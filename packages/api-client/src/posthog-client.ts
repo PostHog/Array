@@ -851,11 +851,16 @@ export class PostHogAPIClient {
   // Desktop file system — the backend surface that backs canvas channels
   // (top-level folders) and dashboards. These routes aren't in the generated
   // OpenAPI client, so we use the raw fetcher.
-  async getDesktopFileSystem(): Promise<Schemas.FileSystem[]> {
+  // Channels are top-level folders on the desktop file system. Filtering to
+  // `type=folder` server-side (and requesting a large page) keeps us from
+  // paginating over every dashboard and filed task just to populate the
+  // sidebar channel list — the bulk of the initial-load cost otherwise.
+  async getDesktopFileSystemChannels(): Promise<Schemas.FileSystem[]> {
     const DESKTOP_FILE_SYSTEM_MAX_PAGES = 50;
+    const DESKTOP_FILE_SYSTEM_PAGE_SIZE = 200;
     const teamId = await this.getTeamId();
     const all: Schemas.FileSystem[] = [];
-    let urlPath: string = `/api/projects/${teamId}/desktop_file_system/`;
+    let urlPath: string = `/api/projects/${teamId}/desktop_file_system/?type=folder&limit=${DESKTOP_FILE_SYSTEM_PAGE_SIZE}`;
     for (let i = 0; i < DESKTOP_FILE_SYSTEM_MAX_PAGES; i++) {
       const url = new URL(`${this.api.baseUrl}${urlPath}`);
       const response = await this.api.fetcher.fetch({
@@ -865,7 +870,7 @@ export class PostHogAPIClient {
       });
       if (!response.ok) {
         throw new Error(
-          `Failed to fetch desktop file system: ${response.statusText}`,
+          `Failed to fetch desktop file system channels: ${response.statusText}`,
         );
       }
       const page = (await response.json()) as Schemas.PaginatedFileSystemList;
@@ -875,7 +880,7 @@ export class PostHogAPIClient {
       urlPath = `${nextUrl.pathname}${nextUrl.search}`;
     }
     log.warn(
-      `getDesktopFileSystem hit MAX_PAGES (${DESKTOP_FILE_SYSTEM_MAX_PAGES}); returning partial results`,
+      `getDesktopFileSystemChannels hit MAX_PAGES (${DESKTOP_FILE_SYSTEM_MAX_PAGES}); returning partial results`,
       { returned: all.length },
     );
     return all;

@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockClient = vi.hoisted(() => ({
-  getDesktopFileSystem: vi.fn(),
+  getDesktopFileSystemChannels: vi.fn(),
   createDesktopFileSystemChannel: vi.fn(),
 }));
 vi.mock("@posthog/ui/features/auth/authClient", () => ({
@@ -35,7 +35,9 @@ describe("useChannelMutations", () => {
 
   it("shows the created channel immediately, before the refetch resolves", async () => {
     // Seed the list with one existing channel.
-    mockClient.getDesktopFileSystem.mockResolvedValue([folder("1", "alpha")]);
+    mockClient.getDesktopFileSystemChannels.mockResolvedValue([
+      folder("1", "alpha"),
+    ]);
 
     const list = renderHook(() => useChannels(), { wrapper });
     await waitFor(() => expect(list.result.current.isLoading).toBe(false));
@@ -45,7 +47,9 @@ describe("useChannelMutations", () => {
     // so we can prove the list updates without waiting on it.
     const created = folder("2", "beta");
     mockClient.createDesktopFileSystemChannel.mockResolvedValue(created);
-    mockClient.getDesktopFileSystem.mockReturnValue(new Promise(() => {}));
+    mockClient.getDesktopFileSystemChannels.mockReturnValue(
+      new Promise(() => {}),
+    );
 
     const mutations = renderHook(() => useChannelMutations(), { wrapper });
     await act(async () => {

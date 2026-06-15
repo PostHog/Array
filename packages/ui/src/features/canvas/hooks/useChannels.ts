@@ -26,7 +26,7 @@ export function useChannels(options?: { enabled?: boolean }): {
 } {
   const query = useAuthenticatedQuery<Schemas.FileSystem[]>(
     CHANNELS_QUERY_KEY,
-    (client) => client.getDesktopFileSystem(),
+    (client) => client.getDesktopFileSystemChannels(),
     {
       enabled: options?.enabled ?? true,
       refetchInterval: CHANNELS_POLL_INTERVAL_MS,
