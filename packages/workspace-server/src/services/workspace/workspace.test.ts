@@ -1,4 +1,10 @@
 import type { RootLogger } from "@posthog/di/logger";
+import {
+  branchExists,
+  getCurrentBranch,
+  getDefaultBranch,
+  remoteBranchExists,
+} from "@posthog/git/queries";
 import type { IAnalytics } from "@posthog/platform/analytics";
 import type { IWorkspaceSettings } from "@posthog/platform/workspace-settings";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
@@ -15,6 +21,17 @@ import type {
   WorkspaceProvisioning,
 } from "./ports";
 import { WorkspaceService, WorkspaceServiceEvent } from "./workspace";
+
+vi.mock("@posthog/git/queries", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@posthog/git/queries")>();
+  return {
+    ...actual,
+    getDefaultBranch: vi.fn(),
+    getCurrentBranch: vi.fn(),
+    branchExists: vi.fn(),
+    remoteBranchExists: vi.fn(),
+  };
+});
 
 function createMocks() {
   const agent = {
@@ -212,6 +229,48 @@ describe("WorkspaceService", () => {
       expect(mocks.fileWatcher.onGitStateChanged).toHaveBeenCalledTimes(1);
       expect(mocks.focus.onBranchRenamed).toHaveBeenCalledTimes(1);
       expect(mocks.agent.onAgentFileActivity).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("checkWorktreeBranch", () => {
+    const mainRepoPath = "/tmp/repo";
+
+    beforeEach(() => {
+      vi.mocked(getDefaultBranch).mockResolvedValue("main");
+      vi.mocked(getCurrentBranch).mockResolvedValue("main");
+      vi.mocked(branchExists).mockResolvedValue(false);
+      vi.mocked(remoteBranchExists).mockResolvedValue(false);
+    });
+
+    it.each([
+      { status: "trunk", branch: "main", local: false, remote: false },
+      { status: "local", branch: "feature/x", local: true, remote: false },
+      {
+        status: "remote-only",
+        branch: "feature/x",
+        local: false,
+        remote: true,
+      },
+      { status: "missing", branch: "feature/x", local: false, remote: false },
+    ])(
+      "classifies '$branch' as $status",
+      async ({ status, branch, local, remote }) => {
+        vi.mocked(branchExists).mockResolvedValue(local);
+        vi.mocked(remoteBranchExists).mockResolvedValue(remote);
+
+        expect(
+          await service.checkWorktreeBranch({ mainRepoPath, branch }),
+        ).toEqual({ status });
+      },
+    );
+
+    it("falls back to the current branch as trunk when getDefaultBranch fails", async () => {
+      vi.mocked(getDefaultBranch).mockRejectedValue(new Error("no remote"));
+      vi.mocked(getCurrentBranch).mockResolvedValue("develop");
+
+      expect(
+        await service.checkWorktreeBranch({ mainRepoPath, branch: "develop" }),
+      ).toEqual({ status: "trunk" });
     });
   });
 });
