@@ -657,6 +657,7 @@ export type ScoutActionType =
   | "open_skill_in_posthog"
   | "open_helper_skill"
   | "copy_finding_link"
+  | "open_linked_report"
   | "show_more_emitted_runs"
   | "filter_runs"
   | "toggle_hide_disabled"
@@ -715,6 +716,8 @@ export interface ScoutActionProperties {
   filter_match_count?: number;
   helper_skill?: string;
   hide_disabled?: boolean;
+  /** Status of the linked inbox report, for `open_linked_report`. */
+  report_status?: string;
 }
 
 export interface SignalSourceConnectedProperties {

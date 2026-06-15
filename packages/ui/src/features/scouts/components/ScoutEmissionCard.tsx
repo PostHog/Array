@@ -1,5 +1,8 @@
 import { CaretRightIcon, CompassIcon } from "@phosphor-icons/react";
-import type { ScoutEmission } from "@posthog/api-client/posthog-client";
+import type {
+  LinkedSignalReport,
+  ScoutEmission,
+} from "@posthog/api-client/posthog-client";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
@@ -7,12 +10,14 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { SeverityBadge } from "./ScoutBadges";
+import { ScoutLinkedReportChip } from "./ScoutLinkedReportChip";
 
 export function ScoutEmissionCard({
   emission,
   skillName,
   actions,
   footerEnd,
+  linkedReport,
   defaultExpanded = false,
   highlighted = false,
 }: {
@@ -23,6 +28,12 @@ export function ScoutEmissionCard({
   actions?: ReactNode;
   /** Replaces the default pipeline note at the footer's right edge. */
   footerEnd?: ReactNode;
+  /**
+   * The inbox report this finding's signal grouped into, when resolved by the
+   * reverse lookup. Renders a chip linking to it; absent/undefined falls back
+   * to the generic pipeline note.
+   */
+  linkedReport?: LinkedSignalReport | null;
   defaultExpanded?: boolean;
   /** True when a shared finding link targets this card – scrolls it into view. */
   highlighted?: boolean;
@@ -89,14 +100,21 @@ export function ScoutEmissionCard({
           className="border-t border-t-(--gray-5) text-[11px] text-gray-10"
         >
           <Text className="font-mono text-[11px]">{emission.finding_id}</Text>
+          {linkedReport ? (
+            <ScoutLinkedReportChip
+              report={linkedReport}
+              skillName={skillName}
+            />
+          ) : null}
           {actions}
           <span className="flex-1" />
-          {footerEnd ?? (
-            <Text className="text-[11px] text-gray-9">
-              Sent to the signals pipeline – report assignment isn&apos;t
-              traceable here yet
-            </Text>
-          )}
+          {footerEnd ??
+            (linkedReport ? null : (
+              <Text className="text-[11px] text-gray-9">
+                Sent to the signals pipeline – report assignment isn&apos;t
+                traceable here yet
+              </Text>
+            ))}
         </Flex>
       ) : null}
     </Box>

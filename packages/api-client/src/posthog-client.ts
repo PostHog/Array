@@ -28,6 +28,7 @@ import type {
   SignalReportArtefact,
   SignalReportArtefactsResponse,
   SignalReportSignalsResponse,
+  SignalReportStatus,
   SignalReportsQueryParams,
   SignalReportsResponse,
   SignalReportTask,
@@ -266,6 +267,24 @@ export interface ScoutEmission {
   severity: string | null;
   source_id: string;
   emitted_at: string;
+}
+
+/** Minimal inbox report projection paired with a scout finding by the reverse lookup. */
+export interface LinkedSignalReport {
+  id: string;
+  title: string | null;
+  status: SignalReportStatus;
+}
+
+/**
+ * One scout finding paired with the inbox report (if any) its signal grouped into.
+ * `report` is null when the finding hasn't grouped into a report yet, was
+ * de-duplicated away, or its signal was deleted – the link is best effort.
+ */
+export interface ScoutEmissionReportLink {
+  finding_id: string;
+  source_id: string;
+  report: LinkedSignalReport | null;
 }
 
 export interface ScoutScratchpadEntry {
@@ -1453,6 +1472,21 @@ export class PostHogAPIClient {
     const data = await this.scoutGet<
       { results: ScoutEmission[] } | ScoutEmission[]
     >(projectId, `runs/${runId}/emissions/`);
+    return Array.isArray(data) ? data : (data.results ?? []);
+  }
+
+  /**
+   * Best-effort reverse lookup: for each finding a run emitted, the inbox report
+   * (if any) its underlying signal grouped into. Pairs with the report's evidence
+   * list, which links the other direction.
+   */
+  async listScoutEmissionReports(
+    projectId: number,
+    runId: string,
+  ): Promise<ScoutEmissionReportLink[]> {
+    const data = await this.scoutGet<
+      { results: ScoutEmissionReportLink[] } | ScoutEmissionReportLink[]
+    >(projectId, `runs/${runId}/emissions/reports/`);
     return Array.isArray(data) ? data : (data.results ?? []);
   }
 

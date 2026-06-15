@@ -4,6 +4,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useState } from "react";
+import { useScoutEmissionReports } from "../hooks/useScoutEmissionReports";
 import { useScoutRunEmissions } from "../hooks/useScoutRunEmissions";
 import { ScoutEmissionCard } from "./ScoutEmissionCard";
 import { ScoutFindingDiscussButton } from "./ScoutFindingDiscussButton";
@@ -101,6 +102,14 @@ function RunEmissions({
     isLoading,
     isError,
   } = useScoutRunEmissions(run.run_id);
+  // Best-effort reverse lookup of which inbox report each finding grouped into.
+  // A failure here is non-fatal: the cards still render, just without the chip.
+  const { data: emissionReports } = useScoutEmissionReports(run.run_id);
+  const reportBySourceId = new Map(
+    (emissionReports ?? [])
+      .filter((link) => link.report)
+      .map((link) => [link.source_id, link.report]),
+  );
   const taskRunUrl = run.task_url ? getPostHogUrl(run.task_url) : null;
 
   if (isLoading) {
@@ -137,6 +146,7 @@ function RunEmissions({
           key={emission.id}
           emission={emission}
           skillName={run.skill_name}
+          linkedReport={reportBySourceId.get(emission.source_id)}
           defaultExpanded={emission.id === highlightFindingId}
           highlighted={emission.id === highlightFindingId}
           actions={
