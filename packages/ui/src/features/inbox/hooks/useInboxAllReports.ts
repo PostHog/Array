@@ -10,6 +10,7 @@ import {
   computeInboxTabCounts,
   INBOX_SCOPE_FOR_YOU,
   isExcludedFromInbox,
+  isPullRequestReport,
   isReportTabReport,
   matchesReviewerScope,
   parseTeammateInboxScope,
@@ -104,6 +105,14 @@ export function useInboxAllReports(options?: {
     {
       status: INBOX_PIPELINE_STATUS_FILTER,
       has_implementation_pr: true,
+      // Mirror the list query's active filters so the badge matches the tab
+      // body. These are empty when `ignoreFilters` is set (sidebar usage), so
+      // the count stays scope-only there.
+      source_product:
+        sourceProductFilter.length > 0
+          ? sourceProductFilter.join(",")
+          : undefined,
+      priority: buildPriorityFilterParam(priorityFilter),
       suggested_reviewers: reviewerUuid
         ? buildSuggestedReviewerFilterParam([reviewerUuid])
         : undefined,
@@ -129,23 +138,28 @@ export function useInboxAllReports(options?: {
   const counts = useMemo(() => {
     const loaded = computeInboxTabCounts(query.allReports, scope);
     // The list is an infinite query that only holds the pages loaded so far
-    // (100 per page), so the loaded-derived Reports count caps at the page
-    // size and reads as a misleading "100". Reports is the dominant bucket, so
-    // derive its true size from the backend's total `count` (unaffected by the
-    // page cap) minus the loaded non-report items (pulls, in-motion runs, and
-    // failed runs) that the total also includes. Pulls/Runs stay loaded-derived
-    // — they are small, newest-first sets that fit on the first page.
-    const loadedNonReport = query.allReports.filter(
+    // (100 per page), so the loaded-derived Reports count caps at the page size
+    // and reads as a misleading "100". Reports is the dominant bucket, so derive
+    // its true size from the backend total `count` (unaffected by the page cap)
+    // minus the non-report items the total also includes. PRs use the true
+    // `pullRequestTotal` (also a real backend count), so PRs sitting past the
+    // loaded page don't inflate Reports. Runs/failed without a PR stay
+    // loaded-derived — small, newest-first, and an accepted approximation.
+    const loadedOtherNonReport = query.allReports.filter(
       (r) =>
         matchesReviewerScope(r, scope) &&
         !isExcludedFromInbox(r) &&
-        !isReportTabReport(r),
+        !isReportTabReport(r) &&
+        !isPullRequestReport(r),
     ).length;
     return {
       ...loaded,
       // True backend counts, unaffected by the list's page-size cap.
       pulls: pullRequestTotal,
-      reports: Math.max(0, query.totalCount - loadedNonReport),
+      reports: Math.max(
+        0,
+        query.totalCount - pullRequestTotal - loadedOtherNonReport,
+      ),
     };
   }, [query.allReports, query.totalCount, scope, pullRequestTotal]);
 
