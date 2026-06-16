@@ -36,6 +36,15 @@ import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 
+interface SidebarNavSectionProps {
+  // The Command Center badge counts how many command-center cells point at a
+  // live task. Deriving it needs the task list, which the Code pane's
+  // SidebarMenu already subscribes to — so it passes the count down here to
+  // avoid a second live useTasks subscription. The Channels pane renders this
+  // standalone with no count, so the component derives its own (below).
+  commandCenterActiveCount?: number;
+}
+
 // The sidebar navigation section shared by the Code pane (above the task list)
 // and the Channels pane. It is fully self-contained — every item's active
 // state, badge count, and click handler is wired here — so it can be dropped
@@ -43,7 +52,9 @@ import { SkillsItem } from "./items/SkillsItem";
 // mirror (Home, Skills, MCP servers, Command Center) stay in that space;
 // Inbox, Agents and New task have no mirror yet and jump back to Code. Search
 // opens the command menu in place.
-export function SidebarNavSection() {
+export function SidebarNavSection({
+  commandCenterActiveCount: providedActiveCount,
+}: SidebarNavSectionProps = {}) {
   const view = useAppView();
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
 
@@ -88,14 +99,24 @@ export function SidebarNavSection() {
   const inboxResults = inboxProbe?.results ?? [];
   const inboxSignalCount = inboxResults.filter(isReportUpForReview).length;
 
+  // Only subscribe to the task list when a parent hasn't already supplied the
+  // count — keeps the standalone (Channels) render self-contained without
+  // opening a redundant subscription when composed inside SidebarMenu.
+  const needsOwnCount = providedActiveCount === undefined;
   const showAllUsers = useSidebarStore((s) => s.showAllUsers);
   const showInternal = useSidebarStore((s) => s.showInternal);
-  const { data: allTasks = [] } = useTasks({ showAllUsers, showInternal });
-  const taskIds = new Set(allTasks.map((t) => t.id));
+  const { data: allTasks = [] } = useTasks(
+    { showAllUsers, showInternal },
+    { enabled: needsOwnCount },
+  );
   const commandCenterCells = useCommandCenterStore((s) => s.cells);
-  const commandCenterActiveCount = commandCenterCells.filter(
-    (taskId) => taskId != null && taskIds.has(taskId),
-  ).length;
+  const ownActiveCount = (() => {
+    const taskIds = new Set(allTasks.map((t) => t.id));
+    return commandCenterCells.filter(
+      (taskId) => taskId != null && taskIds.has(taskId),
+    ).length;
+  })();
+  const commandCenterActiveCount = providedActiveCount ?? ownActiveCount;
 
   const openCommandMenu = useCommandMenuStore((s) => s.open);
 

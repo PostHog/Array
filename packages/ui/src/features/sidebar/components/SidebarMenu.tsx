@@ -399,7 +399,15 @@ function SidebarMenuComponent() {
       id="side-bar-menu"
       className="flex min-h-0 flex-col"
     >
-      <SidebarNavSection />
+      {/* Derive the command-center count from data SidebarMenu already holds,
+          so the nested nav section doesn't open its own task subscription. */}
+      <SidebarNavSection
+        commandCenterActiveCount={commandCenterCells.reduce(
+          (count, taskId) =>
+            taskId != null && taskMap.has(taskId) ? count + 1 : count,
+          0,
+        )}
+      />
 
       <Separator className="mx-2 my-2 shrink-0" />
 
