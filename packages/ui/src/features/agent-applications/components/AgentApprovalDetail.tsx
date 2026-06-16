@@ -1,4 +1,10 @@
-import { LockKeyIcon, XIcon } from "@phosphor-icons/react";
+import {
+  CheckCircleIcon,
+  LockKeyIcon,
+  WarningIcon,
+  XCircleIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { AgentApprovalRequest } from "@posthog/shared/agent-platform-types";
 import { Badge } from "@posthog/ui/primitives/Badge";
@@ -138,16 +144,28 @@ function DecidedOutcome({ approval }: { approval: AgentApprovalRequest }) {
     "error" in approval.dispatch_outcome
       ? String(approval.dispatch_outcome.error)
       : null;
+  const banner = outcomeBanner(approval.state, !!dispatchError);
 
   return (
-    <Flex direction="column" gap="2" className="mt-4">
-      {approval.decision_at ? (
-        <Text className="text-[12px] text-gray-11">
-          {approval.state === "rejected" ? "Rejected" : "Decided"}{" "}
-          {formatRelativeTimeShort(approval.decision_at)}
-          {approval.decision_by ? ` by ${approval.decision_by}` : ""}
-        </Text>
-      ) : null}
+    <Flex direction="column" gap="3" className="mt-4">
+      <Flex
+        align="center"
+        gap="2"
+        className={`rounded-(--radius-2) border px-3 py-2 ${banner.classes}`}
+      >
+        <banner.Icon size={16} weight="fill" className={banner.iconClass} />
+        <Flex direction="column" gap="0.5" className="min-w-0">
+          <Text className="font-medium text-[12.5px] text-gray-12">
+            {banner.title}
+          </Text>
+          {approval.decision_at ? (
+            <Text className="text-[11px] text-gray-11">
+              {formatRelativeTimeShort(approval.decision_at)}
+              {approval.decision_by ? ` by ${approval.decision_by}` : ""}
+            </Text>
+          ) : null}
+        </Flex>
+      </Flex>
       {approval.decision_reason ? (
         <Text className="text-[12px] text-gray-11">
           Reason: {approval.decision_reason}
@@ -163,6 +181,47 @@ function DecidedOutcome({ approval }: { approval: AgentApprovalRequest }) {
       ) : null}
     </Flex>
   );
+}
+
+function outcomeBanner(
+  state: AgentApprovalRequest["state"],
+  hasDispatchError: boolean,
+): {
+  title: string;
+  classes: string;
+  Icon: typeof CheckCircleIcon;
+  iconClass: string;
+} {
+  if (hasDispatchError || state === "dispatched_failed") {
+    return {
+      title: "Approved, but dispatch failed",
+      classes: "border-(--red-6) bg-(--red-2)",
+      Icon: WarningIcon,
+      iconClass: "text-(--red-11)",
+    };
+  }
+  if (state === "rejected") {
+    return {
+      title: "Rejected",
+      classes: "border-(--gray-6) bg-(--gray-2)",
+      Icon: XCircleIcon,
+      iconClass: "text-gray-11",
+    };
+  }
+  if (state === "expired") {
+    return {
+      title: "Expired before a decision",
+      classes: "border-(--amber-6) bg-(--amber-2)",
+      Icon: WarningIcon,
+      iconClass: "text-(--amber-11)",
+    };
+  }
+  return {
+    title: "Approved & dispatched",
+    classes: "border-(--green-6) bg-(--green-2)",
+    Icon: CheckCircleIcon,
+    iconClass: "text-(--green-11)",
+  };
 }
 
 export function ArgsSection({
