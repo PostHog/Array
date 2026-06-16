@@ -87,20 +87,21 @@ export class DashboardsService {
     }
   }
 
-  private listAll(): Promise<FsEntry[]> {
-    return this.fs.listAll<FsEntry>("dashboards");
-  }
-
   private getEntry(id: string): Promise<FsEntry | null> {
     return this.fs.getEntry<FsEntry>(id, "dashboard");
   }
 
   async list(channelId: string): Promise<DashboardSummary[]> {
-    const entries = await this.listAll();
+    // Fetch only this channel's dashboards via a server-side filter
+    // (`parent=<channelPath>&type=dashboard`) rather than walking the whole
+    // project file system and filtering client-side. Dashboards are created as
+    // direct children of the channel folder, so the parent filter matches them.
+    const channelPath = await this.channelPath(channelId);
+    const entries = await this.fs.listByQuery<FsEntry>(
+      `parent=${encodeURIComponent(channelPath)}&type=${DASHBOARD_TYPE}`,
+      "dashboards",
+    );
     return entries
-      .filter(
-        (e) => e.type === DASHBOARD_TYPE && e.meta?.channelId === channelId,
-      )
       .map((e) => toRecord(e))
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .map(
