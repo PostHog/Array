@@ -187,7 +187,11 @@ function RunsSection({
           <Text className="font-semibold text-[13px] text-gray-12">
             {title}
           </Text>
-          <Text className="text-[12px] text-gray-10 tabular-nums">{count}</Text>
+          {count > 0 && (
+            <Text className="text-[12px] text-gray-10 tabular-nums">
+              {count}
+            </Text>
+          )}
           {isLive && count > 0 && (
             <span
               className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-(--blue-9)"

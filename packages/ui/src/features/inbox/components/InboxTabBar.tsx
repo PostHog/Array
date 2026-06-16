@@ -49,15 +49,17 @@ export function InboxTabBar({ counts }: InboxTabBarProps) {
                 <span className="font-medium text-[13px]">
                   {INBOX_TAB_LABEL[key]}
                 </span>
-                <span
-                  className={
-                    isActive
-                      ? "text-[12px] text-gray-11 tabular-nums"
-                      : "text-[12px] text-gray-10 tabular-nums"
-                  }
-                >
-                  {counts[key]}
-                </span>
+                {counts[key] > 0 && (
+                  <span
+                    className={
+                      isActive
+                        ? "text-[12px] text-gray-11 tabular-nums"
+                        : "text-[12px] text-gray-10 tabular-nums"
+                    }
+                  >
+                    {counts[key]}
+                  </span>
+                )}
               </TabsTrigger>
             );
           })}

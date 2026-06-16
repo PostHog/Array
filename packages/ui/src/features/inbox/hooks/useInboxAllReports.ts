@@ -9,12 +9,17 @@ import {
 import {
   computeInboxTabCounts,
   INBOX_SCOPE_FOR_YOU,
+  isExcludedFromInbox,
+  isReportTabReport,
   matchesReviewerScope,
   parseTeammateInboxScope,
 } from "@posthog/core/inbox/reportMembership";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
-import { useInboxReportsInfinite } from "@posthog/ui/features/inbox/hooks/useInboxReports";
+import {
+  useInboxReports,
+  useInboxReportsInfinite,
+} from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useInboxReviewerScopeStore } from "@posthog/ui/features/inbox/stores/inboxReviewerScopeStore";
 import { useInboxSignalsFilterStore } from "@posthog/ui/features/inbox/stores/inboxSignalsFilterStore";
 import { useMemo } from "react";
@@ -90,6 +95,28 @@ export function useInboxAllReports(options?: {
     },
   );
 
+  // True count of pull-request reports for the active scope. The infinite list
+  // only holds the first page(s), so deriving pulls from loaded reports caps at
+  // the page size and depends on ordering (a PR can sit past page 1). A cheap
+  // `limit: 1` count query with the server-side `has_implementation_pr` filter
+  // returns the real total regardless of page size.
+  const pullRequestCountQuery = useInboxReports(
+    {
+      status: INBOX_PIPELINE_STATUS_FILTER,
+      has_implementation_pr: true,
+      suggested_reviewers: reviewerUuid
+        ? buildSuggestedReviewerFilterParam([reviewerUuid])
+        : undefined,
+      limit: 1,
+    },
+    {
+      enabled: !isForYou || reviewerUuid != null,
+      refetchInterval: INBOX_REFETCH_INTERVAL_MS,
+      refetchIntervalInBackground: false,
+    },
+  );
+  const pullRequestTotal = pullRequestCountQuery.data?.count ?? 0;
+
   const scopedReports = useMemo(() => {
     const byScope = ignoreScope
       ? query.allReports
@@ -99,10 +126,28 @@ export function useInboxAllReports(options?: {
       : byScope;
   }, [query.allReports, scope, searchQuery, ignoreScope]);
 
-  const counts = useMemo(
-    () => computeInboxTabCounts(query.allReports, scope),
-    [query.allReports, scope],
-  );
+  const counts = useMemo(() => {
+    const loaded = computeInboxTabCounts(query.allReports, scope);
+    // The list is an infinite query that only holds the pages loaded so far
+    // (100 per page), so the loaded-derived Reports count caps at the page
+    // size and reads as a misleading "100". Reports is the dominant bucket, so
+    // derive its true size from the backend's total `count` (unaffected by the
+    // page cap) minus the loaded non-report items (pulls, in-motion runs, and
+    // failed runs) that the total also includes. Pulls/Runs stay loaded-derived
+    // — they are small, newest-first sets that fit on the first page.
+    const loadedNonReport = query.allReports.filter(
+      (r) =>
+        matchesReviewerScope(r, scope) &&
+        !isExcludedFromInbox(r) &&
+        !isReportTabReport(r),
+    ).length;
+    return {
+      ...loaded,
+      // True backend counts, unaffected by the list's page-size cap.
+      pulls: pullRequestTotal,
+      reports: Math.max(0, query.totalCount - loadedNonReport),
+    };
+  }, [query.allReports, query.totalCount, scope, pullRequestTotal]);
 
   return {
     ...query,

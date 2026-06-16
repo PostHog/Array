@@ -1,12 +1,7 @@
-import {
-  INBOX_PIPELINE_STATUS_FILTER,
-  INBOX_REFETCH_INTERVAL_MS,
-  isReportUpForReview,
-} from "@posthog/core/inbox/reportFiltering";
 import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
-import { useInboxReports } from "@posthog/ui/features/inbox/hooks/useInboxReports";
+import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import {
@@ -24,7 +19,6 @@ import {
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
-import { useRendererWindowFocusStore } from "@posthog/ui/shell/rendererWindowFocusStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
 import { AgentsItem } from "./items/AgentsItem";
@@ -87,17 +81,12 @@ export function SidebarNavSection({
   const isSkillsActive = view.type === "skills";
   const isMcpServersActive = view.type === "mcp-servers";
 
-  const inboxPollingActive = useRendererWindowFocusStore((s) => s.focused);
-  const { data: inboxProbe } = useInboxReports(
-    { status: INBOX_PIPELINE_STATUS_FILTER },
-    {
-      refetchInterval: inboxPollingActive ? INBOX_REFETCH_INTERVAL_MS : false,
-      refetchIntervalInBackground: false,
-      staleTime: inboxPollingActive ? INBOX_REFETCH_INTERVAL_MS : 15_000,
-    },
-  );
-  const inboxResults = inboxProbe?.results ?? [];
-  const inboxSignalCount = inboxResults.filter(isReportUpForReview).length;
+  // Open pull requests in the inbox — the main CTA, and the same count the inbox
+  // Pull requests tab shows, so the badge and the tab always agree.
+  // `ignoreFilters` keeps the badge stable against the inbox's filter chrome;
+  // scope still follows the user's For-you / project choice.
+  const { counts: inboxCounts } = useInboxAllReports({ ignoreFilters: true });
+  const inboxPullRequestCount = inboxCounts.pulls;
 
   // Only subscribe to the task list when a parent hasn't already supplied the
   // count — keeps the standalone (Channels) render self-contained without
@@ -140,7 +129,7 @@ export function SidebarNavSection({
         <InboxItem
           isActive={isInboxActive}
           onClick={navigateToInbox}
-          signalCount={inboxSignalCount}
+          pullRequestCount={inboxPullRequestCount}
         />
       </Box>
 
