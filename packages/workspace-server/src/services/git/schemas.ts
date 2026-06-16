@@ -316,8 +316,8 @@ export const prDiffStatsSchema = z.object({
   additions: z.number(),
   deletions: z.number(),
   changedFiles: z.number(),
-  /** Lowercased GitHub PR state: "open" | "closed" | "merged". */
-  state: z.string(),
+  /** Lowercased GitHub PR state. */
+  state: z.enum(["open", "closed", "merged"]),
   merged: z.boolean(),
   draft: z.boolean(),
 });

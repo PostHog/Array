@@ -117,6 +117,24 @@ function toUnifiedDiffPatch(
   return `diff --git a/${oldPath} b/${filename}\n--- ${fromPath}\n+++ ${toPath}\n${rawPatch}`;
 }
 
+/**
+ * Narrow GitHub GraphQL's `PullRequestState` (OPEN | CLOSED | MERGED) to the
+ * lowercased literal the batch schema expects. Anything unexpected falls back
+ * to "open" so one odd value can never fail validation for the whole batch.
+ */
+function normalizeGraphqlPrState(
+  graphqlState: string,
+): "open" | "closed" | "merged" {
+  switch (graphqlState) {
+    case "MERGED":
+      return "merged";
+    case "CLOSED":
+      return "closed";
+    default:
+      return "open";
+  }
+}
+
 export function mapPrState(
   state: string | null,
   merged: boolean,
@@ -1093,7 +1111,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         additions: node.additions,
         deletions: node.deletions,
         changedFiles: node.changedFiles,
-        state: node.state.toLowerCase(),
+        state: normalizeGraphqlPrState(node.state),
         merged: node.state === "MERGED",
         draft: node.isDraft,
       };

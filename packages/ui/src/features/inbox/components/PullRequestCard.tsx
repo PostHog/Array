@@ -122,7 +122,7 @@ export function PullRequestCard({
       >
         <Flex align="center" gap="2" className="shrink-0">
           {report.implementation_pr_url && (
-            <>
+            <Flex direction="column" align="end" gap="1" className="shrink-0">
               <ReportImplementationPrLink
                 prUrl={report.implementation_pr_url}
                 size="sm"
@@ -131,7 +131,7 @@ export function PullRequestCard({
                 prUrl={report.implementation_pr_url}
                 hideWhileLoading
               />
-            </>
+            </Flex>
           )}
           <SuggestedReviewerAvatarStack
             reportId={report.id}

@@ -1,4 +1,5 @@
 import { GitMergeIcon, GitPullRequestIcon } from "@phosphor-icons/react";
+import { parsePrUrl } from "@posthog/core/inbox/reportPresentation";
 import { cn } from "@posthog/quill";
 import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
 import { usePrDiffStatsFromBatch } from "@posthog/ui/features/inbox/context/PrDiffStatsBatchContext";
@@ -14,32 +15,8 @@ interface ReportImplementationPrLinkProps {
   onLinkClick?: () => void;
 }
 
-function parseGitHubPrReference(prUrl: string): {
-  reference: string;
-  prNumber: string;
-} {
-  try {
-    const parsed = new URL(prUrl);
-    const match = parsed.pathname.match(
-      /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:$|[/?#])/,
-    );
-    if (match) {
-      return {
-        reference: `${match[1]}/${match[2]}#${match[3]}`,
-        prNumber: `#${match[3]}`,
-      };
-    }
-  } catch {
-    // Fall through to regex fallback for non-URL-safe inputs
-  }
-
-  const prMatch = prUrl.match(/\/pull\/(\d+)(?:$|[/?#])/);
-  const prNumber = prMatch ? `#${prMatch[1]}` : "PR";
-  return {
-    reference: prUrl,
-    prNumber,
-  };
-}
+/** The only states we render a badge for; anything else is treated as unknown. */
+const KNOWN_PR_STATES = new Set(["open", "closed", "merged"]);
 
 export function ReportImplementationPrLink({
   prUrl,
@@ -66,9 +43,19 @@ export function ReportImplementationPrLink({
     ? batchEntry.isLoading && !batchEntry.stats
     : fallback.meta.isLoading;
 
-  // If neither source could resolve a status (PR 404s, gh failed, or the batch
-  // had no entry for this PR), don't render a misleading "open" badge.
-  if (!isLoading && state === null) return null;
+  // Only render for a canonical GitHub PR URL. This both keeps the badge in
+  // sync with the gated "Open in GitHub" action and avoids turning an arbitrary
+  // (possibly unsafe-scheme) string into a clickable external link.
+  const prRef = parsePrUrl(prUrl);
+  if (!prRef) return null;
+
+  // `getPrDetailsByUrl` falls back to `{ state: "unknown" }` when the lookup
+  // fails (gh offline, private repo, unparseable URL), and a batch miss leaves
+  // state null. Once settled, render nothing for an unresolved state rather
+  // than a misleading green "open" badge.
+  if (!isLoading && (state === null || !KNOWN_PR_STATES.has(state))) {
+    return null;
+  }
 
   const isSm = size === "sm";
 
@@ -84,15 +71,18 @@ export function ReportImplementationPrLink({
           ? "bg-gray-4 text-gray-11 hover:bg-gray-5"
           : "bg-green-4 text-green-11 hover:bg-green-5";
 
-  const { reference: prReference, prNumber } = parseGitHubPrReference(prUrl);
+  const prReference = `${prRef.repoSlug}#${prRef.number}`;
+  const prNumber = `#${prRef.number}`;
 
-  const tooltip = merged
-    ? `Merged – ${prReference}`
-    : state === "closed"
-      ? `Closed – ${prReference}`
-      : draft
-        ? `Draft – ${prReference}`
-        : `Open – ${prReference}`;
+  const tooltip = isLoading
+    ? prReference
+    : merged
+      ? `Merged – ${prReference}`
+      : state === "closed"
+        ? `Closed – ${prReference}`
+        : draft
+          ? `Draft – ${prReference}`
+          : `Open – ${prReference}`;
 
   const iconSize = isSm ? 10 : 12;
 
