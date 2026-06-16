@@ -8,9 +8,12 @@ import {
 } from "@posthog/core/inbox/reportFiltering";
 import {
   computeInboxTabCounts,
+  INBOX_SCOPE_FOR_YOU,
   matchesReviewerScope,
   parseTeammateInboxScope,
 } from "@posthog/core/inbox/reportMembership";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { useInboxReportsInfinite } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useInboxReviewerScopeStore } from "@posthog/ui/features/inbox/stores/inboxReviewerScopeStore";
 import { useInboxSignalsFilterStore } from "@posthog/ui/features/inbox/stores/inboxSignalsFilterStore";
@@ -52,7 +55,22 @@ export function useInboxAllReports(options?: {
   const priorityFilter = useInboxSignalsFilterStore((s) =>
     ignoreFilters ? EMPTY_FILTER_ARRAY : s.priorityFilter,
   );
+  const client = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({ client });
+
+  // The reviewer scope is applied server-side via `suggested_reviewers`.
+  // "For you" filters on the current user's uuid; a teammate scope on theirs;
+  // "Entire project" (and the Runs tab's `ignoreScope`) send nothing so the
+  // whole project comes back. This replaces the old `-is_suggested_reviewer`
+  // ordering tiebreak, which floated the current user's reports to the top of
+  // the first (and only loaded) page and made "Entire project" look identical
+  // to "For you".
   const teammateUuid = ignoreScope ? null : parseTeammateInboxScope(scope);
+  const reviewerUuid =
+    teammateUuid ??
+    (!ignoreScope && scope === INBOX_SCOPE_FOR_YOU
+      ? (currentUser?.uuid ?? null)
+      : null);
 
   const query = useInboxReportsInfinite(
     {
@@ -63,8 +81,8 @@ export function useInboxAllReports(options?: {
           ? sourceProductFilter.join(",")
           : undefined,
       priority: buildPriorityFilterParam(priorityFilter),
-      suggested_reviewers: teammateUuid
-        ? buildSuggestedReviewerFilterParam([teammateUuid])
+      suggested_reviewers: reviewerUuid
+        ? buildSuggestedReviewerFilterParam([reviewerUuid])
         : undefined,
     },
     {

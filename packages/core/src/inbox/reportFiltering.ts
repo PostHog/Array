@@ -59,15 +59,19 @@ export function buildStatusFilterParam(statuses: SignalReportStatus[]): string {
 /**
  * Comma-separated `ordering` for the signal report list API:
  * 1. Status rank (ready first – semantic server-side rank, always applied)
- * 2. Suggested reviewer (current user's reports first)
- * 3. Toolbar-selected field (priority, total_weight, created_at, etc.)
+ * 2. Toolbar-selected field (priority, total_weight, created_at, etc.)
+ *
+ * The reviewer scope is applied via the `suggested_reviewers` query param, not
+ * ordering — a `-is_suggested_reviewer` tiebreak would float the current user's
+ * reports to the top of the first page and starve the "Entire project" scope of
+ * non-self reports (only the first page is loaded).
  */
 export function buildSignalReportListOrdering(
   field: SignalReportOrderingField,
   direction: "asc" | "desc",
 ): string {
   const fieldKey = direction === "desc" ? `-${field}` : field;
-  return `status,-is_suggested_reviewer,${fieldKey}`;
+  return `status,${fieldKey}`;
 }
 
 export function buildSuggestedReviewerFilterParam(
