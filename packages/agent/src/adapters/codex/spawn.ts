@@ -36,7 +36,14 @@ function buildConfigArgs(options: CodexProcessOptions): string[] {
   // Disable the user's local MCPs one-by-one so Codex only uses the MCPs we
   // provide via ACP. We can't use `-c mcp_servers={}` because that makes Codex
   // ignore MCPs entirely, including the ones we inject later.
+  //
+  // Only bare-key names are emitted: codex's `-c` parser rejects quoted key
+  // segments, so a name with a dot or other special character cannot be
+  // expressed as `mcp_servers.<name>.enabled=false` without producing an
+  // override that fails to load and crashes the whole codex session. Skipping
+  // such a name leaves that server enabled (harmless) instead of killing codex.
   for (const name of options.settings?.mcpServerNames ?? []) {
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) continue;
     args.push("-c", `mcp_servers.${name}.enabled=false`);
   }
 
