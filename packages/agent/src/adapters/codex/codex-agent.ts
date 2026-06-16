@@ -128,6 +128,13 @@ export interface CodexAcpAgentOptions {
   processCallbacks?: ProcessSpawnedCallback;
   posthogApiConfig?: PostHogAPIConfig;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
+  /**
+   * Logger wired to the host log sink. Without it the codex-acp subprocess
+   * stderr, spawn failures and exit codes are written to a throwaway logger and
+   * never reach the exported logs, so a crash surfaces only as a generic
+   * "ACP connection closed" with no cause.
+   */
+  logger?: Logger;
 }
 
 type CodexSession = BaseSession & {
@@ -320,7 +327,8 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
   constructor(client: AgentSideConnection, options: CodexAcpAgentOptions) {
     super(client);
-    this.logger = new Logger({ debug: true, prefix: "[CodexAcpAgent]" });
+    this.logger =
+      options.logger ?? new Logger({ debug: true, prefix: "[CodexAcpAgent]" });
 
     // Load user codex settings before spawning so spawnCodexProcess can
     // filter out any [mcp_servers.*] entries from ~/.codex/config.toml.

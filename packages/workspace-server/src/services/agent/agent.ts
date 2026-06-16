@@ -762,6 +762,16 @@ When creating pull requests, add the following footer at the end of the PR descr
         })),
       );
 
+      // codex-acp connects to every MCP server eagerly during session creation
+      // and treats an unreachable one as fatal, which kills the session
+      // ("ACP connection closed") and makes the host silently fall back to a
+      // Claude/Opus session. Claude connects lazily and is unaffected, so only
+      // the Codex server list is pruned to the reachable ones.
+      const sessionMcpServers =
+        adapter === "codex"
+          ? await this.filterReachableMcpServers(mcpServers, taskRunId)
+          : mcpServers;
+
       let externalPlugins: Awaited<ReturnType<typeof discoverExternalPlugins>> =
         [];
       try {
@@ -833,7 +843,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         const resumeResponse = await connection.resumeSession({
           sessionId: existingSessionId,
           cwd: repoPath,
-          mcpServers,
+          mcpServers: sessionMcpServers,
           _meta: {
             ...(logUrl && {
               persistence: { taskId, runId: taskRunId, logUrl },
@@ -862,7 +872,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         }
         const newSessionResponse = await connection.newSession({
           cwd: repoPath,
-          mcpServers,
+          mcpServers: sessionMcpServers,
           _meta: {
             taskRunId,
             environment: "local",
@@ -949,6 +959,75 @@ When creating pull requests, add the following footer at the end of the PR descr
       }
       if (isReconnect) return null;
       throw err;
+    }
+  }
+
+  private async filterReachableMcpServers<
+    T extends {
+      name: string;
+      url: string;
+      headers: Array<{ name: string; value: string }>;
+    },
+  >(servers: T[], taskRunId: string): Promise<T[]> {
+    const probed = await Promise.all(
+      servers.map(async (server) => ({
+        server,
+        reachable: await this.isMcpServerReachable(server),
+      })),
+    );
+    const reachable: T[] = [];
+    for (const { server, reachable: ok } of probed) {
+      if (ok) {
+        reachable.push(server);
+      } else {
+        this.log.warn(
+          "Dropping unreachable MCP server from Codex session; codex-acp treats an unreachable server as a fatal startup error",
+          { taskRunId, server: server.name, url: server.url },
+        );
+      }
+    }
+    return reachable;
+  }
+
+  private async isMcpServerReachable(server: {
+    url: string;
+    headers: Array<{ name: string; value: string }>;
+  }): Promise<boolean> {
+    const PROBE_TIMEOUT_MS = 4_000;
+    try {
+      const headers: Record<string, string> = {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      };
+      for (const header of server.headers) {
+        headers[header.name] = header.value;
+      }
+      const response = await fetch(server.url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 0,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "posthog-code", version: "1.0.0" },
+          },
+        }),
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
+      await response.body?.cancel();
+      // Any HTTP response means the endpoint is reachable. codex-acp only treats
+      // transport failures (connection refused, DNS, timeout) as fatal; HTTP or
+      // JSON-RPC error responses are handled gracefully.
+      return true;
+    } catch (err) {
+      this.log.debug("MCP server reachability probe failed", {
+        url: server.url,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
     }
   }
 
