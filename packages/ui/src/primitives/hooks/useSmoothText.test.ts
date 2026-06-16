@@ -6,27 +6,18 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("nextRevealLength", () => {
-  it("returns the target when already caught up", () => {
-    expect(nextRevealLength(10, 10, 16, 120)).toBe(10);
-    expect(nextRevealLength(12, 10, 16, 120)).toBe(10);
-  });
-
-  it("advances proportionally to elapsed time and rate", () => {
+  it.each<[string, number, number, number, number, number]>([
+    // label                                     current  target  elapsedMs  rate  expected
+    ["caught up: returns the target", 10, 10, 16, 120, 10],
+    ["caught up past target: clamps to target", 12, 10, 16, 120, 10],
     // 120 chars/sec over 100ms = 12 chars.
-    expect(nextRevealLength(0, 100, 100, 120)).toBe(12);
-  });
-
-  it("never overshoots the target", () => {
-    expect(nextRevealLength(95, 100, 1000, 120)).toBe(100);
-  });
-
-  it("always advances at least one char when behind", () => {
+    ["advances proportionally to elapsed/rate", 0, 100, 100, 120, 12],
+    ["never overshoots the target", 95, 100, 1000, 120, 100],
     // Tiny elapsed time would round to zero; keep forward progress.
-    expect(nextRevealLength(0, 100, 0, 120)).toBe(1);
-  });
-
-  it("snaps when the lag is too large to ease pleasantly", () => {
-    expect(nextRevealLength(0, 5000, 16, 120)).toBe(5000);
+    ["always advances at least one when behind", 0, 100, 0, 120, 1],
+    ["snaps when lag is too large to ease", 0, 5000, 16, 120, 5000],
+  ])("%s", (_label, current, target, elapsedMs, rate, expected) => {
+    expect(nextRevealLength(current, target, elapsedMs, rate)).toBe(expected);
   });
 });
 
