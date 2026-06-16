@@ -173,8 +173,8 @@ transport, blocked on the M-Live open question).
   Commit `0f15929f` (incl. the latent empty-conversation render fix).
 - [x] **M5 — Approvals** (features 9, 11) — per-agent approvals queue, decide
   (approve/reject + edited args + reason). Commit `a2fa9115`, then reworked into
-  **master/detail with embedded session + refresh controls** (`a376b61b`).
-  Remaining: the fleet-wide global approvals queue (feature 10).
+  **master/detail with embedded session + refresh controls** (`a376b61b`). The
+  fleet-wide global approvals queue (feature 10) shipped later in M6 (`5bfeccef`).
 - [x] **M7 — Observability** (features 25, 26; also 1, 3) — agent observability
   over the team's own `$ai_*` events via a `getAgentAnalytics()` HogQL rollup on
   `PostHogAPIClient` (5 parallel `/query/` panels, pure unit-tested shaping in
@@ -187,7 +187,7 @@ transport, blocked on the M-Live open question).
   Data layer committed in `aed89291`; UI in `0856ea5f`. **Design note:** there is
   no separate fleet-analytics page — analytics is blended into the overview and
   the per-agent tabs. This replaced the old operational fleet/agent stat strips
-  (live-now + pending-approvals counts) — those return with M6 / feature 10.
+  (live-now + pending-approvals counts) — those returned in M6 (`5bfeccef`).
 - [x] **Configuration explorer** (features 12, 13, 14, 17, 18, 23 + M8/M9) —
   full-bleed filesystem explorer on a reusable `FileExplorer` primitive: a tree
   (instructions · model · triggers · secrets · skills · tools · mcps ·
@@ -227,6 +227,7 @@ transport, blocked on the M-Live open question).
     above the analytics KPI strip. `Y` deep-links to the new approvals route and
     flips amber when non-zero. Counts come from the same fleet hooks the live-now
     panel uses, so the strip is "free" beyond the requests already in flight.
+  Commit `5bfeccef`.
 - [x] **M-Live (chat preview)** (feature 27) — per-agent **Chat** tab that runs a
   live session against the agent's ingress and renders it through the native
   `ConversationView`. **This resolved the M-Live "where does cloud-SSE transport
