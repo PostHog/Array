@@ -58,19 +58,13 @@ export function useInboxAllReports(options?: {
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
 
-  // The reviewer scope is applied server-side via `suggested_reviewers`.
-  // "For you" filters on the current user's uuid; a teammate scope on theirs;
-  // "Entire project" (and the Runs tab's `ignoreScope`) send nothing so the
-  // whole project comes back. This replaces the old `-is_suggested_reviewer`
-  // ordering tiebreak, which floated the current user's reports to the top of
-  // the first (and only loaded) page and made "Entire project" look identical
-  // to "For you".
+  // Reviewer scope is applied server-side via `suggested_reviewers`: "For you"
+  // filters on the current user, a teammate scope on theirs, "Entire project"
+  // and the Runs tab (`ignoreScope`) send nothing.
+  const isForYou = !ignoreScope && scope === INBOX_SCOPE_FOR_YOU;
   const teammateUuid = ignoreScope ? null : parseTeammateInboxScope(scope);
   const reviewerUuid =
-    teammateUuid ??
-    (!ignoreScope && scope === INBOX_SCOPE_FOR_YOU
-      ? (currentUser?.uuid ?? null)
-      : null);
+    teammateUuid ?? (isForYou ? (currentUser?.uuid ?? null) : null);
 
   const query = useInboxReportsInfinite(
     {
@@ -86,6 +80,11 @@ export function useInboxAllReports(options?: {
         : undefined,
     },
     {
+      // "For you" must always carry the current user's `suggested_reviewers`
+      // filter, so hold the query until that uuid resolves rather than firing a
+      // throwaway project-wide fetch first. Other scopes don't depend on the
+      // user and run immediately.
+      enabled: !isForYou || reviewerUuid != null,
       refetchInterval: INBOX_REFETCH_INTERVAL_MS,
       refetchIntervalInBackground: false,
     },

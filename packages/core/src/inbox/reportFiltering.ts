@@ -61,10 +61,9 @@ export function buildStatusFilterParam(statuses: SignalReportStatus[]): string {
  * 1. Status rank (ready first – semantic server-side rank, always applied)
  * 2. Toolbar-selected field (priority, total_weight, created_at, etc.)
  *
- * The reviewer scope is applied via the `suggested_reviewers` query param, not
- * ordering — a `-is_suggested_reviewer` tiebreak would float the current user's
- * reports to the top of the first page and starve the "Entire project" scope of
- * non-self reports (only the first page is loaded).
+ * Reviewer scope is applied via the `suggested_reviewers` param, not ordering:
+ * a `-is_suggested_reviewer` tiebreak would float the user's reports to the top
+ * of the first (and only loaded) page, starving the "Entire project" scope.
  */
 export function buildSignalReportListOrdering(
   field: SignalReportOrderingField,

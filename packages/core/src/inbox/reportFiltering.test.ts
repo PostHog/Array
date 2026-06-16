@@ -98,22 +98,12 @@ describe("filterReportsBySearch", () => {
 });
 
 describe("buildSignalReportListOrdering", () => {
-  it("puts status then descending field", () => {
-    expect(buildSignalReportListOrdering("total_weight", "desc")).toBe(
-      "status,-total_weight",
-    );
-  });
-
-  it("puts status then ascending field", () => {
-    expect(buildSignalReportListOrdering("created_at", "asc")).toBe(
-      "status,created_at",
-    );
-  });
-
-  it("works for signal_count", () => {
-    expect(buildSignalReportListOrdering("signal_count", "desc")).toBe(
-      "status,-signal_count",
-    );
+  it.each([
+    ["total_weight", "desc", "status,-total_weight"],
+    ["created_at", "asc", "status,created_at"],
+    ["signal_count", "desc", "status,-signal_count"],
+  ] as const)("orders by status then %s (%s)", (field, direction, expected) => {
+    expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
   });
 
   it("does not float the current user's reports via ordering", () => {
