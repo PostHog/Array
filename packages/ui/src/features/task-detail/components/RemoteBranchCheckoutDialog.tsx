@@ -35,7 +35,7 @@ export function RemoteBranchCheckoutDialog() {
 
         <Flex justify="end" gap="2" mt="4">
           <AlertDialog.Cancel>
-            <Button variant="soft" color="gray" size="1" onClick={cancel}>
+            <Button variant="soft" color="gray" size="1">
               Cancel
             </Button>
           </AlertDialog.Cancel>

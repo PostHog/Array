@@ -1073,7 +1073,8 @@ export async function fetchRef(
   ref: string,
 ): Promise<boolean> {
   try {
-    await git.raw(["fetch", "--quiet", "--no-tags", remote, ref]);
+    // `--` keeps a ref beginning with `-` from being parsed as an option.
+    await git.raw(["fetch", "--quiet", "--no-tags", remote, "--", ref]);
     return true;
   } catch {
     return false;

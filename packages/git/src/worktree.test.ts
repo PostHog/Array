@@ -285,4 +285,22 @@ describe("WorktreeManager.createWorktreeForRemoteBranch", () => {
     ).trim();
     expect(upstream).toBe("origin/contributor/pr");
   });
+
+  it("rejects when the remote branch cannot be fetched", async () => {
+    // Point origin at a path that does not exist so the fetch fails.
+    await createGitClient(localDir).remote([
+      "set-url",
+      "origin",
+      "/nonexistent/path/to/remote",
+    ]);
+
+    const manager = new WorktreeManager({
+      mainRepoPath: localDir,
+      worktreeBasePath: worktreeBaseDir,
+    });
+
+    await expect(
+      manager.createWorktreeForRemoteBranch("contributor/pr"),
+    ).rejects.toThrow(/Failed to fetch branch 'contributor\/pr'/);
+  });
 });
