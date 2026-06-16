@@ -42,9 +42,15 @@ const EMPTY_FILTER_ARRAY: never[] = [];
 export function useInboxAllReports(options?: {
   ignoreScope?: boolean;
   ignoreFilters?: boolean;
+  pullRequestsOnly?: boolean;
 }) {
   const ignoreScope = options?.ignoreScope ?? false;
   const ignoreFilters = options?.ignoreFilters ?? false;
+  // The Pull requests tab fetches a server-filtered list (reports that have a
+  // shipped PR) so its list body comes from the same source as its count — a PR
+  // sitting past the broad list's first page no longer renders an empty tab
+  // under a positive badge.
+  const pullRequestsOnly = options?.pullRequestsOnly ?? false;
   const scope = useInboxReviewerScopeStore((s) => s.scope);
   const searchQuery = useInboxSignalsFilterStore((s) =>
     ignoreFilters ? "" : s.searchQuery,
@@ -75,6 +81,7 @@ export function useInboxAllReports(options?: {
   const query = useInboxReportsInfinite(
     {
       status: INBOX_PIPELINE_STATUS_FILTER,
+      has_implementation_pr: pullRequestsOnly ? true : undefined,
       ordering: buildSignalReportListOrdering(sortField, sortDirection),
       source_product:
         sourceProductFilter.length > 0
