@@ -57,6 +57,7 @@ import {
   formatSignalReportSummaryMarkdown,
   inboxStatusLabel,
 } from "@/features/inbox/utils";
+import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import {
   computeReportAgeHours,
   type InboxReportActionType,
@@ -472,6 +473,15 @@ export default function ReportDetailScreen() {
             </Text>
           </View>
           <Text className="text-[12px] text-gray-9">Updated {timeDisplay}</Text>
+          {report.implementation_pr_url ? (
+            <View className="ml-auto">
+              <PrStatusBadge
+                prUrl={report.implementation_pr_url}
+                hideWhenUnresolved
+                size="sm"
+              />
+            </View>
+          ) : null}
         </View>
 
         {/* Failed warning */}
