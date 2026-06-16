@@ -755,15 +755,21 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     this.workspaceRepo.deleteByTaskId(taskId);
   }
 
+  /**
+   * Reclaims the managed `<base>/<repo>` parent folder once its last worktree is
+   * gone. The folder that gets removed is derived from `folderPath`, not from
+   * `worktreePath`; `worktreePath` is read only to confirm the deleted worktree
+   * was managed (lived under the base path) before reclaiming anything.
+   */
   private async cleanupRepoWorktreeFolder(
     folderPath: string,
     worktreePath: string,
   ): Promise<void> {
     const worktreeBasePath = this.workspaceSettings.getWorktreeLocation();
 
-    // Safety check 0: Only reclaim the managed `<base>/<repo>` parent folder for
-    // worktrees that actually live under the managed base path. Externally
-    // located worktrees never created it, so its contents are unrelated.
+    // Only reclaim the managed `<base>/<repo>` parent folder for worktrees that
+    // actually live under the managed base path. Externally located worktrees
+    // never created it, so its contents are unrelated.
     if (!isPathUnder(worktreePath, worktreeBasePath)) {
       return;
     }

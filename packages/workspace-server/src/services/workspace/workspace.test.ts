@@ -367,13 +367,36 @@ describe("WorkspaceService", () => {
       ).toEqual([]);
     });
 
+    it("verifies existence by the stored external path", async () => {
+      const externalPath = mkTemp("external-wt-");
+      seedWorktreeTask(mocks, {
+        taskId: "ext",
+        repoPath: "/code/myrepo",
+        name: "fancy-slug",
+        worktreePath: externalPath,
+      });
+
+      // The on-disk worktree lives at its stored external path; a derived
+      // <base>/<name>/<repo> would not exist, so this would report missing.
+      expect(await service.verifyWorkspaceExists("ext")).toEqual({
+        exists: true,
+      });
+
+      fs.rmSync(externalPath, { recursive: true, force: true });
+      expect(await service.verifyWorkspaceExists("ext")).toEqual({
+        exists: false,
+        missingPath: externalPath,
+      });
+    });
+
     // Identical setup (empty managed `<base>/<repo>` parent, then delete the only
     // worktree for that repo); only the stored worktree path differs. This proves
     // the cleanup guard discriminates on whether the path is under the base path,
     // rather than always (or never) reclaiming the parent folder.
     it.each([
       {
-        label: "leaves an external worktree's parent dirs untouched",
+        label:
+          "leaves the managed parent folder alone for an external worktree",
         makeWorktreePath: () => mkTemp("external-wt-"),
         managedParentSurvives: true,
       },
