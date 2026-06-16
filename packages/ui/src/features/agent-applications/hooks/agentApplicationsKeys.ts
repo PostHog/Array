@@ -3,8 +3,6 @@ export const agentApplicationsKeys = {
     ["agent-applications", "list", projectId] as const,
   detail: (projectId: number | null, idOrSlug: string) =>
     ["agent-applications", "detail", projectId, idOrSlug] as const,
-  stats: (projectId: number | null, idOrSlug: string) =>
-    ["agent-applications", "stats", projectId, idOrSlug] as const,
   sessions: (projectId: number | null, idOrSlug: string) =>
     ["agent-applications", "sessions", projectId, idOrSlug] as const,
   session: (projectId: number | null, idOrSlug: string, sessionId: string) =>
@@ -71,8 +69,6 @@ export const agentApplicationsKeys = {
     ["agent-applications", "memory-tables", projectId, idOrSlug] as const,
   memoryTable: (projectId: number | null, idOrSlug: string, name: string) =>
     ["agent-applications", "memory-table", projectId, idOrSlug, name] as const,
-  fleetStats: (projectId: number | null) =>
-    ["agent-applications", "fleet", "stats", projectId] as const,
   fleetLiveSessions: (projectId: number | null) =>
     ["agent-applications", "fleet", "live-sessions", projectId] as const,
   fleetApprovals: (projectId: number | null, state?: string) =>

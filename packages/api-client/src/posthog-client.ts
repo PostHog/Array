@@ -13,7 +13,6 @@ import {
   SEAT_PRODUCT_KEY,
 } from "@posthog/shared";
 import type {
-  AgentAggregateStats,
   AgentAnalyticsData,
   AgentApplication,
   AgentApplicationSessionDetail,
@@ -4055,21 +4054,6 @@ export class PostHogAPIClient {
     }
   }
 
-  /** Per-application roll-up stats. `since` is an ISO timestamp window start. */
-  async getAgentApplicationStats(
-    idOrSlug: string,
-    since?: string,
-  ): Promise<AgentAggregateStats> {
-    const teamId = await this.getTeamId();
-    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/stats/`;
-    const url = new URL(`${this.api.baseUrl}${path}`);
-    if (since) {
-      url.searchParams.set("since", since);
-    }
-    const response = await this.api.fetcher.fetch({ method: "get", url, path });
-    return (await response.json()) as AgentAggregateStats;
-  }
-
   /** Lists sessions for an application (paginated, filterable by state). */
   async listAgentApplicationSessions(
     idOrSlug: string,
@@ -4630,18 +4614,6 @@ export class PostHogAPIClient {
     } finally {
       reader.releaseLock();
     }
-  }
-
-  /** Team-wide fleet roll-up stats. `since` is an ISO timestamp window start. */
-  async getAgentFleetStats(since?: string): Promise<AgentAggregateStats> {
-    const teamId = await this.getTeamId();
-    const path = `/api/projects/${teamId}/agent_fleet/stats/`;
-    const url = new URL(`${this.api.baseUrl}${path}`);
-    if (since) {
-      url.searchParams.set("since", since);
-    }
-    const response = await this.api.fetcher.fetch({ method: "get", url, path });
-    return (await response.json()) as AgentAggregateStats;
   }
 
   /** Live (non-terminal) sessions across every agent on the team. */

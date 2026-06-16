@@ -65,16 +65,6 @@ export interface AgentApplication {
   ingress_base_url: string | null;
 }
 
-/** Per-application or team-wide roll-up stats. */
-export interface AgentAggregateStats {
-  liveCount: number;
-  sessionsInWindowCount: number;
-  spendInWindowUsd: number;
-  lastActivityAt: string | null;
-  failedInWindowCount: number;
-  pendingApprovalsCount: number;
-}
-
 // --- Revisions -------------------------------------------------------------
 
 /**
