@@ -10,10 +10,12 @@ import { Button } from "@posthog/ui/primitives/Button";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
+import { AgentChatPendingApprovalCard } from "../components/AgentChatPendingApprovalCard";
 import { AgentChatSurface } from "../components/AgentChatSurface";
 import { AgentDetailEmptyState } from "../components/AgentDetailLayout";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentChat } from "../hooks/useAgentChat";
+import { useAgentChatPendingApproval } from "../hooks/useAgentChatPendingApproval";
 import { resolveIngressBaseUrl } from "../utils/ingress";
 import { AgentBuilderSecretForm } from "./AgentBuilderSecretForm";
 import { AgentBuilderSeedDialog } from "./AgentBuilderSeedDialog";
@@ -116,6 +118,10 @@ export function AgentBuilderDock() {
       }),
     clientTools,
   });
+  const { data: pendingApproval } = useAgentChatPendingApproval(
+    AGENT_BUILDER_SLUG,
+    chat.sessionId,
+  );
 
   // Resolve a pending set_secret: PUT the value straight to the env-keys API
   // (never through the agent), then wake the parked session with the outcome.
@@ -256,6 +262,14 @@ export function AgentBuilderDock() {
           placeholder={placeholder}
           emptyState={<AgentBuilderEmptyState page={page} onPick={chat.send} />}
           emptyHint="Ask the agent builder to inspect, debug, or edit your agents. It can see what you're looking at and walk you there."
+          belowConversation={
+            pendingApproval ? (
+              <AgentChatPendingApprovalCard
+                idOrSlug={AGENT_BUILDER_SLUG}
+                approval={pendingApproval}
+              />
+            ) : null
+          }
           aboveComposer={
             pendingSecret ? (
               <AgentBuilderSecretForm
@@ -265,6 +279,9 @@ export function AgentBuilderDock() {
                 onCancel={cancelSecret}
               />
             ) : null
+          }
+          composerDisabledReason={
+            pendingApproval ? "Waiting on your approval decision" : undefined
           }
           onSend={chat.send}
           onCancel={chat.cancel}

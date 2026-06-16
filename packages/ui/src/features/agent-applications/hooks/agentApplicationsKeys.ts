@@ -27,6 +27,24 @@ export const agentApplicationsKeys = {
       idOrSlug,
       state ?? "all",
     ] as const,
+  /**
+   * Tight-poll cache for the in-chat pending-approval card. Lives under the
+   * same "approvals" prefix that `useDecideAgentApproval` invalidates, so a
+   * decide hits this hook too (clears the card optimistically).
+   */
+  chatPendingApproval: (
+    projectId: number | null,
+    idOrSlug: string,
+    sessionId: string | null,
+  ) =>
+    [
+      "agent-applications",
+      "approvals",
+      projectId,
+      idOrSlug,
+      "chat-pending",
+      sessionId,
+    ] as const,
   revisions: (projectId: number | null, idOrSlug: string) =>
     ["agent-applications", "revisions", projectId, idOrSlug] as const,
   revision: (projectId: number | null, idOrSlug: string, revisionId: string) =>

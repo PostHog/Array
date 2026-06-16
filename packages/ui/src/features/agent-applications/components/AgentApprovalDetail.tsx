@@ -1,16 +1,13 @@
-import { CheckIcon, LockKeyIcon, XIcon } from "@phosphor-icons/react";
+import { LockKeyIcon, XIcon } from "@phosphor-icons/react";
 import { formatRelativeTimeShort } from "@posthog/shared";
-import type {
-  AgentApprovalRequest,
-  DecideApprovalRequest,
-} from "@posthog/shared/agent-platform-types";
+import type { AgentApprovalRequest } from "@posthog/shared/agent-platform-types";
 import { Badge } from "@posthog/ui/primitives/Badge";
-import { Button } from "@posthog/ui/primitives/Button";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
-import { Checkbox, Flex, IconButton, Text, TextArea } from "@radix-ui/themes";
+import { Flex, IconButton, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import { useDecideAgentApproval } from "../hooks/useDecideAgentApproval";
 import { approvalStateColor, approvalStateLabel } from "../utils/format";
+import { AgentApprovalDecisionForm } from "./AgentApprovalDecisionForm";
 import { AgentSessionDetailBody } from "./AgentSessionDetailBody";
 
 type Pane = "approval" | "session";
@@ -118,100 +115,19 @@ function DecisionForm({
   approval: AgentApprovalRequest;
 }) {
   const decide = useDecideAgentApproval(idOrSlug);
-  const allowEdit = approval.approver_scope?.allow_edit === true;
-  const [reason, setReason] = useState("");
-  const [editMode, setEditMode] = useState(false);
-  const [argsText, setArgsText] = useState(() =>
-    JSON.stringify(approval.proposed_args, null, 2),
-  );
-  const [parseError, setParseError] = useState<string | null>(null);
-
-  function submit(decision: "approve" | "reject") {
-    const body: DecideApprovalRequest = { decision };
-    if (reason.trim()) body.reason = reason.trim();
-    if (decision === "approve" && allowEdit && editMode) {
-      try {
-        body.edited_args = JSON.parse(argsText);
-      } catch (err) {
-        setParseError(err instanceof Error ? err.message : "Invalid JSON");
-        return;
-      }
-    }
-    setParseError(null);
-    decide.mutate({ approvalId: approval.id, body });
-  }
-
   return (
-    <Flex direction="column" gap="3" className="mt-4">
-      {allowEdit ? (
-        <Text as="label" className="w-fit text-[12px] text-gray-11">
-          <Flex gap="2" align="center">
-            <Checkbox
-              size="1"
-              checked={editMode}
-              onCheckedChange={(c) => setEditMode(c === true)}
-            />
-            Approve with edits
-          </Flex>
-        </Text>
-      ) : null}
-
-      {allowEdit && editMode ? (
-        <div>
-          <TextArea
-            value={argsText}
-            onChange={(e) => setArgsText(e.target.value)}
-            rows={8}
-            className="text-[12px] [font-family:var(--font-mono)]"
-            spellCheck={false}
-          />
-          {parseError ? (
-            <Text className="mt-1 block text-(--red-11) text-[11px]">
-              {parseError}
-            </Text>
-          ) : null}
-        </div>
-      ) : null}
-
-      <TextArea
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        placeholder="Reason (optional)"
-        rows={2}
-        className="text-[12px]"
-      />
-
-      {decide.isError ? (
-        <Text className="text-(--red-11) text-[11px]">
-          {decide.error instanceof Error
+    <AgentApprovalDecisionForm
+      approval={approval}
+      busy={decide.isPending}
+      error={
+        decide.isError
+          ? decide.error instanceof Error
             ? decide.error.message
-            : "Decision failed"}
-        </Text>
-      ) : null}
-
-      <Flex gap="2">
-        <Button
-          color="green"
-          size="2"
-          onClick={() => submit("approve")}
-          disabled={decide.isPending}
-          loading={decide.isPending}
-        >
-          <CheckIcon size={14} />
-          Approve
-        </Button>
-        <Button
-          color="red"
-          variant="soft"
-          size="2"
-          onClick={() => submit("reject")}
-          disabled={decide.isPending}
-        >
-          <XIcon size={14} />
-          Reject
-        </Button>
-      </Flex>
-    </Flex>
+            : "Decision failed"
+          : null
+      }
+      onSubmit={(body) => decide.mutate({ approvalId: approval.id, body })}
+    />
   );
 }
 
@@ -249,7 +165,7 @@ function DecidedOutcome({ approval }: { approval: AgentApprovalRequest }) {
   );
 }
 
-function ArgsSection({
+export function ArgsSection({
   label,
   args,
 }: {

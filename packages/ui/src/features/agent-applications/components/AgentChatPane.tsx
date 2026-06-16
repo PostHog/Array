@@ -14,8 +14,10 @@ import {
 } from "../chat/chatHistoryStore";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentChat } from "../hooks/useAgentChat";
+import { useAgentChatPendingApproval } from "../hooks/useAgentChatPendingApproval";
 import { useAgentRevision } from "../hooks/useAgentRevision";
 import { resolveIngressBaseUrl } from "../utils/ingress";
+import { AgentChatPendingApprovalCard } from "./AgentChatPendingApprovalCard";
 import { AgentChatSurface } from "./AgentChatSurface";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 
@@ -66,6 +68,10 @@ export function AgentChatPane({ idOrSlug }: { idOrSlug: string }) {
     ingressBaseUrl,
     recordHistory: true,
   });
+  const { data: pendingApproval } = useAgentChatPendingApproval(
+    idOrSlug,
+    chat.sessionId,
+  );
   const chats = useChatHistoryStore((s) => s.byAgent[idOrSlug]) ?? EMPTY_CHATS;
   const removeChat = useChatHistoryStore((s) => s.remove);
 
@@ -105,6 +111,19 @@ export function AgentChatPane({ idOrSlug }: { idOrSlug: string }) {
               isStreaming={chat.isStreaming}
               error={chat.error}
               emptyHint="Send a message to start a session and test this agent live."
+              belowConversation={
+                pendingApproval ? (
+                  <AgentChatPendingApprovalCard
+                    idOrSlug={idOrSlug}
+                    approval={pendingApproval}
+                  />
+                ) : null
+              }
+              composerDisabledReason={
+                pendingApproval
+                  ? "Waiting on your approval decision"
+                  : undefined
+              }
               onSend={chat.send}
               onCancel={chat.cancel}
             />

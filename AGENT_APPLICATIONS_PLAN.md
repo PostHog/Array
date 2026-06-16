@@ -144,7 +144,7 @@ transport, blocked on the M-Live open question).
 | 26 | Fleet analytics dashboard | Cross-agent KPIs + WoW deltas, spend/cost, tool reliability | `/query/` HogQL `$ai_*` | ✅ (blended into the Applications overview: KPI strip + per-agent row stats; cost-by-model + tool reliability on the per-agent tab) |
 | **Live & interactive** ||||
 | 27 | Live chat / streaming | SSE transport → ACP; send message; cancel; new/resume chats | ingress `/agents/{slug}/run\|send\|listen\|cancel` | ✅ (per-agent **Chat** preview tab — region-derived ingress, optimistic send, info banner, local recent-chats rail with transcript-rebuilding resume; commit `c0688cfa`) |
-| 28 | In-chat approvals | ACP tool-call permission prompts during a live turn | ingress + approvals | 🔴 |
+| 28 | In-chat approvals | ACP tool-call permission prompts during a live turn | ingress + approvals | ✅ (inline card below the conversation in the chat preview; reuses the M5 decide path; see M-Live-InChat) |
 | 29 | Draft preview | Run a non-live draft revision live before promoting | `…/preview-proxy/…`, `/preview_token/` | 🔴 |
 | 30 | Agent Builder / "edit with AI" | Always-on dock chat with `agent-concierge` that drives UI (`focus_*`) + secrets (`set_secret`) + staged authoring; seed prompts from inline buttons | ingress + client tools | ✅ (global dock, page-context envelope + `get_context`, `focus_*` navigation, `set_secret` punch-out, edit-with-AI seeds; see M-Agent-Builder) |
 
@@ -266,16 +266,29 @@ controls. Ordered by core value.
   integrations view isn't needed right now: Slack setup (feature 23) already
   ships under the slack trigger, and `spec.integrations` renders in the config
   explorer.
-- [ ] **M-Live (remainder)** (features 28, 29) — the live transport itself shipped
+- [ ] **M-Live (remainder)** (feature 29) — the live transport itself shipped
   (see "Done this session"); the **open transport question is resolved**
   (renderer-hook + region-derived ingress). What's left on the live track:
-  - [ ] **In-chat approvals** (feature 28) — when a live turn proposes an
-    approval-gated tool call, surface the decision inline in the chat (reuse the
-    M5 decide path) instead of only in the Approvals tab.
   - [ ] **Draft preview** (feature 29) — run a non-live **draft** revision live
     before promoting, via the preview-proxy / short-lived `preview_token`
     (`AgentChat` in the console mints/refreshes it on `preview_token_required`).
     Lets the Agent Builder "test before promote".
+- [x] **M-Live-InChat — in-chat approvals** (feature 28) — when a live turn
+  proposes an approval-gated tool call, the chat preview now surfaces the
+  decision inline as a card between the conversation and the composer, and
+  parks the composer until decided. Detection is poll-based (2s
+  `useAgentChatPendingApproval` filtered to the chat's session id), since the
+  agent-runner emits no SSE event for "waiting on approval" — confirmed by
+  reading `AgentSessionEvent` (the `waiting` event is for
+  `@posthog/meta-ask-for-input`, not approvals). The decide path reuses the
+  M5 `useDecideAgentApproval` mutation unchanged; on success the same
+  `agentApplicationsKeys.approvals(...)` prefix invalidation clears the
+  pending-card hook, and the SSE follow-up resumes the conversation
+  naturally. The decision form was extracted from `AgentApprovalDetail` into
+  a presentational `AgentApprovalDecisionForm` reused by both surfaces. Wired
+  into both the per-agent **Chat** tab (`AgentChatPane`) and the **Agent
+  Builder dock** (`AgentBuilderDock`) — same `AgentChatSurface` underneath, so
+  the punch-out is consistent across surfaces.
 - [x] **M-Agent-Builder** (feature 30) — **shipped.** An always-on **right-hand
   dock** ("Agent Builder") across all of `/code/agents` that chats with the
   deployed `agent-concierge` (the meta-agent's slug is unchanged; only the
@@ -344,6 +357,11 @@ With a backend that has deployed agents + sessions:
   `/code/agents/applications/approvals`. Live-now lists cross-agent in-flight
   sessions and links each row to the per-agent session detail.
 
-Not yet built: everything in the parity map still marked 🟡 / ⬜ / 🔴 — in-chat
-approvals (feature 28) and draft preview (feature 29). Authoring stays the
-Agent Builder's job.
+- **In-chat approvals** in the per-agent Chat tab: when the agent proposes an
+  approval-gated tool call, an inline card appears below the conversation with
+  the proposed args, approve / reject controls (with optional "approve with
+  edits" and a reason), and a deep link to the full Approvals tab. The composer
+  parks until decided; the SSE follow-up resumes the chat naturally.
+
+Not yet built: everything in the parity map still marked 🟡 / ⬜ / 🔴 — draft
+preview (feature 29). Authoring stays the Agent Builder's job.

@@ -24,6 +24,8 @@ export function AgentChatSurface({
   emptyHint,
   emptyState,
   aboveComposer,
+  belowConversation,
+  composerDisabledReason,
   scrollX = true,
   placeholder = "Message this agent…",
   onSend,
@@ -37,6 +39,13 @@ export function AgentChatSurface({
   emptyState?: ReactNode;
   /** Optional content rendered between the transcript and the composer. */
   aboveComposer?: ReactNode;
+  /** Optional content rendered between the transcript and `aboveComposer`,
+   * anchored to the conversation rather than the input. */
+  belowConversation?: ReactNode;
+  /** When set, the composer is disabled and this string is shown as a tooltip
+   * on the send button. Use when the chat is parked (e.g. waiting on an
+   * inline approval decision). */
+  composerDisabledReason?: string;
   /** Allow horizontal scroll of the transcript (false in the narrow dock). */
   scrollX?: boolean;
   /** Composer placeholder. */
@@ -64,6 +73,7 @@ export function AgentChatSurface({
           />
         )}
       </div>
+      {belowConversation}
       {error ? (
         <Text className="shrink-0 px-4 pb-1 text-(--red-11) text-[12px]">
           {error}
@@ -73,6 +83,7 @@ export function AgentChatSurface({
       <Composer
         isStreaming={isStreaming}
         placeholder={placeholder}
+        disabledReason={composerDisabledReason}
         onSend={onSend}
         onCancel={onCancel}
       />
@@ -83,17 +94,21 @@ export function AgentChatSurface({
 function Composer({
   isStreaming,
   placeholder,
+  disabledReason,
   onSend,
   onCancel,
 }: {
   isStreaming: boolean;
   placeholder: string;
+  disabledReason?: string;
   onSend: (text: string) => void;
   onCancel: () => void;
 }) {
   const [text, setText] = useState("");
+  const parked = !!disabledReason;
 
   function submit() {
+    if (parked) return;
     const trimmed = text.trim();
     if (!trimmed) return;
     onSend(trimmed);
@@ -106,7 +121,12 @@ function Composer({
     }
   }
 
-  const submitBlocked = !text.trim();
+  const submitBlocked = parked || !text.trim();
+  const sendTooltip = parked
+    ? (disabledReason as string)
+    : submitBlocked
+      ? "Enter a message"
+      : "Send message";
 
   return (
     <div className="shrink-0 px-3 pt-2 pb-3">
@@ -115,8 +135,9 @@ function Composer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={placeholder}
+          placeholder={parked ? (disabledReason as string) : placeholder}
           rows={1}
+          disabled={parked}
           className="max-h-[160px] min-h-[40px] resize-none text-[14px] [field-sizing:content]"
         />
         <InputGroupAddon align="block-end" className="p-1">
@@ -133,9 +154,7 @@ function Composer({
                 </InputGroupButton>
               </Tooltip>
             ) : (
-              <Tooltip
-                content={submitBlocked ? "Enter a message" : "Send message"}
-              >
+              <Tooltip content={sendTooltip}>
                 <InputGroupButton
                   variant="primary"
                   size="icon-sm"
