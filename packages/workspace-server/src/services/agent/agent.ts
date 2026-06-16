@@ -690,7 +690,8 @@ When creating pull requests, add the following footer at the end of the PR descr
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
         model,
         reasoningEffort: adapter === "codex" ? effort : undefined,
-        instructions: adapter === "codex" ? systemPrompt.append : undefined,
+        developerInstructions:
+          adapter === "codex" ? systemPrompt.append : undefined,
         additionalDirectories:
           adapter === "codex" ? additionalDirectories : undefined,
         onStructuredOutput: jsonSchema

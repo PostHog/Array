@@ -12,7 +12,12 @@ export interface CodexProcessOptions {
   apiKey?: string;
   model?: string;
   reasoningEffort?: string;
-  instructions?: string;
+  /**
+   * Guidance appended on top of Codex's model-optimized base prompt via the
+   * `developer_instructions` config key. Unlike `instructions` /
+   * `model_instructions_file`, this does not replace the native base prompt.
+   */
+  developerInstructions?: string;
   binaryPath?: string;
   logger?: Logger;
   processCallbacks?: ProcessSpawnedCallback;
@@ -73,13 +78,13 @@ function buildConfigArgs(options: CodexProcessOptions): string[] {
     args.push("-c", `sandbox_workspace_write.writable_roots=[${escaped}]`);
   }
 
-  if (options.instructions) {
-    const escaped = options.instructions
+  if (options.developerInstructions) {
+    const escaped = options.developerInstructions
       .replace(/\\/g, "\\\\")
       .replace(/\n/g, "\\n")
       .replace(/\r/g, "\\r")
       .replace(/"/g, '\\"');
-    args.push("-c", `instructions="${escaped}"`);
+    args.push("-c", `developer_instructions="${escaped}"`);
   }
 
   return args;

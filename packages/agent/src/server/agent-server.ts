@@ -992,7 +992,7 @@ export class AgentServer {
               apiKey: this.config.apiKey,
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
-              instructions: codexInstructions,
+              developerInstructions: codexInstructions,
             }
           : undefined,
       onStructuredOutput: async (output) => {
