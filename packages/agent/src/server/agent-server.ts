@@ -1067,19 +1067,7 @@ export class AgentServer {
         jsonSchema: preTask?.json_schema ?? null,
         permissionMode: initialPermissionMode,
         ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
-        ...(this.config.claudeCode?.plugins?.length && {
-          claudeCode: {
-            options: {
-              ...(this.config.claudeCode?.plugins?.length && {
-                plugins: this.config.claudeCode.plugins,
-              }),
-              ...(runtimeAdapter === "claude" &&
-                this.config.reasoningEffort && {
-                  effort: this.config.reasoningEffort,
-                }),
-            },
-          },
-        }),
+        ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
       },
     });
 
@@ -1668,6 +1656,32 @@ export class AgentServer {
     return typeof systemPrompt === "string"
       ? systemPrompt
       : systemPrompt.append;
+  }
+
+  /**
+   * Builds the optional `claudeCode` session meta. Reasoning effort and plugins
+   * are independent: effort must reach Claude even when no plugins are set, so
+   * it cannot sit behind a plugins guard.
+   */
+  private buildClaudeCodeSessionMeta(
+    runtimeAdapter: "claude" | "codex",
+  ): { claudeCode: { options: Record<string, unknown> } } | undefined {
+    const plugins = this.config.claudeCode?.plugins;
+    const effort =
+      runtimeAdapter === "claude" ? this.config.reasoningEffort : undefined;
+
+    if (!plugins?.length && !effort) {
+      return undefined;
+    }
+
+    const options: Record<string, unknown> = {};
+    if (plugins?.length) {
+      options.plugins = plugins;
+    }
+    if (effort) {
+      options.effort = effort;
+    }
+    return { claudeCode: { options } };
   }
 
   private getCloudInteractionOrigin(): string | undefined {
