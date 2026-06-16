@@ -2,6 +2,32 @@ import { parseRepository, type WorkspaceMode } from "@posthog/shared";
 import { useEffect, useRef } from "react";
 import type { RegisteredFolder } from "../../folders/types";
 
+export interface ReposReadyInput {
+  /** True while the integrations + per-installation repo queries are in flight. */
+  isLoadingRepos: boolean;
+  /** Number of connectable `owner/repo` slugs currently known. */
+  repositoriesCount: number;
+  /** Whether the user has any connected GitHub integration at all. */
+  hasGithubIntegration: boolean;
+}
+
+/**
+ * Whether the cloud-repo list has *settled* — i.e. it's safe to conclude a folder is or
+ * isn't cloud-capable. Distinguishes "settled empty because the user has no GitHub
+ * integration" (ready) from "transiently empty while per-installation repo queries are
+ * still producing data" (not ready). The latter window is real: `isLoadingRepos` can flip
+ * false before `repositories` populates (see the validation effect in TaskInput), so
+ * `!isLoadingRepos` alone would mis-judge a cloud-capable repo during that gap.
+ */
+export function areReposReady({
+  isLoadingRepos,
+  repositoriesCount,
+  hasGithubIntegration,
+}: ReposReadyInput): boolean {
+  if (isLoadingRepos) return false;
+  return repositoriesCount > 0 || !hasGithubIntegration;
+}
+
 export interface RepoSelectionInput {
   folder: RegisteredFolder;
   /** Lower-cased `owner/repo` slugs the user can use in cloud mode. */

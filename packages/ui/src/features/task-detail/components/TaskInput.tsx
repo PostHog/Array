@@ -52,7 +52,10 @@ import {
   type AgentAdapter,
   useSettingsStore,
 } from "../../settings/settingsStore";
-import { useInitialRepoSelectionFromFolderId } from "../hooks/useInitialRepoSelectionFromFolderId";
+import {
+  areReposReady,
+  useInitialRepoSelectionFromFolderId,
+} from "../hooks/useInitialRepoSelectionFromFolderId";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
@@ -513,7 +516,11 @@ export function TaskInput({
     folderId: view.folderId,
     folders,
     repositories,
-    reposLoaded: !isLoadingRepos && repositories.length > 0,
+    reposLoaded: areReposReady({
+      isLoadingRepos,
+      repositoriesCount: repositories.length,
+      hasGithubIntegration,
+    }),
     currentMode: workspaceMode,
     lastUsedLocalMode: lastUsedLocalWorkspaceMode,
     setSelectedDirectory,

@@ -3,7 +3,10 @@ import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { RegisteredFolder } from "../../folders/types";
 import {
+  areReposReady,
   resolveRepoSelectionForFolder,
+  type RepoSelection,
+  type RepoSelectionInput,
   useInitialRepoSelectionFromFolderId,
 } from "./useInitialRepoSelectionFromFolderId";
 
@@ -21,113 +24,183 @@ const folder = (
 });
 
 describe("resolveRepoSelectionForFolder", () => {
-  it("prefills both selectors for a cloud-capable folder and keeps cloud mode", () => {
-    expect(
-      resolveRepoSelectionForFolder({
-        folder: folder("a", "/repos/a", "posthog/posthog"),
+  it.each<{
+    name: string;
+    input: Omit<RepoSelectionInput, "folder"> & { remoteUrl: string | null };
+    expected: RepoSelection;
+  }>([
+    {
+      name: "cloud-capable folder in cloud mode: prefill cloud repo, keep cloud",
+      input: {
+        remoteUrl: "posthog/posthog",
         repositories: ["posthog/posthog"],
         reposLoaded: true,
         currentMode: "cloud",
         lastUsedLocalMode: "local",
-      }),
-    ).toEqual({
-      directory: "/repos/a",
-      cloudRepository: "posthog/posthog",
-      nextMode: undefined,
-    });
-  });
-
-  it("prefills the cloud repo while keeping local mode (no switch)", () => {
-    expect(
-      resolveRepoSelectionForFolder({
-        folder: folder("a", "/repos/a", "posthog/posthog"),
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: "posthog/posthog",
+        nextMode: undefined,
+      },
+    },
+    {
+      name: "cloud-capable folder in local mode: seed cloud repo, keep local",
+      input: {
+        remoteUrl: "posthog/posthog",
         repositories: ["posthog/posthog"],
         reposLoaded: true,
         currentMode: "local",
         lastUsedLocalMode: "local",
-      }),
-    ).toEqual({
-      directory: "/repos/a",
-      cloudRepository: "posthog/posthog",
-      nextMode: undefined,
-    });
-  });
-
-  it("lower-cases the remote slug before matching", () => {
-    expect(
-      resolveRepoSelectionForFolder({
-        folder: folder("a", "/repos/a", "PostHog/PostHog"),
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: "posthog/posthog",
+        nextMode: undefined,
+      },
+    },
+    {
+      name: "lower-cases the remote slug before matching",
+      input: {
+        remoteUrl: "PostHog/PostHog",
         repositories: ["posthog/posthog"],
         reposLoaded: true,
         currentMode: "cloud",
         lastUsedLocalMode: "local",
-      }).cloudRepository,
-    ).toBe("posthog/posthog");
-  });
-
-  it("switches to the last-used local mode for a local-only folder while in cloud", () => {
-    expect(
-      resolveRepoSelectionForFolder({
-        folder: folder("a", "/repos/a", null),
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: "posthog/posthog",
+        nextMode: undefined,
+      },
+    },
+    {
+      name: "local-only folder in cloud mode: switch to last-used local mode",
+      input: {
+        remoteUrl: null,
         repositories: ["posthog/posthog"],
         reposLoaded: true,
         currentMode: "cloud",
         lastUsedLocalMode: "worktree",
-      }),
-    ).toEqual({
-      directory: "/repos/a",
-      cloudRepository: undefined,
-      nextMode: "worktree",
-    });
-  });
-
-  it("treats a remote not in the integrations list as not cloud-capable", () => {
-    expect(
-      resolveRepoSelectionForFolder({
-        folder: folder("a", "/repos/a", "acme/private"),
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: undefined,
+        nextMode: "worktree",
+      },
+    },
+    {
+      name: "remote not in the integrations list: not cloud-capable, switch to local",
+      input: {
+        remoteUrl: "acme/private",
         repositories: ["posthog/posthog"],
         reposLoaded: true,
         currentMode: "cloud",
         lastUsedLocalMode: "local",
-      }),
-    ).toEqual({
-      directory: "/repos/a",
-      cloudRepository: undefined,
-      nextMode: "local",
-    });
-  });
-
-  it("ignores legacy single-segment remote values", () => {
-    expect(
-      resolveRepoSelectionForFolder({
-        folder: folder("a", "/repos/a", "posthog"),
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: undefined,
+        nextMode: "local",
+      },
+    },
+    {
+      name: "ignores legacy single-segment remote values",
+      input: {
+        remoteUrl: "posthog",
         repositories: ["posthog"],
         reposLoaded: true,
         currentMode: "cloud",
         lastUsedLocalMode: "local",
-      }),
-    ).toEqual({
-      directory: "/repos/a",
-      cloudRepository: undefined,
-      nextMode: "local",
-    });
-  });
-
-  it("never switches mode before the integrations list has loaded", () => {
-    expect(
-      resolveRepoSelectionForFolder({
-        folder: folder("a", "/repos/a", null),
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: undefined,
+        nextMode: "local",
+      },
+    },
+    {
+      name: "loaded with empty repositories (no integration): switch to local in cloud",
+      input: {
+        remoteUrl: "posthog/posthog",
+        repositories: [],
+        reposLoaded: true,
+        currentMode: "cloud",
+        lastUsedLocalMode: "local",
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: undefined,
+        nextMode: "local",
+      },
+    },
+    {
+      name: "not loaded: never switch mode (await the integrations list)",
+      input: {
+        remoteUrl: null,
         repositories: [],
         reposLoaded: false,
         currentMode: "cloud",
         lastUsedLocalMode: "local",
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: undefined,
+        nextMode: undefined,
+      },
+    },
+  ])("$name", ({ input: { remoteUrl, ...rest }, expected }) => {
+    expect(
+      resolveRepoSelectionForFolder({
+        folder: folder("a", "/repos/a", remoteUrl),
+        ...rest,
       }),
-    ).toEqual({
-      directory: "/repos/a",
-      cloudRepository: undefined,
-      nextMode: undefined,
-    });
+    ).toEqual(expected);
   });
+});
+
+describe("areReposReady", () => {
+  it.each([
+    {
+      name: "still loading: not ready",
+      isLoadingRepos: true,
+      repositoriesCount: 5,
+      hasGithubIntegration: true,
+      expected: false,
+    },
+    {
+      name: "loaded with repos: ready",
+      isLoadingRepos: false,
+      repositoriesCount: 5,
+      hasGithubIntegration: true,
+      expected: true,
+    },
+    {
+      name: "loaded, empty, no integration (settled empty): ready",
+      isLoadingRepos: false,
+      repositoriesCount: 0,
+      hasGithubIntegration: false,
+      expected: true,
+    },
+    {
+      name: "loaded, empty, but has integration (transient window): not ready",
+      isLoadingRepos: false,
+      repositoriesCount: 0,
+      hasGithubIntegration: true,
+      expected: false,
+    },
+  ])(
+    "$name",
+    ({ isLoadingRepos, repositoriesCount, hasGithubIntegration, expected }) => {
+      expect(
+        areReposReady({
+          isLoadingRepos,
+          repositoriesCount,
+          hasGithubIntegration,
+        }),
+      ).toBe(expected);
+    },
+  );
 });
 
 type HookArgs = {
