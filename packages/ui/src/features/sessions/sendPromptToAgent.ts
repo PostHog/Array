@@ -1,5 +1,6 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { resolveService } from "@posthog/di/container";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useReviewNavigationStore } from "../code-review/reviewNavigationStore";
 import { DEFAULT_TAB_IDS } from "../panels/panelConstants";
 import { usePanelLayoutStore } from "../panels/panelLayoutStore";
@@ -17,7 +18,19 @@ export function sendPromptToAgent(
   taskId: string,
   prompt: string | ContentBlock[],
 ): void {
-  resolveService<AgentPromptSender>(AGENT_PROMPT_SENDER)(taskId, prompt);
+  // Button/review/skill-initiated prompts are fire-and-forget, but a rejected
+  // send (auth failure, sandbox unreachable, agent process died) must still be
+  // surfaced — otherwise the turn just shows "Generated in Xs" with no reply.
+  void resolveService<AgentPromptSender>(AGENT_PROMPT_SENDER)(
+    taskId,
+    prompt,
+  ).catch((error: unknown) => {
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Failed to send your message to the agent. Please try again.",
+    );
+  });
 
   const { getReviewMode, setReviewMode } = useReviewNavigationStore.getState();
   if (getReviewMode(taskId) === "expanded") {

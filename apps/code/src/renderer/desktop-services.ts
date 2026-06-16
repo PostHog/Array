@@ -152,8 +152,8 @@ container
   .toConstantValue(new RendererHedgehogModeHost());
 container
   .bind<AgentPromptSender>(AGENT_PROMPT_SENDER)
-  .toConstantValue((taskId, prompt) => {
-    void resolveService<SessionService>(SESSION_SERVICE).sendPrompt(
+  .toConstantValue(async (taskId, prompt) => {
+    await resolveService<SessionService>(SESSION_SERVICE).sendPrompt(
       taskId,
       prompt,
     );
