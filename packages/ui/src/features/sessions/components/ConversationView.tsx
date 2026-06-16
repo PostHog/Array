@@ -115,6 +115,7 @@ export function ConversationView({
     items: conversationItems,
     lastTurnInfo,
     isCompacting,
+    completedToolCallCount,
   } = useConversationItems(events, isPromptPending, {
     showDebugLogs,
   });
@@ -348,6 +349,7 @@ export function ConversationView({
         pausedDurationMs={pausedDurationMs}
         isCompacting={isCompacting}
         usage={contextUsage}
+        completedToolCallCount={completedToolCallCount}
       />
     </div>
   );

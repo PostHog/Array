@@ -109,6 +109,7 @@ export function createIncrementalConversationBuilder() {
       items: assembleItems(builder, activeStart),
       lastTurnInfo: readLastTurnInfoForOutput(builder),
       isCompacting: builder.isCompacting,
+      completedToolCallCount: builder.completedToolCallCount,
     };
   }
 
