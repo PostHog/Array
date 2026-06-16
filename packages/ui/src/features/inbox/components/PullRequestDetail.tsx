@@ -6,7 +6,6 @@ import {
 } from "@phosphor-icons/react";
 import { parsePrUrl } from "@posthog/core/inbox/reportPresentation";
 import { Button } from "@posthog/quill";
-import { buildInboxDeeplink } from "@posthog/shared/deeplink";
 import type { SignalReport } from "@posthog/shared/types";
 import { InboxDetailFrame } from "@posthog/ui/features/inbox/components/InboxDetailFrame";
 import { InboxMetaSeparator } from "@posthog/ui/features/inbox/components/InboxMetaRow";
@@ -15,8 +14,8 @@ import { PrDiffStats } from "@posthog/ui/features/inbox/components/PrDiffStats";
 import { ReportDetailActions } from "@posthog/ui/features/inbox/components/ReportDetailActions";
 import { ReportTasksSection } from "@posthog/ui/features/inbox/components/ReportTasksSection";
 import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components/SuggestedReviewersSection";
+import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 import { Text } from "@radix-ui/themes";
-import { toast } from "sonner";
 
 interface PullRequestDetailProps {
   reportId: string;
@@ -44,16 +43,6 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
   const prRef = report.implementation_pr_url
     ? parsePrUrl(report.implementation_pr_url)
     : null;
-
-  const handleCopyLink = () => {
-    const url = buildInboxDeeplink(report.id, report.title, {
-      isDevBuild: import.meta.env.DEV,
-    });
-    navigator.clipboard
-      .writeText(url)
-      .then(() => toast.success("Link copied"))
-      .catch(() => toast.error("Couldn't copy link"));
-  };
 
   return (
     <InboxDetailFrame
@@ -89,7 +78,7 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleCopyLink}
+            onClick={() => copyInboxReportLink(report)}
             title="Copy a deep link to this report"
           >
             <CopyIcon size={12} />

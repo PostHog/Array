@@ -4,14 +4,13 @@ import {
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
-import { buildInboxDeeplink } from "@posthog/shared/deeplink";
 import type { SignalReport } from "@posthog/shared/types";
 import { InboxDetailFrame } from "@posthog/ui/features/inbox/components/InboxDetailFrame";
 import { InboxReportDetailGate } from "@posthog/ui/features/inbox/components/InboxReportDetailGate";
 import { ReportDetailActions } from "@posthog/ui/features/inbox/components/ReportDetailActions";
 import { ReportTasksSection } from "@posthog/ui/features/inbox/components/ReportTasksSection";
 import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components/SuggestedReviewersSection";
-import { toast } from "sonner";
+import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 
 interface ReportDetailProps {
   reportId: string;
@@ -36,16 +35,6 @@ export function ReportDetail({
 }
 
 function ReportDetailContent({ report }: { report: SignalReport }) {
-  const handleCopyLink = () => {
-    const url = buildInboxDeeplink(report.id, report.title, {
-      isDevBuild: import.meta.env.DEV,
-    });
-    navigator.clipboard
-      .writeText(url)
-      .then(() => toast.success("Link copied"))
-      .catch(() => toast.error("Couldn't copy link"));
-  };
-
   return (
     <InboxDetailFrame
       report={report}
@@ -59,7 +48,7 @@ function ReportDetailContent({ report }: { report: SignalReport }) {
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleCopyLink}
+            onClick={() => copyInboxReportLink(report)}
             title="Copy a deep link to this report"
           >
             <CopyIcon size={12} />
