@@ -40,7 +40,11 @@ function deriveFromMatches(matches: Match[]): AppView {
   if (!last) return { type: "task-input" };
 
   switch (last.routeId) {
-    case "/code/tasks/$taskId": {
+    // Both the /code task detail and the channels-space task detail render the
+    // same task-detail view, so consumers (active-state highlighting, archive's
+    // navigate-away-if-active check) treat them identically.
+    case "/code/tasks/$taskId":
+    case "/website/$channelId/tasks/$taskId": {
       const taskId = last.params.taskId;
       if (!taskId) return { type: "task-input" };
       // Intentionally no `data` snapshot: consumers read live task state via
