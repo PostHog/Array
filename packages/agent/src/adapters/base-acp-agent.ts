@@ -158,6 +158,17 @@ export abstract class BaseAcpAgent implements Agent {
 
     if (!options.some((opt) => opt.value === currentModelId)) {
       if (!isAnthropicModelId(currentModelId)) {
+        // A non-Anthropic model id reached the Claude adapter, which means the
+        // adapter and model desynced upstream (e.g. a Codex model paired with
+        // the Claude adapter). Log it instead of silently masquerading as a
+        // deliberate Opus session.
+        this.logger.warn(
+          "Non-Anthropic model requested on Claude adapter; falling back to default model",
+          {
+            requestedModel: currentModelId,
+            fallbackModel: DEFAULT_GATEWAY_MODEL,
+          },
+        );
         currentModelId = DEFAULT_GATEWAY_MODEL;
       }
     }

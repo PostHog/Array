@@ -167,6 +167,28 @@ describe("ClaudeAcpAgent session model on resume", () => {
     expect(createdQueries[0].setModel).not.toHaveBeenCalled();
   });
 
+  // Guards the desync that surfaced as "picked gpt-5.5, session ran Opus": a
+  // Codex model id paired with the Claude adapter must not silently masquerade
+  // as a deliberate Opus session. It falls back AND warns.
+  it("warns and falls back to the default model when a Codex model reaches the Claude adapter", async () => {
+    const agent = makeAgent();
+    const warnSpy = vi.spyOn(agent.logger, "warn");
+
+    const response = await agent.newSession({
+      cwd,
+      mcpServers: [],
+      _meta: { taskRunId: "run-codex-on-claude", model: "gpt-5.5" },
+    });
+
+    expect(getModelConfigOption(response)?.currentValue).toBe(
+      "claude-opus-4-8",
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Non-Anthropic model"),
+      expect.objectContaining({ requestedModel: "gpt-5.5" }),
+    );
+  });
+
   // The timeout *message* (RequestError "... timed out after ...") is covered
   // by claude-agent.refresh.test.ts. Here we cover the leak fix on the
   // new-session and resume paths: any init failure must close the query so the

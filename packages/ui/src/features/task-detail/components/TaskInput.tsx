@@ -808,7 +808,9 @@ export function TaskInput({
               isLoading={isCreatingTask}
               autoFocus
               clearOnSubmit={false}
-              submitDisabledExternal={!canSubmit || isCreatingTask || !isOnline}
+              submitDisabledExternal={
+                !canSubmit || isCreatingTask || !isOnline || isPreviewLoading
+              }
               tourTarget="task-input"
               repoPath={selectedDirectory}
               modeOption={modeOption}

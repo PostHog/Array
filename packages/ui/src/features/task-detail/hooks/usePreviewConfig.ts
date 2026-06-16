@@ -50,15 +50,28 @@ export function usePreviewConfig(
   const [configOptions, setConfigOptions] = useState<SessionConfigOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
+  const hasHydrated = useSettingsStore((state) => state._hasHydrated);
 
   useEffect(() => {
     if (!apiHost) return;
+
+    // Wait for the settings store to finish its async hydration before
+    // resolving the model. Otherwise lastUsedModel and lastUsedAdapter read as
+    // their pre-hydration defaults, the restore below is skipped, and the
+    // selector silently falls back to the server default (Opus for Claude).
+    if (!hasHydrated) {
+      setIsLoading(true);
+      return;
+    }
 
     abortRef.current?.abort();
     const abort = new AbortController();
     abortRef.current = abort;
 
     setIsLoading(true);
+    // Drop the previous adapter's options so a stale model id can never be sent
+    // as the current selection while the new adapter's config is loading.
+    setConfigOptions([]);
 
     hostClient.agent.getPreviewConfigOptions
       .query({ apiHost, adapter }, { signal: abort.signal })
@@ -122,7 +135,7 @@ export function usePreviewConfig(
     return () => {
       abort.abort();
     };
-  }, [adapter, apiHost, hostClient]);
+  }, [adapter, apiHost, hostClient, hasHydrated]);
 
   const setConfigOption = useCallback(
     (configId: string, value: string) => {
