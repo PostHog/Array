@@ -652,7 +652,10 @@ export function SessionView({
         <ContextMenu.Item
           onSelect={() => {
             const url = copyTargetUrlRef.current;
-            const text = resolveCopyText(url, window.getSelection()?.toString());
+            const text = resolveCopyText(
+              url,
+              window.getSelection()?.toString(),
+            );
             if (!text) {
               return;
             }

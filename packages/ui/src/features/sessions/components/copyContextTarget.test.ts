@@ -111,7 +111,9 @@ describe("copyFromContextMenu", () => {
   it("invokes onError when the deferred write rejects", async () => {
     Object.assign(navigator, {
       clipboard: {
-        writeText: vi.fn().mockRejectedValue(new Error("Document is not focused")),
+        writeText: vi
+          .fn()
+          .mockRejectedValue(new Error("Document is not focused")),
       },
     });
     const onSuccess = vi.fn();
