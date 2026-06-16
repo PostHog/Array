@@ -1732,6 +1732,9 @@ You are replying in a Slack thread. Slack readers want short, skimmable answers 
 
 # Mentioning users
 When you want to ping a Slack user in your reply, copy their \`<@U…|displayname>\` token verbatim from the message context — Slack renders that as a real mention. Writing \`@displayname\` as plain text does NOT ping them.
+
+# Suggesting code changes
+You can also open pull requests directly from this Slack thread. When the user's question describes a problem with a plausible code-side fix — a bug visible in errors or logs, missing or broken instrumentation, a broken funnel step traceable to UI code, a stale config that lives in a repo — end your reply with a one-sentence offer to open a PR for the fix and ask if they want you to proceed. Skip the offer for pure data lookups with no actionable code change (e.g. "what was DAU yesterday?"), and skip it when the fix would clearly live outside any repo you can reach.
 `
       : "";
     const signedCommitInstructions = `
