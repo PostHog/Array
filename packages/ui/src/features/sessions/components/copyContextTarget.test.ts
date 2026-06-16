@@ -26,45 +26,56 @@ function buildDom(): {
   };
 }
 
+const CHIP_URL = "https://github.com/PostHog/posthog/pull/23985";
+
 describe("getGithubRefUrlFromEventTarget", () => {
-  it("resolves the chip URL when the right-click lands on a nested icon", () => {
-    const { icon } = buildDom();
-    expect(getGithubRefUrlFromEventTarget(icon)).toBe(
-      "https://github.com/PostHog/posthog/pull/23985",
-    );
-  });
-
-  it("resolves the chip URL when the right-click lands on the label", () => {
-    const { label } = buildDom();
-    expect(getGithubRefUrlFromEventTarget(label)).toBe(
-      "https://github.com/PostHog/posthog/pull/23985",
-    );
-  });
-
-  it("returns null when the right-click is on non-chip prose", () => {
-    const { outside } = buildDom();
-    expect(getGithubRefUrlFromEventTarget(outside)).toBeNull();
-  });
-
-  it("returns null for a missing or non-element target", () => {
-    expect(getGithubRefUrlFromEventTarget(null)).toBeNull();
+  it.each<{
+    name: string;
+    pick: (dom: ReturnType<typeof buildDom>) => EventTarget | null;
+    expected: string | null;
+  }>([
+    { name: "a nested icon", pick: (dom) => dom.icon, expected: CHIP_URL },
+    { name: "the label", pick: (dom) => dom.label, expected: CHIP_URL },
+    { name: "non-chip prose", pick: (dom) => dom.outside, expected: null },
+    { name: "a non-element target", pick: () => null, expected: null },
+  ])("resolves $expected when the target is $name", ({ pick, expected }) => {
+    expect(getGithubRefUrlFromEventTarget(pick(buildDom()))).toBe(expected);
   });
 });
 
 describe("resolveCopyText", () => {
-  it("prefers a captured chip URL over the text selection", () => {
-    expect(
-      resolveCopyText("https://github.com/PostHog/posthog/pull/1", "selected"),
-    ).toBe("https://github.com/PostHog/posthog/pull/1");
-  });
-
-  it("falls back to the text selection when there is no chip URL", () => {
-    expect(resolveCopyText(null, "selected words")).toBe("selected words");
-  });
-
-  it("returns null when there is neither a chip URL nor a selection", () => {
-    expect(resolveCopyText(null, "")).toBeNull();
-    expect(resolveCopyText(null, undefined)).toBeNull();
+  it.each<{
+    name: string;
+    url: string | null;
+    selection: string | null | undefined;
+    expected: string | null;
+  }>([
+    {
+      name: "prefers a captured chip URL over the text selection",
+      url: CHIP_URL,
+      selection: "selected",
+      expected: CHIP_URL,
+    },
+    {
+      name: "falls back to the text selection when there is no chip URL",
+      url: null,
+      selection: "selected words",
+      expected: "selected words",
+    },
+    {
+      name: "returns null for an empty selection and no chip URL",
+      url: null,
+      selection: "",
+      expected: null,
+    },
+    {
+      name: "returns null for an undefined selection and no chip URL",
+      url: null,
+      selection: undefined,
+      expected: null,
+    },
+  ])("$name", ({ url, selection, expected }) => {
+    expect(resolveCopyText(url, selection)).toBe(expected);
   });
 });
 
