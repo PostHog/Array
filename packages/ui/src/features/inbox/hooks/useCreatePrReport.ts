@@ -14,7 +14,11 @@ interface UseCreatePrReportOptions {
 }
 
 interface UseCreatePrReportReturn {
-  /** Create an auto-mode implementation task for the report and navigate to it on success. */
+  /**
+   * Create an auto-mode implementation task for the report. Adds the task to the
+   * sidebar and surfaces a success toast with a "View task" action instead of
+   * navigating away.
+   */
   createPrReport: () => Promise<void>;
   /** True while the task is being created. */
   isCreatingPr: boolean;
@@ -23,10 +27,12 @@ interface UseCreatePrReportReturn {
 /**
  * Create an implementation (PR) task directly from the inbox detail pane.
  *
- * Bypasses TaskInput so the user stays on the inbox until the task is ready,
- * then jumps straight to the task detail page. The agent receives a short
- * prompt pointing it at the inbox MCP tools instead of inlining the report
- * summary. The base branch comes from the team-level autostart override map.
+ * Bypasses TaskInput so the user stays on the inbox until the task is ready.
+ * Rather than navigating away, the task is added to the sidebar and a success
+ * toast offers a "View task" action to open the task detail page on demand. The
+ * agent receives a short prompt pointing it at the inbox MCP tools instead of
+ * inlining the report summary. The base branch comes from the team-level
+ * autostart override map.
  */
 export function useCreatePrReport({
   reportId,
@@ -86,6 +92,7 @@ export function useCreatePrReport({
     loggerScope: "create-pr-report",
     copy: {
       loadingTitle: "Starting PR task...",
+      successTitle: "PR task started",
       errorTitle: "Failed to start PR task",
       missingRepository: "Pick a cloud repository before creating a PR",
       missingIntegration: "Connect a GitHub integration to create a PR",
@@ -95,6 +102,7 @@ export function useCreatePrReport({
     },
     buildInput,
     analyticsExtras,
+    redirectOnSuccess: false,
   });
 
   return { createPrReport: run, isCreatingPr: isRunning };
