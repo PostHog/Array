@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentSideConnection } from "@agentclientprotocol/sdk";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_GATEWAY_MODEL } from "../../gateway-models";
 
 type SdkQueryHandle = {
   interrupt: ReturnType<typeof vi.fn>;
@@ -153,40 +154,43 @@ describe("ClaudeAcpAgent session model on resume", () => {
     },
   );
 
-  it("does not call setModel for a new session on the default model", async () => {
-    const agent = makeAgent();
-
-    await agent.newSession({
-      cwd,
-      mcpServers: [],
-      _meta: { taskRunId: "run-3" },
-    });
-
-    // New sessions already pass options.model to the SDK at spawn.
-    expect(createdQueries).toHaveLength(1);
-    expect(createdQueries[0].setModel).not.toHaveBeenCalled();
-  });
-
-  // Guards the desync that surfaced as "picked gpt-5.5, session ran Opus": a
-  // Codex model id paired with the Claude adapter must not silently masquerade
-  // as a deliberate Opus session. It falls back AND warns.
-  it("warns and falls back to the default model when a Codex model reaches the Claude adapter", async () => {
+  // New sessions pass the model to the SDK at spawn, never via setModel. The
+  // Codex-model row guards the desync that surfaced as "picked gpt-5.5, session
+  // ran Opus": a non-Anthropic id on the Claude adapter must fall back to the
+  // default AND warn rather than silently masquerade as a deliberate Opus run.
+  it.each([
+    {
+      name: "uses the gateway default and never calls setModel without a requested model",
+      model: undefined,
+      expectsWarn: false,
+    },
+    {
+      name: "warns and falls back to the default when a Codex model reaches the Claude adapter",
+      model: "gpt-5.5",
+      expectsWarn: true,
+    },
+  ])("newSession $name", async ({ model, expectsWarn }) => {
     const agent = makeAgent();
     const warnSpy = vi.spyOn(agent.logger, "warn");
 
     const response = await agent.newSession({
       cwd,
       mcpServers: [],
-      _meta: { taskRunId: "run-codex-on-claude", model: "gpt-5.5" },
+      _meta: { taskRunId: "run-new", ...(model ? { model } : {}) },
     });
 
+    expect(createdQueries[0].setModel).not.toHaveBeenCalled();
     expect(getModelConfigOption(response)?.currentValue).toBe(
-      "claude-opus-4-8",
+      DEFAULT_GATEWAY_MODEL,
     );
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Non-Anthropic model"),
-      expect.objectContaining({ requestedModel: "gpt-5.5" }),
-    );
+    if (expectsWarn) {
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Non-Anthropic model"),
+        expect.objectContaining({ requestedModel: model }),
+      );
+    } else {
+      expect(warnSpy).not.toHaveBeenCalled();
+    }
   });
 
   // The timeout *message* (RequestError "... timed out after ...") is covered

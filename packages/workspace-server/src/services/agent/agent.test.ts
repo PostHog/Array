@@ -278,7 +278,7 @@ describe("AgentService", () => {
       );
     });
 
-    it("passes identical MCP servers regardless of adapter", async () => {
+    it("passes identical MCP servers to both adapters when all servers are reachable", async () => {
       await service.startSession({
         ...baseSessionParams,
         taskRunId: "run-claude",

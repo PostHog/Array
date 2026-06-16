@@ -993,7 +993,7 @@ When creating pull requests, add the following footer at the end of the PR descr
     url: string;
     headers: Array<{ name: string; value: string }>;
   }): Promise<boolean> {
-    const PROBE_TIMEOUT_MS = 4_000;
+    const PROBE_TIMEOUT_MS = 2_000;
     try {
       const headers: Record<string, string> = {
         "content-type": "application/json",
@@ -1017,7 +1017,14 @@ When creating pull requests, add the following footer at the end of the PR descr
         }),
         signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
       });
-      await response.body?.cancel();
+      // Release the body without draining it. A cancel rejection (e.g. an
+      // already-disturbed stream) is a cleanup detail, not a reachability
+      // signal, so it must not flip the result to unreachable.
+      try {
+        await response.body?.cancel();
+      } catch {
+        // ignore body cleanup failures
+      }
       // Any HTTP response means the endpoint is reachable. codex-acp only treats
       // transport failures (connection refused, DNS, timeout) as fatal; HTTP or
       // JSON-RPC error responses are handled gracefully.

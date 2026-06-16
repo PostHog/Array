@@ -59,10 +59,9 @@ export function usePreviewConfig(
     // resolving the model. Otherwise lastUsedModel and lastUsedAdapter read as
     // their pre-hydration defaults, the restore below is skipped, and the
     // selector silently falls back to the server default (Opus for Claude).
-    if (!hasHydrated) {
-      setIsLoading(true);
-      return;
-    }
+    // isLoading initializes to true, so the picker stays loading until hydration
+    // lands and the fetch below resolves.
+    if (!hasHydrated) return;
 
     abortRef.current?.abort();
     const abort = new AbortController();
