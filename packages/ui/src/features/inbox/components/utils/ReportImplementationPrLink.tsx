@@ -1,6 +1,7 @@
 import { GitMergeIcon, GitPullRequestIcon } from "@phosphor-icons/react";
 import { cn } from "@posthog/quill";
 import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
+import { usePrDiffStatsFromBatch } from "@posthog/ui/features/inbox/context/PrDiffStatsBatchContext";
 import { Tooltip } from "@radix-ui/themes";
 
 export type ImplementationPrLinkSize = "sm" | "md";
@@ -45,9 +46,29 @@ export function ReportImplementationPrLink({
   size = "sm",
   onLinkClick,
 }: ReportImplementationPrLinkProps) {
-  const {
-    meta: { state, merged, draft, isLoading },
-  } = usePrDetails(prUrl);
+  // On list surfaces the surrounding `PrDiffStatsBatchContext` already carries
+  // this PR's status from the single batched request, so read it from there and
+  // skip the per-PR query. Fall back to `usePrDetails` only on the standalone
+  // detail view, where no batch provider is mounted.
+  const batchEntry = usePrDiffStatsFromBatch(prUrl);
+  const fallback = usePrDetails(batchEntry.hasBatch ? null : prUrl);
+
+  const state = batchEntry.hasBatch
+    ? (batchEntry.stats?.state ?? null)
+    : fallback.meta.state;
+  const merged = batchEntry.hasBatch
+    ? (batchEntry.stats?.merged ?? false)
+    : fallback.meta.merged;
+  const draft = batchEntry.hasBatch
+    ? (batchEntry.stats?.draft ?? false)
+    : fallback.meta.draft;
+  const isLoading = batchEntry.hasBatch
+    ? batchEntry.isLoading && !batchEntry.stats
+    : fallback.meta.isLoading;
+
+  // If neither source could resolve a status (PR 404s, gh failed, or the batch
+  // had no entry for this PR), don't render a misleading "open" badge.
+  if (!isLoading && state === null) return null;
 
   const isSm = size === "sm";
 

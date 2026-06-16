@@ -308,10 +308,18 @@ export type PrDetailsByUrlOutput = z.infer<typeof getPrDetailsByUrlOutput>;
 
 export const getPrChangedFilesInput = z.object({ prUrl: z.string() });
 
+// Also carries the PR's live status (`state`/`merged`/`draft`) so list cards
+// can render it from the single batched GraphQL request instead of firing one
+// REST call per visible PR. Mirrors `prDiffStatsSchema` in
+// `@posthog/core/git/router-schemas`.
 export const prDiffStatsSchema = z.object({
   additions: z.number(),
   deletions: z.number(),
   changedFiles: z.number(),
+  /** Lowercased GitHub PR state: "open" | "closed" | "merged". */
+  state: z.string(),
+  merged: z.boolean(),
+  draft: z.boolean(),
 });
 export type PrDiffStats = z.infer<typeof prDiffStatsSchema>;
 
