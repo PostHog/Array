@@ -20,7 +20,7 @@ export function sendPromptToAgent(
 ): void {
   // Button/review/skill-initiated prompts are fire-and-forget, but a rejected
   // send (auth failure, sandbox unreachable, agent process died) must still be
-  // surfaced — otherwise the turn just shows "Generated in Xs" with no reply.
+  // surfaced, or the turn just shows "Generated in Xs" with no reply.
   void resolveService<AgentPromptSender>(AGENT_PROMPT_SENDER)(
     taskId,
     prompt,
