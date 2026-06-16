@@ -218,18 +218,18 @@ function OperationalStrip({
 }) {
   return (
     <Flex align="center" gap="5" className="text-[12.5px]">
-      <Flex align="center" gap="1.5" className="text-gray-11">
-        <BroadcastIcon size={13} className="text-gray-10" />
+      <div className="inline-flex items-center gap-1 text-gray-11">
+        <BroadcastIcon size={13} className="mr-1 text-gray-10" />
         <Text className="font-medium text-gray-12 tabular-nums">
           {liveCount}
         </Text>
         <Text>live now</Text>
-      </Flex>
+      </div>
       <Link
         to="/code/agents/applications/approvals"
-        className="inline-flex items-center gap-1.5 text-gray-11 no-underline hover:text-gray-12"
+        className="inline-flex items-center gap-1 text-gray-11 no-underline hover:text-gray-12"
       >
-        <LockKeyIcon size={13} className="text-gray-10" />
+        <LockKeyIcon size={13} className="mr-1 text-gray-10" />
         <Text
           className={`font-medium tabular-nums ${pendingCount > 0 ? "text-(--amber-11)" : "text-gray-12"}`}
         >
