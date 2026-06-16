@@ -1,4 +1,5 @@
 import {
+  ArchiveIcon,
   CaretDownIcon,
   CaretRightIcon,
   CaretUpIcon,
@@ -33,6 +34,8 @@ import {
   DropdownMenuTrigger,
 } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
+import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
 import {
@@ -79,12 +82,12 @@ function NavButton({
       size="sm"
       data-selected={active || undefined}
       onClick={onClick}
-      className="w-full justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
+      className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
     >
       {icon}
-      {label}
+      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
       {count != null && (
-        <Badge variant="default" className="ml-auto">
+        <Badge variant="default" className="ml-auto shrink-0">
           {count}
         </Badge>
       )}
@@ -224,6 +227,7 @@ function TaskNavRow({
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { fileTask, unfileTask } = useChannelTaskMutations();
+  const { archiveTask } = useArchiveTask();
   const taskData = useChannelTaskData(task);
   const workspace = useWorkspace(taskId);
   const workspaceMode =
@@ -263,6 +267,16 @@ function TaskNavRow({
     }
   };
 
+  const onArchive = async () => {
+    try {
+      await archiveTask({ taskId });
+    } catch (error) {
+      toast.error("Couldn't archive task", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
   const onRemove = async () => {
     try {
       await unfileTask(channelTaskId);
@@ -281,18 +295,20 @@ function TaskNavRow({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger
-        render={
-          <Box>
-            <NavButton
-              label={title}
-              icon={icon}
-              active={active}
-              onClick={onClick}
-            />
-          </Box>
-        }
-      />
+      <Tooltip content={title} delayDuration={600}>
+        <ContextMenuTrigger
+          render={
+            <Box>
+              <NavButton
+                label={title}
+                icon={icon}
+                active={active}
+                onClick={onClick}
+              />
+            </Box>
+          }
+        />
+      </Tooltip>
       <ContextMenuContent>
         <ContextMenuSub>
           <ContextMenuSubTrigger>
@@ -317,6 +333,10 @@ function TaskNavRow({
           </ContextMenuSubContent>
         </ContextMenuSub>
         <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => void onArchive()}>
+          <ArchiveIcon size={14} />
+          Archive
+        </ContextMenuItem>
         <ContextMenuItem variant="destructive" onClick={() => void onRemove()}>
           <XIcon size={14} />
           Remove from channel
@@ -337,6 +357,14 @@ function ChannelSection({
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { data: tasks } = useTasks();
   const { tasks: filedTasks } = useChannelTasks(channel.id);
+  const archivedTaskIds = useArchivedTaskIds();
+  // Tasks are private to each user. A task filed by someone else won't be in
+  // `tasks` (it isn't shared with me), so hide it rather than rendering an
+  // "Untitled task" placeholder. Also drop archived tasks.
+  const visibleFiledTasks = filedTasks.filter(
+    ({ taskId }) =>
+      !archivedTaskIds.has(taskId) && tasks?.some((t) => t.id === taskId),
+  );
   const base = `/website/${channel.id}`;
   const isActive = pathname === base || pathname.startsWith(`${base}/`);
   // Channels start collapsed; expansion is session-only. Navigating into a
@@ -360,7 +388,7 @@ function ChannelSection({
             className="aria-expanded:!bg-transparent hover:aria-expanded:!bg-fill-hover w-full justify-start gap-2 pr-16"
           >
             {/* `#` by default; swaps to the expand/collapse caret on hover. */}
-            <span className="flex size-[18px] shrink-0 items-center justify-center text-gray-10">
+            <span className="flex size-3.5 shrink-0 items-center justify-center text-gray-10">
               <HashIcon size={14} className="block group-hover/chan:hidden" />
               {open ? (
                 <CaretDownIcon
@@ -392,7 +420,7 @@ function ChannelSection({
                 })
               }
             />
-            {filedTasks.map(({ id: channelTaskId, taskId }) => {
+            {visibleFiledTasks.map(({ id: channelTaskId, taskId }) => {
               const task = tasks?.find((t) => t.id === taskId);
               const title = task?.title || "Untitled task";
               return (
@@ -450,6 +478,7 @@ function ChannelGroup({
   isEmpty = false,
   emptyHint,
   className,
+  headerAction,
   children,
 }: {
   label: string;
@@ -457,34 +486,45 @@ function ChannelGroup({
   isEmpty?: boolean;
   emptyHint?: ReactNode;
   className?: string;
+  headerAction?: ReactNode;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(true);
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen} className={className}>
-      <Collapsible.Trigger asChild>
-        <button
-          type="button"
-          className="group/grp flex w-full items-center gap-2 px-2 pt-1 text-left"
-        >
-          {/* Leading icon by default; swaps to the expand/collapse caret on hover. */}
-          <span className="flex size-4 shrink-0 items-center justify-center text-gray-9">
-            <span className="block group-hover/grp:hidden">{icon}</span>
-            {open ? (
-              <CaretUpIcon size={12} className="hidden group-hover/grp:block" />
-            ) : (
-              <CaretDownIcon
-                size={12}
-                className="hidden group-hover/grp:block"
-              />
-            )}
-          </span>
-          <Text weight="medium" className="text-gray-9 text-xs tracking-wide">
-            {label}
-          </Text>
-        </button>
-      </Collapsible.Trigger>
+      <Box className="group/grp relative">
+        <Collapsible.Trigger asChild>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-2 pt-1 text-left"
+          >
+            {/* Leading icon by default; swaps to the expand/collapse caret on hover. */}
+            <span className="flex size-4 shrink-0 items-center justify-center text-gray-9">
+              <span className="block group-hover/grp:hidden">{icon}</span>
+              {open ? (
+                <CaretUpIcon
+                  size={12}
+                  className="hidden group-hover/grp:block"
+                />
+              ) : (
+                <CaretDownIcon
+                  size={12}
+                  className="hidden group-hover/grp:block"
+                />
+              )}
+            </span>
+            <Text weight="medium" className="text-gray-9 text-xs tracking-wide">
+              {label}
+            </Text>
+          </button>
+        </Collapsible.Trigger>
+        {headerAction && (
+          <Box className="absolute top-0.5 right-1 opacity-0 transition-opacity group-hover/grp:opacity-100">
+            {headerAction}
+          </Box>
+        )}
+      </Box>
       <Collapsible.Content>
         <Flex direction="column" gap="1" pt="1" pl="3">
           {isEmpty ? emptyHint : children}
@@ -552,6 +592,19 @@ export function ChannelsList() {
                 label="Channels"
                 icon={<HashIcon size={14} className="text-gray-9" />}
                 className="mt-3"
+                headerAction={
+                  <Tooltip content="New channel" side="top">
+                    <IconButton
+                      variant="ghost"
+                      color="gray"
+                      size="1"
+                      aria-label="New channel"
+                      onClick={() => setModalOpen(true)}
+                    >
+                      <PlusIcon size={14} weight="bold" />
+                    </IconButton>
+                  </Tooltip>
+                }
               >
                 {otherChannels.map((channel) => (
                   <ChannelSection

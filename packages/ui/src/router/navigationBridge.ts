@@ -39,6 +39,13 @@ export function navigateToChannel(channelId: string): void {
   });
 }
 
+export function navigateToChannelTask(channelId: string, taskId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/website/$channelId/tasks/$taskId",
+    params: { channelId, taskId },
+  });
+}
+
 export function navigateToFolderSettings(folderId: string): void {
   void getRouterOrNull()?.navigate({
     to: "/folders/$folderId",
