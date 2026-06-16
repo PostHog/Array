@@ -935,19 +935,17 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     let worktreeInfo: WorktreeInfo | null = null;
     let branchName: string | null = null;
 
-    if (association.mode === "worktree") {
-      if (folderPath) {
-        const worktreePath = association.path;
-        const gitBranch = await getBranchFromPath(worktreePath);
-        branchName = gitBranch ?? association.branchName;
-        worktreeInfo = {
-          worktreePath,
-          worktreeName: association.worktree,
-          branchName,
-          baseBranch: "main",
-          createdAt: new Date().toISOString(),
-        };
-      }
+    if (association.mode === "worktree" && folderPath) {
+      const worktreePath = association.path;
+      const gitBranch = await getBranchFromPath(worktreePath);
+      branchName = gitBranch ?? association.branchName;
+      worktreeInfo = {
+        worktreePath,
+        worktreeName: association.worktree,
+        branchName,
+        baseBranch: "main",
+        createdAt: new Date().toISOString(),
+      };
     } else if (association.mode === "local" && folderPath) {
       branchName = await getBranchFromPath(folderPath);
     }

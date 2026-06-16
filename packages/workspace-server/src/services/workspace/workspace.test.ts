@@ -367,52 +367,44 @@ describe("WorkspaceService", () => {
       ).toEqual([]);
     });
 
-    it("deletes via the stored path and leaves an external worktree's parent dirs untouched", async () => {
-      const base = mkTemp("wt-base-");
-      mocks.workspaceSettings.getWorktreeLocation = () => base;
+    // Identical setup (empty managed `<base>/<repo>` parent, then delete the only
+    // worktree for that repo); only the stored worktree path differs. This proves
+    // the cleanup guard discriminates on whether the path is under the base path,
+    // rather than always (or never) reclaiming the parent folder.
+    it.each([
+      {
+        label: "leaves an external worktree's parent dirs untouched",
+        makeWorktreePath: () => mkTemp("external-wt-"),
+        managedParentSurvives: true,
+      },
+      {
+        label:
+          "reclaims the empty managed parent folder for a worktree under the base path",
+        makeWorktreePath: (base: string) =>
+          path.join(base, "some-name", "myrepo"),
+        managedParentSurvives: false,
+      },
+    ])(
+      "deleteWorkspace via the stored path $label",
+      async ({ makeWorktreePath, managedParentSurvives }) => {
+        const base = mkTemp("wt-base-");
+        mocks.workspaceSettings.getWorktreeLocation = () => base;
 
-      const repoPath = "/code/myrepo";
-      const managedParent = path.join(base, "myrepo");
-      fs.mkdirSync(managedParent);
-      const externalPath = mkTemp("external-wt-");
+        const repoPath = "/code/myrepo";
+        const managedParent = path.join(base, "myrepo");
+        fs.mkdirSync(managedParent);
 
-      seedWorktreeTask(mocks, {
-        taskId: "ext",
-        repoPath,
-        name: "ext-name",
-        worktreePath: externalPath,
-      });
+        seedWorktreeTask(mocks, {
+          taskId: "task",
+          repoPath,
+          name: "some-name",
+          worktreePath: makeWorktreePath(base),
+        });
 
-      await service.deleteWorkspace("ext", repoPath);
+        await service.deleteWorkspace("task", repoPath);
 
-      // The guard short-circuits managed-folder cleanup for external worktrees.
-      expect(fs.existsSync(managedParent)).toBe(true);
-      // The external worktree dir itself is removed by git (mocked), never by
-      // the managed-folder cleanup.
-      expect(fs.existsSync(externalPath)).toBe(true);
-    });
-
-    it("reclaims the empty managed parent folder for a worktree under the base path", async () => {
-      const base = mkTemp("wt-base-");
-      mocks.workspaceSettings.getWorktreeLocation = () => base;
-
-      const repoPath = "/code/myrepo";
-      const managedParent = path.join(base, "myrepo");
-      fs.mkdirSync(managedParent);
-      const managedPath = path.join(base, "some-name", "myrepo");
-
-      seedWorktreeTask(mocks, {
-        taskId: "mng",
-        repoPath,
-        name: "some-name",
-        worktreePath: managedPath,
-      });
-
-      await service.deleteWorkspace("mng", repoPath);
-
-      // Same setup as the external case, but a managed path clears the guard, so
-      // the empty parent folder is reclaimed. This proves the guard discriminates.
-      expect(fs.existsSync(managedParent)).toBe(false);
-    });
+        expect(fs.existsSync(managedParent)).toBe(managedParentSurvives);
+      },
+    );
   });
 });
