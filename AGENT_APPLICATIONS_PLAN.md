@@ -111,7 +111,7 @@ transport, blocked on the M-Live open question).
 |---|---------|--------------|---------|--------|
 | **Browsing & monitoring** ||||
 | 1 | Fleet overview / stat strip | Aggregate KPIs across all agents | `/query/` HogQL `$ai_*` | ✅ (analytics KPIs: spend/sessions/failure/p95 + trends + WoW deltas on the Applications overview; operational live-now/approvals counts dropped — see M6) |
-| 2 | Live-now panel | Cross-agent in-flight sessions, live state dots | `agent_fleet/live_sessions/` | 🟡 |
+| 2 | Live-now panel | Cross-agent in-flight sessions, live state dots | `agent_fleet/live_sessions/` | ✅ (Applications-landing panel; see M6) |
 | 3 | Agent list + filters | All agents, per-agent inline stats, All/Live/Drafts/Archived | `agent_applications/`, `/query/` | ✅ list + inline stats / 🟡 filters |
 | 4 | Per-agent overview | Status, triggers, live revision, recent activity | `agent_applications/{slug}/` | ✅ |
 | 5 | Session list + filters | History; filter by state / revision / date; pagination | `…/sessions/?state=&revision_id=&…` | ✅ (state filter + load-more; date/revision filters pending) |
@@ -120,7 +120,7 @@ transport, blocked on the M-Live open question).
 | 8 | **Session logs pane** | Structured log viewer, level filter + search | `…/sessions/{id}/logs/` | ✅ |
 | **Approvals** ||||
 | 9 | Per-agent approvals queue | List approval-gated tool calls, filter by state | `…/approvals/` | ✅ |
-| 10 | Global approvals queue | Fleet-wide approval inbox | `agent_fleet/approvals/` | 🟡 (client ready; UI pending) |
+| 10 | Global approvals queue | Fleet-wide approval inbox | `agent_fleet/approvals/` | ✅ (master/detail at `/code/agents/applications/approvals`; see M6) |
 | 11 | Approval detail + decide | Reasoning snapshot, proposed args, approve/reject + edit args + reason; embedded session | `…/approvals/{id}/decide/` | ✅ (master/detail) |
 | **Configuration & authoring** ||||
 | 12 | Spec explorer | Filesystem-style view of model/triggers/tools/skills/mcps/integrations/secrets/limits | revision `spec` JSONB | ✅ |
@@ -205,6 +205,28 @@ transport, blocked on the M-Live open question).
   `FileExplorer`: folder tree + read file (markdown, with description/tags), a
   Files/Tables toggle, BM25 search mode, and a tables view (list + row grid).
   Render-only; create/update/delete deferred. Commit `22caee62`.
+- [x] **M6 — Live-now & operational counts + global approvals queue** (features
+  2, 10; restoration of operational counts from feature 1) — parity work that
+  restored the operational signal the M7 analytics KPIs displaced. Two pieces:
+  - **Live-now panel** on the Applications landing — a compact list of
+    cross-agent in-flight sessions (state badge, agent name, trigger kind, turn
+    count, preview, started-ago), each row linking to the per-agent session
+    detail. Backed by `useAgentFleetLiveSessions` (5s poll) over
+    `client.listAgentFleetLiveSessions`. Joins `application_id → name/slug` from
+    the already-cached `useAgentApplications()` query — no extra requests beyond
+    the panel's own.
+  - **Fleet approvals queue** at `/code/agents/applications/approvals` —
+    master/detail mirroring the per-agent `AgentApprovalsPane` but cross-agent:
+    each row shows the agent it belongs to, the detail pane reuses
+    `AgentApprovalDetail` (passing the joined slug), and the filter chips share
+    a single `agentApprovalsFilters.ts` source of truth between the per-agent
+    and fleet panes. Backed by `useAgentFleetApprovals` (10s poll) over
+    `client.listAgentFleetApprovals`. Standalone route with its own focused
+    chrome (back link + title), matching how per-agent detail pages render.
+  - **Operational strip** on the landing: `X live now · Y pending approvals →`
+    above the analytics KPI strip. `Y` deep-links to the new approvals route and
+    flips amber when non-zero. Counts come from the same fleet hooks the live-now
+    panel uses, so the strip is "free" beyond the requests already in flight.
 - [x] **M-Live (chat preview)** (feature 27) — per-agent **Chat** tab that runs a
   live session against the agent's ingress and renders it through the native
   `ConversationView`. **This resolved the M-Live "where does cloud-SSE transport
@@ -243,19 +265,6 @@ controls. Ordered by core value.
   integrations view isn't needed right now: Slack setup (feature 23) already
   ships under the slack trigger, and `spec.integrations` renders in the config
   explorer.
-- [ ] **Global approvals queue** (feature 10) — fleet-wide approval inbox at the
-  Applications level (the per-agent queue shipped in M5). Client method
-  `listAgentFleetApprovals` already exists; needs UI. Pairs with M6 (it also
-  restores the "pending approvals" signal the M7 overview dropped).
-
-- [ ] **M6 — Live-now & operational counts** (feature 2; remainder of 1) —
-  partly **realized by M7**: the Applications landing is now the observability
-  entrypoint (analytics KPIs blended with the agent list), so the stat-strip
-  ask is met by analytics. What's left is the **live-now panel** (cross-agent
-  in-flight sessions, `agent_fleet/live_sessions/` — `listAgentFleetLiveSessions`
-  client method exists) and re-surfacing the **operational counts** (live now +
-  pending approvals) that the analytics KPIs displaced. Pairs well with the
-  global approvals queue (feature 10).
 - [ ] **M-Live (remainder)** (features 28, 29) — the live transport itself shipped
   (see "Done this session"); the **open transport question is resolved**
   (renderer-hook + region-derived ingress). What's left on the live track:
@@ -329,7 +338,11 @@ With a backend that has deployed agents + sessions:
 - **Chat preview** (chat-trigger agents): the per-agent **Chat** tab runs a live
   session against the agent's ingress — send/cancel, optimistic echo, a
   recent-chats rail with resume. (Try it against `agent-approval-demo`.)
+- **Operational strip + live-now panel** on the landing: "X live now · Y pending
+  approvals →"; click pending → fleet-wide approvals master/detail at
+  `/code/agents/applications/approvals`. Live-now lists cross-agent in-flight
+  sessions and links each row to the per-agent session detail.
 
-Not yet built: everything in the parity map still marked 🟡 / ⬜ / 🔴 — the
-global approvals queue, live-now panel, in-chat approvals, draft preview, and
-the **Agent Builder dock** (M-Agent-Builder). Authoring stays the Agent Builder's job.
+Not yet built: everything in the parity map still marked 🟡 / ⬜ / 🔴 — in-chat
+approvals (feature 28) and draft preview (feature 29). Authoring stays the
+Agent Builder's job.

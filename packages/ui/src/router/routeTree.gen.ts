@@ -47,6 +47,7 @@ import { Route as CodeInboxRunsReportIdRouteImport } from './routes/code/inbox/r
 import { Route as CodeInboxReportsReportIdRouteImport } from './routes/code/inbox/reports.$reportId'
 import { Route as CodeInboxPullsReportIdRouteImport } from './routes/code/inbox/pulls.$reportId'
 import { Route as CodeAgentsScoutsSkillNameRouteImport } from './routes/code/agents/scouts.$skillName'
+import { Route as CodeAgentsApplicationsApprovalsRouteImport } from './routes/code/agents/applications/approvals'
 import { Route as CodeAgentsApplicationsIdOrSlugRouteImport } from './routes/code/agents/applications/$idOrSlug'
 import { Route as CodeAgentsScoutsSkillNameIndexRouteImport } from './routes/code/agents/scouts.$skillName.index'
 import { Route as CodeAgentsApplicationsIdOrSlugIndexRouteImport } from './routes/code/agents/applications/$idOrSlug/index'
@@ -253,6 +254,12 @@ const CodeAgentsScoutsSkillNameRoute =
     path: '/$skillName',
     getParentRoute: () => CodeAgentsScoutsRoute,
   } as any)
+const CodeAgentsApplicationsApprovalsRoute =
+  CodeAgentsApplicationsApprovalsRouteImport.update({
+    id: '/approvals',
+    path: '/approvals',
+    getParentRoute: () => CodeAgentsApplicationsRoute,
+  } as any)
 const CodeAgentsApplicationsIdOrSlugRoute =
   CodeAgentsApplicationsIdOrSlugRouteImport.update({
     id: '/$idOrSlug',
@@ -342,6 +349,7 @@ export interface FileRoutesByFullPath {
   '/code/inbox/': typeof CodeInboxIndexRoute
   '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
   '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
+  '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
@@ -383,6 +391,7 @@ export interface FileRoutesByTo {
   '/code/agents': typeof CodeAgentsIndexRoute
   '/code/inbox': typeof CodeInboxIndexRoute
   '/website/$channelId': typeof WebsiteChannelIdIndexRoute
+  '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
   '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
@@ -433,6 +442,7 @@ export interface FileRoutesById {
   '/code/inbox/': typeof CodeInboxIndexRoute
   '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
   '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
+  '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
@@ -485,6 +495,7 @@ export interface FileRouteTypes {
     | '/code/inbox/'
     | '/website/$channelId/'
     | '/code/agents/applications/$idOrSlug'
+    | '/code/agents/applications/approvals'
     | '/code/agents/scouts/$skillName'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
@@ -526,6 +537,7 @@ export interface FileRouteTypes {
     | '/code/agents'
     | '/code/inbox'
     | '/website/$channelId'
+    | '/code/agents/applications/approvals'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
     | '/code/inbox/runs/$reportId'
@@ -575,6 +587,7 @@ export interface FileRouteTypes {
     | '/code/inbox/'
     | '/website/$channelId/'
     | '/code/agents/applications/$idOrSlug'
+    | '/code/agents/applications/approvals'
     | '/code/agents/scouts/$skillName'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
@@ -884,6 +897,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsScoutsSkillNameRouteImport
       parentRoute: typeof CodeAgentsScoutsRoute
     }
+    '/code/agents/applications/approvals': {
+      id: '/code/agents/applications/approvals'
+      path: '/approvals'
+      fullPath: '/code/agents/applications/approvals'
+      preLoaderRoute: typeof CodeAgentsApplicationsApprovalsRouteImport
+      parentRoute: typeof CodeAgentsApplicationsRoute
+    }
     '/code/agents/applications/$idOrSlug': {
       id: '/code/agents/applications/$idOrSlug'
       path: '/$idOrSlug'
@@ -1017,6 +1037,7 @@ const CodeAgentsApplicationsIdOrSlugRouteWithChildren =
 
 interface CodeAgentsApplicationsRouteChildren {
   CodeAgentsApplicationsIdOrSlugRoute: typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
+  CodeAgentsApplicationsApprovalsRoute: typeof CodeAgentsApplicationsApprovalsRoute
   CodeAgentsApplicationsIndexRoute: typeof CodeAgentsApplicationsIndexRoute
 }
 
@@ -1024,6 +1045,7 @@ const CodeAgentsApplicationsRouteChildren: CodeAgentsApplicationsRouteChildren =
   {
     CodeAgentsApplicationsIdOrSlugRoute:
       CodeAgentsApplicationsIdOrSlugRouteWithChildren,
+    CodeAgentsApplicationsApprovalsRoute: CodeAgentsApplicationsApprovalsRoute,
     CodeAgentsApplicationsIndexRoute: CodeAgentsApplicationsIndexRoute,
   }
 

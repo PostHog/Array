@@ -1,6 +1,8 @@
 import {
   ArrowSquareOutIcon,
+  BroadcastIcon,
   CaretRightIcon,
+  LockKeyIcon,
   RobotIcon,
 } from "@phosphor-icons/react";
 import type {
@@ -16,9 +18,12 @@ import { type ReactNode, useMemo } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import { useAgentAnalytics } from "../hooks/useAgentAnalytics";
 import { useAgentApplications } from "../hooks/useAgentApplications";
+import { useAgentFleetApprovals } from "../hooks/useAgentFleetApprovals";
+import { useAgentFleetLiveSessions } from "../hooks/useAgentFleetLiveSessions";
 import { formatSpendUsd } from "../utils/format";
 import { aiObservabilityTracesUrl } from "../utils/observabilityLinks";
 import { AgentAnalyticsKpiStrip } from "./AgentAnalyticsView";
+import { AgentFleetLiveSessionsPanel } from "./AgentFleetLiveSessionsPanel";
 
 /**
  * The Applications tab: the fleet observability KPIs (spend / sessions /
@@ -38,7 +43,11 @@ export function AgentApplicationsListView() {
     error,
   } = useAgentApplications();
   const { data: analytics, isLoading: analyticsLoading } = useAgentAnalytics();
+  const { data: liveSessions } = useAgentFleetLiveSessions();
+  const { data: queuedApprovals } = useAgentFleetApprovals({ state: "queued" });
   const aiObservabilityUrl = aiObservabilityTracesUrl(region, projectId);
+  const liveCount = liveSessions?.results.length ?? 0;
+  const pendingCount = queuedApprovals?.length ?? 0;
 
   // Index the per-agent rollups by application id so each row can show its own
   // sessions / spend / failure rate without a second request.
@@ -53,6 +62,8 @@ export function AgentApplicationsListView() {
   return (
     <AgentsTabLayout activeTab="applications">
       <Flex direction="column" gap="5">
+        <OperationalStrip liveCount={liveCount} pendingCount={pendingCount} />
+
         <section>
           <Flex align="center" justify="between" className="mb-3">
             <Text className="font-semibold text-[13px] text-gray-12">
@@ -74,6 +85,8 @@ export function AgentApplicationsListView() {
             isLoading={analyticsLoading}
           />
         </section>
+
+        <AgentFleetLiveSessionsPanel />
 
         <Flex direction="column" gap="2">
           <Text className="text-[11px] text-gray-10 uppercase tracking-wide">
@@ -186,6 +199,44 @@ function RowStat({
       <Text className="text-[10px] text-gray-10 uppercase tracking-wide">
         {label}
       </Text>
+    </Flex>
+  );
+}
+
+/**
+ * Operational counts strip — restores the "live now / pending approvals"
+ * signals the M7 analytics KPIs displaced. Live count anchors the live-now
+ * panel below; pending links to the fleet approvals queue.
+ */
+function OperationalStrip({
+  liveCount,
+  pendingCount,
+}: {
+  liveCount: number;
+  pendingCount: number;
+}) {
+  return (
+    <Flex align="center" gap="5" className="text-[12.5px]">
+      <Flex align="center" gap="1.5" className="text-gray-11">
+        <BroadcastIcon size={13} className="text-gray-10" />
+        <Text className="font-medium text-gray-12 tabular-nums">
+          {liveCount}
+        </Text>
+        <Text>live now</Text>
+      </Flex>
+      <Link
+        to="/code/agents/applications/approvals"
+        className="inline-flex items-center gap-1.5 text-gray-11 no-underline hover:text-gray-12"
+      >
+        <LockKeyIcon size={13} className="text-gray-10" />
+        <Text
+          className={`font-medium tabular-nums ${pendingCount > 0 ? "text-(--amber-11)" : "text-gray-12"}`}
+        >
+          {pendingCount}
+        </Text>
+        <Text>pending approval{pendingCount === 1 ? "" : "s"}</Text>
+        <CaretRightIcon size={11} className="text-gray-10" />
+      </Link>
     </Flex>
   );
 }

@@ -75,6 +75,14 @@ export const agentApplicationsKeys = {
     ["agent-applications", "fleet", "stats", projectId] as const,
   fleetLiveSessions: (projectId: number | null) =>
     ["agent-applications", "fleet", "live-sessions", projectId] as const,
+  fleetApprovals: (projectId: number | null, state?: string) =>
+    [
+      "agent-applications",
+      "fleet",
+      "approvals",
+      projectId,
+      state ?? "all",
+    ] as const,
   /** `applicationId` is undefined for the fleet-wide board. */
   analytics: (projectId: number | null, applicationId?: string) =>
     [

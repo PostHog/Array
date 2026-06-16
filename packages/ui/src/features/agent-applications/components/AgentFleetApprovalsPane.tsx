@@ -1,46 +1,77 @@
-import { LockKeyIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, LockKeyIcon, RobotIcon } from "@phosphor-icons/react";
 import { formatRelativeTimeShort } from "@posthog/shared";
-import type { AgentApprovalRequest } from "@posthog/shared/agent-platform-types";
+import type {
+  AgentApplication,
+  AgentApprovalRequest,
+} from "@posthog/shared/agent-platform-types";
+import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Flex, Text } from "@radix-ui/themes";
+import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { useAgentApplicationApprovals } from "../hooks/useAgentApplicationApprovals";
+import { useSetAgentBuilderPage } from "../agent-builder/useSetAgentBuilderPage";
+import { useAgentApplications } from "../hooks/useAgentApplications";
+import { useAgentFleetApprovals } from "../hooks/useAgentFleetApprovals";
 import { approvalStateColor, approvalStateLabel } from "../utils/format";
 import { AgentApprovalDetail } from "./AgentApprovalDetail";
-import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
+import { AgentDetailEmptyState } from "./AgentDetailLayout";
 import { APPROVAL_FILTERS, type ApprovalFilter } from "./agentApprovalsFilters";
 import { RefreshIndicator } from "./RefreshIndicator";
 
-export type { ApprovalFilter };
-
 /**
- * Per-agent Approvals pane, master-detail: a filterable list on the left and,
- * when a row is selected (URL `?request=<id>`), an {@link AgentApprovalDetail}
- * panel on the right with the proposed args, decision controls, and the
- * embedded session that proposed the gated call.
+ * Fleet-wide approvals queue: a master/detail mirror of the per-agent
+ * `AgentApprovalsPane` but cross-agent. Each row shows the agent it belongs to
+ * (joined client-side with `useAgentApplications`) and the detail pane reuses
+ * `AgentApprovalDetail` once we resolve the application's `idOrSlug`. Owns its
+ * own chrome (back link + title) rather than nesting under the Scouts /
+ * Applications tab bar, matching how per-agent detail pages render.
  */
-export function AgentApprovalsPane({
-  idOrSlug,
+export function AgentFleetApprovalsPane({
   selectedId,
   onSelect,
   filter,
   onFilterChange,
 }: {
-  idOrSlug: string;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   filter: ApprovalFilter;
   onFilterChange: (f: ApprovalFilter) => void;
 }) {
   const { data, isLoading, isError, isFetching, dataUpdatedAt, refetch } =
-    useAgentApplicationApprovals(
-      idOrSlug,
-      filter === "all" ? undefined : { state: filter },
-    );
+    useAgentFleetApprovals(filter === "all" ? undefined : { state: filter });
+  const { data: applications } = useAgentApplications();
+
   const approvals = useMemo(() => data ?? [], [data]);
+  const appsById = useMemo(() => {
+    const map = new Map<string, AgentApplication>();
+    for (const app of applications ?? []) {
+      map.set(app.id, app);
+    }
+    return map;
+  }, [applications]);
+
   const selected = selectedId
     ? (approvals.find((a) => a.id === selectedId) ?? null)
     : null;
+  const selectedApp = selected ? appsById.get(selected.application_id) : null;
+  const selectedIdOrSlug = selectedApp?.slug ?? selectedApp?.id ?? null;
+
+  const headerContent = useMemo(
+    () => (
+      <Flex align="center" gap="2" className="w-full min-w-0">
+        <LockKeyIcon size={12} className="shrink-0 text-gray-10" />
+        <Text
+          className="truncate whitespace-nowrap font-medium text-[13px]"
+          title="Fleet approvals"
+        >
+          Fleet approvals
+        </Text>
+      </Flex>
+    ),
+    [],
+  );
+  useSetHeaderContent(headerContent);
+  useSetAgentBuilderPage({ kind: "agent-list" });
 
   const filters = (
     <Flex align="center" justify="between" gap="3">
@@ -81,23 +112,24 @@ export function AgentApprovalsPane({
   ) : isError ? (
     <AgentDetailEmptyState
       title="Couldn't load approvals"
-      description="The agent platform API returned an error. Approvals are team-admin only — you may not have access."
+      description="The agent platform API returned an error. Fleet approvals are team-admin only — you may not have access."
     />
   ) : approvals.length === 0 ? (
     <AgentDetailEmptyState
       title="Nothing here"
       description={
         filter === "queued"
-          ? "No tool calls are waiting for a decision."
+          ? "No tool calls are waiting for a decision across the fleet."
           : "No approval requests match this filter."
       }
     />
   ) : (
     <Flex direction="column" gap="2">
       {approvals.map((approval) => (
-        <ApprovalRow
+        <FleetApprovalRow
           key={approval.id}
           approval={approval}
+          application={appsById.get(approval.application_id)}
           selected={approval.id === selectedId}
           onSelect={() => onSelect(approval.id)}
         />
@@ -106,15 +138,38 @@ export function AgentApprovalsPane({
   );
 
   return (
-    <AgentDetailLayout idOrSlug={idOrSlug} activeTab="approvals" fill>
-      <Flex direction="column" className="h-full min-h-0">
+    <Flex direction="column" className="h-full min-h-0">
+      <Flex
+        direction="column"
+        gap="3"
+        className="shrink-0 cursor-default select-none border-(--gray-5) border-b px-6 pt-5"
+      >
+        <Link
+          to="/code/agents/applications"
+          className="flex w-fit items-center gap-1.5 text-[12px] text-gray-11 no-underline hover:text-gray-12"
+        >
+          <ArrowLeftIcon size={13} />
+          Applications
+        </Link>
+        <Flex align="center" gap="2" wrap="wrap">
+          <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
+            Fleet approvals
+          </Text>
+        </Flex>
+        <Text className="max-w-3xl text-[12.5px] text-gray-11 leading-snug">
+          Tool calls across every deployed agent that are waiting on (or have
+          received) a human decision.
+        </Text>
+      </Flex>
+
+      <Flex direction="column" className="min-h-0 flex-1">
         <div className="shrink-0 px-5 pt-5 pb-3">{filters}</div>
-        {selected ? (
+        {selected && selectedIdOrSlug ? (
           <div className="grid min-h-0 flex-1 grid-cols-[minmax(300px,380px)_minmax(0,1fr)] divide-x divide-(--gray-5) overflow-hidden border-(--gray-5) border-t">
             <aside className="min-h-0 overflow-y-auto px-3 py-3">{list}</aside>
             <main className="min-h-0 overflow-hidden">
               <AgentApprovalDetail
-                idOrSlug={idOrSlug}
+                idOrSlug={selectedIdOrSlug}
                 approval={selected}
                 onClose={() => onSelect(null)}
               />
@@ -126,20 +181,24 @@ export function AgentApprovalsPane({
           </div>
         )}
       </Flex>
-    </AgentDetailLayout>
+    </Flex>
   );
 }
 
-function ApprovalRow({
+function FleetApprovalRow({
   approval,
+  application,
   selected,
   onSelect,
 }: {
   approval: AgentApprovalRequest;
+  application: AgentApplication | undefined;
   selected: boolean;
   onSelect: () => void;
 }) {
   const isQueued = approval.state === "queued";
+  const agentLabel =
+    application?.name ?? application?.slug ?? approval.application_id;
   return (
     <button
       type="button"
@@ -150,7 +209,6 @@ function ApprovalRow({
           : "border-border bg-(--color-panel-solid) hover:border-(--gray-7)"
       }`}
     >
-      <LockKeyIcon size={13} className="shrink-0 text-gray-10" />
       <Flex direction="column" gap="1" className="min-w-0 flex-1">
         <Flex align="center" gap="2" className="min-w-0">
           <Badge color={approvalStateColor(approval.state)}>
@@ -160,9 +218,12 @@ function ApprovalRow({
             {approval.tool_name}
           </Text>
         </Flex>
-        <Text className="truncate text-[11px] text-gray-10">
-          {summarizeArgs(approval.proposed_args)}
-        </Text>
+        <Flex align="center" gap="1.5" className="min-w-0">
+          <RobotIcon size={11} className="shrink-0 text-gray-10" />
+          <Text className="truncate text-[11px] text-gray-11">
+            {agentLabel}
+          </Text>
+        </Flex>
       </Flex>
       <Text className="shrink-0 text-[11px] text-gray-10">
         {isQueued
@@ -171,10 +232,4 @@ function ApprovalRow({
       </Text>
     </button>
   );
-}
-
-function summarizeArgs(args: Record<string, unknown>): string {
-  if (!args || Object.keys(args).length === 0) return "No arguments";
-  const compact = JSON.stringify(args);
-  return compact.length > 140 ? `${compact.slice(0, 140)}…` : compact;
 }
