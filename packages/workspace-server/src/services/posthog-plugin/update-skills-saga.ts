@@ -10,6 +10,10 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { Saga } from "@posthog/shared";
+import {
+  copySkillDirLinkingNodeModules,
+  isCodexMirrorDisabled,
+} from "./codex-mirror";
 import { extractZip, unzipAsync } from "./extract-zip";
 
 /**
@@ -45,6 +49,9 @@ export async function syncCodexSkills(
   pluginPath: string,
   codexSkillsDir: string,
 ): Promise<void> {
+  if (isCodexMirrorDisabled()) {
+    return;
+  }
   const effectiveSkillsDir = join(pluginPath, "skills");
   if (!existsSync(effectiveSkillsDir)) {
     return;
@@ -59,7 +66,8 @@ export async function syncCodexSkills(
         const src = join(effectiveSkillsDir, entry.name);
         const dest = join(codexSkillsDir, entry.name);
         await rm(dest, { recursive: true, force: true });
-        await cp(src, dest, { recursive: true });
+        // Symlink node_modules instead of deep-copying it (see codex-mirror).
+        await copySkillDirLinkingNodeModules(src, dest);
       }
     }
   } catch {

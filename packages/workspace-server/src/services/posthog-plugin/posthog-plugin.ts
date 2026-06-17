@@ -23,7 +23,11 @@ import {
 import { TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable, postConstruct, preDestroy } from "inversify";
 import { getUserSkillsDir } from "../skills/skill-discovery";
-import { getCodexSkillsDir, mirrorUserSkillsToCodex } from "./codex-mirror";
+import {
+  getCodexSkillsDir,
+  isCodexMirrorDisabled,
+  mirrorUserSkillsToCodex,
+} from "./codex-mirror";
 import {
   overlayDownloadedSkills,
   syncCodexSkills,
@@ -99,8 +103,14 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
     // Overlay any previously-downloaded skills on top of the runtime plugin
     await overlayDownloadedSkills(this.runtimeSkillsDir, this.runtimePluginDir);
 
-    await syncCodexSkills(this.getPluginPath(), CODEX_SKILLS_DIR);
-    await this.mirrorUserSkills();
+    if (isCodexMirrorDisabled()) {
+      this.log.info(
+        "Codex skills mirror disabled (POSTHOG_DISABLE_CODEX_MIRROR=1); not writing ~/.agents/skills",
+      );
+    } else {
+      await syncCodexSkills(this.getPluginPath(), CODEX_SKILLS_DIR);
+      await this.mirrorUserSkills();
+    }
 
     // Start periodic updates
     this.intervalId = setInterval(() => {

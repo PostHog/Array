@@ -15,6 +15,46 @@ export function getCodexSkillsDir(): string {
   return path.join(os.homedir(), ".agents", "skills");
 }
 
+/**
+ * Opt-out for the Codex skills mirror. Set `POSTHOG_DISABLE_CODEX_MIRROR=1`
+ * when you don't use Codex (or another tool that reads ~/.agents/skills) and
+ * don't want PostHog Code writing there on startup. Read at call time so it
+ * can be toggled without a rebuild.
+ */
+export function isCodexMirrorDisabled(): boolean {
+  return process.env.POSTHOG_DISABLE_CODEX_MIRROR === "1";
+}
+
+/**
+ * Copies a skill directory into Codex's skills dir, but instead of deep-copying
+ * its top-level `node_modules` (which can be hundreds of MB of deps, e.g. ML
+ * runtimes) it symlinks `node_modules` to the source. Node resolves
+ * dependencies through the symlink, so the mirrored skill stays runnable, while
+ * we avoid duplicating the heavy tree on every mirror (no transient disk peak,
+ * no per-startup I/O churn). The caller is responsible for removing `dest`
+ * first when overwriting.
+ */
+export async function copySkillDirLinkingNodeModules(
+  src: string,
+  dest: string,
+  options: { dereference?: boolean } = {},
+): Promise<void> {
+  const srcNodeModules = path.join(src, "node_modules");
+  await fs.promises.cp(src, dest, {
+    recursive: true,
+    dereference: options.dereference ?? false,
+    // Skip only the skill's top-level node_modules; everything else copies.
+    filter: (source) => source !== srcNodeModules,
+  });
+  if (fs.existsSync(srcNodeModules)) {
+    const destNodeModules = path.join(dest, "node_modules");
+    await fs.promises.rm(destNodeModules, { recursive: true, force: true });
+    // "junction" so this also works on Windows without elevated permissions;
+    // the type arg is ignored on POSIX. Target is absolute, as junctions require.
+    await fs.promises.symlink(srcNodeModules, destNodeModules, "junction");
+  }
+}
+
 export async function readCodexMirrorState(
   codexDir: string,
 ): Promise<CodexMirrorState> {
@@ -74,6 +114,9 @@ export async function mirrorUserSkillsToCodex(
   userSkillsDir: string,
   codexDir: string,
 ): Promise<void> {
+  if (isCodexMirrorDisabled()) {
+    return;
+  }
   const state = await readCodexMirrorState(codexDir);
   const previouslyMirrored = new Set(state.mirrored);
   const userNames = await findSkillDirs(userSkillsDir);
@@ -87,11 +130,13 @@ export async function mirrorUserSkillsToCodex(
       }
       await fs.promises.rm(target, { recursive: true, force: true });
       try {
-        // dereference: mirrored skills must be self-contained.
-        await fs.promises.cp(path.join(userSkillsDir, name), target, {
-          recursive: true,
-          dereference: true,
-        });
+        // dereference: mirrored skills must be self-contained — except
+        // node_modules, which is symlinked rather than duplicated.
+        await copySkillDirLinkingNodeModules(
+          path.join(userSkillsDir, name),
+          target,
+          { dereference: true },
+        );
         return name;
       } catch {
         // Skip unreadable skills (e.g. broken symlinks); drop the partial copy.

@@ -1,5 +1,13 @@
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync, lstatSync } from "node:fs";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -79,6 +87,71 @@ describe("mirrorUserSkillsToCodex", () => {
 
     expect(existsSync(path.join(codexDir, "alpha"))).toBe(false);
     expect((await readCodexMirrorState(codexDir)).mirrored).toEqual([]);
+  });
+
+  it("symlinks node_modules instead of duplicating it, deps still resolve", async () => {
+    await createSkill(userDir, "alpha");
+    await mkdir(path.join(userDir, "alpha", "node_modules", "dep"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(userDir, "alpha", "node_modules", "dep", "index.js"),
+      "module.exports = 42;",
+    );
+
+    await mirrorUserSkillsToCodex(userDir, codexDir);
+
+    const mirroredNodeModules = path.join(codexDir, "alpha", "node_modules");
+    // It's a symlink, not a real copied directory.
+    expect(lstatSync(mirroredNodeModules).isSymbolicLink()).toBe(true);
+    // It points at the source skill's node_modules.
+    expect(await realpath(mirroredNodeModules)).toBe(
+      await realpath(path.join(userDir, "alpha", "node_modules")),
+    );
+    // A dependency file resolves through the symlink.
+    expect(
+      await readFile(
+        path.join(mirroredNodeModules, "dep", "index.js"),
+        "utf-8",
+      ),
+    ).toBe("module.exports = 42;");
+    // Non-node_modules content is still really copied (not a symlink).
+    expect(lstatSync(path.join(codexDir, "alpha", "SKILL.md")).isFile()).toBe(
+      true,
+    );
+  });
+
+  it("mirrors a skill without node_modules unchanged", async () => {
+    await createSkill(userDir, "alpha");
+
+    await mirrorUserSkillsToCodex(userDir, codexDir);
+
+    expect(existsSync(path.join(codexDir, "alpha", "node_modules"))).toBe(
+      false,
+    );
+    expect(
+      await readFile(path.join(codexDir, "alpha", "SKILL.md"), "utf-8"),
+    ).toBe("# alpha");
+    expect((await lstat(path.join(codexDir, "alpha"))).isDirectory()).toBe(
+      true,
+    );
+  });
+
+  it("does nothing when POSTHOG_DISABLE_CODEX_MIRROR=1", async () => {
+    await createSkill(userDir, "alpha");
+    const prev = process.env.POSTHOG_DISABLE_CODEX_MIRROR;
+    process.env.POSTHOG_DISABLE_CODEX_MIRROR = "1";
+    try {
+      await mirrorUserSkillsToCodex(userDir, codexDir);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.POSTHOG_DISABLE_CODEX_MIRROR;
+      } else {
+        process.env.POSTHOG_DISABLE_CODEX_MIRROR = prev;
+      }
+    }
+
+    expect(existsSync(path.join(codexDir, "alpha"))).toBe(false);
   });
 
   it("takes ownership of an imported skill via addMirroredName", async () => {
