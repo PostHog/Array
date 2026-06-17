@@ -49,6 +49,39 @@ describe("createAgentChatMapper", () => {
     expect(mapper.apply(ev("user_message", { text: "" }))).toEqual([]);
   });
 
+  it("swallows the echo of an optimistically-seeded message", () => {
+    const mapper = createAgentChatMapper();
+    mapper.seedUserMessage("hello");
+    expect(mapper.apply(ev("user_message", { text: "hello" }))).toEqual([]);
+  });
+
+  it("swallows the echo even when the runner adds trailing whitespace", () => {
+    const mapper = createAgentChatMapper();
+    mapper.seedUserMessage("hello");
+    // Runners commonly normalize by adding a trailing newline — that mustn't
+    // break dedup or the user sees their bubble twice.
+    expect(mapper.apply(ev("user_message", { text: "hello\n" }))).toEqual([]);
+  });
+
+  it("swallows echoes out of order across rapid sends", () => {
+    const mapper = createAgentChatMapper();
+    mapper.seedUserMessage("first");
+    mapper.seedUserMessage("second");
+    // Echoes arrive in reverse — both must dedup, neither should render.
+    expect(mapper.apply(ev("user_message", { text: "second" }))).toEqual([]);
+    expect(mapper.apply(ev("user_message", { text: "first" }))).toEqual([]);
+  });
+
+  it("drops a duplicate user_message the runner re-emits", () => {
+    const mapper = createAgentChatMapper();
+    mapper.seedUserMessage("hello");
+    expect(mapper.apply(ev("user_message", { text: "hello" }))).toEqual([]);
+    // The runner re-emits the same user_message later in the stream — there's
+    // nothing left in `pendingOptimistic`, but we've already rendered this
+    // text, so it must still be dropped.
+    expect(mapper.apply(ev("user_message", { text: "hello" }))).toEqual([]);
+  });
+
   it("maps text and thinking deltas", () => {
     const mapper = createAgentChatMapper();
     expect(
