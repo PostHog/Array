@@ -56,5 +56,21 @@ describe("spawnCodexProcess developer instructions", () => {
     // The bare `instructions` and `model_instructions_file` keys replace Codex's
     // model-optimized base prompt, so guidance must never go through them.
     expect(args.some((arg) => arg.startsWith("instructions="))).toBe(false);
+    expect(args.some((arg) => arg.startsWith("model_instructions_file="))).toBe(
+      false,
+    );
+  });
+
+  it("escapes backslashes, newlines and quotes in developer_instructions", () => {
+    spawnMock.mockClear();
+    spawnMock.mockReturnValue(makeFakeChild());
+
+    spawnCodexProcess({
+      logger: new Logger({ debug: false }),
+      developerInstructions: 'a\\b\n"c',
+    });
+
+    const args: string[] = spawnMock.mock.calls[0][1];
+    expect(args).toContain('developer_instructions="a\\\\b\\n\\"c"');
   });
 });
