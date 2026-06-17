@@ -4,6 +4,7 @@ import {
   buildDoneLabel,
   type CollapseMode,
   type GroupCounts,
+  type GroupIconKey,
   grouping,
   iconForToolKind,
   MCP_ICON,
@@ -12,7 +13,7 @@ import {
 
 export interface GroupIconEntry {
   Icon: Icon;
-  key: string;
+  key: GroupIconKey;
 }
 
 export interface GroupSummary {
@@ -125,7 +126,7 @@ function summarize(items: ConversationItem[]): GroupSummary {
   const icons: GroupIconEntry[] = [];
   const seenIcons = new Set<string>();
 
-  const addIcon = (Icon: Icon, key: string) => {
+  const addIcon = (Icon: Icon, key: GroupIconKey) => {
     if (seenIcons.has(key) || icons.length >= grouping.maxIconsInChip) return;
     seenIcons.add(key);
     icons.push({ Icon, key });
