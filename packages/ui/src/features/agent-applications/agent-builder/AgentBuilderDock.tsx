@@ -204,7 +204,7 @@ export function AgentBuilderDock() {
       {!ingressBaseUrl ? (
         <div className="p-4">
           <AgentDetailEmptyState
-            title="AgentBuilder unavailable"
+            title="Agent Builder unavailable"
             description="The agent-concierge deployment has no reachable ingress in this environment."
           />
         </div>
