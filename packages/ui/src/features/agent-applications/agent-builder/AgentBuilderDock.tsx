@@ -44,6 +44,7 @@ const BUILDER_PLACEHOLDERS = [
 function buildAgentBuilderContext(
   page: AgentBuilderPageContext,
   followEnabled: boolean,
+  project: { id: number | null; name: string | null; orgId: string | null },
 ): Record<string, unknown> {
   const agent = "slug" in page ? page.slug : undefined;
   const sessionId = page.kind === "agent-session" ? page.sessionId : undefined;
@@ -52,6 +53,12 @@ function buildAgentBuilderContext(
     agent,
     session_id: sessionId,
     follow_enabled: followEnabled,
+    // The project the user is currently in — the agent threads this into the
+    // `project_id` arg of every `@posthog/*` tool (it's tenant-neutral and acts
+    // on whatever project we report here).
+    project_id: project.id ?? undefined,
+    project_name: project.name ?? undefined,
+    org_id: project.orgId ?? undefined,
     client: { kind: "posthog-code", version: "1" },
   };
 }
@@ -71,6 +78,15 @@ export function AgentBuilderDock() {
   );
 
   const client = useAuthenticatedClient();
+  const currentProjectId = useAuthStateValue((s) => s.currentProjectId);
+  const currentOrgId = useAuthStateValue((s) => s.currentOrgId);
+  const orgProjectsMap = useAuthStateValue((s) => s.orgProjectsMap);
+  const projectName =
+    currentOrgId != null && currentProjectId != null
+      ? (orgProjectsMap[currentOrgId]?.projects.find(
+          (p) => p.id === currentProjectId,
+        )?.name ?? null)
+      : null;
   const page = useAgentBuilderStore((s) => s.page);
   const followMode = useAgentBuilderStore((s) => s.followMode);
   const setFollowMode = useAgentBuilderStore((s) => s.setFollowMode);
@@ -92,7 +108,12 @@ export function AgentBuilderDock() {
     chatId: CHAT_ID,
     agentSlug: AGENT_BUILDER_SLUG,
     ingressBaseUrl,
-    contextProvider: () => buildAgentBuilderContext(page, followMode),
+    contextProvider: () =>
+      buildAgentBuilderContext(page, followMode, {
+        id: currentProjectId,
+        name: projectName,
+        orgId: currentOrgId,
+      }),
     clientTools,
   });
 
