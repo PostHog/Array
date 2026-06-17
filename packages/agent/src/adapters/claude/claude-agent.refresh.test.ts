@@ -457,7 +457,7 @@ describe("ClaudeAcpAgent self-heal: ensureLocalToolsConnected", () => {
 
   it("rebuilds and reconnects a fresh server when disconnected", async () => {
     const agent = makeAgent();
-    const { oldQuery, buildInProcessMcpServers } = installFakeSession(
+    const { session, oldQuery, buildInProcessMcpServers } = installFakeSession(
       agent,
       "s-down",
     );
@@ -478,6 +478,47 @@ describe("ClaudeAcpAgent self-heal: ensureLocalToolsConnected", () => {
     expect(arg["posthog-code-tools"]).toMatchObject({ type: "sdk" });
     expect(arg["posthog-code-tools"].instance).toEqual({ fresh: 1 });
     expect(clearMcpToolMetadataCacheMock).toHaveBeenCalledTimes(1);
+    // queryOptions is updated so later heals/refresh see the fresh server set.
+    expect(
+      (session as unknown as { queryOptions: { mcpServers: unknown } })
+        .queryOptions.mcpServers,
+    ).toBe(arg);
+  });
+
+  it("passes every external server through when reconnecting", async () => {
+    const agent = makeAgent();
+    const { session, oldQuery } = installFakeSession(agent, "s-multi");
+    (
+      session as unknown as {
+        queryOptions: { mcpServers: Record<string, unknown> };
+      }
+    ).queryOptions.mcpServers = {
+      posthog: { type: "http", url: "https://old" },
+      sentry: { type: "sse", url: "https://sse" },
+      "posthog-code-tools": {
+        type: "sdk",
+        name: "posthog-code-tools",
+        instance: { stale: true },
+      },
+    };
+    oldQuery.mcpServerStatus.mockResolvedValue([
+      { name: "posthog-code-tools", status: "failed" },
+    ]);
+
+    await expect(callHeal(agent)).resolves.toBe(true);
+
+    const arg = oldQuery.setMcpServers.mock.calls[0][0] as Record<
+      string,
+      { type?: string }
+    >;
+    expect(Object.keys(arg).sort()).toEqual([
+      "posthog",
+      "posthog-code-tools",
+      "sentry",
+    ]);
+    expect(arg.posthog).toMatchObject({ type: "http" });
+    expect(arg.sentry).toMatchObject({ type: "sse" });
+    expect(arg["posthog-code-tools"]).toMatchObject({ type: "sdk" });
   });
 
   it("treats a server missing from status as disconnected", async () => {
@@ -498,6 +539,23 @@ describe("ClaudeAcpAgent self-heal: ensureLocalToolsConnected", () => {
 
     await expect(callHeal(agent)).resolves.toBe(true);
     expect(oldQuery.setMcpServers).not.toHaveBeenCalled();
+  });
+
+  it("does not block the turn when the status RPC hangs", async () => {
+    vi.useFakeTimers();
+    try {
+      const agent = makeAgent();
+      const { oldQuery } = installFakeSession(agent, "s-statushang");
+      oldQuery.mcpServerStatus.mockReturnValue(new Promise(() => {}));
+
+      const healPromise = callHeal(agent);
+      await vi.advanceTimersByTimeAsync(5_001);
+
+      await expect(healPromise).resolves.toBe(true);
+      expect(oldQuery.setMcpServers).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("returns false when reconnect fails", async () => {

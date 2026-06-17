@@ -141,10 +141,28 @@ import type {
 
 const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
 
+// Pre-prompt self-heal runs on every cloud turn; bound the status RPC so a
+// wedged control channel can't stall the turn.
+const MCP_STATUS_TIMEOUT_MS = 5_000;
+
 const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
 
 const MAX_TITLE_LENGTH = 256;
 const LOCAL_ONLY_COMMANDS = new Set(["/context", "/heapdump", "/extra-usage"]);
+
+// In-process servers carry `type: "sdk"`; the cast covers union members (stdio)
+// that don't declare `type`.
+function isSdkMcpServer(cfg: McpServerConfig): boolean {
+  return (cfg as { type?: string }).type === "sdk";
+}
+
+function externalMcpServers(
+  servers: Record<string, McpServerConfig> | undefined,
+): Record<string, McpServerConfig> {
+  return Object.fromEntries(
+    Object.entries(servers ?? {}).filter(([, cfg]) => !isSdkMcpServer(cfg)),
+  );
+}
 
 // Best-effort: silent on ENOENT, logs other errors so permission failures
 // aren't masked.
@@ -1303,10 +1321,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       );
     }
 
-    // Re-fetch metadata for the new server list; clear first so dropped servers
-    // don't linger in the cache.
-    clearMcpToolMetadataCache();
-    this.deferBackgroundFetches(newQuery);
+    this.refreshMcpMetadata(newQuery);
   }
 
   /**
@@ -1323,9 +1338,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     let statuses: McpServerStatus[];
     try {
-      statuses = await this.session.query.mcpServerStatus();
+      const status = await withTimeout(
+        this.session.query.mcpServerStatus(),
+        MCP_STATUS_TIMEOUT_MS,
+      );
+      // A slow or failed status RPC must not block the turn; assume healthy.
+      if (status.result === "timeout") {
+        this.logger.debug("ensureLocalToolsConnected: status check timed out", {
+          trigger,
+        });
+        return true;
+      }
+      statuses = status.value;
     } catch (error) {
-      // A failed status RPC must not block the turn; assume healthy.
       this.logger.debug("ensureLocalToolsConnected: status check failed", {
         trigger,
         error: error instanceof Error ? error.message : String(error),
@@ -1347,16 +1372,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     });
 
     try {
-      const external = Object.fromEntries(
-        Object.entries(this.session.queryOptions.mcpServers ?? {}).filter(
-          ([, cfg]) => (cfg as { type?: string }).type !== "sdk",
-        ),
-      );
-      const next = { ...external, ...desired };
+      const next = {
+        ...externalMcpServers(this.session.queryOptions.mcpServers),
+        ...desired,
+      };
       await this.session.query.setMcpServers(next);
       this.session.queryOptions.mcpServers = next;
-      clearMcpToolMetadataCache();
-      this.deferBackgroundFetches(this.session.query);
+      this.refreshMcpMetadata(this.session.query);
       this.logger.info("signed_commit_mcp_recovered", {
         trigger,
         sessionId: this.sessionId,
@@ -1371,6 +1393,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       });
       return false;
     }
+  }
+
+  /** Clear stale MCP tool metadata, then re-fetch it for the new server set. */
+  private refreshMcpMetadata(q: Query): void {
+    clearMcpToolMetadataCache();
+    this.deferBackgroundFetches(q);
   }
 
   async setSessionMode(

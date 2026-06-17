@@ -405,6 +405,26 @@ describe("createSignedCommitGuardHook", () => {
       },
     });
   });
+
+  test("treats a thrown heal callback as unavailable", async () => {
+    const onHeal = vi.fn().mockRejectedValue(new Error("reconnect boom"));
+    const healingGuard = createSignedCommitGuardHook(logger, onHeal);
+
+    const result = await healingGuard(
+      bashInput("git commit -m x"),
+      undefined,
+      opts,
+    );
+
+    expect(result).toMatchObject({
+      hookSpecificOutput: {
+        permissionDecision: "deny",
+        permissionDecisionReason: expect.stringContaining(
+          "safe in the working tree",
+        ),
+      },
+    });
+  });
 });
 
 describe("createTaskHook", () => {
