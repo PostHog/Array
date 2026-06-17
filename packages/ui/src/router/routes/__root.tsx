@@ -1,4 +1,5 @@
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
+import { Button } from "@posthog/quill";
 import {
   BILLING_FLAG,
   HOME_TAB_FLAG,
@@ -6,7 +7,6 @@ import {
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
-import { AppNav } from "@posthog/ui/features/canvas/components/AppNav";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
@@ -40,6 +40,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   createRootRoute,
   Outlet,
+  useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -88,6 +89,7 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   const view = useAppView();
+  const navigate = useNavigate();
   const {
     isOpen: commandMenuOpen,
     setOpen: setCommandMenuOpen,
@@ -208,10 +210,19 @@ function RootLayout() {
       <Flex direction="column" height="100vh" className="bg-gray-2">
         {/* Full-width title bar: a window-drag region carrying the PostHog
             mark. The left padding clears the macOS stoplights. */}
-        <Flex align="center" className="drag h-10 shrink-0 pl-[78px]">
+        <Flex align="center" gap="3" className="drag h-10 shrink-0 pl-[78px]">
           <Box className="h-[14px] w-[26px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
             <LogosLandscape code={false} />
           </Box>
+          <div className="no-drag">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate({ to: "/code" })}
+            >
+              Go back to Code
+            </Button>
+          </div>
         </Flex>
         <Flex flexGrow="1" overflow="hidden">
           <ChannelsSidebar />
@@ -269,7 +280,6 @@ function RootLayout() {
 
   return (
     <Flex height="100vh">
-      {bluebirdEnabled && <AppNav />}
       <Flex direction="column" flexGrow="1" overflow="hidden">
         <HeaderRow />
         <Flex flexGrow="1" overflow="hidden">
