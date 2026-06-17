@@ -18,6 +18,13 @@ interface PendingCall {
   reject: (reason: unknown) => void;
 }
 
+/** The subset of the client the agent depends on, so it can be faked in tests. */
+export interface AppServerRpc {
+  request<T = unknown>(method: string, params?: unknown): Promise<T>;
+  notify(method: string, params?: unknown): void;
+  close(): Promise<void>;
+}
+
 /**
  * Bidirectional newline-delimited JSON-RPC client for the native Codex
  * `app-server` subprocess. Unlike the codex-acp adapter this speaks Codex's
@@ -26,7 +33,7 @@ interface PendingCall {
  * Transport-agnostic: it is given a {@link StreamPair} so tests can drive it
  * over in-memory streams without spawning a process.
  */
-export class AppServerClient {
+export class AppServerClient implements AppServerRpc {
   private readonly writer: WritableStreamDefaultWriter<Uint8Array>;
   private readonly encoder = new TextEncoder();
   private readonly pending = new Map<number, PendingCall>();
