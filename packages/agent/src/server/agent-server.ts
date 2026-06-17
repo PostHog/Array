@@ -938,6 +938,7 @@ export class AgentServer {
       isInternal: preTask?.internal === true,
       originProduct: preTask?.origin_product,
       signalReportId: preTask?.signal_report,
+      aiStage: getTaskRunStateString(preTaskRun, "ai_stage"),
       taskId: payload.task_id,
       taskRunId: payload.run_id,
       taskUserId: payload.user_id,
@@ -2006,6 +2007,7 @@ ${signedCommitInstructions}
     isInternal = false,
     originProduct,
     signalReportId,
+    aiStage,
     taskId,
     taskRunId,
     taskUserId,
@@ -2014,6 +2016,7 @@ ${signedCommitInstructions}
     isInternal?: boolean;
     originProduct?: Task["origin_product"] | null;
     signalReportId?: string | null;
+    aiStage?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
@@ -2039,6 +2042,7 @@ ${signedCommitInstructions}
       task_origin_product: originProduct,
       task_internal: isInternal,
       signal_report_id: signalReportId,
+      ai_stage: aiStage,
       task_id: taskId,
       task_run_id: taskRunId,
       task_user_id: taskUserId,
