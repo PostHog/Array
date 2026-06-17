@@ -19,7 +19,7 @@ import type { ExecutionMode, Task } from "@posthog/shared/domain-types";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToTaskPending } from "@posthog/ui/router/navigationBridge";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
 import { toast } from "../../../primitives/toast";
@@ -154,6 +154,7 @@ export function useTaskCreation({
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const hostClient = useHostTRPCClient();
   const trpc = useHostTRPC();
+  const queryClient = useQueryClient();
   const defaultAdditionalDirectoriesQuery = useQuery(
     trpc.additionalDirectories.listDefaults.queryOptions(),
   );
@@ -306,6 +307,15 @@ export function useTaskCreation({
         if (result.success) {
           setAdditionalDirectoriesOverride(null);
           void trackTaskCreated(input, selectedDirectory, hostClient);
+          // Repo-less channel tasks create no workspace row (the agent runs in
+          // a scratch dir surfaced as a synthetic workspace), so the normal
+          // workspace.create invalidation never fires. Refresh the workspace
+          // cache so the task view resolves its cwd and skips the repo prompt.
+          if (allowNoRepo) {
+            void queryClient.invalidateQueries({
+              queryKey: trpc.workspace.getAll.queryKey(),
+            });
+          }
         }
 
         if (!result.success) {
@@ -366,6 +376,8 @@ export function useTaskCreation({
       invalidateTasks,
       onTaskCreated,
       hostClient,
+      trpc,
+      queryClient,
       taskService,
     ],
   );
