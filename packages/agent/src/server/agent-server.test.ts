@@ -1189,6 +1189,20 @@ describe("AgentServer HTTP Mode", () => {
         effort: "medium",
       });
     });
+
+    it("returns only plugins when effort is not set", () => {
+      const s = createServer({
+        claudeCode: { plugins: [{ type: "local", path: "/tmp/plugin" }] },
+      });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({
+        plugins: [{ type: "local", path: "/tmp/plugin" }],
+      });
+    });
   });
 
   describe("detectedPrUrl tracking", () => {
