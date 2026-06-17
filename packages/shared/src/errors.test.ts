@@ -144,4 +144,30 @@ describe("serializeError", () => {
     expect(serializeError(42)).toEqual({ message: "42" });
     expect(serializeError(null)).toEqual({ message: "null" });
   });
+
+  it("captures a numeric code", () => {
+    expect(serializeError({ message: "x", code: 42 })).toEqual({
+      message: "x",
+      code: 42,
+    });
+  });
+
+  it("does not follow the cause chain at maxDepth 0", () => {
+    const err = new Error("top", { cause: new Error("inner") });
+    expect(serializeError(err, 0)).toEqual({ name: "Error", message: "top" });
+  });
+
+  it("omits name for a plain object without one", () => {
+    expect(serializeError({ message: "foo", code: "ENOENT" })).toEqual({
+      message: "foo",
+      code: "ENOENT",
+    });
+  });
+
+  it("returns only name and message for a bare Error", () => {
+    expect(serializeError(new Error("x"))).toEqual({
+      name: "Error",
+      message: "x",
+    });
+  });
 });

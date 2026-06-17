@@ -734,7 +734,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
       this.log.info("Cloud task stream closed cleanly", {
         key,
-        connectionDurationMs: connectedAt ? Date.now() - connectedAt : 0,
+        connectionDurationMs: Date.now() - connectedAt,
         bytesReceived,
         eventsReceived,
         dataEventsReceived: watcher.connDataEventsReceived,

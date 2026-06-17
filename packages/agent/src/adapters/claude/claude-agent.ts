@@ -1817,7 +1817,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             sessionId,
             taskId,
             taskRunId: meta?.taskRunId,
-            error: err instanceof Error ? err.message : String(err),
+            errorDetail: serializeError(err),
           },
         );
         throw err;

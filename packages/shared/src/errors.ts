@@ -46,11 +46,7 @@ export function serializeError(error: unknown, maxDepth = 5): SerializedError {
     };
     const result: SerializedError = {
       message:
-        typeof source.message === "string"
-          ? source.message
-          : error instanceof Error
-            ? error.message
-            : String(error),
+        typeof source.message === "string" ? source.message : String(error),
     };
     if (typeof source.name === "string") {
       result.name = source.name;
