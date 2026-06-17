@@ -37,7 +37,9 @@ function fail(message) {
 
 /** Project API key from arg/env, else read it from a local PostHog checkout. */
 function resolveProjectKey() {
-  const explicit = (process.argv[2] || process.env.LOCAL_POSTHOG_PROJECT_KEY)?.trim();
+  const explicit = (
+    process.argv[2] || process.env.LOCAL_POSTHOG_PROJECT_KEY
+  )?.trim();
   if (explicit) return explicit;
 
   const posthogDir =
@@ -86,7 +88,8 @@ function upsertEnv(content, key, value) {
   const line = `${key}=${value}`;
   const re = new RegExp(`^${key}=.*$`, "m");
   if (re.test(content)) return content.replace(re, line);
-  const prefix = content === "" || content.endsWith("\n") ? content : `${content}\n`;
+  const prefix =
+    content === "" || content.endsWith("\n") ? content : `${content}\n`;
   return `${prefix}${line}\n`;
 }
 

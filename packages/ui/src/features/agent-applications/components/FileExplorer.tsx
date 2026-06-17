@@ -6,7 +6,7 @@ import {
   FolderOpenIcon,
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 export interface FileTreeNode {
@@ -213,9 +213,14 @@ function FolderRow({
     () => subtreeContains(node, selected),
     [node, selected],
   );
-  useEffect(() => {
+  // Auto-expand when the selection moves into a descendant. Reconciled during
+  // render (not in an effect) so the folder opens before paint.
+  const [prevHasSelectedChild, setPrevHasSelectedChild] =
+    useState(hasSelectedChild);
+  if (hasSelectedChild !== prevHasSelectedChild) {
+    setPrevHasSelectedChild(hasSelectedChild);
     if (hasSelectedChild) setOpen(true);
-  }, [hasSelectedChild]);
+  }
 
   return (
     <li>
