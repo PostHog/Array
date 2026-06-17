@@ -20,6 +20,7 @@ export interface PrepareTaskInputOptions {
   additionalDirectories?: string[];
   channelContext?: string;
   channelName?: string;
+  allowNoRepo?: boolean;
 }
 
 export function prepareTaskInput(
@@ -34,7 +35,7 @@ export function prepareTaskInput(
       ? buildCloudTaskDescription(serializedContent, filePaths)
       : undefined,
     filePaths,
-    repoPath: isCloud ? undefined : options.selectedDirectory,
+    repoPath: isCloud ? undefined : options.selectedDirectory || undefined,
     repository: isCloud ? options.selectedRepository : undefined,
     githubIntegrationId: options.githubIntegrationId,
     githubUserIntegrationId: options.githubUserIntegrationId,
@@ -55,6 +56,7 @@ export function prepareTaskInput(
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,
     channelName: options.channelName,
+    allowNoRepo: options.allowNoRepo,
   };
 }
 

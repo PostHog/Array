@@ -63,6 +63,12 @@ interface UseTaskCreationOptions {
   signalReportId?: string;
   channelContext?: string;
   channelName?: string;
+  /**
+   * Channels "generic chat box" mode: drop the repo/branch requirement so a
+   * task can be submitted without picking a repo. The agent decides at runtime
+   * whether it needs one and attaches it lazily.
+   */
+  allowNoRepo?: boolean;
   onTaskCreated?: (task: Task) => void;
 }
 
@@ -142,6 +148,7 @@ export function useTaskCreation({
   signalReportId,
   channelContext,
   channelName,
+  allowNoRepo,
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
@@ -166,8 +173,11 @@ export function useTaskCreation({
   const { invalidateTasks } = useCreateTask();
   const { isOnline } = useConnectivity();
 
-  const hasRequiredPath =
-    workspaceMode === "cloud" ? !!selectedRepository : !!selectedDirectory;
+  const hasRequiredPath = allowNoRepo
+    ? true
+    : workspaceMode === "cloud"
+      ? !!selectedRepository
+      : !!selectedDirectory;
   const canSubmitBase =
     isAuthenticated && isOnline && hasRequiredPath && !isCreatingTask;
   const canSubmit = !!editorRef.current && canSubmitBase && !editorIsEmpty;
@@ -243,8 +253,10 @@ export function useTaskCreation({
         const serializedContent = contentToXml(content).trim();
         const filePaths = extractFilePaths(content);
         const input = prepareTaskInput(serializedContent, filePaths, {
-          selectedDirectory,
-          selectedRepository,
+          // In channels chat-box mode no repo is attached up front, even if a
+          // directory/repo is lingering in the persisted picker state.
+          selectedDirectory: allowNoRepo ? "" : selectedDirectory,
+          selectedRepository: allowNoRepo ? null : selectedRepository,
           githubIntegrationId,
           githubUserIntegrationId,
           workspaceMode,
@@ -260,6 +272,7 @@ export function useTaskCreation({
           additionalDirectories,
           channelContext,
           channelName,
+          allowNoRepo,
         });
 
         if (executionMode) {
@@ -348,6 +361,7 @@ export function useTaskCreation({
       additionalDirectories,
       channelContext,
       channelName,
+      allowNoRepo,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,

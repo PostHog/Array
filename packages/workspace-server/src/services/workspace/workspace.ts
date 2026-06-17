@@ -71,6 +71,7 @@ import type {
   WorkspaceWarningPayload,
   WorktreeInfo,
 } from "./schemas";
+import { scratchBasePath } from "./scratch";
 
 type TaskAssociation =
   | { taskId: string; folderId: string; mode: "local" }
@@ -826,11 +827,41 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     }
   }
 
+  /**
+   * Base directory holding per-task scratch dirs for repo-less channel tasks.
+   * A sibling of the worktree location so it lives under the same managed
+   * storage root but never shows up in worktree enumeration.
+   */
+  private getScratchPath(taskId: string): string {
+    return path.join(
+      scratchBasePath(this.workspaceSettings.getWorktreeLocation()),
+      taskId,
+    );
+  }
+
+  /**
+   * Ensure a per-task scratch working directory exists for a repo-less channel
+   * task ("generic chat box"). The agent starts here and clones a repo into a
+   * subdirectory only if it decides it needs one.
+   */
+  async ensureScratchDir(taskId: string): Promise<string> {
+    const scratchPath = this.getScratchPath(taskId);
+    await fs.promises.mkdir(scratchPath, { recursive: true });
+    return scratchPath;
+  }
+
   async verifyWorkspaceExists(
     taskId: string,
   ): Promise<{ exists: boolean; missingPath?: string }> {
     const association = this.findTaskAssociation(taskId);
     if (!association) {
+      // Repo-less channel tasks create no workspace association — they run in a
+      // scratch dir. Treat an existing scratch dir as a valid workspace so the
+      // session isn't flagged as "working directory no longer exists".
+      const scratchPath = this.getScratchPath(taskId);
+      if (fs.existsSync(scratchPath)) {
+        return { exists: true };
+      }
       return { exists: false };
     }
 

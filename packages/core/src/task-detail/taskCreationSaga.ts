@@ -318,9 +318,18 @@ export class TaskCreationSaga extends Saga<
       }
     }
 
-    const agentCwd =
-      workspace?.worktreePath ?? workspace?.folderPath ?? repoPath;
     const isCloudCreate = !input.taskId && workspaceMode === "cloud";
+    let agentCwd = workspace?.worktreePath ?? workspace?.folderPath ?? repoPath;
+
+    // Channels "generic chat box": a repo-less local/worktree task still starts
+    // an agent, in a per-task scratch dir. The agent decides at runtime whether
+    // it needs a repo and clones one into the scratch dir only if so.
+    if (!isCloudCreate && !agentCwd && input.allowNoRepo) {
+      agentCwd = await this.readOnlyStep("scratch_dir", () =>
+        this.deps.host.ensureScratchDir(task.id),
+      );
+    }
+
     const shouldConnect = !isCloudCreate && (!!input.taskId || !!agentCwd);
 
     if (shouldConnect) {

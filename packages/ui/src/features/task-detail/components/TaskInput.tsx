@@ -71,6 +71,12 @@ interface TaskInputProps {
   channelContext?: string;
   /** Display name of the channel the CONTEXT.md came from (for the chip). */
   channelName?: string;
+  /**
+   * Channels "generic chat box" mode: hide the repo/branch pickers and let the
+   * task be submitted without a repo. The agent decides at runtime whether it
+   * needs a repo and attaches one lazily.
+   */
+  allowNoRepo?: boolean;
 }
 
 export function TaskInput({
@@ -84,6 +90,7 @@ export function TaskInput({
   reportAssociation,
   channelContext,
   channelName,
+  allowNoRepo,
 }: TaskInputProps = {}) {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const trpc = useHostTRPC();
@@ -544,6 +551,7 @@ export function TaskInput({
     signalReportId: activeReportAssociation?.reportId,
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
+    allowNoRepo,
   });
 
   const handleModeChange = useCallback(
@@ -683,7 +691,7 @@ export function TaskInput({
               onCloudEnvironmentChange={setSelectedCloudEnvId}
               size="1"
             />
-            {workspaceMode === "worktree" && (
+            {!allowNoRepo && workspaceMode === "worktree" && (
               <EnvironmentSelector
                 repoPath={effectiveRepoPath ?? null}
                 value={selectedEnvironment}
@@ -696,88 +704,94 @@ export function TaskInput({
                 }
               />
             )}
-            <ButtonGroup
-              ref={buttonGroupRef}
-              data-tour="folder-picker"
-              data-tour-ready={
-                (
-                  workspaceMode === "cloud"
-                    ? selectedRepository
-                    : selectedDirectory
-                )
-                  ? "true"
-                  : undefined
-              }
-            >
-              {workspaceMode === "cloud" ? (
-                <GitHubRepoPicker
-                  value={selectedRepository}
-                  onChange={handleRepositorySelect}
-                  repositories={
-                    isCloudRepoPickerOpen
-                      ? visibleCloudRepositories
-                      : repositories
+            {!allowNoRepo && (
+              <ButtonGroup
+                ref={buttonGroupRef}
+                data-tour="folder-picker"
+                data-tour-ready={
+                  (
+                    workspaceMode === "cloud"
+                      ? selectedRepository
+                      : selectedDirectory
+                  )
+                    ? "true"
+                    : undefined
+                }
+              >
+                {workspaceMode === "cloud" ? (
+                  <GitHubRepoPicker
+                    value={selectedRepository}
+                    onChange={handleRepositorySelect}
+                    repositories={
+                      isCloudRepoPickerOpen
+                        ? visibleCloudRepositories
+                        : repositories
+                    }
+                    isLoading={
+                      isLoadingRepos ||
+                      (isCloudRepoPickerOpen && cloudRepositoriesLoading)
+                    }
+                    isRefreshing={isRefreshingRepos}
+                    onRefresh={handleRefreshRepositories}
+                    open={isCloudRepoPickerOpen}
+                    onOpenChange={handleCloudRepoPickerOpenChange}
+                    searchQuery={cloudRepoSearchQuery}
+                    onSearchQueryChange={handleCloudRepoSearchChange}
+                    hasMore={cloudRepositoriesHasMore}
+                    onLoadMore={handleLoadMoreCloudRepositories}
+                    placeholder="Select repository..."
+                    size="1"
+                    disabled={isCreatingTask}
+                  />
+                ) : (
+                  <FolderPicker
+                    value={selectedDirectory}
+                    onChange={setSelectedDirectory}
+                    placeholder="Select repository..."
+                    anchor={buttonGroupRef}
+                  />
+                )}
+                <BranchSelector
+                  repoPath={
+                    workspaceMode === "cloud"
+                      ? selectedCloudRepository
+                      : selectedDirectory
                   }
-                  isLoading={
-                    isLoadingRepos ||
-                    (isCloudRepoPickerOpen && cloudRepositoriesLoading)
+                  currentBranch={currentBranch}
+                  defaultBranch={
+                    workspaceMode === "cloud"
+                      ? cloudDefaultBranch
+                      : defaultBranch
                   }
-                  isRefreshing={isRefreshingRepos}
-                  onRefresh={handleRefreshRepositories}
-                  open={isCloudRepoPickerOpen}
-                  onOpenChange={handleCloudRepoPickerOpenChange}
-                  searchQuery={cloudRepoSearchQuery}
-                  onSearchQueryChange={handleCloudRepoSearchChange}
-                  hasMore={cloudRepositoriesHasMore}
-                  onLoadMore={handleLoadMoreCloudRepositories}
-                  placeholder="Select repository..."
-                  size="1"
-                  disabled={isCreatingTask}
-                />
-              ) : (
-                <FolderPicker
-                  value={selectedDirectory}
-                  onChange={setSelectedDirectory}
-                  placeholder="Select repository..."
+                  disabled={
+                    isCreatingTask ||
+                    (workspaceMode === "cloud" && !selectedCloudRepository)
+                  }
+                  loading={workspaceMode === "cloud" ? false : branchLoading}
+                  workspaceMode={workspaceMode}
+                  selectedBranch={selectedBranch}
+                  onBranchSelect={setSelectedBranch}
+                  busyState={busyState}
+                  cloudBranches={cloudBranches}
+                  cloudBranchesLoading={cloudBranchesLoading}
+                  isRefreshing={cloudBranchesRefreshing}
+                  cloudBranchesFetchingMore={cloudBranchesFetchingMore}
+                  cloudBranchesHasMore={cloudBranchesHasMore}
+                  cloudSearchQuery={cloudBranchSearchQuery}
+                  onCloudPickerClose={handleCloudBranchPickerClose}
+                  onCloudSearchChange={handleCloudBranchSearchChange}
+                  onCloudBranchCommit={handleCloudBranchPickerClose}
+                  onCloudLoadMore={handleLoadMoreCloudBranches}
+                  onRefresh={
+                    workspaceMode === "cloud"
+                      ? handleRefreshBranches
+                      : undefined
+                  }
                   anchor={buttonGroupRef}
                 />
-              )}
-              <BranchSelector
-                repoPath={
-                  workspaceMode === "cloud"
-                    ? selectedCloudRepository
-                    : selectedDirectory
-                }
-                currentBranch={currentBranch}
-                defaultBranch={
-                  workspaceMode === "cloud" ? cloudDefaultBranch : defaultBranch
-                }
-                disabled={
-                  isCreatingTask ||
-                  (workspaceMode === "cloud" && !selectedCloudRepository)
-                }
-                loading={workspaceMode === "cloud" ? false : branchLoading}
-                workspaceMode={workspaceMode}
-                selectedBranch={selectedBranch}
-                onBranchSelect={setSelectedBranch}
-                busyState={busyState}
-                cloudBranches={cloudBranches}
-                cloudBranchesLoading={cloudBranchesLoading}
-                isRefreshing={cloudBranchesRefreshing}
-                cloudBranchesFetchingMore={cloudBranchesFetchingMore}
-                cloudBranchesHasMore={cloudBranchesHasMore}
-                cloudSearchQuery={cloudBranchSearchQuery}
-                onCloudPickerClose={handleCloudBranchPickerClose}
-                onCloudSearchChange={handleCloudBranchSearchChange}
-                onCloudBranchCommit={handleCloudBranchPickerClose}
-                onCloudLoadMore={handleLoadMoreCloudBranches}
-                onRefresh={
-                  workspaceMode === "cloud" ? handleRefreshBranches : undefined
-                }
-                anchor={buttonGroupRef}
-              />
-            </ButtonGroup>
-            {workspaceMode !== "cloud" && (
+              </ButtonGroup>
+            )}
+            {!allowNoRepo && workspaceMode !== "cloud" && (
               <AdditionalDirectoriesButton
                 values={additionalDirectories}
                 onChange={setAdditionalDirectories}

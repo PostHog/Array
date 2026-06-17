@@ -46,6 +46,7 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
       onTaskCreated={onTaskCreated}
       channelContext={instructions?.content}
       channelName={channelName}
+      allowNoRepo
     />
   );
 }

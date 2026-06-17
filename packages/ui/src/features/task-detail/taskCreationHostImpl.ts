@@ -79,6 +79,13 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
     return null;
   }
 
+  async ensureScratchDir(taskId: string): Promise<string> {
+    const { path } = await hostClient().workspace.ensureScratchDir.mutate({
+      taskId,
+    });
+    return path;
+  }
+
   async getWorkspace(taskId: string): Promise<Workspace | null> {
     const workspaces = await hostClient().workspace.getAll.query();
     return workspaces?.[taskId] ?? null;
