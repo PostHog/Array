@@ -80,6 +80,12 @@ interface ConversationViewProps {
    * chip hides the response — they pass `"none"` to render everything inline.
    */
   collapseMode?: CollapseMode;
+  /**
+   * Allow horizontal scrolling of the transcript viewport. Defaults to true.
+   * Narrow surfaces (the Agent Builder dock) pass false to avoid a horizontal
+   * scrollbar from off-edge content; nested code blocks keep their own scroll.
+   */
+  scrollX?: boolean;
 }
 
 export function ConversationView({
@@ -92,6 +98,7 @@ export function ConversationView({
   slackThreadUrl,
   compact = false,
   collapseMode: collapseModeProp,
+  scrollX = true,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -398,6 +405,7 @@ export function ConversationView({
             itemClassName="mx-auto px-2 py-1.5"
             itemStyle={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
             footer={footer}
+            scrollX={scrollX}
           />
         </SessionTaskIdProvider>
         {showScrollButton && (

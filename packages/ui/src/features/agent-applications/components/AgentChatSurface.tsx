@@ -22,7 +22,9 @@ export function AgentChatSurface({
   isStreaming,
   error,
   emptyHint,
+  emptyState,
   aboveComposer,
+  scrollX = true,
   onSend,
   onCancel,
 }: {
@@ -30,8 +32,12 @@ export function AgentChatSurface({
   isStreaming: boolean;
   error: string | null;
   emptyHint: string;
+  /** Richer empty-state content (e.g. suggestions); falls back to `emptyHint`. */
+  emptyState?: ReactNode;
   /** Optional content rendered between the transcript and the composer. */
   aboveComposer?: ReactNode;
+  /** Allow horizontal scroll of the transcript (false in the narrow dock). */
+  scrollX?: boolean;
   onSend: (text: string) => void;
   onCancel: () => void;
 }) {
@@ -39,16 +45,19 @@ export function AgentChatSurface({
     <Flex direction="column" className="min-h-0 flex-1">
       <div className="flex min-h-0 flex-1 flex-col">
         {messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-6 text-center">
-            <Text className="max-w-sm text-[13px] text-gray-10 leading-snug">
-              {emptyHint}
-            </Text>
-          </div>
+          (emptyState ?? (
+            <div className="flex h-full items-center justify-center px-6 text-center">
+              <Text className="max-w-sm text-[13px] text-gray-10 leading-snug">
+                {emptyHint}
+              </Text>
+            </div>
+          ))
         ) : (
           <ConversationView
             events={messages}
             isPromptPending={isStreaming}
             collapseMode="none"
+            scrollX={scrollX}
           />
         )}
       </div>

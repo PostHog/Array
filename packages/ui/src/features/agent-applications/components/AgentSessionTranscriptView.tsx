@@ -3,6 +3,7 @@ import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { AgentBuilderHeaderControls } from "../agent-builder/AgentBuilderHeaderControls";
 import { useSetAgentBuilderPage } from "../agent-builder/useSetAgentBuilderPage";
 import { AgentSessionDetailBody } from "./AgentSessionDetailBody";
 
@@ -27,7 +28,12 @@ export function AgentSessionTranscriptView({
     [],
   );
   useSetHeaderContent(headerContent);
-  useSetAgentBuilderPage({ kind: "agent-session", slug: idOrSlug, sessionId });
+  const pageContext = {
+    kind: "agent-session" as const,
+    slug: idOrSlug,
+    sessionId,
+  };
+  useSetAgentBuilderPage(pageContext);
 
   return (
     <Flex direction="column" className="h-full min-h-0">
@@ -44,9 +50,12 @@ export function AgentSessionTranscriptView({
           <ArrowLeftIcon size={13} />
           Sessions
         </Link>
-        <Text className="font-bold text-[18px] text-gray-12 leading-tight tracking-tight">
-          Session transcript
-        </Text>
+        <Flex align="center" justify="between" gap="4">
+          <Text className="font-bold text-[18px] text-gray-12 leading-tight tracking-tight">
+            Session transcript
+          </Text>
+          <AgentBuilderHeaderControls context={pageContext} />
+        </Flex>
       </Flex>
       <div className="min-h-0 flex-1">
         <AgentSessionDetailBody idOrSlug={idOrSlug} sessionId={sessionId} />

@@ -5,6 +5,9 @@ import { persist } from "zustand/middleware";
 /** The deployed meta-agent the agent builder dock always talks to. */
 export const AGENT_BUILDER_SLUG = "agent-concierge";
 
+/** Key for the agent builder's chat in the core `agentChatStore`. */
+export const AGENT_BUILDER_CHAT_ID = "agent-builder";
+
 /**
  * What the user is currently looking at in `/code/agents`. Mirrors the console's
  * `AgentBuilderPageContext` so the agent builder can resolve deictic references ("this

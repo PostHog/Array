@@ -1,23 +1,27 @@
-import { SparkleIcon } from "@phosphor-icons/react";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { type ReactNode, useEffect } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { AGENT_PLATFORM_FLAG } from "../featureFlag";
 import { AgentBuilderDock } from "./AgentBuilderDock";
 import { useAgentBuilderStore } from "./agentBuilderStore";
 
 /**
  * Wraps the `/code/agents` content in a resizable split with the always-on
- * agent builder dock pinned right. Hidden by default; toggled via the edge
- * affordance, the dock's hide button, or Cmd/Ctrl+I. Panel sizes persist
- * (`autoSaveId`). When hidden, the content renders unchanged and a thin edge
- * affordance offers to open the dock.
+ * agent builder dock pinned right. Gated behind the `agent-platform` flag — when
+ * disabled, the content renders unchanged with no dock or affordance. Hidden by
+ * default; toggled via the edge affordance, the dock's hide button, or
+ * Cmd/Ctrl+I. Panel sizes persist (`autoSaveId`).
  */
 export function AgentBuilderDockLayout({ children }: { children: ReactNode }) {
+  const enabled = useFeatureFlag(AGENT_PLATFORM_FLAG);
   const visible = useAgentBuilderStore((s) => s.visible);
   const toggleVisible = useAgentBuilderStore((s) => s.toggleVisible);
 
   useEffect(() => {
+    if (!enabled) return;
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      // Cmd/Ctrl+Shift+I — Cmd+I alone is taken by the inbox.
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || !e.shiftKey) return;
       if (e.key.toLowerCase() !== "i") return;
       const t = e.target as HTMLElement | null;
       if (
@@ -32,21 +36,23 @@ export function AgentBuilderDockLayout({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleVisible]);
+  }, [enabled, toggleVisible]);
 
+  // Flag off → no agent builder anywhere in /code/agents.
+  if (!enabled) {
+    return <>{children}</>;
+  }
+
+  // Collapsed: render content unchanged. The open affordance lives in the
+  // agents page headers (AgentBuilderHeaderControls); Cmd/Ctrl+Shift+I toggles.
   if (!visible) {
-    return (
-      <>
-        {children}
-        <AgentBuilderShowAffordance />
-      </>
-    );
+    return <>{children}</>;
   }
 
   return (
     <PanelGroup
       direction="horizontal"
-      autoSaveId="agents-agent builder-dock"
+      autoSaveId="agents-agent-builder-dock"
       className="h-full min-h-0"
     >
       <Panel
@@ -68,20 +74,5 @@ export function AgentBuilderDockLayout({ children }: { children: ReactNode }) {
         <AgentBuilderDock />
       </Panel>
     </PanelGroup>
-  );
-}
-
-function AgentBuilderShowAffordance() {
-  const setVisible = useAgentBuilderStore((s) => s.setVisible);
-  return (
-    <button
-      type="button"
-      aria-label="Open agent builder"
-      title="Open agent builder (⌘I)"
-      onClick={() => setVisible(true)}
-      className="-translate-y-1/2 fixed top-1/2 right-0 z-30 flex h-12 w-7 items-center justify-center rounded-l-(--radius-3) border border-(--gray-5) border-r-0 bg-background text-(--accent-9) shadow-sm transition-colors hover:bg-(--gray-3)"
-    >
-      <SparkleIcon size={15} weight="fill" />
-    </button>
   );
 }

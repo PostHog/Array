@@ -1,4 +1,5 @@
 import {
+  ArrowRightIcon,
   NavigationArrowIcon,
   PlusIcon,
   SidebarSimpleIcon,
@@ -15,14 +16,17 @@ import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { resolveIngressBaseUrl } from "../utils/ingress";
 import { AgentBuilderSecretForm } from "./AgentBuilderSecretForm";
+import { AgentBuilderSeedDialog } from "./AgentBuilderSeedDialog";
 import {
+  AGENT_BUILDER_CHAT_ID,
   AGENT_BUILDER_SLUG,
   type AgentBuilderPageContext,
   useAgentBuilderStore,
 } from "./agentBuilderStore";
+import { suggestionsForPage } from "./agentBuilderSuggestions";
 import { useAgentBuilderClientTools } from "./useAgentBuilderClientTools";
 
-const CHAT_ID = "agent-builder";
+const CHAT_ID = AGENT_BUILDER_CHAT_ID;
 
 /** The "what am I looking at" object sent to the agent builder (envelope + get_context). */
 function buildAgentBuilderContext(
@@ -111,14 +115,34 @@ export function AgentBuilderDock() {
   }
 
   // Edit-with-AI hand-offs: send the seeded prompt once when a new seed lands.
+  // An empty dock starts immediately; if a chat is already in progress, confirm
+  // whether to start fresh or continue (so a deliberate "New agent" / "Edit with
+  // AI" doesn't silently wipe or append onto an unrelated conversation).
   const lastSeedRef = useRef(0);
+  const [seedConfirm, setSeedConfirm] = useState<string | null>(null);
   useEffect(() => {
-    if (seed && seed.seq !== lastSeedRef.current) {
-      lastSeedRef.current = seed.seq;
+    if (!seed || seed.seq === lastSeedRef.current) return;
+    lastSeedRef.current = seed.seq;
+    consumeSeed(seed.seq);
+    if (chat.messages.length === 0) {
       chat.send(seed.prompt);
-      consumeSeed(seed.seq);
+    } else {
+      setSeedConfirm(seed.prompt);
     }
   }, [seed, chat, consumeSeed]);
+
+  function seedStartFresh() {
+    if (!seedConfirm) return;
+    setPendingSecret(null);
+    chat.newChat();
+    chat.send(seedConfirm);
+    setSeedConfirm(null);
+  }
+  function seedContinue() {
+    if (!seedConfirm) return;
+    chat.send(seedConfirm);
+    setSeedConfirm(null);
+  }
 
   return (
     <Flex direction="column" className="h-full min-h-0 bg-background">
@@ -131,7 +155,7 @@ export function AgentBuilderDock() {
         <Text className="font-medium text-[13px] text-gray-12">
           Agent Builder
         </Text>
-        <Flex align="center" gap="1" className="ml-auto">
+        <Flex align="center" gap="2" className="ml-auto">
           <Tooltip
             content={
               followMode
@@ -164,7 +188,7 @@ export function AgentBuilderDock() {
               <PlusIcon size={14} />
             </Button>
           </Tooltip>
-          <Tooltip content="Hide agent builder">
+          <Tooltip content="Hide agent builder (⌘⇧I)">
             <Button
               variant="ghost"
               color="gray"
@@ -189,6 +213,8 @@ export function AgentBuilderDock() {
           messages={chat.messages}
           isStreaming={chat.isStreaming}
           error={chat.error}
+          scrollX={false}
+          emptyState={<AgentBuilderEmptyState page={page} onPick={chat.send} />}
           emptyHint="Ask the agent builder to inspect, debug, or edit your agents. It can see what you're looking at and walk you there."
           aboveComposer={
             pendingSecret ? (
@@ -204,6 +230,56 @@ export function AgentBuilderDock() {
           onCancel={chat.cancel}
         />
       )}
+
+      <AgentBuilderSeedDialog
+        open={seedConfirm != null}
+        prompt={seedConfirm ?? ""}
+        onStartFresh={seedStartFresh}
+        onContinue={seedContinue}
+        onCancel={() => setSeedConfirm(null)}
+      />
+    </Flex>
+  );
+}
+
+/** Empty-dock state: a short prompt plus page-aware starter suggestions. */
+function AgentBuilderEmptyState({
+  page,
+  onPick,
+}: {
+  page: AgentBuilderPageContext;
+  onPick: (prompt: string) => void;
+}) {
+  const suggestions = suggestionsForPage(page);
+  return (
+    <Flex direction="column" className="h-full min-h-0 justify-end gap-3 p-3">
+      <Text className="px-1 text-[12px] text-gray-10 leading-snug">
+        Ask the agent builder to inspect, debug, or edit your agents — it can
+        see what you're looking at and walk you there. Try:
+      </Text>
+      <Flex direction="column" className="gap-2.5">
+        {suggestions.map((s) => (
+          <button
+            key={s.label}
+            type="button"
+            onClick={() => onPick(s.prompt)}
+            className="group flex items-center gap-2 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-2) px-3 py-2 text-left transition-colors hover:border-(--gray-7) hover:bg-(--gray-3)"
+          >
+            <SparkleIcon
+              size={13}
+              weight="fill"
+              className="shrink-0 text-(--accent-9)"
+            />
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-gray-12">
+              {s.label}
+            </span>
+            <ArrowRightIcon
+              size={12}
+              className="shrink-0 text-gray-8 transition-colors group-hover:text-gray-11"
+            />
+          </button>
+        ))}
+      </Flex>
     </Flex>
   );
 }

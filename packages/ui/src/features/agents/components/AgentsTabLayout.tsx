@@ -1,11 +1,23 @@
 import { RobotIcon } from "@phosphor-icons/react";
+import { AgentBuilderHeaderControls } from "@posthog/ui/features/agent-applications/agent-builder/AgentBuilderHeaderControls";
+import type { AgentBuilderPageContext } from "@posthog/ui/features/agent-applications/agent-builder/agentBuilderStore";
 import { useSetAgentBuilderPage } from "@posthog/ui/features/agent-applications/agent-builder/useSetAgentBuilderPage";
+import { AGENT_PLATFORM_FLAG } from "@posthog/ui/features/agent-applications/featureFlag";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useMemo } from "react";
 
 export type AgentsTab = "scouts" | "applications";
+
+/** Per-tab header copy so the chrome describes what you're actually looking at. */
+const TAB_DESCRIPTION: Record<AgentsTab, string> = {
+  scouts:
+    "Self-driving agents that watch your project and surface work for review — enroll in the canonical fleet or author your own.",
+  applications:
+    "Your deployed agents — browse their sessions, approvals, configuration and revisions, or build and edit them with the Agent Builder.",
+};
 
 /**
  * Shared chrome for the two top-level Agents tabs. Each tab view renders its
@@ -35,20 +47,27 @@ export function AgentsTabLayout({
     [],
   );
   useSetHeaderContent(headerContent);
-  useSetAgentBuilderPage(
-    activeTab === "applications" ? { kind: "agent-list" } : { kind: "scouts" },
-  );
+  const pageContext: AgentBuilderPageContext =
+    activeTab === "applications" ? { kind: "agent-list" } : { kind: "scouts" };
+  useSetAgentBuilderPage(pageContext);
+  // The Applications tab is gated behind the agent-platform flag.
+  const applicationsEnabled = useFeatureFlag(AGENT_PLATFORM_FLAG);
 
   return (
     <Flex direction="column" className="h-full min-h-0">
       <div className="cursor-default select-none border-(--gray-5) border-b px-6 pt-5">
-        <Flex direction="column" gap="0.5" className="pb-3.5">
-          <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
-            Agents
-          </Text>
-          <Text className="max-w-3xl text-[12.5px] text-gray-11 leading-snug">
-            Design, schedule, and deploy the agents that work on your product.
-          </Text>
+        <Flex align="start" justify="between" gap="4" className="pb-3.5">
+          <Flex direction="column" gap="0.5">
+            <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
+              Agents
+            </Text>
+            <Text className="max-w-3xl text-[12.5px] text-gray-11 leading-snug">
+              {applicationsEnabled
+                ? TAB_DESCRIPTION[activeTab]
+                : "Design, schedule, and deploy the agents that work on your product."}
+            </Text>
+          </Flex>
+          <AgentBuilderHeaderControls context={pageContext} />
         </Flex>
         <Flex gap="5" align="center">
           <TabLink
@@ -56,11 +75,13 @@ export function AgentsTabLayout({
             label="Scouts"
             active={activeTab === "scouts"}
           />
-          <TabLink
-            to="/code/agents/applications"
-            label="Applications"
-            active={activeTab === "applications"}
-          />
+          {applicationsEnabled ? (
+            <TabLink
+              to="/code/agents/applications"
+              label="Applications"
+              active={activeTab === "applications"}
+            />
+          ) : null}
         </Flex>
       </div>
 
