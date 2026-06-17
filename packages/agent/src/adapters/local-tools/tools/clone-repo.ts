@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { createGitClient } from "@posthog/git/client";
 import { getCurrentBranch } from "@posthog/git/queries";
@@ -44,6 +45,11 @@ export const cloneRepoTool = defineLocalTool({
     const { repo, branch } = args;
     const token = resolveGithubToken() ?? ctx.token;
 
+    // Never surface the token to the model/transcript: git may echo the remote
+    // URL (with its embedded basic-auth credential) into error output.
+    const redact = (text: string): string =>
+      token ? text.split(token).join("***") : text;
+
     const isOwnerRepo = OWNER_REPO_RE.test(repo);
     const isHttpsUrl = /^https:\/\/github\.com\//.test(repo);
     if (!isOwnerRepo && !isHttpsUrl) {
@@ -58,6 +64,44 @@ export const cloneRepoTool = defineLocalTool({
     const repoName = slug.split("/").pop() ?? "repo";
     const targetPath = path.join(ctx.cwd, "repos", slug);
 
+    const done = async (note?: string): Promise<LocalToolResult> => {
+      const checkedOut = (await getCurrentBranch(targetPath)) ?? branch ?? null;
+      return {
+        content: [
+          {
+            type: "text",
+            text: `${note ?? `Cloned ${slug} (${repoName}) to ${targetPath}`}${
+              checkedOut ? ` on branch ${checkedOut}` : ""
+            }. cd into this path for all git and file work in this repo.`,
+          },
+        ],
+      };
+    };
+
+    const checkout = async (): Promise<LocalToolResult | null> => {
+      if (!branch) return null;
+      try {
+        await createGitClient(targetPath).checkout(branch);
+        return null;
+      } catch (err) {
+        return fail(
+          `Cloned ${slug} to ${targetPath} but failed to check out branch "${branch}": ${redact(
+            err instanceof Error ? err.message : String(err),
+          )}. The default branch is checked out instead.`,
+        );
+      }
+    };
+
+    // Idempotent: a prior clone (retry, reconnected session, LLM loop) leaves
+    // the repo in place. Reuse it instead of letting git abort on a non-empty
+    // destination, which the agent would receive as an opaque error.
+    if (fs.existsSync(path.join(targetPath, ".git"))) {
+      return (
+        (await checkout()) ??
+        (await done(`${slug} already cloned at ${targetPath}`))
+      );
+    }
+
     // GitHub accepts a token as the basic-auth username for https clones; this
     // covers private repos. Public repos clone fine without it.
     const cloneUrl = token
@@ -70,35 +114,15 @@ export const cloneRepoTool = defineLocalTool({
         targetPath,
       });
       if (!result.success) {
-        return fail(`clone_repo failed: ${result.error}`);
+        return fail(`clone_repo failed: ${redact(result.error)}`);
       }
 
-      if (branch) {
-        try {
-          await createGitClient(targetPath).checkout(branch);
-        } catch (err) {
-          return fail(
-            `Cloned ${slug} to ${targetPath} but failed to check out branch "${branch}": ${
-              err instanceof Error ? err.message : String(err)
-            }. The default branch is checked out instead.`,
-          );
-        }
-      }
-
-      const checkedOut = (await getCurrentBranch(targetPath)) ?? branch ?? null;
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Cloned ${slug} (${repoName}) to ${targetPath}${
-              checkedOut ? ` on branch ${checkedOut}` : ""
-            }. cd into this path for all git and file work in this repo.`,
-          },
-        ],
-      };
+      return (await checkout()) ?? (await done());
     } catch (err) {
       return fail(
-        `clone_repo failed: ${err instanceof Error ? err.message : String(err)}`,
+        `clone_repo failed: ${redact(
+          err instanceof Error ? err.message : String(err),
+        )}`,
       );
     }
   },

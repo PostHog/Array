@@ -54,6 +54,10 @@ import {
   STORAGE_PATHS_SERVICE,
 } from "@posthog/platform/storage-paths";
 import {
+  type IWorkspaceSettings,
+  WORKSPACE_SETTINGS_SERVICE,
+} from "@posthog/platform/workspace-settings";
+import {
   type AcpMessage,
   isAuthError,
   serializeError,
@@ -366,6 +370,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly storagePaths: IStoragePaths,
     @inject(WORKSPACE_REPOSITORY)
     private readonly workspaceRepository: IWorkspaceRepository,
+    @inject(WORKSPACE_SETTINGS_SERVICE)
+    private readonly workspaceSettings: IWorkspaceSettings,
     @inject(AGENT_LOGGER)
     loggerFactory: AgentLogger,
   ) {
@@ -649,7 +655,10 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
     // Repo-less channel tasks run in a scratch dir. Detecting it server-side
     // (rather than plumbing a flag from the client) keeps channel mode correct
     // across reconnects, where the same scratch repoPath is passed back in.
-    const channelMode = isScratchPath(repoPath);
+    const channelMode = isScratchPath(
+      repoPath,
+      this.workspaceSettings.getWorktreeLocation(),
+    );
 
     const additionalDirectories =
       taskId === "__preview__"
