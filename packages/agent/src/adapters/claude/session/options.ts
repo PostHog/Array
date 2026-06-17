@@ -300,7 +300,7 @@ function buildSpawnWrapper(
     child.stderr?.on("data", (data: Buffer) => {
       const msg = data.toString().trim();
       if (msg && logger) {
-        logger.debug(`[claude-code:${child.pid}] stderr: ${msg}`);
+        logger.warn(`[claude-code:${child.pid}] stderr: ${msg}`);
       }
     });
 
