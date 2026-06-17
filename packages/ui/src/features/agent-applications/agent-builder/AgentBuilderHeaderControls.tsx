@@ -5,29 +5,19 @@ import { Button } from "@posthog/ui/primitives/Button";
 import { Badge, Flex, Tooltip } from "@radix-ui/themes";
 import { useStore } from "zustand";
 import { AGENT_PLATFORM_FLAG } from "../featureFlag";
-import { headerActionForPage } from "./agentBuilderActions";
 import {
   AGENT_BUILDER_CHAT_ID,
-  type AgentBuilderPageContext,
   useAgentBuilderStore,
 } from "./agentBuilderStore";
-import { EditWithAIButton } from "./EditWithAIButton";
 
 /**
- * The agents-header control cluster — identical across every agents view. Driven
- * by the view's `context`, it renders:
- *  - a "Following" indicator while the agent builder is mid-turn and follow mode
- *    is on (so it's clear the builder is steering navigation),
- *  - a contextual AI button (New agent / Explain this session / …),
- *  - a "show" button that opens the dock, ONLY when it's hidden (the inverse of
- *    the hide button inside the dock header).
- * All buttons are small. Renders nothing unless the `agent-platform` flag is on.
+ * The agents-header control cluster — identical across every agents view.
+ * Authoring lives entirely inside the dock (there is no native "new agent"
+ * form), so the only header affordance is the dock toggle itself, plus a
+ * "Following" indicator while the builder is mid-turn with follow mode on.
+ * Renders nothing unless the `agent-platform` flag is on.
  */
-export function AgentBuilderHeaderControls({
-  context,
-}: {
-  context: AgentBuilderPageContext;
-}) {
+export function AgentBuilderHeaderControls() {
   const enabled = useFeatureFlag(AGENT_PLATFORM_FLAG);
   const visible = useAgentBuilderStore((s) => s.visible);
   const setVisible = useAgentBuilderStore((s) => s.setVisible);
@@ -40,7 +30,6 @@ export function AgentBuilderHeaderControls({
   if (!enabled) return null;
 
   const running = status === "streaming" || status === "starting";
-  const action = headerActionForPage(context);
 
   return (
     <Flex align="center" gap="2" className="shrink-0">
@@ -51,14 +40,6 @@ export function AgentBuilderHeaderControls({
             Following
           </Badge>
         </Tooltip>
-      ) : null}
-      {action ? (
-        <EditWithAIButton
-          prompt={action.prompt}
-          agentSlug={action.agentSlug}
-          label={action.label}
-          size="1"
-        />
       ) : null}
       {!visible ? (
         <Tooltip content="Open the agent builder (⌘⇧I)">

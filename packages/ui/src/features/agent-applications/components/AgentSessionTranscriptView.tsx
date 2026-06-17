@@ -54,7 +54,7 @@ export function AgentSessionTranscriptView({
           <Text className="font-bold text-[18px] text-gray-12 leading-tight tracking-tight">
             Session transcript
           </Text>
-          <AgentBuilderHeaderControls context={pageContext} />
+          <AgentBuilderHeaderControls />
         </Flex>
       </Flex>
       <div className="min-h-0 flex-1">
