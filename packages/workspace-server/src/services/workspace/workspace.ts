@@ -89,7 +89,10 @@ type TaskAssociation =
 /** True when `child` resolves to a path strictly inside `parent`. */
 function isPathUnder(child: string, parent: string): boolean {
   const rel = path.relative(parent, child);
-  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+  const up = `..${path.sep}`;
+  return (
+    rel !== "" && rel !== ".." && !rel.startsWith(up) && !path.isAbsolute(rel)
+  );
 }
 
 export const WorkspaceServiceEvent = {
