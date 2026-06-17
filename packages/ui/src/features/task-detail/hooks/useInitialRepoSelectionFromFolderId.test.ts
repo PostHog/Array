@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { RegisteredFolder } from "../../folders/types";
 import {
   areReposReady,
-  resolveRepoSelectionForFolder,
   type RepoSelection,
   type RepoSelectionInput,
+  resolveRepoSelectionForFolder,
   useInitialRepoSelectionFromFolderId,
 } from "./useInitialRepoSelectionFromFolderId";
 
@@ -278,6 +278,28 @@ describe("useInitialRepoSelectionFromFolderId", () => {
     );
     expect(setWorkspaceMode).toHaveBeenCalledExactlyOnceWith("local");
     expect(setSelectedRepository).not.toHaveBeenCalled();
+  });
+
+  it("waits for folders to load before syncing the directory", () => {
+    const { rerender, setSelectedDirectory } = renderRepoSelectionHook({
+      folderId: "a",
+      folders: [],
+      repositories: [],
+      reposLoaded: false,
+      currentMode: "local",
+    });
+    // The target folder isn't in the list yet: bail without marking the sync done.
+    expect(setSelectedDirectory).not.toHaveBeenCalled();
+
+    // Once folders load, the prefill fires (the guard ref was left unset).
+    rerender({
+      folderId: "a",
+      folders: [folder("a", "/repos/a")],
+      repositories: [],
+      reposLoaded: false,
+      currentMode: "local",
+    });
+    expect(setSelectedDirectory).toHaveBeenCalledExactlyOnceWith("/repos/a");
   });
 
   it("does not re-sync when folders changes but folderId stays the same", () => {
