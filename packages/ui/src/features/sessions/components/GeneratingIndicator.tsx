@@ -159,14 +159,13 @@ export function GeneratingIndicator({
 
   // Advance the word only when a tool/MCP call finishes (activityKey changes),
   // not on an interval. The initial word stays put until the first call settles.
+  // Adjusted during render (React's blessed pattern for deriving state from a
+  // changed prop) rather than in an effect, so it never paints a stale word.
   const prevActivityKeyRef = useRef(activityKey);
-  useEffect(() => {
-    if (activityKey === undefined || activityKey === prevActivityKeyRef.current) {
-      return;
-    }
+  if (activityKey !== undefined && activityKey !== prevActivityKeyRef.current) {
     prevActivityKeyRef.current = activityKey;
     setActivity((current) => getNextThinkingMessage(current));
-  }, [activityKey]);
+  }
 
   return (
     <Flex

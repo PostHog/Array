@@ -530,16 +530,19 @@ describe("buildConversationItems", () => {
       );
     });
 
-    it("counts a tool call once it reaches a terminal status", () => {
-      const events = [
-        userPromptMsg(1, 1, "go"),
-        toolCallMsg(2, "t1"),
-        toolUpdateMsg(3, "t1", { status: "completed" }),
-      ];
-      expect(buildConversationItems(events, true).completedToolCallCount).toBe(
-        1,
-      );
-    });
+    it.each(["completed", "failed", "cancelled"])(
+      "counts a tool call once it settles to %s",
+      (status) => {
+        const events = [
+          userPromptMsg(1, 1, "go"),
+          toolCallMsg(2, "t1"),
+          toolUpdateMsg(3, "t1", { status }),
+        ];
+        expect(
+          buildConversationItems(events, true).completedToolCallCount,
+        ).toBe(1);
+      },
+    );
 
     it("does not double-count repeated updates after settling", () => {
       const events = [
@@ -553,19 +556,6 @@ describe("buildConversationItems", () => {
       ];
       expect(buildConversationItems(events, true).completedToolCallCount).toBe(
         1,
-      );
-    });
-
-    it("counts failed and cancelled as finished too", () => {
-      const events = [
-        userPromptMsg(1, 1, "go"),
-        toolCallMsg(2, "t1"),
-        toolUpdateMsg(3, "t1", { status: "failed" }),
-        toolCallMsg(4, "t2"),
-        toolUpdateMsg(5, "t2", { status: "cancelled" }),
-      ];
-      expect(buildConversationItems(events, true).completedToolCallCount).toBe(
-        2,
       );
     });
 
