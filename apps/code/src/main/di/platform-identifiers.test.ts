@@ -5,7 +5,6 @@ import { CLIPBOARD_SERVICE } from "@posthog/platform/clipboard";
 import { CONTEXT_MENU_SERVICE } from "@posthog/platform/context-menu";
 import { DIALOG_SERVICE } from "@posthog/platform/dialog";
 import { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
-import { HTTP_CLIENT_SERVICE } from "@posthog/platform/http-client";
 import { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
 import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import { NOTIFIER_SERVICE } from "@posthog/platform/notifier";
@@ -25,7 +24,6 @@ const PLATFORM_IDENTIFIERS = {
   CONTEXT_MENU_SERVICE,
   DIALOG_SERVICE,
   FILE_ICON_SERVICE,
-  HTTP_CLIENT_SERVICE,
   IMAGE_PROCESSOR_SERVICE,
   MAIN_WINDOW_SERVICE,
   NOTIFIER_SERVICE,
@@ -39,7 +37,7 @@ const PLATFORM_IDENTIFIERS = {
 describe("platform service identifiers", () => {
   it("defines a symbol for every platform capability", () => {
     const identifiers = Object.values(PLATFORM_IDENTIFIERS);
-    expect(identifiers).toHaveLength(16);
+    expect(identifiers).toHaveLength(15);
     for (const identifier of identifiers) {
       expect(typeof identifier).toBe("symbol");
     }

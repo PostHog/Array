@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OAuthEnv, OAuthHost } from "./identifiers";
 import { OAuthService } from "./oauth";
 
@@ -35,8 +35,6 @@ function createDeps(env: Partial<OAuthEnv> = {}) {
     ...env,
   };
 
-  const http = { fetch: fetchMock };
-
   const scopedLog = {
     debug: vi.fn(),
     info: vi.fn(),
@@ -57,7 +55,6 @@ function createDeps(env: Partial<OAuthEnv> = {}) {
     host,
     log,
     crypto as never,
-    http,
   );
 
   return {
@@ -87,7 +84,12 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 beforeEach(() => {
+  vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockReset();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("OAuthService.refreshToken", () => {

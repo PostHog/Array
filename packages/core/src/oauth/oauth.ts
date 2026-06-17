@@ -9,10 +9,6 @@ import {
   type IDeepLinkRegistry,
 } from "@posthog/platform/deep-link";
 import {
-  HTTP_CLIENT_SERVICE,
-  type IHttpClient,
-} from "@posthog/platform/http-client";
-import {
   type IMainWindow,
   MAIN_WINDOW_SERVICE,
 } from "@posthog/platform/main-window";
@@ -83,8 +79,6 @@ export class OAuthService {
     logger: RootLogger,
     @inject(CRYPTO_SERVICE)
     private readonly crypto: ICrypto,
-    @inject(HTTP_CLIENT_SERVICE)
-    private readonly http: IHttpClient,
   ) {
     this.log = logger.scope("oauth-service");
     // Register OAuth callback handler for deep links
@@ -208,7 +202,7 @@ export class OAuthService {
     try {
       const cloudUrl = getCloudUrlFromRegion(region);
 
-      const response = await this.http.fetch(`${cloudUrl}/oauth/token`, {
+      const response = await fetch(`${cloudUrl}/oauth/token`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -369,7 +363,7 @@ export class OAuthService {
     for (let attempt = 0; attempt < TOKEN_FETCH_MAX_ATTEMPTS; attempt++) {
       let response: Response;
       try {
-        response = await this.http.fetch(`${cloudUrl}/oauth/token`, {
+        response = await fetch(`${cloudUrl}/oauth/token`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body,

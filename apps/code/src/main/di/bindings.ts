@@ -110,7 +110,6 @@ import type { CRYPTO_SERVICE } from "@posthog/platform/crypto";
 import type { DEEP_LINK_SERVICE } from "@posthog/platform/deep-link";
 import type { DIALOG_SERVICE } from "@posthog/platform/dialog";
 import type { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
-import type { HTTP_CLIENT_SERVICE } from "@posthog/platform/http-client";
 import type { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
 import type { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import type { NOTIFIER_SERVICE } from "@posthog/platform/notifier";
@@ -210,7 +209,6 @@ import type { ElectronContextMenu } from "../platform-adapters/electron-context-
 import type { ElectronCrypto } from "../platform-adapters/electron-crypto";
 import type { ElectronDialog } from "../platform-adapters/electron-dialog";
 import type { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
-import type { ElectronHttpClient } from "../platform-adapters/electron-http-client";
 import type { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
 import type { ElectronMainWindow } from "../platform-adapters/electron-main-window";
 import type { ElectronNotifier } from "../platform-adapters/electron-notifier";
@@ -277,7 +275,6 @@ import type {
 export interface MainBindings {
   // Platform adapters
   [URL_LAUNCHER_SERVICE]: ElectronUrlLauncher;
-  [HTTP_CLIENT_SERVICE]: ElectronHttpClient;
   [STORAGE_PATHS_SERVICE]: ElectronStoragePaths;
   [APP_META_SERVICE]: ElectronAppMeta;
   [DIALOG_SERVICE]: ElectronDialog;

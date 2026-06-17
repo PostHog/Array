@@ -102,7 +102,6 @@ import { CRYPTO_SERVICE } from "@posthog/platform/crypto";
 import { DEEP_LINK_SERVICE } from "@posthog/platform/deep-link";
 import { DIALOG_SERVICE } from "@posthog/platform/dialog";
 import { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
-import { HTTP_CLIENT_SERVICE } from "@posthog/platform/http-client";
 import { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
 import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import { NOTIFIER_SERVICE } from "@posthog/platform/notifier";
@@ -217,7 +216,6 @@ import { ElectronContextMenu } from "../platform-adapters/electron-context-menu"
 import { ElectronCrypto } from "../platform-adapters/electron-crypto";
 import { ElectronDialog } from "../platform-adapters/electron-dialog";
 import { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
-import { ElectronHttpClient } from "../platform-adapters/electron-http-client";
 import { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
 import { ElectronMainWindow } from "../platform-adapters/electron-main-window";
 import { ElectronNotifier } from "../platform-adapters/electron-notifier";
@@ -290,7 +288,6 @@ export const container = new TypedContainer<MainBindings>({
 });
 
 container.bind(URL_LAUNCHER_SERVICE).to(ElectronUrlLauncher);
-container.bind(HTTP_CLIENT_SERVICE).to(ElectronHttpClient);
 container.bind(STORAGE_PATHS_SERVICE).to(ElectronStoragePaths);
 container.bind(APP_META_SERVICE).to(ElectronAppMeta);
 container.bind(DIALOG_SERVICE).to(ElectronDialog);
