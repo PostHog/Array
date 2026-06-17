@@ -29,6 +29,49 @@ export function getErrorMessage(error: unknown): string {
   return "";
 }
 
+export interface SerializedError {
+  name?: string;
+  message: string;
+  code?: string | number;
+  cause?: SerializedError;
+}
+
+/**
+ * Flatten an error and its `cause` chain into a plain, log-friendly object.
+ * undici surfaces the real socket-level reason for `TypeError: terminated`
+ * (e.g. ECONNRESET, UND_ERR_SOCKET, UND_ERR_HEADERS_TIMEOUT) on `error.cause`,
+ * which a bare `error.message` throws away. Depth-bounded to avoid cycles.
+ */
+export function serializeError(error: unknown, maxDepth = 5): SerializedError {
+  if (typeof error === "object" && error !== null) {
+    const source = error as {
+      name?: unknown;
+      message?: unknown;
+      code?: unknown;
+      cause?: unknown;
+    };
+    const result: SerializedError = {
+      message:
+        typeof source.message === "string"
+          ? source.message
+          : error instanceof Error
+            ? error.message
+            : String(error),
+    };
+    if (typeof source.name === "string") {
+      result.name = source.name;
+    }
+    if (typeof source.code === "string" || typeof source.code === "number") {
+      result.code = source.code;
+    }
+    if (source.cause != null && maxDepth > 0) {
+      result.cause = serializeError(source.cause, maxDepth - 1);
+    }
+    return result;
+  }
+  return { message: String(error) };
+}
+
 export function isAuthError(error: unknown): boolean {
   const message = getErrorMessage(error).toLowerCase();
   if (!message) return false;

@@ -1367,6 +1367,14 @@ For git operations while detached:
   private async cleanupSession(taskRunId: string): Promise<void> {
     const session = this.sessions.get(taskRunId);
     if (session) {
+      if (session.promptPending || session.inFlightMcpToolCalls.size > 0) {
+        this.log.warn("Cleaning up session with in-flight work", {
+          taskRunId,
+          taskId: session.taskId,
+          promptPending: session.promptPending,
+          inFlightMcpToolCalls: session.inFlightMcpToolCalls.size,
+        });
+      }
       this.cancelInFlightMcpToolCalls(session);
       this.sleepService.release(taskRunId);
       try {
