@@ -53,6 +53,9 @@ export type Session = BaseSession & {
     string,
     McpSdkServerConfigWithInstance
   >;
+  /** Names of the in-process servers registered at session start. Lets the
+   * self-heal check status without rebuilding instances on every prompt. */
+  localToolsServerNames: string[];
   input: Pushable<SDKUserMessage>;
   settingsManager: SettingsManager;
   permissionMode: CodeExecutionMode;

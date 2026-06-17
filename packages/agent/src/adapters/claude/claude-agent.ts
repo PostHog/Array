@@ -36,7 +36,6 @@ import {
   listSessions,
   type McpSdkServerConfigWithInstance,
   type McpServerConfig,
-  type McpServerStatus,
   type Options,
   type Query,
   query,
@@ -150,10 +149,10 @@ const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
 const MAX_TITLE_LENGTH = 256;
 const LOCAL_ONLY_COMMANDS = new Set(["/context", "/heapdump", "/extra-usage"]);
 
-// In-process servers carry `type: "sdk"`; the cast covers union members (stdio)
-// that don't declare `type`.
-function isSdkMcpServer(cfg: McpServerConfig): boolean {
-  return (cfg as { type?: string }).type === "sdk";
+function isSdkMcpServer(
+  cfg: McpServerConfig,
+): cfg is McpSdkServerConfigWithInstance {
+  return cfg.type === "sdk";
 }
 
 function externalMcpServers(
@@ -1283,7 +1282,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // throws "Already connected to a transport" and drops the signed-commit tools.
     const freshInProcess = prev.buildInProcessMcpServers();
     if (Object.keys(freshInProcess).length > 0) {
-      this.logger.info("signed_commit_mcp_rebuilt_on_refresh", {
+      this.logger.info("Rebuilt in-process MCP servers on refresh", {
         sessionId: this.sessionId,
         servers: Object.keys(freshInProcess),
       });
@@ -1330,65 +1329,52 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
    * reconnect via setMcpServers. Returns whether the tooling is usable after.
    */
   private async ensureLocalToolsConnected(trigger: string): Promise<boolean> {
-    const desired = this.session.buildInProcessMcpServers();
-    const names = Object.keys(desired);
+    const names = this.session.localToolsServerNames;
     if (names.length === 0) {
       return true;
     }
 
-    let statuses: McpServerStatus[];
-    try {
-      const status = await withTimeout(
-        this.session.query.mcpServerStatus(),
-        MCP_STATUS_TIMEOUT_MS,
-      );
-      // A slow or failed status RPC must not block the turn; assume healthy.
-      if (status.result === "timeout") {
-        this.logger.debug("ensureLocalToolsConnected: status check timed out", {
-          trigger,
-        });
-        return true;
-      }
-      statuses = status.value;
-    } catch (error) {
+    const status = await withTimeout(
+      this.session.query.mcpServerStatus(),
+      MCP_STATUS_TIMEOUT_MS,
+    ).catch((error) => {
       this.logger.debug("ensureLocalToolsConnected: status check failed", {
         trigger,
         error: error instanceof Error ? error.message : String(error),
       });
+      return { result: "timeout" as const };
+    });
+    // A slow or failed status RPC must not block the turn; assume healthy.
+    if (status.result !== "success") {
       return true;
     }
 
     const allConnected = names.every((name) =>
-      statuses.some((s) => s.name === name && s.status === "connected"),
+      status.value.some((s) => s.name === name && s.status === "connected"),
     );
     if (allConnected) {
       return true;
     }
 
-    this.logger.warn("signed_commit_mcp_unhealthy", {
-      trigger,
-      sessionId: this.sessionId,
-      servers: names,
-    });
+    const logCtx = { trigger, sessionId: this.sessionId, servers: names };
+    this.logger.warn(
+      "Signed-commit MCP server unhealthy; reconnecting",
+      logCtx,
+    );
 
     try {
       const next = {
         ...externalMcpServers(this.session.queryOptions.mcpServers),
-        ...desired,
+        ...this.session.buildInProcessMcpServers(),
       };
       await this.session.query.setMcpServers(next);
       this.session.queryOptions.mcpServers = next;
       this.refreshMcpMetadata(this.session.query);
-      this.logger.info("signed_commit_mcp_recovered", {
-        trigger,
-        sessionId: this.sessionId,
-        servers: names,
-      });
+      this.logger.info("Reconnected signed-commit MCP server", logCtx);
       return true;
     } catch (error) {
-      this.logger.error("signed_commit_mcp_recovery_failed", {
-        trigger,
-        sessionId: this.sessionId,
+      this.logger.error("Failed to reconnect signed-commit MCP server", {
+        ...logCtx,
         error: error instanceof Error ? error.message : String(error),
       });
       return false;
@@ -1634,9 +1620,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const earlyModelId =
       settingsManager.getSettings().model || meta?.model || "";
-    const mcpServers = supportsMcpInjection(earlyModelId)
-      ? parseMcpServers(params, this.logger)
-      : {};
 
     // Register the in-process general local-tools MCP server. Tools self-gate
     // via the registry (e.g. signed-commit is cloud-only and needs a GH token),
@@ -1645,30 +1628,35 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // the agent commits via the signed-commit tool instead.
     //
     // A closure so refresh/self-heal can rebuild a fresh instance (reusing one
-    // throws "Already connected to a transport").
+    // throws "Already connected to a transport"). Capture only the fields it
+    // needs so the session doesn't pin the whole meta object.
+    const baseBranch = meta?.baseBranch;
+    const environment = meta?.environment;
     const buildInProcessMcpServers = (): Record<
       string,
       McpSdkServerConfigWithInstance
     > => {
       const server = createLocalToolsMcpServer(
-        {
-          cwd,
-          token: resolveGithubToken(),
-          taskId,
-          baseBranch: meta?.baseBranch,
-        },
-        meta,
+        { cwd, token: resolveGithubToken(), taskId, baseBranch },
+        { environment },
       );
       return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};
     };
 
     const initialInProcess = buildInProcessMcpServers();
-    Object.assign(mcpServers, initialInProcess);
-    if (Object.keys(initialInProcess).length === 0 && cloudRun) {
+    const localToolsServerNames = Object.keys(initialInProcess);
+    if (localToolsServerNames.length === 0 && cloudRun) {
       this.logger.warn(
-        "Cloud run registered no local tools — missing GH_TOKEN/GITHUB_TOKEN? signed commits unavailable",
+        "Cloud run registered no local tools (missing GH_TOKEN/GITHUB_TOKEN?); signed commits unavailable",
       );
     }
+
+    const mcpServers: Record<string, McpServerConfig> = {
+      ...(supportsMcpInjection(earlyModelId)
+        ? parseMcpServers(params, this.logger)
+        : {}),
+      ...initialInProcess,
+    };
 
     const systemPrompt = buildSystemPrompt(meta?.systemPrompt);
 
@@ -1748,6 +1736,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       query: q,
       queryOptions: options,
       buildInProcessMcpServers,
+      localToolsServerNames,
       input,
       cancelled: false,
       settingsManager,

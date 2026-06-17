@@ -386,28 +386,10 @@ describe("createSignedCommitGuardHook", () => {
     });
   });
 
-  test("reassures the model when tools can't be restored", async () => {
-    const onHeal = vi.fn().mockResolvedValue(false);
-    const healingGuard = createSignedCommitGuardHook(logger, onHeal);
-
-    const result = await healingGuard(
-      bashInput("git push origin main"),
-      undefined,
-      opts,
-    );
-
-    expect(result).toMatchObject({
-      hookSpecificOutput: {
-        permissionDecision: "deny",
-        permissionDecisionReason: expect.stringContaining(
-          "safe in the working tree",
-        ),
-      },
-    });
-  });
-
-  test("treats a thrown heal callback as unavailable", async () => {
-    const onHeal = vi.fn().mockRejectedValue(new Error("reconnect boom"));
+  test.each([
+    ["resolves false", vi.fn().mockResolvedValue(false)],
+    ["throws", vi.fn().mockRejectedValue(new Error("reconnect boom"))],
+  ])("reassures the model when the heal %s", async (_label, onHeal) => {
     const healingGuard = createSignedCommitGuardHook(logger, onHeal);
 
     const result = await healingGuard(

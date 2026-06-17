@@ -51,6 +51,7 @@ function installFakeSession(
     query,
     queryOptions: { sessionId, cwd: "/tmp/repo", abortController },
     buildInProcessMcpServers: () => ({}),
+    localToolsServerNames: [] as string[],
     input,
     cancelled: false,
     interruptReason: undefined,
@@ -80,6 +81,27 @@ function installFakeSession(
   (agent as unknown as { sessionId: string }).sessionId = sessionId;
 
   return { query, input };
+}
+
+// Mark the session as having an enabled (but currently disconnected) in-process
+// signed-commit server so the pre-prompt heal has something to reconnect.
+function enableSignedCommitServer(agent: Agent): void {
+  const session = (
+    agent as unknown as {
+      session: {
+        buildInProcessMcpServers: () => Record<string, unknown>;
+        localToolsServerNames: string[];
+      };
+    }
+  ).session;
+  session.localToolsServerNames = ["posthog-code-tools"];
+  session.buildInProcessMcpServers = () => ({
+    "posthog-code-tools": {
+      type: "sdk",
+      name: "posthog-code-tools",
+      instance: {},
+    },
+  });
 }
 
 function tick(): Promise<void> {
@@ -226,17 +248,7 @@ describe("ClaudeAcpAgent.prompt — streamed assistant text wiring", () => {
     const { query, input } = installFakeSession(agent, sessionId);
 
     // Signed-commit server is enabled but the live query reports it absent.
-    (
-      agent as unknown as {
-        session: { buildInProcessMcpServers: () => Record<string, unknown> };
-      }
-    ).session.buildInProcessMcpServers = () => ({
-      "posthog-code-tools": {
-        type: "sdk",
-        name: "posthog-code-tools",
-        instance: {},
-      },
-    });
+    enableSignedCommitServer(agent);
     (query.mcpServerStatus as ReturnType<typeof vi.fn>).mockResolvedValue([
       { name: "posthog-code-tools", status: "failed" },
     ]);
@@ -266,17 +278,7 @@ describe("ClaudeAcpAgent.prompt — streamed assistant text wiring", () => {
     const sessionId = "s-local-only";
     const { query } = installFakeSession(agent, sessionId);
 
-    (
-      agent as unknown as {
-        session: { buildInProcessMcpServers: () => Record<string, unknown> };
-      }
-    ).session.buildInProcessMcpServers = () => ({
-      "posthog-code-tools": {
-        type: "sdk",
-        name: "posthog-code-tools",
-        instance: {},
-      },
-    });
+    enableSignedCommitServer(agent);
 
     const promptPromise = agent.prompt({
       sessionId,

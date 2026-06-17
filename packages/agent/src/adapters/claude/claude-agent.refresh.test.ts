@@ -114,6 +114,7 @@ function installFakeSession(
       abortController,
     },
     buildInProcessMcpServers,
+    localToolsServerNames: ["posthog-code-tools"],
     input,
     cancelled: false,
     settingsManager: { dispose: vi.fn() },
@@ -430,6 +431,8 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
   });
 });
 
+const DISCONNECTED_STATUS = [{ name: "posthog-code-tools", status: "failed" }];
+
 describe("ClaudeAcpAgent self-heal: ensureLocalToolsConnected", () => {
   beforeEach(() => {
     clearMcpToolMetadataCacheMock.mockClear();
@@ -461,9 +464,7 @@ describe("ClaudeAcpAgent self-heal: ensureLocalToolsConnected", () => {
       agent,
       "s-down",
     );
-    oldQuery.mcpServerStatus.mockResolvedValue([
-      { name: "posthog-code-tools", status: "failed" },
-    ]);
+    oldQuery.mcpServerStatus.mockResolvedValue(DISCONNECTED_STATUS);
 
     await expect(callHeal(agent)).resolves.toBe(true);
 
@@ -501,9 +502,7 @@ describe("ClaudeAcpAgent self-heal: ensureLocalToolsConnected", () => {
         instance: { stale: true },
       },
     };
-    oldQuery.mcpServerStatus.mockResolvedValue([
-      { name: "posthog-code-tools", status: "failed" },
-    ]);
+    oldQuery.mcpServerStatus.mockResolvedValue(DISCONNECTED_STATUS);
 
     await expect(callHeal(agent)).resolves.toBe(true);
 
@@ -561,9 +560,7 @@ describe("ClaudeAcpAgent self-heal: ensureLocalToolsConnected", () => {
   it("returns false when reconnect fails", async () => {
     const agent = makeAgent();
     const { oldQuery } = installFakeSession(agent, "s-reconnect-fail");
-    oldQuery.mcpServerStatus.mockResolvedValue([
-      { name: "posthog-code-tools", status: "failed" },
-    ]);
+    oldQuery.mcpServerStatus.mockResolvedValue(DISCONNECTED_STATUS);
     oldQuery.setMcpServers.mockRejectedValue(new Error("connect boom"));
 
     await expect(callHeal(agent)).resolves.toBe(false);
@@ -573,8 +570,8 @@ describe("ClaudeAcpAgent self-heal: ensureLocalToolsConnected", () => {
     const agent = makeAgent();
     const { session, oldQuery } = installFakeSession(agent, "s-none");
     (
-      session as unknown as { buildInProcessMcpServers: () => unknown }
-    ).buildInProcessMcpServers = vi.fn(() => ({}));
+      session as unknown as { localToolsServerNames: string[] }
+    ).localToolsServerNames = [];
 
     await expect(callHeal(agent)).resolves.toBe(true);
     expect(oldQuery.mcpServerStatus).not.toHaveBeenCalled();
