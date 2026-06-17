@@ -5,6 +5,7 @@ import {
   PROJECT_BLUEBIRD_FLAG,
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
+import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { AppNav } from "@posthog/ui/features/canvas/components/AppNav";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
@@ -116,6 +117,7 @@ function RootLayout() {
   useTaskDeepLink();
   useInboxDeepLink();
   useScoutDeepLink();
+  useApprovalDeepLink();
   useSetupDiscovery();
   useNewTaskDeepLink();
 
