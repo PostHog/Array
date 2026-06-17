@@ -47,7 +47,7 @@ export function FolderPicker({
     getFolderByPath,
   } = useFolders();
 
-  const recentFolders = getRecentFolders();
+  const recentFolders = getRecentFolders(10);
   const displayValue = getFolderDisplayName(value);
   const isField = variant === "field";
 
