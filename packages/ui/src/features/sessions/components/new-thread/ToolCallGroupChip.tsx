@@ -1,8 +1,12 @@
 import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
 import type { GroupSummary } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
-import { motion as motionConfig } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
+import {
+  labelForIconKey,
+  motion as motionConfig,
+} from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 import { ToolRow } from "@posthog/ui/features/sessions/components/session-update/ToolRow";
 import { DotsCircleSpinner } from "@posthog/ui/primitives/DotsCircleSpinner";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 
@@ -69,7 +73,11 @@ export function ToolCallGroupChip({
           !expanded && summary.icons.length > 0 ? (
             <span className="ml-1 flex shrink-0 items-center gap-1.5 text-gray-9">
               {summary.icons.map(({ Icon, key }) => (
-                <Icon key={key} size={13} />
+                <Tooltip key={key} content={labelForIconKey(key)}>
+                  <span className="flex items-center">
+                    <Icon size={13} />
+                  </span>
+                </Tooltip>
               ))}
             </span>
           ) : null
