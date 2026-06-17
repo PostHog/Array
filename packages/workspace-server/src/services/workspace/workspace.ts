@@ -697,6 +697,15 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
     const association = this.findTaskAssociation(taskId);
     if (!association) {
+      // Repo-less channel task: no workspace row, just a scratch dir to remove.
+      const scratchPath = this.getScratchPath(taskId);
+      if (fs.existsSync(scratchPath)) {
+        await this.agent.cancelSessionsByTaskId(taskId);
+        this.processTracking.killByTaskId(taskId);
+        await fs.promises.rm(scratchPath, { recursive: true, force: true });
+        this.log.info(`Scratch workspace deleted for task ${taskId}`);
+        return;
+      }
       this.log.warn(`No workspace found for task ${taskId}`);
       return;
     }
@@ -850,6 +859,40 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     return scratchPath;
   }
 
+  /** Task IDs that have a scratch dir on disk (repo-less channel tasks). */
+  private listScratchTaskIds(): string[] {
+    const base = scratchBasePath(this.workspaceSettings.getWorktreeLocation());
+    try {
+      return fs
+        .readdirSync(base, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * A repo-less channel task has no workspace row — its working directory is a
+   * scratch dir. Synthesize a local-mode Workspace from it so the rest of the
+   * app (cwd resolution, session connect/reconnect, verify) treats it as a
+   * normal local workspace instead of prompting the user to pick a repo.
+   */
+  private buildScratchWorkspace(taskId: string): Workspace {
+    return {
+      taskId,
+      folderId: "",
+      folderPath: this.getScratchPath(taskId),
+      mode: "local",
+      worktreePath: null,
+      worktreeName: null,
+      branchName: null,
+      baseBranch: null,
+      linkedBranch: null,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
   async verifyWorkspaceExists(
     taskId: string,
   ): Promise<{ exists: boolean; missingPath?: string }> {
@@ -898,7 +941,13 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
   async getWorkspace(taskId: string): Promise<Workspace | null> {
     const assoc = this.findTaskAssociation(taskId);
-    if (!assoc) return null;
+    if (!assoc) {
+      // Repo-less channel task: working dir is a scratch dir, no workspace row.
+      if (fs.existsSync(this.getScratchPath(taskId))) {
+        return this.buildScratchWorkspace(taskId);
+      }
+      return null;
+    }
 
     const dbRow = this.workspaceRepo.findByTaskId(taskId);
     const linkedBranch = dbRow?.linkedBranch ?? null;
@@ -1058,6 +1107,14 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         linkedBranch: linkedBranchByTaskId.get(assoc.taskId) ?? null,
         createdAt: new Date().toISOString(),
       };
+    }
+
+    // Repo-less channel tasks (scratch dirs) have no workspace row; surface
+    // them as local workspaces so they resolve a cwd and skip the repo prompt.
+    for (const taskId of this.listScratchTaskIds()) {
+      if (!workspaces[taskId]) {
+        workspaces[taskId] = this.buildScratchWorkspace(taskId);
+      }
     }
 
     return workspaces;

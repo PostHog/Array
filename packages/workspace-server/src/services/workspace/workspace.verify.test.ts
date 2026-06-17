@@ -136,4 +136,33 @@ describe("WorkspaceService.verifyWorkspaceExists", () => {
     expect(result.missingPath).toBe(repoPath);
     expect(workspaceRepo.findByTaskId(TASK_ID)).not.toBeNull();
   });
+
+  it("treats a scratch dir (no workspace row) as a valid local workspace", async () => {
+    const { service, workspaceRepo } = createService(worktreeBasePath);
+
+    // No workspace row exists for a repo-less channel task.
+    expect(workspaceRepo.findByTaskId(TASK_ID)).toBeNull();
+
+    const scratchPath = await service.ensureScratchDir(TASK_ID);
+    expect(scratchPath).toContain("posthog-code-scratch");
+
+    // verify, getWorkspace and getAllWorkspaces all treat it as a local
+    // workspace, so the UI resolves a cwd and skips the repo-picker prompt.
+    const verify = await service.verifyWorkspaceExists(TASK_ID);
+    expect(verify.exists).toBe(true);
+
+    const workspace = await service.getWorkspace(TASK_ID);
+    expect(workspace).toMatchObject({
+      taskId: TASK_ID,
+      mode: "local",
+      folderPath: scratchPath,
+      worktreePath: null,
+    });
+
+    const all = await service.getAllWorkspaces();
+    expect(all[TASK_ID]?.folderPath).toBe(scratchPath);
+
+    // It is not backed by a DB row.
+    expect(workspaceRepo.findByTaskId(TASK_ID)).toBeNull();
+  });
 });
