@@ -1,12 +1,14 @@
 /**
  * Minimal typings for the native Codex `app-server` JSON-RPC protocol.
  *
- * Spike scope: method names are taken from the documented app-server protocol
- * (`codex app-server`). Param/result shapes are intentionally loose until we
- * generate the exact schema from the pinned codex binary via
- * `codex app-server generate-ts`. Tighten these once the binary is bundled.
+ * Method names and message shapes follow the documented protocol
+ * (https://developers.openai.com/codex/app-server). The wire framing is
+ * newline-delimited JSON that follows JSON-RPC 2.0 structure but omits the
+ * `"jsonrpc": "2.0"` header on the wire.
  *
- * See https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md
+ * Spike scope: param/result shapes are still partial. Generate the exact,
+ * version-pinned schema with `codex app-server generate-ts` once the codex
+ * binary is bundled, then tighten these.
  */
 
 export const APP_SERVER_METHODS = {
@@ -25,17 +27,22 @@ export const APP_SERVER_NOTIFICATIONS = {
   ITEM_COMPLETED: "item/completed",
   AGENT_MESSAGE_DELTA: "item/agentMessage/delta",
   TURN_COMPLETED: "turn/completed",
+  TOKEN_USAGE_UPDATED: "thread/tokenUsage/updated",
+} as const;
+
+/** Server-initiated requests the client must answer (approvals). */
+export const APP_SERVER_REQUESTS = {
+  COMMAND_APPROVAL: "item/commandExecution/requestApproval",
+  FILE_CHANGE_APPROVAL: "item/fileChange/requestApproval",
 } as const;
 
 export interface JsonRpcRequest {
-  jsonrpc: "2.0";
   id: number;
   method: string;
   params?: unknown;
 }
 
 export interface JsonRpcNotification {
-  jsonrpc: "2.0";
   method: string;
   params?: unknown;
 }
@@ -47,7 +54,6 @@ export interface JsonRpcError {
 }
 
 export interface JsonRpcResponse {
-  jsonrpc: "2.0";
   id: number;
   result?: unknown;
   error?: JsonRpcError;

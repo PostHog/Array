@@ -41,7 +41,7 @@ function makeFakeServer(transport: StreamPair) {
       }
       throw new Error("no message read");
     },
-    async send(message: RpcMessage & { jsonrpc: "2.0" }): Promise<void> {
+    async send(message: RpcMessage): Promise<void> {
       await writer.write(encoder.encode(`${JSON.stringify(message)}\n`));
     },
   };
@@ -67,7 +67,6 @@ describe("AppServerClient", () => {
     expect(request.params).toEqual({ clientInfo: { name: "posthog-code" } });
 
     await server.send({
-      jsonrpc: "2.0",
       id: request.id as number,
       result: { userAgent: "codex" },
     });
@@ -86,7 +85,6 @@ describe("AppServerClient", () => {
     const pending = client.request("turn/start", {});
     const request = await server.readMessage();
     await server.send({
-      jsonrpc: "2.0",
       id: request.id as number,
       error: { code: -32001, message: "Server overloaded; retry later." },
     });
@@ -109,12 +107,10 @@ describe("AppServerClient", () => {
     const server = makeFakeServer(streams.agent);
 
     await server.send({
-      jsonrpc: "2.0",
       method: "item/agentMessage/delta",
       params: { delta: "Hel" },
     });
     await server.send({
-      jsonrpc: "2.0",
       method: "item/agentMessage/delta",
       params: { delta: "lo" },
     });
@@ -135,7 +131,6 @@ describe("AppServerClient", () => {
     const server = makeFakeServer(streams.agent);
 
     await server.send({
-      jsonrpc: "2.0",
       id: 99,
       method: "applyPatchApproval",
       params: {},

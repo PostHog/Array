@@ -17,13 +17,14 @@ export function mapAppServerNotification(
 ): SessionNotification | null {
   switch (method) {
     case APP_SERVER_NOTIFICATIONS.AGENT_MESSAGE_DELTA: {
-      const delta = readStringField(params, "delta");
-      if (!delta) return null;
+      // `item/agentMessage/delta` carries { itemId, text }.
+      const text = readStringField(params, "text");
+      if (!text) return null;
       return {
         sessionId,
         update: {
           sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: delta },
+          content: { type: "text", text },
         },
       };
     }

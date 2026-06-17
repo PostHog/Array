@@ -54,12 +54,12 @@ export class AppServerClient {
         reject,
       });
     });
-    this.send({ jsonrpc: "2.0", id, method, params });
+    this.send({ id, method, params });
     return promise;
   }
 
   notify(method: string, params?: unknown): void {
-    this.send({ jsonrpc: "2.0", method, params });
+    this.send({ method, params });
   }
 
   async close(): Promise<void> {
@@ -168,7 +168,6 @@ export class AppServerClient {
   ): Promise<void> {
     if (!this.handlers.onRequest) {
       this.send({
-        jsonrpc: "2.0",
         id,
         error: { code: -32601, message: `Method not handled: ${method}` },
       });
@@ -176,10 +175,9 @@ export class AppServerClient {
     }
     try {
       const result = await this.handlers.onRequest(method, params);
-      this.send({ jsonrpc: "2.0", id, result });
+      this.send({ id, result });
     } catch (err) {
       this.send({
-        jsonrpc: "2.0",
         id,
         error: {
           code: -32000,

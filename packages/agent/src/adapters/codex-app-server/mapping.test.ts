@@ -7,7 +7,7 @@ describe("mapAppServerNotification", () => {
     const result = mapAppServerNotification(
       "s-1",
       APP_SERVER_NOTIFICATIONS.AGENT_MESSAGE_DELTA,
-      { delta: "Hello" },
+      { itemId: "item_1", text: "Hello" },
     );
 
     expect(result).toEqual({
@@ -19,7 +19,7 @@ describe("mapAppServerNotification", () => {
     });
   });
 
-  it("returns null when the delta is missing or empty", () => {
+  it("returns null when the text is missing or empty", () => {
     expect(
       mapAppServerNotification(
         "s-1",
@@ -31,7 +31,7 @@ describe("mapAppServerNotification", () => {
       mapAppServerNotification(
         "s-1",
         APP_SERVER_NOTIFICATIONS.AGENT_MESSAGE_DELTA,
-        { delta: "" },
+        { itemId: "item_1", text: "" },
       ),
     ).toBeNull();
   });
