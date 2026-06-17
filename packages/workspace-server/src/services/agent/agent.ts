@@ -954,7 +954,6 @@ When creating pull requests, add the following footer at the end of the PR descr
           adapter: config.adapter,
           model: config.model,
           isRetry,
-          code: (err as { code?: unknown }).code,
           data: (err as { data?: unknown }).data,
           errorDetail: serializeError(err),
         },

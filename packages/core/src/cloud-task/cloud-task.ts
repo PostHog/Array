@@ -732,14 +732,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         return;
       }
 
-      const closed = this.watchers.get(key);
       this.log.info("Cloud task stream closed cleanly", {
         key,
         connectionDurationMs: connectedAt ? Date.now() - connectedAt : 0,
         bytesReceived,
         eventsReceived,
-        dataEventsReceived: closed?.connDataEventsReceived ?? 0,
-        lastEventId: closed?.lastEventId ?? null,
+        dataEventsReceived: watcher.connDataEventsReceived,
+        lastEventId: watcher.lastEventId,
       });
       await this.handleStreamCompletion(key, { reconnectIfNonTerminal: true });
     } catch (error) {

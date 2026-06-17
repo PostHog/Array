@@ -1,5 +1,6 @@
 import type { Readable, Writable } from "node:stream";
 import { ReadableStream, WritableStream } from "node:stream/web";
+import { serializeError } from "@posthog/shared";
 import type { Logger } from "./logger";
 
 export class Pushable<T> implements AsyncIterable<T> {
@@ -147,8 +148,7 @@ export function createTappedWritableStream(
         // Stream may be closed if subprocess crashed - log but don't throw
         droppedWriteCount++;
         logger?.error("ACP write error", {
-          error: err instanceof Error ? err.message : String(err),
-          errorName: err instanceof Error ? err.name : undefined,
+          errorDetail: serializeError(err),
           messageCount,
           droppedWriteCount,
           droppedBytes: chunk.byteLength,

@@ -42,6 +42,7 @@ import {
   type SDKUserMessage,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
+import { serializeError } from "@posthog/shared";
 import { v7 as uuidv7 } from "uuid";
 import packageJson from "../../../package.json" with { type: "json" };
 import {
@@ -1830,7 +1831,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       ? withTimeout(q.initializationResult(), SESSION_VALIDATION_TIMEOUT_MS)
       : undefined;
 
-    const modelConfigStartedAt = Date.now();
     const [rawModelOptions] = await Promise.all([
       this.getModelConfigOptions(
         settingsManager.getSettings().model || meta?.model || undefined,
@@ -1845,7 +1845,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           ]
         : []),
     ]);
-    const modelConfigMs = Date.now() - modelConfigStartedAt;
+    const modelConfigMs = Date.now() - initStartedAt;
 
     // Restrict the model list to the user's `availableModels` allowlist
     // from settings.json so config UI and downstream resolution stay
@@ -1886,7 +1886,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           taskRunId: meta?.taskRunId,
           modelConfigMs,
           initMs: Date.now() - initStartedAt,
-          error: err instanceof Error ? err.message : String(err),
+          errorDetail: serializeError(err),
         });
         throw err;
       }

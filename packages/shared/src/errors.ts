@@ -36,12 +36,6 @@ export interface SerializedError {
   cause?: SerializedError;
 }
 
-/**
- * Flatten an error and its `cause` chain into a plain, log-friendly object.
- * undici surfaces the real socket-level reason for `TypeError: terminated`
- * (e.g. ECONNRESET, UND_ERR_SOCKET, UND_ERR_HEADERS_TIMEOUT) on `error.cause`,
- * which a bare `error.message` throws away. Depth-bounded to avoid cycles.
- */
 export function serializeError(error: unknown, maxDepth = 5): SerializedError {
   if (typeof error === "object" && error !== null) {
     const source = error as {
