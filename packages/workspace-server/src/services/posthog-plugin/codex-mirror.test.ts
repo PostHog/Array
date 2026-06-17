@@ -1,3 +1,4 @@
+import * as nodeFs from "node:fs";
 import { existsSync, lstatSync } from "node:fs";
 import {
   lstat,
@@ -10,12 +11,13 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addMirroredName,
   mirrorUserSkillsToCodex,
   readCodexMirrorState,
 } from "./codex-mirror";
+import { withEnvVar } from "./test-helpers";
 
 let root: string;
 let userDir: string;
@@ -121,6 +123,38 @@ describe("mirrorUserSkillsToCodex", () => {
     );
   });
 
+  it("falls back to copying node_modules when symlink creation is rejected", async () => {
+    await createSkill(userDir, "alpha");
+    await mkdir(path.join(userDir, "alpha", "node_modules", "dep"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(userDir, "alpha", "node_modules", "dep", "index.js"),
+      "module.exports = 1;",
+    );
+
+    // Simulate a filesystem/policy that rejects symlinks.
+    const spy = vi
+      .spyOn(nodeFs.promises, "symlink")
+      .mockRejectedValueOnce(new Error("EPERM: symlinks not permitted"));
+    try {
+      await mirrorUserSkillsToCodex(userDir, codexDir);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const mirroredNodeModules = path.join(codexDir, "alpha", "node_modules");
+    // Fell back to a real copy, not a symlink, so deps are still present.
+    expect(lstatSync(mirroredNodeModules).isSymbolicLink()).toBe(false);
+    expect(lstatSync(mirroredNodeModules).isDirectory()).toBe(true);
+    expect(
+      await readFile(
+        path.join(mirroredNodeModules, "dep", "index.js"),
+        "utf-8",
+      ),
+    ).toBe("module.exports = 1;");
+  });
+
   it("mirrors a skill without node_modules unchanged", async () => {
     await createSkill(userDir, "alpha");
 
@@ -139,17 +173,9 @@ describe("mirrorUserSkillsToCodex", () => {
 
   it("does nothing when POSTHOG_DISABLE_CODEX_MIRROR=1", async () => {
     await createSkill(userDir, "alpha");
-    const prev = process.env.POSTHOG_DISABLE_CODEX_MIRROR;
-    process.env.POSTHOG_DISABLE_CODEX_MIRROR = "1";
-    try {
+    await withEnvVar("POSTHOG_DISABLE_CODEX_MIRROR", "1", async () => {
       await mirrorUserSkillsToCodex(userDir, codexDir);
-    } finally {
-      if (prev === undefined) {
-        delete process.env.POSTHOG_DISABLE_CODEX_MIRROR;
-      } else {
-        process.env.POSTHOG_DISABLE_CODEX_MIRROR = prev;
-      }
-    }
+    });
 
     expect(existsSync(path.join(codexDir, "alpha"))).toBe(false);
   });

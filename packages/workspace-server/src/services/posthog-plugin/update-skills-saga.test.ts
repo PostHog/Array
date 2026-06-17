@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { withEnvVar } from "./test-helpers";
 import { syncCodexSkills } from "./update-skills-saga";
 
 let root: string;
@@ -59,17 +60,9 @@ describe("syncCodexSkills", () => {
 
   it("does nothing when POSTHOG_DISABLE_CODEX_MIRROR=1", async () => {
     await createBundledSkill("alpha");
-    const prev = process.env.POSTHOG_DISABLE_CODEX_MIRROR;
-    process.env.POSTHOG_DISABLE_CODEX_MIRROR = "1";
-    try {
+    await withEnvVar("POSTHOG_DISABLE_CODEX_MIRROR", "1", async () => {
       await syncCodexSkills(pluginPath, codexDir);
-    } finally {
-      if (prev === undefined) {
-        delete process.env.POSTHOG_DISABLE_CODEX_MIRROR;
-      } else {
-        process.env.POSTHOG_DISABLE_CODEX_MIRROR = prev;
-      }
-    }
+    });
 
     expect(existsSync(path.join(codexDir, "alpha"))).toBe(false);
   });

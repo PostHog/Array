@@ -48,10 +48,22 @@ export async function copySkillDirLinkingNodeModules(
   });
   if (fs.existsSync(srcNodeModules)) {
     const destNodeModules = path.join(dest, "node_modules");
-    await fs.promises.rm(destNodeModules, { recursive: true, force: true });
-    // "junction" so this also works on Windows without elevated permissions;
-    // the type arg is ignored on POSIX. Target is absolute, as junctions require.
-    await fs.promises.symlink(srcNodeModules, destNodeModules, "junction");
+    // The cp filter never writes node_modules and callers remove `dest`
+    // first, so the target is absent here.
+    try {
+      // "junction" so this also works on Windows without elevated permissions;
+      // the type arg is ignored on POSIX. Target is absolute, as junctions require.
+      await fs.promises.symlink(srcNodeModules, destNodeModules, "junction");
+    } catch {
+      // Some filesystems / sandbox policies reject symlinks. Fall back to a
+      // real copy so the mirrored skill keeps its dependencies (the pre-change
+      // behavior in those environments) rather than ending up dep-less.
+      await fs.promises.rm(destNodeModules, { recursive: true, force: true });
+      await fs.promises.cp(srcNodeModules, destNodeModules, {
+        recursive: true,
+        dereference: true,
+      });
+    }
   }
 }
 
