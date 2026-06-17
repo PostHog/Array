@@ -50,12 +50,20 @@ export function useReportOpenTracker(
   report: SignalReport,
   tab: InboxDetailTab,
 ): void {
-  // The Pull requests / Reports tabs render the scoped+filtered list; the Runs
-  // tab is project-wide. Mount only the query matching the originating tab so
-  // rank is relative to the rows the user actually saw (and so a non-run detail
-  // doesn't start the unused project-wide poll alongside the scoped one).
+  // Mount only the query matching the originating tab so rank is relative to the
+  // rows the user actually saw (and so a non-run detail doesn't start the unused
+  // project-wide poll alongside the scoped one):
+  //   - Runs tab is project-wide (ignoreScope/ignoreFilters).
+  //   - Pull requests tab renders the server-filtered PR-only list, so mirror
+  //     that here — otherwise a PR past the broad list's first page would get
+  //     rank -1 and a list_size from the broad list, not the rows shown.
+  //   - Reports tab renders the scoped+filtered broad list.
   const { scopedReports } = useInboxAllReports(
-    tab === "runs" ? { ignoreScope: true, ignoreFilters: true } : undefined,
+    tab === "runs"
+      ? { ignoreScope: true, ignoreFilters: true }
+      : tab === "pulls"
+        ? { pullRequestsOnly: true }
+        : undefined,
   );
   const visible = inboxDetailTabReports(tab, scopedReports);
 
