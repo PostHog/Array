@@ -147,7 +147,9 @@ function DashboardPreview({ spec }: { spec: Spec | null | undefined }) {
               <CanvasRenderer spec={spec} state={spec.state} />
             </ErrorBoundary>
           </Box>
-        ) : null
+        ) : (
+          <PreviewPlaceholder label="Loading preview…" />
+        )
       ) : (
         <PreviewPlaceholder label="Empty canvas" />
       )}
