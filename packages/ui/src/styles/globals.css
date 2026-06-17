@@ -1049,6 +1049,10 @@ button,
   cursor: pointer;
 }
 
+.quill-button.quill-button--variant-outline:hover {
+  background-color: var(--color-fill-hover);
+}
+
 /* PostHog Lemon UI button style — applies to solid buttons in explicitly-light Theme wrappers
    (auth screen, onboarding flow). Uses the 3D depth shadow and lift-on-hover effect. */
 .radix-themes[data-appearance="light"] .rt-Button[data-variant="solid"] {

@@ -207,7 +207,14 @@ export function ProjectSwitcher({
       <DropdownMenuContent
         align="start"
         side="bottom"
-        className="w-(--anchor-width) max-w-(--anchor-width) pt-0"
+        className={
+          // The `button` trigger spans the full sidebar width, so binding the
+          // menu to `--anchor-width` would stretch it and break the layout. Pin
+          // a fixed width there; the `item` trigger matches its anchor.
+          triggerVariant === "button"
+            ? "w-64 min-w-64 pt-0"
+            : "w-(--anchor-width) max-w-(--anchor-width) pt-0"
+        }
         sideOffset={4}
       >
         <Box>

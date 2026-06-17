@@ -34,6 +34,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   MenuLabel,
+  Separator,
 } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
@@ -554,19 +555,22 @@ export function ChannelsList() {
   return (
     <>
       <Flex direction="column" gap="px" className="px-2 pb-2">
-        <Box className="px-2 py-1.5">
-          <MenuLabel className="uppercase">Channels</MenuLabel>
+        <Box className="py-1.5">
+          <Separator />
         </Box>
-
-        <Button
-          variant="outline"
-          size="default"
-          className="mb-1 w-full justify-start gap-2"
-          onClick={() => setModalOpen(true)}
-        >
-          <PlusIcon size={14} />
-          New
-        </Button>
+        <Box>
+          <MenuLabel className="group flex items-center justify-between uppercase">
+            Channels
+            <Button
+              variant="outline"
+              size="icon-xs"
+              onClick={() => setModalOpen(true)}
+              className="group-hover:border-border"
+            >
+              <PlusIcon size={14} />
+            </Button>
+          </MenuLabel>
+        </Box>
 
         {!isLoading && channels.length === 0 && (
           <Text size="1" className="px-2 text-gray-9">
