@@ -14,8 +14,14 @@ export function resolveGatewayProduct({
   if (originProduct === "slack") {
     return "slack_app";
   }
+  // Signals-originated work bills to the signals product regardless of whether
+  // the run is internal: signal-report tasks and headless scout runs both count
+  // against signals. (`signals_scout` is the scout origin product.)
+  if (originProduct === "signal_report" || originProduct === "signals_scout") {
+    return "signals";
+  }
   if (isInternal) {
-    return originProduct === "signal_report" ? "signals" : "background_agents";
+    return "background_agents";
   }
   return "posthog_code";
 }

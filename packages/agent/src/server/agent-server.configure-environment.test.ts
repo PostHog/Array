@@ -127,14 +127,25 @@ describe("AgentServer.configureEnvironment", () => {
     );
   });
 
-  it("does not tag as signals when origin_product is 'signal_report' but the task is not internal", () => {
+  it("tags as signals when origin_product is 'signal_report' even if the task is not internal", () => {
     buildServer("background").configureEnvironment({
       isInternal: false,
       originProduct: "signal_report",
     });
 
     expect(process.env.LLM_GATEWAY_URL).toBe(
-      "https://gateway.us.posthog.com/posthog_code",
+      "https://gateway.us.posthog.com/signals",
+    );
+  });
+
+  it("tags as signals for scout runs (origin_product 'signals_scout'), internal or not", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: false,
+      originProduct: "signals_scout",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/signals",
     );
   });
 
