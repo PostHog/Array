@@ -122,7 +122,8 @@ export function createTappedWritableStream(
   const { onMessage, logger } = options;
   const decoder = new TextDecoder();
   let buffer = "";
-  let _messageCount = 0;
+  let messageCount = 0;
+  let droppedWriteCount = 0;
 
   return new WritableStream({
     async write(chunk: Uint8Array) {
@@ -133,7 +134,7 @@ export function createTappedWritableStream(
 
       for (const line of lines) {
         if (!line.trim()) continue;
-        _messageCount++;
+        messageCount++;
 
         onMessage(line);
       }
@@ -144,7 +145,13 @@ export function createTappedWritableStream(
         writer.releaseLock();
       } catch (err) {
         // Stream may be closed if subprocess crashed - log but don't throw
-        logger?.error("ACP write error", err);
+        droppedWriteCount++;
+        logger?.error("ACP write error", {
+          error: err instanceof Error ? err.message : String(err),
+          messageCount,
+          droppedWriteCount,
+          droppedBytes: chunk.byteLength,
+        });
       }
     },
     async close() {

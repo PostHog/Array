@@ -49,6 +49,8 @@ export {
   isNotAuthenticatedError,
   isRateLimitError,
   NotAuthenticatedError,
+  type SerializedError,
+  serializeError,
 } from "./errors";
 export type { ExecutionMode } from "./exec-types";
 export * from "./flags";
