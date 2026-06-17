@@ -359,9 +359,7 @@ export const createSignedCommitGuardHook =
       `[SignedCommitGuard] Blocking unsigned git command: ${command}`,
     );
 
-    // The model usually reaches for raw git only when the signed-commit tool
-    // looks unavailable to it. Try to restore the in-process server before
-    // denying, then tailor the message to whether it came back.
+    // Try to restore the server before denying; tailor the message to the result.
     let toolsAvailable = true;
     if (onEnsureLocalToolsConnected) {
       try {

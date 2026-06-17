@@ -87,8 +87,7 @@ function installFakeSession(
   const endSpy = vi.spyOn(input, "end");
   const abortController = new AbortController();
 
-  // Each call returns a distinguishable FRESH instance so tests can prove the
-  // refresh/self-heal rebuilds rather than reusing the stale one.
+  // Distinguishable fresh instance per call so tests can prove a rebuild.
   let freshInstanceCounter = 0;
   const buildInProcessMcpServers = vi.fn(() => ({
     "posthog-code-tools": {
@@ -400,9 +399,7 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
       }
     ).queryOptions.mcpServers["posthog-code-tools"].instance;
 
-    // freshMcpServers carries only external (http) servers. The sdk server must
-    // be rebuilt fresh — reusing the prior instance is what made the SDK throw
-    // "Already connected to a transport" and silently drop signed-commit tools.
+    // freshMcpServers carries only external servers; the sdk server is rebuilt.
     await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
       mcpServers: freshMcpServers,
     });

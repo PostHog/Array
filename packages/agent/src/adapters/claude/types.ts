@@ -47,14 +47,8 @@ export type Session = BaseSession & {
   query: Query;
   /** The Options object passed to query() — mutating it affects subsequent prompts */
   queryOptions: Options;
-  /**
-   * Rebuilds the in-process ("sdk") MCP servers (currently the signed-commit
-   * `posthog-code-tools` server) with a FRESH instance each call. A reused
-   * instance keeps its `_transport` set, so the SDK throws "Already connected"
-   * when a refreshed/rebuilt Query tries to connect it. Used on session refresh
-   * and by the self-heal path. Returns {} when no in-process server is enabled
-   * (e.g. non-cloud runs or missing GH token).
-   */
+  /** Rebuilds the in-process ("sdk") signed-commit server with a fresh instance
+   * each call (reusing one throws "Already connected"); {} when none is enabled. */
   buildInProcessMcpServers: () => Record<
     string,
     McpSdkServerConfigWithInstance

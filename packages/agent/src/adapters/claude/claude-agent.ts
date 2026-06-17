@@ -446,11 +446,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       promptReplayed = true;
     } else {
-      // Proactively restore the signed-commit MCP server before driving the
-      // turn, so a disconnection from an earlier mid-run refresh can't strand
-      // the commit the user is about to ask for. Skipped for local-only
-      // commands, which never invoke the model. Best-effort: the guard hook is
-      // the reactive backstop if this can't reconnect in time.
+      // Reconnect the signed-commit server before the turn (guard hook backstops).
       if (!isLocalOnlyCommand) {
         await this.ensureLocalToolsConnected("pre-prompt");
       }
@@ -1265,12 +1261,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const newAbortController = new AbortController();
     const { sessionId: _drop, ...rest } = prev.queryOptions;
 
-    // parseMcpServers yields only http/sse/stdio. The in-process ("sdk")
-    // local-tools server (signed commits) must be REBUILT fresh, not carried
-    // over: the abort above tore down the old Query's transport but left the
-    // reused McpServer instance with `_transport` still set, so connecting it
-    // on the new Query throws "Already connected to a transport" and the
-    // signed-commit tools silently vanish. A fresh instance connects cleanly.
+    // Rebuild the in-process ("sdk") server fresh; reusing the prior instance
+    // throws "Already connected to a transport" and drops the signed-commit tools.
     const freshInProcess = prev.buildInProcessMcpServers();
     if (Object.keys(freshInProcess).length > 0) {
       this.logger.info("signed_commit_mcp_rebuilt_on_refresh", {
@@ -1311,31 +1303,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       );
     }
 
-    // Re-fetch MCP tool metadata + slash commands — the server list changed.
-    // Clear first so servers dropped by this refresh don't linger in the cache
-    // and over-report via getConnectedMcpServerNames().
+    // Re-fetch metadata for the new server list; clear first so dropped servers
+    // don't linger in the cache.
     clearMcpToolMetadataCache();
     this.deferBackgroundFetches(newQuery);
   }
 
   /**
-   * Best-effort self-heal for the in-process signed-commit MCP server
-   * (`posthog-code-tools`). If it's enabled for this session but the live Query
-   * reports it missing or not connected, rebuild a FRESH instance and reconnect
-   * it via the SDK's live `setMcpServers` (external servers are passed through
-   * unchanged so they aren't dropped). Never throws. Returns whether the
-   * signed-commit tooling is usable after the call, so callers (e.g. the guard
-   * hook) can tailor their message.
-   *
-   * Triggered proactively before each prompt and reactively when the guard hook
-   * blocks a raw `git commit`/`push`, so the disconnection can never strand a
-   * commit the way a mid-run refresh used to.
+   * Best-effort self-heal: if the in-process signed-commit server is enabled but
+   * the live Query reports it disconnected, rebuild a fresh instance and
+   * reconnect via setMcpServers. Returns whether the tooling is usable after.
    */
   private async ensureLocalToolsConnected(trigger: string): Promise<boolean> {
     const desired = this.session.buildInProcessMcpServers();
     const names = Object.keys(desired);
     if (names.length === 0) {
-      // No in-process server expected (e.g. non-cloud run) — nothing to heal.
       return true;
     }
 
@@ -1634,11 +1616,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // push` are blocked by the PreToolUse guard (and the sandbox git shim), so
     // the agent commits via the signed-commit tool instead.
     //
-    // Built via a closure (stored on the session) so refresh and self-heal can
-    // rebuild a FRESH instance. A reused McpServer keeps its `_transport` set,
-    // so the SDK rejects re-connecting it with "Already connected to a
-    // transport" — which is exactly how the signed-commit server silently
-    // disappeared after a mid-run refresh.
+    // A closure so refresh/self-heal can rebuild a fresh instance (reusing one
+    // throws "Already connected to a transport").
     const buildInProcessMcpServers = (): Record<
       string,
       McpSdkServerConfigWithInstance
