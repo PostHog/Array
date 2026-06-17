@@ -19,6 +19,7 @@ import {
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import {
   Button,
+  ButtonGroup,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -61,7 +62,7 @@ import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
-import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
 import { hostClient } from "../hostClient";
@@ -94,8 +95,17 @@ function relativeTime(ms: number): string {
 }
 
 // Hover-revealed "..." menu on a channel header: rename or delete the channel.
-function ChannelMenu({ channel }: { channel: Channel }) {
-  const [open, setOpen] = useState(false);
+// `open`/`onOpenChange` are lifted so the parent's button group can stay
+// visible while the menu is open.
+function ChannelMenu({
+  channel,
+  open,
+  onOpenChange,
+}: {
+  channel: Channel;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const [renameOpen, setRenameOpen] = useState(false);
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -135,23 +145,22 @@ function ChannelMenu({ channel }: { channel: Channel }) {
   };
 
   return (
-    <Box
-      className={cn(
-        "transition-opacity",
-        open ? "opacity-100" : "opacity-0 group-hover/chan:opacity-100",
-      )}
-    >
-      <DropdownMenu open={open} onOpenChange={setOpen}>
+    <>
+      <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger
           render={
-            <IconButton
-              variant="ghost"
-              color="gray"
-              size="1"
+            <Button
+              variant="outline"
+              size="icon-xs"
               aria-label={`Options for ${channel.name}`}
+              className={cn(
+                "group-hover:border-border",
+                "transition-opacity",
+                open ? "opacity-100" : "opacity-0 group-hover/chan:opacity-100",
+              )}
             >
               <DotsThreeIcon size={14} weight="bold" />
-            </IconButton>
+            </Button>
           }
         />
         <DropdownMenuContent
@@ -197,7 +206,7 @@ function ChannelMenu({ channel }: { channel: Channel }) {
         open={renameOpen}
         onOpenChange={setRenameOpen}
       />
-    </Box>
+    </>
   );
 }
 
@@ -436,6 +445,8 @@ function ChannelSection({
   // channel (sidebar, cmd-k, deep link) auto-expands it so the active channel
   // is always open, while leaving manual collapse/expand intact afterward.
   const [open, setOpen] = useState(isActive);
+  // Lifted so the hover button group stays visible while the menu is open.
+  const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
     if (isActive) setOpen(true);
   }, [isActive]);
@@ -454,33 +465,73 @@ function ChannelSection({
 
   return (
     <Box className="group/chan relative">
+      {/* The channel header row is one button group: the "# name" toggle grows
+          to fill the row, with the hover actions (new task + options menu)
+          joined onto its right edge. */}
       {/* Trigger is a quill Button; open/close is plain state (no Collapsible),
-          so the leading icon lines up with the "New" button above. */}
+            so the leading icon lines up with the "New" button above. */}
       <Button
         variant="default"
         size="default"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="w-full justify-start gap-2 pr-16"
+        className="w-full min-w-0 flex-1 justify-start gap-2 aria-expanded:bg-transparent"
       >
         {/* `#` by default; swaps to the expand/collapse caret on hover. Sized to
-            match the "New" button's plus so the columns align. */}
+              match the "New" button's plus so the columns align. */}
         <span className="relative inline-flex size-[14px] shrink-0 items-center justify-center text-gray-10">
           <HashIcon size={14} className="group-hover/chan:invisible" />
           <span className="absolute inset-0 hidden items-center justify-center group-hover/chan:flex">
             {open ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
           </span>
         </span>
-        <span className="truncate font-medium text-[13px] text-gray-12">
+        <span
+          className={cn(
+            "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
+            menuOpen && "pr-8",
+          )}
+        >
           {channel.name}
         </span>
       </Button>
+      {/* Hover actions: new task + the options menu. Stay visible while the
+            menu is open. */}
+      <div className="absolute top-1 right-1">
+        <ButtonGroup>
+          <Tooltip content="New task" side="top">
+            <Button
+              variant="outline"
+              size="icon-xs"
+              aria-label={`New task in ${channel.name}`}
+              onClick={() =>
+                navigate({
+                  to: "/website/$channelId/new",
+                  params: { channelId: channel.id },
+                })
+              }
+              className={cn(
+                "transition-opacity group-hover:border-border",
+                menuOpen
+                  ? "opacity-100"
+                  : "opacity-0 group-hover/chan:opacity-100",
+              )}
+            >
+              <PlusIcon size={14} weight="bold" />
+            </Button>
+          </Tooltip>
+          <ChannelMenu
+            channel={channel}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+          />
+        </ButtonGroup>
+      </div>
       {open && (
         // Children hang off a vertical guide line, like a tree.
         <Flex
           direction="column"
           gap="px"
-          className="mt-px ml-[15px] border-gray-6 border-l pl-1"
+          className="mt-px ml-[15px] border-gray-6 border-l pl-1 empty:hidden"
         >
           {dashboards.map((d) => (
             <DashboardRow
@@ -514,35 +565,13 @@ function ChannelSection({
           })}
         </Flex>
       )}
-      {/* Hover actions on the channel header: new task + the options menu. */}
-      <Flex gap="1" align="center" className="absolute top-1 right-1">
-        <Box className="opacity-0 transition-opacity group-hover/chan:opacity-100">
-          <Tooltip content="New task" side="top">
-            <IconButton
-              variant="ghost"
-              color="gray"
-              size="1"
-              aria-label={`New task in ${channel.name}`}
-              onClick={() =>
-                navigate({
-                  to: "/website/$channelId/new",
-                  params: { channelId: channel.id },
-                })
-              }
-            >
-              <PlusIcon size={14} weight="bold" />
-            </IconButton>
-          </Tooltip>
-        </Box>
-        <ChannelMenu channel={channel} />
-      </Flex>
     </Box>
   );
 }
 
-// The channel list — the Channels space sidebar body. A "CHANNELS" label and a
-// "New" channel button sit above a flat list of channels; starred channels sort
-// to the top so the ones you use most stay in reach.
+// The channel list — the Channels space sidebar body. Starred channels surface
+// in their own section at the top so the ones you use most stay in reach; the
+// rest sit under a "Channels" label with the "New" channel button.
 export function ChannelsList() {
   const { channels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
@@ -550,7 +579,6 @@ export function ChannelsList() {
 
   const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
   const others = channels.filter((c) => !starredRefToShortcutId.has(c.path));
-  const ordered = [...starred, ...others];
 
   return (
     <>
@@ -558,14 +586,38 @@ export function ChannelsList() {
         <Box className="py-1.5">
           <Separator />
         </Box>
-        <Box>
+
+        {starred.length > 0 && (
+          <>
+            <Box>
+              <MenuLabel className="flex items-center gap-2 uppercase">
+                <StarIcon size={14} className="text-gray-9" />
+                Starred
+              </MenuLabel>
+            </Box>
+            <div className="pl-2">
+              {starred.map((channel) => (
+                <ChannelSection
+                  key={channel.id}
+                  channel={channel}
+                  channels={channels}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        <Box className={cn(starred.length > 0 && "mt-3")}>
           <MenuLabel className="group flex items-center justify-between uppercase">
-            Channels
+            <span className="flex items-center gap-2">
+              <HashIcon size={14} className="text-gray-9" />
+              Channels
+            </span>
             <Button
               variant="outline"
               size="icon-xs"
               onClick={() => setModalOpen(true)}
-              className="group-hover:border-border"
+              className="-mr-1 group-hover:border-border"
             >
               <PlusIcon size={14} />
             </Button>
@@ -578,13 +630,15 @@ export function ChannelsList() {
           </Text>
         )}
 
-        {ordered.map((channel) => (
-          <ChannelSection
-            key={channel.id}
-            channel={channel}
-            channels={channels}
-          />
-        ))}
+        <div className="pl-2">
+          {others.map((channel) => (
+            <ChannelSection
+              key={channel.id}
+              channel={channel}
+              channels={channels}
+            />
+          ))}
+        </div>
       </Flex>
 
       <CreateChannelModal open={modalOpen} onOpenChange={setModalOpen} />

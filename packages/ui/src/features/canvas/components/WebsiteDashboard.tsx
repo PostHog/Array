@@ -6,7 +6,7 @@ import { useDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useCanvasChatStore } from "@posthog/ui/features/canvas/stores/canvasChatStore";
 import { useIsDashboardEditing } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
-import { Flex, ScrollArea, Text } from "@radix-ui/themes";
+import { Flex, Text } from "@radix-ui/themes";
 import { useEffect } from "react";
 
 // Renders a saved json-render dashboard (read-only). In edit mode, swaps to the
@@ -39,7 +39,7 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
   }
 
   return (
-    <ScrollArea className="scroll-mask-4 h-full bg-background">
+    <div className="scroll-mask-4 h-full overflow-auto bg-background">
       {isNonEmptySpec(spec) ? (
         <ErrorBoundary name="dashboard-renderer" resetKey={spec}>
           <ViewRenderer spec={spec} dashboardId={dashboardId} />
@@ -63,6 +63,6 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
           )}
         </Flex>
       )}
-    </ScrollArea>
+    </div>
   );
 }

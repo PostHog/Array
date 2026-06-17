@@ -243,7 +243,7 @@ export function CardBody({
   return (
     // h-full + flex column so the card fills its (stretched) grid cell and its
     // content region (flex-1) can grow — charts fill, tables get a tall scroll box.
-    <Card size="sm" className="flex h-full flex-col">
+    <Card size="sm" className="flex h-full flex-col rounded-sm">
       {props.title && (
         <CardHeader>
           <Heading size="lg" className="font-bold text-foreground">
@@ -333,7 +333,7 @@ export function TableBody({ props }: { props: TableProps; ctx: BodyCtx }) {
     // a max-height). So cap the viewport itself; stickyHeader then pins as it scrolls.
     <Table
       stickyHeader
-      className="rounded-md border border-border **:data-[slot=table-viewport]:max-h-72"
+      className="rounded-sm border border-border **:data-[slot=table-viewport]:max-h-72"
     >
       <TableHeader>
         <TableRow>
@@ -582,7 +582,7 @@ export function RetentionGridBody({
   return (
     <Table
       stickyHeader
-      className="rounded-md border border-border **:data-[slot=table-viewport]:max-h-96"
+      className="rounded-sm border border-border **:data-[slot=table-viewport]:max-h-96"
     >
       <TableHeader>
         <TableRow>
