@@ -99,13 +99,17 @@ export function useRunWorkstreamAction() {
       void (async () => {
         try {
           // The cloud runtime requires a model: action-pinned, then last-used,
-          // then the adapter's server default.
+          // then the adapter's server default. The preferred candidate is only
+          // honoured if the gateway still offers it (the resolver validates it),
+          // so a stale persisted/pinned id can't reach the run and 403.
           const adapter = action.adapter ?? lastUsedAdapter;
-          let model = action.model ?? lastUsedModel ?? undefined;
-          if (!model && cloudRegion) {
+          const preferredModel = action.model ?? lastUsedModel ?? undefined;
+          let model = preferredModel;
+          if (cloudRegion) {
             model = await modelResolver.resolveDefaultModel(
               getCloudUrlFromRegion(cloudRegion),
               adapter,
+              preferredModel,
             );
           }
           if (!model) {

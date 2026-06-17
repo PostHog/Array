@@ -76,6 +76,21 @@ describe("SignalReportTaskService", () => {
     expect(result.status).toBe("created");
   });
 
+  it("forwards the override to the resolver as a preference, not a hard selection", async () => {
+    // The resolver validates the override against the gateway's available
+    // models, so it must receive it rather than the service short-circuiting.
+    const { service, modelResolver } = makeService();
+    await service.createSignalReportTask(
+      makeInput({ modelOverride: "claude-sonnet" }),
+      vi.fn(),
+    );
+    expect(modelResolver.resolveDefaultModel).toHaveBeenCalledWith(
+      expect.any(String),
+      "claude",
+      "claude-sonnet",
+    );
+  });
+
   it("aborts with missing-model when no model can be resolved", async () => {
     const { service, createTask } = makeService(
       {},

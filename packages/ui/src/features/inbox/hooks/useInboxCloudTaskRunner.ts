@@ -135,9 +135,17 @@ export function useInboxCloudTaskRunner({
     const adapter = settings.lastUsedAdapter ?? "claude";
     const apiHost = getCloudUrlFromRegion(cloudRegion);
 
-    const model =
-      settings.lastUsedModel ??
-      (await resolveDefaultModel(queryClient, apiHost, adapter, modelResolver));
+    // Pass the persisted model as a *preference*, not a hard selection: the
+    // resolver keeps it only if the gateway still offers it, otherwise it falls
+    // back to the server default. A stale id (e.g. one later de-listed for the
+    // org) would otherwise be sent here and fail the run with a gateway 403.
+    const model = await resolveDefaultModel(
+      queryClient,
+      apiHost,
+      adapter,
+      modelResolver,
+      settings.lastUsedModel,
+    );
 
     if (!model) {
       sonnerToast.dismiss(toastId);

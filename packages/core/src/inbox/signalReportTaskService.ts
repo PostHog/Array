@@ -66,9 +66,13 @@ export class SignalReportTaskService {
     }
 
     const apiHost = getCloudUrlFromRegion(input.cloudRegion);
-    const model =
-      input.modelOverride ??
-      (await this.modelResolver.resolveDefaultModel(apiHost, input.adapter));
+    // The override is a preference: the resolver keeps it only if the gateway
+    // still offers it, otherwise it falls back to the server default.
+    const model = await this.modelResolver.resolveDefaultModel(
+      apiHost,
+      input.adapter,
+      input.modelOverride,
+    );
     if (!model) {
       return { status: "missing-model" };
     }

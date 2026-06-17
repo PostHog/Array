@@ -301,14 +301,13 @@ function SetupTaskSection() {
       const settings = useSettingsStore.getState();
       const adapter = settings.lastUsedAdapter ?? "claude";
       const apiHost = getCloudUrlFromRegion(cloudRegion);
-      const model =
-        settings.lastUsedModel ??
-        (await resolveDefaultModel(
-          queryClient,
-          apiHost,
-          adapter,
-          modelResolver,
-        ));
+      const model = await resolveDefaultModel(
+        queryClient,
+        apiHost,
+        adapter,
+        modelResolver,
+        settings.lastUsedModel,
+      );
 
       if (!model) {
         sonnerToast.dismiss(toastId);
