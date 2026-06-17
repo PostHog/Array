@@ -366,6 +366,45 @@ describe("createSignedCommitGuardHook", () => {
     );
     expect(result).toEqual({ continue: true });
   });
+
+  test("attempts a heal and keeps the standard message when tools are available", async () => {
+    const onHeal = vi.fn().mockResolvedValue(true);
+    const healingGuard = createSignedCommitGuardHook(logger, onHeal);
+
+    const result = await healingGuard(
+      bashInput("git commit -m x"),
+      undefined,
+      opts,
+    );
+
+    expect(onHeal).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      hookSpecificOutput: {
+        permissionDecision: "deny",
+        permissionDecisionReason: expect.stringContaining("git_signed_commit"),
+      },
+    });
+  });
+
+  test("reassures the model when tools can't be restored", async () => {
+    const onHeal = vi.fn().mockResolvedValue(false);
+    const healingGuard = createSignedCommitGuardHook(logger, onHeal);
+
+    const result = await healingGuard(
+      bashInput("git push origin main"),
+      undefined,
+      opts,
+    );
+
+    expect(result).toMatchObject({
+      hookSpecificOutput: {
+        permissionDecision: "deny",
+        permissionDecisionReason: expect.stringContaining(
+          "safe in the working tree",
+        ),
+      },
+    });
+  });
 });
 
 describe("createTaskHook", () => {

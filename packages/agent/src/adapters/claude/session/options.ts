@@ -62,6 +62,9 @@ export interface BuildOptionsParams {
   onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
   /** Cloud task session — enables the signed-commit guard. */
   cloudMode?: boolean;
+  /** Reactive self-heal invoked when the guard blocks a raw git commit/push.
+   * Returns whether signed-commit tooling is usable after the attempt. */
+  onEnsureLocalToolsConnected?: () => Promise<boolean>;
   /** Per-session task state populated by createTaskHook from SDK Task* events. */
   taskState: TaskState;
   /** Called after createTaskHook mutates taskState so callers can emit a plan
@@ -171,6 +174,7 @@ function buildHooks(
   enrichedReadCache: EnrichedReadCache | undefined,
   registeredAgents: ReadonlySet<string>,
   cloudMode: boolean,
+  onEnsureLocalToolsConnected: (() => Promise<boolean>) | undefined,
   taskState: TaskState,
   onTaskStateChange: (() => Promise<void>) | undefined,
 ): Options["hooks"] {
@@ -191,7 +195,9 @@ function buildHooks(
     createSubagentRewriteHook(logger, registeredAgents),
   ];
   if (cloudMode) {
-    preToolUseHooks.push(createSignedCommitGuardHook(logger));
+    preToolUseHooks.push(
+      createSignedCommitGuardHook(logger, onEnsureLocalToolsConnected),
+    );
   }
 
   const taskHook = createTaskHook(taskState, onTaskStateChange);
@@ -415,6 +421,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.enrichedReadCache,
       registeredAgentNames,
       params.cloudMode ?? false,
+      params.onEnsureLocalToolsConnected,
       params.taskState,
       params.onTaskStateChange,
     ),

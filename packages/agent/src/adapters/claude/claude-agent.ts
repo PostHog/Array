@@ -34,7 +34,9 @@ import {
   type CanUseTool,
   getSessionMessages,
   listSessions,
+  type McpSdkServerConfigWithInstance,
   type McpServerConfig,
+  type McpServerStatus,
   type Options,
   type Query,
   query,
@@ -94,6 +96,7 @@ import {
 import type { EnrichedReadCache } from "./hooks";
 import { createLocalToolsMcpServer } from "./mcp/local-tools";
 import {
+  clearMcpToolMetadataCache,
   fetchMcpToolMetadata,
   getCachedMcpTools,
   getConnectedMcpServerNames,
@@ -443,6 +446,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       promptReplayed = true;
     } else {
+      // Proactively restore the signed-commit MCP server before driving the
+      // turn, so a disconnection from an earlier mid-run refresh can't strand
+      // the commit the user is about to ask for. Skipped for local-only
+      // commands, which never invoke the model. Best-effort: the guard hook is
+      // the reactive backstop if this can't reconnect in time.
+      if (!isLocalOnlyCommand) {
+        await this.ensureLocalToolsConnected("pre-prompt");
+      }
       this.session.input.push(userMessage);
     }
 
@@ -1254,17 +1265,23 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const newAbortController = new AbortController();
     const { sessionId: _drop, ...rest } = prev.queryOptions;
 
-    // parseMcpServers yields only http/sse/stdio – carry over any in-process
-    // ("sdk") server so the local-tools server (signed commits) survives.
-    const preservedInProcess = Object.fromEntries(
-      Object.entries(prev.queryOptions.mcpServers ?? {}).filter(
-        ([, cfg]) => (cfg as { type?: string }).type === "sdk",
-      ),
-    );
+    // parseMcpServers yields only http/sse/stdio. The in-process ("sdk")
+    // local-tools server (signed commits) must be REBUILT fresh, not carried
+    // over: the abort above tore down the old Query's transport but left the
+    // reused McpServer instance with `_transport` still set, so connecting it
+    // on the new Query throws "Already connected to a transport" and the
+    // signed-commit tools silently vanish. A fresh instance connects cleanly.
+    const freshInProcess = prev.buildInProcessMcpServers();
+    if (Object.keys(freshInProcess).length > 0) {
+      this.logger.info("signed_commit_mcp_rebuilt_on_refresh", {
+        sessionId: this.sessionId,
+        servers: Object.keys(freshInProcess),
+      });
+    }
 
     const newOptions: Options = {
       ...rest,
-      mcpServers: { ...mcpServers, ...preservedInProcess },
+      mcpServers: { ...mcpServers, ...freshInProcess },
       resume: this.sessionId,
       forkSession: false,
       abortController: newAbortController,
@@ -1295,7 +1312,83 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
 
     // Re-fetch MCP tool metadata + slash commands — the server list changed.
+    // Clear first so servers dropped by this refresh don't linger in the cache
+    // and over-report via getConnectedMcpServerNames().
+    clearMcpToolMetadataCache();
     this.deferBackgroundFetches(newQuery);
+  }
+
+  /**
+   * Best-effort self-heal for the in-process signed-commit MCP server
+   * (`posthog-code-tools`). If it's enabled for this session but the live Query
+   * reports it missing or not connected, rebuild a FRESH instance and reconnect
+   * it via the SDK's live `setMcpServers` (external servers are passed through
+   * unchanged so they aren't dropped). Never throws. Returns whether the
+   * signed-commit tooling is usable after the call, so callers (e.g. the guard
+   * hook) can tailor their message.
+   *
+   * Triggered proactively before each prompt and reactively when the guard hook
+   * blocks a raw `git commit`/`push`, so the disconnection can never strand a
+   * commit the way a mid-run refresh used to.
+   */
+  private async ensureLocalToolsConnected(trigger: string): Promise<boolean> {
+    const desired = this.session.buildInProcessMcpServers();
+    const names = Object.keys(desired);
+    if (names.length === 0) {
+      // No in-process server expected (e.g. non-cloud run) — nothing to heal.
+      return true;
+    }
+
+    let statuses: McpServerStatus[];
+    try {
+      statuses = await this.session.query.mcpServerStatus();
+    } catch (error) {
+      // A failed status RPC must not block the turn; assume healthy.
+      this.logger.debug("ensureLocalToolsConnected: status check failed", {
+        trigger,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return true;
+    }
+
+    const allConnected = names.every((name) =>
+      statuses.some((s) => s.name === name && s.status === "connected"),
+    );
+    if (allConnected) {
+      return true;
+    }
+
+    this.logger.warn("signed_commit_mcp_unhealthy", {
+      trigger,
+      sessionId: this.sessionId,
+      servers: names,
+    });
+
+    try {
+      const external = Object.fromEntries(
+        Object.entries(this.session.queryOptions.mcpServers ?? {}).filter(
+          ([, cfg]) => (cfg as { type?: string }).type !== "sdk",
+        ),
+      );
+      const next = { ...external, ...desired };
+      await this.session.query.setMcpServers(next);
+      this.session.queryOptions.mcpServers = next;
+      clearMcpToolMetadataCache();
+      this.deferBackgroundFetches(this.session.query);
+      this.logger.info("signed_commit_mcp_recovered", {
+        trigger,
+        sessionId: this.sessionId,
+        servers: names,
+      });
+      return true;
+    } catch (error) {
+      this.logger.error("signed_commit_mcp_recovery_failed", {
+        trigger,
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
   }
 
   async setSessionMode(
@@ -1540,18 +1633,31 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // so adding a tool needs no change here. In cloud runs `git commit`/`git
     // push` are blocked by the PreToolUse guard (and the sandbox git shim), so
     // the agent commits via the signed-commit tool instead.
-    const localToolsServer = createLocalToolsMcpServer(
-      {
-        cwd,
-        token: resolveGithubToken(),
-        taskId,
-        baseBranch: meta?.baseBranch,
-      },
-      meta,
-    );
-    if (localToolsServer) {
-      mcpServers[LOCAL_TOOLS_MCP_NAME] = localToolsServer;
-    } else if (cloudRun) {
+    //
+    // Built via a closure (stored on the session) so refresh and self-heal can
+    // rebuild a FRESH instance. A reused McpServer keeps its `_transport` set,
+    // so the SDK rejects re-connecting it with "Already connected to a
+    // transport" — which is exactly how the signed-commit server silently
+    // disappeared after a mid-run refresh.
+    const buildInProcessMcpServers = (): Record<
+      string,
+      McpSdkServerConfigWithInstance
+    > => {
+      const server = createLocalToolsMcpServer(
+        {
+          cwd,
+          token: resolveGithubToken(),
+          taskId,
+          baseBranch: meta?.baseBranch,
+        },
+        meta,
+      );
+      return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};
+    };
+
+    const initialInProcess = buildInProcessMcpServers();
+    Object.assign(mcpServers, initialInProcess);
+    if (Object.keys(initialInProcess).length === 0 && cloudRun) {
       this.logger.warn(
         "Cloud run registered no local tools — missing GH_TOKEN/GITHUB_TOKEN? signed commits unavailable",
       );
@@ -1612,6 +1718,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       enrichmentDeps: this.enrichment?.deps,
       enrichedReadCache: this.enrichedReadCache,
       cloudMode: cloudRun,
+      onEnsureLocalToolsConnected: () =>
+        this.ensureLocalToolsConnected("guard-hook"),
       taskState,
       onTaskStateChange: async () => {
         await this.client.sessionUpdate({
@@ -1632,6 +1740,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const session: Session = {
       query: q,
       queryOptions: options,
+      buildInProcessMcpServers,
       input,
       cancelled: false,
       settingsManager,

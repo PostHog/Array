@@ -48,6 +48,7 @@ function installFakeSession(
   const session = {
     query,
     queryOptions: { sessionId, cwd: "/tmp/repo", abortController },
+    buildInProcessMcpServers: () => ({}),
     input,
     cancelled: false,
     interruptReason: undefined,

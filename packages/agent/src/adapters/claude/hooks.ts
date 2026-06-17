@@ -341,7 +341,10 @@ function blocksUnsignedGit(command: string): boolean {
  * which creates GitHub-signed (Verified) commits via the API.
  */
 export const createSignedCommitGuardHook =
-  (logger: Logger): HookCallback =>
+  (
+    logger: Logger,
+    onEnsureLocalToolsConnected?: () => Promise<boolean>,
+  ): HookCallback =>
   async (input: HookInput, _toolUseID: string | undefined) => {
     if (input.hook_event_name !== "PreToolUse") return { continue: true };
     if (input.tool_name !== "Bash") return { continue: true };
@@ -355,16 +358,36 @@ export const createSignedCommitGuardHook =
     logger.info(
       `[SignedCommitGuard] Blocking unsigned git command: ${command}`,
     );
+
+    // The model usually reaches for raw git only when the signed-commit tool
+    // looks unavailable to it. Try to restore the in-process server before
+    // denying, then tailor the message to whether it came back.
+    let toolsAvailable = true;
+    if (onEnsureLocalToolsConnected) {
+      try {
+        toolsAvailable = await onEnsureLocalToolsConnected();
+      } catch {
+        toolsAvailable = false;
+      }
+    }
+
+    const reason = toolsAvailable
+      ? "Commits must be signed: `git commit` and `git push` are disabled here. " +
+        "Stage changes with `git add`, then call the `git_signed_commit` tool " +
+        `(${SIGNED_COMMIT_QUALIFIED_TOOL_NAME}) with a \`message\` to create a signed ` +
+        "commit on the branch."
+      : "Commits must be signed, and the signed-commit tooling is momentarily " +
+        "reconnecting, so it isn't available this instant. Your staged and unstaged " +
+        "changes are safe in the working tree — nothing is lost. Wait a moment, then " +
+        `call the \`git_signed_commit\` tool (${SIGNED_COMMIT_QUALIFIED_TOOL_NAME}) with a ` +
+        "`message`; raw `git commit`/`git push` stay disabled.";
+
     return {
       continue: true,
       hookSpecificOutput: {
         hookEventName: "PreToolUse" as const,
         permissionDecision: "deny" as const,
-        permissionDecisionReason:
-          "Commits must be signed: `git commit` and `git push` are disabled here. " +
-          "Stage changes with `git add`, then call the `git_signed_commit` tool " +
-          `(${SIGNED_COMMIT_QUALIFIED_TOOL_NAME}) with a \`message\` to create a signed ` +
-          "commit on the branch.",
+        permissionDecisionReason: reason,
       },
     };
   };
