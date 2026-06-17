@@ -16,7 +16,7 @@ export function resolveGatewayProduct({
   }
   // Signals-originated work bills to the signals product regardless of whether
   // the run is internal: signal-report tasks and headless scout runs both count
-  // against signals. (`signals_scout` is the scout origin product.)
+  // against signals.
   if (originProduct === "signal_report" || originProduct === "signals_scout") {
     return "signals";
   }
