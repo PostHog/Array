@@ -28,6 +28,18 @@ import { useAgentBuilderClientTools } from "./useAgentBuilderClientTools";
 
 const CHAT_ID = AGENT_BUILDER_CHAT_ID;
 
+/** A rotating pool of composer placeholders — picked once per dock mount. */
+const BUILDER_PLACEHOLDERS = [
+  "Build me an agent that…",
+  "What should we build today?",
+  "Ask me to inspect, debug, or edit an agent…",
+  "Describe an agent and I'll wire it up…",
+  "Spin up a new agent, or fix an existing one…",
+  "What's broken? Let's debug a session…",
+  "Audit the fleet, tweak a prompt, ship an agent…",
+  "Tell me what to change…",
+];
+
 /** The "what am I looking at" object sent to the agent builder (envelope + get_context). */
 function buildAgentBuilderContext(
   page: AgentBuilderPageContext,
@@ -68,6 +80,12 @@ export function AgentBuilderDock() {
   const pendingSecret = useAgentBuilderStore((s) => s.pendingSecret);
   const setPendingSecret = useAgentBuilderStore((s) => s.setPendingSecret);
   const [secretBusy, setSecretBusy] = useState(false);
+  const [placeholder] = useState(
+    () =>
+      BUILDER_PLACEHOLDERS[
+        Math.floor(Math.random() * BUILDER_PLACEHOLDERS.length)
+      ],
+  );
 
   const clientTools = useAgentBuilderClientTools();
   const chat = useAgentChat({
@@ -214,6 +232,7 @@ export function AgentBuilderDock() {
           isStreaming={chat.isStreaming}
           error={chat.error}
           scrollX={false}
+          placeholder={placeholder}
           emptyState={<AgentBuilderEmptyState page={page} onPick={chat.send} />}
           emptyHint="Ask the agent builder to inspect, debug, or edit your agents. It can see what you're looking at and walk you there."
           aboveComposer={

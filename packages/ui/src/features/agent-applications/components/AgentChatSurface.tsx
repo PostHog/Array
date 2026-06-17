@@ -25,6 +25,7 @@ export function AgentChatSurface({
   emptyState,
   aboveComposer,
   scrollX = true,
+  placeholder = "Message this agent…",
   onSend,
   onCancel,
 }: {
@@ -38,6 +39,8 @@ export function AgentChatSurface({
   aboveComposer?: ReactNode;
   /** Allow horizontal scroll of the transcript (false in the narrow dock). */
   scrollX?: boolean;
+  /** Composer placeholder. */
+  placeholder?: string;
   onSend: (text: string) => void;
   onCancel: () => void;
 }) {
@@ -67,17 +70,24 @@ export function AgentChatSurface({
         </Text>
       ) : null}
       {aboveComposer}
-      <Composer isStreaming={isStreaming} onSend={onSend} onCancel={onCancel} />
+      <Composer
+        isStreaming={isStreaming}
+        placeholder={placeholder}
+        onSend={onSend}
+        onCancel={onCancel}
+      />
     </Flex>
   );
 }
 
 function Composer({
   isStreaming,
+  placeholder,
   onSend,
   onCancel,
 }: {
   isStreaming: boolean;
+  placeholder: string;
   onSend: (text: string) => void;
   onCancel: () => void;
 }) {
@@ -105,7 +115,7 @@ function Composer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Message this agent…"
+          placeholder={placeholder}
           rows={1}
           className="max-h-[160px] min-h-[40px] resize-none text-[14px] [field-sizing:content]"
         />

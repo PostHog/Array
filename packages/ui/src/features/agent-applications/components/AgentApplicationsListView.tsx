@@ -14,7 +14,7 @@ import { Badge } from "@posthog/ui/primitives/Badge";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useMemo } from "react";
+import { useMemo } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import { useAgentAnalytics } from "../hooks/useAgentAnalytics";
 import { useAgentApplications } from "../hooks/useAgentApplications";
@@ -23,6 +23,7 @@ import { useAgentFleetLiveSessions } from "../hooks/useAgentFleetLiveSessions";
 import { formatSpendUsd } from "../utils/format";
 import { aiObservabilityTracesUrl } from "../utils/observabilityLinks";
 import { AgentAnalyticsKpiStrip } from "./AgentAnalyticsView";
+import { AgentDetailEmptyState } from "./AgentDetailLayout";
 import { AgentFleetLiveSessionsPanel } from "./AgentFleetLiveSessionsPanel";
 
 /**
@@ -95,7 +96,7 @@ export function AgentApplicationsListView() {
           {isLoading ? (
             <ApplicationsSkeleton />
           ) : isError ? (
-            <EmptyState
+            <AgentDetailEmptyState
               title="Couldn't load applications"
               description={
                 error instanceof Error
@@ -104,7 +105,7 @@ export function AgentApplicationsListView() {
               }
             />
           ) : !applications || applications.length === 0 ? (
-            <EmptyState
+            <AgentDetailEmptyState
               title="No agents yet"
               description="Deployed agents on the agent platform will show up here."
             />
@@ -250,28 +251,6 @@ function ApplicationsSkeleton() {
           className="h-[58px] animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)"
         />
       ))}
-    </Flex>
-  );
-}
-
-function EmptyState({
-  title,
-  description,
-}: {
-  title: string;
-  description: ReactNode;
-}) {
-  return (
-    <Flex
-      direction="column"
-      align="center"
-      gap="1"
-      className="rounded-(--radius-2) border border-(--gray-5) border-dashed px-6 py-10 text-center"
-    >
-      <Text className="font-medium text-[13px] text-gray-12">{title}</Text>
-      <Text className="max-w-md text-[12px] text-gray-11 leading-snug">
-        {description}
-      </Text>
     </Flex>
   );
 }
