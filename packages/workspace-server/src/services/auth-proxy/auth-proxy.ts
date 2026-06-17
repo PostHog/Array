@@ -232,7 +232,7 @@ export class AuthProxyService {
           headersSent: res.headersSent,
           durationMs: Date.now() - startedAt,
           bytesStreamed: progress.bytesWritten,
-          err,
+          stack: err instanceof Error ? err.stack : undefined,
           errorDetail: serializeError(err),
         });
       }
