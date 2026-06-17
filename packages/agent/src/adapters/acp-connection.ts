@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
 import type { SessionLogWriter } from "../session-log-writer";
 import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../types";
@@ -13,6 +11,7 @@ import { ClaudeAcpAgent } from "./claude/claude-agent";
 import type { GatewayEnv } from "./claude/session/options";
 import { CodexAcpAgent } from "./codex/codex-agent";
 import type { CodexProcessOptions } from "./codex/spawn";
+import { nativeCodexBinaryPath } from "./codex-app-server/binary-path";
 import { CodexAppServerAgent } from "./codex-app-server/codex-app-server-agent";
 
 type AgentAdapter = "claude" | "codex";
@@ -69,19 +68,6 @@ function resolveEnricherApiConfig(
 ): PostHogAPIConfig | undefined {
   const enabled = !!config.posthogApiConfig && config.enricherEnabled !== false;
   return enabled ? config.posthogApiConfig : undefined;
-}
-
-/**
- * The native codex CLI is bundled next to codex-acp, so derive its path from
- * the codex-acp binary path (same directory, `codex` instead of `codex-acp`).
- * Returns undefined when the binary isn't present (e.g. the npx fallback), in
- * which case the caller keeps using the codex-acp adapter.
- */
-function nativeCodexBinaryPath(codexAcpPath?: string): string | undefined {
-  if (!codexAcpPath) return undefined;
-  const binaryName = process.platform === "win32" ? "codex.exe" : "codex";
-  const candidate = join(dirname(codexAcpPath), binaryName);
-  return existsSync(candidate) ? candidate : undefined;
 }
 
 function createClaudeConnection(config: AcpConnectionConfig): AcpConnection {

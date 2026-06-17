@@ -141,4 +141,16 @@ describe("AppServerClient", () => {
     expect(response.result).toEqual({ decision: "approved" });
     await client.close();
   });
+
+  it("rejects in-flight requests when closed", async () => {
+    const streams = createBidirectionalStreams();
+    const client = new AppServerClient(streams.client, {
+      logger: silentLogger,
+    });
+
+    const pending = client.request("thread/start", {});
+    await client.close();
+
+    await expect(pending).rejects.toThrow(/closed/i);
+  });
 });

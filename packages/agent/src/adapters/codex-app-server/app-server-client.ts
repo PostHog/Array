@@ -10,6 +10,8 @@ export interface AppServerClientHandlers {
    * is returned to the server as the JSON-RPC result.
    */
   onRequest?: (method: string, params: unknown) => Promise<unknown>;
+  /** Fired once when the stream ends without an explicit close() (process exit). */
+  onClose?: () => void;
   logger?: Logger;
 }
 
@@ -122,6 +124,17 @@ export class AppServerClient implements AppServerRpc {
         this.reader.releaseLock();
       } catch {
         // lock already released by cancel()
+      }
+      if (!this.closed) {
+        // The stream ended without an explicit close() (the process exited).
+        // Fail in-flight calls and notify the owner so a pending turn does not
+        // hang forever.
+        this.closed = true;
+        for (const call of this.pending.values()) {
+          call.reject(new Error("codex app-server stream closed"));
+        }
+        this.pending.clear();
+        this.handlers.onClose?.();
       }
     }
   }

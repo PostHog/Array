@@ -76,7 +76,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private readonly model: string;
   private readonly reasoningEffort?: string;
   private threadId?: string;
-  private pendingTurnResolve?: (reason: StopReason) => void;
+  private pendingTurn?: {
+    resolve: (reason: StopReason) => void;
+    reject: (err: Error) => void;
+  };
 
   constructor(
     client: AgentSideConnection,
@@ -94,6 +97,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       onNotification: (method, params) =>
         this.handleNotification(method, params),
       onRequest: (method, params) => this.handleApproval(method, params),
+      onClose: () => this.handleServerClosed(),
     };
 
     if (options.rpcFactory) {
@@ -162,40 +166,55 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     if (!this.threadId) {
       throw new Error("prompt() called before newSession()");
     }
-    const completion = new Promise<StopReason>((resolve) => {
-      this.pendingTurnResolve = resolve;
+    if (this.pendingTurn) {
+      // The host serializes turns; a concurrent prompt would clobber the
+      // single pendingTurn slot, so fail fast rather than corrupt it.
+      throw new Error("prompt() called while a turn is already in progress");
+    }
+    this.session.cancelled = false;
+    const input = toTurnInput(params.prompt);
+    const dropped = params.prompt.length - input.length;
+    if (dropped > 0) {
+      this.logger.warn("Dropped non-text prompt blocks", { dropped });
+    }
+    const completion = new Promise<StopReason>((resolve, reject) => {
+      this.pendingTurn = { resolve, reject };
     });
-    await this.rpc.request(APP_SERVER_METHODS.TURN_START, {
-      threadId: this.threadId,
-      input: toTurnInput(params.prompt),
-      ...(this.reasoningEffort ? { effort: this.reasoningEffort } : {}),
-    });
-    const stopReason = await completion;
-    this.pendingTurnResolve = undefined;
-    return { stopReason };
+    try {
+      await this.rpc.request(APP_SERVER_METHODS.TURN_START, {
+        threadId: this.threadId,
+        input,
+        ...(this.reasoningEffort ? { effort: this.reasoningEffort } : {}),
+      });
+      return { stopReason: await completion };
+    } finally {
+      this.pendingTurn = undefined;
+    }
   }
 
   protected async interrupt(): Promise<void> {
-    this.pendingTurnResolve?.("cancelled");
-    this.pendingTurnResolve = undefined;
+    // Tell the server to stop first, then report the turn cancelled, so the
+    // caller never sees "cancelled" while Codex is still running.
     if (this.threadId) {
       await this.rpc
         .request(APP_SERVER_METHODS.TURN_INTERRUPT, { threadId: this.threadId })
         .catch((err) => this.logger.warn("turn/interrupt failed", err));
     }
+    this.pendingTurn?.resolve("cancelled");
+    this.pendingTurn = undefined;
   }
 
   async closeSession(): Promise<void> {
     this.session.abortController.abort();
-    this.pendingTurnResolve?.("cancelled");
-    this.pendingTurnResolve = undefined;
+    this.pendingTurn?.resolve("cancelled");
+    this.pendingTurn = undefined;
     this.session.settingsManager.dispose();
-    await this.rpc.close();
     this.proc?.kill();
+    await this.rpc.close();
   }
 
   private handleNotification(method: string, params: unknown): void {
-    if (this.sessionId) {
+    if (this.sessionId && !this.session.cancelled) {
       const notification = mapAppServerNotification(
         this.sessionId,
         method,
@@ -211,9 +230,16 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
     if (method === APP_SERVER_NOTIFICATIONS.TURN_COMPLETED) {
       const status = (params as { turn?: { status?: string } })?.turn?.status;
-      this.pendingTurnResolve?.(status === "failed" ? "refusal" : "end_turn");
-      this.pendingTurnResolve = undefined;
+      this.pendingTurn?.resolve(status === "failed" ? "refusal" : "end_turn");
+      this.pendingTurn = undefined;
     }
+  }
+
+  private handleServerClosed(): void {
+    this.pendingTurn?.reject(
+      new Error("codex app-server exited before the turn completed"),
+    );
+    this.pendingTurn = undefined;
   }
 
   private async handleApproval(
@@ -224,6 +250,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       method !== APP_SERVER_REQUESTS.COMMAND_APPROVAL &&
       method !== APP_SERVER_REQUESTS.FILE_CHANGE_APPROVAL
     ) {
+      this.logger.warn("Unrecognized server request; declining", { method });
       return "decline";
     }
     const detail = params as { itemId?: string; command?: string };
