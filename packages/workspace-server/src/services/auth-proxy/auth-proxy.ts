@@ -212,12 +212,6 @@ export class AuthProxyService {
         bytesStreamed: progress.bytesWritten,
       });
     } catch (err) {
-      // headersSent distinguishes a pre-response failure (connection setup)
-      // from a mid-stream termination (the body died after status was sent).
-      // With durationMs + bytesStreamed this reveals whether an upstream
-      // timeout is cutting streamed LLM responses, and serializeError surfaces
-      // the real undici socket cause (ECONNRESET, UND_ERR_SOCKET) behind the
-      // generic "terminated" message.
       if (options.signal?.aborted) {
         this.log.debug("Upstream fetch aborted after client disconnect", {
           url,

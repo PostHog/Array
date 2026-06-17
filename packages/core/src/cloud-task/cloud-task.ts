@@ -666,7 +666,6 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     let streamWasEstablished = false;
     let bytesReceived = 0;
     let eventsReceived = 0;
-    let dataEventsReceived = 0;
 
     try {
       const response = await this.auth.authenticatedFetch(url.toString(), {
@@ -718,9 +717,6 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         const events = parser.parse(chunk);
         for (const event of events) {
           eventsReceived += 1;
-          if (event.event !== "error" && !isKeepaliveEvent(event)) {
-            dataEventsReceived += 1;
-          }
           this.handleSseEvent(key, event);
         }
       }
@@ -736,13 +732,14 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         return;
       }
 
+      const closed = this.watchers.get(key);
       this.log.info("Cloud task stream closed cleanly", {
         key,
         connectionDurationMs: connectedAt ? Date.now() - connectedAt : 0,
         bytesReceived,
         eventsReceived,
-        dataEventsReceived,
-        lastEventId: this.watchers.get(key)?.lastEventId ?? null,
+        dataEventsReceived: closed?.connDataEventsReceived ?? 0,
+        lastEventId: closed?.lastEventId ?? null,
       });
       await this.handleStreamCompletion(key, { reconnectIfNonTerminal: true });
     } catch (error) {
@@ -790,7 +787,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           : 0,
         bytesReceived,
         eventsReceived,
-        dataEventsReceived,
+        dataEventsReceived: watcher?.connDataEventsReceived ?? 0,
         lastEventId: watcher?.lastEventId ?? null,
         reconnectAttempts: watcher?.reconnectAttempts ?? 0,
         streamErrorAttempts: watcher?.streamErrorAttempts ?? 0,

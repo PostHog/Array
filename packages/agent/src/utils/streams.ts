@@ -148,6 +148,7 @@ export function createTappedWritableStream(
         droppedWriteCount++;
         logger?.error("ACP write error", {
           error: err instanceof Error ? err.message : String(err),
+          errorName: err instanceof Error ? err.name : undefined,
           messageCount,
           droppedWriteCount,
           droppedBytes: chunk.byteLength,

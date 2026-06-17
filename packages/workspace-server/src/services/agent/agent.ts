@@ -55,6 +55,7 @@ import {
 import {
   type AcpMessage,
   isAuthError,
+  serializeError,
   TypedEventEmitter,
 } from "@posthog/shared";
 import { inject, injectable, preDestroy } from "inversify";
@@ -946,7 +947,17 @@ When creating pull requests, add the following footer at the end of the PR descr
       const action = isReconnect ? "reconnect" : "create";
       this.log.error(
         `Failed to ${action} session${isRetry ? " after retry" : ""}${detailSuffix}`,
-        err,
+        {
+          taskRunId,
+          taskId,
+          sessionId: config.sessionId,
+          adapter: config.adapter,
+          model: config.model,
+          isRetry,
+          code: (err as { code?: unknown }).code,
+          data: (err as { data?: unknown }).data,
+          errorDetail: serializeError(err),
+        },
       );
       // Non-auth reconnect failure on first attempt: fall back to a fresh session.
       // If this was already an auth retry (isRetry=true), we've exhausted retries
@@ -954,6 +965,8 @@ When creating pull requests, add the following footer at the end of the PR descr
       if (isReconnect && !isRetry) {
         this.log.warn("Reconnect failed, falling back to new session", {
           taskRunId,
+          taskId,
+          sessionId: config.sessionId,
         });
         config.sessionId = undefined;
         return this.getOrCreateSession(config, false, false);

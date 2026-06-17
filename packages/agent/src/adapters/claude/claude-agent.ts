@@ -1126,7 +1126,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         this.session.settingsManager.dispose();
         this.session.input.end();
         throw RequestError.internalError(
-          undefined,
+          { details: msg },
           "The Claude Agent process exited unexpectedly. Please start a new session.",
         );
       }
@@ -1825,10 +1825,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     // Kick off SDK initialization for new sessions so it runs concurrently
     // with the model config fetch below (the gateway REST call is independent).
+    const initStartedAt = Date.now();
     const initPromise = !isResume
       ? withTimeout(q.initializationResult(), SESSION_VALIDATION_TIMEOUT_MS)
       : undefined;
 
+    const modelConfigStartedAt = Date.now();
     const [rawModelOptions] = await Promise.all([
       this.getModelConfigOptions(
         settingsManager.getSettings().model || meta?.model || undefined,
@@ -1843,6 +1845,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           ]
         : []),
     ]);
+    const modelConfigMs = Date.now() - modelConfigStartedAt;
 
     // Restrict the model list to the user's `availableModels` allowlist
     // from settings.json so config UI and downstream resolution stay
@@ -1867,6 +1870,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         session.knownSlashCommands = collectKnownSlashCommands(
           initResult.value.commands,
         );
+        this.logger.info("Session initialized", {
+          sessionId,
+          taskId,
+          taskRunId: meta?.taskRunId,
+          modelConfigMs,
+          initMs: Date.now() - initStartedAt,
+        });
       } catch (err) {
         settingsManager.dispose();
         this.terminateQuery(q, abortController);
@@ -1874,6 +1884,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           sessionId,
           taskId,
           taskRunId: meta?.taskRunId,
+          modelConfigMs,
+          initMs: Date.now() - initStartedAt,
           error: err instanceof Error ? err.message : String(err),
         });
         throw err;
