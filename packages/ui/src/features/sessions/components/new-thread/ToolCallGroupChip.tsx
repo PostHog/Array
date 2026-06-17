@@ -2,6 +2,7 @@ import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
 import type { GroupSummary } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
 import { motion as motionConfig } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 import { ToolRow } from "@posthog/ui/features/sessions/components/session-update/ToolRow";
+import { DotsCircleSpinner } from "@posthog/ui/primitives/DotsCircleSpinner";
 import { motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 
@@ -30,8 +31,18 @@ export function ToolCallGroupChip({
   const reduceMotion = useReducedMotion();
   const animate = motionConfig.enabled && !reduceMotion;
   const Caret = expanded ? CaretDownIcon : CaretRightIcon;
-  const running = !turnComplete && summary.liveLabel != null;
-  const label = running ? summary.liveLabel : summary.doneLabel;
+  // Spin on THIS group's own in-flight tool, not the turn — a turn split across
+  // several chips (by messages/plans) must not keep finished chips spinning.
+  const running = !turnComplete && summary.active && summary.liveLabel != null;
+  // While running, show both what's happened so far (doneLabel reflects the
+  // running tallies) and what's happening now (the live tool title), so a
+  // collapsed turn reads as actively-working rather than stalled.
+  const hasDone = summary.hasCountableWork;
+  const label = running
+    ? hasDone
+      ? `${summary.doneLabel} · ${summary.liveLabel}`
+      : (summary.liveLabel as string)
+    : summary.doneLabel;
 
   return (
     <motion.div
@@ -64,8 +75,11 @@ export function ToolCallGroupChip({
           ) : null
         }
       >
-        <span className="truncate font-medium text-[13px] text-gray-11 transition-colors group-hover:text-gray-12">
-          {label}
+        <span className="flex min-w-0 items-center gap-1.5 font-medium text-[13px] text-gray-11 transition-colors group-hover:text-gray-12">
+          {running ? (
+            <DotsCircleSpinner size={12} className="shrink-0 text-gray-10" />
+          ) : null}
+          <span className="truncate">{label}</span>
         </span>
       </ToolRow>
     </motion.div>

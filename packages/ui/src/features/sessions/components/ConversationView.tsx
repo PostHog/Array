@@ -3,6 +3,7 @@ import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
 import {
   Button,
+  cn,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -318,7 +319,10 @@ export function ConversationView({
                 return (
                   <div
                     key={it.id}
-                    className={isPlainMessage ? "pl-5" : undefined}
+                    className={cn(
+                      isPlainMessage ? "pl-5" : undefined,
+                      "empty:hidden",
+                    )}
                   >
                     {renderItem(it)}
                   </div>

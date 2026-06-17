@@ -38,8 +38,8 @@ export function List({ children, as = "ul" }: ListProps) {
 
   return (
     <Component
-      className={`mt-2 mb-3 list-outside marker:text-[var(--accent-10)] ${
-        as === "ol" ? "list-decimal pl-6" : "list-disc pl-4"
+      className={`my-2 list-outside pl-6 ${
+        as === "ol" ? "list-decimal" : "list-disc"
       }`}
     >
       {children}

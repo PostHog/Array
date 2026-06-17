@@ -58,7 +58,7 @@ export function ToolCallBlock({
       turnComplete: turnComplete ?? false,
     };
     return (
-      <Box className="pl-3">
+      <Box>
         <SubagentToolView
           {...props}
           childItems={childItems}
@@ -107,7 +107,7 @@ export function ToolCallBlock({
     }
   })();
 
-  return <Box className="pl-3">{content}</Box>;
+  return <Box>{content}</Box>;
 }
 
 function buildChildToolCallsMap(

@@ -22,6 +22,19 @@ export interface GroupSummary {
   liveLabel: string | null;
   /** Verb-led summary shown once the turn completes. */
   doneLabel: string;
+  /**
+   * This group's last tool call is still pending/in_progress. A turn can span
+   * several groups (messages/plans split it), so spin on the group's own work,
+   * not the turn — otherwise finished earlier groups keep spinning until the
+   * whole turn ends.
+   */
+  active: boolean;
+  /**
+   * The group did some countable tool work (i.e. doneLabel is a real summary,
+   * not the "Worked" fallback). Lets the chip decide whether to show the
+   * summary without depending on the fallback string.
+   */
+  hasCountableWork: boolean;
 }
 
 /**
@@ -71,6 +84,29 @@ function isAlwaysVisibleItem(item: ConversationItem): boolean {
   );
 }
 
+/**
+ * The agent's direct text to the user. Never folded — it surfaces as its own
+ * chat row so a collapsed turn never swallows something said to the user.
+ */
+function isDirectMessageItem(item: ConversationItem): boolean {
+  return (
+    item.type === "session_update" &&
+    item.update.sessionUpdate === "agent_message_chunk"
+  );
+}
+
+/**
+ * A plan presented for approval (the ExitPlanMode / switch_mode tool call,
+ * rendered by PlanApprovalView). Never folded — a plan is meant to be read.
+ */
+function isPlanItem(item: ConversationItem): boolean {
+  return (
+    item.type === "session_update" &&
+    item.update.sessionUpdate === "tool_call" &&
+    item.update.kind === "switch_mode"
+  );
+}
+
 function summarize(items: ConversationItem[]): GroupSummary {
   const counts: GroupCounts = {
     execute: 0,
@@ -85,6 +121,7 @@ function summarize(items: ConversationItem[]): GroupSummary {
     messages: 0,
   };
   let liveLabel: string | null = null;
+  let lastToolStatus: string | undefined;
   const icons: GroupIconEntry[] = [];
   const seenIcons = new Set<string>();
 
@@ -100,6 +137,7 @@ function summarize(items: ConversationItem[]): GroupSummary {
     if (update.sessionUpdate === "tool_call") {
       // Most recent tool's title — what the chip shows while still running.
       if (update.title) liveLabel = update.title;
+      lastToolStatus = update.status;
       const name = getToolName(update);
       if (name && grouping.subagentToolNames.has(name)) {
         counts.subagents++;
@@ -145,7 +183,27 @@ function summarize(items: ConversationItem[]): GroupSummary {
     }
   }
 
-  return { counts, icons, liveLabel, doneLabel: buildDoneLabel(counts) };
+  const active =
+    lastToolStatus === "pending" || lastToolStatus === "in_progress";
+  const hasCountableWork =
+    counts.execute +
+      counts.read +
+      counts.edit +
+      counts.delete +
+      counts.move +
+      counts.search +
+      counts.fetch +
+      counts.subagents +
+      counts.other >
+    0;
+  return {
+    counts,
+    icons,
+    liveLabel,
+    active,
+    hasCountableWork,
+    doneLabel: buildDoneLabel(counts),
+  };
 }
 
 // Completed turns are frozen by reference in the conversation builder, so their
@@ -198,33 +256,11 @@ export function buildThreadGroups(
 
   const flush = () => {
     if (buffer.length === 0) return;
-    const first = buffer[0];
+    const leading = buffer;
+    const first = leading[0];
     const turnComplete =
       first.type === "session_update" && first.turnContext.turnComplete;
     const groupId = `group:${first.id}`;
-
-    // Peel the trailing assistant answer (a run of agent_message_chunks at the
-    // end of the turn) out of the group so it stays visible even when collapsed.
-    const leading = [...buffer];
-    const trailing: ConversationItem[] = [];
-    while (leading.length > 0) {
-      const last = leading[leading.length - 1];
-      if (
-        last.type === "session_update" &&
-        last.update.sessionUpdate === "agent_message_chunk"
-      ) {
-        trailing.unshift(leading.pop() as ConversationItem);
-      } else {
-        break;
-      }
-    }
-
-    // Nothing collapsible (turn was only an assistant answer): render inline.
-    if (leading.length === 0) {
-      for (const item of buffer) pushItemRow(item);
-      buffer = [];
-      return;
-    }
 
     // Base behavior from the global mode; a per-group override (true=expanded,
     // false=collapsed) wins. A chip is shown whenever the group is collapsible
@@ -251,7 +287,6 @@ export function buildThreadGroups(
     } else {
       for (const item of leading) pushItemRow(item);
     }
-    for (const item of trailing) pushItemRow(item);
     buffer = [];
   };
 
@@ -269,8 +304,13 @@ export function buildThreadGroups(
           // Keep MCP-app tool calls standalone so their iframes stay mounted.
           flush();
           keepMounted.push(pushItemRow(item));
-        } else if (isAlwaysVisibleItem(item)) {
-          // Setup/clone progress and the like never collapse into a group.
+        } else if (
+          isAlwaysVisibleItem(item) ||
+          isDirectMessageItem(item) ||
+          isPlanItem(item)
+        ) {
+          // Setup/clone progress, the agent's direct messages, and plans never
+          // collapse into a group — they surface as their own chat rows.
           flush();
           pushItemRow(item);
         } else {
