@@ -19,8 +19,11 @@ export function AgentApplicationDetailView({ idOrSlug }: { idOrSlug: string }) {
     application?.id,
     "agent",
   );
-  const { data: sessions, isLoading: sessionsLoading } =
-    useAgentApplicationSessions(idOrSlug, { limit: 25 });
+  const {
+    data: sessions,
+    isLoading: sessionsLoading,
+    isError: sessionsError,
+  } = useAgentApplicationSessions(idOrSlug, { limit: 25 });
 
   return (
     <AgentDetailLayout idOrSlug={idOrSlug} activeTab="overview">
@@ -57,6 +60,11 @@ export function AgentApplicationDetailView({ idOrSlug }: { idOrSlug: string }) {
                 />
               ))}
             </Flex>
+          ) : sessionsError ? (
+            <AgentDetailEmptyState
+              title="Couldn't load recent sessions"
+              description="The agent platform API returned an error."
+            />
           ) : !sessions || sessions.results.length === 0 ? (
             <AgentDetailEmptyState
               title="No sessions yet"
