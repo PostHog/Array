@@ -58,13 +58,6 @@ export interface UseAgentChatOptions {
    * to use the agent's currently live revision.
    */
   revisionId?: string | null;
-  /**
-   * Draft-preview only. Per-key values the backend should use in place of the
-   * agent's live env-keys for this preview run. Backed into the JWT claim on
-   * mint, so changing this map invalidates the cached token and forces a fresh
-   * mint on the next ingress call. Pass a stable reference (memoize / state).
-   */
-  secretOverrides?: Record<string, string>;
   /** Index started sessions in the local recent-chats rail (preview only). */
   recordHistory?: boolean;
   /**
@@ -111,7 +104,6 @@ export function useAgentChat({
   agentSlug,
   ingressBaseUrl,
   revisionId = null,
-  secretOverrides,
   recordHistory = false,
   contextProvider,
   clientTools,
@@ -134,30 +126,19 @@ export function useAgentChat({
   // Cached preview token for a draft-revision session. Lazily minted on the
   // first ingress call so chats against the live revision pay nothing.
   const previewTokenRef = useRef<CachedPreviewToken | null>(null);
-  // Drop the cached token if the consumer flips revisions (incl. live ↔ draft)
-  // OR if the secret-overrides reference changes — overrides are baked into
-  // the JWT claim on mint, so a stale token would still carry stale values.
-  // Reference equality is enough: the override card hands us a fresh object
-  // each time the author saves.
+  // Drop the cached token if the consumer flips revisions (incl. live ↔ draft):
+  // a token is bound to a specific (app, revision), so a stale one wouldn't
+  // route to the new target.
   const revisionRef = useRef<string | null>(revisionId);
-  const overridesRef = useRef<Record<string, string> | undefined>(
-    secretOverrides,
-  );
-  if (
-    revisionRef.current !== revisionId ||
-    overridesRef.current !== secretOverrides
-  ) {
+  if (revisionRef.current !== revisionId) {
     revisionRef.current = revisionId;
-    overridesRef.current = secretOverrides;
     previewTokenRef.current = null;
   }
 
   /**
    * Mint a preview token if we don't have one, or refresh it just before
    * expiry. `force` skips the cache (used on the post-401 retry path).
-   * Returns null when the chat targets the live revision. Overrides ride on
-   * the mint request body and re-pass automatically on each re-mint cycle
-   * since they're read from the ref above.
+   * Returns null when the chat targets the live revision.
    */
   const getPreviewToken = useCallback(
     async (force = false): Promise<string | null> => {
@@ -170,11 +151,7 @@ export function useAgentChat({
       ) {
         return cached.token;
       }
-      const minted = await client.mintAgentPreviewToken(
-        agentSlug,
-        revisionId,
-        overridesRef.current,
-      );
+      const minted = await client.mintAgentPreviewToken(agentSlug, revisionId);
       previewTokenRef.current = {
         token: minted.token,
         // Backend returns TTL in seconds; convert to an absolute deadline so

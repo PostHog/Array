@@ -57,8 +57,18 @@ export const agentApplicationsKeys = {
     ] as const,
   bundle: (projectId: number | null, idOrSlug: string, revisionId: string) =>
     ["agent-applications", "bundle", projectId, idOrSlug, revisionId] as const,
-  envKeys: (projectId: number | null, idOrSlug: string) =>
-    ["agent-applications", "env-keys", projectId, idOrSlug] as const,
+  envKeys: (
+    projectId: number | null,
+    idOrSlug: string,
+    revisionId: string | null,
+  ) =>
+    [
+      "agent-applications",
+      "env-keys",
+      projectId,
+      idOrSlug,
+      revisionId,
+    ] as const,
   slackManifest: (
     projectId: number | null,
     idOrSlug: string,

@@ -17,8 +17,14 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
   const navigate = useNavigate();
   const followMode = useAgentBuilderStore((s) => s.followMode);
   const setPendingSecret = useAgentBuilderStore((s) => s.setPendingSecret);
+  const page = useAgentBuilderStore((s) => s.page);
   const followRef = useRef(followMode);
   followRef.current = followMode;
+  // Latest page context without re-creating the handler each render — used to
+  // resolve the revision a `set_secret` punch-out targets when the agent
+  // doesn't name one in the tool args.
+  const pageRef = useRef(page);
+  pageRef.current = page;
 
   return useCallback(
     (data) => {
@@ -26,16 +32,24 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
       const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
       // set_secret — interactive punch-out. Park the call (defer) and render a
-      // form; the dock PUTs the key and wakes the session on submit.
+      // form; the dock PUTs the key and wakes the session on submit. Env keys
+      // are revision-scoped, so resolve the target revision from the tool args,
+      // falling back to the revision the user is currently viewing in the
+      // agent-config page.
       if (data.tool_id === "set_secret") {
         const agentSlug = str(args.agent_slug);
         const secret = str(args.secret);
         if (!agentSlug) return { error: "missing_arg: agent_slug" };
         if (!secret) return { error: "missing_arg: secret" };
+        const p = pageRef.current;
+        const pageRevision = p.kind === "agent-config" ? p.revision : undefined;
+        const revisionId = str(args.revision_id) ?? pageRevision;
+        if (!revisionId) return { error: "missing_arg: revision_id" };
         const mode = args.mode === "rotate" ? "rotate" : "set";
         setPendingSecret({
           callId: data.call_id,
           agentSlug,
+          revisionId,
           secret,
           mode,
           purpose: str(args.purpose),

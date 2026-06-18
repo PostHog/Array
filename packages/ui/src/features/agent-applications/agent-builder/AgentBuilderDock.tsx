@@ -131,6 +131,7 @@ export function AgentBuilderDock() {
     try {
       await client.setAgentEnvKey(
         pendingSecret.agentSlug,
+        pendingSecret.revisionId,
         pendingSecret.secret,
         value,
       );
