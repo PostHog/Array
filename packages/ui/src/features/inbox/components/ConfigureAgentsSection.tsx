@@ -13,6 +13,7 @@ import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS, getCloudUrlFromRegion } from "@posthog/shared";
 import { SELF_DRIVING_SETUP_TASK_FLAG } from "@posthog/shared/constants";
 import type { SignalReportPriority } from "@posthog/shared/types";
+import { useTrackAgentsViewed } from "@posthog/ui/features/agents/hooks/useTrackAgentsViewed";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { DataSourceSetup } from "@posthog/ui/features/inbox/components/DataSourceSetup";
@@ -93,6 +94,15 @@ export function ConfigureAgentsSection() {
   const showSetupTask = useFeatureFlag(SELF_DRIVING_SETUP_TASK_FLAG);
   const userAutostartPriority =
     userAutonomyConfig?.autostart_priority ?? NEVER_AUTOSTART_VALUE;
+
+  useTrackAgentsViewed({
+    isLoading: isLoading || isLoadingIntegrations || userAutonomyConfigLoading,
+    hasGithubIntegration,
+    responderTotalCount: Object.keys(displayValues).length,
+    responderEnabledCount: Object.values(displayValues).filter(Boolean).length,
+    autostartPriority: userAutonomyConfig?.autostart_priority ?? null,
+    setupTaskAvailable: showSetupTask,
+  });
 
   return (
     <Flex direction="column" gap="8">
@@ -210,11 +220,14 @@ export function ConfigureAgentsSection() {
               options={USER_AUTOSTART_OPTIONS}
               ariaLabel="PR auto-start threshold"
               className="min-w-[260px] max-w-[300px]"
-              onValueChange={(value) =>
-                void handleUpdateUserAutonomyPriority(
-                  value === NEVER_AUTOSTART_VALUE ? null : value,
-                )
-              }
+              onValueChange={(value) => {
+                const priority = value === NEVER_AUTOSTART_VALUE ? null : value;
+                track(ANALYTICS_EVENTS.AGENTS_ACTION, {
+                  action_type: "change_autostart_priority",
+                  autostart_priority: priority,
+                });
+                void handleUpdateUserAutonomyPriority(priority);
+              }}
             />
           )}
         </Flex>
@@ -226,6 +239,11 @@ export function ConfigureAgentsSection() {
       >
         <Link
           to="/mcp-servers"
+          onClick={() =>
+            track(ANALYTICS_EVENTS.AGENTS_ACTION, {
+              action_type: "open_mcp_servers",
+            })
+          }
           className="flex items-center justify-between gap-3 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5 no-underline transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2)"
         >
           <Flex align="center" gap="3" className="min-w-0">
@@ -337,6 +355,10 @@ function SetupTaskSection() {
       });
 
       sonnerToast.dismiss(toastId);
+      track(ANALYTICS_EVENTS.AGENTS_ACTION, {
+        action_type: "run_setup_agent",
+        success: result.success,
+      });
       if (result.success) {
         track(ANALYTICS_EVENTS.TASK_CREATED, {
           auto_run: true,
@@ -359,6 +381,10 @@ function SetupTaskSection() {
       }
     } catch (error) {
       sonnerToast.dismiss(toastId);
+      track(ANALYTICS_EVENTS.AGENTS_ACTION, {
+        action_type: "run_setup_agent",
+        success: false,
+      });
       const description =
         error instanceof Error ? error.message : "Unknown error";
       toast.error("Failed to start Self-driving setup", { description });
