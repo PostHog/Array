@@ -1,4 +1,11 @@
+import type { EffortLevel } from "../types";
+
 export const DEFAULT_MODEL = "opus";
+
+// Default thinking level when the user hasn't picked one. Adaptive-only models
+// like claude-fable-5 reject the SDK's no-effort `thinking: { type: "disabled" }`
+// shape, so effort-capable models default to high to keep thinking enabled.
+export const DEFAULT_EFFORT: EffortLevel = "high";
 
 const GATEWAY_TO_SDK_MODEL: Record<string, string> = {
   "claude-opus-4-7": "opus",
@@ -36,6 +43,14 @@ const MODELS_WITH_XHIGH_EFFORT = new Set([
 
 export function supportsEffort(modelId: string): boolean {
   return MODELS_WITH_EFFORT.has(modelId);
+}
+
+export function resolveEffortForModel(
+  modelId: string,
+  effort: EffortLevel | undefined,
+): EffortLevel | undefined {
+  if (effort) return effort;
+  return supportsEffort(modelId) ? DEFAULT_EFFORT : undefined;
 }
 
 export function supportsXhighEffort(modelId: string): boolean {
