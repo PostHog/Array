@@ -49,7 +49,7 @@ export function InboxTabBar({ counts }: InboxTabBarProps) {
                 <span className="font-medium text-[13px]">
                   {INBOX_TAB_LABEL[key]}
                 </span>
-                {counts[key] > 0 && (
+                {key !== "runs" && counts[key] > 0 && (
                   <span
                     className={
                       isActive
