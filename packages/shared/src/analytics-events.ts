@@ -551,7 +551,6 @@ export interface InboxViewedProperties {
    */
   pulls_count?: number;
   reports_count?: number;
-  runs_count?: number;
 }
 
 export interface InboxReportOpenedProperties {

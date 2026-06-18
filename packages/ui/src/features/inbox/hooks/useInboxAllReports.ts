@@ -150,8 +150,7 @@ export function useInboxAllReports(options?: {
     // its true size from the backend total `count` (unaffected by the page cap)
     // minus the non-report items the total also includes. PRs use the true
     // `pullRequestTotal` (also a real backend count), so PRs sitting past the
-    // loaded page don't inflate Reports. Runs/failed without a PR stay
-    // loaded-derived — small, newest-first, and an accepted approximation.
+    // loaded page don't inflate Reports.
     const loadedOtherNonReport = query.allReports.filter(
       (r) =>
         matchesReviewerScope(r, scope) &&

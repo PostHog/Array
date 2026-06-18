@@ -209,13 +209,11 @@ export function matchesReviewerScope(
 export interface InboxTabCounts {
   pulls: number;
   reports: number;
-  runs: number;
 }
 
 export const EMPTY_TAB_COUNTS: InboxTabCounts = {
   pulls: 0,
   reports: 0,
-  runs: 0,
 };
 
 export function computeInboxTabCounts(
@@ -225,10 +223,6 @@ export function computeInboxTabCounts(
   const counts: InboxTabCounts = { ...EMPTY_TAB_COUNTS };
   for (const report of reports) {
     if (isExcludedFromInbox(report)) continue;
-    // Runs count is project-wide: reviewer assignment is an output of
-    // research, so the For-you / teammate filter is meaningless until a
-    // report reaches a downstream tab.
-    if (isAgentRunReport(report)) counts.runs += 1;
     if (!matchesReviewerScope(report, scope)) continue;
     if (isPullRequestReport(report)) counts.pulls += 1;
     if (isReportTabReport(report)) counts.reports += 1;
