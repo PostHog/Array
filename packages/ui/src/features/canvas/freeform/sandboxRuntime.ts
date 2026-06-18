@@ -119,7 +119,15 @@ export function buildSandboxDocument(
     new ResizeObserver(reportSize).observe(document.documentElement);
 
     let root = null;
+    // mount() is async and is called once per streamed code snapshot, so several
+    // runs overlap on their awaits. Without ordering, a slower EARLIER (partial,
+    // often invalid) snapshot could run root.render last and clobber the latest
+    // good render — the bug where live edits don't appear until you revisit.
+    // A monotonic sequence makes only the newest mount commit its render/error;
+    // superseded runs bail out after each await.
+    let mountSeq = 0;
     const mount = async (code) => {
+      const seq = ++mountSeq;
       try {
         const out = Babel.transform(code, {
           filename: "canvas.tsx",
@@ -137,12 +145,14 @@ export function buildSandboxDocument(
         } finally {
           URL.revokeObjectURL(url);
         }
+        if (seq !== mountSeq) return; // a newer snapshot superseded this one
         const Comp = mod.default;
         if (typeof Comp !== "function") {
           throw new Error("Canvas must \`export default\` a React component.");
         }
         const React = await import("react");
         const { createRoot } = await import("react-dom/client");
+        if (seq !== mountSeq) return;
         const el = document.getElementById("root");
         if (!root) root = createRoot(el);
 
@@ -162,11 +172,14 @@ export function buildSandboxDocument(
         );
         // Let layout settle, then report success + size.
         requestAnimationFrame(() => {
+          if (seq !== mountSeq) return;
           post({ type: "rendered" });
           reportSize();
         });
       } catch (err) {
-        reportError(err && err.message, err && err.stack);
+        // Only the latest snapshot reports — a superseded partial's parse error
+        // must not surface as the canvas's error or flicker the host banner.
+        if (seq === mountSeq) reportError(err && err.message, err && err.stack);
       }
     };
 
