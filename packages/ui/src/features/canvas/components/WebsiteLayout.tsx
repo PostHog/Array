@@ -119,8 +119,7 @@ function DashboardEditControls({
       {editing && (
         <>
           <Button
-            // Neutral grey when clean so the disabled state reads clearly.
-            variant={dirty ? "primary" : "default"}
+            variant="primary"
             size="sm"
             disabled={!dirty || isSaving}
             onClick={onSave}
@@ -254,9 +253,7 @@ function FreeformEditControls({
       {editing && (
         <>
           <Button
-            // Neutral grey when there's nothing to save so the disabled state
-            // reads clearly (a faded primary still looks orange/actionable).
-            variant={dirty ? "primary" : "default"}
+            variant="primary"
             size="sm"
             disabled={!dirty || isSavingFreeform || isStreaming}
             onClick={onSave}
