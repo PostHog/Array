@@ -55,6 +55,9 @@ export interface TaskInputNavigationOptions {
   initialModel?: string;
   initialMode?: string;
   reportAssociation?: { reportId: string; title: string };
+  // Which space's new-task screen to open. Both render the same TaskInput; the
+  // channels variant keeps the channels chrome instead of switching to Code.
+  space?: "code" | "website";
 }
 
 /**
@@ -90,7 +93,11 @@ export function openTaskInput(
         : undefined,
     },
   });
-  nav.navigateToCode();
+  if (options.space === "website") {
+    nav.navigateToWebsiteNew();
+  } else {
+    nav.navigateToCode();
+  }
 }
 
 export function useOpenTaskInput(): typeof openTaskInput {

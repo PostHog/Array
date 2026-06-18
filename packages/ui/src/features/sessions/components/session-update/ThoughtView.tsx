@@ -14,8 +14,12 @@ export const ThoughtView = memo(function ThoughtView({
 }: ThoughtViewProps) {
   const hasContent = content.trim().length > 0;
 
+  // An empty thought that's done streaming is pure noise — a bare "Thinking"
+  // header with nothing under it. Only show it while content is still arriving.
+  if (!hasContent && !isLoading) return null;
+
   return (
-    <div className="pl-3">
+    <div>
       <ToolRow
         icon={Brain}
         isLoading={isLoading}

@@ -38,7 +38,7 @@ describe("buildInboxViewedProperties", () => {
     const props = buildInboxViewedProperties({
       visibleReports: [fakeReport({ id: "a" }), fakeReport({ id: "b" })],
       totalCount: 65,
-      tabCounts: { pulls: 38, reports: 62, runs: 4 },
+      tabCounts: { pulls: 38, reports: 62 },
       filters: NO_FILTERS,
     });
 
@@ -47,7 +47,6 @@ describe("buildInboxViewedProperties", () => {
     expect(props.ready_count).toBe(2);
     expect(props.pulls_count).toBe(38);
     expect(props.reports_count).toBe(62);
-    expect(props.runs_count).toBe(4);
     expect(props.is_empty).toBe(false);
     expect(props.status_filter_count).toBe(0);
   });
@@ -61,7 +60,7 @@ describe("buildInboxViewedProperties", () => {
         fakeReport({ priority: null, actionability: null }),
       ],
       totalCount: 4,
-      tabCounts: { pulls: 0, reports: 4, runs: 0 },
+      tabCounts: { pulls: 0, reports: 4 },
       filters: NO_FILTERS,
     });
 
@@ -81,7 +80,7 @@ describe("buildInboxViewedProperties", () => {
         fakeReport({ status: "in_progress" }),
       ],
       totalCount: 2,
-      tabCounts: { pulls: 0, reports: 1, runs: 1 },
+      tabCounts: { pulls: 0, reports: 1 },
       filters: NO_FILTERS,
     });
 
@@ -92,7 +91,7 @@ describe("buildInboxViewedProperties", () => {
     const props = buildInboxViewedProperties({
       visibleReports: [],
       totalCount: 0,
-      tabCounts: { pulls: 0, reports: 0, runs: 0 },
+      tabCounts: { pulls: 0, reports: 0 },
       filters: NO_FILTERS,
     });
 
@@ -109,7 +108,7 @@ describe("buildInboxViewedProperties", () => {
     const props = buildInboxViewedProperties({
       visibleReports: [fakeReport()],
       totalCount: 1,
-      tabCounts: { pulls: 0, reports: 1, runs: 0 },
+      tabCounts: { pulls: 0, reports: 1 },
       filters: { ...NO_FILTERS, ...partial },
     });
 
@@ -120,7 +119,7 @@ describe("buildInboxViewedProperties", () => {
     const props = buildInboxViewedProperties({
       visibleReports: [fakeReport()],
       totalCount: 1,
-      tabCounts: { pulls: 0, reports: 1, runs: 0 },
+      tabCounts: { pulls: 0, reports: 1 },
       filters: { ...NO_FILTERS, searchQuery: "   " },
     });
 

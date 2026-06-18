@@ -1,6 +1,6 @@
 import http from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { streamBodyToResponse } from "./proxy-stream";
+import { type StreamProgress, streamBodyToResponse } from "./proxy-stream";
 
 describe("streamBodyToResponse", () => {
   let server: http.Server | undefined;
@@ -74,5 +74,56 @@ describe("streamBodyToResponse", () => {
     await vi.waitFor(() => {
       expect(cancelled).toBe(true);
     });
+  });
+
+  it("counts streamed bytes into progress", async () => {
+    const progress: StreamProgress = { bytesWritten: 0 };
+    const payload = "data: one\n\ndata: two\n\n";
+    const url = await serve((res) => {
+      res.writeHead(200);
+      void streamBodyToResponse(new Response(payload).body, res, progress);
+    });
+
+    await fetch(url).then((r) => r.text());
+
+    await vi.waitFor(() => {
+      expect(progress.bytesWritten).toBe(
+        new TextEncoder().encode(payload).byteLength,
+      );
+    });
+  });
+
+  it("accumulates bytes across multiple chunks", async () => {
+    const progress: StreamProgress = { bytesWritten: 0 };
+    const url = await serve((res) => {
+      res.writeHead(200);
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of ["aaaa", "bbbbbb", "cc"]) {
+            controller.enqueue(new TextEncoder().encode(chunk));
+          }
+          controller.close();
+        },
+      });
+      void streamBodyToResponse(body, res, progress);
+    });
+
+    await fetch(url).then((r) => r.text());
+
+    await vi.waitFor(() => {
+      expect(progress.bytesWritten).toBe(12);
+    });
+  });
+
+  it("leaves progress at zero for a null body", async () => {
+    const progress: StreamProgress = { bytesWritten: 0 };
+    const url = await serve((res) => {
+      res.writeHead(200);
+      void streamBodyToResponse(null, res, progress);
+    });
+
+    await fetch(url).then((r) => r.text());
+
+    expect(progress.bytesWritten).toBe(0);
   });
 });

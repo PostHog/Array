@@ -1,4 +1,5 @@
 import { HashIcon, XIcon } from "@phosphor-icons/react";
+import { validateChannelName } from "@posthog/core/canvas/channelName";
 import { Button } from "@posthog/quill";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -33,9 +34,10 @@ export function CreateChannelModal({
 
   const trimmed = name.trim();
   const remaining = MAX_CHANNEL_NAME_LENGTH - name.length;
+  const validationError = validateChannelName(trimmed);
 
   const submit = async () => {
-    if (!trimmed || isCreating) return;
+    if (!trimmed || validationError || isCreating) return;
     try {
       const channel = await createChannel(trimmed);
       onOpenChange(false);
@@ -108,6 +110,11 @@ export function CreateChannelModal({
               </Text>
             </TextField.Slot>
           </TextField.Root>
+          {validationError && (
+            <Text color="red" className="text-sm">
+              {validationError}
+            </Text>
+          )}
           <Text className="text-gray-10 text-sm">
             Each channel gets its own dashboards, tasks, and settings. Use a
             name that's easy to find.
@@ -117,7 +124,7 @@ export function CreateChannelModal({
         <Flex gap="3" mt="5" justify="end">
           <Button
             variant="primary"
-            disabled={!trimmed || isCreating}
+            disabled={!trimmed || !!validationError || isCreating}
             onClick={submit}
           >
             Create

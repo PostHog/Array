@@ -1,5 +1,9 @@
 import type http from "node:http";
 
+export interface StreamProgress {
+  bytesWritten: number;
+}
+
 function waitForDrainOrClose(res: http.ServerResponse): Promise<void> {
   return new Promise<void>((resolve) => {
     const settle = () => {
@@ -21,6 +25,7 @@ function waitForDrainOrClose(res: http.ServerResponse): Promise<void> {
 export async function streamBodyToResponse(
   body: ReadableStream<Uint8Array> | null,
   res: http.ServerResponse,
+  progress?: StreamProgress,
 ): Promise<void> {
   if (!body) {
     res.end();
@@ -35,6 +40,9 @@ export async function streamBodyToResponse(
     if (done) {
       res.end();
       return;
+    }
+    if (progress) {
+      progress.bytesWritten += value.byteLength;
     }
     if (!res.write(value)) {
       await waitForDrainOrClose(res);

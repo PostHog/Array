@@ -2,6 +2,7 @@ import { Text } from "@components/text";
 import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
+import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import { useThemeColors } from "@/lib/theme";
 import type { SignalReport } from "../types";
 
@@ -88,6 +89,16 @@ function ReportListRowComponent({ report, onPress }: ReportListRowProps) {
           </Text>
         </View>
       </View>
+
+      {report.implementation_pr_url ? (
+        <View className="self-center">
+          <PrStatusBadge
+            prUrl={report.implementation_pr_url}
+            hideWhenUnresolved
+            size="sm"
+          />
+        </View>
+      ) : null}
     </Pressable>
   );
 }

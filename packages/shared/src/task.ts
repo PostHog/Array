@@ -12,6 +12,7 @@ export interface Task {
     | "support_queue"
     | "session_summaries"
     | "signal_report"
+    | "signals_scout"
     | "slack";
   signal_report?: string | null; // Inbox report UUID when origin_product is "signal_report"
   github_integration?: number | null;

@@ -288,6 +288,10 @@ export interface SignalReport {
   actionability?: SignalReportActionability | null;
   /** Whether the issue appears already fixed, from the actionability judgment artefact. */
   already_addressed?: boolean | null;
+  /** Reason code from the latest dismissal artefact, set when the report was suppressed. */
+  dismissal_reason?: DismissalReasonOptionValue | null;
+  /** Free-form note captured alongside the dismissal reason. */
+  dismissal_note?: string | null;
   /** Whether the current user is a suggested reviewer for this report (server-annotated). */
   is_suggested_reviewer?: boolean;
   /** Distinct source products contributing signals to this report. */
@@ -505,6 +509,11 @@ export interface SignalReportsQueryParams {
   suggested_reviewers?: string;
   /** Comma-separated `P0`–`P4` priorities — only returns reports with one of these priorities. */
   priority?: string;
+  /**
+   * Filter by whether a shipped implementation pull request exists. `true` keeps only PR
+   * reports, `false` only non-PR reports. Pair with `limit: 1` to count PR reports cheaply.
+   */
+  has_implementation_pr?: boolean;
 }
 
 /** Values match `SignalReportTask.Relationship` on the PostHog API. */

@@ -2,7 +2,7 @@ import type { Schemas } from "@posthog/api-client";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 const CHANNELS_POLL_INTERVAL_MS = 30_000;
 const CHANNELS_QUERY_KEY = ["canvas-channels"] as const;
@@ -37,10 +37,16 @@ export function useChannels(options?: { enabled?: boolean }): {
       refetchInterval: CHANNELS_POLL_INTERVAL_MS,
     },
   );
-  const channels = (query.data ?? [])
-    .filter((fs) => fs.type === "folder")
-    .map(toChannel)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Memoize so the array reference is stable while the underlying data is
+  // unchanged — callers depend on `channels` in their own memos/effects.
+  const channels = useMemo(
+    () =>
+      (query.data ?? [])
+        .filter((fs) => fs.type === "folder")
+        .map(toChannel)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [query.data],
+  );
   return { channels, isLoading: query.isLoading };
 }
 

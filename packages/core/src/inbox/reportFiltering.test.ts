@@ -98,21 +98,17 @@ describe("filterReportsBySearch", () => {
 });
 
 describe("buildSignalReportListOrdering", () => {
-  it("puts status then suggested reviewer then descending field", () => {
-    expect(buildSignalReportListOrdering("total_weight", "desc")).toBe(
-      "status,-is_suggested_reviewer,-total_weight",
-    );
+  it.each([
+    ["total_weight", "desc", "status,-total_weight"],
+    ["created_at", "asc", "status,created_at"],
+    ["signal_count", "desc", "status,-signal_count"],
+  ] as const)("orders by status then %s (%s)", (field, direction, expected) => {
+    expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
   });
 
-  it("puts status then suggested reviewer then ascending field", () => {
-    expect(buildSignalReportListOrdering("created_at", "asc")).toBe(
-      "status,-is_suggested_reviewer,created_at",
-    );
-  });
-
-  it("works for signal_count", () => {
-    expect(buildSignalReportListOrdering("signal_count", "desc")).toBe(
-      "status,-is_suggested_reviewer,-signal_count",
+  it("does not float the current user's reports via ordering", () => {
+    expect(buildSignalReportListOrdering("priority", "asc")).not.toContain(
+      "is_suggested_reviewer",
     );
   });
 });

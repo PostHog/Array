@@ -1,11 +1,5 @@
-import {
-  INBOX_PIPELINE_STATUS_FILTER,
-  INBOX_REFETCH_INTERVAL_MS,
-  isReportUpForReview,
-} from "@posthog/core/inbox/reportFiltering";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { Separator } from "@posthog/quill";
-import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import type { Task } from "@posthog/shared/types";
 import {
   archiveTasksImperative,
@@ -13,8 +7,6 @@ import {
   useArchiveTask,
 } from "@posthog/ui/features/archive/useArchiveTask";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
-import { useInboxReports } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
@@ -31,32 +23,18 @@ import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import { DotsCircleSpinner } from "@posthog/ui/primitives/DotsCircleSpinner";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
-  navigateToAgents,
   navigateToCommandCenter,
-  navigateToHome,
-  navigateToInbox,
-  navigateToMcpServers,
-  navigateToSkills,
   navigateToTaskDetail,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
-import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
-import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
+import { openTask } from "@posthog/ui/router/useOpenTask";
 import { logger } from "@posthog/ui/shell/logger";
-import { useRendererWindowFocusStore } from "@posthog/ui/shell/rendererWindowFocusStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArchiveRunningTaskDialog } from "./ArchiveRunningTaskDialog";
-import { AgentsItem } from "./items/AgentsItem";
-import { CommandCenterItem } from "./items/CommandCenterItem";
-import { HomeItem } from "./items/HomeItem";
-import { InboxItem } from "./items/InboxItem";
-import { McpServersItem } from "./items/McpServersItem";
-import { NewTaskItem } from "./items/NewTaskItem";
-import { SearchItem } from "./items/SearchItem";
-import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
+import { SidebarNavSection } from "./SidebarNavSection";
 import { TaskListView } from "./TaskListView";
 import { TasksHeader } from "./TasksHeader";
 
@@ -86,22 +64,9 @@ function SidebarMenuComponent() {
   const { renameTask } = useRenameTask();
   const { togglePin } = usePinnedTasks();
 
-  const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
-
   const sidebarData = useSidebarData({
     activeView: view,
   });
-  const inboxPollingActive = useRendererWindowFocusStore((s) => s.focused);
-  const { data: inboxProbe } = useInboxReports(
-    { status: INBOX_PIPELINE_STATUS_FILTER },
-    {
-      refetchInterval: inboxPollingActive ? INBOX_REFETCH_INTERVAL_MS : false,
-      refetchIntervalInBackground: false,
-      staleTime: inboxPollingActive ? INBOX_REFETCH_INTERVAL_MS : 15_000,
-    },
-  );
-  const inboxResults = inboxProbe?.results ?? [];
-  const inboxSignalCount = inboxResults.filter(isReportUpForReview).length;
 
   const taskMap = new Map<string, Task>();
   for (const task of allTasks) {
@@ -110,9 +75,6 @@ function SidebarMenuComponent() {
 
   const commandCenterCells = useCommandCenterStore((s) => s.cells);
   const assignTaskToCommandCenter = useCommandCenterStore((s) => s.assignTask);
-  const commandCenterActiveCount = commandCenterCells.filter(
-    (taskId) => taskId != null && taskMap.has(taskId),
-  ).length;
 
   const previousTaskIdRef = useRef<string | null>(null);
 
@@ -133,39 +95,6 @@ function SidebarMenuComponent() {
 
     previousTaskIdRef.current = currentTaskId;
   }, [view, markAsViewed]);
-
-  const handleNewTaskClick = () => {
-    openTaskInput();
-  };
-
-  const handleHomeClick = () => {
-    navigateToHome();
-  };
-
-  const handleInboxClick = () => {
-    navigateToInbox();
-  };
-
-  const handleAgentsClick = () => {
-    navigateToAgents();
-  };
-
-  const handleCommandCenterClick = () => {
-    navigateToCommandCenter();
-  };
-
-  const handleSkillsClick = () => {
-    navigateToSkills();
-  };
-
-  const handleMcpServersClick = () => {
-    navigateToMcpServers();
-  };
-
-  const openCommandMenu = useCommandMenuStore((s) => s.open);
-  const handleSearchClick = () => {
-    openCommandMenu();
-  };
 
   const queryClient = useQueryClient();
 
@@ -470,64 +399,15 @@ function SidebarMenuComponent() {
       id="side-bar-menu"
       className="flex min-h-0 flex-col"
     >
-      <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
-        <Box mb="2">
-          <NewTaskItem
-            isActive={sidebarData.isHomeActive}
-            onClick={handleNewTaskClick}
-          />
-        </Box>
-
-        {homeTabEnabled && (
-          <Box>
-            <HomeItem
-              isActive={sidebarData.isHomeViewActive}
-              onClick={handleHomeClick}
-            />
-          </Box>
+      {/* Derive the command-center count from data SidebarMenu already holds,
+          so the nested nav section doesn't open its own task subscription. */}
+      <SidebarNavSection
+        commandCenterActiveCount={commandCenterCells.reduce(
+          (count, taskId) =>
+            taskId != null && taskMap.has(taskId) ? count + 1 : count,
+          0,
         )}
-
-        <Box>
-          <SearchItem onClick={handleSearchClick} />
-        </Box>
-
-        <Box>
-          <InboxItem
-            isActive={sidebarData.isInboxActive}
-            onClick={handleInboxClick}
-            signalCount={inboxSignalCount}
-          />
-        </Box>
-
-        <Box>
-          <AgentsItem
-            isActive={sidebarData.isAgentsActive}
-            onClick={handleAgentsClick}
-          />
-        </Box>
-
-        <Box>
-          <SkillsItem
-            isActive={sidebarData.isSkillsActive}
-            onClick={handleSkillsClick}
-          />
-        </Box>
-
-        <Box>
-          <McpServersItem
-            isActive={sidebarData.isMcpServersActive}
-            onClick={handleMcpServersClick}
-          />
-        </Box>
-
-        <Box mb="2">
-          <CommandCenterItem
-            isActive={sidebarData.isCommandCenterActive}
-            onClick={handleCommandCenterClick}
-            activeCount={commandCenterActiveCount}
-          />
-        </Box>
-      </Flex>
+      />
 
       <Separator className="mx-2 my-2 shrink-0" />
 

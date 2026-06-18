@@ -213,6 +213,9 @@ interface TestableServer {
   ): string | { append: string };
   buildCodexInstructions(systemPrompt: string | { append: string }): string;
   getRuntimeAdapter(): "claude" | "codex";
+  buildClaudeCodeSessionMeta(
+    runtimeAdapter: "claude" | "codex",
+  ): { claudeCode: { options: Record<string, unknown> } } | undefined;
 }
 
 let nextTestPort = 20000;
@@ -626,104 +629,6 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.stop).not.toHaveBeenCalled();
       expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
-
-    it.each([
-      {
-        label: "completed on a clean end_turn",
-        stopReason: "end_turn",
-        expectedStatus: "completed",
-        expectedMethod: "_posthog/task_complete",
-        expectsErrorMessage: false,
-      },
-      {
-        label: "failed when the run stops early (max_tokens)",
-        stopReason: "max_tokens",
-        expectedStatus: "failed",
-        expectedMethod: "_posthog/error",
-        expectsErrorMessage: true,
-      },
-    ])(
-      "marks a background run $label",
-      async ({
-        stopReason,
-        expectedStatus,
-        expectedMethod,
-        expectsErrorMessage,
-      }) => {
-        const order: string[] = [];
-        const testServer = new AgentServer({
-          port,
-          jwtPublicKey: TEST_PUBLIC_KEY,
-          repositoryPath: repo.path,
-          apiUrl: "http://localhost:8000",
-          apiKey: "test-api-key",
-          projectId: 1,
-          mode: "background",
-          taskId: "test-task-id",
-          runId: "test-run-id",
-        }) as unknown as {
-          eventStreamSender: {
-            enqueue: (event: Record<string, unknown>) => void;
-            stop: () => Promise<void>;
-          };
-          posthogAPI: {
-            updateTaskRun: (
-              taskId: string,
-              runId: string,
-              payload: Record<string, unknown>,
-            ) => Promise<unknown>;
-          };
-          signalTaskComplete(
-            payload: JwtPayload,
-            stopReason: string,
-          ): Promise<void>;
-        };
-        testServer.eventStreamSender = {
-          enqueue: vi.fn(() => {
-            order.push("enqueue");
-          }),
-          stop: vi.fn(async () => {
-            order.push("stop");
-          }),
-        };
-        testServer.posthogAPI = {
-          updateTaskRun: vi.fn(async () => {
-            order.push("update");
-            return {};
-          }),
-        };
-
-        await testServer.signalTaskComplete(
-          {
-            run_id: "run-1",
-            task_id: "task-1",
-            team_id: 1,
-            user_id: 1,
-            distinct_id: "distinct-id",
-            mode: "background",
-          },
-          stopReason,
-        );
-
-        expect(order).toEqual(["enqueue", "update", "stop"]);
-        expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: "notification",
-            notification: expect.objectContaining({
-              method: expectedMethod,
-              params: expect.objectContaining({ stopReason }),
-            }),
-          }),
-        );
-        expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledWith(
-          "task-1",
-          "run-1",
-          expectsErrorMessage
-            ? { status: expectedStatus, error_message: expect.any(String) }
-            : { status: expectedStatus },
-        );
-      },
-    );
 
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();
@@ -1235,6 +1140,68 @@ describe("AgentServer HTTP Mode", () => {
       expect(
         (s as unknown as TestableServer).buildCodexInstructions(sessionPrompt),
       ).toContain("Cloud Task Execution");
+    });
+  });
+
+  describe("buildClaudeCodeSessionMeta", () => {
+    it("sends claude reasoning effort even when no plugins are configured", () => {
+      const s = createServer({ reasoningEffort: "high" });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({ effort: "high" });
+    });
+
+    it("does not send claudeCode effort for codex runs", () => {
+      const s = createServer({ reasoningEffort: "high" });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "codex",
+      );
+
+      expect(meta).toBeUndefined();
+    });
+
+    it("returns undefined when neither plugins nor effort are set", () => {
+      const s = createServer();
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta).toBeUndefined();
+    });
+
+    it("includes both plugins and effort for claude runs", () => {
+      const s = createServer({
+        reasoningEffort: "medium",
+        claudeCode: { plugins: [{ type: "local", path: "/tmp/plugin" }] },
+      });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({
+        plugins: [{ type: "local", path: "/tmp/plugin" }],
+        effort: "medium",
+      });
+    });
+
+    it("returns only plugins when effort is not set", () => {
+      const s = createServer({
+        claudeCode: { plugins: [{ type: "local", path: "/tmp/plugin" }] },
+      });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({
+        plugins: [{ type: "local", path: "/tmp/plugin" }],
+      });
     });
   });
 

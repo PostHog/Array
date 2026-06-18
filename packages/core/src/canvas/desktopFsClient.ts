@@ -50,9 +50,18 @@ export class DesktopFsClient {
     return (await res.json()) as T;
   }
 
-  async listAll<T extends FsEntryBase>(errorLabel: string): Promise<T[]> {
+  // List rows matching a server-side-filtered query (e.g.
+  // `parent=<path>&type=dashboard`), paging until exhausted. Filtering on the
+  // backend keeps this to the matching rows instead of walking the whole project
+  // file system — the desktop_file_system can hold thousands of rows (one `task`
+  // row per task), so an unfiltered scan is both slow and silently truncated by
+  // the page cap. Callers should always pass a `parent`/`type` filter.
+  async listByQuery<T extends FsEntryBase>(
+    query: string,
+    errorLabel: string,
+  ): Promise<T[]> {
     const all: T[] = [];
-    let suffix = "";
+    let suffix = `?${query}`;
     for (let i = 0; i < MAX_PAGES; i++) {
       const res = await this.fetch(suffix);
       if (!res.ok)

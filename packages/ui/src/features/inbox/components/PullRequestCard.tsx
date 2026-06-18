@@ -144,8 +144,8 @@ export function PullRequestCard({
             variant="soft"
             color="gray"
             size="1"
-            aria-label="Dismiss this report"
-            tooltipContent="Dismiss this report"
+            aria-label="Archive this report"
+            tooltipContent="Archive this report"
             disabled={dismissDisabledReason !== null || isDismissPending}
             disabledReason={dismissDisabledReason}
             loading={isDismissPending}

@@ -2,6 +2,7 @@ import "./message-editor.css";
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { ArrowUp, Stop } from "@phosphor-icons/react";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
+import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { cycleModeOption } from "@posthog/ui/features/sessions/sessionStore";
 import { hasOpenOverlay } from "@posthog/ui/utils/overlay";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
@@ -42,6 +43,7 @@ export interface PromptInputProps {
   // toolbar slots
   modelSelector?: React.ReactElement | null | false;
   reasoningSelector?: React.ReactElement | null | false;
+  messagingModeToggle?: React.ReactNode;
   historyButton?: React.ReactNode;
   // prompt history provider
   getPromptHistory?: () => string[];
@@ -51,6 +53,7 @@ export interface PromptInputProps {
   onBashCommand?: (command: string) => void;
   onBashModeChange?: (isBashMode: boolean) => void;
   onCancel?: () => void;
+  onToggleMessagingMode?: () => void;
   onAttachFiles?: (files: File[]) => void;
   onEmptyChange?: (isEmpty: boolean) => void;
   onFocus?: () => void;
@@ -82,6 +85,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       enableCommands = true,
       modelSelector,
       reasoningSelector,
+      messagingModeToggle,
       historyButton,
       getPromptHistory,
       onBeforeSubmit,
@@ -89,6 +93,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onBashCommand,
       onBashModeChange,
       onCancel,
+      onToggleMessagingMode,
       onAttachFiles,
       onEmptyChange,
       onFocus,
@@ -238,6 +243,23 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       [editor, modeOption, onModeChange, allowBypassPermissions, disabled],
     );
 
+    useHotkeys(
+      SHORTCUTS.SWITCH_MESSAGING_MODE,
+      (e) => {
+        if (!editor?.isFocused) return;
+        if (hasOpenOverlay()) return;
+        if (!onToggleMessagingMode) return;
+        e.preventDefault();
+        onToggleMessagingMode();
+      },
+      {
+        enableOnFormTags: true,
+        enableOnContentEditable: true,
+        enabled: !disabled && !!onToggleMessagingMode,
+      },
+      [editor, onToggleMessagingMode, disabled],
+    );
+
     const handleContainerClick = useCallback(
       (e: React.MouseEvent) => {
         const target = e.target as HTMLElement;
@@ -344,6 +366,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
             )}
             {modelSelector && <span>{modelSelector}</span>}
             {reasoningSelector && <span>{reasoningSelector}</span>}
+            {messagingModeToggle && <span>{messagingModeToggle}</span>}
             {isBashMode && (
               <Text className="font-mono text-(--blue-9) text-[13px]">
                 ! bash

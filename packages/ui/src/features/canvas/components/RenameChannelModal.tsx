@@ -1,4 +1,5 @@
 import { HashIcon, XIcon } from "@phosphor-icons/react";
+import { validateChannelName } from "@posthog/core/canvas/channelName";
 import { Button } from "@posthog/quill";
 import type { Channel } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
@@ -31,9 +32,10 @@ export function RenameChannelModal({
   const trimmed = name.trim();
   const remaining = MAX_CHANNEL_NAME_LENGTH - name.length;
   const unchanged = trimmed === channel.name;
+  const validationError = validateChannelName(trimmed);
 
   const submit = async () => {
-    if (!trimmed || unchanged || isRenaming) return;
+    if (!trimmed || unchanged || validationError || isRenaming) return;
     try {
       await renameChannel(channel.id, trimmed);
       onOpenChange(false);
@@ -102,12 +104,17 @@ export function RenameChannelModal({
               </Text>
             </TextField.Slot>
           </TextField.Root>
+          {validationError && (
+            <Text color="red" className="text-sm">
+              {validationError}
+            </Text>
+          )}
         </Flex>
 
         <Flex gap="3" mt="5" justify="end">
           <Button
             variant="primary"
-            disabled={!trimmed || unchanged || isRenaming}
+            disabled={!trimmed || unchanged || !!validationError || isRenaming}
             onClick={submit}
           >
             Rename

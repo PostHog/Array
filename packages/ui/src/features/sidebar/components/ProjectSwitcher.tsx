@@ -20,6 +20,7 @@ import {
   AutocompleteItem,
   AutocompleteList,
   AutocompleteStatus,
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -53,10 +54,17 @@ import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { isMac } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Avatar, Box } from "@radix-ui/themes";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
-export function ProjectSwitcher() {
+// `item` (default) is the two-line user/project card used in the Code sidebar.
+// `button` is a compact bordered button showing just the project name + a
+// chevron, used as the Channels-space header.
+export function ProjectSwitcher({
+  triggerVariant = "item",
+}: {
+  triggerVariant?: "item" | "button";
+} = {}) {
   const [popoverOpen, setPopoverOpen] = useState(false);
 
   const currentOrgId = useAuthStateValue((state) => state.currentOrgId);
@@ -164,29 +172,49 @@ export function ProjectSwitcher() {
     <DropdownMenu open={popoverOpen} onOpenChange={setPopoverOpen}>
       <DropdownMenuTrigger
         render={
-          <Item
-            size="xs"
-            className="border-border hover:bg-fill-hover aria-expanded:bg-fill-active"
-          >
-            <ItemContent className="select-none">
-              <ItemTitle>
+          triggerVariant === "button" ? (
+            <Button
+              variant="outline"
+              size="default"
+              className="w-full justify-between gap-2 font-bold"
+            >
+              <span className="truncate">
                 {currentProject?.name ?? "No project selected"}
-              </ItemTitle>
-              <ItemDescription className="text-[11px]">
-                {currentUser?.email ?? "No email"}
-              </ItemDescription>
-            </ItemContent>
-            <ItemActions>
-              <ChevronRightIcon className="size-4 rotate-270 group-aria-expanded/item:rotate-90" />
-            </ItemActions>
-          </Item>
+              </span>
+              <ChevronDownIcon className="size-3.5 shrink-0 text-gray-11" />
+            </Button>
+          ) : (
+            <Item
+              size="xs"
+              className="border-border hover:bg-fill-hover aria-expanded:bg-fill-active"
+            >
+              <ItemContent className="select-none">
+                <ItemTitle>
+                  {currentProject?.name ?? "No project selected"}
+                </ItemTitle>
+                <ItemDescription className="text-[11px]">
+                  {currentUser?.email ?? "No email"}
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <ChevronRightIcon className="size-4 rotate-270 group-aria-expanded/item:rotate-90" />
+              </ItemActions>
+            </Item>
+          )
         }
       />
 
       <DropdownMenuContent
         align="start"
         side="bottom"
-        className="w-(--anchor-width) max-w-(--anchor-width) pt-0"
+        className={
+          // The `button` trigger spans the full sidebar width, so binding the
+          // menu to `--anchor-width` would stretch it and break the layout. Pin
+          // a fixed width there; the `item` trigger matches its anchor.
+          triggerVariant === "button"
+            ? "w-64 min-w-64 pt-0"
+            : "w-(--anchor-width) max-w-(--anchor-width) pt-0"
+        }
         sideOffset={4}
       >
         <Box>

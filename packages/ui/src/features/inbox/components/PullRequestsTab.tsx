@@ -14,6 +14,7 @@ export function PullRequestsTab() {
   return (
     <InboxReportListTab
       predicate={isPullRequestReport}
+      pullRequestsOnly
       Card={PullRequestCard}
       CardListWrapper={PullRequestsBatchProvider}
       searchPlaceholder="Search pull requests…"

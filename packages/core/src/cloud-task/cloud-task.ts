@@ -8,7 +8,7 @@ import {
   type IAnalytics,
 } from "@posthog/platform/analytics";
 import type { StoredLogEntry } from "@posthog/shared";
-import { TypedEventEmitter } from "@posthog/shared";
+import { serializeError, TypedEventEmitter } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { inject, injectable, preDestroy } from "inversify";
 import type { CloudTaskPermissionRequestUpdate } from "./cloud-task-types";
@@ -106,6 +106,9 @@ interface WatcherState {
   lastErrorMessage: string | null;
   lastBranch: string | null;
   lastStatusUpdatedAt: string | null;
+  connStartedAt: number;
+  connSentLastEventId: string | null;
+  connDataEventsReceived: number;
   isBootstrapping: boolean;
   hasEmittedSnapshot: boolean;
   bufferedLogBatches: StoredLogEntry[][];
@@ -155,6 +158,16 @@ function isPermissionRequestEvent(
     data !== null &&
     (data as { type?: string }).type === "permission_request" &&
     typeof (data as { requestId?: string }).requestId === "string"
+  );
+}
+
+function isKeepaliveEvent(event: SseEvent): boolean {
+  return (
+    event.event === "keepalive" ||
+    (typeof event.data === "object" &&
+      event.data !== null &&
+      "type" in event.data &&
+      event.data.type === "keepalive")
   );
 }
 
@@ -432,6 +445,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       lastErrorMessage: null,
       lastBranch: null,
       lastStatusUpdatedAt: null,
+      connStartedAt: 0,
+      connSentLastEventId: null,
+      connDataEventsReceived: 0,
       isBootstrapping: false,
       hasEmittedSnapshot: false,
       bufferedLogBatches: [],
@@ -620,10 +636,15 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const controller = new AbortController();
     watcher.sseAbortController = controller;
 
+    watcher.connStartedAt = 0;
+    watcher.connSentLastEventId = watcher.lastEventId;
+    watcher.connDataEventsReceived = 0;
+    const startLatest = Boolean(options?.startLatest && !watcher.lastEventId);
+
     const url = new URL(
       `${watcher.apiHost}/api/projects/${watcher.teamId}/tasks/${watcher.taskId}/runs/${watcher.runId}/stream/`,
     );
-    if (options?.startLatest && !watcher.lastEventId) {
+    if (startLatest) {
       url.searchParams.set("start", "latest");
     }
     const headers: Record<string, string> = {
@@ -643,6 +664,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     // failed reconnect attempt (see SSE_HEALTHY_CONNECTION_MS).
     let connectedAt = 0;
     let streamWasEstablished = false;
+    let bytesReceived = 0;
+    let eventsReceived = 0;
 
     try {
       const response = await this.auth.authenticatedFetch(url.toString(), {
@@ -661,6 +684,21 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
       connectedAt = Date.now();
       streamWasEstablished = true;
+      watcher.connStartedAt = connectedAt;
+
+      this.log.info("Cloud task SSE connected", {
+        key,
+        sentLastEventId: watcher.connSentLastEventId,
+        startLatest,
+        status: response.status,
+        server: response.headers.get("server"),
+        via: response.headers.get("via"),
+        cfRay: response.headers.get("cf-ray"),
+        cfCacheStatus: response.headers.get("cf-cache-status"),
+        xAccelBuffering: response.headers.get("x-accel-buffering"),
+        contentType: response.headers.get("content-type"),
+        requestId: response.headers.get("x-request-id"),
+      });
 
       const reader = response.body.getReader();
 
@@ -674,9 +712,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           continue;
         }
 
+        bytesReceived += value.byteLength;
         const chunk = decoder.decode(value, { stream: true });
         const events = parser.parse(chunk);
         for (const event of events) {
+          eventsReceived += 1;
           this.handleSseEvent(key, event);
         }
       }
@@ -692,6 +732,14 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         return;
       }
 
+      this.log.info("Cloud task stream closed cleanly", {
+        key,
+        connectionDurationMs: Date.now() - connectedAt,
+        bytesReceived,
+        eventsReceived,
+        dataEventsReceived: watcher.connDataEventsReceived,
+        lastEventId: watcher.lastEventId,
+      });
       await this.handleStreamCompletion(key, { reconnectIfNonTerminal: true });
     } catch (error) {
       this.flushLogBatch(key);
@@ -729,8 +777,20 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       this.log.warn("Cloud task stream error", {
         key,
         error: errorMessage,
+        errorDetail: serializeError(error),
         wasHealthyStream,
         isBackendError,
+        streamWasEstablished,
+        connectionDurationMs: streamWasEstablished
+          ? Date.now() - connectedAt
+          : 0,
+        bytesReceived,
+        eventsReceived,
+        dataEventsReceived: watcher?.connDataEventsReceived ?? 0,
+        lastEventId: watcher?.lastEventId ?? null,
+        reconnectAttempts: watcher?.reconnectAttempts ?? 0,
+        streamErrorAttempts: watcher?.streamErrorAttempts ?? 0,
+        cumulativeReconnectAttempts: watcher?.cumulativeReconnectAttempts ?? 0,
       });
       await this.handleStreamCompletion(key, {
         reconnectIfNonTerminal: true,
@@ -766,13 +826,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     // data.
     watcher.reconnectAttempts = 0;
 
-    if (
-      event.event === "keepalive" ||
-      (typeof event.data === "object" &&
-        event.data !== null &&
-        "type" in event.data &&
-        event.data.type === "keepalive")
-    ) {
+    if (isKeepaliveEvent(event)) {
       return;
     }
 
@@ -780,6 +834,15 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     // and cumulative budgets too.
     watcher.streamErrorAttempts = 0;
     watcher.cumulativeReconnectAttempts = 0;
+
+    watcher.connDataEventsReceived += 1;
+    if (watcher.connDataEventsReceived === 1 && watcher.connSentLastEventId) {
+      this.log.info("Cloud task SSE resumed", {
+        key,
+        resumedFrom: watcher.connSentLastEventId,
+        firstEventIdAfterResume: event.id ?? null,
+      });
+    }
 
     if (isTaskRunStateEvent(event.data)) {
       if (this.applyTaskRunState(watcher, event.data)) {
@@ -992,6 +1055,18 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const watcher = this.watchers.get(key);
     if (!watcher) return;
 
+    this.log.warn("Cloud task watcher failed", {
+      key,
+      errorTitle: error.title,
+      retryable: error.retryable,
+      status: watcher.lastStatus,
+      wasBootstrapping: watcher.isBootstrapping,
+      reconnectAttempts: watcher.reconnectAttempts,
+      cumulativeReconnectAttempts: watcher.cumulativeReconnectAttempts,
+      totalEntryCount: watcher.totalEntryCount,
+      lastEventId: watcher.lastEventId,
+    });
+
     this.analytics.track(ANALYTICS_EVENTS.CLOUD_STREAM_DISCONNECTED, {
       task_id: watcher.taskId,
       run_id: watcher.runId,
@@ -1173,12 +1248,32 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       this.log.warn("Cloud task stream ended before terminal status", {
         key,
         status: watcher.lastStatus,
+        stage: watcher.lastStage,
+        stateChanged,
+        lastEventId: watcher.lastEventId,
+        sentLastEventId: watcher.connSentLastEventId,
+        connDataEventsReceived: watcher.connDataEventsReceived,
+        reconnectAttempts: watcher.reconnectAttempts,
+        streamErrorAttempts: watcher.streamErrorAttempts,
+        cumulativeReconnectAttempts: watcher.cumulativeReconnectAttempts,
       });
       this.scheduleReconnect(key, options.reconnectError, {
         countAttempt: options.countReconnectAttempt ?? false,
       });
       return;
     }
+
+    this.log.info("Cloud task terminal stop", {
+      key,
+      status: watcher.lastStatus,
+      reachedViaError: options.reconnectError !== undefined,
+      lastEventId: watcher.lastEventId,
+      sentLastEventId: watcher.connSentLastEventId,
+      totalEntryCount: watcher.totalEntryCount,
+      connDataEventsReceived: watcher.connDataEventsReceived,
+      connDurationMs:
+        watcher.connStartedAt !== 0 ? Date.now() - watcher.connStartedAt : 0,
+    });
 
     // Always emit the latest status before stopping. Terminal states are
     // intentionally deferred until stream completion; clean EOFs can also mean

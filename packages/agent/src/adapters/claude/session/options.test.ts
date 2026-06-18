@@ -1,10 +1,31 @@
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../../../utils/logger";
 import { SUBAGENT_REWRITES } from "../hooks";
 import { buildSessionOptions } from "./options";
 import { SettingsManager } from "./settings";
+
+const GIT_COMMIT_HOOK_INPUT = {
+  session_id: "s",
+  transcript_path: "/tmp/t",
+  cwd: "/tmp",
+  hook_event_name: "PreToolUse",
+  tool_name: "Bash",
+  tool_use_id: "toolu_1",
+  tool_input: { command: "git commit -m x" },
+} as HookInput;
+
+async function runPreToolUseHooks(options: Options): Promise<void> {
+  const opts = { signal: new AbortController().signal };
+  const hooks = (options.hooks?.PreToolUse ?? []).flatMap(
+    (entry) => entry.hooks ?? [],
+  );
+  for (const hook of hooks) {
+    await hook(GIT_COMMIT_HOOK_INPUT, undefined, opts);
+  }
+}
 
 function makeParams() {
   const cwd = path.join(os.tmpdir(), `options-test-${Date.now()}`);
@@ -69,6 +90,32 @@ describe("buildSessionOptions", () => {
     });
 
     expect(options.agents?.["ph-explore"]).toEqual(override);
+  });
+
+  it("threads onEnsureLocalToolsConnected into the signed-commit guard (cloud)", async () => {
+    const healSpy = vi.fn().mockResolvedValue(true);
+    await runPreToolUseHooks(
+      buildSessionOptions({
+        ...makeParams(),
+        cloudMode: true,
+        onEnsureLocalToolsConnected: healSpy,
+      }),
+    );
+
+    expect(healSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits the signed-commit guard outside cloud mode", async () => {
+    const healSpy = vi.fn().mockResolvedValue(true);
+    await runPreToolUseHooks(
+      buildSessionOptions({
+        ...makeParams(),
+        cloudMode: false,
+        onEnsureLocalToolsConnected: healSpy,
+      }),
+    );
+
+    expect(healSpy).not.toHaveBeenCalled();
   });
 
   describe("CLAUDE_CODE_EXECUTABLE", () => {

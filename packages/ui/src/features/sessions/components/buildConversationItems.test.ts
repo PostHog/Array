@@ -477,6 +477,105 @@ describe("buildConversationItems", () => {
       ).toBe(false);
     });
   });
+
+  describe("completedToolCallCount", () => {
+    const toolCallMsg = (
+      ts: number,
+      toolCallId: string,
+      extra: Record<string, unknown> = {},
+    ): AcpMessage => ({
+      type: "acp_message",
+      ts,
+      message: {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            kind: "execute",
+            status: "pending",
+            title: toolCallId,
+            ...extra,
+          },
+        },
+      },
+    });
+
+    const toolUpdateMsg = (
+      ts: number,
+      toolCallId: string,
+      extra: Record<string, unknown>,
+    ): AcpMessage => ({
+      type: "acp_message",
+      ts,
+      message: {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          update: { sessionUpdate: "tool_call_update", toolCallId, ...extra },
+        },
+      },
+    });
+
+    it("starts at zero with no tool calls", () => {
+      const result = buildConversationItems([userPromptMsg(1, 1, "hi")], null);
+      expect(result.completedToolCallCount).toBe(0);
+    });
+
+    it("stays at zero while a tool call is still pending", () => {
+      const events = [userPromptMsg(1, 1, "go"), toolCallMsg(2, "t1")];
+      expect(buildConversationItems(events, true).completedToolCallCount).toBe(
+        0,
+      );
+    });
+
+    it.each(["completed", "failed", "cancelled"])(
+      "counts a tool call once it settles to %s",
+      (status) => {
+        const events = [
+          userPromptMsg(1, 1, "go"),
+          toolCallMsg(2, "t1"),
+          toolUpdateMsg(3, "t1", { status }),
+        ];
+        expect(
+          buildConversationItems(events, true).completedToolCallCount,
+        ).toBe(1);
+      },
+    );
+
+    it("does not double-count repeated updates after settling", () => {
+      const events = [
+        userPromptMsg(1, 1, "go"),
+        toolCallMsg(2, "t1"),
+        toolUpdateMsg(3, "t1", { status: "completed" }),
+        toolUpdateMsg(4, "t1", {
+          status: "completed",
+          content: [{ type: "content", content: { type: "text", text: "x" } }],
+        }),
+      ];
+      expect(buildConversationItems(events, true).completedToolCallCount).toBe(
+        1,
+      );
+    });
+
+    it("accumulates across multiple completed tool calls and turns", () => {
+      const events = [
+        userPromptMsg(1, 1, "go"),
+        toolCallMsg(2, "t1"),
+        toolUpdateMsg(3, "t1", { status: "completed" }),
+        toolCallMsg(4, "t2"),
+        toolUpdateMsg(5, "t2", { status: "completed" }),
+        promptResponseMsg(6, 1),
+        userPromptMsg(7, 2, "again"),
+        toolCallMsg(8, "t3"),
+        toolUpdateMsg(9, "t3", { status: "completed" }),
+      ];
+      expect(buildConversationItems(events, true).completedToolCallCount).toBe(
+        3,
+      );
+    });
+  });
 });
 
 // Local alias kept intentionally narrow to the shape we care about in tests.

@@ -21,11 +21,12 @@ import {
   useDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useSeedShowcase } from "@posthog/ui/features/canvas/hooks/useSeedShowcase";
+import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { toast } from "@posthog/ui/primitives/toast";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { Box, Flex, Grid, ScrollArea } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { memo, useState } from "react";
 
 // Render each dashboard's live spec at 1/SCALE of the card width, then shrink so
 // the full layout fits inside the fixed-height preview frame as a thumbnail.
@@ -76,7 +77,7 @@ export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
   );
 }
 
-function DashboardCard({
+const DashboardCard = memo(function DashboardCard({
   channelId,
   summary,
 }: {
@@ -95,27 +96,7 @@ function DashboardCard({
         className="no-underline"
       >
         <Card className="gap-0 overflow-hidden p-0">
-          <Box className="relative h-44 overflow-hidden border-border border-b bg-muted">
-            {isNonEmptySpec(spec) ? (
-              <Box
-                className="pointer-events-none absolute top-0 left-0 origin-top-left"
-                style={{
-                  transform: `scale(${PREVIEW_SCALE})`,
-                  width: `${100 / PREVIEW_SCALE}%`,
-                }}
-              >
-                <ErrorBoundary
-                  name="dashboard-preview"
-                  resetKey={spec}
-                  fallback={<PreviewPlaceholder label="Preview unavailable" />}
-                >
-                  <CanvasRenderer spec={spec} state={spec.state} />
-                </ErrorBoundary>
-              </Box>
-            ) : (
-              <PreviewPlaceholder label="Empty canvas" />
-            )}
-          </Box>
+          <DashboardPreview spec={spec} />
           <CardContent className="flex flex-col gap-0.5 p-3">
             <Text size="sm" weight="medium" className="truncate">
               {summary.name}
@@ -134,6 +115,44 @@ function DashboardCard({
       {/* Sibling of the Link (not nested) so opening the menu or deleting never
           navigates into the dashboard. */}
       <DashboardCardMenu id={summary.id} name={summary.name} />
+    </Box>
+  );
+});
+
+// The scaled-down preview frame. The full chart tree is expensive to mount, so
+// we defer rendering it until the card scrolls near the viewport (`once` keeps
+// it mounted afterward). Off-screen cards in a long grid stay cheap.
+function DashboardPreview({ spec }: { spec: Spec | null | undefined }) {
+  const [ref, inView] = useInView<HTMLDivElement>({ once: true });
+
+  return (
+    <Box
+      ref={ref}
+      className="relative h-44 overflow-hidden border-border border-b bg-muted"
+    >
+      {isNonEmptySpec(spec) ? (
+        inView ? (
+          <Box
+            className="pointer-events-none absolute top-0 left-0 origin-top-left"
+            style={{
+              transform: `scale(${PREVIEW_SCALE})`,
+              width: `${100 / PREVIEW_SCALE}%`,
+            }}
+          >
+            <ErrorBoundary
+              name="dashboard-preview"
+              resetKey={spec}
+              fallback={<PreviewPlaceholder label="Preview unavailable" />}
+            >
+              <CanvasRenderer spec={spec} state={spec.state} />
+            </ErrorBoundary>
+          </Box>
+        ) : (
+          <PreviewPlaceholder label="Loading preview…" />
+        )
+      ) : (
+        <PreviewPlaceholder label="Empty canvas" />
+      )}
     </Box>
   );
 }

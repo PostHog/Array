@@ -9,20 +9,20 @@ import { SidebarKbdHint } from "./SidebarKbdHint";
 interface InboxItemProps {
   isActive: boolean;
   onClick: () => void;
-  signalCount?: number;
+  pullRequestCount?: number;
 }
 
 export function InboxItem({
   isActive,
   onClick,
-  signalCount = 0,
+  pullRequestCount = 0,
 }: InboxItemProps) {
   return (
     <Tooltip
       content={
-        signalCount > 0
-          ? `${signalCount} actionable report${signalCount === 1 ? "" : "s"} assigned to you`
-          : "No actionable reports assigned to you yet"
+        pullRequestCount > 0
+          ? `${pullRequestCount} pull request${pullRequestCount === 1 ? "" : "s"} to review`
+          : "No pull requests to review"
       }
       side="right"
     >
@@ -36,8 +36,8 @@ export function InboxItem({
             <>
               Inbox
               <SidebarCountBadge
-                count={signalCount}
-                title={`${signalCount} actionable reports for you`}
+                count={pullRequestCount}
+                title={`${pullRequestCount} pull requests to review`}
               />
             </>
           }

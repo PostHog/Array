@@ -27,6 +27,7 @@ import {
 } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { toast } from "@posthog/ui/primitives/toast";
+import { useHeaderStore } from "@posthog/ui/shell/headerStore";
 import { Box, Flex } from "@radix-ui/themes";
 import {
   Outlet,
@@ -160,6 +161,12 @@ export function WebsiteLayout() {
   const { data: tasks } = useTasks();
   const { channels } = useChannels();
 
+  // App pages mirrored into the Channels space (Home, Skills, MCP servers,
+  // Command Center) are channel-less and push their title into the shared
+  // header store. With no code HeaderRow here, surface that title in this bar so
+  // the mirrored pages read the same as in Code.
+  const headerContent = useHeaderStore((s) => s.content);
+
   const channelId = params.channelId;
   const dashboardId = params.dashboardId;
   const taskId = params.taskId;
@@ -254,7 +261,7 @@ export function WebsiteLayout() {
         gap="2"
         className="h-10 shrink-0 border-gray-6 border-b px-3"
       >
-        {breadcrumbs ?? <span />}
+        {breadcrumbs ?? headerContent ?? <span />}
         {isDashboardDetail && channelId && dashboardId ? (
           <DashboardEditControls
             channelId={channelId}

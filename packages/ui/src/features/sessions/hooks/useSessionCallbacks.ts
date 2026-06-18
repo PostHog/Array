@@ -10,6 +10,7 @@ import { useService } from "@posthog/di/react";
 import type { Task } from "@posthog/shared/domain-types";
 import { tryExecuteCodeCommand } from "@posthog/ui/features/message-editor/commands";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
+import { useMessagingMode } from "@posthog/ui/features/sessions/hooks/useMessagingMode";
 import {
   type AgentSession,
   sessionStoreSetters,
@@ -47,6 +48,8 @@ export function useSessionCallbacks({
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
+  const messagingMode = useMessagingMode(taskId);
+
   const handleSendPrompt = useCallback(
     async (text: string) => {
       const currentSession = sessionRef.current;
@@ -68,7 +71,9 @@ export function useSessionCallbacks({
       try {
         markAsViewed(taskId);
         markActivity(taskId);
-        await sessionService.sendPrompt(taskId, text);
+        await sessionService.sendPrompt(taskId, text, {
+          steer: messagingMode === "steer",
+        });
 
         const view = getAppViewSnapshot();
         const isViewingTask =
@@ -90,6 +95,7 @@ export function useSessionCallbacks({
       markAsViewed,
       task.latest_run,
       sessionService,
+      messagingMode,
     ],
   );
 

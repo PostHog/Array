@@ -17,7 +17,7 @@ describe("resolveGatewayProduct", () => {
     {
       isInternal: false,
       originProduct: "signal_report",
-      expected: "posthog_code",
+      expected: "signals",
     },
     {
       isInternal: true,
@@ -30,6 +30,16 @@ describe("resolveGatewayProduct", () => {
       expected: "background_agents",
     },
     { isInternal: true, originProduct: "signal_report", expected: "signals" },
+    {
+      isInternal: false,
+      originProduct: "signals_scout",
+      expected: "signals",
+    },
+    {
+      isInternal: true,
+      originProduct: "signals_scout",
+      expected: "signals",
+    },
   ] as const)(
     "isInternal=$isInternal originProduct=$originProduct -> $expected",
     ({ isInternal, originProduct, expected }) => {

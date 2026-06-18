@@ -286,9 +286,11 @@ function Section({ title, count, icon, children }: SectionProps) {
       >
         {icon}
         <Text className="font-semibold text-[12px] text-gray-12">{title}</Text>
-        <Text className="rounded-full bg-(--gray-a3) px-1.5 py-px font-medium text-(--gray-11) text-[10.5px] tabular-nums">
-          {count}
-        </Text>
+        {count > 0 && (
+          <Text className="rounded-full bg-(--gray-a3) px-1.5 py-px font-medium text-(--gray-11) text-[10.5px] tabular-nums">
+            {count}
+          </Text>
+        )}
       </Flex>
       {children}
     </Box>

@@ -27,8 +27,13 @@ import type { ComponentType, ReactNode } from "react";
 interface InboxDetailFrameProps {
   report: SignalReport;
   /** List route for the back-link (e.g. "/code/inbox/pulls"). */
-  backTo: "/code/inbox/pulls" | "/code/inbox/reports";
+  backTo: "/code/inbox/pulls" | "/code/inbox/reports" | "/code/inbox/dismissed";
   backLabel: string;
+  /**
+   * Whether to render the Dismiss button + dialog. Off for already-dismissed
+   * reports (the Dismissed tab), where dismissing again makes no sense.
+   */
+  showDismiss?: boolean;
   /** Title fallback when `report.title` is blank. */
   fallbackTitle: string;
   /** Optional breadcrumb fragment (e.g. PR repo slug + number). */
@@ -72,6 +77,7 @@ export function InboxDetailFrame({
   primaryAction,
   summarySection,
   evidenceSection,
+  showDismiss = true,
   children,
 }: InboxDetailFrameProps) {
   const { data: signalsResp } = useInboxReportSignals(report.id);
@@ -150,7 +156,7 @@ export function InboxDetailFrame({
         }
         actions={
           <Flex align="center" className="gap-2.5">
-            {dismissButton}
+            {showDismiss && dismissButton}
             {primaryAction}
           </Flex>
         }
@@ -200,7 +206,7 @@ export function InboxDetailFrame({
             {children}
           </div>
         </div>
-        {dismissDialog}
+        {showDismiss && dismissDialog}
       </div>
     </Flex>
   );

@@ -54,7 +54,11 @@ export interface TaskExecutionOptions {
   gatewayUrl?: string;
   codexBinaryPath?: string;
   reasoningEffort?: EffortLevel;
-  instructions?: string;
+  /**
+   * Codex-only. Appended on top of the model's base prompt via the Codex
+   * `developer_instructions` config key, preserving Codex's native base prompt.
+   */
+  developerInstructions?: string;
   processCallbacks?: ProcessSpawnedCallback;
   /** Callback invoked when the agent calls the create_output tool for structured output */
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;

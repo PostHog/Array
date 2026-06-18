@@ -15,6 +15,22 @@ export function isExcludedFromInbox(report: SignalReport): boolean {
   return INBOX_EXCLUDED_STATUSES.has(report.status);
 }
 
+/**
+ * Archive tab membership. `suppressed` is the only status that represents "the
+ * user archived this out of the inbox" — there is no separate `dismissed` /
+ * `resolved` status in the enum (see `SignalReportStatus`), the archive action
+ * sets `suppressed`. The other not-in-inbox states are deliberately excluded:
+ * `deleted` is permanent (gone, never restorable, stripped server-side), and
+ * snooze is not a status at all — it is a temporary `snoozed_until` timestamp
+ * on an otherwise-active report that auto-returns to the inbox when it elapses,
+ * so it doesn't belong in a manual restore list. Archived reports are fetched
+ * by a dedicated query (the main pipeline query excludes them), so this
+ * predicate is applied to that separate list.
+ */
+export function isDismissedReport(report: SignalReport): boolean {
+  return report.status === "suppressed";
+}
+
 export type InboxScope = "for-you" | "entire-project" | `teammate:${string}`;
 
 export const INBOX_SCOPE_FOR_YOU: InboxScope = "for-you";
@@ -62,14 +78,20 @@ export function countInboxScopeReports(
   return reports.filter((report) => matchesInboxScope(report, scope)).length;
 }
 
-export type InboxTabKey = "pulls" | "reports" | "runs";
+export type InboxTabKey = "pulls" | "reports" | "runs" | "dismissed";
 
-export const INBOX_TAB_KEYS: InboxTabKey[] = ["pulls", "reports", "runs"];
+export const INBOX_TAB_KEYS: InboxTabKey[] = [
+  "pulls",
+  "reports",
+  "runs",
+  "dismissed",
+];
 
 export const INBOX_TAB_LABEL: Record<InboxTabKey, string> = {
   pulls: "Pull requests",
   reports: "Reports",
   runs: "Runs",
+  dismissed: "Archive",
 };
 
 /**
@@ -87,6 +109,7 @@ export const INBOX_TAB_LIST_ROUTE: Record<
   pulls: "/code/inbox/pulls",
   reports: "/code/inbox/reports",
   runs: "/code/inbox/runs",
+  dismissed: "/code/inbox/dismissed",
 };
 
 const INBOX_DETAIL_PATH_RE = new RegExp(
@@ -209,13 +232,11 @@ export function matchesReviewerScope(
 export interface InboxTabCounts {
   pulls: number;
   reports: number;
-  runs: number;
 }
 
 export const EMPTY_TAB_COUNTS: InboxTabCounts = {
   pulls: 0,
   reports: 0,
-  runs: 0,
 };
 
 export function computeInboxTabCounts(
@@ -225,10 +246,6 @@ export function computeInboxTabCounts(
   const counts: InboxTabCounts = { ...EMPTY_TAB_COUNTS };
   for (const report of reports) {
     if (isExcludedFromInbox(report)) continue;
-    // Runs count is project-wide: reviewer assignment is an output of
-    // research, so the For-you / teammate filter is meaningless until a
-    // report reaches a downstream tab.
-    if (isAgentRunReport(report)) counts.runs += 1;
     if (!matchesReviewerScope(report, scope)) continue;
     if (isPullRequestReport(report)) counts.pulls += 1;
     if (isReportTabReport(report)) counts.reports += 1;

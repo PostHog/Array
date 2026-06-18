@@ -34,6 +34,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 - Branch naming in system prompt
 - `broadcastUserMessage` in prompt()
 - `interruptReason` on cancel
+- Steer mode: `_meta.steer` maps to `priority:"next"` in `promptToClaude` (`acp-to-sdk.ts`). A mid-turn branch in `prompt()` pushes the message into the running turn's input and returns immediately with a benign `end_turn` instead of queueing a new turn. Advertised via `_meta.posthog.steering:"native"` in `initialize()`
 - `SYSTEM_REMINDER` stripping from Read tool results
 - WebFetch `resourceLink` content enrichment
 - `customTitle` in listSessions (PostHog Code is ahead of upstream here)

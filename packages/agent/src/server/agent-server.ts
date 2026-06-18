@@ -938,6 +938,7 @@ export class AgentServer {
       isInternal: preTask?.internal === true,
       originProduct: preTask?.origin_product,
       signalReportId: preTask?.signal_report,
+      aiStage: getTaskRunStateString(preTaskRun, "ai_stage"),
       taskId: payload.task_id,
       taskRunId: payload.run_id,
       taskUserId: payload.user_id,
@@ -992,7 +993,7 @@ export class AgentServer {
               apiKey: this.config.apiKey,
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
-              instructions: codexInstructions,
+              developerInstructions: codexInstructions,
             }
           : undefined,
       onStructuredOutput: async (output) => {
@@ -1067,19 +1068,7 @@ export class AgentServer {
         jsonSchema: preTask?.json_schema ?? null,
         permissionMode: initialPermissionMode,
         ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
-        ...(this.config.claudeCode?.plugins?.length && {
-          claudeCode: {
-            options: {
-              ...(this.config.claudeCode?.plugins?.length && {
-                plugins: this.config.claudeCode.plugins,
-              }),
-              ...(runtimeAdapter === "claude" &&
-                this.config.reasoningEffort && {
-                  effort: this.config.reasoningEffort,
-                }),
-            },
-          },
-        }),
+        ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
       },
     });
 
@@ -1277,11 +1266,6 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
-
-      // Mark the run terminal. No-op for interactive sessions (they stay open
-      // for follow-ups); for background cloud-task runs this flips the run from
-      // "in_progress" to "completed".
-      await this.signalTaskComplete(payload, result.stopReason);
     } catch (error) {
       this.logger.error("Failed to send initial task message", error);
       if (this.session) {
@@ -1405,11 +1389,6 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
-
-      // Mark the run terminal. No-op for interactive sessions (they stay open
-      // for follow-ups); for background cloud-task runs this flips the run from
-      // "in_progress" to "completed".
-      await this.signalTaskComplete(payload, result.stopReason);
     } catch (error) {
       this.logger.error("Failed to send resume message", error);
       if (this.session) {
@@ -1680,6 +1659,32 @@ export class AgentServer {
       : systemPrompt.append;
   }
 
+  /**
+   * Builds the optional `claudeCode` session meta. Reasoning effort and plugins
+   * are independent: effort must reach Claude even when no plugins are set, so
+   * it cannot sit behind a plugins guard.
+   */
+  private buildClaudeCodeSessionMeta(
+    runtimeAdapter: "claude" | "codex",
+  ): { claudeCode: { options: Record<string, unknown> } } | undefined {
+    const plugins = this.config.claudeCode?.plugins;
+    const effort =
+      runtimeAdapter === "claude" ? this.config.reasoningEffort : undefined;
+
+    if (!plugins?.length && !effort) {
+      return undefined;
+    }
+
+    const options: Record<string, unknown> = {};
+    if (plugins?.length) {
+      options.plugins = plugins;
+    }
+    if (effort) {
+      options.effort = effort;
+    }
+    return { claudeCode: { options } };
+  }
+
   private getCloudInteractionOrigin(): string | undefined {
     return (
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN ??
@@ -1741,7 +1746,10 @@ You are replying in a Slack thread. Slack readers want short, skimmable answers 
 - This is a default, not a hard rule. If the user (or their saved memory) asks for more depth or a specific format, follow that instead.
 
 # Mentioning users
-When you want to ping a Slack user in your reply, copy their \`<@U…|displayname>\` token verbatim from the message context — Slack renders that as a real mention. Writing \`@displayname\` as plain text does NOT ping them.
+To ping a Slack user, reuse a \`<@U…|displayname>\` token that already appears in the message context — copy it verbatim, including the \`U…\` ID. Do NOT construct a mention token from a name, and do NOT substitute the display name (or any other string) for the \`U…\` ID — \`<@Jane|Jane Doe>\` is not a valid mention; only the form with the real ID like \`<@U01ABCDEF23|Jane Doe>\` is. If the person you want to refer to has no \`<@U…|displayname>\` token anywhere in the thread context, write their name as plain text instead of inventing one.
+
+# Suggesting code changes
+You can also open pull requests directly from this Slack thread. When the user's question describes a problem with a plausible code-side fix — a bug visible in errors or logs, missing or broken instrumentation, a broken funnel step traceable to UI code, a stale config that lives in a repo — end your reply with a one-sentence offer to open a PR for the fix and ask if they want you to proceed. Skip the offer for pure data lookups with no actionable code change (e.g. "what was DAU yesterday?"), and skip it when the fix would clearly live outside any repo you can reach.
 `
       : "";
     const signedCommitInstructions = `
@@ -1964,43 +1972,25 @@ ${signedCommitInstructions}
       }
     }
 
-    const isError = stopReason === "error";
-
-    // Interactive sessions stay open after a normal turn so the user can send
-    // follow-up messages — only an error is terminal there. Background
-    // (headless cloud-task) runs have no follow-up sender, so a normal
-    // end-of-turn IS the run's terminal state and must be reported as
-    // completed; otherwise the run stays "in_progress" forever.
-    if (!isError && this.getEffectiveMode(payload) !== "background") {
+    if (stopReason !== "error") {
       this.logger.debug("Skipping status update for non-error stop reason", {
         stopReason,
       });
       return;
     }
 
-    // Only a clean `end_turn` means the run actually finished its work. Any
-    // other stop reason (error, or an early stop like `max_tokens`/`refusal`)
-    // means the agent halted before completing the task, so report it as
-    // failed rather than completed.
-    const isCompleted = stopReason === "end_turn";
-    const status = isCompleted ? "completed" : "failed";
-    const failureMessage = isError
-      ? (errorMessage ?? "Agent error")
-      : `Agent stopped before completing the task (stop reason: ${stopReason})`;
+    const status = "failed";
 
-    this.enqueueTaskTerminalEvent(
-      isCompleted
-        ? POSTHOG_NOTIFICATIONS.TASK_COMPLETE
-        : POSTHOG_NOTIFICATIONS.ERROR,
-      isCompleted
-        ? { source: "agent_server", stopReason }
-        : { source: "agent_server", stopReason, error: failureMessage },
-    );
+    this.enqueueTaskTerminalEvent(POSTHOG_NOTIFICATIONS.ERROR, {
+      source: "agent_server",
+      stopReason,
+      error: errorMessage ?? "Agent error",
+    });
 
     try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
         status,
-        ...(isCompleted ? {} : { error_message: failureMessage }),
+        error_message: errorMessage ?? "Agent error",
       });
       this.logger.debug("Task completion signaled", { status, stopReason });
     } catch (error) {
@@ -2031,6 +2021,7 @@ ${signedCommitInstructions}
     isInternal = false,
     originProduct,
     signalReportId,
+    aiStage,
     taskId,
     taskRunId,
     taskUserId,
@@ -2039,6 +2030,7 @@ ${signedCommitInstructions}
     isInternal?: boolean;
     originProduct?: Task["origin_product"] | null;
     signalReportId?: string | null;
+    aiStage?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
@@ -2064,6 +2056,7 @@ ${signedCommitInstructions}
       task_origin_product: originProduct,
       task_internal: isInternal,
       signal_report_id: signalReportId,
+      ai_stage: aiStage,
       task_id: taskId,
       task_run_id: taskRunId,
       task_user_id: taskUserId,

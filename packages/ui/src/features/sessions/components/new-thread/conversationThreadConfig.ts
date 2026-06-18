@@ -141,6 +141,32 @@ export function iconForToolKind(kind: CodeToolKind | null | undefined): Icon {
 export const SUBAGENT_ICON: Icon = Robot;
 export const MCP_ICON: Icon = PuzzlePiece;
 
+/** The closed set of `GroupIconEntry.key` values a chip icon can carry. */
+export type GroupIconKey =
+  | "subagent"
+  | "mcp"
+  | `kind:${CodeToolKind}`
+  | "kind:other";
+
+/** Human-readable label for a chip icon, keyed by its `GroupIconEntry.key`. */
+const ICON_KEY_LABELS: Partial<Record<GroupIconKey, string>> = {
+  subagent: "Spawned a subagent",
+  mcp: "Called an MCP tool",
+  "kind:read": "Read files",
+  "kind:edit": "Edited files",
+  "kind:delete": "Deleted files",
+  "kind:move": "Moved files",
+  "kind:search": "Searched the codebase",
+  "kind:execute": "Ran terminal commands",
+  "kind:think": "Thought through the problem",
+  "kind:fetch": "Fetched a web page",
+  "kind:question": "Asked a question",
+};
+
+export function labelForIconKey(key: GroupIconKey): string {
+  return ICON_KEY_LABELS[key] ?? "Ran other tools";
+}
+
 // ---------- Motion ----------
 
 /**

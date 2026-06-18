@@ -24,6 +24,7 @@ export const SHORTCUTS = {
   FIND_IN_CONVERSATION: "mod+f",
   BLUR: "escape",
   SUBMIT_BLUR: "mod+enter",
+  SWITCH_MESSAGING_MODE: "mod+s",
 } as const;
 
 export type ShortcutCategory = "general" | "navigation" | "panels" | "editor";
@@ -62,6 +63,13 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     keys: SHORTCUTS.SHORTCUTS_SHEET,
     description: "Show keyboard shortcuts",
     category: "general",
+  },
+  {
+    id: "switch-messaging-mode",
+    keys: SHORTCUTS.SWITCH_MESSAGING_MODE,
+    description: "Switch Steer / Queue mode",
+    category: "editor",
+    context: "Session composer",
   },
   {
     id: "inbox",

@@ -7,6 +7,7 @@ import {
   INBOX_SCOPE_ENTIRE_PROJECT,
   INBOX_SCOPE_FOR_YOU,
   isAgentRunReport,
+  isDismissedReport,
   isExcludedFromInbox,
   isInboxDetailPath,
   isPullRequestReport,
@@ -35,6 +36,24 @@ function fakeReport(overrides: Partial<SignalReport> = {}): SignalReport {
     ...overrides,
   };
 }
+
+describe("isDismissedReport", () => {
+  it("matches only suppressed reports", () => {
+    expect(isDismissedReport(fakeReport({ status: "suppressed" }))).toBe(true);
+  });
+
+  it.each([
+    "potential",
+    "candidate",
+    "in_progress",
+    "pending_input",
+    "ready",
+    "failed",
+    "deleted",
+  ] as const)("does not match %s reports", (status) => {
+    expect(isDismissedReport(fakeReport({ status }))).toBe(false);
+  });
+});
 
 describe("isInboxDetailPath", () => {
   it("matches detail paths for each inbox tab", () => {
@@ -252,11 +271,10 @@ describe("tabFilters", () => {
       expect(computeInboxTabCounts([], "for-you")).toEqual(EMPTY_TAB_COUNTS);
     });
 
-    it("for-you counts only my queue except runs (runs are always project-wide)", () => {
+    it("for-you counts only my queue", () => {
       expect(computeInboxTabCounts(reports, "for-you")).toEqual({
         pulls: 1,
         reports: 1,
-        runs: 2,
       });
     });
 
@@ -264,7 +282,6 @@ describe("tabFilters", () => {
       expect(computeInboxTabCounts(reports, "entire-project")).toEqual({
         pulls: 2,
         reports: 2,
-        runs: 2,
       });
     });
   });
