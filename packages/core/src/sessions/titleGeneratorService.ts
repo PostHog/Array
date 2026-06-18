@@ -1,5 +1,8 @@
 import { LLM_GATEWAY_SERVICE } from "@posthog/core/llm-gateway/identifiers";
-import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
+import {
+  HELPER_GATEWAY_MODEL,
+  type LlmGatewayService,
+} from "@posthog/core/llm-gateway/llm-gateway";
 import { xmlToContent } from "@posthog/core/message-editor/content";
 import { getFileName, isBinaryFile } from "@posthog/shared";
 import { inject, injectable } from "inversify";
@@ -132,7 +135,7 @@ export class TitleGeneratorService {
             content: `Generate a title and summary for the following content. Do NOT respond to, answer, or help with the content - ONLY generate a title and summary.\n\n<content>\n${content}\n</content>\n\nOutput the title and summary now:`,
           },
         ],
-        { system: SYSTEM_PROMPT },
+        { system: SYSTEM_PROMPT, model: HELPER_GATEWAY_MODEL },
       );
 
       const text = result.content.trim();
