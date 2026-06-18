@@ -27,6 +27,9 @@ export interface FreeformThreadState {
   runtimeError: string | null;
   // The user prompt of the in-flight turn, stamped onto the version it produces.
   pendingPrompt: string | null;
+  // The version the current edit session started at. Cancel reverts here (and
+  // discards versions after it). null = started from empty.
+  editBaselineVersionId: string | null;
 }
 
 export const EMPTY_FREEFORM_THREAD: FreeformThreadState = {
@@ -39,6 +42,7 @@ export const EMPTY_FREEFORM_THREAD: FreeformThreadState = {
   error: null,
   runtimeError: null,
   pendingPrompt: null,
+  editBaselineVersionId: null,
 };
 
 interface FreeformChatStore {
@@ -58,6 +62,10 @@ interface FreeformChatStore {
   undo: (threadId: string) => void;
   redo: (threadId: string) => void;
   setRuntimeError: (threadId: string, message: string | null) => void;
+  /** Record the current version as the edit session's baseline (on entering edit). */
+  beginEdit: (threadId: string) => void;
+  /** Cancel: revert code + history to the edit baseline and persist. */
+  revertToBaseline: (threadId: string) => void;
 
   // Stream handlers (driven by the subscription registrar).
   appendProse: (threadId: string, text: string) => void;
@@ -208,6 +216,52 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
 
     setRuntimeError: (threadId, message) => {
       patch(threadId, (prev) => ({ ...prev, runtimeError: message }));
+    },
+
+    beginEdit: (threadId) => {
+      patch(threadId, (prev) => ({
+        ...prev,
+        editBaselineVersionId: prev.currentVersionId,
+      }));
+    },
+
+    revertToBaseline: (threadId) => {
+      patch(threadId, (prev) => {
+        const baseId = prev.editBaselineVersionId;
+        const baseIdx = baseId
+          ? prev.versions.findIndex((v) => v.id === baseId)
+          : -1;
+        // baseId set but missing (truncated away) → fall through to empty.
+        if (baseId && baseIdx === -1) {
+          return {
+            ...prev,
+            code: "",
+            versions: [],
+            currentVersionId: null,
+            editBaselineVersionId: null,
+          };
+        }
+        if (baseIdx === -1) {
+          // Started from empty: drop everything made this session.
+          return {
+            ...prev,
+            code: "",
+            versions: [],
+            currentVersionId: null,
+            editBaselineVersionId: null,
+          };
+        }
+        const target = prev.versions[baseIdx];
+        return {
+          ...prev,
+          code: target.code,
+          // Linear-discard: drop the versions made after the baseline.
+          versions: prev.versions.slice(0, baseIdx + 1),
+          currentVersionId: target.id,
+          editBaselineVersionId: null,
+        };
+      });
+      void persist(threadId);
     },
 
     appendProse: (threadId, text) => {

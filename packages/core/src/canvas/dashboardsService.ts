@@ -15,6 +15,7 @@ import {
 } from "./desktopFsClient";
 import { FREEFORM_TEMPLATE_ID, type FreeformVersion } from "./freeformSchemas";
 import { DASHBOARD_QUERY_SERVICE } from "./identifiers";
+import { fetchCurrentUser } from "./posthogApi";
 import type { DashboardQuery, DashboardQueryShape } from "./querySchemas";
 
 // Desktop file-system "type" tag for a dashboard entry. Channels are `folder`
@@ -61,31 +62,9 @@ export class DashboardsService {
   // canvases. Cached after the first lookup; never throws (returns undefined).
   private async currentUserLabel(): Promise<string | undefined> {
     if (this.userLabel !== undefined) return this.userLabel ?? undefined;
-    try {
-      const { apiHost } = await this.authService.getValidAccessToken();
-      const res = await this.authService.authenticatedFetch(
-        fetch,
-        `${apiHost}/api/users/@me/`,
-      );
-      if (!res.ok) {
-        this.userLabel = null;
-        return undefined;
-      }
-      const data = (await res.json()) as {
-        first_name?: string | null;
-        last_name?: string | null;
-        email?: string | null;
-      };
-      const name = [data.first_name, data.last_name]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-      this.userLabel = name || data.email || null;
-      return this.userLabel ?? undefined;
-    } catch {
-      this.userLabel = null;
-      return undefined;
-    }
+    const user = await fetchCurrentUser(this.authService);
+    this.userLabel = user?.label ?? null;
+    return this.userLabel ?? undefined;
   }
 
   private getEntry(id: string): Promise<FsEntry | null> {

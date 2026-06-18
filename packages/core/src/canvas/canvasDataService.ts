@@ -13,12 +13,7 @@ import type {
   CanvasDataQueryInput,
   CanvasDataResult,
 } from "./freeformSchemas";
-
-interface HogQLResponse {
-  results?: unknown[];
-  columns?: string[];
-  error?: string | null;
-}
+import { fetchCurrentUser, runHogQLQuery } from "./posthogApi";
 
 // Last-resort attribution if we can't resolve the signed-in user (and the
 // canvas didn't pass its own distinctId).
@@ -55,40 +50,24 @@ export class CanvasDataService {
   }
 
   async query(input: CanvasDataQueryInput): Promise<CanvasDataResult> {
-    const { apiHost } = await this.authService.getValidAccessToken();
-    const projectId = this.authService.getState().currentProjectId;
-    if (projectId == null) {
-      throw new Error("No PostHog project selected");
+    try {
+      // Cache-first execution (the insights avenue): serve a fresh cached
+      // result if present, otherwise compute it now.
+      const { columns, results } = await runHogQLQuery(
+        this.authService,
+        input.hogql,
+        { refresh: "blocking" },
+      );
+      return {
+        columns,
+        results: results.map((r) => (Array.isArray(r) ? r : [r])),
+      };
+    } catch (err) {
+      this.log.warn("Canvas query failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
     }
-
-    const url = `${apiHost}/api/projects/${projectId}/query/`;
-    const response = await this.authService.authenticatedFetch(fetch, url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: { kind: "HogQLQuery", query: input.hogql },
-        // Cache-first execution (the insights avenue): serve a fresh cached
-        // result if present, otherwise compute it now.
-        refresh: "blocking",
-      }),
-    });
-
-    if (!response.ok) {
-      this.log.warn("Canvas query failed", { status: response.status });
-      throw new Error(`Query failed (${response.status})`);
-    }
-
-    const body = (await response.json()) as HogQLResponse;
-    if (body.error) {
-      this.log.warn("Canvas query error", { error: body.error });
-      throw new Error(body.error);
-    }
-
-    const rows = Array.isArray(body.results) ? body.results : [];
-    return {
-      columns: Array.isArray(body.columns) ? body.columns.map(String) : [],
-      results: rows.map((r) => (Array.isArray(r) ? r : [r])),
-    };
   }
 
   // The bootstrap config the iframe needs to run posthog-js (analytics +
@@ -102,7 +81,7 @@ export class CanvasDataService {
     }
     const [publicKey, distinctId] = await Promise.all([
       this.getProjectToken(apiHost, projectId),
-      this.getUserDistinctId(apiHost),
+      this.getUserDistinctId(),
     ]);
     return { apiHost, publicKey, distinctId };
   }
@@ -123,7 +102,7 @@ export class CanvasDataService {
     // (edit mode); otherwise a stable fallback.
     const distinctId =
       input.distinctId ??
-      (await this.getUserDistinctId(apiHost)) ??
+      (await this.getUserDistinctId()) ??
       FALLBACK_DISTINCT_ID;
     const response = await fetch(`${apiHost}/i/v0/e/`, {
       method: "POST",
@@ -170,21 +149,10 @@ export class CanvasDataService {
 
   // The signed-in user's distinct_id (so edit-mode captures attribute to "me" in
   // PostHog, not a placeholder). Cached; returns undefined if unavailable.
-  private async getUserDistinctId(
-    apiHost: string,
-  ): Promise<string | undefined> {
+  private async getUserDistinctId(): Promise<string | undefined> {
     if (this.userDistinctId !== undefined) return this.userDistinctId;
-    try {
-      const res = await this.authService.authenticatedFetch(
-        fetch,
-        `${apiHost}/api/users/@me/`,
-      );
-      if (!res.ok) return undefined;
-      const data = (await res.json()) as { distinct_id?: string };
-      this.userDistinctId = data.distinct_id;
-      return this.userDistinctId;
-    } catch {
-      return undefined;
-    }
+    const user = await fetchCurrentUser(this.authService);
+    this.userDistinctId = user?.distinctId;
+    return this.userDistinctId;
   }
 }
