@@ -7,7 +7,7 @@ import {
   EmptyTitle,
 } from "@posthog/quill";
 import { CardSkeleton } from "@posthog/ui/features/inbox/components/CardSkeleton";
-import { DismissedReportCard } from "@posthog/ui/features/inbox/components/DismissedReportCard";
+import { ReportCard } from "@posthog/ui/features/inbox/components/ReportCard";
 import { useInboxDismissedReports } from "@posthog/ui/features/inbox/hooks/useInboxDismissedReports";
 import { useInboxRestoreReport } from "@posthog/ui/features/inbox/hooks/useInboxRestoreReport";
 import { Flex } from "@radix-ui/themes";
@@ -52,8 +52,9 @@ export function DismissedTab() {
   return (
     <Flex direction="column" gap="3" className="mx-auto max-w-4xl px-6 py-4">
       {reports.map((report) => (
-        <DismissedReportCard
+        <ReportCard
           key={report.id}
+          variant="archived"
           report={report}
           onRestore={() => restore.mutate(report.id)}
           isRestorePending={restoringId === report.id}
