@@ -28,7 +28,7 @@ export function headerActionForPage(
       };
     case "agent":
       return {
-        label: "Ask about this agent",
+        label: "Explain this agent",
         prompt: "Explain what this agent does and how it's configured.",
         agentSlug: page.slug,
       };
