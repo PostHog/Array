@@ -11,6 +11,7 @@ import { AlertDialog, Flex, Popover, Text } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useAgentRevisionLifecycle } from "../hooks/useAgentRevisionLifecycle";
+import { useCreateAgentDraftFromRevision } from "../hooks/useCreateAgentDraftFromRevision";
 import { revisionStateColor } from "../utils/format";
 
 type LifecycleAction = "freeze" | "promote" | "archive";
@@ -105,6 +106,7 @@ export function AgentRevisionBar({
   onSelectRevision: (id: string) => void;
 }) {
   const lifecycle = useAgentRevisionLifecycle(idOrSlug);
+  const cloneToDraft = useCreateAgentDraftFromRevision(idOrSlug, agent.id);
   const navigate = useNavigate();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [filters, setFilters] = useState<Set<AgentRevisionState>>(
@@ -185,7 +187,7 @@ export function AgentRevisionBar({
                     type="button"
                     onClick={() => toggleFilter(f)}
                     aria-pressed={active}
-                    className={`rounded-full border px-2 py-0.5 text-[10.5px] uppercase tracking-wide ${
+                    className={`rounded-(--radius-2) border px-1.5 py-[3px] text-[10.5px] uppercase leading-none tracking-wide ${
                       active
                         ? "border-(--accent-7) bg-(--accent-3) text-gray-12"
                         : "border-border text-gray-10 hover:border-(--gray-7)"
@@ -214,7 +216,7 @@ export function AgentRevisionBar({
                         setPickerOpen(false);
                       }}
                       aria-current={r.id === selected.id ? "true" : undefined}
-                      className={`flex w-full items-start gap-2 px-3 py-2 text-left ${
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left ${
                         r.id === selected.id
                           ? "bg-(--accent-3)"
                           : "hover:bg-(--gray-3)"
@@ -245,10 +247,12 @@ export function AgentRevisionBar({
 
       <Flex gap="2">
         {/*
-         * Test draft — runs this revision through the live ingress with a
-         * preview token, before it's promoted. The chat tab handles the rest
-         * (mint + token attach via useAgentChat). Live revision uses the
-         * default Chat tab; archived can't be exercised.
+         * Test — runs this revision through the live ingress with a preview
+         * token, before it's promoted. The chat tab handles the rest (mint +
+         * token attach via useAgentChat). Live uses the default Chat tab;
+         * archived can't be exercised. Label varies by state: "Test draft"
+         * leans into the unfinished work; for `ready` the bundle is frozen so
+         * plain "Test" is more accurate.
          */}
         {selected.state !== "live" &&
         selected.state !== "archived" &&
@@ -265,7 +269,30 @@ export function AgentRevisionBar({
               })
             }
           >
-            Test draft
+            {selected.state === "draft" ? "Test draft" : "Test"}
+          </Button>
+        ) : null}
+        {/*
+         * Clone to draft — fork this revision into a fresh editable draft.
+         * The standard exit when a ready/live/archived bundle is immutable
+         * but you want to keep iterating. Pre-selects the new draft so the
+         * picker lands you in edit mode immediately.
+         */}
+        {selected.state !== "draft" ? (
+          <Button
+            size="1"
+            variant="soft"
+            color="gray"
+            loading={cloneToDraft.isPending}
+            disabled={!agent.id}
+            onClick={() =>
+              cloneToDraft.mutate(
+                { sourceRevisionId: selected.id },
+                { onSuccess: (rev) => onSelectRevision(rev.id) },
+              )
+            }
+          >
+            Clone to draft
           </Button>
         ) : null}
         {actions.map((a) => (

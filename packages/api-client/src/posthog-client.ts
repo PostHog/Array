@@ -4279,6 +4279,34 @@ export class PostHogAPIClient {
     return (await response.json()) as AgentPreviewToken;
   }
 
+  /**
+   * Atomically create a fresh draft revision under this app, seeded with the
+   * full bundle of `sourceRevisionId`. The standard "edit an immutable
+   * revision" exit: ready/live/archived bundles are stamped and locked, so
+   * iterating on them requires forking to a new draft first. Both ids are
+   * UUIDs; the app's `slug` is not accepted here (the body needs the UUID).
+   */
+  async createAgentDraftRevisionFrom(
+    applicationId: string,
+    sourceRevisionId: string,
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(applicationId)}/revisions/new_draft/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({
+          application_id: applicationId,
+          source_revision_id: sourceRevisionId,
+        }),
+      },
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
   /** Run a revision lifecycle transition: freeze (draft→ready), promote
    * (ready→live, demoting the old live), or archive. Returns the updated revision. */
   async transitionAgentRevision(
