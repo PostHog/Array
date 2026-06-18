@@ -1,5 +1,6 @@
 import {
   ArrowCounterClockwiseIcon,
+  CopyIcon,
   FileTextIcon,
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
@@ -8,6 +9,7 @@ import type { SignalReport } from "@posthog/shared/types";
 import { InboxDetailFrame } from "@posthog/ui/features/inbox/components/InboxDetailFrame";
 import { InboxReportDetailGate } from "@posthog/ui/features/inbox/components/InboxReportDetailGate";
 import { useInboxRestoreReport } from "@posthog/ui/features/inbox/hooks/useInboxRestoreReport";
+import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 import { Spinner } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -47,7 +49,20 @@ function DismissedReportDetailContent({ report }: { report: SignalReport }) {
       backLabel="Back to dismissed"
       fallbackTitle="Untitled report"
       showDismiss={false}
-      primaryAction={<RestoreReportButton report={report} />}
+      primaryAction={
+        <>
+          <RestoreReportButton report={report} />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => copyInboxReportLink(report)}
+            title="Copy a deep link to this report"
+          >
+            <CopyIcon size={12} />
+          </Button>
+        </>
+      }
       summarySection={{ Icon: FileTextIcon, title: "Summary" }}
       evidenceSection={{ Icon: MagnifyingGlassIcon, title: "Evidence" }}
     />

@@ -75,6 +75,13 @@ export function navigateToInboxReportDetail(reportId: string): void {
   });
 }
 
+export function navigateToInboxDismissedDetail(reportId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/inbox/dismissed/$reportId",
+    params: { reportId },
+  });
+}
+
 export function navigateToScoutDetail(
   skillSlug: string,
   findingId?: string,
