@@ -6,6 +6,7 @@ import {
   isNotAuthenticatedError,
   isRateLimitError,
   NotAuthenticatedError,
+  serializeError,
 } from "./errors";
 
 describe("NotAuthenticatedError", () => {
@@ -101,5 +102,72 @@ describe("isFatalSessionError", () => {
 
   it("returns false for ordinary recoverable errors", () => {
     expect(isFatalSessionError("temporary network blip")).toBe(false);
+  });
+});
+
+describe("serializeError", () => {
+  it("captures name, message and code from an Error", () => {
+    const err = Object.assign(new TypeError("boom"), { code: "ERR_X" });
+    expect(serializeError(err)).toEqual({
+      name: "TypeError",
+      message: "boom",
+      code: "ERR_X",
+    });
+  });
+
+  it("walks the cause chain (the undici 'terminated' shape)", () => {
+    const cause = Object.assign(new Error("other side closed"), {
+      code: "UND_ERR_SOCKET",
+    });
+    const err = new TypeError("terminated", { cause });
+    expect(serializeError(err)).toEqual({
+      name: "TypeError",
+      message: "terminated",
+      cause: {
+        name: "Error",
+        message: "other side closed",
+        code: "UND_ERR_SOCKET",
+      },
+    });
+  });
+
+  it("bounds depth to avoid runaway or cyclic chains", () => {
+    const cyclic: { message: string; cause?: unknown } = { message: "a" };
+    cyclic.cause = cyclic;
+    const result = serializeError(cyclic, 2);
+    expect(result.cause?.cause?.message).toBe("a");
+    expect(result.cause?.cause?.cause).toBeUndefined();
+  });
+
+  it("handles non-Error inputs", () => {
+    expect(serializeError("plain string")).toEqual({ message: "plain string" });
+    expect(serializeError(42)).toEqual({ message: "42" });
+    expect(serializeError(null)).toEqual({ message: "null" });
+  });
+
+  it("captures a numeric code", () => {
+    expect(serializeError({ message: "x", code: 42 })).toEqual({
+      message: "x",
+      code: 42,
+    });
+  });
+
+  it("does not follow the cause chain at maxDepth 0", () => {
+    const err = new Error("top", { cause: new Error("inner") });
+    expect(serializeError(err, 0)).toEqual({ name: "Error", message: "top" });
+  });
+
+  it("omits name for a plain object without one", () => {
+    expect(serializeError({ message: "foo", code: "ENOENT" })).toEqual({
+      message: "foo",
+      code: "ENOENT",
+    });
+  });
+
+  it("returns only name and message for a bare Error", () => {
+    expect(serializeError(new Error("x"))).toEqual({
+      name: "Error",
+      message: "x",
+    });
   });
 });

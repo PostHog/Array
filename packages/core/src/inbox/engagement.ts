@@ -140,7 +140,7 @@ export interface BuildInboxViewedInput {
   /** Server-reported total of reports matching the active query — the headline inbox number. */
   totalCount: number;
   /** Tab badge counts shown in the v2 header (the numbers the user actually sees). */
-  tabCounts: { pulls: number; reports: number; runs: number };
+  tabCounts: { pulls: number; reports: number };
   filters: InboxViewedFilterState;
 }
 
@@ -213,6 +213,5 @@ export function buildInboxViewedProperties(
     actionability_unknown_count: actionabilityCounts.unknown,
     pulls_count: tabCounts.pulls,
     reports_count: tabCounts.reports,
-    runs_count: tabCounts.runs,
   };
 }

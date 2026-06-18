@@ -1,5 +1,5 @@
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
-import { Separator } from "@posthog/quill";
+import { Button } from "@posthog/quill";
 import {
   BILLING_FLAG,
   HOME_TAB_FLAG,
@@ -7,8 +7,7 @@ import {
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
-import { AppNav } from "@posthog/ui/features/canvas/components/AppNav";
-import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
+import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
@@ -19,14 +18,13 @@ import { useIntegrations } from "@posthog/ui/features/integrations/useIntegratio
 import { useScoutDeepLink } from "@posthog/ui/features/scouts/hooks/useScoutDeepLink";
 import { useSetupDiscovery } from "@posthog/ui/features/setup/useSetupDiscovery";
 import { MainSidebar } from "@posthog/ui/features/sidebar/components/MainSidebar";
-import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
-import { SidebarNavSection } from "@posthog/ui/features/sidebar/components/SidebarNavSection";
 import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useVisualTaskOrder } from "@posthog/ui/features/sidebar/useVisualTaskOrder";
 import { RemoteBranchCheckoutDialog } from "@posthog/ui/features/task-detail/components/RemoteBranchCheckoutDialog";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { TourOverlay } from "@posthog/ui/features/tour/components/TourOverlay";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
+import LogosLandscape from "@posthog/ui/primitives/Logo";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
@@ -37,11 +35,12 @@ import { logger } from "@posthog/ui/shell/logger";
 import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRootRoute,
   Outlet,
+  useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -90,6 +89,7 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   const view = useAppView();
+  const navigate = useNavigate();
   const {
     isOpen: commandMenuOpen,
     setOpen: setCommandMenuOpen,
@@ -207,39 +207,32 @@ function RootLayout() {
 
   if (isChannelsSpace) {
     return (
-      <Flex height="100vh">
-        <AppNav />
-        <Flex direction="column" flexGrow="1" overflow="hidden">
-          <Flex flexGrow="1" overflow="hidden">
-            <Flex
-              direction="column"
-              className="w-[260px] shrink-0 border-gray-6 border-r bg-gray-2"
+      <Flex direction="column" height="100vh" className="bg-gray-2">
+        {/* Full-width title bar: a window-drag region carrying the PostHog
+            mark. The left padding clears the macOS stoplights. */}
+        <Flex align="center" gap="3" className="drag h-10 shrink-0 pl-[78px]">
+          <Box className="h-[14px] w-[26px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
+            <LogosLandscape code={false} />
+          </Box>
+          <div className="no-drag">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate({ to: "/code" })}
             >
-              {/* Aligns the channel list with the outlet's breadcrumb bar (same
-                  h-10) so both columns start at the same line, like /code. */}
-              <Flex
-                align="center"
-                className="h-10 shrink-0 border-gray-6 border-b px-3"
-              >
-                <Text size="1" weight="medium" className="text-gray-12">
-                  Channels
-                </Text>
-              </Flex>
-              <SidebarNavSection />
-              <Separator className="mx-2 my-2 shrink-0" />
-              <Box className="min-h-0 flex-1 overflow-hidden">
-                <ChannelsList />
-              </Box>
-              {/* User panel — same component and wrapper as the bottom of the
-                  code sidebar (see SidebarContent). */}
-              <Box p="2" className="shrink-0 border-gray-6 border-t">
-                <ProjectSwitcher />
-              </Box>
-            </Flex>
-            <Box flexGrow="1" overflow="hidden">
+              Go back to Code
+            </Button>
+          </div>
+        </Flex>
+        <Flex flexGrow="1" overflow="hidden">
+          <ChannelsSidebar />
+          {/* Content sits in a bordered, rounded card inset from the window
+              edges — the framed pane from the design. */}
+          <Box flexGrow="1" className="overflow-hidden pr-2 pb-2">
+            <Box className="h-full overflow-hidden rounded-sm border border-gray-6 bg-gray-1">
               <Outlet />
             </Box>
-          </Flex>
+          </Box>
         </Flex>
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
         <KeyboardShortcutsSheet
@@ -287,7 +280,6 @@ function RootLayout() {
 
   return (
     <Flex height="100vh">
-      {bluebirdEnabled && <AppNav />}
       <Flex direction="column" flexGrow="1" overflow="hidden">
         <HeaderRow />
         <Flex flexGrow="1" overflow="hidden">

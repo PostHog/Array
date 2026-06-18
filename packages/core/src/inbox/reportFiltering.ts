@@ -19,20 +19,6 @@ function normalizeReviewerId(value: string): string {
   return value.trim();
 }
 
-/**
- * Reports that are surfaced to the current user as needing review: ready,
- * immediately actionable, and addressed to them. Used for both the sidebar
- * red badge count and the inbox toolbar "up for review" byline so the two
- * numbers always agree.
- */
-export function isReportUpForReview(report: SignalReport): boolean {
-  return (
-    report.status === "ready" &&
-    report.is_suggested_reviewer === true &&
-    report.actionability === "immediately_actionable"
-  );
-}
-
 export function filterReportsBySearch(
   reports: SignalReport[],
   query: string,

@@ -213,6 +213,9 @@ interface TestableServer {
   ): string | { append: string };
   buildCodexInstructions(systemPrompt: string | { append: string }): string;
   getRuntimeAdapter(): "claude" | "codex";
+  buildClaudeCodeSessionMeta(
+    runtimeAdapter: "claude" | "codex",
+  ): { claudeCode: { options: Record<string, unknown> } } | undefined;
 }
 
 let nextTestPort = 20000;
@@ -1137,6 +1140,68 @@ describe("AgentServer HTTP Mode", () => {
       expect(
         (s as unknown as TestableServer).buildCodexInstructions(sessionPrompt),
       ).toContain("Cloud Task Execution");
+    });
+  });
+
+  describe("buildClaudeCodeSessionMeta", () => {
+    it("sends claude reasoning effort even when no plugins are configured", () => {
+      const s = createServer({ reasoningEffort: "high" });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({ effort: "high" });
+    });
+
+    it("does not send claudeCode effort for codex runs", () => {
+      const s = createServer({ reasoningEffort: "high" });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "codex",
+      );
+
+      expect(meta).toBeUndefined();
+    });
+
+    it("returns undefined when neither plugins nor effort are set", () => {
+      const s = createServer();
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta).toBeUndefined();
+    });
+
+    it("includes both plugins and effort for claude runs", () => {
+      const s = createServer({
+        reasoningEffort: "medium",
+        claudeCode: { plugins: [{ type: "local", path: "/tmp/plugin" }] },
+      });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({
+        plugins: [{ type: "local", path: "/tmp/plugin" }],
+        effort: "medium",
+      });
+    });
+
+    it("returns only plugins when effort is not set", () => {
+      const s = createServer({
+        claudeCode: { plugins: [{ type: "local", path: "/tmp/plugin" }] },
+      });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({
+        plugins: [{ type: "local", path: "/tmp/plugin" }],
+      });
     });
   });
 

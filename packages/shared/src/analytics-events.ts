@@ -551,7 +551,6 @@ export interface InboxViewedProperties {
    */
   pulls_count?: number;
   reports_count?: number;
-  runs_count?: number;
 }
 
 export interface InboxReportOpenedProperties {
@@ -738,6 +737,33 @@ export interface SignalSourceConnectedProperties {
   via_setup_wizard: boolean;
 }
 
+// Agents page events (the `/code/agents` configuration surface)
+export type AgentsActionType =
+  | "run_setup_agent"
+  | "change_autostart_priority"
+  | "open_mcp_servers";
+
+export interface AgentsViewedProperties {
+  /** Whether code access (GitHub) is connected — gates responder configuration. */
+  has_github_integration: boolean;
+  /** Total number of responder source products on the page. */
+  responder_total_count: number;
+  /** How many of those responders are currently enabled. */
+  responder_enabled_count: number;
+  /** User's PR auto-start threshold priority (P0–P4), or null when set to "Never". */
+  autostart_priority: string | null;
+  /** Whether the agent-driven setup entry point is shown (feature-flagged). */
+  setup_task_available: boolean;
+}
+
+export interface AgentsActionProperties {
+  action_type: AgentsActionType;
+  /** New threshold for `change_autostart_priority` (P0–P4, or null for "Never"). */
+  autostart_priority?: string | null;
+  /** Whether `run_setup_agent` successfully created the setup task. */
+  success?: boolean;
+}
+
 // Subscription / billing events
 
 export type UpgradePromptShownSurface = "usage_limit_modal" | "upgrade_dialog";
@@ -885,6 +911,10 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
   SIGNAL_SOURCE_CONNECTED: "Signal source connected",
 
+  // Agents page events
+  AGENTS_VIEWED: "Agents viewed",
+  AGENTS_ACTION: "Agents action",
+
   // Scout events
   SCOUT_FLEET_VIEWED: "Scout fleet viewed",
   SCOUT_DETAIL_VIEWED: "Scout detail viewed",
@@ -1014,6 +1044,10 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
   [ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED]: SignalSourceConnectedProperties;
+
+  // Agents page events
+  [ANALYTICS_EVENTS.AGENTS_VIEWED]: AgentsViewedProperties;
+  [ANALYTICS_EVENTS.AGENTS_ACTION]: AgentsActionProperties;
 
   // Scout events
   [ANALYTICS_EVENTS.SCOUT_FLEET_VIEWED]: ScoutFleetViewedProperties;

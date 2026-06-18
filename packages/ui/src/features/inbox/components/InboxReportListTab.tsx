@@ -73,6 +73,12 @@ interface InboxReportListTabProps {
     reports: SignalReport[];
     children: ReactNode;
   }>;
+  /**
+   * Fetch a server-filtered PR-only list instead of the broad pipeline list, so
+   * the tab body comes from the same source as the Pull-requests count (a PR
+   * past the broad list's first page would otherwise not render).
+   */
+  pullRequestsOnly?: boolean;
 }
 
 /**
@@ -89,8 +95,11 @@ export function InboxReportListTab({
   searchPlaceholder,
   emptyState,
   CardListWrapper,
+  pullRequestsOnly = false,
 }: InboxReportListTabProps) {
-  const { scopedReports, allReports, isLoading } = useInboxAllReports();
+  const { scopedReports, allReports, isLoading } = useInboxAllReports({
+    pullRequestsOnly,
+  });
   const scope = useInboxReviewerScopeStore((s) => s.scope);
   const [dismissReport, setDismissReport] = useState<SignalReport | null>(null);
 

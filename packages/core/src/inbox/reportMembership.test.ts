@@ -252,11 +252,10 @@ describe("tabFilters", () => {
       expect(computeInboxTabCounts([], "for-you")).toEqual(EMPTY_TAB_COUNTS);
     });
 
-    it("for-you counts only my queue except runs (runs are always project-wide)", () => {
+    it("for-you counts only my queue", () => {
       expect(computeInboxTabCounts(reports, "for-you")).toEqual({
         pulls: 1,
         reports: 1,
-        runs: 2,
       });
     });
 
@@ -264,7 +263,6 @@ describe("tabFilters", () => {
       expect(computeInboxTabCounts(reports, "entire-project")).toEqual({
         pulls: 2,
         reports: 2,
-        runs: 2,
       });
     });
   });

@@ -1,5 +1,6 @@
 import { Cloud, Spinner } from "@phosphor-icons/react";
 import { Button as QuillButton } from "@posthog/quill";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useDiffStatsToggle } from "@posthog/ui/features/code-review/hooks/useDiffStatsToggle";
@@ -26,6 +27,7 @@ import { useAppView } from "@posthog/ui/router/useAppView";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
 import { isWindows } from "@posthog/ui/utils/platform";
 import { Box, Flex } from "@radix-ui/themes";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 const CLOUD_HANDOFF_FLAG = "phc-cloud-handoff";
@@ -129,6 +131,28 @@ function TaskDiffStatsBadge({ task }: { task: Task }) {
   );
 }
 
+// Switches from the Code space to the Channels space (project-bluebird). Sits to
+// the left of the sidebar toggle, replacing the old vertical app rail.
+function BluebirdButton() {
+  const navigate = useNavigate();
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  if (!bluebirdEnabled) return null;
+  return (
+    <div className="no-drag">
+      <QuillButton
+        variant="outline"
+        size="sm"
+        onClick={() => navigate({ to: "/website" })}
+      >
+        Bluebird
+      </QuillButton>
+    </div>
+  );
+}
+
 export const HEADER_HEIGHT = 36;
 const COLLAPSED_WIDTH = 110;
 const WINDOWS_TITLEBAR_INSET = 140;
@@ -181,8 +205,9 @@ export function HeaderRow() {
           minWidth: `${COLLAPSED_WIDTH}px`,
           transition: isResizing ? "none" : "width 0.2s ease-in-out",
         }}
-        className="relative h-full border-r border-r-(--gray-6)"
+        className="relative h-full gap-2 border-r border-r-(--gray-6)"
       >
+        <BluebirdButton />
         <SidebarTrigger />
         {sidebarOpen && (
           <Box

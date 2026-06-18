@@ -95,6 +95,18 @@ function getRandomThinkingMessage(): string {
   ];
 }
 
+/** Pick a new word that differs from the current one, so consecutive changes
+ *  always read as a change. */
+function getNextThinkingMessage(current: string): string {
+  if (THINKING_MESSAGES.length <= 1) return THINKING_MESSAGES[0];
+  let next = current;
+  while (next === current) {
+    next =
+      THINKING_MESSAGES[Math.floor(Math.random() * THINKING_MESSAGES.length)];
+  }
+  return next;
+}
+
 export function formatDuration(ms: number, fractionDigits = 2): string {
   const totalSeconds = Math.floor(ms / 1000);
   const mins = Math.floor(totalSeconds / 60);
@@ -119,11 +131,16 @@ interface GeneratingIndicatorProps {
   startedAt?: number | null;
   /** Accumulated time (ms) spent waiting for user input, subtracted from elapsed display. */
   pausedDurationMs?: number;
+  /** Monotonic counter of finished tool/MCP calls. The status word advances
+   *  each time this changes, so it tracks real work completing rather than a
+   *  timer — a stalled agent keeps the same word. */
+  activityKey?: number;
 }
 
 export function GeneratingIndicator({
   startedAt,
   pausedDurationMs,
+  activityKey,
 }: GeneratingIndicatorProps) {
   const [elapsed, setElapsed] = useState(0);
   const [activity, setActivity] = useState(getRandomThinkingMessage);
@@ -140,13 +157,15 @@ export function GeneratingIndicator({
     return () => clearInterval(interval);
   }, [startedAt]);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setActivity(getRandomThinkingMessage());
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, []);
+  // Advance the word only when a tool/MCP call finishes (activityKey changes),
+  // not on an interval. The initial word stays put until the first call settles.
+  // Adjusted during render (React's blessed pattern for deriving state from a
+  // changed prop) rather than in an effect, so it never paints a stale word.
+  const prevActivityKeyRef = useRef(activityKey);
+  if (activityKey !== undefined && activityKey !== prevActivityKeyRef.current) {
+    prevActivityKeyRef.current = activityKey;
+    setActivity((current) => getNextThinkingMessage(current));
+  }
 
   return (
     <Flex

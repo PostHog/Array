@@ -4,8 +4,12 @@ import {
   type RootLogger,
   type ScopedLogger,
 } from "@posthog/di/logger";
+import { serializeError } from "@posthog/shared";
 import { inject, injectable } from "inversify";
-import { streamBodyToResponse } from "../proxy-stream/proxy-stream";
+import {
+  type StreamProgress,
+  streamBodyToResponse,
+} from "../proxy-stream/proxy-stream";
 import { AUTH_PROXY_AUTH } from "./identifiers";
 import type { AuthProxyAuth } from "./ports";
 
@@ -178,8 +182,12 @@ export class AuthProxyService {
     options: RequestInit,
     res: http.ServerResponse,
   ): Promise<void> {
+    const startedAt = Date.now();
+    const progress: StreamProgress = { bytesWritten: 0 };
+    let status = 0;
     try {
       const response = await this.auth.authenticatedFetch(url, options);
+      status = response.status;
 
       const responseHeaders: Record<string, string> = {};
       const stripHeaders = new Set([
@@ -194,14 +202,33 @@ export class AuthProxyService {
 
       res.writeHead(response.status, responseHeaders);
 
-      await streamBodyToResponse(response.body, res);
+      await streamBodyToResponse(response.body, res, progress);
+
+      this.log.info("Auth proxy forward completed", {
+        url,
+        method: options.method,
+        status,
+        durationMs: Date.now() - startedAt,
+        bytesStreamed: progress.bytesWritten,
+      });
     } catch (err) {
       if (options.signal?.aborted) {
         this.log.debug("Upstream fetch aborted after client disconnect", {
           url,
+          durationMs: Date.now() - startedAt,
+          bytesStreamed: progress.bytesWritten,
         });
       } else {
-        this.log.error("Proxy forward error", { url, err });
+        this.log.error("Proxy forward error", {
+          url,
+          method: options.method,
+          status,
+          headersSent: res.headersSent,
+          durationMs: Date.now() - startedAt,
+          bytesStreamed: progress.bytesWritten,
+          stack: err instanceof Error ? err.stack : undefined,
+          errorDetail: serializeError(err),
+        });
       }
       if (!res.headersSent) {
         res.writeHead(502);

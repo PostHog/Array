@@ -14,6 +14,8 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 vi.mock("./mcp/tool-metadata", () => ({
   fetchMcpToolMetadata: vi.fn().mockResolvedValue(undefined),
   getConnectedMcpServerNames: vi.fn().mockReturnValue([]),
+  getCachedMcpTools: vi.fn().mockReturnValue([]),
+  clearMcpToolMetadataCache: vi.fn(),
   setMcpToolApprovalStates: vi.fn(),
   isMcpToolReadOnly: vi.fn().mockReturnValue(false),
   getMcpToolMetadata: vi.fn().mockReturnValue(undefined),
@@ -48,6 +50,8 @@ function installFakeSession(
   const session = {
     query,
     queryOptions: { sessionId, cwd: "/tmp/repo", abortController },
+    buildInProcessMcpServers: () => ({}),
+    localToolsServerNames: [] as string[],
     input,
     cancelled: false,
     interruptReason: undefined,
@@ -77,6 +81,27 @@ function installFakeSession(
   (agent as unknown as { sessionId: string }).sessionId = sessionId;
 
   return { query, input };
+}
+
+// Mark the session as having an enabled (but currently disconnected) in-process
+// signed-commit server so the pre-prompt heal has something to reconnect.
+function enableSignedCommitServer(agent: Agent): void {
+  const session = (
+    agent as unknown as {
+      session: {
+        buildInProcessMcpServers: () => Record<string, unknown>;
+        localToolsServerNames: string[];
+      };
+    }
+  ).session;
+  session.localToolsServerNames = ["posthog-code-tools"];
+  session.buildInProcessMcpServers = () => ({
+    "posthog-code-tools": {
+      type: "sdk",
+      name: "posthog-code-tools",
+      instance: {},
+    },
+  });
 }
 
 function tick(): Promise<void> {
@@ -215,5 +240,56 @@ describe("ClaudeAcpAgent.prompt — streamed assistant text wiring", () => {
     expect(messageChunkTexts(client.sessionUpdate.mock.calls)).toEqual([
       "gateway answer",
     ]);
+  });
+
+  it("reconnects a disconnected signed-commit server before the turn", async () => {
+    const { agent } = makeAgent();
+    const sessionId = "s-heal";
+    const { query, input } = installFakeSession(agent, sessionId);
+
+    // Signed-commit server is enabled but the live query reports it absent.
+    enableSignedCommitServer(agent);
+    (query.mcpServerStatus as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { name: "posthog-code-tools", status: "failed" },
+    ]);
+
+    const promptPromise = agent.prompt({
+      sessionId,
+      prompt: [{ type: "text", text: "commit this" }],
+    });
+    await tick();
+
+    // The pre-prompt heal fired before the model turn began.
+    expect(query.mcpServerStatus).toHaveBeenCalled();
+    expect(query.setMcpServers).toHaveBeenCalledTimes(1);
+    const arg = (query.setMcpServers as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as Record<string, unknown>;
+    expect(arg["posthog-code-tools"]).toMatchObject({ type: "sdk" });
+
+    await echoUserMessage(query, input);
+    await send(query, assistantMessage(sessionId, "msg_h", "done"));
+    await send(query, resultSuccess(sessionId));
+    const result = await promptPromise;
+    expect(result.stopReason).toBe("end_turn");
+  });
+
+  it("skips the pre-prompt heal for local-only commands", async () => {
+    const { agent } = makeAgent();
+    const sessionId = "s-local-only";
+    const { query } = installFakeSession(agent, sessionId);
+
+    enableSignedCommitServer(agent);
+
+    const promptPromise = agent.prompt({
+      sessionId,
+      prompt: [{ type: "text", text: "/context" }],
+    });
+    await tick();
+
+    expect(query.mcpServerStatus).not.toHaveBeenCalled();
+    expect(query.setMcpServers).not.toHaveBeenCalled();
+
+    await send(query, resultSuccess(sessionId));
+    await promptPromise;
   });
 });

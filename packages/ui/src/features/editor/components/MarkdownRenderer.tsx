@@ -32,7 +32,7 @@ function markdownUrlTransform(value: string): string {
 }
 
 const HeadingText = ({ children }: { children: React.ReactNode }) => (
-  <Text as="p" mb="3" className="text-(--accent-11) text-sm">
+  <Text as="p" className="mb-2 text-(--accent-11) text-sm leading-relaxed">
     <strong>{children}</strong>
   </Text>
 );
@@ -44,31 +44,20 @@ export const baseComponents: Components = {
   h4: ({ children }) => <HeadingText>{children}</HeadingText>,
   h5: ({ children }) => <HeadingText>{children}</HeadingText>,
   h6: ({ children }) => <HeadingText>{children}</HeadingText>,
-  p: ({ children, node }) => {
-    const isStrongOnly =
-      node?.children?.length === 1 &&
-      node.children[0].type === "element" &&
-      node.children[0].tagName === "strong";
-
-    return (
-      <Text as="p" mb={isStrongOnly ? "2" : "3"}>
-        {children}
-      </Text>
-    );
-  },
+  p: ({ children }) => (
+    <Text as="p" className="mb-2">
+      {children}
+    </Text>
+  ),
   blockquote: ({ children }) => (
-    <Blockquote size="1" mb="3" style={{ borderColor: "var(--accent-6)" }}>
+    <Blockquote size="1" mb="2" style={{ borderColor: "var(--accent-6)" }}>
       {children}
     </Blockquote>
   ),
   code: ({ children, className }) => {
     const match = className?.match(/language-(\w+)/);
     if (!match) {
-      return (
-        <Code variant="ghost" className="text-(--accent-11)">
-          {children}
-        </Code>
-      );
+      return <Code variant="ghost">{children}</Code>;
     }
     return (
       <HighlightedCode
@@ -80,9 +69,7 @@ export const baseComponents: Components = {
   pre: ({ children }) => <CodeBlock size="1">{children}</CodeBlock>,
   em: ({ children }) => <em>{children}</em>,
   i: ({ children }) => <i>{children}</i>,
-  strong: ({ children }) => (
-    <strong className="text-(--accent-11)">{children}</strong>
-  ),
+  strong: ({ children }) => <strong>{children}</strong>,
   del: ({ children }) => (
     <del className="text-(--gray-9) line-through">{children}</del>
   ),
@@ -154,7 +141,7 @@ export const baseComponents: Components = {
           checked={checked}
           size="1"
           style={{ verticalAlign: "middle" }}
-          className="mr-2"
+          className="mr-1"
         />
       );
     }

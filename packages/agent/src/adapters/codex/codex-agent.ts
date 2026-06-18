@@ -401,6 +401,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
         _meta: {
           posthog: {
             resumeSession: true,
+            steering: "interrupt-resend",
           },
         },
       },

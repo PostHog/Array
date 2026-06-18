@@ -1,3 +1,4 @@
+import { cn } from "@posthog/quill";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type CSSProperties,
@@ -271,7 +272,7 @@ function VirtualizedListInner<T>(
                 }}
               >
                 <div
-                  className={itemClassName}
+                  className={cn(itemClassName, "[&_p:last-of-type]:mb-0")}
                   style={itemStyle}
                   data-conversation-item-id={itemKey}
                 >

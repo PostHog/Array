@@ -38,7 +38,7 @@ export function SubagentToolView({
   const hasChildren = childItems.length > 0;
 
   return (
-    <Box className="my-2 max-w-4xl overflow-hidden rounded-lg border border-gray-6 bg-gray-1">
+    <Box className="max-w-4xl overflow-hidden rounded-sm border border-gray-6 bg-gray-1">
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
@@ -69,7 +69,8 @@ export function SubagentToolView({
       </button>
 
       {isExpanded && hasChildren && (
-        <Box className="space-y-1 border-gray-6 border-t px-2 py-2">
+        // [&_.tool-row-collapsible]:pl-1 so that inner ToolRow triggers have some more spacing on left
+        <Box className="space-y-1 border-gray-6 border-t px-2 py-2 [&_.tool-row-collapsible]:pl-1">
           {childItems.map((child) => {
             if (child.type !== "session_update") return null;
             return (

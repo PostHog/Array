@@ -108,8 +108,12 @@ export function ToolRow({
   }
 
   return (
-    <Collapsible.Root open={isOpen} onOpenChange={setOpen}>
-      <Collapsible.Trigger className="group mb-0 flex w-full min-w-0 cursor-pointer items-start gap-2 py-0.5 text-left">
+    <Collapsible.Root
+      open={isOpen}
+      onOpenChange={setOpen}
+      className="tool-row-collapsible"
+    >
+      <Collapsible.Trigger className="group mb-0 flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-sm py-0.5 pl-1 text-left hover:bg-fill-hover data-panel-open:bg-fill-selected">
         {leadingNode}
         {header}
       </Collapsible.Trigger>

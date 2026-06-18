@@ -77,6 +77,9 @@ export interface BuildResult {
   items: ConversationItem[];
   lastTurnInfo: LastTurnInfo | null;
   isCompacting: boolean;
+  /** Number of tool calls settled into a terminal status so far. Monotonic
+   *  within a thread; consumers treat a change as "a tool/MCP call finished". */
+  completedToolCallCount: number;
 }
 
 interface ProgressCardState {
@@ -126,6 +129,11 @@ export interface ItemBuilder {
    *  reads it after to detect a card being mutated inside an already frozen
    *  (completed) turn, which would otherwise go unseen. */
   lowestTouchedProgressIndex: number;
+  /** Count of tool calls that have reached a terminal status (completed /
+   *  failed / cancelled). Increments once per tool call when it first settles.
+   *  Drives the generating indicator's status word so it advances on real work
+   *  finishing rather than on a timer. */
+  completedToolCallCount: number;
 }
 
 export function createItemBuilder(): ItemBuilder {
@@ -140,7 +148,14 @@ export function createItemBuilder(): ItemBuilder {
     nextId: () => idCounter++,
     progressCards: new Map(),
     lowestTouchedProgressIndex: Number.POSITIVE_INFINITY,
+    completedToolCallCount: 0,
   };
+}
+
+const TERMINAL_TOOL_STATUSES = new Set(["completed", "failed", "cancelled"]);
+
+function isTerminalToolStatus(status: string | null | undefined): boolean {
+  return status != null && TERMINAL_TOOL_STATUSES.has(status);
 }
 
 function isThoughtItem(
@@ -201,7 +216,12 @@ export function buildConversationItems(
 
   const lastTurnInfo = readLastTurnInfo(b);
 
-  return { items: b.items, lastTurnInfo, isCompacting: b.isCompacting };
+  return {
+    items: b.items,
+    lastTurnInfo,
+    isCompacting: b.isCompacting,
+    completedToolCallCount: b.completedToolCallCount,
+  };
 }
 
 /**
@@ -718,10 +738,17 @@ function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
       if (!turn) break;
       const existing = turn.toolCalls.get(update.toolCallId);
       if (existing) {
+        const wasTerminal = isTerminalToolStatus(existing.status);
         Object.assign(existing, update);
+        if (!wasTerminal && isTerminalToolStatus(existing.status)) {
+          b.completedToolCallCount++;
+        }
       } else {
         const toolCall = { ...update };
         turn.toolCalls.set(update.toolCallId, toolCall);
+        if (isTerminalToolStatus(toolCall.status)) {
+          b.completedToolCallCount++;
+        }
         const parentId = getParentToolCallId(update);
         if (parentId) {
           pushChildItem(b, parentId, toolCall);
@@ -737,8 +764,12 @@ function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
       if (!turn) break;
       const existing = turn.toolCalls.get(update.toolCallId);
       if (existing) {
+        const wasTerminal = isTerminalToolStatus(existing.status);
         const { sessionUpdate: _, ...rest } = update;
         Object.assign(existing, rest);
+        if (!wasTerminal && isTerminalToolStatus(existing.status)) {
+          b.completedToolCallCount++;
+        }
       }
       break;
     }

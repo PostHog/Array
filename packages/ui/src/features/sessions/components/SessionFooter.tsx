@@ -20,6 +20,9 @@ interface SessionFooterProps {
   pausedDurationMs?: number;
   isCompacting?: boolean;
   usage?: ContextUsage | null;
+  /** Number of tool calls finished so far; the generating indicator advances
+   *  its status word each time this changes. */
+  completedToolCallCount?: number;
 }
 
 export function SessionFooter({
@@ -33,6 +36,7 @@ export function SessionFooter({
   pausedDurationMs,
   isCompacting = false,
   usage,
+  completedToolCallCount,
 }: SessionFooterProps) {
   const rightSide = (
     <Flex align="center" gap="3" className="ml-auto shrink-0">
@@ -69,6 +73,7 @@ export function SessionFooter({
             <GeneratingIndicator
               startedAt={promptStartedAt}
               pausedDurationMs={pausedDurationMs}
+              activityKey={completedToolCallCount}
             />
             {queuedCount > 0 && (
               <Text className="truncate text-[13px] text-muted-foreground">

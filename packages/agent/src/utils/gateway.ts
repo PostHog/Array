@@ -14,8 +14,11 @@ export function resolveGatewayProduct({
   if (originProduct === "slack") {
     return "slack_app";
   }
+  if (originProduct === "signal_report" || originProduct === "signals_scout") {
+    return "signals";
+  }
   if (isInternal) {
-    return originProduct === "signal_report" ? "signals" : "background_agents";
+    return "background_agents";
   }
   return "posthog_code";
 }

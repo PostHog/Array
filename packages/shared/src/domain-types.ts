@@ -505,6 +505,11 @@ export interface SignalReportsQueryParams {
   suggested_reviewers?: string;
   /** Comma-separated `P0`–`P4` priorities — only returns reports with one of these priorities. */
   priority?: string;
+  /**
+   * Filter by whether a shipped implementation pull request exists. `true` keeps only PR
+   * reports, `false` only non-PR reports. Pair with `limit: 1` to count PR reports cheaply.
+   */
+  has_implementation_pr?: boolean;
 }
 
 /** Values match `SignalReportTask.Relationship` on the PostHog API. */
