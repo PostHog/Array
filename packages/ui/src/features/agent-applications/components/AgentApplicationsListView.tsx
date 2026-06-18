@@ -259,9 +259,9 @@ function RowStat({
 }
 
 /**
- * Operational counts strip — only rendered when something is actually
- * happening. Pending deep-links to the fleet approvals queue; live anchors the
- * live-now panel below.
+ * Operational counts strip — always renders the pending-approvals count as a
+ * deep link to the fleet approvals queue, and visually emphasizes the row when
+ * `pendingCount > 0`.
  */
 function OperationalStrip({ pendingCount }: { pendingCount: number }) {
   const pendingAttention = pendingCount > 0;
