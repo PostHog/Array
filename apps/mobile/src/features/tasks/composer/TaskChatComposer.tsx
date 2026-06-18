@@ -2,6 +2,7 @@ import * as Haptics from "expo-haptics";
 import {
   ArrowUp,
   BrainIcon,
+  Lightning,
   Microphone,
   PaperclipIcon,
   PauseIcon,
@@ -9,6 +10,7 @@ import {
   Robot,
   ShieldCheck,
   Sparkle,
+  Stack,
   Stop,
 } from "phosphor-react-native";
 import {
@@ -31,6 +33,7 @@ import {
 import { useVoiceRecording } from "@/features/chat";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
+import type { MessagingMode } from "../stores/messagingModeStore";
 import { AttachmentSheet } from "./attachments/AttachmentSheet";
 import { AttachmentsBar } from "./attachments/AttachmentsBar";
 import {
@@ -72,6 +75,10 @@ interface TaskChatComposerProps {
   onModeChange: (mode: ExecutionMode) => void;
   onModelChange: (model: string) => void;
   onReasoningChange: (reasoning: ReasoningEffort) => void;
+  /** Steer vs Queue behaviour for messages sent while a turn is running. */
+  messagingMode: MessagingMode;
+  queuedCount: number;
+  onToggleMessagingMode: () => void;
 }
 
 function modeIcon(mode: ExecutionMode, color: string, size = 14): ReactNode {
@@ -154,6 +161,9 @@ export function TaskChatComposer({
   onModeChange,
   onModelChange,
   onReasoningChange,
+  messagingMode,
+  queuedCount,
+  onToggleMessagingMode,
 }: TaskChatComposerProps) {
   const themeColors = useThemeColors();
   const [message, setMessage] = useState(() => initialMessage ?? "");
@@ -229,6 +239,18 @@ export function TaskChatComposer({
     onStop?.();
   };
 
+  const isSteer = messagingMode === "steer";
+  const messagingModeLabel = isSteer
+    ? "Steer"
+    : queuedCount > 0
+      ? `Queue (${queuedCount})`
+      : "Queue";
+
+  const handleToggleMessagingMode = () => {
+    Haptics.selectionAsync();
+    onToggleMessagingMode();
+  };
+
   return (
     <>
       <View className="px-3">
@@ -288,6 +310,23 @@ export function TaskChatComposer({
                   paddingRight: 4,
                 }}
               >
+                <Pill
+                  icon={
+                    isSteer ? (
+                      <Lightning
+                        size={14}
+                        color={themeColors.accent[11]}
+                        weight="fill"
+                      />
+                    ) : (
+                      <Stack size={14} color={themeColors.gray[11]} />
+                    )
+                  }
+                  label={messagingModeLabel}
+                  accent={isSteer}
+                  onPress={handleToggleMessagingMode}
+                />
+
                 <Pill
                   icon={modeIcon(
                     mode,

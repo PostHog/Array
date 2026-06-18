@@ -107,6 +107,7 @@ vi.mock("phosphor-react-native", async () => {
     ShieldCheck: icon("ShieldCheck"),
     Sparkle: icon("Sparkle"),
     SpeakerHigh: icon("SpeakerHigh"),
+    Stack: icon("Stack"),
     Stop: icon("Stop"),
     StopIcon: icon("StopIcon"),
     Terminal: icon("Terminal"),

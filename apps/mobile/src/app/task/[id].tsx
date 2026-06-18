@@ -31,7 +31,13 @@ import {
   type ReasoningEffort,
 } from "@/features/tasks/composer/options";
 import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
+import {
+  useMessagingMode,
+  useQueuedCount,
+  useToggleMessagingMode,
+} from "@/features/tasks/hooks/useMessagingMode";
 import { taskKeys } from "@/features/tasks/hooks/useTasks";
+import { useMessageQueueStore } from "@/features/tasks/stores/messageQueueStore";
 import {
   pendingTaskPromptStoreApi,
   usePendingTaskPrompt,
@@ -41,7 +47,11 @@ import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type { Task } from "@/features/tasks/types";
 import { getSessionActivityPhase } from "@/features/tasks/utils/sessionActivity";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
-import { useActiveTaskAnalyticsContext } from "@/lib/analytics";
+import {
+  ANALYTICS_EVENTS,
+  useActiveTaskAnalyticsContext,
+  useAnalytics,
+} from "@/lib/analytics";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
@@ -81,6 +91,7 @@ export default function TaskDetailScreen() {
     disconnectFromTask,
     sendPrompt,
     cancelPrompt,
+    sendInterrupting,
     sendPermissionResponse,
     setConfigOption,
     getSessionForTask,
@@ -146,6 +157,11 @@ export default function TaskDetailScreen() {
   const composerModel = composerConfig?.model ?? DEFAULT_MODEL;
   const composerReasoning: ReasoningEffort =
     composerConfig?.reasoning ?? DEFAULT_REASONING;
+
+  const messagingMode = useMessagingMode(taskId);
+  const queuedCount = useQueuedCount(taskId);
+  const toggleMessagingMode = useToggleMessagingMode(taskId);
+  const analytics = useAnalytics();
 
   const { height } = useReanimatedKeyboardAnimation();
 
@@ -309,6 +325,20 @@ export default function TaskDetailScreen() {
     ],
   );
 
+  const trackPromptSent = useCallback(
+    (text: string, isSteer: boolean) => {
+      if (!taskId) return;
+      analytics.track(ANALYTICS_EVENTS.PROMPT_SENT, {
+        task_id: taskId,
+        is_initial: false,
+        execution_type: "cloud",
+        prompt_length_chars: text.length,
+        is_steer: isSteer,
+      });
+    },
+    [taskId, analytics],
+  );
+
   const handleSendPrompt = useCallback(
     (text: string, attachments: PendingAttachment[]) => {
       if (!taskId) return;
@@ -319,15 +349,41 @@ export default function TaskDetailScreen() {
         return;
       }
 
-      sendPrompt(taskId, text, attachments).catch((err) => {
+      const onSendFailed = (err: unknown) => {
         log.error("Failed to send prompt", err);
         Alert.alert(
           "Failed to send",
           "Your message could not be delivered. Please try again.",
         );
-      });
+      };
+
+      // A turn is running. Queue holds the message locally until it ends;
+      // Steer interrupts the turn and resends right away.
+      if (session?.isPromptPending) {
+        if (messagingMode === "queue") {
+          useMessageQueueStore.getState().enqueue(taskId, text, attachments);
+          return;
+        }
+        sendInterrupting(taskId, text, attachments)
+          .then(() => trackPromptSent(text, true))
+          .catch(onSendFailed);
+        return;
+      }
+
+      sendPrompt(taskId, text, attachments)
+        .then(() => trackPromptSent(text, false))
+        .catch(onSendFailed);
     },
-    [taskId, sendPrompt, session?.terminalStatus, handleSendAfterTerminal],
+    [
+      taskId,
+      sendPrompt,
+      sendInterrupting,
+      session?.terminalStatus,
+      session?.isPromptPending,
+      messagingMode,
+      handleSendAfterTerminal,
+      trackPromptSent,
+    ],
   );
 
   const handleModeChange = useCallback(
@@ -577,6 +633,9 @@ export default function TaskDetailScreen() {
             onModeChange={handleModeChange}
             onModelChange={handleModelChange}
             onReasoningChange={handleReasoningChange}
+            messagingMode={messagingMode}
+            queuedCount={queuedCount}
+            onToggleMessagingMode={toggleMessagingMode}
           />
         </Animated.View>
       </Animated.View>

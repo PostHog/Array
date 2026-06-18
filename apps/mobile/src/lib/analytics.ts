@@ -15,6 +15,7 @@ export const ANALYTICS_EVENTS = {
   SIGN_IN_STARTED: "Sign in started",
   SIGN_IN_COMPLETED: "Sign in completed",
   SIGN_IN_FAILED: "Sign in failed",
+  PROMPT_SENT: "Prompt sent",
 } as const;
 
 export type SignInMethod = "oauth" | "dev_api_key" | "qr_scan";
@@ -162,6 +163,15 @@ export interface InboxReportActionProperties {
   suggested_reviewer_uuid?: string;
 }
 
+export interface PromptSentProperties {
+  task_id: string;
+  is_initial: boolean;
+  execution_type: "cloud";
+  prompt_length_chars: number;
+  /** True when the message interrupted a running turn (Steer mode). */
+  is_steer: boolean;
+}
+
 export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_VIEWED]: InboxViewedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_OPENED]: InboxReportOpenedProperties;
@@ -171,6 +181,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SIGN_IN_STARTED]: SignInStartedProperties;
   [ANALYTICS_EVENTS.SIGN_IN_COMPLETED]: SignInCompletedProperties;
   [ANALYTICS_EVENTS.SIGN_IN_FAILED]: SignInFailedProperties;
+  [ANALYTICS_EVENTS.PROMPT_SENT]: PromptSentProperties;
 };
 
 export interface Analytics {

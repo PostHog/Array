@@ -30,6 +30,10 @@ import {
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playMeepSound } from "../utils/sounds";
 import { useAttachmentEchoStore } from "./attachmentEchoStore";
+import {
+  combineQueuedMessages,
+  useMessageQueueStore,
+} from "./messageQueueStore";
 
 const log = logger.scope("task-session-store");
 
@@ -306,6 +310,13 @@ interface TaskSessionStore {
     },
   ) => Promise<void>;
   cancelPrompt: (taskId: string) => Promise<boolean>;
+  /** Send a prompt now, interrupting the running turn first if one is live. */
+  sendInterrupting: (
+    taskId: string,
+    prompt: string,
+    attachments?: PendingAttachment[],
+  ) => Promise<void>;
+  flushQueuedMessages: (taskId: string) => Promise<void>;
   setConfigOption: (
     taskId: string,
     configId: string,
@@ -328,6 +339,9 @@ interface TaskSessionStore {
 
 const watchHandles = new Map<string, WatchCloudTaskHandle>();
 const connectAttempts = new Set<string>();
+// Guards against a turn-end batch and a mode toggle racing to flush the same
+// queue twice.
+const flushingTasks = new Set<string>();
 
 function mapTerminalStatus(
   status: string | undefined | null,
@@ -749,6 +763,37 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     }
   },
 
+  sendInterrupting: async (taskId, prompt, attachments) => {
+    // The cloud has no mid-turn inject, so steering interrupts the running
+    // turn and resends as a fresh prompt.
+    if (get().getSessionForTask(taskId)?.isPromptPending) {
+      await get().cancelPrompt(taskId);
+    }
+    await get().sendPrompt(taskId, prompt, attachments);
+  },
+
+  flushQueuedMessages: async (taskId: string) => {
+    if (flushingTasks.has(taskId)) return;
+    flushingTasks.add(taskId);
+    try {
+      const drained = useMessageQueueStore.getState().drain(taskId);
+      if (drained.length === 0) return;
+
+      const { text, attachments } = combineQueuedMessages(drained);
+      try {
+        await get().sendInterrupting(taskId, text, attachments);
+      } catch (err) {
+        log.warn("Failed to flush queued messages, restoring queue", {
+          taskId,
+          error: err,
+        });
+        useMessageQueueStore.getState().prepend(taskId, drained);
+      }
+    } finally {
+      flushingTasks.delete(taskId);
+    }
+  },
+
   getSessionForTask: (taskId: string) => {
     return Object.values(get().sessions).find((s) => s.taskId === taskId);
   },
@@ -855,6 +900,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       );
 
       const wasAwaitingPing = existing?.awaitingPing ?? false;
+      const wasPromptPending = existing?.isPromptPending ?? false;
 
       set((state) => {
         const current = state.sessions[taskRunId];
@@ -958,6 +1004,26 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           taskRunId,
           kind: "task_failed",
         });
+      }
+
+      // Turn just ended on a live delta — drain any queued messages the user
+      // buffered while it was running. Deferred a tick so the store state is
+      // committed before the flush reads it.
+      const after = get().sessions[taskRunId];
+      if (
+        !isSnapshot &&
+        wasPromptPending &&
+        after &&
+        !after.isPromptPending &&
+        after.status === "connected" &&
+        useMessageQueueStore.getState().getQueue(after.taskId).length > 0
+      ) {
+        const flushTaskId = after.taskId;
+        setTimeout(() => {
+          get()
+            .flushQueuedMessages(flushTaskId)
+            .catch((err) => log.warn("Queue flush failed", err));
+        }, 0);
       }
     }
 
