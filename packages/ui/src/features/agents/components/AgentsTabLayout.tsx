@@ -16,7 +16,7 @@ const TAB_DESCRIPTION: Record<AgentsTab, string> = {
   scouts:
     "Self-driving agents that watch your project and surface work for review — enroll in the canonical fleet or author your own.",
   applications:
-    "Your deployed agents — browse their sessions, approvals, configuration and revisions, or build and edit them with the Agent Builder.",
+    "Deployed agents triggered by chat, Slack, webhooks, or cron — preview, approve, and edit with the Agent Builder.",
 };
 
 /**
@@ -67,7 +67,7 @@ export function AgentsTabLayout({
                 : "Design, schedule, and deploy the agents that work on your product."}
             </Text>
           </Flex>
-          <AgentBuilderHeaderControls context={pageContext} />
+          <AgentBuilderHeaderControls />
         </Flex>
         <Flex gap="5" align="center">
           <TabLink

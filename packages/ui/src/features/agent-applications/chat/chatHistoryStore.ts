@@ -15,6 +15,12 @@ export interface PreviewChatEntry {
   title: string;
   /** Epoch ms when the chat was started here. */
   startedAt: number;
+  /**
+   * Revision the chat targets, when the user opened it as a draft preview.
+   * Undefined for sessions that ran against `live_revision`. Lets the rail
+   * label drafts and route resumes back to the right preview surface.
+   */
+  revisionId?: string;
 }
 
 interface ChatHistoryState {

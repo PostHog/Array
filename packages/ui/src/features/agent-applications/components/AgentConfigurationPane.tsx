@@ -328,7 +328,7 @@ export function AgentConfigurationPane({
 
   const { data: revision, isLoading } = useAgentRevision(idOrSlug, revisionId);
   const { data: bundle } = useAgentRevisionBundle(idOrSlug, revisionId);
-  const { data: envKeys } = useAgentEnvKeys(idOrSlug);
+  const { data: envKeys } = useAgentEnvKeys(idOrSlug, revisionId);
 
   const spec = revision?.spec ?? null;
   const setKeys = useMemo(() => envKeys ?? [], [envKeys]);
@@ -598,6 +598,7 @@ function DetailBody({
           keyName={id}
           setKeys={ctx.setKeys}
           idOrSlug={ctx.idOrSlug}
+          revisionId={ctx.revisionId}
         />
       );
     case "limits":
@@ -1220,10 +1221,12 @@ function SecretBody({
   keyName,
   setKeys,
   idOrSlug,
+  revisionId,
 }: {
   keyName: string;
   setKeys: string[];
   idOrSlug: string;
+  revisionId: string;
 }) {
   const isSet = setKeys.includes(keyName);
   return (
@@ -1234,7 +1237,12 @@ function SecretBody({
         value={isSet ? "set" : "not set"}
         valueColor={isSet ? "var(--green-11)" : "var(--amber-11)"}
       />
-      <SecretEditor idOrSlug={idOrSlug} keyName={keyName} isSet={isSet} />
+      <SecretEditor
+        idOrSlug={idOrSlug}
+        revisionId={revisionId}
+        keyName={keyName}
+        isSet={isSet}
+      />
     </Flex>
   );
 }

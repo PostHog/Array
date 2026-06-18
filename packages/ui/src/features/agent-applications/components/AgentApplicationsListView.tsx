@@ -1,6 +1,5 @@
 import {
   ArrowSquareOutIcon,
-  BroadcastIcon,
   CaretRightIcon,
   LockKeyIcon,
   RobotIcon,
@@ -19,7 +18,6 @@ import { useAuthStateValue } from "../../auth/store";
 import { useAgentAnalytics } from "../hooks/useAgentAnalytics";
 import { useAgentApplications } from "../hooks/useAgentApplications";
 import { useAgentFleetApprovals } from "../hooks/useAgentFleetApprovals";
-import { useAgentFleetLiveSessions } from "../hooks/useAgentFleetLiveSessions";
 import { formatSpendUsd } from "../utils/format";
 import { aiObservabilityTracesUrl } from "../utils/observabilityLinks";
 import { AgentAnalyticsKpiStrip } from "./AgentAnalyticsView";
@@ -27,11 +25,10 @@ import { AgentDetailEmptyState } from "./AgentDetailLayout";
 import { AgentFleetLiveSessionsPanel } from "./AgentFleetLiveSessionsPanel";
 
 /**
- * The Applications tab: the fleet observability KPIs (spend / sessions /
- * failure rate / p95 over the team's `$ai_*` events) blended on top of the list
- * of deployed agents. The per-agent rollups from the same analytics query are
- * merged into each list row as inline stats, so one fetch powers both the KPI
- * strip and the rows. Each row links to the per-agent detail view.
+ * The Applications tab. Renders the deployed-agent fleet as the primary
+ * surface, with operational / activity / live-now panels appearing below the
+ * list only when they have something to say. A quiet fleet still feels like a
+ * launchpad: just the agents, sectioned LIVE vs DRAFTS.
  */
 export function AgentApplicationsListView() {
   const region = useAuthStateValue((s) => s.cloudRegion);
@@ -44,11 +41,10 @@ export function AgentApplicationsListView() {
     error,
   } = useAgentApplications();
   const { data: analytics, isLoading: analyticsLoading } = useAgentAnalytics();
-  const { data: liveSessions } = useAgentFleetLiveSessions();
   const { data: queuedApprovals } = useAgentFleetApprovals({ state: "queued" });
   const aiObservabilityUrl = aiObservabilityTracesUrl(region, projectId);
-  const liveCount = liveSessions?.results.length ?? 0;
   const pendingCount = queuedApprovals?.length ?? 0;
+  const hasAnalytics = analytics ? !analytics.empty : false;
 
   // Index the per-agent rollups by application id so each row can show its own
   // sessions / spend / failure rate without a second request.
@@ -60,39 +56,22 @@ export function AgentApplicationsListView() {
     return map;
   }, [analytics]);
 
+  // Split LIVE vs DRAFT so the operational view foregrounds what's serving
+  // traffic; drafts dim and section below.
+  const { liveApps, draftApps } = useMemo(() => {
+    const live: AgentApplication[] = [];
+    const draft: AgentApplication[] = [];
+    for (const app of applications ?? []) {
+      if (app.live_revision != null) live.push(app);
+      else draft.push(app);
+    }
+    return { liveApps: live, draftApps: draft };
+  }, [applications]);
+
   return (
     <AgentsTabLayout activeTab="applications">
-      <Flex direction="column" gap="5">
-        <OperationalStrip liveCount={liveCount} pendingCount={pendingCount} />
-
+      <Flex direction="column" gap="6">
         <section>
-          <Flex align="center" justify="between" className="mb-3">
-            <Text className="font-semibold text-[13px] text-gray-12">
-              Activity · last 7 days
-            </Text>
-            {aiObservabilityUrl ? (
-              <button
-                type="button"
-                onClick={() => openExternalUrl(aiObservabilityUrl)}
-                className="inline-flex items-center gap-1 text-[12px] text-gray-11 no-underline hover:text-gray-12"
-              >
-                Open in AI observability
-                <ArrowSquareOutIcon size={12} />
-              </button>
-            ) : null}
-          </Flex>
-          <AgentAnalyticsKpiStrip
-            data={analytics}
-            isLoading={analyticsLoading}
-          />
-        </section>
-
-        <AgentFleetLiveSessionsPanel />
-
-        <Flex direction="column" gap="2">
-          <Text className="text-[11px] text-gray-10 uppercase tracking-wide">
-            Agents
-          </Text>
           {isLoading ? (
             <ApplicationsSkeleton />
           ) : isError ? (
@@ -110,17 +89,92 @@ export function AgentApplicationsListView() {
               description="Deployed agents on the agent platform will show up here."
             />
           ) : (
-            applications.map((app) => (
-              <ApplicationRow
-                key={app.id}
-                application={app}
-                stats={statsById.get(app.id)}
+            <Flex direction="column" gap="5">
+              <AgentsSection
+                label="Live"
+                apps={liveApps}
+                statsById={statsById}
               />
-            ))
+              {draftApps.length > 0 ? (
+                <AgentsSection
+                  label="Drafts"
+                  apps={draftApps}
+                  statsById={statsById}
+                  dimmed
+                />
+              ) : null}
+            </Flex>
           )}
-        </Flex>
+        </section>
+
+        <OperationalStrip pendingCount={pendingCount} />
+
+        {hasAnalytics ? (
+          <section>
+            <Flex align="center" justify="between" className="mb-3">
+              <Text className="font-semibold text-[13px] text-gray-12">
+                Activity · last 7 days
+              </Text>
+              {aiObservabilityUrl ? (
+                <button
+                  type="button"
+                  onClick={() => openExternalUrl(aiObservabilityUrl)}
+                  className="inline-flex items-center gap-1 text-[12px] text-gray-11 no-underline hover:text-gray-12"
+                >
+                  Open in AI observability
+                  <ArrowSquareOutIcon size={12} />
+                </button>
+              ) : null}
+            </Flex>
+            <AgentAnalyticsKpiStrip
+              data={analytics}
+              isLoading={analyticsLoading}
+            />
+          </section>
+        ) : null}
+
+        <AgentFleetLiveSessionsPanel />
       </Flex>
     </AgentsTabLayout>
+  );
+}
+
+/** A labeled group of agent rows; `dimmed` softens drafts so live agents
+ * dominate the visual hierarchy. */
+function AgentsSection({
+  label,
+  apps,
+  statsById,
+  dimmed,
+}: {
+  label: string;
+  apps: AgentApplication[];
+  statsById: Map<string, AgentAnalyticsAgentRow>;
+  dimmed?: boolean;
+}) {
+  if (apps.length === 0) return null;
+  return (
+    <Flex direction="column" gap="2">
+      <Flex align="center" gap="2">
+        <Text className="text-[11px] text-gray-10 uppercase tracking-wide">
+          {label}
+        </Text>
+        <Text className="text-[11px] text-gray-9 tabular-nums">
+          {apps.length}
+        </Text>
+      </Flex>
+      <div className={dimmed ? "opacity-70" : undefined}>
+        <Flex direction="column" gap="2">
+          {apps.map((app) => (
+            <ApplicationRow
+              key={app.id}
+              application={app}
+              stats={statsById.get(app.id)}
+            />
+          ))}
+        </Flex>
+      </div>
+    </Flex>
   );
 }
 
@@ -205,33 +259,24 @@ function RowStat({
 }
 
 /**
- * Operational counts strip — restores the "live now / pending approvals"
- * signals the M7 analytics KPIs displaced. Live count anchors the live-now
- * panel below; pending links to the fleet approvals queue.
+ * Operational counts strip — always renders the pending-approvals count as a
+ * deep link to the fleet approvals queue, and visually emphasizes the row when
+ * `pendingCount > 0`.
  */
-function OperationalStrip({
-  liveCount,
-  pendingCount,
-}: {
-  liveCount: number;
-  pendingCount: number;
-}) {
+function OperationalStrip({ pendingCount }: { pendingCount: number }) {
+  const pendingAttention = pendingCount > 0;
   return (
     <Flex align="center" gap="5" className="text-[12.5px]">
-      <div className="inline-flex items-center gap-1 text-gray-11">
-        <BroadcastIcon size={13} className="mr-1 text-gray-10" />
-        <Text className="font-medium text-gray-12 tabular-nums">
-          {liveCount}
-        </Text>
-        <Text>live now</Text>
-      </div>
       <Link
         to="/code/agents/applications/approvals"
         className="inline-flex items-center gap-1 text-gray-11 no-underline hover:text-gray-12"
       >
-        <LockKeyIcon size={13} className="mr-1 text-gray-10" />
+        <LockKeyIcon
+          size={13}
+          className={`mr-1 ${pendingAttention ? "text-(--amber-11)" : "text-gray-10"}`}
+        />
         <Text
-          className={`font-medium tabular-nums ${pendingCount > 0 ? "text-(--amber-11)" : "text-gray-12"}`}
+          className={`font-medium tabular-nums ${pendingAttention ? "text-(--amber-11)" : "text-gray-12"}`}
         >
           {pendingCount}
         </Text>

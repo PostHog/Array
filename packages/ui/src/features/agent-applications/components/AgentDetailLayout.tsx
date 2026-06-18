@@ -153,7 +153,7 @@ export function AgentDetailLayout({
             </Badge>
           ) : null}
           <Flex align="center" className="ml-auto shrink-0">
-            <AgentBuilderHeaderControls context={pageContext} />
+            <AgentBuilderHeaderControls />
           </Flex>
         </Flex>
         {application?.description?.trim() ? (

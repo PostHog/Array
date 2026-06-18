@@ -71,7 +71,13 @@ export function createAgentChatMapper(): AgentChatMapper {
   let promptId = 0;
   const seenToolCalls = new Set<string>();
   // Texts shown optimistically and awaiting their echoed `user_message` frame.
+  // Compared by trimmed form so runner-side whitespace normalization
+  // (trailing `\n`, padding around envelopes, etc.) doesn't break dedup.
   const pendingOptimistic: string[] = [];
+  // Every user text we've rendered this session, normalized. Catches the runner
+  // re-emitting the same `user_message` event twice (the second arrival has
+  // nothing left in `pendingOptimistic` to swallow it).
+  const seenUserTexts = new Set<string>();
 
   return {
     seedUserMessage(text: string, ts?: number): AcpMessage[] {
@@ -80,6 +86,7 @@ export function createAgentChatMapper(): AgentChatMapper {
       }
       promptId += 1;
       pendingOptimistic.push(text);
+      seenUserTexts.add(text.trim());
       return [promptRequestMessage(promptId, text, ts ?? Date.now())];
     },
 
@@ -99,11 +106,25 @@ export function createAgentChatMapper(): AgentChatMapper {
           // so it never shows in the transcript (and so dedup matches the clean
           // optimistic text the composer rendered).
           const text = stripConsoleContext(event.data.text);
-          // Already rendered optimistically on send — swallow the echo.
-          if (pendingOptimistic[0] === text) {
-            pendingOptimistic.shift();
+          const normalized = text.trim();
+          // Echo of a message we already rendered optimistically. Scan the
+          // queue (not just `[0]`) so out-of-order echoes from rapid sends
+          // still match, and compare trimmed forms so trailing/leading
+          // whitespace from the runner doesn't break the match.
+          const pendingIdx = pendingOptimistic.findIndex(
+            (p) => p.trim() === normalized,
+          );
+          if (pendingIdx !== -1) {
+            pendingOptimistic.splice(pendingIdx, 1);
             return [];
           }
+          // The runner re-emitted a `user_message` we've already rendered
+          // (either as optimistic seed or as a non-dedup'd echo). Drop it so
+          // the bubble doesn't appear twice.
+          if (seenUserTexts.has(normalized)) {
+            return [];
+          }
+          seenUserTexts.add(normalized);
           promptId += 1;
           return [promptRequestMessage(promptId, text, ts)];
         }

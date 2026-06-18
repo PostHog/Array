@@ -131,6 +131,7 @@ export function AgentBuilderDock() {
     try {
       await client.setAgentEnvKey(
         pendingSecret.agentSlug,
+        pendingSecret.revisionId,
         pendingSecret.secret,
         value,
       );
@@ -190,11 +191,14 @@ export function AgentBuilderDock() {
   }
 
   return (
-    <Flex direction="column" className="h-full min-h-0 bg-background">
+    <Flex
+      direction="column"
+      className="h-full min-h-0 border-(--amber-5) border-l-2 bg-(--amber-1)/30"
+    >
       <Flex
         align="center"
         gap="2"
-        className="shrink-0 border-(--gray-5) border-b px-3 py-2"
+        className="shrink-0 border-(--amber-4) border-b bg-(--amber-2)/40 px-3 py-2"
       >
         <SparkleIcon size={15} weight="fill" className="text-(--accent-9)" />
         <Text className="font-medium text-[13px] text-gray-12">
