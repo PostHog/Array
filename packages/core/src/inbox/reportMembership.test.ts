@@ -42,18 +42,16 @@ describe("isDismissedReport", () => {
     expect(isDismissedReport(fakeReport({ status: "suppressed" }))).toBe(true);
   });
 
-  it("does not match active or deleted reports", () => {
-    for (const status of [
-      "potential",
-      "candidate",
-      "in_progress",
-      "pending_input",
-      "ready",
-      "failed",
-      "deleted",
-    ] as const) {
-      expect(isDismissedReport(fakeReport({ status }))).toBe(false);
-    }
+  it.each([
+    "potential",
+    "candidate",
+    "in_progress",
+    "pending_input",
+    "ready",
+    "failed",
+    "deleted",
+  ] as const)("does not match %s reports", (status) => {
+    expect(isDismissedReport(fakeReport({ status }))).toBe(false);
   });
 });
 
