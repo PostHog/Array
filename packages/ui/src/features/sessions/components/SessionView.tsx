@@ -18,7 +18,6 @@ import { ConversationView } from "@posthog/ui/features/sessions/components/Conve
 import {
   copyFromContextMenu,
   getGithubRefUrlFromEventTarget,
-  resolveCopyText,
 } from "@posthog/ui/features/sessions/components/copyContextTarget";
 import { DropZoneOverlay } from "@posthog/ui/features/sessions/components/DropZoneOverlay";
 import { ModelSelector } from "@posthog/ui/features/sessions/components/ModelSelector";
@@ -371,13 +370,14 @@ export function SessionView({
   useAutoFocusOnTyping(editorRef, !isActiveSession);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    copyTargetUrlRef.current = getGithubRefUrlFromEventTarget(e.target);
     const target = e.target as HTMLElement;
     if (
       target.closest('input, textarea, [contenteditable="true"], .ProseMirror')
     ) {
       e.stopPropagation();
+      return;
     }
+    copyTargetUrlRef.current = getGithubRefUrlFromEventTarget(e.target);
   }, []);
 
   return (
@@ -652,10 +652,7 @@ export function SessionView({
         <ContextMenu.Item
           onSelect={() => {
             const url = copyTargetUrlRef.current;
-            const text = resolveCopyText(
-              url,
-              window.getSelection()?.toString(),
-            );
+            const text = url ?? window.getSelection()?.toString();
             if (!text) {
               return;
             }

@@ -2,7 +2,6 @@ import { GithubRefChip } from "@posthog/ui/features/editor/components/GithubRefC
 import {
   copyFromContextMenu,
   getGithubRefUrlFromEventTarget,
-  resolveCopyText,
 } from "@posthog/ui/features/sessions/components/copyContextTarget";
 import { ContextMenu, Theme } from "@radix-ui/themes";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -47,10 +46,7 @@ function Harness() {
           <ContextMenu.Item
             onSelect={() => {
               const url = copyTargetUrlRef.current;
-              const text = resolveCopyText(
-                url,
-                window.getSelection()?.toString(),
-              );
+              const text = url ?? window.getSelection()?.toString();
               if (!text) {
                 return;
               }

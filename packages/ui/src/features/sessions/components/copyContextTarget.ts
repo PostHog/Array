@@ -18,18 +18,6 @@ export function getGithubRefUrlFromEventTarget(
 }
 
 /**
- * Decide what the conversation "Copy" action should put on the clipboard: a
- * captured chip URL wins, otherwise fall back to the current text selection.
- * Returns `null` when there is nothing to copy.
- */
-export function resolveCopyText(
-  capturedUrl: string | null,
-  selection: string | null | undefined,
-): string | null {
-  return capturedUrl ?? (selection ? selection : null);
-}
-
-/**
  * Copy text to the clipboard from a context-menu selection.
  *
  * The write is deferred to a later task on purpose. When a Radix

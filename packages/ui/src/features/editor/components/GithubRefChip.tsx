@@ -19,18 +19,15 @@ export function GithubRefChip({
   children: ReactNode;
 }) {
   const Icon = kind === "pr" ? GitPullRequestIcon : GithubLogoIcon;
-  // `display: contents` wrapper keeps inline flow unchanged while exposing the
-  // URL on an ancestor of every part of the chip (icon, label, chip root).
   return (
-    <span {...{ [GITHUB_REF_URL_ATTR]: href }} className="contents">
-      <Chip
-        size="xs"
-        onClick={() => window.open(href, "_blank")}
-        className="cli-file-mention mx-0.5 max-w-full cursor-pointer! whitespace-nowrap pl-1 align-middle active:translate-y-0"
-      >
-        <Icon size={10} />
-        <span className="min-w-0 truncate">{children}</span>
-      </Chip>
-    </span>
+    <Chip
+      {...{ [GITHUB_REF_URL_ATTR]: href }}
+      size="xs"
+      onClick={() => window.open(href, "_blank")}
+      className="cli-file-mention mx-0.5 max-w-full cursor-pointer! whitespace-nowrap pl-1 align-middle active:translate-y-0"
+    >
+      <Icon size={10} />
+      <span className="min-w-0 truncate">{children}</span>
+    </Chip>
   );
 }

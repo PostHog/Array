@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   copyFromContextMenu,
   getGithubRefUrlFromEventTarget,
-  resolveCopyText,
 } from "./copyContextTarget";
 
 function buildDom(): {
@@ -40,42 +39,6 @@ describe("getGithubRefUrlFromEventTarget", () => {
     { name: "a non-element target", pick: () => null, expected: null },
   ])("resolves $expected when the target is $name", ({ pick, expected }) => {
     expect(getGithubRefUrlFromEventTarget(pick(buildDom()))).toBe(expected);
-  });
-});
-
-describe("resolveCopyText", () => {
-  it.each<{
-    name: string;
-    url: string | null;
-    selection: string | null | undefined;
-    expected: string | null;
-  }>([
-    {
-      name: "prefers a captured chip URL over the text selection",
-      url: CHIP_URL,
-      selection: "selected",
-      expected: CHIP_URL,
-    },
-    {
-      name: "falls back to the text selection when there is no chip URL",
-      url: null,
-      selection: "selected words",
-      expected: "selected words",
-    },
-    {
-      name: "returns null for an empty selection and no chip URL",
-      url: null,
-      selection: "",
-      expected: null,
-    },
-    {
-      name: "returns null for an undefined selection and no chip URL",
-      url: null,
-      selection: undefined,
-      expected: null,
-    },
-  ])("$name", ({ url, selection, expected }) => {
-    expect(resolveCopyText(url, selection)).toBe(expected);
   });
 });
 
