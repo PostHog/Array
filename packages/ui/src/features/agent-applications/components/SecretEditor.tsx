@@ -15,14 +15,16 @@ import { useAgentEnvKeyMutations } from "../hooks/useAgentEnvKeyMutations";
  */
 export function SecretEditor({
   idOrSlug,
+  revisionId,
   keyName,
   isSet,
 }: {
   idOrSlug: string;
+  revisionId: string;
   keyName: string;
   isSet: boolean;
 }) {
-  const { setKey, clearKey } = useAgentEnvKeyMutations(idOrSlug);
+  const { setKey, clearKey } = useAgentEnvKeyMutations(idOrSlug, revisionId);
   // For a set secret the input is hidden until the user chooses to rotate.
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");

@@ -44,6 +44,13 @@ export interface PendingSecret {
   /** The parked tool call to resolve via `/send`. */
   callId: string;
   agentSlug: string;
+  /**
+   * Revision the secret is written to. Env keys are revision-scoped, so the
+   * `set_secret` punch-out must target a specific revision (the one the agent
+   * is editing). Sourced from the tool args, falling back to the dock's
+   * current `agent-config` page context.
+   */
+  revisionId: string;
   /** Env key name, e.g. "ANTHROPIC_KEY". The value is never seen by the agent. */
   secret: string;
   mode?: "set" | "rotate";

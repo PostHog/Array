@@ -4248,33 +4248,21 @@ export class PostHogAPIClient {
    * should hit (`endpoints`) so the client never has to construct preview URLs
    * by string-mangling `ingress_base_url`.
    *
-   * `secretOverrides`, when provided, attaches per-key values to the JWT claim
-   * so the runner reads them in place of the agent's live env-keys for this
-   * preview only. Lifetime is per-mint — the client re-passes the same map on
-   * every re-mint cycle (see useAgentChat). Values are never persisted server-
-   * side beyond the JWT.
-   *
    * Note the Django route: app-level path with the revision as a query param,
    * NOT nested under /revisions/{id}/.
    */
   async mintAgentPreviewToken(
     idOrSlug: string,
     revisionId: string,
-    secretOverrides?: Record<string, string>,
   ): Promise<AgentPreviewToken> {
     const teamId = await this.getTeamId();
     const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/preview-token/`;
     const url = new URL(`${this.api.baseUrl}${path}`);
     url.searchParams.set("revision_id", revisionId);
-    const hasOverrides =
-      !!secretOverrides && Object.keys(secretOverrides).length > 0;
     const response = await this.api.fetcher.fetch({
       method: "post",
       url,
       path,
-      overrides: hasOverrides
-        ? { body: JSON.stringify({ secret_overrides: secretOverrides }) }
-        : undefined,
     });
     return (await response.json()) as AgentPreviewToken;
   }
@@ -4426,10 +4414,17 @@ export class PostHogAPIClient {
     return (await response.json()) as { session_id: string };
   }
 
-  /** The names of env keys currently set on an agent (values never returned). */
-  async listAgentEnvKeys(idOrSlug: string): Promise<string[]> {
+  /**
+   * The names of env keys currently set on a revision (values never returned).
+   * Env keys are scoped to a revision, so each revision carries its own secret
+   * set.
+   */
+  async listAgentEnvKeys(
+    idOrSlug: string,
+    revisionId: string,
+  ): Promise<string[]> {
     const teamId = await this.getTeamId();
-    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/env_keys/`;
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/env_keys/`;
     const url = new URL(`${this.api.baseUrl}${path}`);
     const response = await this.api.fetcher.fetch({ method: "get", url, path });
     const data = (await response.json()) as {
@@ -4439,14 +4434,15 @@ export class PostHogAPIClient {
     return data.keys ?? data.results ?? [];
   }
 
-  /** Set or rotate one encrypted env key. The value is write-only. */
+  /** Set or rotate one encrypted env key on a revision. The value is write-only. */
   async setAgentEnvKey(
     idOrSlug: string,
+    revisionId: string,
     key: string,
     value: string,
   ): Promise<void> {
     const teamId = await this.getTeamId();
-    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/env_keys/${encodeURIComponent(key)}/`;
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/env_keys/${encodeURIComponent(key)}/`;
     const url = new URL(`${this.api.baseUrl}${path}`);
     await this.api.fetcher.fetch({
       method: "put",
@@ -4456,10 +4452,14 @@ export class PostHogAPIClient {
     });
   }
 
-  /** Clear one encrypted env key. No-op server-side if it isn't set. */
-  async clearAgentEnvKey(idOrSlug: string, key: string): Promise<void> {
+  /** Clear one encrypted env key on a revision. No-op server-side if it isn't set. */
+  async clearAgentEnvKey(
+    idOrSlug: string,
+    revisionId: string,
+    key: string,
+  ): Promise<void> {
     const teamId = await this.getTeamId();
-    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/env_keys/${encodeURIComponent(key)}/`;
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/env_keys/${encodeURIComponent(key)}/`;
     const url = new URL(`${this.api.baseUrl}${path}`);
     await this.api.fetcher.fetch({ method: "delete", url, path });
   }

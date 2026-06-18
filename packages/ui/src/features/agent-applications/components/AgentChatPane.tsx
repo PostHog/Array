@@ -17,16 +17,13 @@ import {
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { useAgentChatPendingApproval } from "../hooks/useAgentChatPendingApproval";
-import { useAgentMissingSecrets } from "../hooks/useAgentMissingSecrets";
 import { useAgentRevision } from "../hooks/useAgentRevision";
 import { resolveIngressBaseUrl } from "../utils/ingress";
 import { AgentChatPendingApprovalCard } from "./AgentChatPendingApprovalCard";
-import { AgentChatSecretOverridesCard } from "./AgentChatSecretOverridesCard";
 import { AgentChatSurface } from "./AgentChatSurface";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 
 const EMPTY_CHATS: PreviewChatEntry[] = [];
-const EMPTY_OVERRIDES: Record<string, string> = {};
 
 function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
@@ -92,17 +89,6 @@ export function AgentChatPane({
   const hasChatTrigger = (revision?.spec?.triggers ?? []).some(
     (t) => rec(t).type === "chat",
   );
-  // Per-preview secret overrides. Reference identity matters: useAgentChat
-  // drops its cached token whenever this object changes, so reuse the same
-  // EMPTY constant when there's nothing to override (prevents needless mint
-  // churn on every render).
-  const [secretOverrides, setSecretOverrides] =
-    useState<Record<string, string>>(EMPTY_OVERRIDES);
-  const [overridesDismissed, setOverridesDismissed] = useState(false);
-  const missingSecrets = useAgentMissingSecrets(
-    idOrSlug,
-    isDraftPreview ? revisionId : null,
-  );
   const chat = useAgentChat({
     // Keyed by revision so a draft preview and the live chat coexist in the
     // store without trampling each other.
@@ -112,7 +98,6 @@ export function AgentChatPane({
     agentSlug: idOrSlug,
     ingressBaseUrl,
     revisionId: isDraftPreview ? revisionId : null,
-    secretOverrides: isDraftPreview ? secretOverrides : undefined,
     recordHistory: true,
   });
   const { data: pendingApproval } = useAgentChatPendingApproval(
@@ -217,16 +202,6 @@ export function AgentChatPane({
               model={revision?.spec?.model}
               region={cloudRegion}
             />
-            {isDraftPreview &&
-            !overridesDismissed &&
-            missingSecrets.length > 0 ? (
-              <AgentChatSecretOverridesCard
-                missingSecrets={missingSecrets}
-                overrides={secretOverrides}
-                onSave={setSecretOverrides}
-                onDismiss={() => setOverridesDismissed(true)}
-              />
-            ) : null}
             <AgentChatSurface
               messages={chat.messages}
               isStreaming={chat.isStreaming}
