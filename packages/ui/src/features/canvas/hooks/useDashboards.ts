@@ -89,6 +89,14 @@ export function useDashboardMutations() {
         templateId,
       }),
     deleteDashboard: (id: string) => remove.mutateAsync({ id }),
+    // Explicitly persist a freeform canvas's current code + history (autosave
+    // already runs each turn; this is the manual Save affordance).
+    saveFreeformDashboard: (
+      id: string,
+      code: string,
+      versions: FreeformVersion[],
+      currentVersionId?: string,
+    ) => saveFreeform.mutateAsync({ id, code, versions, currentVersionId }),
     // Fork a freeform canvas: create a fresh freeform record, then copy its
     // source + version history onto it. Returns the new record (to navigate to).
     forkFreeform: async (
@@ -113,6 +121,7 @@ export function useDashboardMutations() {
       return record;
     },
     isSaving: save.isPending,
+    isSavingFreeform: saveFreeform.isPending,
     isCreating: create.isPending,
     isDeleting: remove.isPending,
   };

@@ -154,9 +154,10 @@ function DashboardEditControls({
   );
 }
 
-// Edit toggle + Fork + Cancel for a FREEFORM canvas. Unlike json-render, a
-// freeform canvas autosaves every turn, so there's no Save button; Cancel
-// instead reverts the whole edit session (with a confirm) and Fork copies it.
+// Edit toggle + Save + Fork + Cancel for a FREEFORM canvas. A freeform canvas
+// autosaves every turn, so Save is an explicit re-persist (with success/error
+// toasts); Cancel reverts the whole edit session (with a confirm) and Fork
+// copies it to a new record.
 function FreeformEditControls({
   channelId,
   dashboardId,
@@ -168,7 +169,8 @@ function FreeformEditControls({
   const editing = useIsDashboardEditing(dashboardId);
   const setEditing = useDashboardEditStore((s) => s.setEditing);
   const { dashboard } = useDashboard(dashboardId);
-  const { forkFreeform, isCreating } = useDashboardMutations();
+  const { forkFreeform, saveFreeformDashboard, isCreating, isSavingFreeform } =
+    useDashboardMutations();
 
   const threadId = threadIdFor(dashboardId);
   const { code, versions, currentVersionId, editBaselineVersionId } =
@@ -204,6 +206,24 @@ function FreeformEditControls({
     setConfirmOpen(false);
   };
 
+  // Freeform autosaves each turn; Save is an explicit re-persist (and surfaces
+  // any failure as a toast, which the silent autosave doesn't).
+  const onSave = () => {
+    if (!code) return;
+    saveFreeformDashboard(
+      dashboardId,
+      code,
+      versions,
+      currentVersionId ?? undefined,
+    )
+      .then(() => toast.success("Canvas saved"))
+      .catch((error) => {
+        toast.error("Couldn't save canvas", {
+          description: error instanceof Error ? error.message : String(error),
+        });
+      });
+  };
+
   const onFork = async () => {
     if (!code) return;
     try {
@@ -230,15 +250,25 @@ function FreeformEditControls({
   return (
     <Flex align="center" gap="2" className="no-drag">
       {editing && (
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!code || isCreating}
-          onClick={onFork}
-        >
-          <GitForkIcon size={14} />
-          Save as fork
-        </Button>
+        <>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!code || isSavingFreeform}
+            onClick={onSave}
+          >
+            Save
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!code || isCreating}
+            onClick={onFork}
+          >
+            <GitForkIcon size={14} />
+            Save as fork
+          </Button>
+        </>
       )}
       <Button
         variant="outline"
