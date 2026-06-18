@@ -104,6 +104,22 @@ describe("SignalReportTaskService", () => {
     expect(createTask).not.toHaveBeenCalled();
   });
 
+  it("falls back to the explicit override when the resolver fails transiently", async () => {
+    // A transient resolver failure returns undefined; a caller-supplied override
+    // is already a concrete model, so the run should use it rather than block.
+    const { service, createTask } = makeService(
+      {},
+      { resolveDefaultModel: vi.fn().mockResolvedValue(undefined) },
+    );
+    const result = await service.createSignalReportTask(
+      makeInput({ modelOverride: "claude-sonnet" }),
+      vi.fn(),
+    );
+    expect(result.status).toBe("created");
+    expect(createTask).toHaveBeenCalledTimes(1);
+    expect(createTask.mock.calls[0][0].model).toBe("claude-sonnet");
+  });
+
   it("returns create-failed when the saga fails", async () => {
     const { service } = makeService({
       createTask: vi
