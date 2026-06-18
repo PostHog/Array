@@ -42,3 +42,14 @@ export function isDismissalReasonSnooze(
     option.snoozesInsteadOfDismiss === true
   );
 }
+
+/**
+ * Human label for a persisted dismissal reason code. Reason codes are owned by
+ * the client that dismissed the report, so an unrecognised value (e.g. from a
+ * newer client) falls back to the raw code rather than being dropped.
+ */
+export function dismissalReasonLabel(value: string): string {
+  return (
+    DISMISSAL_REASON_OPTIONS.find((o) => o.value === value)?.label ?? value
+  );
+}

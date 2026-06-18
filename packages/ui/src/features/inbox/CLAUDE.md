@@ -38,6 +38,13 @@ the dismissed list is not scoped, and the tab carries no count badge. The
 Dismissed detail is **not** a tracked `InboxDetailTab` (no OPENED/CLOSED
 engagement events), since its rank would be measured against the wrong list.
 
+Each `DismissedReportCard` shows why the report was suppressed (`dismissal_reason`,
+labelled via `dismissalReasonLabel`, with `dismissal_note` as a tooltip). These
+are denormalised onto the list `SignalReport` by the backend serializer — the
+same artefact-lift pattern as `priority`/`actionability`/`already_addressed` —
+so cards avoid an N+1 per-card artefact fetch. Unknown reason codes fall back to
+the raw value; cards with no dismissal artefact simply omit the chip.
+
 Responder configuration is **not** an Inbox tab. It is the top-level Responders sidebar item at `/code/agents`. The legacy `/code/inbox/agents` route redirects there.
 
 Reviewer scope is a UI preference stored in `inboxReviewerScopeStore`. It filters the list between reports suggested for the current user and reports for someone else. It does not change tab membership; the tab predicates are independent.

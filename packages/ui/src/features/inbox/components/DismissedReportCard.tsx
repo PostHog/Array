@@ -8,6 +8,7 @@ import {
   parseConventionalCommitTitle,
 } from "@posthog/core/inbox/reportPresentation";
 import { cn } from "@posthog/quill";
+import { dismissalReasonLabel } from "@posthog/shared/dismissalReasons";
 import type { SignalReport } from "@posthog/shared/types";
 import { ConventionalCommitScopeTag } from "@posthog/ui/features/inbox/components/ConventionalCommitScopeTag";
 import { InboxCardSourceMeta } from "@posthog/ui/features/inbox/components/InboxCardSourceMeta";
@@ -49,6 +50,10 @@ export function DismissedReportCard({
     "Untitled report",
   );
   const headline = deriveHeadline(report.summary);
+  const reasonLabel = report.dismissal_reason
+    ? dismissalReasonLabel(report.dismissal_reason)
+    : null;
+  const dismissalNote = report.dismissal_note?.trim() || null;
 
   return (
     <div
@@ -82,7 +87,7 @@ export function DismissedReportCard({
             </Text>
           )}
 
-          {(!!hasSource || dismissedAtLabel) && (
+          {(!!hasSource || dismissedAtLabel || reasonLabel) && (
             <Flex align="center" wrap="wrap" className="mt-1.5 min-w-0 gap-2.5">
               <InboxCardSourceMeta
                 repoSlug={null}
@@ -92,6 +97,18 @@ export function DismissedReportCard({
               {dismissedAtLabel && (
                 <Text className="text-[12px] text-gray-10">
                   Dismissed {dismissedAtLabel}
+                </Text>
+              )}
+              {reasonLabel && (
+                <Text
+                  className="max-w-full truncate rounded-(--radius-1) bg-(--gray-3) px-1.5 py-0.5 text-[11px] text-gray-11"
+                  title={
+                    dismissalNote
+                      ? `${reasonLabel} — ${dismissalNote}`
+                      : reasonLabel
+                  }
+                >
+                  {reasonLabel}
                 </Text>
               )}
             </Flex>
