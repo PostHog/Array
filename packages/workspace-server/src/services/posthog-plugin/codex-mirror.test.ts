@@ -78,6 +78,24 @@ describe("cleanupLegacyCodexMirror", () => {
     );
     expect(removed).toEqual([]);
   });
+
+  it("never deletes the codex dir or its parent from unsafe mirror names", async () => {
+    await createSkill(codexDir, "keep-me", "the user's own");
+    await writeFile(
+      path.join(codexDir, ".posthog-mirror.json"),
+      JSON.stringify({
+        version: 1,
+        mirrored: ["", ".", "..", "../../escape", "nested/evil"],
+      }),
+    );
+
+    const removed = await cleanupLegacyCodexMirror(codexDir, bundledDir);
+
+    expect(removed).toEqual([]);
+    expect(existsSync(root)).toBe(true);
+    expect(existsSync(codexDir)).toBe(true);
+    expect(existsSync(path.join(codexDir, "keep-me"))).toBe(true);
+  });
 });
 
 describe("readCodexMirrorState", () => {
@@ -92,6 +110,21 @@ describe("readCodexMirrorState", () => {
     expect(await readCodexMirrorState(codexDir)).toEqual({
       version: 1,
       mirrored: [],
+    });
+  });
+
+  it("drops unsafe entries that could escape the codex dir", async () => {
+    await mkdir(codexDir, { recursive: true });
+    await writeFile(
+      path.join(codexDir, ".posthog-mirror.json"),
+      JSON.stringify({
+        version: 1,
+        mirrored: ["good", "", ".", "..", "nested/evil", "back\\slash", 42],
+      }),
+    );
+    expect(await readCodexMirrorState(codexDir)).toEqual({
+      version: 1,
+      mirrored: ["good"],
     });
   });
 });

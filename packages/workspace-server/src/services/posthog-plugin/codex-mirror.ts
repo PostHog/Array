@@ -22,6 +22,23 @@ export function getCodexSkillsDir(): string {
   return path.join(os.homedir(), ".agents", "skills");
 }
 
+/**
+ * A mirror entry names a single skill directory we copied. Reject anything that
+ * is not a plain segment ("", ".", "..", or a path containing a separator) so a
+ * corrupt or hand-edited state file can never widen the recursive delete in
+ * cleanup to the codex dir itself or its parent.
+ */
+function isSafeMirrorName(name: unknown): name is string {
+  return (
+    typeof name === "string" &&
+    name.length > 0 &&
+    name !== "." &&
+    name !== ".." &&
+    !name.includes("/") &&
+    !name.includes("\\")
+  );
+}
+
 export async function readCodexMirrorState(
   codexDir: string,
 ): Promise<CodexMirrorState> {
@@ -36,7 +53,7 @@ export async function readCodexMirrorState(
     }
     return {
       version: 1,
-      mirrored: data.mirrored.filter((n) => typeof n === "string"),
+      mirrored: data.mirrored.filter(isSafeMirrorName),
     };
   } catch {
     return { version: 1, mirrored: [] };
