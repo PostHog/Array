@@ -60,22 +60,30 @@ afterEach(() => {
 });
 
 describe("isAppImage", () => {
-  it("is true on linux with APPIMAGE set", () => {
-    setPlatform("linux");
-    process.env.APPIMAGE = "/home/u/Apps/posthog_code.appimage";
-    expect(isAppImage()).toBe(true);
-  });
-
-  it("is false when APPIMAGE is not set", () => {
-    setPlatform("linux");
-    delete process.env.APPIMAGE;
-    expect(isAppImage()).toBe(false);
-  });
-
-  it("is false on non-linux platforms even with APPIMAGE set", () => {
-    setPlatform("darwin");
-    process.env.APPIMAGE = "/whatever";
-    expect(isAppImage()).toBe(false);
+  it.each([
+    {
+      name: "is true on linux with APPIMAGE set",
+      platform: "linux" as const,
+      appImage: "/home/u/Apps/posthog_code.appimage",
+      expected: true,
+    },
+    {
+      name: "is false when APPIMAGE is not set",
+      platform: "linux" as const,
+      appImage: undefined,
+      expected: false,
+    },
+    {
+      name: "is false on non-linux platforms even with APPIMAGE set",
+      platform: "darwin" as const,
+      appImage: "/whatever",
+      expected: false,
+    },
+  ])("$name", ({ platform, appImage, expected }) => {
+    setPlatform(platform);
+    if (appImage === undefined) delete process.env.APPIMAGE;
+    else process.env.APPIMAGE = appImage;
+    expect(isAppImage()).toBe(expected);
   });
 });
 
