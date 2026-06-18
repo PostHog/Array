@@ -5,6 +5,7 @@ import {
   dashboardSummarySchema,
   listDashboardsInput,
   refreshDashboardInput,
+  saveFreeformInput,
   updateDashboardInput,
 } from "@posthog/core/canvas/dashboardSchemas";
 import { DASHBOARDS_SERVICE } from "@posthog/core/canvas/identifiers";
@@ -38,6 +39,14 @@ export const dashboardsRouter = router({
     .output(dashboardRecordSchema)
     .mutation(({ ctx, input }) =>
       ctx.container.get<IDashboardsService>(DASHBOARDS_SERVICE).update(input),
+    ),
+  saveFreeform: publicProcedure
+    .input(saveFreeformInput)
+    .output(dashboardRecordSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<IDashboardsService>(DASHBOARDS_SERVICE)
+        .saveFreeform(input),
     ),
   delete: publicProcedure
     .input(dashboardIdInput)

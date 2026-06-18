@@ -8,7 +8,10 @@ import type {
   AUTH_TOKEN_CIPHER,
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
-import type { CANVAS_GEN_SERVICE } from "@posthog/core/canvas/identifiers";
+import type {
+  CANVAS_GEN_SERVICE,
+  FREEFORM_GEN_SERVICE,
+} from "@posthog/core/canvas/identifiers";
 import type {
   CLOUD_TASK_AUTH,
   ICloudTaskAuth,
@@ -97,6 +100,7 @@ import type {
   IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
 import type { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
+import type { FreeformGenService } from "@posthog/host-router/services/freeform-gen.service";
 import type {
   ANALYTICS_SERVICE,
   IAnalytics,
@@ -425,6 +429,7 @@ export interface MainBindings {
   [LOGS_SERVICE]: ILogsService;
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
   [CANVAS_GEN_SERVICE]: CanvasGenService;
+  [FREEFORM_GEN_SERVICE]: FreeformGenService;
 
   // ws-server git service (bound to(GitService))
   [WS_GIT_SERVICE]: GitService;

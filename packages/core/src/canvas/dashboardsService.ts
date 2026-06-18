@@ -13,6 +13,7 @@ import {
   type DesktopFsClient,
   type FsEntryBase,
 } from "./desktopFsClient";
+import { FREEFORM_TEMPLATE_ID, type FreeformVersion } from "./freeformSchemas";
 import { DASHBOARD_QUERY_SERVICE } from "./identifiers";
 import type { DashboardQuery, DashboardQueryShape } from "./querySchemas";
 
@@ -138,10 +139,14 @@ export class DashboardsService {
   }): Promise<DashboardRecord> {
     const channelPath = await this.channelPath(input.channelId);
     const now = Date.now();
+    const templateId = input.templateId ?? "dashboard";
     const meta: DashboardFileMeta = {
       spec: input.spec,
       channelId: input.channelId,
-      templateId: input.templateId ?? "dashboard",
+      templateId,
+      // Freeform canvases store React code, not a spec; tag them so the render
+      // path picks the sandboxed iframe instead of the json-render tree.
+      kind: templateId === FREEFORM_TEMPLATE_ID ? "freeform" : "json-render",
       createdBy: await this.currentUserLabel(),
       createdAt: now,
       updatedAt: now,
@@ -190,6 +195,45 @@ export class DashboardsService {
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`Failed to save dashboard (${res.status})`);
+    return toRecord((await res.json()) as FsEntry);
+  }
+
+  // Persist a freeform canvas's source + edit history. Separate from update()
+  // because freeform stores code/versions instead of a json-render spec.
+  async saveFreeform(input: {
+    id: string;
+    name?: string;
+    code: string;
+    versions: FreeformVersion[];
+    currentVersionId?: string;
+  }): Promise<DashboardRecord> {
+    const entry = await this.getEntry(input.id);
+    const now = Date.now();
+    const prevMeta = entry?.meta ?? {};
+    const meta: DashboardFileMeta = {
+      ...prevMeta,
+      kind: "freeform",
+      code: input.code,
+      versions: input.versions,
+      currentVersionId: input.currentVersionId,
+      updatedAt: now,
+      createdAt: prevMeta.createdAt ?? toEpoch(entry?.created_at),
+    };
+
+    const body: Record<string, unknown> = { meta };
+    if (input.name && entry) {
+      const parent = parentPath(entry.path);
+      const next = sanitizeSegment(input.name);
+      const newPath = parent ? `${parent}/${next}` : next;
+      if (newPath !== entry.path) body.path = newPath;
+    }
+
+    const res = await this.fs.fetch(`${encodeURIComponent(input.id)}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Failed to save canvas (${res.status})`);
     return toRecord((await res.json()) as FsEntry);
   }
 
@@ -300,6 +344,10 @@ function toRecord(entry: FsEntry): DashboardRecord {
     name: lastSegment(entry.path),
     spec: meta.spec ?? null,
     templateId: meta.templateId ?? "dashboard",
+    kind: meta.kind ?? "json-render",
+    code: meta.code,
+    versions: meta.versions,
+    currentVersionId: meta.currentVersionId,
     // Prefer our stamped meta; fall back to the FS row's creator if present.
     createdBy: meta.createdBy ?? creatorName(entry.created_by),
     createdAt,

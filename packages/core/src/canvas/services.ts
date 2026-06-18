@@ -1,6 +1,14 @@
 import type { ChannelTaskRecord } from "./channelTaskSchemas";
 import type { DashboardRecord, DashboardSummary } from "./dashboardSchemas";
 import type {
+  CanvasDataQueryInput,
+  CanvasDataResult,
+  FreeformGenEventPayload,
+  FreeformGenerateInput,
+  FreeformThreadInput,
+  FreeformVersion,
+} from "./freeformSchemas";
+import type {
   CanvasGenEventPayload,
   CanvasGenerateInput,
   CanvasThreadInput,
@@ -25,6 +33,15 @@ export interface ICanvasGenService {
   ): AsyncIterable<CanvasGenEventPayload>;
 }
 
+export interface IFreeformGenService {
+  generate(input: FreeformGenerateInput): Promise<void>;
+  reset(input: FreeformThreadInput): Promise<void>;
+  toIterable(
+    event: "freeform-event",
+    opts?: { signal?: AbortSignal },
+  ): AsyncIterable<FreeformGenEventPayload>;
+}
+
 export interface ICanvasTemplatesService {
   list(): CanvasTemplateSummary[];
   get(id: string): CanvasTemplate | undefined;
@@ -46,6 +63,13 @@ export interface IDashboardsService {
     name?: string;
     spec: Record<string, unknown> | null;
   }): Promise<DashboardRecord>;
+  saveFreeform(input: {
+    id: string;
+    name?: string;
+    code: string;
+    versions: FreeformVersion[];
+    currentVersionId?: string;
+  }): Promise<DashboardRecord>;
   delete(id: string): Promise<void>;
   refresh(input: {
     id: string;
@@ -59,6 +83,10 @@ export interface IDashboardsService {
 
 export interface IDashboardQueryService {
   run(input: DashboardQueryRunInput): Promise<DashboardQueryResult[]>;
+}
+
+export interface ICanvasDataService {
+  query(input: CanvasDataQueryInput): Promise<CanvasDataResult>;
 }
 
 export interface IChannelTasksService {

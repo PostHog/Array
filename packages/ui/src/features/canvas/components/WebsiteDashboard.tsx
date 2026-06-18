@@ -1,10 +1,12 @@
 import { isNonEmptySpec } from "@json-render/core";
 import type { Spec } from "@json-render/react";
 import { WebsiteCanvas } from "@posthog/ui/features/canvas/components/WebsiteCanvas";
+import { FreeformCanvasView } from "@posthog/ui/features/canvas/freeform/FreeformCanvasView";
 import { ViewRenderer } from "@posthog/ui/features/canvas/genui/ViewRenderer";
 import { useDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useCanvasChatStore } from "@posthog/ui/features/canvas/stores/canvasChatStore";
 import { useIsDashboardEditing } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
+import { useFreeformChatStore } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { Flex, Text } from "@radix-ui/themes";
 import { useEffect } from "react";
@@ -20,6 +22,19 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
   const threadId = `dashboard:${dashboardId}`;
   const spec = dashboard?.spec as Spec | null | undefined;
   const templateId = dashboard?.templateId;
+  const isFreeform = dashboard?.kind === "freeform";
+  const ensureCode = useFreeformChatStore((s) => s.ensureCode);
+
+  // Seed the freeform thread from the saved record (code + version history) when
+  // its data lands, so undo/redo and the live render reflect what's stored.
+  useEffect(() => {
+    if (!isFreeform || !dashboard) return;
+    ensureCode(threadId, {
+      code: dashboard.code,
+      versions: dashboard.versions,
+      currentVersionId: dashboard.currentVersionId,
+    });
+  }, [isFreeform, dashboard, threadId, ensureCode]);
 
   // Entering edit on an existing dashboard: seed the canvas thread with the
   // saved spec so the agent refines the current board instead of a blank
@@ -33,6 +48,12 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
   useEffect(() => {
     if (templateId) setTemplate(threadId, templateId);
   }, [threadId, templateId, setTemplate]);
+
+  // Freeform canvases render their React app in a sandboxed iframe in both view
+  // and edit mode (edit adds the chat panel + version controls).
+  if (isFreeform) {
+    return <FreeformCanvasView threadId={threadId} interactive={editing} />;
+  }
 
   if (editing) {
     return <WebsiteCanvas threadId={threadId} />;
