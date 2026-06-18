@@ -3,6 +3,7 @@ import {
   REPORT_MODEL_RESOLVER,
   type ReportModelResolver,
 } from "@posthog/core/inbox/identifiers";
+import { classifyIntegrations } from "@posthog/core/integrations/selectors";
 import {
   TASK_SERVICE,
   type TaskCreationInput,
@@ -21,6 +22,10 @@ import {
   ResponderAgentRoster,
   ResponderAgentRosterSkeleton,
 } from "@posthog/ui/features/inbox/components/ResponderAgentRoster";
+import {
+  RESPONDER_AGENT_GROUPS,
+  type ResponderAgentSource,
+} from "@posthog/ui/features/inbox/components/responderAgentMeta";
 import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDefaultModel";
 import { useSignalSourceManager } from "@posthog/ui/features/inbox/hooks/useSignalSourceManager";
 import {
@@ -72,6 +77,18 @@ Inspect the connected PostHog project and repository, figure out which Self-driv
 
 const log = logger.scope("agents-setup-task");
 
+/**
+ * Source products that count as Responders on this page. `displayValues` also
+ * carries the legacy `signals_scout` toggle, but scouts render separately in
+ * `ScoutsFleetSection` and are excluded from the responder roster — so they must
+ * not inflate the responder counts in `AGENTS_VIEWED`.
+ */
+const RESPONDER_SOURCE_PRODUCTS = new Set<ResponderAgentSource>(
+  RESPONDER_AGENT_GROUPS.flatMap((group) =>
+    group.agents.map((agent) => agent.source),
+  ),
+);
+
 export function ConfigureAgentsSection() {
   const {
     displayValues,
@@ -92,18 +109,33 @@ export function ConfigureAgentsSection() {
   const {
     isLoading: isLoadingSlackIntegrations,
     isError: isIntegrationsError,
+    data: integrationsData,
   } = useIntegrations();
   const isLoadingSlack = isLoadingIntegrations || isLoadingSlackIntegrations;
   const showSetupTask = useFeatureFlag(SELF_DRIVING_SETUP_TASK_FLAG);
   const userAutostartPriority =
     userAutonomyConfig?.autostart_priority ?? NEVER_AUTOSTART_VALUE;
 
+  // Derive from the query data, not the store-backed `hasGithubIntegration`: the
+  // store is hydrated by a passive effect that lags the query by a render, so the
+  // store value can still read `false` on the render where the query settles —
+  // exactly when the view event fires. Classifying the query data avoids the lag.
+  const trackedHasGithubIntegration = classifyIntegrations(
+    integrationsData ?? [],
+  ).hasGithubIntegration;
+  // Count only Responder sources; `displayValues` also includes `signals_scout`,
+  // which renders separately and would otherwise inflate the responder counts.
+  const responderEntries = Object.entries(displayValues).filter(([source]) =>
+    RESPONDER_SOURCE_PRODUCTS.has(source as ResponderAgentSource),
+  );
+
   useTrackAgentsViewed({
     isLoading: isLoading || isLoadingIntegrations || userAutonomyConfigLoading,
     isError: isIntegrationsError,
-    hasGithubIntegration,
-    responderTotalCount: Object.keys(displayValues).length,
-    responderEnabledCount: Object.values(displayValues).filter(Boolean).length,
+    hasGithubIntegration: trackedHasGithubIntegration,
+    responderTotalCount: responderEntries.length,
+    responderEnabledCount: responderEntries.filter(([, enabled]) => enabled)
+      .length,
     autostartPriority: userAutonomyConfig?.autostart_priority ?? null,
     setupTaskAvailable: showSetupTask,
   });
@@ -292,16 +324,28 @@ function SetupTaskSection() {
   );
 
   const handleStartSetup = useCallback(async () => {
+    // A click that fails a precondition is still a failed setup attempt; emit
+    // `run_setup_agent` with success:false so these don't drop out of the funnel
+    // and bias the success rate upward. (The re-entrancy and still-loading guards
+    // below are not attempts, so they don't fire.)
+    const trackSetupFailure = () =>
+      track(ANALYTICS_EVENTS.AGENTS_ACTION, {
+        action_type: "run_setup_agent",
+        success: false,
+      });
+
     if (isStartingSetupTask) return;
     if (isLoadingRepos) {
       toast.error("Still loading GitHub repositories");
       return;
     }
     if (!hasGithubIntegration || !setupRepository) {
+      trackSetupFailure();
       toast.error("Connect GitHub before starting Self-driving setup");
       return;
     }
     if (!cloudRegion) {
+      trackSetupFailure();
       toast.error("Sign in to start Self-driving setup");
       return;
     }
@@ -309,6 +353,7 @@ function SetupTaskSection() {
     const githubUserIntegrationId =
       getUserIntegrationIdForRepo(setupRepository);
     if (!githubUserIntegrationId) {
+      trackSetupFailure();
       toast.error("Connect a GitHub integration with repository access");
       return;
     }
@@ -334,6 +379,7 @@ function SetupTaskSection() {
 
       if (!model) {
         sonnerToast.dismiss(toastId);
+        trackSetupFailure();
         toast.error("Failed to start Self-driving setup", {
           description:
             "Couldn't resolve a default model. Open the task page once and pick a model, then try again.",
