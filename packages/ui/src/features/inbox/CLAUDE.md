@@ -27,12 +27,16 @@ Inbox has four tabs and one reviewer-scope control:
 Detail pages live under the same tab: `/code/inbox/<tab>/$reportId`.
 
 The Dismissed tab is the exception: suppressed reports are excluded from the
-main pipeline query and from the report detail endpoint, so the tab fetches
-them with a dedicated `status=suppressed` query (`useInboxDismissedReports`) and
-its cards do **not** link to a detail page. Each card can be restored to the
-inbox via `useInboxRestoreReport`, which reuses the `state` action's `potential`
-("reopen") transition — the only reopen path the backend exposes. The reviewer
-scope control is hidden on this tab since the dismissed list is not scoped.
+main pipeline query, so the tab fetches them with a dedicated `status=suppressed`
+query (`useInboxDismissedReports`). Its detail view (`DismissedReportDetail`) is
+read-only — summary + evidence + a single Restore action, no triage affordances —
+and depends on the backend serving suppressed reports on the `retrieve`/`signals`
+read paths (PostHog/posthog#64019). Restore uses `useInboxRestoreReport`, which
+reuses the `state` action's `potential` ("reopen") transition — the only reopen
+path the backend exposes. The reviewer scope control is hidden on this tab since
+the dismissed list is not scoped, and the tab carries no count badge. The
+Dismissed detail is **not** a tracked `InboxDetailTab` (no OPENED/CLOSED
+engagement events), since its rank would be measured against the wrong list.
 
 Responder configuration is **not** an Inbox tab. It is the top-level Responders sidebar item at `/code/agents`. The legacy `/code/inbox/agents` route redirects there.
 

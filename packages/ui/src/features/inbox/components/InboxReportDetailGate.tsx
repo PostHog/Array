@@ -12,7 +12,11 @@ import type { ReactNode } from "react";
 interface InboxReportDetailGateProps {
   reportId: string;
   cachedReport?: SignalReport | null;
-  backTo: "/code/inbox/pulls" | "/code/inbox/reports" | "/code/inbox/runs";
+  backTo:
+    | "/code/inbox/pulls"
+    | "/code/inbox/reports"
+    | "/code/inbox/runs"
+    | "/code/inbox/dismissed";
   backLabel: string;
   missingCopy: string;
   children: (report: SignalReport) => ReactNode;
@@ -57,19 +61,26 @@ export function InboxReportDetailGate({
     );
   }
 
+  const trackTab = tabFromBackTo(backTo);
   return (
     <>
-      <ReportOpenTracker report={resolvedReport} tab={tabFromBackTo(backTo)} />
+      {trackTab && <ReportOpenTracker report={resolvedReport} tab={trackTab} />}
       {children(resolvedReport)}
     </>
   );
 }
 
+/**
+ * The Dismissed tab isn't part of the triage funnel and isn't a tracked
+ * `InboxDetailTab` (its rank would be measured against the wrong list), so it
+ * returns `null` and the open/close engagement events are skipped for it.
+ */
 function tabFromBackTo(
   backTo: InboxReportDetailGateProps["backTo"],
-): InboxDetailTab {
+): InboxDetailTab | null {
   if (backTo === "/code/inbox/pulls") return "pulls";
   if (backTo === "/code/inbox/runs") return "runs";
+  if (backTo === "/code/inbox/dismissed") return null;
   return "reports";
 }
 

@@ -16,6 +16,7 @@ import { PriorityMonogram } from "@posthog/ui/features/inbox/components/Priority
 import { hasKnownSourceProduct } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { Button as UiButton } from "@posthog/ui/primitives/Button";
 import { Flex, Text } from "@radix-ui/themes";
+import { Link } from "@tanstack/react-router";
 
 interface DismissedReportCardProps {
   report: SignalReport;
@@ -24,9 +25,8 @@ interface DismissedReportCardProps {
 }
 
 /**
- * Read-only card for the Dismissed tab. Suppressed reports have no reachable
- * detail page (the backend detail endpoint excludes them), so the card does not
- * link out — its only action is restoring the report back to the inbox.
+ * Card for the Dismissed tab. Links into the read-only dismissed detail view;
+ * the Restore button (right column) stops propagation so it doesn't navigate.
  */
 export function DismissedReportCard({
   report,
@@ -56,7 +56,12 @@ export function DismissedReportCard({
         "group flex w-full items-stretch gap-3 rounded-(--radius-2) border border-(--gray-6) border-dashed bg-(--color-panel-solid) px-4 py-3.5 opacity-90 transition duration-150 hover:border-(--gray-7) hover:bg-(--gray-2)",
       )}
     >
-      <div className="flex min-w-0 flex-1 items-start gap-3">
+      <Link
+        to="/code/inbox/dismissed/$reportId"
+        params={{ reportId: report.id }}
+        preload="intent"
+        className="flex min-w-0 flex-1 items-start gap-3 text-left text-inherit no-underline focus-visible:outline-none"
+      >
         <PriorityMonogram priority={report.priority} />
 
         <Flex direction="column" gap="1.5" className="min-w-0 flex-1">
@@ -92,7 +97,7 @@ export function DismissedReportCard({
             </Flex>
           )}
         </Flex>
-      </div>
+      </Link>
 
       <Flex
         direction="column"
