@@ -7,6 +7,7 @@ import {
   INBOX_SCOPE_ENTIRE_PROJECT,
   INBOX_SCOPE_FOR_YOU,
   isAgentRunReport,
+  isDismissedReport,
   isExcludedFromInbox,
   isInboxDetailPath,
   isPullRequestReport,
@@ -35,6 +36,26 @@ function fakeReport(overrides: Partial<SignalReport> = {}): SignalReport {
     ...overrides,
   };
 }
+
+describe("isDismissedReport", () => {
+  it("matches only suppressed reports", () => {
+    expect(isDismissedReport(fakeReport({ status: "suppressed" }))).toBe(true);
+  });
+
+  it("does not match active or deleted reports", () => {
+    for (const status of [
+      "potential",
+      "candidate",
+      "in_progress",
+      "pending_input",
+      "ready",
+      "failed",
+      "deleted",
+    ] as const) {
+      expect(isDismissedReport(fakeReport({ status }))).toBe(false);
+    }
+  });
+});
 
 describe("isInboxDetailPath", () => {
   it("matches detail paths for each inbox tab", () => {

@@ -12,6 +12,13 @@ import type {
 export const INBOX_PIPELINE_STATUS_FILTER =
   "potential,candidate,in_progress,ready,pending_input,failed";
 
+/**
+ * Status filter for the Dismissed tab. Suppressed reports are excluded from the
+ * main pipeline query, so the Dismissed tab fetches them explicitly. `deleted`
+ * is terminal and stripped server-side, so it is never listed here.
+ */
+export const INBOX_DISMISSED_STATUS_FILTER = "suppressed";
+
 /** Polling interval for inbox queries while the Electron window is focused. */
 export const INBOX_REFETCH_INTERVAL_MS = 3000;
 

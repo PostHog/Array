@@ -15,15 +15,24 @@ The main objects are:
 
 ## Information Architecture
 
-Inbox has three tabs and one reviewer-scope control:
+Inbox has four tabs and one reviewer-scope control:
 
 | Tab | Route | Membership |
 | --- | --- | --- |
 | Pull requests | `/code/inbox/pulls` | Reports with `implementation_pr_url` set |
 | Reports | `/code/inbox/reports` | Reports without a PR and not currently running |
 | Runs | `/code/inbox/runs` | Reports that are still in progress or waiting on input |
+| Dismissed | `/code/inbox/dismissed` | Reports the user suppressed (`status === "suppressed"`) |
 
 Detail pages live under the same tab: `/code/inbox/<tab>/$reportId`.
+
+The Dismissed tab is the exception: suppressed reports are excluded from the
+main pipeline query and from the report detail endpoint, so the tab fetches
+them with a dedicated `status=suppressed` query (`useInboxDismissedReports`) and
+its cards do **not** link to a detail page. Each card can be restored to the
+inbox via `useInboxRestoreReport`, which reuses the `state` action's `potential`
+("reopen") transition — the only reopen path the backend exposes. The reviewer
+scope control is hidden on this tab since the dismissed list is not scoped.
 
 Responder configuration is **not** an Inbox tab. It is the top-level Responders sidebar item at `/code/agents`. The legacy `/code/inbox/agents` route redirects there.
 
@@ -49,6 +58,7 @@ The tab components are intentionally simple:
 - `PullRequestsTab` partitions scoped reports with `isPullRequestReport`.
 - `ReportsTab` partitions with `isReportTabReport`.
 - `RunsTab` partitions with `isAgentRunReport`.
+- `DismissedTab` lists its own `useInboxDismissedReports` query (matching `isDismissedReport`); no detail route, restore action per card.
 
 The detail components share the same shape: load the report, render a common header, then render tab-specific sections. Detail sections should explain the report in product terms, not expose backend object names.
 

@@ -15,6 +15,16 @@ export function isExcludedFromInbox(report: SignalReport): boolean {
   return INBOX_EXCLUDED_STATUSES.has(report.status);
 }
 
+/**
+ * Dismissed tab membership: reports the user suppressed from the inbox. The
+ * dismiss action sets `suppressed`; `deleted` is terminal and never listed.
+ * These reports are fetched by a dedicated query (the main pipeline query
+ * excludes them), so this predicate is applied to that separate list.
+ */
+export function isDismissedReport(report: SignalReport): boolean {
+  return report.status === "suppressed";
+}
+
 export type InboxScope = "for-you" | "entire-project" | `teammate:${string}`;
 
 export const INBOX_SCOPE_FOR_YOU: InboxScope = "for-you";
@@ -62,14 +72,20 @@ export function countInboxScopeReports(
   return reports.filter((report) => matchesInboxScope(report, scope)).length;
 }
 
-export type InboxTabKey = "pulls" | "reports" | "runs";
+export type InboxTabKey = "pulls" | "reports" | "runs" | "dismissed";
 
-export const INBOX_TAB_KEYS: InboxTabKey[] = ["pulls", "reports", "runs"];
+export const INBOX_TAB_KEYS: InboxTabKey[] = [
+  "pulls",
+  "reports",
+  "runs",
+  "dismissed",
+];
 
 export const INBOX_TAB_LABEL: Record<InboxTabKey, string> = {
   pulls: "Pull requests",
   reports: "Reports",
   runs: "Runs",
+  dismissed: "Dismissed",
 };
 
 /**
@@ -87,6 +103,7 @@ export const INBOX_TAB_LIST_ROUTE: Record<
   pulls: "/code/inbox/pulls",
   reports: "/code/inbox/reports",
   runs: "/code/inbox/runs",
+  dismissed: "/code/inbox/dismissed",
 };
 
 const INBOX_DETAIL_PATH_RE = new RegExp(
