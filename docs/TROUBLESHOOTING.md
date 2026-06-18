@@ -185,7 +185,7 @@ The usual cause is **not** that the key is missing — it's that the shell runni
 
 ### Fix
 
-**Quick setup — paste this.** It locates Secretive's socket and adds `SSH_AUTH_SOCK` to your **user-global** `~/.claude/settings.json`, merging with whatever's already there so every agent shell picks it up regardless of how the app was launched (needs `jq`; if you don't have it, do the manual edit below instead):
+**Quick setup — paste this.** Adds `SSH_AUTH_SOCK` to your `~/.claude/settings.json` (merging with anything already there) so every agent shell picks it up. Needs `jq`; otherwise use the manual edit below:
 
 ```bash
 SOCK="$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"; [ -S "$SOCK" ] || echo "⚠️  No Secretive socket at $SOCK — open Secretive → Setup and copy the path it shows"; mkdir -p ~/.claude; f=~/.claude/settings.json; [ -s "$f" ] || echo '{}' > "$f"; tmp=$(mktemp) && jq --arg s "$SOCK" '.env = (.env // {}) + {SSH_AUTH_SOCK: $s}' "$f" > "$tmp" && mv "$tmp" "$f" && echo "updated $f:" && cat "$f"
@@ -213,7 +213,7 @@ Either way, for commits you run in a terminal yourself, also export it from your
 export SSH_AUTH_SOCK="$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"
 ```
 
-Then verify the agent can serve the key (this prints your Secretive public key) and that a signed commit goes through. Run it inside a git repo, and note the single `export` so the socket applies to *both* commands — not just `ssh-add`:
+Then verify it works, from inside a git repo — this prints your Secretive public key, then a signed commit:
 
 ```bash
 export SSH_AUTH_SOCK="$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"
@@ -227,7 +227,3 @@ Two things `SSH_AUTH_SOCK` can't fix, because only the machine owner controls th
 
 - **Keep the Mac unlocked** while agents commit — the Secure Enclave is unavailable while the screen is locked.
 - For fully unattended signing, **turn off "Require Authentication before use"** for that key in the Secretive app (the trade-off is no per-signature Touch ID). Leave it on and you'll have to approve each commit's Touch ID prompt.
-
-### Why this isn't a repo-level setting
-
-It's tempting to put `SSH_AUTH_SOCK` in the repo's checked-in `.claude/settings.json`, but that path is macOS- and Secretive-specific. Forcing it on everyone would clobber the working SSH agent of Linux/CI runs and any contributor who doesn't use Secretive. Keep it in your per-machine `~/.claude/settings.json` (or shell profile) instead.
