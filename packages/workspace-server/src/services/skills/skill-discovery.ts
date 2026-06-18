@@ -52,6 +52,37 @@ export async function findSkillDirs(
     .map((e) => e.name);
 }
 
+/**
+ * Symlinks each named skill from `sourceDir` into `targetDir`, resolving the
+ * real path first so the link works even when the source is itself a symlink.
+ * Failures are logged and skipped. Returns the names that were linked.
+ */
+export async function linkSkillsInto(
+  targetDir: string,
+  sourceDir: string,
+  skillNames: string[],
+  log: { warn: (message: string, meta?: Record<string, unknown>) => void },
+): Promise<string[]> {
+  const linked: string[] = [];
+  await Promise.all(
+    skillNames.map(async (skillName) => {
+      try {
+        const realSrc = await fs.promises.realpath(
+          path.join(sourceDir, skillName),
+        );
+        await fs.promises.symlink(realSrc, path.join(targetDir, skillName));
+        linked.push(skillName);
+      } catch (err) {
+        log.warn("Failed to symlink skill", {
+          skillName,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
+  );
+  return linked;
+}
+
 export async function getMarketplaceInstallPaths(): Promise<string[]> {
   const installedPath = path.join(
     os.homedir(),

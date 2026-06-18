@@ -685,14 +685,16 @@ When creating pull requests, add the following footer at the end of the PR descr
         systemPromptOverride,
       );
 
+      const bundledSkillsDir = join(
+        this.posthogPluginService.getPluginPath(),
+        "skills",
+      );
+
       const codexHome =
         adapter === "codex"
           ? await prepareCodexHome({
               appDataPath: this.storagePaths.appDataPath,
-              bundledSkillsDir: join(
-                this.posthogPluginService.getPluginPath(),
-                "skills",
-              ),
+              bundledSkillsDir,
               log: this.log,
             })
           : undefined;
@@ -795,10 +797,7 @@ When creating pull requests, add the following footer at the end of the PR descr
           {
             userDataDir: this.storagePaths.appDataPath,
             repoPath,
-            bundledSkillsDir: join(
-              this.posthogPluginService.getPluginPath(),
-              "skills",
-            ),
+            bundledSkillsDir,
           },
           this.log,
         );

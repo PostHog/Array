@@ -1,12 +1,13 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk";
 import { getCodexSkillsDir } from "../posthog-plugin/codex-mirror";
 import {
   findSkillDirs,
   getMarketplaceInstallPaths,
+  getUserSkillsDir,
+  linkSkillsInto,
 } from "../skills/skill-discovery";
 import type { AgentScopedLogger } from "./ports";
 
@@ -61,7 +62,7 @@ async function discoverCodexSkills(
   log: AgentScopedLogger,
 ): Promise<SdkPluginConfig[]> {
   const [userNames, bundledNames] = await Promise.all([
-    findSkillDirs(path.join(os.homedir(), ".claude", "skills")),
+    findSkillDirs(getUserSkillsDir()),
     bundledSkillsDir ? findSkillDirs(bundledSkillsDir) : Promise.resolve([]),
   ]);
   const exclude = new Set([...userNames, ...bundledNames]);
@@ -81,7 +82,7 @@ async function discoverUserSkills(
   log: AgentScopedLogger,
 ): Promise<SdkPluginConfig[]> {
   return buildSyntheticPlugin(
-    path.join(os.homedir(), ".claude", "skills"),
+    getUserSkillsDir(),
     path.join(userDataDir, "plugins", "user-skills"),
     "user-skills",
     "User Claude skills",
@@ -154,21 +155,7 @@ async function buildSyntheticPlugin(
       // ignore
     }
 
-    await Promise.all(
-      skillDirs.map(async (skillName) => {
-        const src = path.join(sourceSkillsDir, skillName);
-        const dest = path.join(syntheticSkillsDir, skillName);
-        try {
-          const realSrc = await fs.promises.realpath(src);
-          await fs.promises.symlink(realSrc, dest);
-        } catch (err) {
-          log.warn("Failed to symlink skill", {
-            skillName,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }),
-    );
+    await linkSkillsInto(syntheticSkillsDir, sourceSkillsDir, skillDirs, log);
 
     return [{ type: "local", path: pluginDir }];
   } catch (err) {

@@ -109,7 +109,7 @@ export async function cleanupLegacyCodexMirror(
     }),
   );
 
-  // 3. Drop the legacy mirror-state file; nothing maintains it anymore.
+  // 3. Drop the legacy mirror-state file.
   await fs.promises.rm(path.join(codexDir, MIRROR_STATE_FILE), { force: true });
 
   return [...removed];

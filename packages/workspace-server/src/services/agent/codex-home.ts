@@ -1,7 +1,11 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { findSkillDirs, getUserSkillsDir } from "../skills/skill-discovery";
+import {
+  findSkillDirs,
+  getUserSkillsDir,
+  linkSkillsInto,
+} from "../skills/skill-discovery";
 import type { AgentScopedLogger } from "./ports";
 
 /**
@@ -34,28 +38,13 @@ export async function prepareCodexHome(options: {
   const sources = [options.bundledSkillsDir, getUserSkillsDir()];
   const linked = new Set<string>();
   for (const sourceDir of sources) {
-    const names = await findSkillDirs(sourceDir);
-    await Promise.all(
-      names.map(async (name) => {
-        if (linked.has(name)) return;
-        linked.add(name);
-        try {
-          const realSrc = await fs.promises.realpath(
-            path.join(sourceDir, name),
-          );
-          await fs.promises.symlink(realSrc, path.join(skillsDir, name));
-        } catch (err) {
-          linked.delete(name);
-          options.log.warn("Failed to link skill into codex home", {
-            skillName: name,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }),
+    const names = (await findSkillDirs(sourceDir)).filter(
+      (name) => !linked.has(name),
     );
+    const ok = await linkSkillsInto(skillsDir, sourceDir, names, options.log);
+    for (const name of ok) linked.add(name);
   }
 
-  // Keep the user's real Codex config in effect for our sessions.
   const configLink = path.join(codexHome, "config.toml");
   await fs.promises.rm(configLink, { force: true });
   const userConfig = path.join(os.homedir(), ".codex", "config.toml");
