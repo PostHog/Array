@@ -163,9 +163,16 @@ export function FreeformCanvas({
   }, [postInit]);
 
   // Re-send init when the code / mode / analytics change, if the iframe is ready.
+  // NB: reference code/mode/analytics DIRECTLY here (not via postInit, which
+  // reads them off a ref) — otherwise the exhaustive-deps lint strips them from
+  // the array as "unused" and the effect goes stale, never re-posting on change.
   useEffect(() => {
-    if (readyRef.current) postInit();
-  }, [postInit]);
+    if (!readyRef.current) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      { channel: "posthog-canvas", type: "init", code, mode, analytics },
+      "*",
+    );
+  }, [code, mode, analytics]);
 
   return (
     <iframe
