@@ -60,7 +60,7 @@ describe("buildInboxViewedProperties", () => {
         fakeReport({ priority: null, actionability: null }),
       ],
       totalCount: 4,
-      tabCounts: { pulls: 0, reports: 4, runs: 0 },
+      tabCounts: { pulls: 0, reports: 4 },
       filters: NO_FILTERS,
     });
 
@@ -80,7 +80,7 @@ describe("buildInboxViewedProperties", () => {
         fakeReport({ status: "in_progress" }),
       ],
       totalCount: 2,
-      tabCounts: { pulls: 0, reports: 1, runs: 1 },
+      tabCounts: { pulls: 0, reports: 1 },
       filters: NO_FILTERS,
     });
 
@@ -91,7 +91,7 @@ describe("buildInboxViewedProperties", () => {
     const props = buildInboxViewedProperties({
       visibleReports: [],
       totalCount: 0,
-      tabCounts: { pulls: 0, reports: 0, runs: 0 },
+      tabCounts: { pulls: 0, reports: 0 },
       filters: NO_FILTERS,
     });
 
@@ -108,7 +108,7 @@ describe("buildInboxViewedProperties", () => {
     const props = buildInboxViewedProperties({
       visibleReports: [fakeReport()],
       totalCount: 1,
-      tabCounts: { pulls: 0, reports: 1, runs: 0 },
+      tabCounts: { pulls: 0, reports: 1 },
       filters: { ...NO_FILTERS, ...partial },
     });
 
@@ -119,7 +119,7 @@ describe("buildInboxViewedProperties", () => {
     const props = buildInboxViewedProperties({
       visibleReports: [fakeReport()],
       totalCount: 1,
-      tabCounts: { pulls: 0, reports: 1, runs: 0 },
+      tabCounts: { pulls: 0, reports: 1 },
       filters: { ...NO_FILTERS, searchQuery: "   " },
     });
 
