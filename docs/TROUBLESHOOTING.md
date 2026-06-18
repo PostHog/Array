@@ -169,3 +169,56 @@ Packages: -198
 ```
 
 This is cosmetic noise — nothing is broken. It's caused by `node-linker=hoisted` in `.npmrc`, which gives us a flat `node_modules` layout (required for Electron). With hoisted mode, pnpm reorganizes the flat layout on each install and reports the churn as packages added/removed. The packages aren't actually disappearing. Safe to ignore.
+
+## Commit signing fails with Secretive ("private key not available")
+
+We require signed commits, and many of us sign via [Secretive](https://github.com/maxgoedjen/secretive) (SSH keys held in the macOS Secure Enclave). A commit — most often one an agent like Claude Code or Codex runs for you — fails with something like:
+
+```
+error: Load key "...": agent refused operation
+fatal: failed to write commit object
+```
+
+or a tool reports that "the Secretive SSH agent doesn't have the matching private key available."
+
+The usual cause is **not** that the key is missing — it's that the shell running `git commit` can't reach Secretive's agent socket. Git signs commits with `ssh-keygen -Y sign`, which finds the agent **only** through the `SSH_AUTH_SOCK` environment variable. It does **not** read `~/.ssh/config`'s `IdentityAgent`. A GUI-launched app (or an agent shell spawned from one) often doesn't inherit `SSH_AUTH_SOCK`, so signing fails intermittently even though Secretive is running and your terminal commits fine.
+
+### Fix
+
+Point `SSH_AUTH_SOCK` at Secretive's socket. Find the exact path (Secretive also shows it in-app under its setup screen):
+
+```bash
+ls "$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"
+```
+
+For agent-driven commits, set it in your **user-global** `~/.claude/settings.json` so every agent shell has it regardless of how the app was launched:
+
+```json
+{
+  "env": {
+    "SSH_AUTH_SOCK": "/Users/<you>/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"
+  }
+}
+```
+
+For commits you run in a terminal, also export it from your shell profile (`~/.zshrc`):
+
+```bash
+export SSH_AUTH_SOCK="$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"
+```
+
+Then verify the agent can actually serve the key (this should print your Secretive public key) and that a signed commit goes through:
+
+```bash
+SSH_AUTH_SOCK="$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh" ssh-add -L
+git commit --allow-empty -m "test signing" && git log --show-signature -1
+```
+
+Two things `SSH_AUTH_SOCK` can't fix, because only the machine owner controls them:
+
+- **Keep the Mac unlocked** while agents commit — the Secure Enclave is unavailable while the screen is locked.
+- For fully unattended signing, **turn off "Require Authentication before use"** for that key in the Secretive app (the trade-off is no per-signature Touch ID). Leave it on and you'll have to approve each commit's Touch ID prompt.
+
+### Why this isn't a repo-level setting
+
+It's tempting to put `SSH_AUTH_SOCK` in the repo's checked-in `.claude/settings.json`, but that path is macOS- and Secretive-specific. Forcing it on everyone would clobber the working SSH agent of Linux/CI runs and any contributor who doesn't use Secretive. Keep it in your per-machine `~/.claude/settings.json` (or shell profile) instead.
