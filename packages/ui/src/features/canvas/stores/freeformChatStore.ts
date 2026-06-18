@@ -27,9 +27,6 @@ export interface FreeformThreadState {
   runtimeError: string | null;
   // The user prompt of the in-flight turn, stamped onto the version it produces.
   pendingPrompt: string | null;
-  // The version the current edit session started at. Cancel reverts here (and
-  // discards versions after it). null = started from empty.
-  editBaselineVersionId: string | null;
 }
 
 export const EMPTY_FREEFORM_THREAD: FreeformThreadState = {
@@ -42,7 +39,6 @@ export const EMPTY_FREEFORM_THREAD: FreeformThreadState = {
   error: null,
   runtimeError: null,
   pendingPrompt: null,
-  editBaselineVersionId: null,
 };
 
 interface FreeformChatStore {
@@ -51,21 +47,15 @@ interface FreeformChatStore {
   send: (threadId: string, prompt: string) => Promise<void>;
   reset: (threadId: string) => Promise<void>;
   /** Seed a thread from a saved record (only if the thread is still empty). */
-  ensureCode: (
-    threadId: string,
-    record: {
-      code?: string;
-      versions?: FreeformVersion[];
-      currentVersionId?: string;
-    },
-  ) => void;
+  ensureCode: (threadId: string, record: SavedFreeform) => void;
   undo: (threadId: string) => void;
   redo: (threadId: string) => void;
   setRuntimeError: (threadId: string, message: string | null) => void;
-  /** Record the current version as the edit session's baseline (on entering edit). */
-  beginEdit: (threadId: string) => void;
-  /** Cancel: revert code + history to the edit baseline and persist. */
-  revertToBaseline: (threadId: string) => void;
+  /**
+   * Cancel: discard in-memory edits and restore the thread to the saved record
+   * (code + history). Unlike ensureCode this overwrites the live state.
+   */
+  revertToSaved: (threadId: string, record: SavedFreeform) => void;
 
   // Stream handlers (driven by the subscription registrar).
   appendProse: (threadId: string, text: string) => void;
@@ -75,13 +65,15 @@ interface FreeformChatStore {
   fail: (threadId: string, message: string) => void;
 }
 
-function newId(): string {
-  return crypto.randomUUID();
+// The saved-record shape used to seed / revert a thread.
+interface SavedFreeform {
+  code?: string;
+  versions?: FreeformVersion[];
+  currentVersionId?: string;
 }
 
-// The dashboardId a thread persists to ("dashboard:<id>" → "<id>").
-function dashboardIdOf(threadId: string): string {
-  return threadId.replace(/^dashboard:/, "");
+function newId(): string {
+  return crypto.randomUUID();
 }
 
 export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
@@ -95,22 +87,6 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         [threadId]: fn(s.threads[threadId] ?? EMPTY_FREEFORM_THREAD),
       },
     }));
-
-  // Persist the current code + history to the backend (autosave). Never throws.
-  const persist = async (threadId: string) => {
-    const t = get().threads[threadId];
-    if (!t) return;
-    try {
-      await hostClient().dashboards.saveFreeform.mutate({
-        id: dashboardIdOf(threadId),
-        code: t.code,
-        versions: t.versions,
-        currentVersionId: t.currentVersionId ?? undefined,
-      });
-    } catch (error) {
-      log.error("Freeform autosave failed", { error });
-    }
-  };
 
   return {
     threads: {},
@@ -199,7 +175,6 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         const target = prev.versions[idx - 1];
         return { ...prev, code: target.code, currentVersionId: target.id };
       });
-      void persist(threadId);
     },
 
     redo: (threadId) => {
@@ -211,57 +186,24 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         const target = prev.versions[idx + 1];
         return { ...prev, code: target.code, currentVersionId: target.id };
       });
-      void persist(threadId);
     },
 
     setRuntimeError: (threadId, message) => {
       patch(threadId, (prev) => ({ ...prev, runtimeError: message }));
     },
 
-    beginEdit: (threadId) => {
+    revertToSaved: (threadId, record) => {
+      // Cancel: drop in-memory edits, restoring the saved code + history. Unlike
+      // ensureCode, this overwrites whatever the thread currently holds.
       patch(threadId, (prev) => ({
         ...prev,
-        editBaselineVersionId: prev.currentVersionId,
+        code: record.code ?? "",
+        versions: record.versions ?? [],
+        currentVersionId:
+          record.currentVersionId ?? record.versions?.at(-1)?.id ?? null,
+        runtimeError: null,
+        pendingPrompt: null,
       }));
-    },
-
-    revertToBaseline: (threadId) => {
-      patch(threadId, (prev) => {
-        const baseId = prev.editBaselineVersionId;
-        const baseIdx = baseId
-          ? prev.versions.findIndex((v) => v.id === baseId)
-          : -1;
-        // baseId set but missing (truncated away) → fall through to empty.
-        if (baseId && baseIdx === -1) {
-          return {
-            ...prev,
-            code: "",
-            versions: [],
-            currentVersionId: null,
-            editBaselineVersionId: null,
-          };
-        }
-        if (baseIdx === -1) {
-          // Started from empty: drop everything made this session.
-          return {
-            ...prev,
-            code: "",
-            versions: [],
-            currentVersionId: null,
-            editBaselineVersionId: null,
-          };
-        }
-        const target = prev.versions[baseIdx];
-        return {
-          ...prev,
-          code: target.code,
-          // Linear-discard: drop the versions made after the baseline.
-          versions: prev.versions.slice(0, baseIdx + 1),
-          currentVersionId: target.id,
-          editBaselineVersionId: null,
-        };
-      });
-      void persist(threadId);
     },
 
     appendProse: (threadId, text) => {
@@ -318,7 +260,6 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
           currentVersionId: version.id,
         };
       });
-      void persist(threadId);
     },
 
     fail: (threadId, message) => {

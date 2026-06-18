@@ -154,10 +154,11 @@ function DashboardEditControls({
   );
 }
 
-// Edit toggle + Save + Fork + Cancel for a FREEFORM canvas. A freeform canvas
-// autosaves every turn, so Save is an explicit re-persist (with success/error
-// toasts); Cancel reverts the whole edit session (with a confirm) and Fork
-// copies it to a new record.
+// Edit toggle + Save + Fork + Cancel for a FREEFORM canvas — mirrors the
+// json-render DashboardEditControls flow. Agent turns + undo/redo are in-memory;
+// Save is enabled only when the live code differs from the saved record (dirty);
+// Cancel discards in-memory edits back to the saved record (confirming if dirty);
+// Fork copies the current code to a new record.
 function FreeformEditControls({
   channelId,
   dashboardId,
@@ -173,43 +174,43 @@ function FreeformEditControls({
     useDashboardMutations();
 
   const threadId = threadIdFor(dashboardId);
-  const { code, versions, currentVersionId, editBaselineVersionId } =
+  const { code, versions, currentVersionId, isStreaming } =
     useFreeformThread(threadId);
-  const beginEdit = useFreeformChatStore((s) => s.beginEdit);
-  const revertToBaseline = useFreeformChatStore((s) => s.revertToBaseline);
+  const revertToSaved = useFreeformChatStore((s) => s.revertToSaved);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // 1-based version numbers for the confirm copy. baseline 0 = started empty.
-  const versionNum = (id: string | null) => {
-    const i = versions.findIndex((v) => v.id === id);
-    return i === -1 ? 0 : i + 1;
+  // Dirty = the live source differs from what's persisted (mirrors the spec
+  // comparison the json-render controls do).
+  const savedCode = dashboard?.code ?? "";
+  const hasCode = code.length > 0;
+  const dirty = hasCode && code !== savedCode;
+
+  // The saved snapshot Cancel reverts to (and ensureCode seeds from on load).
+  const savedRecord = {
+    code: dashboard?.code,
+    versions: dashboard?.versions,
+    currentVersionId: dashboard?.currentVersionId,
   };
-  const baselineNum = versionNum(editBaselineVersionId);
-  const currentNum = versionNum(currentVersionId);
-  const hasChanges = currentVersionId !== editBaselineVersionId;
 
   const onToggleEdit = () => {
     if (!editing) {
       setEditing(dashboardId, true);
-      beginEdit(threadId);
       return;
     }
-    // Cancelling: only confirm if the session actually changed the canvas.
-    if (hasChanges) setConfirmOpen(true);
+    // Cancelling: confirm only when there are unsaved edits to lose.
+    if (dirty) setConfirmOpen(true);
     else setEditing(dashboardId, false);
   };
 
   const onConfirmCancel = () => {
-    revertToBaseline(threadId);
+    revertToSaved(threadId, savedRecord);
     setEditing(dashboardId, false);
     setConfirmOpen(false);
   };
 
-  // Freeform autosaves each turn; Save is an explicit re-persist (and surfaces
-  // any failure as a toast, which the silent autosave doesn't).
   const onSave = () => {
-    if (!code) return;
+    if (!dirty || isStreaming) return;
     saveFreeformDashboard(
       dashboardId,
       code,
@@ -254,7 +255,7 @@ function FreeformEditControls({
           <Button
             variant="primary"
             size="sm"
-            disabled={!code || isSavingFreeform}
+            disabled={!dirty || isSavingFreeform || isStreaming}
             onClick={onSave}
           >
             Save
@@ -262,7 +263,7 @@ function FreeformEditControls({
           <Button
             variant="outline"
             size="sm"
-            disabled={!code || isCreating}
+            disabled={!hasCode || isCreating}
             onClick={onFork}
           >
             <GitForkIcon size={14} />
@@ -290,12 +291,11 @@ function FreeformEditControls({
       >
         <AlertDialog.Content maxWidth="440px" size="2">
           <AlertDialog.Title className="text-base">
-            Discard changes?
+            Discard unsaved changes?
           </AlertDialog.Title>
           <AlertDialog.Description className="text-sm">
-            {baselineNum === 0
-              ? `This will discard all ${currentNum} version${currentNum === 1 ? "" : "s"} made this session and clear the canvas.`
-              : `Changes from version ${baselineNum} to version ${currentNum} will be lost. The canvas will revert to version ${baselineNum}.`}
+            Your edits since the last save will be lost and the canvas will
+            revert to the last saved version.
           </AlertDialog.Description>
           <Flex justify="end" gap="2" mt="4">
             <AlertDialog.Cancel>
