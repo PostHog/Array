@@ -1,10 +1,31 @@
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../../../utils/logger";
 import { SUBAGENT_REWRITES } from "../hooks";
 import { buildSessionOptions } from "./options";
 import { SettingsManager } from "./settings";
+
+const GIT_COMMIT_HOOK_INPUT = {
+  session_id: "s",
+  transcript_path: "/tmp/t",
+  cwd: "/tmp",
+  hook_event_name: "PreToolUse",
+  tool_name: "Bash",
+  tool_use_id: "toolu_1",
+  tool_input: { command: "git commit -m x" },
+} as HookInput;
+
+async function runPreToolUseHooks(options: Options): Promise<void> {
+  const opts = { signal: new AbortController().signal };
+  const hooks = (options.hooks?.PreToolUse ?? []).flatMap(
+    (entry) => entry.hooks ?? [],
+  );
+  for (const hook of hooks) {
+    await hook(GIT_COMMIT_HOOK_INPUT, undefined, opts);
+  }
+}
 
 function makeParams() {
   const cwd = path.join(os.tmpdir(), `options-test-${Date.now()}`);
@@ -69,6 +90,84 @@ describe("buildSessionOptions", () => {
     });
 
     expect(options.agents?.["ph-explore"]).toEqual(override);
+  });
+
+  it("threads onEnsureLocalToolsConnected into the signed-commit guard (cloud)", async () => {
+    const healSpy = vi.fn().mockResolvedValue(true);
+    await runPreToolUseHooks(
+      buildSessionOptions({
+        ...makeParams(),
+        cloudMode: true,
+        onEnsureLocalToolsConnected: healSpy,
+      }),
+    );
+
+    expect(healSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits the signed-commit guard outside cloud mode", async () => {
+    const healSpy = vi.fn().mockResolvedValue(true);
+    await runPreToolUseHooks(
+      buildSessionOptions({
+        ...makeParams(),
+        cloudMode: false,
+        onEnsureLocalToolsConnected: healSpy,
+      }),
+    );
+
+    expect(healSpy).not.toHaveBeenCalled();
+  });
+
+  describe("CLAUDE_CODE_EXECUTABLE", () => {
+    const originalClaudeExecutable = process.env.CLAUDE_CODE_EXECUTABLE;
+
+    beforeEach(() => {
+      delete process.env.CLAUDE_CODE_EXECUTABLE;
+    });
+
+    afterEach(() => {
+      if (originalClaudeExecutable === undefined) {
+        delete process.env.CLAUDE_CODE_EXECUTABLE;
+      } else {
+        process.env.CLAUDE_CODE_EXECUTABLE = originalClaudeExecutable;
+      }
+    });
+
+    it.each([
+      {
+        executablePath: "/tmp/claude",
+        expectedPath: "/tmp/claude",
+        expectedExecutable: undefined,
+        name: "does not force node when Claude executable is a native binary",
+      },
+      {
+        executablePath: "/tmp/cli.js",
+        expectedPath: "/tmp/cli.js",
+        expectedExecutable: "node",
+        name: "uses node when Claude executable is the legacy JavaScript CLI",
+      },
+      {
+        executablePath: undefined,
+        expectedPath: undefined,
+        expectedExecutable: undefined,
+        name: "leaves executable and path unset when CLAUDE_CODE_EXECUTABLE is missing",
+      },
+      {
+        executablePath: "",
+        expectedPath: undefined,
+        expectedExecutable: undefined,
+        name: "leaves executable and path unset when CLAUDE_CODE_EXECUTABLE is empty",
+      },
+    ])("$name", ({ executablePath, expectedPath, expectedExecutable }) => {
+      if (executablePath !== undefined) {
+        process.env.CLAUDE_CODE_EXECUTABLE = executablePath;
+      }
+
+      const options = buildSessionOptions(makeParams());
+
+      expect(options.pathToClaudeCodeExecutable).toBe(expectedPath);
+      expect(options.executable).toBe(expectedExecutable);
+    });
   });
 
   describe("ANTHROPIC_CUSTOM_HEADERS", () => {

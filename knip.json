@@ -1,13 +1,9 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "ignoreWorkspaces": ["apps/mobile"],
+  "ignoreWorkspaces": ["apps/mobile", "apps/twig", "apps/web"],
   "workspaces": {
     ".": {
-      "entry": [
-        "mprocs.yaml",
-        "scripts/pnpm-run.mjs",
-        "scripts/test-access-token.js"
-      ]
+      "entry": ["mprocs.yaml", "scripts/*.{mjs,js,ts}"]
     },
     "apps/code": {
       "entry": [
@@ -15,21 +11,25 @@
         "src/main/index.ts",
         "src/main/preload.ts",
         "src/renderer/main.tsx",
+        "src/renderer/desktop-services.ts",
+        "src/renderer/desktop-contributions.ts",
         "forge.config.ts",
         "vite.main.config.mts",
         "vite.preload.config.mts",
         "vite.renderer.config.mts",
-        "scripts/*.ts"
+        "vite.shared.mts",
+        "vite.workspace-server.config.mts",
+        "scripts/*.{ts,mjs}"
       ],
-      "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
-      "ignore": ["src/api/generated.ts"],
+      "project": ["src/**/*.{ts,tsx}", "scripts/**/*.{ts,mjs}"],
       "ignoreDependencies": [
         "typed-openapi",
         "chokidar",
         "detect-libc",
         "is-glob",
         "micromatch",
-        "node-addon-api"
+        "node-addon-api",
+        "@vitest/coverage-v8"
       ]
     },
     "apps/cli": {
@@ -40,13 +40,22 @@
     "packages/agent": {
       "project": ["src/**/*.ts"],
       "ignore": ["src/templates/**"],
-      "ignoreDependencies": ["minimatch", "yoga-wasm-web"],
+      "ignoreDependencies": ["yoga-wasm-web", "@vitest/coverage-v8"],
+      "includeEntryExports": true
+    },
+    "packages/api-client": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignore": ["src/generated.ts", "src/generated.augment.ts"],
       "includeEntryExports": true
     },
     "packages/core": {
-      "entry": ["src/*.ts"],
-      "project": ["src/**/*.ts"],
-      "ignore": ["tests/**"],
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignoreDependencies": ["reflect-metadata"],
+      "includeEntryExports": true
+    },
+    "packages/di": {
+      "project": ["src/**/*.{ts,tsx}"],
       "includeEntryExports": true
     },
     "packages/electron-trpc": {
@@ -59,9 +68,48 @@
       "project": ["src/**/*.ts"],
       "includeEntryExports": true
     },
-    "packages/shared": {
-      "entry": ["src/index.ts", "src/**/*.test.ts"],
+    "packages/enricher": {
+      "entry": ["src/**/*.test.ts", "scripts/*.cjs"],
       "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["tree-sitter-cli"],
+      "includeEntryExports": true
+    },
+    "packages/git": {
+      "entry": ["src/*.ts", "src/**/*.test.ts"],
+      "project": ["src/**/*.ts"],
+      "includeEntryExports": true
+    },
+    "packages/host-router": {
+      "project": ["src/**/*.{ts,tsx}"],
+      "includeEntryExports": true
+    },
+    "packages/host-trpc": {
+      "project": ["src/**/*.{ts,tsx}"],
+      "includeEntryExports": true
+    },
+    "packages/platform": {
+      "entry": ["src/*.ts"],
+      "project": ["src/**/*.ts"],
+      "includeEntryExports": true
+    },
+    "packages/shared": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"],
+      "includeEntryExports": true
+    },
+    "packages/ui": {
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignore": ["src/test/**", "src/**/*.stories.tsx"],
+      "ignoreDependencies": ["vite"],
+      "includeEntryExports": true
+    },
+    "packages/workspace-client": {
+      "project": ["src/**/*.{ts,tsx}"],
+      "includeEntryExports": true
+    },
+    "packages/workspace-server": {
+      "entry": ["tsup.config.ts"],
+      "project": ["src/**/*.{ts,tsx}"],
       "includeEntryExports": true
     }
   }

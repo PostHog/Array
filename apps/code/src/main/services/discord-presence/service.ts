@@ -1,6 +1,6 @@
+import { TypedEventEmitter } from "@posthog/shared";
 import { injectable, preDestroy } from "inversify";
 import { logger } from "../../utils/logger";
-import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import { settingsStore } from "../settingsStore";
 import {
   getDiscordClientId,

@@ -1,10 +1,7 @@
-import { createJSONStorage, type StateStorage } from "zustand/middleware";
+import { registerRendererStateStorage } from "@posthog/ui/shell/rendererStorage";
 import { trpcClient } from "../trpc";
 
-/**
- * Raw storage adapter that uses electron to persist state.
- */
-const electronStorageRaw: StateStorage = {
+registerRendererStateStorage({
   getItem: async (key: string): Promise<string | null> => {
     return await trpcClient.secureStore.getItem.query({ key });
   },
@@ -14,6 +11,4 @@ const electronStorageRaw: StateStorage = {
   removeItem: async (key: string): Promise<void> => {
     await trpcClient.secureStore.removeItem.query({ key });
   },
-};
-
-export const electronStorage = createJSONStorage(() => electronStorageRaw);
+});

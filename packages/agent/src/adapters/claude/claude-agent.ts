@@ -3,7 +3,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  type ModelInfo as AcpModelInfo,
   type AgentSideConnection,
   type ClientCapabilities,
   type ForkSessionRequest,
@@ -24,12 +23,9 @@ import {
   type SessionConfigOption,
   type SessionConfigOptionCategory,
   type SessionConfigSelectOption,
-  type SessionModelState,
   type SessionModeState,
   type SetSessionConfigOptionRequest,
   type SetSessionConfigOptionResponse,
-  type SetSessionModelRequest,
-  type SetSessionModelResponse,
   type SetSessionModeRequest,
   type SetSessionModeResponse,
   type Usage,
@@ -38,6 +34,7 @@ import {
   type CanUseTool,
   getSessionMessages,
   listSessions,
+  type McpSdkServerConfigWithInstance,
   type McpServerConfig,
   type Options,
   type Query,
@@ -45,6 +42,7 @@ import {
   type SDKUserMessage,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
+import { serializeError } from "@posthog/shared";
 import { v7 as uuidv7 } from "uuid";
 import packageJson from "../../../package.json" with { type: "json" };
 import {
@@ -63,7 +61,12 @@ import {
   type PostHogProductId,
 } from "../../posthog-products";
 import type { PostHogAPIConfig } from "../../types";
-import { isCloudRun, unreachable, withTimeout } from "../../utils/common";
+import {
+  isCloudRun,
+  unreachable,
+  withAbort,
+  withTimeout,
+} from "../../utils/common";
 import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
@@ -78,7 +81,7 @@ import {
   estimateSkillsTokens,
   estimateSystemPrompt,
 } from "./context-breakdown";
-import { promptToClaude } from "./conversion/acp-to-sdk";
+import { isSteerMeta, promptToClaude } from "./conversion/acp-to-sdk";
 import {
   handleResultMessage,
   handleStreamEvent,
@@ -93,6 +96,7 @@ import {
 import type { EnrichedReadCache } from "./hooks";
 import { createLocalToolsMcpServer } from "./mcp/local-tools";
 import {
+  clearMcpToolMetadataCache,
   fetchMcpToolMetadata,
   getCachedMcpTools,
   getConnectedMcpServerNames,
@@ -130,13 +134,35 @@ import type {
   NewSessionMeta,
   SDKMessageFilter,
   Session,
+  ToolUpdateMeta,
   ToolUseCache,
   ToolUseStreamCache,
 } from "./types";
 
 const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
+
+// Pre-prompt self-heal runs on every cloud turn; bound the status RPC so a
+// wedged control channel can't stall the turn.
+const MCP_STATUS_TIMEOUT_MS = 5_000;
+
+const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
+
 const MAX_TITLE_LENGTH = 256;
 const LOCAL_ONLY_COMMANDS = new Set(["/context", "/heapdump", "/extra-usage"]);
+
+function isSdkMcpServer(
+  cfg: McpServerConfig,
+): cfg is McpSdkServerConfigWithInstance {
+  return cfg.type === "sdk";
+}
+
+function externalMcpServers(
+  servers: Record<string, McpServerConfig> | undefined,
+): Record<string, McpServerConfig> {
+  return Object.fromEntries(
+    Object.entries(servers ?? {}).filter(([, cfg]) => !isSdkMcpServer(cfg)),
+  );
+}
 
 // Best-effort: silent on ENOENT, logs other errors so permission failures
 // aren't masked.
@@ -189,6 +215,19 @@ function shouldEmitRawMessage(
   );
 }
 
+async function fetchContextUsedTokens(
+  sdkQuery: Query,
+  logger: Logger,
+): Promise<number | null> {
+  try {
+    const usage = await sdkQuery.getContextUsage();
+    return usage.totalTokens;
+  } catch (error) {
+    logger.error("Failed to fetch context usage from SDK:", error);
+    return null;
+  }
+}
+
 export interface ClaudeAcpAgentOptions {
   onProcessSpawned?: (info: ProcessSpawnedInfo) => void;
   onProcessExited?: (pid: number) => void;
@@ -204,6 +243,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   toolUseStreamCache: ToolUseStreamCache;
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
+  forceCancelGraceMs: number = DEFAULT_FORCE_CANCEL_GRACE_MS;
   private options?: ClaudeAcpAgentOptions;
   private enrichment?: Enrichment;
   private enrichedReadCache: EnrichedReadCache = new Map();
@@ -255,6 +295,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         _meta: {
           posthog: {
             resumeSession: true,
+            steering: "native",
           },
           claudeCode: {
             promptQueueing: true,
@@ -357,7 +398,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     return {
       modes: response.modes,
-      models: response.models,
       configOptions: response.configOptions,
     };
   }
@@ -415,6 +455,18 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
 
     if (this.session.promptRunning) {
+      const isSteer = isSteerMeta(params._meta);
+      if (isSteer) {
+        // Fold this message into the turn already running instead of queueing a
+        // new turn. promptToClaude tagged it priority:"next" so the SDK delivers
+        // it at the next tool-call boundary. Return immediately with a benign
+        // end_turn: the in-flight turn (not this call) owns the loop and the
+        // real stop reason. The client tells steers apart by the request's
+        // _meta.steer, not by this value.
+        this.session.input.push(userMessage);
+        await this.broadcastUserMessage(params);
+        return { stopReason: "end_turn" };
+      }
       this.session.input.push(userMessage);
       const order = this.session.nextPendingOrder++;
       const cancelled = await new Promise<boolean>((resolve) => {
@@ -425,6 +477,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       promptReplayed = true;
     } else {
+      // Reconnect the signed-commit server before the turn (guard hook backstops).
+      if (!isLocalOnlyCommand) {
+        await this.ensureLocalToolsConnected("pre-prompt");
+      }
       this.session.input.push(userMessage);
     }
 
@@ -446,9 +502,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     await this.broadcastUserMessage(params);
 
     this.session.promptRunning = true;
+    const cancelController = new AbortController();
+    this.session.cancelController = cancelController;
     let handedOff = false;
     let errored = false;
     let lastAssistantTotalUsage: number | null = null;
+    let lastRefusalExplanation: string | null = null;
     let lastStreamUsage = {
       input_tokens: 0,
       output_tokens: 0,
@@ -490,11 +549,31 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       enrichedReadCache: this.enrichedReadCache,
       logger: this.logger,
       supportsTerminalOutput,
+      streamedAssistantBlocks: {
+        textIds: new Set<string>(),
+        thinkingIds: new Set<string>(),
+      },
     };
 
     try {
       while (true) {
-        const { value: message, done } = await this.session.query.next();
+        const nextMessage = this.session.query.next();
+        const next = await withAbort(nextMessage, cancelController.signal);
+        if (next.result === "aborted" || cancelController.signal.aborted) {
+          void nextMessage.catch((err) =>
+            this.logger.warn("in-flight query.next() rejected after cancel", {
+              sessionId: params.sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+          return {
+            stopReason: "cancelled",
+            _meta: this.session.interruptReason
+              ? { interruptReason: this.session.interruptReason }
+              : undefined,
+          };
+        }
+        const { value: message, done } = next.value;
 
         if (done || !message) {
           if (this.session.cancelled) {
@@ -521,18 +600,39 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         switch (message.type) {
           case "system":
             if (message.subtype === "compact_boundary") {
-              // Send used:0 immediately so the client doesn't keep showing
-              // the stale pre-compaction context size until the next turn.
-              lastAssistantTotalUsage = 0;
+              const usedTokens = await withAbort(
+                fetchContextUsedTokens(this.session.query, this.logger),
+                cancelController.signal,
+              );
+              lastAssistantTotalUsage =
+                usedTokens.result === "success" ? (usedTokens.value ?? 0) : 0;
               promptReplayed = true;
               await this.client.sessionUpdate({
                 sessionId: params.sessionId,
                 update: {
                   sessionUpdate: "usage_update",
-                  used: 0,
+                  used: lastAssistantTotalUsage,
                   size: lastContextWindowSize,
                 },
               });
+            }
+            if (message.subtype === "commands_changed") {
+              this.session.knownSlashCommands = collectKnownSlashCommands(
+                message.commands,
+              );
+              const available = getAvailableSlashCommands(message.commands);
+              await this.client.sessionUpdate({
+                sessionId: params.sessionId,
+                update: {
+                  sessionUpdate: "available_commands_update",
+                  availableCommands: available,
+                },
+              });
+              this.updateBreakdownCategory(
+                "skills",
+                estimateSkillsTokens(available),
+              );
+              break;
             }
             if (message.subtype === "local_command_output") {
               promptReplayed = true;
@@ -748,6 +848,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 this.session.accumulatedUsage.cachedWriteTokens,
             };
 
+            if (
+              (message as { stop_reason?: string }).stop_reason === "refusal"
+            ) {
+              if (lastRefusalExplanation) {
+                await this.client.sessionUpdate({
+                  sessionId: params.sessionId,
+                  update: {
+                    sessionUpdate: "agent_message_chunk",
+                    content: { type: "text", text: lastRefusalExplanation },
+                  },
+                });
+              }
+              return { stopReason: "refusal", usage };
+            }
+
             const result = handleResultMessage(message);
             if (result.error) throw result.error;
 
@@ -865,6 +980,17 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               break;
             }
 
+            if (message.type === "assistant") {
+              const inner = message.message as unknown as {
+                stop_reason?: string | null;
+                stop_details?: { explanation?: string | null } | null;
+              };
+              if (inner.stop_reason === "refusal") {
+                lastRefusalExplanation =
+                  inner.stop_details?.explanation ?? null;
+              }
+            }
+
             // Store latest assistant usage (excluding subagents)
             // Sum all token types as a proxy for post-turn context occupancy:
             // current turn's output will become next turn's input.
@@ -908,11 +1034,42 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             break;
           }
 
-          case "tool_progress":
+          case "tool_progress": {
+            await this.client.sessionUpdate({
+              sessionId: params.sessionId,
+              update: {
+                sessionUpdate: "tool_call_update",
+                toolCallId: message.tool_use_id,
+                status: "in_progress",
+                _meta: {
+                  claudeCode: {
+                    toolName: message.tool_name,
+                    toolResponse: {
+                      elapsedTimeSeconds: message.elapsed_time_seconds,
+                    },
+                  },
+                } satisfies ToolUpdateMeta,
+              },
+            });
+            break;
+          }
+          case "rate_limit_event": {
+            if (lastAssistantTotalUsage !== null) {
+              await this.client.sessionUpdate({
+                sessionId: params.sessionId,
+                update: {
+                  sessionUpdate: "usage_update",
+                  used: lastAssistantTotalUsage,
+                  size: lastContextWindowSize,
+                  _meta: { "_claude/rateLimit": message.rate_limit_info },
+                },
+              });
+            }
+            break;
+          }
           case "auth_status":
           case "tool_use_summary":
           case "prompt_suggestion":
-          case "rate_limit_event":
             break;
 
           default:
@@ -970,12 +1127,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         this.session.settingsManager.dispose();
         this.session.input.end();
         throw RequestError.internalError(
-          undefined,
+          { details: msg },
           "The Claude Agent process exited unexpectedly. Please start a new session.",
         );
       }
       throw error;
     } finally {
+      if (this.session.forceCancelTimer) {
+        clearTimeout(this.session.forceCancelTimer);
+        this.session.forceCancelTimer = undefined;
+      }
+      if (this.session.cancelController === cancelController) {
+        this.session.cancelController = undefined;
+      }
       // Drop any leftover streaming-input buffers. Normally cleared per index
       // on `content_block_stop`, but a cancelled or errored turn may leave
       // entries behind; without this they'd carry over into the next turn
@@ -1014,6 +1178,22 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       pending.resolve(true);
     }
     this.session.pendingMessages.clear();
+
+    if (
+      this.session.promptRunning &&
+      this.session.cancelController &&
+      !this.session.cancelController.signal.aborted &&
+      !this.session.forceCancelTimer
+    ) {
+      const cancelController = this.session.cancelController;
+      this.session.forceCancelTimer = setTimeout(() => {
+        this.logger.error(
+          `Session ${this.sessionId}: cancel floor elapsed without the SDK yielding; forcing "cancelled". The underlying query may still be wedged — a new session may be required.`,
+        );
+        cancelController.abort();
+      }, this.forceCancelGraceMs);
+    }
+
     await this.session.query.interrupt();
   }
 
@@ -1111,12 +1291,26 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // fresh AbortController.
     const newAbortController = new AbortController();
     const { sessionId: _drop, ...rest } = prev.queryOptions;
+
+    // Rebuild the in-process ("sdk") server fresh; reusing the prior instance
+    // throws "Already connected to a transport" and drops the signed-commit tools.
+    const freshInProcess = prev.buildInProcessMcpServers();
+    if (Object.keys(freshInProcess).length > 0) {
+      this.logger.info("Rebuilt in-process MCP servers on refresh", {
+        sessionId: this.sessionId,
+        servers: Object.keys(freshInProcess),
+      });
+    }
+
     const newOptions: Options = {
       ...rest,
-      mcpServers,
+      mcpServers: { ...mcpServers, ...freshInProcess },
       resume: this.sessionId,
       forkSession: false,
       abortController: newAbortController,
+      // `rest.model` is the creation-time value; the user may have switched
+      // models since, so re-root the new Query on the live session model.
+      ...(prev.modelId && { model: toSdkModelId(prev.modelId) }),
     };
 
     const newInput = new Pushable<SDKUserMessage>();
@@ -1132,24 +1326,79 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       SESSION_VALIDATION_TIMEOUT_MS,
     );
     if (result.result === "timeout") {
-      throw new Error(`Session refresh timed out for ${this.sessionId}`);
+      this.terminateQuery(newQuery, newAbortController);
+      throw new RequestError(
+        -32603,
+        `Session refresh timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`,
+        { sessionId: this.sessionId },
+      );
     }
 
-    // Re-fetch MCP tool metadata + slash commands — the server list changed.
-    this.deferBackgroundFetches(newQuery);
+    this.refreshMcpMetadata(newQuery);
   }
 
-  async unstable_setSessionModel(
-    params: SetSessionModelRequest,
-  ): Promise<SetSessionModelResponse | undefined> {
-    await this.session.query.setModel(toSdkModelId(params.modelId));
-    this.session.modelId = params.modelId;
-    this.session.lastContextWindowSize = this.getContextWindowForModel(
-      params.modelId,
+  /**
+   * Best-effort self-heal: if the in-process signed-commit server is enabled but
+   * the live Query reports it disconnected, rebuild a fresh instance and
+   * reconnect via setMcpServers. Returns whether the tooling is usable after.
+   */
+  private async ensureLocalToolsConnected(trigger: string): Promise<boolean> {
+    const names = this.session.localToolsServerNames;
+    if (names.length === 0) {
+      return true;
+    }
+
+    const status = await withTimeout(
+      this.session.query.mcpServerStatus(),
+      MCP_STATUS_TIMEOUT_MS,
+    ).catch((error) => {
+      this.logger.debug("ensureLocalToolsConnected: status check failed", {
+        trigger,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { result: "timeout" as const };
+    });
+    // A slow or failed status RPC must not block the turn; assume healthy.
+    if (status.result !== "success") {
+      return true;
+    }
+
+    const allConnected = names.every((name) =>
+      status.value.some((s) => s.name === name && s.status === "connected"),
     );
-    this.rebuildEffortConfigOption(params.modelId);
-    await this.updateConfigOption("model", params.modelId);
-    return {};
+    if (allConnected) {
+      return true;
+    }
+
+    const logCtx = { trigger, sessionId: this.sessionId, servers: names };
+    this.logger.warn(
+      "Signed-commit MCP server unhealthy; reconnecting",
+      logCtx,
+    );
+
+    try {
+      const next = {
+        ...externalMcpServers(this.session.queryOptions.mcpServers),
+        ...this.session.buildInProcessMcpServers(),
+      };
+      await this.session.query.setMcpServers(next);
+      this.session.queryOptions.mcpServers = next;
+      this.refreshMcpMetadata(this.session.query);
+      this.logger.info("Reconnected signed-commit MCP server", logCtx);
+      return true;
+    } catch (error) {
+      this.logger.error("Failed to reconnect signed-commit MCP server", {
+        ...logCtx,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  /** Clear stale MCP tool metadata, then re-fetch it for the new server set. */
+  private refreshMcpMetadata(q: Query): void {
+    clearMcpToolMetadataCache();
+    this.deferBackgroundFetches(q);
   }
 
   async setSessionMode(
@@ -1300,6 +1549,46 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
   }
 
+  private async validateCwd(cwd: string): Promise<void> {
+    if (!path.isAbsolute(cwd)) {
+      throw RequestError.invalidParams(
+        { cwd },
+        `\`cwd\` must be an absolute path, but received: ${cwd}`,
+      );
+    }
+
+    let stats: fs.Stats;
+    try {
+      stats = await fs.promises.stat(cwd);
+    } catch {
+      throw RequestError.invalidParams(
+        { cwd },
+        `\`cwd\` does not exist on the machine running the agent: ${cwd}`,
+      );
+    }
+
+    if (!stats.isDirectory()) {
+      throw RequestError.invalidParams(
+        { cwd },
+        `\`cwd\` is not a directory: ${cwd}`,
+      );
+    }
+  }
+
+  /**
+   * Without this, a timed-out session leaks an orphaned `claude` process that
+   * the retry loop then multiplies. Aborting the controller kills the
+   * subprocess via the spawn signal; closing the query stops further reads.
+   */
+  private terminateQuery(sdkQuery: Query, controller: AbortController): void {
+    controller.abort();
+    try {
+      sdkQuery.close();
+    } catch {
+      // Query may already be closed.
+    }
+  }
+
   private async createSession(
     params: {
       cwd: string;
@@ -1315,6 +1604,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   ): Promise<NewSessionResponse> {
     const { cwd } = params;
     const { resume, forkSession } = creationOpts;
+
+    await this.validateCwd(cwd);
 
     const isResume = !!resume;
 
@@ -1343,26 +1634,43 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const earlyModelId =
       settingsManager.getSettings().model || meta?.model || "";
-    const mcpServers = supportsMcpInjection(earlyModelId)
-      ? parseMcpServers(params, this.logger)
-      : {};
 
     // Register the in-process general local-tools MCP server. Tools self-gate
     // via the registry (e.g. signed-commit is cloud-only and needs a GH token),
     // so adding a tool needs no change here. In cloud runs `git commit`/`git
     // push` are blocked by the PreToolUse guard (and the sandbox git shim), so
     // the agent commits via the signed-commit tool instead.
-    const localToolsServer = createLocalToolsMcpServer(
-      { cwd, token: resolveGithubToken(), taskId },
-      meta,
-    );
-    if (localToolsServer) {
-      mcpServers[LOCAL_TOOLS_MCP_NAME] = localToolsServer;
-    } else if (cloudRun) {
+    //
+    // A closure so refresh/self-heal can rebuild a fresh instance (reusing one
+    // throws "Already connected to a transport"). Capture only the fields it
+    // needs so the session doesn't pin the whole meta object.
+    const baseBranch = meta?.baseBranch;
+    const environment = meta?.environment;
+    const buildInProcessMcpServers = (): Record<
+      string,
+      McpSdkServerConfigWithInstance
+    > => {
+      const server = createLocalToolsMcpServer(
+        { cwd, token: resolveGithubToken(), taskId, baseBranch },
+        { environment },
+      );
+      return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};
+    };
+
+    const initialInProcess = buildInProcessMcpServers();
+    const localToolsServerNames = Object.keys(initialInProcess);
+    if (localToolsServerNames.length === 0 && cloudRun) {
       this.logger.warn(
-        "Cloud run registered no local tools — missing GH_TOKEN/GITHUB_TOKEN? signed commits unavailable",
+        "Cloud run registered no local tools (missing GH_TOKEN/GITHUB_TOKEN?); signed commits unavailable",
       );
     }
+
+    const mcpServers: Record<string, McpServerConfig> = {
+      ...(supportsMcpInjection(earlyModelId)
+        ? parseMcpServers(params, this.logger)
+        : {}),
+      ...initialInProcess,
+    };
 
     const systemPrompt = buildSystemPrompt(meta?.systemPrompt);
 
@@ -1413,13 +1721,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       settingsManager,
       onModeChange: this.createOnModeChange(),
       onPostHogResourceUsed: this.createOnPostHogResourceUsed(),
-      onCodeFileRead: this.createOnCodeFileRead(),
       onProcessSpawned: this.options?.onProcessSpawned,
       onProcessExited: this.options?.onProcessExited,
       effort,
       enrichmentDeps: this.enrichment?.deps,
       enrichedReadCache: this.enrichedReadCache,
       cloudMode: cloudRun,
+      onEnsureLocalToolsConnected: () =>
+        this.ensureLocalToolsConnected("guard-hook"),
       taskState,
       onTaskStateChange: async () => {
         await this.client.sessionUpdate({
@@ -1440,6 +1749,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const session: Session = {
       query: q,
       queryOptions: options,
+      buildInProcessMcpServers,
+      localToolsServerNames,
       input,
       cancelled: false,
       settingsManager,
@@ -1482,8 +1793,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           SESSION_VALIDATION_TIMEOUT_MS,
         );
         if (result.result === "timeout") {
-          throw new Error(
-            `Session ${forkSession ? "fork" : "resumption"} timed out for sessionId=${sessionId}`,
+          throw new RequestError(
+            -32603,
+            `Session ${forkSession ? "fork" : "resumption"} timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`,
+            { sessionId, taskId, taskRunId: meta?.taskRunId },
           );
         }
         session.knownSlashCommands = collectKnownSlashCommands(
@@ -1491,6 +1804,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         );
       } catch (err) {
         settingsManager.dispose();
+        this.terminateQuery(q, abortController);
         if (
           err instanceof Error &&
           err.message === "Query closed before response received"
@@ -1503,7 +1817,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             sessionId,
             taskId,
             taskRunId: meta?.taskRunId,
-            error: err instanceof Error ? err.message : String(err),
+            errorDetail: serializeError(err),
           },
         );
         throw err;
@@ -1512,6 +1826,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     // Kick off SDK initialization for new sessions so it runs concurrently
     // with the model config fetch below (the gateway REST call is independent).
+    const initStartedAt = Date.now();
     const initPromise = !isResume
       ? withTimeout(q.initializationResult(), SESSION_VALIDATION_TIMEOUT_MS)
       : undefined;
@@ -1530,6 +1845,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           ]
         : []),
     ]);
+    const modelConfigMs = Date.now() - initStartedAt;
 
     // Restrict the model list to the user's `availableModels` allowlist
     // from settings.json so config UI and downstream resolution stay
@@ -1545,21 +1861,32 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       try {
         const initResult = await initPromise;
         if (initResult.result === "timeout") {
-          settingsManager.dispose();
-          throw new Error(
-            `Session initialization timed out for sessionId=${sessionId}`,
+          throw new RequestError(
+            -32603,
+            `Session initialization timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`,
+            { sessionId, taskId, taskRunId: meta?.taskRunId },
           );
         }
         session.knownSlashCommands = collectKnownSlashCommands(
           initResult.value.commands,
         );
+        this.logger.info("Session initialized", {
+          sessionId,
+          taskId,
+          taskRunId: meta?.taskRunId,
+          modelConfigMs,
+          initMs: Date.now() - initStartedAt,
+        });
       } catch (err) {
         settingsManager.dispose();
+        this.terminateQuery(q, abortController);
         this.logger.error("Session initialization failed", {
           sessionId,
           taskId,
           taskRunId: meta?.taskRunId,
-          error: err instanceof Error ? err.message : String(err),
+          modelConfigMs,
+          initMs: Date.now() - initStartedAt,
+          errorDetail: serializeError(err),
         });
         throw err;
       }
@@ -1575,7 +1902,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const resolvedSdkModel = toSdkModelId(resolvedModelId);
 
-    if (!isResume && resolvedSdkModel !== DEFAULT_MODEL) {
+    // New sessions start with options.model = DEFAULT_MODEL, so only a
+    // non-default pick needs a setModel call. Resumed sessions always need
+    // it: the SDK does not carry the model across resume and would silently
+    // run its default otherwise.
+    if (isResume || resolvedSdkModel !== DEFAULT_MODEL) {
       await this.session.query.setModel(resolvedSdkModel);
     }
 
@@ -1593,17 +1924,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       })),
     };
 
-    const models: SessionModelState = {
-      currentModelId: resolvedModelId,
-      availableModels: modelOptions.options.map(
-        (opt): AcpModelInfo => ({
-          modelId: opt.value,
-          name: opt.name,
-          description: opt.description,
-        }),
-      ),
-    };
-
     const configOptions = this.buildConfigOptions(
       permissionMode,
       modelOptions,
@@ -1615,7 +1935,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.deferBackgroundFetches(q);
     }
 
-    return { sessionId, modes, models, configOptions };
+    return { sessionId, modes, configOptions };
   }
 
   private createCanUseTool(
@@ -1664,12 +1984,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     };
   }
 
-  /** Records the `code` product the first time the agent reads a file from the
-   *  codebase, so working with code surfaces a chip just like an MCP call does. */
-  private createOnCodeFileRead() {
-    return () => this.recordSessionResources(["code"]);
-  }
-
   /** Adds products to the session-wide set and emits any newly-seen ones.
    *  Session-wide dedup: only the first use of a product emits, so the client's
    *  persistent list shows each chip once across all turns. */
@@ -1706,31 +2020,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       })),
     };
 
-    const modelOptions = this.session.configOptions.find(
-      (o) => o.id === "model",
-    );
-    const models: SessionModelState = {
-      currentModelId: this.session.modelId ?? DEFAULT_MODEL,
-      availableModels:
-        modelOptions && "options" in modelOptions
-          ? (
-              modelOptions.options as Array<{
-                value: string;
-                name: string;
-                description?: string;
-              }>
-            ).map((opt) => ({
-              modelId: opt.value,
-              name: opt.name,
-              description: opt.description,
-            }))
-          : [],
-    };
-
     return {
       sessionId,
       modes,
-      models,
       configOptions: this.session.configOptions,
     };
   }

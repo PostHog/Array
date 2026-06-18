@@ -1,0 +1,121 @@
+import {
+  deriveUpdateUiStatus,
+  type MenuCheckToast,
+  resolveMenuCheckFromStatus,
+  resolveMenuCheckResult,
+  updateStore,
+} from "@posthog/core/updates/updateStore";
+import { resolveService } from "@posthog/di/container";
+import {
+  UPDATES_CLIENT,
+  type UpdatesClient,
+} from "@posthog/ui/features/updates/updatesClient";
+import { toast } from "@posthog/ui/primitives/toast";
+import { logger } from "@posthog/ui/shell/logger";
+
+const log = logger.scope("updates-host");
+
+const client = resolveService<UpdatesClient>(UPDATES_CLIENT);
+const store = updateStore.getState;
+
+function showToast(menuToast: MenuCheckToast): void {
+  if (menuToast.kind === "success") {
+    toast.success(menuToast.message);
+    return;
+  }
+  toast.error(
+    menuToast.message,
+    menuToast.description
+      ? {
+          description: menuToast.description,
+        }
+      : undefined,
+  );
+}
+
+void client
+  .isEnabled()
+  .then((result) => store().setEnabled(result.enabled))
+  .catch((error: unknown) => {
+    log.error("Failed to get update enabled status", { error });
+  });
+
+void client
+  .getStatus()
+  .then((status) => {
+    const update = deriveUpdateUiStatus(status, store().status);
+    if (update?.status) {
+      store().setStatus(update.status);
+    }
+    if (update && "version" in update) {
+      store().setVersion(update.version ?? null);
+    }
+  })
+  .catch((error: unknown) => {
+    log.error("Failed to get update status", { error });
+  });
+
+client.onStatus({
+  onData: (status) => {
+    const update = deriveUpdateUiStatus(status, store().status);
+    if (update?.status) {
+      store().setStatus(update.status);
+    }
+    if (update && "version" in update) {
+      store().setVersion(update.version ?? null);
+    }
+
+    const outcome = resolveMenuCheckFromStatus(
+      status,
+      store().menuCheckPending,
+    );
+    if (outcome) {
+      if (outcome.clearPending) {
+        store().setMenuCheckPending(false);
+      }
+      if (outcome.toast) {
+        showToast(outcome.toast);
+      }
+    }
+  },
+  onError: (error) => {
+    log.error("Update status subscription error", { error });
+    store().setMenuCheckPending(false);
+  },
+});
+
+client.onReady({
+  onData: (data) => {
+    store().setReady(data.version);
+  },
+  onError: (error) => {
+    log.error("Update ready subscription error", { error });
+  },
+});
+
+client.onCheckFromMenu({
+  onData: () => {
+    store().setMenuCheckPending(true);
+    void client
+      .check()
+      .then((result) => {
+        const outcome = resolveMenuCheckResult(result);
+        if (outcome) {
+          if (outcome.clearPending) {
+            store().setMenuCheckPending(false);
+          }
+          if (outcome.toast) {
+            showToast(outcome.toast);
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        store().setMenuCheckPending(false);
+        log.error("Failed to check for updates", { error });
+        toast.error("Failed to check for updates");
+      });
+  },
+  onError: (error) => {
+    log.error("Update menu check subscription error", { error });
+  },
+});

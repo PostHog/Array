@@ -8,7 +8,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      workflow: ${{ steps.filter.outputs.workflow }}
+    steps:
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          predicate-quantifier: every
+          filters: |
+            # Biome lints .github/scripts/*.mjs and tracked JSON in
+            # .vscode/.claude, so only workflow YAML and prose are ignored.
+            code:
+              - "!**/*.md"
+              - "!docs/**"
+              - "!.github/workflows/**"
+              - "!.husky/**"
+              - "!LICENSE"
+              - "!.gitignore"
+              - "!.env.example"
+            workflow:
+              - ".github/workflows/code-quality.yml"
+
   quality:
+    needs: changes
+    # Fail closed: if change detection itself failed, run instead of skipping.
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true' || needs.changes.outputs.workflow == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,3 +53,11 @@ jobs:
 
       - name: Run Biome
         run: biome ci .
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Check host boundaries (apps/code must stay a thin Electron host)
+        run: node scripts/check-host-boundaries.mjs

@@ -1,218 +1,253 @@
 # PostHog Code Development Guide
 
-This is the single source of truth for how PostHog Code is built. Architecture rules live here. Deep reference docs are linked at the bottom. If something contradicts this file, this file wins.
+`AGENTS.md` is the source of truth for architecture and development rules. `CLAUDE.md` is a symlink to this file. Edit this file only.
 
-## Architecture rules (read this first)
+## Architecture
 
-Read this section before writing or modifying code. These rules are load-bearing. The goal is a renderer that is strictly UI so the same app shape works on web and mobile, and a main process that owns every byte of business logic but stays host-agnostic so it can later run in a cloud sandbox or a workspace server, not just in Electron. PRs land fast from many contributors and many agents; these rules are what keep the foundation from rotting.
+PostHog Code uses a layered architecture. Business logic and UI live in shared `packages/*`. Each `apps/*` host boots those packages and binds host-specific implementations. `@posthog/core` and `@posthog/ui` must run unchanged on desktop, web, and mobile.
 
-**The principle: three layers, each with one job.**
+Principle: logic is portable; hosts are thin.
 
-| Layer                          | One job                                                                                                      |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| **Main process services**      | All business logic and I/O. Orchestration, fetching, polling, parsing, auth, side effects, system telemetry. |
-| **Renderer Zustand stores**    | Pure UI state. Subscription-fed caches. Thin action wrappers over tRPC. Nothing else.                        |
-| **React components and hooks** | Render the store. Wire user input to store actions or tRPC mutations. Local component state only.            |
+| Layer | Responsibility |
+| --- | --- |
+| `packages/core` | Host-agnostic business logic: orchestration, retries, dedupe, sagas, parsing, domain events, domain state. Inversify services only. No React, Node, Electron, or `trpcClient`. |
+| `packages/workspace-server` | Node-only capabilities behind tRPC: git, fs, process spawn, pty, watchers. |
+| `packages/ui` | React UI shell: views, components, hooks, view-state stores, route and command contributions. No business logic, Node, Electron, or `trpcClient`. |
+| `apps/<host>` | Boot, lifecycle, platform adapters, DI wiring, host transports. No business logic. |
 
-**Renderer services are a narrow escape hatch.** Only for renderer-only UI mechanics shared across components (visual queues, drag-and-drop, focus rings). Never for data fetching, never for cross-store coordination on system events, never for multi-step async orchestration.
+## Packages
 
-### Rules in one screen
+| Package | Owns | Must not contain |
+| --- | --- | --- |
+| `@posthog/platform` | Host-capability interfaces and DI tokens. Host-neutral, zero runtime dependencies. | Implementations, Node, DOM, tRPC, Electron |
+| `@posthog/shared` | Zero-dependency primitives, types, Saga pattern, cloud-prompt encoding. | Internal package imports, I/O |
+| `@posthog/api-client` | PostHog/Django HTTPS client. Constructed by factory, not DI. | UI, Node-only host syscalls |
+| `@posthog/workspace-client` | Thin tRPC client for local or sandbox workspace-server. Runs in any JS environment. | Business logic, UI |
+| `@posthog/workspace-server` | Node backend services and colocated tRPC routers for git, fs, watchers, processes. | UI, core, Electron |
+| `@posthog/core` | Portable Inversify services, domain schemas/types, domain stores (`zustand/vanilla`). Injects platform, workspace-client, api-client. | React, `trpcClient`, Node syscalls, Electron, host-router runtime |
+| `@posthog/ui` | React components, hooks, contributions, view-state stores. Built on `@posthog/quill`. | Business logic, `trpcClient`, Node |
+| `@posthog/host-trpc` | Shared `initTRPC` base with container-bearing context for Electron main routers. | Feature logic |
+| `@posthog/host-router` | Electron host tRPC routers that resolve services from request context and forward calls. Exposes `HostRouter` type and renderer `useHostTRPC`. | Service implementations |
+| `@posthog/di` | DI and boot primitives: `CONTRIBUTION`, `boot()`, `ROOT_LOGGER`, `setRootContainer()`, `bindToContainer()`, `useService`. | Feature code |
+| `@posthog/electron-trpc` | tRPC-over-Electron-IPC transport. | Feature code |
+| `@posthog/git`, `@posthog/enricher`, `@posthog/agent` | Reusable domain implementation packages. | Host-specific code |
 
-- **R1** Main services own business logic. `@injectable()`, singleton, exposed via a tRPC router with Zod schemas in the service's `schemas.ts`. No imports from `apps/code/src/renderer/*`.
-- **R2** Zustand stores are thin: UI state, subscription caches or queues. Actions do at most one `trpcClient` call plus one state update. No multi-step flows (OAuth dances, token refresh, server sync, retry loops), no module-level `let` promises, no cross-store reach-ins, no business clients, no query-cache surgery, no system-event analytics.
-- **R3** Renderer services are a narrow escape hatch. They live in `apps/code/src/renderer/services/`, are `@injectable()`, and never fetch data or coordinate cross-store reactions to system events.
-- **R4** Components use `useQuery` and `useMutation`, not imperative `trpcClient` calls. Custom hooks wrap a single query or a store selector. Hooks that orchestrate multiple queries to derive a result become one tRPC procedure.
-- **R5** Cross-feature coordination happens in main. Main emits an event; each affected store reacts via its feature's subscription registrar. Stores never reach into other stores.
-- **R6** Every tRPC procedure has Zod `input` and (where it returns data) Zod `output`. Types are inferred from schemas, never declared separately.
-- **R7** Persistence and platform APIs are main, but main services never import from `electron` directly. Host capabilities (clipboard, dialog, secure storage, file system, shell, notifier, updater) flow through `@posthog/platform` interfaces with per-host adapters in `apps/code/src/main/platform-adapters/`. The renderer persists pure UI prefs via `electronStorage`. Domain data persists in the SQLite DB via a `Repository`.
-- **R8** No `container.get(...)` inside service methods. Constructor injection only. A circular dep means the boundary is wrong; split or invert via events.
-- **R9** Subscriptions are wired once per feature in `apps/code/src/renderer/features/<feature>/subscriptions.ts`, started at app boot. Components do not start subscriptions ad hoc.
-- **R10** tRPC routers are one-liners. No inline business logic. No reaching past the service to a repository. No router without a backing service.
-- **R11** Templates use `@posthog/quill` for everything on the rendering layer that's available. Reach for raw primitives or one-off components only when Quill has no equivalent.
-- **R12** Routing is TanStack Router. New screens register routes with TanStack Router; do not introduce a second router or hand-rolled routing logic.
+Hosts:
 
-### Decision tree
+- `apps/code`: Electron desktop host.
+- `apps/web`: web host and portability smoke test.
+- `apps/mobile`: React Native host.
+- `apps/cli`: thin shell over `@posthog/cli`.
 
-Apply on every new file or meaningful change.
+## Rules
 
-1. Network call, file system, git, shell, multi-step async? Main service.
-2. Reusable across hosts (Electron, mobile, web, CI)? Domain package (`packages/*`).
-3. Wraps a host capability (clipboard, dialog, secure storage)? Platform adapter behind a `@posthog/platform` interface.
-4. Purely about how the UI looks right now? Store if shared, `useState` if local to one subtree.
-5. Single user event triggers a single mutation? Component with `useMutation`.
-6. Non-trivial renderer-only UI mechanic shared across features? Renderer service.
-7. None of the above? Probably a main service.
+1. Business logic lives in `@posthog/core` services. Use `@injectable()` classes, constructor injection, and host-neutral dependencies.
+2. Stores hold state only. No async flows, retries, dedupe, clients, cross-store orchestration, or business decisions.
+3. Domain state lives in `@posthog/core` with `zustand/vanilla`. View state lives in `@posthog/ui` with `zustand`.
+4. Node and host syscalls live in `@posthog/workspace-server` or a host adapter. `core` reaches workspace-server through an injected workspace-client slice.
+5. Components render. Hooks wrap exactly one query, mutation, subscription, or store selector. Multi-source orchestration belongs in a service method.
+6. Cross-feature coordination uses a service or `Contribution` emitting typed events. Stores do not reach into other stores.
+7. Runtime boundary shapes use Zod schemas in `schemas.ts`. Infer TypeScript types from schemas.
+8. Host capabilities use `@posthog/platform` interfaces plus per-host adapters under `apps/<host>`.
+9. Use constructor injection only. Do not use `container.get(...)` or `resolveService(...)` inside service methods or components. `resolveService` is allowed only in host composition seams under `apps/`.
+10. Boot side effects are `Contribution`s bound in feature modules and started by `boot()`.
+11. tRPC routers are one-line forwards over services. No inline business logic.
+12. Use Inversify with `@inversifyjs/strongly-typed`. Define each token as a standalone `export const TOKEN = Symbol.for("posthog.<area>.<thing>")` beside its `interface`/service — never an object-literal token bag (`TOKENS = { X: Symbol.for(...) }`), because object properties are not `unique symbol` and cannot key a binding map. Every composition root declares a `BindingMap` interface (token → bound type) and constructs `new TypedContainer<BindingMap>()`, so a mistyped bind or a resolve of an unbound token fails at compile time. Bind in the feature module. Do not use `@provide` or `*Port` naming.
+13. Use `@posthog/quill` for rendering-layer primitives when available. Routing is TanStack Router contributed per feature.
 
-### Forbidden patterns
+Hard boundary: `@posthog/core` and `@posthog/ui` never import host transports. No `trpcClient`, `electron`, or `node:*`.
 
-These shapes exist in the codebase today. Do not copy them. Do not extend them.
+## Import Direction
 
-- **Multi-step flows in stores.** Whole auth flows (OAuth dance, token refresh, server-sync), retry loops, polling, anything with `let inFlightAuthSync: Promise | null` style dedup. All of it belongs in a main service. The store just reflects the service's state.
-- **Cross-store reach-ins in actions.** `useOtherStore.getState().something()` inside a store action. Main emits an event; each store reacts in its registrar.
-- **Business clients held in stores.** `client: createClient(region, projectId)` in a store. Construct in main, store holds a serializable id.
-- **Stores owning subscriptions.** `let globalSubscription = trpcClient.X.subscribe(...)` at store module scope. Use a feature subscription registrar.
-- **Stores owning timers for domain cleanup.** `window.setTimeout(() => removeClone(id), 3000)`. The host owns the lifecycle and emits a `Removed` event.
-- **Custom hooks that orchestrate multiple queries.** Two `useQuery` calls plus a `useMemo` merge. Expose one tRPC procedure that returns the merged shape.
-- **Imperative `trpcClient` from components for routine reads.** `useEffect(() => trpcClient.X.query().then(setState))`. Use `useQuery`.
-- **tRPC routers bypassing their service to call a repository.** `workspace.ts` does this today; do not extend the pattern.
-- **tRPC routers with inline business logic.** Math, time arithmetic, conditional branching inside `.mutation`. Move to a service method.
-- **tRPC routers with no backing service.** `os.ts` is 396 lines today with no `OsService`. New routers always have a service.
-- **`container.get(X)` inside a service method to dodge a circular dep.** `WorkspaceService` does this with `FileWatcherService`. Split or event-ize instead.
-- **Renderer services that fetch domain data or coordinate tRPC.** The 3,796-line `sessions/service/service.ts` is the canonical example. Move it to main.
-- **Platform adapters with business logic.** Adapters wrap and translate. Decisions live in services that depend on the adapter via an interface.
-- **Importing from `electron` in service code.** Services depend on `@posthog/platform` interfaces, not on `app`, `BrowserWindow`, `clipboard`, `dialog`, `shell`, `safeStorage` etc. Otherwise the service can never run in a cloud sandbox or workspace-server context.
+Enforced by Biome `noRestrictedImports`.
 
-When in doubt, push logic toward main. The renderer is being thinned out, not thickened. Imagine a web or mobile build of this app reusing the same renderer code: every business decision living in a store or component is a thing that won't port.
+- `platform` and `shared` import no internal packages.
+- `api-client` and `workspace-client` may import `shared` and relevant `platform` contracts. No UI or Node host syscalls.
+- `workspace-server` may import `shared`, `platform` contracts, Node modules, and workspace-server code. Never `core` or `ui`.
+- `core` may import `shared`, `platform`, `workspace-client`, `api-client`, and other core code. Never `ui`, `workspace-server`, `electron`, `node:*`, `trpcClient`, or host-router runtime.
+- `ui` may import `core`, `platform`, `shared`, `@posthog/quill`, and UI feature public files. Never `workspace-server`, `electron`, `node:*`, or `trpcClient`.
+- `apps/<host>` may import any package and its own host adapters.
 
-### Store / service boundary
+## Core Eligibility
 
-**Renderer stores own:** pure UI state (open/closed, selected item, scroll position), cached data from subscriptions, message queues and event buffers, permission display state, thin action wrappers that call tRPC mutations.
+`core` is portable business logic. If code touches the host, it is not core yet.
 
-**Renderer services own (narrow escape hatch only):** renderer-only UI mechanics shared across more than one component (visual action queues, global drag-and-drop coordinator, focus ring manager, debounced scroll broadcaster). Logic that is awkward to express in a component AND has no domain meaning.
+| Host dependency | Correct home |
+| --- | --- |
+| `node:fs`, `node:path`, `node:child_process`, `process.*` | `workspace-server`, or an injected platform/environment interface |
+| `node:crypto` for ids, hashes, PKCE, random | injected platform crypto/random interface |
+| `node:events` emitters or async iterators | shared event abstraction, or keep source in `workspace-server` |
+| `@posthog/enricher`, git/file/AST repo scans | `workspace-server` owns the scan; `core` owns result decisions |
+| `process.platform`, `process.arch` | typed host-info interface supplied by host |
 
-**Renderer services DO NOT own:** cross-store coordination on system events (main emits, each store reacts via a subscription registrar), multi-step state machines that orchestrate tRPC calls (that is a main service), anything that fetches data or holds business state.
+Split host-tangled algorithms: pure decision in `core`, host access in `workspace-server` or a platform adapter.
 
-**Main process services own:** business logic and orchestration, polling loops, retries, dedup, batching, data fetching, parsing, transformation, long-lived host state (registries, watchers, OAuth flow state), cross-service coordination, emission of typed events.
+## Placement Decision
 
-When multiple stores need to react to one event (logout clearing auth + seats + settings + navigation), main emits the event and each store reacts in its feature's subscription registrar. Stores never reach into other stores.
+For each new file or meaningful change:
 
----
+1. Data source:
+   - Git, fs, process, pty, watchers: `workspace-server` procedure, consumed by a `core` service through workspace-client.
+   - PostHog cloud API: `core` service/function using `@posthog/api-client`.
+   - Client-local host capability: `@posthog/platform` interface plus per-host adapter.
+2. Logic:
+   - Real orchestration, retries, rules, sagas, or decisions: `core` service.
+   - Trivial passthrough or streamed value: store plus host glue.
+3. State:
+   - Domain fact read by business logic: core store.
+   - Pure view state: UI store.
 
-## Project structure
+## Forbidden Patterns
 
-- Monorepo with pnpm workspaces and turbo
-- `apps/code` PostHog Code Electron desktop app (React + Vite)
-- `apps/cli` CLI app, thin shell over the external `@posthog/cli` npm package
-- `apps/mobile` React Native mobile app (Expo)
-- `packages/agent` TypeScript agent framework wrapping the Claude Agent SDK
-- `packages/git` Git saga operations, gh CLI client, read-write locks
-- `packages/enricher` AST-level PostHog flag detection across multiple languages
-- `packages/platform` Interface-only declarations for host capabilities (fulfilled by per-target adapters in `apps/code/src/main/platform-adapters/`)
-- `packages/electron-trpc` tRPC-over-Electron-IPC bridge
-- `packages/shared` Zero-dependency shared utilities (Saga pattern, cloud-prompt encoding)
+- Business logic in store actions.
+- Domain stores in `@posthog/ui`.
+- `trpcClient` imports in `@posthog/core` or `@posthog/ui`.
+- Service-locator calls inside services or components.
+- Hooks that orchestrate multiple queries.
+- Platform interfaces for backend data.
+- Services for trivial passthroughs.
+- Business logic in platform adapters.
+- tRPC routers with inline logic or no backing service.
+- Object-literal DI token bags (`TOKENS = { X: Symbol.for(...) }`); use standalone token consts so a `BindingMap` can key on them.
+- Untyped `new Container()` at a composition root; use `new TypedContainer<BindingMap>()`.
+- Bespoke clients that wrap `trpcClient.x` one-to-one.
+- `*Port`, `*_PORT`, or `ports.ts` naming.
+- Business logic in `apps/<host>`.
+
+## Host Boundary
+
+`apps/code` contains Electron boot, lifecycle, platform adapters, and DI wiring only. `scripts/check-host-boundaries.mjs` checks host thinness against `scripts/host-boundary-allowlist.json`.
+
+When moving logic out of `apps/code`, run:
+
+```bash
+node scripts/check-host-boundaries.mjs --prune
+```
+
+Do not use `--init` to baseline new violations.
+
+## Structure
+
+```text
+apps/code/src/
+|-- main/
+|   |-- index.ts                 # composition root
+|   |-- bootstrap.ts             # boot sequence
+|   |-- window.ts, menu.ts, deep-links.ts, preload.ts
+|   |-- di/                      # container and host tokens
+|   |-- services/                # host-resident services
+|   `-- platform-adapters/       # Electron adapters
+`-- renderer/
+    |-- main.tsx                 # imports wiring, boots the app
+    |-- desktop-services.ts      # renderer host adapter bindings
+    |-- desktop-contributions.ts # loads core/ui modules
+    |-- platform-adapters/       # renderer adapters wrapping host transport
+    |-- features/                # host glue only
+    `-- trpc/client.ts           # renderer trpcClient for host glue
+```
+
+```text
+packages/core/src/<feature>/
+|-- <feature>.ts
+|-- <feature>.module.ts
+|-- <feature>Store.ts
+|-- identifiers.ts
+|-- schemas.ts
+`-- <feature>.test.ts
+
+packages/host-router/src/routers/<feature>.router.ts
+
+packages/ui/src/features/<feature>/
+|-- <Feature>View.tsx
+|-- <feature>.contribution.ts
+|-- <feature>.module.ts
+|-- store.ts
+`-- use<Feature>.ts
+```
+
+## DI and Boot
+
+- Tokens are standalone `export const TOKEN = Symbol.for("posthog.<area>.<thing>")` consts, defined beside the interface in the owning package. Standalone consts infer `unique symbol`, which is what lets a `BindingMap` key on them; object-literal token bags do not and are forbidden.
+- Each composition root (`apps/code` main + renderer, `apps/web`, `packages/workspace-server`) owns a `BindingMap` interface mapping every token it binds to the bound type, and constructs `new TypedContainer<BindingMap>()` (from `@inversifyjs/strongly-typed`). `bind`/`get`/`isBound` are then checked against the map at compile time.
+- Services bind in feature `.module.ts` files with `ContainerModule` (typed via `TypedContainerModule<BindingMap>` where the root is typed).
+- Hosts load modules in `desktop-contributions.ts` or the equivalent web/mobile composition file.
+- Hosts bind platform implementations in `desktop-services.ts`, `main/index.ts`, or host equivalents.
+- Hosts call `setRootContainer(container)` before resolving services through React or host seams.
+- Plain modules that must register bindings before root initialization use `bindToContainer((container) => ...)`.
+- `CONTRIBUTION` starts subscriptions, commands, routes, menus, and feature boot.
+- React uses `useService(TOKEN)` at boundaries only.
+
+```ts
+setRootContainer(container);
+
+import "./desktop-services";
+import "./desktop-contributions";
+
+await boot(container);
+```
 
 ## Commands
 
-- `pnpm install` Install all dependencies
-- `pnpm dev` Run both agent (watch) and code app via phrocs
-- `pnpm dev:mprocs` Run both agent (watch) and code app via mprocs
-- `pnpm dev:agent` Run agent package in watch mode only
-- `pnpm dev:code` Run code desktop app only
-- `pnpm build` Build all packages (turbo)
-- `pnpm typecheck` Type check all packages
-- `pnpm lint` Lint and auto-fix with biome
-- `pnpm format` Format with biome
-- `pnpm test` Run tests across all packages
+- `pnpm install`: install dependencies.
+- `pnpm dev`: run agent watch and desktop app.
+- `pnpm build`: build all packages.
+- `pnpm typecheck`: typecheck all packages.
+- `pnpm lint`: run Biome lint and autofix.
+- `pnpm format`: run Biome format.
+- `pnpm test`: run unit tests.
+- `pnpm test:e2e`: run Playwright tests.
+- `pnpm --filter <pkg> typecheck|test|build`: run a scoped task.
+- `pnpm --filter code package|make`: package the Electron app.
+- `node scripts/check-host-boundaries.mjs`: verify host boundary allowlist.
 
-### Code app
+## Code Style
 
-- `pnpm --filter code test` Run vitest tests
-- `pnpm --filter code typecheck` Type check code app
-- `pnpm --filter code package` Package electron app
-- `pnpm --filter code make` Make distributable
+- Prefer local code over new dependencies for simple fixes.
+- Keep functions focused.
+- Use Biome, not ESLint or Prettier. Use 2-space indentation and double quotes.
+- No `console.*` in source. Inject `ROOT_LOGGER` as `RootLogger` and call `.scope(name)`. Logger files are exempt.
+- TypeScript strict mode. Use explicit types where they clarify public contracts or nontrivial values.
+- Use path aliases and package public exports. Avoid deep relative imports.
+- No barrel files (`index.ts`).
+- Use Tailwind first. Keep classes sorted. Use inline `style` only for runtime values, library configuration, or CSS variables.
+- Abort controllers before awaiting cleanup that depends on them.
 
-### Agent package
+See [docs/conventions.md](./docs/conventions.md).
 
-- `pnpm --filter agent build` Build agent with tsup
-- `pnpm --filter agent dev` Watch mode build
-- `pnpm --filter agent typecheck` Type check agent
+## Agent Integration
 
-### Shared package
+- Use SDK types from `@anthropic-ai/claude-agent-sdk` and `@agentclientprotocol/sdk`.
+- Do not use Claude Code SDK `rawInput`. Use Zod-validated metadata.
+- User approvals are tool calls with permissions. Do not model approvals as custom methods plus notifications.
 
-- `pnpm --filter @posthog/shared build` Build shared with tsup
-- `pnpm --filter @posthog/shared dev` Watch mode build
-- `pnpm --filter @posthog/shared typecheck` Type check shared
+## Key Libraries
 
----
-
-## Code style
-
-- Prefer writing our own solution over adding external packages when the fix is simple
-- Keep functions focused with single responsibility
-- Biome for linting and formatting (not ESLint or Prettier)
-- 2-space indentation, double quotes
-- No `console.*` in source. Use the logger instead (logger files exempt)
-- Path aliases required in renderer code, no relative imports: `@features/*`, `@components/*`, `@stores/*`, `@hooks/*`, `@utils/*`, `@renderer/*`, `@shared/*`, `@api/*`
-- Main process path aliases: `@main/*`, `@api/*`, `@shared/*`
-- TypeScript strict mode enabled
-- Tailwind CSS classes should be sorted (biome `useSortedClasses` rule)
-- No barrel files (`index.ts`). Import directly from source
-- Tailwind first, inline `style` only for dynamic values, library config, or CSS-var passthrough
-- Use the scoped logger (`logger.scope(...)`) not `console`
-- Abort controllers fire **before** awaiting cleanup that depends on them (otherwise deadlock)
-
-See [docs/conventions.md](./docs/conventions.md) for full examples of Tailwind rules, Zustand store shape, analytics event naming, and other code conventions.
-
-## Agent integration guidelines
-
-- **No rawInput**: Don't use Claude Code SDK's `rawInput`. Only use Zod validated meta fields. This keeps us agent agnostic and gives us a maintainable, extensible format for logs.
-- **Use ACP SDK types**: Don't roll your own types for things available in the ACP SDK. Import types directly from `@anthropic-ai/claude-agent-sdk`.
-- **Permissions via tool calls**: If something requires user input or approval, implement it through a tool call with a permission instead of custom methods plus notifications. Avoid patterns like `_array/permission_request`.
-
-## Key libraries
-
-- React 19, Radix UI Themes, Tailwind CSS
-- TanStack Query for data fetching, TanStack Router for routing
-- xterm.js for terminal emulation
-- CodeMirror for code editing
-- Tiptap for rich text
-- Zod for schema validation
-- InversifyJS for dependency injection
-- Sonner for toast notifications
-
----
+- React 19, Radix UI Themes, Tailwind CSS, `@posthog/quill`
+- TanStack Query, TanStack Router
+- Zustand, InversifyJS (with `@inversifyjs/strongly-typed`), Zod
+- xterm.js, CodeMirror, Tiptap
+- Sonner
 
 ## Testing
 
-- `pnpm test` runs unit tests, `pnpm test:e2e` runs Playwright.
-- Unit tests (Vitest) for stores, utilities, service methods with mocked deps, business logic.
-- E2E tests (Playwright) for critical user journeys, IPC, Electron-API-dependent features, regressions.
-- Rule of thumb: if it can be tested without Electron running, use a unit test.
-- Tests are colocated as `.test.ts` / `.test.tsx`. E2E tests live in `tests/e2e/`.
+- Unit tests: Vitest.
+- E2E tests: Playwright.
+- Test core/UI services and stores with faked injected dependencies and explicit props.
+- Prefer a parameterised test shape (`it.each`/`test.each`) when several cases exercise the same logic with different inputs and expectations. Keep separate tests when cases differ in setup, assertions, or intent.
+- Colocate tests as `.test.ts` or `.test.tsx`.
+- Put E2E tests in `tests/e2e/`.
+- Drive and screenshot the real running app (live data) with agent-browser over CDP `:9222`: run `pnpm app:cdp` or use the `test-electron-app` skill.
+- After touching `@posthog/platform`, rebuild or typecheck its `dist/`.
+- After touching `packages/core`, run `biome lint packages/core` and verify zero `noRestrictedImports`.
 
-See [docs/testing.md](./docs/testing.md) for store testing patterns, mocking patterns, and test helpers.
+See [docs/testing.md](./docs/testing.md).
 
----
+## Reference
 
-## Directory structure
-
-```
-apps/code/src/
-├── main/
-│   ├── di/                   # InversifyJS container + tokens
-│   ├── services/             # Services own all business logic and I/O
-│   ├── platform-adapters/    # Electron implementations of @posthog/platform interfaces
-│   ├── trpc/
-│   │   ├── router.ts         # Root router combining all routers
-│   │   └── routers/          # One router per service
-│   └── lib/logger.ts
-├── renderer/
-│   ├── di/                   # Renderer DI container (tRPC client + narrow renderer services)
-│   ├── features/             # Feature modules (sessions, tasks, terminal, etc.)
-│   │   └── <feature>/subscriptions.ts  # Subscription registrars wired once at boot
-│   ├── stores/               # Zustand stores (pure UI state + subscription caches)
-│   ├── services/             # Narrow renderer services (UI mechanics only)
-│   ├── hooks/                # Custom React hooks
-│   ├── components/           # Shared components
-│   ├── trpc/client.ts        # tRPC client setup
-│   └── utils/                # Utilities, logger, analytics, etc.
-├── shared/                   # Shared between main & renderer
-│   ├── types.ts              # Shared type definitions
-│   └── constants.ts
-├── api/                      # PostHog API client
-└── test/                     # Test utilities
-```
-
----
-
-## Environment variables
-
-- Copy `.env.example` to `.env`
-
----
-
-## Reference docs
-
-- [docs/architecture.md](./docs/architecture.md) Electron process model, DI, IPC via tRPC, services, events, MCP apps, package roles.
-- [docs/conventions.md](./docs/conventions.md) Tailwind rules, store/component patterns, async cleanup, logger, analytics events naming.
-- [docs/testing.md](./docs/testing.md) Test patterns, store testing, mocking, test helpers.
+- [docs/architecture.md](./docs/architecture.md)
+- [docs/conventions.md](./docs/conventions.md)
+- [docs/testing.md](./docs/testing.md)
+- [docs/DEEP-LINKS.md](./docs/DEEP-LINKS.md)
+- [docs/LOCAL-DEVELOPMENT.md](./docs/LOCAL-DEVELOPMENT.md)
+- [docs/UPDATES.md](./docs/UPDATES.md)
+- [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)

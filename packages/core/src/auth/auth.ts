@@ -1,0 +1,1065 @@
+import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
+import {
+  type IPowerManager,
+  POWER_MANAGER_SERVICE,
+} from "@posthog/platform/power-manager";
+import {
+  type BackoffOptions,
+  type CloudRegion,
+  getCloudUrlFromRegion,
+  NotAuthenticatedError,
+  OAUTH_SCOPE_VERSION,
+  sleepWithBackoff,
+  TypedEventEmitter,
+  withTimeout,
+} from "@posthog/shared";
+import { inject, injectable, postConstruct, preDestroy } from "inversify";
+import {
+  AUTH_CONNECTIVITY,
+  AUTH_OAUTH_FLOW_SERVICE,
+  AUTH_PREFERENCE_STORE,
+  AUTH_SESSION_STORE,
+  AUTH_TOKEN_CIPHER,
+  AUTH_TOKEN_OVERRIDE,
+  type IAuthConnectivity,
+  type IAuthOAuthFlowService,
+  type IAuthPreferenceStore,
+  type IAuthSessionStore,
+  type IAuthTokenCipher,
+} from "./identifiers";
+import {
+  AuthServiceEvent,
+  type AuthServiceEvents,
+  type AuthState,
+  type AuthTokenResponse,
+  findOrgForProject,
+  flattenProjectIds,
+  type OrgProjects,
+  type OrgProjectsMap,
+  pickInitialProjectId,
+  type ValidAccessTokenOutput,
+} from "./schemas";
+
+const TOKEN_EXPIRY_SKEW_MS = 60_000;
+const AUTH_FETCH_TIMEOUT_MS = 30_000;
+const AUTH_BOOTSTRAP_DEADLINE_MS = 20_000;
+type FetchLike = (
+  input: string | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
+interface InMemorySession {
+  accountKey: string | null;
+  accessToken: string;
+  accessTokenExpiresAt: number;
+  refreshToken: string;
+  cloudRegion: CloudRegion;
+  orgProjectsMap: OrgProjectsMap;
+  currentOrgId: string | null;
+  currentProjectId: number | null;
+  orgProjectsIncomplete: boolean;
+}
+
+interface StoredSessionInput {
+  refreshToken: string;
+  cloudRegion: CloudRegion;
+  selectedProjectId: number | null;
+}
+
+interface TokenResponseOptions {
+  cloudRegion: CloudRegion;
+  selectedProjectId: number | null;
+}
+
+@injectable()
+export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
+  private state: AuthState = {
+    status: "anonymous",
+    bootstrapComplete: false,
+    cloudRegion: null,
+    orgProjectsMap: {},
+    currentOrgId: null,
+    currentProjectId: null,
+    hasCodeAccess: null,
+    needsScopeReauth: false,
+  };
+  private session: InMemorySession | null = null;
+  private initializePromise: Promise<void> | null = null;
+  private refreshPromise: Promise<InMemorySession> | null = null;
+  constructor(
+    @inject(AUTH_PREFERENCE_STORE)
+    private readonly authPreference: IAuthPreferenceStore,
+    @inject(AUTH_SESSION_STORE)
+    private readonly authSession: IAuthSessionStore,
+    @inject(AUTH_OAUTH_FLOW_SERVICE)
+    private readonly oauthFlow: IAuthOAuthFlowService,
+    @inject(AUTH_CONNECTIVITY)
+    private readonly connectivity: IAuthConnectivity,
+    @inject(AUTH_TOKEN_CIPHER)
+    private readonly cipher: IAuthTokenCipher,
+    @inject(POWER_MANAGER_SERVICE)
+    private readonly powerManager: IPowerManager,
+    @inject(ROOT_LOGGER)
+    private readonly logger: RootLogger,
+    @inject(AUTH_TOKEN_OVERRIDE)
+    private readonly tokenOverride: string | null,
+  ) {
+    super();
+  }
+  async initialize(): Promise<void> {
+    if (this.initializePromise) {
+      return this.initializePromise;
+    }
+
+    this.initializePromise = this.doInitialize();
+    return this.initializePromise;
+  }
+  getState(): AuthState {
+    return { ...this.state };
+  }
+  async login(region: CloudRegion): Promise<AuthState> {
+    await this.authenticateWithFlow(
+      () => this.oauthFlow.startFlow(region),
+      region,
+      "OAuth flow failed",
+    );
+    return this.getState();
+  }
+  async signup(region: CloudRegion): Promise<AuthState> {
+    await this.authenticateWithFlow(
+      () => this.oauthFlow.startSignupFlow(region),
+      region,
+      "Signup failed",
+    );
+    return this.getState();
+  }
+  async getValidAccessToken(): Promise<ValidAccessTokenOutput> {
+    const override = this.tokenOverride;
+    if (override) {
+      await this.initialize();
+      const region = this.session?.cloudRegion ?? "us";
+      return {
+        accessToken: override,
+        apiHost: getCloudUrlFromRegion(region),
+      };
+    }
+
+    await this.initialize();
+
+    const session = await this.ensureValidSession();
+    return {
+      accessToken: session.accessToken,
+      apiHost: getCloudUrlFromRegion(session.cloudRegion),
+    };
+  }
+  async refreshAccessToken(): Promise<ValidAccessTokenOutput> {
+    const override = this.tokenOverride;
+    if (override) {
+      await this.initialize();
+      const region = this.session?.cloudRegion ?? "us";
+      return {
+        accessToken: override,
+        apiHost: getCloudUrlFromRegion(region),
+      };
+    }
+
+    await this.initialize();
+
+    const session = await this.ensureValidSession(true);
+    return {
+      accessToken: session.accessToken,
+      apiHost: getCloudUrlFromRegion(session.cloudRegion),
+    };
+  }
+  async invalidateAccessTokenForTest(): Promise<void> {
+    await this.initialize();
+
+    if (!this.session) {
+      return;
+    }
+
+    this.session = {
+      ...this.session,
+      accessToken: `${this.session.accessToken}_invalid`,
+      accessTokenExpiresAt: Date.now() + 5 * 60 * 1000,
+    };
+  }
+  async authenticatedFetch(
+    fetchImpl: FetchLike,
+    input: string | Request,
+    init: RequestInit = {},
+  ): Promise<Response> {
+    const initialAuth = await this.getValidAccessToken();
+    let response = await this.executeAuthenticatedFetch(
+      fetchImpl,
+      input,
+      init,
+      initialAuth.accessToken,
+    );
+
+    if (response.status === 401 || response.status === 403) {
+      const refreshedAuth = await this.refreshAccessToken();
+      response = await this.executeAuthenticatedFetch(
+        fetchImpl,
+        input,
+        init,
+        refreshedAuth.accessToken,
+      );
+    }
+
+    return response;
+  }
+  async redeemInviteCode(code: string): Promise<AuthState> {
+    const { apiHost } = await this.getValidAccessToken();
+    const response = await this.authenticatedFetch(
+      fetch,
+      `${apiHost}/api/code/invites/redeem/`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      },
+    );
+
+    const data = (await response.json().catch(() => ({}))) as {
+      success?: boolean;
+      error?: string;
+    };
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || "Failed to redeem invite code");
+    }
+
+    this.updateState({ hasCodeAccess: true });
+    return this.getState();
+  }
+  async selectProject(projectId: number): Promise<AuthState> {
+    await this.initialize();
+
+    const session = this.requireSession();
+
+    if (!flattenProjectIds(session.orgProjectsMap).includes(projectId)) {
+      throw new Error("Invalid project selection");
+    }
+
+    const newOrgId =
+      findOrgForProject(
+        session.orgProjectsMap,
+        projectId,
+        session.currentOrgId,
+      ) ?? session.currentOrgId;
+
+    const orgProjectsMap =
+      newOrgId && newOrgId !== session.currentOrgId
+        ? await this.applyOrgChange(session, newOrgId)
+        : session.orgProjectsMap;
+
+    this.commitSessionState(session, {
+      orgProjectsMap,
+      currentOrgId: newOrgId,
+      currentProjectId: projectId,
+    });
+    return this.getState();
+  }
+  async switchOrg(orgId: string): Promise<AuthState> {
+    await this.initialize();
+
+    const session = this.requireSession();
+
+    if (!session.orgProjectsMap[orgId]) {
+      throw new Error("Invalid organization");
+    }
+
+    const orgProjectsMap = await this.applyOrgChange(session, orgId);
+    const currentProjectId = this.pickProjectForOrg(
+      session,
+      orgProjectsMap,
+      orgId,
+    );
+
+    this.commitSessionState(session, {
+      orgProjectsMap,
+      currentOrgId: orgId,
+      currentProjectId,
+    });
+    return this.getState();
+  }
+  private async applyOrgChange(
+    session: InMemorySession,
+    orgId: string,
+  ): Promise<OrgProjectsMap> {
+    await this.patchCurrentOrganization(orgId);
+    const refreshedProjects = await this.fetchOrgProjects(
+      session.accessToken,
+      session.cloudRegion,
+      orgId,
+    );
+    if (!refreshedProjects) {
+      return session.orgProjectsMap;
+    }
+    return {
+      ...session.orgProjectsMap,
+      [orgId]: {
+        orgName: session.orgProjectsMap[orgId]?.orgName ?? "(unknown)",
+        projects: refreshedProjects,
+      },
+    };
+  }
+  private pickProjectForOrg(
+    session: InMemorySession,
+    orgProjectsMap: OrgProjectsMap,
+    orgId: string,
+  ): number | null {
+    const orgProjects = orgProjectsMap[orgId]?.projects ?? [];
+    const preferredProjectId = session.accountKey
+      ? (this.authPreference.getOrgProject(
+          session.accountKey,
+          session.cloudRegion,
+          orgId,
+        )?.lastSelectedProjectId ?? null)
+      : null;
+    if (
+      preferredProjectId &&
+      orgProjects.some((p) => p.id === preferredProjectId)
+    ) {
+      return preferredProjectId;
+    }
+    return orgProjects[0]?.id ?? null;
+  }
+  private commitSessionState(
+    prevSession: InMemorySession,
+    next: {
+      orgProjectsMap: OrgProjectsMap;
+      currentOrgId: string | null;
+      currentProjectId: number | null;
+    },
+  ): void {
+    this.session = {
+      ...prevSession,
+      orgProjectsMap: next.orgProjectsMap,
+      currentOrgId: next.currentOrgId,
+      currentProjectId: next.currentProjectId,
+      orgProjectsIncomplete: false,
+    };
+
+    this.persistProjectPreference(this.session);
+    this.persistSession({
+      refreshToken: this.session.refreshToken,
+      cloudRegion: this.session.cloudRegion,
+      selectedProjectId: next.currentProjectId,
+    });
+
+    this.updateState({
+      orgProjectsMap: next.orgProjectsMap,
+      currentOrgId: next.currentOrgId,
+      currentProjectId: next.currentProjectId,
+    });
+  }
+  private async patchCurrentOrganization(orgId: string): Promise<void> {
+    const { apiHost } = await this.getValidAccessToken();
+    const response = await this.authenticatedFetch(
+      fetch,
+      `${apiHost}/api/users/@me/`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ set_current_organization: orgId }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to switch organization: ${response.statusText}`);
+    }
+  }
+  async logout(): Promise<AuthState> {
+    const { cloudRegion, currentProjectId } = this.state;
+
+    this.authSession.clearCurrent();
+    this.session = null;
+    this.setAnonymousState({ cloudRegion, currentProjectId });
+    return this.getState();
+  }
+  private executeAuthenticatedFetch(
+    fetchImpl: FetchLike,
+    input: string | Request,
+    init: RequestInit,
+    accessToken: string,
+  ): Promise<Response> {
+    const headers = new Headers(init.headers);
+    headers.set("authorization", `Bearer ${accessToken}`);
+
+    return fetchImpl(input, {
+      ...init,
+      headers,
+      signal: init.signal ?? AbortSignal.timeout(AUTH_FETCH_TIMEOUT_MS),
+    });
+  }
+  private async doInitialize(): Promise<void> {
+    const stored = this.authSession.getCurrent();
+
+    if (!stored) {
+      this.setAnonymousState({ bootstrapComplete: true });
+      return;
+    }
+
+    if (stored.scopeVersion < OAUTH_SCOPE_VERSION) {
+      this.session = null;
+      this.setAnonymousState({
+        bootstrapComplete: true,
+        cloudRegion: stored.cloudRegion,
+        currentProjectId: stored.selectedProjectId,
+        needsScopeReauth: true,
+      });
+      return;
+    }
+
+    const storedSession = this.resolveStoredSession();
+    if (!storedSession) {
+      this.logger.warn("Stored auth session could not be decrypted");
+      this.authSession.clearCurrent();
+      this.setAnonymousState({ bootstrapComplete: true });
+      return;
+    }
+
+    try {
+      const restore = this.refreshAndSyncSession(storedSession);
+      const outcome = await withTimeout(restore, AUTH_BOOTSTRAP_DEADLINE_MS);
+      if (outcome.result === "timeout") {
+        this.logger.warn(
+          "Auth bootstrap exceeded deadline; completing anonymously and restoring in the background",
+        );
+        // Keep awaiting so a late success still upgrades state; swallow rejection.
+        restore.catch((error) => {
+          this.logger.warn("Background auth restore failed after deadline", {
+            error,
+          });
+        });
+        this.completeBootstrapAnonymously(storedSession);
+      }
+    } catch (error) {
+      this.logger.warn("Failed to restore stored auth session", { error });
+      this.completeBootstrapAnonymously(storedSession);
+    }
+  }
+  private completeBootstrapAnonymously(
+    storedSession: StoredSessionInput,
+  ): void {
+    // Stored session stays on disk so connectivity/resume recovery can retry.
+    this.session = null;
+    this.setAnonymousState({
+      bootstrapComplete: true,
+      cloudRegion: storedSession.cloudRegion,
+      currentProjectId: storedSession.selectedProjectId,
+    });
+  }
+  private async ensureValidSession(
+    forceRefresh = false,
+  ): Promise<InMemorySession> {
+    if (
+      this.session &&
+      !forceRefresh &&
+      !this.isSessionExpiring(this.session)
+    ) {
+      return this.session;
+    }
+
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    const sessionInput = this.getSessionInputForRefresh();
+
+    this.refreshPromise = this.refreshSession(sessionInput).finally(() => {
+      this.refreshPromise = null;
+    });
+
+    const session = await this.refreshPromise;
+    await this.syncAuthenticatedSession(session);
+    return session;
+  }
+
+  private getSessionInputForRefresh(): StoredSessionInput {
+    if (this.session) {
+      return {
+        refreshToken: this.session.refreshToken,
+        cloudRegion: this.session.cloudRegion,
+        selectedProjectId: this.session.currentProjectId,
+      };
+    }
+
+    const storedSession = this.resolveStoredSession();
+    if (!storedSession) {
+      throw new NotAuthenticatedError();
+    }
+
+    return storedSession;
+  }
+  private async refreshSession(
+    input: StoredSessionInput,
+  ): Promise<InMemorySession> {
+    if (!this.connectivity.getStatus().isOnline) {
+      throw new Error("Offline");
+    }
+
+    let lastError = "Token refresh failed";
+
+    for (
+      let attempt = 0;
+      attempt < AuthService.REFRESH_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      const result = await this.oauthFlow.refreshToken(
+        input.refreshToken,
+        input.cloudRegion,
+      );
+
+      if (result.success && result.data) {
+        return await this.createSessionFromTokenResponse(result.data, input);
+      }
+
+      lastError = result.error || "Token refresh failed";
+
+      if (result.errorCode === "auth_error") {
+        this.logger.warn("Refresh token rejected by server, forcing logout");
+        this.authSession.clearCurrent();
+        this.session = null;
+        this.setAnonymousState({
+          cloudRegion: input.cloudRegion,
+          currentProjectId: input.selectedProjectId,
+        });
+        throw new Error(lastError);
+      }
+
+      const isRetryable =
+        result.errorCode === "network_error" ||
+        result.errorCode === "server_error";
+
+      if (!isRetryable) {
+        throw new Error(lastError);
+      }
+
+      const isLastAttempt = attempt === AuthService.REFRESH_MAX_ATTEMPTS - 1;
+      if (isLastAttempt) break;
+
+      this.logger.warn("Transient refresh failure, retrying", {
+        attempt,
+        errorCode: result.errorCode,
+      });
+      await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
+    }
+
+    throw new Error(lastError);
+  }
+  private async createSessionFromTokenResponse(
+    tokenResponse: AuthTokenResponse,
+    options: TokenResponseOptions,
+  ): Promise<InMemorySession> {
+    const scopedOrgIds = tokenResponse.scoped_organizations ?? [];
+    const { accountKey, currentOrgId } = await this.fetchUserContext(
+      tokenResponse.access_token,
+      options.cloudRegion,
+    );
+    const { map: orgProjectsMap, incomplete: orgProjectsIncomplete } =
+      await this.buildOrgProjectsMap(
+        tokenResponse.access_token,
+        options.cloudRegion,
+        scopedOrgIds,
+        this.session?.orgProjectsMap ?? {},
+      );
+    const lastPrefs = accountKey
+      ? this.authPreference.get(accountKey, options.cloudRegion)
+      : null;
+    const currentProjectId = pickInitialProjectId({
+      orgProjectsMap,
+      currentOrgId,
+      preferredProjectId:
+        options.selectedProjectId ?? lastPrefs?.lastSelectedProjectId ?? null,
+      lastSelectedOrgId: lastPrefs?.lastSelectedOrgId ?? null,
+    });
+
+    const session: InMemorySession = {
+      accountKey,
+      accessToken: tokenResponse.access_token,
+      accessTokenExpiresAt: Date.now() + tokenResponse.expires_in * 1000,
+      refreshToken: tokenResponse.refresh_token,
+      cloudRegion: options.cloudRegion,
+      orgProjectsMap,
+      currentOrgId,
+      currentProjectId,
+      orgProjectsIncomplete,
+    };
+
+    return session;
+  }
+  private async buildOrgProjectsMap(
+    accessToken: string,
+    cloudRegion: CloudRegion,
+    orgIds: string[],
+    previousMap: OrgProjectsMap,
+  ): Promise<{ map: OrgProjectsMap; incomplete: boolean }> {
+    let incomplete = false;
+    const entries = await Promise.all(
+      orgIds.map(async (orgId): Promise<[string, OrgProjects]> => {
+        const { org, transient } = await this.fetchOrgWithProjects(
+          accessToken,
+          cloudRegion,
+          orgId,
+        );
+        if (org) {
+          return [orgId, org];
+        }
+        const fallback = previousMap[orgId] ?? {
+          orgName: "(unknown)",
+          projects: [],
+        };
+        if (transient && fallback.projects.length === 0) {
+          incomplete = true;
+        }
+        return [orgId, fallback];
+      }),
+    );
+
+    return { map: Object.fromEntries(entries), incomplete };
+  }
+  private async fetchOrgProjects(
+    accessToken: string,
+    cloudRegion: CloudRegion,
+    orgId: string,
+  ): Promise<{ id: number; name: string }[] | null> {
+    const { org } = await this.fetchOrgWithProjects(
+      accessToken,
+      cloudRegion,
+      orgId,
+    );
+    return org?.projects ?? null;
+  }
+  private async fetchOrgWithProjects(
+    accessToken: string,
+    cloudRegion: CloudRegion,
+    orgId: string,
+  ): Promise<{ org: OrgProjects | null; transient: boolean }> {
+    for (
+      let attempt = 0;
+      attempt < AuthService.ORG_FETCH_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      const result = await this.fetchOrgWithProjectsOnce(
+        accessToken,
+        cloudRegion,
+        orgId,
+      );
+      if (result.ok) {
+        return { org: result.data, transient: false };
+      }
+      if (!result.retryable) {
+        return { org: null, transient: false };
+      }
+
+      const isLastAttempt = attempt === AuthService.ORG_FETCH_MAX_ATTEMPTS - 1;
+      if (isLastAttempt) {
+        break;
+      }
+
+      this.logger.warn("Transient org fetch failure, retrying", {
+        orgId,
+        attempt,
+      });
+      await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
+    }
+
+    return { org: null, transient: true };
+  }
+  private async fetchOrgWithProjectsOnce(
+    accessToken: string,
+    cloudRegion: CloudRegion,
+    orgId: string,
+  ): Promise<
+    { ok: true; data: OrgProjects } | { ok: false; retryable: boolean }
+  > {
+    const apiHost = getCloudUrlFromRegion(cloudRegion);
+    try {
+      const res = await this.executeAuthenticatedFetch(
+        fetch,
+        `${apiHost}/api/organizations/${orgId}/`,
+        {},
+        accessToken,
+      );
+      if (!res.ok) {
+        return { ok: false, retryable: res.status >= 500 };
+      }
+      const raw = (await res.json().catch(() => null)) as {
+        name?: unknown;
+        teams?: unknown;
+      } | null;
+      const orgName =
+        typeof raw?.name === "string" && raw.name.length > 0
+          ? raw.name
+          : "(unknown)";
+      const teams = Array.isArray(raw?.teams) ? raw.teams : [];
+      const projects = teams
+        .map((t) => t as { id?: unknown; name?: unknown })
+        .filter((t) => typeof t.id === "number" && typeof t.name === "string")
+        .map((t) => ({ id: t.id as number, name: t.name as string }));
+      return { ok: true, data: { orgName, projects } };
+    } catch (error) {
+      this.logger.warn("Failed to fetch org with projects", { orgId, error });
+      return { ok: false, retryable: true };
+    }
+  }
+  private async authenticateWithFlow(
+    runFlow: () => Promise<{
+      success: boolean;
+      data?: AuthTokenResponse;
+      error?: string;
+    }>,
+    region: CloudRegion,
+    fallbackError: string,
+  ): Promise<void> {
+    const result = await runFlow();
+    if (!result.success || !result.data) {
+      throw new Error(result.error || fallbackError);
+    }
+
+    const session = await this.createSessionFromTokenResponse(result.data, {
+      cloudRegion: region,
+      selectedProjectId: this.state.currentProjectId,
+    });
+    await this.syncAuthenticatedSession(session);
+  }
+  private async refreshAndSyncSession(
+    input: StoredSessionInput,
+  ): Promise<void> {
+    const session = await this.refreshSession(input);
+    await this.syncAuthenticatedSession(session);
+  }
+  private async syncAuthenticatedSession(
+    session: InMemorySession,
+  ): Promise<void> {
+    this.persistProjectPreference(session);
+    this.persistSession({
+      refreshToken: session.refreshToken,
+      cloudRegion: session.cloudRegion,
+      selectedProjectId: session.currentProjectId,
+    });
+
+    this.session = session;
+    this.updateState({
+      status: "authenticated",
+      bootstrapComplete: true,
+      cloudRegion: session.cloudRegion,
+      orgProjectsMap: session.orgProjectsMap,
+      currentOrgId: session.currentOrgId,
+      currentProjectId: session.currentProjectId,
+      needsScopeReauth: false,
+    });
+    await this.updateCodeAccessFromSession();
+
+    if (session.orgProjectsIncomplete) {
+      void this.refreshOrgProjects();
+    }
+  }
+  private persistSession(input: {
+    refreshToken: string;
+    cloudRegion: CloudRegion;
+    selectedProjectId: number | null;
+  }): void {
+    const priorSelected =
+      this.authSession.getCurrent()?.selectedProjectId ?? null;
+    this.authSession.saveCurrent({
+      refreshTokenEncrypted: this.cipher.encrypt(input.refreshToken),
+      cloudRegion: input.cloudRegion,
+      selectedProjectId: input.selectedProjectId ?? priorSelected,
+      scopeVersion: OAUTH_SCOPE_VERSION,
+    });
+  }
+  private persistProjectPreference(session: InMemorySession): void {
+    if (!session.accountKey || session.currentProjectId === null) {
+      return;
+    }
+
+    this.authPreference.save({
+      accountKey: session.accountKey,
+      cloudRegion: session.cloudRegion,
+      lastSelectedProjectId: session.currentProjectId,
+      lastSelectedOrgId: session.currentOrgId,
+    });
+
+    const orgIdForProject = session.currentProjectId
+      ? findOrgForProject(
+          session.orgProjectsMap,
+          session.currentProjectId,
+          session.currentOrgId,
+        )
+      : null;
+    if (orgIdForProject && session.currentProjectId) {
+      this.authPreference.saveOrgProject({
+        accountKey: session.accountKey,
+        cloudRegion: session.cloudRegion,
+        orgId: orgIdForProject,
+        lastSelectedProjectId: session.currentProjectId,
+      });
+    }
+  }
+  private isSessionExpiring(session: InMemorySession): boolean {
+    return session.accessTokenExpiresAt - Date.now() <= TOKEN_EXPIRY_SKEW_MS;
+  }
+  private async fetchUserContext(
+    accessToken: string,
+    cloudRegion: CloudRegion,
+  ): Promise<{ accountKey: string | null; currentOrgId: string | null }> {
+    try {
+      const response = await this.executeAuthenticatedFetch(
+        fetch,
+        `${getCloudUrlFromRegion(cloudRegion)}/api/users/@me/`,
+        {},
+        accessToken,
+      );
+
+      if (!response.ok) {
+        return { accountKey: null, currentOrgId: null };
+      }
+
+      const data = (await response.json().catch(() => ({}))) as {
+        uuid?: unknown;
+        distinct_id?: unknown;
+        email?: unknown;
+        organization?: { id?: unknown } | null;
+      };
+
+      let accountKey: string | null = null;
+      if (typeof data.uuid === "string" && data.uuid.length > 0) {
+        accountKey = data.uuid;
+      } else if (
+        typeof data.distinct_id === "string" &&
+        data.distinct_id.length > 0
+      ) {
+        accountKey = data.distinct_id;
+      } else if (typeof data.email === "string" && data.email.length > 0) {
+        accountKey = data.email;
+      }
+
+      const orgId = data.organization?.id;
+      const currentOrgId =
+        typeof orgId === "string" && orgId.length > 0 ? orgId : null;
+
+      return { accountKey, currentOrgId };
+    } catch (error) {
+      this.logger.warn("Failed to resolve user context", { error });
+      return { accountKey: null, currentOrgId: null };
+    }
+  }
+  private requireSession(): InMemorySession {
+    if (!this.session) {
+      throw new NotAuthenticatedError();
+    }
+    return this.session;
+  }
+  private setAnonymousState(
+    partial: Pick<
+      Partial<AuthState>,
+      | "bootstrapComplete"
+      | "cloudRegion"
+      | "currentProjectId"
+      | "needsScopeReauth"
+    > = {},
+  ): void {
+    this.updateState({
+      status: "anonymous",
+      bootstrapComplete: partial.bootstrapComplete ?? true,
+      cloudRegion: partial.cloudRegion ?? null,
+      orgProjectsMap: {},
+      currentOrgId: null,
+      currentProjectId: partial.currentProjectId ?? null,
+      hasCodeAccess: null,
+      needsScopeReauth: partial.needsScopeReauth ?? false,
+    });
+  }
+  private async updateCodeAccessFromSession(): Promise<void> {
+    if (!this.session) {
+      this.updateState({ hasCodeAccess: null });
+      return;
+    }
+
+    try {
+      const apiHost = getCloudUrlFromRegion(this.session.cloudRegion);
+      const response = await this.executeAuthenticatedFetch(
+        fetch,
+        `${apiHost}/api/code/invites/check-access/`,
+        {},
+        this.session.accessToken,
+      );
+      const data = (await response.json().catch(() => ({}))) as {
+        has_access?: boolean;
+      };
+
+      this.updateState({ hasCodeAccess: data.has_access === true });
+    } catch (error) {
+      this.logger.warn("Failed to update code access state", { error });
+      this.updateState({ hasCodeAccess: false });
+    }
+  }
+  private static readonly REFRESH_MAX_ATTEMPTS = 3;
+  private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
+  private static readonly ORG_RECOVERY_MAX_ATTEMPTS = 5;
+  private static readonly REFRESH_BACKOFF: BackoffOptions = {
+    initialDelayMs: 1_000,
+    maxDelayMs: 5_000,
+    multiplier: 2,
+  };
+  private recoveryPromise: Promise<void> | null = null;
+  private orgProjectsRefreshPromise: Promise<void> | null = null;
+  private connectivityUnsubscribe: (() => void) | null = null;
+  private resumeUnsubscribe: (() => void) | null = null;
+  @postConstruct()
+  init(): void {
+    this.connectivityUnsubscribe = this.connectivity.onStatusChange(
+      (status) => {
+        if (status.isOnline) {
+          this.attemptSessionRecovery();
+        }
+      },
+    );
+
+    this.resumeUnsubscribe = this.powerManager.onResume(this.handleResume);
+  }
+  @preDestroy()
+  shutdown(): void {
+    this.connectivityUnsubscribe?.();
+    this.connectivityUnsubscribe = null;
+    this.resumeUnsubscribe?.();
+    this.resumeUnsubscribe = null;
+  }
+  private handleResume = (): void => {
+    this.attemptSessionRecovery();
+  };
+  private resolveStoredSession(): StoredSessionInput | null {
+    const stored = this.authSession.getCurrent();
+    if (!stored) return null;
+
+    const refreshToken = this.cipher.decrypt(stored.refreshTokenEncrypted);
+    if (!refreshToken) return null;
+
+    return {
+      refreshToken,
+      cloudRegion: stored.cloudRegion,
+      selectedProjectId: stored.selectedProjectId,
+    };
+  }
+  private attemptSessionRecovery(): void {
+    if (this.session) {
+      if (this.session.orgProjectsIncomplete) {
+        void this.refreshOrgProjects();
+      }
+      return;
+    }
+    if (this.recoveryPromise) return;
+
+    const stored = this.authSession.getCurrent();
+    if (!stored) return;
+    if (stored.scopeVersion < OAUTH_SCOPE_VERSION) return;
+
+    const storedSession = this.resolveStoredSession();
+    if (!storedSession) return;
+
+    this.recoveryPromise = this.refreshAndSyncSession(storedSession)
+      .catch((error) => {
+        this.logger.warn("Session recovery failed", { error });
+      })
+      .finally(() => {
+        this.recoveryPromise = null;
+      });
+  }
+
+  private refreshOrgProjects(): Promise<void> {
+    if (this.orgProjectsRefreshPromise) {
+      return this.orgProjectsRefreshPromise;
+    }
+
+    this.orgProjectsRefreshPromise = this.doRefreshOrgProjects()
+      .catch((error) => {
+        this.logger.warn("Org/projects recovery failed", { error });
+      })
+      .finally(() => {
+        this.orgProjectsRefreshPromise = null;
+      });
+    return this.orgProjectsRefreshPromise;
+  }
+
+  private async doRefreshOrgProjects(): Promise<void> {
+    for (
+      let attempt = 0;
+      attempt < AuthService.ORG_RECOVERY_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      if (!this.session?.orgProjectsIncomplete) return;
+      if (!this.connectivity.getStatus().isOnline) return;
+
+      let session: InMemorySession;
+      try {
+        session = await this.ensureValidSession();
+      } catch (error) {
+        this.logger.warn("Org/projects recovery aborted: session invalid", {
+          error,
+        });
+        return;
+      }
+
+      if (!session.orgProjectsIncomplete) return;
+
+      const orgIds = Object.keys(session.orgProjectsMap);
+      const { map, incomplete } = await this.buildOrgProjectsMap(
+        session.accessToken,
+        session.cloudRegion,
+        orgIds,
+        session.orgProjectsMap,
+      );
+
+      // The session may have been replaced (logout, re-login) while the fetch
+      // was in flight; committing the stale one would resurrect it.
+      if (this.session !== session) return;
+
+      if (!incomplete) {
+        const lastPrefs = session.accountKey
+          ? this.authPreference.get(session.accountKey, session.cloudRegion)
+          : null;
+        const storedSelected =
+          this.authSession.getCurrent()?.selectedProjectId ?? null;
+        const currentProjectId = pickInitialProjectId({
+          orgProjectsMap: map,
+          currentOrgId: session.currentOrgId,
+          preferredProjectId:
+            session.currentProjectId ??
+            storedSelected ??
+            lastPrefs?.lastSelectedProjectId ??
+            null,
+          lastSelectedOrgId: lastPrefs?.lastSelectedOrgId ?? null,
+        });
+        this.commitSessionState(session, {
+          orgProjectsMap: map,
+          currentOrgId: session.currentOrgId,
+          currentProjectId,
+        });
+        this.logger.info(
+          "Recovered organizations/projects after incomplete sync",
+        );
+        return;
+      }
+
+      const isLastAttempt =
+        attempt === AuthService.ORG_RECOVERY_MAX_ATTEMPTS - 1;
+      if (isLastAttempt) break;
+
+      await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
+    }
+
+    this.logger.warn("Org/projects recovery exhausted retries");
+  }
+
+  private updateState(partial: Partial<AuthState>): void {
+    this.state = {
+      ...this.state,
+      ...partial,
+    };
+    this.emit(AuthServiceEvent.StateChanged, this.getState());
+  }
+}

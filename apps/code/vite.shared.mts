@@ -40,7 +40,7 @@ const baseAliases: Alias[] = [
   { find: "@shared", replacement: path.resolve(__dirname, "./src/shared") },
 ];
 
-const workspaceAliases: Alias[] = [
+export const workspaceAliases: Alias[] = [
   {
     find: /^@posthog\/agent\/(.+)$/,
     replacement: path.resolve(__dirname, "../../packages/agent/src/$1.ts"),
@@ -48,6 +48,10 @@ const workspaceAliases: Alias[] = [
   {
     find: "@posthog/agent",
     replacement: path.resolve(__dirname, "../../packages/agent/src/index.ts"),
+  },
+  {
+    find: /^@posthog\/shared\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/shared/src/$1"),
   },
   {
     find: "@posthog/shared",
@@ -58,6 +62,44 @@ const workspaceAliases: Alias[] = [
     replacement: path.resolve(
       __dirname,
       "../../packages/enricher/src/index.ts",
+    ),
+  },
+  {
+    find: /^@posthog\/core\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/core/src/$1"),
+  },
+  {
+    find: /^@posthog\/di\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/di/src/$1"),
+  },
+  {
+    find: /^@posthog\/api-client\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/api-client/src/$1"),
+  },
+  {
+    find: /^@posthog\/ui\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/ui/src/$1"),
+  },
+  {
+    find: /^@posthog\/host-trpc\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/host-trpc/src/$1"),
+  },
+  {
+    find: /^@posthog\/host-router\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/host-router/src/$1"),
+  },
+  {
+    find: /^@posthog\/workspace-client\/(.+)$/,
+    replacement: path.resolve(
+      __dirname,
+      "../../packages/workspace-client/src/$1",
+    ),
+  },
+  {
+    find: /^@posthog\/workspace-server\/(.+)$/,
+    replacement: path.resolve(
+      __dirname,
+      "../../packages/workspace-server/src/$1",
     ),
   },
 ];

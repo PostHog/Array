@@ -1,0 +1,929 @@
+import { FileText, X } from "@phosphor-icons/react";
+import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
+import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
+import { ButtonGroup } from "@posthog/quill";
+import type { Task } from "@posthog/shared/domain-types";
+import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
+import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
+import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
+import { useAppView } from "@posthog/ui/router/useAppView";
+import { Flex, Text, Tooltip } from "@radix-ui/themes";
+import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useConnectivity } from "../../../hooks/useConnectivity";
+import { DotPatternBackground } from "../../../primitives/DotPatternBackground";
+import { toast } from "../../../primitives/toast";
+import { useActiveRepoStore } from "../../../shell/activeRepoStore";
+import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
+import { useAuthStateValue } from "../../auth/store";
+import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
+import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
+import { FolderPicker } from "../../folder-picker/FolderPicker";
+import { GitHubRepoPicker } from "../../folder-picker/GitHubRepoPicker";
+import { useFolders } from "../../folders/useFolders";
+import { BranchSelector } from "../../git-interaction/components/BranchSelector";
+import { GitBranchDialog } from "../../git-interaction/components/GitInteractionDialogs";
+import { useGitInteractionStore } from "../../git-interaction/state/gitInteractionStore";
+import { useGitQueries } from "../../git-interaction/useGitQueries";
+import {
+  createBranch,
+  getBranchNameInputState,
+} from "../../git-interaction/utils/branchCreation";
+import { useInboxReportSelectionStore } from "../../inbox/stores/inboxReportSelectionStore";
+import {
+  useUserGithubBranches,
+  useUserGithubRepositories,
+  useUserRepositoryIntegration,
+} from "../../integrations/useIntegrations";
+import { PromptHistoryDialog } from "../../message-editor/components/PromptHistoryDialog";
+import { PromptInput } from "../../message-editor/components/PromptInput";
+import { useDraftStore } from "../../message-editor/draftStore";
+import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryStore";
+import type { EditorHandle } from "../../message-editor/types";
+import { useAutoFocusOnTyping } from "../../message-editor/useAutoFocusOnTyping";
+import { resolveAndAttachDroppedFiles } from "../../message-editor/utils/persistFile";
+import { DropZoneOverlay } from "../../sessions/components/DropZoneOverlay";
+import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
+import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
+import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
+import {
+  type AgentAdapter,
+  useSettingsStore,
+} from "../../settings/settingsStore";
+import { useInitialDirectoryFromFolderId } from "../hooks/useInitialDirectoryFromFolderId";
+import { usePreviewConfig } from "../hooks/usePreviewConfig";
+import { useTaskCreation } from "../hooks/useTaskCreation";
+import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
+import { SuggestedTasksPanel } from "./SuggestedTasksPanel";
+import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
+
+interface TaskInputProps {
+  sessionId?: string;
+  onTaskCreated?: (task: Task) => void;
+  initialPrompt?: string;
+  initialPromptKey?: string;
+  initialCloudRepository?: string;
+  initialModel?: string;
+  initialMode?: string;
+  reportAssociation?: TaskInputReportAssociation;
+  /** Optional channel CONTEXT.md, appended to the initial prompt as background. */
+  channelContext?: string;
+  /** Display name of the channel the CONTEXT.md came from (for the chip). */
+  channelName?: string;
+}
+
+export function TaskInput({
+  sessionId = "task-input",
+  onTaskCreated,
+  initialPrompt,
+  initialPromptKey,
+  initialCloudRepository,
+  initialModel,
+  initialMode,
+  reportAssociation,
+  channelContext,
+  channelName,
+}: TaskInputProps = {}) {
+  const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+  const trpc = useHostTRPC();
+  const hostClient = useHostTRPCClient();
+  const gitWriteClient = useMemo(
+    () => ({
+      createBranch: async (directoryPath: string, branchName: string) => {
+        await hostClient.git.createBranch.mutate({ directoryPath, branchName });
+      },
+    }),
+    [hostClient],
+  );
+  const view = useAppView();
+  const clearTaskInputReportAssociation = useTaskInputPrefillStore(
+    (s) => s.clearReportAssociation,
+  );
+  const setSelectedReportIds = useInboxReportSelectionStore(
+    (s) => s.setSelectedReportIds,
+  );
+  const selectedDirectory = useActiveRepoStore((s) => s.path);
+  const setSelectedDirectory = useActiveRepoStore((s) => s.setPath);
+  const { data: mostRecentRepo } = useQuery(
+    trpc.folders.getMostRecentlyAccessedRepository.queryOptions(),
+  );
+  const {
+    setLastUsedLocalWorkspaceMode,
+    lastUsedWorkspaceMode,
+    setLastUsedWorkspaceMode,
+    lastUsedAdapter,
+    setLastUsedAdapter,
+    lastUsedCloudRepository,
+    setLastUsedCloudRepository,
+    allowBypassPermissions,
+    setLastUsedEnvironment,
+    getLastUsedEnvironment,
+    defaultInitialTaskMode,
+    lastUsedInitialTaskMode,
+    setLastUsedReasoningEffort,
+    setLastUsedModel,
+    _hasHydrated: settingsHydrated,
+  } = useSettingsStore();
+
+  const editorRef = useRef<EditorHandle>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const buttonGroupRef = useRef<HTMLDivElement>(null);
+  const dragCounterRef = useRef(0);
+  const reportInputHadContentRef = useRef(false);
+
+  const [editorIsEmpty, setEditorIsEmpty] = useState(true);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [isCreatingBranch, setIsCreatingBranch] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  const [cloudRepoSearchQuery, setCloudRepoSearchQuery] = useState("");
+  const [isCloudRepoPickerOpen, setIsCloudRepoPickerOpen] = useState(false);
+  const [cloudBranchSearchQuery, setCloudBranchSearchQuery] = useState("");
+  const [selectedEnvironment, setSelectedEnvironmentRaw] = useState<
+    string | null
+  >(null);
+  const [selectedCloudEnvId, setSelectedCloudEnvId] = useState<string | null>(
+    null,
+  );
+  const [activeReportAssociation, setActiveReportAssociation] = useState(
+    reportAssociation ?? null,
+  );
+
+  // Channel CONTEXT.md is included by default; the chip lets the user drop it
+  // from this task's prompt. Re-include whenever the source context changes
+  // (e.g. switching channels) so a dismissal doesn't stick across channels.
+  const [channelContextDismissed, setChannelContextDismissed] = useState(false);
+  const lastChannelContextRef = useRef(channelContext);
+  useEffect(() => {
+    if (lastChannelContextRef.current !== channelContext) {
+      lastChannelContextRef.current = channelContext;
+      setChannelContextDismissed(false);
+    }
+  }, [channelContext]);
+  const includeChannelContext = !!channelContext && !channelContextDismissed;
+
+  const adapter = lastUsedAdapter;
+  const prefillRequestKey = initialPromptKey ?? initialPrompt;
+
+  useEffect(() => {
+    if (!initialPrompt || !prefillRequestKey) return;
+    useDraftStore.getState().actions.setPendingContent(sessionId, {
+      segments: [{ type: "text", text: initialPrompt }],
+    });
+  }, [initialPrompt, prefillRequestKey, sessionId]);
+
+  useEffect(() => {
+    reportInputHadContentRef.current = false;
+    setActiveReportAssociation(reportAssociation ?? null);
+  }, [reportAssociation]);
+
+  const handleDismissReportAssociation = useCallback(() => {
+    reportInputHadContentRef.current = false;
+    setActiveReportAssociation(null);
+    clearTaskInputReportAssociation();
+  }, [clearTaskInputReportAssociation]);
+
+  const handleEditorEmptyChange = useCallback(
+    (isEmpty: boolean) => {
+      setEditorIsEmpty(isEmpty);
+
+      if (!activeReportAssociation) return;
+      if (!isEmpty) {
+        reportInputHadContentRef.current = true;
+        return;
+      }
+      if (!reportInputHadContentRef.current) return;
+
+      reportInputHadContentRef.current = false;
+      setActiveReportAssociation(null);
+      clearTaskInputReportAssociation();
+    },
+    [activeReportAssociation, clearTaskInputReportAssociation],
+  );
+
+  const handleOpenAssociatedReport = useCallback(() => {
+    if (!activeReportAssociation) return;
+    navigateToInbox();
+    setSelectedReportIds([activeReportAssociation.reportId]);
+  }, [activeReportAssociation, setSelectedReportIds]);
+
+  useEffect(() => {
+    if (!selectedDirectory && mostRecentRepo?.path) {
+      setSelectedDirectory(mostRecentRepo.path);
+    }
+  }, [mostRecentRepo?.path, selectedDirectory, setSelectedDirectory]);
+
+  const setAdapter = (newAdapter: AgentAdapter) =>
+    setLastUsedAdapter(newAdapter);
+
+  const {
+    repositories,
+    getInstallationIdForRepo,
+    getUserIntegrationIdForRepo,
+    isLoadingRepos,
+    isRefreshingRepos,
+    refreshRepositories,
+    hasGithubIntegration,
+  } = useUserRepositoryIntegration();
+
+  const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
+    if (initialCloudRepository) return "cloud";
+    return lastUsedWorkspaceMode || "local";
+  });
+
+  const didResolveWorkspaceModeRef = useRef(false);
+  useEffect(() => {
+    if (didResolveWorkspaceModeRef.current) return;
+    if (!settingsHydrated) return;
+    didResolveWorkspaceModeRef.current = true;
+    if (initialCloudRepository) return;
+    setWorkspaceModeState(lastUsedWorkspaceMode || "local");
+  }, [settingsHydrated, lastUsedWorkspaceMode, initialCloudRepository]);
+
+  const setWorkspaceMode = (mode: WorkspaceMode) => {
+    didResolveWorkspaceModeRef.current = true;
+    setWorkspaceModeState(mode);
+    setLastUsedWorkspaceMode(mode);
+    if (mode !== "cloud") {
+      setLastUsedLocalWorkspaceMode(mode);
+    }
+  };
+  const {
+    repositories: visibleCloudRepositories,
+    isPending: cloudRepositoriesLoading,
+    hasMore: cloudRepositoriesHasMore,
+    loadMore: loadMoreCloudRepositories,
+  } = useUserGithubRepositories(cloudRepoSearchQuery, isCloudRepoPickerOpen);
+  const [selectedRepository, setSelectedRepository] = useState<string | null>(
+    () =>
+      initialCloudRepository?.toLowerCase() ??
+      lastUsedCloudRepository?.toLowerCase() ??
+      null,
+  );
+  const selectedCloudRepository = useMemo(() => {
+    if (!selectedRepository) return null;
+    const lower = selectedRepository.toLowerCase();
+    return repositories.includes(lower) ? lower : null;
+  }, [selectedRepository, repositories]);
+  const { currentBranch, branchLoading, defaultBranch, busyState } =
+    useGitQueries(selectedDirectory);
+
+  const selectedGithubUserIntegrationId = selectedCloudRepository
+    ? getUserIntegrationIdForRepo(selectedCloudRepository)
+    : undefined;
+  const selectedInstallationId = selectedCloudRepository
+    ? getInstallationIdForRepo(selectedCloudRepository)
+    : undefined;
+
+  const {
+    data: cloudBranchData,
+    isPending: cloudBranchesLoading,
+    isRefreshing: cloudBranchesRefreshing,
+    isFetchingMore: cloudBranchesFetchingMore,
+    hasMore: cloudBranchesHasMore,
+    loadMore: loadMoreCloudBranches,
+    refresh: refreshCloudBranches,
+  } = useUserGithubBranches(
+    selectedInstallationId,
+    selectedCloudRepository,
+    cloudBranchSearchQuery,
+  );
+  const cloudBranches = cloudBranchData?.branches;
+  const cloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+
+  const {
+    branchOpen,
+    branchName: newBranchName,
+    branchError,
+    actions: gitActions,
+  } = useGitInteractionStore();
+
+  const handleNewBranchNameChange = useCallback(
+    (value: string) => {
+      const { sanitized, error } = getBranchNameInputState(value);
+      gitActions.setBranchName(sanitized);
+      gitActions.setBranchError(error);
+    },
+    [gitActions],
+  );
+
+  const handleCreateBranch = useCallback(async () => {
+    setIsCreatingBranch(true);
+
+    try {
+      const result = await createBranch({
+        writeClient: gitWriteClient,
+        repoPath: selectedDirectory || undefined,
+        rawBranchName: newBranchName,
+      });
+      if (!result.success) {
+        gitActions.setBranchError(result.error);
+        return;
+      }
+
+      setSelectedBranch(result.branchName);
+      gitActions.closeBranch();
+    } finally {
+      setIsCreatingBranch(false);
+    }
+  }, [selectedDirectory, newBranchName, gitActions, gitWriteClient]);
+
+  const handleRepositorySelect = useCallback(
+    (repo: string | null) => {
+      if (!repo) {
+        setSelectedRepository(null);
+        setLastUsedCloudRepository(null);
+        return;
+      }
+
+      const normalizedRepo = repo.toLowerCase();
+      setSelectedRepository(normalizedRepo);
+      setLastUsedCloudRepository(normalizedRepo);
+    },
+    [setLastUsedCloudRepository],
+  );
+
+  useEffect(() => {
+    if (!initialCloudRepository) return;
+    setWorkspaceModeState("cloud");
+    setSelectedRepository(initialCloudRepository.toLowerCase());
+  }, [initialCloudRepository]);
+
+  const handleRefreshRepositories = useCallback(() => {
+    void refreshRepositories().catch((error) => {
+      toast.error("Failed to refresh repositories", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    });
+  }, [refreshRepositories]);
+
+  const handleRefreshBranches = useCallback(() => {
+    void refreshCloudBranches().catch((error) => {
+      toast.error("Failed to refresh branches", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    });
+  }, [refreshCloudBranches]);
+
+  const handleCloudRepoPickerOpenChange = useCallback((open: boolean) => {
+    setIsCloudRepoPickerOpen(open);
+    if (!open) {
+      setCloudRepoSearchQuery("");
+    }
+  }, []);
+
+  const handleCloudRepoSearchChange = useCallback((value: string) => {
+    setCloudRepoSearchQuery(value);
+  }, []);
+
+  const handleLoadMoreCloudRepositories = useCallback(() => {
+    loadMoreCloudRepositories();
+  }, [loadMoreCloudRepositories]);
+
+  const handleCloudBranchPickerClose = useCallback(() => {
+    setCloudBranchSearchQuery("");
+  }, []);
+
+  const handleCloudBranchSearchChange = useCallback((value: string) => {
+    setCloudBranchSearchQuery(value);
+  }, []);
+
+  const handleLoadMoreCloudBranches = useCallback(() => {
+    loadMoreCloudBranches();
+  }, [loadMoreCloudBranches]);
+
+  const {
+    modeOption,
+    modelOption,
+    thoughtOption,
+    isLoading: isPreviewLoading,
+    setConfigOption,
+  } = usePreviewConfig(adapter);
+
+  const lastAppliedDeepLinkConfigKey = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (isPreviewLoading) return;
+    if (!initialPromptKey) return;
+    if (lastAppliedDeepLinkConfigKey.current === initialPromptKey) return;
+    if (!initialModel && !initialMode) return;
+
+    if (initialModel && isValidConfigValue(modelOption, initialModel)) {
+      setConfigOption(modelOption.id, initialModel);
+    }
+    if (initialMode && isValidConfigValue(modeOption, initialMode)) {
+      setConfigOption(modeOption.id, initialMode);
+    }
+    lastAppliedDeepLinkConfigKey.current = initialPromptKey;
+  }, [
+    isPreviewLoading,
+    initialPromptKey,
+    initialModel,
+    initialMode,
+    modelOption,
+    modeOption,
+    setConfigOption,
+  ]);
+
+  const { folders } = useFolders();
+
+  useEffect(() => {
+    if (selectedRepository || !lastUsedCloudRepository) {
+      return;
+    }
+
+    setSelectedRepository(lastUsedCloudRepository.toLowerCase());
+  }, [lastUsedCloudRepository, selectedRepository]);
+
+  useEffect(() => {
+    // Clear `selectedRepository` only when the list has actually loaded AND the
+    // selection is missing from it — i.e. the repo was removed from the user's
+    // integrations. Bail out when `repositories` is empty: that can happen
+    // transiently after `isLoadingRepos` flips false but before the
+    // per-integration queries have produced data, and clearing here would
+    // wipe out a freshly-supplied `initialCloudRepository` prefill.
+    if (
+      isLoadingRepos ||
+      repositories.length === 0 ||
+      !selectedRepository ||
+      selectedCloudRepository
+    ) {
+      return;
+    }
+
+    setSelectedRepository(null);
+    if (lastUsedCloudRepository === selectedRepository) {
+      setLastUsedCloudRepository(null);
+    }
+  }, [
+    isLoadingRepos,
+    repositories.length,
+    lastUsedCloudRepository,
+    selectedCloudRepository,
+    selectedRepository,
+    setLastUsedCloudRepository,
+  ]);
+
+  useInitialDirectoryFromFolderId(view.folderId, folders, setSelectedDirectory);
+
+  useEffect(() => {
+    setCloudBranchSearchQuery("");
+  }, []);
+
+  const effectiveRepoPath =
+    workspaceMode === "cloud" ? selectedCloudRepository : selectedDirectory;
+
+  const setSelectedEnvironment = useCallback(
+    (envId: string | null) => {
+      setSelectedEnvironmentRaw(envId);
+      if (effectiveRepoPath) {
+        setLastUsedEnvironment(effectiveRepoPath, envId);
+      }
+    },
+    [effectiveRepoPath, setLastUsedEnvironment],
+  );
+
+  const [prevEffectiveRepoPath, setPrevEffectiveRepoPath] =
+    useState(effectiveRepoPath);
+  if (effectiveRepoPath !== prevEffectiveRepoPath) {
+    setPrevEffectiveRepoPath(effectiveRepoPath);
+    setSelectedBranch(null);
+    setSelectedEnvironmentRaw(
+      effectiveRepoPath ? getLastUsedEnvironment(effectiveRepoPath) : null,
+    );
+  }
+
+  const effectiveWorkspaceMode = workspaceMode;
+
+  // Get current values from preview config options for task creation.
+  // Defaults ensure values are always passed even before the preview config loads.
+  const currentModel =
+    modelOption?.type === "select" ? modelOption.currentValue : undefined;
+  const adapterDefault = adapter === "codex" ? "auto" : "plan";
+  const modeFallback =
+    defaultInitialTaskMode === "last_used"
+      ? (lastUsedInitialTaskMode ?? adapterDefault)
+      : adapterDefault;
+  const currentExecutionMode =
+    getCurrentModeFromConfigOptions(modeOption ? [modeOption] : undefined) ??
+    modeFallback;
+  const currentReasoningLevel =
+    thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+
+  const branchForTaskCreation =
+    effectiveWorkspaceMode === "worktree" || effectiveWorkspaceMode === "cloud"
+      ? selectedBranch
+      : null;
+
+  const {
+    isCreatingTask,
+    canSubmit,
+    handleSubmit,
+    additionalDirectories,
+    setAdditionalDirectories,
+  } = useTaskCreation({
+    editorRef,
+    selectedDirectory,
+    selectedRepository: selectedCloudRepository,
+    githubUserIntegrationId: selectedGithubUserIntegrationId,
+    workspaceMode: effectiveWorkspaceMode,
+    branch: branchForTaskCreation,
+    editorIsEmpty,
+    adapter,
+    executionMode: currentExecutionMode,
+    model: currentModel,
+    reasoningLevel: currentReasoningLevel,
+    onTaskCreated,
+    environmentId: selectedEnvironment,
+    sandboxEnvironmentId:
+      effectiveWorkspaceMode === "cloud" && selectedCloudEnvId
+        ? selectedCloudEnvId
+        : undefined,
+    signalReportId: activeReportAssociation?.reportId,
+    channelContext: includeChannelContext ? channelContext : undefined,
+    channelName,
+  });
+
+  const handleModeChange = useCallback(
+    (value: string) => {
+      if (modeOption) {
+        setConfigOption(modeOption.id, value);
+      }
+    },
+    [modeOption, setConfigOption],
+  );
+
+  const handleModelChange = useCallback(
+    (value: string) => {
+      if (modelOption) {
+        setConfigOption(modelOption.id, value);
+        setLastUsedModel(value);
+      }
+    },
+    [modelOption, setConfigOption, setLastUsedModel],
+  );
+
+  const handleThoughtChange = useCallback(
+    (value: string) => {
+      if (thoughtOption) {
+        setConfigOption(thoughtOption.id, value);
+        setLastUsedReasoningEffort(value);
+      }
+    },
+    [thoughtOption, setConfigOption, setLastUsedReasoningEffort],
+  );
+
+  const { isOnline } = useConnectivity();
+  const promptSessionId = sessionId;
+
+  const hasHistory = useTaskInputHistoryStore((s) => s.entries.length > 0);
+  const getPromptHistory = useCallback(
+    () => useTaskInputHistoryStore.getState().entries.map((e) => e.text),
+    [],
+  );
+  const handleHistorySelect = useCallback((text: string) => {
+    editorRef.current?.setContent(text);
+    editorRef.current?.focus();
+  }, []);
+  const hasPendingDraft = useCallback(
+    () => !(editorRef.current?.isEmpty() ?? true),
+    [],
+  );
+  const hints = [
+    "@ to add files",
+    "/ for skills",
+    hasHistory ? "\u2191\u2193 for history" : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  useAutoFocusOnTyping(editorRef, isCreatingTask);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDraggingFile(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setIsDraggingFile(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDraggingFile(false);
+
+    // If dropped on the editor, Tiptap's handleDrop already handled it
+    if ((e.target as HTMLElement).closest(".ProseMirror")) return;
+
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    resolveAndAttachDroppedFiles(files, (a) =>
+      editorRef.current?.addAttachment(a),
+    )
+      .then(() => editorRef.current?.focus())
+      .catch(() => toast.error("Failed to attach files"));
+  }, []);
+
+  const handleContainerClick = useCallback((e: React.MouseEvent) => {
+    if (!e.currentTarget.contains(e.target as Node)) return;
+    if ((e.target as HTMLElement).closest(FOCUSABLE_SELECTOR)) return;
+    editorRef.current?.focus();
+  }, []);
+
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop container
+    // biome-ignore lint/a11y/useKeyWithClickEvents: click delegates focus to the editor; keyboard users tab into it directly
+    <div
+      ref={containerRef}
+      onClick={handleContainerClick}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      className="relative h-full w-full"
+    >
+      <DropZoneOverlay isVisible={isDraggingFile} />
+      <Flex height="100%" className="relative px-4">
+        <DotPatternBackground className="h-[100.333%]" />
+        <div
+          style={{
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+          }}
+          className="absolute left-1/2 z-[1] flex w-[calc(100%-2rem)] max-w-[600px] flex-col gap-2"
+        >
+          <Flex
+            gap="2"
+            align="center"
+            className="absolute bottom-full left-0 mb-2 min-w-0"
+          >
+            <WorkspaceModeSelect
+              value={workspaceMode}
+              onChange={setWorkspaceMode}
+              selectedCloudEnvironmentId={selectedCloudEnvId}
+              onCloudEnvironmentChange={setSelectedCloudEnvId}
+              size="1"
+            />
+            {workspaceMode === "worktree" && (
+              <EnvironmentSelector
+                repoPath={effectiveRepoPath ?? null}
+                value={selectedEnvironment}
+                onChange={setSelectedEnvironment}
+                disabled={isCreatingTask}
+                onCreateEnvironment={() =>
+                  openSettings("environments", {
+                    repoPath: effectiveRepoPath ?? undefined,
+                  })
+                }
+              />
+            )}
+            <ButtonGroup
+              ref={buttonGroupRef}
+              data-tour="folder-picker"
+              data-tour-ready={
+                (
+                  workspaceMode === "cloud"
+                    ? selectedRepository
+                    : selectedDirectory
+                )
+                  ? "true"
+                  : undefined
+              }
+            >
+              {workspaceMode === "cloud" ? (
+                <GitHubRepoPicker
+                  value={selectedRepository}
+                  onChange={handleRepositorySelect}
+                  repositories={
+                    isCloudRepoPickerOpen
+                      ? visibleCloudRepositories
+                      : repositories
+                  }
+                  isLoading={
+                    isLoadingRepos ||
+                    (isCloudRepoPickerOpen && cloudRepositoriesLoading)
+                  }
+                  isRefreshing={isRefreshingRepos}
+                  onRefresh={handleRefreshRepositories}
+                  open={isCloudRepoPickerOpen}
+                  onOpenChange={handleCloudRepoPickerOpenChange}
+                  searchQuery={cloudRepoSearchQuery}
+                  onSearchQueryChange={handleCloudRepoSearchChange}
+                  hasMore={cloudRepositoriesHasMore}
+                  onLoadMore={handleLoadMoreCloudRepositories}
+                  placeholder="Select repository..."
+                  size="1"
+                  disabled={isCreatingTask}
+                />
+              ) : (
+                <FolderPicker
+                  value={selectedDirectory}
+                  onChange={setSelectedDirectory}
+                  placeholder="Select repository..."
+                  anchor={buttonGroupRef}
+                />
+              )}
+              <BranchSelector
+                repoPath={
+                  workspaceMode === "cloud"
+                    ? selectedCloudRepository
+                    : selectedDirectory
+                }
+                currentBranch={currentBranch}
+                defaultBranch={
+                  workspaceMode === "cloud" ? cloudDefaultBranch : defaultBranch
+                }
+                disabled={
+                  isCreatingTask ||
+                  (workspaceMode === "cloud" && !selectedCloudRepository)
+                }
+                loading={workspaceMode === "cloud" ? false : branchLoading}
+                workspaceMode={workspaceMode}
+                selectedBranch={selectedBranch}
+                onBranchSelect={setSelectedBranch}
+                busyState={busyState}
+                cloudBranches={cloudBranches}
+                cloudBranchesLoading={cloudBranchesLoading}
+                isRefreshing={cloudBranchesRefreshing}
+                cloudBranchesFetchingMore={cloudBranchesFetchingMore}
+                cloudBranchesHasMore={cloudBranchesHasMore}
+                cloudSearchQuery={cloudBranchSearchQuery}
+                onCloudPickerClose={handleCloudBranchPickerClose}
+                onCloudSearchChange={handleCloudBranchSearchChange}
+                onCloudBranchCommit={handleCloudBranchPickerClose}
+                onCloudLoadMore={handleLoadMoreCloudBranches}
+                onRefresh={
+                  workspaceMode === "cloud" ? handleRefreshBranches : undefined
+                }
+                anchor={buttonGroupRef}
+              />
+            </ButtonGroup>
+            {workspaceMode !== "cloud" && (
+              <AdditionalDirectoriesButton
+                values={additionalDirectories}
+                onChange={setAdditionalDirectories}
+                primaryDirectory={selectedDirectory}
+                disabled={isCreatingTask}
+              />
+            )}
+            {cloudRegion === "dev" && (
+              <Flex align="center" gap="1" className="shrink-0">
+                <span
+                  className="inline-block h-2 w-2 rounded-full bg-orange-9"
+                  aria-hidden
+                />
+                <Text color="orange" className="font-medium text-[13px]">
+                  Dev
+                </Text>
+              </Flex>
+            )}
+          </Flex>
+
+          <Flex direction="column" gap="0">
+            <PromptInput
+              ref={editorRef}
+              sessionId={promptSessionId}
+              placeholder={`What do you want to ship? ${hints}`}
+              editorHeight="large"
+              disabled={isCreatingTask}
+              isLoading={isCreatingTask}
+              autoFocus
+              clearOnSubmit={false}
+              submitDisabledExternal={
+                !canSubmit || isCreatingTask || !isOnline || isPreviewLoading
+              }
+              tourTarget="task-input"
+              repoPath={selectedDirectory}
+              modeOption={modeOption}
+              onModeChange={handleModeChange}
+              allowBypassPermissions={allowBypassPermissions}
+              enableCommands
+              enableBashMode={false}
+              modelSelector={
+                <UnifiedModelSelector
+                  modelOption={modelOption}
+                  adapter={adapter ?? "claude"}
+                  onAdapterChange={setAdapter}
+                  disabled={isCreatingTask}
+                  isConnecting={isPreviewLoading}
+                  onModelChange={handleModelChange}
+                />
+              }
+              historyButton={
+                <PromptHistoryDialog
+                  onSelect={handleHistorySelect}
+                  hasPendingDraft={hasPendingDraft}
+                  disabled={isCreatingTask}
+                />
+              }
+              reasoningSelector={
+                !isPreviewLoading && (
+                  <ReasoningLevelSelector
+                    thoughtOption={thoughtOption}
+                    adapter={adapter}
+                    onChange={handleThoughtChange}
+                    disabled={isCreatingTask}
+                  />
+                )
+              }
+              getPromptHistory={getPromptHistory}
+              onEmptyChange={handleEditorEmptyChange}
+              onSubmitClick={handleSubmit}
+              onSubmit={() => {
+                if (canSubmit) handleSubmit();
+              }}
+            />
+            {activeReportAssociation && (
+              <div className="-mt-px mx-2 flex select-none items-center justify-between gap-2 rounded-b-md border border-blue-6 border-t-0 bg-blue-2 px-2 py-1 text-[12px] text-blue-11">
+                <span className="flex min-w-0 flex-1 items-center gap-1">
+                  <span className="shrink-0">
+                    This task will be associated with report
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleOpenAssociatedReport}
+                    className="min-w-0 truncate text-left font-medium underline underline-offset-2 hover:text-blue-12"
+                  >
+                    {activeReportAssociation.title || "Untitled report"}
+                  </button>
+                </span>
+                <Tooltip content="Exit Inbox mode">
+                  <button
+                    type="button"
+                    onClick={handleDismissReportAssociation}
+                    aria-label="Exit Inbox mode"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-blue-10 hover:bg-blue-4 hover:text-blue-12"
+                  >
+                    <X size={12} />
+                  </button>
+                </Tooltip>
+              </div>
+            )}
+            {includeChannelContext && (
+              <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
+                <span className="shrink-0 text-gray-10">Using:</span>
+                <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
+                  <FileText size={12} />
+                  <span className="truncate">
+                    {channelName ? `#${channelName} ` : ""}CONTEXT.md
+                  </span>
+                  <Tooltip content="Don't include this context">
+                    <button
+                      type="button"
+                      onClick={() => setChannelContextDismissed(true)}
+                      aria-label="Remove channel context from prompt"
+                      className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
+                    >
+                      <X size={12} />
+                    </button>
+                  </Tooltip>
+                </span>
+              </div>
+            )}
+            {effectiveWorkspaceMode === "cloud" &&
+              !isLoadingRepos &&
+              !hasGithubIntegration && (
+                <div className="mx-2 mt-2">
+                  <CloudGithubMissingNotice />
+                </div>
+              )}
+          </Flex>
+          <div className="absolute top-full right-0 left-0 z-10">
+            <SuggestedTasksPanel />
+          </div>
+        </div>
+      </Flex>
+
+      <GitBranchDialog
+        open={branchOpen}
+        onOpenChange={(open) => {
+          if (!open) gitActions.closeBranch();
+        }}
+        branchName={newBranchName}
+        onBranchNameChange={handleNewBranchNameChange}
+        onConfirm={handleCreateBranch}
+        isSubmitting={isCreatingBranch}
+        error={branchError}
+      />
+    </div>
+  );
+}

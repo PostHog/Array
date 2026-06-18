@@ -1,4 +1,7 @@
-import type { AgentSideConnection } from "@agentclientprotocol/sdk";
+import {
+  type AgentSideConnection,
+  RequestError,
+} from "@agentclientprotocol/sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POSTHOG_METHODS } from "../../acp-extensions";
 import { Pushable } from "../../utils/streams";
@@ -13,8 +16,10 @@ type SdkQueryHandle = {
   interrupt: ReturnType<typeof vi.fn>;
   setModel: ReturnType<typeof vi.fn>;
   setMcpServers: ReturnType<typeof vi.fn>;
+  mcpServerStatus: ReturnType<typeof vi.fn>;
   supportedCommands: ReturnType<typeof vi.fn>;
   initializationResult: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
   [Symbol.asyncIterator]: () => AsyncIterator<never>;
 };
 
@@ -29,8 +34,10 @@ function makeQueryHandle(): SdkQueryHandle {
     interrupt: vi.fn().mockResolvedValue(undefined),
     setModel: vi.fn().mockResolvedValue(undefined),
     setMcpServers: vi.fn().mockResolvedValue(undefined),
+    mcpServerStatus: vi.fn().mockResolvedValue([]),
     supportedCommands: vi.fn().mockResolvedValue([]),
     initializationResult: vi.fn().mockImplementation(() => nextInitPromise),
+    close: vi.fn(),
     [Symbol.asyncIterator]: async function* () {
       /* never yields */
     } as never,
@@ -50,9 +57,12 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 }));
 
 const fetchMcpToolMetadataMock = vi.fn().mockResolvedValue(undefined);
+const clearMcpToolMetadataCacheMock = vi.fn();
 vi.mock("./mcp/tool-metadata", () => ({
   fetchMcpToolMetadata: fetchMcpToolMetadataMock,
   getConnectedMcpServerNames: vi.fn().mockReturnValue([]),
+  getCachedMcpTools: vi.fn().mockReturnValue([]),
+  clearMcpToolMetadataCache: clearMcpToolMetadataCacheMock,
 }));
 
 // Import after the mocks so ClaudeAcpAgent resolves the mocked SDK
@@ -77,15 +87,34 @@ function installFakeSession(
   const endSpy = vi.spyOn(input, "end");
   const abortController = new AbortController();
 
+  // Distinguishable fresh instance per call so tests can prove a rebuild.
+  let freshInstanceCounter = 0;
+  const buildInProcessMcpServers = vi.fn(() => ({
+    "posthog-code-tools": {
+      type: "sdk" as const,
+      name: "posthog-code-tools",
+      instance: { fresh: ++freshInstanceCounter },
+    },
+  }));
+
   const session = {
     query: oldQuery,
     queryOptions: {
       sessionId,
       cwd: "/tmp/repo",
       model: "claude-sonnet-4-6",
-      mcpServers: { posthog: { type: "http", url: "https://old" } },
+      mcpServers: {
+        posthog: { type: "http", url: "https://old" },
+        "posthog-code-tools": {
+          type: "sdk",
+          name: "posthog-code-tools",
+          instance: { stale: true },
+        },
+      },
       abortController,
     },
+    buildInProcessMcpServers,
+    localToolsServerNames: ["posthog-code-tools"],
     input,
     cancelled: false,
     settingsManager: { dispose: vi.fn() },
@@ -111,7 +140,13 @@ function installFakeSession(
   (agent as unknown as { session: unknown }).session = session;
   (agent as unknown as { sessionId: string }).sessionId = sessionId;
 
-  return { session, oldQuery, endSpy, abortController };
+  return {
+    session,
+    oldQuery,
+    endSpy,
+    abortController,
+    buildInProcessMcpServers,
+  };
 }
 
 const freshMcpServers = [
@@ -133,6 +168,7 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
       models: [],
     });
     fetchMcpToolMetadataMock.mockClear();
+    clearMcpToolMetadataCacheMock.mockClear();
   });
 
   it("returns methodNotFound for unknown extension methods", async () => {
@@ -185,7 +221,7 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     ).rejects.toThrow(/does not support MCP injection/);
   });
 
-  it("throws when initialization of the new query times out", async () => {
+  it("throws a RequestError and closes the timed-out query so it cannot leak", async () => {
     vi.useFakeTimers();
     try {
       const agent = makeAgent();
@@ -202,9 +238,12 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
 
       await vi.advanceTimersByTimeAsync(30_001);
 
-      await expect(promise).rejects.toThrow(
-        /Session refresh timed out for s-timeout/,
-      );
+      // A RequestError (not a plain Error) is what survives the ACP layer
+      // instead of being collapsed into a generic "Internal error".
+      await expect(promise).rejects.toBeInstanceOf(RequestError);
+      await expect(promise).rejects.toThrow(/Session refresh timed out after/);
+      // The new query is closed so its CLI subprocess does not leak.
+      expect(createdQueries[0]?.close).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
@@ -222,7 +261,8 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     expect(oldQuery.interrupt).toHaveBeenCalledTimes(1);
     expect(endSpy).toHaveBeenCalledTimes(1);
 
-    // New query was built with resume identity (not sessionId) and new servers
+    // New query: resume identity (not sessionId), http server refreshed, and
+    // the in-process local-tools server rebuilt fresh.
     expect(lastQueryCall.options).toMatchObject({
       resume: "s-2",
       forkSession: false,
@@ -231,6 +271,11 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
           type: "http",
           url: "https://fresh",
           headers: { "x-foo": "bar" },
+        },
+        "posthog-code-tools": {
+          type: "sdk",
+          name: "posthog-code-tools",
+          instance: {},
         },
       },
     });
@@ -312,5 +357,223 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
 
     expect(fetchMcpToolMetadataMock).toHaveBeenCalledTimes(1);
     expect(fetchMcpToolMetadataMock.mock.calls[0][0]).toBe(createdQueries[0]);
+  });
+
+  // The fake session is created on sonnet (queryOptions.model); modelId
+  // simulates the user switching models mid-session.
+  it.each([
+    {
+      name: "re-roots the new query on the live session model",
+      modelId: "claude-fable-5",
+      expected: "claude-fable-5",
+    },
+    {
+      name: "maps the live session model to its SDK alias",
+      modelId: "claude-opus-4-8",
+      expected: "opus",
+    },
+    {
+      name: "keeps the creation-time model when the session has no modelId",
+      modelId: undefined,
+      expected: "claude-sonnet-4-6",
+    },
+  ])("$name", async ({ modelId, expected }) => {
+    const agent = makeAgent();
+    installFakeSession(agent, "s-model", { modelId });
+
+    await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    expect(lastQueryCall.options?.model).toBe(expected);
+  });
+
+  it("rebuilds a FRESH in-process local-tools server across refresh", async () => {
+    const agent = makeAgent();
+    const { session, buildInProcessMcpServers } = installFakeSession(
+      agent,
+      "s-inprocess",
+    );
+    const staleInstance = (
+      session as unknown as {
+        queryOptions: { mcpServers: Record<string, { instance?: unknown }> };
+      }
+    ).queryOptions.mcpServers["posthog-code-tools"].instance;
+
+    // freshMcpServers carries only external servers; the sdk server is rebuilt.
+    await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    expect(buildInProcessMcpServers).toHaveBeenCalledTimes(1);
+    const servers = lastQueryCall.options?.mcpServers as Record<
+      string,
+      { type?: string; name?: string; instance?: unknown }
+    >;
+    expect(servers["posthog-code-tools"]).toMatchObject({
+      type: "sdk",
+      name: "posthog-code-tools",
+    });
+    // A brand-new instance object, never the stale reused one.
+    expect(servers["posthog-code-tools"].instance).not.toBe(staleInstance);
+    expect(servers["posthog-code-tools"].instance).toEqual({ fresh: 1 });
+  });
+
+  it("clears the MCP tool metadata cache on refresh", async () => {
+    const agent = makeAgent();
+    installFakeSession(agent, "s-cache");
+
+    await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    expect(clearMcpToolMetadataCacheMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+const DISCONNECTED_STATUS = [{ name: "posthog-code-tools", status: "failed" }];
+
+describe("ClaudeAcpAgent self-heal: ensureLocalToolsConnected", () => {
+  beforeEach(() => {
+    clearMcpToolMetadataCacheMock.mockClear();
+    fetchMcpToolMetadataMock.mockClear();
+  });
+
+  function callHeal(agent: Agent, trigger = "test"): Promise<boolean> {
+    return (
+      agent as unknown as {
+        ensureLocalToolsConnected: (t: string) => Promise<boolean>;
+      }
+    ).ensureLocalToolsConnected(trigger);
+  }
+
+  it("is a no-op when the signed-commit server is connected", async () => {
+    const agent = makeAgent();
+    const { oldQuery } = installFakeSession(agent, "s-healthy");
+    oldQuery.mcpServerStatus.mockResolvedValue([
+      { name: "posthog-code-tools", status: "connected" },
+    ]);
+
+    await expect(callHeal(agent)).resolves.toBe(true);
+    expect(oldQuery.setMcpServers).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds and reconnects a fresh server when disconnected", async () => {
+    const agent = makeAgent();
+    const { session, oldQuery, buildInProcessMcpServers } = installFakeSession(
+      agent,
+      "s-down",
+    );
+    oldQuery.mcpServerStatus.mockResolvedValue(DISCONNECTED_STATUS);
+
+    await expect(callHeal(agent)).resolves.toBe(true);
+
+    expect(buildInProcessMcpServers).toHaveBeenCalledTimes(1);
+    expect(oldQuery.setMcpServers).toHaveBeenCalledTimes(1);
+    const arg = oldQuery.setMcpServers.mock.calls[0][0] as Record<
+      string,
+      { type?: string; instance?: unknown }
+    >;
+    // External http server passed through unchanged; sdk server is fresh.
+    expect(arg.posthog).toMatchObject({ type: "http" });
+    expect(arg["posthog-code-tools"]).toMatchObject({ type: "sdk" });
+    expect(arg["posthog-code-tools"].instance).toEqual({ fresh: 1 });
+    expect(clearMcpToolMetadataCacheMock).toHaveBeenCalledTimes(1);
+    // queryOptions is updated so later heals/refresh see the fresh server set.
+    expect(
+      (session as unknown as { queryOptions: { mcpServers: unknown } })
+        .queryOptions.mcpServers,
+    ).toBe(arg);
+  });
+
+  it("passes every external server through when reconnecting", async () => {
+    const agent = makeAgent();
+    const { session, oldQuery } = installFakeSession(agent, "s-multi");
+    (
+      session as unknown as {
+        queryOptions: { mcpServers: Record<string, unknown> };
+      }
+    ).queryOptions.mcpServers = {
+      posthog: { type: "http", url: "https://old" },
+      sentry: { type: "sse", url: "https://sse" },
+      "posthog-code-tools": {
+        type: "sdk",
+        name: "posthog-code-tools",
+        instance: { stale: true },
+      },
+    };
+    oldQuery.mcpServerStatus.mockResolvedValue(DISCONNECTED_STATUS);
+
+    await expect(callHeal(agent)).resolves.toBe(true);
+
+    const arg = oldQuery.setMcpServers.mock.calls[0][0] as Record<
+      string,
+      { type?: string }
+    >;
+    expect(Object.keys(arg).sort()).toEqual([
+      "posthog",
+      "posthog-code-tools",
+      "sentry",
+    ]);
+    expect(arg.posthog).toMatchObject({ type: "http" });
+    expect(arg.sentry).toMatchObject({ type: "sse" });
+    expect(arg["posthog-code-tools"]).toMatchObject({ type: "sdk" });
+  });
+
+  it("treats a server missing from status as disconnected", async () => {
+    const agent = makeAgent();
+    const { oldQuery } = installFakeSession(agent, "s-missing");
+    oldQuery.mcpServerStatus.mockResolvedValue([
+      { name: "some-other", status: "connected" },
+    ]);
+
+    await expect(callHeal(agent)).resolves.toBe(true);
+    expect(oldQuery.setMcpServers).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not block the turn when the status RPC fails", async () => {
+    const agent = makeAgent();
+    const { oldQuery } = installFakeSession(agent, "s-statuserr");
+    oldQuery.mcpServerStatus.mockRejectedValue(new Error("rpc down"));
+
+    await expect(callHeal(agent)).resolves.toBe(true);
+    expect(oldQuery.setMcpServers).not.toHaveBeenCalled();
+  });
+
+  it("does not block the turn when the status RPC hangs", async () => {
+    vi.useFakeTimers();
+    try {
+      const agent = makeAgent();
+      const { oldQuery } = installFakeSession(agent, "s-statushang");
+      oldQuery.mcpServerStatus.mockReturnValue(new Promise(() => {}));
+
+      const healPromise = callHeal(agent);
+      await vi.advanceTimersByTimeAsync(5_001);
+
+      await expect(healPromise).resolves.toBe(true);
+      expect(oldQuery.setMcpServers).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns false when reconnect fails", async () => {
+    const agent = makeAgent();
+    const { oldQuery } = installFakeSession(agent, "s-reconnect-fail");
+    oldQuery.mcpServerStatus.mockResolvedValue(DISCONNECTED_STATUS);
+    oldQuery.setMcpServers.mockRejectedValue(new Error("connect boom"));
+
+    await expect(callHeal(agent)).resolves.toBe(false);
+  });
+
+  it("is a no-op when no in-process server is enabled", async () => {
+    const agent = makeAgent();
+    const { session, oldQuery } = installFakeSession(agent, "s-none");
+    (
+      session as unknown as { localToolsServerNames: string[] }
+    ).localToolsServerNames = [];
+
+    await expect(callHeal(agent)).resolves.toBe(true);
+    expect(oldQuery.mcpServerStatus).not.toHaveBeenCalled();
   });
 });

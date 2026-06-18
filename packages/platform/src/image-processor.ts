@@ -25,3 +25,7 @@ export interface IImageProcessor {
     options: DownscaleOptions,
   ): DownscaledImage;
 }
+
+export const IMAGE_PROCESSOR_SERVICE = Symbol.for(
+  "posthog.platform.imageProcessor",
+);

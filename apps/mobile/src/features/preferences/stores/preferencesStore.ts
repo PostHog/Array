@@ -1,8 +1,32 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 export type ThemePreference = "light" | "dark" | "system";
+
+export type FontSizePreference = "small" | "default" | "large" | "xlarge";
+
+/**
+ * Multiplier applied to every rendered font size. Consumed by the global
+ * `Text.render` patch in `lib/textDefaults`, which scales each text node's
+ * explicit `fontSize` by this factor. Children without an explicit size keep
+ * inheriting their (already-scaled) parent, so the whole UI scales uniformly.
+ */
+export const FONT_SCALE_BY_PREFERENCE: Record<FontSizePreference, number> = {
+  small: 0.9,
+  default: 1,
+  large: 1.15,
+  xlarge: 1.3,
+};
+
+/**
+ * iOS reads noticeably smaller than Android at the same point size, so iOS
+ * ships one notch larger out of the box. Other platforms keep the 1.0
+ * baseline. Either way the user can change it in Settings.
+ */
+const DEFAULT_FONT_SIZE: FontSizePreference =
+  Platform.OS === "ios" ? "large" : "default";
 
 export type CompletionSound =
   | "meep"
@@ -31,6 +55,9 @@ interface PreferencesState {
 
   theme: ThemePreference;
   setTheme: (theme: ThemePreference) => void;
+
+  fontSize: FontSizePreference;
+  setFontSize: (size: FontSizePreference) => void;
 
   completionSound: CompletionSound;
   setCompletionSound: (sound: CompletionSound) => void;
@@ -64,6 +91,9 @@ export const usePreferencesStore = create<PreferencesState>()(
       theme: "system",
       setTheme: (theme) => set({ theme }),
 
+      fontSize: DEFAULT_FONT_SIZE,
+      setFontSize: (size) => set({ fontSize: size }),
+
       completionSound: "meep",
       setCompletionSound: (sound) => set({ completionSound: sound }),
       completionVolume: 70,
@@ -92,6 +122,7 @@ export const usePreferencesStore = create<PreferencesState>()(
         pingsEnabled: state.pingsEnabled,
         pushNotificationsEnabled: state.pushNotificationsEnabled,
         theme: state.theme,
+        fontSize: state.fontSize,
         completionSound: state.completionSound,
         completionVolume: state.completionVolume,
         defaultInitialTaskMode: state.defaultInitialTaskMode,

@@ -5,5 +5,8 @@ declare global {
     electronUtils?: {
       getPathForFile: (file: File) => string;
     };
+    __posthogBootstrap?: {
+      sessionId: string | null;
+    };
   }
 }

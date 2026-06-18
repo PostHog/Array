@@ -31,7 +31,12 @@ if (!ctxEnv) {
   die("POSTHOG_LOCAL_TOOLS_CTX env var is required");
 }
 
-let parsed: { cwd: string; taskId?: string; token?: string };
+let parsed: {
+  cwd: string;
+  taskId?: string;
+  token?: string;
+  baseBranch?: string;
+};
 try {
   parsed = JSON.parse(Buffer.from(ctxEnv, "base64").toString("utf-8"));
 } catch (err) {
@@ -46,6 +51,7 @@ const ctx: LocalToolCtx = {
   cwd: parsed.cwd,
   token: parsed.token ?? readGithubTokenFromEnv(),
   taskId: parsed.taskId,
+  baseBranch: parsed.baseBranch,
 };
 
 const enabledNames = (process.env.POSTHOG_LOCAL_TOOLS_ENABLED ?? "")

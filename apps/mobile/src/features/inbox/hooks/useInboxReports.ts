@@ -25,6 +25,7 @@ import type {
   SuggestedReviewerWriteEntry,
 } from "../types";
 import {
+  buildPriorityFilterParam,
   buildSignalReportListOrdering,
   buildStatusFilterParam,
   buildSuggestedReviewerFilterParam,
@@ -51,6 +52,7 @@ export function useInboxReports(options?: { enabled?: boolean }) {
   const suggestedReviewerFilter = useInboxFilterStore(
     (s) => s.suggestedReviewerFilter,
   );
+  const priorityFilter = useInboxFilterStore((s) => s.priorityFilter);
 
   const params: SignalReportsQueryParams = {
     status: buildStatusFilterParam(statusFilter),
@@ -63,6 +65,7 @@ export function useInboxReports(options?: { enabled?: boolean }) {
       suggestedReviewerFilter.length > 0
         ? buildSuggestedReviewerFilterParam(suggestedReviewerFilter)
         : undefined,
+    priority: buildPriorityFilterParam(priorityFilter),
   };
 
   const query = useQuery<SignalReportsResponse>({

@@ -7,6 +7,7 @@ interface TestableServer {
     isInternal?: boolean;
     originProduct?: Task["origin_product"] | null;
     signalReportId?: string | null;
+    aiStage?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
@@ -98,6 +99,11 @@ describe("AgentServer.configureEnvironment", () => {
     buildServer("background").configureEnvironment({ isInternal: false });
     const fromBackground = process.env.LLM_GATEWAY_URL;
 
+    // Clear the env var the first call wrote — resolveLlmGatewayUrl now treats
+    // a set LLM_GATEWAY_URL as an override base and appends the product on top
+    // of it, which would double up the product slug across back-to-back calls
+    // in the same process.
+    delete process.env.LLM_GATEWAY_URL;
     buildServer("interactive").configureEnvironment({ isInternal: false });
     const fromInteractive = process.env.LLM_GATEWAY_URL;
 
@@ -122,14 +128,25 @@ describe("AgentServer.configureEnvironment", () => {
     );
   });
 
-  it("does not tag as signals when origin_product is 'signal_report' but the task is not internal", () => {
+  it("tags as signals when origin_product is 'signal_report' even if the task is not internal", () => {
     buildServer("background").configureEnvironment({
       isInternal: false,
       originProduct: "signal_report",
     });
 
     expect(process.env.LLM_GATEWAY_URL).toBe(
-      "https://gateway.us.posthog.com/posthog_code",
+      "https://gateway.us.posthog.com/signals",
+    );
+  });
+
+  it("tags as signals for scout runs (origin_product 'signals_scout'), internal or not", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: false,
+      originProduct: "signals_scout",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/signals",
     );
   });
 
@@ -138,6 +155,7 @@ describe("AgentServer.configureEnvironment", () => {
       isInternal: true,
       originProduct: "signal_report",
       signalReportId: "report-123",
+      aiStage: "research",
       taskId: "task-abc",
       taskRunId: "run-xyz",
       taskUserId: 42,
@@ -149,12 +167,22 @@ describe("AgentServer.configureEnvironment", () => {
         "x-posthog-property-task_origin_product: signal_report",
         "x-posthog-property-task_internal: true",
         "x-posthog-property-signal_report_id: report-123",
+        "x-posthog-property-ai_stage: research",
         "x-posthog-property-task_id: task-abc",
         "x-posthog-property-task_run_id: run-xyz",
         "x-posthog-property-task_user_id: 42",
         "x-posthog-property-task_title: Fix the bug",
       ].join("\n"),
     );
+  });
+
+  it("omits ai_stage from ANTHROPIC_CUSTOM_HEADERS when not provided", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: false,
+      taskId: "task-abc",
+    });
+
+    expect(process.env.ANTHROPIC_CUSTOM_HEADERS).not.toContain("ai_stage");
   });
 
   // A signals_scout title is multi-line; it must not inject extra header lines.
@@ -226,13 +254,23 @@ describe("AgentServer.configureEnvironment", () => {
     );
   });
 
-  it("respects the LLM_GATEWAY_URL override regardless of internal flag", () => {
+  it("appends the resolved product to a LLM_GATEWAY_URL override base", () => {
+    // The override is treated as a base URL. The product slug is always
+    // appended so the gateway routes to the correct product config — a bare
+    // host like http://ngrok.test/proxy would otherwise hit the catch-all
+    // llm_gateway product, which OAuth tokens cannot use.
     process.env.LLM_GATEWAY_URL = "http://ngrok.test/proxy";
 
     buildServer("background").configureEnvironment({ isInternal: true });
 
-    expect(process.env.LLM_GATEWAY_URL).toBe("http://ngrok.test/proxy");
-    expect(process.env.ANTHROPIC_BASE_URL).toBe("http://ngrok.test/proxy");
-    expect(process.env.OPENAI_BASE_URL).toBe("http://ngrok.test/proxy/v1");
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "http://ngrok.test/proxy/background_agents",
+    );
+    expect(process.env.ANTHROPIC_BASE_URL).toBe(
+      "http://ngrok.test/proxy/background_agents",
+    );
+    expect(process.env.OPENAI_BASE_URL).toBe(
+      "http://ngrok.test/proxy/background_agents/v1",
+    );
   });
 });

@@ -4,85 +4,163 @@
  * IMPORTANT: These tokens are for main process only.
  * Never import this file from renderer code.
  */
+
+// Workspace-server connection (typed client over the ELECTRON_RUN_AS_NODE child)
+export const WORKSPACE_CLIENT = Symbol.for(
+  "posthog.host.main.workspace.client",
+);
+
+// Stores
+export const SETTINGS_STORE = Symbol.for("posthog.host.main.settings.store");
+export const SECURE_STORE_SERVICE = Symbol.for(
+  "posthog.host.main.secure-store.service",
+);
+export const SECURE_STORE_BACKEND = Symbol.for(
+  "posthog.host.main.secure-store.backend",
+);
+export const ENCRYPTION_SERVICE = Symbol.for(
+  "posthog.host.main.encryption.service",
+);
+
+// Database
+export const AUTH_PREFERENCE_REPOSITORY = Symbol.for(
+  "posthog.host.main.auth.preference-repository",
+);
+export const DATABASE_SERVICE = Symbol.for(
+  "posthog.host.main.database.service",
+);
+export const AUTH_SESSION_REPOSITORY = Symbol.for(
+  "posthog.host.main.auth.session-repository",
+);
+export const REPOSITORY_REPOSITORY = Symbol.for(
+  "posthog.host.main.repository.repository",
+);
+export const WORKSPACE_REPOSITORY = Symbol.for(
+  "posthog.host.main.workspace.repository",
+);
+export const WORKTREE_REPOSITORY = Symbol.for(
+  "posthog.host.main.worktree.repository",
+);
+export const ARCHIVE_REPOSITORY = Symbol.for(
+  "posthog.host.main.archive.repository",
+);
+export const SUSPENSION_REPOSITORY = Symbol.for(
+  "posthog.host.main.suspension.repository",
+);
+export const DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY = Symbol.for(
+  "posthog.host.main.additional-directory.default-repository",
+);
+
+// Services
+export const AUTH_SERVICE = Symbol.for("posthog.host.main.auth.service");
+export const SUSPENSION_SERVICE = Symbol.for(
+  "posthog.host.main.suspension.service",
+);
+export const APP_LIFECYCLE_SERVICE = Symbol.for(
+  "posthog.host.main.app-lifecycle.service",
+);
+export const CLOUD_TASK_SERVICE = Symbol.for(
+  "posthog.host.main.cloud-task.service",
+);
+export const CONTEXT_MENU_SERVICE = Symbol.for(
+  "posthog.host.main.context-menu.service",
+);
+
+export const EXTERNAL_APPS_SERVICE = Symbol.for(
+  "posthog.host.main.external-apps.service",
+);
+export const LLM_GATEWAY_SERVICE = Symbol.for(
+  "posthog.host.main.llm-gateway.service",
+);
+export const MCP_APPS_SERVICE = Symbol.for(
+  "posthog.host.main.mcp-apps.service",
+);
+export const FILE_WATCHER_SERVICE = Symbol.for(
+  "posthog.host.main.file-watcher.service",
+);
+export const FS_SERVICE = Symbol.for("posthog.host.main.fs.service");
+export const GIT_SERVICE = Symbol.for("posthog.host.main.git.service");
+export const DEEP_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.deep-link.service",
+);
+export const PROCESS_TRACKING_SERVICE = Symbol.for(
+  "posthog.host.main.process-tracking.service",
+);
+export const SLEEP_SERVICE = Symbol.for("posthog.host.main.sleep.service");
+export const POSTHOG_PLUGIN_SERVICE = Symbol.for(
+  "posthog.host.main.posthog-plugin.service",
+);
+export const UPDATES_SERVICE = Symbol.for("posthog.host.main.updates.service");
+export const TASK_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.task-link.service",
+);
+export const INBOX_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.inbox-link.service",
+);
+export const SCOUT_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.scout-link.service",
+);
+export const NEW_TASK_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.new-task-link.service",
+);
+export const WATCHER_REGISTRY_SERVICE = Symbol.for(
+  "posthog.host.main.watcher-registry.service",
+);
+export const PROVISIONING_SERVICE = Symbol.for(
+  "posthog.host.main.provisioning.service",
+);
+export const WORKSPACE_SERVICE = Symbol.for(
+  "posthog.host.main.workspace.service",
+);
+export const WORKSPACE_SERVER_SERVICE = Symbol.for(
+  "posthog.host.main.workspace-server.service",
+);
+export const DISCORD_PRESENCE_SERVICE = Symbol.for(
+  "posthog.host.main.discord-presence.service",
+);
+
 export const MAIN_TOKENS = Object.freeze({
-  // Platform ports (host-agnostic interfaces from @posthog/platform)
-  UrlLauncher: Symbol.for("Platform.UrlLauncher"),
-  StoragePaths: Symbol.for("Platform.StoragePaths"),
-  AppMeta: Symbol.for("Platform.AppMeta"),
-  Dialog: Symbol.for("Platform.Dialog"),
-  Clipboard: Symbol.for("Platform.Clipboard"),
-  FileIcon: Symbol.for("Platform.FileIcon"),
-  SecureStorage: Symbol.for("Platform.SecureStorage"),
-  MainWindow: Symbol.for("Platform.MainWindow"),
-  AppLifecycle: Symbol.for("Platform.AppLifecycle"),
-  PowerManager: Symbol.for("Platform.PowerManager"),
-  Updater: Symbol.for("Platform.Updater"),
-  Notifier: Symbol.for("Platform.Notifier"),
-  ContextMenu: Symbol.for("Platform.ContextMenu"),
-  BundledResources: Symbol.for("Platform.BundledResources"),
-  ImageProcessor: Symbol.for("Platform.ImageProcessor"),
+  WorkspaceClient: WORKSPACE_CLIENT,
 
-  // Stores
-  SettingsStore: Symbol.for("Main.SettingsStore"),
+  SettingsStore: SETTINGS_STORE,
+  SecureStoreService: SECURE_STORE_SERVICE,
+  SecureStoreBackend: SECURE_STORE_BACKEND,
+  EncryptionService: ENCRYPTION_SERVICE,
 
-  // Database
-  AuthPreferenceRepository: Symbol.for("Main.AuthPreferenceRepository"),
-  DatabaseService: Symbol.for("Main.DatabaseService"),
-  AuthSessionRepository: Symbol.for("Main.AuthSessionRepository"),
-  RepositoryRepository: Symbol.for("Main.RepositoryRepository"),
-  WorkspaceRepository: Symbol.for("Main.WorkspaceRepository"),
-  WorktreeRepository: Symbol.for("Main.WorktreeRepository"),
-  ArchiveRepository: Symbol.for("Main.ArchiveRepository"),
-  SuspensionRepository: Symbol.for("Main.SuspensionRepository"),
-  DefaultAdditionalDirectoryRepository: Symbol.for(
-    "Main.DefaultAdditionalDirectoryRepository",
-  ),
+  AuthPreferenceRepository: AUTH_PREFERENCE_REPOSITORY,
+  DatabaseService: DATABASE_SERVICE,
+  AuthSessionRepository: AUTH_SESSION_REPOSITORY,
+  RepositoryRepository: REPOSITORY_REPOSITORY,
+  WorkspaceRepository: WORKSPACE_REPOSITORY,
+  WorktreeRepository: WORKTREE_REPOSITORY,
+  ArchiveRepository: ARCHIVE_REPOSITORY,
+  SuspensionRepository: SUSPENSION_REPOSITORY,
+  DefaultAdditionalDirectoryRepository: DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
 
-  // Services
-  AgentAuthAdapter: Symbol.for("Main.AgentAuthAdapter"),
-  AgentService: Symbol.for("Main.AgentService"),
-  AuthService: Symbol.for("Main.AuthService"),
-  AuthProxyService: Symbol.for("Main.AuthProxyService"),
-  McpProxyService: Symbol.for("Main.McpProxyService"),
-  ArchiveService: Symbol.for("Main.ArchiveService"),
-  SuspensionService: Symbol.for("Main.SuspensionService"),
-  AppLifecycleService: Symbol.for("Main.AppLifecycleService"),
-  CloudTaskService: Symbol.for("Main.CloudTaskService"),
-  ConnectivityService: Symbol.for("Main.ConnectivityService"),
-  ContextMenuService: Symbol.for("Main.ContextMenuService"),
-  DiscordPresenceService: Symbol.for("Main.DiscordPresenceService"),
+  AuthService: AUTH_SERVICE,
+  SuspensionService: SUSPENSION_SERVICE,
+  AppLifecycleService: APP_LIFECYCLE_SERVICE,
+  CloudTaskService: CLOUD_TASK_SERVICE,
+  ContextMenuService: CONTEXT_MENU_SERVICE,
+  DiscordPresenceService: DISCORD_PRESENCE_SERVICE,
 
-  ExternalAppsService: Symbol.for("Main.ExternalAppsService"),
-  LlmGatewayService: Symbol.for("Main.LlmGatewayService"),
-  McpAppsService: Symbol.for("Main.McpAppsService"),
-  FileWatcherService: Symbol.for("Main.FileWatcherService"),
-  FocusService: Symbol.for("Main.FocusService"),
-  FocusSyncService: Symbol.for("Main.FocusSyncService"),
-  FoldersService: Symbol.for("Main.FoldersService"),
-  FsService: Symbol.for("Main.FsService"),
-  GitService: Symbol.for("Main.GitService"),
-  HandoffService: Symbol.for("Main.HandoffService"),
-  GitHubIntegrationService: Symbol.for("Main.GitHubIntegrationService"),
-  LinearIntegrationService: Symbol.for("Main.LinearIntegrationService"),
-  SlackIntegrationService: Symbol.for("Main.SlackIntegrationService"),
-  LocalLogsService: Symbol.for("Main.LocalLogsService"),
-  DeepLinkService: Symbol.for("Main.DeepLinkService"),
-  NotificationService: Symbol.for("Main.NotificationService"),
-  McpCallbackService: Symbol.for("Main.McpCallbackService"),
-  OAuthService: Symbol.for("Main.OAuthService"),
-  ProcessTrackingService: Symbol.for("Main.ProcessTrackingService"),
-  SleepService: Symbol.for("Main.SleepService"),
-  ShellService: Symbol.for("Main.ShellService"),
-  PosthogPluginService: Symbol.for("Main.PosthogPluginService"),
-  UIService: Symbol.for("Main.UIService"),
-  UpdatesService: Symbol.for("Main.UpdatesService"),
-  TaskLinkService: Symbol.for("Main.TaskLinkService"),
-  InboxLinkService: Symbol.for("Main.InboxLinkService"),
-  NewTaskLinkService: Symbol.for("Main.NewTaskLinkService"),
-  WatcherRegistryService: Symbol.for("Main.WatcherRegistryService"),
-  EnvironmentService: Symbol.for("Main.EnvironmentService"),
-  ProvisioningService: Symbol.for("Main.ProvisioningService"),
-  WorkspaceService: Symbol.for("Main.WorkspaceService"),
-  EnrichmentService: Symbol.for("Main.EnrichmentService"),
-  UsageMonitorService: Symbol.for("Main.UsageMonitorService"),
+  ExternalAppsService: EXTERNAL_APPS_SERVICE,
+  LlmGatewayService: LLM_GATEWAY_SERVICE,
+  McpAppsService: MCP_APPS_SERVICE,
+  FileWatcherService: FILE_WATCHER_SERVICE,
+  FsService: FS_SERVICE,
+  GitService: GIT_SERVICE,
+  DeepLinkService: DEEP_LINK_SERVICE,
+  ProcessTrackingService: PROCESS_TRACKING_SERVICE,
+  SleepService: SLEEP_SERVICE,
+  PosthogPluginService: POSTHOG_PLUGIN_SERVICE,
+  UpdatesService: UPDATES_SERVICE,
+  TaskLinkService: TASK_LINK_SERVICE,
+  InboxLinkService: INBOX_LINK_SERVICE,
+  ScoutLinkService: SCOUT_LINK_SERVICE,
+  NewTaskLinkService: NEW_TASK_LINK_SERVICE,
+  WatcherRegistryService: WATCHER_REGISTRY_SERVICE,
+  ProvisioningService: PROVISIONING_SERVICE,
+  WorkspaceService: WORKSPACE_SERVICE,
+  WorkspaceServerService: WORKSPACE_SERVER_SERVICE,
 });

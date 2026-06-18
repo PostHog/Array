@@ -22,7 +22,7 @@ import {
   POSTHOG_API_KEY,
   POSTHOG_OPTIONS,
   useIdentifyUser,
-  useRegisterAppVersion,
+  useRegisterSuperProperties,
   useScreenTracking,
 } from "@/lib/posthog";
 import { queryClient } from "@/lib/queryClient";
@@ -39,7 +39,7 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
 
   useScreenTracking();
   useIdentifyUser();
-  useRegisterAppVersion();
+  useRegisterSuperProperties();
 
   useEffect(() => {
     initializeAuth();

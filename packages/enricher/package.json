@@ -18,6 +18,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@posthog/shared": "workspace:*",
     "web-tree-sitter": "^0.24.7"
   },
   "devDependencies": {

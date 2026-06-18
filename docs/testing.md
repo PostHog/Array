@@ -1,81 +1,202 @@
 # Testing
 
-Detailed testing reference. Top-level rule of thumb lives in [AGENTS.md](../AGENTS.md).
-
 ## Commands
 
-- `pnpm test` Run unit tests across all packages
-- `pnpm --filter code test` Run code unit tests only
-- `pnpm test:e2e` Run Playwright E2E tests
+- `pnpm test`: run unit tests across packages.
+- `pnpm --filter code test`: run desktop app unit tests.
+- `pnpm test:e2e`: run Playwright E2E tests.
+- `pnpm --filter <pkg> test`: run tests for one package.
 
-## When to write unit tests vs E2E tests
+## Test Types
 
-**Unit tests (Vitest)** Fast, isolated, run frequently:
-- Zustand store logic and state transitions
-- Pure utility functions and helpers
-- Service methods with mocked dependencies
-- Complex business logic in isolation
-- Data transformations and validators
+Use unit tests when the code can run without Electron.
 
-**E2E tests (Playwright)** Slower, test real user flows:
-- Critical user journeys (auth, task creation, workspace setup)
-- IPC communication between main and renderer
-- Features requiring real Electron APIs (file system, shell)
-- Multi-step workflows spanning multiple components
-- Regression tests for reported bugs
+Unit-test:
 
-**Rule of thumb**: If it can be tested without Electron running, use a unit test. If it requires the full app context or tests user-facing behavior, use E2E.
+- core services
+- UI services
+- Zustand stores
+- pure utilities
+- data transforms
+- validators
+- business decisions
 
-## Test file location
+Use E2E tests for behavior that needs the full app.
 
-Tests are colocated with source code using `.test.ts` or `.test.tsx` extension. E2E tests live in `tests/e2e/`.
+E2E-test:
 
-## Store testing
+- auth flows
+- task creation
+- workspace setup
+- IPC behavior
+- real Electron APIs
+- multi-step user workflows
+- regression coverage for reported app bugs
 
-```typescript
+Rule: if Electron is not required, write a unit test.
+
+## File Location
+
+- Unit tests colocate with source as `.test.ts` or `.test.tsx`.
+- E2E tests live in `tests/e2e/`.
+- Package test setup files live at `<pkg>/src/test/setup.ts`.
+- Feature-specific helpers colocate with the feature.
+
+Avoid central test utility folders unless the helper is broadly reused across packages.
+
+## Service Tests
+
+Construct services with faked injected dependencies. Do not use the container unless the test is specifically about DI wiring.
+
+```ts
+const workspace = {
+  focus: {
+    enable: vi.fn().mockResolvedValue(ok),
+  },
+};
+
+const git = {
+  getCurrentBranch: vi.fn().mockResolvedValue("main"),
+};
+
+const service = new FocusService(
+  git as unknown as IGitService,
+  workspace as unknown as FocusWorkspaceClient
+);
+
+await service.enableFocus(input);
+
+expect(workspace.focus.enable).toHaveBeenCalledWith(expectedInput);
+```
+
+Test the service decision, not the transport.
+
+## Store Tests
+
+Reset store state before each test. Clear storage when persistence is involved.
+
+```ts
 describe("store", () => {
   beforeEach(() => {
     localStorage.clear();
-    useStore.setState({ /* reset state */ });
+    useStore.setState({ open: false, width: 256 });
   });
 
-  it("action changes state", () => {
-    useStore.getState().action();
-    expect(useStore.getState().property).toBe(expectedValue);
+  it("updates state", () => {
+    useStore.getState().toggle();
+
+    expect(useStore.getState().open).toBe(true);
   });
 
-  it("persists to localStorage", () => {
-    useStore.getState().action();
+  it("persists selected fields", () => {
+    useStore.getState().setOpen(true);
+
     const persisted = localStorage.getItem("store-key");
-    expect(JSON.parse(persisted).state).toEqual(expectedState);
+
+    expect(JSON.parse(persisted ?? "{}").state).toEqual({ open: true });
   });
 });
 ```
 
-## Mocking patterns
+## Parameterised Tests
 
-**Hoisted mocks for complex modules:**
-```typescript
-const mockPty = vi.hoisted(() => ({ spawn: vi.fn() }));
+Prefer a parameterised test shape when several cases exercise the same logic with different inputs and expectations. Use Vitest's `it.each` / `test.each` instead of copy-pasting near-identical `it` blocks.
+
+```ts
+it.each([
+  { input: "main", expected: true },
+  { input: "feature/x", expected: false },
+  { input: "", expected: false },
+])("isDefaultBranch($input) === $expected", ({ input, expected }) => {
+  expect(isDefaultBranch(input)).toBe(expected);
+});
+```
+
+Keep cases as separate `it` blocks when they differ in setup, assertions, or intent — parameterise repetition, not distinct behaviors.
+
+## Mocking
+
+Hoist mocks for modules that must be mocked before import evaluation.
+
+```ts
+const mockPty = vi.hoisted(() => ({
+  spawn: vi.fn(),
+}));
+
 vi.mock("node-pty", () => mockPty);
 ```
 
-**Simple module mocks:**
-```typescript
-vi.mock("@utils/analytics", () => ({ track: vi.fn() }));
+Use simple module mocks for direct dependencies.
+
+```ts
+vi.mock("@utils/analytics", () => ({
+  track: vi.fn(),
+}));
 ```
 
-**Global fetch stubbing:**
-```typescript
+Stub globals explicitly.
+
+```ts
 const mockFetch = vi.fn();
+
 vi.stubGlobal("fetch", mockFetch);
 mockFetch.mockResolvedValueOnce(ok());
 ```
 
-## Test helpers
+## UI Tests
 
-Test utilities are in `src/test/`:
-- `setup.ts` Global test setup with localStorage mock
-- `utils.tsx` `renderWithProviders()` for component tests
-- `fixtures.ts` Mock data factories
-- `panelTestHelpers.ts` Domain-specific assertions
+Prefer explicit props and fake services over app-wide setup. Test rendered behavior and user-observable state.
+
+For components using DI:
+
+- pass props directly when possible
+- fake service interfaces
+- bind only the services required by the component
+- avoid running the full boot unless the test covers boot behavior
+
+## E2E Tests
+
+Use Playwright for flows that require the running app or Electron APIs.
+
+Keep E2E tests focused:
+
+- one user journey per test
+- stable selectors
+- no arbitrary sleeps
+- assert visible outcomes
+- capture regression conditions explicitly
+
+## Interactive App Testing
+
+To drive the **real running app** (live tRPC, workspace-server, real data) instead of writing a spec, use [agent-browser](https://github.com/vercel-labs/agent-browser) over the Chrome DevTools Protocol. The dev app already launches with `--remote-debugging-port=9222`, so an agent can connect, snapshot the accessibility tree, click/type and screenshot the live UI.
+
+Two surfaces, pick by intent:
+
+| Goal | Tool |
+| --- | --- |
+| Verify or screenshot a change in the real app, live data | agent-browser + CDP `:9222` (`test-electron-app` skill) |
+| Regression coverage in CI | Playwright E2E (`tests/e2e/`) |
+
+Workflow:
+
+```bash
+npm i -g agent-browser && agent-browser install   # once
+pnpm dev                                            # run the app (exposes CDP on :9222)
+pnpm app:cdp                                         # preflight + connect
+agent-browser skills get electron                   # load the canonical commands
+agent-browser snapshot -i                           # then click/type/screenshot
+```
+
+This drives whatever profile is signed into `~/.posthog-code`; do not mutate production data while exploring. See the `test-electron-app` skill.
+
+## Boundary Checks
+
+After touching `@posthog/platform`, rebuild or typecheck its `dist/` before relying on downstream typechecks.
+
+After touching `packages/core`, run:
+
+```bash
+biome lint packages/core
+```
+
+Expected result: zero `noRestrictedImports` violations.

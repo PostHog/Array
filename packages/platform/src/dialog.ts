@@ -22,3 +22,5 @@ export interface IDialog {
   confirm(options: ConfirmOptions): Promise<number>;
   pickFile(options: PickFileOptions): Promise<string[]>;
 }
+
+export const DIALOG_SERVICE = Symbol.for("posthog.platform.dialog");

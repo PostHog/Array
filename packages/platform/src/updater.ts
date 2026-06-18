@@ -9,3 +9,5 @@ export interface IUpdater {
   onNoUpdate(handler: () => void): () => void;
   onError(handler: (error: Error) => void): () => void;
 }
+
+export const UPDATER_SERVICE = Symbol.for("posthog.platform.updater");

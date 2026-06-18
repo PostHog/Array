@@ -155,6 +155,7 @@ export default function NewTaskScreen() {
   // re-pick the same one for every new task.
   const lastRepository = useTaskStore((s) => s.lastRepository);
   const setLastRepository = useTaskStore((s) => s.setLastRepository);
+  const setComposerConfig = useTaskStore((s) => s.setComposerConfig);
   const [prompt, setPrompt] = useState(initialPrompt ?? "");
   const [selection, setSelectionState] = useState<RepositorySelection>(() => {
     if (initialRepo) {
@@ -319,6 +320,12 @@ export default function NewTaskScreen() {
       pendingTaskPromptStoreApi.move(pendingKey, task.id);
       currentPendingKey = task.id;
 
+      // Seed the per-task composer config with the mode/model/reasoning the
+      // user picked here, so the task detail screen reflects them and every
+      // subsequent run (resume-after-terminal) reuses the selected mode rather
+      // than falling back to DEFAULT_EXECUTION_MODE ("plan").
+      setComposerConfig(task.id, { mode, model, reasoning });
+
       const pendingUserMessage =
         attachments.length > 0
           ? serializeCloudPrompt(
@@ -360,6 +367,7 @@ export default function NewTaskScreen() {
     selection,
     signalReport,
     getUserIntegrationId,
+    setComposerConfig,
   ]);
 
   const hasContent = !!prompt.trim() || attachments.length > 0;

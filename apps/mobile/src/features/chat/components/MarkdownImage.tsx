@@ -1,13 +1,7 @@
 import { ImageBroken } from "phosphor-react-native";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Image,
-  Linking,
-  Pressable,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import { useThemeColors } from "@/lib/theme";
 
 interface MarkdownImageProps {
@@ -67,7 +61,7 @@ export function MarkdownImage({ url, alt }: MarkdownImageProps) {
 
   return (
     <Pressable
-      onPress={() => Linking.openURL(url)}
+      onPress={() => openExternalUrl(url)}
       accessibilityRole="image"
       accessibilityLabel={alt || "Image"}
       className="active:opacity-80"

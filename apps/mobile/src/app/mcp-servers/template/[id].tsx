@@ -4,7 +4,6 @@ import { Lock, Warning } from "phosphor-react-native";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   ScrollView,
   TextInput,
@@ -21,6 +20,7 @@ import { installTemplateWithOAuth } from "@/features/mcp/oauth";
 import { isStdioServer } from "@/features/mcp/types";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("mcp-template-detail");
@@ -168,7 +168,7 @@ export default function McpTemplateDetailScreen() {
 
         {template.docs_url ? (
           <Pressable
-            onPress={() => Linking.openURL(template.docs_url as string)}
+            onPress={() => openExternalUrl(template.docs_url as string)}
             className="mb-4 rounded-lg border border-gray-5 bg-card px-3 py-2 active:bg-gray-2"
           >
             <Text className="font-medium text-[13px] text-accent-11">

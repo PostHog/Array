@@ -1,36 +1,66 @@
 import "reflect-metadata";
 import os from "node:os";
+import { TypedEventEmitter } from "@posthog/shared";
+import type { WorkspaceClient } from "@posthog/workspace-client/client";
+import { createWorkspaceClient } from "@posthog/workspace-client/client";
+import type { FileWatcherEvent } from "@posthog/workspace-client/types";
 import { app, BrowserWindow, dialog } from "electron";
 import log from "electron-log/main";
 import "./utils/logger";
 import "./services/index.js";
-import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import type { DatabaseService } from "./db/service";
+import type { AuthService } from "@posthog/core/auth/auth";
+import { focusHostModule } from "@posthog/core/focus/focus-host.module";
+import {
+  FOCUS_SESSION_STORE,
+  FOCUS_WORKSPACE_CLIENT,
+  FOCUS_WORKTREE_PATHS,
+} from "@posthog/core/focus/host-focus";
+import { GIT_WORKSPACE_CLIENT } from "@posthog/core/git/identifiers";
+import type { GitHubIntegrationService } from "@posthog/core/integrations/github";
+import {
+  GITHUB_INTEGRATION_SERVICE,
+  SLACK_INTEGRATION_SERVICE,
+} from "@posthog/core/integrations/identifiers";
+import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
+import type { InboxLinkService } from "@posthog/core/links/inbox-link";
+import type { NewTaskLinkService } from "@posthog/core/links/new-task-link";
+import type { ScoutLinkService } from "@posthog/core/links/scout-link";
+import type { TaskLinkService } from "@posthog/core/links/task-link";
+import { NOTIFICATION_SERVICE } from "@posthog/core/notification/identifiers";
+import type { NotificationService } from "@posthog/core/notification/notification";
+import { OAUTH_SERVICE } from "@posthog/core/oauth/identifiers";
+import type { OAuthService } from "@posthog/core/oauth/oauth";
+import type { UpdatesService } from "@posthog/core/updates/updates";
+import { CONNECTIVITY_CLIENT } from "@posthog/host-router/ports/connectivity-client";
+import { ENVIRONMENT_CLIENT } from "@posthog/host-router/ports/environment-client";
+import { FILE_WATCHER_CONTROL } from "@posthog/host-router/ports/file-watcher-control";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import type { DatabaseService } from "@posthog/workspace-server/db/service";
+import type { ExternalAppsService } from "@posthog/workspace-server/services/external-apps/external-apps";
+import {
+  FS_SERVICE,
+  type FsCapability,
+} from "@posthog/workspace-server/services/fs/identifiers";
+import type { PosthogPluginService } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin";
+import { SUSPENSION_SERVICE } from "@posthog/workspace-server/services/suspension/identifiers";
+import type { SuspensionService } from "@posthog/workspace-server/services/suspension/suspension";
+import type { WorkspaceService } from "@posthog/workspace-server/services/workspace/workspace";
 import { initializeDeepLinks, registerDeepLinkHandlers } from "./deep-links";
 import { container } from "./di/container";
 import { MAIN_TOKENS } from "./di/tokens";
+import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
-import type { AuthService } from "./services/auth/service";
 import type { DiscordPresenceService } from "./services/discord-presence/service";
-import type { ExternalAppsService } from "./services/external-apps/service";
-import type { GitHubIntegrationService } from "./services/github-integration/service";
-import type { InboxLinkService } from "./services/inbox-link/service";
-import type { NewTaskLinkService } from "./services/new-task-link/service";
-import type { NotificationService } from "./services/notification/service";
-import type { OAuthService } from "./services/oauth/service";
 import {
-  captureException,
-  getPostHogClient,
-  initializePostHog,
-  trackAppEvent,
-} from "./services/posthog-analytics";
-import type { PosthogPluginService } from "./services/posthog-plugin/service";
-import type { SlackIntegrationService } from "./services/slack-integration/service";
-import type { SuspensionService } from "./services/suspension/service";
-import type { TaskLinkService } from "./services/task-link/service";
-import type { UpdatesService } from "./services/updates/service";
-import type { WorkspaceService } from "./services/workspace/service";
+  focusSessionStore,
+  focusWorktreePaths,
+} from "./services/focus/desktop-adapters";
+import type { WorkspaceServerService } from "./services/workspace-server/service";
+import {
+  collectMemorySnapshot,
+  flattenMemorySnapshot,
+} from "./utils/crash-diagnostics";
 import { ensureClaudeConfigDir } from "./utils/env";
 import {
   getChromiumLogFilePath,
@@ -39,6 +69,39 @@ import {
 } from "./utils/logger";
 import { isMacosPackagedUnsafeBundleLocation } from "./utils/macos-packaged-install-guard";
 import { createWindow } from "./window";
+
+type FileWatcherEventsByKind = {
+  [K in FileWatcherEvent["kind"]]: Extract<FileWatcherEvent, { kind: K }>;
+};
+
+export class FileWatcherBridge extends TypedEventEmitter<FileWatcherEventsByKind> {
+  private subs = new Map<string, { unsubscribe: () => void }>();
+
+  constructor(private workspace: WorkspaceClient) {
+    super();
+  }
+
+  startWatching(repoPath: string): void {
+    if (this.subs.has(repoPath)) return;
+    const sub = this.workspace.fileWatcher.watch.subscribe(
+      { repoPath },
+      {
+        onData: (event) => {
+          this.emit(event.kind, event as never);
+        },
+        onError: () => {},
+      },
+    );
+    this.subs.set(repoPath, sub);
+  }
+
+  stopWatching(repoPath: string): void {
+    const sub = this.subs.get(repoPath);
+    if (!sub) return;
+    sub.unsubscribe();
+    this.subs.delete(repoPath);
+  }
+}
 
 // Single instance lock must be acquired FIRST before any other app setup
 const additionalData = process.defaultApp ? { argv: process.argv } : undefined;
@@ -72,6 +135,14 @@ function isCrashLoop(): boolean {
   return recentCrashTimestamps.length >= CRASH_LOOP_THRESHOLD;
 }
 
+function crashDiagnostics() {
+  return {
+    appUptimeSeconds: Math.round(process.uptime()),
+    chromiumLogTail: readChromiumLogTail(),
+    ...flattenMemorySnapshot(collectMemorySnapshot(() => app.getAppMetrics())),
+  };
+}
+
 app.on("render-process-gone", (_event, webContents, details) => {
   const props = {
     source: "main",
@@ -81,18 +152,17 @@ app.on("render-process-gone", (_event, webContents, details) => {
     url: webContents.getURL(),
     title: webContents.getTitle(),
     webContentsId: String(webContents.id),
+    ...crashDiagnostics(),
   };
-  log.error("Renderer process gone", {
-    ...props,
-    chromiumLogTail: readChromiumLogTail(),
-  });
-  captureException(
+  log.error("Renderer process gone", props);
+  posthogNodeAnalytics.captureException(
     new Error(`Renderer process gone: ${details.reason}`),
-    props,
+    {
+      ...props,
+      $exception_fingerprint: ["render-process-gone", details.reason],
+    },
   );
-  getPostHogClient()
-    ?.flush()
-    .catch(() => {});
+  posthogNodeAnalytics.flush().catch(() => {});
 
   if (RECOVERABLE_RENDER_REASONS.has(details.reason)) {
     if (isCrashLoop()) {
@@ -130,31 +200,35 @@ app.on("child-process-gone", (_event, details) => {
     exitCode: String(details.exitCode),
     serviceName: details.serviceName ?? "",
     name: details.name ?? "",
+    ...crashDiagnostics(),
   };
-  log.error("Child process gone", {
-    ...props,
-    chromiumLogTail: readChromiumLogTail(),
-  });
-  captureException(
+  log.error("Child process gone", props);
+  posthogNodeAnalytics.captureException(
     new Error(`Child process gone (${details.type}): ${details.reason}`),
-    props,
+    {
+      ...props,
+      $exception_fingerprint: [
+        "child-process-gone",
+        details.type,
+        details.reason,
+      ],
+    },
   );
-  getPostHogClient()
-    ?.flush()
-    .catch(() => {});
+  posthogNodeAnalytics.flush().catch(() => {});
 });
 
 async function initializeServices(): Promise<void> {
   container.get<DatabaseService>(MAIN_TOKENS.DatabaseService);
-  container.get<OAuthService>(MAIN_TOKENS.OAuthService);
+  container.get<OAuthService>(OAUTH_SERVICE);
   const authService = container.get<AuthService>(MAIN_TOKENS.AuthService);
-  container.get<NotificationService>(MAIN_TOKENS.NotificationService);
+  container.get<NotificationService>(NOTIFICATION_SERVICE);
   container.get<UpdatesService>(MAIN_TOKENS.UpdatesService);
   container.get<TaskLinkService>(MAIN_TOKENS.TaskLinkService);
   container.get<InboxLinkService>(MAIN_TOKENS.InboxLinkService);
+  container.get<ScoutLinkService>(MAIN_TOKENS.ScoutLinkService);
   container.get<NewTaskLinkService>(MAIN_TOKENS.NewTaskLinkService);
-  container.get<GitHubIntegrationService>(MAIN_TOKENS.GitHubIntegrationService);
-  container.get<SlackIntegrationService>(MAIN_TOKENS.SlackIntegrationService);
+  container.get<GitHubIntegrationService>(GITHUB_INTEGRATION_SERVICE);
+  container.get<SlackIntegrationService>(SLACK_INTEGRATION_SERVICE);
   container.get<ExternalAppsService>(MAIN_TOKENS.ExternalAppsService);
   container.get<PosthogPluginService>(MAIN_TOKENS.PosthogPluginService);
   // Eagerly start the Discord presence service so it connects when enabled.
@@ -168,13 +242,12 @@ async function initializeServices(): Promise<void> {
   );
   workspaceService.initBranchWatcher();
 
-  const suspensionService = container.get<SuspensionService>(
-    MAIN_TOKENS.SuspensionService,
-  );
+  const suspensionService =
+    container.get<SuspensionService>(SUSPENSION_SERVICE);
   suspensionService.startInactivityChecker();
 
   // Track app started event
-  trackAppEvent(ANALYTICS_EVENTS.APP_STARTED);
+  posthogNodeAnalytics.track(ANALYTICS_EVENTS.APP_STARTED);
 }
 
 // ========================================================
@@ -185,7 +258,7 @@ async function initializeServices(): Promise<void> {
 registerDeepLinkHandlers();
 
 // Initialize PostHog analytics
-initializePostHog();
+posthogNodeAnalytics.initialize();
 
 app.whenReady().then(async () => {
   if (
@@ -233,6 +306,58 @@ app.whenReady().then(async () => {
   ensureClaudeConfigDir();
   registerMcpSandboxProtocol();
   createWindow();
+
+  const wsServer = container.get<WorkspaceServerService>(
+    MAIN_TOKENS.WorkspaceServerService,
+  );
+  const connection = await wsServer.start();
+  const workspaceClient = createWorkspaceClient(connection);
+  container.bind(MAIN_TOKENS.WorkspaceClient).toConstantValue(workspaceClient);
+  container.bind(GIT_WORKSPACE_CLIENT).toConstantValue(workspaceClient);
+  container.bind(CONNECTIVITY_CLIENT).toConstantValue(workspaceClient);
+  container.bind(ENVIRONMENT_CLIENT).toConstantValue(workspaceClient);
+  const fileWatcherBridge = new FileWatcherBridge(workspaceClient);
+  container
+    .bind(MAIN_TOKENS.FileWatcherService)
+    .toConstantValue(fileWatcherBridge);
+  container.bind(FILE_WATCHER_CONTROL).toConstantValue(fileWatcherBridge);
+  container.bind(FOCUS_WORKSPACE_CLIENT).toConstantValue(workspaceClient);
+  container.bind(FOCUS_SESSION_STORE).toConstantValue(focusSessionStore);
+  container.bind(FOCUS_WORKTREE_PATHS).toConstantValue(focusWorktreePaths);
+  container.load(focusHostModule);
+  const fsCapability: FsCapability = {
+    listRepoFiles: (repoPath, query, limit) =>
+      workspaceClient.fs.listRepoFiles.query({ repoPath, query, limit }),
+    readRepoFile: (repoPath, filePath) =>
+      workspaceClient.fs.readRepoFile.query({ repoPath, filePath }),
+    readRepoFiles: (repoPath, filePaths) =>
+      workspaceClient.fs.readRepoFiles.query({ repoPath, filePaths }),
+    readRepoFileBounded: (repoPath, filePath, maxLines) =>
+      workspaceClient.fs.readRepoFileBounded.query({
+        repoPath,
+        filePath,
+        maxLines,
+      }),
+    readRepoFilesBounded: (repoPath, filePaths, maxLines) =>
+      workspaceClient.fs.readRepoFilesBounded.query({
+        repoPath,
+        filePaths,
+        maxLines,
+      }),
+    readAbsoluteFile: (filePath) =>
+      workspaceClient.fs.readAbsoluteFile.query({ filePath }),
+    readFileAsBase64: (filePath) =>
+      workspaceClient.fs.readFileAsBase64.query({ filePath }),
+    writeRepoFile: async (repoPath, filePath, content) => {
+      await workspaceClient.fs.writeRepoFile.mutate({
+        repoPath,
+        filePath,
+        content,
+      });
+    },
+  };
+  container.bind(MAIN_TOKENS.FsService).toConstantValue(fsCapability);
+  container.bind(FS_SERVICE).toService(MAIN_TOKENS.FsService);
   await initializeServices();
   initializeDeepLinks();
 });
@@ -242,6 +367,11 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", async (event) => {
+  try {
+    container
+      .get<WorkspaceServerService>(MAIN_TOKENS.WorkspaceServerService)
+      .stop();
+  } catch {}
   let lifecycleService: AppLifecycleService;
   try {
     lifecycleService = container.get<AppLifecycleService>(
@@ -301,11 +431,17 @@ process.on("uncaughtException", (error) => {
     return;
   }
   log.error("Uncaught exception", error);
-  captureException(error, { source: "main", type: "uncaughtException" });
+  posthogNodeAnalytics.captureException(error, {
+    source: "main",
+    type: "uncaughtException",
+  });
 });
 
 process.on("unhandledRejection", (reason) => {
   log.error("Unhandled rejection", reason);
   const error = reason instanceof Error ? reason : new Error(String(reason));
-  captureException(error, { source: "main", type: "unhandledRejection" });
+  posthogNodeAnalytics.captureException(error, {
+    source: "main",
+    type: "unhandledRejection",
+  });
 });

@@ -79,7 +79,10 @@ import {
 } from "../local-tools";
 import { resolveTaskId } from "../session-meta";
 import { createCodexClient } from "./codex-client";
-import { normalizeCodexConfigOptions } from "./models";
+import {
+  modelIdFromConfigOptions,
+  normalizeCodexConfigOptions,
+} from "./models";
 import {
   type CodexSessionState,
   createSessionState,
@@ -109,6 +112,7 @@ interface NewSessionMeta {
   systemPrompt?: string;
   permissionMode?: string;
   model?: string;
+  baseBranch?: string;
   persistence?: { taskId?: string; runId?: string; logUrl?: string };
   claudeCode?: {
     options?: Record<string, unknown>;
@@ -124,6 +128,13 @@ export interface CodexAcpAgentOptions {
   processCallbacks?: ProcessSpawnedCallback;
   posthogApiConfig?: PostHogAPIConfig;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
+  /**
+   * Logger wired to the host log sink. Without it the codex-acp subprocess
+   * stderr, spawn failures and exit codes are written to a throwaway logger and
+   * never reach the exported logs, so a crash surfaces only as a generic
+   * "ACP connection closed" with no cause.
+   */
+  logger?: Logger;
 }
 
 type CodexSession = BaseSession & {
@@ -316,7 +327,8 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
   constructor(client: AgentSideConnection, options: CodexAcpAgentOptions) {
     super(client);
-    this.logger = new Logger({ debug: true, prefix: "[CodexAcpAgent]" });
+    this.logger =
+      options.logger ?? new Logger({ debug: true, prefix: "[CodexAcpAgent]" });
 
     // Load user codex settings before spawning so spawnCodexProcess can
     // filter out any [mcp_servers.*] entries from ~/.codex/config.toml.
@@ -389,6 +401,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
         _meta: {
           posthog: {
             resumeSession: true,
+            steering: "interrupt-resend",
           },
         },
       },
@@ -420,7 +433,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       taskRunId: meta?.taskRunId,
       taskId: resolveTaskId(meta),
       modeId: response.modes?.currentModeId ?? "auto",
-      modelId: response.models?.currentModelId,
+      modelId: modelIdFromConfigOptions(response.configOptions),
       permissionMode: requestedPermissionMode,
     });
     this.sessionId = response.sessionId;
@@ -536,7 +549,6 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
     return {
       modes: loadResponse.modes,
-      models: loadResponse.models,
       configOptions: loadResponse.configOptions,
     };
   }
@@ -633,6 +645,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       cwd,
       token: resolveGithubToken(),
       taskId: resolveTaskId(meta),
+      baseBranch: meta?.baseBranch,
     };
     const tools = enabledLocalTools(ctx, meta);
     if (tools.length === 0) {

@@ -1,7 +1,16 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: [
+    "src/index.ts",
+    "src/analytics-events.ts",
+    "src/constants.ts",
+    "src/deeplink.ts",
+    "src/dismissalReasons.ts",
+    "src/domain-types.ts",
+    "src/mcp-sandbox-proxy.ts",
+    "src/types.ts",
+  ],
   format: ["esm"],
   dts: true,
   sourcemap: true,

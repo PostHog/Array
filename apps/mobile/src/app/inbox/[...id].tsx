@@ -26,6 +26,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUserQuery } from "@/features/auth";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { getReportRepository } from "@/features/inbox/api";
+import { buildCreatePrReportPrompt } from "@/features/inbox/buildCreatePrReportPrompt";
+import { CreatePrFeedbackSheet } from "@/features/inbox/components/CreatePrFeedbackSheet";
 import { DiscussReportSheet } from "@/features/inbox/components/DiscussReportSheet";
 import {
   type DismissReportResult,
@@ -51,7 +53,11 @@ import type {
   SignalReportStatus,
   SuggestedReviewersArtefact,
 } from "@/features/inbox/types";
-import { inboxStatusLabel } from "@/features/inbox/utils";
+import {
+  formatSignalReportSummaryMarkdown,
+  inboxStatusLabel,
+} from "@/features/inbox/utils";
+import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import {
   computeReportAgeHours,
   type InboxReportActionType,
@@ -146,6 +152,7 @@ export default function ReportDetailScreen() {
   const [reportRepo, setReportRepo] = useState<string | null>(null);
   const [dismissOpen, setDismissOpen] = useState(false);
   const [discussOpen, setDiscussOpen] = useState(false);
+  const [createPrFeedbackOpen, setCreatePrFeedbackOpen] = useState(false);
   const [signalsExpanded, setSignalsExpanded] = useState(false);
 
   const artefactsQuery = useInboxReportArtefacts(reportId ?? null);
@@ -277,28 +284,37 @@ export default function ReportDetailScreen() {
       ),
   );
 
-  const handleStartTask = useCallback(() => {
-    if (!report) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    tracker.signalAction({
-      report_id: report.id,
-      report_title: report.title ?? null,
-      report_age_hours: computeReportAgeHours(report.created_at),
-      action_type: "create_pr",
-      surface: "detail_pane",
-      is_bulk: false,
-      bulk_size: 1,
-    });
-    const prompt = `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`;
-    router.push({
-      pathname: "/task",
-      params: {
-        prompt,
-        ...(reportRepo ? { repo: reportRepo } : {}),
-        signalReport: report.id,
-      },
-    });
-  }, [report, router, reportRepo, tracker]);
+  const handleStartTask = useCallback(
+    (feedback?: string) => {
+      if (!report) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setCreatePrFeedbackOpen(false);
+      tracker.signalAction({
+        report_id: report.id,
+        report_title: report.title ?? null,
+        report_age_hours: computeReportAgeHours(report.created_at),
+        action_type: "create_pr",
+        surface: "detail_pane",
+        is_bulk: false,
+        bulk_size: 1,
+        has_feedback: !!feedback,
+        ...(feedback ? { feedback_text: feedback.slice(0, 500) } : {}),
+      });
+      const prompt = buildCreatePrReportPrompt({
+        summary: report.summary,
+        feedback,
+      });
+      router.push({
+        pathname: "/task",
+        params: {
+          prompt,
+          ...(reportRepo ? { repo: reportRepo } : {}),
+          signalReport: report.id,
+        },
+      });
+    },
+    [report, router, reportRepo, tracker],
+  );
 
   const handleDismissed = useCallback(
     (result: DismissReportResult) => {
@@ -457,6 +473,15 @@ export default function ReportDetailScreen() {
             </Text>
           </View>
           <Text className="text-[12px] text-gray-9">Updated {timeDisplay}</Text>
+          {report.implementation_pr_url ? (
+            <View className="ml-auto">
+              <PrStatusBadge
+                prUrl={report.implementation_pr_url}
+                hideWhenUnresolved
+                size="sm"
+              />
+            </View>
+          ) : null}
         </View>
 
         {/* Failed warning */}
@@ -492,7 +517,9 @@ export default function ReportDetailScreen() {
         {/* Summary */}
         {report.summary && (
           <View className="mb-4" style={{ opacity: isReady ? 1 : 0.7 }}>
-            <MarkdownText content={report.summary} />
+            <MarkdownText
+              content={formatSignalReportSummaryMarkdown(report.summary)}
+            />
           </View>
         )}
 
@@ -574,19 +601,32 @@ export default function ReportDetailScreen() {
         </Pressable>
 
         {canStartTask && (
-          <Pressable
-            onPress={handleStartTask}
-            className="flex-row items-center gap-2 rounded-full bg-accent-9 px-4 py-3.5 shadow-lg active:opacity-80"
-          >
-            {isAwaitingInput ? (
-              <Plus size={18} color="#ffffff" weight="bold" />
-            ) : (
-              <Play size={18} color="#ffffff" weight="fill" />
-            )}
-            <Text className="font-semibold text-[15px] text-white">
-              {primaryActionLabel}
-            </Text>
-          </Pressable>
+          <View className="flex-row items-center overflow-hidden rounded-full bg-accent-9 shadow-lg">
+            <Pressable
+              onPress={() => handleStartTask()}
+              className="flex-row items-center gap-2 py-3.5 pr-3 pl-4 active:opacity-80"
+            >
+              {isAwaitingInput ? (
+                <Plus size={18} color="#ffffff" weight="bold" />
+              ) : (
+                <Play size={18} color="#ffffff" weight="fill" />
+              )}
+              <Text className="font-semibold text-[15px] text-white">
+                {primaryActionLabel}
+              </Text>
+            </Pressable>
+            <View className="h-6 w-px bg-white/25" />
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setCreatePrFeedbackOpen(true);
+              }}
+              accessibilityLabel="Add feedback"
+              className="py-3.5 pr-4 pl-3 active:opacity-80"
+            >
+              <CaretDown size={16} color="#ffffff" weight="bold" />
+            </Pressable>
+          </View>
         )}
       </View>
 
@@ -604,6 +644,13 @@ export default function ReportDetailScreen() {
         reportTitle={report.title}
         onClose={() => setDiscussOpen(false)}
         onSubmit={handleDiscussSubmit}
+      />
+
+      <CreatePrFeedbackSheet
+        visible={createPrFeedbackOpen}
+        isAwaitingInput={isAwaitingInput}
+        onClose={() => setCreatePrFeedbackOpen(false)}
+        onSubmit={handleStartTask}
       />
     </>
   );

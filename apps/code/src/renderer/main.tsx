@@ -1,12 +1,28 @@
 import "reflect-metadata";
+// Side effect: registers the host (electron-trpc-backed) storage with @posthog/ui.
+// Persisted stores hydrate from it once it registers, wherever in the import
+// graph they are created.
+import "@utils/electronStorage";
+// Side effect: composes the renderer container and calls setRootContainer.
+// Must precede the updates adapter below, which resolves UPDATES_CLIENT at
+// module scope.
+import "@renderer/di/container";
+// Side effect: drives the updates subscription + toast via the core update store.
+import "@renderer/platform-adapters/updates";
 // Side effect: attaches window focus/visibility listeners so `focused` is accurate before inbox queries mount.
-import "@stores/rendererWindowFocusStore";
+import "@posthog/ui/shell/rendererWindowFocusStore";
 import { Providers } from "@components/Providers";
 import { preloadHighlighter } from "@pierre/diffs";
-import App from "@renderer/App";
+import { boot } from "@posthog/di/contribution";
+import { ServiceProvider } from "@posthog/di/react";
+import App from "@posthog/ui/shell/App";
+import { initializePostHog } from "@posthog/ui/shell/posthogAnalyticsImpl";
+import { registerDesktopContributions } from "@renderer/desktop-contributions";
+import { container } from "@renderer/di/container";
+import "@renderer/desktop-services";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "./styles/globals.css";
+import "@posthog/ui/styles/globals.css";
 
 void preloadHighlighter({
   themes: ["github-dark", "github-light"],
@@ -59,13 +75,23 @@ document.title = import.meta.env.DEV
   ? "PostHog Code (Development)"
   : "PostHog Code";
 
+const bootstrapSessionId = window.__posthogBootstrap?.sessionId;
+if (bootstrapSessionId) {
+  initializePostHog(bootstrapSessionId);
+}
+
+registerDesktopContributions();
+void boot(container);
+
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <Providers>
-      <App />
-    </Providers>
+    <ServiceProvider container={container}>
+      <Providers>
+        <App />
+      </Providers>
+    </ServiceProvider>
   </React.StrictMode>,
 );

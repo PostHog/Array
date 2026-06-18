@@ -21,6 +21,7 @@ import {
   fetchGatewayModels,
   formatGatewayModelName,
   type GatewayModel,
+  getClaudeModelRecency,
   isAnthropicModel,
 } from "../gateway-models";
 import { Logger } from "../utils/logger";
@@ -142,7 +143,13 @@ export abstract class BaseAcpAgent implements Agent {
         value: model.id,
         name: formatGatewayModelName(model),
         description: `Context: ${model.context_window.toLocaleString()} tokens`,
-      }));
+      }))
+      // Sort oldest-to-newest so the picker is deterministic and the newest
+      // model lands at the end of the list, closest to the trigger.
+      .sort(
+        (a, b) =>
+          getClaudeModelRecency(a.value) - getClaudeModelRecency(b.value),
+      );
 
     const isAnthropicModelId = (modelId: string): boolean =>
       modelId.startsWith("claude-") || modelId.startsWith("anthropic/");
@@ -151,6 +158,17 @@ export abstract class BaseAcpAgent implements Agent {
 
     if (!options.some((opt) => opt.value === currentModelId)) {
       if (!isAnthropicModelId(currentModelId)) {
+        // A non-Anthropic model id reached the Claude adapter, which means the
+        // adapter and model desynced upstream (e.g. a Codex model paired with
+        // the Claude adapter). Log it instead of silently masquerading as a
+        // deliberate Opus session.
+        this.logger.warn(
+          "Non-Anthropic model requested on Claude adapter; falling back to default model",
+          {
+            requestedModel: currentModelId,
+            fallbackModel: DEFAULT_GATEWAY_MODEL,
+          },
+        );
         currentModelId = DEFAULT_GATEWAY_MODEL;
       }
     }

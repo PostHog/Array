@@ -478,7 +478,10 @@ function copyPosthogPlugin(isDev: boolean): Plugin {
 }
 
 function copyDrizzleMigrations(): Plugin {
-  const migrationsDir = join(__dirname, "src/main/db/migrations");
+  const migrationsDir = join(
+    __dirname,
+    "../../packages/workspace-server/src/db/migrations",
+  );
   return {
     name: "copy-drizzle-migrations",
     buildStart() {

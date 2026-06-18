@@ -20,6 +20,10 @@ describe("toSdkModelId", () => {
     expect(toSdkModelId("custom-model")).toBe("custom-model");
   });
 
+  it("passes claude-fable-5 through unchanged (no SDK alias)", () => {
+    expect(toSdkModelId("claude-fable-5")).toBe("claude-fable-5");
+  });
+
   it("passes deprecated gateway IDs through unchanged", () => {
     expect(toSdkModelId("claude-opus-4-6")).toBe("claude-opus-4-6");
     expect(toSdkModelId("claude-sonnet-4-5")).toBe("claude-sonnet-4-5");
@@ -41,6 +45,13 @@ describe("model capability flags", () => {
     expect(supportsXhighEffort("claude-opus-4-7")).toBe(true);
     expect(supportsXhighEffort("claude-opus-4-6")).toBe(false);
     expect(supportsEffort("claude-haiku-4-5")).toBe(false);
+  });
+
+  it("flags claude-fable-5 as a flagship model", () => {
+    expect(supports1MContext("claude-fable-5")).toBe(true);
+    expect(supportsEffort("claude-fable-5")).toBe(true);
+    expect(supportsXhighEffort("claude-fable-5")).toBe(true);
+    expect(supportsMcpInjection("claude-fable-5")).toBe(true);
   });
 
   it("allows MCP injection for supported Claude models", () => {
@@ -120,6 +131,23 @@ describe("resolveModelPreference", () => {
 
   it("returns null when nothing matches", () => {
     expect(resolveModelPreference("gpt-5", options)).toBeNull();
+  });
+
+  it("does not inherit a cross-family match from the context hint alone", () => {
+    const sonnetOnly = [
+      { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (1M context)" },
+    ];
+    expect(resolveModelPreference("opus[1m]", sonnetOnly)).toBeNull();
+  });
+
+  it("resolves a hinted alias to the right family when a family token matches", () => {
+    const withHints = [
+      { value: "claude-opus-4-8", name: "Claude Opus 4.8 (1M context)" },
+      { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (1M context)" },
+    ];
+    expect(resolveModelPreference("opus[1m]", withHints)).toBe(
+      "claude-opus-4-8",
+    );
   });
 
   it("treats `best` and `default` as wildcards (no tokens contribute)", () => {

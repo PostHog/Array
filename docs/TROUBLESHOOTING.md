@@ -45,12 +45,10 @@ If the app crashes with something like:
 libc++abi: terminating due to uncaught exception of type Napi::Error
 ```
 
-Native modules (like node-pty) need to be rebuilt for your Electron version.
-
-### Fix
+A native module was built for the wrong runtime. Re-run the install, which rebuilds what Electron needs via `apps/code/scripts/postinstall.sh`:
 
 ```bash
-cd apps/code && npx electron-rebuild -f
+pnpm install
 ```
 
 ## Codex agent crashes with GPU process errors
@@ -74,7 +72,7 @@ Then restart the app. This downloads the codex-acp binary to `apps/code/resource
 
 ## Database initialization failed (better-sqlite3)
 
-If you see either of these errors on startup:
+If you see any of these errors on startup:
 
 ```
 Database initialization failed Error: Could not locate the bindings file.
@@ -87,15 +85,55 @@ NODE_MODULE_VERSION 145. This version of Node.js requires
 NODE_MODULE_VERSION 123.
 ```
 
-The `better-sqlite3` native binary wasn't compiled for your Electron version. This commonly happens after a merge, branch switch or Electron upgrade because the postinstall rebuild can fail silently (`|| true`).
+```
+Unhandled rejection Error: Unexpected error found when calling "initialize"
+@postConstruct decorated method on class "DatabaseService"
+```
+
+The last one is the same failure wrapped by the DI container; the underlying cause (with the bindings paths it tried) is in `~/.posthog-code/logs-dev/main.log`.
+
+The `better-sqlite3` native binary wasn't compiled for your Electron version. This commonly happens after a merge, branch switch or Electron upgrade. It also happens whenever the binary was last rebuilt for plain Node, for example to run the workspace-server DB tests (see "One binary, two ABIs" below).
 
 ### Fix
 
 ```bash
-cd apps/code && npx electron-rebuild -f
+pnpm rebuild:sqlite-electron
 ```
 
 Then restart the app.
+
+The script (`scripts/rebuild-better-sqlite3-electron.mjs`) downloads the official Electron prebuild via `prebuild-install` and falls back to compiling with `node-gyp` against the Electron headers. It deliberately avoids `@electron/rebuild`: its CLI crashes on Node 26 and newer (it requires the legacy `yargs/yargs` entry, which new Node parses as ESM) and its module walker cannot find packages hoisted to the root `node_modules` by pnpm's `node-linker=hoisted` layout. The ABI comes from the Electron target, not your system Node, so the binary gets the right `NODE_MODULE_VERSION` even when the two differ. It lands at `node_modules/better-sqlite3/build/Release/better_sqlite3.node`.
+
+Also check that build scripts are allowed to run at all: if `~/.npmrc` contains `ignore-scripts=true`, pnpm silently skips every native build and postinstall, and nothing above can work.
+
+If the script itself won't run, the same prebuild download works manually (no toolchain needed):
+
+```bash
+ELECTRON_VERSION="$(node -p "require('./node_modules/electron/package.json').version")"
+cd node_modules/better-sqlite3
+rm -rf build prebuilds
+npx prebuild-install --runtime=electron --target="$ELECTRON_VERSION" --arch="$(node -p process.arch)"
+```
+
+### One binary, two ABIs (app vs tests)
+
+There is a single `better-sqlite3` binary in the repo but two runtimes that load it:
+
+- The Electron main process (`pnpm dev`, the packaged app) needs it compiled for **Electron's** ABI. The `apps/code` postinstall does this.
+- The workspace-server DB tests run under plain Node via vitest and need it compiled for **your system Node's** ABI.
+
+These ABIs differ, so the binary can only satisfy one side at a time and rebuilding for one breaks the other. The toggle is deliberate:
+
+```bash
+# Before running the workspace-server DB tests locally (CI does this in test.yml):
+node scripts/rebuild-better-sqlite3-node.mjs
+
+# Before running the app again, restore the Electron build:
+pnpm --filter code postinstall
+# (or any of the fixes above)
+```
+
+Symptoms map directly to the current state: the app failing with `DatabaseService` / `NODE_MODULE_VERSION` errors means the binary is in its Node state; `src/db/repositories/repositories.test.ts` failing with a `NODE_MODULE_VERSION` mismatch means it is in its Electron state. Note that `pnpm rebuild better-sqlite3` compiles for system Node, so it flips the binary to the test state even if you meant to fix the app.
 
 ## node-gyp failed to rebuild @parcel/watcher
 

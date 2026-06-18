@@ -8,7 +8,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      workflow: ${{ steps.filter.outputs.workflow }}
+    steps:
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          predicate-quantifier: every
+          filters: |
+            # Wider excludes than code-quality.yml, which keeps .github/scripts
+            # and .vscode/.claude in scope because Biome lints them.
+            code:
+              - "!**/*.md"
+              - "!docs/**"
+              - "!.github/**"
+              - "!.vscode/**"
+              - "!.claude/**"
+              - "!.husky/**"
+              - "!LICENSE"
+              - "!.gitignore"
+              - "!.env.example"
+            workflow:
+              - ".github/workflows/typecheck.yml"
+
   typecheck:
+    needs: changes
+    # Fail closed: if change detection itself failed, run instead of skipping.
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true' || needs.changes.outputs.workflow == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { serializeError } from "@posthog/shared";
 import type { SessionContext } from "./otel-log-writer";
 import type { PostHogAPIClient } from "./posthog-api";
 import type { StoredNotification } from "./types";
@@ -221,7 +222,8 @@ export class SessionLogWriter {
           {
             taskId: session.context.taskId,
             runId: session.context.runId,
-            error,
+            maxRetries: SessionLogWriter.MAX_FLUSH_RETRIES,
+            errorDetail: serializeError(error),
           },
         );
         this.retryCounts.set(sessionId, 0);

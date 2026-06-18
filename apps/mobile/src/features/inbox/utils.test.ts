@@ -7,10 +7,67 @@ import type {
 } from "./types";
 import {
   buildInboxViewedProperties,
+  buildPriorityFilterParam,
   buildReviewerOptions,
+  formatSignalReportSummaryMarkdown,
+  orderSuggestedReviewers,
   reviewerMatchesAvailable,
   toSuggestedReviewerWriteContent,
 } from "./utils";
+
+function reviewer(login: string, uuid?: string): SuggestedReviewer {
+  return {
+    github_login: login,
+    github_name: login,
+    relevant_commits: [],
+    user: uuid
+      ? {
+          id: 1,
+          uuid,
+          email: `${login}@posthog.com`,
+          first_name: login,
+          last_name: "",
+        }
+      : null,
+  };
+}
+
+describe("orderSuggestedReviewers", () => {
+  it("moves the current user to the front", () => {
+    const reviewers = [
+      reviewer("a", "uuid-a"),
+      reviewer("me", "uuid-me"),
+      reviewer("c", "uuid-c"),
+    ];
+    const ordered = orderSuggestedReviewers(reviewers, "uuid-me");
+    expect(ordered.map((r) => r.github_login)).toEqual(["me", "a", "c"]);
+  });
+
+  it.each([
+    {
+      label: "already first",
+      reviewers: [reviewer("me", "uuid-me"), reviewer("a", "uuid-a")],
+      meUuid: "uuid-me" as string | null | undefined,
+    },
+    {
+      label: "absent",
+      reviewers: [reviewer("a", "uuid-a"), reviewer("b", "uuid-b")],
+      meUuid: "uuid-me" as string | null | undefined,
+    },
+    {
+      label: "null meUuid",
+      reviewers: [reviewer("a", "uuid-a"), reviewer("me", "uuid-me")],
+      meUuid: null as string | null | undefined,
+    },
+    {
+      label: "undefined meUuid",
+      reviewers: [reviewer("a", "uuid-a"), reviewer("me", "uuid-me")],
+      meUuid: undefined as string | null | undefined,
+    },
+  ])("is a no-op when $label", ({ reviewers, meUuid }) => {
+    expect(orderSuggestedReviewers(reviewers, meUuid)).toBe(reviewers);
+  });
+});
 
 function makeReviewer(
   partial: Partial<SuggestedReviewer> = {},
@@ -61,12 +118,51 @@ function makeReport(
   };
 }
 
+describe("formatSignalReportSummaryMarkdown", () => {
+  it.each([
+    {
+      name: "puts section body on a new line after the header",
+      input:
+        "**What's happening:** Error tracking issue keyed on `app:dashboard_query`.",
+      expected:
+        "**What's happening:**\n\nError tracking issue keyed on `app:dashboard_query`.",
+    },
+    {
+      name: "splits consecutive headers packed on one line",
+      input:
+        "**What's happening:** Users hit rate limits. **Root cause:** Limiters are contended. **How to resolve:** Reduce blocking.",
+      expected:
+        "**What's happening:**\n\nUsers hit rate limits.\n\n**Root cause:**\n\nLimiters are contended.\n\n**How to resolve:**\n\nReduce blocking.",
+    },
+    {
+      name: "leaves already-separated headers sane",
+      input:
+        "**What's happening:**\n\nUsers hit rate limits.\n\n**Root cause:**\n\nLimiters are contended.",
+      expected:
+        "**What's happening:**\n\nUsers hit rate limits.\n\n**Root cause:**\n\nLimiters are contended.",
+    },
+    {
+      name: "leaves content without headers unchanged",
+      input: "Plain summary with no structured sections.",
+      expected: "Plain summary with no structured sections.",
+    },
+    {
+      name: "matches headers case-insensitively",
+      input: "**what's happening:** lowercase header body.",
+      expected: "**what's happening:**\n\nlowercase header body.",
+    },
+  ])("$name", ({ input, expected }) => {
+    expect(formatSignalReportSummaryMarkdown(input)).toBe(expected);
+  });
+});
+
 describe("buildInboxViewedProperties", () => {
   it("emits zero counts for an empty list", () => {
     const props = buildInboxViewedProperties([], 0, {
       sourceProductFilter: [],
       statusFilter: DEFAULT_STATUS_FILTER,
       suggestedReviewerFilter: [],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
     expect(props).toMatchObject({
@@ -75,7 +171,6 @@ describe("buildInboxViewedProperties", () => {
       ready_count: 0,
       has_active_filters: false,
       is_empty: true,
-      is_gated_due_to_scale: false,
       priority_p0_count: 0,
       priority_p1_count: 0,
       priority_p2_count: 0,
@@ -116,6 +211,7 @@ describe("buildInboxViewedProperties", () => {
       sourceProductFilter: [],
       statusFilter: DEFAULT_STATUS_FILTER,
       suggestedReviewerFilter: [],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
 
@@ -131,11 +227,12 @@ describe("buildInboxViewedProperties", () => {
     expect(props.actionability_unknown_count).toBe(1);
   });
 
-  it("marks filters active when any of status/source/reviewer differs from defaults", () => {
+  it("marks filters active when any of status/source/reviewer/priority differs from defaults", () => {
     const narrowed = buildInboxViewedProperties([], 0, {
       sourceProductFilter: [],
       statusFilter: ["ready"],
       suggestedReviewerFilter: [],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
     expect(narrowed.has_active_filters).toBe(true);
@@ -145,6 +242,7 @@ describe("buildInboxViewedProperties", () => {
       sourceProductFilter: ["error_tracking"],
       statusFilter: DEFAULT_STATUS_FILTER,
       suggestedReviewerFilter: [],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
     expect(sourced.has_active_filters).toBe(true);
@@ -154,9 +252,19 @@ describe("buildInboxViewedProperties", () => {
       sourceProductFilter: [],
       statusFilter: DEFAULT_STATUS_FILTER,
       suggestedReviewerFilter: ["uuid-1"],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
     expect(reviewer.has_active_filters).toBe(true);
+
+    const prioritized = buildInboxViewedProperties([], 0, {
+      sourceProductFilter: [],
+      statusFilter: DEFAULT_STATUS_FILTER,
+      suggestedReviewerFilter: [],
+      priorityFilter: ["P0"],
+      defaultStatusFilter: DEFAULT_STATUS_FILTER,
+    });
+    expect(prioritized.has_active_filters).toBe(true);
   });
 
   it("treats a reordered default status set as not filtered", () => {
@@ -164,6 +272,7 @@ describe("buildInboxViewedProperties", () => {
       sourceProductFilter: [],
       statusFilter: [...DEFAULT_STATUS_FILTER].reverse(),
       suggestedReviewerFilter: [],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
     expect(props.has_active_filters).toBe(false);
@@ -226,6 +335,28 @@ describe("reviewerMatchesAvailable", () => {
     },
   ])("$name", ({ reviewer, expected }) => {
     expect(reviewerMatchesAvailable(reviewer, makeAvailable())).toBe(expected);
+  });
+});
+
+describe("buildPriorityFilterParam", () => {
+  it.each([
+    {
+      name: "returns undefined for an empty selection",
+      input: [],
+      expected: undefined,
+    },
+    {
+      name: "joins selected priorities with commas",
+      input: ["P0", "P2"] as const,
+      expected: "P0,P2",
+    },
+    {
+      name: "dedupes repeated priorities",
+      input: ["P1", "P1", "P3"] as const,
+      expected: "P1,P3",
+    },
+  ])("$name", ({ input, expected }) => {
+    expect(buildPriorityFilterParam([...input])).toBe(expected);
   });
 });
 

@@ -1,6 +1,12 @@
 import { readdirSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { AuthService } from "@posthog/core/auth/auth";
+import { MCP_APPS_SERVICE } from "@posthog/core/mcp-apps/identifiers";
+import type { McpAppsService } from "@posthog/core/mcp-apps/mcp-apps";
+import { UI_SERVICE } from "@posthog/core/ui/identifiers";
+import type { UIService } from "@posthog/core/ui/ui";
+import type { UpdatesService } from "@posthog/core/updates/updates";
 import {
   app,
   BrowserWindow,
@@ -12,10 +18,6 @@ import {
 } from "electron";
 import { container } from "./di/container";
 import { MAIN_TOKENS } from "./di/tokens";
-import type { AuthService } from "./services/auth/service";
-import type { McpAppsService } from "./services/mcp-apps/service";
-import type { UIService } from "./services/ui/service";
-import type { UpdatesService } from "./services/updates/service";
 import { isDevBuild } from "./utils/env";
 import { getLogFilePath } from "./utils/logger";
 
@@ -101,7 +103,7 @@ function buildAppMenu(): MenuItemConstructorOptions {
         label: "Settings...",
         accelerator: "CmdOrCtrl+,",
         click: () => {
-          container.get<UIService>(MAIN_TOKENS.UIService).openSettings();
+          container.get<UIService>(UI_SERVICE).openSettings();
         },
       },
       { type: "separator" },
@@ -135,7 +137,7 @@ function buildFileMenu(): MenuItemConstructorOptions {
         label: "New task",
         accelerator: "CmdOrCtrl+N",
         click: () => {
-          container.get<UIService>(MAIN_TOKENS.UIService).newTask();
+          container.get<UIService>(UI_SERVICE).newTask();
         },
       },
       { type: "separator" },
@@ -213,9 +215,7 @@ function buildFileMenu(): MenuItemConstructorOptions {
           {
             label: "Invalidate OAuth token",
             click: () => {
-              void container
-                .get<UIService>(MAIN_TOKENS.UIService)
-                .invalidateToken();
+              void container.get<UIService>(UI_SERVICE).invalidateToken();
             },
           },
           {
@@ -244,7 +244,7 @@ function buildFileMenu(): MenuItemConstructorOptions {
             label: "Refresh MCP Apps discovery",
             click: () => {
               container
-                .get<McpAppsService>(MAIN_TOKENS.McpAppsService)
+                .get<McpAppsService>(MCP_APPS_SERVICE)
                 .refreshDiscovery()
                 .then(() => {
                   dialog.showMessageBox({
@@ -267,7 +267,7 @@ function buildFileMenu(): MenuItemConstructorOptions {
           {
             label: "Clear application storage",
             click: () => {
-              container.get<UIService>(MAIN_TOKENS.UIService).clearStorage();
+              container.get<UIService>(UI_SERVICE).clearStorage();
             },
           },
         ],
@@ -317,7 +317,7 @@ function buildViewMenu(): MenuItemConstructorOptions {
       {
         label: "Reset layout",
         click: () => {
-          container.get<UIService>(MAIN_TOKENS.UIService).resetLayout();
+          container.get<UIService>(UI_SERVICE).resetLayout();
         },
       },
     ],

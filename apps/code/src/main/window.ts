@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createIPCHandler } from "@posthog/electron-trpc/main";
+import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import {
   app,
   BrowserWindow,
@@ -10,10 +11,12 @@ import {
   shell,
 } from "electron";
 import { container } from "./di/container";
-import { MAIN_TOKENS } from "./di/tokens";
 import { buildApplicationMenu } from "./menu";
 import type { ElectronMainWindow } from "./platform-adapters/electron-main-window";
+import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
+import { POSTHOG_SESSION_ID_ARG } from "./posthog-session-arg";
 import { trpcRouter } from "./trpc/router";
+import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import { type WindowStateSchema, windowStateStore } from "./utils/store";
@@ -71,10 +74,6 @@ export function saveWindowState(window: BrowserWindow): void {
 
 let mainWindow: BrowserWindow | null = null;
 
-export function getMainWindow(): BrowserWindow | null {
-  return mainWindow;
-}
-
 export function focusMainWindow(reason: string): void {
   if (mainWindow) {
     log.info("focusMainWindow called", {
@@ -110,6 +109,7 @@ function setupCrashLogging(window: BrowserWindow): void {
       reason: details.reason,
       exitCode: details.exitCode,
       url: window.webContents.getURL(),
+      memory: collectMemorySnapshot(() => app.getAppMetrics()),
       chromiumLogTail: readChromiumLogTail(),
     });
   });
@@ -117,6 +117,7 @@ function setupCrashLogging(window: BrowserWindow): void {
   window.on("unresponsive", () => {
     log.warn("Window unresponsive", {
       url: window.webContents.getURL(),
+      memory: collectMemorySnapshot(() => app.getAppMetrics()),
       chromiumLogTail: readChromiumLogTail(),
     });
   });
@@ -204,7 +205,10 @@ export function createWindow(): void {
       preload: path.join(__dirname, "preload.js"),
       enableBlinkFeatures: "GetDisplayMedia",
       partition: "persist:main",
-      additionalArguments: isDev ? ["--posthog-code-dev"] : [],
+      additionalArguments: [
+        ...(isDev ? ["--posthog-code-dev"] : []),
+        `${POSTHOG_SESSION_ID_ARG}${posthogNodeAnalytics.getOrCreateSessionId()}`,
+      ],
       ...(isDev && { webSecurity: false }),
     },
   });
@@ -240,12 +244,13 @@ export function createWindow(): void {
   mainWindow.on("close", () => mainWindow && saveWindowState(mainWindow));
 
   container
-    .get<ElectronMainWindow>(MAIN_TOKENS.MainWindow)
+    .get<ElectronMainWindow>(MAIN_WINDOW_SERVICE)
     .setMainWindowGetter(() => mainWindow);
 
   createIPCHandler({
     router: trpcRouter,
     windows: [mainWindow],
+    createContext: async () => ({ container }),
   });
 
   setupExternalLinkHandlers(mainWindow);

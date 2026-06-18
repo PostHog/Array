@@ -37,7 +37,7 @@ import type {
   SignalReportPriority,
   SignalReportStatus,
 } from "../types";
-import { inboxStatusLabel } from "../utils";
+import { formatSignalReportSummaryMarkdown, inboxStatusLabel } from "../utils";
 import { SwipeableReportCard } from "./SwipeableReportCard";
 
 const log = logger.scope("tinder-view");
@@ -423,7 +423,11 @@ export function TinderView({
 
                 {/* Summary */}
                 {expandedReport.summary && (
-                  <MarkdownText content={expandedReport.summary} />
+                  <MarkdownText
+                    content={formatSignalReportSummaryMarkdown(
+                      expandedReport.summary,
+                    )}
+                  />
                 )}
 
                 {/* Signal count + time */}

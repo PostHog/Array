@@ -9,9 +9,13 @@
  * The scheme must be registered with `protocol.registerSchemesAsPrivileged`
  * BEFORE `app.ready` (done in bootstrap.ts). This handler is registered
  * AFTER `app.ready`.
+ *
+ * The proxy HTML is host-agnostic and lives in `@posthog/shared`; this is the
+ * Electron-specific seam that serves it at an isolated origin. Web supplies the
+ * same HTML via a blob URL (see the web composition root).
  */
 
-import { sandboxProxyHtml } from "@shared/mcp-sandbox-proxy";
+import { sandboxProxyHtml } from "@posthog/shared/mcp-sandbox-proxy";
 import { session } from "electron";
 
 import { logger } from "../utils/logger";

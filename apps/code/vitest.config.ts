@@ -1,6 +1,7 @@
 import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
+import { rendererAliases } from "./vite.shared.mjs";
 
 export default defineConfig({
   plugins: [react()],
@@ -25,16 +26,12 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      "@main": path.resolve(__dirname, "./src/main"),
-      "@renderer": path.resolve(__dirname, "./src/renderer"),
-      "@shared": path.resolve(__dirname, "./src/shared"),
-      "@features": path.resolve(__dirname, "./src/renderer/features"),
-      "@components": path.resolve(__dirname, "./src/renderer/components"),
-      "@stores": path.resolve(__dirname, "./src/renderer/stores"),
-      "@hooks": path.resolve(__dirname, "./src/renderer/hooks"),
-      "@utils": path.resolve(__dirname, "./src/renderer/utils"),
-      "@test": path.resolve(__dirname, "./src/shared/test"),
-    },
+    alias: [
+      ...rendererAliases,
+      {
+        find: "@test",
+        replacement: path.resolve(__dirname, "./src/shared/test"),
+      },
+    ],
   },
 });

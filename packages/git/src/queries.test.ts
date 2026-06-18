@@ -1,7 +1,7 @@
 import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createGitClient } from "./client";
 import {
   detectDefaultBranch,
@@ -9,6 +9,7 @@ import {
   getBranchDiffPatchesByPath,
   getChangedFilesDetailed,
   getGitBusyState,
+  remoteBranchExists,
   splitUnifiedDiffByFile,
 } from "./queries";
 
@@ -394,5 +395,58 @@ describe("getGitBusyState", () => {
       busy: true,
       operation: "rebase",
     });
+  });
+});
+
+describe("remoteBranchExists", () => {
+  let repoDir: string;
+  let remoteDir: string;
+
+  beforeEach(async () => {
+    remoteDir = await mkdtemp(path.join(tmpdir(), "posthog-code-bare-"));
+    const remoteGit = createGitClient(remoteDir);
+    await remoteGit.init(["--bare", "--initial-branch", "main"]);
+
+    repoDir = await mkdtemp(path.join(tmpdir(), "posthog-code-queries-"));
+    const git = createGitClient(repoDir);
+    await git.init(["--initial-branch", "main"]);
+    await git.addConfig("user.name", "Test");
+    await git.addConfig("user.email", "test@example.com");
+    await git.addConfig("commit.gpgsign", "false");
+    await git.addRemote("origin", remoteDir);
+    await writeFile(path.join(repoDir, "file.txt"), "content\n");
+    await git.add(["file.txt"]);
+    await git.commit("initial");
+    await git.push(["origin", "main"]);
+
+    await git.checkoutLocalBranch("remote-only");
+    await writeFile(path.join(repoDir, "extra.txt"), "extra\n");
+    await git.add(["extra.txt"]);
+    await git.commit("extra");
+    await git.push(["origin", "remote-only"]);
+    await git.checkout("main");
+  });
+
+  afterEach(async () => {
+    for (const d of [repoDir, remoteDir]) {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { branch: "main", expected: true },
+    { branch: "remote-only", expected: true },
+    { branch: "nonexistent", expected: false },
+  ])("returns $expected for branch '$branch'", async ({ branch, expected }) => {
+    expect(await remoteBranchExists(repoDir, branch)).toBe(expected);
+  });
+
+  it("returns false when the remote is unreachable", async () => {
+    await createGitClient(repoDir).remote([
+      "set-url",
+      "origin",
+      "/nonexistent/path/to/remote",
+    ]);
+    expect(await remoteBranchExists(repoDir, "main")).toBe(false);
   });
 });

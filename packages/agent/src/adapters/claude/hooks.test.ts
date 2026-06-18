@@ -10,7 +10,6 @@ vi.mock("../../enrichment/file-enricher", () => ({
 import { Logger } from "../../utils/logger";
 import type { TaskState } from "./conversion/task-state";
 import {
-  createPostToolUseHook,
   createPreToolUseHook,
   createReadEnrichmentHook,
   createSignedCommitGuardHook,
@@ -201,38 +200,6 @@ describe("createReadEnrichmentHook", () => {
   });
 });
 
-describe("createPostToolUseHook onCodeFileRead", () => {
-  const signal = { signal: new AbortController().signal };
-
-  test("fires onCodeFileRead when a file is read", async () => {
-    const onCodeFileRead = vi.fn();
-    const hook = createPostToolUseHook({ onCodeFileRead });
-    await hook(buildReadHookInput({ tool_name: "Read" }), "toolu_1", signal);
-
-    expect(onCodeFileRead).toHaveBeenCalledTimes(1);
-  });
-
-  test("does not fire onCodeFileRead for non-Read tools", async () => {
-    const onCodeFileRead = vi.fn();
-    const hook = createPostToolUseHook({ onCodeFileRead });
-    await hook(buildReadHookInput({ tool_name: "Bash" }), "toolu_1", signal);
-
-    expect(onCodeFileRead).not.toHaveBeenCalled();
-  });
-
-  test("does not fire onCodeFileRead for non-PostToolUse events", async () => {
-    const onCodeFileRead = vi.fn();
-    const hook = createPostToolUseHook({ onCodeFileRead });
-    await hook(
-      { hook_event_name: "PreToolUse", tool_name: "Read" } as HookInput,
-      "toolu_1",
-      signal,
-    );
-
-    expect(onCodeFileRead).not.toHaveBeenCalled();
-  });
-});
-
 function buildPreToolUseHookInput(
   toolName: string,
   toolInput: Record<string, unknown>,
@@ -398,6 +365,47 @@ describe("createSignedCommitGuardHook", () => {
       opts,
     );
     expect(result).toEqual({ continue: true });
+  });
+
+  test("attempts a heal and keeps the standard message when tools are available", async () => {
+    const onHeal = vi.fn().mockResolvedValue(true);
+    const healingGuard = createSignedCommitGuardHook(logger, onHeal);
+
+    const result = await healingGuard(
+      bashInput("git commit -m x"),
+      undefined,
+      opts,
+    );
+
+    expect(onHeal).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      hookSpecificOutput: {
+        permissionDecision: "deny",
+        permissionDecisionReason: expect.stringContaining("git_signed_commit"),
+      },
+    });
+  });
+
+  test.each([
+    ["resolves false", vi.fn().mockResolvedValue(false)],
+    ["throws", vi.fn().mockRejectedValue(new Error("reconnect boom"))],
+  ])("reassures the model when the heal %s", async (_label, onHeal) => {
+    const healingGuard = createSignedCommitGuardHook(logger, onHeal);
+
+    const result = await healingGuard(
+      bashInput("git commit -m x"),
+      undefined,
+      opts,
+    );
+
+    expect(result).toMatchObject({
+      hookSpecificOutput: {
+        permissionDecision: "deny",
+        permissionDecisionReason: expect.stringContaining(
+          "safe in the working tree",
+        ),
+      },
+    });
   });
 });
 

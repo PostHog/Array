@@ -72,6 +72,24 @@ export class CodexSettingsManager {
 }
 
 /**
+ * Extracts the server name from a `mcp_servers.<name>...` section path, taking
+ * only the first key segment. A nested table like `mcp_servers.foo.env`
+ * describes the `env` field of server `foo`, not a separate server, so it must
+ * collapse to `foo`. Treating it as its own server emits
+ * `mcp_servers.foo.env.enabled=false`, which sets a boolean on the string-typed
+ * env map and makes codex-acp reject the whole config (it then crashes and the
+ * host silently falls back to Claude). Quoted segments (`"a.b"`) keep their dots.
+ */
+function firstMcpServerName(sectionPath: string): string | null {
+  const trimmed = sectionPath.trim();
+  if (!trimmed) return null;
+  const quoted = trimmed.match(/^(["'])(.*?)\1/);
+  if (quoted) return quoted[2] ?? null;
+  const dotIndex = trimmed.indexOf(".");
+  return dotIndex === -1 ? trimmed : trimmed.slice(0, dotIndex);
+}
+
+/**
  * Minimal TOML parser for codex config.toml.
  * Handles flat key=value pairs and [projects."path"] sections.
  * Does NOT handle full TOML spec — only what codex config uses.
@@ -90,7 +108,10 @@ function parseCodexToml(content: string, cwd: string): CodexSettings {
     if (sectionMatch) {
       currentSection = sectionMatch[1] ?? "";
       if (currentSection.startsWith("mcp_servers.")) {
-        mcpServerNames.add(currentSection.slice("mcp_servers.".length));
+        const serverName = firstMcpServerName(
+          currentSection.slice("mcp_servers.".length),
+        );
+        if (serverName) mcpServerNames.add(serverName);
       }
       continue;
     }

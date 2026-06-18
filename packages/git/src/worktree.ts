@@ -170,16 +170,7 @@ export class WorktreeManager {
       });
     });
 
-    await this.symlinkClaudeConfig(worktreePath);
-    await processWorktreeLink(this.mainRepoPath, worktreePath, {
-      onOutput: options?.onOutput,
-    });
-    await processWorktreeInclude(this.mainRepoPath, worktreePath, {
-      onOutput: options?.onOutput,
-    });
-    await runPostCheckoutHook(this.mainRepoPath, worktreePath, {
-      onOutput: options?.onOutput,
-    });
+    await this.finalizeWorktree(worktreePath, options?.onOutput);
 
     return {
       worktreePath,
@@ -203,35 +194,9 @@ export class WorktreeManager {
       throw new Error(`Branch '${branch}' does not exist`);
     }
 
-    let worktreeName = preferredName ?? this.generateWorktreeName();
-
-    if (preferredName) {
-      const worktreePath = this.getWorktreePath(preferredName);
-      const existingWorktrees = await this.listWorktrees();
-      const isRegistered = existingWorktrees.some(
-        (wt) => wt.worktreePath === worktreePath,
-      );
-      const existsOnDisk = await this.worktreeExists(preferredName);
-
-      if (isRegistered || existsOnDisk) {
-        worktreeName = `${this.generateWorktreeName()}${Date.now()}`;
-      }
-    } else if (await this.worktreeExists(worktreeName)) {
-      worktreeName = `${this.generateWorktreeName()}${Date.now()}`;
-    }
-
-    if (!this.usesExternalPath()) {
-      await this.ensureArrayDirIgnored();
-    }
-
-    const worktreePath = this.getWorktreePath(worktreeName);
-
-    const parentDir = path.dirname(worktreePath);
-    await fs.mkdir(parentDir, { recursive: true });
-
-    const targetPath = this.usesExternalPath()
-      ? worktreePath
-      : `./${WORKTREE_FOLDER_NAME}/${worktreeName}/${this.repoName}`;
+    const worktreeName = await this.resolveAvailableWorktreeName(preferredName);
+    const { worktreePath, targetPath } =
+      await this.prepareWorktreePath(worktreeName);
 
     const output = await manager.executeWrite(this.mainRepoPath, async () => {
       return this.spawnWorktreeAdd([targetPath, branch], {
@@ -239,16 +204,7 @@ export class WorktreeManager {
       });
     });
 
-    await this.symlinkClaudeConfig(worktreePath);
-    await processWorktreeLink(this.mainRepoPath, worktreePath, {
-      onOutput: options?.onOutput,
-    });
-    await processWorktreeInclude(this.mainRepoPath, worktreePath, {
-      onOutput: options?.onOutput,
-    });
-    await runPostCheckoutHook(this.mainRepoPath, worktreePath, {
-      onOutput: options?.onOutput,
-    });
+    await this.finalizeWorktree(worktreePath, options?.onOutput);
 
     return {
       worktreePath,
@@ -260,13 +216,75 @@ export class WorktreeManager {
     };
   }
 
-  async createDetachedWorktreeAtCommit(
-    commit: string,
+  /**
+   * Fetches a branch that exists on the remote but not locally, then creates a
+   * worktree with a new local branch tracking `origin/<branch>`. Used when the
+   * user opts in to checking out a remote-only branch (e.g. a contributor's PR).
+   */
+  async createWorktreeForRemoteBranch(
+    branch: string,
     preferredName?: string,
-    options?: { onOutput?: (data: string) => void },
+    options?: { onOutput?: (data: string) => void; remote?: string },
   ): Promise<WorktreeInfo> {
     const manager = getGitOperationManager();
+    const remote = options?.remote ?? "origin";
+    const remoteRef = `${remote}/${branch}`;
 
+    options?.onOutput?.(`Fetching ${remoteRef}...\n`);
+    const fetched = await manager.executeWrite(this.mainRepoPath, (git) =>
+      fetchRef(git, remote, branch),
+    );
+    if (!fetched) {
+      throw new Error(`Failed to fetch branch '${branch}' from ${remote}`);
+    }
+
+    // Verify the remote-tracking ref was created. Restricted refspecs can cause
+    // git fetch to succeed (updating only FETCH_HEAD) without writing
+    // refs/remotes/<remote>/<branch>, which makes the subsequent worktree add
+    // fail with an opaque "invalid reference" error. Check the fully-qualified
+    // ref so a stray local branch/tag named `<remote>/<branch>` can't satisfy it.
+    const trackingRefCreated = await branchExists(
+      this.mainRepoPath,
+      `refs/remotes/${remoteRef}`,
+    );
+    if (!trackingRefCreated) {
+      throw new Error(
+        `Fetch succeeded but remote-tracking ref '${remoteRef}' was not created. Check the remote's fetch refspec configuration.`,
+      );
+    }
+
+    const worktreeName = await this.resolveAvailableWorktreeName(preferredName);
+    const { worktreePath, targetPath } =
+      await this.prepareWorktreePath(worktreeName);
+
+    // `-b <branch> <remoteRef>` creates a local branch at the fetched remote ref
+    // and sets it up to track the remote branch.
+    const output = await manager.executeWrite(this.mainRepoPath, async () => {
+      return this.spawnWorktreeAdd(["-b", branch, targetPath, remoteRef], {
+        onOutput: options?.onOutput,
+      });
+    });
+
+    await this.finalizeWorktree(worktreePath, options?.onOutput);
+
+    return {
+      worktreePath,
+      worktreeName,
+      branchName: branch,
+      baseBranch: remoteRef,
+      createdAt: new Date().toISOString(),
+      output: output.trim() || undefined,
+    };
+  }
+
+  /**
+   * Resolves a worktree name that does not collide with an existing worktree,
+   * falling back to a freshly generated unique name when the preferred (or
+   * default) name is already registered or present on disk.
+   */
+  private async resolveAvailableWorktreeName(
+    preferredName?: string,
+  ): Promise<string> {
     let worktreeName = preferredName ?? this.generateWorktreeName();
 
     if (preferredName) {
@@ -284,17 +302,57 @@ export class WorktreeManager {
       worktreeName = `${this.generateWorktreeName()}${Date.now()}`;
     }
 
+    return worktreeName;
+  }
+
+  /**
+   * Ensures the worktree's parent directory exists and computes the path passed
+   * to `git worktree add`. For in-array worktrees it also makes sure the array
+   * directory is gitignored. Returns the absolute worktree path and the
+   * (possibly relative) target path the git command should use.
+   */
+  private async prepareWorktreePath(
+    worktreeName: string,
+  ): Promise<{ worktreePath: string; targetPath: string }> {
     if (!this.usesExternalPath()) {
       await this.ensureArrayDirIgnored();
     }
 
     const worktreePath = this.getWorktreePath(worktreeName);
-    const parentDir = path.dirname(worktreePath);
-    await fs.mkdir(parentDir, { recursive: true });
+    await fs.mkdir(path.dirname(worktreePath), { recursive: true });
 
     const targetPath = this.usesExternalPath()
       ? worktreePath
       : `./${WORKTREE_FOLDER_NAME}/${worktreeName}/${this.repoName}`;
+
+    return { worktreePath, targetPath };
+  }
+
+  /**
+   * Runs the post-create steps shared by every worktree: symlink the Claude
+   * config, then process the worktree link/include files and the post-checkout
+   * hook.
+   */
+  private async finalizeWorktree(
+    worktreePath: string,
+    onOutput?: (data: string) => void,
+  ): Promise<void> {
+    await this.symlinkClaudeConfig(worktreePath);
+    await processWorktreeLink(this.mainRepoPath, worktreePath, { onOutput });
+    await processWorktreeInclude(this.mainRepoPath, worktreePath, { onOutput });
+    await runPostCheckoutHook(this.mainRepoPath, worktreePath, { onOutput });
+  }
+
+  async createDetachedWorktreeAtCommit(
+    commit: string,
+    preferredName?: string,
+    options?: { onOutput?: (data: string) => void },
+  ): Promise<WorktreeInfo> {
+    const manager = getGitOperationManager();
+
+    const worktreeName = await this.resolveAvailableWorktreeName(preferredName);
+    const { worktreePath, targetPath } =
+      await this.prepareWorktreePath(worktreeName);
 
     const output = await manager.executeWrite(this.mainRepoPath, async () => {
       return this.spawnWorktreeAdd(["--detach", targetPath, commit], {
@@ -302,16 +360,7 @@ export class WorktreeManager {
       });
     });
 
-    await this.symlinkClaudeConfig(worktreePath);
-    await processWorktreeLink(this.mainRepoPath, worktreePath, {
-      onOutput: options?.onOutput,
-    });
-    await processWorktreeInclude(this.mainRepoPath, worktreePath, {
-      onOutput: options?.onOutput,
-    });
-    await runPostCheckoutHook(this.mainRepoPath, worktreePath, {
-      onOutput: options?.onOutput,
-    });
+    await this.finalizeWorktree(worktreePath, options?.onOutput);
 
     return {
       worktreePath,

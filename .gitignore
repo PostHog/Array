@@ -11,6 +11,11 @@ out/
 storybook-static
 bin/
 
+# node-gyp configure artifact from a stray run at the repo root
+/build/
+
+# tsup bundled config artifacts (temporary files left behind when bundling TS configs)
+*.config.bundled_*.mjs
 
 # Environment
 .env
@@ -51,6 +56,7 @@ playwright-report/
 test-results/
 *storybook.log
 .session-store.json
+.playwright-mcp
 
 # Downloaded binaries
 apps/code/resources/codex-acp/

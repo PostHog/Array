@@ -14,6 +14,7 @@ const MODELS_WITH_1M_CONTEXT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
+  "claude-fable-5",
 ]);
 
 export function supports1MContext(modelId: string): boolean {
@@ -24,11 +25,13 @@ const MODELS_WITH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
+  "claude-fable-5",
 ]);
 
 const MODELS_WITH_XHIGH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
+  "claude-fable-5",
 ]);
 
 export function supportsEffort(modelId: string): boolean {
@@ -135,11 +138,14 @@ function scoreModelMatch(
 ): number {
   const haystack = `${model.value} ${model.name ?? ""}`.toLowerCase();
   let score = 0;
+  let nonHintMatched = false;
   for (const token of tokens) {
     if (haystack.includes(token)) {
+      if (token !== contextHint) nonHintMatched = true;
       score += token === contextHint ? 3 : 1;
     }
   }
+  if (contextHint && !nonHintMatched) return 0;
   return score;
 }
 

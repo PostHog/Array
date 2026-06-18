@@ -381,6 +381,11 @@ const config: ForgeConfig = {
           config: "vite.preload.config.mts",
           target: "preload",
         },
+        {
+          entry: "node_modules/@posthog/workspace-server/src/serve.ts",
+          config: "vite.workspace-server.config.mts",
+          target: "main",
+        },
       ],
       renderer: [
         {

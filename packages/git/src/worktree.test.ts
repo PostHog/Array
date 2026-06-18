@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -128,5 +128,179 @@ describe("WorktreeManager.createWorktree fetchBeforeCreate", () => {
 
     const worktreeHead = await shaOfBranch(info.worktreePath, "HEAD");
     expect(worktreeHead).toBe(localTipBefore);
+  });
+});
+
+async function dirExists(p: string): Promise<boolean> {
+  try {
+    await stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The git-worktree slice moved the worktree add/list/remove/prune commands into
+// ws-server services that consume @posthog/git WorktreeManager. This is the
+// real-git headless smoke for that command lifecycle (acceptance: "smoke test
+// the moved commands").
+describe("WorktreeManager lifecycle (add / exists / list / remove / prune)", () => {
+  let remoteDir: string;
+  let localDir: string;
+  let worktreeBaseDir: string;
+
+  beforeEach(async () => {
+    remoteDir = await initBareRemote();
+
+    const seedDir = await mkdtemp(path.join(tmpdir(), "posthog-code-seed-"));
+    const seedGit = createGitClient(seedDir);
+    await seedGit.init(["--initial-branch", "main"]);
+    await seedGit.addConfig("user.name", "Test");
+    await seedGit.addConfig("user.email", "test@example.com");
+    await seedGit.addConfig("commit.gpgsign", "false");
+    await commit(seedDir, "initial.txt", "initial\n");
+    await seedGit.addRemote("origin", remoteDir);
+    await seedGit.push(["origin", "main"]);
+    await rm(seedDir, { recursive: true, force: true });
+
+    // realpath so the paths match what `git worktree list` reports (on macOS
+    // /tmp is a symlink to /private/tmp); listWorktrees filters by path prefix.
+    localDir = await realpath(await initLocalClone(remoteDir));
+    worktreeBaseDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), "posthog-code-wts-")),
+    );
+  });
+
+  afterEach(async () => {
+    for (const d of [remoteDir, localDir, worktreeBaseDir]) {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  it("adds a worktree on disk and removes it again", async () => {
+    const manager = new WorktreeManager({
+      mainRepoPath: localDir,
+      worktreeBasePath: worktreeBaseDir,
+    });
+
+    const info = await manager.createWorktree({ baseBranch: "main" });
+
+    expect(await dirExists(info.worktreePath)).toBe(true);
+    expect(await manager.worktreeExists(info.worktreeName)).toBe(true);
+    expect(await shaOfBranch(info.worktreePath, "HEAD")).toBe(
+      await shaOfBranch(localDir, "main"),
+    );
+
+    await manager.deleteWorktree(info.worktreePath);
+
+    expect(await dirExists(info.worktreePath)).toBe(false);
+    expect(await manager.worktreeExists(info.worktreeName)).toBe(false);
+  });
+
+  it("lists a branched worktree and prunes it as orphaned", async () => {
+    await createGitClient(localDir).branch(["feature"]);
+
+    const manager = new WorktreeManager({
+      mainRepoPath: localDir,
+      worktreeBasePath: worktreeBaseDir,
+    });
+    const info = await manager.createWorktreeForExistingBranch("feature");
+
+    const listed = await manager.listWorktrees();
+    expect(listed.map((w) => w.worktreePath)).toContain(info.worktreePath);
+    expect(
+      listed.find((w) => w.worktreePath === info.worktreePath)?.branchName,
+    ).toBe("feature");
+
+    // Nothing is associated -> the branched worktree is orphaned and pruned.
+    const { deleted, errors } = await manager.cleanupOrphanedWorktrees([]);
+
+    expect(errors).toEqual([]);
+    expect(deleted).toContain(info.worktreePath);
+    expect(await dirExists(info.worktreePath)).toBe(false);
+    expect(await manager.listWorktrees()).toEqual([]);
+  });
+});
+
+describe("WorktreeManager.createWorktreeForRemoteBranch", () => {
+  let remoteDir: string;
+  let localDir: string;
+  let worktreeBaseDir: string;
+
+  beforeEach(async () => {
+    remoteDir = await initBareRemote();
+
+    const seedDir = await mkdtemp(path.join(tmpdir(), "posthog-code-seed-"));
+    const seedGit = createGitClient(seedDir);
+    await seedGit.init(["--initial-branch", "main"]);
+    await seedGit.addConfig("user.name", "Test");
+    await seedGit.addConfig("user.email", "test@example.com");
+    await seedGit.addConfig("commit.gpgsign", "false");
+    await commit(seedDir, "initial.txt", "initial\n");
+    await seedGit.addRemote("origin", remoteDir);
+    await seedGit.push(["origin", "main"]);
+
+    // Push a branch that will only exist on the remote from the local clone's POV.
+    await seedGit.checkoutLocalBranch("contributor/pr");
+    await commit(seedDir, "pr.txt", "pr content\n");
+    await seedGit.push(["origin", "contributor/pr"]);
+
+    await rm(seedDir, { recursive: true, force: true });
+
+    localDir = await realpath(await initLocalClone(remoteDir));
+    worktreeBaseDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), "posthog-code-wts-")),
+    );
+  });
+
+  afterEach(async () => {
+    for (const d of [remoteDir, localDir, worktreeBaseDir]) {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  it("fetches a remote-only branch and creates a tracking worktree", async () => {
+    const localBranches = await createGitClient(localDir).branch();
+    expect(localBranches.all).not.toContain("contributor/pr");
+
+    const manager = new WorktreeManager({
+      mainRepoPath: localDir,
+      worktreeBasePath: worktreeBaseDir,
+    });
+
+    const info = await manager.createWorktreeForRemoteBranch("contributor/pr");
+
+    expect(await dirExists(info.worktreePath)).toBe(true);
+    expect(info.branchName).toBe("contributor/pr");
+
+    const remoteTip = await shaOfBranch(localDir, "origin/contributor/pr");
+    const worktreeHead = await shaOfBranch(info.worktreePath, "HEAD");
+    expect(worktreeHead).toBe(remoteTip);
+
+    const upstream = (
+      await createGitClient(info.worktreePath).revparse([
+        "--abbrev-ref",
+        "contributor/pr@{upstream}",
+      ])
+    ).trim();
+    expect(upstream).toBe("origin/contributor/pr");
+  });
+
+  it("rejects when the remote branch cannot be fetched", async () => {
+    // Point origin at a path that does not exist so the fetch fails.
+    await createGitClient(localDir).remote([
+      "set-url",
+      "origin",
+      "/nonexistent/path/to/remote",
+    ]);
+
+    const manager = new WorktreeManager({
+      mainRepoPath: localDir,
+      worktreeBasePath: worktreeBaseDir,
+    });
+
+    await expect(
+      manager.createWorktreeForRemoteBranch("contributor/pr"),
+    ).rejects.toThrow(/Failed to fetch branch 'contributor\/pr'/);
   });
 });

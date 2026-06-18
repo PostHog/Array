@@ -176,13 +176,8 @@ export interface EventDefinition {
 
 // ── Stale flag types ──
 
-export type StalenessReason =
-  | "fully_rolled_out"
-  | "inactive"
-  | "not_in_posthog"
-  | "experiment_complete";
-
-export type FlagType = "boolean" | "multivariate" | "remote_config";
+import type { FlagType, StalenessReason } from "@posthog/shared";
+export type { FlagType, StalenessReason };
 
 // ── Enricher types ──
 

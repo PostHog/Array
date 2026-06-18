@@ -27,6 +27,7 @@ import {
 } from "../adapters/error-classification";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
+  SIGNED_MERGE_QUALIFIED_TOOL_NAME,
   SIGNED_REWRITE_QUALIFIED_TOOL_NAME,
 } from "../adapters/signed-commit-shared";
 import type { PermissionMode } from "../execution-mode";
@@ -54,8 +55,8 @@ import { resourceLink } from "../utils/acp-content";
 import { AsyncMutex } from "../utils/async-mutex";
 import {
   buildGatewayPropertyHeaders,
-  getLlmGatewayUrl,
   resolveGatewayProduct,
+  resolveLlmGatewayUrl,
 } from "../utils/gateway";
 import { Logger } from "../utils/logger";
 import { logAgentshRuntimeInfo } from "./agentsh-runtime";
@@ -197,6 +198,15 @@ function createTappedWritableStream(
   });
 }
 
+export function isTurnCompleteNotification(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { method?: unknown }).method ===
+      POSTHOG_NOTIFICATIONS.TURN_COMPLETE
+  );
+}
+
 interface SseController {
   send: (data: unknown) => void;
   close: () => void;
@@ -240,6 +250,7 @@ export class AgentServer {
   private posthogAPI: PostHogAPIClient;
   private eventStreamSender: TaskRunEventStreamSender | null = null;
   private questionRelayedToSlack = false;
+  private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
@@ -927,6 +938,7 @@ export class AgentServer {
       isInternal: preTask?.internal === true,
       originProduct: preTask?.origin_product,
       signalReportId: preTask?.signal_report,
+      aiStage: getTaskRunStateString(preTaskRun, "ai_stage"),
       taskId: payload.task_id,
       taskRunId: payload.run_id,
       taskUserId: payload.user_id,
@@ -939,8 +951,16 @@ export class AgentServer {
       this.detectedPrUrl = prUrl;
     }
 
+    const slackThreadUrl = getTaskRunStateString(
+      preTaskRun,
+      "slack_thread_url",
+    );
+
     const runtimeAdapter = this.getRuntimeAdapter();
-    const sessionSystemPrompt = this.buildSessionSystemPrompt(prUrl);
+    const sessionSystemPrompt = this.buildSessionSystemPrompt(
+      prUrl,
+      slackThreadUrl,
+    );
     const codexInstructions =
       runtimeAdapter === "codex"
         ? this.buildCodexInstructions(sessionSystemPrompt)
@@ -973,7 +993,7 @@ export class AgentServer {
               apiKey: this.config.apiKey,
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
-              instructions: codexInstructions,
+              developerInstructions: codexInstructions,
             }
           : undefined,
       onStructuredOutput: async (output) => {
@@ -988,7 +1008,11 @@ export class AgentServer {
     });
 
     // Tap both streams to broadcast all ACP messages via SSE (mimics local transport)
+    this.adapterEmittedTurnComplete = false;
     const onAcpMessage = (message: unknown) => {
+      if (isTurnCompleteNotification(message)) {
+        this.adapterEmittedTurnComplete = true;
+      }
       this.broadcastEvent({
         type: "notification",
         timestamp: new Date().toISOString(),
@@ -1043,19 +1067,8 @@ export class AgentServer {
         allowedDomains: this.config.allowedDomains,
         jsonSchema: preTask?.json_schema ?? null,
         permissionMode: initialPermissionMode,
-        ...(this.config.claudeCode?.plugins?.length && {
-          claudeCode: {
-            options: {
-              ...(this.config.claudeCode?.plugins?.length && {
-                plugins: this.config.claudeCode.plugins,
-              }),
-              ...(runtimeAdapter === "claude" &&
-                this.config.reasoningEffort && {
-                  effort: this.config.reasoningEffort,
-                }),
-            },
-          },
-        }),
+        ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
+        ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
       },
     });
 
@@ -1617,8 +1630,9 @@ export class AgentServer {
 
   private buildSessionSystemPrompt(
     prUrl?: string | null,
+    slackThreadUrl?: string | null,
   ): string | { append: string } {
-    const cloudAppend = this.buildCloudSystemPrompt(prUrl);
+    const cloudAppend = this.buildCloudSystemPrompt(prUrl, slackThreadUrl);
     const userPrompt = this.config.claudeCode?.systemPrompt;
 
     // String override: combine user prompt with cloud instructions
@@ -1643,6 +1657,32 @@ export class AgentServer {
     return typeof systemPrompt === "string"
       ? systemPrompt
       : systemPrompt.append;
+  }
+
+  /**
+   * Builds the optional `claudeCode` session meta. Reasoning effort and plugins
+   * are independent: effort must reach Claude even when no plugins are set, so
+   * it cannot sit behind a plugins guard.
+   */
+  private buildClaudeCodeSessionMeta(
+    runtimeAdapter: "claude" | "codex",
+  ): { claudeCode: { options: Record<string, unknown> } } | undefined {
+    const plugins = this.config.claudeCode?.plugins;
+    const effort =
+      runtimeAdapter === "claude" ? this.config.reasoningEffort : undefined;
+
+    if (!plugins?.length && !effort) {
+      return undefined;
+    }
+
+    const options: Record<string, unknown> = {};
+    if (plugins?.length) {
+      options.plugins = plugins;
+    }
+    if (effort) {
+      options.effort = effort;
+    }
+    return { claudeCode: { options } };
   }
 
   private getCloudInteractionOrigin(): string | undefined {
@@ -1685,7 +1725,10 @@ export class AgentServer {
     );
   }
 
-  private buildCloudSystemPrompt(prUrl?: string | null): string {
+  private buildCloudSystemPrompt(
+    prUrl?: string | null,
+    slackThreadUrl?: string | null,
+  ): string {
     const taskId = this.config.taskId;
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
     const isSlack = this.getCloudInteractionOrigin() === "slack";
@@ -1693,6 +1736,20 @@ export class AgentServer {
       ? `
 # Identity
 You are the PostHog Slack app, PostHog's agent for helping users with their product data and coding tasks from Slack. When introducing yourself or referring to yourself in messages to the user, identify as "PostHog Slack app". Do NOT refer to yourself as Claude, an Anthropic assistant, or any underlying model name.
+
+# Response Style
+You are replying in a Slack thread. Slack readers want short, skimmable answers — be concise by default.
+- Answer simple questions in a single sentence. Keep everything else brief — a few sentences at most.
+- Lead with the answer or the outcome. Skip preamble, restating the question, and sign-offs.
+- Prefer plain prose. Treat bullet lists as the exception, not the norm, and avoid headers and tables unless they genuinely make a complex answer clearer.
+- Do not narrate your thinking or list every step you took; report what matters and the result.
+- This is a default, not a hard rule. If the user (or their saved memory) asks for more depth or a specific format, follow that instead.
+
+# Mentioning users
+To ping a Slack user, reuse a \`<@U…|displayname>\` token that already appears in the message context — copy it verbatim, including the \`U…\` ID. Do NOT construct a mention token from a name, and do NOT substitute the display name (or any other string) for the \`U…\` ID — \`<@Jane|Jane Doe>\` is not a valid mention; only the form with the real ID like \`<@U01ABCDEF23|Jane Doe>\` is. If the person you want to refer to has no \`<@U…|displayname>\` token anywhere in the thread context, write their name as plain text instead of inventing one.
+
+# Suggesting code changes
+You can also open pull requests directly from this Slack thread. When the user's question describes a problem with a plausible code-side fix — a bug visible in errors or logs, missing or broken instrumentation, a broken funnel step traceable to UI code, a stale config that lives in a repo — end your reply with a one-sentence offer to open a PR for the fix and ask if they want you to proceed. Skip the offer for pure data lookups with no actionable code change (e.g. "what was DAU yesterday?"), and skip it when the fix would clearly live outside any repo you can reach.
 `
       : "";
     const signedCommitInstructions = `
@@ -1704,12 +1761,36 @@ It creates a GitHub-signed ("Verified") commit on the branch and keeps your loca
 sync. To start a new branch, pass \`branch\` (prefixed with \`posthog-code/\`) — the tool creates
 it on the remote for you.
 
+## Updating from the base branch
+To bring the base branch into your PR branch, call the \`git_signed_merge\` tool (full name
+\`${SIGNED_MERGE_QUALIFIED_TOOL_NAME}\`) — it creates a Verified two-parent merge commit
+server-side (like GitHub's "Update branch" button). NEVER run \`git merge\` followed by
+\`git_signed_commit\`: a merge in progress is refused, because the commit API would linearize
+the merge and dump every base-branch change into your PR. If \`git_signed_merge\` reports a
+conflict, fix it with a rebase instead: \`git rebase origin/<base>\`, resolve, \`git rebase
+--continue\`, then call \`git_signed_rewrite\`.
+
 ## Rewriting / force-pushing (rebases, conflict fixes)
 \`git push --force\` is also blocked. To update a branch after a local rebase or conflict
-resolution, rebase/merge locally with normal \`git\` (resolve conflicts and finish with
+resolution, rebase locally with normal \`git\` (resolve conflicts and finish with
 \`git rebase --continue\`, NOT \`git commit\`), then call the \`git_signed_rewrite\` tool (full
 name \`${SIGNED_REWRITE_QUALIFIED_TOOL_NAME}\`). It republishes the branch's commits as Verified
 and atomically force-updates the remote branch. This is how you fix conflicts on an existing PR.
+Histories containing merge commits are refused — rebase (which flattens merges) first.
+If a signed-git tool refuses with a "merge in progress" or "leak" error, follow its recovery
+instructions instead of retrying the same call.
+
+## Re-committing to a branch with an open PR
+Before committing again to a branch that already has an open PR, fetch it first. The remote
+branch can advance between your commits — CI automation often auto-commits regenerated
+artifacts (codegen, lockfiles, formatting) onto open PR branches, and collaborators can push
+too. Committing from a stale local checkout silently reverts those commits, so
+\`git_signed_commit\` refuses when the remote branch is ahead of your checkout. If it does, or
+before your next commit, update your checkout — stash any uncommitted work across the update so
+you don't lose it: \`git stash --include-untracked\`, \`git fetch origin <branch>\`,
+\`git reset --hard origin/<branch>\`, \`git stash pop\` (resolve any conflicts), then re-stage
+and commit. A soft/mixed reset would keep your stale files and re-commit the revert, so the
+hard reset is the safe one here — your work is held in the stash.
 
 ## Attribution
 Do NOT add "Co-Authored-By" trailers or "Generated with [Claude Code]" lines to your
@@ -1717,6 +1798,11 @@ commit messages. The \`git_signed_commit\` tool automatically appends the only t
 we want:
   Generated-By: PostHog Code
   Task-Id: ${taskId}`;
+
+    const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
+    const prFooter = slackThreadUrl
+      ? `*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](${slackThreadUrl})*`
+      : `*Created with [PostHog Code](https://posthog.com/code?ref=pr)*`;
 
     if (prUrl) {
       if (!shouldAutoCreatePr) {
@@ -1742,7 +1828,7 @@ This task already has an open pull request: ${prUrl}
 After completing the requested changes:
 1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
-   - If the branch has conflicts with its base, fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
+   - If the branch is behind its base, call the \`git_signed_merge\` tool first — it merges the base in server-side with a Verified merge commit. Only if it reports a conflict: fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
 3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
    - Reply on the thread with a short note describing what changed (reference the commit SHA when useful) using \`gh api -X POST /repos/{owner}/{repo}/pulls/{n}/comments/{id}/replies -f body='...'\`.
    - Resolve the thread via the \`resolveReviewThread\` GraphQL mutation: \`gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread-node-id>"\`.
@@ -1767,6 +1853,9 @@ When the user explicitly asks to clone or work in a GitHub repository:
 - Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
 - Work from inside that cloned repository for follow-up code changes
 - If the user explicitly asks you to open or update a pull request, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
+- Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
+${whyContextInstruction.trimStart()}
+- End the PR description with a horizontal rule followed by this footer line: ${prFooter}
 - Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
 
       return `${identityInstructions}
@@ -1809,13 +1898,15 @@ After completing the requested changes:
 1. Pick a new branch name prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`)
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with \`branch\` set to that name and a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). The tool creates the branch on the remote and a signed commit on it.
 3. Before opening the PR, prepare the body:
+   - Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
+${whyContextInstruction}
    - Check the repo for a PR template at \`.github/pull_request_template.md\` (also try \`.github/PULL_REQUEST_TEMPLATE.md\`, \`docs/pull_request_template.md\`, and root variants). If one exists, use its exact section headings as the PR body — do NOT fall back to a generic Summary/Test plan format.
    - If no repo-level template exists, check the org's \`.github\` repo via \`gh api /repos/<owner>/.github/contents/.github/pull_request_template.md\` (and other common paths) and use that as a fallback.
    - Search for matching open issues with \`gh issue list --state open --search '<keywords>'\` (derive keywords from the branch name, commits, and changed files; \`gh issue view <n>\` to confirm relevance). For every issue this PR would resolve, include a \`Closes #<n>\` line in the body so GitHub auto-links and auto-closes it on merge. For issues that are related but not fully resolved, use \`Refs #<n>\` instead.
 4. Create a draft pull request using \`gh pr create --draft${this.config.baseBranch ? ` --base ${this.config.baseBranch}` : ""}\` with a descriptive title and the body prepared above. Add the following footer at the end of the PR description:
 \`\`\`
 ---
-*Created with [PostHog Code](https://posthog.com/code?ref=pr)*
+${prFooter}
 \`\`\`
 
 Important:
@@ -1930,6 +2021,7 @@ ${signedCommitInstructions}
     isInternal = false,
     originProduct,
     signalReportId,
+    aiStage,
     taskId,
     taskRunId,
     taskUserId,
@@ -1938,6 +2030,7 @@ ${signedCommitInstructions}
     isInternal?: boolean;
     originProduct?: Task["origin_product"] | null;
     signalReportId?: string | null;
+    aiStage?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
@@ -1945,8 +2038,11 @@ ${signedCommitInstructions}
   } = {}): void {
     const { apiKey, apiUrl, projectId } = this.config;
     const product = resolveGatewayProduct({ isInternal, originProduct });
-    const gatewayUrl =
-      process.env.LLM_GATEWAY_URL || getLlmGatewayUrl(apiUrl, product);
+    const gatewayUrl = resolveLlmGatewayUrl(
+      process.env.LLM_GATEWAY_URL,
+      apiUrl,
+      product,
+    );
     const openaiBaseUrl = gatewayUrl.endsWith("/v1")
       ? gatewayUrl
       : `${gatewayUrl}/v1`;
@@ -1960,6 +2056,7 @@ ${signedCommitInstructions}
       task_origin_product: originProduct,
       task_internal: isInternal,
       signal_report_id: signalReportId,
+      ai_stage: aiStage,
       task_id: taskId,
       task_run_id: taskRunId,
       task_user_id: taskUserId,
@@ -2457,6 +2554,10 @@ ${signedCommitInstructions}
 
   private broadcastTurnComplete(stopReason: string): void {
     if (!this.session) return;
+    if (this.adapterEmittedTurnComplete) {
+      this.adapterEmittedTurnComplete = false;
+      return;
+    }
     const notification = {
       jsonrpc: "2.0",
       method: POSTHOG_NOTIFICATIONS.TURN_COMPLETE,

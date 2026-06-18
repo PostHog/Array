@@ -100,10 +100,12 @@ export default defineConfig([
   {
     entry: [
       "src/index.ts",
+      "src/acp-extensions.ts",
       "src/agent.ts",
       "src/gateway-models.ts",
       "src/handoff-checkpoint.ts",
       "src/posthog-api.ts",
+      "src/posthog-products.ts",
       "src/pr-url-detector.ts",
       "src/resume.ts",
       "src/types.ts",
