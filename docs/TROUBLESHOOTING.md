@@ -185,13 +185,19 @@ The usual cause is **not** that the key is missing — it's that the shell runni
 
 ### Fix
 
-Point `SSH_AUTH_SOCK` at Secretive's socket. Find the exact path (Secretive also shows it in-app under its setup screen):
+**Quick setup — paste this.** It locates Secretive's socket and adds `SSH_AUTH_SOCK` to your **user-global** `~/.claude/settings.json`, merging with whatever's already there so every agent shell picks it up regardless of how the app was launched (needs `jq`; if you don't have it, do the manual edit below instead):
+
+```bash
+SOCK="$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"; [ -S "$SOCK" ] || echo "⚠️  No Secretive socket at $SOCK — open Secretive → Setup and copy the path it shows"; mkdir -p ~/.claude; f=~/.claude/settings.json; [ -s "$f" ] || echo '{}' > "$f"; tmp=$(mktemp) && jq --arg s "$SOCK" '.env = (.env // {}) + {SSH_AUTH_SOCK: $s}' "$f" > "$tmp" && mv "$tmp" "$f" && echo "updated $f:" && cat "$f"
+```
+
+**Or set it by hand.** Find the socket path (Secretive also shows it in-app under its setup screen):
 
 ```bash
 ls "$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"
 ```
 
-For agent-driven commits, set it in your **user-global** `~/.claude/settings.json` so every agent shell has it regardless of how the app was launched:
+and add it to `~/.claude/settings.json`:
 
 ```json
 {
@@ -201,18 +207,21 @@ For agent-driven commits, set it in your **user-global** `~/.claude/settings.jso
 }
 ```
 
-For commits you run in a terminal, also export it from your shell profile (`~/.zshrc`):
+Either way, for commits you run in a terminal yourself, also export it from your shell profile (`~/.zshrc`):
 
 ```bash
 export SSH_AUTH_SOCK="$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"
 ```
 
-Then verify the agent can actually serve the key (this should print your Secretive public key) and that a signed commit goes through:
+Then verify the agent can serve the key (this prints your Secretive public key) and that a signed commit goes through. Run it inside a git repo, and note the single `export` so the socket applies to *both* commands — not just `ssh-add`:
 
 ```bash
-SSH_AUTH_SOCK="$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh" ssh-add -L
+export SSH_AUTH_SOCK="$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"
+ssh-add -L
 git commit --allow-empty -m "test signing" && git log --show-signature -1
 ```
+
+> **Note:** Claude Code reads `env` at session start, so restart the app (or start a new session) after editing `~/.claude/settings.json` for the change to take effect.
 
 Two things `SSH_AUTH_SOCK` can't fix, because only the machine owner controls them:
 
