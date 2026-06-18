@@ -1,4 +1,7 @@
-import type { CanvasDataQueryInput } from "@posthog/core/canvas/freeformSchemas";
+import type {
+  CanvasCaptureInput,
+  CanvasDataQueryInput,
+} from "@posthog/core/canvas/freeformSchemas";
 import { hostClient } from "../hostClient";
 
 // Resolves a `ph.*` data-request from a freeform canvas (edit mode). The host
@@ -18,6 +21,17 @@ export async function handleFreeformDataRequest(
       return hostClient().canvasData.query.mutate({
         hogql: input.hogql,
         params: input.params,
+      });
+    }
+    case "capture": {
+      const input = payload as CanvasCaptureInput;
+      if (!input?.event || typeof input.event !== "string") {
+        throw new Error("ph.capture(event) requires an event name");
+      }
+      return hostClient().canvasData.capture.mutate({
+        event: input.event,
+        distinctId: input.distinctId,
+        properties: input.properties,
       });
     }
     case "run":

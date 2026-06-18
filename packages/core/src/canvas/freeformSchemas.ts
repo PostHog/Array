@@ -106,6 +106,30 @@ export const canvasDataResultSchema = z.object({
 });
 export type CanvasDataResult = z.infer<typeof canvasDataResultSchema>;
 
+// Capture (write) avenue behind the `ph.capture` shim. The host sends the event
+// to the project using its PUBLIC project key (phc_…, safe to be client-side) —
+// the private read token still never enters the iframe. `distinctId` is who the
+// event is attributed to; defaults host-side when omitted.
+export const canvasCaptureInput = z.object({
+  event: z.string().min(1),
+  distinctId: z.string().min(1).optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+});
+export type CanvasCaptureInput = z.infer<typeof canvasCaptureInput>;
+
+export const canvasCaptureResultSchema = z.object({ ok: z.boolean() });
+export type CanvasCaptureResult = z.infer<typeof canvasCaptureResultSchema>;
+
+// What the host hands the UI to bootstrap in-iframe analytics/replay. The
+// public capture key + the signed-in user's distinct_id; the private token is
+// never included. The UI forwards this into the iframe `init` frame.
+export const canvasCaptureConfigSchema = z.object({
+  apiHost: z.string(),
+  publicKey: z.string(),
+  distinctId: z.string().optional(),
+});
+export type CanvasCaptureConfig = z.infer<typeof canvasCaptureConfigSchema>;
+
 // ---------------------------------------------------------------------------
 // Host <-> iframe postMessage protocol (Q10/Q11). The canvas runs in a
 // null-origin sandboxed iframe, so it CANNOT share JS objects with the host —
@@ -119,6 +143,20 @@ export type CanvasDataResult = z.infer<typeof canvasDataResultSchema>;
 const CANVAS_CHANNEL = "posthog-canvas" as const;
 export const CANVAS_MESSAGE_CHANNEL = CANVAS_CHANNEL;
 
+// Analytics bootstrap config handed to the iframe so posthog-js can run INSIDE
+// it (the only way session replay records the app's DOM). Only the PUBLIC
+// capture key crosses — never the private read token. `distinctId` seeds
+// attribution (the signed-in user in edit; omitted for anonymous shared
+// viewers, who get an auto-generated id). `persist` is false on a null-origin
+// sandbox (no storage) → memory session; true on the usercontent origin.
+export const canvasAnalyticsConfigSchema = z.object({
+  apiHost: z.string(),
+  publicKey: z.string(),
+  distinctId: z.string().optional(),
+  persist: z.boolean(),
+});
+export type CanvasAnalyticsConfig = z.infer<typeof canvasAnalyticsConfigSchema>;
+
 // host -> iframe
 export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
   // First frame: hand the iframe its source + the run mode. The iframe does not
@@ -130,6 +168,8 @@ export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
     // "edit" = author in-app (full-API shim, CDN packages, open egress).
     // "view" = published/shared (frozen named queries, closed egress).
     mode: z.enum(["edit", "view"]),
+    // Present when analytics/replay should run in the iframe. Absent = no capture.
+    analytics: canvasAnalyticsConfigSchema.optional(),
   }),
   // Reply to a data-request, correlated by `id`.
   z.object({

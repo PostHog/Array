@@ -39,6 +39,20 @@ describe("checkFreeformImports", () => {
     expect(result.violations.some((v) => v.includes(expected))).toBe(true);
   });
 
+  it("does not flag ordinary string literals as imports", () => {
+    // Regression: the specifier regex must key off `from`/`import`, not any
+    // quoted string after an import/export keyword.
+    const code = `
+      import React from "react";
+      export default function App() {
+        const label = "Add to cart";
+        const url = "https://example.com/x";
+        return React.createElement("button", null, label);
+      }
+    `;
+    expect(checkFreeformImports(code)).toEqual({ ok: true, violations: [] });
+  });
+
   it("collects multiple violations at once", () => {
     const code = `import x from "lodash"; const y = import("react");`;
     const result = checkFreeformImports(code);

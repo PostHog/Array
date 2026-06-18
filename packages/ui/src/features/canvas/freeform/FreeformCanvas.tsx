@@ -1,4 +1,5 @@
 import {
+  type CanvasAnalyticsConfig,
   type CanvasToHostMessage,
   canvasToHostMessageSchema,
   type HostToCanvasMessage,
@@ -24,6 +25,12 @@ export interface FreeformCanvasProps {
   onError?: (message: string, stack?: string) => void;
   /** Called once the canvas has rendered successfully (clears error state). */
   onRendered?: () => void;
+  /**
+   * Bootstrap config for in-iframe posthog-js (analytics + session replay).
+   * Absent = no capture/replay. Only the PUBLIC key is here; the private token
+   * never crosses into the iframe.
+   */
+  analytics?: CanvasAnalyticsConfig;
 }
 
 // Renders a freeform-React canvas inside a null-origin sandboxed iframe and
@@ -35,14 +42,20 @@ export function FreeformCanvas({
   onDataRequest,
   onError,
   onRendered,
+  analytics,
 }: FreeformCanvasProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false);
   const [height, setHeight] = useState<number | null>(null);
 
-  // The document is keyed only on mode (not code): code is injected via `init`,
-  // so changing it never reloads the iframe — it re-renders in place.
-  const srcDoc = useMemo(() => buildSandboxDocument(mode), [mode]);
+  // The document is keyed on mode + the analytics host (which the CSP must open
+  // for posthog-js), not on code: code is injected via `init`, so changing it
+  // never reloads the iframe — it re-renders in place.
+  const analyticsHost = analytics?.apiHost;
+  const srcDoc = useMemo(
+    () => buildSandboxDocument(mode, analyticsHost),
+    [mode, analyticsHost],
+  );
 
   // Reset ready whenever the iframe document is rebuilt.
   // biome-ignore lint/correctness/useExhaustiveDependencies: srcDoc identity tracks a reload.
@@ -118,10 +131,10 @@ export function FreeformCanvas({
   useEffect(() => {
     if (!ready) return;
     iframeRef.current?.contentWindow?.postMessage(
-      { channel: "posthog-canvas", type: "init", code, mode },
+      { channel: "posthog-canvas", type: "init", code, mode, analytics },
       "*",
     );
-  }, [ready, code, mode]);
+  }, [ready, code, mode, analytics]);
 
   return (
     <iframe

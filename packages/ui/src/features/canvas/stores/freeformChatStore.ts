@@ -240,7 +240,14 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
           headIdx === -1 ? prev.versions : prev.versions.slice(0, headIdx + 1);
         const unchanged = base.at(-1)?.code === currentCode;
         if (unchanged || !currentCode) {
-          return { ...prev, isStreaming: false, lastTool: null };
+          // Clear pendingPrompt too, so a no-op turn's prompt can't get stamped
+          // onto the next version that actually changes the code.
+          return {
+            ...prev,
+            isStreaming: false,
+            lastTool: null,
+            pendingPrompt: null,
+          };
         }
         const version: FreeformVersion = {
           id: newId(),

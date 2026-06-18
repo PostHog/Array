@@ -65,11 +65,15 @@ export const dashboardSummarySchema = z.object({
   channelId: z.string(),
   name: z.string(),
   templateId: z.string().default("dashboard"),
+  kind: z.enum(["json-render", "freeform"]).default("json-render"),
   createdBy: z.string().optional(),
   updatedAt: z.number(),
   // The full spec is already loaded when listing (it rides in the FS row's
   // meta), so include it here to render grid previews without an N+1 of get()s.
   spec: dashboardSpecSchema,
+  // Freeform only: the React source, included so the grid can render a live
+  // preview the same way json-render canvases preview from their spec.
+  code: z.string().optional(),
 });
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
 

@@ -58,6 +58,11 @@ export const FREEFORM_ESM_HOST = ESM;
 // The in-browser transpiler (Q2), imported as ESM so egress stays on one host.
 export const FREEFORM_BABEL_URL = `${ESM}/@babel/standalone@7.26.4`;
 
+// posthog-js, booted by the runtime (not the agent) to power in-iframe analytics
+// + session replay. Edit mode loads it from the CDN; the published tier will
+// self-host it in the bundle. Pinned so a canvas can't drift onto a new major.
+export const FREEFORM_POSTHOG_JS_URL = `${ESM}/posthog-js@1.205.0`;
+
 // Names the agent is allowed to import. Subpath imports (e.g. "dayjs/plugin/x")
 // are allowed when their package root is whitelisted AND the exact subpath is
 // listed; we keep it strict (exact-match only) so a subpath can't smuggle in an
@@ -83,11 +88,16 @@ export interface ImportCheckResult {
   violations: string[];
 }
 
-// Matches static import/export-from specifiers:
-//   import x from "spec";  import "spec";  export * from "spec";
-// Captures the quoted specifier in group 1 or 2.
+// Matches static module specifiers, which appear either as `from "spec"`
+// (import-with-bindings and export-from) or a bare side-effect `import "spec"`.
+// Anchoring on `from`/`import` (rather than "any quoted string following an
+// import/export keyword") avoids flagging ordinary string literals such as
+// `export default function App() { const s = "hi"; }`. Captures the specifier in
+// group 1 or 2. Note: being regex-based it can still be fooled by the literal
+// text `from "x"` inside a string/JSX — a fully correct check would parse the
+// AST (deferred; this check isn't wired into save/publish yet).
 const STATIC_IMPORT_RE =
-  /(?:import|export)\b[^;'"]*?(?:from\s*)?["']([^"']+)["']|import\s*["']([^"']+)["']/g;
+  /\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']/g;
 
 // Patterns we reject outright regardless of specifier (Q9): dynamic import()
 // dodges static analysis; require()/importScripts pull arbitrary modules; inline
@@ -101,10 +111,13 @@ const FORBIDDEN_PATTERNS: { re: RegExp; reason: string }[] = [
 
 /**
  * Statically verify that freeform canvas code imports only whitelisted packages
- * and uses no out-of-band code-loading. This is the enforcement point (Q9): it
- * runs at save AND publish. It is deliberately conservative — when in doubt it
- * rejects. A relative import (./x) is rejected because a canvas is a single file
- * with no sibling modules.
+ * and uses no out-of-band code-loading. Intended as the enforcement point (Q9)
+ * at save AND publish — but NOT yet wired into the save path (the autosave in
+ * freeformChatStore persists code without calling this). For now it is exercised
+ * only by tests; wiring it in is a follow-up (and should land with the regex's
+ * string/JSX false-positive limitation addressed, ideally via AST parsing).
+ * Deliberately conservative — when in doubt it rejects. A relative import (./x)
+ * is rejected because a canvas is a single file with no sibling modules.
  */
 export function checkFreeformImports(code: string): ImportCheckResult {
   const violations: string[] = [];

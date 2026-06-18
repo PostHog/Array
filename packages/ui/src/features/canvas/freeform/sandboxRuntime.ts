@@ -2,6 +2,7 @@ import {
   buildImportMap,
   FREEFORM_BABEL_URL,
   FREEFORM_ESM_HOST,
+  FREEFORM_POSTHOG_JS_URL,
 } from "@posthog/core/canvas/freeformWhitelist";
 
 // Builds the HTML document loaded into the freeform-canvas sandbox iframe.
@@ -19,9 +20,14 @@ import {
 //     and forbids third-party egress entirely.
 export type SandboxMode = "edit" | "view";
 
-export function buildSandboxDocument(mode: SandboxMode): string {
+export function buildSandboxDocument(
+  mode: SandboxMode,
+  // The PostHog host, when in-iframe analytics/replay is enabled. Opens CSP for
+  // posthog-js to load its recorder and POST events/replay to ingest.
+  analyticsApiHost?: string,
+): string {
   const importMap = JSON.stringify(buildImportMap());
-  const csp = contentSecurityPolicy(mode);
+  const csp = contentSecurityPolicy(mode, analyticsApiHost);
 
   // The bootstrap module. It is static (no user input) so it can be inlined
   // safely. It waits for `init`, transpiles the canvas with Babel, runs it from
@@ -41,11 +47,52 @@ export function buildSandboxDocument(mode: SandboxMode): string {
         pending.set(id, { resolve, reject });
         post({ type: "data-request", id, method, payload });
       });
+    // posthog-js runs IN here (the only way replay records the app's DOM). It is
+    // booted by init when analytics config is present; until then capture falls
+    // back to the host-mediated path.
+    let phClient = null;
     window.ph = {
       // Run a named, server-stored query (the only shape allowed in view mode).
       run: (name, params) => call("run", { name, params: params ?? {} }),
       // Inline HogQL — edit mode only; rejected by the host in view mode.
       query: (hogql, params) => call("query", { hogql, params: params ?? {} }),
+      // Send an analytics event. Prefer in-iframe posthog-js (so it shares the
+      // session/replay); otherwise host-mediated (no replay, still captured).
+      capture: (event, properties, distinctId) => {
+        if (phClient) {
+          phClient.capture(event, properties ?? {});
+          return Promise.resolve({ ok: true });
+        }
+        return call("capture", { event, properties: properties ?? {}, distinctId });
+      },
+    };
+
+    // Boot posthog-js with the PUBLIC key the host passed in (never the read
+    // token). Enables session replay so the author/viewer can be watched.
+    const bootAnalytics = async (cfg) => {
+      if (phClient || !cfg) return;
+      try {
+        const mod = await import("${FREEFORM_POSTHOG_JS_URL}");
+        const posthog = mod.default || mod.posthog || mod;
+        posthog.init(cfg.publicKey, {
+          api_host: cfg.apiHost,
+          // No storage on a null-origin sandbox → memory session; the
+          // usercontent origin (shared tier) persists per-viewer.
+          persistence: cfg.persist ? "localStorage+cookie" : "memory",
+          capture_pageview: false,
+          disable_session_recording: false,
+          loaded: (ph) => {
+            if (cfg.distinctId) ph.identify(cfg.distinctId);
+          },
+        });
+        phClient = posthog;
+        window.posthog = posthog;
+      } catch (err) {
+        reportError(
+          "analytics init failed: " + (err && err.message),
+          err && err.stack,
+        );
+      }
     };
 
     // --- error reporting (feeds the host's self-repair loop) ---
@@ -66,6 +113,10 @@ export function buildSandboxDocument(mode: SandboxMode): string {
       const h = document.documentElement.scrollHeight;
       post({ type: "resize", height: h });
     };
+    // Observe size ONCE for the iframe's life. mount() runs on every streamed
+    // code snapshot, so creating the observer there would leak one per snapshot
+    // and multiply resize messages.
+    new ResizeObserver(reportSize).observe(document.documentElement);
 
     let root = null;
     const mount = async (code) => {
@@ -113,7 +164,6 @@ export function buildSandboxDocument(mode: SandboxMode): string {
         requestAnimationFrame(() => {
           post({ type: "rendered" });
           reportSize();
-          new ResizeObserver(reportSize).observe(document.documentElement);
         });
       } catch (err) {
         reportError(err && err.message, err && err.stack);
@@ -124,6 +174,7 @@ export function buildSandboxDocument(mode: SandboxMode): string {
       const d = e.data;
       if (!d || d.channel !== CHANNEL) return;
       if (d.type === "init") {
+        if (d.analytics) void bootAnalytics(d.analytics);
         void mount(d.code);
       } else if (d.type === "data-response") {
         const p = pending.get(d.id);
@@ -157,29 +208,45 @@ export function buildSandboxDocument(mode: SandboxMode): string {
 }
 
 // The iframe CSP (third isolation layer). `connect-src` matters most: in view
-// mode it is locked to 'none' so a published canvas can't phone home, even if a
-// dependency tries. Edit mode opens the CDN host only.
-function contentSecurityPolicy(mode: SandboxMode): string {
+// mode it is otherwise locked down so a published canvas can't phone home. When
+// analytics/replay is on we open ONLY the PostHog ingest + assets hosts (so
+// posthog-js can load its recorder and POST events/replay) — never arbitrary
+// egress.
+function contentSecurityPolicy(
+  mode: SandboxMode,
+  analyticsApiHost?: string,
+): string {
   const esm = FREEFORM_ESM_HOST;
+  // posthog-js posts events to the api host and loads the recorder from the
+  // region assets host; allow both. Wildcards cover PostHog Cloud regions; the
+  // explicit api host covers self-hosted.
+  const ph = analyticsApiHost
+    ? `${analyticsApiHost} https://*.posthog.com https://*.i.posthog.com`
+    : "";
+
   if (mode === "edit") {
     return [
       "default-src 'none'",
-      // Inline bootstrap + esm.sh modules + the transpiled Blob module.
-      `script-src 'unsafe-inline' blob: ${esm}`,
+      // Inline bootstrap + esm.sh modules + the transpiled Blob module + the
+      // posthog-js recorder script.
+      `script-src 'unsafe-inline' blob: ${esm} ${ph}`,
       `style-src 'unsafe-inline' ${esm}`,
       `font-src data: ${esm}`,
       "img-src data: blob: https:",
-      // esm.sh sub-fetches; canvas data goes over postMessage, not connect.
-      `connect-src ${esm}`,
+      `worker-src blob:`,
+      // esm.sh sub-fetches; canvas DATA goes over postMessage (not connect), but
+      // posthog-js events/replay DO use connect to the PostHog hosts.
+      `connect-src ${esm} ${ph}`,
     ].join("; ");
   }
-  // view / published: self-hosted, frozen, zero third-party egress.
+  // view / published: self-hosted, frozen. Only egress is PostHog analytics.
   return [
     "default-src 'none'",
-    "script-src 'unsafe-inline' blob: 'self'",
+    `script-src 'unsafe-inline' blob: 'self' ${ph}`,
     "style-src 'unsafe-inline' 'self'",
     "font-src data: 'self'",
     "img-src data: blob: 'self'",
-    "connect-src 'none'",
+    `worker-src blob:`,
+    `connect-src 'self' ${ph}`,
   ].join("; ");
 }

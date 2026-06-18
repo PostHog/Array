@@ -1,6 +1,9 @@
 import type { ChannelTaskRecord } from "./channelTaskSchemas";
 import type { DashboardRecord, DashboardSummary } from "./dashboardSchemas";
 import type {
+  CanvasCaptureConfig,
+  CanvasCaptureInput,
+  CanvasCaptureResult,
   CanvasDataQueryInput,
   CanvasDataResult,
   FreeformGenEventPayload,
@@ -87,6 +90,8 @@ export interface IDashboardQueryService {
 
 export interface ICanvasDataService {
   query(input: CanvasDataQueryInput): Promise<CanvasDataResult>;
+  capture(input: CanvasCaptureInput): Promise<CanvasCaptureResult>;
+  captureConfig(): Promise<CanvasCaptureConfig>;
 }
 
 export interface IChannelTasksService {

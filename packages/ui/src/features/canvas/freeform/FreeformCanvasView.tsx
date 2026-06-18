@@ -3,6 +3,8 @@ import {
   ArrowUUpRightIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
+import type { CanvasAnalyticsConfig } from "@posthog/core/canvas/freeformSchemas";
+import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
 import {
   useFreeformChatStore,
@@ -10,7 +12,8 @@ import {
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { Flex, ScrollArea, Text } from "@radix-ui/themes";
-import { useCallback, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo } from "react";
 import { FreeformCanvas } from "./FreeformCanvas";
 import { FreeformChat } from "./FreeformChat";
 import { handleFreeformDataRequest } from "./freeformDataBridge";
@@ -34,6 +37,31 @@ export function FreeformCanvasView({
   const setRuntimeError = useFreeformChatStore((s) => s.setRuntimeError);
 
   useEffect(() => registerFreeformSubscription(threadId), [threadId]);
+
+  // Public capture key + the signed-in user's distinct_id, so posthog-js can run
+  // inside the iframe (analytics + session replay). Edit mode runs on a
+  // null-origin sandbox (no storage) → memory session (persist:false).
+  const trpc = useHostTRPC();
+  const { data: captureConfig } = useQuery(
+    trpc.canvasData.captureConfig.queryOptions(undefined, {
+      staleTime: 5 * 60_000,
+    }),
+  );
+  // Memoised on the (stable) query result so its identity doesn't change every
+  // render — otherwise FreeformCanvas's init effect re-fires and re-posts the
+  // whole file to the iframe on every render during streaming.
+  const analytics: CanvasAnalyticsConfig | undefined = useMemo(
+    () =>
+      captureConfig
+        ? {
+            apiHost: captureConfig.apiHost,
+            publicKey: captureConfig.publicKey,
+            distinctId: captureConfig.distinctId,
+            persist: false,
+          }
+        : undefined,
+    [captureConfig],
+  );
 
   const idx = versions.findIndex((v) => v.id === currentVersionId);
   const canUndo = idx > 0;
@@ -119,6 +147,7 @@ export function FreeformCanvasView({
                 onDataRequest={handleFreeformDataRequest}
                 onError={onError}
                 onRendered={onRendered}
+                analytics={analytics}
               />
             </ErrorBoundary>
           ) : (

@@ -111,17 +111,21 @@ export class DashboardsService {
           channelId: cid,
           name,
           templateId,
+          kind,
           createdBy,
           updatedAt,
           spec,
+          code,
         }) => ({
           id,
           channelId: cid,
           name,
           templateId,
+          kind,
           createdBy,
           updatedAt,
           spec,
+          code,
         }),
       );
   }
