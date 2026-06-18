@@ -126,9 +126,9 @@ async function buildSyntheticPlugin(
 ): Promise<SdkPluginConfig[]> {
   try {
     const allSkillDirs = await findSkillDirs(sourceSkillsDir);
-    const skillDirs = exclude
-      ? allSkillDirs.filter((skillName) => !exclude.has(skillName))
-      : allSkillDirs;
+    const skillDirs = allSkillDirs.filter(
+      (skillName) => !exclude?.has(skillName),
+    );
     if (skillDirs.length === 0) {
       return [];
     }

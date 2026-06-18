@@ -56,7 +56,7 @@ export async function prepareCodexHome(options: {
   const codexHome = getCodexHomeDir(options.appDataPath, options.taskRunId);
   const skillsDir = path.join(codexHome, "skills");
 
-  // Start from a clean skills dir; a retried run reuses the same taskRunId.
+  // A retried run reuses its taskRunId, so wipe any stale links before rebuilding.
   await fs.promises.rm(skillsDir, { recursive: true, force: true });
   await fs.promises.mkdir(skillsDir, { recursive: true });
 

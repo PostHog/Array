@@ -187,8 +187,7 @@ export class SkillsService {
 
   /**
    * Imports a Codex-authored skill into ~/.claude/skills, after which it is
-   * an ordinary editable user skill. The mirror takes ownership of the Codex
-   * copy so future syncs carry edits back without clobbering or duplicating.
+   * an ordinary editable user skill. The original Codex copy is left untouched.
    */
   async importCodexSkill(
     skillPath: string,
