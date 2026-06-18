@@ -53,11 +53,6 @@ export interface TaskExecutionOptions {
   model?: string;
   gatewayUrl?: string;
   codexBinaryPath?: string;
-  /**
-   * Codex-only. Private CODEX_HOME for the spawned codex-acp process, holding
-   * PostHog's bundled + the user's Claude skills, so Codex sessions get them
-   * without writing to the shared `~/.agents/skills`.
-   */
   codexHome?: string;
   reasoningEffort?: EffortLevel;
   /**

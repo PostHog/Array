@@ -19,11 +19,6 @@ export interface CodexProcessOptions {
    */
   developerInstructions?: string;
   binaryPath?: string;
-  /**
-   * Private CODEX_HOME for this process. codex-acp scans `$CODEX_HOME/skills`
-   * (for PostHog's bundled + Claude skills) on top of `$HOME/.agents/skills`
-   * (the user's own Codex skills), so this never touches the shared dir.
-   */
   codexHome?: string;
   logger?: Logger;
   processCallbacks?: ProcessSpawnedCallback;
