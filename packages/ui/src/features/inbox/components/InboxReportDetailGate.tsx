@@ -60,14 +60,19 @@ export function InboxReportDetailGate({
   children,
 }: InboxReportDetailGateProps) {
   const navigate = useNavigate();
-  const { data: report, isLoading, isFetching } = useInboxReportById(reportId);
+  const {
+    data: report,
+    isLoading,
+    isFetching,
+    isFetchedAfterMount,
+  } = useInboxReportById(reportId);
   const resolvedReport = report ?? cachedReport;
 
   // Keep the report on the route that matches its status. A status↔route mismatch
   // happens when a URL goes stale — browser history, a bookmark, a copied deep
   // link, or a status change in another session. A suppressed report reached via a
   // /pulls, /reports, or /runs URL would otherwise render that tab's full triage
-  // actions (dismiss, discuss, create PR) on an out-of-pipeline report; a restored
+  // actions (archive, discuss, create PR) on an out-of-pipeline report; a restored
   // report reached via /dismissed would offer Restore and silently re-queue it
   // (READY/RESOLVED → POTENTIAL is an allowed server-side transition). Redirect
   // across that dismissed↔pipeline boundary, gated on a settled fetch so we act on
@@ -83,6 +88,16 @@ export function InboxReportDetailGate({
       redirectTo = nonSuppressedDetailRoute(resolvedReport);
     }
   }
+
+  // The redirect above only fires once the fetch settles, so on a triage route we
+  // still hold an unconfirmed cached/seeded status during the forced post-mount
+  // fetch. Rendering the children then would briefly expose full triage actions
+  // (create PR, discuss, archive) for a report that another session has already
+  // suppressed, before the redirect kicks in. Hold the spinner until that same
+  // fetch settles. The Archive route stays render-from-cache (the PR's instant-open
+  // path): it's read-only and its one action, Restore, re-checks status server-side.
+  const statusUnconfirmed =
+    !onDismissedRoute && isFetching && !isFetchedAfterMount;
   const redirectReportId = resolvedReport?.id;
   useEffect(() => {
     if (!redirectTo || !redirectReportId) return;
@@ -93,7 +108,7 @@ export function InboxReportDetailGate({
     });
   }, [redirectTo, redirectReportId, navigate]);
 
-  if (isLoading && !resolvedReport) {
+  if ((isLoading && !resolvedReport) || statusUnconfirmed) {
     return (
       <Flex align="center" justify="center" className="py-16">
         <Spinner />

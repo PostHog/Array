@@ -26,7 +26,7 @@ interface DismissedReportCardProps {
 }
 
 /**
- * Card for the Dismissed tab. Links into the read-only dismissed detail view;
+ * Card for the Archive tab. Links into the read-only archived detail view;
  * the Restore button (right column) stops propagation so it doesn't navigate.
  */
 export function DismissedReportCard({
@@ -96,7 +96,7 @@ export function DismissedReportCard({
               />
               {dismissedAtLabel && (
                 <Text className="text-[12px] text-gray-10">
-                  Dismissed {dismissedAtLabel}
+                  Archived {dismissedAtLabel}
                 </Text>
               )}
               {reasonLabel && (

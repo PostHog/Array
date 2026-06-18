@@ -128,7 +128,7 @@ export function InboxBulkSelectionBar({
               size="1"
               variant="soft"
               color="gray"
-              tooltipContent="Snooze or permanently dismiss"
+              tooltipContent="Snooze or archive"
               disabledReason={bulkActions.suppressDisabledReason}
               disabled={
                 bulkActions.suppressDisabledReason !== null || dismissPending
@@ -136,7 +136,7 @@ export function InboxBulkSelectionBar({
               loading={dismissPending}
               onClick={() => setShowDismissDialog(true)}
             >
-              Dismiss
+              Archive
             </Button>
           )}
 

@@ -22,11 +22,12 @@ Inbox has four tabs and one reviewer-scope control:
 | Pull requests | `/code/inbox/pulls` | Reports with `implementation_pr_url` set |
 | Reports | `/code/inbox/reports` | Reports without a PR and not currently running |
 | Runs | `/code/inbox/runs` | Reports that are still in progress or waiting on input |
-| Dismissed | `/code/inbox/dismissed` | Reports the user suppressed (`status === "suppressed"`) |
+| Archive | `/code/inbox/dismissed` | Reports the user archived/suppressed (`status === "suppressed"`) |
 
 Detail pages live under the same tab: `/code/inbox/<tab>/$reportId`.
 
-The Dismissed tab is the exception: suppressed reports are excluded from the
+The Archive tab (route `/code/inbox/dismissed`, user-facing label "Archive") is
+the exception: suppressed reports are excluded from the
 main pipeline query, so the tab fetches them with a dedicated `status=suppressed`
 query (`useInboxDismissedReports`). Its detail view (`DismissedReportDetail`) is
 read-only — summary + evidence + a single Restore action, no triage affordances —
@@ -34,9 +35,13 @@ and depends on the backend serving suppressed reports on the `retrieve`/`signals
 read paths (PostHog/posthog#64019). Restore uses `useInboxRestoreReport`, which
 reuses the `state` action's `potential` ("reopen") transition — the only reopen
 path the backend exposes. The reviewer scope control is hidden on this tab since
-the dismissed list is not scoped, and the tab carries no count badge. The
-Dismissed detail is **not** a tracked `InboxDetailTab` (no OPENED/CLOSED
+the archive list is not scoped, and the tab carries no count badge. The
+Archive detail is **not** a tracked `InboxDetailTab` (no OPENED/CLOSED
 engagement events), since its rank would be measured against the wrong list.
+
+The internal route segment, query key, and component/hook names keep the
+`dismissed`/`suppressed` vocabulary (the backend status is `suppressed`); only
+the user-facing copy uses "Archive"/"archived".
 
 Each `DismissedReportCard` shows why the report was suppressed (`dismissal_reason`,
 labelled via `dismissalReasonLabel`, with `dismissal_note` as a tooltip). These
@@ -69,7 +74,7 @@ The tab components are intentionally simple:
 - `PullRequestsTab` partitions scoped reports with `isPullRequestReport`.
 - `ReportsTab` partitions with `isReportTabReport`.
 - `RunsTab` partitions with `isAgentRunReport`.
-- `DismissedTab` lists its own `useInboxDismissedReports` query (matching `isDismissedReport`); no detail route, restore action per card.
+- `DismissedTab` (the "Archive" tab) lists its own `useInboxDismissedReports` query (matching `isDismissedReport`); read-only detail route, restore action per card.
 
 The detail components share the same shape: load the report, render a common header, then render tab-specific sections. Detail sections should explain the report in product terms, not expose backend object names.
 

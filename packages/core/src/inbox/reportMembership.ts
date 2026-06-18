@@ -85,7 +85,7 @@ export const INBOX_TAB_LABEL: Record<InboxTabKey, string> = {
   pulls: "Pull requests",
   reports: "Reports",
   runs: "Runs",
-  dismissed: "Dismissed",
+  dismissed: "Archive",
 };
 
 /**

@@ -19,9 +19,9 @@ interface DismissedReportDetailProps {
 }
 
 /**
- * Detail view for a dismissed (suppressed) report. Read-only re-read of what the
+ * Detail view for an archived (suppressed) report. Read-only re-read of what the
  * report was — summary + evidence — with a single Restore action. No triage
- * affordances (dismiss, discuss, create PR, reviewers): the report is out of the
+ * affordances (archive, discuss, create PR, reviewers): the report is out of the
  * pipeline until it's restored.
  *
  * The gate keeps reports on the route that matches their status: a no-longer-
@@ -37,7 +37,7 @@ export function DismissedReportDetail({
       reportId={reportId}
       cachedReport={cachedReport}
       backTo="/code/inbox/dismissed"
-      backLabel="Back to dismissed"
+      backLabel="Back to archive"
       missingCopy="This report couldn't be found. It may have been deleted."
     >
       {(report) => <DismissedReportDetailContent report={report} />}
@@ -50,7 +50,7 @@ function DismissedReportDetailContent({ report }: { report: SignalReport }) {
     <InboxDetailFrame
       report={report}
       backTo="/code/inbox/dismissed"
-      backLabel="Back to dismissed"
+      backLabel="Back to archive"
       fallbackTitle="Untitled report"
       showDismiss={false}
       primaryAction={

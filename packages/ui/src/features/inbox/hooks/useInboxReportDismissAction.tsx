@@ -12,7 +12,7 @@ import { type ReactElement, useCallback, useMemo, useState } from "react";
 
 const EMPTY_REPORTS: SignalReport[] = [];
 
-/** Dismiss flow used by every inbox detail screen – one report, one button + dialog. */
+/** Archive flow used by every inbox detail screen – one report, one button + dialog. */
 export function useInboxReportDismissAction(report: SignalReport): {
   actionButton: ReactElement;
   dialog: ReactElement | null;
@@ -44,12 +44,12 @@ export function useInboxReportDismissAction(report: SignalReport): {
   );
 
   const actionButton = (
-    <Tooltip content="Dismiss this report">
+    <Tooltip content="Archive this report">
       <Button
         type="button"
         variant="outline"
         size="sm"
-        aria-label="Dismiss this report"
+        aria-label="Archive this report"
         disabled={isPending}
         onClick={() => setOpen(true)}
       >

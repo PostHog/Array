@@ -50,7 +50,7 @@ export function InboxTabBar({ counts }: InboxTabBarProps) {
                 <span className="font-medium text-[13px]">
                   {INBOX_TAB_LABEL[key]}
                 </span>
-                {/* Runs and the open-ended archive don't get a running total — it adds no signal. */}
+                {/* Runs and the open-ended Archive don't get a running total — it adds no signal. */}
                 {key !== "runs" && key !== "dismissed" && counts[key] > 0 && (
                   <span
                     className={

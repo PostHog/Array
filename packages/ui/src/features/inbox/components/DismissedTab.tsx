@@ -13,9 +13,9 @@ import { useInboxRestoreReport } from "@posthog/ui/features/inbox/hooks/useInbox
 import { Flex } from "@radix-ui/themes";
 
 /**
- * Dismissed tab: reports the user has dismissed (suppressed) from the inbox,
- * newest first. Each card can be restored back into the pipeline. Read-only
- * otherwise — suppressed reports have no reachable detail page.
+ * Archive tab: reports the user has archived (suppressed) from the inbox,
+ * newest first. Each card can be restored back into the pipeline, or opened in
+ * a read-only detail view (summary + evidence) — no triage affordances.
  */
 export function DismissedTab() {
   const { reports, isLoading } = useInboxDismissedReports();
@@ -38,9 +38,9 @@ export function DismissedTab() {
             <EmptyMedia variant="icon">
               <ArchiveIcon size={24} />
             </EmptyMedia>
-            <EmptyTitle>No dismissed reports</EmptyTitle>
+            <EmptyTitle>No archived reports</EmptyTitle>
             <EmptyDescription>
-              Reports you dismiss from your inbox show up here. You can restore
+              Reports you archive from your inbox show up here. You can restore
               any of them back to the inbox.
             </EmptyDescription>
           </EmptyHeader>

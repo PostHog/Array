@@ -18,7 +18,7 @@ const log = logger.scope("open-inbox-report");
 /**
  * Returns a callback that opens an inbox report by id: fetch it directly
  * (bypassing the paginated list), seed the detail cache, reset inbox-local
- * filters so it isn't hidden, then navigate to the right tab – Dismissed when
+ * filters so it isn't hidden, then navigate to the right tab – Archive when
  * it's suppressed, Pulls when it has an implementation PR, otherwise Reports.
  *
  * Shared by the deep-link handler ({@link useInboxDeepLink}) and any in-app

@@ -3,28 +3,28 @@ import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMuta
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-/** Thrown when the report is no longer dismissed by the time Restore runs. */
-class ReportNoLongerDismissedError extends Error {
+/** Thrown when the report is no longer archived by the time Restore runs. */
+class ReportNoLongerArchivedError extends Error {
   constructor() {
-    super("This report is no longer dismissed.");
-    this.name = "ReportNoLongerDismissedError";
+    super("This report is no longer archived.");
+    this.name = "ReportNoLongerArchivedError";
   }
 }
 
 /**
- * Restore a dismissed report back into the inbox. Reuses the `state` action's
+ * Restore an archived report back into the inbox. Reuses the `state` action's
  * `potential` transition (the same one the backend documents as "reopen"), which
  * is the only reopen path the backend exposes — the report re-enters the
- * pipeline as a fresh candidate rather than returning to its pre-dismissal
+ * pipeline as a fresh candidate rather than returning to its pre-archive
  * status (that prior status isn't persisted).
  *
  * Revalidates against the server before re-queueing: a Restore can be triggered
- * from a stale row (e.g. a Dismissed card left open while the report was restored
+ * from a stale row (e.g. an Archive card left open while the report was restored
  * or progressed in another session), and `potential` is accepted for active
- * reports too — so restoring a no-longer-dismissed report would silently re-queue
+ * reports too — so restoring a no-longer-archived report would silently re-queue
  * it. If the fresh status isn't `suppressed`, no-op and refresh the lists instead.
  *
- * Invalidates `reportKeys.all` so both the Dismissed list and the pipeline
+ * Invalidates `reportKeys.all` so both the Archive list and the pipeline
  * tabs refetch and the restored report moves between them.
  */
 export function useInboxRestoreReport() {
@@ -34,7 +34,7 @@ export function useInboxRestoreReport() {
     async (client, reportId: string) => {
       const current = await client.getSignalReport(reportId);
       if (current && current.status !== "suppressed") {
-        throw new ReportNoLongerDismissedError();
+        throw new ReportNoLongerArchivedError();
       }
       return client.updateSignalReportState(reportId, { state: "potential" });
     },
@@ -47,7 +47,7 @@ export function useInboxRestoreReport() {
         toast.success("Report restored to inbox");
       },
       onError: async (error) => {
-        if (error instanceof ReportNoLongerDismissedError) {
+        if (error instanceof ReportNoLongerArchivedError) {
           // The stale row's report already moved on — drop it from the list
           // rather than reporting a failure for an action that was moot.
           await queryClient.invalidateQueries({
