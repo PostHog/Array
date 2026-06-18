@@ -67,7 +67,7 @@ import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import { loadSessionEnvOverrides } from "../session-env/loader";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
-import { prepareCodexHome } from "./codex-home";
+import { cleanupCodexHome, prepareCodexHome } from "./codex-home";
 import { discoverExternalPlugins } from "./discover-plugins";
 import {
   AGENT_AUTH_ADAPTER,
@@ -690,14 +690,23 @@ When creating pull requests, add the following footer at the end of the PR descr
         "skills",
       );
 
-      const codexHome =
-        adapter === "codex"
-          ? await prepareCodexHome({
-              appDataPath: this.storagePaths.appDataPath,
-              bundledSkillsDir,
-              log: this.log,
-            })
-          : undefined;
+      let codexHome: string | undefined;
+      if (adapter === "codex") {
+        try {
+          codexHome = await prepareCodexHome({
+            appDataPath: this.storagePaths.appDataPath,
+            taskRunId,
+            bundledSkillsDir,
+            log: this.log,
+          });
+        } catch (err) {
+          // A skills-prep failure must not kill the session; Codex falls back
+          // to its default home and the user's own ~/.agents/skills.
+          this.log.warn("Failed to prepare codex home", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
 
       const acpConnection = await agent.run(taskId, taskRunId, {
         adapter,
@@ -1428,6 +1437,10 @@ For git operations while detached:
       } catch {
         this.log.debug("Agent cleanup failed", { taskRunId });
       }
+
+      await cleanupCodexHome(this.storagePaths.appDataPath, taskRunId).catch(
+        () => this.log.debug("Codex home cleanup failed", { taskRunId }),
+      );
 
       this.sessions.delete(taskRunId);
 

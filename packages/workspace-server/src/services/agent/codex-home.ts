@@ -9,6 +9,32 @@ import {
 import type { AgentScopedLogger } from "./ports";
 
 /**
+ * Resolves a task run's private CODEX_HOME directory. Each run gets its own so
+ * concurrent Codex sessions never share — and never race to rebuild — the same
+ * skills directory.
+ */
+export function getCodexHomeDir(
+  appDataPath: string,
+  taskRunId: string,
+): string {
+  return path.join(appDataPath, "codex-home", taskRunId);
+}
+
+/**
+ * Removes a task run's private CODEX_HOME. Safe for any adapter — a no-op when
+ * the directory was never created.
+ */
+export async function cleanupCodexHome(
+  appDataPath: string,
+  taskRunId: string,
+): Promise<void> {
+  await fs.promises.rm(getCodexHomeDir(appDataPath, taskRunId), {
+    recursive: true,
+    force: true,
+  });
+}
+
+/**
  * Builds a private CODEX_HOME for PostHog Code's own Codex sessions, so they
  * load the bundled PostHog catalog and the user's `~/.claude/skills` — without
  * ever writing into the shared cross-agent `~/.agents/skills`.
@@ -23,13 +49,14 @@ import type { AgentScopedLogger } from "./ports";
  */
 export async function prepareCodexHome(options: {
   appDataPath: string;
+  taskRunId: string;
   bundledSkillsDir: string;
   log: AgentScopedLogger;
 }): Promise<string> {
-  const codexHome = path.join(options.appDataPath, "codex-home");
+  const codexHome = getCodexHomeDir(options.appDataPath, options.taskRunId);
   const skillsDir = path.join(codexHome, "skills");
 
-  // Rebuild the skills dir from scratch each spawn so removed skills don't linger.
+  // Start from a clean skills dir; a retried run reuses the same taskRunId.
   await fs.promises.rm(skillsDir, { recursive: true, force: true });
   await fs.promises.mkdir(skillsDir, { recursive: true });
 

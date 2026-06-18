@@ -12,9 +12,15 @@ vi.mock("node:os", async (importOriginal) => {
   return { ...actual, homedir, default: { ...actual, homedir } };
 });
 
-import { prepareCodexHome } from "./codex-home";
+import {
+  cleanupCodexHome,
+  getCodexHomeDir,
+  prepareCodexHome,
+} from "./codex-home";
 
 const noopLog = { debug() {}, info() {}, warn() {}, error() {} };
+
+const taskRunId = "run-1";
 
 let root: string;
 let appDataPath: string;
@@ -48,11 +54,12 @@ describe("prepareCodexHome", () => {
 
     const codexHome = await prepareCodexHome({
       appDataPath,
+      taskRunId,
       bundledSkillsDir,
       log: noopLog,
     });
 
-    expect(codexHome).toBe(path.join(appDataPath, "codex-home"));
+    expect(codexHome).toBe(path.join(appDataPath, "codex-home", taskRunId));
     const skillsDir = path.join(codexHome, "skills");
     expect(existsSync(path.join(skillsDir, "query-data", "SKILL.md"))).toBe(
       true,
@@ -66,6 +73,7 @@ describe("prepareCodexHome", () => {
 
     const codexHome = await prepareCodexHome({
       appDataPath,
+      taskRunId,
       bundledSkillsDir,
       log: noopLog,
     });
@@ -84,6 +92,7 @@ describe("prepareCodexHome", () => {
 
     const codexHome = await prepareCodexHome({
       appDataPath,
+      taskRunId,
       bundledSkillsDir,
       log: noopLog,
     });
@@ -95,12 +104,18 @@ describe("prepareCodexHome", () => {
 
   it("rebuilds the skills dir, dropping stale links", async () => {
     await createSkill(bundledSkillsDir, "first");
-    await prepareCodexHome({ appDataPath, bundledSkillsDir, log: noopLog });
+    await prepareCodexHome({
+      appDataPath,
+      taskRunId,
+      bundledSkillsDir,
+      log: noopLog,
+    });
 
     await rm(path.join(bundledSkillsDir, "first"), { recursive: true });
     await createSkill(bundledSkillsDir, "second");
     const codexHome = await prepareCodexHome({
       appDataPath,
+      taskRunId,
       bundledSkillsDir,
       log: noopLog,
     });
@@ -108,5 +123,48 @@ describe("prepareCodexHome", () => {
     const skillsDir = path.join(codexHome, "skills");
     expect(existsSync(path.join(skillsDir, "first"))).toBe(false);
     expect(existsSync(path.join(skillsDir, "second"))).toBe(true);
+  });
+
+  it("gives each task run an isolated dir, so concurrent runs never share", async () => {
+    await createSkill(bundledSkillsDir, "query-data");
+
+    const [homeA, homeB] = await Promise.all([
+      prepareCodexHome({
+        appDataPath,
+        taskRunId: "run-a",
+        bundledSkillsDir,
+        log: noopLog,
+      }),
+      prepareCodexHome({
+        appDataPath,
+        taskRunId: "run-b",
+        bundledSkillsDir,
+        log: noopLog,
+      }),
+    ]);
+
+    expect(homeA).not.toBe(homeB);
+    expect(existsSync(path.join(homeA, "skills", "query-data"))).toBe(true);
+    expect(existsSync(path.join(homeB, "skills", "query-data"))).toBe(true);
+  });
+
+  it("cleanupCodexHome removes the run's dir and is a no-op when absent", async () => {
+    await createSkill(bundledSkillsDir, "query-data");
+    const codexHome = await prepareCodexHome({
+      appDataPath,
+      taskRunId,
+      bundledSkillsDir,
+      log: noopLog,
+    });
+    expect(existsSync(codexHome)).toBe(true);
+
+    await cleanupCodexHome(appDataPath, taskRunId);
+    expect(existsSync(codexHome)).toBe(false);
+    expect(existsSync(getCodexHomeDir(appDataPath, taskRunId))).toBe(false);
+
+    // Second call on a now-absent dir must not throw.
+    await expect(
+      cleanupCodexHome(appDataPath, taskRunId),
+    ).resolves.toBeUndefined();
   });
 });
