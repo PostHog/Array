@@ -25,6 +25,7 @@ import type {
   AgentMemoryTableHeader,
   AgentMemoryTableRows,
   AgentMemoryTreeNode,
+  AgentPreviewToken,
   AgentRevision,
   AgentSessionEvent,
   AgentSessionLogEntry,
@@ -840,6 +841,18 @@ function parseAvailableSuggestedReviewersPayload(
     results,
     count: results.length,
   };
+}
+
+/**
+ * Wraps the ingress preview token in the `parameters.header` shape the fetcher
+ * merges into request headers without clobbering the auth bearer. Returns
+ * `undefined` when there is no token so unmodified ingress calls stay byte-for-
+ * byte identical to today.
+ */
+function previewTokenHeader(
+  token: string | null | undefined,
+): { header: { "X-Agent-Preview-Token": string } } | undefined {
+  return token ? { header: { "X-Agent-Preview-Token": token } } : undefined;
 }
 
 export class PostHogAPIClient {
@@ -4226,6 +4239,46 @@ export class PostHogAPIClient {
     }
   }
 
+  /**
+   * Mint a short-lived preview token (HS256 JWT) for a non-live revision. The
+   * token is sent to the ingress on /run /send /listen /cancel via
+   * `X-Agent-Preview-Token` (alongside the usual bearer) and authorizes those
+   * calls to route against this specific revision instead of `live_revision`.
+   * The response also self-describes the per-trigger ingress URLs the caller
+   * should hit (`endpoints`) so the client never has to construct preview URLs
+   * by string-mangling `ingress_base_url`.
+   *
+   * `secretOverrides`, when provided, attaches per-key values to the JWT claim
+   * so the runner reads them in place of the agent's live env-keys for this
+   * preview only. Lifetime is per-mint — the client re-passes the same map on
+   * every re-mint cycle (see useAgentChat). Values are never persisted server-
+   * side beyond the JWT.
+   *
+   * Note the Django route: app-level path with the revision as a query param,
+   * NOT nested under /revisions/{id}/.
+   */
+  async mintAgentPreviewToken(
+    idOrSlug: string,
+    revisionId: string,
+    secretOverrides?: Record<string, string>,
+  ): Promise<AgentPreviewToken> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/preview-token/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    url.searchParams.set("revision_id", revisionId);
+    const hasOverrides =
+      !!secretOverrides && Object.keys(secretOverrides).length > 0;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: hasOverrides
+        ? { body: JSON.stringify({ secret_overrides: secretOverrides }) }
+        : undefined,
+    });
+    return (await response.json()) as AgentPreviewToken;
+  }
+
   /** Run a revision lifecycle transition: freeze (draft→ready), promote
    * (ready→live, demoting the old live), or archive. Returns the updated revision. */
   async transitionAgentRevision(
@@ -4462,17 +4515,24 @@ export class PostHogAPIClient {
   // attaches the same bearer regardless of host, so no proxy is needed (unlike
   // the console, which proxied only because browser EventSource can't set
   // an Authorization header — `fetch` can).
+  //
+  // `previewToken`, when present, scopes the call to a non-live revision via
+  // `X-Agent-Preview-Token`. The fetcher merges `parameters.header` into the
+  // built headers (so the bearer survives) — never put preview-token into
+  // `overrides.headers`, which replaces the whole headers object.
 
   /** Start a chat session; returns the new session id. */
   async runAgentSession(
     ingressBaseUrl: string,
     message: string,
+    previewToken?: string | null,
   ): Promise<{ session_id: string; resumed?: boolean }> {
     const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/run`);
     const response = await this.api.fetcher.fetch({
       method: "post",
       url,
       path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
       overrides: { body: JSON.stringify({ message }) },
     });
     return (await response.json()) as { session_id: string; resumed?: boolean };
@@ -4483,12 +4543,14 @@ export class PostHogAPIClient {
     ingressBaseUrl: string,
     sessionId: string,
     message: string,
+    previewToken?: string | null,
   ): Promise<void> {
     const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/send`);
     await this.api.fetcher.fetch({
       method: "post",
       url,
       path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
       overrides: { body: JSON.stringify({ session_id: sessionId, message }) },
     });
   }
@@ -4499,6 +4561,7 @@ export class PostHogAPIClient {
     sessionId: string,
     callId: string,
     outcome: { result?: unknown; error?: string },
+    previewToken?: string | null,
   ): Promise<void> {
     const url = new URL(
       `${ingressBaseUrl.replace(/\/$/, "")}/client_tool_result`,
@@ -4507,6 +4570,7 @@ export class PostHogAPIClient {
       method: "post",
       url,
       path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
       overrides: {
         body: JSON.stringify({
           session_id: sessionId,
@@ -4528,6 +4592,7 @@ export class PostHogAPIClient {
     sessionId: string,
     callId: string,
     outcome: { result: Record<string, unknown> } | { error: string },
+    previewToken?: string | null,
   ): Promise<void> {
     const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/send`);
     const clientToolResult =
@@ -4538,6 +4603,7 @@ export class PostHogAPIClient {
       method: "post",
       url,
       path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
       overrides: {
         body: JSON.stringify({
           session_id: sessionId,
@@ -4551,12 +4617,14 @@ export class PostHogAPIClient {
   async cancelAgentSession(
     ingressBaseUrl: string,
     sessionId: string,
+    previewToken?: string | null,
   ): Promise<void> {
     const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/cancel`);
     await this.api.fetcher.fetch({
       method: "post",
       url,
       path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
       overrides: { body: JSON.stringify({ session_id: sessionId }) },
     });
   }
@@ -4569,17 +4637,20 @@ export class PostHogAPIClient {
     ingressBaseUrl: string,
     sessionId: string,
     signal?: AbortSignal,
+    previewToken?: string | null,
   ): AsyncGenerator<AgentSessionEvent> {
     const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/listen`);
     url.searchParams.set("session_id", sessionId);
     // NB: only `signal` in overrides. Passing `headers` here would replace the
     // fetcher's Authorization header (it spreads overrides over the built
-    // headers), which 401s the stream. /listen streams SSE without an explicit
-    // Accept header.
+    // headers), which 401s the stream. The preview token rides on
+    // `parameters.header` — merged in, not replacing. /listen streams SSE
+    // without an explicit Accept header.
     const response = await this.api.fetcher.fetch({
       method: "get",
       url,
       path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
       overrides: { signal },
     });
     if (!response.body) return;

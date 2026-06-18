@@ -8,6 +8,7 @@ import type {
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { AlertDialog, Flex, Popover, Text } from "@radix-ui/themes";
+import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useAgentRevisionLifecycle } from "../hooks/useAgentRevisionLifecycle";
 import { revisionStateColor } from "../utils/format";
@@ -104,6 +105,7 @@ export function AgentRevisionBar({
   onSelectRevision: (id: string) => void;
 }) {
   const lifecycle = useAgentRevisionLifecycle(idOrSlug);
+  const navigate = useNavigate();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [filters, setFilters] = useState<Set<AgentRevisionState>>(
     () => new Set<AgentRevisionState>(["live", "ready", "draft"]),
@@ -241,23 +243,43 @@ export function AgentRevisionBar({
         </Popover.Content>
       </Popover.Root>
 
-      {actions.length > 0 ? (
-        <Flex gap="2">
-          {actions.map((a) => (
-            <Button
-              key={a.action}
-              size="1"
-              variant="soft"
-              color={a.destructive ? "red" : "gray"}
-              onClick={() =>
-                setPending({ action: a.action, revision: selected })
-              }
-            >
-              {a.label}
-            </Button>
-          ))}
-        </Flex>
-      ) : null}
+      <Flex gap="2">
+        {/*
+         * Test draft — runs this revision through the live ingress with a
+         * preview token, before it's promoted. The chat tab handles the rest
+         * (mint + token attach via useAgentChat). Live revision uses the
+         * default Chat tab; archived can't be exercised.
+         */}
+        {selected.state !== "live" &&
+        selected.state !== "archived" &&
+        !isLive ? (
+          <Button
+            size="1"
+            variant="soft"
+            color="gray"
+            onClick={() =>
+              navigate({
+                to: "/code/agents/applications/$idOrSlug/chat",
+                params: { idOrSlug },
+                search: { revision: selected.id },
+              })
+            }
+          >
+            Test draft
+          </Button>
+        ) : null}
+        {actions.map((a) => (
+          <Button
+            key={a.action}
+            size="1"
+            variant="soft"
+            color={a.destructive ? "red" : "gray"}
+            onClick={() => setPending({ action: a.action, revision: selected })}
+          >
+            {a.label}
+          </Button>
+        ))}
+      </Flex>
 
       <AlertDialog.Root
         open={!!pending}
