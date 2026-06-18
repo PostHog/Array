@@ -12,6 +12,7 @@ import {
   PROTOCOL_VERSION,
 } from "@agentclientprotocol/sdk";
 import { type ServerType, serve } from "@hono/node-server";
+import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -34,7 +35,7 @@ import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { PostHogAPIClient } from "../posthog-api";
-import { extractCreatedPrUrl } from "../pr-url-detector";
+import { findPrUrl, wasCreatedRecently } from "../pr-url-detector";
 import {
   formatConversationForResume,
   type ResumeState,
@@ -252,6 +253,10 @@ export class AgentServer {
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
+  // PR attribution state, reset per session. `evaluatedPrUrls` dedupes the
+  // GitHub lookup per URL; `prAttributed` short-circuits scanning once attached.
+  private prAttributed = false;
+  private readonly evaluatedPrUrls = new Set<string>();
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
   // Guards against concurrent session initialization. autoInitializeSession() and
@@ -1077,6 +1082,9 @@ export class AgentServer {
       acpSessionId,
       runId: payload.run_id,
     });
+
+    this.prAttributed = false;
+    this.evaluatedPrUrls.clear();
 
     this.session = {
       payload,
@@ -2235,6 +2243,11 @@ ${signedCommitInstructions}
           });
         }
 
+        // Attribute a created PR from anywhere in the stream (terminal output,
+        // content, or message), confirming ownership via GitHub rather than
+        // parsing tool calls — robust to SDK update-framing changes.
+        this.maybeAttachCreatedPr(payload, params.update);
+
         // session/update notifications flow through the tapped stream (like local transport)
         // Capture checkpoints for file-changing tools so cloud resumes restore
         // from git checkpoints rather than tree snapshots.
@@ -2255,13 +2268,6 @@ ${signedCommitInstructions}
             toolResponse?.filePath
           ) {
             await this.captureCheckpointState();
-          }
-
-          if (
-            toolName &&
-            (toolName.includes("Bash") || toolName.includes("bash"))
-          ) {
-            this.detectAndAttachPrUrl(payload, params.update);
           }
         }
       },
@@ -2390,59 +2396,68 @@ ${signedCommitInstructions}
     );
   }
 
-  private detectAndAttachPrUrl(
+  /**
+   * Scan a stream update for a PR URL and, if one is found, attribute it to the
+   * run when GitHub confirms it was created during this run. Cheap and tolerant:
+   * scans the serialized update (so it doesn't matter which field carries the
+   * URL), dedupes the GitHub lookup per URL, and stops once attributed.
+   */
+  private maybeAttachCreatedPr(
     payload: JwtPayload,
-    update: Record<string, unknown>,
+    update: Record<string, unknown> | undefined,
   ): void {
+    if (this.prAttributed || !update) return;
+    const prUrl = findPrUrl(JSON.stringify(update));
+    if (!prUrl || this.evaluatedPrUrls.has(prUrl)) return;
+    this.evaluatedPrUrls.add(prUrl);
+    void this.attachPrIfCreatedThisRun(payload, prUrl);
+  }
+
+  private async attachPrIfCreatedThisRun(
+    payload: JwtPayload,
+    prUrl: string,
+  ): Promise<void> {
+    if (this.prAttributed) return;
     try {
-      const meta = (update?._meta as Record<string, unknown>)?.claudeCode as
-        | Record<string, unknown>
-        | undefined;
+      const createdAt = await this.fetchPrCreatedAt(prUrl);
+      // Created just now => this run created it. Older (or unknown) => the run
+      // only viewed it; don't attribute. Recency-based so it stays correct for
+      // long task runs.
+      if (!wasCreatedRecently(createdAt, Date.now())) return;
 
-      const content = update?.content as
-        | Array<{ type?: string; text?: string }>
-        | undefined;
-
-      const prUrl = extractCreatedPrUrl({
-        toolName: meta?.toolName as string | undefined,
-        bashCommand: meta?.bashCommand as string | undefined,
-        toolResponse: meta?.toolResponse,
-        content,
-      });
-      if (!prUrl) return;
-
+      this.prAttributed = true;
       this.detectedPrUrl = prUrl;
-      this.logger.debug("Detected PR URL from gh pr create", {
+      await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
+        output: { pr_url: prUrl },
+      });
+      this.logger.debug("Attributed created PR to task run", {
+        taskId: payload.task_id,
         runId: payload.run_id,
         prUrl,
       });
-
-      // Fire-and-forget: attach PR URL to the task run
-      this.posthogAPI
-        .updateTaskRun(payload.task_id, payload.run_id, {
-          output: { pr_url: prUrl },
-        })
-        .then(() => {
-          this.logger.debug("PR URL attached to task run", {
-            taskId: payload.task_id,
-            runId: payload.run_id,
-            prUrl,
-          });
-        })
-        .catch((err) => {
-          this.logger.error("Failed to attach PR URL to task run", {
-            taskId: payload.task_id,
-            runId: payload.run_id,
-            prUrl,
-            error: err,
-          });
-        });
     } catch (err) {
-      // Never let detection errors break message flow
-      this.logger.debug("Error in PR URL detection", {
+      // Best-effort: never let attribution break message flow.
+      this.logger.debug("PR attribution failed", {
         runId: payload.run_id,
+        prUrl,
         error: err,
       });
+    }
+  }
+
+  /** PR `createdAt` (ISO) via the GitHub CLI, or null if it can't be resolved. */
+  private async fetchPrCreatedAt(prUrl: string): Promise<string | null> {
+    const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
+      cwd: this.config.repositoryPath,
+      timeoutMs: 10_000,
+    });
+    if (res.exitCode !== 0) return null;
+    try {
+      return (
+        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
+      );
+    } catch {
+      return null;
     }
   }
 
