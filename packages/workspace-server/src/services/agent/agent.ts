@@ -36,8 +36,9 @@ import {
   isOpenAIModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
-import { extractCreatedPrUrl } from "@posthog/agent/pr-url-detector";
+import { findPrUrl, wasCreatedRecently } from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
+import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
 import { APP_META_SERVICE, type IAppMeta } from "@posthog/platform/app-meta";
 import {
@@ -286,6 +287,12 @@ interface ManagedSession {
   mcpToolApprovals: McpToolApprovals;
   /** Maps tool keys to their installation for backend approval updates */
   toolInstallations: McpToolInstallations;
+  /**
+   * PR attribution state. `evaluatedPrUrls` dedupes the GitHub lookup per URL;
+   * `prAttributed` short-circuits scanning once a PR has been attached.
+   */
+  prAttributed: boolean;
+  evaluatedPrUrls: Set<string>;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -909,6 +916,8 @@ When creating pull requests, add the following footer at the end of the PR descr
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
+        prAttributed: false,
+        evaluatedPrUrls: new Set(),
       };
 
       this.sessions.set(taskRunId, session);
@@ -1792,13 +1801,16 @@ For git operations while detached:
       if (msg.params?.update?.sessionUpdate !== "tool_call_update") return;
 
       const update = msg.params.update;
+      const session = this.sessions.get(taskRunId);
+
+      // PR attribution scans the whole update, independent of tool framing, so
+      // a PR URL that surfaces without a Bash toolName (e.g. terminal output)
+      // is still detected. Runs before the toolName gate below.
+      this.maybeAttachCreatedPr(taskRunId, session, update);
+
       const toolMeta = update._meta?.claudeCode;
       const toolName = toolMeta?.toolName;
       if (!toolName) return;
-
-      const session = this.sessions.get(taskRunId);
-
-      this.detectAndAttachPrUrl(taskRunId, session, toolMeta, update.content);
 
       this.trackAgentFileActivity(taskRunId, session, toolName);
     } catch (err) {
@@ -1810,36 +1822,41 @@ For git operations while detached:
   }
 
   /**
-   * Detect GitHub PR URLs in `gh pr create` output and attach to task.
-   * Gated on the originating bash command so that unrelated PR URLs (e.g.
-   * `gh pr view`, `gh search prs`) don't get latched onto the run.
+   * Scan a stream update for a PR URL and, if one is found, attach it to the
+   * task when GitHub confirms it was created during this run. Cheap and
+   * tolerant: scans the serialized update (so it doesn't matter which field
+   * carries the URL), dedupes the GitHub lookup per URL, and stops once
+   * attributed. Checking the PR's actual `createdAt` — rather than the
+   * originating command — keeps an older PR the agent merely viewed (e.g.
+   * `gh pr view`) from being latched onto the run.
    */
-  private detectAndAttachPrUrl(
+  private maybeAttachCreatedPr(
     taskRunId: string,
     session: ManagedSession | undefined,
-    toolMeta:
-      | {
-          toolName?: string;
-          toolResponse?: unknown;
-          bashCommand?: string;
-        }
-      | undefined,
-    content?: Array<{ type?: string; text?: string }>,
+    update: unknown,
   ): void {
-    const prUrl = extractCreatedPrUrl({
-      toolName: toolMeta?.toolName,
-      bashCommand: toolMeta?.bashCommand,
-      toolResponse: toolMeta?.toolResponse,
-      content,
-    });
-    if (!prUrl) return;
+    if (!session || session.prAttributed) return;
+    const prUrl = findPrUrl(JSON.stringify(update));
+    if (!prUrl || session.evaluatedPrUrls.has(prUrl)) return;
+    session.evaluatedPrUrls.add(prUrl);
+    void this.attachPrIfCreatedThisRun(taskRunId, session, prUrl);
+  }
 
-    this.log.info("Detected PR URL from gh pr create", { taskRunId, prUrl });
+  private async attachPrIfCreatedThisRun(
+    taskRunId: string,
+    session: ManagedSession,
+    prUrl: string,
+  ): Promise<void> {
+    if (session.prAttributed) return;
 
-    if (!session) {
-      this.log.warn("Session not found for PR attachment", { taskRunId });
-      return;
-    }
+    const createdAt = await this.fetchPrCreatedAt(session.repoPath, prUrl);
+    // Created just now => this run created it. Older (or unknown) => the run
+    // only viewed it; don't attribute. Recency-based so it stays correct for
+    // long task runs.
+    if (!wasCreatedRecently(createdAt, Date.now())) return;
+
+    session.prAttributed = true;
+    this.log.info("Detected PR URL created during run", { taskRunId, prUrl });
 
     session.agent
       .attachPullRequestToTask(session.taskId, prUrl)
@@ -1870,6 +1887,27 @@ For git operations while detached:
     this.emitAgentFileActivityForCurrentBranch(taskRunId, session, {
       reason: "pr-detected",
     });
+  }
+
+  /** PR `createdAt` (ISO) via the GitHub CLI, or null if it can't be resolved. */
+  private async fetchPrCreatedAt(
+    cwd: string,
+    prUrl: string,
+  ): Promise<string | null> {
+    try {
+      const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
+        cwd,
+        timeoutMs: 10_000,
+      });
+      if (res.exitCode !== 0) return null;
+      return (
+        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
+      );
+    } catch (err) {
+      // Best-effort: never let attribution break message flow.
+      this.log.debug("Failed to resolve PR createdAt", { prUrl, error: err });
+      return null;
+    }
   }
 
   /**

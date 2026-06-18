@@ -1142,50 +1142,6 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
-<<<<<<< ours
-  describe("PR attribution", () => {
-    const PR_URL = "https://github.com/PostHog/posthog.com/pull/17764";
-    const payload: JwtPayload = {
-      task_id: "t",
-      run_id: "r",
-      team_id: 1,
-      user_id: 1,
-      distinct_id: "d",
-      mode: "interactive",
-    };
-
-    // The cloud sandbox frames a created PR's URL inside terminal output, on a
-    // tool_call_update that carries no toolName/bashCommand — the case the old
-    // detector missed. Attribution must work from the serialized update alone.
-    const terminalUpdate = (url: string) => ({
-      sessionUpdate: "tool_call_update",
-      _meta: { terminal_output: `Creating draft pull request...\n${url}\n` },
-||||||| ancestor
-  describe("detectedPrUrl tracking", () => {
-    it("stores PR URL when gh pr create produces it", () => {
-      const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            bashCommand: 'gh pr create --title "x" --body "y"',
-            toolResponse: {
-              stdout:
-                "https://github.com/PostHog/posthog/pull/42\nCreating pull request...",
-            },
-          },
-        },
-      };
-
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBe(
-        "https://github.com/PostHog/posthog/pull/42",
-      );
-=======
   describe("buildClaudeCodeSessionMeta", () => {
     it("sends claude reasoning effort even when no plugins are configured", () => {
       const s = createServer({ reasoningEffort: "high" });
@@ -1248,31 +1204,23 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
-  describe("detectedPrUrl tracking", () => {
-    it("stores PR URL when gh pr create produces it", () => {
-      const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            bashCommand: 'gh pr create --title "x" --body "y"',
-            toolResponse: {
-              stdout:
-                "https://github.com/PostHog/posthog/pull/42\nCreating pull request...",
-            },
-          },
-        },
-      };
+  describe("PR attribution", () => {
+    const PR_URL = "https://github.com/PostHog/posthog.com/pull/17764";
+    const payload: JwtPayload = {
+      task_id: "t",
+      run_id: "r",
+      team_id: 1,
+      user_id: 1,
+      distinct_id: "d",
+      mode: "interactive",
+    };
 
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBe(
-        "https://github.com/PostHog/posthog/pull/42",
-      );
->>>>>>> theirs
+    // The cloud sandbox frames a created PR's URL inside terminal output, on a
+    // tool_call_update that carries no toolName/bashCommand — the case the old
+    // detector missed. Attribution must work from the serialized update alone.
+    const terminalUpdate = (url: string) => ({
+      sessionUpdate: "tool_call_update",
+      _meta: { terminal_output: `Creating draft pull request...\n${url}\n` },
     });
 
     type PrTestServer = {
