@@ -5,8 +5,8 @@ import {
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
 import {
-  isAgentRunReport,
   isPullRequestReport,
+  isReportTabReport,
 } from "@posthog/core/inbox/reportMembership";
 import { Button } from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
@@ -49,8 +49,10 @@ export function DismissedReportDetail({
 
 /**
  * Detail route a non-suppressed report should be viewed at, by the same
- * tab-membership predicates the inbox tabs use: Pulls when a PR exists, Runs
- * while the run is in flight, otherwise Reports.
+ * tab-membership predicates the inbox tabs use: Pulls when a PR exists, Reports
+ * when it belongs to the Reports tab, otherwise Runs. `isReportTabReport`
+ * already excludes `failed` (and in-flight runs), so failed/finished and live
+ * runs both fall through to Runs — the only tab that actually lists them.
  */
 function nonSuppressedDetailRoute(
   report: SignalReport,
@@ -59,8 +61,8 @@ function nonSuppressedDetailRoute(
   | "/code/inbox/runs/$reportId"
   | "/code/inbox/reports/$reportId" {
   if (isPullRequestReport(report)) return "/code/inbox/pulls/$reportId";
-  if (isAgentRunReport(report)) return "/code/inbox/runs/$reportId";
-  return "/code/inbox/reports/$reportId";
+  if (isReportTabReport(report)) return "/code/inbox/reports/$reportId";
+  return "/code/inbox/runs/$reportId";
 }
 
 function DismissedReportDetailContent({ report }: { report: SignalReport }) {
