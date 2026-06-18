@@ -311,6 +311,17 @@ export function useAgentChat({
           }
           break;
         }
+      } catch (err) {
+        // A `getPreviewToken` throw (initial mint or re-mint) lands here —
+        // `pump` already handles its own errors. Without this the rejection
+        // would slip past `finally` (which only flips status) and the user
+        // would see the stream quietly stop.
+        if (epochRef.current === epoch && !controller.signal.aborted) {
+          store.setError(
+            chatId,
+            err instanceof Error ? err.message : "Preview session unavailable.",
+          );
+        }
       } finally {
         if (epochRef.current === epoch) {
           streamingRef.current = false;
