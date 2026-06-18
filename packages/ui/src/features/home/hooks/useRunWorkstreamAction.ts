@@ -106,11 +106,15 @@ export function useRunWorkstreamAction() {
           const preferredModel = action.model ?? lastUsedModel ?? undefined;
           let model = preferredModel;
           if (cloudRegion) {
-            model = await modelResolver.resolveDefaultModel(
+            // The resolver swallows transient failures and returns undefined; fall
+            // back to the preferred id so a gateway outage degrades like the old
+            // code (a stale id may still 403) instead of hard-blocking valid runs.
+            const resolvedModel = await modelResolver.resolveDefaultModel(
               getCloudUrlFromRegion(cloudRegion),
               adapter,
               preferredModel,
             );
+            model = resolvedModel ?? preferredModel;
           }
           if (!model) {
             pendingTaskPromptStoreApi.clear(pendingTaskKey);

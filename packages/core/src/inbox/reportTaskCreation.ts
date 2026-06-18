@@ -16,6 +16,22 @@ export interface PreviewConfigOption {
 }
 
 /**
+ * Flatten the (possibly nested) choices into the set of selectable values.
+ * The gateway may return models either flat or wrapped in labelled groups, so
+ * this mirrors `flattenConfigValues` in the TaskInput picker — a model nested in
+ * a group must still count as available.
+ */
+function flattenChoiceValues(choices: PreviewConfigChoice[]): string[] {
+  return choices.flatMap((choice) =>
+    choice.options
+      ? flattenChoiceValues(choice.options)
+      : choice.value
+        ? [choice.value]
+        : [],
+  );
+}
+
+/**
  * Pick the model id out of the agent's preview-config options.
  *
  * When `preferredModel` is supplied (e.g. the user's persisted last-used model)
@@ -37,7 +53,8 @@ export function selectModelFromOptions(
   }
   if (
     preferredModel &&
-    modelOption.options?.some((o) => o.value === preferredModel)
+    modelOption.options &&
+    flattenChoiceValues(modelOption.options).includes(preferredModel)
   ) {
     return preferredModel;
   }
