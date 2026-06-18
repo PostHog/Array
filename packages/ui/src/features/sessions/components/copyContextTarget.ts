@@ -12,8 +12,9 @@ export function getGithubRefUrlFromEventTarget(
   // right-click target is an SVGElement that still supports `closest()`.
   if (!(target instanceof Element)) return null;
   return (
-    target.closest<HTMLElement>(`[${GITHUB_REF_URL_ATTR}]`)?.dataset
-      .githubRefUrl ?? null
+    target
+      .closest(`[${GITHUB_REF_URL_ATTR}]`)
+      ?.getAttribute(GITHUB_REF_URL_ATTR) ?? null
   );
 }
 

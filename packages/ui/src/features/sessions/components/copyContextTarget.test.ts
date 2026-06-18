@@ -1,3 +1,4 @@
+import { GITHUB_REF_URL_ATTR } from "@posthog/ui/features/editor/components/GithubRefChip";
 import { describe, expect, it, vi } from "vitest";
 import {
   copyFromContextMenu,
@@ -12,7 +13,7 @@ function buildDom(): {
 } {
   document.body.innerHTML = `
     <div id="conversation">
-      <span data-github-ref-url="https://github.com/PostHog/posthog/pull/23985">
+      <span ${GITHUB_REF_URL_ATTR}="https://github.com/PostHog/posthog/pull/23985">
         <button id="chip"><svg id="icon"></svg><span id="label">PostHog/posthog#23985</span></button>
       </span>
       <p id="outside">just some prose</p>
@@ -35,6 +36,7 @@ describe("getGithubRefUrlFromEventTarget", () => {
   }>([
     { name: "a nested icon", pick: (dom) => dom.icon, expected: CHIP_URL },
     { name: "the label", pick: (dom) => dom.label, expected: CHIP_URL },
+    { name: "the chip button", pick: (dom) => dom.chip, expected: CHIP_URL },
     { name: "non-chip prose", pick: (dom) => dom.outside, expected: null },
     { name: "a non-element target", pick: () => null, expected: null },
   ])("resolves $expected when the target is $name", ({ pick, expected }) => {

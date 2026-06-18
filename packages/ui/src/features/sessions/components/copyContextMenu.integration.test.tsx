@@ -7,7 +7,7 @@ import { ContextMenu, Theme } from "@radix-ui/themes";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useRef } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const PR_URL = "https://github.com/PostHog/posthog/pull/63995";
 
@@ -62,6 +62,10 @@ function Harness() {
 }
 
 describe("conversation context-menu copy (integration)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("copies the PR URL when right-clicking the chip and choosing Copy", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
@@ -77,5 +81,39 @@ describe("conversation context-menu copy (integration)", () => {
 
     // The write is deferred until after the menu closes (focus race), so wait.
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(PR_URL));
+  });
+
+  it("falls back to the text selection when the right-click misses a chip", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      toString: () => "some selected prose",
+    } as Selection);
+
+    render(<Harness />);
+
+    fireEvent.contextMenu(screen.getByText(/The draft PR is up/));
+    await userEvent.click(await screen.findByText("Copy"));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("some selected prose"),
+    );
+  });
+
+  it("copies nothing when there is neither a chip URL nor a selection", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      toString: () => "",
+    } as Selection);
+
+    render(<Harness />);
+
+    fireEvent.contextMenu(screen.getByText(/The draft PR is up/));
+    await userEvent.click(await screen.findByText("Copy"));
+
+    // Flush the deferred-write tick so a wrongful copy would have fired by now.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(writeText).not.toHaveBeenCalled();
   });
 });
