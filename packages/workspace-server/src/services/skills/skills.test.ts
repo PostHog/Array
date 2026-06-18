@@ -30,7 +30,6 @@ let repoSkillsDir: string;
 function makeService(): SkillsService {
   const plugin = {
     getPluginPath: () => pluginPath,
-    mirrorUserSkills: async () => {},
   } as unknown as PosthogPluginService;
   const folders = {
     getFolders: async () => [{ path: folderPath, name: "my-repo" }],
@@ -220,7 +219,7 @@ describe("codex skills", () => {
     expect(codexSkills[0]?.editable).toBe(false);
   });
 
-  it("imports a codex skill into the user skills dir and takes mirror ownership", async () => {
+  it("imports a codex skill into the user skills dir", async () => {
     await mkdir(codexHome.dir, { recursive: true });
     await createSkill(codexHome.dir, "codex-only");
     const service = makeService();
@@ -233,14 +232,10 @@ describe("codex skills", () => {
     expect(result.path).toBe(target);
     const content = await service.readSkillFile(target, "SKILL.md");
     expect(content).toContain("codex-only");
-
-    const state = JSON.parse(
-      await (await import("node:fs/promises")).readFile(
-        path.join(codexHome.dir, ".posthog-mirror.json"),
-        "utf-8",
-      ),
+    // The original Codex skill is left untouched — we copy, never mirror back.
+    expect(existsSync(path.join(codexHome.dir, "codex-only", "SKILL.md"))).toBe(
+      true,
     );
-    expect(state.mirrored).toContain("codex-only");
   });
 
   it("rejects importing paths outside the codex skills dir", async () => {

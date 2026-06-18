@@ -74,3 +74,29 @@ describe("spawnCodexProcess developer instructions", () => {
     expect(args).toContain('developer_instructions="a\\\\b\\n\\"c"');
   });
 });
+
+describe("spawnCodexProcess codex home", () => {
+  it("sets CODEX_HOME on the child env when provided", () => {
+    spawnMock.mockClear();
+    spawnMock.mockReturnValue(makeFakeChild());
+
+    spawnCodexProcess({
+      logger: new Logger({ debug: false }),
+      codexHome: "/data/codex-home",
+    });
+
+    const env = spawnMock.mock.calls[0][2].env;
+    expect(env.CODEX_HOME).toBe("/data/codex-home");
+  });
+
+  it("does not inject CODEX_HOME when not provided", () => {
+    spawnMock.mockClear();
+    spawnMock.mockReturnValue(makeFakeChild());
+
+    spawnCodexProcess({ logger: new Logger({ debug: false }) });
+
+    // Inherits the ambient value (if any) without the adapter adding its own.
+    const env = spawnMock.mock.calls[0][2].env;
+    expect(env.CODEX_HOME).toBe(process.env.CODEX_HOME);
+  });
+});

@@ -67,6 +67,7 @@ import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import { loadSessionEnvOverrides } from "../session-env/loader";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
+import { prepareCodexHome } from "./codex-home";
 import { discoverExternalPlugins } from "./discover-plugins";
 import {
   AGENT_AUTH_ADAPTER,
@@ -684,11 +685,24 @@ When creating pull requests, add the following footer at the end of the PR descr
         systemPromptOverride,
       );
 
+      const codexHome =
+        adapter === "codex"
+          ? await prepareCodexHome({
+              appDataPath: this.storagePaths.appDataPath,
+              bundledSkillsDir: join(
+                this.posthogPluginService.getPluginPath(),
+                "skills",
+              ),
+              log: this.log,
+            })
+          : undefined;
+
       const acpConnection = await agent.run(taskId, taskRunId, {
         adapter,
         gatewayUrl: proxyUrl,
         codexBinaryPath:
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
+        codexHome,
         model,
         reasoningEffort: adapter === "codex" ? effort : undefined,
         developerInstructions:
@@ -781,6 +795,10 @@ When creating pull requests, add the following footer at the end of the PR descr
           {
             userDataDir: this.storagePaths.appDataPath,
             repoPath,
+            bundledSkillsDir: join(
+              this.posthogPluginService.getPluginPath(),
+              "skills",
+            ),
           },
           this.log,
         );

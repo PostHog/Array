@@ -19,6 +19,12 @@ export interface CodexProcessOptions {
    */
   developerInstructions?: string;
   binaryPath?: string;
+  /**
+   * Private CODEX_HOME for this process. codex-acp scans `$CODEX_HOME/skills`
+   * (for PostHog's bundled + Claude skills) on top of `$HOME/.agents/skills`
+   * (the user's own Codex skills), so this never touches the shared dir.
+   */
+  codexHome?: string;
   logger?: Logger;
   processCallbacks?: ProcessSpawnedCallback;
   settings?: CodexSettings;
@@ -120,6 +126,10 @@ export function spawnCodexProcess(options: CodexProcessOptions): CodexProcess {
 
   if (options.apiKey) {
     env.POSTHOG_GATEWAY_API_KEY = options.apiKey;
+  }
+
+  if (options.codexHome) {
+    env.CODEX_HOME = options.codexHome;
   }
 
   const { command, args } = findCodexBinary(options);
