@@ -49,19 +49,18 @@ describe("createAgentChatMapper", () => {
     expect(mapper.apply(ev("user_message", { text: "" }))).toEqual([]);
   });
 
-  it("swallows the echo of an optimistically-seeded message", () => {
-    const mapper = createAgentChatMapper();
-    mapper.seedUserMessage("hello");
-    expect(mapper.apply(ev("user_message", { text: "hello" }))).toEqual([]);
-  });
-
-  it("swallows the echo even when the runner adds trailing whitespace", () => {
-    const mapper = createAgentChatMapper();
-    mapper.seedUserMessage("hello");
-    // Runners commonly normalize by adding a trailing newline — that mustn't
-    // break dedup or the user sees their bubble twice.
-    expect(mapper.apply(ev("user_message", { text: "hello\n" }))).toEqual([]);
-  });
+  it.each([
+    ["exact match", "hello", "hello"],
+    ["trailing newline", "hello", "hello\n"],
+    ["leading spaces", "hello", "  hello"],
+  ])(
+    "swallows the echo of an optimistically-seeded message (%s)",
+    (_, seeded, echoed) => {
+      const mapper = createAgentChatMapper();
+      mapper.seedUserMessage(seeded);
+      expect(mapper.apply(ev("user_message", { text: echoed }))).toEqual([]);
+    },
+  );
 
   it("swallows echoes out of order across rapid sends", () => {
     const mapper = createAgentChatMapper();
