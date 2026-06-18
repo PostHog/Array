@@ -20,6 +20,8 @@ export interface FreeformThreadState {
   /** Which version is live (undo/redo moves this). */
   currentVersionId: string | null;
   isStreaming: boolean;
+  /** True while an autosave is in flight (drives the toolbar's saving spinner). */
+  isSaving: boolean;
   lastTool: string | null;
   /** Agent/stream error (chat-level). */
   error: string | null;
@@ -35,6 +37,7 @@ export const EMPTY_FREEFORM_THREAD: FreeformThreadState = {
   versions: [],
   currentVersionId: null,
   isStreaming: false,
+  isSaving: false,
   lastTool: null,
   error: null,
   runtimeError: null,
@@ -52,10 +55,12 @@ interface FreeformChatStore {
   redo: (threadId: string) => void;
   setRuntimeError: (threadId: string, message: string | null) => void;
   /**
-   * Cancel: discard in-memory edits and restore the thread to the saved record
-   * (code + history). Unlike ensureCode this overwrites the live state.
+   * Revert: when viewing a non-latest version, make it the head (drop the newer
+   * versions) and autosave. The canvas then continues from this version.
    */
-  revertToSaved: (threadId: string, record: SavedFreeform) => void;
+  revert: (threadId: string) => void;
+  /** Cancel a version browse: jump back to the latest version (no save). */
+  goToLatest: (threadId: string) => void;
 
   // Stream handlers (driven by the subscription registrar).
   appendProse: (threadId: string, text: string) => void;
@@ -76,6 +81,11 @@ function newId(): string {
   return crypto.randomUUID();
 }
 
+// The dashboardId a thread persists to ("dashboard:<id>" → "<id>").
+function dashboardIdOf(threadId: string): string {
+  return threadId.replace(/^dashboard:/, "");
+}
+
 export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
   const patch = (
     threadId: string,
@@ -87,6 +97,26 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         [threadId]: fn(s.threads[threadId] ?? EMPTY_FREEFORM_THREAD),
       },
     }));
+
+  // Autosave the current code + history to the backend, toggling isSaving so the
+  // toolbar can show a spinner. Never throws.
+  const persist = async (threadId: string) => {
+    const t = get().threads[threadId];
+    if (!t) return;
+    patch(threadId, (prev) => ({ ...prev, isSaving: true }));
+    try {
+      await hostClient().dashboards.saveFreeform.mutate({
+        id: dashboardIdOf(threadId),
+        code: t.code,
+        versions: t.versions,
+        currentVersionId: t.currentVersionId ?? undefined,
+      });
+    } catch (error) {
+      log.error("Freeform autosave failed", { error });
+    } finally {
+      patch(threadId, (prev) => ({ ...prev, isSaving: false }));
+    }
+  };
 
   return {
     threads: {},
@@ -192,18 +222,26 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
       patch(threadId, (prev) => ({ ...prev, runtimeError: message }));
     },
 
-    revertToSaved: (threadId, record) => {
-      // Cancel: drop in-memory edits, restoring the saved code + history. Unlike
-      // ensureCode, this overwrites whatever the thread currently holds.
-      patch(threadId, (prev) => ({
-        ...prev,
-        code: record.code ?? "",
-        versions: record.versions ?? [],
-        currentVersionId:
-          record.currentVersionId ?? record.versions?.at(-1)?.id ?? null,
-        runtimeError: null,
-        pendingPrompt: null,
-      }));
+    revert: (threadId) => {
+      // Adopt the version being viewed: drop everything after it so it becomes
+      // the head, then autosave.
+      patch(threadId, (prev) => {
+        const idx = prev.versions.findIndex(
+          (v) => v.id === prev.currentVersionId,
+        );
+        if (idx === -1) return prev;
+        return { ...prev, versions: prev.versions.slice(0, idx + 1) };
+      });
+      void persist(threadId);
+    },
+
+    goToLatest: (threadId) => {
+      // Cancel a browse: jump to the head version (already saved, no persist).
+      patch(threadId, (prev) => {
+        const head = prev.versions.at(-1);
+        if (!head) return prev;
+        return { ...prev, code: head.code, currentVersionId: head.id };
+      });
     },
 
     appendProse: (threadId, text) => {
@@ -226,6 +264,7 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
     },
 
     finish: (threadId) => {
+      let committed = false;
       patch(threadId, (prev) => {
         // Commit a new version from the streamed code (Q8: linear-discard — drop
         // any redo tail beyond the current pointer before appending).
@@ -251,6 +290,7 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
           prompt: prev.pendingPrompt ?? undefined,
           createdAt: Date.now(),
         };
+        committed = true;
         return {
           ...prev,
           isStreaming: false,
@@ -260,6 +300,8 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
           currentVersionId: version.id,
         };
       });
+      // Autosave the new version.
+      if (committed) void persist(threadId);
     },
 
     fail: (threadId, message) => {

@@ -28,14 +28,13 @@ import {
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
-import { AlertDialog, Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import {
   Outlet,
   useNavigate,
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
-import { useState } from "react";
 
 function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
@@ -154,11 +153,11 @@ function DashboardEditControls({
   );
 }
 
-// Edit toggle + Save + Fork + Cancel for a FREEFORM canvas — mirrors the
-// json-render DashboardEditControls flow. Agent turns + undo/redo are in-memory;
-// Save is enabled only when the live code differs from the saved record (dirty);
-// Cancel discards in-memory edits back to the saved record (confirming if dirty);
-// Fork copies the current code to a new record.
+// Edit toggle + autosave status + Fork for a FREEFORM canvas. Freeform
+// autosaves every turn, so the toolbar shows a saving spinner rather than a Save
+// button. When the user undoes to an older version, the autosave status is
+// replaced by Revert (adopt the viewed version, dropping newer ones) + Cancel
+// (jump back to the latest). Fork copies the current code to a new record.
 function FreeformEditControls({
   channelId,
   dashboardId,
@@ -170,60 +169,19 @@ function FreeformEditControls({
   const editing = useIsDashboardEditing(dashboardId);
   const setEditing = useDashboardEditStore((s) => s.setEditing);
   const { dashboard } = useDashboard(dashboardId);
-  const { forkFreeform, saveFreeformDashboard, isCreating, isSavingFreeform } =
-    useDashboardMutations();
+  const { forkFreeform, isCreating } = useDashboardMutations();
 
   const threadId = threadIdFor(dashboardId);
-  const { code, versions, currentVersionId, isStreaming } =
+  const { code, versions, currentVersionId, isSaving } =
     useFreeformThread(threadId);
-  const revertToSaved = useFreeformChatStore((s) => s.revertToSaved);
+  const revert = useFreeformChatStore((s) => s.revert);
+  const goToLatest = useFreeformChatStore((s) => s.goToLatest);
 
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
-  // Dirty = the live source differs from what's persisted (mirrors the spec
-  // comparison the json-render controls do).
-  const savedCode = dashboard?.code ?? "";
   const hasCode = code.length > 0;
-  const dirty = hasCode && code !== savedCode;
-
-  // The saved snapshot Cancel reverts to (and ensureCode seeds from on load).
-  const savedRecord = {
-    code: dashboard?.code,
-    versions: dashboard?.versions,
-    currentVersionId: dashboard?.currentVersionId,
-  };
-
-  const onToggleEdit = () => {
-    if (!editing) {
-      setEditing(dashboardId, true);
-      return;
-    }
-    // Cancelling: confirm only when there are unsaved edits to lose.
-    if (dirty) setConfirmOpen(true);
-    else setEditing(dashboardId, false);
-  };
-
-  const onConfirmCancel = () => {
-    revertToSaved(threadId, savedRecord);
-    setEditing(dashboardId, false);
-    setConfirmOpen(false);
-  };
-
-  const onSave = () => {
-    if (!dirty || isStreaming) return;
-    saveFreeformDashboard(
-      dashboardId,
-      code,
-      versions,
-      currentVersionId ?? undefined,
-    )
-      .then(() => toast.success("Canvas saved"))
-      .catch((error) => {
-        toast.error("Couldn't save canvas", {
-          description: error instanceof Error ? error.message : String(error),
-        });
-      });
-  };
+  // Viewing the head version (or there's no history yet) → autosave is live.
+  // Otherwise the user has undone to an older version and is browsing.
+  const onLatest =
+    versions.length === 0 || currentVersionId === versions.at(-1)?.id;
 
   const onFork = async () => {
     if (!code) return;
@@ -250,67 +208,56 @@ function FreeformEditControls({
 
   return (
     <Flex align="center" gap="2" className="no-drag">
+      {editing &&
+        hasCode &&
+        (onLatest ? (
+          // Autosave status — a non-interactive button showing a spinner while a
+          // save is in flight, "Saved" otherwise.
+          <Button variant="outline" size="sm" disabled loading={isSaving}>
+            Saved
+          </Button>
+        ) : (
+          <>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => revert(threadId)}
+            >
+              Revert to this version
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => goToLatest(threadId)}
+            >
+              Cancel
+            </Button>
+          </>
+        ))}
       {editing && (
-        <>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={!dirty || isSavingFreeform || isStreaming}
-            onClick={onSave}
-          >
-            Save
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!hasCode || isCreating}
-            onClick={onFork}
-          >
-            <GitForkIcon size={14} />
-            Save as fork
-          </Button>
-        </>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!hasCode || isCreating}
+          onClick={onFork}
+        >
+          <GitForkIcon size={14} />
+          Save as fork
+        </Button>
       )}
       <Button
         variant="outline"
         size="sm"
         data-selected={editing}
-        onClick={onToggleEdit}
+        onClick={() => setEditing(dashboardId, !editing)}
       >
         {editing ? (
           <XIcon size={14} />
         ) : (
           <PencilSimpleIcon size={14} weight="regular" />
         )}
-        {editing ? "Cancel" : "Edit"}
+        {editing ? "Done" : "Edit"}
       </Button>
-
-      <AlertDialog.Root
-        open={confirmOpen}
-        onOpenChange={(open) => !open && setConfirmOpen(false)}
-      >
-        <AlertDialog.Content maxWidth="440px" size="2">
-          <AlertDialog.Title className="text-base">
-            Discard unsaved changes?
-          </AlertDialog.Title>
-          <AlertDialog.Description className="text-sm">
-            Your edits since the last save will be lost and the canvas will
-            revert to the last saved version.
-          </AlertDialog.Description>
-          <Flex justify="end" gap="2" mt="4">
-            <AlertDialog.Cancel>
-              <Button variant="outline" size="sm">
-                Keep editing
-              </Button>
-            </AlertDialog.Cancel>
-            <AlertDialog.Action>
-              <Button variant="destructive" size="sm" onClick={onConfirmCancel}>
-                Discard changes
-              </Button>
-            </AlertDialog.Action>
-          </Flex>
-        </AlertDialog.Content>
-      </AlertDialog.Root>
     </Flex>
   );
 }
