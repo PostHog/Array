@@ -38,8 +38,8 @@ export const FREEFORM_WHITELIST: WhitelistEntry[] = [
   // cheapest dependency and keeps shared canvases visually on-brand.
   {
     name: "@posthog/quill",
-    version: "latest",
-    esm: `${ESM}/@posthog/quill?external=react,react-dom`,
+    version: "0.3.0-beta.17",
+    esm: `${ESM}/@posthog/quill@0.3.0-beta.17?external=react,react-dom`,
   },
   // One charting library (the conventional React pick).
   {

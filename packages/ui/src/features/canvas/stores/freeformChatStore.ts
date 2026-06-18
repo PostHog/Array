@@ -344,7 +344,10 @@ function appendToLastAssistant(
 ): FreeformMessage[] {
   const last = messages[messages.length - 1];
   if (!last || last.role !== "assistant") return messages;
-  const joined = last.text ? `${last.text}\n${text}` : text;
+  // Prose arrives as suffix DELTAs of the (trimmed) accumulated prose string, so
+  // each delta already carries its own leading whitespace — concatenate directly
+  // rather than inserting a newline (which would split sentences mid-stream).
+  const joined = `${last.text}${text}`;
   return messages.map((m, i) =>
     i === messages.length - 1 ? { ...m, text: joined } : m,
   );

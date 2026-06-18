@@ -5,7 +5,7 @@ import {
   type HostToCanvasMessage,
 } from "@posthog/core/canvas/freeformSchemas";
 import { logger } from "@posthog/ui/shell/logger";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildSandboxDocument, type SandboxMode } from "./sandboxRuntime";
 
 const log = logger.scope("freeform-canvas");
@@ -45,8 +45,11 @@ export function FreeformCanvas({
   analytics,
 }: FreeformCanvasProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [ready, setReady] = useState(false);
   const [height, setHeight] = useState<number | null>(null);
+  // Whether the iframe has announced it's ready for `init`. A ref, not state: it
+  // only gates an imperative postMessage and is never shown on screen, so it
+  // shouldn't trigger re-renders.
+  const readyRef = useRef(false);
 
   // The document is keyed on mode + the analytics host (which the CSP must open
   // for posthog-js), not on code: code is injected via `init`, so changing it
@@ -57,16 +60,47 @@ export function FreeformCanvas({
     [mode, analyticsHost],
   );
 
-  // Reset ready whenever the iframe document is rebuilt.
+  // Latest props, read by the once-bound listener + the (stable) postInit.
+  const latest = useRef({
+    onDataRequest,
+    onError,
+    onRendered,
+    code,
+    mode,
+    analytics,
+  });
+  latest.current = {
+    onDataRequest,
+    onError,
+    onRendered,
+    code,
+    mode,
+    analytics,
+  };
+
+  const postInit = useCallback(() => {
+    const p = latest.current;
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        channel: "posthog-canvas",
+        type: "init",
+        code: p.code,
+        mode: p.mode,
+        analytics: p.analytics,
+      },
+      "*",
+    );
+  }, []);
+
+  // The iframe reloads only when srcDoc changes (mode / analytics host); on
+  // reload it re-announces "ready", so mark it not-ready until then. Ref write
+  // only — no state update, no extra render.
   // biome-ignore lint/correctness/useExhaustiveDependencies: srcDoc identity tracks a reload.
-  useEffect(() => setReady(false), [srcDoc]);
+  useEffect(() => {
+    readyRef.current = false;
+  }, [srcDoc]);
 
-  // Latest callbacks without re-subscribing the message listener every render.
-  const handlers = useRef({ onDataRequest, onError, onRendered });
-  handlers.current = { onDataRequest, onError, onRendered };
-
-  // Subscribed once for the component's life; reads latest callbacks via the
-  // `handlers` ref so it never needs to re-bind.
+  // Subscribed once for the component's life; reads latest props via the ref.
   useEffect(() => {
     const post = (msg: HostToCanvasMessage) => {
       iframeRef.current?.contentWindow?.postMessage(msg, "*");
@@ -75,11 +109,12 @@ export function FreeformCanvas({
     const route = async (msg: CanvasToHostMessage) => {
       switch (msg.type) {
         case "ready":
-          setReady(true);
+          readyRef.current = true;
+          postInit();
           break;
         case "data-request": {
           try {
-            const result = await handlers.current.onDataRequest(
+            const result = await latest.current.onDataRequest(
               msg.method,
               msg.payload,
             );
@@ -103,10 +138,10 @@ export function FreeformCanvas({
         }
         case "error":
           log.warn("Freeform canvas error", { message: msg.message });
-          handlers.current.onError?.(msg.message, msg.stack);
+          latest.current.onError?.(msg.message, msg.stack);
           break;
         case "rendered":
-          handlers.current.onRendered?.();
+          latest.current.onRendered?.();
           break;
         case "resize":
           setHeight(msg.height);
@@ -125,16 +160,12 @@ export function FreeformCanvas({
 
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [postInit]);
 
-  // Push the current code once the iframe is ready, and on every code change.
+  // Re-send init when the code / mode / analytics change, if the iframe is ready.
   useEffect(() => {
-    if (!ready) return;
-    iframeRef.current?.contentWindow?.postMessage(
-      { channel: "posthog-canvas", type: "init", code, mode, analytics },
-      "*",
-    );
-  }, [ready, code, mode, analytics]);
+    if (readyRef.current) postInit();
+  }, [postInit]);
 
   return (
     <iframe

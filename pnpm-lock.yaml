@@ -19,8 +19,8 @@ catalogs:
       specifier: ^2.1.10
       version: 2.1.10
     '@posthog/quill':
-      specifier: 0.3.0-beta.14
-      version: 0.3.0-beta.14
+      specifier: 0.3.0-beta.17
+      version: 0.3.0-beta.17
     '@radix-ui/themes':
       specifier: ^3.2.1
       version: 3.3.0
@@ -193,7 +193,7 @@ importers:
         version: link:../../packages/platform
       '@posthog/quill':
         specifier: 'catalog:'
-        version: 0.3.0-beta.14(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)
+        version: 0.3.0-beta.17(@base-ui/react@1.3.0(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)
       '@posthog/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -1358,7 +1358,7 @@ importers:
         version: 2.1.10(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@posthog/quill':
         specifier: 'catalog:'
-        version: 0.3.0-beta.14(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)
+        version: 0.3.0-beta.17(@base-ui/react@1.3.0(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)
       '@posthog/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/typescript
@@ -4554,10 +4554,11 @@ packages:
       react: ^18.3.1 || ^19.0.0
       react-dom: ^18.3.1 || ^19.0.0
 
-  '@posthog/quill@0.3.0-beta.14':
-    resolution: {integrity: sha512-TH+PFpPS2jc/U3JifAfzZx0wkjRPxOBoHKc7lzW6zxZi96XC7AjrG5JaB7trRlFoF1ffvmyJKenJYtSpNGdA8Q==}
+  '@posthog/quill@0.3.0-beta.17':
+    resolution: {integrity: sha512-lroFp8m5koA9KZcWvrpEbUCM7TWXvrYcwJ+DaqzBEsYA8a27jvezPbrnEJtHdPMe+lBTebN/C7OgrdKsI3H0pw==}
     engines: {node: '>=20'}
     peerDependencies:
+      '@base-ui/react': ^1.3.0
       react: ^18.3.1 || ^19.0.0
       react-dom: ^18.3.1 || ^19.0.0
       tailwindcss: ^4.0.0
@@ -17173,7 +17174,7 @@ snapshots:
       react-dom: 19.1.0(react@19.1.0)
       simple-statistics: 7.8.9
 
-  '@posthog/quill@0.3.0-beta.14(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)':
+  '@posthog/quill@0.3.0-beta.17(@base-ui/react@1.3.0(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)':
     dependencies:
       '@base-ui/react': 1.3.0(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       class-variance-authority: 0.7.1
@@ -17184,8 +17185,6 @@ snapshots:
       react-resizable-panels: 4.10.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       tailwind-merge: 2.6.1
       tailwindcss: 4.2.2
-    transitivePeerDependencies:
-      - '@types/react'
 
   '@posthog/rollup-plugin@1.4.0(rollup@4.57.1)':
     dependencies:

@@ -35,9 +35,12 @@ const FALLBACK_DISTINCT_ID = "freeform-canvas";
 @injectable()
 export class CanvasDataService {
   private readonly log: ScopedLogger;
-  // The project's public capture key (phc_…), fetched once and reused.
-  private projectToken: string | undefined;
+  // The public capture key (phc_…) per project id. Keyed by project so switching
+  // projects in the same session doesn't reuse the previous project's key (this
+  // is a singleton service).
+  private readonly projectTokens = new Map<number, string>();
   // The signed-in user's distinct_id, the default attribution in edit mode.
+  // Per-user (not per-project), so a single cached value is correct.
   private userDistinctId: string | undefined;
 
   constructor(
@@ -133,7 +136,8 @@ export class CanvasDataService {
     apiHost: string,
     projectId: number,
   ): Promise<string> {
-    if (this.projectToken) return this.projectToken;
+    const cached = this.projectTokens.get(projectId);
+    if (cached) return cached;
     const res = await this.authService.authenticatedFetch(
       fetch,
       `${apiHost}/api/projects/${projectId}/`,
@@ -143,8 +147,8 @@ export class CanvasDataService {
     }
     const data = (await res.json()) as { api_token?: string };
     if (!data.api_token) throw new Error("Project has no capture key");
-    this.projectToken = data.api_token;
-    return this.projectToken;
+    this.projectTokens.set(projectId, data.api_token);
+    return data.api_token;
   }
 
   // The signed-in user's distinct_id (so edit-mode captures attribute to "me" in
