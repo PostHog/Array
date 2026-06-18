@@ -89,7 +89,10 @@ export function ConfigureAgentsSection() {
   } = useSignalSourceManager();
   const { hasGithubIntegration, isLoadingIntegrations } =
     useRepositoryIntegration();
-  const { isLoading: isLoadingSlackIntegrations } = useIntegrations();
+  const {
+    isLoading: isLoadingSlackIntegrations,
+    isError: isIntegrationsError,
+  } = useIntegrations();
   const isLoadingSlack = isLoadingIntegrations || isLoadingSlackIntegrations;
   const showSetupTask = useFeatureFlag(SELF_DRIVING_SETUP_TASK_FLAG);
   const userAutostartPriority =
@@ -97,6 +100,7 @@ export function ConfigureAgentsSection() {
 
   useTrackAgentsViewed({
     isLoading: isLoading || isLoadingIntegrations || userAutonomyConfigLoading,
+    isError: isIntegrationsError,
     hasGithubIntegration,
     responderTotalCount: Object.keys(displayValues).length,
     responderEnabledCount: Object.values(displayValues).filter(Boolean).length,

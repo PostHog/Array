@@ -5,6 +5,14 @@ import { useEffect, useRef } from "react";
 export interface TrackAgentsViewedInput {
   /** Gate the event until responder / integration / autonomy data has settled. */
   isLoading: boolean;
+  /**
+   * True when a backing fetch errored. An errored request also leaves
+   * `isLoading` false, so without this gate the event would fire with default
+   * values (e.g. `has_github_integration: false`) and `firedRef` would lock that
+   * bogus view in for the rest of the component's lifetime — mirrors the
+   * `!isSuccess` gate in `useTrackInboxViewed`.
+   */
+  isError: boolean;
   hasGithubIntegration: boolean;
   responderTotalCount: number;
   responderEnabledCount: number;
@@ -22,6 +30,7 @@ export interface TrackAgentsViewedInput {
 export function useTrackAgentsViewed(input: TrackAgentsViewedInput): void {
   const {
     isLoading,
+    isError,
     hasGithubIntegration,
     responderTotalCount,
     responderEnabledCount,
@@ -32,7 +41,10 @@ export function useTrackAgentsViewed(input: TrackAgentsViewedInput): void {
   const firedRef = useRef(false);
   useEffect(() => {
     if (firedRef.current) return;
-    if (isLoading) return;
+    // Don't fire (and lock `firedRef`) until the data settled successfully: an
+    // errored fetch also clears `isLoading`, and firing then would capture a
+    // bogus default view that a later refetch can't correct.
+    if (isLoading || isError) return;
     firedRef.current = true;
     track(ANALYTICS_EVENTS.AGENTS_VIEWED, {
       has_github_integration: hasGithubIntegration,
@@ -43,6 +55,7 @@ export function useTrackAgentsViewed(input: TrackAgentsViewedInput): void {
     });
   }, [
     isLoading,
+    isError,
     hasGithubIntegration,
     responderTotalCount,
     responderEnabledCount,
