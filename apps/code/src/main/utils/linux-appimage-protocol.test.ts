@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./logger.js", () => ({
+vi.mock("./logger", () => ({
   logger: {
     scope: () => ({
       info: vi.fn(),
@@ -37,7 +37,10 @@ const originalAppImage = process.env.APPIMAGE;
 const originalAppDir = process.env.APPDIR;
 
 function setPlatform(platform: NodeJS.Platform): void {
-  Object.defineProperty(process, "platform", { value: platform });
+  Object.defineProperty(process, "platform", {
+    value: platform,
+    configurable: true,
+  });
 }
 
 beforeEach(() => {
