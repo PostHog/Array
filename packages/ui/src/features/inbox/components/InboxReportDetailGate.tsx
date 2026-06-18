@@ -1,3 +1,7 @@
+import {
+  isPullRequestReport,
+  isReportTabReport,
+} from "@posthog/core/inbox/reportMembership";
 import { Spinner } from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
 import { DetailBackLink } from "@posthog/ui/features/inbox/components/DetailBackLink";
@@ -7,7 +11,8 @@ import {
   useReportOpenTracker,
 } from "@posthog/ui/features/inbox/hooks/useReportOpenTracker";
 import { Flex, Text } from "@radix-ui/themes";
-import type { ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { type ReactNode, useEffect } from "react";
 
 interface InboxReportDetailGateProps {
   reportId: string;
@@ -20,6 +25,25 @@ interface InboxReportDetailGateProps {
   backLabel: string;
   missingCopy: string;
   children: (report: SignalReport) => ReactNode;
+}
+
+type InboxDetailRoute =
+  | "/code/inbox/pulls/$reportId"
+  | "/code/inbox/reports/$reportId"
+  | "/code/inbox/runs/$reportId"
+  | "/code/inbox/dismissed/$reportId";
+
+/**
+ * Detail route a non-suppressed report belongs on, by the same tab-membership
+ * predicates the inbox tabs use: Pulls when a PR exists, Reports when it belongs
+ * to the Reports tab, otherwise Runs. `isReportTabReport` already excludes
+ * `failed` and in-flight runs, so failed/finished and live runs both fall
+ * through to Runs — the only tab that actually lists them.
+ */
+function nonSuppressedDetailRoute(report: SignalReport): InboxDetailRoute {
+  if (isPullRequestReport(report)) return "/code/inbox/pulls/$reportId";
+  if (isReportTabReport(report)) return "/code/inbox/reports/$reportId";
+  return "/code/inbox/runs/$reportId";
 }
 
 /**
@@ -35,10 +59,51 @@ export function InboxReportDetailGate({
   missingCopy,
   children,
 }: InboxReportDetailGateProps) {
-  const { data: report, isLoading } = useInboxReportById(reportId);
+  const navigate = useNavigate();
+  const { data: report, isLoading, isFetching } = useInboxReportById(reportId);
   const resolvedReport = report ?? cachedReport;
 
+  // Keep the report on the route that matches its status. A status↔route mismatch
+  // happens when a URL goes stale — browser history, a bookmark, a copied deep
+  // link, or a status change in another session. A suppressed report reached via a
+  // /pulls, /reports, or /runs URL would otherwise render that tab's full triage
+  // actions (dismiss, discuss, create PR) on an out-of-pipeline report; a restored
+  // report reached via /dismissed would offer Restore and silently re-queue it
+  // (READY/RESOLVED → POTENTIAL is an allowed server-side transition). Redirect
+  // across that dismissed↔pipeline boundary, gated on a settled fetch so we act on
+  // the confirmed status rather than a pre-change cache snapshot (the detail query
+  // forces a fresh fetch on mount via `initialDataUpdatedAt: 0`).
+  const onDismissedRoute = backTo === "/code/inbox/dismissed";
+  const isSuppressed = resolvedReport?.status === "suppressed";
+  let redirectTo: InboxDetailRoute | null = null;
+  if (resolvedReport && !isFetching) {
+    if (isSuppressed && !onDismissedRoute) {
+      redirectTo = "/code/inbox/dismissed/$reportId";
+    } else if (!isSuppressed && onDismissedRoute) {
+      redirectTo = nonSuppressedDetailRoute(resolvedReport);
+    }
+  }
+  const redirectReportId = resolvedReport?.id;
+  useEffect(() => {
+    if (!redirectTo || !redirectReportId) return;
+    navigate({
+      to: redirectTo,
+      params: { reportId: redirectReportId },
+      replace: true,
+    });
+  }, [redirectTo, redirectReportId, navigate]);
+
   if (isLoading && !resolvedReport) {
+    return (
+      <Flex align="center" justify="center" className="py-16">
+        <Spinner />
+      </Flex>
+    );
+  }
+
+  if (redirectTo) {
+    // Redirecting across the dismissed↔pipeline boundary; render nothing
+    // meaningful for the frame we're leaving.
     return (
       <Flex align="center" justify="center" className="py-16">
         <Spinner />

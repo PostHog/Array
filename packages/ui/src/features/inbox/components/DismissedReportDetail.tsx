@@ -4,20 +4,14 @@ import {
   FileTextIcon,
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
-import {
-  isPullRequestReport,
-  isReportTabReport,
-} from "@posthog/core/inbox/reportMembership";
 import { Button } from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
 import { InboxDetailFrame } from "@posthog/ui/features/inbox/components/InboxDetailFrame";
 import { InboxReportDetailGate } from "@posthog/ui/features/inbox/components/InboxReportDetailGate";
-import { useInboxReportById } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useInboxRestoreReport } from "@posthog/ui/features/inbox/hooks/useInboxRestoreReport";
 import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
-import { Flex, Spinner } from "@radix-ui/themes";
+import { Spinner } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
 
 interface DismissedReportDetailProps {
   reportId: string;
@@ -29,6 +23,10 @@ interface DismissedReportDetailProps {
  * report was — summary + evidence — with a single Restore action. No triage
  * affordances (dismiss, discuss, create PR, reviewers): the report is out of the
  * pipeline until it's restored.
+ *
+ * The gate keeps reports on the route that matches their status: a no-longer-
+ * suppressed report opened here (stale URL or restored elsewhere) is redirected
+ * to its current home, so this content only ever renders a suppressed report.
  */
 export function DismissedReportDetail({
   reportId,
@@ -47,61 +45,7 @@ export function DismissedReportDetail({
   );
 }
 
-/**
- * Detail route a non-suppressed report should be viewed at, by the same
- * tab-membership predicates the inbox tabs use: Pulls when a PR exists, Reports
- * when it belongs to the Reports tab, otherwise Runs. `isReportTabReport`
- * already excludes `failed` (and in-flight runs), so failed/finished and live
- * runs both fall through to Runs — the only tab that actually lists them.
- */
-function nonSuppressedDetailRoute(
-  report: SignalReport,
-):
-  | "/code/inbox/pulls/$reportId"
-  | "/code/inbox/runs/$reportId"
-  | "/code/inbox/reports/$reportId" {
-  if (isPullRequestReport(report)) return "/code/inbox/pulls/$reportId";
-  if (isReportTabReport(report)) return "/code/inbox/reports/$reportId";
-  return "/code/inbox/runs/$reportId";
-}
-
 function DismissedReportDetailContent({ report }: { report: SignalReport }) {
-  const navigate = useNavigate();
-  // Shares the gate's detail query (same key, deduped) for its fetch state.
-  const { isFetching } = useInboxReportById(report.id);
-
-  // A dismissed-detail URL can go stale — browser history, a bookmark, or a
-  // copied deep link — after the report was restored and moved on. Restoring a
-  // non-suppressed report would silently re-queue it (READY/RESOLVED → POTENTIAL
-  // is an allowed server-side transition), so redirect such reports to wherever
-  // they now live instead of rendering the read-only dismissed view with Restore.
-  //
-  // Gate the redirect on a settled fetch (`!isFetching`): right after a dismissal
-  // the shared cache still holds the pre-dismissal record (the suppress mutation
-  // invalidates but doesn't rewrite it), and redirecting on that stale snapshot
-  // would bounce the user out of a report that really is dismissed. The detail
-  // query forces a fresh fetch on mount (`initialDataUpdatedAt: 0`), so this just
-  // waits for the real status to land.
-  const isDismissed = report.status === "suppressed";
-  const redirectTo =
-    !isDismissed && !isFetching ? nonSuppressedDetailRoute(report) : null;
-  useEffect(() => {
-    if (!redirectTo) return;
-    navigate({
-      to: redirectTo,
-      params: { reportId: report.id },
-      replace: true,
-    });
-  }, [redirectTo, navigate, report.id]);
-
-  if (!isDismissed) {
-    return (
-      <Flex align="center" justify="center" className="py-16">
-        <Spinner />
-      </Flex>
-    );
-  }
-
   return (
     <InboxDetailFrame
       report={report}
