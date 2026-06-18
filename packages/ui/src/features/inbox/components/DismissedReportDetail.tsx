@@ -10,8 +10,9 @@ import { InboxDetailFrame } from "@posthog/ui/features/inbox/components/InboxDet
 import { InboxReportDetailGate } from "@posthog/ui/features/inbox/components/InboxReportDetailGate";
 import { useInboxRestoreReport } from "@posthog/ui/features/inbox/hooks/useInboxRestoreReport";
 import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
-import { Spinner } from "@radix-ui/themes";
+import { Flex, Spinner } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 interface DismissedReportDetailProps {
   reportId: string;
@@ -42,6 +43,33 @@ export function DismissedReportDetail({
 }
 
 function DismissedReportDetailContent({ report }: { report: SignalReport }) {
+  const navigate = useNavigate();
+
+  // A dismissed-detail URL can go stale — browser history, a bookmark, or a
+  // copied deep link — after the report was restored and moved on. Restoring a
+  // non-suppressed report would silently re-queue it (READY/RESOLVED → POTENTIAL
+  // is an allowed server-side transition), so redirect to wherever the report
+  // now lives instead of rendering the read-only dismissed view with Restore.
+  const isDismissed = report.status === "suppressed";
+  useEffect(() => {
+    if (isDismissed) return;
+    navigate({
+      to: report.implementation_pr_url
+        ? "/code/inbox/pulls/$reportId"
+        : "/code/inbox/reports/$reportId",
+      params: { reportId: report.id },
+      replace: true,
+    });
+  }, [isDismissed, navigate, report.id, report.implementation_pr_url]);
+
+  if (!isDismissed) {
+    return (
+      <Flex align="center" justify="center" className="py-16">
+        <Spinner />
+      </Flex>
+    );
+  }
+
   return (
     <InboxDetailFrame
       report={report}
