@@ -55,6 +55,7 @@ export function initializePostHog(sessionId?: string) {
   }
 
   posthog.init(apiKey, {
+    defaults: "2026-05-30",
     api_host: apiHost,
     ui_host: uiHost,
     disable_session_recording: false,
