@@ -7,12 +7,10 @@ import {
   INBOX_REFETCH_INTERVAL_MS,
 } from "@posthog/core/inbox/reportFiltering";
 import {
-  computeInboxTabCounts,
   INBOX_SCOPE_FOR_YOU,
   isExcludedFromInbox,
   isPullRequestReport,
   isReportTabReport,
-  matchesReviewerScope,
   parseTeammateInboxScope,
 } from "@posthog/core/inbox/reportMembership";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
@@ -134,16 +132,21 @@ export function useInboxAllReports(options?: {
   const pullRequestTotal = pullRequestCountQuery.data?.count ?? 0;
 
   const scopedReports = useMemo(() => {
-    const byScope = ignoreScope
-      ? query.allReports
-      : query.allReports.filter((r) => matchesReviewerScope(r, scope));
+    // Reviewer scope is applied server-side via `suggested_reviewers` (see the
+    // infinite query above), so the loaded reports are already scoped. We must
+    // NOT re-filter here on the serialized `is_suggested_reviewer` boolean: the
+    // server's `suggested_reviewers` filter and that boolean can disagree (the
+    // boolean is recomputed at read time from GitHub-identity links and is
+    // `false` for some reports the filter still matches — notably failed runs).
+    // A client recheck would drop those reports from the list while the count
+    // badge — which trusts the same server filter — keeps counting them,
+    // producing a positive PR badge over an empty list.
     return searchQuery.trim()
-      ? filterReportsBySearch(byScope, searchQuery)
-      : byScope;
-  }, [query.allReports, scope, searchQuery, ignoreScope]);
+      ? filterReportsBySearch(query.allReports, searchQuery)
+      : query.allReports;
+  }, [query.allReports, searchQuery]);
 
   const counts = useMemo(() => {
-    const loaded = computeInboxTabCounts(query.allReports, scope);
     // The list is an infinite query that only holds the pages loaded so far
     // (100 per page), so the loaded-derived Reports count caps at the page size
     // and reads as a misleading "100". Reports is the dominant bucket, so derive
@@ -151,15 +154,17 @@ export function useInboxAllReports(options?: {
     // minus the non-report items the total also includes. PRs use the true
     // `pullRequestTotal` (also a real backend count), so PRs sitting past the
     // loaded page don't inflate Reports.
+    //
+    // Reviewer scope is already applied server-side, so every loaded report is
+    // in scope — no client `is_suggested_reviewer` recheck here either, to keep
+    // the Reports count consistent with the same server filter the totals use.
     const loadedOtherNonReport = query.allReports.filter(
       (r) =>
-        matchesReviewerScope(r, scope) &&
         !isExcludedFromInbox(r) &&
         !isReportTabReport(r) &&
         !isPullRequestReport(r),
     ).length;
     return {
-      ...loaded,
       // True backend counts, unaffected by the list's page-size cap.
       pulls: pullRequestTotal,
       reports: Math.max(
@@ -167,7 +172,7 @@ export function useInboxAllReports(options?: {
         query.totalCount - pullRequestTotal - loadedOtherNonReport,
       ),
     };
-  }, [query.allReports, query.totalCount, scope, pullRequestTotal]);
+  }, [query.allReports, query.totalCount, pullRequestTotal]);
 
   return {
     ...query,
