@@ -1,3 +1,4 @@
+import { eventToAsyncIterator } from "@posthog/host-trpc/eventSubscription";
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import { z } from "zod";
 import {
@@ -43,57 +44,6 @@ const stateOutput = z
     isLoading: z.boolean(),
   })
   .nullable();
-
-function subscribeBrowser<
-  TEvent extends BrowserNavigateEvent | BrowserTitleEvent | BrowserFaviconEvent,
->(event: "navigate" | "title" | "favicon") {
-  return publicProcedure
-    .input(browserIdInput)
-    .subscription(async function* (opts) {
-      const service = opts.ctx.container.get<IBrowserService>(BROWSER_SERVICE);
-      const targetBrowserId = opts.input.browserId;
-
-      let resolve: ((value: IteratorResult<TEvent>) => void) | null = null;
-      const queue: TEvent[] = [];
-      let done = false;
-
-      const listener = (data: TEvent) => {
-        if (data.browserId !== targetBrowserId) return;
-        if (resolve) {
-          const r = resolve;
-          resolve = null;
-          r({ value: data, done: false });
-        } else {
-          queue.push(data);
-        }
-      };
-
-      (service.on as (event: string, listener: (data: TEvent) => void) => void)(
-        event,
-        listener,
-      );
-
-      opts.signal?.addEventListener("abort", () => {
-        done = true;
-        service.off(event, listener as (...args: unknown[]) => void);
-        if (resolve) {
-          resolve({ value: undefined as never, done: true });
-        }
-      });
-
-      while (!done) {
-        if (queue.length > 0) {
-          yield queue.shift()!;
-        } else {
-          const next = await new Promise<IteratorResult<TEvent>>((r) => {
-            resolve = r;
-          });
-          if (next.done) break;
-          yield next.value;
-        }
-      }
-    });
-}
 
 export const browserRouter = router({
   create: publicProcedure
@@ -163,6 +113,12 @@ export const browserRouter = router({
         .reload(input.browserId),
     ),
 
+  stop: publicProcedure
+    .input(browserIdInput)
+    .mutation(({ ctx, input }) =>
+      ctx.container.get<IBrowserService>(BROWSER_SERVICE).stop(input.browserId),
+    ),
+
   getState: publicProcedure
     .input(browserIdInput)
     .output(stateOutput)
@@ -172,53 +128,48 @@ export const browserRouter = router({
         .getState(input.browserId),
     ),
 
-  onNavigate: subscribeBrowser<BrowserNavigateEvent>("navigate"),
-  onTitle: subscribeBrowser<BrowserTitleEvent>("title"),
-  onFavicon: subscribeBrowser<BrowserFaviconEvent>("favicon"),
+  onNavigate: publicProcedure
+    .input(browserIdInput)
+    .subscription(({ ctx, input, signal }) => {
+      const service = ctx.container.get<IBrowserService>(BROWSER_SERVICE);
+      return eventToAsyncIterator<BrowserNavigateEvent>(
+        (l) => service.on("navigate", l),
+        (l) => service.off("navigate", l),
+        signal,
+        (data) => data.browserId === input.browserId,
+      );
+    }),
 
-  // Fired when web content calls window.open() with a safe http/https URL.
-  onOpenUrl: publicProcedure.subscription(async function* (opts) {
-    const service = opts.ctx.container.get<IBrowserService>(BROWSER_SERVICE);
-    let resolve: ((value: IteratorResult<BrowserOpenUrlEvent>) => void) | null =
-      null;
-    const queue: BrowserOpenUrlEvent[] = [];
-    let done = false;
+  onTitle: publicProcedure
+    .input(browserIdInput)
+    .subscription(({ ctx, input, signal }) => {
+      const service = ctx.container.get<IBrowserService>(BROWSER_SERVICE);
+      return eventToAsyncIterator<BrowserTitleEvent>(
+        (l) => service.on("title", l),
+        (l) => service.off("title", l),
+        signal,
+        (data) => data.browserId === input.browserId,
+      );
+    }),
 
-    const listener = (data: BrowserOpenUrlEvent) => {
-      if (resolve) {
-        const r = resolve;
-        resolve = null;
-        r({ value: data, done: false });
-      } else {
-        queue.push(data);
-      }
-    };
+  onFavicon: publicProcedure
+    .input(browserIdInput)
+    .subscription(({ ctx, input, signal }) => {
+      const service = ctx.container.get<IBrowserService>(BROWSER_SERVICE);
+      return eventToAsyncIterator<BrowserFaviconEvent>(
+        (l) => service.on("favicon", l),
+        (l) => service.off("favicon", l),
+        signal,
+        (data) => data.browserId === input.browserId,
+      );
+    }),
 
-    (
-      service.on as (
-        event: "openUrl",
-        listener: (data: BrowserOpenUrlEvent) => void,
-      ) => void
-    )("openUrl", listener);
-
-    opts.signal?.addEventListener("abort", () => {
-      done = true;
-      service.off("openUrl", listener as (...args: unknown[]) => void);
-      if (resolve) resolve({ value: undefined as never, done: true });
-    });
-
-    while (!done) {
-      if (queue.length > 0) {
-        yield queue.shift()!;
-      } else {
-        const next = await new Promise<IteratorResult<BrowserOpenUrlEvent>>(
-          (r) => {
-            resolve = r;
-          },
-        );
-        if (next.done) break;
-        yield next.value;
-      }
-    }
+  onOpenUrl: publicProcedure.subscription(({ ctx, signal }) => {
+    const service = ctx.container.get<IBrowserService>(BROWSER_SERVICE);
+    return eventToAsyncIterator<BrowserOpenUrlEvent>(
+      (l) => service.on("openUrl", l),
+      (l) => service.off("openUrl", l),
+      signal,
+    );
   }),
 });

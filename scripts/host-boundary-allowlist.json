@@ -19,6 +19,9 @@
     "apps/code/src/main/services/secure-store/service.ts": [
       "injectable-outside-host"
     ],
+    "apps/code/src/main/services/browser/service.ts": [
+      "injectable-outside-host"
+    ],
     "apps/code/src/main/services/workspace-server/service.ts": [
       "injectable-outside-host"
     ],

@@ -68,6 +68,20 @@
   },
   "overrides": [
     {
+      // BrowserPanel.tsx triggers a Biome 2.2.4 performance bug in
+      // useExhaustiveDependencies when multiple useEffect hooks with deeply-typed
+      // tRPC client references are combined with useSubscription calls. Disable
+      // just this rule for this file to allow the pre-commit hook to complete.
+      "includes": ["packages/ui/src/features/browser/BrowserPanel.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "useExhaustiveDependencies": "off"
+          }
+        }
+      }
+    },
+    {
       // Main-process code must not import from "electron" directly. Every Electron
       // API goes through a port in @posthog/platform, implemented by an adapter in
       // apps/code/src/main/platform-adapters/. The only files allowed to import

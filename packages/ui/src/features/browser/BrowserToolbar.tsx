@@ -1,12 +1,13 @@
 import { useHostTRPCClient } from "@posthog/host-router/react";
+import { useBrowserViewState } from "@posthog/ui/features/browser/browserStore";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  Cross2Icon,
   ReloadIcon,
 } from "@radix-ui/react-icons";
 import { Flex, IconButton, TextField } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useBrowserViewState } from "./browserStore";
 
 interface BrowserToolbarProps {
   browserId: string;
@@ -88,11 +89,11 @@ export function BrowserToolbar({ browserId }: BrowserToolbarProps) {
         size="1"
         onClick={() =>
           isLoading
-            ? client.browser.reload.mutate({ browserId })
+            ? client.browser.stop.mutate({ browserId })
             : client.browser.reload.mutate({ browserId })
         }
       >
-        <ReloadIcon />
+        {isLoading ? <Cross2Icon /> : <ReloadIcon />}
       </IconButton>
 
       <TextField.Root

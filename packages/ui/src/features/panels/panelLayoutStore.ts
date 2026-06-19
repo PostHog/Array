@@ -406,6 +406,10 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
               coreAddBrowserTab(layout, panelId, url) as Partial<TaskLayout>,
           ),
         );
+        track(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
+          source: url ? "window_open" : "user",
+          has_initial_url: Boolean(url),
+        });
       },
 
       addActionTab: (taskId, panelId, action) => {

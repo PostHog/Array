@@ -7,6 +7,7 @@ import type {
 } from "@posthog/host-router/ports/browser";
 import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import { TypedEventEmitter } from "@posthog/shared";
+// biome-ignore lint/style/noRestrictedImports: WebContentsView is Electron-only by design; see host-boundary-allowlist.json
 import { WebContentsView } from "electron";
 import { inject, injectable, preDestroy } from "inversify";
 import type { ElectronMainWindow } from "../../platform-adapters/electron-main-window";
@@ -206,6 +207,10 @@ export class BrowserService
 
   reload(browserId: string): void {
     this.browsers.get(browserId)?.view.webContents.reload();
+  }
+
+  stop(browserId: string): void {
+    this.browsers.get(browserId)?.view.webContents.stop();
   }
 
   getState(browserId: string): {

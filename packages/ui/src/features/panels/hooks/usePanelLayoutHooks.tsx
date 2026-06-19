@@ -8,11 +8,11 @@ import {
 } from "@phosphor-icons/react";
 import { resolveTabAbsolutePath } from "@posthog/core/panels/resolveTabPath";
 import type { Task } from "@posthog/shared/domain-types";
+import { useBrowserViewState } from "@posthog/ui/features/browser/browserStore";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ImperativePanelGroupHandle } from "react-resizable-panels";
 import { FileIcon } from "../../../primitives/FileIcon";
 import { ActionTabIcon } from "../../actions/ActionTabIcon";
-import { useBrowserViewState } from "../../browser/browserStore";
 import { useCwd } from "../../sidebar/useCwd";
 import { TabContentRenderer } from "../../task-detail/components/TabContentRenderer";
 import type { SplitDirection } from "../panelLayoutStore";
@@ -28,6 +28,7 @@ function BrowserTabIcon({ browserId }: { browserId: string }) {
   if (favicon) {
     return (
       <img
+        alt=""
         src={favicon}
         width={14}
         height={14}

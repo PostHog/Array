@@ -908,6 +908,12 @@ export interface SubscriptionCancelledProperties {
   plan_key: string;
 }
 
+export interface BrowserTabOpenedProperties {
+  // "user" = globe icon click; "window_open" = intercepted window.open() call
+  source: "user" | "window_open";
+  has_initial_url: boolean;
+}
+
 // Event names as constants
 export const ANALYTICS_EVENTS = {
   // App lifecycle
@@ -1010,6 +1016,9 @@ export const ANALYTICS_EVENTS = {
   DEEP_LINK_PLAN: "Deep link plan",
   DEEP_LINK_ISSUE: "Deep link issue",
   DEEP_LINK_ISSUE_FAILED: "Deep link issue failed",
+
+  // Browser tab events
+  BROWSER_TAB_OPENED: "Browser tab opened",
 
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
@@ -1197,4 +1206,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.DASHBOARD_ACTION]: DashboardActionProperties;
   [ANALYTICS_EVENTS.CANVAS_PROMPT_SENT]: CanvasPromptSentProperties;
   [ANALYTICS_EVENTS.CONTEXT_ACTION]: ContextActionProperties;
+
+  // Browser tab events
+  [ANALYTICS_EVENTS.BROWSER_TAB_OPENED]: BrowserTabOpenedProperties;
 };

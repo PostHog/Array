@@ -35,6 +35,7 @@ export interface IBrowserService {
   goBack(browserId: string): void;
   goForward(browserId: string): void;
   reload(browserId: string): void;
+  stop(browserId: string): void;
   getState(browserId: string): {
     url: string;
     title: string;

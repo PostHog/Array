@@ -1,10 +1,10 @@
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
-import { useSubscription } from "@trpc/tanstack-react-query";
-import { Flex } from "@radix-ui/themes";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { BrowserToolbar } from "@posthog/ui/features/browser/BrowserToolbar";
+import { useBrowserStore } from "@posthog/ui/features/browser/browserStore";
 import { usePanelLayoutState } from "@posthog/ui/features/panels/hooks/usePanelLayoutHooks";
-import { useBrowserStore } from "./browserStore";
-import { BrowserToolbar } from "./BrowserToolbar";
+import { Flex } from "@radix-ui/themes";
+import { useSubscription } from "@trpc/tanstack-react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface BrowserPanelProps {
   browserId: string;
@@ -13,7 +13,12 @@ interface BrowserPanelProps {
   panelId: string;
 }
 
-export function BrowserPanel({ browserId, initialUrl, taskId, panelId }: BrowserPanelProps) {
+export function BrowserPanel({
+  browserId,
+  initialUrl,
+  taskId,
+  panelId,
+}: BrowserPanelProps) {
   const client = useHostTRPCClient();
   const trpc = useHostTRPC();
   const contentRef = useRef<HTMLDivElement>(null);
