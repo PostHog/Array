@@ -1,4 +1,5 @@
 import type { Icon } from "@phosphor-icons/react";
+import type { ExecutionMode } from "@posthog/shared/domain-types";
 import { Flex, Text } from "@radix-ui/themes";
 
 export interface SuggestedPrompt {
@@ -7,6 +8,8 @@ export interface SuggestedPrompt {
   prompt: string;
   icon: Icon;
   color: string;
+  /** Task mode to apply when this suggestion is selected. */
+  mode: ExecutionMode;
 }
 
 export interface SuggestedPromptCardProps {

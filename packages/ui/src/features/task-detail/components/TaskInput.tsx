@@ -963,6 +963,11 @@ export function TaskInput({
                                 { type: "text", text: suggestion.prompt },
                               ],
                             });
+                          // Bug/feature suggestions start in plan mode; the
+                          // analysis ones start in auto mode.
+                          if (isValidConfigValue(modeOption, suggestion.mode)) {
+                            setConfigOption(modeOption.id, suggestion.mode);
+                          }
                         }}
                       />
                     ))}
