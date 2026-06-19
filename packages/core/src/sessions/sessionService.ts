@@ -92,6 +92,10 @@ const LOCAL_SESSION_RECOVERY_FAILED_MESSAGE =
 const GITHUB_AUTHORIZATION_REQUIRED_CODE = "github_authorization_required";
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
+// A local connect can start while a stored-session auth restore is still in
+// flight past its bootstrap deadline. Cap how many retry delays we hold the
+// session in "connecting" waiting for that restore before surfacing an error.
+const AUTH_RESTORE_MAX_RETRY_WAITS = 6;
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
   constructor(
@@ -666,23 +670,41 @@ export class SessionService {
 
       let lastRetryMessage = message;
       let wentOffline = false;
-      for (let attempt = 1; attempt <= AUTO_RETRY_MAX_ATTEMPTS; attempt++) {
+      let restoringWaits = 0;
+      let attempt = 0;
+      while (attempt < AUTO_RETRY_MAX_ATTEMPTS) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, AUTO_RETRY_DELAY_MS),
+        );
+        if (!this.d.getIsOnline()) {
+          this.d.log.warn("Skipping retry — device went offline", { taskId });
+          wentOffline = true;
+          break;
+        }
+
+        // A stored-session auth restore can outlast its bootstrap deadline and
+        // settle in the background. While it is still restoring, keep the
+        // session connecting and wait rather than calling clearSessionError
+        // (which tears the session down) and burning the retry budget into a
+        // permanent error. Bounded so a wedged restore still surfaces an error.
+        if (
+          restoringWaits < AUTH_RESTORE_MAX_RETRY_WAITS &&
+          (await this.getAuthCredentialsStatus()).kind === "restoring"
+        ) {
+          restoringWaits++;
+          this.d.log.info("Auth still restoring; keeping session connecting", {
+            taskId,
+            restoringWaits,
+          });
+          continue;
+        }
+
+        attempt++;
         this.d.log.warn("Auto-retrying failed connection", {
           taskId,
           attempt,
           delayMs: AUTO_RETRY_DELAY_MS,
         });
-        await new Promise((resolve) =>
-          setTimeout(resolve, AUTO_RETRY_DELAY_MS),
-        );
-        if (!this.d.getIsOnline()) {
-          this.d.log.warn("Skipping retry — device went offline", {
-            taskId,
-            attempt,
-          });
-          wentOffline = true;
-          break;
-        }
         try {
           await this.clearSessionError(taskId, repoPath);
           return;
