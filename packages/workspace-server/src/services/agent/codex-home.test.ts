@@ -167,4 +167,24 @@ describe("prepareCodexHome", () => {
       cleanupCodexHome(appDataPath, taskRunId),
     ).resolves.toBeUndefined();
   });
+
+  it("rejects an unsafe taskRunId instead of escaping the codex-home dir", async () => {
+    const outside = path.join(appDataPath, "keep-me");
+    await createSkill(outside, "precious");
+
+    for (const badId of ["", ".", "..", "../../escape", "nested/evil"]) {
+      expect(() => getCodexHomeDir(appDataPath, badId)).toThrow();
+      await expect(
+        prepareCodexHome({
+          appDataPath,
+          taskRunId: badId,
+          bundledSkillsDir,
+          log: noopLog,
+        }),
+      ).rejects.toThrow();
+      await expect(cleanupCodexHome(appDataPath, badId)).rejects.toThrow();
+    }
+
+    expect(existsSync(path.join(outside, "precious", "SKILL.md"))).toBe(true);
+  });
 });

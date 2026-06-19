@@ -25,6 +25,23 @@ export function getUserSkillsDir(): string {
   return path.join(os.homedir(), ".claude", "skills");
 }
 
+/**
+ * True when `value` is a single path segment safe to join onto a trusted
+ * directory. Rejects "", ".", "..", and anything containing a separator, so a
+ * value from a state file or an RPC boundary can never widen a `path.join`
+ * into a sibling or parent directory (and a recursive delete along with it).
+ */
+export function isSafePathSegment(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value !== "." &&
+    value !== ".." &&
+    !value.includes("/") &&
+    !value.includes("\\")
+  );
+}
+
 /** Heuristic: content with NUL bytes in the first 4 KiB is binary. */
 export function isProbablyText(bytes: Uint8Array): boolean {
   return !bytes.subarray(0, 4096).includes(0);

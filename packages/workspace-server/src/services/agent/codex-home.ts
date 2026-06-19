@@ -4,6 +4,7 @@ import * as path from "node:path";
 import {
   findSkillDirs,
   getUserSkillsDir,
+  isSafePathSegment,
   linkSkillsInto,
 } from "../skills/skill-discovery";
 import type { AgentScopedLogger } from "./ports";
@@ -17,6 +18,9 @@ export function getCodexHomeDir(
   appDataPath: string,
   taskRunId: string,
 ): string {
+  if (!isSafePathSegment(taskRunId)) {
+    throw new Error(`Unsafe taskRunId: ${JSON.stringify(taskRunId)}`);
+  }
   return path.join(appDataPath, "codex-home", taskRunId);
 }
 
