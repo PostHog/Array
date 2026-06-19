@@ -4,6 +4,7 @@ import {
   buildSuggestedReviewerFilterParam,
   filterReportsBySearch,
   INBOX_PIPELINE_STATUS_FILTER,
+  INBOX_PULL_REQUEST_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@posthog/core/inbox/reportFiltering";
 import {
@@ -80,7 +81,11 @@ export function useInboxAllReports(options?: {
 
   const query = useInboxReportsInfinite(
     {
-      status: INBOX_PIPELINE_STATUS_FILTER,
+      // The Pull requests tab shows only `ready` PRs (active review work),
+      // matching its count query and the PostHog Cloud inbox.
+      status: pullRequestsOnly
+        ? INBOX_PULL_REQUEST_STATUS_FILTER
+        : INBOX_PIPELINE_STATUS_FILTER,
       has_implementation_pr: pullRequestsOnly ? true : undefined,
       ordering: buildSignalReportListOrdering(sortField, sortDirection),
       source_product:
@@ -110,7 +115,7 @@ export function useInboxAllReports(options?: {
   // returns the real total regardless of page size.
   const pullRequestCountQuery = useInboxReports(
     {
-      status: INBOX_PIPELINE_STATUS_FILTER,
+      status: INBOX_PULL_REQUEST_STATUS_FILTER,
       has_implementation_pr: true,
       // Mirror the list query's active filters so the badge matches the tab
       // body. These are empty when `ignoreFilters` is set (sidebar usage), so

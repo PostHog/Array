@@ -22,6 +22,15 @@ export const INBOX_PIPELINE_STATUS_FILTER =
  */
 export const INBOX_DISMISSED_STATUS_FILTER = "suppressed";
 
+/**
+ * Status filter for the Pull requests tab's list and count. Only `ready` PRs —
+ * a Responder draft awaiting review — are surfaced; PRs that have already been
+ * merged/closed (`resolved`) or are still running drop off so the tab and its
+ * count reflect only actionable work the user can act on. Keeps the count
+ * honest about what the list actually shows.
+ */
+export const INBOX_PULL_REQUEST_STATUS_FILTER = "ready";
+
 /** Polling interval for inbox queries while the Electron window is focused. */
 export const INBOX_REFETCH_INTERVAL_MS = 3000;
 

@@ -120,9 +120,14 @@ export function isInboxDetailPath(pathname: string): boolean {
   return INBOX_DETAIL_PATH_RE.test(pathname);
 }
 
-/** PR tab membership: Responder shipped a draft PR and the report is still in-inbox. */
+/**
+ * PR tab membership: Responder shipped a draft PR and it is `ready` for review.
+ * PRs that have already been merged/closed (`resolved`) or are still running
+ * are excluded so the tab — and its count — only show actionable PRs, matching
+ * the PostHog Cloud inbox.
+ */
 export function isPullRequestReport(report: SignalReport): boolean {
-  return !!report.implementation_pr_url && !isExcludedFromInbox(report);
+  return report.status === "ready" && !!report.implementation_pr_url;
 }
 
 // ── Runs-tab partitioning ─────────────────────────────────────────────────
@@ -217,7 +222,10 @@ export function orderedRunsTabReports(reports: SignalReport[]): SignalReport[] {
 export function isReportTabReport(report: SignalReport): boolean {
   if (isExcludedFromInbox(report)) return false;
   if (report.status === "failed") return false; // failed runs live in the Runs tab only
-  if (isPullRequestReport(report)) return false;
+  // Any report carrying a PR belongs to the Pull requests tab, even once it has
+  // been merged/closed (`resolved`) — those just drop out of the inbox here
+  // rather than reappearing as a Report.
+  if (report.implementation_pr_url) return false;
   if (isAgentRunReport(report)) return false;
   return true;
 }
