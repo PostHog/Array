@@ -1,4 +1,7 @@
-import type { EditorContent } from "@posthog/core/message-editor/content";
+import {
+  type EditorContent,
+  xmlToContent,
+} from "@posthog/core/message-editor/content";
 import {
   combineQueuedCloudPrompts,
   promptToQueuedEditorContent,
@@ -34,9 +37,10 @@ export function useReturnQueuedMessageToEditor(
           ? promptToQueuedEditorContent(combined)
           : null;
       } else {
-        pendingContent = {
-          segments: [{ type: "text", text: message.content }],
-        };
+        // Local queued content is the serialized form (text + `<file .../>`
+        // tags); parse it back into chip segments so attachments restore as
+        // chips, not raw XML.
+        pendingContent = xmlToContent(message.content);
       }
       if (!pendingContent) return;
 

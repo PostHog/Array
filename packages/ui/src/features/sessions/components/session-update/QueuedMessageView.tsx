@@ -33,7 +33,7 @@ export function QueuedMessageView({
     <Box className="rounded-lg border border-gray-5 bg-card px-3 py-2">
       <Flex align="center" gap="2">
         <Stack size={14} className="shrink-0 text-gray-9" />
-        <Box className="min-w-0 flex-1 font-medium text-[13px] text-gray-12 [&>*:last-child]:mb-0 [&>*]:line-clamp-2">
+        <Box className="min-w-0 flex-1 font-medium text-[13px] text-gray-12 [&>*:last-child]:mb-0">
           {hasFileMentions(message.content) ? (
             parseFileMentions(message.content)
           ) : (
