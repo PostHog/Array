@@ -10,6 +10,10 @@ describe("isMarkdownFile", () => {
     ["index.html", false],
     ["script.js", false],
     ["no-extension", false],
+    // Dotfiles: the name after the leading dot is read as the extension, so a
+    // file literally named ".md" matches, while ".gitignore" does not.
+    [".md", true],
+    [".gitignore", false],
     ["", false],
   ])("%s -> %s", (filename, expected) => {
     expect(isMarkdownFile(filename)).toBe(expected);
@@ -25,6 +29,9 @@ describe("isHtmlFile", () => {
     ["README.md", false],
     ["styles.css", false],
     ["no-extension", false],
+    // Dotfiles: ".html" reads as the html extension; ".htaccess" does not.
+    [".html", true],
+    [".htaccess", false],
     ["", false],
   ])("%s -> %s", (filename, expected) => {
     expect(isHtmlFile(filename)).toBe(expected);
@@ -40,6 +47,8 @@ describe("getRenderableKind", () => {
     ["script.js", null],
     ["styles.css", null],
     ["no-extension", null],
+    [".gitignore", null],
+    [".htaccess", null],
     ["", null],
   ])("%s -> %s", (filename, expected) => {
     expect(getRenderableKind(filename)).toBe(expected);

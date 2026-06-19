@@ -26,6 +26,21 @@ export const useFilePreviewStore = create<FilePreviewStore>()(
     }),
     {
       name: "file-preview-storage",
+      // Deep-merge `renderPreview` so a kind added to the defaults later (e.g.
+      // svg) keeps its rendered-by-default value for users whose stored state
+      // predates it — a shallow merge would drop it and show source instead.
+      merge: (persisted, current) => {
+        const persistedState = persisted as {
+          renderPreview?: Partial<Record<RenderableKind, boolean>>;
+        };
+        return {
+          ...current,
+          renderPreview: {
+            ...current.renderPreview,
+            ...persistedState.renderPreview,
+          },
+        };
+      },
     },
   ),
 );
