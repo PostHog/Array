@@ -219,6 +219,18 @@ describe("codex skills", () => {
     expect(codexSkills[0]?.editable).toBe(false);
   });
 
+  it("hides a codex skill already imported into the user skills dir", async () => {
+    await mkdir(codexHome.dir, { recursive: true });
+    await createSkill(userSkillsHome.dir, "shared-skill");
+    await createSkill(codexHome.dir, "shared-skill");
+    await createSkill(codexHome.dir, "codex-only");
+
+    const skills = await makeService().listSkills();
+    const codexSkills = skills.filter((s) => s.source === "codex");
+
+    expect(codexSkills.map((s) => s.name)).toEqual(["codex-only"]);
+  });
+
   it("imports a codex skill into the user skills dir", async () => {
     await mkdir(codexHome.dir, { recursive: true });
     await createSkill(codexHome.dir, "codex-only");

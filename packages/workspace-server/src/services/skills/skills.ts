@@ -515,9 +515,10 @@ async function waitForDir(dir: string, signal?: AbortSignal): Promise<boolean> {
 }
 
 /**
- * Hides Codex copies we are responsible for: bundled skills synced by the
- * official pipeline and user skills mirrored out. What remains is genuinely
- * the user's Codex-only skills.
+ * Hides Codex copies already represented elsewhere in the list: a bundled skill
+ * synced there by the old pipeline, a legacy mirror copy, or a skill the user
+ * has imported into their own `~/.claude/skills`. What remains is genuinely the
+ * user's Codex-only skills.
  */
 function dedupeCodexSkills(
   skills: SkillInfo[],
@@ -526,13 +527,18 @@ function dedupeCodexSkills(
   const bundledNames = new Set(
     skills.filter((s) => s.source === "bundled").map((s) => s.name),
   );
+  const userDirNames = new Set(
+    skills.filter((s) => s.source === "user").map((s) => path.basename(s.path)),
+  );
   return skills.filter((skill) => {
     if (skill.source !== "codex") return true;
-    // The mirror state stores directory names; frontmatter names only
-    // matter for the bundled copies, which keep theirs verbatim.
+    const dirName = path.basename(skill.path);
+    // The mirror state and the user's own skills are matched by directory name;
+    // bundled copies keep their frontmatter name verbatim, so match those by it.
     return (
       !bundledNames.has(skill.name) &&
-      !mirroredNames.has(path.basename(skill.path))
+      !mirroredNames.has(dirName) &&
+      !userDirNames.has(dirName)
     );
   });
 }
