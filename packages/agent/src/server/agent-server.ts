@@ -952,9 +952,9 @@ export class AgentServer {
 
     const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
 
-    if (prUrl) {
-      this.detectedPrUrl = prUrl;
-    }
+    // Assign unconditionally so a re-initialized session on the same instance
+    // doesn't carry a stale PR URL from a previous run into the new prompt.
+    this.detectedPrUrl = prUrl;
 
     const slackThreadUrl = getTaskRunStateString(
       preTaskRun,
@@ -2418,15 +2418,32 @@ ${signedCommitInstructions}
     prUrl: string,
   ): Promise<void> {
     if (this.prAttributed) return;
-    try {
-      const createdAt = await this.fetchPrCreatedAt(prUrl);
-      // Created just now => this run created it. Older (or unknown) => the run
-      // only viewed it; don't attribute. Recency-based so it stays correct for
-      // long task runs.
-      if (!wasCreatedRecently(createdAt, Date.now())) return;
 
-      this.prAttributed = true;
-      this.detectedPrUrl = prUrl;
+    let createdAt: string | null;
+    try {
+      createdAt = await this.fetchPrCreatedAt(prUrl);
+    } catch (err) {
+      // Best-effort: a failed GitHub lookup must never break message flow.
+      this.logger.debug("PR attribution lookup failed", {
+        runId: payload.run_id,
+        prUrl,
+        error: err,
+      });
+      return;
+    }
+
+    // Created just now => this run created it. Older (or unknown) => the run
+    // only viewed it; don't attribute. Recency-based so it stays correct for
+    // long task runs.
+    if (!wasCreatedRecently(createdAt, Date.now())) return;
+    // Re-check after the await: a concurrent attribution for a different URL
+    // may have won the race while we were waiting on GitHub.
+    if (this.prAttributed) return;
+
+    this.prAttributed = true;
+    this.detectedPrUrl = prUrl;
+
+    try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
         output: { pr_url: prUrl },
       });
@@ -2436,8 +2453,9 @@ ${signedCommitInstructions}
         prUrl,
       });
     } catch (err) {
-      // Best-effort: never let attribution break message flow.
-      this.logger.debug("PR attribution failed", {
+      // A dropped attribution is operationally significant, so log at error.
+      this.logger.error("Failed to attach PR URL to task run", {
+        taskId: payload.task_id,
         runId: payload.run_id,
         prUrl,
         error: err,

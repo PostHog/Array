@@ -1854,6 +1854,9 @@ For git operations while detached:
     // only viewed it; don't attribute. Recency-based so it stays correct for
     // long task runs.
     if (!wasCreatedRecently(createdAt, Date.now())) return;
+    // Re-check after the await: a concurrent attribution for a different URL
+    // may have won the race while we were waiting on GitHub.
+    if (session.prAttributed) return;
 
     session.prAttributed = true;
     this.log.info("Detected PR URL created during run", { taskRunId, prUrl });
