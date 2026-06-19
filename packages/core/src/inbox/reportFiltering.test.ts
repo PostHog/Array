@@ -99,12 +99,15 @@ describe("filterReportsBySearch", () => {
 
 describe("buildSignalReportListOrdering", () => {
   it.each([
-    ["total_weight", "desc", "status,-total_weight"],
-    ["created_at", "asc", "status,created_at"],
-    ["signal_count", "desc", "status,-signal_count"],
-  ] as const)("orders by status then %s (%s)", (field, direction, expected) => {
-    expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
-  });
+    ["total_weight", "desc", "status,-total_weight,priority"],
+    ["created_at", "asc", "status,created_at,priority"],
+    ["signal_count", "desc", "status,-signal_count,priority"],
+  ] as const)(
+    "orders by status then %s (%s), tiebreaking by priority",
+    (field, direction, expected) => {
+      expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
+    },
+  );
 
   it("tiebreaks priority order by newest first", () => {
     expect(buildSignalReportListOrdering("priority", "asc")).toBe(
