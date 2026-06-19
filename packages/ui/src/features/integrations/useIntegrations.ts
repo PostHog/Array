@@ -12,7 +12,10 @@ import {
   combineUserGithubRepositories,
   getIntegrationIdForRepo,
   getRepoEntry,
+  isEmptyRepositoryMap,
   isRepoInIntegration,
+  resolveEffectiveUserRepositoryMap,
+  resolveUserRepositoryCacheAction,
   type UserRepositoryIntegrationRef,
 } from "@posthog/core/integrations/repositories";
 import type { RepositoriesService } from "@posthog/core/integrations/repositoriesService";
@@ -402,22 +405,21 @@ export function useUserRepositoryIntegration() {
     failedInstallationIds,
   } = useAllUserGithubRepositories(githubIntegrations);
 
-  // Keep the persisted cache in sync with the freshly fetched map so the next
-  // cold start can render the picker without waiting on the network. Clear the
-  // cache when the user has no integrations; otherwise only write once
-  // everything has loaded so partial data never overwrites a good cache.
+  // Persist the freshly loaded map so the picker has data on the next cold
+  // start, and clear it once the user has no integrations.
   useEffect(() => {
-    if (integrationsPending) return;
-    if (githubIntegrations.length === 0) {
-      if (Object.keys(cachedRepositoryMap).length > 0) {
-        setCachedRepositoryMap({});
-      }
-      return;
+    const action = resolveUserRepositoryCacheAction({
+      integrationsPending,
+      reposPending,
+      hasIntegrations: githubIntegrations.length > 0,
+      liveRepositoryMap: repositoryMap,
+      cachedRepositoryMap,
+    });
+    if (action === "write") {
+      setCachedRepositoryMap(repositoryMap);
+    } else if (action === "clear") {
+      setCachedRepositoryMap({});
     }
-    if (reposPending) return;
-    if (Object.keys(repositoryMap).length === 0) return;
-    if (repositoryMap === cachedRepositoryMap) return;
-    setCachedRepositoryMap(repositoryMap);
   }, [
     integrationsPending,
     reposPending,
@@ -428,16 +430,12 @@ export function useUserRepositoryIntegration() {
   ]);
 
   const liveLoading = integrationsPending || reposPending;
-  const servingFromCache =
-    liveLoading &&
-    Object.keys(repositoryMap).length === 0 &&
-    Object.keys(cachedRepositoryMap).length > 0;
-
-  // Serve the cached map while the live queries load so the picker renders the
-  // last-used repo immediately on a cold start instead of a spinner.
-  const effectiveRepositoryMap = servingFromCache
-    ? cachedRepositoryMap
-    : repositoryMap;
+  const { effectiveRepositoryMap, servingFromCache } =
+    resolveEffectiveUserRepositoryMap({
+      liveLoading,
+      liveRepositoryMap: repositoryMap,
+      cachedRepositoryMap,
+    });
 
   const repositories = useMemo(
     () => Object.keys(effectiveRepositoryMap),
@@ -489,7 +487,7 @@ export function useUserRepositoryIntegration() {
     refreshRepositories,
     hasGithubIntegration:
       githubIntegrations.length > 0 ||
-      (integrationsPending && Object.keys(cachedRepositoryMap).length > 0),
+      (integrationsPending && !isEmptyRepositoryMap(cachedRepositoryMap)),
     failedInstallationIds,
     reposByInstallationId,
   };
