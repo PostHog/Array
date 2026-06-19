@@ -52,6 +52,7 @@ export interface PanelLayoutState {
   setFocusedPanel: (taskId: string, panelId: string) => void;
   addTerminalTab: (taskId: string, panelId: string) => void;
   addBrowserTab: (taskId: string, panelId: string, url?: string) => void;
+  openBrowserUrl: (taskId: string, url: string) => void;
   splitPanel: (
     taskId: string,
     tabId: string,
@@ -78,6 +79,7 @@ export function usePanelLayoutState(taskId: string): PanelLayoutState {
         setFocusedPanel: state.setFocusedPanel,
         addTerminalTab: state.addTerminalTab,
         addBrowserTab: state.addBrowserTab,
+        openBrowserUrl: state.openBrowserUrl,
         updateTabLabel: state.updateTabLabel,
         splitPanel: state.splitPanel,
         draggingTabId: state.getLayout(taskId)?.draggingTabId ?? null,

@@ -1,3 +1,4 @@
+import { DEFAULT_PANEL_IDS } from "@posthog/core/panels/panelConstants";
 import {
   addRecentFile,
   addActionTab as coreAddActionTab,
@@ -102,6 +103,7 @@ export interface PanelLayoutStore {
   setFocusedPanel: (taskId: string, panelId: string) => void;
   addTerminalTab: (taskId: string, panelId: string) => void;
   addBrowserTab: (taskId: string, panelId: string, url?: string) => void;
+  openBrowserUrl: (taskId: string, url: string) => void;
   addActionTab: (
     taskId: string,
     panelId: string,
@@ -409,6 +411,22 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
         track(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
           source: url ? "window_open" : "user",
           has_initial_url: Boolean(url),
+        });
+      },
+
+      openBrowserUrl: (taskId, url) => {
+        const layout = get().taskLayouts[taskId];
+        const panelId = layout?.focusedPanelId ?? DEFAULT_PANEL_IDS.MAIN_PANEL;
+        set((state) =>
+          updateTaskLayout(
+            state,
+            taskId,
+            (l) => coreAddBrowserTab(l, panelId, url) as Partial<TaskLayout>,
+          ),
+        );
+        track(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
+          source: "chat_link",
+          has_initial_url: true,
         });
       },
 

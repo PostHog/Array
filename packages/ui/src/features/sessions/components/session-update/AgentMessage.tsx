@@ -1,9 +1,13 @@
 import { Check, Copy } from "@phosphor-icons/react";
+import { useHostTRPCClient } from "@posthog/host-router/react";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { Box, Code, IconButton } from "@radix-ui/themes";
 import { memo, useCallback, useMemo, useState } from "react";
 import type { Components } from "react-markdown";
 import { HighlightedCode } from "../../../../primitives/HighlightedCode";
 import { Tooltip } from "../../../../primitives/Tooltip";
+import { track } from "../../../../shell/analytics";
+import { openExternalUrl } from "../../../../shell/openExternal";
 import { usePendingScrollStore } from "../../../code-editor/pendingScrollStore";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import { StreamingMarkdown } from "../../../editor/components/StreamingMarkdown";
@@ -106,7 +110,94 @@ function BareFileLink({ text }: { text: string }) {
   return <InlineFileLink text={text} resolvedPath={resolved.path} />;
 }
 
+function ChatLink({
+  href,
+  children,
+}: {
+  href?: string;
+  children: React.ReactNode;
+}) {
+  const taskId = useSessionTaskId();
+  const openBrowserUrl = usePanelLayoutStore((s) => s.openBrowserUrl);
+  const hostClient = useHostTRPCClient();
+
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (!href) return;
+      e.preventDefault();
+      if (taskId) {
+        openBrowserUrl(taskId, href);
+      }
+      track(ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT, {
+        destination: "embedded_browser",
+      });
+    },
+    [href, taskId, openBrowserUrl],
+  );
+
+  const handleContextMenu = useCallback(
+    async (e: React.MouseEvent) => {
+      if (!href) return;
+      e.preventDefault();
+      const result = await hostClient.contextMenu.showLinkContextMenu.mutate({
+        url: href,
+      });
+      if (!result.action) return;
+      switch (result.action.type) {
+        case "open-embedded":
+          if (taskId) openBrowserUrl(taskId, href);
+          track(ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT, {
+            destination: "embedded_browser",
+          });
+          break;
+        case "open-external":
+          openExternalUrl(href);
+          track(ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT, {
+            destination: "system_browser",
+          });
+          break;
+        case "copy-url":
+          navigator.clipboard.writeText(href);
+          track(ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT, {
+            destination: "copy_link",
+          });
+          break;
+      }
+    },
+    [href, taskId, openBrowserUrl, hostClient],
+  );
+
+  return (
+    <a
+      href={href}
+      onClick={handleClick}
+      onContextMenu={(e) => void handleContextMenu(e)}
+      className="markdown-link inline-flex cursor-pointer items-center gap-[2px]"
+    >
+      {children}
+      <svg
+        width="10"
+        height="10"
+        viewBox="0 0 12 12"
+        fill="none"
+        stroke="var(--accent-11)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-label="opens in app browser"
+        role="img"
+        className="ml-1 shrink-0"
+      >
+        <path d="M4.5 1.5H2.25C1.836 1.5 1.5 1.836 1.5 2.25V9.75C1.5 10.164 1.836 10.5 2.25 10.5H9.75C10.164 10.5 10.5 10.164 10.5 9.75V7.5" />
+        <path d="M7.5 1.5H10.5V4.5" />
+        <path d="M5.25 6.75L10.5 1.5" />
+      </svg>
+    </a>
+  );
+}
+
 const agentComponents: Partial<Components> = {
+  a: ({ href, children }) => <ChatLink href={href}>{children}</ChatLink>,
   code: ({ children, className }) => {
     const langMatch = className?.match(/language-(\w+)/);
     if (langMatch) {

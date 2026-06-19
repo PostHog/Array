@@ -15,6 +15,8 @@ import {
   fileContextMenuOutput,
   folderContextMenuInput,
   folderContextMenuOutput,
+  linkContextMenuInput,
+  linkContextMenuOutput,
   splitContextMenuOutput,
   tabContextMenuInput,
   tabContextMenuOutput,
@@ -111,5 +113,14 @@ export const contextMenuRouter = router({
       ctx.container
         .get<ContextMenuService>(CONTEXT_MENU_CONTROLLER)
         .showFileContextMenu(input),
+    ),
+
+  showLinkContextMenu: publicProcedure
+    .input(linkContextMenuInput)
+    .output(linkContextMenuOutput)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<ContextMenuService>(CONTEXT_MENU_CONTROLLER)
+        .showLinkContextMenu(input),
     ),
 });

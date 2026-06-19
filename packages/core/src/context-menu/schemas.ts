@@ -36,6 +36,10 @@ export const fileContextMenuInput = z.object({
   showCollapseAll: z.boolean().optional(),
 });
 
+export const linkContextMenuInput = z.object({
+  url: z.string(),
+});
+
 const externalAppAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("open-in-app"), appId: z.string() }),
   z.object({ type: z.literal("copy-path") }),
@@ -79,6 +83,12 @@ const fileAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("external-app"), action: externalAppAction }),
 ]);
 
+const linkAction = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("open-embedded") }),
+  z.object({ type: z.literal("open-external") }),
+  z.object({ type: z.literal("copy-url") }),
+]);
+
 const splitDirection = z.enum(["left", "right", "up", "down"]);
 
 export const taskContextMenuOutput = z.object({
@@ -97,6 +107,9 @@ export const tabContextMenuOutput = z.object({ action: tabAction.nullable() });
 export const fileContextMenuOutput = z.object({
   action: fileAction.nullable(),
 });
+export const linkContextMenuOutput = z.object({
+  action: linkAction.nullable(),
+});
 export const splitContextMenuOutput = z.object({
   direction: splitDirection.nullable(),
 });
@@ -109,6 +122,7 @@ export type ArchivedTaskContextMenuInput = z.infer<
 export type FolderContextMenuInput = z.infer<typeof folderContextMenuInput>;
 export type TabContextMenuInput = z.infer<typeof tabContextMenuInput>;
 export type FileContextMenuInput = z.infer<typeof fileContextMenuInput>;
+export type LinkContextMenuInput = z.infer<typeof linkContextMenuInput>;
 
 export type ExternalAppAction = z.infer<typeof externalAppAction>;
 export type TaskAction = z.infer<typeof taskAction>;
@@ -117,6 +131,7 @@ export type ArchivedTaskAction = z.infer<typeof archivedTaskAction>;
 export type FolderAction = z.infer<typeof folderAction>;
 export type TabAction = z.infer<typeof tabAction>;
 export type FileAction = z.infer<typeof fileAction>;
+export type LinkAction = z.infer<typeof linkAction>;
 export type SplitDirection = z.infer<typeof splitDirection>;
 
 export const confirmDeleteTaskInput = z.object({
@@ -170,4 +185,5 @@ export type ArchivedTaskContextMenuResult = z.infer<
 export type FolderContextMenuResult = z.infer<typeof folderContextMenuOutput>;
 export type TabContextMenuResult = z.infer<typeof tabContextMenuOutput>;
 export type FileContextMenuResult = z.infer<typeof fileContextMenuOutput>;
+export type LinkContextMenuResult = z.infer<typeof linkContextMenuOutput>;
 export type SplitContextMenuResult = z.infer<typeof splitContextMenuOutput>;

@@ -3,13 +3,14 @@ import {
   GlobeSimple,
   Plus,
   SquareSplitHorizontalIcon,
+  Terminal,
 } from "@phosphor-icons/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { PanelDropZones } from "@posthog/ui/features/panels/components/PanelDropZones";
 import type { SplitDirection } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { PanelContent } from "@posthog/ui/features/panels/panelTypes";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
-import { Box, Flex } from "@radix-ui/themes";
+import { Box, DropdownMenu, Flex } from "@radix-ui/themes";
 import type React from "react";
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import { PanelTab } from "./PanelTab";
@@ -201,12 +202,34 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
-            {content.droppable && onAddTerminal && (
-              <Tooltip content="New terminal" side="bottom">
-                <TabBarButton ariaLabel="Add terminal" onClick={onAddTerminal}>
-                  <Plus size={14} />
-                </TabBarButton>
-              </Tooltip>
+            {content.droppable && (onAddTerminal || onAddBrowser) && (
+              <DropdownMenu.Root>
+                <Tooltip content="New tab" side="bottom">
+                  <DropdownMenu.Trigger>
+                    <TabBarButton ariaLabel="Add tab" onClick={() => {}}>
+                      <Plus size={14} />
+                    </TabBarButton>
+                  </DropdownMenu.Trigger>
+                </Tooltip>
+                <DropdownMenu.Content side="bottom" align="start" size="1">
+                  {onAddTerminal && (
+                    <DropdownMenu.Item onClick={onAddTerminal}>
+                      <Flex align="center" gap="2">
+                        <Terminal size={13} />
+                        New terminal
+                      </Flex>
+                    </DropdownMenu.Item>
+                  )}
+                  {onAddBrowser && (
+                    <DropdownMenu.Item onClick={onAddBrowser}>
+                      <Flex align="center" gap="2">
+                        <GlobeSimple size={13} />
+                        New browser tab
+                      </Flex>
+                    </DropdownMenu.Item>
+                  )}
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>
             )}
             {/* Spacer to increase DND area */}
             {content.droppable && (
@@ -214,12 +237,26 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
             )}
           </Flex>
           {(rightContent ||
-            (content.droppable && (onSplitPanel || onAddBrowser))) && (
+            (content.droppable &&
+              (onSplitPanel || onAddBrowser || onAddTerminal))) && (
             <Flex
               align="center"
               className="absolute top-0 right-0 h-[32px] border-b border-b-(--gray-6) border-l border-l-(--gray-6) bg-(--color-background)"
             >
               {rightContent}
+              {content.droppable && onAddTerminal && (
+                <Tooltip content="New terminal" side="bottom">
+                  <TabBarButton
+                    ariaLabel="New terminal"
+                    onClick={onAddTerminal}
+                  >
+                    <Terminal width={14} height={14} />
+                  </TabBarButton>
+                </Tooltip>
+              )}
+              {content.droppable && onAddTerminal && onAddBrowser && (
+                <div className="h-4 w-px bg-(--gray-6)" />
+              )}
               {content.droppable && onAddBrowser && (
                 <Tooltip content="New browser tab" side="bottom">
                   <TabBarButton
@@ -230,9 +267,9 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                   </TabBarButton>
                 </Tooltip>
               )}
-              {content.droppable && onAddBrowser && onSplitPanel && (
-                <div className="h-4 w-px bg-(--gray-6)" />
-              )}
+              {content.droppable &&
+                (onAddTerminal || onAddBrowser) &&
+                onSplitPanel && <div className="h-4 w-px bg-(--gray-6)" />}
               {content.droppable && onSplitPanel && (
                 <Tooltip content="Split panel" side="bottom">
                   <TabBarButton
@@ -256,16 +293,23 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
       >
         {content.tabs.length > 0 &&
         content.tabs.some((t) => t.id === content.activeTabId) ? (
-          content.tabs.map((tab) => (
-            <div
-              key={tab.id}
-              style={
-                tab.id === content.activeTabId ? activeTabStyle : hiddenTabStyle
-              }
-            >
-              {tab.component}
-            </div>
-          ))
+          content.tabs.map((tab) => {
+            const isActive = tab.id === content.activeTabId;
+            // Browser tabs use display:none when inactive so IntersectionObserver
+            // correctly reports them as not visible and hides the native WebContentsView.
+            // Other tabs use visibility:hidden to preserve editor/terminal dimensions.
+            const isBrowserTab = tab.data?.type === "browser";
+            const style = isActive
+              ? activeTabStyle
+              : isBrowserTab
+                ? { ...hiddenTabStyle, display: "none" }
+                : hiddenTabStyle;
+            return (
+              <div key={tab.id} style={style}>
+                {tab.component}
+              </div>
+            );
+          })
         ) : emptyState ? (
           emptyState
         ) : (

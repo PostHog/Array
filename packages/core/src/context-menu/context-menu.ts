@@ -26,6 +26,9 @@ import type {
   FolderAction,
   FolderContextMenuInput,
   FolderContextMenuResult,
+  LinkAction,
+  LinkContextMenuInput,
+  LinkContextMenuResult,
   SplitContextMenuResult,
   SplitDirection,
   TabAction,
@@ -251,6 +254,17 @@ export class ContextMenuService {
             ...this.externalAppItems<FolderAction>(apps, lastUsedAppId),
           ]
         : []),
+    ]);
+  }
+
+  async showLinkContextMenu(
+    _input: LinkContextMenuInput,
+  ): Promise<LinkContextMenuResult> {
+    return this.showMenu<LinkAction>([
+      this.item("Open in app browser", { type: "open-embedded" }),
+      this.item("Open in system browser", { type: "open-external" }),
+      this.separator(),
+      this.item("Copy link", { type: "copy-url" }),
     ]);
   }
 

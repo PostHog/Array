@@ -909,9 +909,13 @@ export interface SubscriptionCancelledProperties {
 }
 
 export interface BrowserTabOpenedProperties {
-  // "user" = globe icon click; "window_open" = intercepted window.open() call
-  source: "user" | "window_open";
+  // "user" = globe icon click; "window_open" = intercepted window.open() call; "chat_link" = link in agent message
+  source: "user" | "window_open" | "chat_link";
   has_initial_url: boolean;
+}
+
+export interface LinkClickedInChatProperties {
+  destination: "embedded_browser" | "system_browser" | "copy_link";
 }
 
 // Event names as constants
@@ -1019,6 +1023,7 @@ export const ANALYTICS_EVENTS = {
 
   // Browser tab events
   BROWSER_TAB_OPENED: "Browser tab opened",
+  LINK_CLICKED_IN_CHAT: "Link clicked in chat",
 
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
@@ -1209,4 +1214,5 @@ export type EventPropertyMap = {
 
   // Browser tab events
   [ANALYTICS_EVENTS.BROWSER_TAB_OPENED]: BrowserTabOpenedProperties;
+  [ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT]: LinkClickedInChatProperties;
 };
