@@ -186,3 +186,43 @@ describe("ContextMenuService.confirmDeleteTask", () => {
     ).toEqual({ confirmed: false });
   });
 });
+
+describe("ContextMenuService.showLinkContextMenu", () => {
+  it("shows all three link actions", async () => {
+    const menu = new FakeContextMenu();
+    makeService(menu).showLinkContextMenu({ url: "https://example.com" });
+    await menu.shown;
+    expect(labels(menu.lastItems)).toEqual([
+      "Open in app browser",
+      "Open in system browser",
+      "Copy link",
+    ]);
+  });
+
+  it.each([
+    ["Open in app browser", { type: "open-embedded" }],
+    ["Open in system browser", { type: "open-external" }],
+    ["Copy link", { type: "copy-url" }],
+  ] as const)(
+    "clicking '%s' resolves to the correct action",
+    async (label, expected) => {
+      const menu = new FakeContextMenu();
+      const result = makeService(menu).showLinkContextMenu({
+        url: "https://example.com",
+      });
+      await menu.shown;
+      findItem(menu.lastItems, label).click();
+      expect(await result).toEqual({ action: expected });
+    },
+  );
+
+  it("resolves to null when dismissed without a selection", async () => {
+    const menu = new FakeContextMenu();
+    const result = makeService(menu).showLinkContextMenu({
+      url: "https://example.com",
+    });
+    await menu.shown;
+    menu.lastOptions?.onDismiss?.();
+    expect(await result).toEqual({ action: null });
+  });
+});
