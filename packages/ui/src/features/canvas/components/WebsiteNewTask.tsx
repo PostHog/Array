@@ -1,4 +1,5 @@
 import type { Task } from "@posthog/shared/domain-types";
+import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
@@ -47,6 +48,7 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
       channelContext={instructions?.content}
       channelName={channelName}
       allowNoRepo
+      suggestions={CHANNEL_TASK_SUGGESTIONS}
     />
   );
 }

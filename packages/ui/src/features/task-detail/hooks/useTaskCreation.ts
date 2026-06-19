@@ -290,15 +290,19 @@ export function useTaskCreation({
             if (pendingTaskKey) {
               pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
             }
+            // Clear the draft BEFORE navigating away. When onTaskCreated
+            // navigates (e.g. channels), it can synchronously unmount/destroy
+            // the editor; clearing afterwards would throw in clearContent()
+            // before the persisted draft is wiped, leaving stale text behind.
+            if (!pendingTaskKey && !contentOverride) {
+              editor.clear();
+            }
             if (onTaskCreated) {
               onTaskCreated(output.task);
             } else {
               void openTask(output.task);
             }
             useTourStore.getState().completeTour(createFirstTaskTour.id);
-            if (!pendingTaskKey && !contentOverride) {
-              editor.clear();
-            }
             // Pre-flight already ran above for cloud; skip the service's duplicate check.
           },
           { skipCloudUsagePreflight: true },
