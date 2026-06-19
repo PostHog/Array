@@ -106,6 +106,12 @@ describe("buildSignalReportListOrdering", () => {
     expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
   });
 
+  it("tiebreaks priority order by newest first", () => {
+    expect(buildSignalReportListOrdering("priority", "asc")).toBe(
+      "status,priority,-created_at",
+    );
+  });
+
   it("does not float the current user's reports via ordering", () => {
     expect(buildSignalReportListOrdering("priority", "asc")).not.toContain(
       "is_suggested_reviewer",

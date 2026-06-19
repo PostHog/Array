@@ -65,6 +65,10 @@ export function buildStatusFilterParam(statuses: SignalReportStatus[]): string {
  * Comma-separated `ordering` for the signal report list API:
  * 1. Status rank (ready first – semantic server-side rank, always applied)
  * 2. Toolbar-selected field (priority, total_weight, created_at, etc.)
+ * 3. For priority, a `-created_at` tiebreak so the newest report wins within a
+ *    tier. Priority is a coarse 5-bucket rank (P0–P4); without it, reports in
+ *    the same tier come back in an arbitrary order. The server applies the
+ *    clauses in order (and falls back to `id`), so this only breaks ties.
  *
  * Reviewer scope is applied via the `suggested_reviewers` param, not ordering:
  * a `-is_suggested_reviewer` tiebreak would float the user's reports to the top
@@ -75,7 +79,8 @@ export function buildSignalReportListOrdering(
   direction: "asc" | "desc",
 ): string {
   const fieldKey = direction === "desc" ? `-${field}` : field;
-  return `status,${fieldKey}`;
+  const tiebreak = field === "priority" ? ",-created_at" : "";
+  return `status,${fieldKey}${tiebreak}`;
 }
 
 export function buildSuggestedReviewerFilterParam(
