@@ -3,8 +3,8 @@ import type {
   DecideApprovalRequest,
 } from "@posthog/shared/agent-platform-types";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { useAuthStateValue } from "../../auth/store";
 
 interface DecideArgs {

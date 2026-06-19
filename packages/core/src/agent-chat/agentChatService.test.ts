@@ -1,7 +1,13 @@
-import { agentChatStore } from "@posthog/core/agent-chat/agentChatStore";
+import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import type { AgentSessionEvent } from "@posthog/shared/agent-platform-types";
-import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AgentChatService } from "./agentChatService";
+import { agentChatStore } from "./agentChatStore";
+import type { AgentChatSession } from "./identifiers";
+
+const INGRESS = "https://ingress.example";
+const SLUG = "my-agent";
+const SESSION = "sess-1";
 
 const mockClient = vi.hoisted(() => ({
   runAgentSession: vi.fn(),
@@ -13,18 +19,24 @@ const mockClient = vi.hoisted(() => ({
   sendAgentInteractiveToolResult: vi.fn(),
   mintAgentPreviewToken: vi.fn(),
 }));
-vi.mock("@posthog/ui/features/auth/authClient", () => ({
-  useAuthenticatedClient: () => mockClient,
-}));
-vi.mock("@posthog/ui/primitives/toast", () => ({
-  toast: { error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
+const client = mockClient as unknown as PostHogAPIClient;
 
-import { useAgentChat } from "./useAgentChat";
-
-const INGRESS = "https://ingress.example";
-const SLUG = "my-agent";
-const SESSION = "sess-1";
+function session(chatId: string): AgentChatSession {
+  return {
+    chatId,
+    agentSlug: SLUG,
+    ingressBaseUrl: INGRESS,
+    revisionId: null,
+    createMapper: () => ({
+      seedUserMessage: () => [],
+      setPromptIdBase: () => {},
+      apply: () => [],
+    }),
+    resolveClientTool: async () => null,
+    buildWireText: (text) => text,
+    mapConversation: () => [],
+  };
+}
 
 function ev(kind: AgentSessionEvent["kind"], data: unknown): AgentSessionEvent {
   return {
@@ -46,16 +58,13 @@ async function* streamThenDrop(...events: AgentSessionEvent[]) {
   throw new Error("network reset");
 }
 
-function render(chatId: string) {
-  return renderHook(() =>
-    useAgentChat({ chatId, agentSlug: SLUG, ingressBaseUrl: INGRESS }),
-  );
-}
+describe("AgentChatService /listen reconnect", () => {
+  let service: AgentChatService;
 
-describe("useAgentChat /listen reconnect", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    service = new AgentChatService();
     mockClient.runAgentSession.mockResolvedValue({ session_id: SESSION });
   });
   afterEach(() => {
@@ -70,15 +79,10 @@ describe("useAgentChat /listen reconnect", () => {
       )
       .mockImplementationOnce(() => streamOf(ev("completed", {})));
 
-    const { result } = render(chatId);
-    await act(async () => {
-      void result.current.send("go");
-    });
+    void service.send(client, session(chatId), "go");
     // Let start() + the first pump (delta then drop) settle, then clear the
     // reconnect backoff so the second attach runs.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
+    await vi.advanceTimersByTimeAsync(1000);
 
     expect(mockClient.streamAgentSession).toHaveBeenCalledTimes(2);
     // A live drop never asks the api whether the session ended — the re-attach
@@ -100,13 +104,8 @@ describe("useAgentChat /listen reconnect", () => {
       conversation: [],
     });
 
-    const { result } = render(chatId);
-    await act(async () => {
-      void result.current.send("go");
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
+    void service.send(client, session(chatId), "go");
+    await vi.advanceTimersByTimeAsync(0);
 
     // Silent re-attach → we ask the api, see it's terminal, and stop. No retry,
     // no error.
@@ -134,13 +133,8 @@ describe("useAgentChat /listen reconnect", () => {
       },
     );
 
-    const { result } = render(chatId);
-    await act(async () => {
-      void result.current.send("go");
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
+    void service.send(client, session(chatId), "go");
+    await vi.advanceTimersByTimeAsync(0);
 
     const chat = agentChatStore.getState().chats[chatId];
     expect(chat?.status).toBe("completed");
@@ -162,14 +156,9 @@ describe("useAgentChat /listen reconnect", () => {
       conversation: [],
     });
 
-    const { result } = render(chatId);
-    await act(async () => {
-      void result.current.send("go");
-    });
+    void service.send(client, session(chatId), "go");
     // Drain the full capped-exponential backoff schedule (≈23.5s).
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
-    });
+    await vi.advanceTimersByTimeAsync(30_000);
 
     // Initial attach + MAX_LISTEN_RECONNECTS (6) re-attaches.
     expect(mockClient.streamAgentSession).toHaveBeenCalledTimes(7);

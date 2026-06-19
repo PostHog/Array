@@ -15,6 +15,7 @@
  * rendering half-streamed JSON as `rawInput` reads worse than a brief gap.
  */
 
+import type { AgentChatMapper } from "@posthog/core/agent-chat/identifiers";
 import type { AcpMessage } from "@posthog/shared";
 import type { AgentSessionEvent } from "@posthog/shared/agent-platform-types";
 import {
@@ -49,23 +50,7 @@ function outputText(value: unknown): string {
   }
 }
 
-export interface AgentChatMapper {
-  /**
-   * Optimistically emit the user's just-sent message so it renders the instant
-   * they hit send, before the network round-trip. The stream echoes the same
-   * message back a beat later as a `user_message` event — that echo is swallowed
-   * (matched by text, FIFO) so it isn't rendered twice.
-   */
-  seedUserMessage(text: string, ts?: number): AcpMessage[];
-  /**
-   * Continue prompt (request) id numbering past `count` restored turns, so a
-   * follow-up message on a resumed chat doesn't collide with a turn rebuilt
-   * from the stored transcript.
-   */
-  setPromptIdBase(count: number): void;
-  /** Translate one SSE event into zero or more ACP messages. */
-  apply(event: AgentSessionEvent): AcpMessage[];
-}
+export type { AgentChatMapper };
 
 export function createAgentChatMapper(): AgentChatMapper {
   let promptId = 0;
