@@ -2039,6 +2039,30 @@ export class SessionService {
   }
 
   /**
+   * Steer a single queued message into the running turn now: drop it from the
+   * queue and resend it as a steer. Native (Claude, local) injects at the next
+   * tool boundary; cloud/Codex interrupt and resend. The rest of the queue is
+   * left in place and drains when the turn ends. Rolls the message back onto
+   * the queue if the send fails so it is not silently lost.
+   */
+  async steerQueuedMessage(taskId: string, messageId: string): Promise<void> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return;
+    const message = session.messageQueue.find((m) => m.id === messageId);
+    if (!message) return;
+
+    this.d.store.removeQueuedMessage(taskId, messageId);
+    try {
+      await this.sendPrompt(taskId, message.rawPrompt ?? message.content, {
+        steer: true,
+      });
+    } catch (error) {
+      this.d.store.prependQueuedMessages(taskId, [message]);
+      throw error;
+    }
+  }
+
+  /**
    * Cancel the current prompt.
    */
   async cancelPrompt(taskId: string): Promise<boolean> {

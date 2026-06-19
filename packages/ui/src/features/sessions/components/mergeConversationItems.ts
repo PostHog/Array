@@ -1,11 +1,8 @@
 import type { ConversationItem } from "./buildConversationItems";
 
-type QueuedItem = Extract<ConversationItem, { type: "queued" }>;
-
 interface MergeConversationItemsArgs {
   conversationItems: ConversationItem[];
   optimisticItems: ConversationItem[];
-  queuedItems: QueuedItem[];
   isCloud: boolean;
 }
 
@@ -18,15 +15,10 @@ interface MergeConversationItemsArgs {
 export function mergeConversationItems({
   conversationItems,
   optimisticItems,
-  queuedItems,
   isCloud,
 }: MergeConversationItemsArgs): ConversationItem[] {
   if (!isCloud) {
-    const result: ConversationItem[] = [
-      ...conversationItems,
-      ...optimisticItems,
-    ];
-    return queuedItems.length > 0 ? [...result, ...queuedItems] : result;
+    return [...conversationItems, ...optimisticItems];
   }
 
   const pinnedOptimisticItems = optimisticItems.filter(
@@ -50,10 +42,9 @@ export function mergeConversationItems({
           if (item.type !== "user_message") return true;
           return !pinnedOptimisticUserContents.has(item.content);
         });
-  const result: ConversationItem[] = [
+  return [
     ...pinnedOptimisticItems,
     ...dedupedConversation,
     ...tailOptimisticItems,
   ];
-  return queuedItems.length > 0 ? [...result, ...queuedItems] : result;
 }
