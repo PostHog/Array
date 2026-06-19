@@ -746,12 +746,6 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     });
     await this.syncAuthenticatedSession(session);
   }
-  private async refreshAndSyncSession(
-    input: StoredSessionInput,
-  ): Promise<void> {
-    const session = await this.refreshSession(input);
-    await this.syncAuthenticatedSession(session);
-  }
   private async syncAuthenticatedSession(
     session: InMemorySession,
   ): Promise<void> {
@@ -978,10 +972,14 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     if (!stored) return;
     if (stored.scopeVersion < OAUTH_SCOPE_VERSION) return;
 
-    const storedSession = this.resolveStoredSession();
-    if (!storedSession) return;
+    if (!this.resolveStoredSession()) return;
 
-    this.recoveryPromise = this.refreshAndSyncSession(storedSession)
+    // Route through ensureValidSession so a refresh already in flight (e.g. the
+    // background bootstrap restore past its deadline) is shared instead of
+    // kicking a second concurrent token refresh that would burn the same
+    // rotating refresh token twice.
+    this.recoveryPromise = this.ensureValidSession()
+      .then(() => undefined)
       .catch((error) => {
         this.logger.warn("Session recovery failed", { error });
       })

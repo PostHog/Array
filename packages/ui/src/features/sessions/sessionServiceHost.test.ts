@@ -3763,6 +3763,52 @@ describe("SessionService", () => {
       }
     });
 
+    it("does not drain the cloud queue while auth is still restoring", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = getSessionService();
+        const prompt: ContentBlock[] = [{ type: "text", text: "hold this" }];
+        const queuedMessage = {
+          id: "queue-1",
+          content: "hold this",
+          rawPrompt: prompt,
+          queuedAt: 1700000000,
+        };
+        const session = createMockSession({
+          isCloud: true,
+          cloudStatus: "in_progress",
+          status: "connected",
+          isPromptPending: false,
+          messageQueue: [queuedMessage],
+        });
+        mockSessionStoreSetters.getSessions.mockReturnValue({
+          "run-123": session,
+        });
+        mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+        mockSessionStoreSetters.dequeueMessages.mockReturnValue([
+          queuedMessage,
+        ]);
+        mockAuth.fetchAuthState.mockResolvedValue({
+          status: "restoring",
+          bootstrapComplete: false,
+          cloudRegion: "us",
+          orgProjectsMap: {},
+          currentOrgId: null,
+          currentProjectId: 123,
+          hasCodeAccess: null,
+          needsScopeReauth: false,
+        });
+
+        service.flushQueuedCloudMessagesAfterAuthRestored();
+        await vi.advanceTimersByTimeAsync(10);
+
+        expect(mockSessionStoreSetters.dequeueMessages).not.toHaveBeenCalled();
+        expect(mockTrpcCloudTask.sendCommand.mutate).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("does not pin isPromptPending when queueing during sandbox boot", async () => {
       const service = getSessionService();
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
