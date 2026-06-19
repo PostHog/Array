@@ -23,6 +23,7 @@ vi.mock("../api", () => ({
   sendCloudCommand: vi.fn(),
 }));
 
+import type { CloudTaskUpdatePayload, StoredLogEntry } from "../types";
 import { useMessageQueueStore } from "./messageQueueStore";
 import { type TaskSession, useTaskSessionStore } from "./taskSessionStore";
 
@@ -115,5 +116,64 @@ describe("steerQueuedMessage", () => {
 
     expect(sendInterrupting).not.toHaveBeenCalled();
     expect(useMessageQueueStore.getState().getQueue("t1")).toHaveLength(1);
+  });
+
+  it("no-ops when no turn is running", async () => {
+    seedSession({ isPromptPending: false });
+    const sendInterrupting = vi.fn(() => Promise.resolve());
+    useTaskSessionStore.setState({ sendInterrupting });
+
+    useMessageQueueStore.getState().enqueue("t1", "first", []);
+    const target = useMessageQueueStore.getState().getQueue("t1")[0];
+
+    await useTaskSessionStore.getState().steerQueuedMessage("t1", target.id);
+
+    expect(sendInterrupting).not.toHaveBeenCalled();
+    expect(useMessageQueueStore.getState().getQueue("t1")).toHaveLength(1);
+  });
+});
+
+describe("compaction tracking from the log stream", () => {
+  beforeEach(() => {
+    useTaskSessionStore.setState({ sessions: {} });
+  });
+
+  function statusEntry(isComplete: boolean): StoredLogEntry {
+    return {
+      type: "notification",
+      notification: {
+        method: "_posthog/status",
+        params: { status: "compacting", isComplete },
+      },
+    };
+  }
+
+  function logsUpdate(entries: StoredLogEntry[]): CloudTaskUpdatePayload {
+    return {
+      kind: "logs",
+      taskId: "t1",
+      runId: "run-1",
+      newEntries: entries,
+      totalEntryCount: entries.length,
+    };
+  }
+
+  it("sets isCompacting on a compacting status and clears it on the boundary", () => {
+    seedSession({ isCompacting: false });
+    const store = useTaskSessionStore.getState();
+
+    store._handleCloudUpdate("run-1", logsUpdate([statusEntry(false)]));
+    expect(store.getSessionForTask("t1")?.isCompacting).toBe(true);
+
+    store._handleCloudUpdate(
+      "run-1",
+      logsUpdate([
+        {
+          type: "notification",
+          notification: { method: "_posthog/compact_boundary" },
+        },
+      ]),
+    );
+    expect(store.getSessionForTask("t1")?.isCompacting).toBe(false);
   });
 });

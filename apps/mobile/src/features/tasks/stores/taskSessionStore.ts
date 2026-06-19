@@ -818,9 +818,10 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
 
   steerQueuedMessage: async (taskId: string, messageId: string) => {
     const session = get().getSessionForTask(taskId);
-    // Steering mid-compaction would abort the compaction; leave the message
-    // queued so it drains normally once compaction ends.
-    if (!session || session.isCompacting) return;
+    // Steering only makes sense against a live turn. Mid-compaction it would
+    // abort the compaction; with no turn running there is nothing to interrupt
+    // and the message drains via the normal turn-end flush.
+    if (!session || !session.isPromptPending || session.isCompacting) return;
 
     const message = useMessageQueueStore
       .getState()

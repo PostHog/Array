@@ -66,23 +66,24 @@ describe("messageQueueStore", () => {
     expect(getQueue("t1").map((m) => m.content)).toEqual(["a", "b", "c"]);
   });
 
-  it("removes exactly the targeted message and leaves the rest", () => {
+  it.each([
+    {
+      name: "removes exactly the targeted message",
+      contents: ["a", "b", "c"],
+      removeIndex: 1,
+      expected: ["a", "c"],
+    },
+    {
+      name: "clears the entry once the last message is removed",
+      contents: ["only"],
+      removeIndex: 0,
+      expected: [],
+    },
+  ])("$name", ({ contents, removeIndex, expected }) => {
     const { enqueue, remove, getQueue } = useMessageQueueStore.getState();
-    enqueue("t1", "a", []);
-    enqueue("t1", "b", []);
-    enqueue("t1", "c", []);
-    const target = getQueue("t1")[1];
-
-    remove("t1", target.id);
-
-    expect(getQueue("t1").map((m) => m.content)).toEqual(["a", "c"]);
-  });
-
-  it("clears the queue entry once the last message is removed", () => {
-    const { enqueue, remove, getQueue } = useMessageQueueStore.getState();
-    enqueue("t1", "only", []);
-    remove("t1", getQueue("t1")[0].id);
-    expect(getQueue("t1")).toEqual([]);
+    for (const content of contents) enqueue("t1", content, []);
+    remove("t1", getQueue("t1")[removeIndex].id);
+    expect(getQueue("t1").map((m) => m.content)).toEqual(expected);
   });
 
   it("ignores removal of an unknown id", () => {
