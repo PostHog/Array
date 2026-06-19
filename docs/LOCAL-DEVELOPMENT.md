@@ -110,12 +110,13 @@ flags take effect:
 python manage.py sync_feature_flags
 
 # In this repo: rewrite VITE_POSTHOG_* to your local instance, then restart dev
-pnpm posthog:local
+node scripts/use-local-posthog.mjs
 pnpm dev
 ```
 
-`pnpm posthog:local` auto-reads the project API key from a sibling `../posthog`
-checkout (or pass it: `pnpm posthog:local phc_xxx`, or set `POSTHOG_DIR`). This
+`node scripts/use-local-posthog.mjs` auto-reads the project API key from a
+sibling `../posthog` checkout (or pass it:
+`node scripts/use-local-posthog.mjs phc_xxx`, or set `POSTHOG_DIR`). This
 only affects the analytics/flags client — the data API still uses the **Dev**
 region you pick at login.
 
