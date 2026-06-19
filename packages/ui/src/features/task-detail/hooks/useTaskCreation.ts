@@ -19,7 +19,7 @@ import type { ExecutionMode, Task } from "@posthog/shared/domain-types";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToTaskPending } from "@posthog/ui/router/navigationBridge";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
 import { toast } from "../../../primitives/toast";
@@ -63,6 +63,12 @@ interface UseTaskCreationOptions {
   signalReportId?: string;
   channelContext?: string;
   channelName?: string;
+  /**
+   * Channels "generic chat box" mode: drop the repo/branch requirement so a
+   * task can be submitted without picking a repo. The agent decides at runtime
+   * whether it needs one and attaches it lazily.
+   */
+  allowNoRepo?: boolean;
   onTaskCreated?: (task: Task) => void;
 }
 
@@ -142,11 +148,13 @@ export function useTaskCreation({
   signalReportId,
   channelContext,
   channelName,
+  allowNoRepo,
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const hostClient = useHostTRPCClient();
   const trpc = useHostTRPC();
+  const queryClient = useQueryClient();
   const defaultAdditionalDirectoriesQuery = useQuery(
     trpc.additionalDirectories.listDefaults.queryOptions(),
   );
@@ -166,8 +174,11 @@ export function useTaskCreation({
   const { invalidateTasks } = useCreateTask();
   const { isOnline } = useConnectivity();
 
-  const hasRequiredPath =
-    workspaceMode === "cloud" ? !!selectedRepository : !!selectedDirectory;
+  const hasRequiredPath = allowNoRepo
+    ? true
+    : workspaceMode === "cloud"
+      ? !!selectedRepository
+      : !!selectedDirectory;
   const canSubmitBase =
     isAuthenticated && isOnline && hasRequiredPath && !isCreatingTask;
   const canSubmit = !!editorRef.current && canSubmitBase && !editorIsEmpty;
@@ -243,8 +254,10 @@ export function useTaskCreation({
         const serializedContent = contentToXml(content).trim();
         const filePaths = extractFilePaths(content);
         const input = prepareTaskInput(serializedContent, filePaths, {
-          selectedDirectory,
-          selectedRepository,
+          // In channels chat-box mode no repo is attached up front, even if a
+          // directory/repo is lingering in the persisted picker state.
+          selectedDirectory: allowNoRepo ? undefined : selectedDirectory,
+          selectedRepository: allowNoRepo ? null : selectedRepository,
           githubIntegrationId,
           githubUserIntegrationId,
           workspaceMode,
@@ -260,6 +273,7 @@ export function useTaskCreation({
           additionalDirectories,
           channelContext,
           channelName,
+          allowNoRepo,
         });
 
         if (executionMode) {
@@ -293,6 +307,15 @@ export function useTaskCreation({
         if (result.success) {
           setAdditionalDirectoriesOverride(null);
           void trackTaskCreated(input, selectedDirectory, hostClient);
+          // Repo-less channel tasks create no workspace row (the agent runs in
+          // a scratch dir surfaced as a synthetic workspace), so the normal
+          // workspace.create invalidation never fires. Refresh the workspace
+          // cache so the task view resolves its cwd and skips the repo prompt.
+          if (allowNoRepo) {
+            void queryClient.invalidateQueries({
+              queryKey: trpc.workspace.getAll.queryKey(),
+            });
+          }
         }
 
         if (!result.success) {
@@ -348,10 +371,13 @@ export function useTaskCreation({
       additionalDirectories,
       channelContext,
       channelName,
+      allowNoRepo,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
       hostClient,
+      trpc,
+      queryClient,
       taskService,
     ],
   );

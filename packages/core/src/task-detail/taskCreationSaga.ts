@@ -204,6 +204,22 @@ export class TaskCreationSaga extends Saga<
 
     const shouldStartCloudRun = workspaceMode === "cloud" && !task.latest_run;
 
+    // Channels "generic chat box": a repo-less local/worktree task still starts
+    // an agent, in a per-task scratch dir. Provision it before signalling the
+    // task is ready so the task view resolves the scratch dir as its cwd (a
+    // synthetic local workspace) instead of showing the repo-picker prompt.
+    let scratchCwd: string | null = null;
+    if (
+      !repoPath &&
+      !input.taskId &&
+      workspaceMode !== "cloud" &&
+      input.allowNoRepo
+    ) {
+      scratchCwd = await this.readOnlyStep("scratch_dir", () =>
+        this.deps.host.ensureScratchDir(task.id),
+      );
+    }
+
     if (!hasProvisioning && !shouldStartCloudRun && this.deps.onTaskReady) {
       this.deps.onTaskReady({ task, workspace });
     }
@@ -318,9 +334,13 @@ export class TaskCreationSaga extends Saga<
       }
     }
 
-    const agentCwd =
-      workspace?.worktreePath ?? workspace?.folderPath ?? repoPath;
     const isCloudCreate = !input.taskId && workspaceMode === "cloud";
+    const agentCwd =
+      workspace?.worktreePath ??
+      workspace?.folderPath ??
+      repoPath ??
+      scratchCwd;
+
     const shouldConnect = !isCloudCreate && (!!input.taskId || !!agentCwd);
 
     if (shouldConnect) {

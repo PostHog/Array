@@ -54,6 +54,10 @@ import {
   STORAGE_PATHS_SERVICE,
 } from "@posthog/platform/storage-paths";
 import {
+  type IWorkspaceSettings,
+  WORKSPACE_SETTINGS_SERVICE,
+} from "@posthog/platform/workspace-settings";
+import {
   type AcpMessage,
   isAuthError,
   serializeError,
@@ -67,6 +71,7 @@ import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import { loadSessionEnvOverrides } from "../session-env/loader";
+import { isScratchPath } from "../workspace/scratch";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
 import { cleanupCodexHome, prepareCodexHome } from "./codex-home";
 import { discoverExternalPlugins } from "./discover-plugins";
@@ -365,6 +370,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly storagePaths: IStoragePaths,
     @inject(WORKSPACE_REPOSITORY)
     private readonly workspaceRepository: IWorkspaceRepository,
+    @inject(WORKSPACE_SETTINGS_SERVICE)
+    private readonly workspaceSettings: IWorkspaceSettings,
     @inject(AGENT_LOGGER)
     loggerFactory: AgentLogger,
   ) {
@@ -527,6 +534,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     customInstructions?: string,
     additionalDirectories?: string[],
     systemPromptOverride?: string,
+    channelMode?: boolean,
   ): {
     append: string;
   } {
@@ -565,6 +573,19 @@ When creating pull requests, add the following footer at the end of the PR descr
 ---
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
 \`\`\``;
+
+    if (channelMode) {
+      prompt += `
+
+## Channel task (no repository attached)
+You are running in a PostHog channel as a general-purpose assistant. This task may NOT need a code repository at all — it could be data analysis via PostHog tools, drafting a message, or answering a question. Do not assume you need a repo.
+
+- Your working directory is a scratch directory, not a git checkout. Treat it as empty.
+- Decide from the user's request (and the channel CONTEXT.md included above, if any) whether the task actually requires working inside a code repository.
+- Only if a repository is genuinely required: pick which one from the request and CONTEXT.md. Repositories named in CONTEXT.md are the most likely candidates — prefer them. Call \`list_repos\` to see what is available.
+- Bring a repo into your workspace with the \`clone_repo\` tool (pass \`owner/repo\`). It clones into a subdirectory of your working directory and returns the path — cd into that path for all git work.
+- If a repository is required but you cannot confidently determine which one, use the AskUserQuestion tool to ask the user to choose before cloning. Do not guess.`;
+    }
 
     if (customInstructions) {
       prompt += `\n\nUser custom instructions:\n${customInstructions}`;
@@ -631,6 +652,14 @@ When creating pull requests, add the following footer at the end of the PR descr
     // Preview config doesn't need a real repo — use a temp directory
     const repoPath = taskId === "__preview__" ? tmpdir() : rawRepoPath;
 
+    // Repo-less channel tasks run in a scratch dir. Detecting it server-side
+    // (rather than plumbing a flag from the client) keeps channel mode correct
+    // across reconnects, where the same scratch repoPath is passed back in.
+    const channelMode = isScratchPath(
+      repoPath,
+      this.workspaceSettings.getWorktreeLocation(),
+    );
+
     const additionalDirectories =
       taskId === "__preview__"
         ? []
@@ -687,6 +716,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         customInstructions,
         additionalDirectories,
         systemPromptOverride,
+        channelMode,
       );
 
       const bundledSkillsDir = join(
@@ -884,6 +914,7 @@ When creating pull requests, add the following footer at the end of the PR descr
             environment: "local",
             sessionId: existingSessionId,
             systemPrompt,
+            ...(channelMode && { channelMode }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
@@ -909,6 +940,7 @@ When creating pull requests, add the following footer at the end of the PR descr
             taskRunId,
             environment: "local",
             systemPrompt,
+            ...(channelMode && { channelMode }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),

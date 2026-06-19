@@ -9,6 +9,7 @@ import type {
 const mockHost = vi.hoisted(() => ({
   getAuthenticatedClient: vi.fn(),
   getTaskDirectory: vi.fn(),
+  ensureScratchDir: vi.fn(),
   getWorkspace: vi.fn(),
   createWorkspace: vi.fn(),
   deleteWorkspace: vi.fn(),
@@ -70,6 +71,7 @@ describe("TaskCreationSaga", () => {
     mockHost.createWorkspace.mockResolvedValue({});
     mockHost.deleteWorkspace.mockResolvedValue(undefined);
     mockHost.getTaskDirectory.mockResolvedValue(null);
+    mockHost.ensureScratchDir.mockResolvedValue("/tmp/scratch/task-123");
     mockHost.getWorkspace.mockResolvedValue(null);
     mockHost.getFolders.mockResolvedValue([]);
     mockHost.uploadRunAttachments.mockResolvedValue([]);
@@ -152,6 +154,41 @@ describe("TaskCreationSaga", () => {
     );
     expect(startTaskRunMock.mock.invocationCallOrder[0]).toBeLessThan(
       onTaskReady.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("starts a repo-less channel task in a scratch dir (allowNoRepo)", async () => {
+    const createdTask = createTask({ repository: undefined });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+
+    const saga = new TaskCreationSaga({
+      posthogClient: {
+        createTask: createTaskMock,
+        deleteTask: vi.fn(),
+        getTask: vi.fn(),
+        createTaskRun: vi.fn(),
+        startTaskRun: vi.fn(),
+        sendRunCommand: vi.fn(),
+        updateTask: vi.fn(),
+      } as never,
+      host,
+      sessionService,
+      track: vi.fn(),
+    });
+
+    const result = await saga.run({
+      content: "Draft a launch email",
+      workspaceMode: "local",
+      allowNoRepo: true,
+    });
+
+    expect(result.success).toBe(true);
+    // No repo selected → no workspace created, but a scratch dir is provisioned
+    // and the agent session connects there.
+    expect(mockHost.createWorkspace).not.toHaveBeenCalled();
+    expect(mockHost.ensureScratchDir).toHaveBeenCalledWith("task-123");
+    expect(sessionService.connectToTask).toHaveBeenCalledWith(
+      expect.objectContaining({ repoPath: "/tmp/scratch/task-123" }),
     );
   });
 

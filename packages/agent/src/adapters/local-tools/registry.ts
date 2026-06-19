@@ -25,6 +25,8 @@ export interface LocalToolCtx {
 /** Minimal session-meta shape needed to gate tools (e.g. cloud-only). */
 export interface LocalToolGateMeta {
   environment?: "local" | "cloud";
+  /** Repo-less channel session: enables the lazy-repo tools. */
+  channelMode?: boolean;
 }
 
 /**

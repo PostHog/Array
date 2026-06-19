@@ -31,10 +31,7 @@ import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import {
-  navigateToChannel,
-  navigateToChannelTask,
-} from "@posthog/ui/router/navigationBridge";
+import { navigateToChannel } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
@@ -290,11 +287,11 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
               // Bluebird: a task filed to a channel opens in the channel-
               // organized view under /website, keeping the channels chrome.
               // Otherwise fall back to the /code task detail.
-              if (bluebirdEnabled && channel) {
-                navigateToChannelTask(channel.id, task.id);
-              } else {
-                void openTask(task);
-              }
+              const channelTarget =
+                bluebirdEnabled && channel
+                  ? { channelId: channel.id }
+                  : undefined;
+              void openTask(task, channelTarget);
             },
           };
         }),

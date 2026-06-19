@@ -173,6 +173,9 @@ function createMockDependencies() {
       addAdditionalDirectory: vi.fn(),
       removeAdditionalDirectory: vi.fn(),
     },
+    workspaceSettings: {
+      getWorktreeLocation: () => "/mock/worktrees",
+    },
     loggerFactory: {
       scope: () => ({
         info: vi.fn(),
@@ -216,6 +219,7 @@ describe("AgentService", () => {
       deps.appMeta as never,
       deps.storagePaths as never,
       deps.workspaceRepository as never,
+      deps.workspaceSettings as never,
       deps.loggerFactory as never,
     );
     vi.spyOn(service, "emit");
