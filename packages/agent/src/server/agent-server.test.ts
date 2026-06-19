@@ -1280,6 +1280,19 @@ describe("AgentServer HTTP Mode", () => {
       expect(s.fetchPrCreatedAt).toHaveBeenCalledTimes(1);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
+
+    it("attributes only the first when two distinct recent PRs race", async () => {
+      // Both URLs fetch as recent, so both pass the recency check. Without the
+      // post-await guard each would set detectedPrUrl and call updateTaskRun;
+      // attribution must still happen exactly once.
+      const s = setup(justNow());
+      const second = "https://github.com/PostHog/posthog.com/pull/17765";
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(second));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
+      expect(s.detectedPrUrl).toBe(PR_URL);
+    });
   });
 
   describe("buildCloudSystemPrompt", () => {
