@@ -65,6 +65,32 @@ describe("messageQueueStore", () => {
 
     expect(getQueue("t1").map((m) => m.content)).toEqual(["a", "b", "c"]);
   });
+
+  it("removes exactly the targeted message and leaves the rest", () => {
+    const { enqueue, remove, getQueue } = useMessageQueueStore.getState();
+    enqueue("t1", "a", []);
+    enqueue("t1", "b", []);
+    enqueue("t1", "c", []);
+    const target = getQueue("t1")[1];
+
+    remove("t1", target.id);
+
+    expect(getQueue("t1").map((m) => m.content)).toEqual(["a", "c"]);
+  });
+
+  it("clears the queue entry once the last message is removed", () => {
+    const { enqueue, remove, getQueue } = useMessageQueueStore.getState();
+    enqueue("t1", "only", []);
+    remove("t1", getQueue("t1")[0].id);
+    expect(getQueue("t1")).toEqual([]);
+  });
+
+  it("ignores removal of an unknown id", () => {
+    const { enqueue, remove, getQueue } = useMessageQueueStore.getState();
+    enqueue("t1", "a", []);
+    remove("t1", "nope");
+    expect(getQueue("t1").map((m) => m.content)).toEqual(["a"]);
+  });
 });
 
 describe("combineQueuedMessages", () => {
@@ -72,7 +98,7 @@ describe("combineQueuedMessages", () => {
     content: string,
     attachments: PendingAttachment[],
   ): QueuedMessage {
-    return { content, attachments };
+    return { id: content, content, attachments };
   }
 
   it("joins text in order with a blank line and concatenates attachments", () => {
