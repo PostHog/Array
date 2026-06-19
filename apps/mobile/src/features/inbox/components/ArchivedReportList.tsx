@@ -109,6 +109,11 @@ export function ArchivedReportList({
     };
   }, []);
 
+  const handlePress = useCallback(
+    (report: SignalReport) => onReportPress?.(report),
+    [onReportPress],
+  );
+
   const restoreMutate = restore.mutate;
   const handleRestore = useCallback(
     (reportId: string) => {
@@ -180,7 +185,7 @@ export function ArchivedReportList({
         renderItem={({ item }) => (
           <ArchivedRow
             report={item}
-            onPress={(report) => onReportPress?.(report)}
+            onPress={handlePress}
             onRestore={handleRestore}
             restoring={restore.isPending && restore.variables === item.id}
           />
