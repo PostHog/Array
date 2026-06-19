@@ -182,6 +182,7 @@ export type RepositoryCacheAction = "write" | "clear" | "skip";
 export interface UserRepositoryCacheInputs {
   integrationsPending: boolean;
   reposPending: boolean;
+  reposErrored: boolean;
   hasIntegrations: boolean;
   liveRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
   cachedRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
@@ -194,6 +195,7 @@ export interface UserRepositoryCacheInputs {
 export function resolveUserRepositoryCacheAction({
   integrationsPending,
   reposPending,
+  reposErrored,
   hasIntegrations,
   liveRepositoryMap,
   cachedRepositoryMap,
@@ -203,9 +205,13 @@ export function resolveUserRepositoryCacheAction({
     return isEmptyRepositoryMap(cachedRepositoryMap) ? "skip" : "clear";
   }
   if (reposPending) return "skip";
-  // A transient empty or failed fetch must not clobber the last-known-good
-  // cache, so only overwrite when fresh data exists and actually differs.
-  if (isEmptyRepositoryMap(liveRepositoryMap)) return "skip";
+  if (isEmptyRepositoryMap(liveRepositoryMap)) {
+    // A failed fetch can return an empty map, so keep the last-known-good
+    // cache instead of clobbering it. A genuinely empty result clears the
+    // stale cache so a removed repo does not flash on the next cold start.
+    if (reposErrored) return "skip";
+    return isEmptyRepositoryMap(cachedRepositoryMap) ? "skip" : "clear";
+  }
   if (sameUserRepositoryMap(liveRepositoryMap, cachedRepositoryMap)) {
     return "skip";
   }

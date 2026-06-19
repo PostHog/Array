@@ -156,6 +156,7 @@ describe("resolveUserRepositoryCacheAction", () => {
       inputs: {
         integrationsPending: true,
         reposPending: false,
+        reposErrored: false,
         hasIntegrations: true,
         liveRepositoryMap: { "a/x": ref },
         cachedRepositoryMap: {},
@@ -167,6 +168,7 @@ describe("resolveUserRepositoryCacheAction", () => {
       inputs: {
         integrationsPending: false,
         reposPending: false,
+        reposErrored: false,
         hasIntegrations: false,
         liveRepositoryMap: {},
         cachedRepositoryMap: { "a/x": ref },
@@ -178,6 +180,7 @@ describe("resolveUserRepositoryCacheAction", () => {
       inputs: {
         integrationsPending: false,
         reposPending: false,
+        reposErrored: false,
         hasIntegrations: false,
         liveRepositoryMap: {},
         cachedRepositoryMap: {},
@@ -189,6 +192,7 @@ describe("resolveUserRepositoryCacheAction", () => {
       inputs: {
         integrationsPending: false,
         reposPending: true,
+        reposErrored: false,
         hasIntegrations: true,
         liveRepositoryMap: {},
         cachedRepositoryMap: { "a/x": ref },
@@ -196,13 +200,38 @@ describe("resolveUserRepositoryCacheAction", () => {
       expected: "skip",
     },
     {
-      name: "skips an empty live map so a failed fetch keeps the cache",
+      name: "keeps the cache when an errored fetch returns empty",
       inputs: {
         integrationsPending: false,
         reposPending: false,
+        reposErrored: true,
         hasIntegrations: true,
         liveRepositoryMap: {},
         cachedRepositoryMap: { "a/x": ref },
+      },
+      expected: "skip",
+    },
+    {
+      name: "clears a stale cache when a clean fetch returns empty",
+      inputs: {
+        integrationsPending: false,
+        reposPending: false,
+        reposErrored: false,
+        hasIntegrations: true,
+        liveRepositoryMap: {},
+        cachedRepositoryMap: { "a/x": ref },
+      },
+      expected: "clear",
+    },
+    {
+      name: "skips when a clean empty fetch matches an empty cache",
+      inputs: {
+        integrationsPending: false,
+        reposPending: false,
+        reposErrored: false,
+        hasIntegrations: true,
+        liveRepositoryMap: {},
+        cachedRepositoryMap: {},
       },
       expected: "skip",
     },
@@ -211,6 +240,7 @@ describe("resolveUserRepositoryCacheAction", () => {
       inputs: {
         integrationsPending: false,
         reposPending: false,
+        reposErrored: false,
         hasIntegrations: true,
         liveRepositoryMap: { "a/x": { ...ref } },
         cachedRepositoryMap: { "a/x": { ...ref } },
@@ -222,6 +252,7 @@ describe("resolveUserRepositoryCacheAction", () => {
       inputs: {
         integrationsPending: false,
         reposPending: false,
+        reposErrored: false,
         hasIntegrations: true,
         liveRepositoryMap: { "a/y": ref },
         cachedRepositoryMap: { "a/x": ref },

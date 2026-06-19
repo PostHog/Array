@@ -407,10 +407,12 @@ export function useUserRepositoryIntegration() {
 
   // Persist the freshly loaded map so the picker has data on the next cold
   // start, and clear it once the user has no integrations.
+  const reposErrored = failedInstallationIds.length > 0;
   useEffect(() => {
     const action = resolveUserRepositoryCacheAction({
       integrationsPending,
       reposPending,
+      reposErrored,
       hasIntegrations: githubIntegrations.length > 0,
       liveRepositoryMap: repositoryMap,
       cachedRepositoryMap,
@@ -423,6 +425,7 @@ export function useUserRepositoryIntegration() {
   }, [
     integrationsPending,
     reposPending,
+    reposErrored,
     githubIntegrations.length,
     repositoryMap,
     cachedRepositoryMap,
