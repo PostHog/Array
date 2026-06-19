@@ -5,6 +5,8 @@ vi.mock("@posthog/ui/shell/analytics", () => ({
   setActiveTaskContext: vi.fn(),
 }));
 
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { track } from "@posthog/ui/shell/analytics";
 import { usePanelLayoutStore } from "./panelLayoutStore";
 import {
   assertActiveTab,
@@ -549,6 +551,47 @@ describe("panelLayoutStore", () => {
 
       const updatedTree = getPanelTree("task-1");
       expect(updatedTree.type).toBe("leaf");
+    });
+  });
+
+  describe("addBrowserTab", () => {
+    beforeEach(() => {
+      usePanelLayoutStore.getState().initializeTask("task-1");
+      vi.mocked(track).mockClear();
+    });
+
+    it("tracks BROWSER_TAB_OPENED with source=user when no URL provided", () => {
+      usePanelLayoutStore.getState().addBrowserTab("task-1", "main-panel");
+
+      expect(track).toHaveBeenCalledOnce();
+      expect(track).toHaveBeenCalledWith(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
+        source: "user",
+        has_initial_url: false,
+      });
+    });
+
+    it("tracks BROWSER_TAB_OPENED with source=window_open when URL provided", () => {
+      usePanelLayoutStore
+        .getState()
+        .addBrowserTab("task-1", "main-panel", "https://example.com");
+
+      expect(track).toHaveBeenCalledOnce();
+      expect(track).toHaveBeenCalledWith(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
+        source: "window_open",
+        has_initial_url: true,
+      });
+    });
+
+    it("adds a browser tab to the panel", () => {
+      usePanelLayoutStore
+        .getState()
+        .addBrowserTab("task-1", "main-panel", "https://example.com");
+
+      const panel = findPanelById(getPanelTree("task-1"), "main-panel");
+      const browserTabs = panel?.content.tabs.filter((t: { id: string }) =>
+        t.id.startsWith("browser-"),
+      );
+      expect(browserTabs?.length).toBeGreaterThan(0);
     });
   });
 
