@@ -50,9 +50,6 @@ export class AuthContribution implements Contribution {
     }
   }
 
-  // Cloud prompts can queue while auth is restoring. Flush them once auth
-  // resolves, or tell the user to sign back in if the restore ended in logout
-  // so their queued messages are not silently stranded.
   private syncCloudQueueForAuthState(state: AuthState): void {
     if (state.status === "authenticated") {
       this.sessionService.flushQueuedCloudMessagesAfterAuthRestored();

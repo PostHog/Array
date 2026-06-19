@@ -92,9 +92,6 @@ const LOCAL_SESSION_RECOVERY_FAILED_MESSAGE =
 const GITHUB_AUTHORIZATION_REQUIRED_CODE = "github_authorization_required";
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
-// A local connect can start while a stored-session auth restore is still in
-// flight past its bootstrap deadline. Cap how many retry delays we hold the
-// session in "connecting" waiting for that restore before surfacing an error.
 const AUTH_RESTORE_MAX_RETRY_WAITS = 6;
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
@@ -682,11 +679,8 @@ export class SessionService {
           break;
         }
 
-        // A stored-session auth restore can outlast its bootstrap deadline and
-        // settle in the background. While it is still restoring, keep the
-        // session connecting and wait rather than calling clearSessionError
-        // (which tears the session down) and burning the retry budget into a
-        // permanent error. Bounded so a wedged restore still surfaces an error.
+        // Wait out an in-flight restore instead of spending a retry on
+        // clearSessionError, which tears the connecting session down.
         if (
           restoringWaits < AUTH_RESTORE_MAX_RETRY_WAITS &&
           (await this.getAuthCredentialsStatus()).kind === "restoring"

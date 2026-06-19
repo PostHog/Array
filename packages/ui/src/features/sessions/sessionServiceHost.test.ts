@@ -654,8 +654,6 @@ describe("SessionService", () => {
         );
         expect(mockTrpcAgent.start.mutate).not.toHaveBeenCalled();
 
-        // Past the old 2-attempt / 20s window: still restoring, so the session
-        // must stay connecting instead of being torn down or flipped to error.
         await vi.advanceTimersByTimeAsync(30_000);
         expect(clearSpy).not.toHaveBeenCalled();
         expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalledWith(
