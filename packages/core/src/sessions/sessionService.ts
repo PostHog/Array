@@ -3704,6 +3704,14 @@ export class SessionService {
     }
   }
 
+  public flushQueuedCloudMessagesAfterAuthRestored(): void {
+    const sessions = this.d.store.getSessions();
+    for (const session of Object.values(sessions)) {
+      if (!session.isCloud || session.messageQueue.length === 0) continue;
+      this.scheduleCloudQueueFlush(session.taskId, "auth_restored");
+    }
+  }
+
   public updateSessionTaskTitle(taskId: string, taskTitle: string): void {
     const session = this.d.store.getSessionByTaskId(taskId);
     if (!session) return;

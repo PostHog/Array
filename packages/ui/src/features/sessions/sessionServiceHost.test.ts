@@ -3713,6 +3713,56 @@ describe("SessionService", () => {
       expect(mockTrpcCloudTask.sendCommand.mutate).not.toHaveBeenCalled();
     });
 
+    it("flushes cloud prompt queued during auth restore after auth is restored", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = getSessionService();
+        const prompt: ContentBlock[] = [{ type: "text", text: "hold this" }];
+        const queuedMessage = {
+          id: "queue-1",
+          content: "hold this",
+          rawPrompt: prompt,
+          queuedAt: 1700000000,
+        };
+        const session = createMockSession({
+          isCloud: true,
+          cloudStatus: "in_progress",
+          status: "connected",
+          isPromptPending: false,
+          messageQueue: [queuedMessage],
+        });
+        mockSessionStoreSetters.getSessions.mockReturnValue({
+          "run-123": session,
+        });
+        mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+        mockSessionStoreSetters.dequeueMessages.mockReturnValue([
+          queuedMessage,
+        ]);
+        mockTrpcCloudTask.sendCommand.mutate.mockResolvedValue({
+          success: true,
+          result: { queued: true },
+        });
+
+        service.flushQueuedCloudMessagesAfterAuthRestored();
+        await vi.advanceTimersByTimeAsync(0);
+
+        await vi.waitFor(() => {
+          expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
+            expect.objectContaining({
+              taskId: "task-123",
+              runId: "run-123",
+              method: "user_message",
+            }),
+          );
+        });
+        expect(mockSessionStoreSetters.dequeueMessages).toHaveBeenCalledWith(
+          "task-123",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("does not pin isPromptPending when queueing during sandbox boot", async () => {
       const service = getSessionService();
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
