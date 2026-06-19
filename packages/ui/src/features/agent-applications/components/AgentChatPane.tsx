@@ -18,6 +18,7 @@ import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { useAgentChatPendingApproval } from "../hooks/useAgentChatPendingApproval";
 import { useAgentRevision } from "../hooks/useAgentRevision";
+import { modelPolicySummary } from "../utils/format";
 import { resolveIngressBaseUrl } from "../utils/ingress";
 import { AgentChatPendingApprovalCard } from "./AgentChatPendingApprovalCard";
 import { AgentChatSurface } from "./AgentChatSurface";
@@ -199,7 +200,7 @@ export function AgentChatPane({
             <PreviewBanner
               revisionId={targetRevisionId}
               isDraft={isDraftPreview}
-              model={revision?.spec?.model}
+              model={modelPolicySummary(revision?.spec?.model_policy)}
               region={cloudRegion}
             />
             <AgentChatSurface

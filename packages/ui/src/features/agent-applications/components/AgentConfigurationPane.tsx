@@ -618,10 +618,36 @@ function byPath(files: BundleFile[], path: string): BundleFile | undefined {
 // --- bodies -----------------------------------------------------------------
 
 function ModelBody({ spec }: { spec: AgentSpec }) {
+  const policy = spec.model_policy;
   return (
     <Flex direction="column" gap="2">
-      <Row label="model" value={spec.model ?? "not set"} mono />
-      <Row label="reasoning" value={spec.reasoning ?? "default"} />
+      {policy ? (
+        <Row label="policy" value={policy.mode} />
+      ) : (
+        <Row label="model" value="not set" mono />
+      )}
+      {policy?.mode === "auto" ? (
+        <>
+          <Row label="level" value={policy.level} />
+          <Row
+            label="reasoning"
+            value={policy.reasoning ?? spec.reasoning ?? "default"}
+          />
+        </>
+      ) : null}
+      {policy?.mode === "manual" ? (
+        <>
+          {policy.models.map((m, i) => (
+            <Row
+              key={`${m.model}:${m.reasoning ?? "_"}`}
+              label={i === 0 ? "model" : "fallback"}
+              value={m.reasoning ? `${m.model} · ${m.reasoning}` : m.model}
+              mono
+            />
+          ))}
+          <Row label="reasoning" value={spec.reasoning ?? "default"} />
+        </>
+      ) : null}
       {spec.entrypoint ? (
         <Row label="entrypoint" value={spec.entrypoint} mono />
       ) : null}

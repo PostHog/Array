@@ -67,13 +67,34 @@ export interface AgentApplication {
 
 // --- Revisions -------------------------------------------------------------
 
+/** Normalized reasoning-effort knob; mirrors the backend spec schema. */
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+
+/** One model in a manual priority list; per-entry reasoning overrides the spec default. */
+export interface ModelEntry {
+  model: string;
+  reasoning?: ReasoningEffort;
+}
+
+/** Quality/cost level for an `auto` policy, resolved to a maintained model list at runtime. */
+export type ModelLevel = "low" | "medium" | "high";
+
+/**
+ * Model selection. `auto` resolves a level to a platform-maintained,
+ * priority-ordered list at runtime; `manual` is the author's explicit
+ * priority list (first entry primary, rest fallbacks).
+ */
+export type ModelPolicy =
+  | { mode: "auto"; level: ModelLevel; reasoning?: ReasoningEffort }
+  | { mode: "manual"; models: ModelEntry[] };
+
 /**
  * The agent spec carried on a revision. Fully typed elaboration (triggers,
  * tools, mcps, skills, limits) lands with the config editor milestone; for now
  * the known top-level fields are surfaced and the rest passes through.
  */
 export interface AgentSpec {
-  model: string;
+  model_policy?: ModelPolicy;
   triggers?: unknown[];
   tools?: unknown[];
   mcps?: unknown[];
@@ -86,7 +107,7 @@ export interface AgentSpec {
     max_wall_seconds?: number;
   };
   entrypoint?: string;
-  reasoning?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  reasoning?: ReasoningEffort;
   [key: string]: unknown;
 }
 

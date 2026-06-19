@@ -2,6 +2,7 @@ import type {
   AgentApprovalRequestState,
   AgentRevisionState,
   AgentSessionState,
+  ModelPolicy,
 } from "@posthog/shared/agent-platform-types";
 /** Formats a USD spend value for the fleet / agent stat strips. */
 export function formatSpendUsd(value: number | null | undefined): string {
@@ -110,4 +111,15 @@ export function revisionStateColor(
     default:
       return "gray";
   }
+}
+
+/** Short, glanceable model-policy label for banners (e.g. "auto · high", "claude-sonnet-4-6 +1"). */
+export function modelPolicySummary(
+  policy: ModelPolicy | null | undefined,
+): string | undefined {
+  if (!policy) return undefined;
+  if (policy.mode === "auto") return `auto · ${policy.level}`;
+  const [first, ...rest] = policy.models;
+  if (!first) return "manual";
+  return rest.length > 0 ? `${first.model} +${rest.length}` : first.model;
 }
