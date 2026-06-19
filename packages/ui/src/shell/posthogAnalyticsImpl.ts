@@ -55,11 +55,6 @@ export function initializePostHog(sessionId?: string) {
   }
 
   posthog.init(apiKey, {
-    // Pins posthog-js' baseline config to the 2026-05-30 defaults epoch (a named
-    // bundle of recommended defaults, not a date anything happens on). This value
-    // only exists in posthog-js >= 1.378.0 — keep package.json's floor in sync.
-    // posthog-js merges the epoch first and the explicit options below last, so
-    // every option set here deliberately overrides the epoch.
     defaults: "2026-05-30",
     api_host: apiHost,
     ui_host: uiHost,
