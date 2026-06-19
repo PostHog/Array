@@ -1,18 +1,6 @@
-import {
-  ArrowBendDownLeft,
-  DotsThree,
-  Stack,
-  Trash,
-} from "@phosphor-icons/react";
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@posthog/quill";
+import { ArrowBendDownLeft, Stack, Trash } from "@phosphor-icons/react";
+import { Button } from "@posthog/quill";
 import { Box, Flex, IconButton, Tooltip } from "@radix-ui/themes";
-import { useState } from "react";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import type { QueuedMessage } from "../../sessionStore";
 import { hasFileMentions, parseFileMentions } from "./parseFileMentions";
@@ -21,7 +9,6 @@ interface QueuedMessageViewProps {
   message: QueuedMessage;
   onSteer?: () => void;
   onRemove?: () => void;
-  onTurnOffQueueing?: () => void;
   supportsNativeSteer?: boolean;
 }
 
@@ -29,11 +16,8 @@ export function QueuedMessageView({
   message,
   onSteer,
   onRemove,
-  onTurnOffQueueing,
   supportsNativeSteer = false,
 }: QueuedMessageViewProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-
   const steerTooltip = supportsNativeSteer
     ? "Inject this message into the current turn at the next tool boundary."
     : "Interrupt the current turn and resend with this message.";
@@ -76,28 +60,6 @@ export function QueuedMessageView({
                 <Trash size={12} />
               </IconButton>
             </Tooltip>
-          )}
-          {onTurnOffQueueing && (
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="icon-xs"
-                    aria-label="More options"
-                  >
-                    <DotsThree size={16} weight="bold" />
-                  </Button>
-                }
-              />
-              <DropdownMenuContent align="end" side="bottom" sideOffset={6}>
-                <DropdownMenuItem onClick={onTurnOffQueueing}>
-                  <Stack size={14} />
-                  Turn off queueing
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           )}
         </Flex>
       </Flex>

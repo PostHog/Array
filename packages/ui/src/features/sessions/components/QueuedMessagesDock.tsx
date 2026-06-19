@@ -4,11 +4,7 @@ import {
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
 import { QueuedMessageView } from "@posthog/ui/features/sessions/components/session-update/QueuedMessageView";
-import {
-  useMessagingMode,
-  useSupportsNativeSteer,
-} from "@posthog/ui/features/sessions/hooks/useMessagingMode";
-import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
+import { useSupportsNativeSteer } from "@posthog/ui/features/sessions/hooks/useMessagingMode";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import { useQueuedMessagesForTask } from "@posthog/ui/features/sessions/useSession";
 import { Flex } from "@radix-ui/themes";
@@ -19,14 +15,12 @@ interface QueuedMessagesDockProps {
 
 /**
  * Queued follow-ups pinned directly above the composer (outside the scrolling
- * thread) with per-message actions: steer it into the running turn now, discard
- * it, or turn queueing off for the task.
+ * thread) with per-message actions: steer it into the running turn now, or
+ * discard it.
  */
 export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
   const queued = useQueuedMessagesForTask(taskId);
   const sessionService = useService<SessionService>(SESSION_SERVICE);
-  const mode = useMessagingMode(taskId);
-  const turnOffQueueing = useToggleMessagingMode(taskId);
   const supportsNativeSteer = useSupportsNativeSteer(taskId);
 
   if (queued.length === 0) return null;
@@ -48,7 +42,6 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
           onRemove={() =>
             sessionStoreSetters.removeQueuedMessage(taskId, message.id)
           }
-          onTurnOffQueueing={mode === "queue" ? turnOffQueueing : undefined}
         />
       ))}
     </Flex>
