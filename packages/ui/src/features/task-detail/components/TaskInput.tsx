@@ -686,9 +686,14 @@ export function TaskInput({
         <DotPatternBackground className="h-[100.333%]" />
         <div
           style={{
-            // Raise the input when channel suggestions are shown so the longer
+            // Raise the input when the suggestion cards are shown so the longer
             // list below it isn't squished against the bottom of the viewport.
-            top: suggestions && suggestions.length > 0 ? "38%" : "50%",
+            // Tied to the same condition as the cards (which hide once the
+            // editor has content) so the input recenters as the user types.
+            top:
+              suggestions && suggestions.length > 0 && editorIsEmpty
+                ? "38%"
+                : "50%",
             transform: "translate(-50%, -50%)",
           }}
           className="absolute left-1/2 z-[1] flex w-[calc(100%-2rem)] max-w-[600px] flex-col gap-2"
