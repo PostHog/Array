@@ -412,7 +412,11 @@ export function useAgentChat({
             reconnectBackoffMs(reconnectAttempts),
             controller.signal,
           );
-          if (!waited || epochRef.current !== epoch || controller.signal.aborted)
+          if (
+            !waited ||
+            epochRef.current !== epoch ||
+            controller.signal.aborted
+          )
             break;
           // Refresh a preview token that may have lapsed across the gap.
           token = await getPreviewToken();

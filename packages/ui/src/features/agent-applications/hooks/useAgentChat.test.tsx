@@ -27,8 +27,12 @@ const SLUG = "my-agent";
 const SESSION = "sess-1";
 
 function ev(kind: AgentSessionEvent["kind"], data: unknown): AgentSessionEvent {
-  return { kind, session_id: SESSION, ts: "2026-06-19T00:00:00Z", data } as
-    AgentSessionEvent;
+  return {
+    kind,
+    session_id: SESSION,
+    ts: "2026-06-19T00:00:00Z",
+    data,
+  } as AgentSessionEvent;
 }
 
 /** A `/listen` stream that emits the given events then ends cleanly. */
@@ -88,7 +92,9 @@ describe("useAgentChat /listen reconnect", () => {
   it("finalizes without an error when the session ended during the gap", async () => {
     const chatId = "terminal-in-gap";
     // Stream drops immediately (no events); the run already finished server-side.
-    mockClient.streamAgentSession.mockImplementationOnce(() => streamThenDrop());
+    mockClient.streamAgentSession.mockImplementationOnce(() =>
+      streamThenDrop(),
+    );
     mockClient.getAgentApplicationSession.mockResolvedValue({
       state: "completed",
       conversation: [],
