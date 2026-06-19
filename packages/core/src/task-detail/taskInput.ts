@@ -3,7 +3,7 @@ import type { TaskCreationInput, WorkspaceMode } from "@posthog/shared";
 import type { ExecutionMode } from "@posthog/shared/domain-types";
 
 export interface PrepareTaskInputOptions {
-  selectedDirectory: string;
+  selectedDirectory?: string;
   selectedRepository?: string | null;
   githubIntegrationId?: number;
   githubUserIntegrationId?: string;
@@ -35,7 +35,7 @@ export function prepareTaskInput(
       ? buildCloudTaskDescription(serializedContent, filePaths)
       : undefined,
     filePaths,
-    repoPath: isCloud ? undefined : options.selectedDirectory || undefined,
+    repoPath: isCloud ? undefined : options.selectedDirectory,
     repository: isCloud ? options.selectedRepository : undefined,
     githubIntegrationId: options.githubIntegrationId,
     githubUserIntegrationId: options.githubUserIntegrationId,

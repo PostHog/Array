@@ -3,11 +3,10 @@ import * as path from "node:path";
 import { createGitClient } from "@posthog/git/client";
 import { getCurrentBranch } from "@posthog/git/queries";
 import { CloneSaga } from "@posthog/git/sagas/clone";
+import { parseGithubUrl } from "@posthog/git/utils";
 import { z } from "zod";
 import { resolveGithubToken } from "../../../utils/github-token";
 import { defineLocalTool, type LocalToolResult } from "../registry";
-
-const OWNER_REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 
 const cloneRepoSchema = {
   repo: z
@@ -50,18 +49,17 @@ export const cloneRepoTool = defineLocalTool({
     const redact = (text: string): string =>
       token ? text.split(token).join("***") : text;
 
-    const isOwnerRepo = OWNER_REPO_RE.test(repo);
-    const isHttpsUrl = /^https:\/\/github\.com\//.test(repo);
-    if (!isOwnerRepo && !isHttpsUrl) {
+    // parseGithubUrl accepts owner/repo shorthand and full https/ssh URLs,
+    // validates the host, and normalizes away path traversal (a crafted URL
+    // can't escape the scratch workspace via the path.join below).
+    const parsed = parseGithubUrl(repo);
+    if (!parsed) {
       return fail(
         `clone_repo: invalid repo "${repo}". Pass 'owner/repo' or a full https://github.com/... URL.`,
       );
     }
-
-    const slug = isOwnerRepo
-      ? repo
-      : repo.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "");
-    const repoName = slug.split("/").pop() ?? "repo";
+    const slug = `${parsed.owner}/${parsed.repo}`;
+    const repoName = parsed.repo;
     const targetPath = path.join(ctx.cwd, "repos", slug);
 
     const done = async (note?: string): Promise<LocalToolResult> => {

@@ -24,10 +24,12 @@ const listReposSchema = {
     .describe("Max repos to return (default 50)."),
 };
 
-interface GhRepo {
-  nameWithOwner: string;
-  description?: string;
-}
+const ghRepoSchema = z.array(
+  z.object({
+    nameWithOwner: z.string(),
+    description: z.string().nullish(),
+  }),
+);
 
 /**
  * Lists candidate GitHub repositories for a repo-less channel session, via the
@@ -62,7 +64,19 @@ export const listReposTool = defineLocalTool({
         env: token ? { ...process.env, GH_TOKEN: token } : process.env,
         maxBuffer: 1024 * 1024 * 8,
       });
-      let repos = JSON.parse(stdout) as GhRepo[];
+      const parsed = ghRepoSchema.safeParse(JSON.parse(stdout));
+      if (!parsed.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `list_repos: unexpected output from gh. ${parsed.error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      let repos = parsed.data;
       if (query) {
         const q = query.toLowerCase();
         repos = repos.filter((r) => r.nameWithOwner.toLowerCase().includes(q));
@@ -74,7 +88,7 @@ export const listReposTool = defineLocalTool({
       }
       const lines = repos.map((r) =>
         r.description
-          ? `${r.nameWithOwner} — ${r.description}`
+          ? `${r.nameWithOwner}: ${r.description}`
           : r.nameWithOwner,
       );
       return { content: [{ type: "text", text: lines.join("\n") }] };

@@ -66,6 +66,15 @@ function createService(worktreeBasePath: string) {
   return { service, repositoryRepo, workspaceRepo, worktreeRepo };
 }
 
+async function exists(p: string): Promise<boolean> {
+  try {
+    await fsp.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("WorkspaceService.verifyWorkspaceExists", () => {
   let tmpDir: string;
   let worktreeBasePath: string;
@@ -164,5 +173,56 @@ describe("WorkspaceService.verifyWorkspaceExists", () => {
 
     // It is not backed by a DB row.
     expect(workspaceRepo.findByTaskId(TASK_ID)).toBeNull();
+  });
+});
+
+describe("WorkspaceService scratch path confinement", () => {
+  let tmpDir: string;
+  let worktreeBasePath: string;
+
+  beforeEach(async () => {
+    tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "ws-scratch-"));
+    worktreeBasePath = path.join(tmpDir, "worktrees");
+  });
+
+  afterEach(async () => {
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("creates then removes a scratch dir for a valid task id", async () => {
+    const { service } = createService(worktreeBasePath);
+
+    const scratchPath = await service.ensureScratchDir(TASK_ID);
+    expect(await exists(scratchPath)).toBe(true);
+
+    await service.deleteWorkspace(TASK_ID, "");
+    expect(await exists(scratchPath)).toBe(false);
+  });
+
+  it.each([
+    { label: "parent traversal", taskId: ".." },
+    { label: "deep traversal", taskId: path.join("..", "..", "victim") },
+    { label: "absolute escape", taskId: path.resolve(os.tmpdir(), "victim") },
+    { label: "nested path", taskId: path.join("a", "b") },
+    { label: "empty id", taskId: "" },
+  ])("rejects ensureScratchDir for $label", async ({ taskId }) => {
+    const { service } = createService(worktreeBasePath);
+    await expect(service.ensureScratchDir(taskId)).rejects.toThrow(
+      /invalid scratch task id/i,
+    );
+  });
+
+  it("never deletes a directory outside the base via a traversal task id", async () => {
+    const { service } = createService(worktreeBasePath);
+
+    const victim = path.join(tmpDir, "victim");
+    await fsp.mkdir(victim, { recursive: true });
+    await fsp.writeFile(path.join(victim, "keep.txt"), "data");
+
+    // "../victim" resolves to <tmpDir>/victim, a sibling of the scratch base.
+    await expect(service.deleteWorkspace("../victim", "")).rejects.toThrow(
+      /invalid scratch task id/i,
+    );
+    expect(await exists(path.join(victim, "keep.txt"))).toBe(true);
   });
 });

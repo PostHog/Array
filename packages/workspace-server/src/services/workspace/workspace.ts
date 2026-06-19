@@ -842,10 +842,18 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
    * storage root but never shows up in worktree enumeration.
    */
   private getScratchPath(taskId: string): string {
-    return path.join(
+    const base = path.resolve(
       scratchBasePath(this.workspaceSettings.getWorktreeLocation()),
-      taskId,
     );
+    const scratchPath = path.resolve(base, taskId);
+    // A task's scratch dir is always a direct child of the base. Anything else
+    // (a ".." traversal, an empty id, a nested path) escapes it, so reject it:
+    // getScratchPath feeds mkdir and a recursive rm, and taskId can be
+    // attacker-influenced.
+    if (path.dirname(scratchPath) !== base) {
+      throw new Error(`Invalid scratch task id: ${taskId}`);
+    }
+    return scratchPath;
   }
 
   /**

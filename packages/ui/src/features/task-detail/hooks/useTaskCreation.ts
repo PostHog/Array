@@ -256,7 +256,7 @@ export function useTaskCreation({
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
-          selectedDirectory: allowNoRepo ? "" : selectedDirectory,
+          selectedDirectory: allowNoRepo ? undefined : selectedDirectory,
           selectedRepository: allowNoRepo ? null : selectedRepository,
           githubIntegrationId,
           githubUserIntegrationId,
