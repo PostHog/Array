@@ -247,12 +247,10 @@ export function AgentRevisionBar({
 
       <Flex gap="2">
         {/*
-         * Test — runs this revision through the live ingress with a preview
-         * token, before it's promoted. The chat tab handles the rest (mint +
-         * token attach via useAgentChat). Live uses the default Chat tab;
-         * archived can't be exercised. Label varies by state: "Test draft"
-         * leans into the unfinished work; for `ready` the bundle is frozen so
-         * plain "Test" is more accurate.
+         * Test — runs this not-yet-promoted revision through the live ingress
+         * with a preview token (the chat tab mints + attaches it via
+         * useAgentChat). Live uses the default Chat tab; archived can't be
+         * exercised.
          */}
         {selected.state !== "live" &&
         selected.state !== "archived" &&
@@ -273,10 +271,9 @@ export function AgentRevisionBar({
           </Button>
         ) : null}
         {/*
-         * Clone to draft — fork this revision into a fresh editable draft.
-         * The standard exit when a ready/live/archived bundle is immutable
-         * but you want to keep iterating. Pre-selects the new draft so the
-         * picker lands you in edit mode immediately.
+         * Clone to draft — fork this revision into a fresh editable draft (the
+         * exit when a ready/live/archived bundle is immutable but you want to
+         * keep iterating). Pre-selects the new draft.
          */}
         {selected.state !== "draft" ? (
           <Button

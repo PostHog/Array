@@ -99,8 +99,6 @@ export function AgentAnalyticsView({
   );
 }
 
-/* ── KPIs ─────────────────────────────────────────────────────────── */
-
 /**
  * The four top-line KPI tiles (spend / sessions / failure rate / p95) with
  * 14-day spark trends + WoW deltas. Reused standalone on the per-agent Overview
@@ -250,8 +248,6 @@ function DeltaChip({
   );
 }
 
-/* ── Charts ───────────────────────────────────────────────────────── */
-
 function CostByModelChart({ rows }: { rows: AgentAnalyticsModelRow[] }) {
   const theme = useChartTheme();
   if (rows.length === 0) {
@@ -275,8 +271,6 @@ function CostByModelChart({ rows }: { rows: AgentAnalyticsModelRow[] }) {
     </div>
   );
 }
-
-/* ── Tables ───────────────────────────────────────────────────────── */
 
 function ToolTable({ rows }: { rows: AgentAnalyticsToolRow[] }) {
   if (rows.length === 0) {
@@ -311,8 +305,6 @@ function ToolTable({ rows }: { rows: AgentAnalyticsToolRow[] }) {
     </table>
   );
 }
-
-/* ── Primitives ───────────────────────────────────────────────────── */
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (

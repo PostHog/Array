@@ -91,8 +91,6 @@ export function turnCompleteMessage(
   };
 }
 
-// --- SessionUpdate builders -------------------------------------------------
-
 /** Streaming/settled assistant text fragment. */
 export function agentTextUpdate(text: string): SessionUpdate {
   return { sessionUpdate: "agent_message_chunk", content: textBlock(text) };
