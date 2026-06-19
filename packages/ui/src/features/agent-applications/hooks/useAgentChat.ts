@@ -45,6 +45,35 @@ const TERMINAL_SESSION_STATES = new Set([
   "failed",
 ]);
 
+/**
+ * Bounded reconnect budget for a dropped `/listen` tail. A re-attach that yields
+ * any event resets the budget, so a healthy long run that keeps getting closed
+ * out (idle timeouts, proxy recycling) reconnects indefinitely; only a genuinely
+ * dead or vanished stream exhausts it and surfaces an error.
+ */
+const MAX_LISTEN_RECONNECTS = 6;
+
+/** Exponential backoff (capped at 8s) between `/listen` reconnect attempts. */
+function reconnectBackoffMs(attempt: number): number {
+  return Math.min(500 * 2 ** (attempt - 1), 8_000);
+}
+
+/** Resolve after `ms`, or early (→ false) if `signal` aborts; else → true. */
+function delay(ms: number, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(true);
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 export interface UseAgentChatOptions {
   /** Opaque key isolating this chat in the store (e.g. "agent-builder", "preview:<slug>"). */
   chatId: string;
@@ -231,12 +260,20 @@ export function useAgentChat({
       abortRef.current = controller;
       streamingRef.current = true;
       const store = agentChatStore.getState();
+      // Bumps true the moment a (re)attached stream yields a real event, so the
+      // reconnect loop can tell "still producing output" from "attached to a
+      // silent or ended session". Reset before every pump attempt.
+      let madeProgress = false;
+      // Last non-auth stream error, surfaced only if reconnects are exhausted.
+      let lastDropError: string | null = null;
       // Pump the SSE generator with the supplied token. Returns:
       //   "remint"       — server signalled `preview_token_required` and is
       //                    closing the stream; mint fresh and reconnect.
       //   "auth_failure" — initial fetch 401'd; safety-net retry once.
-      //   "done"         — natural exit (session ended, error surfaced, or
-      //                    the run was superseded).
+      //   "done"         — the stream ended: a terminal frame, a drop (network
+      //                    reset / idle-timeout close), or a superseded run. The
+      //                    caller decides — terminal frame vs reconnect — from
+      //                    the chat status and `madeProgress`.
       const pump = async (
         token: string | null,
       ): Promise<"remint" | "auth_failure" | "done"> => {
@@ -250,6 +287,7 @@ export function useAgentChat({
             if (epochRef.current !== epoch) return "done";
             // Control event: don't surface to the user, just request a remint.
             if (event.kind === "preview_token_required") return "remint";
+            madeProgress = true;
             store.appendMessages(chatId, mapperRef.current.apply(event));
             if (event.kind === "client_tool_call") {
               void dispatchClientTool(event.data, sessionId);
@@ -274,13 +312,31 @@ export function useAgentChat({
           ) {
             return "auth_failure";
           }
-          if (epochRef.current === epoch && !controller.signal.aborted) {
-            store.setError(
-              chatId,
-              err instanceof Error ? err.message : "Stream dropped.",
-            );
+          // Network reset / idle-timeout close / parse failure: remember it but
+          // don't surface yet — the loop reconnects, and only errors if the
+          // session is gone or the reconnect budget is exhausted.
+          if (!controller.signal.aborted) {
+            lastDropError = err instanceof Error ? err.message : null;
           }
           return "done";
+        }
+      };
+      // Is the run still live? `/listen` can't replay a terminal frame we missed
+      // during a gap, so on a silent re-attach we ask the api before retrying —
+      // a run that finished in the gap finalizes instead of looping to an error.
+      const sessionLiveState = async (): Promise<
+        "live" | "terminal" | "unknown"
+      > => {
+        try {
+          const detail = await client.getAgentApplicationSession(
+            agentSlug,
+            sessionId,
+          );
+          return !detail || TERMINAL_SESSION_STATES.has(detail.state)
+            ? "terminal"
+            : "live";
+        } catch {
+          return "unknown";
         }
       };
       try {
@@ -289,7 +345,14 @@ export function useAgentChat({
         // on long author sessions); a true `[401]` only gets one retry as a
         // safety net for the initial fetch.
         let authRetried = false;
+        // `/listen` is long-lived and gets closed out from under us by idle
+        // timeouts, proxy recycling, and transient blips. When that happens
+        // mid-run we reconnect (bounded, with backoff) rather than strand the
+        // user — a re-attach just resumes tailing and the terminal frame still
+        // lands when the run finishes.
+        let reconnectAttempts = 0;
         while (true) {
+          madeProgress = false;
           const outcome = await pump(token);
           if (epochRef.current !== epoch || controller.signal.aborted) break;
           if (outcome === "remint") {
@@ -301,15 +364,50 @@ export function useAgentChat({
             token = await getPreviewToken(true);
             continue;
           }
-          // outcome === "done", or auth_failure already retried → surface the
-          // (already-set) error and exit.
           if (outcome === "auth_failure") {
             store.setError(
               chatId,
               "Preview session failed to authenticate. Try again.",
             );
+            break;
           }
-          break;
+          // outcome === "done": the stream ended. A terminal/`waiting` frame
+          // already moved us off "streaming" — that's an expected end, so stop.
+          if (agentChatStore.getState().chats[chatId]?.status !== "streaming") {
+            break;
+          }
+          // Still "streaming" → the connection dropped while the run is live.
+          if (madeProgress) {
+            // The re-attach produced output, so the run is clearly still going:
+            // reset the budget so repeated idle drops never exhaust it.
+            reconnectAttempts = 0;
+          } else {
+            // Silence on (re)attach: confirm the run didn't just finish in the
+            // gap before spending the budget.
+            const liveState = await sessionLiveState();
+            if (epochRef.current !== epoch || controller.signal.aborted) break;
+            if (liveState === "terminal") {
+              store.setStatus(chatId, "completed");
+              break;
+            }
+          }
+          if (reconnectAttempts >= MAX_LISTEN_RECONNECTS) {
+            store.setError(
+              chatId,
+              lastDropError ??
+                "Lost connection to the agent. Send a message to retry.",
+            );
+            break;
+          }
+          reconnectAttempts += 1;
+          const waited = await delay(
+            reconnectBackoffMs(reconnectAttempts),
+            controller.signal,
+          );
+          if (!waited || epochRef.current !== epoch || controller.signal.aborted)
+            break;
+          // Refresh a preview token that may have lapsed across the gap.
+          token = await getPreviewToken();
         }
       } catch (err) {
         // A `getPreviewToken` throw (initial mint or re-mint) lands here —
@@ -337,6 +435,7 @@ export function useAgentChat({
       client,
       ingressBaseUrl,
       chatId,
+      agentSlug,
       dispatchClientTool,
       getPreviewToken,
       revisionId,
