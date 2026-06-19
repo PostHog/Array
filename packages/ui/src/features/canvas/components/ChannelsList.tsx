@@ -56,7 +56,10 @@ import {
   useChannelTaskMutations,
   useChannelTasks,
 } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
-import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import {
+  useDashboardMutations,
+  useDashboards,
+} from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
@@ -248,7 +251,8 @@ function ChildRow({
   );
 }
 
-// A single saved canvas under a channel — navigates to its detail view.
+// A single saved canvas under a channel — navigates to its detail view, with a
+// right-click menu to delete it.
 function DashboardRow({
   channelId,
   dashboard,
@@ -259,19 +263,58 @@ function DashboardRow({
   active: boolean;
 }) {
   const navigate = useNavigate();
-  return (
-    <ChildRow
-      icon={iconForTemplate(dashboard.templateId)}
-      title={dashboard.name}
-      subtitle={`updated ${relativeTime(dashboard.updatedAt)}`}
-      active={active}
-      onClick={() =>
-        navigate({
-          to: "/website/$channelId/dashboards/$dashboardId",
-          params: { channelId, dashboardId: dashboard.id },
-        })
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { deleteDashboard, isDeleting } = useDashboardMutations();
+
+  const onDelete = async () => {
+    try {
+      await deleteDashboard(dashboard.id);
+      if (pathname === `/website/${channelId}/dashboards/${dashboard.id}`) {
+        void navigate({
+          to: "/website/$channelId",
+          params: { channelId },
+        });
       }
-    />
+    } catch (error) {
+      toast.error("Couldn't delete canvas", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  return (
+    <ContextMenu>
+      <Tooltip content={dashboard.name} delayDuration={600}>
+        <ContextMenuTrigger
+          render={
+            <Box>
+              <ChildRow
+                icon={iconForTemplate(dashboard.templateId)}
+                title={dashboard.name}
+                subtitle={`updated ${relativeTime(dashboard.updatedAt)}`}
+                active={active}
+                onClick={() =>
+                  navigate({
+                    to: "/website/$channelId/dashboards/$dashboardId",
+                    params: { channelId, dashboardId: dashboard.id },
+                  })
+                }
+              />
+            </Box>
+          }
+        />
+      </Tooltip>
+      <ContextMenuContent>
+        <ContextMenuItem
+          variant="destructive"
+          disabled={isDeleting}
+          onClick={() => void onDelete()}
+        >
+          <TrashIcon size={14} />
+          Delete
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
