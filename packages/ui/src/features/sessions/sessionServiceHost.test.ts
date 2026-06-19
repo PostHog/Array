@@ -3829,6 +3829,32 @@ describe("SessionService", () => {
       }
     });
 
+    it("counts queued messages across cloud sessions only", () => {
+      const service = getSessionService();
+      const queued = (id: string) => ({
+        id,
+        content: "queued",
+        rawPrompt: [{ type: "text", text: "queued" }] as ContentBlock[],
+        queuedAt: 1700000000,
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-cloud-a": createMockSession({
+          isCloud: true,
+          messageQueue: [queued("a1"), queued("a2")],
+        }),
+        "run-local": createMockSession({
+          isCloud: false,
+          messageQueue: [queued("l1")],
+        }),
+        "run-cloud-empty": createMockSession({
+          isCloud: true,
+          messageQueue: [],
+        }),
+      });
+
+      expect(service.countQueuedCloudMessages()).toBe(2);
+    });
+
     it("does not pin isPromptPending when queueing during sandbox boot", async () => {
       const service = getSessionService();
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(

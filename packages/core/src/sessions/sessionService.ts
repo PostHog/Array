@@ -3745,6 +3745,16 @@ export class SessionService {
     }
   }
 
+  public countQueuedCloudMessages(): number {
+    const sessions = this.d.store.getSessions();
+    let count = 0;
+    for (const session of Object.values(sessions)) {
+      if (!session.isCloud) continue;
+      count += session.messageQueue.length;
+    }
+    return count;
+  }
+
   public updateSessionTaskTitle(taskId: string, taskTitle: string): void {
     const session = this.d.store.getSessionByTaskId(taskId);
     if (!session) return;

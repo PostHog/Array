@@ -1,3 +1,4 @@
+import type { AuthState } from "@posthog/core/auth/schemas";
 import {
   SESSION_SERVICE,
   type SessionService,
@@ -8,6 +9,7 @@ import {
   type HostTrpcClient,
 } from "@posthog/host-router/client";
 import { withTimeout } from "@posthog/shared";
+import { toast } from "@posthog/ui/primitives/toast";
 import { logger } from "@posthog/ui/shell/logger";
 import { inject, injectable } from "inversify";
 import { useAuthStore } from "./store";
@@ -15,6 +17,7 @@ import { useAuthStore } from "./store";
 const log = logger.scope("auth-contribution");
 // boot() starts contributions serially, so a stuck host query must not wedge it.
 const INITIAL_STATE_TIMEOUT_MS = 10_000;
+const STRANDED_CLOUD_QUEUE_TOAST_ID = "stranded-cloud-queue";
 
 @injectable()
 export class AuthContribution implements Contribution {
@@ -29,9 +32,7 @@ export class AuthContribution implements Contribution {
     this.hostClient.auth.onStateChanged.subscribe(undefined, {
       onData: (state) => {
         useAuthStore.getState().setAuthState(state);
-        if (state.status === "authenticated") {
-          this.sessionService.flushQueuedCloudMessagesAfterAuthRestored();
-        }
+        this.syncCloudQueueForAuthState(state);
       },
     });
 
@@ -41,12 +42,31 @@ export class AuthContribution implements Contribution {
     );
     if (outcome.result === "success") {
       useAuthStore.getState().setAuthState(outcome.value);
-      if (outcome.value.status === "authenticated") {
-        this.sessionService.flushQueuedCloudMessagesAfterAuthRestored();
-      }
+      this.syncCloudQueueForAuthState(outcome.value);
     } else {
       log.warn(
         "Initial auth state query timed out; relying on state subscription",
+      );
+    }
+  }
+
+  // Cloud prompts can queue while auth is restoring. Flush them once auth
+  // resolves, or tell the user to sign back in if the restore ended in logout
+  // so their queued messages are not silently stranded.
+  private syncCloudQueueForAuthState(state: AuthState): void {
+    if (state.status === "authenticated") {
+      this.sessionService.flushQueuedCloudMessagesAfterAuthRestored();
+      return;
+    }
+
+    if (state.status === "anonymous") {
+      const pending = this.sessionService.countQueuedCloudMessages();
+      if (pending === 0) return;
+      const noun = pending === 1 ? "message" : "messages";
+      const pronoun = pending === 1 ? "it" : "them";
+      toast.error(
+        `You were signed out with ${pending} unsent cloud ${noun}. Sign in to send ${pronoun}.`,
+        { id: STRANDED_CLOUD_QUEUE_TOAST_ID },
       );
     }
   }
