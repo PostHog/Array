@@ -7,8 +7,8 @@ import type {
 } from "@posthog/host-router/ports/browser";
 import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import { TypedEventEmitter } from "@posthog/shared";
-// biome-ignore lint/style/noRestrictedImports: WebContentsView is Electron-only by design; see host-boundary-allowlist.json
-import { WebContentsView } from "electron";
+// biome-ignore lint/style/noRestrictedImports: Electron-only by design; see host-boundary-allowlist.json
+import { clipboard, Menu, MenuItem, shell, WebContentsView } from "electron";
 import { inject, injectable, preDestroy } from "inversify";
 import type { ElectronMainWindow } from "../../platform-adapters/electron-main-window";
 import { logger } from "../../utils/logger";
@@ -74,6 +74,10 @@ export class BrowserService
       win.contentView.addChildView(view);
     }
 
+    // Guards any handler that fires in the narrow window between
+    // this.browsers.delete() and webContents.close() in destroy().
+    const alive = () => this.browsers.has(browserId);
+
     // Block navigation to anything other than http/https.
     view.webContents.on("will-navigate", (event, targetUrl) => {
       if (!this.isSafeUrl(targetUrl)) {
@@ -93,37 +97,35 @@ export class BrowserService
     // Open window.open() calls as new browser tabs in the app instead of
     // spawning an uncontrolled native window.
     view.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
-      if (this.isSafeUrl(targetUrl)) {
+      if (alive() && this.isSafeUrl(targetUrl)) {
         this.emit("openUrl", { url: targetUrl });
       }
       return { action: "deny" };
     });
 
     view.webContents.on("did-navigate", () => {
-      this.emitNavigate(entry);
+      if (alive()) this.emitNavigate(entry);
     });
 
     view.webContents.on("did-navigate-in-page", () => {
-      this.emitNavigate(entry);
+      if (alive()) this.emitNavigate(entry);
     });
 
     view.webContents.on("page-title-updated", (_e, title) => {
-      this.emit("title", { browserId, title });
+      if (alive()) this.emit("title", { browserId, title });
     });
 
     view.webContents.on("page-favicon-updated", (_e, favicons) => {
-      this.emit("favicon", {
-        browserId,
-        favicon: favicons[0] ?? null,
-      });
+      if (alive())
+        this.emit("favicon", { browserId, favicon: favicons[0] ?? null });
     });
 
     view.webContents.on("did-start-loading", () => {
-      this.emitNavigate(entry);
+      if (alive()) this.emitNavigate(entry);
     });
 
     view.webContents.on("did-stop-loading", () => {
-      this.emitNavigate(entry);
+      if (alive()) this.emitNavigate(entry);
     });
 
     // Show a branded error page when a URL fails to load (DNS errors, timeouts, etc.).
@@ -135,10 +137,71 @@ export class BrowserService
       (_event, errorCode, _errorDescription, validatedURL, isMainFrame) => {
         if (!isMainFrame) return;
         if (errorCode === -3) return;
+        if (!alive()) return;
         const errorPage = buildErrorPage(validatedURL);
         view.webContents.loadURL(errorPage).catch(() => {});
       },
     );
+
+    view.webContents.on("context-menu", (_event, params) => {
+      if (!alive()) return;
+      const wc = entry.view.webContents;
+      const items: MenuItem[] = [
+        new MenuItem({
+          label: "Back",
+          enabled: wc.canGoBack(),
+          click: () => wc.goBack(),
+        }),
+        new MenuItem({
+          label: "Forward",
+          enabled: wc.canGoForward(),
+          click: () => wc.goForward(),
+        }),
+        new MenuItem({ label: "Reload", click: () => wc.reload() }),
+        new MenuItem({ type: "separator" }),
+      ];
+
+      if (params.linkURL) {
+        items.push(
+          new MenuItem({
+            label: "Open link in system browser",
+            click: () => {
+              shell.openExternal(params.linkURL).catch(() => {});
+            },
+          }),
+          new MenuItem({
+            label: "Copy link address",
+            click: () => {
+              clipboard.writeText(params.linkURL);
+            },
+          }),
+          new MenuItem({ type: "separator" }),
+        );
+      } else {
+        items.push(
+          new MenuItem({
+            label: "Open in system browser",
+            click: () => {
+              shell.openExternal(wc.getURL()).catch(() => {});
+            },
+          }),
+          new MenuItem({ type: "separator" }),
+        );
+      }
+
+      items.push(
+        new MenuItem({
+          label: "Inspect element",
+          click: () => {
+            wc.inspectElement(params.x, params.y);
+          },
+        }),
+      );
+
+      const menu = Menu.buildFromTemplate(items);
+      const mainWin = this.mainWindow.getBrowserWindow();
+      if (mainWin) menu.popup({ window: mainWin });
+    });
 
     if (url && url !== "about:blank") {
       view.webContents.loadURL(url).catch((err) => {
@@ -151,6 +214,8 @@ export class BrowserService
     const entry = this.browsers.get(browserId);
     if (!entry) return;
 
+    // Remove from map first so any in-flight event callbacks (alive() check)
+    // become no-ops before we start tearing down.
     this.browsers.delete(browserId);
 
     const win = this.mainWindow.getBrowserWindow();
@@ -163,6 +228,9 @@ export class BrowserService
     }
 
     try {
+      // Remove all listeners before close() so closures referencing entry
+      // are released immediately rather than waiting for GC.
+      entry.view.webContents.removeAllListeners();
       entry.view.webContents.close();
     } catch {
       // already closed
