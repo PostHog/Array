@@ -287,6 +287,14 @@ export function useAgentChat({
             if (epochRef.current !== epoch) return "done";
             // Control event: don't surface to the user, just request a remint.
             if (event.kind === "preview_token_required") return "remint";
+            // Hard end (meta-end-session): the session is sealed and rejects
+            // further `/send`s. Unlike `completed` (turn-end, stays open), this
+            // is terminal — finalize and stop tailing. The mapper renders no
+            // transcript content for it, so skip the append like the remint.
+            if (event.kind === "closed") {
+              store.setStatus(chatId, "completed");
+              return "done";
+            }
             madeProgress = true;
             store.appendMessages(chatId, mapperRef.current.apply(event));
             if (event.kind === "client_tool_call") {
@@ -421,6 +429,12 @@ export function useAgentChat({
           );
         }
       } finally {
+        // The loop has fully broken (terminal frame, exhausted budget, or
+        // supersede), so release the still-open `/listen` socket: the server
+        // tails perpetually and only tears down on client disconnect. Exiting
+        // the `for await` alone just frees the reader lock, not the connection.
+        // `controller` is run-local; re-aborting an aborted one is a no-op.
+        controller.abort();
         if (epochRef.current === epoch) {
           streamingRef.current = false;
           // Stream ended without a terminal frame mid-conversation → treat as

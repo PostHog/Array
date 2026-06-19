@@ -111,6 +111,42 @@ describe("useAgentChat /listen reconnect", () => {
     expect(chat?.error).toBeNull();
   });
 
+  it("treats a closed frame as a terminal stream-end", async () => {
+    const chatId = "closed";
+    let captured: AbortSignal | undefined;
+    // A perpetual tail that emits `closed` then would keep yielding: proves the
+    // pump stops on `closed` rather than draining the generator.
+    async function* perpetual() {
+      yield ev("assistant_text_delta", { text: "bye" });
+      yield ev("closed", {});
+      yield ev("assistant_text_delta", { text: "should never render" });
+    }
+    mockClient.streamAgentSession.mockImplementationOnce(
+      (_url: string, _id: string, signal: AbortSignal) => {
+        captured = signal;
+        return perpetual();
+      },
+    );
+
+    const { result } = render(chatId);
+    await act(async () => {
+      void result.current.send("go");
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const chat = agentChatStore.getState().chats[chatId];
+    expect(chat?.status).toBe("completed");
+    expect(chat?.error).toBeNull();
+    // No reconnect: the terminal frame ends the tail, so neither the stream nor
+    // the liveness probe is re-invoked.
+    expect(mockClient.streamAgentSession).toHaveBeenCalledTimes(1);
+    expect(mockClient.getAgentApplicationSession).not.toHaveBeenCalled();
+    // The still-open socket is released on the terminal exit.
+    expect(captured?.aborted).toBe(true);
+  });
+
   it("surfaces an error only after the reconnect budget is exhausted", async () => {
     const chatId = "give-up";
     // Always drops with no events; the api keeps reporting the run as live.
