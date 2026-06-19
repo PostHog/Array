@@ -4,6 +4,7 @@ import { agentRouter } from "./routers/agent.router";
 import { analyticsRouter } from "./routers/analytics.router";
 import { archiveRouter } from "./routers/archive.router";
 import { authRouter } from "./routers/auth.router";
+import { browserRouter } from "./routers/browser.router";
 import { canvasDataRouter } from "./routers/canvas-data.router";
 import { canvasTemplatesRouter } from "./routers/canvas-templates.router";
 import { channelTasksRouter } from "./routers/channel-tasks.router";
@@ -46,6 +47,7 @@ import { workspaceRouter } from "./routers/workspace.router";
 
 export const hostRouter = router({
   additionalDirectories: additionalDirectoriesRouter,
+  browser: browserRouter,
   agent: agentRouter,
   analytics: analyticsRouter,
   archive: archiveRouter,

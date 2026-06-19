@@ -82,6 +82,10 @@ import type { UpdatesService } from "@posthog/core/updates/updates";
 import type { USAGE_HOST, UsageHost } from "@posthog/core/usage/identifiers";
 import type { ROOT_LOGGER, RootLogger } from "@posthog/di/logger";
 import type {
+  BROWSER_SERVICE,
+  IBrowserService,
+} from "@posthog/host-router/ports/browser";
+import type {
   CONNECTIVITY_CLIENT,
   HostConnectivityClient,
 } from "@posthog/host-router/ports/connectivity-client";
@@ -430,6 +434,7 @@ export interface MainBindings {
   [LOGS_SERVICE]: ILogsService;
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
   [MAIN_DISCORD_PRESENCE_SERVICE]: DiscordPresenceService;
+  [BROWSER_SERVICE]: IBrowserService;
 
   // ws-server git service (bound to(GitService))
   [WS_GIT_SERVICE]: GitService;

@@ -3,6 +3,7 @@ import { agentRouter } from "@posthog/host-router/routers/agent.router";
 import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { archiveRouter } from "@posthog/host-router/routers/archive.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
+import { browserRouter } from "@posthog/host-router/routers/browser.router";
 import { canvasDataRouter } from "@posthog/host-router/routers/canvas-data.router";
 import { canvasTemplatesRouter } from "@posthog/host-router/routers/canvas-templates.router";
 import { channelTasksRouter } from "@posthog/host-router/routers/channel-tasks.router";
@@ -48,6 +49,7 @@ import { router } from "./trpc";
 
 export const trpcRouter = router({
   additionalDirectories: additionalDirectoriesRouter,
+  browser: browserRouter,
   agent: agentRouter,
   analytics: analyticsRouter,
   archive: archiveRouter,

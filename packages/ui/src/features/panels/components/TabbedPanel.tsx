@@ -1,5 +1,9 @@
 import { useDroppable } from "@dnd-kit/react";
-import { Plus, SquareSplitHorizontalIcon } from "@phosphor-icons/react";
+import {
+  GlobeSimple,
+  Plus,
+  SquareSplitHorizontalIcon,
+} from "@phosphor-icons/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { PanelDropZones } from "@posthog/ui/features/panels/components/PanelDropZones";
 import type { SplitDirection } from "@posthog/ui/features/panels/panelLayoutStore";
@@ -65,6 +69,7 @@ interface TabbedPanelProps {
   draggingTabId?: string | null;
   draggingTabPanelId?: string | null;
   onAddTerminal?: () => void;
+  onAddBrowser?: () => void;
   onSplitPanel?: (direction: SplitDirection) => void;
   rightContent?: React.ReactNode;
   emptyState?: React.ReactNode;
@@ -81,6 +86,7 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
   draggingTabId = null,
   draggingTabPanelId = null,
   onAddTerminal,
+  onAddBrowser,
   onSplitPanel,
   rightContent,
   emptyState,
@@ -207,12 +213,26 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
               <Box flexShrink="0" className="h-[32px] min-w-[90px]" />
             )}
           </Flex>
-          {(rightContent || (content.droppable && onSplitPanel)) && (
+          {(rightContent ||
+            (content.droppable && (onSplitPanel || onAddBrowser))) && (
             <Flex
               align="center"
               className="absolute top-0 right-0 h-[32px] border-b border-b-(--gray-6) border-l border-l-(--gray-6) bg-(--color-background)"
             >
               {rightContent}
+              {content.droppable && onAddBrowser && (
+                <Tooltip content="New browser tab" side="bottom">
+                  <TabBarButton
+                    ariaLabel="New browser tab"
+                    onClick={onAddBrowser}
+                  >
+                    <GlobeSimple width={14} height={14} />
+                  </TabBarButton>
+                </Tooltip>
+              )}
+              {content.droppable && onAddBrowser && onSplitPanel && (
+                <div className="h-4 w-px bg-(--gray-6)" />
+              )}
               {content.droppable && onSplitPanel && (
                 <Tooltip content="Split panel" side="bottom">
                   <TabBarButton

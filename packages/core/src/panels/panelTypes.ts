@@ -42,6 +42,11 @@ export type TabData =
       body: string;
     }
   | {
+      type: "browser";
+      browserId: string;
+      url: string;
+    }
+  | {
       type: "other";
     };
 

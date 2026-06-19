@@ -22,6 +22,7 @@ interface LeafNodeRendererProps {
   onActiveTabChange: (panelId: string, tabId: string) => void;
   onPanelFocus: (panelId: string) => void;
   onAddTerminal: (panelId: string) => void;
+  onAddBrowser: (panelId: string) => void;
   onSplitPanel: (panelId: string, direction: SplitDirection) => void;
 }
 
@@ -38,6 +39,7 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
   onActiveTabChange,
   onPanelFocus,
   onAddTerminal,
+  onAddBrowser,
   onSplitPanel,
 }) => {
   const isCloud = useIsWorkspaceCloudRun(taskId);
@@ -91,6 +93,7 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
       draggingTabId={draggingTabId}
       draggingTabPanelId={draggingTabPanelId}
       onAddTerminal={isCloud ? undefined : () => onAddTerminal(node.id)}
+      onAddBrowser={isCloud ? undefined : () => onAddBrowser(node.id)}
       onSplitPanel={(direction) => onSplitPanel(node.id, direction)}
       emptyState={cloudEmptyState}
     />

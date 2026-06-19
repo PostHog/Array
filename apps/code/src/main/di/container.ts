@@ -88,6 +88,7 @@ import { USAGE_HOST } from "@posthog/core/usage/identifiers";
 import { usageMonitorModule } from "@posthog/core/usage/usage-monitor.module";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import { listFilesContainingText } from "@posthog/git/queries";
+import { BROWSER_SERVICE } from "@posthog/host-router/ports/browser";
 import {
   GIT_PR_STATUS_PROVIDER,
   type IGitPrStatus,
@@ -235,6 +236,7 @@ import {
   OAuthFlowPortAdapter,
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
+import { BrowserService } from "../services/browser/service";
 import { DeepLinkService } from "../services/deep-link/service";
 import { DiscordPresenceService } from "../services/discord-presence/service";
 import { EncryptionService } from "../services/encryption/service";
@@ -700,6 +702,7 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
 });
 container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
 container.bind(MAIN_DISCORD_PRESENCE_SERVICE).to(DiscordPresenceService);
+container.bind(BROWSER_SERVICE).to(BrowserService).inSingletonScope();
 
 // Canvas / dashboards (project-bluebird). The host-agnostic dashboard services
 // live in @posthog/core (bound via canvasCoreModule) and resolve through

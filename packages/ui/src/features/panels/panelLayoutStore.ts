@@ -1,6 +1,7 @@
 import {
   addRecentFile,
   addActionTab as coreAddActionTab,
+  addBrowserTab as coreAddBrowserTab,
   addTerminalTab as coreAddTerminalTab,
   closeOtherTabs as coreCloseOtherTabs,
   closeTab as coreCloseTab,
@@ -100,6 +101,7 @@ export interface PanelLayoutStore {
   updateTabLabel: (taskId: string, tabId: string, label: string) => void;
   setFocusedPanel: (taskId: string, panelId: string) => void;
   addTerminalTab: (taskId: string, panelId: string) => void;
+  addBrowserTab: (taskId: string, panelId: string, url?: string) => void;
   addActionTab: (
     taskId: string,
     panelId: string,
@@ -391,6 +393,17 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
             taskId,
             (layout) =>
               coreAddTerminalTab(layout, panelId) as Partial<TaskLayout>,
+          ),
+        );
+      },
+
+      addBrowserTab: (taskId, panelId, url) => {
+        set((state) =>
+          updateTaskLayout(
+            state,
+            taskId,
+            (layout) =>
+              coreAddBrowserTab(layout, panelId, url) as Partial<TaskLayout>,
           ),
         );
       },

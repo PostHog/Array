@@ -707,6 +707,27 @@ export function addTerminalTab(
   return { panelTree: updatedTree };
 }
 
+export function addBrowserTab(
+  layout: TaskLayout,
+  panelId: string,
+  url = "https://www.google.com",
+): Partial<TaskLayout> {
+  const browserId = `browser-${Date.now()}`;
+  const updatedTree = updateTreeNode(layout.panelTree, panelId, (panel) => {
+    if (panel.type !== "leaf") return panel;
+    return addTabToPanel(panel, {
+      id: browserId,
+      label: "Browser",
+      data: { type: "browser", browserId, url },
+      component: null,
+      draggable: true,
+      closeable: true,
+    });
+  });
+
+  return { panelTree: updatedTree };
+}
+
 export function addActionTab(
   layout: TaskLayout,
   panelId: string,
