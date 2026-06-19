@@ -19,7 +19,6 @@ import {
   parseGitActionMessage,
 } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import type { UserShellExecute } from "@posthog/ui/features/sessions/components/session-update/UserShellExecuteView";
-import type { QueuedMessage } from "@posthog/ui/features/sessions/sessionStore";
 import type {
   SessionUpdate,
   ToolCall,
@@ -64,8 +63,7 @@ export type ConversationItem =
       turnId: string;
     }
   | { type: "turn_cancelled"; id: string; interruptReason?: string }
-  | UserShellExecute
-  | { type: "queued"; id: string; message: QueuedMessage };
+  | UserShellExecute;
 
 export interface LastTurnInfo {
   isComplete: boolean;

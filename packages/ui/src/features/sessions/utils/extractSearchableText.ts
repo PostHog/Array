@@ -40,8 +40,6 @@ export function extractSearchableText(item: ConversationItem): string {
       ].join(" ");
     case "turn_cancelled":
       return item.interruptReason ?? "Interrupted by user";
-    case "queued":
-      return item.message.content;
     case "git_action":
     case "skill_button_action":
     case "git_action_result":

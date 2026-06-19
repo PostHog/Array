@@ -6,8 +6,12 @@ import { useService } from "@posthog/di/react";
 import { QueuedMessageView } from "@posthog/ui/features/sessions/components/session-update/QueuedMessageView";
 import { useSupportsNativeSteer } from "@posthog/ui/features/sessions/hooks/useMessagingMode";
 import { useReturnQueuedMessageToEditor } from "@posthog/ui/features/sessions/hooks/useReturnQueuedMessageToEditor";
-import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
+import {
+  sessionStoreSetters,
+  useSessionForTask,
+} from "@posthog/ui/features/sessions/sessionStore";
 import { useQueuedMessagesForTask } from "@posthog/ui/features/sessions/useSession";
+import { toast } from "@posthog/ui/primitives/toast";
 import { Flex } from "@radix-ui/themes";
 
 interface QueuedMessagesDockProps {
@@ -24,6 +28,8 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const supportsNativeSteer = useSupportsNativeSteer(taskId);
   const returnToEditor = useReturnQueuedMessageToEditor(taskId);
+  // Steer can't inject mid-compaction, so it would be a silent no-op; hide it.
+  const isCompacting = useSessionForTask(taskId)?.isCompacting ?? false;
 
   if (queued.length === 0) return null;
 
@@ -34,13 +40,19 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
           key={message.id}
           message={message}
           supportsNativeSteer={supportsNativeSteer}
-          onSteer={() => {
-            void sessionService
-              .steerQueuedMessage(taskId, message.id)
-              .catch(() => {
-                // Steer failed; the service already re-queued the message.
-              });
-          }}
+          onSteer={
+            isCompacting
+              ? undefined
+              : () => {
+                  void sessionService
+                    .steerQueuedMessage(taskId, message.id)
+                    .catch(() => {
+                      toast.error(
+                        "Couldn't steer this message. It's still queued.",
+                      );
+                    });
+                }
+          }
           onReturnToEditor={() => returnToEditor(message)}
           onRemove={() =>
             sessionStoreSetters.removeQueuedMessage(taskId, message.id)

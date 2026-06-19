@@ -261,10 +261,6 @@ export function ConversationView({
           return <TurnCancelledView interruptReason={item.interruptReason} />;
         case "user_shell_execute":
           return <UserShellExecuteView item={item} />;
-        case "queued":
-          // Queued messages render in the QueuedMessagesDock above the
-          // composer, not inline in the thread.
-          return null;
       }
     },
     [repoPath, taskId, slackThreadUrl, firstUserMessageId, initialItemIds],

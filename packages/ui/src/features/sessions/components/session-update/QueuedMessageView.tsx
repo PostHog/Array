@@ -56,12 +56,12 @@ export function QueuedMessageView({
             </Tooltip>
           )}
           {onReturnToEditor && (
-            <Tooltip content="Edit in composer">
+            <Tooltip content="Return to editor">
               <IconButton
                 size="1"
                 variant="ghost"
                 color="gray"
-                aria-label="Return message to the composer"
+                aria-label="Return to editor"
                 onClick={onReturnToEditor}
               >
                 <ArrowUUpLeft size={12} />
