@@ -132,32 +132,18 @@ export function useInboxAllReports(options?: {
   const pullRequestTotal = pullRequestCountQuery.data?.count ?? 0;
 
   const scopedReports = useMemo(() => {
-    // Reviewer scope is applied server-side via `suggested_reviewers` (see the
-    // infinite query above), so the loaded reports are already scoped. We must
-    // NOT re-filter here on the serialized `is_suggested_reviewer` boolean: the
-    // server's `suggested_reviewers` filter and that boolean can disagree (the
-    // boolean is recomputed at read time from GitHub-identity links and is
-    // `false` for some reports the filter still matches — notably failed runs).
-    // A client recheck would drop those reports from the list while the count
-    // badge — which trusts the same server filter — keeps counting them,
-    // producing a positive PR badge over an empty list.
+    // Reviewer scope is already applied server-side via `suggested_reviewers`.
+    // Don't re-filter on the `is_suggested_reviewer` boolean — it can disagree
+    // with that filter, dropping reports the count badge still counts.
     return searchQuery.trim()
       ? filterReportsBySearch(query.allReports, searchQuery)
       : query.allReports;
   }, [query.allReports, searchQuery]);
 
   const counts = useMemo(() => {
-    // The list is an infinite query that only holds the pages loaded so far
-    // (100 per page), so the loaded-derived Reports count caps at the page size
-    // and reads as a misleading "100". Reports is the dominant bucket, so derive
-    // its true size from the backend total `count` (unaffected by the page cap)
-    // minus the non-report items the total also includes. PRs use the true
-    // `pullRequestTotal` (also a real backend count), so PRs sitting past the
-    // loaded page don't inflate Reports.
-    //
-    // Reviewer scope is already applied server-side, so every loaded report is
-    // in scope — no client `is_suggested_reviewer` recheck here either, to keep
-    // the Reports count consistent with the same server filter the totals use.
+    // Derive Reports from the backend total (the loaded list caps at the page
+    // size), subtracting PRs and the other non-report items the total includes.
+    // Scope is server-side, so no client reviewer recheck here either.
     const loadedOtherNonReport = query.allReports.filter(
       (r) =>
         !isExcludedFromInbox(r) &&
