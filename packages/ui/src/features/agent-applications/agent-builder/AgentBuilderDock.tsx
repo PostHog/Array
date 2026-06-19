@@ -67,7 +67,7 @@ function buildAgentBuilderContext(
 
 /**
  * The Agent Builder chat — an always-on dock talking to the deployed meta-agent
- * (backend slug `agent-concierge`). Streams through the shared
+ * (backend slug `agent-builder`). Streams through the shared
  * `useAgentChat`/`AgentChatSurface` stack, prepends the current `/code/agents`
  * page context to the first message, answers `get_context`, and lets the agent
  * drive the UI via `focus_*`.

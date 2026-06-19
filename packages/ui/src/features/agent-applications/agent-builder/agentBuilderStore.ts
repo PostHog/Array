@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 /** The deployed meta-agent the agent builder dock always talks to. */
-export const AGENT_BUILDER_SLUG = "agent-concierge";
+export const AGENT_BUILDER_SLUG = "agent-builder";
 
 /** Key for the agent builder's chat in the core `agentChatStore`. */
 export const AGENT_BUILDER_CHAT_ID = "agent-builder";

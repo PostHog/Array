@@ -12,11 +12,7 @@ import { useMemo } from "react";
 import { useSetAgentBuilderPage } from "../agent-builder/useSetAgentBuilderPage";
 import { useAgentApplications } from "../hooks/useAgentApplications";
 import { useAgentFleetApprovals } from "../hooks/useAgentFleetApprovals";
-import {
-  approvalStateColor,
-  approvalStateLabel,
-  displayAgentName,
-} from "../utils/format";
+import { approvalStateColor, approvalStateLabel } from "../utils/format";
 import { AgentApprovalDetail } from "./AgentApprovalDetail";
 import { AgentDetailEmptyState } from "./AgentDetailLayout";
 import { APPROVAL_FILTERS, type ApprovalFilter } from "./agentApprovalsFilters";
@@ -202,9 +198,7 @@ function FleetApprovalRow({
 }) {
   const isQueued = approval.state === "queued";
   const agentLabel =
-    displayAgentName(application) ??
-    application?.slug ??
-    approval.application_id;
+    application?.name ?? application?.slug ?? approval.application_id;
   return (
     <button
       type="button"

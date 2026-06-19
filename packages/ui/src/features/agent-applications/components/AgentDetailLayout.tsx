@@ -8,7 +8,6 @@ import { AgentBuilderHeaderControls } from "../agent-builder/AgentBuilderHeaderC
 import type { AgentBuilderPageContext } from "../agent-builder/agentBuilderStore";
 import { useSetAgentBuilderPage } from "../agent-builder/useSetAgentBuilderPage";
 import { useAgentApplication } from "../hooks/useAgentApplication";
-import { displayAgentName } from "../utils/format";
 
 /** Map a detail sub-tab to the agent builder page context for this agent. */
 function tabToAgentBuilderPage(
@@ -111,7 +110,7 @@ export function AgentDetailLayout({
     isError,
   } = useAgentApplication(idOrSlug);
 
-  const title = displayAgentName(application) ?? idOrSlug;
+  const title = application?.name ?? idOrSlug;
   const headerContent = useMemo(
     () => (
       <Flex align="center" gap="2" className="w-full min-w-0">

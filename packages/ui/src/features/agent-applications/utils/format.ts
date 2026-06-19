@@ -3,25 +3,6 @@ import type {
   AgentRevisionState,
   AgentSessionState,
 } from "@posthog/shared/agent-platform-types";
-import { AGENT_BUILDER_SLUG } from "../agent-builder/agentBuilderStore";
-
-/**
- * The meta-agent that backs the in-app builder ships under the slug
- * `agent-concierge` and is named "Agent concierge" in the backend. Everywhere
- * the user sees it we want the product name "Agent Builder" instead —
- * overriding here keeps the backend slug intact while normalising copy in one
- * place, and matches the casing used elsewhere in the UI (dock header, page
- * copy). Returns `undefined` when no name is known so callers can fall back to
- * a slug or id of their choosing.
- */
-export function displayAgentName(
-  app: { slug?: string | null; name?: string | null } | null | undefined,
-): string | undefined {
-  if (!app) return undefined;
-  if (app.slug === AGENT_BUILDER_SLUG) return "Agent Builder";
-  return app.name ?? undefined;
-}
-
 /** Formats a USD spend value for the fleet / agent stat strips. */
 export function formatSpendUsd(value: number | null | undefined): string {
   if (value == null) return "$0";

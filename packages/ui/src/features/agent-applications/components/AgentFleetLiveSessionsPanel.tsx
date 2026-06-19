@@ -11,7 +11,7 @@ import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useAgentApplications } from "../hooks/useAgentApplications";
 import { useAgentFleetLiveSessions } from "../hooks/useAgentFleetLiveSessions";
-import { displayAgentName, sessionStateColor } from "../utils/format";
+import { sessionStateColor } from "../utils/format";
 import { RefreshIndicator } from "./RefreshIndicator";
 
 /**
@@ -97,9 +97,7 @@ function LiveSessionRow({
   application: AgentApplication | undefined;
 }) {
   const agentLabel =
-    displayAgentName(application) ??
-    application?.slug ??
-    session.application_id;
+    application?.name ?? application?.slug ?? session.application_id;
   const idOrSlug =
     application?.slug ?? application?.id ?? session.application_id;
   const trigger = triggerLabel(session.trigger_metadata);

@@ -12,7 +12,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useAgentRevisionLifecycle } from "../hooks/useAgentRevisionLifecycle";
 import { useCreateAgentDraftFromRevision } from "../hooks/useCreateAgentDraftFromRevision";
-import { displayAgentName, revisionStateColor } from "../utils/format";
+import { revisionStateColor } from "../utils/format";
 
 type LifecycleAction = "freeze" | "promote" | "archive";
 
@@ -71,7 +71,7 @@ function dialogCopy(
       title: `Promote ${id} to live`,
       description: replacing
         ? `The current live revision will be archived and traffic switches to ${id} immediately.`
-        : `This becomes the live revision for ${displayAgentName(agent) ?? agent.name}. Triggers start serving from it immediately.`,
+        : `This becomes the live revision for ${agent.name}. Triggers start serving from it immediately.`,
       confirmLabel: "Promote to live",
     };
   }
