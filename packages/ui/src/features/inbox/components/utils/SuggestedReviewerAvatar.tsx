@@ -35,11 +35,7 @@ export function SuggestedReviewerAvatar({
         <img
           src={posthogIcon}
           alt=""
-          className={cn(
-            "shrink-0 object-contain",
-            config.className,
-            className,
-          )}
+          className={cn("shrink-0 object-contain", config.className, className)}
         />
       );
     }
