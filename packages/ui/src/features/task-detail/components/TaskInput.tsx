@@ -543,6 +543,7 @@ export function TaskInput({
     setAdditionalDirectories,
   } = useTaskCreation({
     editorRef,
+    sessionId,
     selectedDirectory,
     selectedRepository: selectedCloudRepository,
     githubUserIntegrationId: selectedGithubUserIntegrationId,
