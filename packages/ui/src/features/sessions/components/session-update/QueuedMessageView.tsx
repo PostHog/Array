@@ -1,4 +1,9 @@
-import { ArrowBendDownLeft, Stack, Trash } from "@phosphor-icons/react";
+import {
+  ArrowBendDownLeft,
+  ArrowUUpLeft,
+  Stack,
+  Trash,
+} from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Box, Flex, IconButton, Tooltip } from "@radix-ui/themes";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
@@ -8,6 +13,7 @@ import { hasFileMentions, parseFileMentions } from "./parseFileMentions";
 interface QueuedMessageViewProps {
   message: QueuedMessage;
   onSteer?: () => void;
+  onReturnToEditor?: () => void;
   onRemove?: () => void;
   supportsNativeSteer?: boolean;
 }
@@ -15,6 +21,7 @@ interface QueuedMessageViewProps {
 export function QueuedMessageView({
   message,
   onSteer,
+  onReturnToEditor,
   onRemove,
   supportsNativeSteer = false,
 }: QueuedMessageViewProps) {
@@ -46,6 +53,19 @@ export function QueuedMessageView({
                 <ArrowBendDownLeft size={12} />
                 <span>Steer</span>
               </Button>
+            </Tooltip>
+          )}
+          {onReturnToEditor && (
+            <Tooltip content="Edit in composer">
+              <IconButton
+                size="1"
+                variant="ghost"
+                color="gray"
+                aria-label="Return message to the composer"
+                onClick={onReturnToEditor}
+              >
+                <ArrowUUpLeft size={12} />
+              </IconButton>
             </Tooltip>
           )}
           {onRemove && (

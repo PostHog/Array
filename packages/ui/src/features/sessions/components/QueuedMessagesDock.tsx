@@ -5,6 +5,7 @@ import {
 import { useService } from "@posthog/di/react";
 import { QueuedMessageView } from "@posthog/ui/features/sessions/components/session-update/QueuedMessageView";
 import { useSupportsNativeSteer } from "@posthog/ui/features/sessions/hooks/useMessagingMode";
+import { useReturnQueuedMessageToEditor } from "@posthog/ui/features/sessions/hooks/useReturnQueuedMessageToEditor";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import { useQueuedMessagesForTask } from "@posthog/ui/features/sessions/useSession";
 import { Flex } from "@radix-ui/themes";
@@ -15,13 +16,14 @@ interface QueuedMessagesDockProps {
 
 /**
  * Queued follow-ups pinned directly above the composer (outside the scrolling
- * thread) with per-message actions: steer it into the running turn now, or
- * discard it.
+ * thread) with per-message actions: steer it into the running turn now, return
+ * it to the composer to re-read or edit, or discard it.
  */
 export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
   const queued = useQueuedMessagesForTask(taskId);
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const supportsNativeSteer = useSupportsNativeSteer(taskId);
+  const returnToEditor = useReturnQueuedMessageToEditor(taskId);
 
   if (queued.length === 0) return null;
 
@@ -39,6 +41,7 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
                 // Steer failed; the service already re-queued the message.
               });
           }}
+          onReturnToEditor={() => returnToEditor(message)}
           onRemove={() =>
             sessionStoreSetters.removeQueuedMessage(taskId, message.id)
           }
