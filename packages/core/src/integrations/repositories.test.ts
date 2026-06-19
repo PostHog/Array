@@ -4,11 +4,17 @@ import {
   combineRepositoryPicker,
   combineUserGithubRepositories,
   getIntegrationIdForRepo,
+  isEmptyRepositoryMap,
   isRepoInIntegration,
   normalizeRepoKey,
+  type RepositoryCacheAction,
   type RepositoryQueryResult,
+  resolveEffectiveUserRepositoryMap,
+  resolveUserRepositoryCacheAction,
+  sameUserRepositoryMap,
   type TeamRepositoriesResult,
   type UserRepositoriesResult,
+  type UserRepositoryCacheInputs,
   type UserRepositoryIntegrationRef,
 } from "./repositories";
 
@@ -105,5 +111,202 @@ describe("repo key helpers", () => {
     expect(isRepoInIntegration({}, "")).toBe(true);
     expect(isRepoInIntegration({ "a/x": 1 }, "A/X")).toBe(true);
     expect(isRepoInIntegration({}, "a/x")).toBe(false);
+  });
+});
+
+const ref: UserRepositoryIntegrationRef = {
+  userIntegrationId: "u1",
+  installationId: "i1",
+};
+
+describe("isEmptyRepositoryMap", () => {
+  it("detects empty and non-empty maps", () => {
+    expect(isEmptyRepositoryMap({})).toBe(true);
+    expect(isEmptyRepositoryMap({ "a/x": ref })).toBe(false);
+  });
+});
+
+describe("sameUserRepositoryMap", () => {
+  it("compares by content, not reference", () => {
+    expect(
+      sameUserRepositoryMap({ "a/x": { ...ref } }, { "a/x": { ...ref } }),
+    ).toBe(true);
+  });
+
+  it("differs on size, missing keys or changed refs", () => {
+    expect(sameUserRepositoryMap({ "a/x": ref }, {})).toBe(false);
+    expect(sameUserRepositoryMap({ "a/x": ref }, { "a/y": ref })).toBe(false);
+    expect(
+      sameUserRepositoryMap(
+        { "a/x": ref },
+        { "a/x": { userIntegrationId: "u2", installationId: "i1" } },
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("resolveUserRepositoryCacheAction", () => {
+  const cases: Array<{
+    name: string;
+    inputs: UserRepositoryCacheInputs;
+    expected: RepositoryCacheAction;
+  }> = [
+    {
+      name: "skips while integrations are pending",
+      inputs: {
+        integrationsPending: true,
+        reposPending: false,
+        reposErrored: false,
+        hasIntegrations: true,
+        liveRepositoryMap: { "a/x": ref },
+        cachedRepositoryMap: {},
+      },
+      expected: "skip",
+    },
+    {
+      name: "clears when there are no integrations and a cache exists",
+      inputs: {
+        integrationsPending: false,
+        reposPending: false,
+        reposErrored: false,
+        hasIntegrations: false,
+        liveRepositoryMap: {},
+        cachedRepositoryMap: { "a/x": ref },
+      },
+      expected: "clear",
+    },
+    {
+      name: "skips clearing when there are no integrations and no cache",
+      inputs: {
+        integrationsPending: false,
+        reposPending: false,
+        reposErrored: false,
+        hasIntegrations: false,
+        liveRepositoryMap: {},
+        cachedRepositoryMap: {},
+      },
+      expected: "skip",
+    },
+    {
+      name: "skips while repos are pending",
+      inputs: {
+        integrationsPending: false,
+        reposPending: true,
+        reposErrored: false,
+        hasIntegrations: true,
+        liveRepositoryMap: {},
+        cachedRepositoryMap: { "a/x": ref },
+      },
+      expected: "skip",
+    },
+    {
+      name: "keeps the cache when an errored fetch returns empty",
+      inputs: {
+        integrationsPending: false,
+        reposPending: false,
+        reposErrored: true,
+        hasIntegrations: true,
+        liveRepositoryMap: {},
+        cachedRepositoryMap: { "a/x": ref },
+      },
+      expected: "skip",
+    },
+    {
+      name: "clears a stale cache when a clean fetch returns empty",
+      inputs: {
+        integrationsPending: false,
+        reposPending: false,
+        reposErrored: false,
+        hasIntegrations: true,
+        liveRepositoryMap: {},
+        cachedRepositoryMap: { "a/x": ref },
+      },
+      expected: "clear",
+    },
+    {
+      name: "skips when a clean empty fetch matches an empty cache",
+      inputs: {
+        integrationsPending: false,
+        reposPending: false,
+        reposErrored: false,
+        hasIntegrations: true,
+        liveRepositoryMap: {},
+        cachedRepositoryMap: {},
+      },
+      expected: "skip",
+    },
+    {
+      name: "skips when live data equals the cache by content",
+      inputs: {
+        integrationsPending: false,
+        reposPending: false,
+        reposErrored: false,
+        hasIntegrations: true,
+        liveRepositoryMap: { "a/x": { ...ref } },
+        cachedRepositoryMap: { "a/x": { ...ref } },
+      },
+      expected: "skip",
+    },
+    {
+      name: "writes when live data differs from the cache",
+      inputs: {
+        integrationsPending: false,
+        reposPending: false,
+        reposErrored: false,
+        hasIntegrations: true,
+        liveRepositoryMap: { "a/y": ref },
+        cachedRepositoryMap: { "a/x": ref },
+      },
+      expected: "write",
+    },
+  ];
+
+  it.each(cases)("$name", ({ inputs, expected }) => {
+    expect(resolveUserRepositoryCacheAction(inputs)).toBe(expected);
+  });
+});
+
+describe("resolveEffectiveUserRepositoryMap", () => {
+  const cached = { "a/y": ref };
+  const live = { "a/x": ref };
+
+  it("uses live data when not loading even if a cache exists", () => {
+    const result = resolveEffectiveUserRepositoryMap({
+      liveLoading: false,
+      liveRepositoryMap: {},
+      cachedRepositoryMap: cached,
+    });
+    expect(result.servingFromCache).toBe(false);
+    expect(result.effectiveRepositoryMap).toEqual({});
+  });
+
+  it("serves the cache while loading with an empty live map", () => {
+    const result = resolveEffectiveUserRepositoryMap({
+      liveLoading: true,
+      liveRepositoryMap: {},
+      cachedRepositoryMap: cached,
+    });
+    expect(result.servingFromCache).toBe(true);
+    expect(result.effectiveRepositoryMap).toBe(cached);
+  });
+
+  it("prefers live data once it arrives mid-load", () => {
+    const result = resolveEffectiveUserRepositoryMap({
+      liveLoading: true,
+      liveRepositoryMap: live,
+      cachedRepositoryMap: cached,
+    });
+    expect(result.servingFromCache).toBe(false);
+    expect(result.effectiveRepositoryMap).toBe(live);
+  });
+
+  it("does not serve from cache when both maps are empty", () => {
+    const result = resolveEffectiveUserRepositoryMap({
+      liveLoading: true,
+      liveRepositoryMap: {},
+      cachedRepositoryMap: {},
+    });
+    expect(result.servingFromCache).toBe(false);
+    expect(result.effectiveRepositoryMap).toEqual({});
   });
 });

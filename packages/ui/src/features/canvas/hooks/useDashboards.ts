@@ -3,6 +3,7 @@ import type {
   DashboardRecord,
   DashboardSummary,
 } from "@posthog/core/canvas/dashboardSchemas";
+import type { FreeformVersion } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { useCanvasChatStore } from "@posthog/ui/features/canvas/stores/canvasChatStore";
 import { useDashboardEditStore } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
@@ -64,6 +65,9 @@ export function useDashboardMutations() {
   const remove = useMutation(
     trpc.dashboards.delete.mutationOptions({ onSuccess: invalidate }),
   );
+  const saveFreeform = useMutation(
+    trpc.dashboards.saveFreeform.mutationOptions({ onSuccess: invalidate }),
+  );
 
   return {
     saveDashboard: (id: string, spec: Spec | null, name?: string) =>
@@ -85,7 +89,39 @@ export function useDashboardMutations() {
         templateId,
       }),
     deleteDashboard: (id: string) => remove.mutateAsync({ id }),
+    // Explicitly persist a freeform canvas's current code + history (autosave
+    // already runs each turn; this is the manual Save affordance).
+    saveFreeformDashboard: (
+      id: string,
+      code: string,
+      versions: FreeformVersion[],
+      currentVersionId?: string,
+    ) => saveFreeform.mutateAsync({ id, code, versions, currentVersionId }),
+    // Fork a freeform canvas: create a fresh freeform record, then copy its
+    // source + version history onto it. Returns the new record (to navigate to).
+    forkFreeform: async (
+      channelId: string,
+      name: string,
+      code: string,
+      versions: FreeformVersion[],
+      currentVersionId?: string,
+    ): Promise<DashboardRecord> => {
+      const record = await create.mutateAsync({
+        channelId,
+        name,
+        spec: null,
+        templateId: "freeform",
+      });
+      await saveFreeform.mutateAsync({
+        id: record.id,
+        code,
+        versions,
+        currentVersionId,
+      });
+      return record;
+    },
     isSaving: save.isPending,
+    isSavingFreeform: saveFreeform.isPending,
     isCreating: create.isPending,
     isDeleting: remove.isPending,
   };

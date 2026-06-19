@@ -1,7 +1,10 @@
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import { inject, injectable } from "inversify";
 import { LLM_GATEWAY_SERVICE } from "../llm-gateway/identifiers";
-import type { LlmGatewayService } from "../llm-gateway/llm-gateway";
+import {
+  HELPER_GATEWAY_MODEL,
+  type LlmGatewayService,
+} from "../llm-gateway/llm-gateway";
 import { CreatePrSaga, type CreatePrStep } from "./create-pr-saga";
 import {
   type CreatePrHost,
@@ -97,7 +100,7 @@ ${truncatedDiff}${contextSection}`;
 
     const response = await this.llm.prompt(
       [{ role: "user", content: userMessage }],
-      { system },
+      { system, model: HELPER_GATEWAY_MODEL },
     );
 
     return { message: response.content.trim() };
@@ -207,7 +210,7 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
 
     const response = await this.llm.prompt(
       [{ role: "user", content: userMessage }],
-      { system, maxTokens: 2000 },
+      { system, maxTokens: 2000, model: HELPER_GATEWAY_MODEL },
     );
 
     const content = response.content.trim();

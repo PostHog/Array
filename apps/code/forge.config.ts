@@ -219,6 +219,10 @@ const config: ForgeConfig = {
         icon: "./build/app-icon.png",
         categories: ["Development"],
         bin: "PostHog Code",
+        // Declare the deep-link scheme in the bundled .desktop entry so
+        // AppImage integrators (e.g. AppImageLauncher) register the handler.
+        // Non-integrated runs are covered at runtime in DeepLinkService.
+        mimeType: ["x-scheme-handler/posthog-code"],
       },
     }),
     new MakerDeb({

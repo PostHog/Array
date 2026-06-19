@@ -426,4 +426,68 @@ describe("discoverExternalPlugins", () => {
       expect(result[2]?.path).toMatch(/repo-skills-/);
     });
   });
+
+  describe("codex skills", () => {
+    const CODEX_SKILLS_DIR = "/mock/home/.agents/skills";
+
+    it("discovers the user's codex skills as a synthetic plugin", async () => {
+      createSkillDir(CODEX_SKILLS_DIR, "codex-skill");
+
+      const result = await discoverExternalPlugins({
+        userDataDir: USER_DATA_DIR,
+      });
+
+      expect(result).toEqual([
+        { type: "local", path: `${USER_DATA_DIR}/plugins/codex-skills` },
+      ]);
+      const pluginJson = JSON.parse(
+        vol.readFileSync(
+          `${USER_DATA_DIR}/plugins/codex-skills/plugin.json`,
+          "utf-8",
+        ) as string,
+      );
+      expect(pluginJson.description).toBe("User Codex skills");
+    });
+
+    it("excludes codex skills whose name matches a user skill", async () => {
+      createSkillDir(USER_SKILLS_DIR, "shared");
+      createSkillDir(CODEX_SKILLS_DIR, "shared");
+      createSkillDir(CODEX_SKILLS_DIR, "codex-only");
+
+      await discoverExternalPlugins({ userDataDir: USER_DATA_DIR });
+
+      const entries = vol.readdirSync(
+        `${USER_DATA_DIR}/plugins/codex-skills/skills`,
+      );
+      expect(entries).toEqual(["codex-only"]);
+    });
+
+    it("excludes codex skills whose name matches a bundled skill", async () => {
+      const bundledSkillsDir = "/mock/bundled/skills";
+      createSkillDir(bundledSkillsDir, "query-data");
+      createSkillDir(CODEX_SKILLS_DIR, "query-data");
+      createSkillDir(CODEX_SKILLS_DIR, "codex-only");
+
+      await discoverExternalPlugins({
+        userDataDir: USER_DATA_DIR,
+        bundledSkillsDir,
+      });
+
+      const entries = vol.readdirSync(
+        `${USER_DATA_DIR}/plugins/codex-skills/skills`,
+      );
+      expect(entries).toEqual(["codex-only"]);
+    });
+
+    it("omits the codex plugin entirely when every name collides", async () => {
+      createSkillDir(USER_SKILLS_DIR, "dup");
+      createSkillDir(CODEX_SKILLS_DIR, "dup");
+
+      const result = await discoverExternalPlugins({
+        userDataDir: USER_DATA_DIR,
+      });
+
+      expect(result.some((p) => p.path.endsWith("/codex-skills"))).toBe(false);
+    });
+  });
 });

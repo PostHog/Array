@@ -62,4 +62,29 @@ describe("ContextBreakdownPopover", () => {
     expect(screen.queryByText("Tools")).not.toBeInTheDocument();
     expect(screen.queryByText("Rules")).not.toBeInTheDocument();
   });
+
+  it("scales segments to the context window, not the used tokens", () => {
+    const { container } = render(
+      <Theme>
+        <ContextBreakdownPopover
+          usage={usageWith(
+            {
+              systemPrompt: 0,
+              tools: 0,
+              rules: 0,
+              skills: 0,
+              mcp: 0,
+              subagents: 0,
+              conversation: 50_000,
+            },
+            { used: 50_000, size: 200_000, percentage: 25 },
+          )}
+        />
+      </Theme>,
+    );
+    // 50K of a 200K window => the single segment fills a quarter of the bar,
+    // leaving the rest as empty track (remaining context).
+    const segment = container.querySelector('[style*="width: 25%"]');
+    expect(segment).not.toBeNull();
+  });
 });

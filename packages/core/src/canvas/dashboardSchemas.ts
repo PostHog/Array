@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { freeformVersionSchema } from "./freeformSchemas";
 
 // A json-render Spec (root + flat element map). Stored verbatim; null = empty.
 export const dashboardSpecSchema = z.record(z.string(), z.unknown()).nullable();
@@ -14,6 +15,14 @@ export const dashboardRecordSchema = z.object({
   // The canvas template this board was built with. Defaults to "dashboard" so
   // boards saved before templating still parse and behave as before.
   templateId: z.string().default("dashboard"),
+  // Render kind. Absent/"json-render" = the spec-driven component tree; "freeform"
+  // = agent-authored React in a sandboxed iframe (code/versions below). Defaults
+  // so canvases saved before freeform existed still parse as json-render.
+  kind: z.enum(["json-render", "freeform"]).default("json-render"),
+  // Freeform only: the live single-file React source, and its edit history.
+  code: z.string().optional(),
+  versions: z.array(freeformVersionSchema).optional(),
+  currentVersionId: z.string().optional(),
   // Display name of whoever created the file-system row (from the backend's
   // `created_by` user). Absent for rows the API returns without a creator.
   createdBy: z.string().optional(),
@@ -34,6 +43,12 @@ export const dashboardFileMetaSchema = z.object({
   channelId: z.string().optional(),
   // The canvas template id this board was built with (absent = "dashboard").
   templateId: z.string().optional(),
+  // Render kind (absent = "json-render"). See dashboardRecordSchema.kind.
+  kind: z.enum(["json-render", "freeform"]).optional(),
+  // Freeform only: live React source + ordered edit history + the live pointer.
+  code: z.string().optional(),
+  versions: z.array(freeformVersionSchema).optional(),
+  currentVersionId: z.string().optional(),
   // Display name of the creator, stamped at create time. We can't rely on the
   // FS row's `created_by` (the list endpoint doesn't expand it), so we store our
   // own. Absent on boards created before this field existed.
@@ -50,11 +65,15 @@ export const dashboardSummarySchema = z.object({
   channelId: z.string(),
   name: z.string(),
   templateId: z.string().default("dashboard"),
+  kind: z.enum(["json-render", "freeform"]).default("json-render"),
   createdBy: z.string().optional(),
   updatedAt: z.number(),
   // The full spec is already loaded when listing (it rides in the FS row's
   // meta), so include it here to render grid previews without an N+1 of get()s.
   spec: dashboardSpecSchema,
+  // Freeform only: the React source, included so the grid can render a live
+  // preview the same way json-render canvases preview from their spec.
+  code: z.string().optional(),
 });
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
 
@@ -71,6 +90,14 @@ export const updateDashboardInput = z.object({
   id: z.string().min(1),
   name: z.string().min(1).optional(),
   spec: dashboardSpecSchema,
+});
+
+export const saveFreeformInput = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).optional(),
+  code: z.string(),
+  versions: z.array(freeformVersionSchema),
+  currentVersionId: z.string().optional(),
 });
 
 export const dashboardIdInput = z.object({ id: z.string().min(1) });

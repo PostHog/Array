@@ -52,7 +52,7 @@
     "@lezer/highlight": "^1.2.3",
     "@modelcontextprotocol/ext-apps": "^1.1.2",
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "@pierre/diffs": "^1.1.21",
+    "@pierre/diffs": "^1.2.10",
     "@posthog/agent": "workspace:*",
     "@posthog/api-client": "workspace:*",
     "@posthog/core": "workspace:*",

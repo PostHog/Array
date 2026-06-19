@@ -3,6 +3,7 @@ import bubblesUrl from "../assets/sounds/bubbles.mp3";
 import daniloUrl from "../assets/sounds/danilo.mp3";
 import dropUrl from "../assets/sounds/drop.mp3";
 import guitarUrl from "../assets/sounds/guitar.mp3";
+import icqUrl from "../assets/sounds/icq.mp3";
 import knockUrl from "../assets/sounds/knock.mp3";
 import meepUrl from "../assets/sounds/meep.mp3";
 import meepSmolUrl from "../assets/sounds/meep-smol.mp3";
@@ -27,6 +28,7 @@ const SOUND_URLS: Record<Exclude<CompletionSound, "none">, string> = {
   slide: slideUrl,
   switch: switchUrl,
   wilhelm: wilhelmUrl,
+  icq: icqUrl,
 };
 
 let currentAudio: HTMLAudioElement | null = null;

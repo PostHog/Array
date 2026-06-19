@@ -5,6 +5,7 @@ import {
   Code,
   CreditCard,
   Cube,
+  DiscordLogo,
   Folder,
   GearSix,
   GithubLogo,
@@ -28,6 +29,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { AdvancedSettings } from "@posthog/ui/features/settings/sections/AdvancedSettings";
 import { ClaudeCodeSettings } from "@posthog/ui/features/settings/sections/ClaudeCodeSettings";
+import { DiscordSettings } from "@posthog/ui/features/settings/sections/DiscordSettings";
 import { EnvironmentsSettings } from "@posthog/ui/features/settings/sections/environments/EnvironmentsSettings";
 import { GeneralSettings } from "@posthog/ui/features/settings/sections/GeneralSettings";
 import { GitHubSettings } from "@posthog/ui/features/settings/sections/GitHubSettings";
@@ -70,6 +72,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
   { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
   { id: "slack", label: "Slack", icon: <SlackLogo size={16} /> },
+  { id: "discord", label: "Discord", icon: <DiscordLogo size={16} /> },
   { id: "signals", label: "Self-driving", icon: <TrafficSignal size={16} /> },
   { id: "updates", label: "Updates", icon: <ArrowsClockwise size={16} /> },
   { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
@@ -88,6 +91,7 @@ const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   shortcuts: "Shortcuts",
   github: "GitHub",
   slack: "Slack integration",
+  discord: "Discord",
   signals: "Self-driving",
   updates: "Updates",
   advanced: "Advanced",
@@ -106,6 +110,7 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   shortcuts: ShortcutsSettings,
   github: GitHubSettings,
   slack: SlackSettings,
+  discord: DiscordSettings,
   // Slack notification config lives in the dedicated Slack section; the Signals
   // section links out to it rather than duplicating the controls.
   signals: () => <SignalSourcesSettings showSlackNotifications={false} />,

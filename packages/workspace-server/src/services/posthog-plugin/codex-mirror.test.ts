@@ -1,16 +1,12 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  addMirroredName,
-  mirrorUserSkillsToCodex,
-  readCodexMirrorState,
-} from "./codex-mirror";
+import { cleanupLegacyCodexMirror, readCodexMirrorState } from "./codex-mirror";
 
 let root: string;
-let userDir: string;
+let bundledDir: string;
 let codexDir: string;
 
 async function createSkill(dir: string, name: string, body = `# ${name}`) {
@@ -20,79 +16,85 @@ async function createSkill(dir: string, name: string, body = `# ${name}`) {
 
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "codex-mirror-test-"));
-  userDir = path.join(root, "user-skills");
+  bundledDir = path.join(root, "bundled-skills");
   codexDir = path.join(root, "codex-skills");
-  await mkdir(userDir, { recursive: true });
+  await mkdir(bundledDir, { recursive: true });
 });
 
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-describe("mirrorUserSkillsToCodex", () => {
-  it("copies user skills into the codex dir and records them", async () => {
-    await createSkill(userDir, "alpha");
-    await createSkill(userDir, "beta");
+describe("cleanupLegacyCodexMirror", () => {
+  it("removes tracked mirror copies and deletes the state file", async () => {
+    await createSkill(codexDir, "alpha", "mirrored copy");
+    await createSkill(codexDir, "beta", "mirrored copy");
+    await writeFile(
+      path.join(codexDir, ".posthog-mirror.json"),
+      JSON.stringify({ version: 1, mirrored: ["alpha", "beta"] }),
+    );
 
-    await mirrorUserSkillsToCodex(userDir, codexDir);
+    const removed = await cleanupLegacyCodexMirror(codexDir, bundledDir);
 
-    expect(
-      await readFile(path.join(codexDir, "alpha", "SKILL.md"), "utf-8"),
-    ).toBe("# alpha");
-    expect(existsSync(path.join(codexDir, "beta", "SKILL.md"))).toBe(true);
-    const state = await readCodexMirrorState(codexDir);
-    expect(state.mirrored.sort()).toEqual(["alpha", "beta"]);
-  });
-
-  it("never overwrites a codex skill we did not put there", async () => {
-    await mkdir(codexDir, { recursive: true });
-    await createSkill(codexDir, "alpha", "codex original");
-    await createSkill(userDir, "alpha", "user version");
-
-    await mirrorUserSkillsToCodex(userDir, codexDir);
-
-    expect(
-      await readFile(path.join(codexDir, "alpha", "SKILL.md"), "utf-8"),
-    ).toBe("codex original");
-    const state = await readCodexMirrorState(codexDir);
-    expect(state.mirrored).toEqual([]);
-  });
-
-  it("overwrites skills we previously mirrored and carries edits out", async () => {
-    await createSkill(userDir, "alpha", "v1");
-    await mirrorUserSkillsToCodex(userDir, codexDir);
-
-    await writeFile(path.join(userDir, "alpha", "SKILL.md"), "v2");
-    await mirrorUserSkillsToCodex(userDir, codexDir);
-
-    expect(
-      await readFile(path.join(codexDir, "alpha", "SKILL.md"), "utf-8"),
-    ).toBe("v2");
-  });
-
-  it("removes mirrors whose source skill is gone", async () => {
-    await createSkill(userDir, "alpha");
-    await mirrorUserSkillsToCodex(userDir, codexDir);
-
-    await rm(path.join(userDir, "alpha"), { recursive: true });
-    await mirrorUserSkillsToCodex(userDir, codexDir);
-
+    expect(removed.sort()).toEqual(["alpha", "beta"]);
     expect(existsSync(path.join(codexDir, "alpha"))).toBe(false);
-    expect((await readCodexMirrorState(codexDir)).mirrored).toEqual([]);
+    expect(existsSync(path.join(codexDir, "beta"))).toBe(false);
+    expect(existsSync(path.join(codexDir, ".posthog-mirror.json"))).toBe(false);
   });
 
-  it("takes ownership of an imported skill via addMirroredName", async () => {
-    // Codex-authored skill, imported to user skills (import records the name).
-    await mkdir(codexDir, { recursive: true });
-    await createSkill(codexDir, "alpha", "codex original");
-    await createSkill(userDir, "alpha", "imported then edited");
-    await addMirroredName(codexDir, "alpha");
+  it("removes bundled-catalog copies with identical SKILL.md", async () => {
+    await createSkill(bundledDir, "query-data", "bundled body");
+    await createSkill(codexDir, "query-data", "bundled body");
 
-    await mirrorUserSkillsToCodex(userDir, codexDir);
+    const removed = await cleanupLegacyCodexMirror(codexDir, bundledDir);
 
-    expect(
-      await readFile(path.join(codexDir, "alpha", "SKILL.md"), "utf-8"),
-    ).toBe("imported then edited");
+    expect(removed).toEqual(["query-data"]);
+    expect(existsSync(path.join(codexDir, "query-data"))).toBe(false);
+  });
+
+  it("keeps a user's own skill that shares a bundled name but differs", async () => {
+    await createSkill(bundledDir, "query-data", "bundled body");
+    await createSkill(codexDir, "query-data", "the user's own different body");
+
+    const removed = await cleanupLegacyCodexMirror(codexDir, bundledDir);
+
+    expect(removed).toEqual([]);
+    expect(existsSync(path.join(codexDir, "query-data"))).toBe(true);
+  });
+
+  it("keeps untracked, non-bundled codex skills", async () => {
+    await createSkill(codexDir, "my-codex-skill", "wholly the user's");
+
+    const removed = await cleanupLegacyCodexMirror(codexDir, bundledDir);
+
+    expect(removed).toEqual([]);
+    expect(existsSync(path.join(codexDir, "my-codex-skill"))).toBe(true);
+  });
+
+  it("returns nothing when the codex dir does not exist", async () => {
+    const removed = await cleanupLegacyCodexMirror(
+      path.join(root, "missing"),
+      bundledDir,
+    );
+    expect(removed).toEqual([]);
+  });
+
+  it("never deletes the codex dir or its parent from unsafe mirror names", async () => {
+    await createSkill(codexDir, "keep-me", "the user's own");
+    await writeFile(
+      path.join(codexDir, ".posthog-mirror.json"),
+      JSON.stringify({
+        version: 1,
+        mirrored: ["", ".", "..", "../../escape", "nested/evil"],
+      }),
+    );
+
+    const removed = await cleanupLegacyCodexMirror(codexDir, bundledDir);
+
+    expect(removed).toEqual([]);
+    expect(existsSync(root)).toBe(true);
+    expect(existsSync(codexDir)).toBe(true);
+    expect(existsSync(path.join(codexDir, "keep-me"))).toBe(true);
   });
 });
 
@@ -108,6 +110,21 @@ describe("readCodexMirrorState", () => {
     expect(await readCodexMirrorState(codexDir)).toEqual({
       version: 1,
       mirrored: [],
+    });
+  });
+
+  it("drops unsafe entries that could escape the codex dir", async () => {
+    await mkdir(codexDir, { recursive: true });
+    await writeFile(
+      path.join(codexDir, ".posthog-mirror.json"),
+      JSON.stringify({
+        version: 1,
+        mirrored: ["good", "", ".", "..", "nested/evil", "back\\slash", 42],
+      }),
+    );
+    expect(await readCodexMirrorState(codexDir)).toEqual({
+      version: 1,
+      mirrored: ["good"],
     });
   });
 });

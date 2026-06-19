@@ -3,6 +3,7 @@ import {
   GearSixIcon,
   HouseIcon,
   RobotIcon,
+  SquaresFourIcon,
   TrayIcon,
 } from "@phosphor-icons/react";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
@@ -11,18 +12,41 @@ import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/Project
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import {
   navigateToAgents,
+  navigateToCanvas,
   navigateToHome,
   navigateToInbox,
   navigateToSkills,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { Box, Flex } from "@radix-ui/themes";
+import { useRouterState } from "@tanstack/react-router";
+
+// Non-canvas /website mirrors (Home, Files, etc.) — used to tell whether the
+// current /website route is a canvas surface (channels index / a channel / a
+// dashboard) so the Canvas nav item highlights only there.
+const NON_CANVAS_WEBSITE_PREFIXES = [
+  "/website/home",
+  "/website/skills",
+  "/website/mcp-servers",
+  "/website/command-center",
+];
 
 // The global nav brought over from the Code app — a single icon+label row each,
 // no rail. These are app-wide destinations (they leave the Channels space for
 // the corresponding Code view); the channel tree below is channel browsing.
 function ChannelsNav() {
   const view = useAppView();
+  // Active on the canvas surfaces: the channels index, a channel, or a canvas —
+  // any /website route that isn't one of the cross-app mirrors above.
+  const isCanvasActive = useRouterState({
+    select: (s) => {
+      const path = s.location.pathname;
+      return (
+        path.startsWith("/website") &&
+        !NON_CANVAS_WEBSITE_PREFIXES.some((p) => path.startsWith(p))
+      );
+    },
+  });
   return (
     <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
       <SidebarItem
@@ -48,6 +72,18 @@ function ChannelsNav() {
         label="Global Inbox"
         isActive={view.type === "inbox"}
         onClick={navigateToInbox}
+      />
+      <SidebarItem
+        depth={0}
+        icon={
+          <SquaresFourIcon
+            size={16}
+            weight={isCanvasActive ? "fill" : "regular"}
+          />
+        }
+        label="Canvas"
+        isActive={isCanvasActive}
+        onClick={navigateToCanvas}
       />
       <SidebarItem
         depth={0}

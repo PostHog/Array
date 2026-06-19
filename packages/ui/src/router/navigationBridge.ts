@@ -136,6 +136,11 @@ export function navigateToWebsiteHome(): void {
   void getRouterOrNull()?.navigate({ to: "/website/home" });
 }
 
+// The Canvas workspace landing (the channels index, where canvases live).
+export function navigateToCanvas(): void {
+  void getRouterOrNull()?.navigate({ to: "/website" });
+}
+
 export function navigateToWebsiteSkills(): void {
   void getRouterOrNull()?.navigate({ to: "/website/skills" });
 }

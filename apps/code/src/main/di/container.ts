@@ -19,7 +19,10 @@ import {
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
 import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
-import { CANVAS_GEN_SERVICE } from "@posthog/core/canvas/identifiers";
+import {
+  CANVAS_GEN_SERVICE,
+  FREEFORM_GEN_SERVICE,
+} from "@posthog/core/canvas/identifiers";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
@@ -94,6 +97,7 @@ import {
   type IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
 import { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
+import { FreeformGenService } from "@posthog/host-router/services/freeform-gen.service";
 import { ANALYTICS_SERVICE } from "@posthog/platform/analytics";
 import { APP_LIFECYCLE_SERVICE } from "@posthog/platform/app-lifecycle";
 import { APP_META_SERVICE } from "@posthog/platform/app-meta";
@@ -238,6 +242,7 @@ import {
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
 import { DeepLinkService } from "../services/deep-link/service";
+import { DiscordPresenceService } from "../services/discord-presence/service";
 import { EncryptionService } from "../services/encryption/service";
 import { SecureStoreService } from "../services/secure-store/service";
 import { settingsStore } from "../services/settingsStore";
@@ -707,6 +712,7 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
   };
 });
 container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
+container.bind(MAIN_TOKENS.DiscordPresenceService).to(DiscordPresenceService);
 
 // Canvas / dashboards (project-bluebird). The host-agnostic dashboard services
 // live in @posthog/core (bound via canvasCoreModule); CanvasGenService is the
@@ -715,3 +721,4 @@ container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
 // host-router routers.
 container.load(canvasCoreModule);
 container.bind(CANVAS_GEN_SERVICE).to(CanvasGenService).inSingletonScope();
+container.bind(FREEFORM_GEN_SERVICE).to(FreeformGenService).inSingletonScope();

@@ -118,6 +118,9 @@ export const WORKSPACE_SERVICE = Symbol.for(
 export const WORKSPACE_SERVER_SERVICE = Symbol.for(
   "posthog.host.main.workspace-server.service",
 );
+export const DISCORD_PRESENCE_SERVICE = Symbol.for(
+  "posthog.host.main.discord-presence.service",
+);
 
 export const MAIN_TOKENS = Object.freeze({
   WorkspaceClient: WORKSPACE_CLIENT,
@@ -142,6 +145,7 @@ export const MAIN_TOKENS = Object.freeze({
   AppLifecycleService: APP_LIFECYCLE_SERVICE,
   CloudTaskService: CLOUD_TASK_SERVICE,
   ContextMenuService: CONTEXT_MENU_SERVICE,
+  DiscordPresenceService: DISCORD_PRESENCE_SERVICE,
 
   ExternalAppsService: EXTERNAL_APPS_SERVICE,
   LlmGatewayService: LLM_GATEWAY_SERVICE,

@@ -39,7 +39,6 @@ import type { ProcessTrackingService } from "../process-tracking/process-trackin
 import { getBranchFromPath, hasAnyFiles } from "../repo-fs-query/repo-fs-query";
 import { SUSPENSION_SERVICE } from "../suspension/identifiers";
 import type { SuspensionService } from "../suspension/suspension";
-import { deriveWorktreePath as deriveWorktreePathFromBase } from "../worktree-path/worktree-path";
 import {
   deleteWorktree as deleteGitWorktree,
   listTwigWorktrees,
@@ -80,9 +79,21 @@ type TaskAssociation =
       taskId: string;
       folderId: string;
       mode: "worktree";
+      /** Cosmetic worktree name, surfaced as `worktreeName` in projections. */
       worktree: string;
+      /** Authoritative on-disk worktree path, read from the stored row. */
+      path: string;
       branchName: string | null;
     };
+
+/** True when `child` resolves to a path strictly inside `parent`. */
+function isPathUnder(child: string, parent: string): boolean {
+  const rel = path.relative(parent, child);
+  const up = `..${path.sep}`;
+  return (
+    rel !== "" && rel !== ".." && !rel.startsWith(up) && !path.isAbsolute(rel)
+  );
+}
 
 export const WorkspaceServiceEvent = {
   Error: "error",
@@ -139,14 +150,6 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
   private creatingWorkspaces = new Map<string, Promise<WorkspaceInfo>>();
   private branchWatcherInitialized = false;
 
-  private deriveWorktreePath(folderPath: string, worktreeName: string): string {
-    return deriveWorktreePathFromBase(
-      this.workspaceSettings.getWorktreeLocation(),
-      folderPath,
-      worktreeName,
-    );
-  }
-
   private findTaskAssociation(taskId: string): TaskAssociation | null {
     const workspace = this.workspaceRepo.findByTaskId(taskId);
     if (!workspace) return null;
@@ -169,6 +172,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         folderId: workspace.repositoryId,
         mode: "worktree",
         worktree: worktree.name,
+        path: worktree.path,
         branchName: null,
       };
     }
@@ -209,6 +213,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
           folderId: workspace.repositoryId,
           mode: "worktree",
           worktree: worktree.name,
+          path: worktree.path,
           branchName: null,
         });
       } else {
@@ -250,10 +255,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     const associations = this.getAllTaskAssociations();
     for (const assoc of associations) {
       if (assoc.mode !== "worktree") continue;
-      const folderPath = this.getFolderPath(assoc.folderId);
-      if (!folderPath) continue;
-      const derivedPath = this.deriveWorktreePath(folderPath, assoc.worktree);
-      if (derivedPath === worktreePath && assoc.branchName !== newBranch) {
+      if (assoc.path === worktreePath && assoc.branchName !== newBranch) {
         this.updateAssociationBranchName(assoc.taskId, newBranch);
         this.emit(WorkspaceServiceEvent.BranchChanged, {
           taskId: assoc.taskId,
@@ -277,11 +279,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       if (!folderPath) continue;
 
       if (assoc.mode === "worktree") {
-        const worktreePath = this.deriveWorktreePath(
-          folderPath,
-          assoc.worktree,
-        );
-        if (worktreePath !== repoPath) continue;
+        if (assoc.path !== repoPath) continue;
 
         const currentBranch = await getBranchFromPath(repoPath);
         if (currentBranch !== null && currentBranch !== assoc.branchName) {
@@ -721,7 +719,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     let worktreePath: string | null = null;
 
     if (association.mode === "worktree") {
-      worktreePath = this.deriveWorktreePath(folderPath, association.worktree);
+      worktreePath = association.path;
     }
 
     await this.agent.cancelSessionsByTaskId(taskId);
@@ -743,7 +741,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       );
 
       if (otherWorkspacesForFolder.length === 0) {
-        await this.cleanupRepoWorktreeFolder(folderPath);
+        await this.cleanupRepoWorktreeFolder(folderPath, worktreePath);
       }
     }
 
@@ -760,8 +758,25 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     this.workspaceRepo.deleteByTaskId(taskId);
   }
 
-  private async cleanupRepoWorktreeFolder(folderPath: string): Promise<void> {
+  /**
+   * Reclaims the managed `<base>/<repo>` parent folder once its last worktree is
+   * gone. The folder that gets removed is derived from `folderPath`, not from
+   * `worktreePath`; `worktreePath` is read only to confirm the deleted worktree
+   * was managed (lived under the base path) before reclaiming anything.
+   */
+  private async cleanupRepoWorktreeFolder(
+    folderPath: string,
+    worktreePath: string,
+  ): Promise<void> {
     const worktreeBasePath = this.workspaceSettings.getWorktreeLocation();
+
+    // Only reclaim the managed `<base>/<repo>` parent folder for worktrees that
+    // actually live under the managed base path. Externally located worktrees
+    // never created it, so its contents are unrelated.
+    if (!isPathUnder(worktreePath, worktreeBasePath)) {
+      return;
+    }
+
     const repoName = path.basename(folderPath);
     const repoWorktreeFolderPath = path.join(worktreeBasePath, repoName);
 
@@ -838,10 +853,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     }
 
     if (association.mode === "worktree") {
-      const worktreePath = this.deriveWorktreePath(
-        folderPath,
-        association.worktree,
-      );
+      const worktreePath = association.path;
       const exists = fs.existsSync(worktreePath);
       if (!exists) {
         this.log.info(`Worktree for task ${taskId} no longer exists`);
@@ -884,7 +896,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
     if (assoc.mode === "worktree") {
       worktreeName = assoc.worktree;
-      worktreePath = this.deriveWorktreePath(folderPath, worktreeName);
+      worktreePath = assoc.path;
       const gitBranch = await getBranchFromPath(worktreePath);
       branchName = gitBranch ?? assoc.branchName;
     } else if (assoc.mode === "local") {
@@ -932,22 +944,17 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     let worktreeInfo: WorktreeInfo | null = null;
     let branchName: string | null = null;
 
-    if (association.mode === "worktree") {
-      if (folderPath) {
-        const worktreePath = this.deriveWorktreePath(
-          folderPath,
-          association.worktree,
-        );
-        const gitBranch = await getBranchFromPath(worktreePath);
-        branchName = gitBranch ?? association.branchName;
-        worktreeInfo = {
-          worktreePath,
-          worktreeName: association.worktree,
-          branchName,
-          baseBranch: "main",
-          createdAt: new Date().toISOString(),
-        };
-      }
+    if (association.mode === "worktree" && folderPath) {
+      const worktreePath = association.path;
+      const gitBranch = await getBranchFromPath(worktreePath);
+      branchName = gitBranch ?? association.branchName;
+      worktreeInfo = {
+        worktreePath,
+        worktreeName: association.worktree,
+        branchName,
+        baseBranch: "main",
+        createdAt: new Date().toISOString(),
+      };
     } else if (association.mode === "local" && folderPath) {
       branchName = await getBranchFromPath(folderPath);
     }
@@ -994,7 +1001,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
       if (assoc.mode === "worktree") {
         worktreeName = assoc.worktree;
-        worktreePath = this.deriveWorktreePath(folderPath, worktreeName);
+        worktreePath = assoc.path;
       }
 
       let branchName: string | null = null;
@@ -1118,10 +1125,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
     for (const assoc of associations) {
       if (assoc.mode !== "worktree") continue;
-      const folderPath = this.getFolderPath(assoc.folderId);
-      if (!folderPath) continue;
-      const derivedPath = this.deriveWorktreePath(folderPath, assoc.worktree);
-      if (derivedPath === worktreePath) {
+      if (assoc.path === worktreePath) {
         result.push({ taskId: assoc.taskId });
       }
     }

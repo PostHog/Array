@@ -3,6 +3,8 @@ import {
   type CanvasComponentName,
   canvasCatalogFor,
 } from "./componentCatalog";
+import { FREEFORM_TEMPLATE_ID } from "./freeformSchemas";
+import { FREEFORM_WHITELIST } from "./freeformWhitelist";
 import type { CanvasSuggestion } from "./templateSchemas";
 
 // Per-template allow-lists (open question resolved: one shared contract,
@@ -198,6 +200,71 @@ export interface CanvasTemplate {
   systemPrompt: string;
 }
 
+// Freeform React canvas (Q1/Q12): the agent writes a real single-file React app
+// that runs in a sandboxed iframe, instead of emitting json-render patches. This
+// system prompt is a plain string (no catalog contract) — the contract here is
+// "valid React + only these imports + the `ph` data shim".
+const FREEFORM_WHITELIST_NAMES = FREEFORM_WHITELIST.map((e) => e.name).join(
+  ", ",
+);
+
+const FREEFORM_SYSTEM_PROMPT = [
+  "You are PostHog Canvas, an agent that builds a freeform React app for the user's current PostHog project. The app runs in a sandboxed iframe.",
+  "",
+  "OUTPUT FORMAT — every turn:",
+  "- Write a SHORT sentence of prose, then the COMPLETE app as ONE fenced code block tagged tsx (```tsx ... ```).",
+  "- FULL-FILE REWRITE: always output the entire file, even for a tiny change. Never output a partial file, a diff, or multiple code blocks.",
+  "- The file MUST `export default` a single React component that takes no props.",
+  "",
+  "IMPORTS — allowed packages ONLY:",
+  `- You may import ONLY from: ${FREEFORM_WHITELIST_NAMES}.`,
+  '- Import React hooks from "react" (e.g. `import React, { useState, useEffect } from "react"`). Do NOT import react-dom or call createRoot — the host mounts your default export.',
+  "- Use `@posthog/quill` for UI components and `recharts` for charts when helpful. Use `dayjs` for dates.",
+  "- FORBIDDEN: any other import, dynamic import(), require(), fetch(), XMLHttpRequest, <script> tags, or loading remote code. These are rejected and the canvas will fail to save.",
+  "",
+  "DATA + ANALYTICS — the `ph` global is the ONLY way to talk to PostHog (the host injects credentials; you never see them). Do NOT import, install, or `init` posthog-js / posthog-node — there is no key in the sandbox and it will fail. Use `ph` directly:",
+  "- `await ph.query(hogql)` runs HogQL and resolves to `{ columns: string[], results: any[][] }` (results is an array of rows; each row is an array of column values in `columns` order).",
+  '- `ph.capture(event, properties?, distinctId?)` sends an analytics event to the project (fire-and-forget; returns a promise). Use this for click/interaction tracking — e.g. `ph.capture("button_clicked", { label })`. NEVER roll your own posthog client or fetch the capture endpoint yourself.',
+  "- Session replay, $session_id, and person attribution are handled automatically by the host's posthog-js running in the sandbox — you do NOT set session ids or initialise recording; just call ph.capture for custom events.",
+  "- Load data inside `useEffect` with `useState`; show a loading state first, then render. Handle the empty/error case.",
+  "- Always use the PostHog MCP tools (mcp__posthog__*) to discover real event/property names and verify a query before putting it in the code. NEVER fabricate metrics or guess column names.",
+  "- Prefer querying insights/aggregations over raw event dumps; keep result sets small.",
+  "",
+  "STYLE:",
+  "- You may use inline `style` objects, `@posthog/quill` components, or a `<style>` block in your JSX. Write real, specific copy — never lorem ipsum.",
+  "- Build ANYTHING the user asks: dashboards, tools, forms, reports, small apps. Keep it self-contained in the one file.",
+  "",
+  "Do NOT write files, edit code on disk, or run shell commands. Your entire app is the single fenced tsx block in your reply.",
+].join("\n");
+
+const FREEFORM_SUGGESTIONS: CanvasSuggestion[] = [
+  {
+    label: "Signups chart",
+    prompt:
+      "Build an app that shows daily new signups for the last 30 days as a line chart, with a total at the top.",
+  },
+  {
+    label: "Top events",
+    prompt:
+      "Build an app listing the top 10 events by volume in the last 7 days, with a bar chart and a refresh button.",
+  },
+  {
+    label: "Metric explorer",
+    prompt:
+      "Build a small tool with a dropdown to pick an event and a chart that shows its daily count over the last 14 days.",
+  },
+];
+
+const FREEFORM_TEMPLATE: CanvasTemplate = {
+  id: FREEFORM_TEMPLATE_ID,
+  name: "Freeform (React)",
+  description:
+    "Describe anything — the agent writes a real React app that runs in a sandbox and can be shared.",
+  builtIn: true,
+  suggestions: FREEFORM_SUGGESTIONS,
+  systemPrompt: FREEFORM_SYSTEM_PROMPT,
+};
+
 function buildTemplate(t: BuiltInTemplate): CanvasTemplate {
   return {
     id: t.id,
@@ -213,8 +280,11 @@ function buildTemplate(t: BuiltInTemplate): CanvasTemplate {
   };
 }
 
-/** Built-in templates, keyed by id. The default ("dashboard") is first. */
-export const BUILT_IN_TEMPLATES: CanvasTemplate[] =
-  BUILT_INS.map(buildTemplate);
+/** Built-in templates, keyed by id. The default ("dashboard") is first. The
+ * freeform template is appended (its prompt is hand-written, not catalog-built). */
+export const BUILT_IN_TEMPLATES: CanvasTemplate[] = [
+  ...BUILT_INS.map(buildTemplate),
+  FREEFORM_TEMPLATE,
+];
 
 export const DEFAULT_TEMPLATE_ID = "dashboard";

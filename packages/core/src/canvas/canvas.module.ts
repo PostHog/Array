@@ -1,10 +1,12 @@
 import { ContainerModule } from "inversify";
+import { CanvasDataService } from "./canvasDataService";
 import { CanvasTemplatesService } from "./canvasTemplatesService";
 import { ChannelTasksService } from "./channelTasksService";
 import { DashboardQueryService } from "./dashboardQueryService";
 import { DashboardsService } from "./dashboardsService";
 import { DESKTOP_FS_CLIENT, DesktopFsClient } from "./desktopFsClient";
 import {
+  CANVAS_DATA_SERVICE,
   CANVAS_TEMPLATES_SERVICE,
   CHANNEL_TASKS_SERVICE,
   DASHBOARD_QUERY_SERVICE,
@@ -20,6 +22,9 @@ export const canvasCoreModule = new ContainerModule(({ bind }) => {
 
   bind(DashboardQueryService).toSelf().inSingletonScope();
   bind(DASHBOARD_QUERY_SERVICE).toService(DashboardQueryService);
+
+  bind(CanvasDataService).toSelf().inSingletonScope();
+  bind(CANVAS_DATA_SERVICE).toService(CanvasDataService);
 
   bind(DashboardsService).toSelf().inSingletonScope();
   bind(DASHBOARDS_SERVICE).toService(DashboardsService);

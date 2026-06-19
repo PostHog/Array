@@ -10,6 +10,7 @@ import { authUiModule } from "@posthog/ui/features/auth/auth.module";
 import { billingUiModule } from "@posthog/ui/features/billing/billing.module";
 import { cloneUiModule } from "@posthog/ui/features/clone/clone.module";
 import { connectivityUiModule } from "@posthog/ui/features/connectivity/connectivity.module";
+import { discordPresenceUiModule } from "@posthog/ui/features/discord-presence/discordPresence.module";
 import { fileWatcherUiModule } from "@posthog/ui/features/file-watcher/file-watcher.module";
 import { focusUiModule } from "@posthog/ui/features/focus/focus.module";
 import { notificationsUiModule } from "@posthog/ui/features/notifications/notifications.module";
@@ -30,6 +31,7 @@ export function registerDesktopContributions(): void {
     billingCoreModule,
     cloneUiModule,
     connectivityUiModule,
+    discordPresenceUiModule,
     fileWatcherUiModule,
     focusUiModule,
     githubConnectModule,

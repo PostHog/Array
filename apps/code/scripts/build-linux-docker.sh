@@ -28,13 +28,16 @@ if [ -n "$RAW_TARGETS" ]; then
   for t in "${_targets[@]}"; do
     t="$(echo "$t" | tr '[:upper:]' '[:lower:]' | xargs)" # lowercase + trim
     [ -z "$t" ] && continue
+    # Forge's --targets matches each configured maker's `.name` (its display
+    # name), NOT its npm package name. Passing the package name makes Forge
+    # fall back to a fresh, UNCONFIGURED maker (dropping options like `bin`),
+    # which then fails to locate the packaged executable. Map to `.name`.
     case "$t" in
-      deb)      pkg="@electron-forge/maker-deb" ;;
-      rpm)      pkg="@electron-forge/maker-rpm" ;;
-      zip)      pkg="@electron-forge/maker-zip" ;;
-      appimage) pkg="@reforged/maker-appimage" ;;
-      */*)      pkg="$t" ;; # already a maker package name
-      *) echo "Unknown target '$t' (expected: deb, rpm, zip, appimage, or a maker package name)" >&2; exit 1 ;;
+      deb)      pkg="deb" ;;
+      rpm)      pkg="rpm" ;;
+      zip)      pkg="zip" ;;
+      appimage) pkg="AppImage" ;;
+      *) echo "Unknown target '$t' (expected: deb, rpm, zip, or appimage)" >&2; exit 1 ;;
     esac
     MAKE_TARGETS="${MAKE_TARGETS:+$MAKE_TARGETS,}$pkg"
   done

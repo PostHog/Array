@@ -12,7 +12,10 @@ import {
   combineUserGithubRepositories,
   getIntegrationIdForRepo,
   getRepoEntry,
+  isEmptyRepositoryMap,
   isRepoInIntegration,
+  resolveEffectiveUserRepositoryMap,
+  resolveUserRepositoryCacheAction,
   type UserRepositoryIntegrationRef,
 } from "@posthog/core/integrations/repositories";
 import type { RepositoriesService } from "@posthog/core/integrations/repositoriesService";
@@ -29,6 +32,7 @@ import {
   useIntegrationSelectors,
   useIntegrationStore,
 } from "@posthog/ui/features/integrations/store";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useAuthenticatedInfiniteQuery } from "@posthog/ui/hooks/useAuthenticatedInfiniteQuery";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useDebounce } from "@posthog/ui/primitives/hooks/useDebounce";
@@ -387,6 +391,13 @@ export function useUserRepositoryIntegration() {
     useUserGithubIntegrations();
   const [isRefreshingRepos, setIsRefreshingRepos] = useState(false);
 
+  const cachedRepositoryMap = useSettingsStore(
+    (state) => state.cachedCloudRepositoryMap,
+  );
+  const setCachedRepositoryMap = useSettingsStore(
+    (state) => state.setCachedCloudRepositoryMap,
+  );
+
   const {
     repositoryMap,
     reposByInstallationId,
@@ -394,25 +405,61 @@ export function useUserRepositoryIntegration() {
     failedInstallationIds,
   } = useAllUserGithubRepositories(githubIntegrations);
 
+  // Persist the freshly loaded map so the picker has data on the next cold
+  // start, and clear it once the user has no integrations.
+  const reposErrored = failedInstallationIds.length > 0;
+  useEffect(() => {
+    const action = resolveUserRepositoryCacheAction({
+      integrationsPending,
+      reposPending,
+      reposErrored,
+      hasIntegrations: githubIntegrations.length > 0,
+      liveRepositoryMap: repositoryMap,
+      cachedRepositoryMap,
+    });
+    if (action === "write") {
+      setCachedRepositoryMap(repositoryMap);
+    } else if (action === "clear") {
+      setCachedRepositoryMap({});
+    }
+  }, [
+    integrationsPending,
+    reposPending,
+    reposErrored,
+    githubIntegrations.length,
+    repositoryMap,
+    cachedRepositoryMap,
+    setCachedRepositoryMap,
+  ]);
+
+  const liveLoading = integrationsPending || reposPending;
+  const { effectiveRepositoryMap, servingFromCache } =
+    resolveEffectiveUserRepositoryMap({
+      liveLoading,
+      liveRepositoryMap: repositoryMap,
+      cachedRepositoryMap,
+    });
+
   const repositories = useMemo(
-    () => Object.keys(repositoryMap),
-    [repositoryMap],
+    () => Object.keys(effectiveRepositoryMap),
+    [effectiveRepositoryMap],
   );
 
   const getUserIntegrationIdForRepo = useCallback(
     (repoKey: string) =>
-      getRepoEntry(repositoryMap, repoKey)?.userIntegrationId,
-    [repositoryMap],
+      getRepoEntry(effectiveRepositoryMap, repoKey)?.userIntegrationId,
+    [effectiveRepositoryMap],
   );
 
   const getInstallationIdForRepo = useCallback(
-    (repoKey: string) => getRepoEntry(repositoryMap, repoKey)?.installationId,
-    [repositoryMap],
+    (repoKey: string) =>
+      getRepoEntry(effectiveRepositoryMap, repoKey)?.installationId,
+    [effectiveRepositoryMap],
   );
 
   const repoInIntegration = useCallback(
-    (repoKey: string) => isRepoInIntegration(repositoryMap, repoKey),
-    [repositoryMap],
+    (repoKey: string) => isRepoInIntegration(effectiveRepositoryMap, repoKey),
+    [effectiveRepositoryMap],
   );
 
   const refreshRepositories = useCallback(async () => {
@@ -438,10 +485,12 @@ export function useUserRepositoryIntegration() {
     getUserIntegrationIdForRepo,
     getInstallationIdForRepo,
     isRepoInIntegration: repoInIntegration,
-    isLoadingRepos: integrationsPending || reposPending,
-    isRefreshingRepos,
+    isLoadingRepos: liveLoading && !servingFromCache,
+    isRefreshingRepos: isRefreshingRepos || servingFromCache,
     refreshRepositories,
-    hasGithubIntegration: githubIntegrations.length > 0,
+    hasGithubIntegration:
+      githubIntegrations.length > 0 ||
+      (integrationsPending && !isEmptyRepositoryMap(cachedRepositoryMap)),
     failedInstallationIds,
     reposByInstallationId,
   };

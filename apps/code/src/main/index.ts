@@ -52,6 +52,7 @@ import { MAIN_TOKENS } from "./di/tokens";
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
+import type { DiscordPresenceService } from "./services/discord-presence/service";
 import {
   focusSessionStore,
   focusWorktreePaths,
@@ -232,6 +233,8 @@ async function initializeServices(): Promise<void> {
   container.get<SlackIntegrationService>(SLACK_INTEGRATION_SERVICE);
   container.get<ExternalAppsService>(MAIN_TOKENS.ExternalAppsService);
   container.get<PosthogPluginService>(MAIN_TOKENS.PosthogPluginService);
+  // Eagerly start the Discord presence service so it connects when enabled.
+  container.get<DiscordPresenceService>(MAIN_TOKENS.DiscordPresenceService);
 
   await authService.initialize();
 

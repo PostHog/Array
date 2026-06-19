@@ -97,4 +97,4 @@ We love contributions big and small. See [CONTRIBUTING.md](./CONTRIBUTING.md) to
 
 ## Troubleshooting
 
-See [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) for common issues (black screen, Electron install failures, native module crashes, etc.).
+See [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) for common issues (black screen, Electron install failures, native module crashes, Secretive commit signing, etc.).

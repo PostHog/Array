@@ -12,6 +12,7 @@ import {
   PROTOCOL_VERSION,
 } from "@agentclientprotocol/sdk";
 import { type ServerType, serve } from "@hono/node-server";
+import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -34,7 +35,7 @@ import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { PostHogAPIClient } from "../posthog-api";
-import { extractCreatedPrUrl } from "../pr-url-detector";
+import { findPrUrl, wasCreatedRecently } from "../pr-url-detector";
 import {
   formatConversationForResume,
   type ResumeState,
@@ -252,6 +253,9 @@ export class AgentServer {
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
+  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
+  private prAttributed = false;
+  private readonly evaluatedPrUrls = new Set<string>();
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
   // Guards against concurrent session initialization. autoInitializeSession() and
@@ -947,9 +951,8 @@ export class AgentServer {
 
     const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
 
-    if (prUrl) {
-      this.detectedPrUrl = prUrl;
-    }
+    // Unconditional so a re-init on the same instance drops a stale PR URL.
+    this.detectedPrUrl = prUrl;
 
     const slackThreadUrl = getTaskRunStateString(
       preTaskRun,
@@ -1077,6 +1080,9 @@ export class AgentServer {
       acpSessionId,
       runId: payload.run_id,
     });
+
+    this.prAttributed = false;
+    this.evaluatedPrUrls.clear();
 
     this.session = {
       payload,
@@ -2235,6 +2241,8 @@ ${signedCommitInstructions}
           });
         }
 
+        this.maybeAttachCreatedPr(payload, params.update);
+
         // session/update notifications flow through the tapped stream (like local transport)
         // Capture checkpoints for file-changing tools so cloud resumes restore
         // from git checkpoints rather than tree snapshots.
@@ -2255,13 +2263,6 @@ ${signedCommitInstructions}
             toolResponse?.filePath
           ) {
             await this.captureCheckpointState();
-          }
-
-          if (
-            toolName &&
-            (toolName.includes("Bash") || toolName.includes("bash"))
-          ) {
-            this.detectAndAttachPrUrl(payload, params.update);
           }
         }
       },
@@ -2390,59 +2391,73 @@ ${signedCommitInstructions}
     );
   }
 
-  private detectAndAttachPrUrl(
+  private maybeAttachCreatedPr(
     payload: JwtPayload,
-    update: Record<string, unknown>,
+    update: Record<string, unknown> | undefined,
   ): void {
+    if (this.prAttributed || !update) return;
+    const prUrl = findPrUrl(JSON.stringify(update));
+    if (!prUrl || this.evaluatedPrUrls.has(prUrl)) return;
+    this.evaluatedPrUrls.add(prUrl);
+    void this.attachPrIfCreatedThisRun(payload, prUrl);
+  }
+
+  private async attachPrIfCreatedThisRun(
+    payload: JwtPayload,
+    prUrl: string,
+  ): Promise<void> {
+    if (this.prAttributed) return;
+
+    let createdAt: string | null;
     try {
-      const meta = (update?._meta as Record<string, unknown>)?.claudeCode as
-        | Record<string, unknown>
-        | undefined;
-
-      const content = update?.content as
-        | Array<{ type?: string; text?: string }>
-        | undefined;
-
-      const prUrl = extractCreatedPrUrl({
-        toolName: meta?.toolName as string | undefined,
-        bashCommand: meta?.bashCommand as string | undefined,
-        toolResponse: meta?.toolResponse,
-        content,
+      createdAt = await this.fetchPrCreatedAt(prUrl);
+    } catch (err) {
+      this.logger.debug("PR attribution lookup failed", {
+        runId: payload.run_id,
+        prUrl,
+        error: err,
       });
-      if (!prUrl) return;
+      return;
+    }
 
-      this.detectedPrUrl = prUrl;
-      this.logger.debug("Detected PR URL from gh pr create", {
+    if (!wasCreatedRecently(createdAt, Date.now())) return;
+    // Re-check after the await: another URL may have attributed while we waited.
+    if (this.prAttributed) return;
+
+    this.prAttributed = true;
+    this.detectedPrUrl = prUrl;
+
+    try {
+      await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
+        output: { pr_url: prUrl },
+      });
+      this.logger.debug("Attributed created PR to task run", {
+        taskId: payload.task_id,
         runId: payload.run_id,
         prUrl,
       });
-
-      // Fire-and-forget: attach PR URL to the task run
-      this.posthogAPI
-        .updateTaskRun(payload.task_id, payload.run_id, {
-          output: { pr_url: prUrl },
-        })
-        .then(() => {
-          this.logger.debug("PR URL attached to task run", {
-            taskId: payload.task_id,
-            runId: payload.run_id,
-            prUrl,
-          });
-        })
-        .catch((err) => {
-          this.logger.error("Failed to attach PR URL to task run", {
-            taskId: payload.task_id,
-            runId: payload.run_id,
-            prUrl,
-            error: err,
-          });
-        });
     } catch (err) {
-      // Never let detection errors break message flow
-      this.logger.debug("Error in PR URL detection", {
+      this.logger.error("Failed to attach PR URL to task run", {
+        taskId: payload.task_id,
         runId: payload.run_id,
+        prUrl,
         error: err,
       });
+    }
+  }
+
+  private async fetchPrCreatedAt(prUrl: string): Promise<string | null> {
+    const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
+      cwd: this.config.repositoryPath,
+      timeoutMs: 10_000,
+    });
+    if (res.exitCode !== 0) return null;
+    try {
+      return (
+        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
+      );
+    } catch {
+      return null;
     }
   }
 

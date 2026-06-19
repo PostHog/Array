@@ -19,6 +19,10 @@ import { FloatingSettingsHeader } from "@/features/settings/components/FloatingS
 import { SettingsRow } from "@/features/settings/components/SettingsRow";
 import { SettingsSection } from "@/features/settings/components/SettingsSection";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
+import {
+  type MessagingMode,
+  useMessagingModeStore,
+} from "@/features/tasks/stores/messagingModeStore";
 import { playCompletionSound } from "@/features/tasks/utils/sounds";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
@@ -49,6 +53,7 @@ const SOUND_OPTIONS: ReadonlyArray<{ value: CompletionSound; label: string }> =
     { value: "shoot", label: "Shoot" },
     { value: "slide", label: "Slide" },
     { value: "drop", label: "Drop" },
+    { value: "icq", label: "ICQ" },
   ];
 
 const VOLUME_OPTIONS = [
@@ -70,6 +75,23 @@ const TASK_MODE_OPTIONS = [
     description: "Remember the mode you picked last time",
   },
 ] as const;
+
+const MESSAGING_MODE_OPTIONS: ReadonlyArray<{
+  value: MessagingMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "queue",
+    label: "Queue",
+    description: "Hold messages until the current turn finishes",
+  },
+  {
+    value: "steer",
+    label: "Steer",
+    description: "Interrupt the current turn and send right away",
+  },
+];
 
 const REASONING_EFFORT_OPTIONS: ReadonlyArray<{
   value: DefaultReasoningEffort;
@@ -109,6 +131,10 @@ function volumeLabel(volume: number): string {
 
 function taskModeLabel(mode: InitialTaskMode): string {
   return TASK_MODE_OPTIONS.find((o) => o.value === mode)?.label ?? "Plan";
+}
+
+function messagingModeLabel(mode: MessagingMode): string {
+  return MESSAGING_MODE_OPTIONS.find((o) => o.value === mode)?.label ?? "Queue";
 }
 
 function reasoningEffortLabel(effort: DefaultReasoningEffort): string {
@@ -161,6 +187,10 @@ export default function SettingsScreen() {
   const setDefaultReasoningEffort = usePreferencesStore(
     (s) => s.setDefaultReasoningEffort,
   );
+  const defaultMessagingMode = useMessagingModeStore((s) => s.defaultMode);
+  const setDefaultMessagingMode = useMessagingModeStore(
+    (s) => s.setDefaultMode,
+  );
   const decidedCount = useDismissedReportsStore(
     (s) => s.dismissedIds.length + s.acceptedIds.length,
   );
@@ -173,6 +203,7 @@ export default function SettingsScreen() {
   const [taskModeSheetOpen, setTaskModeSheetOpen] = useState(false);
   const [reasoningEffortSheetOpen, setReasoningEffortSheetOpen] =
     useState(false);
+  const [messagingModeSheetOpen, setMessagingModeSheetOpen] = useState(false);
   const [projectSheetOpen, setProjectSheetOpen] = useState(false);
 
   // The selected project's name. Prefer the names fetched for the scoped teams
@@ -349,11 +380,24 @@ export default function SettingsScreen() {
             label="Default effort level"
             description="Reasoning effort to pre-fill on new tasks"
             onPress={() => setReasoningEffortSheetOpen(true)}
-            showDivider={false}
             rightSlot={
               <>
                 <Text className="text-[14px] text-gray-11">
                   {reasoningEffortLabel(defaultReasoningEffort)}
+                </Text>
+                <CaretRight size={14} color={themeColors.gray[10]} />
+              </>
+            }
+          />
+          <SettingsRow
+            label="Messaging mode"
+            description="What happens when you send while a turn is running"
+            onPress={() => setMessagingModeSheetOpen(true)}
+            showDivider={false}
+            rightSlot={
+              <>
+                <Text className="text-[14px] text-gray-11">
+                  {messagingModeLabel(defaultMessagingMode)}
                 </Text>
                 <CaretRight size={14} color={themeColors.gray[10]} />
               </>
@@ -606,6 +650,19 @@ export default function SettingsScreen() {
         }
         onClose={() => setReasoningEffortSheetOpen(false)}
         options={REASONING_EFFORT_OPTIONS.map((option) => ({
+          value: option.value,
+          label: option.label,
+          description: option.description,
+        }))}
+      />
+
+      <SelectSheet
+        open={messagingModeSheetOpen}
+        title="Messaging mode"
+        value={defaultMessagingMode}
+        onChange={(value) => setDefaultMessagingMode(value as MessagingMode)}
+        onClose={() => setMessagingModeSheetOpen(false)}
+        options={MESSAGING_MODE_OPTIONS.map((option) => ({
           value: option.value,
           label: option.label,
           description: option.description,

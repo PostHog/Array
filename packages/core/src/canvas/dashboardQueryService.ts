@@ -6,6 +6,7 @@ import {
   type ScopedLogger,
 } from "@posthog/di/logger";
 import { inject, injectable } from "inversify";
+import { runHogQLQuery } from "./posthogApi";
 import type {
   DashboardQuery,
   DashboardQueryResult,
@@ -15,12 +16,6 @@ import type {
 // Run at most this many HogQL queries at once so a wide dashboard doesn't
 // hammer the query endpoint.
 const CONCURRENCY = 5;
-
-interface HogQLResponse {
-  results?: unknown[];
-  columns?: string[];
-  error?: string | null;
-}
 
 // Executes the HogQL queries stored on a dashboard's data points and returns a
 // single scalar value per point. Used by the dashboard refresh flow.
@@ -41,20 +36,13 @@ export class DashboardQueryService {
     const { queries } = input;
     if (queries.length === 0) return [];
 
-    const { apiHost } = await this.authService.getValidAccessToken();
-    const projectId = this.authService.getState().currentProjectId;
-    if (projectId == null) {
-      return queries.map((q) => this.fail(q, "No PostHog project selected"));
-    }
-
-    const url = `${apiHost}/api/projects/${projectId}/query/`;
     const results: DashboardQueryResult[] = [];
 
     // Simple capped batches; preserves input order in the output.
     for (let i = 0; i < queries.length; i += CONCURRENCY) {
       const batch = queries.slice(i, i + CONCURRENCY);
       const settled = await Promise.allSettled(
-        batch.map((q) => this.runOne(url, q)),
+        batch.map((q) => this.runOne(q)),
       );
       settled.forEach((s, j) => {
         results.push(
@@ -68,25 +56,21 @@ export class DashboardQueryService {
     return results;
   }
 
-  private async runOne(
-    url: string,
-    q: DashboardQuery,
-  ): Promise<DashboardQueryResult> {
-    const response = await this.authService.authenticatedFetch(fetch, url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: { kind: "HogQLQuery", query: q.query } }),
-    });
-
-    if (!response.ok) {
-      return this.fail(q, `Query failed (${response.status})`);
+  private async runOne(q: DashboardQuery): Promise<DashboardQueryResult> {
+    let columns: string[];
+    let rows: unknown[];
+    try {
+      // Default execution mode here (no `refresh`) — the dashboard refresh flow
+      // wants fresh values; canvas previews use the cached avenue instead.
+      ({ columns, results: rows } = await runHogQLQuery(
+        this.authService,
+        q.query,
+      ));
+    } catch (err) {
+      return this.fail(q, errorMessage(err));
     }
 
-    const body = (await response.json()) as HogQLResponse;
-    if (body.error) return this.fail(q, body.error);
-
-    const rows = body.results;
-    if (!Array.isArray(rows) || rows.length === 0) {
+    if (rows.length === 0) {
       return this.fail(q, "Query returned no rows");
     }
 
@@ -95,7 +79,7 @@ export class DashboardQueryService {
       return this.fail(q, "Unexpected result shape");
     }
 
-    const value = this.mapShape(q, grid, body.columns);
+    const value = this.mapShape(q, grid, columns);
     if (value === undefined) {
       return this.fail(
         q,

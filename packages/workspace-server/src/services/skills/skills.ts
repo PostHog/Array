@@ -6,7 +6,6 @@ import { WATCHER_SERVICE } from "../../di/tokens";
 import type { FoldersService } from "../folders/folders";
 import { FOLDERS_SERVICE } from "../folders/identifiers";
 import {
-  addMirroredName,
   getCodexSkillsDir,
   readCodexMirrorState,
 } from "../posthog-plugin/codex-mirror";
@@ -61,11 +60,6 @@ export class SkillsService {
     @inject(WATCHER_SERVICE)
     private readonly watcher: WatcherService,
   ) {}
-
-  /** Fire-and-forget Codex mirror after local mutations. */
-  private queueCodexMirror(): void {
-    void this.plugin.mirrorUserSkills().catch(() => {});
-  }
 
   async listSkills(): Promise<SkillInfo[]> {
     const roots = await this.getSkillRoots();
@@ -125,7 +119,6 @@ export class SkillsService {
       serializeSkillMarkdown({ name, description: "" }, SKILL_MD_TEMPLATE_BODY),
       "utf-8",
     );
-    this.queueCodexMirror();
     return { path: skillPath };
   }
 
@@ -147,7 +140,6 @@ export class SkillsService {
       content,
       "utf-8",
     );
-    this.queueCodexMirror();
   }
 
   async saveSkillFile(
@@ -159,7 +151,6 @@ export class SkillsService {
     const target = resolveSkillFilePath(skillDir, filePath);
     await fs.promises.mkdir(path.dirname(target), { recursive: true });
     await fs.promises.writeFile(target, content, "utf-8");
-    this.queueCodexMirror();
   }
 
   async renameSkillFile(
@@ -178,7 +169,6 @@ export class SkillsService {
     }
     await fs.promises.mkdir(path.dirname(to), { recursive: true });
     await fs.promises.rename(from, to);
-    this.queueCodexMirror();
   }
 
   async deleteSkillFile(skillPath: string, filePath: string): Promise<void> {
@@ -188,19 +178,16 @@ export class SkillsService {
       throw new Error("SKILL.md cannot be deleted");
     }
     await fs.promises.rm(target, { force: true });
-    this.queueCodexMirror();
   }
 
   async deleteSkill(skillPath: string): Promise<void> {
     const skillDir = await this.resolveWritableSkillDir(skillPath);
     await fs.promises.rm(skillDir, { recursive: true, force: true });
-    this.queueCodexMirror();
   }
 
   /**
    * Imports a Codex-authored skill into ~/.claude/skills, after which it is
-   * an ordinary editable user skill. The mirror takes ownership of the Codex
-   * copy so future syncs carry edits back without clobbering or duplicating.
+   * an ordinary editable user skill. The original Codex copy is left untouched.
    */
   async importCodexSkill(
     skillPath: string,
@@ -231,8 +218,6 @@ export class SkillsService {
       recursive: true,
       dereference: true,
     });
-    await addMirroredName(codexRoot, name);
-    this.queueCodexMirror();
     return { path: target };
   }
 
@@ -339,7 +324,6 @@ export class SkillsService {
       await fs.promises.rm(staging, { recursive: true, force: true });
       throw error;
     }
-    this.queueCodexMirror();
     return { path: target };
   }
 
@@ -531,9 +515,10 @@ async function waitForDir(dir: string, signal?: AbortSignal): Promise<boolean> {
 }
 
 /**
- * Hides Codex copies we are responsible for: bundled skills synced by the
- * official pipeline and user skills mirrored out. What remains is genuinely
- * the user's Codex-only skills.
+ * Hides Codex copies already represented elsewhere in the list: a bundled skill
+ * synced there by the old pipeline, a legacy mirror copy, or a skill the user
+ * has imported into their own `~/.claude/skills`. What remains is genuinely the
+ * user's Codex-only skills.
  */
 function dedupeCodexSkills(
   skills: SkillInfo[],
@@ -542,13 +527,18 @@ function dedupeCodexSkills(
   const bundledNames = new Set(
     skills.filter((s) => s.source === "bundled").map((s) => s.name),
   );
+  const userDirNames = new Set(
+    skills.filter((s) => s.source === "user").map((s) => path.basename(s.path)),
+  );
   return skills.filter((skill) => {
     if (skill.source !== "codex") return true;
-    // The mirror state stores directory names; frontmatter names only
-    // matter for the bundled copies, which keep theirs verbatim.
+    const dirName = path.basename(skill.path);
+    // The mirror state and the user's own skills are matched by directory name;
+    // bundled copies keep their frontmatter name verbatim, so match those by it.
     return (
       !bundledNames.has(skill.name) &&
-      !mirroredNames.has(path.basename(skill.path))
+      !mirroredNames.has(dirName) &&
+      !userDirNames.has(dirName)
     );
   });
 }

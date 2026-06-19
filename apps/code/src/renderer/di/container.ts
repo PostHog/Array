@@ -86,6 +86,10 @@ import {
   CONNECTIVITY_CLIENT,
   type ConnectivityClient,
 } from "@posthog/ui/features/connectivity/connectivityClient";
+import {
+  DISCORD_PRESENCE_CLIENT,
+  type DiscordPresenceClient,
+} from "@posthog/ui/features/discord-presence/identifiers";
 import { FocusStoreCoordinator } from "@posthog/ui/features/external-apps/focusCoordinator";
 import { focusDeps } from "@posthog/ui/features/focus/focusAdapter";
 import { FOCUS_CONTROLLER_DEPS } from "@posthog/ui/features/focus/focusClient";
@@ -160,6 +164,31 @@ const connectivityClient: ConnectivityClient = {
     trpcClient.connectivity.onStatusChange.subscribe(undefined, sub),
 };
 container.bind(CONNECTIVITY_CLIENT).toConstantValue(connectivityClient);
+
+// discord presence client — passthrough over the local main-process router
+const discordPresenceClient: DiscordPresenceClient = {
+  getState: () => trpcClient.discordPresence.getState.query(),
+  setEnabled: async (enabled) => {
+    await trpcClient.discordPresence.setEnabled.mutate({ enabled });
+  },
+  setShowTaskTitle: async (value) => {
+    await trpcClient.discordPresence.setShowTaskTitle.mutate({ value });
+  },
+  setShowRepoName: async (value) => {
+    await trpcClient.discordPresence.setShowRepoName.mutate({ value });
+  },
+  setActivity: async (intent) => {
+    await trpcClient.discordPresence.setActivity.mutate(intent);
+  },
+  onStatusChanged: (onData) => {
+    const sub = trpcClient.discordPresence.onStatusChanged.subscribe(
+      undefined,
+      { onData },
+    );
+    return () => sub.unsubscribe();
+  },
+};
+container.bind(DISCORD_PRESENCE_CLIENT).toConstantValue(discordPresenceClient);
 
 // terminal shell client
 const shellClient: ShellClient = {

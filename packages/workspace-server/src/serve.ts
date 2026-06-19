@@ -1,6 +1,14 @@
 import "reflect-metadata";
+import dns from "node:dns";
+import net from "node:net";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
+
+// Prefer IPv4 and disable "Happy Eyeballs" (mirrors apps/code main bootstrap).
+// This child makes all outbound HTTPS to PostHog/the gateway; its many-address
+// ELB times out when IPv6 is unreachable (e.g. Tailscale).
+dns.setDefaultResultOrder("ipv4first");
+net.setDefaultAutoSelectFamily(false);
 
 const SHUTDOWN_GRACE_MS = 3_000;
 const WATCHDOG_INTERVAL_MS = 2_000;

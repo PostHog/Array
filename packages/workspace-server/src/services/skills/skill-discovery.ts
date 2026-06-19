@@ -25,6 +25,23 @@ export function getUserSkillsDir(): string {
   return path.join(os.homedir(), ".claude", "skills");
 }
 
+/**
+ * True when `value` is a single path segment safe to join onto a trusted
+ * directory. Rejects "", ".", "..", and anything containing a separator, so a
+ * value from a state file or an RPC boundary can never widen a `path.join`
+ * into a sibling or parent directory (and a recursive delete along with it).
+ */
+export function isSafePathSegment(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value !== "." &&
+    value !== ".." &&
+    !value.includes("/") &&
+    !value.includes("\\")
+  );
+}
+
 /** Heuristic: content with NUL bytes in the first 4 KiB is binary. */
 export function isProbablyText(bytes: Uint8Array): boolean {
   return !bytes.subarray(0, 4096).includes(0);
@@ -50,6 +67,37 @@ export async function findSkillDirs(
         fs.existsSync(path.join(sourceSkillsDir, e.name, "SKILL.md")),
     )
     .map((e) => e.name);
+}
+
+/**
+ * Symlinks each named skill from `sourceDir` into `targetDir`, resolving the
+ * real path first so the link works even when the source is itself a symlink.
+ * Failures are logged and skipped. Returns the names that were linked.
+ */
+export async function linkSkillsInto(
+  targetDir: string,
+  sourceDir: string,
+  skillNames: string[],
+  log: { warn: (message: string, meta?: Record<string, unknown>) => void },
+): Promise<string[]> {
+  const linked: string[] = [];
+  await Promise.all(
+    skillNames.map(async (skillName) => {
+      try {
+        const realSrc = await fs.promises.realpath(
+          path.join(sourceDir, skillName),
+        );
+        await fs.promises.symlink(realSrc, path.join(targetDir, skillName));
+        linked.push(skillName);
+      } catch (err) {
+        log.warn("Failed to symlink skill", {
+          skillName,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
+  );
+  return linked;
 }
 
 export async function getMarketplaceInstallPaths(): Promise<string[]> {

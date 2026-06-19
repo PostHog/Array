@@ -19,6 +19,7 @@ export interface CodexProcessOptions {
    */
   developerInstructions?: string;
   binaryPath?: string;
+  codexHome?: string;
   logger?: Logger;
   processCallbacks?: ProcessSpawnedCallback;
   settings?: CodexSettings;
@@ -120,6 +121,10 @@ export function spawnCodexProcess(options: CodexProcessOptions): CodexProcess {
 
   if (options.apiKey) {
     env.POSTHOG_GATEWAY_API_KEY = options.apiKey;
+  }
+
+  if (options.codexHome) {
+    env.CODEX_HOME = options.codexHome;
   }
 
   const { command, args } = findCodexBinary(options);

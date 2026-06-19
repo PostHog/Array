@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_EFFORT,
   getEffortOptions,
+  resolveEffortForModel,
   resolveModelPreference,
   supports1MContext,
   supportsEffort,
@@ -62,6 +64,31 @@ describe("model capability flags", () => {
   it("keeps deprecated Haiku sessions excluded from MCP injection", () => {
     expect(supportsMcpInjection("claude-haiku-4-5")).toBe(false);
   });
+});
+
+describe("resolveEffortForModel", () => {
+  it("defaults the thinking level to high", () => {
+    expect(DEFAULT_EFFORT).toBe("high");
+  });
+
+  it.each([
+    // No explicit effort: effort-capable models fall back to the default.
+    ["claude-fable-5", undefined, "high"],
+    ["claude-opus-4-8", undefined, "high"],
+    ["claude-opus-4-7", undefined, "high"],
+    ["claude-sonnet-4-6", undefined, "high"],
+    // Models without effort support stay unset (SDK disables thinking).
+    ["claude-haiku-4-5", undefined, undefined],
+    ["claude-opus-4-6", undefined, undefined],
+    // An explicit choice is always honored, including on adaptive-only models.
+    ["claude-opus-4-8", "low", "low"],
+    ["claude-fable-5", "max", "max"],
+  ] as const)(
+    "resolveEffortForModel(%s, %s) === %s",
+    (modelId, effort, expected) => {
+      expect(resolveEffortForModel(modelId, effort)).toBe(expected);
+    },
+  );
 });
 
 describe("getEffortOptions", () => {

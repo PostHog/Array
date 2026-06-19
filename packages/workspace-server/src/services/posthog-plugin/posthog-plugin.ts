@@ -22,19 +22,16 @@ import {
 } from "@posthog/platform/storage-paths";
 import { TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable, postConstruct, preDestroy } from "inversify";
-import { getUserSkillsDir } from "../skills/skill-discovery";
-import { getCodexSkillsDir, mirrorUserSkillsToCodex } from "./codex-mirror";
+import { cleanupLegacyCodexMirror, getCodexSkillsDir } from "./codex-mirror";
 import {
   overlayDownloadedSkills,
-  syncCodexSkills,
   UpdateSkillsSaga,
 } from "./update-skills-saga";
 
 const SKILLS_ZIP_URL = process.env.SKILLS_ZIP_URL ?? "";
 const CONTEXT_MILL_ZIP_URL = process.env.CONTEXT_MILL_ZIP_URL ?? "";
 const UPDATE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
-const CODEX_SKILLS_DIR = getCodexSkillsDir();
-const USER_SKILLS_DIR = getUserSkillsDir();
+const CODEX_CLEANUP_MARKER = ".codex-mirror-cleanup-done";
 
 interface PosthogPluginEvents {
   skillsUpdated: true;
@@ -99,8 +96,7 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
     // Overlay any previously-downloaded skills on top of the runtime plugin
     await overlayDownloadedSkills(this.runtimeSkillsDir, this.runtimePluginDir);
 
-    await syncCodexSkills(this.getPluginPath(), CODEX_SKILLS_DIR);
-    await this.mirrorUserSkills();
+    await this.cleanupLegacyCodexMirrorOnce();
 
     // Start periodic updates
     this.intervalId = setInterval(() => {
@@ -114,15 +110,28 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
   }
 
   /**
-   * Mirrors the user's skills out to Codex ("bring your skills, use them
-   * anywhere"). Never fatal: a broken mirror must not affect the official
-   * skills pipeline or the mutation that triggered it.
+   * Removes the skills earlier builds copied into the shared ~/.agents/skills
+   * directory (bundled catalog + user-skill mirror), so the directory becomes
+   * the user's own again. Runs at most once per install; never fatal.
    */
-  async mirrorUserSkills(): Promise<void> {
+  private async cleanupLegacyCodexMirrorOnce(): Promise<void> {
+    const marker = join(this.storagePaths.appDataPath, CODEX_CLEANUP_MARKER);
+    if (existsSync(marker)) {
+      return;
+    }
     try {
-      await mirrorUserSkillsToCodex(USER_SKILLS_DIR, CODEX_SKILLS_DIR);
+      const removed = await cleanupLegacyCodexMirror(
+        getCodexSkillsDir(),
+        join(this.getPluginPath(), "skills"),
+      );
+      if (removed.length > 0) {
+        this.log.info("Cleaned legacy mirrored skills from ~/.agents/skills", {
+          count: removed.length,
+        });
+      }
+      await writeFile(marker, `${new Date().toISOString()}\n`);
     } catch (err) {
-      this.log.warn("Mirroring user skills to Codex failed", { error: err });
+      this.log.warn("Codex mirror cleanup failed", { error: err });
     }
   }
 
@@ -167,8 +176,6 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
       const result = await saga.run({
         runtimeSkillsDir: this.runtimeSkillsDir,
         runtimePluginDir: this.runtimePluginDir,
-        pluginPath: this.getPluginPath(),
-        codexSkillsDir: CODEX_SKILLS_DIR,
         tempDir,
         skillsZipUrl: SKILLS_ZIP_URL,
         contextMillZipUrl: CONTEXT_MILL_ZIP_URL,
@@ -176,7 +183,6 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
       });
 
       if (result.success) {
-        await this.mirrorUserSkills();
         this.emit("skillsUpdated", true);
       } else {
         this.log.warn("Skills update failed", {

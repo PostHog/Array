@@ -200,7 +200,6 @@ interface TestableServer {
     payload: JwtPayload,
     run: TaskRun | null,
   ): Promise<void>;
-  detectAndAttachPrUrl(payload: unknown, update: unknown): void;
   detectedPrUrl: string | null;
   buildCloudSystemPrompt(
     prUrl?: string | null,
@@ -1205,115 +1204,92 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
-  describe("detectedPrUrl tracking", () => {
-    it("stores PR URL when gh pr create produces it", () => {
-      const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            bashCommand: 'gh pr create --title "x" --body "y"',
-            toolResponse: {
-              stdout:
-                "https://github.com/PostHog/posthog/pull/42\nCreating pull request...",
-            },
-          },
-        },
-      };
+  describe("PR attribution", () => {
+    const PR_URL = "https://github.com/PostHog/posthog.com/pull/17764";
+    const payload: JwtPayload = {
+      task_id: "t",
+      run_id: "r",
+      team_id: 1,
+      user_id: 1,
+      distinct_id: "d",
+      mode: "interactive",
+    };
 
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBe(
-        "https://github.com/PostHog/posthog/pull/42",
-      );
+    // The cloud sandbox frames a created PR's URL inside terminal output, on a
+    // tool_call_update that carries no toolName/bashCommand — the case the old
+    // detector missed. Attribution must work from the serialized update alone.
+    const terminalUpdate = (url: string) => ({
+      sessionUpdate: "tool_call_update",
+      _meta: { terminal_output: `Creating draft pull request...\n${url}\n` },
     });
 
-    it("does not set detectedPrUrl when no PR URL is found", () => {
-      const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            bashCommand: "gh pr create",
-            toolResponse: { stdout: "just some output" },
-          },
-        },
-      };
+    type PrTestServer = {
+      maybeAttachCreatedPr(
+        p: JwtPayload,
+        u: Record<string, unknown> | undefined,
+      ): void;
+      fetchPrCreatedAt(url: string): Promise<string | null>;
+      detectedPrUrl: string | null;
+      posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+    };
 
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBeNull();
+    const justNow = () => new Date().toISOString();
+    const longAgo = "2020-01-01T00:00:00Z";
+
+    const setup = (prCreatedAt: string | null): PrTestServer => {
+      const s = createServer() as unknown as PrTestServer;
+      s.fetchPrCreatedAt = vi.fn(async () => prCreatedAt);
+      s.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      return s;
+    };
+
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    it("attributes a PR created just now from terminal output alone", async () => {
+      const s = setup(justNow());
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
+        output: { pr_url: PR_URL },
+      });
+      expect(s.detectedPrUrl).toBe(PR_URL);
     });
 
-    it("does not attach PR URL when the bash command is gh pr view", () => {
-      const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            bashCommand: "gh pr view 42 --json url",
-            toolResponse: {
-              stdout: "https://github.com/PostHog/posthog/pull/42",
-            },
-          },
-        },
-      };
-
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBeNull();
+    it("does not attribute an older PR the run only viewed (e.g. on a long run)", async () => {
+      const s = setup(longAgo);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+      expect(s.detectedPrUrl).toBeNull();
     });
 
-    it("does not attach PR URL when the bash command is gh search prs", () => {
-      const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            bashCommand: 'gh search prs "fix login"',
-            toolResponse: {
-              stdout: "https://github.com/PostHog/posthog/pull/42",
-            },
-          },
-        },
-      };
-
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBeNull();
+    it("ignores updates with no PR URL", async () => {
+      const s = setup(justNow());
+      s.maybeAttachCreatedPr(payload, { sessionUpdate: "agent_thought_chunk" });
+      await flush();
+      expect(s.fetchPrCreatedAt).not.toHaveBeenCalled();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
 
-    it("does not attach PR URL when bashCommand is missing", () => {
-      const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            toolResponse: {
-              stdout: "https://github.com/PostHog/posthog/pull/42",
-            },
-          },
-        },
-      };
+    it("attributes once and looks up GitHub once across repeated updates", async () => {
+      const s = setup(justNow());
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.fetchPrCreatedAt).toHaveBeenCalledTimes(1);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
+    });
 
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBeNull();
+    it("attributes only the first when two distinct recent PRs race", async () => {
+      // Both fetch as recent; without the post-await guard each would attribute.
+      const s = setup(justNow());
+      const second = "https://github.com/PostHog/posthog.com/pull/17765";
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(second));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
+      expect(s.detectedPrUrl).toBe(PR_URL);
     });
   });
 

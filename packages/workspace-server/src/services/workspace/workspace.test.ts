@@ -1,3 +1,6 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { RootLogger } from "@posthog/di/logger";
 import {
   branchExists,
@@ -8,7 +11,7 @@ import {
 import type { IAnalytics } from "@posthog/platform/analytics";
 import type { IWorkspaceSettings } from "@posthog/platform/workspace-settings";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockRepositoryRepository } from "../../db/repositories/repository-repository.mock";
 import { createMockWorkspaceRepository } from "../../db/repositories/workspace-repository.mock";
 import { createMockWorktreeRepository } from "../../db/repositories/worktree-repository.mock";
@@ -30,6 +33,17 @@ vi.mock("@posthog/git/queries", async (importOriginal) => {
     getCurrentBranch: vi.fn(),
     branchExists: vi.fn(),
     remoteBranchExists: vi.fn(),
+  };
+});
+
+// Neutralize the real git worktree removal so delete tests exercise only the
+// service's path resolution and managed-folder cleanup, not actual git/fs ops.
+vi.mock("../worktree-query/worktree-query", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../worktree-query/worktree-query")>();
+  return {
+    ...actual,
+    deleteWorktree: vi.fn(async () => {}),
   };
 });
 
@@ -88,6 +102,29 @@ function createMocks() {
     analytics,
     log,
   };
+}
+
+/** Seed a worktree-mode workspace whose stored row carries `name` and `path`. */
+function seedWorktreeTask(
+  mocks: ReturnType<typeof createMocks>,
+  opts: {
+    taskId: string;
+    repoPath: string;
+    name: string;
+    worktreePath: string;
+  },
+): void {
+  const repo = mocks.repositoryRepo.create({ path: opts.repoPath });
+  const workspace = mocks.workspaceRepo.create({
+    taskId: opts.taskId,
+    repositoryId: repo.id,
+    mode: "worktree",
+  });
+  mocks.worktreeRepo.create({
+    workspaceId: workspace.id,
+    name: opts.name,
+    path: opts.worktreePath,
+  });
 }
 
 function makeService(mocks: ReturnType<typeof createMocks>): WorkspaceService {
@@ -272,5 +309,125 @@ describe("WorkspaceService", () => {
         await service.checkWorktreeBranch({ mainRepoPath, branch: "develop" }),
       ).toEqual({ status: "trunk" });
     });
+  });
+
+  describe("worktree path resolved from the stored row", () => {
+    const tempDirs: string[] = [];
+
+    afterEach(() => {
+      for (const dir of tempDirs.splice(0)) {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    function mkTemp(prefix: string): string {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+      tempDirs.push(dir);
+      return dir;
+    }
+
+    it("projects an externally-located worktree from its stored path", async () => {
+      const externalPath = "/external/checkout/my-worktree";
+      seedWorktreeTask(mocks, {
+        taskId: "ext",
+        repoPath: "/code/myrepo",
+        name: "fancy-slug",
+        worktreePath: externalPath,
+      });
+
+      expect(await service.getWorkspace("ext")).toMatchObject({
+        mode: "worktree",
+        worktreePath: externalPath,
+        worktreeName: "fancy-slug",
+      });
+      expect(await service.getWorkspaceInfo("ext")).toMatchObject({
+        mode: "worktree",
+        worktree: expect.objectContaining({
+          worktreePath: externalPath,
+          worktreeName: "fancy-slug",
+        }),
+      });
+    });
+
+    it("matches occupancy by the stored path, not a derived one", () => {
+      const externalPath = "/external/checkout/my-worktree";
+      seedWorktreeTask(mocks, {
+        taskId: "ext",
+        repoPath: "/code/myrepo",
+        name: "fancy-slug",
+        worktreePath: externalPath,
+      });
+
+      expect(service.getWorktreeTasks(externalPath)).toEqual([
+        { taskId: "ext" },
+      ]);
+      // The name would derive to <base>/<name>/<repo>; that path must not match.
+      expect(
+        service.getWorktreeTasks("/tmp/worktrees/fancy-slug/myrepo"),
+      ).toEqual([]);
+    });
+
+    it("verifies existence by the stored external path", async () => {
+      const externalPath = mkTemp("external-wt-");
+      seedWorktreeTask(mocks, {
+        taskId: "ext",
+        repoPath: "/code/myrepo",
+        name: "fancy-slug",
+        worktreePath: externalPath,
+      });
+
+      // The on-disk worktree lives at its stored external path; a derived
+      // <base>/<name>/<repo> would not exist, so this would report missing.
+      expect(await service.verifyWorkspaceExists("ext")).toEqual({
+        exists: true,
+      });
+
+      fs.rmSync(externalPath, { recursive: true, force: true });
+      expect(await service.verifyWorkspaceExists("ext")).toEqual({
+        exists: false,
+        missingPath: externalPath,
+      });
+    });
+
+    // Identical setup (empty managed `<base>/<repo>` parent, then delete the only
+    // worktree for that repo); only the stored worktree path differs. This proves
+    // the cleanup guard discriminates on whether the path is under the base path,
+    // rather than always (or never) reclaiming the parent folder.
+    it.each([
+      {
+        label:
+          "leaves the managed parent folder alone for an external worktree",
+        makeWorktreePath: () => mkTemp("external-wt-"),
+        managedParentSurvives: true,
+      },
+      {
+        label:
+          "reclaims the empty managed parent folder for a worktree under the base path",
+        makeWorktreePath: (base: string) =>
+          path.join(base, "some-name", "myrepo"),
+        managedParentSurvives: false,
+      },
+    ])(
+      "deleteWorkspace via the stored path $label",
+      async ({ makeWorktreePath, managedParentSurvives }) => {
+        const base = mkTemp("wt-base-");
+        mocks.workspaceSettings.getWorktreeLocation = () => base;
+
+        const repoPath = "/code/myrepo";
+        const managedParent = path.join(base, "myrepo");
+        fs.mkdirSync(managedParent);
+
+        seedWorktreeTask(mocks, {
+          taskId: "task",
+          repoPath,
+          name: "some-name",
+          worktreePath: makeWorktreePath(base),
+        });
+
+        await service.deleteWorkspace("task", repoPath);
+
+        expect(fs.existsSync(managedParent)).toBe(managedParentSurvives);
+      },
+    );
   });
 });

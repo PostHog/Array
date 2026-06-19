@@ -7,6 +7,8 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const dropAsset = require("../../../../assets/sounds/drop.mp3");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const icqAsset = require("../../../../assets/sounds/icq.mp3");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const knockAsset = require("../../../../assets/sounds/knock.mp3");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const meepAsset = require("../../../../assets/sounds/meep.mp3");
@@ -27,6 +29,7 @@ const SOUND_ASSETS: Record<CompletionSound, number> = {
   shoot: shootAsset,
   slide: slideAsset,
   drop: dropAsset,
+  icq: icqAsset,
 };
 
 let audioModeConfigured = false;

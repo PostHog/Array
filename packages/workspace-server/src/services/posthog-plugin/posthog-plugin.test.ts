@@ -90,7 +90,6 @@ import type { IAppMeta } from "@posthog/platform/app-meta";
 import type { IBundledResources } from "@posthog/platform/bundled-resources";
 import type { IStoragePaths } from "@posthog/platform/storage-paths";
 import { PosthogPluginService } from "./posthog-plugin";
-import { syncCodexSkills } from "./update-skills-saga";
 
 /** Expose private members for testing without `as any`. */
 interface TestablePluginService {
@@ -105,7 +104,6 @@ const RUNTIME_SKILLS_DIR = "/mock/userData/skills";
 const BUNDLED_PLUGIN_DIR = "/mock/appPath/.vite/build/plugins/posthog";
 const BUNDLED_PLUGIN_DIR_PACKAGED =
   "/mock/appPath.unpacked/.vite/build/plugins/posthog";
-const CODEX_SKILLS_DIR = "/mock/home/.agents/skills";
 
 function mockFetchResponse(ok: boolean, status = 200) {
   return {
@@ -461,25 +459,6 @@ describe("PosthogPluginService", () => {
         ? vol.readdirSync("/mock/tmp")
         : [];
       expect(tmpEntries).toHaveLength(0);
-    });
-  });
-
-  describe("syncCodexSkills", () => {
-    it("copies skill directories to Codex dir", async () => {
-      setupBundledPlugin();
-
-      await syncCodexSkills(BUNDLED_PLUGIN_DIR, CODEX_SKILLS_DIR);
-
-      expect(
-        vol.readFileSync(`${CODEX_SKILLS_DIR}/shipped-skill/SKILL.md`, "utf-8"),
-      ).toBe("# Shipped");
-    });
-
-    it("skips if effective skills dir does not exist", async () => {
-      // No skills dir anywhere
-      await syncCodexSkills("/nonexistent", CODEX_SKILLS_DIR);
-
-      expect(vol.existsSync(CODEX_SKILLS_DIR)).toBe(false);
     });
   });
 

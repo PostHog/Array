@@ -42,7 +42,9 @@ export function decideTitleGeneration(input: {
     input;
 
   const shouldGenerateFromPrompts =
-    (promptCount === 1 && lastGeneratedAtCount === 0) ||
+    (promptCount === 1 &&
+      lastGeneratedAtCount === 0 &&
+      !initialDescriptionHandled) ||
     (promptCount > 1 &&
       promptCount - lastGeneratedAtCount >= REGENERATE_INTERVAL);
 
