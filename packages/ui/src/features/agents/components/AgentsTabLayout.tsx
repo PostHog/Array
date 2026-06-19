@@ -16,7 +16,7 @@ const TAB_DESCRIPTION: Record<AgentsTab, string> = {
   scouts:
     "Self-driving agents that watch your project and surface work for review — enroll in the canonical fleet or author your own.",
   applications:
-    "Deployed agents triggered by chat, Slack, webhooks, or cron — preview, approve, and edit with the Agent Builder.",
+    "Talk it through. Ship it. Watch it work. The Agent Builder turns ideas into production agents.",
 };
 
 /**
@@ -55,19 +55,17 @@ export function AgentsTabLayout({
 
   return (
     <Flex direction="column" className="h-full min-h-0">
-      <div className="cursor-default select-none border-(--gray-5) border-b px-6 pt-5">
-        <Flex align="start" justify="between" gap="4" className="pb-3.5">
-          <Flex direction="column" gap="0.5">
-            <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
-              Agents
-            </Text>
-            <Text className="max-w-3xl text-[12.5px] text-gray-11 leading-snug">
-              {applicationsEnabled
-                ? TAB_DESCRIPTION[activeTab]
-                : "Design, schedule, and deploy the agents that work on your product."}
-            </Text>
-          </Flex>
-          <AgentBuilderHeaderControls />
+      <div className="relative cursor-default select-none border-(--gray-5) border-b px-6 pt-5">
+        <AgentBuilderHeaderControls />
+        <Flex direction="column" gap="0.5" className="pr-44 pb-3.5">
+          <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
+            Agents
+          </Text>
+          <Text className="max-w-3xl text-[12.5px] text-gray-11 leading-snug">
+            {applicationsEnabled
+              ? TAB_DESCRIPTION[activeTab]
+              : "Design, schedule, and deploy the agents that work on your product."}
+          </Text>
         </Flex>
         <Flex gap="5" align="center">
           <TabLink

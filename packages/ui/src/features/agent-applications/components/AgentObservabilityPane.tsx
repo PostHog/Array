@@ -1,6 +1,7 @@
 import { useAuthStateValue } from "../../auth/store";
 import { useAgentAnalytics } from "../hooks/useAgentAnalytics";
 import { useAgentApplication } from "../hooks/useAgentApplication";
+import { displayAgentName } from "../utils/format";
 import { aiObservabilityTracesUrl } from "../utils/observabilityLinks";
 import { AgentAnalyticsView } from "./AgentAnalyticsView";
 import { AgentDetailLayout } from "./AgentDetailLayout";
@@ -28,7 +29,7 @@ export function AgentObservabilityPane({ idOrSlug }: { idOrSlug: string }) {
       <AgentAnalyticsView
         data={data}
         title="Observability"
-        subtitle={`${application?.name ?? "This agent"} · last 7 days (14-day trend)`}
+        subtitle={`${displayAgentName(application) ?? "This agent"} · last 7 days (14-day trend)`}
         aiObservabilityUrl={aiObservabilityTracesUrl(region, projectId)}
         isLoading={isLoading || !application}
         isError={isError}

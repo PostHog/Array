@@ -18,7 +18,7 @@ import { useAuthStateValue } from "../../auth/store";
 import { useAgentAnalytics } from "../hooks/useAgentAnalytics";
 import { useAgentApplications } from "../hooks/useAgentApplications";
 import { useAgentFleetApprovals } from "../hooks/useAgentFleetApprovals";
-import { formatSpendUsd } from "../utils/format";
+import { displayAgentName, formatSpendUsd } from "../utils/format";
 import { aiObservabilityTracesUrl } from "../utils/observabilityLinks";
 import { AgentAnalyticsKpiStrip } from "./AgentAnalyticsView";
 import { AgentDetailEmptyState } from "./AgentDetailLayout";
@@ -197,7 +197,7 @@ function ApplicationRow({
         <Flex direction="column" gap="0.5" className="min-w-0">
           <Flex align="center" gap="2" className="min-w-0">
             <Text className="truncate font-medium text-[13px] text-gray-12">
-              {application.name}
+              {displayAgentName(application) ?? application.name}
             </Text>
             <Badge color={isLive ? "green" : "gray"}>
               {isLive ? "Live" : "Draft"}
