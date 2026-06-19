@@ -1,3 +1,4 @@
+import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
 import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
 import {
   COLLAPSE_MODE_DEFAULT,
@@ -66,6 +67,7 @@ interface SettingsStore {
   lastUsedModel: string | null;
   lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
+  cachedCloudRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
   lastUsedEnvironments: Record<string, string>;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
@@ -80,6 +82,9 @@ interface SettingsStore {
   setLastUsedModel: (model: string) => void;
   setLastUsedReasoningEffort: (effort: string) => void;
   setLastUsedCloudRepository: (repo: string | null) => void;
+  setCachedCloudRepositoryMap: (
+    map: Record<string, UserRepositoryIntegrationRef>,
+  ) => void;
   setLastUsedEnvironment: (
     repoPath: string,
     environmentId: string | null,
@@ -163,6 +168,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedModel: null,
       lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
+      cachedCloudRepositoryMap: {},
       lastUsedEnvironments: {},
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
@@ -179,6 +185,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedReasoningEffort: effort }),
       setLastUsedCloudRepository: (repo) =>
         set({ lastUsedCloudRepository: repo }),
+      setCachedCloudRepositoryMap: (map) =>
+        set({ cachedCloudRepositoryMap: map }),
       setLastUsedEnvironment: (repoPath, environmentId) =>
         set((state) => {
           const next = { ...state.lastUsedEnvironments };
@@ -303,6 +311,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedModel: state.lastUsedModel,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
+        cachedCloudRepositoryMap: state.cachedCloudRepositoryMap,
         lastUsedEnvironments: state.lastUsedEnvironments,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,

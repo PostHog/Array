@@ -20,6 +20,7 @@ describe("feature settingsStore cloud selections", () => {
     useSettingsStore.setState({
       allowBypassPermissions: false,
       lastUsedCloudRepository: null,
+      cachedCloudRepositoryMap: {},
     });
   });
 
@@ -55,6 +56,56 @@ describe("feature settingsStore cloud selections", () => {
     expect(useSettingsStore.getState().lastUsedCloudRepository).toBe(
       "posthog/posthog",
     );
+  });
+
+  it("persists the cached cloud repository map", async () => {
+    useSettingsStore.getState().setCachedCloudRepositoryMap({
+      "posthog/posthog": {
+        userIntegrationId: "user-1",
+        installationId: "install-1",
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(setItem).toHaveBeenCalled();
+    });
+
+    const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
+    const persisted = JSON.parse(lastCall[1]);
+
+    expect(persisted.state.cachedCloudRepositoryMap).toEqual({
+      "posthog/posthog": {
+        userIntegrationId: "user-1",
+        installationId: "install-1",
+      },
+    });
+  });
+
+  it("rehydrates the cached cloud repository map", async () => {
+    getItem.mockResolvedValue(
+      JSON.stringify({
+        state: {
+          cachedCloudRepositoryMap: {
+            "posthog/code": {
+              userIntegrationId: "user-2",
+              installationId: "install-2",
+            },
+          },
+        },
+        version: 0,
+      }),
+    );
+
+    useSettingsStore.setState({ cachedCloudRepositoryMap: {} });
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState().cachedCloudRepositoryMap).toEqual({
+      "posthog/code": {
+        userIntegrationId: "user-2",
+        installationId: "install-2",
+      },
+    });
   });
 
   it("rehydrates the unsafe mode toggle", async () => {

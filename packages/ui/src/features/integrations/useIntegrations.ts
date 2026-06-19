@@ -29,6 +29,7 @@ import {
   useIntegrationSelectors,
   useIntegrationStore,
 } from "@posthog/ui/features/integrations/store";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useAuthenticatedInfiniteQuery } from "@posthog/ui/hooks/useAuthenticatedInfiniteQuery";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useDebounce } from "@posthog/ui/primitives/hooks/useDebounce";
@@ -387,6 +388,13 @@ export function useUserRepositoryIntegration() {
     useUserGithubIntegrations();
   const [isRefreshingRepos, setIsRefreshingRepos] = useState(false);
 
+  const cachedRepositoryMap = useSettingsStore(
+    (state) => state.cachedCloudRepositoryMap,
+  );
+  const setCachedRepositoryMap = useSettingsStore(
+    (state) => state.setCachedCloudRepositoryMap,
+  );
+
   const {
     repositoryMap,
     reposByInstallationId,
@@ -394,25 +402,63 @@ export function useUserRepositoryIntegration() {
     failedInstallationIds,
   } = useAllUserGithubRepositories(githubIntegrations);
 
+  // Keep the persisted cache in sync with the freshly fetched map so the next
+  // cold start can render the picker without waiting on the network. Clear the
+  // cache when the user has no integrations; otherwise only write once
+  // everything has loaded so partial data never overwrites a good cache.
+  useEffect(() => {
+    if (integrationsPending) return;
+    if (githubIntegrations.length === 0) {
+      if (Object.keys(cachedRepositoryMap).length > 0) {
+        setCachedRepositoryMap({});
+      }
+      return;
+    }
+    if (reposPending) return;
+    if (Object.keys(repositoryMap).length === 0) return;
+    if (repositoryMap === cachedRepositoryMap) return;
+    setCachedRepositoryMap(repositoryMap);
+  }, [
+    integrationsPending,
+    reposPending,
+    githubIntegrations.length,
+    repositoryMap,
+    cachedRepositoryMap,
+    setCachedRepositoryMap,
+  ]);
+
+  const liveLoading = integrationsPending || reposPending;
+  const servingFromCache =
+    liveLoading &&
+    Object.keys(repositoryMap).length === 0 &&
+    Object.keys(cachedRepositoryMap).length > 0;
+
+  // Serve the cached map while the live queries load so the picker renders the
+  // last-used repo immediately on a cold start instead of a spinner.
+  const effectiveRepositoryMap = servingFromCache
+    ? cachedRepositoryMap
+    : repositoryMap;
+
   const repositories = useMemo(
-    () => Object.keys(repositoryMap),
-    [repositoryMap],
+    () => Object.keys(effectiveRepositoryMap),
+    [effectiveRepositoryMap],
   );
 
   const getUserIntegrationIdForRepo = useCallback(
     (repoKey: string) =>
-      getRepoEntry(repositoryMap, repoKey)?.userIntegrationId,
-    [repositoryMap],
+      getRepoEntry(effectiveRepositoryMap, repoKey)?.userIntegrationId,
+    [effectiveRepositoryMap],
   );
 
   const getInstallationIdForRepo = useCallback(
-    (repoKey: string) => getRepoEntry(repositoryMap, repoKey)?.installationId,
-    [repositoryMap],
+    (repoKey: string) =>
+      getRepoEntry(effectiveRepositoryMap, repoKey)?.installationId,
+    [effectiveRepositoryMap],
   );
 
   const repoInIntegration = useCallback(
-    (repoKey: string) => isRepoInIntegration(repositoryMap, repoKey),
-    [repositoryMap],
+    (repoKey: string) => isRepoInIntegration(effectiveRepositoryMap, repoKey),
+    [effectiveRepositoryMap],
   );
 
   const refreshRepositories = useCallback(async () => {
@@ -438,10 +484,12 @@ export function useUserRepositoryIntegration() {
     getUserIntegrationIdForRepo,
     getInstallationIdForRepo,
     isRepoInIntegration: repoInIntegration,
-    isLoadingRepos: integrationsPending || reposPending,
-    isRefreshingRepos,
+    isLoadingRepos: liveLoading && !servingFromCache,
+    isRefreshingRepos: isRefreshingRepos || servingFromCache,
     refreshRepositories,
-    hasGithubIntegration: githubIntegrations.length > 0,
+    hasGithubIntegration:
+      githubIntegrations.length > 0 ||
+      (integrationsPending && Object.keys(cachedRepositoryMap).length > 0),
     failedInstallationIds,
     reposByInstallationId,
   };
