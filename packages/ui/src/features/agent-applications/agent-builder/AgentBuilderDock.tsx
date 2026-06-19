@@ -66,10 +66,11 @@ function buildAgentBuilderContext(
 }
 
 /**
- * The agent builder chat — an always-on dock talking to the deployed
- * `agent-concierge`. Streams through the shared `useAgentChat`/`AgentChatSurface`
- * stack, prepends the current `/code/agents` page context to the first message,
- * answers `get_context`, and lets the agent drive the UI via `focus_*`.
+ * The Agent Builder chat — an always-on dock talking to the deployed meta-agent
+ * (backend slug `agent-builder`). Streams through the shared
+ * `useAgentChat`/`AgentChatSurface` stack, prepends the current `/code/agents`
+ * page context to the first message, answers `get_context`, and lets the agent
+ * drive the UI via `focus_*`.
  */
 export function AgentBuilderDock() {
   const { data: application } = useAgentApplication(AGENT_BUILDER_SLUG);
@@ -254,7 +255,7 @@ export function AgentBuilderDock() {
         <div className="p-4">
           <AgentDetailEmptyState
             title="Agent Builder unavailable"
-            description="The agent-concierge deployment has no reachable ingress in this environment."
+            description="The Agent Builder deployment has no reachable ingress in this environment."
           />
         </div>
       ) : (

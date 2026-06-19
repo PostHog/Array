@@ -40,8 +40,9 @@ export function AgentSessionTranscriptView({
       <Flex
         direction="column"
         gap="2"
-        className="shrink-0 cursor-default select-none px-6 pt-5 pb-3"
+        className="relative shrink-0 cursor-default select-none px-6 pt-5 pb-3"
       >
+        <AgentBuilderHeaderControls />
         <Link
           to="/code/agents/applications/$idOrSlug/sessions"
           params={{ idOrSlug }}
@@ -50,12 +51,9 @@ export function AgentSessionTranscriptView({
           <ArrowLeftIcon size={13} />
           Sessions
         </Link>
-        <Flex align="center" justify="between" gap="4">
-          <Text className="font-bold text-[18px] text-gray-12 leading-tight tracking-tight">
-            Session transcript
-          </Text>
-          <AgentBuilderHeaderControls />
-        </Flex>
+        <Text className="pr-44 font-bold text-[18px] text-gray-12 leading-tight tracking-tight">
+          Session transcript
+        </Text>
       </Flex>
       <div className="min-h-0 flex-1">
         <AgentSessionDetailBody idOrSlug={idOrSlug} sessionId={sessionId} />

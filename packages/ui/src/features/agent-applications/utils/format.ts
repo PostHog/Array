@@ -3,7 +3,6 @@ import type {
   AgentRevisionState,
   AgentSessionState,
 } from "@posthog/shared/agent-platform-types";
-
 /** Formats a USD spend value for the fleet / agent stat strips. */
 export function formatSpendUsd(value: number | null | undefined): string {
   if (value == null) return "$0";

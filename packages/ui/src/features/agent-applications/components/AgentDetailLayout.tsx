@@ -134,8 +134,9 @@ export function AgentDetailLayout({
       <Flex
         direction="column"
         gap="3"
-        className="cursor-default select-none border-(--gray-5) border-b px-6 pt-5"
+        className="relative cursor-default select-none border-(--gray-5) border-b px-6 pt-5"
       >
+        <AgentBuilderHeaderControls />
         <Link
           to="/code/agents/applications"
           className="flex w-fit items-center gap-1.5 text-[12px] text-gray-11 no-underline hover:text-gray-12"
@@ -143,7 +144,7 @@ export function AgentDetailLayout({
           <ArrowLeftIcon size={13} />
           Applications
         </Link>
-        <Flex align="center" gap="2" wrap="wrap">
+        <Flex align="center" gap="2" wrap="wrap" className="pr-44">
           <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
             {title}
           </Text>
@@ -152,9 +153,6 @@ export function AgentDetailLayout({
               {application.live_revision ? "Live" : "Draft"}
             </Badge>
           ) : null}
-          <Flex align="center" className="ml-auto shrink-0">
-            <AgentBuilderHeaderControls />
-          </Flex>
         </Flex>
         {application?.description?.trim() ? (
           <Text className="max-w-3xl text-[12.5px] text-gray-11 leading-snug">

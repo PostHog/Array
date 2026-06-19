@@ -15,15 +15,18 @@ import { useAgentBuilderStore } from "./agentBuilderStore";
 /**
  * The agents-header control cluster — identical across every agents view.
  *
+ * Pinned absolutely to the top-right of the nearest `relative` ancestor so it
+ * sits on the same row as the Agent Builder dock header (matching `py-2`),
+ * keeping the two halves of the agents UI visually aligned across views.
+ *
  * One split button is the single entry point into the Agent Builder dock:
  *  - the primary segment is the contextual "edit with AI" action for the view
  *    you're on (New agent / Edit configuration / Explain this session / …) — it
  *    opens the dock and seeds the matching prompt,
- *  - the trailing segment just opens/closes the dock without seeding, so you
- *    can peek at or dismiss the existing conversation.
- * The two were previously near-identical gold buttons; fusing them keeps both
- * affordances but with one sparkle (the AI identity) and one neutral toggle.
- * Views with no obvious action (Scouts) collapse to the lone open/close toggle.
+ *  - the trailing segment just opens the dock without seeding, so you can peek
+ *    at the existing conversation; once the dock is open it disappears so we
+ *    don't double up with the dock's own close button.
+ * Views with no obvious action (Scouts) collapse to the lone open toggle.
  * Renders nothing unless the `agent-platform` flag is on.
  */
 export function AgentBuilderHeaderControls() {
@@ -36,13 +39,15 @@ export function AgentBuilderHeaderControls() {
   if (!enabled) return null;
 
   const action = headerActionForPage(page);
-  const toggleTip = visible
-    ? "Hide the agent builder (⌘⇧I)"
-    : "Open the agent builder (⌘⇧I)";
+  const openTip = "Open the agent builder (⌘⇧I)";
 
   return (
     <TooltipProvider delay={500}>
-      <Flex align="center" gap="2" className="shrink-0">
+      <Flex
+        align="center"
+        gap="2"
+        className="absolute top-0 right-0 z-10 shrink-0 px-6 py-2"
+      >
         {action ? (
           <div className="flex items-center">
             <Tooltip>
@@ -51,7 +56,11 @@ export function AgentBuilderHeaderControls() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-s-[3px] rounded-e-none"
+                    className={
+                      visible
+                        ? "rounded-[3px]"
+                        : "rounded-s-[3px] rounded-e-none"
+                    }
                     onClick={() =>
                       startAgentBuilder(action.prompt, action.agentSlug)
                     }
@@ -69,34 +78,33 @@ export function AgentBuilderHeaderControls() {
                 Open the agent builder and start here
               </TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    className="rounded-s-none rounded-e-[3px] border-s-0"
-                    aria-label={toggleTip}
-                    onClick={toggleVisible}
-                  >
-                    <SidebarSimpleIcon
-                      size={14}
-                      weight={visible ? "fill" : "regular"}
-                    />
-                  </Button>
-                }
-              />
-              <TooltipContent side="top">{toggleTip}</TooltipContent>
-            </Tooltip>
+            {visible ? null : (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      className="rounded-s-none rounded-e-[3px] border-s-0"
+                      aria-label={openTip}
+                      onClick={toggleVisible}
+                    >
+                      <SidebarSimpleIcon size={14} weight="regular" />
+                    </Button>
+                  }
+                />
+                <TooltipContent side="top">{openTip}</TooltipContent>
+              </Tooltip>
+            )}
           </div>
-        ) : (
+        ) : visible ? null : (
           <Tooltip>
             <TooltipTrigger
               render={
                 <Button
                   variant="outline"
                   size="icon-sm"
-                  aria-label={toggleTip}
+                  aria-label={openTip}
                   onClick={toggleVisible}
                 >
                   <SparkleIcon
@@ -107,7 +115,7 @@ export function AgentBuilderHeaderControls() {
                 </Button>
               }
             />
-            <TooltipContent side="top">{toggleTip}</TooltipContent>
+            <TooltipContent side="top">{openTip}</TooltipContent>
           </Tooltip>
         )}
       </Flex>
