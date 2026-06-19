@@ -8,10 +8,9 @@ describe("OAUTH_SCOPES guard", () => {
       scopes: OAUTH_SCOPES,
     }).toMatchInlineSnapshot(`
       {
-        "scopeVersion": 6,
+        "scopeVersion": 5,
         "scopes": [
           "*",
-          "agent_approvals:write",
         ],
       }
     `);

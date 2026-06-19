@@ -555,49 +555,17 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     options: TokenResponseOptions,
   ): Promise<InMemorySession> {
     const scopedOrgIds = tokenResponse.scoped_organizations ?? [];
-    const { accountKey, currentOrgId, currentOrgProjects } =
-      await this.fetchUserContext(
-        tokenResponse.access_token,
-        options.cloudRegion,
-      );
-    // If /api/users/@me/ already carried `organization.teams[]` for the
-    // current org, use that as a seed for the org map. This unblocks Local
-    // Development OAuth, where tokens are project-scoped and can't hit
-    // /api/organizations/{id}/ at all (returns 403 "API keys with scoped
-    // projects are only supported on project-based endpoints."), so the
-    // /organizations fetch in buildOrgProjectsMap would otherwise leave the
-    // map empty. Only seed when @me/ actually returned projects — otherwise
-    // we'd clobber previously-known data on refresh.
-    const seedMap: OrgProjectsMap = {
-      ...(this.session?.orgProjectsMap ?? {}),
-    };
-    const haveCurrentOrgFromMe = !!(
-      currentOrgId &&
-      currentOrgProjects &&
-      currentOrgProjects.projects.length > 0
+    const { accountKey, currentOrgId } = await this.fetchUserContext(
+      tokenResponse.access_token,
+      options.cloudRegion,
     );
-    if (haveCurrentOrgFromMe && currentOrgId && currentOrgProjects) {
-      seedMap[currentOrgId] = currentOrgProjects;
-    }
-    // When the backend grants no scoped orgs but @me/ already gave us the
-    // current org's projects, skip the org fetch entirely (the seed has what
-    // we need). Without @me/ projects and without scoped orgs, fall through
-    // to the existing "do nothing" behavior so users with genuinely no orgs
-    // aren't paranoid-fetched.
-    const orgIdsToFetch =
-      scopedOrgIds.length > 0 ? scopedOrgIds : haveCurrentOrgFromMe ? [] : [];
     const { map: orgProjectsMap, incomplete: orgProjectsIncomplete } =
       await this.buildOrgProjectsMap(
         tokenResponse.access_token,
         options.cloudRegion,
-        orgIdsToFetch,
-        seedMap,
+        scopedOrgIds,
+        this.session?.orgProjectsMap ?? {},
       );
-    // Make sure the @me/-seeded org is in the final map even when no fetch
-    // ran (buildOrgProjectsMap only returns entries for orgIds it processed).
-    if (haveCurrentOrgFromMe && currentOrgId && !orgProjectsMap[currentOrgId]) {
-      orgProjectsMap[currentOrgId] = seedMap[currentOrgId];
-    }
     const lastPrefs = accountKey
       ? this.authPreference.get(accountKey, options.cloudRegion)
       : null;
@@ -838,11 +806,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private async fetchUserContext(
     accessToken: string,
     cloudRegion: CloudRegion,
-  ): Promise<{
-    accountKey: string | null;
-    currentOrgId: string | null;
-    currentOrgProjects: OrgProjects | null;
-  }> {
+  ): Promise<{ accountKey: string | null; currentOrgId: string | null }> {
     try {
       const response = await this.executeAuthenticatedFetch(
         fetch,
@@ -852,22 +816,14 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       );
 
       if (!response.ok) {
-        return {
-          accountKey: null,
-          currentOrgId: null,
-          currentOrgProjects: null,
-        };
+        return { accountKey: null, currentOrgId: null };
       }
 
       const data = (await response.json().catch(() => ({}))) as {
         uuid?: unknown;
         distinct_id?: unknown;
         email?: unknown;
-        organization?: {
-          id?: unknown;
-          name?: unknown;
-          teams?: unknown;
-        } | null;
+        organization?: { id?: unknown } | null;
       };
 
       let accountKey: string | null = null;
@@ -886,39 +842,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       const currentOrgId =
         typeof orgId === "string" && orgId.length > 0 ? orgId : null;
 
-      // @me/ returns the current org's `organization.teams[]` with the same
-      // {id, name} shape as /api/organizations/{id}/, so we can populate the
-      // org map from it. Lets the dev app work against project-scoped OAuth
-      // tokens (Local Development) where /api/organizations/{id}/ 403s.
-      let currentOrgProjects: OrgProjects | null = null;
-      if (currentOrgId) {
-        const teamsRaw = data.organization?.teams;
-        const orgName = data.organization?.name;
-        const projects = Array.isArray(teamsRaw)
-          ? teamsRaw
-              .map((t) => t as { id?: unknown; name?: unknown })
-              .filter(
-                (t) => typeof t.id === "number" && typeof t.name === "string",
-              )
-              .map((t) => ({ id: t.id as number, name: t.name as string }))
-          : [];
-        currentOrgProjects = {
-          orgName:
-            typeof orgName === "string" && orgName.length > 0
-              ? orgName
-              : "(unknown)",
-          projects,
-        };
-      }
-
-      return { accountKey, currentOrgId, currentOrgProjects };
+      return { accountKey, currentOrgId };
     } catch (error) {
       this.logger.warn("Failed to resolve user context", { error });
-      return {
-        accountKey: null,
-        currentOrgId: null,
-        currentOrgProjects: null,
-      };
+      return { accountKey: null, currentOrgId: null };
     }
   }
   private requireSession(): InMemorySession {
