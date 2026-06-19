@@ -109,11 +109,15 @@ describe("buildSignalReportListOrdering", () => {
     },
   );
 
-  it("tiebreaks priority order by newest first", () => {
-    expect(buildSignalReportListOrdering("priority", "asc")).toBe(
-      "status,priority,-created_at",
-    );
-  });
+  it.each([
+    ["priority", "asc", "status,priority,-created_at"],
+    ["priority", "desc", "status,-priority,-created_at"],
+  ] as const)(
+    "tiebreaks %s (%s) by newest first",
+    (field, direction, expected) => {
+      expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
+    },
+  );
 
   it("does not float the current user's reports via ordering", () => {
     expect(buildSignalReportListOrdering("priority", "asc")).not.toContain(
