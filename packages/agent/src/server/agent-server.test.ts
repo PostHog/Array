@@ -1282,9 +1282,7 @@ describe("AgentServer HTTP Mode", () => {
     });
 
     it("attributes only the first when two distinct recent PRs race", async () => {
-      // Both URLs fetch as recent, so both pass the recency check. Without the
-      // post-await guard each would set detectedPrUrl and call updateTaskRun;
-      // attribution must still happen exactly once.
+      // Both fetch as recent; without the post-await guard each would attribute.
       const s = setup(justNow());
       const second = "https://github.com/PostHog/posthog.com/pull/17765";
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));

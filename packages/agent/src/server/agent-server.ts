@@ -253,8 +253,7 @@ export class AgentServer {
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
-  // PR attribution state, reset per session. `evaluatedPrUrls` dedupes the
-  // GitHub lookup per URL; `prAttributed` short-circuits scanning once attached.
+  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
   private prAttributed = false;
   private readonly evaluatedPrUrls = new Set<string>();
   private lastReportedBranch: string | null = null;
@@ -952,8 +951,7 @@ export class AgentServer {
 
     const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
 
-    // Assign unconditionally so a re-initialized session on the same instance
-    // doesn't carry a stale PR URL from a previous run into the new prompt.
+    // Unconditional so a re-init on the same instance drops a stale PR URL.
     this.detectedPrUrl = prUrl;
 
     const slackThreadUrl = getTaskRunStateString(
@@ -2243,9 +2241,6 @@ ${signedCommitInstructions}
           });
         }
 
-        // Attribute a created PR from anywhere in the stream (terminal output,
-        // content, or message), confirming ownership via GitHub rather than
-        // parsing tool calls — robust to SDK update-framing changes.
         this.maybeAttachCreatedPr(payload, params.update);
 
         // session/update notifications flow through the tapped stream (like local transport)
@@ -2396,12 +2391,6 @@ ${signedCommitInstructions}
     );
   }
 
-  /**
-   * Scan a stream update for a PR URL and, if one is found, attribute it to the
-   * run when GitHub confirms it was created during this run. Cheap and tolerant:
-   * scans the serialized update (so it doesn't matter which field carries the
-   * URL), dedupes the GitHub lookup per URL, and stops once attributed.
-   */
   private maybeAttachCreatedPr(
     payload: JwtPayload,
     update: Record<string, unknown> | undefined,
@@ -2423,7 +2412,6 @@ ${signedCommitInstructions}
     try {
       createdAt = await this.fetchPrCreatedAt(prUrl);
     } catch (err) {
-      // Best-effort: a failed GitHub lookup must never break message flow.
       this.logger.debug("PR attribution lookup failed", {
         runId: payload.run_id,
         prUrl,
@@ -2432,12 +2420,8 @@ ${signedCommitInstructions}
       return;
     }
 
-    // Created just now => this run created it. Older (or unknown) => the run
-    // only viewed it; don't attribute. Recency-based so it stays correct for
-    // long task runs.
     if (!wasCreatedRecently(createdAt, Date.now())) return;
-    // Re-check after the await: a concurrent attribution for a different URL
-    // may have won the race while we were waiting on GitHub.
+    // Re-check after the await: another URL may have attributed while we waited.
     if (this.prAttributed) return;
 
     this.prAttributed = true;
@@ -2453,7 +2437,6 @@ ${signedCommitInstructions}
         prUrl,
       });
     } catch (err) {
-      // A dropped attribution is operationally significant, so log at error.
       this.logger.error("Failed to attach PR URL to task run", {
         taskId: payload.task_id,
         runId: payload.run_id,
@@ -2463,7 +2446,6 @@ ${signedCommitInstructions}
     }
   }
 
-  /** PR `createdAt` (ISO) via the GitHub CLI, or null if it can't be resolved. */
   private async fetchPrCreatedAt(prUrl: string): Promise<string | null> {
     const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
       cwd: this.config.repositoryPath,

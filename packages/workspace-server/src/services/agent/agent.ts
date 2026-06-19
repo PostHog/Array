@@ -287,10 +287,7 @@ interface ManagedSession {
   mcpToolApprovals: McpToolApprovals;
   /** Maps tool keys to their installation for backend approval updates */
   toolInstallations: McpToolInstallations;
-  /**
-   * PR attribution state. `evaluatedPrUrls` dedupes the GitHub lookup per URL;
-   * `prAttributed` short-circuits scanning once a PR has been attached.
-   */
+  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
   prAttributed: boolean;
   evaluatedPrUrls: Set<string>;
 }
@@ -1803,9 +1800,8 @@ For git operations while detached:
       const update = msg.params.update;
       const session = this.sessions.get(taskRunId);
 
-      // PR attribution scans the whole update, independent of tool framing, so
-      // a PR URL that surfaces without a Bash toolName (e.g. terminal output)
-      // is still detected. Runs before the toolName gate below.
+      // Runs before the toolName gate: a PR URL can surface without a Bash
+      // toolName (e.g. in terminal output).
       this.maybeAttachCreatedPr(taskRunId, session, update);
 
       const toolMeta = update._meta?.claudeCode;
@@ -1821,15 +1817,6 @@ For git operations while detached:
     }
   }
 
-  /**
-   * Scan a stream update for a PR URL and, if one is found, attach it to the
-   * task when GitHub confirms it was created during this run. Cheap and
-   * tolerant: scans the serialized update (so it doesn't matter which field
-   * carries the URL), dedupes the GitHub lookup per URL, and stops once
-   * attributed. Checking the PR's actual `createdAt` — rather than the
-   * originating command — keeps an older PR the agent merely viewed (e.g.
-   * `gh pr view`) from being latched onto the run.
-   */
   private maybeAttachCreatedPr(
     taskRunId: string,
     session: ManagedSession | undefined,
@@ -1850,12 +1837,8 @@ For git operations while detached:
     if (session.prAttributed) return;
 
     const createdAt = await this.fetchPrCreatedAt(session.repoPath, prUrl);
-    // Created just now => this run created it. Older (or unknown) => the run
-    // only viewed it; don't attribute. Recency-based so it stays correct for
-    // long task runs.
     if (!wasCreatedRecently(createdAt, Date.now())) return;
-    // Re-check after the await: a concurrent attribution for a different URL
-    // may have won the race while we were waiting on GitHub.
+    // Re-check after the await: another URL may have attributed while we waited.
     if (session.prAttributed) return;
 
     session.prAttributed = true;
@@ -1907,7 +1890,6 @@ For git operations while detached:
         (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
       );
     } catch (err) {
-      // Best-effort: never let attribution break message flow.
       this.log.debug("Failed to resolve PR createdAt", { prUrl, error: err });
       return null;
     }
