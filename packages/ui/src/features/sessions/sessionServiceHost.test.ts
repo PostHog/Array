@@ -4302,6 +4302,49 @@ describe("SessionService", () => {
         mockSessionStoreSetters.prependQueuedMessages,
       ).toHaveBeenCalledWith("task-123", [queuedMessage]);
     });
+
+    it("is a no-op while compacting and keeps the queued message intact", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          adapter: "claude",
+          isPromptPending: true,
+          isCompacting: true,
+          messageQueue: [queuedMessage],
+        }),
+      );
+
+      await service.steerQueuedMessage("task-123", "q-1");
+
+      expect(
+        mockSessionStoreSetters.removeQueuedMessage,
+      ).not.toHaveBeenCalled();
+      expect(mockSessionStoreSetters.enqueueMessage).not.toHaveBeenCalled();
+      expect(mockTrpcAgent.prompt.mutate).not.toHaveBeenCalled();
+    });
+
+    it("resends the original rawPrompt blocks, not the plain-text content", async () => {
+      const service = getSessionService();
+      const rawPrompt: ContentBlock[] = [{ type: "text", text: "rich blocks" }];
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          adapter: "claude",
+          isPromptPending: true,
+          messageQueue: [
+            { id: "q-rich", content: "plain text", rawPrompt, queuedAt: 1 },
+          ],
+        }),
+      );
+      mockTrpcAgent.prompt.mutate.mockResolvedValue({ stopReason: "end_turn" });
+
+      await service.steerQueuedMessage("task-123", "q-rich");
+
+      expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledWith({
+        sessionId: "run-123",
+        prompt: [{ type: "text", text: "rich blocks" }],
+        steer: true,
+      });
+    });
   });
 
   describe("cancelPrompt", () => {

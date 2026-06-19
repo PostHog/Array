@@ -2048,6 +2048,10 @@ export class SessionService {
   async steerQueuedMessage(taskId: string, messageId: string): Promise<void> {
     const session = this.d.store.getSessionByTaskId(taskId);
     if (!session) return;
+    // Steer falls through to the queue during compaction, which would re-enqueue
+    // the message as plain text and drop its rawPrompt. Leave it queued; it
+    // drains normally once compaction ends.
+    if (session.isCompacting) return;
     const message = session.messageQueue.find((m) => m.id === messageId);
     if (!message) return;
 
