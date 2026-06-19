@@ -390,6 +390,7 @@ describe("SessionService", () => {
     mockSettingsState.customInstructions = "";
     mockGetIsOnline.mockReturnValue(true);
     mockGetConfigOptionByCategory.mockReturnValue(undefined);
+    mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
     mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(undefined);
     mockSessionStoreSetters.getSessions.mockReturnValue({});
     mockAuth.fetchAuthState.mockResolvedValue({
@@ -614,6 +615,52 @@ describe("SessionService", () => {
           errorMessage: expect.stringContaining("Authentication required"),
         }),
       );
+    });
+
+    it("keeps the session connecting when auth is still restoring", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = getSessionService();
+        const clearSpy = vi
+          .spyOn(service, "clearSessionError")
+          .mockResolvedValue(undefined);
+        const initialPrompt: ContentBlock[] = [
+          { type: "text", text: "do the thing" },
+        ];
+
+        mockAuth.fetchAuthState.mockResolvedValue({
+          status: "restoring",
+          bootstrapComplete: false,
+          cloudRegion: "us",
+          orgProjectsMap: {},
+          currentOrgId: null,
+          currentProjectId: 123,
+          hasCodeAccess: null,
+          needsScopeReauth: false,
+        });
+
+        const promise = service.connectToTask({
+          task: createMockTask(),
+          repoPath: "/repo",
+          initialPrompt,
+        });
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(mockSessionStoreSetters.setSession).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: "connecting",
+            initialPrompt,
+          }),
+        );
+        expect(mockTrpcAgent.start.mutate).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(10_000);
+        await promise;
+
+        expect(clearSpy).toHaveBeenCalledWith("task-123", "/repo");
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     describe("auto-retry on connect failure", () => {
@@ -3631,6 +3678,39 @@ describe("SessionService", () => {
 
       expect(result.stopReason).toBe("queued");
       expect(mockTrpcCloudTask.retry.mutate).not.toHaveBeenCalled();
+    });
+
+    it("queues cloud prompt while auth is still restoring", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "in_progress",
+          status: "connected",
+          isPromptPending: false,
+        }),
+      );
+      mockAuth.fetchAuthState.mockResolvedValue({
+        status: "restoring",
+        bootstrapComplete: false,
+        cloudRegion: "us",
+        orgProjectsMap: {},
+        currentOrgId: null,
+        currentProjectId: 123,
+        hasCodeAccess: null,
+        needsScopeReauth: false,
+      });
+
+      const prompt: ContentBlock[] = [{ type: "text", text: "hold this" }];
+      const result = await service.sendPrompt("task-123", prompt);
+
+      expect(result.stopReason).toBe("queued");
+      expect(mockSessionStoreSetters.enqueueMessage).toHaveBeenCalledWith(
+        "task-123",
+        "hold this",
+        prompt,
+      );
+      expect(mockTrpcCloudTask.sendCommand.mutate).not.toHaveBeenCalled();
     });
 
     it("does not pin isPromptPending when queueing during sandbox boot", async () => {

@@ -274,6 +274,11 @@ interface AuthCredentials {
   client: AuthClient;
 }
 
+type AuthCredentialsStatus =
+  | { kind: "ready"; auth: AuthCredentials }
+  | { kind: "restoring" }
+  | { kind: "missing" };
+
 export interface ConnectParams {
   task: Task;
   repoPath: string;
@@ -529,7 +534,11 @@ export class SessionService {
     }
 
     try {
-      const auth = await this.getAuthCredentials();
+      const authStatus = await this.getAuthCredentialsStatus();
+      if (authStatus.kind === "restoring") {
+        throw new Error("Authentication is still restoring. Please wait.");
+      }
+      const auth = authStatus.kind === "ready" ? authStatus.auth : null;
       const route = routeLocalConnect({
         hasAuth: auth !== null,
         latestRunId: latestRun?.id,
@@ -2159,13 +2168,21 @@ export class SessionService {
       return { stopReason: "queued" };
     }
 
-    const [auth, cloudCommandAuth] = await Promise.all([
-      this.getAuthCredentials(),
-      this.getCloudCommandAuth(),
-    ]);
-    if (!auth || !cloudCommandAuth) {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind === "restoring") {
+      this.d.store.enqueueMessage(session.taskId, transport.promptText, prompt);
+      this.d.log.info("Cloud message queued (auth restoring)", {
+        taskId: session.taskId,
+        queueLength: session.messageQueue.length + 1,
+      });
+      return { stopReason: "queued" };
+    }
+
+    const cloudCommandAuth = await this.getCloudCommandAuth();
+    if (authStatus.kind !== "ready" || !cloudCommandAuth) {
       throw new Error("Authentication required for cloud commands");
     }
+    const { auth } = authStatus;
 
     this.watchCloudTask(
       session.taskId,
@@ -2332,10 +2349,21 @@ export class SessionService {
     session: AgentSession,
     prompt: string | ContentBlock[],
   ): Promise<{ stopReason: string }> {
-    const authCredentials = await this.getAuthCredentials();
-    if (!authCredentials) {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind === "restoring") {
+      const transport = this.d.h.getCloudPromptTransport(prompt);
+      this.d.store.enqueueMessage(session.taskId, transport.promptText, prompt);
+      this.d.log.info("Cloud resume queued (auth restoring)", {
+        taskId: session.taskId,
+        queueLength: session.messageQueue.length + 1,
+      });
+      return { stopReason: "queued" };
+    }
+    if (authStatus.kind !== "ready") {
       throw new Error("Authentication required for cloud commands");
     }
+    const authCredentials = authStatus.auth;
+
     const auth = await this.getCloudCommandAuth();
     if (!auth) {
       throw new Error("Authentication required for cloud commands");
@@ -4215,16 +4243,28 @@ export class SessionService {
 
   // --- Helper Methods ---
 
-  private async getAuthCredentials(): Promise<AuthCredentials | null> {
+  private async getAuthCredentialsStatus(): Promise<AuthCredentialsStatus> {
     const authState = await this.d.fetchAuthState();
+    if (
+      authState.status === "restoring" ||
+      authState.bootstrapComplete === false
+    ) {
+      return { kind: "restoring" };
+    }
+
     const apiHost = authState.cloudRegion
       ? getCloudUrlFromRegion(authState.cloudRegion)
       : null;
     const projectId = authState.currentProjectId;
     const client = this.d.createAuthenticatedClient(authState);
 
-    if (!apiHost || !projectId || !client) return null;
-    return { apiHost, projectId, client };
+    if (!apiHost || !projectId || !client) return { kind: "missing" };
+    return { kind: "ready", auth: { apiHost, projectId, client } };
+  }
+
+  private async getAuthCredentials(): Promise<AuthCredentials | null> {
+    const authStatus = await this.getAuthCredentialsStatus();
+    return authStatus.kind === "ready" ? authStatus.auth : null;
   }
 
   private parseLogContent(content: string): ParsedSessionLogs {
