@@ -123,11 +123,11 @@ describe("tabFilters", () => {
       ).toBe(false);
     });
 
-    it("returns false for a resolved (merged/closed) PR", () => {
+    it("returns false for a PR whose report is no longer ready", () => {
       expect(
         isPullRequestReport(
           fakeReport({
-            status: "resolved",
+            status: "candidate",
             implementation_pr_url: "https://gh/p/1",
           }),
         ),
@@ -198,11 +198,11 @@ describe("tabFilters", () => {
       ).toBe(false);
     });
 
-    it("excludes resolved (merged/closed) PRs rather than surfacing them as Reports", () => {
+    it("excludes any PR-bearing report rather than surfacing it as a Report", () => {
       expect(
         isReportTabReport(
           fakeReport({
-            status: "resolved",
+            status: "candidate",
             implementation_pr_url: "https://gh/p/1",
           }),
         ),
