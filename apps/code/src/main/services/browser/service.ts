@@ -111,7 +111,7 @@ export class BrowserService
     // Route window.open() into the app as a new tab instead of a native window.
     view.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
       if (alive() && this.isSafeUrl(targetUrl)) {
-        this.emit("openUrl", { url: targetUrl });
+        this.emit("openUrl", { browserId, url: targetUrl });
       }
       return { action: "deny" };
     });
@@ -252,8 +252,10 @@ export class BrowserService
   navigate(browserId: string, url: string): void {
     const entry = this.browsers.get(browserId);
     if (!entry) return;
-    entry.view.webContents.loadURL(url).catch((err) => {
-      log.warn("Failed to navigate", url, err);
+    const effectiveUrl =
+      !url || url === "about:blank" ? buildNewTabPage() : url;
+    entry.view.webContents.loadURL(effectiveUrl).catch((err) => {
+      log.warn("Failed to navigate", effectiveUrl, err);
     });
   }
 

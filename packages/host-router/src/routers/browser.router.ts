@@ -164,12 +164,15 @@ export const browserRouter = router({
       );
     }),
 
-  onOpenUrl: publicProcedure.subscription(({ ctx, signal }) => {
-    const service = ctx.container.get<IBrowserService>(BROWSER_SERVICE);
-    return eventToAsyncIterator<BrowserOpenUrlEvent>(
-      (l) => service.on("openUrl", l),
-      (l) => service.off("openUrl", l),
-      signal,
-    );
-  }),
+  onOpenUrl: publicProcedure
+    .input(browserIdInput)
+    .subscription(({ ctx, input, signal }) => {
+      const service = ctx.container.get<IBrowserService>(BROWSER_SERVICE);
+      return eventToAsyncIterator<BrowserOpenUrlEvent>(
+        (l) => service.on("openUrl", l),
+        (l) => service.off("openUrl", l),
+        signal,
+        (data) => data.browserId === input.browserId,
+      );
+    }),
 });

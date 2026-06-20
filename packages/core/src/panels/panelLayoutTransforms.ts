@@ -712,7 +712,7 @@ export function addBrowserTab(
   panelId: string,
   url = "about:blank",
 ): Partial<TaskLayout> {
-  const browserId = `browser-${Date.now()}`;
+  const browserId = `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const updatedTree = updateTreeNode(layout.panelTree, panelId, (panel) => {
     if (panel.type !== "leaf") return panel;
     return addTabToPanel(panel, {

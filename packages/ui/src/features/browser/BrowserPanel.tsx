@@ -196,15 +196,18 @@ export function BrowserPanel({
 
   // Open window.open() requests as new browser tabs in the same panel.
   useSubscription(
-    trpc.browser.onOpenUrl.subscriptionOptions(undefined, {
-      onData: (data) => {
-        addBrowserTab(taskId, panelId, data.url);
-        track(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
-          source: "window_open",
-          has_initial_url: true,
-        });
+    trpc.browser.onOpenUrl.subscriptionOptions(
+      { browserId },
+      {
+        onData: (data) => {
+          addBrowserTab(taskId, panelId, data.url);
+          track(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
+            source: "window_open",
+            has_initial_url: true,
+          });
+        },
       },
-    }),
+    ),
   );
 
   return (

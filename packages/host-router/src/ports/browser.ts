@@ -20,6 +20,7 @@ export interface BrowserFaviconEvent {
 }
 
 export interface BrowserOpenUrlEvent {
+  browserId: string;
   url: string;
 }
 
