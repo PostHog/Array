@@ -12,14 +12,12 @@ import {
   statSync,
 } from "node:fs";
 import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { builtinModules } from "node:module";
 import { tmpdir } from "node:os";
 import path, { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { unzipSync } from "fflate";
-import { defineConfig, loadEnv, type Plugin } from "vite";
-import tsconfigPaths from "vite-tsconfig-paths";
+import type { Plugin } from "vite";
 // @ts-expect-error - plain ESM helper shared with packages/agent/tsup.config.ts
 import {
   CLAUDE_CLI_SUPPORT_DIRS,
@@ -29,14 +27,8 @@ import {
   targetArch,
   targetPlatform,
 } from "../../packages/agent/build/native-binary.mjs";
-import {
-  createForceDevModeDefine,
-  createPosthogPlugin,
-  mainAliases,
-} from "./vite.shared.mjs";
-import { autoServicesPlugin } from "./vite-plugin-auto-services";
 
-function getGitCommit(): string {
+export function getGitCommit(): string {
   if (process.env.BUILD_COMMIT) return process.env.BUILD_COMMIT;
   try {
     return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
@@ -45,13 +37,13 @@ function getGitCommit(): string {
   }
 }
 
-function getBuildDate(): string {
+export function getBuildDate(): string {
   return new Date().toISOString();
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-function fixFilenameCircularRef(): Plugin {
+export function fixFilenameCircularRef(): Plugin {
   return {
     name: "fix-filename-circular-ref",
     enforce: "post",
@@ -166,7 +158,7 @@ function copyClaudeSupportAssets(sourcePath: string, destDir: string): void {
   }
 }
 
-function copyClaudeExecutable(): Plugin {
+export function copyClaudeExecutable(): Plugin {
   return {
     name: "copy-claude-executable",
     writeBundle() {
@@ -229,10 +221,10 @@ function getFilesRecursive(dir: string): string[] {
   return files;
 }
 
-const SKILLS_ZIP_URL =
+export const SKILLS_ZIP_URL =
   "https://github.com/PostHog/posthog/releases/download/agent-skills-latest/skills.zip";
 
-const CONTEXT_MILL_ZIP_URL =
+export const CONTEXT_MILL_ZIP_URL =
   "https://github.com/PostHog/context-mill/releases/latest/download/skills-mcp-resources.zip";
 
 const execFileAsync = promisify(execFile);
@@ -411,7 +403,7 @@ const PLUGIN_ALLOW_LIST = [
 
 let remoteSkillsFetched = false;
 
-function copyPosthogPlugin(isDev: boolean): Plugin {
+export function copyPosthogPlugin(isDev: boolean): Plugin {
   const sourceDir = join(__dirname, "../../plugins/posthog");
   const localSkillsDir = join(sourceDir, "local-skills");
 
@@ -478,7 +470,7 @@ function copyPosthogPlugin(isDev: boolean): Plugin {
   };
 }
 
-function copyDrizzleMigrations(): Plugin {
+export function copyDrizzleMigrations(): Plugin {
   const migrationsDir = join(
     __dirname,
     "../../packages/workspace-server/src/db/migrations",
@@ -503,7 +495,7 @@ function copyDrizzleMigrations(): Plugin {
 
 let enricherGrammarsCopied = false;
 
-function copyEnricherGrammars(): Plugin {
+export function copyEnricherGrammars(): Plugin {
   return {
     name: "copy-enricher-grammars",
     writeBundle() {
@@ -549,7 +541,7 @@ function copyEnricherGrammars(): Plugin {
 
 let codexAcpCopied = false;
 
-function copyCodexAcpBinaries(): Plugin {
+export function copyCodexAcpBinaries(): Plugin {
   return {
     name: "copy-codex-acp-binaries",
     writeBundle() {
@@ -601,81 +593,3 @@ function copyCodexAcpBinaries(): Plugin {
     },
   };
 }
-
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, path.resolve(__dirname, "../.."), "");
-  const isDev = mode === "development";
-
-  return {
-    plugins: [
-      tsconfigPaths({ ignoreConfigErrors: true }),
-      autoServicesPlugin(join(__dirname, "src/main/services")),
-      fixFilenameCircularRef(),
-      copyClaudeExecutable(),
-      copyPosthogPlugin(isDev),
-      copyDrizzleMigrations(),
-      copyCodexAcpBinaries(),
-      copyEnricherGrammars(),
-      createPosthogPlugin(env, "posthog-code-main"),
-    ].filter(Boolean),
-    define: {
-      __BUILD_COMMIT__: JSON.stringify(getGitCommit()),
-      __BUILD_DATE__: JSON.stringify(getBuildDate()),
-      "process.env.VITE_POSTHOG_API_KEY": JSON.stringify(
-        env.VITE_POSTHOG_API_KEY || "",
-      ),
-      "process.env.VITE_POSTHOG_API_HOST": JSON.stringify(
-        env.VITE_POSTHOG_API_HOST || "",
-      ),
-      "process.env.VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE": JSON.stringify(
-        env.VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE || "",
-      ),
-      "process.env.SKILLS_ZIP_URL": JSON.stringify(SKILLS_ZIP_URL),
-      "process.env.CONTEXT_MILL_ZIP_URL": JSON.stringify(CONTEXT_MILL_ZIP_URL),
-      ...createForceDevModeDefine(),
-    },
-    resolve: {
-      alias: mainAliases,
-      conditions: ["node"],
-      mainFields: ["module", "jsnext:main", "jsnext"],
-    },
-    cacheDir: ".vite/cache",
-    build: {
-      outDir: path.join(__dirname, ".vite/build"),
-      emptyOutDir: false,
-      target: "node18",
-      sourcemap: true,
-      minify: false,
-      reportCompressedSize: false,
-      commonjsOptions: {
-        transformMixedEsModules: true,
-      },
-      lib: {
-        entry: path.resolve(__dirname, "src/main/bootstrap.ts"),
-        formats: ["cjs"],
-        fileName: () => "bootstrap.js",
-      },
-      rollupOptions: {
-        external: [
-          "electron",
-          "electron/main",
-          ...builtinModules,
-          ...builtinModules.map((m) => `node:${m}`),
-          "node-pty",
-          "@parcel/watcher",
-          "file-icon",
-          "better-sqlite3",
-        ],
-        onwarn(warning, warn) {
-          if (warning.code === "UNUSED_EXTERNAL_IMPORT") return;
-          if (
-            warning.code === "EVAL" &&
-            warning.id?.includes("web-tree-sitter")
-          )
-            return;
-          warn(warning);
-        },
-      },
-    },
-  };
-});

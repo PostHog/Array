@@ -149,7 +149,7 @@ jobs:
           MATRIX_ARCH: ${{ matrix.arch }}
         working-directory: apps/code
         run: |
-          node scripts/build.mjs
+          pnpm exec electron-vite build
           if [[ "$MATRIX_ARCH" == "arm64" ]]; then
             pnpm exec electron-builder build --mac --arm64 --publish never --config electron-builder.config.cjs
           else
@@ -305,7 +305,7 @@ jobs:
           APP_VERSION: ${{ steps.version.outputs.version }}
         working-directory: apps/code
         run: |
-          node scripts/build.mjs
+          pnpm exec electron-vite build
           pnpm exec electron-builder build --win --x64 --publish never --config electron-builder.config.cjs
 
       - name: Upload release artifacts
@@ -422,7 +422,7 @@ jobs:
           MATRIX_ARCH: ${{ matrix.arch }}
         working-directory: apps/code
         run: |
-          node scripts/build.mjs
+          pnpm exec electron-vite build
           if [[ "$MATRIX_ARCH" == "arm64" ]]; then
             pnpm exec electron-builder build --linux --arm64 --publish never --config electron-builder.config.cjs
           else
