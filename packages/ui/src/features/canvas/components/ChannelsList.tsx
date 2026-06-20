@@ -380,7 +380,9 @@ function TaskRow({
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { fileTask, unfileTask } = useChannelTaskMutations();
-  const { archiveTask } = useArchiveTask();
+  // Archiving from the bluebird/channels nav should return to the website
+  // new-task screen, not the Code one.
+  const { archiveTask } = useArchiveTask({ navigateSpace: "website" });
   const taskData = useChannelTaskData(task);
   const workspace = useWorkspace(taskId);
   const workspaceMode =
