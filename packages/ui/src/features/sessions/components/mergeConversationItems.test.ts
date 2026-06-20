@@ -50,6 +50,27 @@ describe("mergeConversationItems", () => {
     expect(result.map((i) => i.id)).toEqual(["opt", "other"]);
   });
 
+  it("cloud: dedupes the echoed prompt even when it carries an appended channel CONTEXT.md", () => {
+    const echoedWithContext =
+      'hello\n\n<channel_context channel="bluebird">background</channel_context>';
+    const result = mergeConversationItems({
+      conversationItems: [
+        userMessage("echo", echoedWithContext),
+        userMessage("other", "different"),
+      ],
+      optimisticItems: [userMessage("opt", "hello")],
+      isCloud: true,
+    });
+    // No duplicate: the echo is dropped...
+    expect(result.map((i) => i.id)).toEqual(["opt", "other"]);
+    // ...and the pinned bubble is upgraded to the context-bearing copy so the
+    // CONTEXT.md chip renders in place instead of as a second message.
+    const pinned = result.find((i) => i.id === "opt");
+    expect(pinned?.type === "user_message" && pinned.content).toBe(
+      echoedWithContext,
+    );
+  });
+
   it("cloud: dedupe is no-op when there are no optimistic items", () => {
     const result = mergeConversationItems({
       conversationItems: [
