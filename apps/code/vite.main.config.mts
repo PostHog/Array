@@ -1,4 +1,3 @@
-import { builtinModules } from "node:module";
 import { execFile, execSync } from "node:child_process";
 import {
   closeSync,
@@ -13,6 +12,7 @@ import {
   statSync,
 } from "node:fs";
 import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { builtinModules } from "node:module";
 import { tmpdir } from "node:os";
 import path, { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
