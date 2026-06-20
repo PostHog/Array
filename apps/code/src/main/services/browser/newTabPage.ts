@@ -22,27 +22,29 @@ export function buildNewTabPage(): string {
     max-width: 460px;
   }
   .hog {
-    width: 72px;
-    height: 72px;
-    margin: 0 auto 20px;
-    opacity: 0.85;
+    width: 160px;
+    height: auto;
+    margin: 0 auto 28px;
+    filter: drop-shadow(0 8px 32px rgba(0,0,0,.6));
   }
   h1 {
     font-size: 24px;
-    font-weight: 600;
-    color: #f0f0f0;
+    font-weight: 700;
+    color: #fff;
     letter-spacing: -0.3px;
     margin-bottom: 10px;
   }
   p {
-    font-size: 13.5px;
+    font-size: 14px;
     line-height: 1.65;
     color: #888;
+    max-width: 400px;
   }
   .footer {
     margin-top: 24px;
     font-size: 11px;
-    color: #555;
+    color: #444;
+    letter-spacing: 0.5px;
   }
 </style>
 </head>
