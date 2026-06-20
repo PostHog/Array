@@ -10,6 +10,7 @@ import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
 import { DotPatternBackground } from "../../../primitives/DotPatternBackground";
@@ -688,12 +689,10 @@ export function TaskInput({
           style={{
             // Raise the input when the suggestion cards are shown so the longer
             // list below it isn't squished against the bottom of the viewport.
-            // Tied to the same condition as the cards (which hide once the
-            // editor has content) so the input recenters as the user types.
-            top:
-              suggestions && suggestions.length > 0 && editorIsEmpty
-                ? "38%"
-                : "50%",
+            // Note: this is NOT tied to `editorIsEmpty` — the input keeps its
+            // position as the user types so the box doesn't jump down when the
+            // suggestions fade out (and back in when the prompt is cleared).
+            top: suggestions && suggestions.length > 0 ? "38%" : "50%",
             transform: "translate(-50%, -50%)",
           }}
           className="absolute left-1/2 z-[1] flex w-[calc(100%-2rem)] max-w-[600px] flex-col gap-2"
@@ -942,43 +941,53 @@ export function TaskInput({
           </Flex>
           <div className="absolute top-full right-0 left-0 z-10">
             {suggestions ? (
-              suggestions.length > 0 &&
-              editorIsEmpty && (
-                <div className="mt-6 flex flex-col gap-2">
-                  <Text
-                    size="1"
-                    weight="medium"
-                    className="px-2.5 text-(--gray-11)"
+              <AnimatePresence>
+                {suggestions.length > 0 && editorIsEmpty && (
+                  <motion.div
+                    key="suggestions"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
+                    className="mt-6 flex flex-col gap-2"
                   >
-                    Suggestions
-                  </Text>
-                  <div className="grid grid-cols-2 gap-2">
-                    {suggestions.map((suggestion) => (
-                      <SuggestedPromptCard
-                        key={suggestion.label}
-                        suggestion={suggestion}
-                        onSelect={() => {
-                          // Use pending content (not setContent) so the
-                          // multi-line template — intro + "User input:" fill-in
-                          // lines — keeps its line breaks; focuses at the end.
-                          useDraftStore
-                            .getState()
-                            .actions.setPendingContent(sessionId, {
-                              segments: [
-                                { type: "text", text: suggestion.prompt },
-                              ],
-                            });
-                          // Bug/feature suggestions start in plan mode; the
-                          // analysis ones start in auto mode.
-                          if (isValidConfigValue(modeOption, suggestion.mode)) {
-                            setConfigOption(modeOption.id, suggestion.mode);
-                          }
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )
+                    <Text
+                      size="1"
+                      weight="medium"
+                      className="px-2.5 text-(--gray-11)"
+                    >
+                      Suggestions
+                    </Text>
+                    <div className="grid grid-cols-2 gap-2">
+                      {suggestions.map((suggestion) => (
+                        <SuggestedPromptCard
+                          key={suggestion.label}
+                          suggestion={suggestion}
+                          onSelect={() => {
+                            // Use pending content (not setContent) so the
+                            // multi-line template — intro + "User input:" fill-in
+                            // lines — keeps its line breaks; focuses at the end.
+                            useDraftStore
+                              .getState()
+                              .actions.setPendingContent(sessionId, {
+                                segments: [
+                                  { type: "text", text: suggestion.prompt },
+                                ],
+                              });
+                            // Bug/feature suggestions start in plan mode; the
+                            // analysis ones start in auto mode.
+                            if (
+                              isValidConfigValue(modeOption, suggestion.mode)
+                            ) {
+                              setConfigOption(modeOption.id, suggestion.mode);
+                            }
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             ) : (
               <SuggestedTasksPanel />
             )}
