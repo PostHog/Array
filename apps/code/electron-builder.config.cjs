@@ -75,6 +75,7 @@ module.exports = {
 
   mac: {
     target: ["dmg", "zip"],
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder interpolation tokens, not JS template literals
     artifactName: "PostHog-Code-${version}-${arch}-mac.${ext}",
     icon: "build/app-icon.icns",
     category: "public.app-category.productivity",
@@ -103,6 +104,7 @@ module.exports = {
 
   win: {
     target: ["nsis", "squirrel"],
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder interpolation tokens, not JS template literals
     artifactName: "PostHog-Code-${version}-${arch}-win.${ext}",
     icon: "build/app-icon.ico",
   },
