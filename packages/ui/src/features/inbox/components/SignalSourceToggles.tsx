@@ -370,7 +370,7 @@ export function SignalSourceToggles({
             onCheckedChange={toggleScouts}
             disabled={disabled}
             syncStatus={sourceStates?.signals_scout?.syncStatus}
-            docsUrl="https://posthog.com/docs/self-driving"
+            docsUrl="https://posthog.com/blog/self-driving-product"
             docsLabel="Scouts"
           />
           {evaluationsUrl && (
