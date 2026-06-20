@@ -9,7 +9,19 @@ The version in `apps/code/package.json` is set to `0.0.0-dev` - this is intentio
 - **major.minor**: Controlled by git tags (e.g., `v0.15.0`, `v1.0.0`)
 - **patch**: Auto-calculated as number of commits since the minor tag
 
-**Important:** Releases must use proper three-part semver versions (e.g., `v0.22.1`, not `v0.22`). The Electron auto-updater uses update.electronjs.org, which requires valid semver for version comparison. Two-part versions will break auto-updates.
+**Important:** Releases must use proper three-part semver versions (e.g., `v0.22.1`, not `v0.22`). The auto-updater requires valid semver for version comparison. Two-part versions will break auto-updates.
+
+## Auto-Update Mechanism
+
+PostHog Code uses [electron-updater](https://www.electron.build/auto-update) (the npm package, not the built-in Electron autoUpdater). On startup the app checks for updates against the GitHub Release for PostHog/code.
+
+electron-builder generates and uploads a `latest-mac.yml` (macOS) or `latest.yml` (Windows) manifest to the GitHub Release during CI. The path to these manifests is baked into `app-update.yml` inside the app bundle at package time.
+
+**macOS**: DMG + zip artifacts are uploaded; the merged `latest-mac.yml` covers both arm64 and x64 so the correct build is selected per architecture.
+
+**Windows**: Both NSIS and Squirrel.Windows installers are shipped during the transition period. Existing Squirrel users continue receiving updates via the legacy feed; once they reinstall via the NSIS installer they move to the electron-updater flow permanently.
+
+**Linux**: No auto-update. AppImage, deb and rpm packages are manual downloads from the GitHub Release.
 
 ## How It Works
 

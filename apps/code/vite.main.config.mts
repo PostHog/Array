@@ -507,7 +507,7 @@ function copyEnricherGrammars(): Plugin {
   return {
     name: "copy-enricher-grammars",
     writeBundle() {
-      // `.vite/grammars` is what the bundle resolves at dev-time; electron-forge
+      // `.vite/grammars` is what the bundle resolves at dev-time; electron-builder
       // only copies `.vite/build/**` into the packaged app, so we need both.
       const destDirs = [
         join(__dirname, ".vite/grammars"),

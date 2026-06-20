@@ -87,8 +87,6 @@ onlyBuiltDependencies:
   - electron
   - electron-winstaller
   - esbuild
-  - fs-xattr
-  - macos-alias
   - node-pty
   - tree-sitter-cli
 

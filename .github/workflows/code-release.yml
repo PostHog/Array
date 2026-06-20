@@ -34,9 +34,9 @@ jobs:
           APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           # Pre-create a single draft release so every parallel publish job uploads
-          # into the same release. Without this, electron-forge's GitHub publisher
-          # creates-if-missing from each job at once, producing multiple releases for
-          # one tag and scattering assets (the orphans get left as drafts).
+          # into the same release. Without this, parallel jobs each create-if-missing
+          # at once, producing multiple releases for one tag and scattering assets
+          # (the orphans get left as drafts).
           if gh release view "v$APP_VERSION" --repo PostHog/code >/dev/null 2>&1; then
             echo "Release v$APP_VERSION already exists — reusing it"
           else
@@ -142,9 +142,6 @@ jobs:
 
       - name: Build agent package
         run: pnpm --filter @posthog/agent run build
-
-      - name: Build native modules
-        run: pnpm --filter code run build-native
 
       - name: Build release artifacts
         env:
@@ -299,9 +296,6 @@ jobs:
 
       - name: Build agent package
         run: pnpm --filter @posthog/agent run build
-
-      - name: Build native modules
-        run: pnpm --filter code run build-native
 
       - name: Build release artifacts
         env:
