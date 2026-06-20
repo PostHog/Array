@@ -608,7 +608,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
-      tsconfigPaths(),
+      tsconfigPaths({ ignoreConfigErrors: true }),
       autoServicesPlugin(join(__dirname, "src/main/services")),
       fixFilenameCircularRef(),
       copyClaudeExecutable(),

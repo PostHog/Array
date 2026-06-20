@@ -42,7 +42,7 @@ export default defineConfig(({ command, mode }) => {
       }),
       tailwindcss(),
       react(),
-      tsconfigPaths(),
+      tsconfigPaths({ ignoreConfigErrors: true }),
       createPosthogPlugin(env, "posthog-code-renderer"),
     ].filter(Boolean),
     worker: {

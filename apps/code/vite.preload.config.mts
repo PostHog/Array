@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [
-    tsconfigPaths(),
+    tsconfigPaths({ ignoreConfigErrors: true }),
     autoServicesPlugin(path.join(__dirname, "src/main/services")),
   ],
   resolve: {
