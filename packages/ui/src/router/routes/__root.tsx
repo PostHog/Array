@@ -268,7 +268,10 @@ function RootLayout() {
         />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
-        <FeedbackModal mode={feedbackMode} onFinished={handleFeedbackFinished} />
+        <FeedbackModal
+          mode={feedbackMode}
+          onFinished={handleFeedbackFinished}
+        />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />
