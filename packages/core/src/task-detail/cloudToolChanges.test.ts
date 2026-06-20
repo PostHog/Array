@@ -62,6 +62,61 @@ describe("extractCloudToolChangedFiles", () => {
     expect(result).toHaveLength(1);
     expect(result[0].path).toBe("src/app.ts");
   });
+
+  it.each([
+    {
+      name: "new file counts all lines as added",
+      kind: "write" as const,
+      oldText: undefined,
+      newText: "a\nb\nc",
+      added: 3,
+      removed: 0,
+    },
+    {
+      name: "modified file counts added and removed",
+      kind: "edit" as const,
+      oldText: "a\nb\nc",
+      newText: "a\nB\nc\nd",
+      added: 2,
+      removed: 1,
+    },
+    {
+      name: "pure removal counts removed only",
+      kind: "edit" as const,
+      oldText: "a\nb\nc",
+      newText: "a",
+      added: 0,
+      removed: 2,
+    },
+  ])("diff stats: $name", ({ kind, oldText, newText, added, removed }) => {
+    const calls = makeToolCalls(
+      toolCall({
+        toolCallId: "tc",
+        kind,
+        locations: [{ path: "src/f.ts" }],
+        content: diffContent("src/f.ts", newText, oldText),
+      }),
+    );
+    const [file] = extractCloudToolChangedFiles(calls);
+    expect(file.linesAdded).toBe(added);
+    expect(file.linesRemoved).toBe(removed);
+  });
+
+  it("returns identical stats when the same diff object is reused (cache)", () => {
+    const content = diffContent("src/f.ts", "a\nB\nc", "a\nb\nc");
+    const first = extractCloudToolChangedFiles(
+      makeToolCalls(
+        toolCall({ kind: "edit", locations: [{ path: "src/f.ts" }], content }),
+      ),
+    );
+    const second = extractCloudToolChangedFiles(
+      makeToolCalls(
+        toolCall({ kind: "edit", locations: [{ path: "src/f.ts" }], content }),
+      ),
+    );
+    expect(second[0].linesAdded).toBe(first[0].linesAdded);
+    expect(second[0].linesRemoved).toBe(first[0].linesRemoved);
+  });
 });
 
 describe("extractCloudFileContent", () => {
