@@ -11,8 +11,10 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useRefreshDashboard } from "@posthog/ui/features/canvas/hooks/useRefreshDashboard";
 import { useIsDashboardEditing } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
+import { track } from "@posthog/ui/shell/analytics";
 import { useEffect, useState } from "react";
 
 const POLL_OPTIONS = { "10s": 10_000, "10min": 600_000 } as const;
@@ -32,8 +34,10 @@ function formatCountdown(intervalMs: number, secondsLeft: number): string {
 // is paused while the dashboard is being edited so the data stays put.
 export function DashboardRefreshControl({
   dashboardId,
+  channelId,
 }: {
   dashboardId: string;
+  channelId?: string;
 }) {
   const editing = useIsDashboardEditing(dashboardId);
   const { refresh, isRefreshing } = useRefreshDashboard(dashboardId);
@@ -81,7 +85,15 @@ export function DashboardRefreshControl({
         variant="outline"
         size="sm"
         disabled={isRefreshing}
-        onClick={() => void refresh()}
+        onClick={() => {
+          track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+            action_type: "refresh",
+            surface: "canvas",
+            channel_id: channelId,
+            dashboard_id: dashboardId,
+          });
+          void refresh();
+        }}
       >
         <ArrowClockwiseIcon
           size={14}
@@ -105,7 +117,16 @@ export function DashboardRefreshControl({
         >
           <DropdownMenuRadioGroup
             value={mode}
-            onValueChange={(value) => setMode(value as RefreshMode)}
+            onValueChange={(value) => {
+              track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+                action_type: "poll_mode_change",
+                surface: "canvas",
+                channel_id: channelId,
+                dashboard_id: dashboardId,
+                poll_mode: value,
+              });
+              setMode(value as RefreshMode);
+            }}
           >
             <DropdownMenuRadioItem value="static">Static</DropdownMenuRadioItem>
             <DropdownMenuGroup>

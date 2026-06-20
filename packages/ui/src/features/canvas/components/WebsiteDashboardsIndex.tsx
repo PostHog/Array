@@ -15,6 +15,7 @@ import {
   Text,
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { FreeformCanvas } from "@posthog/ui/features/canvas/freeform/FreeformCanvas";
 import { handleFreeformDataRequest } from "@posthog/ui/features/canvas/freeform/freeformDataBridge";
@@ -27,6 +28,7 @@ import {
 import { useSeedShowcase } from "@posthog/ui/features/canvas/hooks/useSeedShowcase";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { Box, Flex, Grid } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
@@ -119,6 +121,16 @@ const DashboardCard = memo(function DashboardCard({
         to="/website/$channelId/dashboards/$dashboardId"
         params={{ channelId, dashboardId: summary.id }}
         className="no-underline"
+        onClick={() =>
+          track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+            action_type: "open",
+            surface: "dashboards_grid",
+            channel_id: channelId,
+            dashboard_id: summary.id,
+            kind: summary.kind,
+            template_id: summary.templateId,
+          })
+        }
       >
         <Card className="gap-0 overflow-hidden p-0">
           {isFreeform ? (
@@ -146,7 +158,12 @@ const DashboardCard = memo(function DashboardCard({
       </Link>
       {/* Sibling of the Link (not nested) so opening the menu or deleting never
           navigates into the dashboard. */}
-      <DashboardCardMenu id={summary.id} name={summary.name} />
+      <DashboardCardMenu
+        id={summary.id}
+        name={summary.name}
+        channelId={channelId}
+        kind={summary.kind}
+      />
     </Box>
   );
 });
@@ -246,16 +263,45 @@ function FreeformPreview({ code }: { code?: string }) {
   );
 }
 
-function DashboardCardMenu({ id, name }: { id: string; name: string }) {
+function DashboardCardMenu({
+  id,
+  name,
+  channelId,
+  kind,
+}: {
+  id: string;
+  name: string;
+  channelId: string;
+  kind: DashboardSummary["kind"];
+}) {
   const [open, setOpen] = useState(false);
   const { deleteDashboard, isDeleting } = useDashboardMutations();
 
   const onDelete = () => {
-    deleteDashboard(id).catch((error) => {
-      toast.error("Couldn't delete canvas", {
-        description: error instanceof Error ? error.message : String(error),
+    deleteDashboard(id)
+      .then(() => {
+        track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+          action_type: "delete",
+          surface: "dashboards_grid",
+          channel_id: channelId,
+          dashboard_id: id,
+          kind,
+          success: true,
+        });
+      })
+      .catch((error) => {
+        track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+          action_type: "delete",
+          surface: "dashboards_grid",
+          channel_id: channelId,
+          dashboard_id: id,
+          kind,
+          success: false,
+        });
+        toast.error("Couldn't delete canvas", {
+          description: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
   };
 
   return (

@@ -6,6 +6,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { DashboardDateRangeControl } from "@posthog/ui/features/canvas/components/DashboardDateRangeControl";
 import { DashboardRefreshControl } from "@posthog/ui/features/canvas/components/DashboardRefreshControl";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
@@ -27,6 +28,7 @@ import {
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import {
@@ -72,15 +74,30 @@ function DashboardEditControls({
     if (!dirty) return;
     // The h1 title is the dashboard's name: sync it to the file on every save so
     // renaming the canvas title renames the saved dashboard.
-    saveDashboard(
-      dashboardId,
-      liveSpec,
-      dashboardTitleFromSpec(liveSpec),
-    ).catch((error) => {
-      toast.error("Couldn't save dashboard", {
-        description: error instanceof Error ? error.message : String(error),
+    saveDashboard(dashboardId, liveSpec, dashboardTitleFromSpec(liveSpec))
+      .then(() => {
+        track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+          action_type: "save",
+          surface: "canvas",
+          channel_id: channelId,
+          dashboard_id: dashboardId,
+          kind: "json-render",
+          success: true,
+        });
+      })
+      .catch((error) => {
+        track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+          action_type: "save",
+          surface: "canvas",
+          channel_id: channelId,
+          dashboard_id: dashboardId,
+          kind: "json-render",
+          success: false,
+        });
+        toast.error("Couldn't save dashboard", {
+          description: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
   };
 
   const onFork = async () => {
@@ -90,12 +107,28 @@ function DashboardEditControls({
         dashboardTitleFromSpec(liveSpec) ?? dashboard?.name ?? "Canvas";
       const name = `${title} (fork)`;
       const record = await createDashboard(channelId, name, liveSpec);
+      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+        action_type: "fork",
+        surface: "canvas",
+        channel_id: channelId,
+        dashboard_id: dashboardId,
+        kind: "json-render",
+        success: true,
+      });
       setEditing(record.id, true);
       void navigate({
         to: "/website/$channelId/dashboards/$dashboardId",
         params: { channelId, dashboardId: record.id },
       });
     } catch (error) {
+      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+        action_type: "fork",
+        surface: "canvas",
+        channel_id: channelId,
+        dashboard_id: dashboardId,
+        kind: "json-render",
+        success: false,
+      });
       toast.error("Couldn't fork dashboard", {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -103,6 +136,14 @@ function DashboardEditControls({
   };
 
   const onToggleEdit = () => {
+    track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+      action_type: "edit_toggle",
+      surface: "canvas",
+      channel_id: channelId,
+      dashboard_id: dashboardId,
+      kind: "json-render",
+      editing: !editing,
+    });
     if (editing) {
       // Cancel: drop unsaved edits. Resetting the thread clears the live spec so
       // re-entering edit re-seeds from the saved dashboard; the file is untouched.
@@ -194,12 +235,28 @@ function FreeformEditControls({
         versions,
         currentVersionId ?? undefined,
       );
+      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+        action_type: "fork",
+        surface: "canvas",
+        channel_id: channelId,
+        dashboard_id: dashboardId,
+        kind: "freeform",
+        success: true,
+      });
       setEditing(record.id, true);
       void navigate({
         to: "/website/$channelId/dashboards/$dashboardId",
         params: { channelId, dashboardId: record.id },
       });
     } catch (error) {
+      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+        action_type: "fork",
+        surface: "canvas",
+        channel_id: channelId,
+        dashboard_id: dashboardId,
+        kind: "freeform",
+        success: false,
+      });
       toast.error("Couldn't fork canvas", {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -221,7 +278,16 @@ function FreeformEditControls({
             <Button
               variant="primary"
               size="sm"
-              onClick={() => revert(threadId)}
+              onClick={() => {
+                track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+                  action_type: "revert",
+                  surface: "canvas",
+                  channel_id: channelId,
+                  dashboard_id: dashboardId,
+                  kind: "freeform",
+                });
+                revert(threadId);
+              }}
             >
               Revert to this version
             </Button>
@@ -249,7 +315,17 @@ function FreeformEditControls({
         variant="outline"
         size="sm"
         data-selected={editing}
-        onClick={() => setEditing(dashboardId, !editing)}
+        onClick={() => {
+          track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+            action_type: "edit_toggle",
+            surface: "canvas",
+            channel_id: channelId,
+            dashboard_id: dashboardId,
+            kind: "freeform",
+            editing: !editing,
+          });
+          setEditing(dashboardId, !editing);
+        }}
       >
         {editing ? (
           <XIcon size={14} />
@@ -344,12 +420,18 @@ export function WebsiteLayout() {
             {/* Shown in edit too: changing it directs the agent's next build at
                 the chosen window (refresh in view, prompt hint in edit). */}
             {isDashboardDetail && dashboardId && isDataTemplate && (
-              <DashboardDateRangeControl dashboardId={dashboardId} />
+              <DashboardDateRangeControl
+                dashboardId={dashboardId}
+                channelId={channelId}
+              />
             )}
           </Flex>
           <Flex align="center" gap="2">
             {isDashboardDetail && dashboardId && isDataTemplate && !editing && (
-              <DashboardRefreshControl dashboardId={dashboardId} />
+              <DashboardRefreshControl
+                dashboardId={dashboardId}
+                channelId={channelId}
+              />
             )}
             {isDashboardDetail && channelId && dashboardId ? (
               dashboard?.kind === "freeform" ? (

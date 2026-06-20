@@ -3,13 +3,16 @@ import {
   ArrowUUpRightIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
+import { buildCanvasPromptProps } from "@posthog/core/canvas/canvasAnalytics";
 import type { CanvasAnalyticsConfig } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import {
   useFreeformChatStore,
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
+import { track } from "@posthog/ui/shell/analytics";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
@@ -79,10 +82,18 @@ export function FreeformCanvasView({
   // Q7 self-repair: hand the runtime error back to the agent to fix.
   const askAgentToFix = () => {
     if (!runtimeError) return;
-    void send(
-      threadId,
-      `The app threw a runtime error: "${runtimeError}". Fix it and rewrite the whole file.`,
+    const text = `The app threw a runtime error: "${runtimeError}". Fix it and rewrite the whole file.`;
+    track(
+      ANALYTICS_EVENTS.CANVAS_PROMPT_SENT,
+      buildCanvasPromptProps({
+        surface: "freeform",
+        threadId,
+        text,
+        fromSuggestion: false,
+        intent: "ask_agent_to_fix",
+      }),
     );
+    void send(threadId, text);
   };
 
   return (

@@ -88,6 +88,12 @@ interface TaskInputProps {
    * composer. Channels-only — omitted on the /code new-task screen.
    */
   suggestions?: SuggestedPrompt[];
+  /**
+   * Called when a starter-prompt suggestion card is clicked, with the card's
+   * label. Optional analytics hook for the channels new-task screen; has no
+   * effect on the fill behaviour.
+   */
+  onSuggestionSelect?: (label: string) => void;
 }
 
 export function TaskInput({
@@ -103,6 +109,7 @@ export function TaskInput({
   channelName,
   allowNoRepo,
   suggestions,
+  onSuggestionSelect,
 }: TaskInputProps = {}) {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const trpc = useHostTRPC();
@@ -964,6 +971,7 @@ export function TaskInput({
                           key={suggestion.label}
                           suggestion={suggestion}
                           onSelect={() => {
+                            onSuggestionSelect?.(suggestion.label);
                             // Use pending content (not setContent) so the
                             // multi-line template — intro + "User input:" fill-in
                             // lines — keeps its line breaks; focuses at the end.

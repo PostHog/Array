@@ -37,6 +37,7 @@ import {
   MenuLabel,
   Separator,
 } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
@@ -65,9 +66,10 @@ import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { AlertDialog, Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
 
 // Cap how many tasks each channel shows by default; the rest hide behind a
@@ -140,11 +142,23 @@ function ChannelMenu({
 
       await deleteChannel(channel.id);
       removeStar();
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "delete",
+        surface: "sidebar",
+        channel_id: channel.id,
+        success: true,
+      });
       // If we're inside the channel being deleted, fall back to the index.
       if (pathname.startsWith(`/website/${channel.id}`)) {
         void navigate({ to: "/website" });
       }
     } catch (error) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "delete",
+        surface: "sidebar",
+        channel_id: channel.id,
+        success: false,
+      });
       toast.error("Couldn't delete channel", {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -176,18 +190,32 @@ function ChannelMenu({
           sideOffset={4}
           className="w-auto min-w-fit"
         >
-          <DropdownMenuItem onClick={() => toggleStar()}>
+          <DropdownMenuItem
+            onClick={() => {
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: isStarred ? "unstar" : "star",
+                surface: "sidebar",
+                channel_id: channel.id,
+              });
+              toggleStar();
+            }}
+          >
             <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />
             {isStarred ? "Unstar channel" : "Star channel"}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onClick={() =>
+            onClick={() => {
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: "edit_context_open",
+                surface: "sidebar",
+                channel_id: channel.id,
+              });
               navigate({
                 to: "/website/$channelId/context",
                 params: { channelId: channel.id },
-              })
-            }
+              });
+            }}
           >
             <FileTextIcon size={14} />
             Edit CONTEXT.md
@@ -274,6 +302,14 @@ function DashboardRow({
   const onDelete = async () => {
     try {
       await deleteDashboard(dashboard.id);
+      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+        action_type: "delete",
+        surface: "sidebar",
+        channel_id: channelId,
+        dashboard_id: dashboard.id,
+        kind: dashboard.kind,
+        success: true,
+      });
       // Deleting destroys the canvas, including any child routes under it, so
       // match the whole subtree (mirrors ChannelMenu.onDelete).
       if (
@@ -285,6 +321,14 @@ function DashboardRow({
         });
       }
     } catch (error) {
+      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+        action_type: "delete",
+        surface: "sidebar",
+        channel_id: channelId,
+        dashboard_id: dashboard.id,
+        kind: dashboard.kind,
+        success: false,
+      });
       toast.error("Couldn't delete canvas", {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -303,12 +347,20 @@ function DashboardRow({
                   title={dashboard.name}
                   subtitle={`updated ${relativeTime(dashboard.updatedAt)}`}
                   active={active}
-                  onClick={() =>
+                  onClick={() => {
+                    track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+                      action_type: "open",
+                      surface: "sidebar",
+                      channel_id: channelId,
+                      dashboard_id: dashboard.id,
+                      kind: dashboard.kind,
+                      template_id: dashboard.templateId,
+                    });
                     navigate({
                       to: "/website/$channelId/dashboards/$dashboardId",
                       params: { channelId, dashboardId: dashboard.id },
-                    })
-                  }
+                    });
+                  }}
                 />
               </Box>
             }
@@ -422,7 +474,23 @@ function TaskRow({
   const onFileTo = async (targetChannelId: string) => {
     try {
       await fileTask(targetChannelId, taskId, title);
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "file_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        target_channel_id: targetChannelId,
+        task_id: taskId,
+        success: true,
+      });
     } catch (error) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "file_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        target_channel_id: targetChannelId,
+        task_id: taskId,
+        success: false,
+      });
       toast.error("Couldn't file task", {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -432,7 +500,21 @@ function TaskRow({
   const onArchive = async () => {
     try {
       await archiveTask({ taskId });
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "archive_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        task_id: taskId,
+        success: true,
+      });
     } catch (error) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "archive_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        task_id: taskId,
+        success: false,
+      });
       toast.error("Couldn't archive task", {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -442,6 +524,13 @@ function TaskRow({
   const onRemove = async () => {
     try {
       await unfileTask(channelTaskId);
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "unfile_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        task_id: taskId,
+        success: true,
+      });
       if (pathname === `/website/${channelId}/tasks/${taskId}`) {
         void navigate({
           to: "/website/$channelId",
@@ -449,6 +538,13 @@ function TaskRow({
         });
       }
     } catch (error) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "unfile_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        task_id: taskId,
+        success: false,
+      });
       toast.error("Couldn't remove task from channel", {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -538,6 +634,11 @@ function ChannelSection({
   }, [isActive]);
   // Toggle expansion; collapsing also resets back to the first batch of tasks.
   const toggleOpen = () => {
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: open ? "collapse_channel" : "open_channel",
+      surface: "sidebar",
+      channel_id: channel.id,
+    });
     setOpen((o) => !o);
     if (open) setTaskLimit(MAX_VISIBLE_TASKS_PER_CHANNEL);
   };
@@ -601,12 +702,17 @@ function ChannelSection({
               variant="outline"
               size="icon-xs"
               aria-label={`New task in ${channel.name}`}
-              onClick={() =>
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "new_task_open",
+                  surface: "sidebar",
+                  channel_id: channel.id,
+                });
                 navigate({
                   to: "/website/$channelId/new",
                   params: { channelId: channel.id },
-                })
-              }
+                });
+              }}
               className={cn(
                 "transition-opacity group-hover:border-border",
                 menuOpen
@@ -665,9 +771,14 @@ function ChannelSection({
             <Button
               variant="default"
               size="default"
-              onClick={() =>
-                setTaskLimit((n) => n + MAX_VISIBLE_TASKS_PER_CHANNEL)
-              }
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "view_more_tasks",
+                  surface: "sidebar",
+                  channel_id: channel.id,
+                });
+                setTaskLimit((n) => n + MAX_VISIBLE_TASKS_PER_CHANNEL);
+              }}
               className="w-full min-w-0 justify-start gap-2 text-[13px] text-gray-10"
             >
               <span className="inline-flex size-[14px] shrink-0 items-center justify-center">
@@ -692,6 +803,19 @@ export function ChannelsList() {
 
   const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
   const others = channels.filter((c) => !starredRefToShortcutId.has(c.path));
+
+  // Fire CHANNELS_SPACE_VIEWED once per space mount, after channels first load
+  // (so the counts are accurate). The sidebar stays mounted while navigating
+  // between channels, so this naturally fires once per entry into the space.
+  const viewedTrackedRef = useRef(false);
+  useEffect(() => {
+    if (isLoading || viewedTrackedRef.current) return;
+    viewedTrackedRef.current = true;
+    track(ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED, {
+      channel_count: channels.length,
+      starred_count: starred.length,
+    });
+  }, [isLoading, channels.length, starred.length]);
 
   return (
     <>

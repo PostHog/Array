@@ -12,6 +12,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import {
   formatRangeLabel,
   liveWindow,
@@ -25,6 +26,7 @@ import {
   useCanvasThread,
 } from "@posthog/ui/features/canvas/stores/canvasChatStore";
 import { useIsDashboardEditing } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
+import { track } from "@posthog/ui/shell/analytics";
 import { useMemo, useState } from "react";
 
 function threadIdFor(dashboardId: string): string {
@@ -41,8 +43,10 @@ function threadIdFor(dashboardId: string): string {
 // the label shows the human-readable window.
 export function DashboardDateRangeControl({
   dashboardId,
+  channelId,
 }: {
   dashboardId: string;
+  channelId?: string;
 }) {
   const editing = useIsDashboardEditing(dashboardId);
   const threadId = threadIdFor(dashboardId);
@@ -76,6 +80,14 @@ export function DashboardDateRangeControl({
 
   const onApply = (next: DateTimeValue) => {
     setOpen(false);
+    track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+      action_type: "date_range_apply",
+      surface: "canvas",
+      channel_id: channelId,
+      dashboard_id: dashboardId,
+      range_name: next.range.name,
+      editing,
+    });
     const range: DashboardDateRange = {
       name: next.range.name,
       from: next.start.getTime(),

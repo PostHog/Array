@@ -1,3 +1,4 @@
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
@@ -6,6 +7,7 @@ import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFold
 import { TaskInput } from "@posthog/ui/features/task-detail/components/TaskInput";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
@@ -29,11 +31,28 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
       // Seed the detail cache so the destination route resolves instantly
       // (mirrors openTask), then file to the channel + navigate.
       queryClient.setQueryData(taskDetailQuery(task.id).queryKey, task);
-      void fileTask(channelId, task.id, task.title).catch((error: unknown) => {
-        toast.error("Couldn't file task to channel", {
-          description: error instanceof Error ? error.message : String(error),
+      void fileTask(channelId, task.id, task.title)
+        .then(() => {
+          track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+            action_type: "file_task",
+            surface: "new_task",
+            channel_id: channelId,
+            task_id: task.id,
+            success: true,
+          });
+        })
+        .catch((error: unknown) => {
+          track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+            action_type: "file_task",
+            surface: "new_task",
+            channel_id: channelId,
+            task_id: task.id,
+            success: false,
+          });
+          toast.error("Couldn't file task to channel", {
+            description: error instanceof Error ? error.message : String(error),
+          });
         });
-      });
       void navigate({
         to: "/website/$channelId/tasks/$taskId",
         params: { channelId, taskId: task.id },
@@ -49,6 +68,14 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
       channelName={channelName}
       allowNoRepo
       suggestions={CHANNEL_TASK_SUGGESTIONS}
+      onSuggestionSelect={(label) =>
+        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+          action_type: "new_task_suggestion",
+          surface: "new_task",
+          channel_id: channelId,
+          suggestion_label: label,
+        })
+      }
     />
   );
 }

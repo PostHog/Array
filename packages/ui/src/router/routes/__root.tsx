@@ -262,14 +262,26 @@ function RootLayout() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setFeedbackMode("leaving")}
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "leave_space",
+                  surface: "title_bar",
+                });
+                setFeedbackMode("leaving");
+              }}
             >
               Go back to Code
             </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setFeedbackMode("feedback")}
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "leave_feedback",
+                  surface: "title_bar",
+                });
+                setFeedbackMode("feedback");
+              }}
             >
               Leave feedback
             </Button>

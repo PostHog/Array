@@ -6,6 +6,7 @@ import {
   SquaresFourIcon,
   TrayIcon,
 } from "@phosphor-icons/react";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -20,8 +21,19 @@ import {
   navigateToWebsiteHome,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
+import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
+
+// Fire a nav_click event, then run the destination's navigation.
+function trackNav(navTarget: string, navigate: () => void) {
+  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+    action_type: "nav_click",
+    surface: "nav",
+    nav_target: navTarget,
+  });
+  navigate();
+}
 
 // Non-canvas /website mirrors (Home, Files, etc.) — used to tell whether the
 // current /website route is a canvas surface (channels index / a channel / a
@@ -65,7 +77,7 @@ function ChannelsNav() {
           }
           label="Home"
           isActive={view.type === "home"}
-          onClick={navigateToWebsiteHome}
+          onClick={() => trackNav("home", navigateToWebsiteHome)}
         />
       )}
       <SidebarItem
@@ -78,7 +90,7 @@ function ChannelsNav() {
         }
         label="Global Inbox"
         isActive={view.type === "inbox"}
-        onClick={navigateToInbox}
+        onClick={() => trackNav("inbox", navigateToInbox)}
       />
       <SidebarItem
         depth={0}
@@ -90,7 +102,7 @@ function ChannelsNav() {
         }
         label="Canvas"
         isActive={isCanvasActive}
-        onClick={navigateToCanvas}
+        onClick={() => trackNav("canvas", navigateToCanvas)}
       />
       <SidebarItem
         depth={0}
@@ -102,7 +114,7 @@ function ChannelsNav() {
         }
         label="Agents"
         isActive={view.type === "agents"}
-        onClick={navigateToAgents}
+        onClick={() => trackNav("agents", navigateToAgents)}
       />
       <SidebarItem
         depth={0}
@@ -114,7 +126,7 @@ function ChannelsNav() {
         }
         label="Files"
         isActive={view.type === "skills"}
-        onClick={navigateToSkills}
+        onClick={() => trackNav("files", navigateToSkills)}
       />
     </Flex>
   );
@@ -147,7 +159,7 @@ export function ChannelsSidebar() {
           depth={0}
           icon={<GearSixIcon size={16} />}
           label="Settings"
-          onClick={() => openSettings()}
+          onClick={() => trackNav("settings", () => openSettings())}
         />
       </Box>
     </Flex>

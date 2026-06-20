@@ -1,10 +1,13 @@
 import { PaperPlaneRightIcon, SpinnerGapIcon } from "@phosphor-icons/react";
+import { buildCanvasPromptProps } from "@posthog/core/canvas/canvasAnalytics";
 import { Button } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useCanvasTemplates } from "@posthog/ui/features/canvas/hooks/useCanvasTemplates";
 import {
   useFreeformChatStore,
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
+import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, ScrollArea, Text, TextArea } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 
@@ -22,8 +25,12 @@ export function FreeformChat({ threadId }: { threadId: string }) {
   const [draft, setDraft] = useState("");
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // True once a suggestion chip seeded the composer, until the user types over
+  // it — so the eventual send is attributed to the suggestion.
+  const fromSuggestionRef = useRef(false);
 
   const fillSuggestion = (text: string) => {
+    fromSuggestionRef.current = true;
     setDraft(text);
     inputRef.current?.focus();
   };
@@ -37,6 +44,16 @@ export function FreeformChat({ threadId }: { threadId: string }) {
   const submit = () => {
     const text = draft.trim();
     if (!text || isStreaming) return;
+    track(
+      ANALYTICS_EVENTS.CANVAS_PROMPT_SENT,
+      buildCanvasPromptProps({
+        surface: "freeform",
+        threadId,
+        text,
+        fromSuggestion: fromSuggestionRef.current,
+      }),
+    );
+    fromSuggestionRef.current = false;
     setDraft("");
     void send(threadId, text);
   };
@@ -130,7 +147,10 @@ export function FreeformChat({ threadId }: { threadId: string }) {
             className="flex-1"
             placeholder="Build an app that…"
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              fromSuggestionRef.current = false;
+              setDraft(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
