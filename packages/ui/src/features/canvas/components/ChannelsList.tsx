@@ -65,7 +65,7 @@ import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
-import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { AlertDialog, Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
 import { hostClient } from "../hostClient";
@@ -265,11 +265,16 @@ function DashboardRow({
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { deleteDashboard, isDeleting } = useDashboardMutations();
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const onDelete = async () => {
     try {
       await deleteDashboard(dashboard.id);
-      if (pathname === `/website/${channelId}/dashboards/${dashboard.id}`) {
+      // Deleting destroys the canvas, including any child routes under it, so
+      // match the whole subtree (mirrors ChannelMenu.onDelete).
+      if (
+        pathname.startsWith(`/website/${channelId}/dashboards/${dashboard.id}`)
+      ) {
         void navigate({
           to: "/website/$channelId",
           params: { channelId },
@@ -283,38 +288,67 @@ function DashboardRow({
   };
 
   return (
-    <ContextMenu>
-      <Tooltip content={dashboard.name} delayDuration={600}>
-        <ContextMenuTrigger
-          render={
-            <Box>
-              <ChildRow
-                icon={iconForTemplate(dashboard.templateId)}
-                title={dashboard.name}
-                subtitle={`updated ${relativeTime(dashboard.updatedAt)}`}
-                active={active}
-                onClick={() =>
-                  navigate({
-                    to: "/website/$channelId/dashboards/$dashboardId",
-                    params: { channelId, dashboardId: dashboard.id },
-                  })
-                }
-              />
-            </Box>
-          }
-        />
-      </Tooltip>
-      <ContextMenuContent>
-        <ContextMenuItem
-          variant="destructive"
-          disabled={isDeleting}
-          onClick={() => void onDelete()}
-        >
-          <TrashIcon size={14} />
-          Delete
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+    <>
+      <ContextMenu>
+        <Tooltip content={dashboard.name} delayDuration={600}>
+          <ContextMenuTrigger
+            render={
+              <Box>
+                <ChildRow
+                  icon={iconForTemplate(dashboard.templateId)}
+                  title={dashboard.name}
+                  subtitle={`updated ${relativeTime(dashboard.updatedAt)}`}
+                  active={active}
+                  onClick={() =>
+                    navigate({
+                      to: "/website/$channelId/dashboards/$dashboardId",
+                      params: { channelId, dashboardId: dashboard.id },
+                    })
+                  }
+                />
+              </Box>
+            }
+          />
+        </Tooltip>
+        <ContextMenuContent>
+          <ContextMenuItem
+            variant="destructive"
+            disabled={isDeleting}
+            onClick={() => setConfirmOpen(true)}
+          >
+            <TrashIcon size={14} />
+            Delete
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+      <AlertDialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialog.Content maxWidth="420px" size="2">
+          <AlertDialog.Title size="3">Delete canvas</AlertDialog.Title>
+          <AlertDialog.Description size="1">
+            "{dashboard.name}" will be permanently deleted. This can't be
+            undone.
+          </AlertDialog.Description>
+          <Flex justify="end" gap="2" mt="4">
+            <AlertDialog.Cancel>
+              <Button variant="outline" size="sm">
+                Cancel
+              </Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={isDeleting}
+                onClick={() => void onDelete()}
+              >
+                Delete
+              </Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+    </>
   );
 }
 
