@@ -122,6 +122,34 @@ describe("OAuthService.refreshToken", () => {
     expect(result.errorCode).toBe("auth_error");
   });
 
+  it("maps a 400 invalid_grant to an auth_error", async () => {
+    const { service } = createDeps();
+    fetchMock.mockResolvedValue(jsonResponse({ error: "invalid_grant" }, 400));
+
+    const result = await service.refreshToken("rt", "us");
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe("auth_error");
+  });
+
+  it("maps a 400 invalid_client to an unknown_error, not a logout", async () => {
+    const { service } = createDeps();
+    fetchMock.mockResolvedValue(jsonResponse({ error: "invalid_client" }, 400));
+
+    const result = await service.refreshToken("rt", "us");
+
+    expect(result.errorCode).toBe("unknown_error");
+  });
+
+  it("maps a 400 with no parseable body to an unknown_error", async () => {
+    const { service } = createDeps();
+    fetchMock.mockResolvedValue(new Response("", { status: 400 }));
+
+    const result = await service.refreshToken("rt", "us");
+
+    expect(result.errorCode).toBe("unknown_error");
+  });
+
   it("maps 5xx to a server_error", async () => {
     const { service } = createDeps();
     fetchMock.mockResolvedValue(jsonResponse({}, 503));
@@ -133,7 +161,7 @@ describe("OAuthService.refreshToken", () => {
 
   it("maps other 4xx to an unknown_error", async () => {
     const { service } = createDeps();
-    fetchMock.mockResolvedValue(jsonResponse({}, 400));
+    fetchMock.mockResolvedValue(jsonResponse({}, 404));
 
     const result = await service.refreshToken("rt", "us");
 

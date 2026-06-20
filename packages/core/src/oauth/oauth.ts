@@ -216,8 +216,20 @@ export class OAuthService {
       });
 
       if (!response.ok) {
-        // 401/403 are auth errors - the token is invalid
-        const isAuthError = response.status === 401 || response.status === 403;
+        // 401/403 are always auth failures. A 400 is only a dead refresh token
+        // when the OAuth error is invalid_grant/invalid_token; other 400s like
+        // invalid_client or invalid_request are config bugs and must not log the
+        // user out, or they would be unable to log back in with the same broken
+        // config.
+        const oauthError =
+          response.status === 400
+            ? await this.readOAuthErrorCode(response)
+            : null;
+        const isAuthError =
+          response.status === 401 ||
+          response.status === 403 ||
+          oauthError === "invalid_grant" ||
+          oauthError === "invalid_token";
         // 5xx are server errors - should be retried
         const isServerError = response.status >= 500;
         this.log.warn(
@@ -246,6 +258,15 @@ export class OAuthService {
         error: NETWORK_ERROR_MESSAGE,
         errorCode: "network_error",
       };
+    }
+  }
+
+  private async readOAuthErrorCode(response: Response): Promise<string | null> {
+    try {
+      const body = (await response.json()) as { error?: unknown };
+      return typeof body.error === "string" ? body.error : null;
+    } catch {
+      return null;
     }
   }
 
