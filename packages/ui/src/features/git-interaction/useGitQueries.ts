@@ -109,9 +109,8 @@ export function useGitQueries(
   useQuery(
     trpc.git.getAllBranches.queryOptions(input, {
       enabled,
-      staleTime: 5 * 60_000,
-      gcTime: 30 * 60_000,
-      refetchOnWindowFocus: false,
+      staleTime: Infinity,
+      gcTime: 10 * 60_000,
     }),
   );
 
