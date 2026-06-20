@@ -1,3 +1,4 @@
+import { ArrowSquareOut } from "@phosphor-icons/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
 import {
@@ -6,6 +7,7 @@ import {
   PROJECT_BLUEBIRD_FLAG,
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
 import {
@@ -39,6 +41,8 @@ import { logger } from "@posthog/ui/shell/logger";
 import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
+import { openUrlInBrowser } from "@posthog/ui/utils/browser";
+import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -105,6 +109,17 @@ function RootLayout() {
     const wasLeaving = feedbackMode === "leaving";
     setFeedbackMode(null);
     if (wasLeaving) navigate({ to: "/code" });
+  };
+
+  // "PostHog Web" button in the Channels title bar: opens the user's current
+  // project on the correct cloud (region comes from cloudRegion via
+  // getPostHogUrl), falling back to the account root when no project is set.
+  const currentProjectId = useAuthStateValue((s) => s.currentProjectId);
+  const handleOpenPostHogWeb = () => {
+    const url = getPostHogUrl(
+      currentProjectId ? `/project/${currentProjectId}` : "/",
+    );
+    if (url) void openUrlInBrowser(url);
   };
   const {
     isOpen: commandMenuOpen,
@@ -244,6 +259,16 @@ function RootLayout() {
               onClick={() => setFeedbackMode("feedback")}
             >
               Leave feedback
+            </Button>
+          </Flex>
+          <Flex align="center" className="no-drag ml-auto pr-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleOpenPostHogWeb}
+            >
+              <ArrowSquareOut size={14} />
+              PostHog Web
             </Button>
           </Flex>
         </Flex>
