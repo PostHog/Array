@@ -70,6 +70,10 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
 import { hostClient } from "../hostClient";
 
+// Cap how many tasks each channel shows by default; the rest hide behind a
+// "View more" button so a busy channel doesn't dominate the sidebar.
+const MAX_VISIBLE_TASKS_PER_CHANNEL = 5;
+
 // A canvas's leading icon, chosen from its template so the tree reads at a
 // glance: bar chart for dashboards, line chart for web-analytics, plain file for
 // blank canvases.
@@ -524,9 +528,17 @@ function ChannelSection({
   const [open, setOpen] = useState(isActive);
   // Lifted so the hover button group stays visible while the menu is open.
   const [menuOpen, setMenuOpen] = useState(false);
+  // Only the first few tasks per channel show by default; "View more" reveals
+  // another batch each click so a busy channel doesn't flood the sidebar.
+  const [taskLimit, setTaskLimit] = useState(MAX_VISIBLE_TASKS_PER_CHANNEL);
   useEffect(() => {
     if (isActive) setOpen(true);
   }, [isActive]);
+  // Toggle expansion; collapsing also resets back to the first batch of tasks.
+  const toggleOpen = () => {
+    setOpen((o) => !o);
+    if (open) setTaskLimit(MAX_VISIBLE_TASKS_PER_CHANNEL);
+  };
 
   // Lazy: a channel's canvases and filed tasks are only fetched once it's
   // expanded, so the tree doesn't fire one query per channel on mount.
@@ -539,6 +551,13 @@ function ChannelSection({
     ({ taskId }) =>
       !archivedTaskIds.has(taskId) && tasks?.some((t) => t.id === taskId),
   );
+  const displayedFiledTasks = visibleFiledTasks.slice(0, taskLimit);
+  const hiddenTaskCount = visibleFiledTasks.length - displayedFiledTasks.length;
+  // Reveal one more batch, capped at the remaining count.
+  const nextBatchCount = Math.min(
+    hiddenTaskCount,
+    MAX_VISIBLE_TASKS_PER_CHANNEL,
+  );
 
   return (
     <Box className="group/chan relative">
@@ -550,7 +569,7 @@ function ChannelSection({
       <Button
         variant="default"
         size="default"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggleOpen}
         aria-expanded={open}
         className="w-full min-w-0 flex-1 justify-start gap-2 aria-expanded:bg-transparent"
       >
@@ -618,7 +637,7 @@ function ChannelSection({
               active={pathname === `${base}/dashboards/${d.id}`}
             />
           ))}
-          {visibleFiledTasks.map(({ id: channelTaskId, taskId }) => {
+          {displayedFiledTasks.map(({ id: channelTaskId, taskId }) => {
             const task = tasks?.find((t) => t.id === taskId);
             const title = task?.title || "Untitled task";
             return (
@@ -640,6 +659,21 @@ function ChannelSection({
               />
             );
           })}
+          {hiddenTaskCount > 0 && (
+            <Button
+              variant="default"
+              size="default"
+              onClick={() =>
+                setTaskLimit((n) => n + MAX_VISIBLE_TASKS_PER_CHANNEL)
+              }
+              className="w-full min-w-0 justify-start gap-2 text-[13px] text-gray-10"
+            >
+              <span className="inline-flex size-[14px] shrink-0 items-center justify-center">
+                <CaretDownIcon size={12} />
+              </span>
+              View {nextBatchCount} more
+            </Button>
+          )}
         </Flex>
       )}
     </Box>
