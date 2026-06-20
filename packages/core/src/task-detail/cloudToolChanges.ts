@@ -143,7 +143,7 @@ const diffStatsCache = new WeakMap<
   { added?: number; removed?: number }
 >();
 
-function cachedDiffStats(
+export function cachedDiffStats(
   diff: Extract<ToolCallContent, { type: "diff" }> | undefined,
 ): { added?: number; removed?: number } {
   if (!diff) return {};

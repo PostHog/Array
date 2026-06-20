@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  cachedDiffStats,
   extractCloudFileContent,
   extractCloudToolChangedFiles,
   type ParsedToolCall,
 } from "./cloudToolChanges";
+
+function diffObj(
+  newText: string,
+  oldText: string,
+): NonNullable<Parameters<typeof cachedDiffStats>[0]> {
+  return { type: "diff", path: "src/f.ts", newText, oldText };
+}
 
 function toolCall(overrides: Partial<ParsedToolCall>): ParsedToolCall {
   return {
@@ -102,20 +110,15 @@ describe("extractCloudToolChangedFiles", () => {
     expect(file.linesRemoved).toBe(removed);
   });
 
-  it("returns identical stats when the same diff object is reused (cache)", () => {
-    const content = diffContent("src/f.ts", "a\nB\nc", "a\nb\nc");
-    const first = extractCloudToolChangedFiles(
-      makeToolCalls(
-        toolCall({ kind: "edit", locations: [{ path: "src/f.ts" }], content }),
-      ),
-    );
-    const second = extractCloudToolChangedFiles(
-      makeToolCalls(
-        toolCall({ kind: "edit", locations: [{ path: "src/f.ts" }], content }),
-      ),
-    );
-    expect(second[0].linesAdded).toBe(first[0].linesAdded);
-    expect(second[0].linesRemoved).toBe(first[0].linesRemoved);
+  it("memoizes diff stats by diff-object identity", () => {
+    const diff = diffObj("a\nB\nc", "a\nb\nc");
+    const first = cachedDiffStats(diff);
+    expect(cachedDiffStats(diff)).toBe(first);
+
+    const distinctButEqual = diffObj("a\nB\nc", "a\nb\nc");
+    const recomputed = cachedDiffStats(distinctButEqual);
+    expect(recomputed).not.toBe(first);
+    expect(recomputed).toEqual(first);
   });
 });
 
