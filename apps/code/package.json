@@ -131,6 +131,7 @@
     "drizzle-orm": "^0.45.1",
     "electron-log": "^5.4.3",
     "electron-store": "^11.0.0",
+    "electron-updater": "^6.8.9",
     "fflate": "^0.8.2",
     "file-icon": "^6.0.0",
     "fzf": "^0.5.2",
