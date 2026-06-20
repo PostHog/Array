@@ -38,7 +38,7 @@
     "tasks",
     "developer-tools"
   ],
-  "author": "PostHog",
+  "author": "PostHog <eng@posthog.com>",
   "license": "MIT",
   "devDependencies": {
     "@biomejs/biome": "2.2.4",
