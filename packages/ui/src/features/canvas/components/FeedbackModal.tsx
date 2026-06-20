@@ -21,25 +21,23 @@ import { useState } from "react";
 export type FeedbackModalMode = "feedback" | "leaving" | "posthog-web";
 
 /** Title + prompt shown for each way the modal can be opened. */
-const MODAL_COPY: Record<
-  FeedbackModalMode,
-  { title: string; prompt: string }
-> = {
-  feedback: {
-    title: "Leave feedback",
-    prompt:
-      "How's the Channels experience? Tell us what's working and what you'd change.",
-  },
-  leaving: {
-    title: "Before you go back to Code",
-    prompt:
-      "How's the Channels experience? Tell us what's working and what you'd change.",
-  },
-  "posthog-web": {
-    title: "Before you head to PostHog web",
-    prompt: "Why are you going back to PostHog web?",
-  },
-};
+const MODAL_COPY: Record<FeedbackModalMode, { title: string; prompt: string }> =
+  {
+    feedback: {
+      title: "Leave feedback",
+      prompt:
+        "How's the Channels experience? Tell us what's working and what you'd change.",
+    },
+    leaving: {
+      title: "Before you go back to Code",
+      prompt:
+        "How's the Channels experience? Tell us what's working and what you'd change.",
+    },
+    "posthog-web": {
+      title: "Before you head to PostHog web",
+      prompt: "Why are you going back to PostHog web?",
+    },
+  };
 
 export interface FeedbackModalProps {
   /** `null` closes the modal. `"feedback"` shows a Cancel button; the navigation-intercept modes (`"leaving"`, `"posthog-web"`) show a Skip button. */

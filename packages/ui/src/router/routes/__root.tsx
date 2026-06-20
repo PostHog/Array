@@ -110,6 +110,14 @@ function RootLayout() {
   );
   const currentProjectId = useAuthStateValue((s) => s.currentProjectId);
 
+  // The user's current project on the correct cloud (region comes from
+  // cloudRegion via getPostHogUrl), falling back to the account root. `null`
+  // when the region is unknown — the "PostHog Web" button is disabled then, so
+  // a click can never silently no-op.
+  const posthogWebUrl = getPostHogUrl(
+    currentProjectId ? `/project/${currentProjectId}` : "/",
+  );
+
   // Both "Go back to Code" and "PostHog Web" open the feedback modal first and
   // perform their navigation only once it's submitted or skipped.
   const handleFeedbackFinished = () => {
@@ -117,13 +125,8 @@ function RootLayout() {
     setFeedbackMode(null);
     if (finishedMode === "leaving") {
       navigate({ to: "/code" });
-    } else if (finishedMode === "posthog-web") {
-      // Open the user's current project on the correct cloud (region comes from
-      // cloudRegion via getPostHogUrl), falling back to the account root.
-      const url = getPostHogUrl(
-        currentProjectId ? `/project/${currentProjectId}` : "/",
-      );
-      if (url) void openUrlInBrowser(url);
+    } else if (finishedMode === "posthog-web" && posthogWebUrl) {
+      void openUrlInBrowser(posthogWebUrl);
     }
   };
 
@@ -275,6 +278,7 @@ function RootLayout() {
             <Button
               variant="outline"
               size="sm"
+              disabled={!posthogWebUrl}
               onClick={handleOpenPostHogWeb}
             >
               <ArrowSquareOut size={14} />
