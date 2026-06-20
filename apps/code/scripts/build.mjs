@@ -25,11 +25,7 @@ function runViteBuild(config) {
 }
 
 async function main() {
-  // Main must run first — its plugins copy claude-cli, codex-acp, grammars,
-  // plugins/posthog and drizzle migrations into .vite/build.
   await runViteBuild("vite.main.config.mts");
-
-  // Preload, workspace-server and renderer run after main.
   await runViteBuild("vite.preload.config.mts");
   await runViteBuild("vite.workspace-server.config.mts");
   await runViteBuild("vite.renderer.config.mts");

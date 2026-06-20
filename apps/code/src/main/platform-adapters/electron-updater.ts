@@ -7,11 +7,8 @@ import { injectable } from "inversify";
 @injectable()
 export class ElectronUpdater implements IUpdater {
   constructor() {
-    // Without a logger electron-updater swallows its own errors, so route them
-    // to electron-log like the rest of the main process. autoDownload and
-    // install-on-quit are left at electron-updater's defaults (both already on),
-    // which is what UpdatesService's state machine expects.
     autoUpdater.logger = log;
+    autoUpdater.disableDifferentialDownload = true;
   }
 
   public isSupported(): boolean {
@@ -22,9 +19,6 @@ export class ElectronUpdater implements IUpdater {
     );
   }
 
-  // electron-updater configures itself from the app-update.yml that
-  // electron-builder bakes into the package from the publish config, so there
-  // is no runtime feed URL to set. Kept as a no-op for IUpdater compatibility.
   public setFeedUrl(_url: string): void {
     return;
   }

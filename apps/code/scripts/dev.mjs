@@ -118,7 +118,6 @@ function waitForLine(child, pattern) {
 }
 
 async function main() {
-  // Start renderer Vite dev server on a fixed strict port.
   const rendererServer = spawn(
     "pnpm",
     [
@@ -139,7 +138,6 @@ async function main() {
   );
   children.push(rendererServer);
 
-  // Track readiness: renderer URL + 3 watch build completions.
   let devServerUrl = null;
   const watchReady = { main: false, preload: false, ws: false };
 
@@ -202,7 +200,6 @@ async function main() {
     });
   }
 
-  // Monitor renderer server for its URL.
   forwardAndCheck(rendererServer.stdout, process.stdout, (line) => {
     if (devServerUrl === null && line.includes(`localhost:${DEV_SERVER_PORT}`)) {
       devServerUrl = `http://localhost:${DEV_SERVER_PORT}`;
@@ -211,7 +208,6 @@ async function main() {
   });
   forwardAndCheck(rendererServer.stderr, process.stderr, () => {});
 
-  // Built pattern: Vite prints "built in" or "watching for file changes" after first build.
   const builtPattern = /built in|watching for file changes/i;
 
   function startWatchBuild(config, readyKey) {

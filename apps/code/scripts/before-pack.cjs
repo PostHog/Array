@@ -3,8 +3,6 @@
 const { cpSync, existsSync, mkdirSync, rmSync } = require("node:fs");
 const path = require("node:path");
 
-// Arch enum values from builder-util / app-builder-lib
-// 0=ia32, 1=x64, 2=armv7l, 3=arm64, 4=universal
 const ARCH_X64 = 1;
 const ARCH_ARM64 = 3;
 
@@ -32,7 +30,6 @@ module.exports = async function beforePack(context) {
   const platformName = context.packager.platform.name; // 'mac', 'win', 'linux'
   const arch = context.arch; // numeric Arch enum
 
-  // Paths relative to this script's location (apps/code/scripts/)
   const rootNodeModules = path.resolve(__dirname, "../../../node_modules");
   const localNodeModules = path.resolve(__dirname, "../node_modules");
 
@@ -85,8 +82,6 @@ module.exports = async function beforePack(context) {
     copyDep(watcherPkg, rootNodeModules, localNodeModules);
   }
 
-  // Remove @parcel/watcher/build so the host-compiled fallback binary cannot
-  // shadow the required platform-specific optional dependency at runtime.
   const watcherBuild = path.join(localNodeModules, "@parcel/watcher/build");
   if (existsSync(watcherBuild)) {
     rmSync(watcherBuild, { recursive: true, force: true });

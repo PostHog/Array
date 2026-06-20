@@ -17,14 +17,10 @@ module.exports = {
   electronVersion: require("electron/package.json").version,
   npmRebuild: false,
   nodeGypRebuild: false,
+  generateUpdatesFilesForAllChannels: true,
 
   beforePack: "./scripts/before-pack.cjs",
 
-  // The vite bundle (.vite/build) already inlines all pure-JS deps, so the
-  // asar only needs the externalized native modules that beforePack stages
-  // into apps/code/node_modules. This mirrors Forge's packageAfterCopy list;
-  // pulling in node_modules/**/* instead duplicates the whole workspace
-  // (@posthog, @anthropic-ai, ...) for ~1.2GB of dead weight.
   files: [
     ".vite/build/**/*",
     ".vite/renderer/**/*",
@@ -78,10 +74,6 @@ module.exports = {
   ],
 
   mac: {
-    // Plain target list so the --arm64/--x64 CLI flag selects the arch
-    // (per-arch CI runners). Space-free artifactName so the on-disk filename
-    // matches the (sanitized) url electron-builder writes into latest-mac.yml,
-    // which is what `gh release upload` puts on the GitHub release.
     target: ["dmg", "zip"],
     artifactName: "PostHog-Code-${version}-${arch}-mac.${ext}",
     icon: "build/app-icon.icns",
@@ -98,6 +90,7 @@ module.exports = {
 
   dmg: {
     format: "ULFO",
+    size: "4g",
     background: "build/dmg-background.png",
     icon: "build/app-icon.icns",
     iconSize: 80,
@@ -119,15 +112,11 @@ module.exports = {
     deleteAppDataOnUninstall: false,
   },
 
-  // Match the legacy Forge MakerSquirrel package identity so existing
-  // Squirrel.Windows installs keep auto-updating through the transition.
   squirrelWindows: {
     name: "PostHogCode",
   },
 
   linux: {
-    // Plain target list so --arm64/--x64 selects the arch on each runner.
-    // deb/rpm keep their own packageName-based names; AppImage isn't auto-updated.
     target: ["AppImage", "deb", "rpm"],
     icon: "build/app-icon.png",
     category: "Development",
