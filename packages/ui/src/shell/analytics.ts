@@ -30,6 +30,11 @@ export interface AnalyticsTracker {
   identifyUser(userId: string, properties?: UserIdentifyProperties): void;
   setUserGroups(user: AnalyticsUserGroups): void;
   resetUser(): void;
+  captureSurveyResponse(params: {
+    surveyId: string;
+    questionId: string;
+    response: string;
+  }): void;
 }
 
 export const ANALYTICS_TRACKER = Symbol.for("posthog.ui.AnalyticsTracker");
@@ -73,4 +78,14 @@ export function setUserGroups(user: AnalyticsUserGroups): void {
 
 export function resetUser(): void {
   resolveService<AnalyticsTracker>(ANALYTICS_TRACKER).resetUser();
+}
+
+export function captureSurveyResponse(params: {
+  surveyId: string;
+  questionId: string;
+  response: string;
+}): void {
+  resolveService<AnalyticsTracker>(ANALYTICS_TRACKER).captureSurveyResponse(
+    params,
+  );
 }

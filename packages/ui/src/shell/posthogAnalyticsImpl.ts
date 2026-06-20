@@ -219,6 +219,34 @@ export function track<K extends keyof EventPropertyMap>(
 }
 
 /**
+ * Record a survey response via posthog-js's `survey sent` event. The survey
+ * must already exist (and be launched) in the project the app reports to, or
+ * the response will not attach to it.
+ */
+export function captureSurveyResponse({
+  surveyId,
+  questionId,
+  response,
+}: {
+  surveyId: string;
+  questionId: string;
+  response: string;
+}) {
+  if (!isInitialized) {
+    return;
+  }
+
+  posthog.capture("survey sent", {
+    $survey_id: surveyId,
+    $survey_questions: [{ id: questionId }],
+    // Newer ingestion keys responses by question id; `$survey_response` is the
+    // legacy single-question key. Send both so the response attaches either way.
+    [`$survey_response_${questionId}`]: response,
+    $survey_response: response,
+  });
+}
+
+/**
  * Build tool metadata for analytics on permission requests
  */
 export function buildPermissionToolMetadata(
@@ -318,6 +346,7 @@ export const posthogAnalyticsTracker: AnalyticsTracker = {
   identifyUser,
   setUserGroups,
   resetUser,
+  captureSurveyResponse,
 };
 
 /**

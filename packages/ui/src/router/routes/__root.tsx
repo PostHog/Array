@@ -8,6 +8,10 @@ import {
 } from "@posthog/shared";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
+import {
+  FeedbackModal,
+  type FeedbackModalMode,
+} from "@posthog/ui/features/canvas/components/FeedbackModal";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
@@ -90,6 +94,18 @@ export const Route = createRootRoute({
 function RootLayout() {
   const view = useAppView();
   const navigate = useNavigate();
+
+  // Feedback modal shown in the Channels title bar. Opened directly by "Leave
+  // feedback" (mode "feedback") or as an intercept before "Go back to Code"
+  // (mode "leaving", which routes to /code once submitted or skipped).
+  const [feedbackMode, setFeedbackMode] = useState<FeedbackModalMode | null>(
+    null,
+  );
+  const handleFeedbackFinished = () => {
+    const wasLeaving = feedbackMode === "leaving";
+    setFeedbackMode(null);
+    if (wasLeaving) navigate({ to: "/code" });
+  };
   const {
     isOpen: commandMenuOpen,
     setOpen: setCommandMenuOpen,
@@ -214,15 +230,22 @@ function RootLayout() {
           <Box className="h-[14px] w-[26px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
             <LogosLandscape code={false} />
           </Box>
-          <div className="no-drag">
+          <Flex align="center" gap="2" className="no-drag">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate({ to: "/code" })}
+              onClick={() => setFeedbackMode("leaving")}
             >
               Go back to Code
             </Button>
-          </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFeedbackMode("feedback")}
+            >
+              Leave feedback
+            </Button>
+          </Flex>
         </Flex>
         <Flex flexGrow="1" overflow="hidden">
           <ChannelsSidebar />
@@ -245,6 +268,7 @@ function RootLayout() {
         />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        <FeedbackModal mode={feedbackMode} onFinished={handleFeedbackFinished} />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />
