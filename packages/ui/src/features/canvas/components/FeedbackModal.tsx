@@ -1,6 +1,7 @@
 import {
   Button,
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -13,7 +14,7 @@ import {
 } from "@posthog/ui/features/canvas/feedbackSurvey";
 import { captureSurveyResponse } from "@posthog/ui/shell/analytics";
 import { TextArea } from "@radix-ui/themes";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export type FeedbackModalMode = "feedback" | "leaving";
 
@@ -32,23 +33,6 @@ export interface FeedbackModalProps {
  */
 export function FeedbackModal({ mode, onFinished }: FeedbackModalProps) {
   const open = mode !== null;
-  const [value, setValue] = useState("");
-
-  // Reset the textarea every time the modal opens.
-  useEffect(() => {
-    if (open) setValue("");
-  }, [open]);
-
-  const handleSubmit = () => {
-    const response = value.trim();
-    if (!response) return;
-    captureSurveyResponse({
-      surveyId: FEEDBACK_SURVEY_ID,
-      questionId: FEEDBACK_SURVEY_QUESTION_ID,
-      response,
-    });
-    onFinished();
-  };
 
   return (
     <Dialog
@@ -66,6 +50,39 @@ export function FeedbackModal({ mode, onFinished }: FeedbackModalProps) {
             change.
           </DialogDescription>
         </DialogHeader>
+        {/* Mounted only while open so the textarea resets on each open without
+            syncing state to the `mode` prop in an effect. */}
+        {mode !== null && (
+          <FeedbackModalForm mode={mode} onFinished={onFinished} />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FeedbackModalForm({
+  mode,
+  onFinished,
+}: {
+  mode: FeedbackModalMode;
+  onFinished: () => void;
+}) {
+  const [value, setValue] = useState("");
+
+  const handleSubmit = () => {
+    const response = value.trim();
+    if (!response) return;
+    captureSurveyResponse({
+      surveyId: FEEDBACK_SURVEY_ID,
+      questionId: FEEDBACK_SURVEY_QUESTION_ID,
+      response,
+    });
+    onFinished();
+  };
+
+  return (
+    <>
+      <DialogBody>
         <TextArea
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -74,20 +91,20 @@ export function FeedbackModal({ mode, onFinished }: FeedbackModalProps) {
           maxLength={4000}
           autoFocus
         />
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={onFinished}>
-            {mode === "leaving" ? "Skip" : "Cancel"}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={value.trim().length === 0}
-            onClick={handleSubmit}
-          >
-            Send feedback
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="outline" size="sm" onClick={onFinished}>
+          {mode === "leaving" ? "Skip" : "Cancel"}
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={value.trim().length === 0}
+          onClick={handleSubmit}
+        >
+          Send feedback
+        </Button>
+      </DialogFooter>
+    </>
   );
 }

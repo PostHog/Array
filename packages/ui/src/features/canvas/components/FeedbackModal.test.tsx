@@ -25,21 +25,21 @@ describe("FeedbackModal", () => {
     captureSurveyResponse.mockReset();
   });
 
-  it("shows a Skip button when opened via Go back to Code", () => {
-    renderModal("leaving");
-    expect(screen.getByRole("button", { name: "Skip" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Cancel" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("shows a Cancel button when opened via Leave feedback", () => {
-    renderModal("feedback");
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Skip" }),
-    ).not.toBeInTheDocument();
-  });
+  it.each([
+    { mode: "leaving" as const, expected: "Skip", missing: "Cancel" },
+    { mode: "feedback" as const, expected: "Cancel", missing: "Skip" },
+  ])(
+    "shows the $expected secondary button in $mode mode",
+    ({ mode, expected, missing }) => {
+      renderModal(mode);
+      expect(
+        screen.getByRole("button", { name: expected }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: missing }),
+      ).not.toBeInTheDocument();
+    },
+  );
 
   it("disables submit until text is entered", async () => {
     const user = userEvent.setup();
