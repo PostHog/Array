@@ -171,6 +171,7 @@ export function ProjectSwitcher({
   return (
     <DropdownMenu open={popoverOpen} onOpenChange={setPopoverOpen}>
       <DropdownMenuTrigger
+        nativeButton={triggerVariant === "button"}
         render={
           triggerVariant === "button" ? (
             <Button
