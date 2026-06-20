@@ -1,0 +1,95 @@
+"use strict";
+
+const { cpSync, existsSync, mkdirSync, rmSync } = require("node:fs");
+const path = require("node:path");
+
+// Arch enum values from builder-util / app-builder-lib
+// 0=ia32, 1=x64, 2=armv7l, 3=arm64, 4=universal
+const ARCH_X64 = 1;
+const ARCH_ARM64 = 3;
+
+function copyDep(name, rootNodeModules, localNodeModules) {
+  const src = path.join(rootNodeModules, name);
+  if (!existsSync(src)) {
+    const localSrc = path.join(localNodeModules, name);
+    if (existsSync(localSrc)) {
+      console.log(`[before-pack] "${name}" already in local node_modules, skipping`);
+      return;
+    }
+    console.warn(`[before-pack] "${name}" not found in root or local node_modules, skipping`);
+    return;
+  }
+
+  const dest = path.join(localNodeModules, name);
+  const parentDir = path.dirname(dest);
+  mkdirSync(parentDir, { recursive: true });
+  rmSync(dest, { recursive: true, force: true });
+  cpSync(src, dest, { recursive: true, dereference: true });
+  console.log(`[before-pack] staged "${name}"`);
+}
+
+module.exports = async function beforePack(context) {
+  const platformName = context.packager.platform.name; // 'mac', 'win', 'linux'
+  const arch = context.arch; // numeric Arch enum
+
+  // Paths relative to this script's location (apps/code/scripts/)
+  const rootNodeModules = path.resolve(__dirname, "../../../node_modules");
+  const localNodeModules = path.resolve(__dirname, "../node_modules");
+
+  console.log(`[before-pack] platform=${platformName} arch=${arch}`);
+  console.log(`[before-pack] root node_modules: ${rootNodeModules}`);
+  console.log(`[before-pack] local node_modules: ${localNodeModules}`);
+
+  const commonDeps = [
+    "node-pty",
+    "node-addon-api",
+    "@parcel/watcher",
+    "micromatch",
+    "is-glob",
+    "detect-libc",
+    "braces",
+    "picomatch",
+    "is-extglob",
+    "fill-range",
+    "to-regex-range",
+    "is-number",
+    "better-sqlite3",
+    "bindings",
+    "file-uri-to-path",
+    "prebuild-install",
+  ];
+
+  for (const dep of commonDeps) {
+    copyDep(dep, rootNodeModules, localNodeModules);
+  }
+
+  if (platformName === "mac") {
+    const watcherPkg =
+      arch === ARCH_X64
+        ? "@parcel/watcher-darwin-x64"
+        : "@parcel/watcher-darwin-arm64";
+    copyDep(watcherPkg, rootNodeModules, localNodeModules);
+    copyDep("file-icon", rootNodeModules, localNodeModules);
+    copyDep("p-map", rootNodeModules, localNodeModules);
+  } else if (platformName === "win") {
+    const watcherPkg =
+      arch === ARCH_ARM64
+        ? "@parcel/watcher-win32-arm64"
+        : "@parcel/watcher-win32-x64";
+    copyDep(watcherPkg, rootNodeModules, localNodeModules);
+  } else if (platformName === "linux") {
+    const watcherPkg =
+      arch === ARCH_ARM64
+        ? "@parcel/watcher-linux-arm64-glibc"
+        : "@parcel/watcher-linux-x64-glibc";
+    copyDep(watcherPkg, rootNodeModules, localNodeModules);
+  }
+
+  // Remove @parcel/watcher/build so the host-compiled fallback binary cannot
+  // shadow the required platform-specific optional dependency at runtime.
+  const watcherBuild = path.join(localNodeModules, "@parcel/watcher/build");
+  if (existsSync(watcherBuild)) {
+    rmSync(watcherBuild, { recursive: true, force: true });
+    console.log("[before-pack] removed @parcel/watcher/build");
+  }
+};
