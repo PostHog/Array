@@ -7,13 +7,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Textarea,
 } from "@posthog/quill";
 import {
   FEEDBACK_SURVEY_ID,
   FEEDBACK_SURVEY_QUESTION_ID,
 } from "@posthog/ui/features/canvas/feedbackSurvey";
 import { captureSurveyResponse } from "@posthog/ui/shell/analytics";
-import { TextArea } from "@radix-ui/themes";
 import { useState } from "react";
 
 export type FeedbackModalMode = "feedback" | "leaving";
@@ -83,7 +83,7 @@ function FeedbackModalForm({
   return (
     <>
       <DialogBody>
-        <TextArea
+        <Textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder="Share your feedback"
