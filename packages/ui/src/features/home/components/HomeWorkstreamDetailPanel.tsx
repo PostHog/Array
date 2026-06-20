@@ -41,7 +41,8 @@ interface Props {
 export function HomeWorkstreamDetailPanel({ workstream, onClose }: Props) {
   const { data: allTasks = [] } = useTasks();
   const boundActions = useBoundActions(workstream);
-  const runAction = useRunWorkstreamAction();
+  const { run: runAction, isPending: isRunningAction } =
+    useRunWorkstreamAction();
 
   const pr = workstream.pr;
   const headTask = workstream.tasks[0];
@@ -124,10 +125,15 @@ export function HomeWorkstreamDetailPanel({ workstream, onClose }: Props) {
                   <Button
                     variant="primary"
                     size="sm"
+                    disabled={isRunningAction}
                     onClick={() => runAction(primaryAction, workstream)}
                     title={`${primaryAction.situationLabel} → ${primaryAction.skillId}`}
                   >
-                    <Sparkle size={12} />
+                    {isRunningAction ? (
+                      <Spinner size={12} className="animate-spin" />
+                    ) : (
+                      <Sparkle size={12} />
+                    )}
                     {primaryAction.label}
                   </Button>
                 ) : null}
@@ -143,6 +149,7 @@ export function HomeWorkstreamDetailPanel({ workstream, onClose }: Props) {
                       {overflowActions.map((action: BoundAction) => (
                         <DropdownMenu.Item
                           key={`${action.situationId}::${action.id}`}
+                          disabled={isRunningAction}
                           onSelect={() => runAction(action, workstream)}
                         >
                           <Sparkle size={11} />
@@ -306,6 +313,15 @@ function TaskRow({
       <Text className="min-w-0 flex-1 truncate text-[12px] text-gray-12">
         {task.title}
       </Text>
+      {task.quickAction ? (
+        <span
+          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-(--accent-a3) px-1.5 py-0.5 text-(--accent-11) text-[10px]"
+          title={`Started via quick action: ${task.quickAction}`}
+        >
+          <Sparkle size={9} weight="fill" />
+          {task.quickAction}
+        </span>
+      ) : null}
       {task.needsPermission ? (
         <Badge variant="warning" title="Awaiting permission">
           !
