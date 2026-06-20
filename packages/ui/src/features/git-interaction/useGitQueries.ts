@@ -108,9 +108,10 @@ export function useGitQueries(
 
   useQuery(
     trpc.git.getAllBranches.queryOptions(input, {
-      enabled: repoEnabled,
-      ...GIT_QUERY_DEFAULTS,
-      staleTime: 60_000,
+      enabled,
+      staleTime: 5 * 60_000,
+      gcTime: 30 * 60_000,
+      refetchOnWindowFocus: false,
     }),
   );
 

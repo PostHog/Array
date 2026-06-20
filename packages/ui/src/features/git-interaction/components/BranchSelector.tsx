@@ -151,7 +151,9 @@ export function BranchSelector({
         directoryPath: repoPath as string,
       }),
       enabled: !isCloudMode && !!repoPath,
-      staleTime: 60_000,
+      staleTime: 5 * 60_000,
+      gcTime: 30 * 60_000,
+      refetchOnWindowFocus: false,
     });
 
   const branches = isCloudMode ? (cloudBranches ?? []) : localBranches;
