@@ -1,6 +1,7 @@
 import type { SignalReport, SignalReportPriority } from "@posthog/shared/types";
 import { describe, expect, it } from "vitest";
 import {
+  buildArchiveListOrdering,
   buildPriorityFilterParam,
   buildSignalReportListOrdering,
   buildSuggestedReviewerFilterParam,
@@ -109,6 +110,22 @@ describe("buildSignalReportListOrdering", () => {
   it("does not float the current user's reports via ordering", () => {
     expect(buildSignalReportListOrdering("priority", "asc")).not.toContain(
       "is_suggested_reviewer",
+    );
+  });
+});
+
+describe("buildArchiveListOrdering", () => {
+  it.each([
+    ["updated_at", "desc", "-updated_at"],
+    ["updated_at", "asc", "updated_at"],
+    ["created_at", "desc", "-created_at"],
+  ] as const)("orders by %s (%s) only", (field, direction, expected) => {
+    expect(buildArchiveListOrdering(field, direction)).toBe(expected);
+  });
+
+  it("does not prefix with status, so suppressed and resolved interleave by time", () => {
+    expect(buildArchiveListOrdering("updated_at", "desc")).not.toContain(
+      "status",
     );
   });
 });

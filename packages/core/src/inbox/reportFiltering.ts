@@ -79,6 +79,21 @@ export function buildSignalReportListOrdering(
   return `status,${fieldKey}`;
 }
 
+/**
+ * Ordering for the Archive tab, which lists two terminal statuses
+ * (`suppressed` + `resolved`). Unlike the pipeline ordering above, it must NOT
+ * prefix with `status`: that would group one terminal state ahead of the other
+ * before applying the time sort, burying recent completions behind older items
+ * from the sibling status. Sort purely by the selected field so the list is
+ * globally newest-changed-first across both states.
+ */
+export function buildArchiveListOrdering(
+  field: SignalReportOrderingField,
+  direction: "asc" | "desc",
+): string {
+  return direction === "desc" ? `-${field}` : field;
+}
+
 export function buildSuggestedReviewerFilterParam(
   reviewerIds: string[],
 ): string | undefined {
