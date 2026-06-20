@@ -69,7 +69,7 @@ const config: Configuration = {
     extendInfo: {
       CFBundleIconName: "Icon",
     },
-    notarize: skipNotarize ? false : { teamId: process.env.APPLE_TEAM_ID },
+    notarize: !skipNotarize,
   },
 
   dmg: {
@@ -89,7 +89,9 @@ const config: Configuration = {
     target: ["nsis", "squirrel"],
     // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder interpolation tokens, not JS template literals
     artifactName: "PostHog-Code-${version}-${arch}-win.${ext}",
-    icon: "build/app-icon.ico",
+    // electron-builder generates the multi-size .ico from this 1024px PNG; a real
+    // .ico must be >=256px and the committed app-icon.ico is only 32px.
+    icon: "build/app-icon.png",
   },
 
   nsis: {
