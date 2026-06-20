@@ -105,6 +105,8 @@ const config: Configuration = {
 
   linux: {
     target: ["AppImage", "deb", "rpm"],
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder interpolation tokens, not JS template literals
+    artifactName: "PostHog-Code-${version}-${arch}-linux.${ext}",
     icon: "build/app-icon.png",
     category: "Development",
     mimeTypes: ["x-scheme-handler/posthog-code"],
