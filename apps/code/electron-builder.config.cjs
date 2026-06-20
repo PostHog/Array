@@ -17,7 +17,6 @@ module.exports = {
   electronVersion: require("electron/package.json").version,
   npmRebuild: false,
   nodeGypRebuild: false,
-  generateUpdatesFilesForAllChannels: true,
 
   beforePack: "./scripts/before-pack.cjs",
 
@@ -99,7 +98,6 @@ module.exports = {
 
   dmg: {
     format: "ULFO",
-    size: "4g",
     background: "build/dmg-background.png",
     icon: "build/app-icon.icns",
     iconSize: 80,

@@ -7,12 +7,11 @@ import { injectable } from "inversify";
 @injectable()
 export class ElectronUpdater implements IUpdater {
   constructor() {
+    // Without a logger electron-updater swallows its own errors, so route them
+    // to electron-log like the rest of the main process. autoDownload and
+    // install-on-quit are left at electron-updater's defaults (both already on),
+    // which is what UpdatesService's state machine expects.
     autoUpdater.logger = log;
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
-    // Differential (blockmap) downloads are flaky behind some proxies/AV;
-    // prefer full-package downloads for reliability.
-    autoUpdater.disableDifferentialDownload = true;
   }
 
   public isSupported(): boolean {
