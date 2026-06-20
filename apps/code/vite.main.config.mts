@@ -668,6 +668,8 @@ export default defineConfig(({ mode }) => {
         ],
         onwarn(warning, warn) {
           if (warning.code === "UNUSED_EXTERNAL_IMPORT") return;
+          if (warning.code === "EVAL" && warning.id?.includes("web-tree-sitter"))
+            return;
           warn(warning);
         },
       },
