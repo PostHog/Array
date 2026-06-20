@@ -11,11 +11,15 @@ function copyDep(name, rootNodeModules, localNodeModules) {
   if (!existsSync(src)) {
     const localSrc = path.join(localNodeModules, name);
     if (existsSync(localSrc)) {
-      console.log(`[before-pack] "${name}" already in local node_modules, skipping`);
-      return;
+      console.log(
+        `[before-pack] "${name}" already in local node_modules, skipping`,
+      );
+      return true;
     }
-    console.warn(`[before-pack] "${name}" not found in root or local node_modules, skipping`);
-    return;
+    console.warn(
+      `[before-pack] "${name}" not found in root or local node_modules, skipping`,
+    );
+    return false;
   }
 
   const dest = path.join(localNodeModules, name);
@@ -24,11 +28,20 @@ function copyDep(name, rootNodeModules, localNodeModules) {
   rmSync(dest, { recursive: true, force: true });
   cpSync(src, dest, { recursive: true, dereference: true });
   console.log(`[before-pack] staged "${name}"`);
+  return true;
+}
+
+function copyRequiredDep(name, rootNodeModules, localNodeModules) {
+  if (!copyDep(name, rootNodeModules, localNodeModules)) {
+    throw new Error(
+      `[before-pack] required native dependency "${name}" not found in node_modules`,
+    );
+  }
 }
 
 module.exports = async function beforePack(context) {
-  const platformName = context.packager.platform.name; // 'mac', 'win', 'linux'
-  const arch = context.arch; // numeric Arch enum
+  const platformName = context.packager.platform.name;
+  const arch = context.arch;
 
   const rootNodeModules = path.resolve(__dirname, "../../../node_modules");
   const localNodeModules = path.resolve(__dirname, "../node_modules");
@@ -65,7 +78,7 @@ module.exports = async function beforePack(context) {
       arch === ARCH_X64
         ? "@parcel/watcher-darwin-x64"
         : "@parcel/watcher-darwin-arm64";
-    copyDep(watcherPkg, rootNodeModules, localNodeModules);
+    copyRequiredDep(watcherPkg, rootNodeModules, localNodeModules);
     copyDep("file-icon", rootNodeModules, localNodeModules);
     copyDep("p-map", rootNodeModules, localNodeModules);
   } else if (platformName === "win") {
@@ -73,13 +86,13 @@ module.exports = async function beforePack(context) {
       arch === ARCH_ARM64
         ? "@parcel/watcher-win32-arm64"
         : "@parcel/watcher-win32-x64";
-    copyDep(watcherPkg, rootNodeModules, localNodeModules);
+    copyRequiredDep(watcherPkg, rootNodeModules, localNodeModules);
   } else if (platformName === "linux") {
     const watcherPkg =
       arch === ARCH_ARM64
         ? "@parcel/watcher-linux-arm64-glibc"
         : "@parcel/watcher-linux-x64-glibc";
-    copyDep(watcherPkg, rootNodeModules, localNodeModules);
+    copyRequiredDep(watcherPkg, rootNodeModules, localNodeModules);
   }
 
   const watcherBuild = path.join(localNodeModules, "@parcel/watcher/build");

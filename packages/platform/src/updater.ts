@@ -1,6 +1,5 @@
 export interface IUpdater {
   isSupported(): boolean;
-  setFeedUrl(url: string): void;
   check(): void;
   quitAndInstall(): void;
   onCheckStart(handler: () => void): () => void;

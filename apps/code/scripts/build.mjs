@@ -8,11 +8,10 @@ const root = path.resolve(__dirname, "..");
 
 function runViteBuild(config) {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      "pnpm",
-      ["exec", "vite", "build", "--config", config],
-      { cwd: root, stdio: "inherit" },
-    );
+    const child = spawn("pnpm", ["exec", "vite", "build", "--config", config], {
+      cwd: root,
+      stdio: "inherit",
+    });
     child.on("close", (code) => {
       if (code !== 0) {
         reject(new Error(`vite build -c ${config} exited with code ${code}`));

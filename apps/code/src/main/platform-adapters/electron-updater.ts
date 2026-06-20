@@ -19,10 +19,6 @@ export class ElectronUpdater implements IUpdater {
     );
   }
 
-  public setFeedUrl(_url: string): void {
-    return;
-  }
-
   public check(): void {
     void autoUpdater.checkForUpdates();
   }

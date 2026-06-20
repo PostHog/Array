@@ -31,7 +31,6 @@ const {
     updaterHandlers,
     mockUpdater: {
       isSupported: vi.fn(() => true),
-      setFeedUrl: vi.fn(),
       check: vi.fn(),
       quitAndInstall: vi.fn(),
       onCheckStart: vi.fn((h: () => void) => {
@@ -201,27 +200,10 @@ describe("UpdatesService", () => {
     it("prevents multiple initializations", async () => {
       await initializeService(service);
 
-      const firstCallCount = mockUpdater.setFeedUrl.mock.calls.length;
-
-      // Simulate whenReady resolving again (shouldn't happen, but testing guard)
+      const firstCallCount = mockUpdater.onError.mock.calls.length;
       await initializeService(service);
 
-      // setFeedURL should not be called again
-      expect(mockUpdater.setFeedUrl.mock.calls.length).toBe(firstCallCount);
-    });
-  });
-
-  describe("feedUrl", () => {
-    it("constructs correct feed URL with platform, arch, and version", async () => {
-      mockAppMeta.platform = "darwin";
-      mockAppMeta.arch = "arm64";
-      mockAppMeta.version = "2.0.0";
-
-      await initializeService(service);
-
-      expect(mockUpdater.setFeedUrl).toHaveBeenCalledWith(
-        "https://update.electronjs.org/PostHog/code/darwin-arm64/2.0.0",
-      );
+      expect(mockUpdater.onError.mock.calls.length).toBe(firstCallCount);
     });
   });
 
@@ -985,19 +967,6 @@ describe("UpdatesService", () => {
 
       // Should not throw
       expect(() => service.checkForUpdates()).not.toThrow();
-    });
-
-    it("handles setFeedURL failure gracefully", async () => {
-      mockUpdater.setFeedUrl.mockImplementation(() => {
-        throw new Error("Invalid URL");
-      });
-
-      // Should not throw
-      expect(() => {
-        const newService = new UpdatesService();
-        injectPorts(newService);
-        newService.init();
-      }).not.toThrow();
     });
   });
 });

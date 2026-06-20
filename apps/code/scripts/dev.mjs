@@ -27,96 +27,6 @@ process.on("SIGTERM", () => {
   process.exit(0);
 });
 
-function spawnVite(args, { onLine } = {}) {
-  const child = spawn("pnpm", ["exec", "vite", ...args], {
-    cwd: root,
-    stdio: ["inherit", "pipe", "pipe"],
-  });
-  children.push(child);
-
-  function relay(stream, dest) {
-    stream.setEncoding("utf8");
-    let buf = "";
-    stream.on("data", (chunk) => {
-      buf += chunk;
-      let nl;
-      while ((nl = buf.indexOf("\n")) !== -1) {
-        const line = buf.slice(0, nl);
-        buf = buf.slice(nl + 1);
-        dest.write(line + "\n");
-        if (onLine) onLine(line);
-      }
-    });
-    stream.on("end", () => {
-      if (buf) {
-        dest.write(buf);
-        if (onLine) onLine(buf);
-      }
-    });
-  }
-
-  relay(child.stdout, process.stdout);
-  relay(child.stderr, process.stderr);
-
-  return child;
-}
-
-function waitForLine(child, pattern) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const handlers = {
-      stdout: [],
-      stderr: [],
-    };
-
-    function check(line) {
-      if (settled) return;
-      if (pattern.test(line)) {
-        settled = true;
-        resolve(line);
-      }
-    }
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-
-    let stdoutBuf = "";
-    let stderrBuf = "";
-
-    function processBuffer(buf, remaining, stream) {
-      buf += remaining;
-      let nl;
-      while ((nl = buf.indexOf("\n")) !== -1) {
-        const line = buf.slice(0, nl);
-        buf = buf.slice(nl + 1);
-        process[stream].write(line + "\n");
-        check(line);
-      }
-      return buf;
-    }
-
-    child.stdout.on("data", (chunk) => {
-      stdoutBuf = processBuffer(stdoutBuf, chunk, "stdout");
-    });
-    child.stderr.on("data", (chunk) => {
-      stderrBuf = processBuffer(stderrBuf, chunk, "stderr");
-    });
-    child.on("close", (code) => {
-      if (!settled) {
-        reject(
-          new Error(`Process exited with code ${code} before pattern matched`),
-        );
-      }
-    });
-    child.on("error", (err) => {
-      if (!settled) {
-        settled = true;
-        reject(err);
-      }
-    });
-  });
-}
-
 async function main() {
   const rendererServer = spawn(
     "pnpm",
@@ -137,6 +47,10 @@ async function main() {
     },
   );
   children.push(rendererServer);
+  rendererServer.on("close", (code) => {
+    killAll("SIGTERM");
+    process.exit(code ?? 0);
+  });
 
   let devServerUrl = null;
   const watchReady = { main: false, preload: false, ws: false };
@@ -184,12 +98,13 @@ async function main() {
     let buf = "";
     stream.on("data", (chunk) => {
       buf += chunk;
-      let nl;
-      while ((nl = buf.indexOf("\n")) !== -1) {
+      let nl = buf.indexOf("\n");
+      while (nl !== -1) {
         const line = buf.slice(0, nl);
         buf = buf.slice(nl + 1);
-        dest.write(line + "\n");
+        dest.write(`${line}\n`);
         onLine(line);
+        nl = buf.indexOf("\n");
       }
     });
     stream.on("end", () => {
@@ -201,7 +116,10 @@ async function main() {
   }
 
   forwardAndCheck(rendererServer.stdout, process.stdout, (line) => {
-    if (devServerUrl === null && line.includes(`localhost:${DEV_SERVER_PORT}`)) {
+    if (
+      devServerUrl === null &&
+      line.includes(`localhost:${DEV_SERVER_PORT}`)
+    ) {
       devServerUrl = `http://localhost:${DEV_SERVER_PORT}`;
       maybeStartElectron();
     }

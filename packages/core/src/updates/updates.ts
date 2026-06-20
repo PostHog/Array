@@ -42,9 +42,6 @@ type TransitionContext = {
 
 @injectable()
 export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
-  private static readonly SERVER_HOST = "https://update.electronjs.org";
-  private static readonly REPO_OWNER = "PostHog";
-  private static readonly REPO_NAME = "code";
   private static readonly CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
   private static readonly CHECK_TIMEOUT_MS = 60 * 1000; // 1 minute timeout for checks
   private static readonly INSTALL_SHUTDOWN_TIMEOUT_MS = 3000;
@@ -96,11 +93,6 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
 
   get isEnabled(): boolean {
     return this.updater.isSupported();
-  }
-
-  private get feedUrl(): string {
-    const ctor = this.constructor as typeof UpdatesService;
-    return `${ctor.SERVER_HOST}/${ctor.REPO_OWNER}/${ctor.REPO_NAME}/${this.appMeta.platform}-${this.appMeta.arch}/${this.appMeta.version}`;
   }
 
   @postConstruct()
@@ -237,20 +229,11 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     }
 
     this.initialized = true;
-    const feedUrl = this.feedUrl;
     this.log.info("Setting up auto updater", {
-      feedUrl,
       currentVersion: this.appMeta.version,
       platform: this.appMeta.platform,
       arch: this.appMeta.arch,
     });
-
-    try {
-      this.updater.setFeedUrl(feedUrl);
-    } catch (error) {
-      this.log.error("Failed to set feed URL", { error });
-      return;
-    }
 
     this.unsubscribes.push(
       this.updater.onError((error) => this.handleError(error)),
@@ -284,7 +267,6 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     this.log.error("Auto update error", {
       message: error.message,
       stack: error.stack,
-      feedUrl: this.feedUrl,
       state: this.state,
     });
 
