@@ -48,6 +48,7 @@ export default defineConfig(({ mode }) => {
       format: "es",
     },
     build: {
+      outDir: path.join(__dirname, ".vite/renderer/main_window"),
       sourcemap: true,
     },
     envDir: path.resolve(__dirname, "../.."),

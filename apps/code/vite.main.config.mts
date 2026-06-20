@@ -1,3 +1,4 @@
+import { builtinModules } from "node:module";
 import { execFile, execSync } from "node:child_process";
 import {
   closeSync,
@@ -635,9 +636,13 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: mainAliases,
+      conditions: ["node"],
+      mainFields: ["module", "jsnext:main", "jsnext"],
     },
     cacheDir: ".vite/cache",
     build: {
+      outDir: path.join(__dirname, ".vite/build"),
+      emptyOutDir: false,
       target: "node18",
       sourcemap: true,
       minify: false,
@@ -645,8 +650,17 @@ export default defineConfig(({ mode }) => {
       commonjsOptions: {
         transformMixedEsModules: true,
       },
+      lib: {
+        entry: path.resolve(__dirname, "src/main/bootstrap.ts"),
+        formats: ["cjs"],
+        fileName: () => "bootstrap.js",
+      },
       rollupOptions: {
         external: [
+          "electron",
+          "electron/main",
+          ...builtinModules,
+          ...builtinModules.map((m) => `node:${m}`),
           "node-pty",
           "@parcel/watcher",
           "file-icon",

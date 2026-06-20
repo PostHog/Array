@@ -7,7 +7,6 @@ import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerRpm } from "@electron-forge/maker-rpm";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
-import { VitePlugin } from "@electron-forge/plugin-vite";
 import { PublisherGithub } from "@electron-forge/publisher-github";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { MakerAppImage } from "@reforged/maker-appimage";
@@ -370,33 +369,6 @@ const config: ForgeConfig = {
       },
       draft: true,
       prerelease: false,
-    }),
-  ],
-  plugins: [
-    new VitePlugin({
-      build: [
-        {
-          entry: "src/main/bootstrap.ts",
-          config: "vite.main.config.mts",
-          target: "main",
-        },
-        {
-          entry: "src/main/preload.ts",
-          config: "vite.preload.config.mts",
-          target: "preload",
-        },
-        {
-          entry: "node_modules/@posthog/workspace-server/src/serve.ts",
-          config: "vite.workspace-server.config.mts",
-          target: "main",
-        },
-      ],
-      renderer: [
-        {
-          name: "main_window",
-          config: "vite.renderer.config.mts",
-        },
-      ],
     }),
   ],
 };

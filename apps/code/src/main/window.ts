@@ -23,8 +23,8 @@ import { type WindowStateSchema, windowStateStore } from "./utils/store";
 
 const log = logger.scope("window");
 
-declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
-declare const MAIN_WINDOW_VITE_NAME: string;
+const MAIN_WINDOW_VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+const MAIN_WINDOW_VITE_NAME = "main_window";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
