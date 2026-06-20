@@ -101,6 +101,9 @@ const config: Configuration = {
 
   squirrelWindows: {
     name: "PostHogCode",
+    // Squirrel.Windows requires a URL for the install/shortcut icon.
+    iconUrl:
+      "https://raw.githubusercontent.com/PostHog/code/main/apps/code/build/app-icon.ico",
   },
 
   linux: {
