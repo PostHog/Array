@@ -38,35 +38,63 @@ function makeSnapshot(overrides: Partial<HomeSnapshot> = {}): HomeSnapshot {
 }
 
 describe("workstreamTaskFromTask", () => {
-  it("maps a created task to a provisional queued workstream task", () => {
-    const wsTask = workstreamTaskFromTask(makeTask());
-    expect(wsTask).toEqual({
-      id: "task_1",
-      title: "Fix CI",
-      status: "queued",
-      isGenerating: false,
-      needsPermission: false,
-      quickAction: null,
-    });
-  });
-
-  it("records the quick action label when provided", () => {
-    expect(workstreamTaskFromTask(makeTask(), "Fix CI").quickAction).toBe(
-      "Fix CI",
-    );
-  });
-
-  it("prefers the latest run status when present", () => {
-    const wsTask = workstreamTaskFromTask(
-      makeTask({ latest_run: { status: "in_progress" } as Task["latest_run"] }),
-    );
-    expect(wsTask.status).toBe("in_progress");
-  });
-
-  it("falls back to a placeholder title", () => {
-    expect(workstreamTaskFromTask(makeTask({ title: "" })).title).toBe(
-      "New task",
-    );
+  it.each([
+    {
+      name: "provisional queued task with no quick action",
+      task: makeTask(),
+      quickAction: undefined,
+      expected: {
+        id: "task_1",
+        title: "Fix CI",
+        status: "queued",
+        isGenerating: false,
+        needsPermission: false,
+        quickAction: null,
+      },
+    },
+    {
+      name: "records the quick action label when provided",
+      task: makeTask(),
+      quickAction: "Fix CI",
+      expected: {
+        id: "task_1",
+        title: "Fix CI",
+        status: "queued",
+        isGenerating: false,
+        needsPermission: false,
+        quickAction: "Fix CI",
+      },
+    },
+    {
+      name: "prefers the latest run status when present",
+      task: makeTask({
+        latest_run: { status: "in_progress" } as Task["latest_run"],
+      }),
+      quickAction: undefined,
+      expected: {
+        id: "task_1",
+        title: "Fix CI",
+        status: "in_progress",
+        isGenerating: false,
+        needsPermission: false,
+        quickAction: null,
+      },
+    },
+    {
+      name: "falls back to a placeholder title",
+      task: makeTask({ title: "" }),
+      quickAction: undefined,
+      expected: {
+        id: "task_1",
+        title: "New task",
+        status: "queued",
+        isGenerating: false,
+        needsPermission: false,
+        quickAction: null,
+      },
+    },
+  ])("$name", ({ task, quickAction, expected }) => {
+    expect(workstreamTaskFromTask(task, quickAction)).toEqual(expected);
   });
 });
 

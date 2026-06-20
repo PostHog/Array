@@ -6,6 +6,7 @@ import {
   useBoundActions,
 } from "@posthog/ui/features/home/hooks/useBoundActions";
 import { useRunWorkstreamAction } from "@posthog/ui/features/home/hooks/useRunWorkstreamAction";
+import { useQuickActionStore } from "@posthog/ui/features/home/stores/quickActionStore";
 import {
   SITUATION_VISUAL,
   type SituationCss,
@@ -52,7 +53,10 @@ export function useWorkstreamPresentation(
 ): WorkstreamPresentation {
   const { data: tasks = [] } = useTasks();
   const boundActions = useBoundActions(workstream);
-  const { run, isPending: isRunningAction } = useRunWorkstreamAction();
+  const { run } = useRunWorkstreamAction();
+  const isRunningAction = useQuickActionStore(
+    (s) => !!s.inFlight[workstream.id],
+  );
 
   const pr = workstream.pr;
   const headTask = workstream.tasks[0];

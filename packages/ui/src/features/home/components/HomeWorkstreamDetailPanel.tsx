@@ -26,6 +26,7 @@ import {
   useBoundActions,
 } from "@posthog/ui/features/home/hooks/useBoundActions";
 import { useRunWorkstreamAction } from "@posthog/ui/features/home/hooks/useRunWorkstreamAction";
+import { useQuickActionStore } from "@posthog/ui/features/home/stores/quickActionStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
@@ -41,8 +42,10 @@ interface Props {
 export function HomeWorkstreamDetailPanel({ workstream, onClose }: Props) {
   const { data: allTasks = [] } = useTasks();
   const boundActions = useBoundActions(workstream);
-  const { run: runAction, isPending: isRunningAction } =
-    useRunWorkstreamAction();
+  const { run: runAction } = useRunWorkstreamAction();
+  const isRunningAction = useQuickActionStore(
+    (s) => !!s.inFlight[workstream.id],
+  );
 
   const pr = workstream.pr;
   const headTask = workstream.tasks[0];

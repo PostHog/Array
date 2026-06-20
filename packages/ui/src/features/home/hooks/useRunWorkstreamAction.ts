@@ -13,6 +13,7 @@ import {
 } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { homeKeys } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
+import { useQuickActionStore } from "@posthog/ui/features/home/stores/quickActionStore";
 import { insertOptimisticTask } from "@posthog/ui/features/home/utils/optimisticTask";
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
@@ -24,15 +25,13 @@ import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useRef, useState } from "react";
+import { useCallback } from "react";
 import type { BoundAction } from "./useBoundActions";
 
 const log = logger.scope("home-quick-action");
 
 export interface RunWorkstreamAction {
   run: (action: BoundAction, workstream: HomeWorkstream) => void;
-  /** True while a one-click task is being created, so callers can disable the trigger. */
-  isPending: boolean;
 }
 
 // The agent runs the bound skill when the prompt starts with `/<skill-id>`, so
@@ -55,6 +54,8 @@ function buildSkillPrompt(action: BoundAction): string {
  * offline, signed out, or the repo has no GitHub integration.
  */
 export function useRunWorkstreamAction(): RunWorkstreamAction {
+  // Shared, workstream-keyed in-flight state so the row and the open detail panel
+  // (independent hook instances) can't both start a task for the same workstream.
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );
@@ -72,8 +73,6 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
   const refreshHome = useAuthenticatedMutation((client) =>
     client.refreshHomeSnapshot(),
   );
-  const inFlightRef = useRef(false);
-  const [isPending, setIsPending] = useState(false);
 
   const run = useCallback(
     (action: BoundAction, workstream: HomeWorkstream) => {
@@ -102,9 +101,9 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
         return;
       }
 
-      if (inFlightRef.current) return;
-      inFlightRef.current = true;
-      setIsPending(true);
+      const quickActions = useQuickActionStore.getState();
+      if (quickActions.inFlight[workstream.id]) return;
+      quickActions.start(workstream.id);
 
       void (async () => {
         try {
@@ -184,8 +183,7 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
           log.error("Quick action task creation threw", { error });
           fallbackToTaskInput();
         } finally {
-          inFlightRef.current = false;
-          setIsPending(false);
+          useQuickActionStore.getState().finish(workstream.id);
         }
       })();
     },
@@ -195,7 +193,7 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
       cloudRegion,
       invalidateTasks,
       queryClient,
-      refreshHome,
+      refreshHome.mutateAsync,
       getUserIntegrationIdForRepo,
       lastUsedAdapter,
       lastUsedModel,
@@ -204,5 +202,5 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
     ],
   );
 
-  return { run, isPending };
+  return { run };
 }
