@@ -13,9 +13,9 @@ import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem
 import {
   navigateToAgents,
   navigateToCanvas,
-  navigateToHome,
   navigateToInbox,
   navigateToSkills,
+  navigateToWebsiteHome,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { Box, Flex } from "@radix-ui/themes";
@@ -32,8 +32,10 @@ const NON_CANVAS_WEBSITE_PREFIXES = [
 ];
 
 // The global nav brought over from the Code app — a single icon+label row each,
-// no rail. These are app-wide destinations (they leave the Channels space for
-// the corresponding Code view); the channel tree below is channel browsing.
+// no rail. Home points at the /website/home mirror so it stays in the Channels
+// space (same shared HomeView, channels chrome kept); the other rows are
+// app-wide destinations that leave the Channels space for the Code view. The
+// channel tree below is channel browsing.
 function ChannelsNav() {
   const view = useAppView();
   // Active on the canvas surfaces: the channels index, a channel, or a canvas —
@@ -59,7 +61,7 @@ function ChannelsNav() {
         }
         label="Home"
         isActive={view.type === "home"}
-        onClick={navigateToHome}
+        onClick={navigateToWebsiteHome}
       />
       <SidebarItem
         depth={0}
