@@ -9,6 +9,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 import { loadEnv } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { buildExternals } from "./runtime-dependencies";
 import {
   createForceDevModeDefine,
   createPosthogPlugin,
@@ -41,13 +42,8 @@ const nodeExternals = [
 ];
 
 // Native .node modules can't be bundled — they stay external and resolve from
-// the staged node_modules at runtime (see scripts/before-pack.cjs).
-const nativeModules = [
-  "node-pty",
-  "@parcel/watcher",
-  "file-icon",
-  "better-sqlite3",
-];
+// the staged node_modules at runtime (see scripts/before-pack.ts).
+const nativeModules = buildExternals;
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(__dirname, "../.."), "");

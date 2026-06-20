@@ -1,10 +1,23 @@
-"use strict";
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import path from "node:path";
+import {
+  macOnlyNativeModules,
+  runtimeNativeModules,
+} from "../runtime-dependencies";
 
-const { cpSync, existsSync, mkdirSync, rmSync } = require("node:fs");
-const path = require("node:path");
-const { Arch } = require("electron-builder");
+const ARCH_X64 = 1;
+const ARCH_ARM64 = 3;
 
-function copyDep(name, rootNodeModules, localNodeModules) {
+type BeforePackContext = {
+  packager: { platform: { name: string } };
+  arch: number;
+};
+
+function copyDep(
+  name: string,
+  rootNodeModules: string,
+  localNodeModules: string,
+): boolean {
   const src = path.join(rootNodeModules, name);
   if (!existsSync(src)) {
     const localSrc = path.join(localNodeModules, name);
@@ -29,7 +42,11 @@ function copyDep(name, rootNodeModules, localNodeModules) {
   return true;
 }
 
-function copyRequiredDep(name, rootNodeModules, localNodeModules) {
+function copyRequiredDep(
+  name: string,
+  rootNodeModules: string,
+  localNodeModules: string,
+): void {
   if (!copyDep(name, rootNodeModules, localNodeModules)) {
     throw new Error(
       `[before-pack] required native dependency "${name}" not found in node_modules`,
@@ -37,7 +54,7 @@ function copyRequiredDep(name, rootNodeModules, localNodeModules) {
   }
 }
 
-module.exports = async function beforePack(context) {
+export default async function beforePack(context: BeforePackContext) {
   const platformName = context.packager.platform.name;
   const arch = context.arch;
 
@@ -48,47 +65,28 @@ module.exports = async function beforePack(context) {
   console.log(`[before-pack] root node_modules: ${rootNodeModules}`);
   console.log(`[before-pack] local node_modules: ${localNodeModules}`);
 
-  const requiredDeps = ["node-pty", "better-sqlite3", "@parcel/watcher"];
-  const optionalDeps = [
-    "node-addon-api",
-    "micromatch",
-    "is-glob",
-    "detect-libc",
-    "braces",
-    "picomatch",
-    "is-extglob",
-    "fill-range",
-    "to-regex-range",
-    "is-number",
-    "bindings",
-    "file-uri-to-path",
-    "prebuild-install",
-  ];
-
-  for (const dep of requiredDeps) {
-    copyRequiredDep(dep, rootNodeModules, localNodeModules);
-  }
-  for (const dep of optionalDeps) {
+  for (const dep of runtimeNativeModules) {
     copyDep(dep, rootNodeModules, localNodeModules);
   }
 
   if (platformName === "mac") {
     const watcherPkg =
-      arch === Arch.x64
+      arch === ARCH_X64
         ? "@parcel/watcher-darwin-x64"
         : "@parcel/watcher-darwin-arm64";
     copyRequiredDep(watcherPkg, rootNodeModules, localNodeModules);
-    copyDep("file-icon", rootNodeModules, localNodeModules);
-    copyDep("p-map", rootNodeModules, localNodeModules);
+    for (const dep of macOnlyNativeModules) {
+      copyDep(dep, rootNodeModules, localNodeModules);
+    }
   } else if (platformName === "win") {
     const watcherPkg =
-      arch === Arch.arm64
+      arch === ARCH_ARM64
         ? "@parcel/watcher-win32-arm64"
         : "@parcel/watcher-win32-x64";
     copyRequiredDep(watcherPkg, rootNodeModules, localNodeModules);
   } else if (platformName === "linux") {
     const watcherPkg =
-      arch === Arch.arm64
+      arch === ARCH_ARM64
         ? "@parcel/watcher-linux-arm64-glibc"
         : "@parcel/watcher-linux-x64-glibc";
     copyRequiredDep(watcherPkg, rootNodeModules, localNodeModules);
@@ -99,4 +97,4 @@ module.exports = async function beforePack(context) {
     rmSync(watcherBuild, { recursive: true, force: true });
     console.log("[before-pack] removed @parcel/watcher/build");
   }
-};
+}

@@ -95,9 +95,9 @@ COPYFILE_DISABLE=1 tar -cf - \
       cd apps/code
       pnpm exec electron-vite build
       if [ -n "${MAKE_TARGETS:-}" ]; then
-        pnpm exec electron-builder build --linux $MAKE_TARGETS --${ARCH} --config electron-builder.config.cjs
+        pnpm exec electron-builder build --linux $MAKE_TARGETS --${ARCH} --config electron-builder.ts
       else
-        pnpm exec electron-builder build --linux --${ARCH} --config electron-builder.config.cjs
+        pnpm exec electron-builder build --linux --${ARCH} --config electron-builder.ts
       fi
       mkdir -p /out
       cp -r out/. /out/

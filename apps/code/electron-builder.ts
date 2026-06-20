@@ -1,10 +1,14 @@
-"use strict";
+import { createRequire } from "node:module";
+import type { Configuration } from "electron-builder";
+import { asarUnpackGlobs, packagedFileGlobs } from "./runtime-dependencies";
+import beforePack from "./scripts/before-pack";
+
+const require = createRequire(import.meta.url);
 
 const skipNotarize =
   process.env.SKIP_NOTARIZE === "1" || !process.env.APPLE_TEAM_ID;
 
-/** @type {import('electron-builder').Configuration} */
-module.exports = {
+const config: Configuration = {
   // Original release bundle id; changing it breaks existing installs' data dir and Keychain entries.
   appId: "com.posthog.array",
   productName: "PostHog Code",
@@ -20,31 +24,14 @@ module.exports = {
   nodeGypRebuild: false,
   generateUpdatesFilesForAllChannels: true,
 
-  beforePack: "./scripts/before-pack.cjs",
+  beforePack,
 
   files: [
     ".vite/build/**/*",
     ".vite/renderer/**/*",
     "package.json",
     "!node_modules/**/*",
-    "node_modules/node-pty/**/*",
-    "node_modules/node-addon-api/**/*",
-    "node_modules/@parcel/**/*",
-    "node_modules/better-sqlite3/**/*",
-    "node_modules/bindings/**/*",
-    "node_modules/file-uri-to-path/**/*",
-    "node_modules/file-icon/**/*",
-    "node_modules/p-map/**/*",
-    "node_modules/prebuild-install/**/*",
-    "node_modules/micromatch/**/*",
-    "node_modules/is-glob/**/*",
-    "node_modules/detect-libc/**/*",
-    "node_modules/braces/**/*",
-    "node_modules/picomatch/**/*",
-    "node_modules/is-extglob/**/*",
-    "node_modules/fill-range/**/*",
-    "node_modules/to-regex-range/**/*",
-    "node_modules/is-number/**/*",
+    ...packagedFileGlobs,
   ],
 
   asarUnpack: [
@@ -54,12 +41,7 @@ module.exports = {
     ".vite/build/plugins/posthog/**",
     ".vite/build/codex-acp/**",
     ".vite/build/grammars/**",
-    "node_modules/node-pty/**",
-    "node_modules/@parcel/**",
-    "node_modules/file-icon/**",
-    "node_modules/better-sqlite3/**",
-    "node_modules/bindings/**",
-    "node_modules/file-uri-to-path/**",
+    ...asarUnpackGlobs,
   ],
 
   extraResources: [
@@ -143,3 +125,5 @@ module.exports = {
     releaseType: "draft",
   },
 };
+
+export default config;
