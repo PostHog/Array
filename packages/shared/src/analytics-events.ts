@@ -844,6 +844,7 @@ export const ANALYTICS_EVENTS = {
   COMMAND_MENU_ACTION: "Command menu action",
   COMMAND_CENTER_VIEWED: "Command center viewed",
   SKILL_BUTTON_TRIGGERED: "Skill button triggered",
+  POSTHOG_WEB_OPENED: "PostHog web opened",
 
   // Permission events
   PERMISSION_RESPONDED: "Permission responded",
@@ -978,6 +979,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.COMMAND_MENU_ACTION]: CommandMenuActionProperties;
   [ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED]: never;
   [ANALYTICS_EVENTS.SKILL_BUTTON_TRIGGERED]: SkillButtonTriggeredProperties;
+  [ANALYTICS_EVENTS.POSTHOG_WEB_OPENED]: never;
 
   // Permission events
   [ANALYTICS_EVENTS.PERMISSION_RESPONDED]: PermissionRespondedProperties;

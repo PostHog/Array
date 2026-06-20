@@ -27,6 +27,7 @@ describe("FeedbackModal", () => {
 
   it.each([
     { mode: "leaving" as const, expected: "Skip", missing: "Cancel" },
+    { mode: "posthog-web" as const, expected: "Skip", missing: "Cancel" },
     { mode: "feedback" as const, expected: "Cancel", missing: "Skip" },
   ])(
     "shows the $expected secondary button in $mode mode",
@@ -52,9 +53,9 @@ describe("FeedbackModal", () => {
     expect(submit).not.toHaveAttribute("aria-disabled", "true");
   });
 
-  it("captures the trimmed response and finishes on submit", async () => {
+  it("captures the trimmed response with its source and finishes on submit", async () => {
     const user = userEvent.setup();
-    const onFinished = renderModal("leaving");
+    const onFinished = renderModal("posthog-web");
 
     await user.type(
       screen.getByPlaceholderText("Share your feedback"),
@@ -64,7 +65,12 @@ describe("FeedbackModal", () => {
 
     expect(captureSurveyResponse).toHaveBeenCalledTimes(1);
     expect(captureSurveyResponse).toHaveBeenCalledWith(
-      expect.objectContaining({ response: "great work" }),
+      expect.objectContaining({
+        responses: [
+          expect.objectContaining({ response: "great work" }),
+          expect.objectContaining({ response: "Visiting PostHog web" }),
+        ],
+      }),
     );
     expect(onFinished).toHaveBeenCalledTimes(1);
   });

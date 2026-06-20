@@ -7,6 +7,7 @@ import {
   PROJECT_BLUEBIRD_FLAG,
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
@@ -33,6 +34,7 @@ import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import LogosLandscape from "@posthog/ui/primitives/Logo";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
+import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { GlobalEventHandlers } from "@posthog/ui/shell/GlobalEventHandlers";
 import { HeaderRow } from "@posthog/ui/shell/HeaderRow";
@@ -100,26 +102,34 @@ function RootLayout() {
   const navigate = useNavigate();
 
   // Feedback modal shown in the Channels title bar. Opened directly by "Leave
-  // feedback" (mode "feedback") or as an intercept before "Go back to Code"
-  // (mode "leaving", which routes to /code once submitted or skipped).
+  // feedback" (mode "feedback"), or as an intercept before navigating away —
+  // "Go back to Code" (mode "leaving") and "PostHog Web" (mode "posthog-web"),
+  // each of which routes once the modal is submitted or skipped.
   const [feedbackMode, setFeedbackMode] = useState<FeedbackModalMode | null>(
     null,
   );
+  const currentProjectId = useAuthStateValue((s) => s.currentProjectId);
+
+  // Both "Go back to Code" and "PostHog Web" open the feedback modal first and
+  // perform their navigation only once it's submitted or skipped.
   const handleFeedbackFinished = () => {
-    const wasLeaving = feedbackMode === "leaving";
+    const finishedMode = feedbackMode;
     setFeedbackMode(null);
-    if (wasLeaving) navigate({ to: "/code" });
+    if (finishedMode === "leaving") {
+      navigate({ to: "/code" });
+    } else if (finishedMode === "posthog-web") {
+      // Open the user's current project on the correct cloud (region comes from
+      // cloudRegion via getPostHogUrl), falling back to the account root.
+      const url = getPostHogUrl(
+        currentProjectId ? `/project/${currentProjectId}` : "/",
+      );
+      if (url) void openUrlInBrowser(url);
+    }
   };
 
-  // "PostHog Web" button in the Channels title bar: opens the user's current
-  // project on the correct cloud (region comes from cloudRegion via
-  // getPostHogUrl), falling back to the account root when no project is set.
-  const currentProjectId = useAuthStateValue((s) => s.currentProjectId);
   const handleOpenPostHogWeb = () => {
-    const url = getPostHogUrl(
-      currentProjectId ? `/project/${currentProjectId}` : "/",
-    );
-    if (url) void openUrlInBrowser(url);
+    track(ANALYTICS_EVENTS.POSTHOG_WEB_OPENED);
+    setFeedbackMode("posthog-web");
   };
   const {
     isOpen: commandMenuOpen,
