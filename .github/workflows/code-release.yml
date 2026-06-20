@@ -4,10 +4,18 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      # Temporary: full pre-merge dry run of the release pipeline on this branch.
+      # Builds, signs and verifies every platform but does NOT create or publish a
+      # GitHub release (all release steps are gated to tags below). Remove this
+      # entry before merging.
+      - refactor/electron-vite
+  workflow_dispatch:
 
 concurrency:
-  group: code-release
-  cancel-in-progress: false
+  # Per-ref so a branch dry run never serializes behind or cancels a tag release.
+  group: code-release-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
 
 jobs:
   prepare-release:
@@ -29,6 +37,7 @@ jobs:
           echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Create draft release if absent
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           APP_VERSION: ${{ steps.version.outputs.version }}
@@ -97,12 +106,16 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Extract version from tag
+      - name: Resolve version
         id: version
         run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "Version: $TAG_VERSION"
-          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="$(jq -r .version apps/code/package.json)"
+          fi
+          echo "Version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set version in package.json
         env:
@@ -208,6 +221,7 @@ jobs:
           retention-days: 7
 
       - name: Upload release artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           APP_VERSION: ${{ steps.version.outputs.version }}
@@ -216,6 +230,18 @@ jobs:
             apps/code/out/*.dmg \
             apps/code/out/*-mac.zip \
             apps/code/out/*.blockmap
+
+      - name: Upload build artifacts (dry run)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: code-macos-${{ matrix.arch }}
+          path: |
+            apps/code/out/*.dmg
+            apps/code/out/*-mac.zip
+            apps/code/out/*.blockmap
+            apps/code/out/latest-mac.yml
+          retention-days: 7
 
       - name: Upload mac manifest artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -259,15 +285,19 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Extract version from tag
+      - name: Resolve version
         id: version
         shell: pwsh
         env:
           GITHUB_REF: ${{ github.ref }}
         run: |
-          $tagVersion = "$env:GITHUB_REF" -replace "refs/tags/v", ""
-          echo "Version: $tagVersion"
-          echo "version=$tagVersion" >> $env:GITHUB_OUTPUT
+          if ("$env:GITHUB_REF" -like "refs/tags/v*") {
+            $version = "$env:GITHUB_REF" -replace "refs/tags/v", ""
+          } else {
+            $version = (Get-Content apps/code/package.json -Raw | ConvertFrom-Json).version
+          }
+          echo "Version: $version"
+          echo "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Set version in package.json
         shell: pwsh
@@ -309,6 +339,7 @@ jobs:
           pnpm exec electron-builder build --win --x64 --publish never --config electron-builder.ts
 
       - name: Upload release artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -329,6 +360,19 @@ jobs:
           }
           $files = $items | Select-Object -ExpandProperty FullName
           gh release upload "v$env:APP_VERSION" --repo PostHog/code --clobber @files
+
+      - name: Upload build artifacts (dry run)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: code-windows
+          path: |
+            apps/code/out/*.exe
+            apps/code/out/latest.yml
+            apps/code/out/*.blockmap
+            apps/code/out/squirrel-windows/**
+          retention-days: 7
+          if-no-files-found: ignore
 
   publish-linux:
     needs: [prepare-release]
@@ -381,12 +425,16 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Extract version from tag
+      - name: Resolve version
         id: version
         run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "Version: $TAG_VERSION"
-          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="$(jq -r .version apps/code/package.json)"
+          fi
+          echo "Version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set version in package.json
         env:
@@ -430,6 +478,7 @@ jobs:
           fi
 
       - name: Upload release artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           APP_VERSION: ${{ steps.version.outputs.version }}
@@ -439,12 +488,23 @@ jobs:
             apps/code/out/*.deb \
             apps/code/out/*.rpm
 
+      - name: Upload build artifacts (dry run)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: code-linux-${{ matrix.arch }}
+          path: |
+            apps/code/out/*.AppImage
+            apps/code/out/*.deb
+            apps/code/out/*.rpm
+          retention-days: 7
+
   finalize-release:
     needs: [publish-macos, publish-windows, publish-linux]
     # macOS is the primary platform: publish the release as long as macOS built
     # successfully, even if Windows or Linux failed. always() is required so this
     # job isn't skipped when a non-macOS publish job fails.
-    if: always() && needs.publish-macos.result == 'success'
+    if: always() && needs.publish-macos.result == 'success' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
