@@ -59,6 +59,9 @@ export type ReportCardProps = DefaultReportCardProps | ArchivedReportCardProps;
 export function ReportCard(props: ReportCardProps) {
   const { report, isSelected = false, onRowClick } = props;
   const isArchived = props.variant === "archived";
+  // Resolved reports are terminal (their implementation PR merged): shown in the
+  // Archive tab for reference, badged as resolved, with no restore action.
+  const isResolved = report.status === "resolved";
 
   const detailRoute = isArchived
     ? {
@@ -113,7 +116,7 @@ export function ReportCard(props: ReportCardProps) {
   };
 
   const hasMetadata = isArchived
-    ? !!hasSource || !!updatedAtLabel || !!reasonLabel
+    ? !!hasSource || !!updatedAtLabel || !!reasonLabel || isResolved
     : !!repoSlug ||
       hasSource ||
       !isReady ||
@@ -196,20 +199,24 @@ export function ReportCard(props: ReportCardProps) {
                 <>
                   {updatedAtLabel && (
                     <Text className="text-[12px] text-gray-10">
-                      Archived {updatedAtLabel}
+                      {isResolved ? "Resolved" : "Archived"} {updatedAtLabel}
                     </Text>
                   )}
-                  {reasonLabel && (
-                    <Text
-                      className="max-w-full truncate rounded-(--radius-1) bg-(--gray-3) px-1.5 py-0.5 text-[11px] text-gray-11"
-                      title={
-                        dismissalNote
-                          ? `${reasonLabel} — ${dismissalNote}`
-                          : reasonLabel
-                      }
-                    >
-                      {reasonLabel}
-                    </Text>
+                  {isResolved ? (
+                    <SignalReportStatusBadge status={report.status} />
+                  ) : (
+                    reasonLabel && (
+                      <Text
+                        className="max-w-full truncate rounded-(--radius-1) bg-(--gray-3) px-1.5 py-0.5 text-[11px] text-gray-11"
+                        title={
+                          dismissalNote
+                            ? `${reasonLabel} — ${dismissalNote}`
+                            : reasonLabel
+                        }
+                      >
+                        {reasonLabel}
+                      </Text>
+                    )
                   )}
                 </>
               ) : (
@@ -237,23 +244,26 @@ export function ReportCard(props: ReportCardProps) {
         className="shrink-0 border-border border-l pl-3"
       >
         {props.variant === "archived" ? (
-          <UiButton
-            type="button"
-            variant="soft"
-            color="gray"
-            size="1"
-            aria-label="Restore this report to the inbox"
-            tooltipContent="Restore to inbox"
-            loading={props.isRestorePending}
-            disabled={props.isRestorePending}
-            onClick={(event) => {
-              event.stopPropagation();
-              props.onRestore();
-            }}
-          >
-            <ArrowCounterClockwiseIcon size={14} />
-            Restore
-          </UiButton>
+          // Resolved reports are terminal — reference-only, no restore action.
+          isResolved ? null : (
+            <UiButton
+              type="button"
+              variant="soft"
+              color="gray"
+              size="1"
+              aria-label="Restore this report to the inbox"
+              tooltipContent="Restore to inbox"
+              loading={props.isRestorePending}
+              disabled={props.isRestorePending}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onRestore();
+              }}
+            >
+              <ArrowCounterClockwiseIcon size={14} />
+              Restore
+            </UiButton>
+          )
         ) : (
           <>
             {updatedAtLabel && (

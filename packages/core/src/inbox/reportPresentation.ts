@@ -50,6 +50,8 @@ export function inboxStatusLabel(status: SignalReportStatus): string {
   switch (status) {
     case "ready":
       return "Ready";
+    case "resolved":
+      return "Resolved";
     case "pending_input":
       return "Needs input";
     case "in_progress":
@@ -72,6 +74,8 @@ export function inboxStatusLabel(status: SignalReportStatus): string {
 export function inboxStatusAccentCss(status: SignalReportStatus): string {
   switch (status) {
     case "ready":
+      return "var(--green-9)";
+    case "resolved":
       return "var(--green-9)";
     case "pending_input":
       return "var(--violet-9)";
