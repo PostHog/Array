@@ -66,9 +66,10 @@ describe("mergeConversationItems", () => {
     // ...and the pinned bubble is upgraded to the context-bearing copy so the
     // CONTEXT.md chip renders in place instead of as a second message.
     const pinned = result.find((i) => i.id === "opt");
-    expect(pinned?.type === "user_message" && pinned.content).toBe(
-      echoedWithContext,
-    );
+    expect(pinned?.type).toBe("user_message");
+    if (pinned?.type !== "user_message")
+      throw new Error("expected user_message");
+    expect(pinned.content).toBe(echoedWithContext);
   });
 
   it("cloud: dedupe is no-op when there are no optimistic items", () => {
