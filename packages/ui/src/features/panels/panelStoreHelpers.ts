@@ -1,4 +1,5 @@
 import * as core from "@posthog/core/panels/panelStoreHelpers";
+import * as coreTree from "@posthog/core/panels/panelTree";
 import type { TaskLayout } from "./panelLayoutStore";
 import type { GroupPanel, LeafPanel, PanelNode, Tab } from "./panelTypes";
 
@@ -66,6 +67,17 @@ export const isFileTabActiveInTree = core.isFileTabActiveInTree as (
   tree: PanelNode,
   filePath: string,
 ) => boolean;
+
+export const findTabInTree = coreTree.findTabInTree as (
+  node: PanelNode,
+  tabId: string,
+) => { panelId: string; tab: Tab } | null;
+
+export const updateTreeNode = coreTree.updateTreeNode as (
+  node: PanelNode,
+  targetId: string,
+  updateFn: (node: PanelNode) => PanelNode,
+) => PanelNode;
 
 export function updateTaskLayout(
   state: { taskLayouts: Record<string, TaskLayout> },

@@ -16,6 +16,7 @@ import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import type { Node as PmNode } from "@tiptap/pm/model";
 import type { Editor } from "@tiptap/react";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
+import { useOpenUrl } from "../../../shell/useOpenUrl";
 import { readAbsoluteFile } from "../hostApi";
 import type { ChipType, MentionChipAttrs } from "./MentionChipNode";
 
@@ -77,18 +78,19 @@ function DefaultChip({
   selected: boolean;
   onRemove: () => void;
 }) {
+  const openUrl = useOpenUrl();
   const isCommand = type === "command";
   const prefix = isCommand ? "/" : "@";
   const isFile = type === "file";
   const isFolder = type === "folder";
   const isGithubRef = type === "github_issue" || type === "github_pr";
-  const canOpenUrl = isGithubRef && /^https:\/\//.test(id);
+  const canOpenUrl = isGithubRef && /^https?:\/\//i.test(id);
 
   const chipContent = (
     <Chip
       size="xs"
       contentEditable={false}
-      onClick={canOpenUrl ? () => window.open(id, "_blank") : undefined}
+      onClick={canOpenUrl ? () => openUrl(id) : undefined}
       className={`${chipBase} max-w-full whitespace-nowrap ${isGithubRef ? "cursor-pointer!" : "cursor-default! active:translate-y-0!"} ${isCommand ? "cli-slash-command" : "cli-file-mention"} ${selected ? selectedRing : ""}`}
     >
       <IconCloseButton type={type as ChipType} onRemove={onRemove} />

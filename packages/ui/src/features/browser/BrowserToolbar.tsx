@@ -35,16 +35,20 @@ export function BrowserToolbar({ browserId }: BrowserToolbarProps) {
     isLoading,
   } = useBrowserViewState(browserId);
 
-  const [inputValue, setInputValue] = useState(url);
+  const lastRealUrlRef = useRef(url.startsWith("data:") ? "" : url);
+  if (url && !url.startsWith("data:")) lastRealUrlRef.current = url;
+  const displayUrl = url.startsWith("data:") ? lastRealUrlRef.current : url;
+
+  const [inputValue, setInputValue] = useState(displayUrl);
   const inputRef = useRef<HTMLInputElement>(null);
   const isEditingRef = useRef(false);
   const didNavigateRef = useRef(false);
 
   useEffect(() => {
     if (!isEditingRef.current) {
-      setInputValue(url);
+      setInputValue(displayUrl);
     }
-  }, [url]);
+  }, [displayUrl]);
 
   const handleNavigate = useCallback(() => {
     const target = normalizeUrl(inputValue);
@@ -61,6 +65,7 @@ export function BrowserToolbar({ browserId }: BrowserToolbarProps) {
       gap="1"
       px="2"
       style={{
+        position: "relative",
         height: "36px",
         flexShrink: 0,
         borderBottom: "1px solid var(--gray-4)",
@@ -108,7 +113,7 @@ export function BrowserToolbar({ browserId }: BrowserToolbarProps) {
         onBlur={() => {
           isEditingRef.current = false;
           if (!didNavigateRef.current) {
-            setInputValue(url);
+            setInputValue(displayUrl);
           }
           didNavigateRef.current = false;
         }}
@@ -116,11 +121,19 @@ export function BrowserToolbar({ browserId }: BrowserToolbarProps) {
         onKeyDown={(e) => {
           if (e.key === "Enter") handleNavigate();
           if (e.key === "Escape") {
-            setInputValue(url);
+            setInputValue(displayUrl);
             inputRef.current?.blur();
           }
         }}
       />
+      {isLoading && (
+        <div
+          className="absolute inset-x-0 bottom-0 h-[2px] overflow-hidden"
+          style={{ zIndex: 1 }}
+        >
+          <div className="h-full w-1/3 animate-browser-loading rounded-full bg-(--accent-9)" />
+        </div>
+      )}
     </Flex>
   );
 }

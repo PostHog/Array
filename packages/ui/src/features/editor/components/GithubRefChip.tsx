@@ -1,6 +1,7 @@
 import { GithubLogoIcon, GitPullRequestIcon } from "@phosphor-icons/react";
 import { Chip } from "@posthog/quill";
 import type { ReactNode } from "react";
+import { useOpenUrl } from "../../../shell/useOpenUrl";
 
 /**
  * DOM attribute carrying the chip's GitHub URL. The conversation context menu
@@ -18,12 +19,13 @@ export function GithubRefChip({
   kind: "issue" | "pr";
   children: ReactNode;
 }) {
+  const openUrl = useOpenUrl();
   const Icon = kind === "pr" ? GitPullRequestIcon : GithubLogoIcon;
   return (
     <Chip
       {...{ [GITHUB_REF_URL_ATTR]: href }}
       size="xs"
-      onClick={() => window.open(href, "_blank")}
+      onClick={() => openUrl(href)}
       className="cli-file-mention mx-0.5 max-w-full cursor-pointer! whitespace-nowrap pl-1 align-middle active:translate-y-0"
     >
       <Icon size={10} />

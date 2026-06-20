@@ -13,6 +13,7 @@ import { inject, injectable, preDestroy } from "inversify";
 import type { ElectronMainWindow } from "../../platform-adapters/electron-main-window";
 import { logger } from "../../utils/logger";
 import { buildErrorPage } from "./errorPage";
+import { buildNewTabPage } from "./newTabPage";
 
 const log = logger.scope("browser-service");
 
@@ -56,6 +57,10 @@ export class BrowserService
   create(browserId: string, url: string): void {
     if (this.browsers.has(browserId)) return;
 
+    // Replace blank new-tab sentinel with the Hedge Browser welcome page.
+    const effectiveUrl =
+      !url || url === "about:blank" ? buildNewTabPage() : url;
+
     const view = new WebContentsView({
       webPreferences: {
         nodeIntegration: false,
@@ -74,11 +79,20 @@ export class BrowserService
       win.contentView.addChildView(view);
     }
 
-    // Guards any handler that fires in the narrow window between
-    // this.browsers.delete() and webContents.close() in destroy().
+    // Seed the address bar immediately so it shows the target URL before any
+    // navigation events fire (getURL() returns "" on a fresh WebContentsView).
+    this.emit("navigate", {
+      browserId,
+      url: effectiveUrl,
+      title: "",
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: true,
+    });
+
+    // Guards handlers that fire between browsers.delete() and webContents.close().
     const alive = () => this.browsers.has(browserId);
 
-    // Block navigation to anything other than http/https.
     view.webContents.on("will-navigate", (event, targetUrl) => {
       if (!this.isSafeUrl(targetUrl)) {
         event.preventDefault();
@@ -94,8 +108,7 @@ export class BrowserService
       }
     });
 
-    // Open window.open() calls as new browser tabs in the app instead of
-    // spawning an uncontrolled native window.
+    // Route window.open() into the app as a new tab instead of a native window.
     view.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
       if (alive() && this.isSafeUrl(targetUrl)) {
         this.emit("openUrl", { url: targetUrl });
@@ -128,10 +141,7 @@ export class BrowserService
       if (alive()) this.emitNavigate(entry);
     });
 
-    // Show a branded error page when a URL fails to load (DNS errors, timeouts, etc.).
-    // Error codes < 0 are Chromium net errors; -3 is ABORTED (e.g. caused by our own
-    // navigation lock, or the user pressing Stop) — skip those to avoid flashing the
-    // error page during normal navigation.
+    // -3 is ABORTED (our own navigation lock or user pressing Stop) — skip to avoid flashing an error page.
     view.webContents.on(
       "did-fail-load",
       (_event, errorCode, _errorDescription, validatedURL, isMainFrame) => {
@@ -185,6 +195,12 @@ export class BrowserService
               shell.openExternal(wc.getURL()).catch(() => {});
             },
           }),
+          new MenuItem({
+            label: "Copy page URL",
+            click: () => {
+              clipboard.writeText(wc.getURL());
+            },
+          }),
           new MenuItem({ type: "separator" }),
         );
       }
@@ -203,19 +219,16 @@ export class BrowserService
       if (mainWin) menu.popup({ window: mainWin });
     });
 
-    if (url && url !== "about:blank") {
-      view.webContents.loadURL(url).catch((err) => {
-        log.warn("Failed to load URL", url, err);
-      });
-    }
+    view.webContents.loadURL(effectiveUrl).catch((err) => {
+      log.warn("Failed to load URL", effectiveUrl, err);
+    });
   }
 
   destroy(browserId: string): void {
     const entry = this.browsers.get(browserId);
     if (!entry) return;
 
-    // Remove from map first so any in-flight event callbacks (alive() check)
-    // become no-ops before we start tearing down.
+    // Delete first so in-flight handlers (alive() check) become no-ops before teardown.
     this.browsers.delete(browserId);
 
     const win = this.mainWindow.getBrowserWindow();
@@ -228,8 +241,7 @@ export class BrowserService
     }
 
     try {
-      // Remove all listeners before close() so closures referencing entry
-      // are released immediately rather than waiting for GC.
+      // removeAllListeners before close() drops closure references immediately instead of waiting for GC.
       entry.view.webContents.removeAllListeners();
       entry.view.webContents.close();
     } catch {

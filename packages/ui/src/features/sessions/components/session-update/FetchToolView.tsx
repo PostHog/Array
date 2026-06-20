@@ -1,5 +1,6 @@
 import { Globe } from "@phosphor-icons/react";
 import { Link } from "@radix-ui/themes";
+import { useOpenUrl } from "../../../../shell/useOpenUrl";
 import { ToolRow } from "./ToolRow";
 import {
   ContentPre,
@@ -25,6 +26,7 @@ export function FetchToolView({
     turnComplete,
   );
 
+  const openUrl = useOpenUrl();
   const resourceLink = findResourceLink(content);
   const fetchedContent = getContentText(content) ?? "";
   const hasContent = fetchedContent.trim().length > 0;
@@ -43,10 +45,12 @@ export function FetchToolView({
         >
           <Link
             href={url}
-            target="_blank"
-            rel="noopener noreferrer"
             className="break-all text-[13px]"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openUrl(url);
+            }}
           >
             {url}
           </Link>

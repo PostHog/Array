@@ -359,7 +359,8 @@
                       "!@posthog/platform",
                       "!@posthog/platform/*",
                       "!@posthog/quill",
-                      "!@posthog/quill-charts"
+                      "!@posthog/quill-charts",
+                      "!@posthog/host-router/react"
                     ],
                     "message": "ui must run in any JS environment."
                   }

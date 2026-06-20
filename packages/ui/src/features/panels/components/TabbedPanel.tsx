@@ -109,6 +109,21 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
     }
   };
 
+  // Hide the active browser view when a dropdown opens so it doesn't cover the menu
+  // (WebContentsView is a native layer that ignores CSS z-index).
+  const handleAddDropdownOpenChange = useCallback(
+    (open: boolean) => {
+      const activeTab = content.tabs.find((t) => t.id === content.activeTabId);
+      if (activeTab?.data?.type === "browser") {
+        hostClient.browser.setVisible.mutate({
+          browserId: activeTab.data.browserId,
+          visible: !open,
+        });
+      }
+    },
+    [content.tabs, content.activeTabId, hostClient],
+  );
+
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const { ref: droppableRef } = useDroppable({
     id: `tab-bar-${panelId}`,
@@ -171,6 +186,7 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
           <Flex
             ref={tabBarRef}
             className="scrollbar-overlay absolute top-0 right-0 left-0 h-[36px] items-start"
+            style={{ zIndex: 1 }}
           >
             {content.tabs.map((tab, index) => (
               <PanelTab
@@ -202,35 +218,47 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
-            {content.droppable && (onAddTerminal || onAddBrowser) && (
-              <DropdownMenu.Root>
-                <Tooltip content="New tab" side="bottom">
-                  <DropdownMenu.Trigger>
-                    <TabBarButton ariaLabel="Add tab" onClick={() => {}}>
-                      <Plus size={14} />
-                    </TabBarButton>
-                  </DropdownMenu.Trigger>
-                </Tooltip>
-                <DropdownMenu.Content side="bottom" align="start" size="1">
-                  {onAddTerminal && (
+            {content.droppable &&
+              (onAddTerminal || onAddBrowser) &&
+              (onAddTerminal && onAddBrowser ? (
+                <DropdownMenu.Root onOpenChange={handleAddDropdownOpenChange}>
+                  <Tooltip content="New tab" side="bottom">
+                    <DropdownMenu.Trigger>
+                      <TabBarButton ariaLabel="Add tab" onClick={() => {}}>
+                        <Plus size={14} />
+                      </TabBarButton>
+                    </DropdownMenu.Trigger>
+                  </Tooltip>
+                  <DropdownMenu.Content side="bottom" align="start" size="1">
                     <DropdownMenu.Item onClick={onAddTerminal}>
                       <Flex align="center" gap="2">
                         <Terminal size={13} />
                         New terminal
                       </Flex>
                     </DropdownMenu.Item>
-                  )}
-                  {onAddBrowser && (
                     <DropdownMenu.Item onClick={onAddBrowser}>
                       <Flex align="center" gap="2">
                         <GlobeSimple size={13} />
                         New browser tab
                       </Flex>
                     </DropdownMenu.Item>
-                  )}
-                </DropdownMenu.Content>
-              </DropdownMenu.Root>
-            )}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
+              ) : (
+                <Tooltip
+                  content={onAddTerminal ? "New terminal" : "New browser tab"}
+                  side="bottom"
+                >
+                  <TabBarButton
+                    ariaLabel={
+                      onAddTerminal ? "New terminal" : "New browser tab"
+                    }
+                    onClick={onAddTerminal ?? onAddBrowser ?? (() => {})}
+                  >
+                    <Plus size={14} />
+                  </TabBarButton>
+                </Tooltip>
+              ))}
             {/* Spacer to increase DND area */}
             {content.droppable && (
               <Box flexShrink="0" className="h-[32px] min-w-[90px]" />
@@ -242,6 +270,7 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
             <Flex
               align="center"
               className="absolute top-0 right-0 h-[32px] border-b border-b-(--gray-6) border-l border-l-(--gray-6) bg-(--color-background)"
+              style={{ zIndex: 2 }}
             >
               {rightContent}
               {content.droppable && onAddTerminal && (

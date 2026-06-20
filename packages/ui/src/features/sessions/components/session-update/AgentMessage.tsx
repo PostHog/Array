@@ -127,10 +127,19 @@ function ChatLink({
       e.preventDefault();
       if (taskId) {
         openBrowserUrl(taskId, href);
+        track(ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT, {
+          destination: "embedded_browser",
+        });
+        track(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
+          source: "chat_link",
+          has_initial_url: true,
+        });
+      } else {
+        openExternalUrl(href);
+        track(ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT, {
+          destination: "system_browser",
+        });
       }
-      track(ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT, {
-        destination: "embedded_browser",
-      });
     },
     [href, taskId, openBrowserUrl],
   );
@@ -145,10 +154,21 @@ function ChatLink({
       if (!result.action) return;
       switch (result.action.type) {
         case "open-embedded":
-          if (taskId) openBrowserUrl(taskId, href);
-          track(ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT, {
-            destination: "embedded_browser",
-          });
+          if (taskId) {
+            openBrowserUrl(taskId, href);
+            track(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
+              source: "chat_link",
+              has_initial_url: true,
+            });
+            track(ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT, {
+              destination: "embedded_browser",
+            });
+          } else {
+            openExternalUrl(href);
+            track(ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT, {
+              destination: "system_browser",
+            });
+          }
           break;
         case "open-external":
           openExternalUrl(href);
@@ -167,7 +187,7 @@ function ChatLink({
     [href, taskId, openBrowserUrl, hostClient],
   );
 
-  return (
+  const anchor = (
     <a
       href={href}
       onClick={handleClick}
@@ -193,6 +213,14 @@ function ChatLink({
         <path d="M5.25 6.75L10.5 1.5" />
       </svg>
     </a>
+  );
+
+  if (!href) return anchor;
+
+  return (
+    <Tooltip content={href} side="top" delayDuration={600}>
+      {anchor}
+    </Tooltip>
   );
 }
 

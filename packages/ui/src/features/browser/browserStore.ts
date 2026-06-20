@@ -27,6 +27,10 @@ const defaultBrowserState = (): BrowserViewState => ({
   canGoForward: false,
 });
 
+const FALLBACK_BROWSER_STATE: BrowserViewState = Object.freeze(
+  defaultBrowserState(),
+);
+
 export const useBrowserStore = create<BrowserStoreState>((set) => ({
   browsers: {},
 
@@ -49,5 +53,7 @@ export const useBrowserStore = create<BrowserStoreState>((set) => ({
 }));
 
 export function useBrowserViewState(browserId: string): BrowserViewState {
-  return useBrowserStore((s) => s.browsers[browserId] ?? defaultBrowserState());
+  return useBrowserStore(
+    (s) => s.browsers[browserId] ?? FALLBACK_BROWSER_STATE,
+  );
 }

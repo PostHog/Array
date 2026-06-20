@@ -710,7 +710,7 @@ export function addTerminalTab(
 export function addBrowserTab(
   layout: TaskLayout,
   panelId: string,
-  url = "https://www.google.com",
+  url = "about:blank",
 ): Partial<TaskLayout> {
   const browserId = `browser-${Date.now()}`;
   const updatedTree = updateTreeNode(layout.panelTree, panelId, (panel) => {

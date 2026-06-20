@@ -4,6 +4,7 @@ import {
   parsePrNumber,
 } from "@posthog/core/git-interaction/prStatus";
 import { Button, Flex, Spinner, Text } from "@radix-ui/themes";
+import { useOpenUrl } from "../../../shell/useOpenUrl";
 import { getPrVisualIcon } from "../prIcon";
 
 interface PRBadgeLinkProps {
@@ -47,6 +48,7 @@ export function PRBadgeLink({
   attachedRight = false,
   compact = false,
 }: PRBadgeLinkProps) {
+  const openUrl = useOpenUrl();
   const config = getPrVisualConfig(prState, merged, draft);
   const PrIcon = getPrVisualIcon(config.icon);
   const prNumber = parsePrNumber(prUrl);
@@ -55,9 +57,11 @@ export function PRBadgeLink({
     return (
       <a
         href={prUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openUrl(prUrl);
+        }}
         className={`inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] no-underline ${COMPACT_COLOR_CLASSES[config.color]}`}
       >
         {isPrPending ? (
@@ -83,9 +87,11 @@ export function PRBadgeLink({
     >
       <a
         href={prUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openUrl(prUrl);
+        }}
       >
         <Flex align="center" gap="2">
           {isPrPending ? (

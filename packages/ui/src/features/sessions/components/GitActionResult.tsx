@@ -6,7 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { GitActionType } from "@posthog/ui/features/sessions/components/GitActionMessage";
-import { openExternalUrl } from "@posthog/ui/shell/openExternal";
+import { useOpenUrl } from "@posthog/ui/shell/useOpenUrl";
 import { Badge, Box, Button, Flex, Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 
@@ -43,9 +43,7 @@ export function GitActionResult({
     ),
   );
 
-  const handleOpenUrl = (url: string) => {
-    openExternalUrl(url);
-  };
+  const handleOpenUrl = useOpenUrl();
 
   const showCommit = commitInfo != null;
   const showPrLink = repoInfo?.compareUrl != null;

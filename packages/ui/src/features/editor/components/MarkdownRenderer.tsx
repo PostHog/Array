@@ -12,6 +12,7 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { PluggableList } from "unified";
 import { openExternalUrl } from "../../../shell/openExternal";
+import { useOpenUrl } from "../../../shell/useOpenUrl";
 
 interface MarkdownRendererProps {
   content: string;
@@ -37,132 +38,138 @@ const HeadingText = ({ children }: { children: React.ReactNode }) => (
   </Text>
 );
 
-export const baseComponents: Components = {
-  h1: ({ children }) => <HeadingText>{children}</HeadingText>,
-  h2: ({ children }) => <HeadingText>{children}</HeadingText>,
-  h3: ({ children }) => <HeadingText>{children}</HeadingText>,
-  h4: ({ children }) => <HeadingText>{children}</HeadingText>,
-  h5: ({ children }) => <HeadingText>{children}</HeadingText>,
-  h6: ({ children }) => <HeadingText>{children}</HeadingText>,
-  p: ({ children }) => (
-    <Text as="p" className="mb-2">
-      {children}
-    </Text>
-  ),
-  blockquote: ({ children }) => (
-    <Blockquote size="1" mb="2" style={{ borderColor: "var(--accent-6)" }}>
-      {children}
-    </Blockquote>
-  ),
-  code: ({ children, className }) => {
-    const match = className?.match(/language-(\w+)/);
-    if (!match) {
-      return <Code variant="ghost">{children}</Code>;
-    }
-    return (
-      <HighlightedCode
-        code={String(children).replace(/\n$/, "")}
-        language={match[1]}
-      />
-    );
-  },
-  pre: ({ children }) => <CodeBlock size="1">{children}</CodeBlock>,
-  em: ({ children }) => <em>{children}</em>,
-  i: ({ children }) => <i>{children}</i>,
-  strong: ({ children }) => <strong>{children}</strong>,
-  del: ({ children }) => (
-    <del className="text-(--gray-9) line-through">{children}</del>
-  ),
-  a: ({ href, children }) => {
-    const githubRef = href ? parseGithubIssueUrl(href) : null;
-    if (githubRef) {
-      const isAutoLink = typeof children === "string" && children === href;
-      const label = isAutoLink
-        ? `${githubRef.owner}/${githubRef.repo}#${githubRef.number}`
-        : children;
-      return (
-        <GithubRefChip href={githubRef.normalizedUrl} kind={githubRef.kind}>
-          {label}
-        </GithubRefChip>
-      );
-    }
-    const isDeeplink = isPostHogCodeDeeplink(href);
-    return (
-      <a
-        href={href}
-        onClick={(event) => {
-          if (!isDeeplink || !href) return;
-          event.preventDefault();
-          openExternalUrl(href);
-        }}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="markdown-link inline-flex items-center gap-[2px]"
-      >
+function makeBaseComponents(openUrl: (url: string) => void): Components {
+  return {
+    h1: ({ children }) => <HeadingText>{children}</HeadingText>,
+    h2: ({ children }) => <HeadingText>{children}</HeadingText>,
+    h3: ({ children }) => <HeadingText>{children}</HeadingText>,
+    h4: ({ children }) => <HeadingText>{children}</HeadingText>,
+    h5: ({ children }) => <HeadingText>{children}</HeadingText>,
+    h6: ({ children }) => <HeadingText>{children}</HeadingText>,
+    p: ({ children }) => (
+      <Text as="p" className="mb-2">
         {children}
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="var(--accent-11)"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-label="external link icon"
-          role="img"
-          className="ml-1 shrink-0"
-        >
-          <path d="M4.5 1.5H2.25C1.836 1.5 1.5 1.836 1.5 2.25V9.75C1.5 10.164 1.836 10.5 2.25 10.5H9.75C10.164 10.5 10.5 10.164 10.5 9.75V7.5" />
-          <path d="M7.5 1.5H10.5V4.5" />
-          <path d="M5.25 6.75L10.5 1.5" />
-        </svg>
-      </a>
-    );
-  },
-  kbd: ({ children }) => <Kbd>{children}</Kbd>,
-  ul: ({ children }) => (
-    <List as="ul" size="1">
-      {children}
-    </List>
-  ),
-  ol: ({ children }) => (
-    <List as="ol" size="1">
-      {children}
-    </List>
-  ),
-  li: ({ children }) => <ListItem size="1">{children}</ListItem>,
-  hr: () => <Divider size="3" />,
-  // Task list checkbox
-  input: ({ type, checked }) => {
-    if (type === "checkbox") {
+      </Text>
+    ),
+    blockquote: ({ children }) => (
+      <Blockquote size="1" mb="2" style={{ borderColor: "var(--accent-6)" }}>
+        {children}
+      </Blockquote>
+    ),
+    code: ({ children, className }) => {
+      const match = className?.match(/language-(\w+)/);
+      if (!match) {
+        return <Code variant="ghost">{children}</Code>;
+      }
       return (
-        <Checkbox
-          checked={checked}
-          size="1"
-          style={{ verticalAlign: "middle" }}
-          className="mr-1"
+        <HighlightedCode
+          code={String(children).replace(/\n$/, "")}
+          language={match[1]}
         />
       );
-    }
-    return <input type={type} />;
-  },
-  // Table components - plain HTML for size control
-  table: ({ children }) => <table className="mb-3">{children}</table>,
-  thead: ({ children }) => <thead>{children}</thead>,
-  tbody: ({ children }) => <tbody>{children}</tbody>,
-  tr: ({ children }) => <tr className="border-gray-6 border-b">{children}</tr>,
-  th: ({ children, style }) => (
-    <th className="px-2 py-1 text-left text-gray-11" style={style}>
-      {children}
-    </th>
-  ),
-  td: ({ children, style }) => (
-    <td className="px-2 py-1 text-gray-12" style={style}>
-      {children}
-    </td>
-  ),
-};
+    },
+    pre: ({ children }) => <CodeBlock size="1">{children}</CodeBlock>,
+    em: ({ children }) => <em>{children}</em>,
+    i: ({ children }) => <i>{children}</i>,
+    strong: ({ children }) => <strong>{children}</strong>,
+    del: ({ children }) => (
+      <del className="text-(--gray-9) line-through">{children}</del>
+    ),
+    a: ({ href, children }) => {
+      const githubRef = href ? parseGithubIssueUrl(href) : null;
+      if (githubRef) {
+        const isAutoLink = typeof children === "string" && children === href;
+        const label = isAutoLink
+          ? `${githubRef.owner}/${githubRef.repo}#${githubRef.number}`
+          : children;
+        return (
+          <GithubRefChip href={githubRef.normalizedUrl} kind={githubRef.kind}>
+            {label}
+          </GithubRefChip>
+        );
+      }
+      return (
+        <a
+          href={href}
+          onClick={(event) => {
+            if (!href) return;
+            event.preventDefault();
+            openUrl(href);
+          }}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="markdown-link inline-flex items-center gap-[2px]"
+        >
+          {children}
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="var(--accent-11)"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-label="external link icon"
+            role="img"
+            className="ml-1 shrink-0"
+          >
+            <path d="M4.5 1.5H2.25C1.836 1.5 1.5 1.836 1.5 2.25V9.75C1.5 10.164 1.836 10.5 2.25 10.5H9.75C10.164 10.5 10.5 10.164 10.5 9.75V7.5" />
+            <path d="M7.5 1.5H10.5V4.5" />
+            <path d="M5.25 6.75L10.5 1.5" />
+          </svg>
+        </a>
+      );
+    },
+    kbd: ({ children }) => <Kbd>{children}</Kbd>,
+    ul: ({ children }) => (
+      <List as="ul" size="1">
+        {children}
+      </List>
+    ),
+    ol: ({ children }) => (
+      <List as="ol" size="1">
+        {children}
+      </List>
+    ),
+    li: ({ children }) => <ListItem size="1">{children}</ListItem>,
+    hr: () => <Divider size="3" />,
+    // Task list checkbox
+    input: ({ type, checked }) => {
+      if (type === "checkbox") {
+        return (
+          <Checkbox
+            checked={checked}
+            size="1"
+            style={{ verticalAlign: "middle" }}
+            className="mr-1"
+          />
+        );
+      }
+      return <input type={type} />;
+    },
+    // Table components - plain HTML for size control
+    table: ({ children }) => <table className="mb-3">{children}</table>,
+    thead: ({ children }) => <thead>{children}</thead>,
+    tbody: ({ children }) => <tbody>{children}</tbody>,
+    tr: ({ children }) => (
+      <tr className="border-gray-6 border-b">{children}</tr>
+    ),
+    th: ({ children, style }) => (
+      <th className="px-2 py-1 text-left text-gray-11" style={style}>
+        {children}
+      </th>
+    ),
+    td: ({ children, style }) => (
+      <td className="px-2 py-1 text-gray-12" style={style}>
+        {children}
+      </td>
+    ),
+  };
+}
+
+// Static version for module-level use where hooks are unavailable (falls back to system browser).
+export const baseComponents: Components = makeBaseComponents(openExternalUrl);
 
 export const defaultRemarkPlugins = [remarkGfm];
 
@@ -172,17 +179,19 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   componentsOverride,
   rehypePlugins,
 }: MarkdownRendererProps) {
+  const openUrl = useOpenUrl();
   const processedContent = useMemo(
     () => preprocessMarkdown(content),
     [content],
   );
   const plugins = remarkPluginsOverride ?? defaultRemarkPlugins;
+  const baseComponents = useMemo(() => makeBaseComponents(openUrl), [openUrl]);
   const components = useMemo(
     () =>
       componentsOverride
         ? { ...baseComponents, ...componentsOverride }
         : baseComponents,
-    [componentsOverride],
+    [componentsOverride, baseComponents],
   );
   return (
     <ReactMarkdown

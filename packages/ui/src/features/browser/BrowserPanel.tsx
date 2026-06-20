@@ -1,10 +1,14 @@
+import { findTabInTree } from "@posthog/core/panels/panelTree";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { BrowserToolbar } from "@posthog/ui/features/browser/BrowserToolbar";
 import { useBrowserStore } from "@posthog/ui/features/browser/browserStore";
 import { usePanelLayoutState } from "@posthog/ui/features/panels/hooks/usePanelLayoutHooks";
+import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import { Flex } from "@radix-ui/themes";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { track } from "../../shell/analytics";
 
 interface BrowserPanelProps {
   browserId: string;
@@ -25,9 +29,17 @@ export function BrowserPanel({
   const setBrowserState = useBrowserStore((s) => s.setBrowserState);
   const removeBrowser = useBrowserStore((s) => s.removeBrowser);
   const { addBrowserTab, updateTabLabel } = usePanelLayoutState(taskId);
+  const updateBrowserTabUrl = usePanelLayoutStore((s) => s.updateBrowserTabUrl);
   const boundsRafRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
   const visibleRef = useRef(false);
+  const lastBoundsRef = useRef<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const lastVisibleRef = useRef<boolean | null>(null);
   const [viewReady, setViewReady] = useState(false);
 
   // Create the WebContentsView on mount, destroy on unmount.
@@ -46,8 +58,20 @@ export function BrowserPanel({
       if (boundsRafRef.current !== null) {
         cancelAnimationFrame(boundsRafRef.current);
       }
-      client.browser.destroy.mutate({ browserId });
-      removeBrowser(browserId);
+      // Skip destroy if the tab was moved to another panel — create() will be
+      // called by the new BrowserPanel but the guard (browsers.has) returns early,
+      // preserving the WebContentsView without a reload.
+      const layout = usePanelLayoutStore.getState().getLayout(taskId);
+      const tabMoved = layout
+        ? findTabInTree(layout.panelTree, browserId) !== null
+        : false;
+      if (!tabMoved) {
+        client.browser.destroy.mutate({ browserId });
+        removeBrowser(browserId);
+      } else {
+        // Hide the native view so it doesn't float over the UI during re-renders or HMR.
+        client.browser.setVisible.mutate({ browserId, visible: false });
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -56,13 +80,21 @@ export function BrowserPanel({
     if (!contentRef.current || !mountedRef.current) return;
     const rect = contentRef.current.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    client.browser.setBounds.mutate({
-      browserId,
-      x: Math.round(rect.left),
-      y: Math.round(rect.top),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    });
+    const x = Math.round(rect.left);
+    const y = Math.round(rect.top);
+    const width = Math.round(rect.width);
+    const height = Math.round(rect.height);
+    const prev = lastBoundsRef.current;
+    if (
+      prev &&
+      prev.x === x &&
+      prev.y === y &&
+      prev.width === width &&
+      prev.height === height
+    )
+      return;
+    lastBoundsRef.current = { x, y, width, height };
+    client.browser.setBounds.mutate({ browserId, x, y, width, height });
   }, [browserId, client]);
 
   const scheduleSyncBounds = useCallback(() => {
@@ -77,6 +109,7 @@ export function BrowserPanel({
   useEffect(() => {
     if (!viewReady) return;
     const visible = visibleRef.current;
+    lastVisibleRef.current = visible;
     client.browser.setVisible.mutate({ browserId, visible });
     if (visible) syncBounds();
   }, [viewReady, browserId, client, syncBounds]);
@@ -90,7 +123,10 @@ export function BrowserPanel({
       const visible = entry?.isIntersecting ?? false;
       visibleRef.current = visible;
       if (!viewReady) return;
-      client.browser.setVisible.mutate({ browserId, visible });
+      if (lastVisibleRef.current !== visible) {
+        lastVisibleRef.current = visible;
+        client.browser.setVisible.mutate({ browserId, visible });
+      }
       if (visible) scheduleSyncBounds();
     });
 
@@ -127,6 +163,9 @@ export function BrowserPanel({
             canGoForward: data.canGoForward,
             isLoading: data.isLoading,
           });
+          if (!data.isLoading && data.url && !data.url.startsWith("data:")) {
+            updateBrowserTabUrl(taskId, browserId, data.url);
+          }
         },
       },
     ),
@@ -160,6 +199,10 @@ export function BrowserPanel({
     trpc.browser.onOpenUrl.subscriptionOptions(undefined, {
       onData: (data) => {
         addBrowserTab(taskId, panelId, data.url);
+        track(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
+          source: "window_open",
+          has_initial_url: true,
+        });
       },
     }),
   );

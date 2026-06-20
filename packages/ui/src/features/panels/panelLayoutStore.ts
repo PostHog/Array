@@ -21,12 +21,15 @@ import {
   splitPanelTree,
 } from "@posthog/core/panels/panelLayoutTransforms";
 import { createFileTabId } from "@posthog/core/panels/panelStoreHelpers";
-import { findTabInTree } from "@posthog/core/panels/panelTree";
 import { ANALYTICS_EVENTS, getFileExtension } from "@posthog/shared";
 import { persist } from "zustand/middleware";
 import { createWithEqualityFn } from "zustand/traditional";
 import { track } from "../../shell/analytics";
-import { updateTaskLayout } from "./panelStoreHelpers";
+import {
+  findTabInTree,
+  updateTaskLayout,
+  updateTreeNode,
+} from "./panelStoreHelpers";
 import type { PanelNode, Tab } from "./panelTypes";
 
 export interface TaskLayout {
@@ -104,6 +107,7 @@ export interface PanelLayoutStore {
   addTerminalTab: (taskId: string, panelId: string) => void;
   addBrowserTab: (taskId: string, panelId: string, url?: string) => void;
   openBrowserUrl: (taskId: string, url: string) => void;
+  updateBrowserTabUrl: (taskId: string, browserId: string, url: string) => void;
   addActionTab: (
     taskId: string,
     panelId: string,
@@ -408,10 +412,6 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
               coreAddBrowserTab(layout, panelId, url) as Partial<TaskLayout>,
           ),
         );
-        track(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
-          source: url ? "window_open" : "user",
-          has_initial_url: Boolean(url),
-        });
       },
 
       openBrowserUrl: (taskId, url) => {
@@ -424,10 +424,34 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
             (l) => coreAddBrowserTab(l, panelId, url) as Partial<TaskLayout>,
           ),
         );
-        track(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
-          source: "chat_link",
-          has_initial_url: true,
-        });
+      },
+
+      updateBrowserTabUrl: (taskId, browserId, url) => {
+        set((state) =>
+          updateTaskLayout(state, taskId, (layout) => {
+            const location = findTabInTree(layout.panelTree, browserId);
+            if (!location) return {};
+            const updatedTree = updateTreeNode(
+              layout.panelTree,
+              location.panelId,
+              (panel) => {
+                if (panel.type !== "leaf") return panel;
+                return {
+                  ...panel,
+                  content: {
+                    ...panel.content,
+                    tabs: panel.content.tabs.map((t) =>
+                      t.id === browserId && t.data.type === "browser"
+                        ? { ...t, data: { ...t.data, url } }
+                        : t,
+                    ),
+                  },
+                };
+              },
+            );
+            return { panelTree: updatedTree };
+          }),
+        );
       },
 
       addActionTab: (taskId, panelId, action) => {

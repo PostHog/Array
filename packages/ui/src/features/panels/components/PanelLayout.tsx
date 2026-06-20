@@ -1,7 +1,9 @@
 import { DragDropProvider } from "@dnd-kit/react";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import type React from "react";
 import { useCallback, useEffect } from "react";
+import { track } from "../../../shell/analytics";
 import { useDragDropHandlers } from "../hooks/useDragDropHandlers";
 import { usePanelKeyboardShortcuts } from "../hooks/usePanelKeyboardShortcuts";
 import {
@@ -75,6 +77,10 @@ const PanelLayoutRenderer: React.FC<{
   const handleAddBrowser = useCallback(
     (panelId: string) => {
       layoutState.addBrowserTab(taskId, panelId);
+      track(ANALYTICS_EVENTS.BROWSER_TAB_OPENED, {
+        source: "user",
+        has_initial_url: false,
+      });
     },
     [layoutState, taskId],
   );
