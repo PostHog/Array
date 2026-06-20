@@ -79,10 +79,12 @@ module.exports = {
   ],
 
   mac: {
-    target: [
-      { target: "dmg", arch: ["arm64", "x64"] },
-      { target: "zip", arch: ["arm64", "x64"] },
-    ],
+    // Plain target list so the --arm64/--x64 CLI flag selects the arch
+    // (per-arch CI runners). Space-free artifactName so the on-disk filename
+    // matches the (sanitized) url electron-builder writes into latest-mac.yml,
+    // which is what `gh release upload` puts on the GitHub release.
+    target: ["dmg", "zip"],
+    artifactName: "PostHog-Code-${version}-${arch}-mac.${ext}",
     icon: "build/app-icon.icns",
     category: "public.app-category.productivity",
     hardenedRuntime: true,
@@ -97,6 +99,7 @@ module.exports = {
 
   dmg: {
     format: "ULFO",
+    size: "4g",
     background: "build/dmg-background.png",
     icon: "build/app-icon.icns",
     iconSize: 80,
@@ -108,10 +111,8 @@ module.exports = {
   },
 
   win: {
-    target: [
-      { target: "nsis", arch: ["x64"] },
-      { target: "squirrel", arch: ["x64"] },
-    ],
+    target: ["nsis", "squirrel"],
+    artifactName: "PostHog-Code-${version}-${arch}-win.${ext}",
     icon: "build/app-icon.ico",
   },
 
@@ -120,12 +121,16 @@ module.exports = {
     deleteAppDataOnUninstall: false,
   },
 
+  // Match the legacy Forge MakerSquirrel package identity so existing
+  // Squirrel.Windows installs keep auto-updating through the transition.
+  squirrelWindows: {
+    name: "PostHogCode",
+  },
+
   linux: {
-    target: [
-      { target: "AppImage", arch: ["x64", "arm64"] },
-      { target: "deb", arch: ["x64", "arm64"] },
-      { target: "rpm", arch: ["x64", "arm64"] },
-    ],
+    // Plain target list so --arm64/--x64 selects the arch on each runner.
+    // deb/rpm keep their own packageName-based names; AppImage isn't auto-updated.
+    target: ["AppImage", "deb", "rpm"],
     icon: "build/app-icon.png",
     category: "Development",
     mimeTypes: ["x-scheme-handler/posthog-code"],
