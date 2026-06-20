@@ -1195,9 +1195,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
 
   // Project Bluebird (Channels) events
-  [ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED]:
-    | ChannelsSpaceViewedProperties
-    | undefined;
+  [ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED]: ChannelsSpaceViewedProperties;
   [ANALYTICS_EVENTS.CHANNEL_ACTION]: ChannelActionProperties;
   [ANALYTICS_EVENTS.DASHBOARD_ACTION]: DashboardActionProperties;
   [ANALYTICS_EVENTS.CANVAS_PROMPT_SENT]: CanvasPromptSentProperties;

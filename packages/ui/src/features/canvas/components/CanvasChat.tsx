@@ -4,6 +4,7 @@ import { buildCanvasPromptProps } from "@posthog/core/canvas/canvasAnalytics";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useCanvasTemplates } from "@posthog/ui/features/canvas/hooks/useCanvasTemplates";
+import { useFromSuggestion } from "@posthog/ui/features/canvas/hooks/useFromSuggestion";
 import {
   useCanvasChatStore,
   useCanvasThread,
@@ -27,13 +28,11 @@ export function CanvasChat({ threadId }: { threadId: string }) {
   const [draft, setDraft] = useState("");
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  // True once a suggestion chip seeded the composer, until the user types over
-  // it — so the eventual send is attributed to the suggestion.
-  const fromSuggestionRef = useRef(false);
+  const fromSuggestion = useFromSuggestion();
 
   // Drop a suggestion into the composer and focus it (ready to edit or send).
   const fillSuggestion = (text: string) => {
-    fromSuggestionRef.current = true;
+    fromSuggestion.mark();
     setDraft(text);
     inputRef.current?.focus();
   };
@@ -53,10 +52,9 @@ export function CanvasChat({ threadId }: { threadId: string }) {
         surface: "json",
         threadId,
         text,
-        fromSuggestion: fromSuggestionRef.current,
+        fromSuggestion: fromSuggestion.consume(),
       }),
     );
-    fromSuggestionRef.current = false;
     setDraft("");
     void send(threadId, text);
   };
@@ -151,7 +149,7 @@ export function CanvasChat({ threadId }: { threadId: string }) {
             placeholder="Build a canvas of…"
             value={draft}
             onChange={(e) => {
-              fromSuggestionRef.current = false;
+              fromSuggestion.clear();
               setDraft(e.target.value);
             }}
             onKeyDown={(e) => {

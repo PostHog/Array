@@ -64,28 +64,24 @@ describe("buildCanvasPromptProps", () => {
 });
 
 describe("buildContextSaveProps", () => {
-  it("marks the first version when there are no existing instructions", () => {
-    expect(
-      buildContextSaveProps({
-        channelId: "c1",
-        hasInstructions: false,
-        success: true,
-      }),
-    ).toEqual({
-      action_type: "save_version",
-      channel_id: "c1",
-      is_first_version: true,
-      success: true,
-    });
-  });
-
-  it("marks an update when instructions already exist", () => {
-    const props = buildContextSaveProps({
-      channelId: "c1",
-      hasInstructions: true,
-      success: false,
-    });
-    expect(props.is_first_version).toBe(false);
-    expect(props.success).toBe(false);
-  });
+  // is_first_version is the negation of hasInstructions; success passes through
+  // independently. The table covers both inputs against both outcomes.
+  it.each([
+    { hasInstructions: false, success: true, is_first_version: true },
+    { hasInstructions: true, success: true, is_first_version: false },
+    { hasInstructions: false, success: false, is_first_version: true },
+    { hasInstructions: true, success: false, is_first_version: false },
+  ])(
+    "hasInstructions=$hasInstructions success=$success → is_first_version=$is_first_version",
+    ({ hasInstructions, success, is_first_version }) => {
+      expect(
+        buildContextSaveProps({ channelId: "c1", hasInstructions, success }),
+      ).toEqual({
+        action_type: "save_version",
+        channel_id: "c1",
+        is_first_version,
+        success,
+      });
+    },
+  );
 });
