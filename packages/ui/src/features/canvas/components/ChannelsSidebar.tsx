@@ -153,9 +153,6 @@ export function ChannelsSidebar() {
         <ChannelsList />
       </Box>
 
-      {/* Update prompt pinned above Settings, mirroring the Code-mode sidebar
-          (SidebarContent) so a ready update is offered in this space too. The
-          banner renders nothing unless an update is downloading/ready. */}
       <UpdateBanner />
 
       {/* Settings pinned to the bottom. Settings is a full-page route, so this
