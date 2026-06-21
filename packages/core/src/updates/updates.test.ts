@@ -722,6 +722,54 @@ describe("UpdatesService", () => {
     });
   });
 
+  describe("available update guards", () => {
+    it("does not re-check or clear the banner on periodic checks while available", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: "Notes",
+      });
+      expect(service.getStatus()).toMatchObject({
+        available: true,
+        availableVersion: "v2.0.0",
+      });
+
+      const statusHandler = vi.fn();
+      service.on(UpdatesEvent.Status, statusHandler);
+      mockUpdater.check.mockClear();
+
+      const result = service.checkForUpdates("periodic");
+
+      expect(result).toEqual({ success: true });
+      expect(mockUpdater.check).not.toHaveBeenCalled();
+      expect(statusHandler).not.toHaveBeenCalled();
+      expect(service.getStatus()).toMatchObject({
+        available: true,
+        availableVersion: "v2.0.0",
+      });
+    });
+
+    it("starts the download when auto-download is enabled while available", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: null,
+      });
+      expect(service.getStatus()).toMatchObject({ available: true });
+
+      mockUpdater.download.mockClear();
+      service.setAutoDownloadEnabled(true);
+
+      expect(mockUpdater.download).toHaveBeenCalled();
+      expect(service.getStatus()).toMatchObject({
+        downloading: true,
+        availableVersion: "v2.0.0",
+      });
+    });
+  });
+
   describe("check timeout", () => {
     beforeEach(async () => {
       await initializeService(service);

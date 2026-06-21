@@ -126,7 +126,10 @@ export function UpdateAvailableModal() {
                 Downloading...
               </Button>
             ) : (
-              <Button onClick={() => downloadMutation.mutate(undefined)}>
+              <Button
+                onClick={() => downloadMutation.mutate(undefined)}
+                disabled={downloadMutation.isPending}
+              >
                 <ArrowDown size={16} />
                 Download Update
               </Button>

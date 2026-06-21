@@ -50,9 +50,6 @@ export function GeneralSettings() {
   const { data: updatesEnabled } = useQuery(
     hostTRPC.updates.isEnabled.queryOptions(),
   );
-  const autoDownloadMutation = useMutation(
-    hostTRPC.updates.setAutoDownload.mutationOptions(),
-  );
 
   useEffect(() => {
     if (serverPreventSleep !== undefined) {
@@ -81,9 +78,8 @@ export function GeneralSettings() {
         old_value: !checked,
       });
       setDownloadUpdatesAutomatically(checked);
-      autoDownloadMutation.mutate({ enabled: checked });
     },
-    [setDownloadUpdatesAutomatically, autoDownloadMutation],
+    [setDownloadUpdatesAutomatically],
   );
 
   // Chat state

@@ -81,4 +81,18 @@ describe("GitHubReleasesService", () => {
     const service = new GitHubReleasesService();
     await expect(service.listReleases()).rejects.toThrow();
   });
+
+  it("serves stale cache when a later refetch fails", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(0);
+    const service = new GitHubReleasesService();
+    const first = await service.listReleases();
+
+    nowSpy.mockReturnValue(11 * 60_000);
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
+    const second = await service.listReleases();
+
+    expect(second).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    nowSpy.mockRestore();
+  });
 });

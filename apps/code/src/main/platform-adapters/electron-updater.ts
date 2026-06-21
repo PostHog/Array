@@ -45,11 +45,11 @@ export class ElectronUpdater implements IUpdater {
   }
 
   public check(): void {
-    void autoUpdater.checkForUpdates();
+    void autoUpdater.checkForUpdates().catch(() => undefined);
   }
 
   public download(): void {
-    void autoUpdater.downloadUpdate();
+    void autoUpdater.downloadUpdate().catch(() => undefined);
   }
 
   public quitAndInstall(): void {

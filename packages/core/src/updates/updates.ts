@@ -128,6 +128,10 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       this.updater.setAutoDownload(enabled);
     }
     this.log.info("Auto-download preference updated", { enabled });
+
+    if (enabled && this.state === "available") {
+      this.requestDownload();
+    }
   }
 
   requestDownload(): void {
@@ -196,6 +200,14 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
         this.emitStatus(this.stagedStatusPayload());
       }
 
+      return { success: true };
+    }
+
+    if (source === "periodic" && this.state === "available") {
+      this.logStateTransition(this.state, {
+        source,
+        reason: "periodic check skipped because an update is already available",
+      });
       return { success: true };
     }
 

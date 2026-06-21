@@ -72,19 +72,21 @@ function dayLabel(date: Date): string {
   });
 }
 
-function weekLabel(date: Date): string {
+function mondayOf(date: Date): Date {
   const monday = new Date(date);
   monday.setDate(date.getDate() - ((date.getDay() + 6) % 7));
-  return `Week of ${monday.toLocaleDateString(undefined, {
+  return monday;
+}
+
+function weekLabel(date: Date): string {
+  return `Week of ${mondayOf(date).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
   })}`;
 }
 
 function weekKey(date: Date): string {
-  const monday = new Date(date);
-  monday.setDate(date.getDate() - ((date.getDay() + 6) % 7));
-  return `week-${monday.toDateString()}`;
+  return `week-${mondayOf(date).toDateString()}`;
 }
 
 // Groups newest-first releases: each of the last `recentDays` days is its own
@@ -95,10 +97,9 @@ export function groupReleases(
   recentDays: number = RECENT_DAYS,
 ): ReleaseGroup[] {
   const recentCutoff = now - recentDays * DAY_MS;
-  const order: string[] = [];
   const map = new Map<string, ReleaseGroup>();
 
-  releases.forEach((release, index) => {
+  for (const release of releases) {
     const time = release.date ? Date.parse(release.date) : Number.NaN;
     const dated = !Number.isNaN(time);
     let key: string;
@@ -118,12 +119,15 @@ export function groupReleases(
 
     let group = map.get(key);
     if (!group) {
-      group = { key, label, releases: [], isLatest: index === 0 };
+      group = { key, label, releases: [], isLatest: false };
       map.set(key, group);
-      order.push(key);
     }
     group.releases.push(release);
-  });
+  }
 
-  return order.map((key) => map.get(key) as ReleaseGroup);
+  const groups = Array.from(map.values());
+  if (groups.length > 0) {
+    groups[0].isLatest = true;
+  }
+  return groups;
 }
