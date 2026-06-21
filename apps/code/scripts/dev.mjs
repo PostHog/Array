@@ -18,6 +18,14 @@ function killAll(signal = "SIGTERM") {
   }
 }
 
+function onSpawnError(label) {
+  return (err) => {
+    console.error(`Failed to start ${label}: ${err.message}`);
+    killAll("SIGTERM");
+    process.exit(1);
+  };
+}
+
 process.on("SIGINT", () => {
   killAll("SIGTERM");
   process.exit(0);
@@ -47,6 +55,7 @@ async function main() {
     },
   );
   children.push(rendererServer);
+  rendererServer.on("error", onSpawnError("renderer dev server"));
   rendererServer.on("close", (code) => {
     killAll("SIGTERM");
     process.exit(code ?? 0);
@@ -87,6 +96,7 @@ async function main() {
       },
     );
     children.push(electron);
+    electron.on("error", onSpawnError("electron"));
     electron.on("close", (code) => {
       killAll("SIGTERM");
       process.exit(code ?? 0);
@@ -147,6 +157,7 @@ async function main() {
       },
     );
     children.push(child);
+    child.on("error", onSpawnError(`vite watch (${readyKey})`));
     forwardAndCheck(child.stdout, process.stdout, (line) => {
       if (!watchReady[readyKey] && builtPattern.test(line)) {
         watchReady[readyKey] = true;
@@ -154,7 +165,6 @@ async function main() {
       }
     });
     forwardAndCheck(child.stderr, process.stderr, () => {});
-    return child;
   }
 
   startWatchBuild("vite.main.config.mts", "main");

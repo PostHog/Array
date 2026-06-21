@@ -146,18 +146,21 @@ jobs:
       - name: Build release artifacts
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
+          MATRIX_ARCH: ${{ matrix.arch }}
         working-directory: apps/code
         run: |
           node scripts/build.mjs
-          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+          if [[ "$MATRIX_ARCH" == "arm64" ]]; then
             pnpm exec electron-builder build --mac --arm64 --publish never --config electron-builder.config.cjs
           else
             pnpm exec electron-builder build --mac --x64 --publish never --config electron-builder.config.cjs
           fi
 
       - name: Verify package
+        env:
+          MATRIX_ARCH: ${{ matrix.arch }}
         run: |
-          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+          if [[ "$MATRIX_ARCH" == "arm64" ]]; then
             APP_BUNDLE="apps/code/out/mac-arm64/PostHog Code.app"
           else
             APP_BUNDLE="apps/code/out/mac/PostHog Code.app"
@@ -416,10 +419,11 @@ jobs:
       - name: Build release artifacts
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
+          MATRIX_ARCH: ${{ matrix.arch }}
         working-directory: apps/code
         run: |
           node scripts/build.mjs
-          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+          if [[ "$MATRIX_ARCH" == "arm64" ]]; then
             pnpm exec electron-builder build --linux --arm64 --publish never --config electron-builder.config.cjs
           else
             pnpm exec electron-builder build --linux --x64 --publish never --config electron-builder.config.cjs
