@@ -514,7 +514,7 @@ export class SessionService {
    */
   private previewConfigOptionsCache = new Map<
     string,
-    Promise<SessionConfigOption[]>
+    { promise: Promise<SessionConfigOption[]>; fetchedAt: number }
   >();
   /**
    * Initial cloud prompt text (user message + any channel CONTEXT.md block),
@@ -3136,9 +3136,10 @@ export class SessionService {
     initialModel?: string,
   ): Promise<void> {
     const cacheKey = `${apiHost}::${adapter}`;
-    let pending = this.previewConfigOptionsCache.get(cacheKey);
-    if (!pending) {
-      pending = this.d.trpc.agent.getPreviewConfigOptions
+    let entry = this.previewConfigOptionsCache.get(cacheKey);
+    if (!entry || Date.now() - entry.fetchedAt > 300_000) {
+      if (entry) this.previewConfigOptionsCache.delete(cacheKey);
+      const promise = this.d.trpc.agent.getPreviewConfigOptions
         .query({ apiHost, adapter })
         .catch((err: unknown) => {
           this.d.log.warn(
@@ -3149,13 +3150,18 @@ export class SessionService {
               error: err,
             },
           );
-          this.previewConfigOptionsCache.delete(cacheKey);
+          // Only evict if this entry is still the cached one; a concurrent
+          // refresh may have replaced it and we must not drop the fresh entry.
+          if (this.previewConfigOptionsCache.get(cacheKey) === entry) {
+            this.previewConfigOptionsCache.delete(cacheKey);
+          }
           return [] as SessionConfigOption[];
         });
-      this.previewConfigOptionsCache.set(cacheKey, pending);
+      entry = { promise, fetchedAt: Date.now() };
+      this.previewConfigOptionsCache.set(cacheKey, entry);
     }
 
-    const previewOptions = await pending;
+    const previewOptions = await entry.promise;
     const extras = previewOptions
       .filter(
         (opt) => opt.category === "model" || opt.category === "thought_level",

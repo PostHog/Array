@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { container } from "../../di/container";
-import { MAIN_TOKENS } from "../../di/tokens";
+import { DISCORD_PRESENCE_SERVICE } from "../../di/tokens";
 import {
   DiscordPresenceServiceEvent,
   discordPresenceStateSchema,
@@ -10,7 +10,7 @@ import type { DiscordPresenceService } from "../../services/discord-presence/ser
 import { publicProcedure, router } from "../trpc";
 
 const getService = () =>
-  container.get<DiscordPresenceService>(MAIN_TOKENS.DiscordPresenceService);
+  container.get<DiscordPresenceService>(DISCORD_PRESENCE_SERVICE);
 
 export const discordPresenceRouter = router({
   getState: publicProcedure
