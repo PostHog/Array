@@ -1,4 +1,6 @@
 import {
+  CaretDown,
+  CaretRight,
   Folder,
   Package,
   Robot,
@@ -14,6 +16,14 @@ import type { SkillInfo, SkillSource } from "@posthog/shared";
 import { Badge, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useEffect, useRef } from "react";
 import { SkillListCard } from "./SkillListCard";
+import type { SkillViewMode } from "./skillsViewStore";
+
+export function humanizeName(name: string): string {
+  return name
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
 export const SOURCE_CONFIG: Record<
   SkillSource,
@@ -66,7 +76,7 @@ export function SkillCard({
     <SkillListCard
       cardRef={ref}
       icon={<Icon size={14} weight="duotone" className="text-gray-11" />}
-      title={skill.name}
+      title={humanizeName(skill.name)}
       subtitle={skill.description || undefined}
       isSelected={isSelected}
       onClick={onClick}
@@ -98,6 +108,57 @@ export function SkillCard({
   );
 }
 
+export function SkillGridCard({
+  skill,
+  isSelected,
+  onClick,
+  scrollIntoView,
+  onScrolledIntoView,
+  issues = [],
+}: SkillCardProps) {
+  const config = SOURCE_CONFIG[skill.source];
+  const Icon = config?.icon ?? Package;
+
+  const ref = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!scrollIntoView) return;
+    ref.current?.scrollIntoView({ block: "center" });
+    onScrolledIntoView?.();
+  }, [scrollIntoView, onScrolledIntoView]);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={onClick}
+      className={`flex w-full cursor-pointer flex-col gap-2 rounded-lg border p-2.5 text-left transition-colors ${
+        isSelected
+          ? "border-accent-8 bg-accent-3"
+          : "border-gray-6 bg-gray-2 hover:border-gray-8 hover:bg-gray-3"
+      }`}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex items-center justify-center rounded bg-gray-4 p-1.5">
+          <Icon size={16} weight="duotone" className="text-gray-11" />
+        </div>
+        {issues.length > 0 && (
+          <Warning size={12} className="shrink-0 text-amber-11" />
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="line-clamp-2 font-medium text-[12px] text-gray-12 leading-tight">
+          {humanizeName(skill.name)}
+        </p>
+        {skill.description && (
+          <p className="mt-0.5 line-clamp-2 text-[11px] text-gray-9 leading-tight">
+            {skill.description}
+          </p>
+        )}
+      </div>
+    </button>
+  );
+}
+
 interface SkillSectionProps {
   title: string;
   skills: SkillInfo[];
@@ -106,6 +167,9 @@ interface SkillSectionProps {
   scrollToPath: string | null;
   onScrolledIntoView: () => void;
   analysis?: SkillAnalysis;
+  viewMode?: SkillViewMode;
+  isCollapsed?: boolean;
+  onToggle?: () => void;
 }
 
 export function SkillSection({
@@ -116,25 +180,63 @@ export function SkillSection({
   scrollToPath,
   onScrolledIntoView,
   analysis,
+  viewMode = "list",
+  isCollapsed = false,
+  onToggle,
 }: SkillSectionProps) {
   return (
     <Flex direction="column" gap="1">
-      <Text className="mb-1 font-medium text-[12px] text-gray-9 uppercase tracking-wider">
-        {title}
-      </Text>
-      <Flex direction="column" gap="1">
-        {skills.map((skill) => (
-          <SkillCard
-            key={skill.path}
-            skill={skill}
-            isSelected={selectedPath === skill.path}
-            onClick={() => onSelect(skill.path)}
-            scrollIntoView={scrollToPath === skill.path}
-            onScrolledIntoView={onScrolledIntoView}
-            issues={analysis?.[skill.path]}
-          />
+      {onToggle ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="mb-1 flex items-center gap-1.5 text-left text-gray-9 hover:text-gray-11"
+        >
+          {isCollapsed ? (
+            <CaretRight size={11} className="shrink-0" />
+          ) : (
+            <CaretDown size={11} className="shrink-0" />
+          )}
+          <span className="font-medium text-[12px] uppercase tracking-wider">
+            {title}
+          </span>
+          <span className="text-[11px] text-gray-7">{skills.length}</span>
+        </button>
+      ) : (
+        <Text className="mb-1 font-medium text-[12px] text-gray-9 uppercase tracking-wider">
+          {title}
+        </Text>
+      )}
+      {!isCollapsed &&
+        (viewMode === "grid" ? (
+          <div className="grid grid-cols-2 gap-2">
+            {skills.map((skill) => (
+              <SkillGridCard
+                key={skill.path}
+                skill={skill}
+                isSelected={selectedPath === skill.path}
+                onClick={() => onSelect(skill.path)}
+                scrollIntoView={scrollToPath === skill.path}
+                onScrolledIntoView={onScrolledIntoView}
+                issues={analysis?.[skill.path]}
+              />
+            ))}
+          </div>
+        ) : (
+          <Flex direction="column" gap="1">
+            {skills.map((skill) => (
+              <SkillCard
+                key={skill.path}
+                skill={skill}
+                isSelected={selectedPath === skill.path}
+                onClick={() => onSelect(skill.path)}
+                scrollIntoView={scrollToPath === skill.path}
+                onScrolledIntoView={onScrolledIntoView}
+                issues={analysis?.[skill.path]}
+              />
+            ))}
+          </Flex>
         ))}
-      </Flex>
     </Flex>
   );
 }

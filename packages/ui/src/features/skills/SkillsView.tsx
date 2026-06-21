@@ -1,4 +1,12 @@
-import { Lightbulb, MagnifyingGlass, Plus } from "@phosphor-icons/react";
+import {
+  CaretDown,
+  CaretRight,
+  Lightbulb,
+  List,
+  MagnifyingGlass,
+  Plus,
+  SquaresFour,
+} from "@phosphor-icons/react";
 import { analyzeSkills } from "@posthog/core/skills/analyzeSkills";
 import { Tabs, TabsList, TabsTrigger } from "@posthog/quill";
 import type { SkillInfo, SkillSource } from "@posthog/shared";
@@ -7,25 +15,54 @@ import {
   Button,
   Flex,
   ScrollArea,
+  Spinner,
   Text,
   TextField,
+  Tooltip,
 } from "@radix-ui/themes";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSetHeaderContent } from "../../hooks/useSetHeaderContent";
 import { ResizableSidebar } from "../../primitives/ResizableSidebar";
+import { toast } from "../../primitives/toast";
 import { MarketplaceBrowse } from "./MarketplaceBrowse";
-import { NewSkillDialog } from "./NewSkillDialog";
-import { SkillSection, SOURCE_CONFIG } from "./SkillCard";
+import {
+  SkillCard,
+  SkillGridCard,
+  SkillSection,
+  SOURCE_CONFIG,
+} from "./SkillCard";
 import { SkillDetailPanel } from "./SkillDetailPanel";
+import { isSkillExistsError, skillErrorDescription } from "./skillErrors";
 import {
   useRequestedSkillName,
   useSkillsSelectionActions,
 } from "./skillsSelectionStore";
 import { useSkillsSidebarStore } from "./skillsSidebarStore";
+import { useSkillsViewStore } from "./skillsViewStore";
 import { TeamSkillsTab } from "./TeamSkillsTab";
+import { useCreateSkill } from "./useSkillMutations";
 import { useSkills } from "./useSkills";
 import { useSkillsWatcher } from "./useSkillsWatcher";
 import { useTeamSkills } from "./useTeamSkills";
+
+function getSkillCategory(name: string): string {
+  const word = name.split("-")[0] ?? "";
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+function groupByCategory(skills: SkillInfo[]): [string, SkillInfo[]][] {
+  const map = new Map<string, SkillInfo[]>();
+  for (const skill of skills) {
+    const cat = getSkillCategory(skill.name);
+    const existing = map.get(cat);
+    if (existing) {
+      existing.push(skill);
+    } else {
+      map.set(cat, [skill]);
+    }
+  }
+  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
 
 const SOURCE_ORDER: SkillSource[] = [
   "user",
@@ -47,7 +84,9 @@ export function SkillsView() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [scrollToPath, setScrollToPath] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [newSkillOpen, setNewSkillOpen] = useState(false);
+  const [justCreatedPath, setJustCreatedPath] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const createSkill = useCreateSkill();
 
   const { data: teamListing } = useTeamSkills(skills);
   const teamAvailable = teamListing?.available ?? false;
@@ -62,6 +101,23 @@ export function SkillsView() {
     setIsResizing,
   } = useSkillsSidebarStore();
 
+  const { viewMode, setViewMode } = useSkillsViewStore();
+
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleCategory = useCallback((key: string) => {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
   const selectedSkill = useMemo(() => {
     if (selectedPath === null || skills.length === 0) return null;
     return skills.find((s) => s.path === selectedPath) ?? null;
@@ -69,7 +125,36 @@ export function SkillsView() {
 
   const handleSelect = useCallback((path: string) => {
     setSelectedPath((prev) => (prev === path ? null : path));
+    setJustCreatedPath(null);
   }, []);
+
+  const handleNewSkill = useCallback(async () => {
+    setIsCreating(true);
+    try {
+      let name = "new-skill";
+      for (let i = 2; i <= 20; i++) {
+        try {
+          const result = await createSkill.mutateAsync({ scope: "user", name });
+          setSelectedPath(result.path);
+          setJustCreatedPath(result.path);
+          setScrollToPath(result.path);
+          return;
+        } catch (err) {
+          if (isSkillExistsError(err) && i <= 20) {
+            name = `new-skill-${i}`;
+          } else {
+            throw err;
+          }
+        }
+      }
+    } catch (error) {
+      toast.error("Failed to create skill", {
+        description: skillErrorDescription(error),
+      });
+    } finally {
+      setIsCreating(false);
+    }
+  }, [createSkill]);
 
   // Another surface (e.g. the scout helper links) can ask to open a specific
   // skill by name; honor it once the skill list has loaded, then clear it.
@@ -89,6 +174,7 @@ export function SkillsView() {
 
   const handleCloseSidebar = useCallback(() => {
     setSelectedPath(null);
+    setJustCreatedPath(null);
   }, []);
 
   const analysis = useMemo(() => analyzeSkills(skills), [skills]);
@@ -114,6 +200,31 @@ export function SkillsView() {
     }
     return map;
   }, [skills, searchQuery]);
+
+  const allCollapsibleKeys = useMemo(() => {
+    const keys: string[] = [];
+    for (const source of SOURCE_ORDER) {
+      const items = grouped.get(source);
+      if (!items || items.length === 0) continue;
+      keys.push(`source:${source}`);
+      if (source === "bundled" || source === "codex") {
+        for (const [cat] of groupByCategory(items)) {
+          keys.push(`${source}:${cat}`);
+        }
+      }
+    }
+    return keys;
+  }, [grouped]);
+
+  const allCollapsed =
+    allCollapsibleKeys.length > 0 &&
+    allCollapsibleKeys.every((k) => collapsedCategories.has(k));
+
+  const expandAll = useCallback(() => setCollapsedCategories(new Set()), []);
+  const collapseAll = useCallback(
+    () => setCollapsedCategories(new Set(allCollapsibleKeys)),
+    [allCollapsibleKeys],
+  );
 
   const headerContent = useMemo(
     () => (
@@ -167,7 +278,7 @@ export function SkillsView() {
               className="scroll-area-constrain-width h-full"
             >
               <Box px="4" py="3">
-                <Flex pb="3" gap="2" align="center">
+                <Flex pb="2" gap="2" align="center">
                   <Box flexGrow="1">
                     <TextField.Root
                       size="2"
@@ -184,11 +295,45 @@ export function SkillsView() {
                   <Button
                     size="2"
                     variant="soft"
-                    onClick={() => setNewSkillOpen(true)}
+                    onClick={() => void handleNewSkill()}
+                    disabled={isCreating}
                   >
-                    <Plus size={14} />
+                    {isCreating ? <Spinner size="1" /> : <Plus size={14} />}
                     New skill
                   </Button>
+                </Flex>
+                <Flex pb="3" gap="3" align="center">
+                  <Tooltip
+                    content={
+                      viewMode === "list"
+                        ? "Switch to grid view"
+                        : "Switch to list view"
+                    }
+                    side="bottom"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setViewMode(viewMode === "list" ? "grid" : "list")
+                      }
+                      className="flex items-center gap-1 rounded p-1 text-[11px] text-gray-10 hover:bg-gray-3 hover:text-gray-12"
+                    >
+                      {viewMode === "list" ? (
+                        <SquaresFour size={13} />
+                      ) : (
+                        <List size={13} />
+                      )}
+                      <span>{viewMode === "list" ? "Grid" : "List"}</span>
+                    </button>
+                  </Tooltip>
+                  <div className="h-3 w-px bg-gray-5" />
+                  <button
+                    type="button"
+                    onClick={allCollapsed ? expandAll : collapseAll}
+                    className="text-[11px] text-gray-10 hover:text-gray-12"
+                  >
+                    {allCollapsed ? "Expand all" : "Collapse all"}
+                  </button>
                 </Flex>
                 {skills.length === 0 && !isLoading ? (
                   <Flex
@@ -212,6 +357,119 @@ export function SkillsView() {
                       if (!items || items.length === 0) return null;
                       const config = SOURCE_CONFIG[source];
 
+                      if (source === "bundled" || source === "codex") {
+                        const categories = groupByCategory(items);
+                        const sourceKey = `source:${source}`;
+                        const sourceCollapsed =
+                          collapsedCategories.has(sourceKey);
+                        return (
+                          <Flex key={source} direction="column" gap="4">
+                            <button
+                              type="button"
+                              onClick={() => toggleCategory(sourceKey)}
+                              className="flex items-center gap-1.5 text-left text-gray-9 hover:text-gray-11"
+                            >
+                              {sourceCollapsed ? (
+                                <CaretRight size={11} className="shrink-0" />
+                              ) : (
+                                <CaretDown size={11} className="shrink-0" />
+                              )}
+                              <span className="font-medium text-[12px] uppercase tracking-wider">
+                                {config.sectionTitle}
+                              </span>
+                              <span className="text-[11px] text-gray-7">
+                                {items.length}
+                              </span>
+                            </button>
+                            {!sourceCollapsed &&
+                              categories.map(([category, categorySkills]) => {
+                                const catKey = `${source}:${category}`;
+                                const collapsed =
+                                  collapsedCategories.has(catKey);
+                                return (
+                                  <Flex
+                                    key={category}
+                                    direction="column"
+                                    gap="1"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleCategory(catKey)}
+                                      className="mb-0.5 flex items-center gap-1.5 text-left text-gray-9 hover:text-gray-11"
+                                    >
+                                      {collapsed ? (
+                                        <CaretRight
+                                          size={11}
+                                          className="shrink-0"
+                                        />
+                                      ) : (
+                                        <CaretDown
+                                          size={11}
+                                          className="shrink-0"
+                                        />
+                                      )}
+                                      <span className="font-medium text-[12px]">
+                                        {category}
+                                      </span>
+                                      <span className="text-[11px] text-gray-7">
+                                        {categorySkills.length}
+                                      </span>
+                                    </button>
+                                    {!collapsed &&
+                                      (viewMode === "grid" ? (
+                                        <div className="grid grid-cols-2 gap-2">
+                                          {categorySkills.map((skill) => (
+                                            <SkillGridCard
+                                              key={skill.path}
+                                              skill={skill}
+                                              isSelected={
+                                                selectedSkill?.path ===
+                                                skill.path
+                                              }
+                                              onClick={() =>
+                                                handleSelect(skill.path)
+                                              }
+                                              scrollIntoView={
+                                                scrollToPath === skill.path
+                                              }
+                                              onScrolledIntoView={
+                                                handleScrolledIntoView
+                                              }
+                                              issues={analysis[skill.path]}
+                                            />
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <Flex direction="column" gap="1">
+                                          {categorySkills.map((skill) => (
+                                            <SkillCard
+                                              key={skill.path}
+                                              skill={skill}
+                                              isSelected={
+                                                selectedSkill?.path ===
+                                                skill.path
+                                              }
+                                              onClick={() =>
+                                                handleSelect(skill.path)
+                                              }
+                                              scrollIntoView={
+                                                scrollToPath === skill.path
+                                              }
+                                              onScrolledIntoView={
+                                                handleScrolledIntoView
+                                              }
+                                              issues={analysis[skill.path]}
+                                            />
+                                          ))}
+                                        </Flex>
+                                      ))}
+                                  </Flex>
+                                );
+                              })}
+                          </Flex>
+                        );
+                      }
+
                       return (
                         <SkillSection
                           key={source}
@@ -222,6 +480,11 @@ export function SkillsView() {
                           scrollToPath={scrollToPath}
                           onScrolledIntoView={handleScrolledIntoView}
                           analysis={analysis}
+                          viewMode={viewMode}
+                          isCollapsed={collapsedCategories.has(
+                            `source:${source}`,
+                          )}
+                          onToggle={() => toggleCategory(`source:${source}`)}
                         />
                       );
                     })}
@@ -246,17 +509,12 @@ export function SkillsView() {
                 issues={analysis[selectedSkill.path] ?? []}
                 canPublish={!!teamListing?.available}
                 onClose={handleCloseSidebar}
+                initialEditing={selectedSkill.path === justCreatedPath}
               />
             )}
           </ResizableSidebar>
         </Flex>
       )}
-
-      <NewSkillDialog
-        open={newSkillOpen}
-        onOpenChange={setNewSkillOpen}
-        onCreated={(path) => setSelectedPath(path)}
-      />
     </Flex>
   );
 }

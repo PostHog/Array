@@ -29,7 +29,7 @@ import {
   TextField,
   Tooltip,
 } from "@radix-ui/themes";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ReplaceSkillDialog } from "./ReplaceSkillDialog";
 import { SOURCE_CONFIG } from "./SkillCard";
 import { SkillFileEditor } from "./SkillFileEditor";
@@ -52,6 +52,8 @@ interface SkillDetailPanelProps {
   issues?: SkillIssue[];
   /** Whether team skills are available for publishing. */
   canPublish?: boolean;
+  /** Open directly in edit mode (used when creating a new skill). */
+  initialEditing?: boolean;
 }
 
 export function SkillDetailPanel({
@@ -59,11 +61,13 @@ export function SkillDetailPanel({
   onClose,
   issues = [],
   canPublish = false,
+  initialEditing = false,
 }: SkillDetailPanelProps) {
   const config = SOURCE_CONFIG[skill.source];
 
   const [selectedFile, setSelectedFile] = useState("SKILL.md");
   const [isEditing, setIsEditing] = useState(false);
+  const hasAutoEnteredEdit = useRef(false);
   const [addFileOpen, setAddFileOpen] = useState(false);
   const [newFilePath, setNewFilePath] = useState("");
   const [renameFrom, setRenameFrom] = useState<string | null>(null);
@@ -78,6 +82,18 @@ export function SkillDetailPanel({
     skill.path,
     selectedFile,
   );
+
+  useEffect(() => {
+    if (
+      initialEditing &&
+      !hasAutoEnteredEdit.current &&
+      !isLoading &&
+      fileContent != null
+    ) {
+      hasAutoEnteredEdit.current = true;
+      setIsEditing(true);
+    }
+  }, [initialEditing, isLoading, fileContent]);
 
   const saveFile = useSaveSkillFile();
   const renameFile = useRenameSkillFile();
@@ -303,7 +319,7 @@ export function SkillDetailPanel({
           )}
         </Flex>
 
-        {issues.length > 0 && (
+        {issues.length > 0 && !isEditing && (
           <Flex direction="column" gap="1">
             {issues.map((issue) => (
               <Callout.Root
