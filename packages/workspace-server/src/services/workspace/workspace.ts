@@ -898,6 +898,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       baseBranch: null,
       linkedBranch: null,
       createdAt: new Date().toISOString(),
+      isScratch: true,
     };
   }
 

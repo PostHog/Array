@@ -47,6 +47,14 @@ export const navigationTaskBinder: NavigationTaskBinder = {
 
     const workspaces = await hostClient().workspace.getAll.query();
     const existingWorkspace = workspaces?.[task.id] ?? null;
+
+    // Repo-less channel task: its workspace is a synthetic scratch dir, not a
+    // registered folder. Never register it (that would pop the "initialize git"
+    // dialog on the empty scratch dir) or write a workspace row for it.
+    if (existingWorkspace?.isScratch) {
+      return undefined;
+    }
+
     if (existingWorkspace?.folderId) {
       const folders = await hostClient().folders.getFolders.query();
       const folder = folders.find((f) => f.id === existingWorkspace.folderId);
