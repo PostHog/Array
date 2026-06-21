@@ -650,10 +650,20 @@ function ChannelSection({
   // Tasks are private to each user. A task filed by someone else won't be in
   // `tasks` (it isn't shared with me), so hide it rather than rendering an
   // "Untitled task" placeholder. Also drop archived tasks.
-  const visibleFiledTasks = filedTasks.filter(
-    ({ taskId }) =>
-      !archivedTaskIds.has(taskId) && tasks?.some((t) => t.id === taskId),
-  );
+  // Order by each task's own last-updated time (most recent first) so a
+  // channel surfaces what's actively moving, rather than the order tasks were
+  // filed. `filedTasks` arrives sorted by filing time; this re-sorts by the
+  // task's `updated_at`, falling back to 0 when a task isn't loaded.
+  const taskUpdatedAt = (taskId: string): number => {
+    const updatedAt = tasks?.find((t) => t.id === taskId)?.updated_at;
+    return updatedAt ? Date.parse(updatedAt) : 0;
+  };
+  const visibleFiledTasks = filedTasks
+    .filter(
+      ({ taskId }) =>
+        !archivedTaskIds.has(taskId) && tasks?.some((t) => t.id === taskId),
+    )
+    .sort((a, b) => taskUpdatedAt(b.taskId) - taskUpdatedAt(a.taskId));
   const displayedFiledTasks = visibleFiledTasks.slice(0, taskLimit);
   const hiddenTaskCount = visibleFiledTasks.length - displayedFiledTasks.length;
   // Reveal one more batch, capped at the remaining count.
