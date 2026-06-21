@@ -159,6 +159,59 @@ export function SkillGridCard({
   );
 }
 
+interface SkillCardListProps {
+  skills: SkillInfo[];
+  selectedPath: string | null;
+  onSelect: (path: string) => void;
+  scrollToPath: string | null;
+  onScrolledIntoView: () => void;
+  analysis?: SkillAnalysis;
+  viewMode?: SkillViewMode;
+}
+
+export function SkillCardList({
+  skills,
+  selectedPath,
+  onSelect,
+  scrollToPath,
+  onScrolledIntoView,
+  analysis,
+  viewMode = "list",
+}: SkillCardListProps) {
+  if (viewMode === "grid") {
+    return (
+      <div className="grid grid-cols-2 gap-2">
+        {skills.map((skill) => (
+          <SkillGridCard
+            key={skill.path}
+            skill={skill}
+            isSelected={selectedPath === skill.path}
+            onClick={() => onSelect(skill.path)}
+            scrollIntoView={scrollToPath === skill.path}
+            onScrolledIntoView={onScrolledIntoView}
+            issues={analysis?.[skill.path]}
+          />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <Flex direction="column" gap="1">
+      {skills.map((skill) => (
+        <SkillCard
+          key={skill.path}
+          skill={skill}
+          isSelected={selectedPath === skill.path}
+          onClick={() => onSelect(skill.path)}
+          scrollIntoView={scrollToPath === skill.path}
+          onScrolledIntoView={onScrolledIntoView}
+          issues={analysis?.[skill.path]}
+        />
+      ))}
+    </Flex>
+  );
+}
+
 interface SkillSectionProps {
   title: string;
   skills: SkillInfo[];
@@ -207,36 +260,17 @@ export function SkillSection({
           {title}
         </Text>
       )}
-      {!isCollapsed &&
-        (viewMode === "grid" ? (
-          <div className="grid grid-cols-2 gap-2">
-            {skills.map((skill) => (
-              <SkillGridCard
-                key={skill.path}
-                skill={skill}
-                isSelected={selectedPath === skill.path}
-                onClick={() => onSelect(skill.path)}
-                scrollIntoView={scrollToPath === skill.path}
-                onScrolledIntoView={onScrolledIntoView}
-                issues={analysis?.[skill.path]}
-              />
-            ))}
-          </div>
-        ) : (
-          <Flex direction="column" gap="1">
-            {skills.map((skill) => (
-              <SkillCard
-                key={skill.path}
-                skill={skill}
-                isSelected={selectedPath === skill.path}
-                onClick={() => onSelect(skill.path)}
-                scrollIntoView={scrollToPath === skill.path}
-                onScrolledIntoView={onScrolledIntoView}
-                issues={analysis?.[skill.path]}
-              />
-            ))}
-          </Flex>
-        ))}
+      {!isCollapsed && (
+        <SkillCardList
+          skills={skills}
+          selectedPath={selectedPath}
+          onSelect={onSelect}
+          scrollToPath={scrollToPath}
+          onScrolledIntoView={onScrolledIntoView}
+          analysis={analysis}
+          viewMode={viewMode}
+        />
+      )}
     </Flex>
   );
 }

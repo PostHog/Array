@@ -25,12 +25,7 @@ import { useSetHeaderContent } from "../../hooks/useSetHeaderContent";
 import { ResizableSidebar } from "../../primitives/ResizableSidebar";
 import { toast } from "../../primitives/toast";
 import { MarketplaceBrowse } from "./MarketplaceBrowse";
-import {
-  SkillCard,
-  SkillGridCard,
-  SkillSection,
-  SOURCE_CONFIG,
-} from "./SkillCard";
+import { SkillCardList, SkillSection, SOURCE_CONFIG } from "./SkillCard";
 import { SkillDetailPanel } from "./SkillDetailPanel";
 import { isSkillExistsError, skillErrorDescription } from "./skillErrors";
 import {
@@ -132,7 +127,7 @@ export function SkillsView() {
     setIsCreating(true);
     try {
       let name = "new-skill";
-      for (let i = 2; i <= 20; i++) {
+      for (let i = 2; i <= 21; i++) {
         try {
           const result = await createSkill.mutateAsync({ scope: "user", name });
           setSelectedPath(result.path);
@@ -140,7 +135,7 @@ export function SkillsView() {
           setScrollToPath(result.path);
           return;
         } catch (err) {
-          if (isSkillExistsError(err) && i <= 20) {
+          if (isSkillExistsError(err) && i < 21) {
             name = `new-skill-${i}`;
           } else {
             throw err;
@@ -415,54 +410,21 @@ export function SkillsView() {
                                         {categorySkills.length}
                                       </span>
                                     </button>
-                                    {!collapsed &&
-                                      (viewMode === "grid" ? (
-                                        <div className="grid grid-cols-2 gap-2">
-                                          {categorySkills.map((skill) => (
-                                            <SkillGridCard
-                                              key={skill.path}
-                                              skill={skill}
-                                              isSelected={
-                                                selectedSkill?.path ===
-                                                skill.path
-                                              }
-                                              onClick={() =>
-                                                handleSelect(skill.path)
-                                              }
-                                              scrollIntoView={
-                                                scrollToPath === skill.path
-                                              }
-                                              onScrolledIntoView={
-                                                handleScrolledIntoView
-                                              }
-                                              issues={analysis[skill.path]}
-                                            />
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <Flex direction="column" gap="1">
-                                          {categorySkills.map((skill) => (
-                                            <SkillCard
-                                              key={skill.path}
-                                              skill={skill}
-                                              isSelected={
-                                                selectedSkill?.path ===
-                                                skill.path
-                                              }
-                                              onClick={() =>
-                                                handleSelect(skill.path)
-                                              }
-                                              scrollIntoView={
-                                                scrollToPath === skill.path
-                                              }
-                                              onScrolledIntoView={
-                                                handleScrolledIntoView
-                                              }
-                                              issues={analysis[skill.path]}
-                                            />
-                                          ))}
-                                        </Flex>
-                                      ))}
+                                    {!collapsed && (
+                                      <SkillCardList
+                                        skills={categorySkills}
+                                        selectedPath={
+                                          selectedSkill?.path ?? null
+                                        }
+                                        onSelect={handleSelect}
+                                        scrollToPath={scrollToPath}
+                                        onScrolledIntoView={
+                                          handleScrolledIntoView
+                                        }
+                                        analysis={analysis}
+                                        viewMode={viewMode}
+                                      />
+                                    )}
                                   </Flex>
                                 );
                               })}
