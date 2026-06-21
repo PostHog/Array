@@ -1,3 +1,4 @@
+import { X } from "@phosphor-icons/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
   groupReleases,
@@ -8,6 +9,7 @@ import {
   Badge,
   Dialog,
   Flex,
+  IconButton,
   ScrollArea,
   Spinner,
   Text,
@@ -58,13 +60,20 @@ export function WhatsNewModal() {
       }}
     >
       <Dialog.Content maxWidth="640px">
-        <Flex direction="column" gap="1" mb="3">
-          <Dialog.Title className="mb-0">What's New</Dialog.Title>
-          <Dialog.Description>
-            <Text color="gray" size="2">
-              Release history and recent improvements
-            </Text>
-          </Dialog.Description>
+        <Flex justify="between" align="start" gap="3" mb="3">
+          <Flex direction="column" gap="1">
+            <Dialog.Title className="mb-0">What's New</Dialog.Title>
+            <Dialog.Description>
+              <Text color="gray" size="2">
+                Release history and recent improvements
+              </Text>
+            </Dialog.Description>
+          </Flex>
+          <Dialog.Close>
+            <IconButton variant="ghost" color="gray" aria-label="Close">
+              <X size={16} />
+            </IconButton>
+          </Dialog.Close>
         </Flex>
 
         {isLoading ? (
