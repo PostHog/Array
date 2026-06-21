@@ -26,7 +26,7 @@ export function WhatsNewModal() {
   const isOpen = useWhatsNewStore((state) => state.isOpen);
   const close = useWhatsNewStore((state) => state.close);
   const hostTRPC = useHostTRPC();
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     ...hostTRPC.githubReleases.list.queryOptions(),
     enabled: isOpen,
   });
@@ -59,7 +59,8 @@ export function WhatsNewModal() {
           </Flex>
         ) : isError ? (
           <Text color="gray" size="2">
-            Could not load releases. Please try again later.
+            Could not load releases:{" "}
+            {error instanceof Error ? error.message : String(error)}
           </Text>
         ) : releases.length === 0 ? (
           <Text color="gray" size="2">
