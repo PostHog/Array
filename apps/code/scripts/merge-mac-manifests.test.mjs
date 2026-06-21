@@ -45,13 +45,16 @@ describe("mergeManifests", () => {
     expect(merged.files[0].sha512).toBe("from-arm64");
   });
 
-  it("takes top-level metadata from the arm64 manifest", () => {
+  it("keeps arch-independent metadata but drops single-arch top-level fields", () => {
     const merged = mergeManifests(arm64Manifest(), x64Manifest());
 
     expect(merged.version).toBe("1.2.3");
     expect(merged.releaseDate).toBe("2026-06-20T00:00:00.000Z");
-    expect(merged.path).toBe("PostHog-Code-1.2.3-arm64-mac.zip");
-    expect(merged.sha512).toBe("arm64-sha");
+    // path/sha512/size describe one file and are meaningless for a merged
+    // multi-arch manifest; electron-updater reads files[] instead.
+    expect(merged.path).toBeUndefined();
+    expect(merged.sha512).toBeUndefined();
+    expect(merged.size).toBeUndefined();
   });
 
   it("throws when the two manifests report different versions", () => {
