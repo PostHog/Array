@@ -11,7 +11,7 @@ import {
   Flex,
   IconButton,
   ScrollArea,
-  Spinner,
+  Skeleton,
   Text,
 } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
@@ -34,6 +34,27 @@ function ReleaseSection({ title, items }: { title: string; items: string[] }) {
           </li>
         ))}
       </ul>
+    </Flex>
+  );
+}
+
+function ChangelogSkeleton() {
+  return (
+    <Flex direction="column" gap="5">
+      {["a", "b", "c"].map((key) => (
+        <Flex key={key} direction="column" gap="3">
+          <Flex align="center" justify="between" gap="2">
+            <Skeleton width="150px" height="22px" />
+            <Skeleton width="72px" height="22px" />
+          </Flex>
+          <Flex direction="column" gap="2">
+            <Skeleton width="64px" height="12px" />
+            <Skeleton width="82%" height="14px" />
+            <Skeleton width="68%" height="14px" />
+            <Skeleton width="74%" height="14px" />
+          </Flex>
+        </Flex>
+      ))}
     </Flex>
   );
 }
@@ -77,9 +98,7 @@ export function WhatsNewModal() {
         </Flex>
 
         {isLoading ? (
-          <Flex align="center" justify="center" py="6">
-            <Spinner />
-          </Flex>
+          <ChangelogSkeleton />
         ) : isError ? (
           <Text color="gray" size="2">
             Could not load releases. Please try again later.
