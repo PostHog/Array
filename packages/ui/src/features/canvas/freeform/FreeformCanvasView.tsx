@@ -77,16 +77,15 @@ export function FreeformCanvasView({
 
   // Run status: cloud reports via cloudStatus / latest_run.status; local is tied
   // to the live ACP session. Assume running while the task record loads.
-  const genTaskQuery = useQuery({
+  const { data: genTask, isLoading: genTaskLoading } = useQuery({
     ...taskDetailQuery(genTaskId ?? ""),
     enabled: !!genTaskId,
     refetchInterval: genTaskId ? 5000 : false,
   });
-  const genTask = genTaskQuery.data;
   const genSession = useSessionForTask(genTaskId ?? undefined);
   const running = (() => {
     if (!genTaskId) return false;
-    if (genTaskQuery.isLoading) return true;
+    if (genTaskLoading) return true;
     if (genTask?.latest_run?.environment === "cloud") {
       const cloudStatus =
         genSession?.cloudStatus ?? genTask?.latest_run?.status ?? null;
