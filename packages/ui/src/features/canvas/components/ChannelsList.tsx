@@ -653,17 +653,22 @@ function ChannelSection({
   // Order by each task's own last-updated time (most recent first) so a
   // channel surfaces what's actively moving, rather than the order tasks were
   // filed. `filedTasks` arrives sorted by filing time; this re-sorts by the
-  // task's `updated_at`, falling back to 0 when a task isn't loaded.
-  const taskUpdatedAt = (taskId: string): number => {
-    const updatedAt = tasks?.find((t) => t.id === taskId)?.updated_at;
-    return updatedAt ? Date.parse(updatedAt) : 0;
-  };
+  // task's `updated_at`. A single id→ms map keeps both the membership filter
+  // and the sort O(1) per item; `|| 0` guards against a malformed date
+  // (`Date.parse` → NaN) and a task that isn't loaded.
+  const taskUpdatedAtMs = new Map(
+    tasks?.map((t) => [t.id, Date.parse(t.updated_at) || 0]) ?? [],
+  );
   const visibleFiledTasks = filedTasks
     .filter(
       ({ taskId }) =>
-        !archivedTaskIds.has(taskId) && tasks?.some((t) => t.id === taskId),
+        !archivedTaskIds.has(taskId) && taskUpdatedAtMs.has(taskId),
     )
-    .sort((a, b) => taskUpdatedAt(b.taskId) - taskUpdatedAt(a.taskId));
+    .sort(
+      (a, b) =>
+        (taskUpdatedAtMs.get(b.taskId) ?? 0) -
+        (taskUpdatedAtMs.get(a.taskId) ?? 0),
+    );
   const displayedFiledTasks = visibleFiledTasks.slice(0, taskLimit);
   const hiddenTaskCount = visibleFiledTasks.length - displayedFiledTasks.length;
   // Reveal one more batch, capped at the remaining count.
