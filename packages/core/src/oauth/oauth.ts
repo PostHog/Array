@@ -61,6 +61,15 @@ interface PendingOAuthFlow {
   abortController?: AbortController;
 }
 
+async function parseOAuthErrorCode(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.json()) as { error?: unknown };
+    return typeof body.error === "string" ? body.error : null;
+  } catch {
+    return null;
+  }
+}
+
 @injectable()
 export class OAuthService {
   private pendingFlow: PendingOAuthFlow | null = null;
@@ -221,15 +230,13 @@ export class OAuthService {
         // invalid_client or invalid_request are config bugs and must not log the
         // user out, or they would be unable to log back in with the same broken
         // config.
-        const oauthError =
-          response.status === 400
-            ? await this.readOAuthErrorCode(response)
-            : null;
+        const oauthErrorCode =
+          response.status === 400 ? await parseOAuthErrorCode(response) : null;
         const isAuthError =
           response.status === 401 ||
           response.status === 403 ||
-          oauthError === "invalid_grant" ||
-          oauthError === "invalid_token";
+          oauthErrorCode === "invalid_grant" ||
+          oauthErrorCode === "invalid_token";
         // 5xx are server errors - should be retried
         const isServerError = response.status >= 500;
         this.log.warn(
@@ -258,15 +265,6 @@ export class OAuthService {
         error: NETWORK_ERROR_MESSAGE,
         errorCode: "network_error",
       };
-    }
-  }
-
-  private async readOAuthErrorCode(response: Response): Promise<string | null> {
-    try {
-      const body = (await response.json()) as { error?: unknown };
-      return typeof body.error === "string" ? body.error : null;
-    } catch {
-      return null;
     }
   }
 
