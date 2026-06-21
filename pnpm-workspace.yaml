@@ -12,21 +12,21 @@ catalog:
   '@radix-ui/themes': ^3.2.1
   '@tanstack/devtools-vite': ^0.7.0
   '@tanstack/react-devtools': ^0.10.5
-  '@tanstack/react-query': ^5.90.2
-  '@tanstack/react-router': ^1.95.0
-  '@tanstack/react-router-devtools': ^1.95.0
-  '@tanstack/router-generator': ^1.95.0
-  '@tanstack/router-plugin': ^1.95.0
-  '@trpc/client': ^11.12.0
-  '@trpc/server': ^11.12.0
-  '@trpc/tanstack-react-query': 11.12.0
+  '@tanstack/react-query': ^5.100.14
+  '@tanstack/react-router': ^1.170.10
+  '@tanstack/react-router-devtools': ^1.167.0
+  '@tanstack/router-generator': ^1.167.17
+  '@tanstack/router-plugin': ^1.168.13
+  '@trpc/client': ^11.17.0
+  '@trpc/server': ^11.17.0
+  '@trpc/tanstack-react-query': ^11.17.0
   '@types/node': ^20.0.0
-  '@types/react': ^19.1.0
-  '@types/react-dom': ^19.1.0
+  '@types/react': ^19.2.15
+  '@types/react-dom': ^19.2.3
   hono: ^4.6.14
   inversify: ^7.10.6
-  react: 19.1.0
-  react-dom: 19.1.0
+  react: 19.2.6
+  react-dom: 19.2.6
   reflect-metadata: ^0.2.2
   superjson: ^2.2.2
   tsup: ^8.5.1
@@ -73,7 +73,21 @@ minimumReleaseAgeExclude:
   - '@tanstack/virtual-file-routes'
 
 overrides:
-  zod: 4.3.6
+  # node-abi predates Electron 42; ^3.92.0 is the first release that knows its ABI
+  # (146), needed when rebuilding native modules against Electron 42.
+  node-abi: ^3.92.0
+  # Dedupe the zod 4.x line to one version so cross-package schema types stay
+  # nameable (TS2742). Scoped to 4.x; 3.x consumers are untouched.
+  'zod@^4.0.0': 4.4.3
+  # Keep one React across the monorepo so apps/code and apps/mobile share an
+  # instance (react-test-renderer must match react).
+  react: 19.2.6
+  react-dom: 19.2.6
+  react-test-renderer: 19.2.6
+  # Dedupe @types/react so shared UI Ref types unify across apps (a second copy
+  # makes nominally-distinct Ref types and breaks ref props in packages/ui).
+  '@types/react': ^19.2.15
+  '@types/react-dom': ^19.2.3
   # quill 0.3.0-beta.14 ships a broken `@base-ui/react: catalog:` dependency (the
   # catalog protocol leaked into the published package and can't resolve for an
   # external dep); pin it to a real version so installs of quill succeed.

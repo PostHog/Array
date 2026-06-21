@@ -53,7 +53,7 @@
     "knip": "^5.66.3",
     "lint-staged": "^15.5.2",
     "mprocs": "^0.7.1",
-    "turbo": "^2.6.2"
+    "turbo": "^2.9.16"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [
