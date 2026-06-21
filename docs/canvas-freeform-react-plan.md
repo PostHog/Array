@@ -1,15 +1,8 @@
 # Freeform React Canvases — Design Plan
 
 > Status: edit-tier shipped; publish/sharing tiers (below) scoped, not yet built.
-> Scope: **all** canvases are agent-authored freeform React, executed in a sandboxed
+> Scope: canvases are agent-authored freeform React, executed in a sandboxed
 > iframe, shareable externally without leaking credentials.
-
-> **Update:** the original declarative **json-render** tier has been **removed**
-> entirely. This plan first proposed replacing only the **Blank** template and
-> keeping Dashboard / Web Analytics on json-render; since then json-render was
-> deleted, so every canvas is freeform React. The Dashboard / Web Analytics layouts
-> survive only as freeform agent **prompts** (`freeformSystemPromptFor`) for legacy
-> canvases carrying those template ids.
 
 ## Summary
 

@@ -1,10 +1,9 @@
 # Canvas (Website space) — patterns
 
 Conventions for the channel-scoped Website space: channels and canvases. A canvas
-is an agent-authored single-file React app rendered in a sandboxed iframe (the
-freeform tier — there is no longer a json-render/declarative tier). Read this
-before changing breadcrumbs, canvas naming, or the canvas generation harness. The
-root `AGENTS.md` architecture rules still apply.
+is an agent-authored single-file React app rendered in a sandboxed iframe. Read
+this before changing breadcrumbs, canvas naming, or the canvas generation harness.
+The root `AGENTS.md` architecture rules still apply.
 
 ## Spaces & chrome
 
