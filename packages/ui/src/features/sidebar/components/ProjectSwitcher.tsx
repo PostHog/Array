@@ -310,6 +310,11 @@ export function ProjectSwitcher({
               <ArrowSquareOut size={14} className="ml-auto text-gray-11" />
             </DropdownMenuItem>
 
+            <DropdownMenuItem onClick={handleViewChangelog}>
+              <Gift size={14} className="text-gray-11" />
+              View changelog
+            </DropdownMenuItem>
+
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <Info size={14} className="text-gray-11" />
@@ -339,11 +344,6 @@ export function ProjectSwitcher({
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-
-            <DropdownMenuItem onClick={handleViewChangelog}>
-              <Gift size={14} className="text-gray-11" />
-              View changelog
-            </DropdownMenuItem>
 
             <DropdownMenuItem onClick={handleSettings}>
               <Gear size={14} className="text-gray-11" />

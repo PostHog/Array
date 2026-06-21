@@ -1,5 +1,8 @@
 import { useHostTRPC } from "@posthog/host-router/react";
-import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import {
+  groupReleases,
+  mergeReleaseNotes,
+} from "@posthog/ui/features/updates/releaseNotes";
 import { useWhatsNewStore } from "@posthog/ui/features/updates/whatsNewStore";
 import {
   Badge,
@@ -11,22 +14,33 @@ import {
 } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 
-function formatDate(date: string | null): string {
-  if (!date) return "";
-  const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+function ReleaseSection({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <Flex direction="column" gap="1">
+      <span className="font-medium text-[11px] text-gray-10 uppercase tracking-wide">
+        {title}
+      </span>
+      <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+        {items.map((item) => (
+          <li
+            key={`${title}-${item}`}
+            className="flex gap-2 text-[13px] text-gray-12 leading-relaxed"
+          >
+            <span className="mt-px select-none text-gray-9">•</span>
+            <span className="min-w-0">{item}</span>
+          </li>
+        ))}
+      </ul>
+    </Flex>
+  );
 }
 
 export function WhatsNewModal() {
   const isOpen = useWhatsNewStore((state) => state.isOpen);
   const close = useWhatsNewStore((state) => state.close);
   const hostTRPC = useHostTRPC();
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     ...hostTRPC.githubReleases.list.queryOptions(),
     enabled: isOpen,
   });
@@ -34,7 +48,7 @@ export function WhatsNewModal() {
     hostTRPC.os.getAppVersion.queryOptions(),
   );
 
-  const releases = data?.releases ?? [];
+  const groups = groupReleases(data?.releases ?? []);
 
   return (
     <Dialog.Root
@@ -59,47 +73,68 @@ export function WhatsNewModal() {
           </Flex>
         ) : isError ? (
           <Text color="gray" size="2">
-            Could not load releases:{" "}
-            {error instanceof Error ? error.message : String(error)}
+            Could not load releases. Please try again later.
           </Text>
-        ) : releases.length === 0 ? (
+        ) : groups.length === 0 ? (
           <Text color="gray" size="2">
             No releases found.
           </Text>
         ) : (
           <ScrollArea
-            type="auto"
+            type="scroll"
             scrollbars="vertical"
             style={{ maxHeight: "60vh" }}
           >
             <Flex direction="column" gap="5" className="pr-3">
-              {releases.map((release, index) => (
-                <Flex key={release.version} direction="column" gap="2">
-                  <Flex align="center" justify="between" gap="2">
-                    <Flex align="center" gap="2">
+              {groups.map((group, index) => {
+                const { improved, fixed } = mergeReleaseNotes(group.releases);
+                const containsCurrent = currentVersion
+                  ? group.releases.some(
+                      (release) => release.version === currentVersion,
+                    )
+                  : false;
+                return (
+                  <Flex
+                    key={group.key}
+                    direction="column"
+                    gap="3"
+                    className={
+                      index > 0 ? "border-gray-6 border-t pt-5" : undefined
+                    }
+                  >
+                    <Flex align="center" justify="between" gap="2">
                       <Text weight="bold" size="3">
-                        {release.name}
+                        {group.label}
                       </Text>
-                      {index === 0 ? <Badge color="green">Latest</Badge> : null}
-                      {currentVersion === release.version ? (
+                      <Flex align="center" gap="2">
+                        {group.isLatest ? (
+                          <Badge color="green">Latest</Badge>
+                        ) : null}
+                        {containsCurrent ? (
+                          <Badge color="gray" variant="outline">
+                            Current
+                          </Badge>
+                        ) : null}
                         <Badge color="gray" variant="soft">
-                          Current
+                          {group.releases.length === 1
+                            ? group.releases[0].name
+                            : `${group.releases.length} releases`}
                         </Badge>
-                      ) : null}
+                      </Flex>
                     </Flex>
-                    <Text size="1" color="gray">
-                      {formatDate(release.date)}
-                    </Text>
+                    {improved.length === 0 && fixed.length === 0 ? (
+                      <Text size="2" color="gray">
+                        No notable changes.
+                      </Text>
+                    ) : (
+                      <Flex direction="column" gap="3">
+                        <ReleaseSection title="Improved" items={improved} />
+                        <ReleaseSection title="Fixed" items={fixed} />
+                      </Flex>
+                    )}
                   </Flex>
-                  {release.notes ? (
-                    <MarkdownRenderer content={release.notes} />
-                  ) : (
-                    <Text size="2" color="gray">
-                      No release notes.
-                    </Text>
-                  )}
-                </Flex>
-              ))}
+                );
+              })}
             </Flex>
           </ScrollArea>
         )}
