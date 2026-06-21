@@ -94,6 +94,13 @@ interface TaskInputProps {
    * effect on the fill behaviour.
    */
   onSuggestionSelect?: (label: string) => void;
+  /**
+   * Called when the channel CONTEXT.md chip is clicked (not its dismiss × ).
+   * When provided, the chip's icon+label becomes a button — the channels
+   * new-task screen uses it to open the CONTEXT.md in a side panel. Without it
+   * the chip is non-interactive (only dismissable).
+   */
+  onContextChipClick?: () => void;
 }
 
 export function TaskInput({
@@ -110,6 +117,7 @@ export function TaskInput({
   allowNoRepo,
   suggestions,
   onSuggestionSelect,
+  onContextChipClick,
 }: TaskInputProps = {}) {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const trpc = useHostTRPC();
@@ -921,10 +929,27 @@ export function TaskInput({
               <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
                 <span className="shrink-0 text-gray-10">Using:</span>
                 <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
-                  <FileText size={12} />
-                  <span className="truncate">
-                    {channelName ? `#${channelName} ` : ""}CONTEXT.md
-                  </span>
+                  {onContextChipClick ? (
+                    <Tooltip content="View this context">
+                      <button
+                        type="button"
+                        onClick={onContextChipClick}
+                        className="inline-flex min-w-0 items-center gap-1 rounded text-[var(--gray-11)] hover:text-gray-12"
+                      >
+                        <FileText size={12} />
+                        <span className="truncate">
+                          {channelName ? `#${channelName} ` : ""}CONTEXT.md
+                        </span>
+                      </button>
+                    </Tooltip>
+                  ) : (
+                    <>
+                      <FileText size={12} />
+                      <span className="truncate">
+                        {channelName ? `#${channelName} ` : ""}CONTEXT.md
+                      </span>
+                    </>
+                  )}
                   <Tooltip content="Don't include this context">
                     <button
                       type="button"

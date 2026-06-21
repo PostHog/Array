@@ -1,5 +1,5 @@
-import { Check, Copy } from "@phosphor-icons/react";
-import { isMarkdownFile } from "@posthog/core/code-editor/fileKind";
+import { Check, Code, Copy, Eye } from "@phosphor-icons/react";
+import { getRenderableKind } from "@posthog/core/code-editor/fileKind";
 import {
   collapseFileState,
   resolveMarkdownLink,
@@ -25,6 +25,7 @@ import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { useFileTreeStore } from "../../right-sidebar/fileTreeStore";
 import { useCwd } from "../../sidebar/useCwd";
 import { useIsWorkspaceCloudRun } from "../../workspace/useWorkspace";
+import { useFilePreviewStore } from "../filePreviewStore";
 import { useCloudFileContent } from "../hooks/useCloudFileContent";
 import {
   useAbsoluteFileContent,
@@ -75,6 +76,25 @@ function FilePanelImagePreview({
   );
 }
 
+function HtmlFilePreview({ content }: { content: string }) {
+  return (
+    <Box className="flex-1 overflow-hidden bg-white">
+      {/*
+        Render the HTML in a null-origin sandboxed iframe: allow-scripts WITHOUT
+        allow-same-origin lets scripts run but keeps the document on a null
+        origin, so it cannot reach the host renderer's DOM, cookies, or storage.
+        Do not add allow-same-origin — it collapses that isolation boundary.
+      */}
+      <iframe
+        title="HTML preview"
+        sandbox="allow-scripts"
+        srcDoc={content}
+        className="h-full w-full border-0"
+      />
+    </Box>
+  );
+}
+
 export function CodeEditorPanel({
   taskId,
   task: _task,
@@ -84,7 +104,12 @@ export function CodeEditorPanel({
   const isInsideRepo = !!repoPath && absolutePath.startsWith(repoPath);
   const filePath = getRelativePath(absolutePath, repoPath);
   const isImage = isRasterImageFile(absolutePath);
-  const isMarkdown = isMarkdownFile(absolutePath);
+  const renderableKind = getRenderableKind(absolutePath);
+  const isRenderable = renderableKind !== null;
+  const showRendered = useFilePreviewStore((s) =>
+    renderableKind ? s.renderPreview[renderableKind] : false,
+  );
+  const toggleKind = useFilePreviewStore((s) => s.toggleKind);
   const openFileInSplit = usePanelLayoutStore((s) => s.openFileInSplit);
   const expandToFile = useFileTreeStore((s) => s.expandToFile);
   const [copied, setCopied] = useState(false);
@@ -234,11 +259,29 @@ export function CodeEditorPanel({
     );
   }
 
-  if (isMarkdown) {
+  const sourceView = (
+    <Box height="100%" className="relative overflow-hidden">
+      <CodeMirrorEditor
+        content={fileContent}
+        filePath={absolutePath}
+        relativePath={filePath}
+        readOnly
+        enrichment={enrichment}
+      />
+      <EnrichmentPopover />
+    </Box>
+  );
+
+  if (isRenderable) {
     const handleCopySource = () => {
       navigator.clipboard.writeText(fileContent);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    };
+    const handleToggleRendered = () => {
+      if (renderableKind) {
+        toggleKind(renderableKind);
+      }
     };
 
     return (
@@ -257,6 +300,18 @@ export function CodeEditorPanel({
             {filePath}
           </Text>
           <Flex align="center" gap="1">
+            <Tooltip content={showRendered ? "View source" : "View preview"}>
+              <IconButton
+                size="1"
+                variant="ghost"
+                color="gray"
+                className="cursor-pointer"
+                onClick={handleToggleRendered}
+                aria-label={showRendered ? "View source" : "View preview"}
+              >
+                {showRendered ? <Code size={14} /> : <Eye size={14} />}
+              </IconButton>
+            </Tooltip>
             <Tooltip content={copied ? "Copied" : "Copy source"}>
               <IconButton
                 size="1"
@@ -271,30 +326,25 @@ export function CodeEditorPanel({
             </Tooltip>
           </Flex>
         </Flex>
-        <Box className="flex-1 overflow-auto">
-          <Box className="plan-markdown max-w-[750px]" p="5">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={markdownComponents}
-            >
-              {fileContent}
-            </ReactMarkdown>
+        {!showRendered ? (
+          <Box className="flex-1 overflow-hidden">{sourceView}</Box>
+        ) : renderableKind === "markdown" ? (
+          <Box className="flex-1 overflow-auto">
+            <Box className="plan-markdown max-w-[750px]" p="5">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={markdownComponents}
+              >
+                {fileContent}
+              </ReactMarkdown>
+            </Box>
           </Box>
-        </Box>
+        ) : (
+          <HtmlFilePreview content={fileContent} />
+        )}
       </Flex>
     );
   }
 
-  return (
-    <Box height="100%" className="relative overflow-hidden">
-      <CodeMirrorEditor
-        content={fileContent}
-        filePath={absolutePath}
-        relativePath={filePath}
-        readOnly
-        enrichment={enrichment}
-      />
-      <EnrichmentPopover />
-    </Box>
-  );
+  return sourceView;
 }
