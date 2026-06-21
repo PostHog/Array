@@ -1,3 +1,7 @@
+import type {
+  UpdateAvailableInfo,
+  UpdateDownloadProgress,
+} from "@posthog/platform/updater";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UpdatesEvent } from "./schemas";
 
@@ -13,7 +17,8 @@ const {
 } = vi.hoisted(() => {
   const updaterHandlers: {
     checkStart: (() => void) | null;
-    updateAvailable: (() => void) | null;
+    updateAvailable: ((info: UpdateAvailableInfo) => void) | null;
+    downloadProgress: ((progress: UpdateDownloadProgress) => void) | null;
     noUpdate: (() => void) | null;
     updateDownloaded: ((version: string) => void) | null;
     error: ((error: Error) => void) | null;
@@ -21,6 +26,7 @@ const {
   } = {
     checkStart: null,
     updateAvailable: null,
+    downloadProgress: null,
     noUpdate: null,
     updateDownloaded: null,
     error: null,
@@ -37,10 +43,18 @@ const {
         updaterHandlers.checkStart = h;
         return () => {};
       }),
-      onUpdateAvailable: vi.fn((h: () => void) => {
+      onUpdateAvailable: vi.fn((h: (info: UpdateAvailableInfo) => void) => {
         updaterHandlers.updateAvailable = h;
         return () => {};
       }),
+      onDownloadProgress: vi.fn(
+        (h: (progress: UpdateDownloadProgress) => void) => {
+          updaterHandlers.downloadProgress = h;
+          return () => {};
+        },
+      ),
+      download: vi.fn(),
+      setAutoDownload: vi.fn(),
       onNoUpdate: vi.fn((h: () => void) => {
         updaterHandlers.noUpdate = h;
         return () => {};
@@ -656,14 +670,54 @@ describe("UpdatesService", () => {
       });
     });
 
-    it("returns downloading status while an update is downloading", async () => {
+    it("returns available status when an update is found", async () => {
       await initializeService(service);
 
-      updaterHandlers.updateAvailable?.();
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: "Notes",
+      });
 
       expect(service.getStatus()).toEqual({
+        checking: false,
+        available: true,
+        availableVersion: "v2.0.0",
+        releaseNotes: "Notes",
+      });
+    });
+
+    it("auto-downloads and returns downloading status when enabled", async () => {
+      await initializeService(service);
+      service.setAutoDownloadEnabled(true);
+
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: null,
+      });
+
+      expect(mockUpdater.download).toHaveBeenCalled();
+      expect(service.getStatus()).toMatchObject({
         checking: true,
         downloading: true,
+        availableVersion: "v2.0.0",
+      });
+    });
+
+    it("downloads on requestDownload and reaches ready", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: null,
+      });
+      service.requestDownload();
+      expect(mockUpdater.download).toHaveBeenCalled();
+      expect(service.getStatus()).toMatchObject({ downloading: true });
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      expect(service.getStatus()).toMatchObject({
+        updateReady: true,
+        version: "v2.0.0",
       });
     });
   });

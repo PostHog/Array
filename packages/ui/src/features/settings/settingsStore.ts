@@ -142,9 +142,13 @@ interface SettingsStore {
   hedgehogMode: boolean;
   slotMachineMode: boolean;
   mcpAppsDisabledServers: string[];
+  downloadUpdatesAutomatically: boolean;
+  lastSeenChangelogVersion: string | null;
   setHedgehogMode: (enabled: boolean) => void;
   setSlotMachineMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
+  setDownloadUpdatesAutomatically: (enabled: boolean) => void;
+  setLastSeenChangelogVersion: (version: string | null) => void;
 
   // Onboarding hints
   hints: Record<string, HintState>;
@@ -272,8 +276,14 @@ export const useSettingsStore = create<SettingsStore>()(
       hedgehogMode: false,
       slotMachineMode: false,
       mcpAppsDisabledServers: [],
+      downloadUpdatesAutomatically: false,
+      lastSeenChangelogVersion: null,
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
       setSlotMachineMode: (enabled) => set({ slotMachineMode: enabled }),
+      setDownloadUpdatesAutomatically: (enabled) =>
+        set({ downloadUpdatesAutomatically: enabled }),
+      setLastSeenChangelogVersion: (version) =>
+        set({ lastSeenChangelogVersion: version }),
       setMcpAppsDisabledServers: (servers) =>
         set({ mcpAppsDisabledServers: servers }),
 
@@ -360,6 +370,8 @@ export const useSettingsStore = create<SettingsStore>()(
         hedgehogMode: state.hedgehogMode,
         slotMachineMode: state.slotMachineMode,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
+        downloadUpdatesAutomatically: state.downloadUpdatesAutomatically,
+        lastSeenChangelogVersion: state.lastSeenChangelogVersion,
 
         // Onboarding hints
         hints: state.hints,

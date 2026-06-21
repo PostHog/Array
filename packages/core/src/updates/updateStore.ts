@@ -3,6 +3,7 @@ import { createStore } from "zustand/vanilla";
 
 export type UpdateUiStatus =
   | "idle"
+  | "available"
   | "checking"
   | "downloading"
   | "ready"
@@ -11,6 +12,11 @@ export type UpdateUiStatus =
 interface UpdateState {
   status: UpdateUiStatus;
   version: string | null;
+  availableVersion: string | null;
+  releaseNotes: string | null;
+  releaseDate: string | null;
+  downloadPercent: number | null;
+  bytesPerSecond: number | null;
   isEnabled: boolean;
   menuCheckPending: boolean;
 
@@ -19,11 +25,17 @@ interface UpdateState {
   setEnabled: (isEnabled: boolean) => void;
   setMenuCheckPending: (menuCheckPending: boolean) => void;
   setReady: (version: string | null) => void;
+  applyStatusUpdate: (update: UpdateStatusUpdate) => void;
 }
 
 export const updateStore = createStore<UpdateState>((set) => ({
   status: "idle",
   version: null,
+  availableVersion: null,
+  releaseNotes: null,
+  releaseDate: null,
+  downloadPercent: null,
+  bytesPerSecond: null,
   isEnabled: false,
   menuCheckPending: false,
 
@@ -32,6 +44,31 @@ export const updateStore = createStore<UpdateState>((set) => ({
   setEnabled: (isEnabled) => set({ isEnabled }),
   setMenuCheckPending: (menuCheckPending) => set({ menuCheckPending }),
   setReady: (version) => set({ status: "ready", version }),
+  applyStatusUpdate: (update) =>
+    set((state) => ({
+      status: update.status ?? state.status,
+      version: update.version !== undefined ? update.version : state.version,
+      availableVersion:
+        update.availableVersion !== undefined
+          ? update.availableVersion
+          : state.availableVersion,
+      releaseNotes:
+        update.releaseNotes !== undefined
+          ? update.releaseNotes
+          : state.releaseNotes,
+      releaseDate:
+        update.releaseDate !== undefined
+          ? update.releaseDate
+          : state.releaseDate,
+      downloadPercent:
+        update.downloadPercent !== undefined
+          ? update.downloadPercent
+          : state.downloadPercent,
+      bytesPerSecond:
+        update.bytesPerSecond !== undefined
+          ? update.bytesPerSecond
+          : state.bytesPerSecond,
+    })),
 }));
 
 export const getUpdateUiStatus = () => updateStore.getState().status;
@@ -42,6 +79,11 @@ export const getMenuCheckPending = () =>
 export interface UpdateStatusUpdate {
   status?: UpdateUiStatus;
   version?: string | null;
+  availableVersion?: string | null;
+  releaseNotes?: string | null;
+  releaseDate?: string | null;
+  downloadPercent?: number | null;
+  bytesPerSecond?: number | null;
 }
 
 export function deriveUpdateUiStatus(
@@ -57,7 +99,23 @@ export function deriveUpdateUiStatus(
   }
 
   if (payload.checking && payload.downloading) {
-    return { status: "downloading" };
+    return {
+      status: "downloading",
+      availableVersion: payload.availableVersion ?? null,
+      releaseNotes: payload.releaseNotes ?? null,
+      releaseDate: payload.releaseDate ?? null,
+      downloadPercent: payload.downloadPercent ?? null,
+      bytesPerSecond: payload.bytesPerSecond ?? null,
+    };
+  }
+
+  if (payload.available) {
+    return {
+      status: "available",
+      availableVersion: payload.availableVersion ?? null,
+      releaseNotes: payload.releaseNotes ?? null,
+      releaseDate: payload.releaseDate ?? null,
+    };
   }
 
   if (payload.checking) {

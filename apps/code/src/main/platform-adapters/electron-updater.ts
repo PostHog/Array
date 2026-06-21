@@ -1,14 +1,39 @@
-import type { IUpdater } from "@posthog/platform/updater";
+import type {
+  IUpdater,
+  UpdateAvailableInfo,
+  UpdateDownloadProgress,
+} from "@posthog/platform/updater";
 import { app } from "electron";
 import log from "electron-log/main";
-import { autoUpdater, type UpdateInfo } from "electron-updater";
+import {
+  autoUpdater,
+  type ProgressInfo,
+  type UpdateInfo,
+} from "electron-updater";
 import { injectable } from "inversify";
+
+function normalizeReleaseNotes(
+  notes: UpdateInfo["releaseNotes"],
+): string | null {
+  if (!notes) return null;
+  if (typeof notes === "string") return notes;
+  const joined = notes
+    .map((n) => n.note ?? "")
+    .filter((n) => n.length > 0)
+    .join("\n\n");
+  return joined.length > 0 ? joined : null;
+}
 
 @injectable()
 export class ElectronUpdater implements IUpdater {
   constructor() {
     autoUpdater.logger = log;
     autoUpdater.disableDifferentialDownload = true;
+    // Default to manual download; the "Download updates automatically" setting
+    // flips this via setAutoDownload(). A downloaded update always installs on the
+    // next quit, with an in-app Restart button for immediate install.
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
   }
 
   public isSupported(): boolean {
@@ -23,8 +48,16 @@ export class ElectronUpdater implements IUpdater {
     void autoUpdater.checkForUpdates();
   }
 
+  public download(): void {
+    void autoUpdater.downloadUpdate();
+  }
+
   public quitAndInstall(): void {
     autoUpdater.quitAndInstall(false, true);
+  }
+
+  public setAutoDownload(enabled: boolean): void {
+    autoUpdater.autoDownload = enabled;
   }
 
   public onCheckStart(handler: () => void): () => void {
@@ -32,10 +65,32 @@ export class ElectronUpdater implements IUpdater {
     return () => autoUpdater.off("checking-for-update", handler);
   }
 
-  public onUpdateAvailable(handler: () => void): () => void {
-    const l = (_info: UpdateInfo) => handler();
+  public onUpdateAvailable(
+    handler: (info: UpdateAvailableInfo) => void,
+  ): () => void {
+    const l = (info: UpdateInfo) =>
+      handler({
+        version: info.version,
+        releaseNotes: normalizeReleaseNotes(info.releaseNotes),
+        releaseDate: info.releaseDate,
+        releaseName: info.releaseName,
+      });
     autoUpdater.on("update-available", l);
     return () => autoUpdater.off("update-available", l);
+  }
+
+  public onDownloadProgress(
+    handler: (progress: UpdateDownloadProgress) => void,
+  ): () => void {
+    const l = (info: ProgressInfo) =>
+      handler({
+        percent: info.percent,
+        bytesPerSecond: info.bytesPerSecond,
+        transferred: info.transferred,
+        total: info.total,
+      });
+    autoUpdater.on("download-progress", l);
+    return () => autoUpdater.off("download-progress", l);
   }
 
   public onUpdateDownloaded(handler: (version: string) => void): () => void {

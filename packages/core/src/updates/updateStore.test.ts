@@ -27,7 +27,14 @@ describe("deriveUpdateUiStatus", () => {
   it("maps checking + downloading to downloading", () => {
     expect(
       deriveUpdateUiStatus({ checking: true, downloading: true }, "idle"),
-    ).toEqual({ status: "downloading" });
+    ).toEqual({
+      status: "downloading",
+      availableVersion: null,
+      releaseNotes: null,
+      releaseDate: null,
+      downloadPercent: null,
+      bytesPerSecond: null,
+    });
   });
 
   it("maps checking to checking", () => {

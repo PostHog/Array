@@ -42,6 +42,8 @@ import { ExistingWorktreeDialog } from "@posthog/ui/features/task-detail/compone
 import { RemoteBranchCheckoutDialog } from "@posthog/ui/features/task-detail/components/RemoteBranchCheckoutDialog";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { TourOverlay } from "@posthog/ui/features/tour/components/TourOverlay";
+import { UpdateAvailableModal } from "@posthog/ui/features/updates/UpdateAvailableModal";
+import { WhatsNewModal } from "@posthog/ui/features/updates/WhatsNewModal";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import LogosLandscape from "@posthog/ui/primitives/Logo";
 import { useAppView } from "@posthog/ui/router/useAppView";
@@ -391,6 +393,8 @@ function RootLayout() {
           onToggleShortcutsSheet={toggleShortcutsSheet}
         />
         {billingEnabled && <UsageLimitModal />}
+        <UpdateAvailableModal />
+        <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
         <FeedbackModal
           mode={feedbackMode}
@@ -421,6 +425,8 @@ function RootLayout() {
           onToggleShortcutsSheet={toggleShortcutsSheet}
         />
         {billingEnabled && <UsageLimitModal />}
+        <UpdateAvailableModal />
+        <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
         <ExistingWorktreeDialog />
         {import.meta.env.DEV && (
@@ -465,6 +471,8 @@ function RootLayout() {
         />
         <TourOverlay />
         {billingEnabled && <UsageLimitModal />}
+        <UpdateAvailableModal />
+        <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
         {approvalDeepLink.pending ? (
           <DeepLinkApprovalModal

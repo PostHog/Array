@@ -6,6 +6,7 @@ import {
   DiscordLogo,
   FolderSimple,
   Gear,
+  Gift,
   Info,
   Keyboard,
   Plus,
@@ -50,6 +51,7 @@ import {
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { useProjects } from "@posthog/ui/features/projects/useProjects";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { useWhatsNewStore } from "@posthog/ui/features/updates/whatsNewStore";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { isMac } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
@@ -160,6 +162,11 @@ export function ProjectSwitcher({
 
   const handleDiscord = () => {
     openExternalUrl(EXTERNAL_LINKS.discord);
+    setPopoverOpen(false);
+  };
+
+  const handleViewChangelog = () => {
+    useWhatsNewStore.getState().open();
     setPopoverOpen(false);
   };
 
@@ -332,6 +339,11 @@ export function ProjectSwitcher({
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+
+            <DropdownMenuItem onClick={handleViewChangelog}>
+              <Gift size={14} className="text-gray-11" />
+              View changelog
+            </DropdownMenuItem>
 
             <DropdownMenuItem onClick={handleSettings}>
               <Gear size={14} className="text-gray-11" />
