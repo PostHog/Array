@@ -9,7 +9,6 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { useCanvasRefreshNonce } from "@posthog/ui/features/canvas/stores/canvasRefreshStore";
 import {
   useFreeformChatStore,
   useFreeformThread,
@@ -107,9 +106,6 @@ export function FreeformCanvasView({
       },
     ),
   );
-
-  // Refresh bumps this nonce → reloads the iframe → re-runs the app's queries.
-  const refreshKey = useCanvasRefreshNonce(threadId);
 
   const trpcCapture = trpc.canvasData.captureConfig.queryOptions(undefined, {
     staleTime: 5 * 60_000,
@@ -242,7 +238,6 @@ export function FreeformCanvasView({
                   onError={onError}
                   onRendered={onRendered}
                   analytics={analytics}
-                  refreshKey={refreshKey}
                 />
               </ErrorBoundary>
             ) : showGeneratingState ? (

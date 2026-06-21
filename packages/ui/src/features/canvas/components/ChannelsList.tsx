@@ -313,7 +313,6 @@ function DashboardRow({
         surface: "sidebar",
         channel_id: channelId,
         dashboard_id: dashboard.id,
-        kind: dashboard.kind,
         success: true,
       });
       // Deleting destroys the canvas, including any child routes under it, so
@@ -332,7 +331,6 @@ function DashboardRow({
         surface: "sidebar",
         channel_id: channelId,
         dashboard_id: dashboard.id,
-        kind: dashboard.kind,
         success: false,
       });
       toast.error("Couldn't delete canvas", {
@@ -359,7 +357,6 @@ function DashboardRow({
                       surface: "sidebar",
                       channel_id: channelId,
                       dashboard_id: dashboard.id,
-                      kind: dashboard.kind,
                       template_id: dashboard.templateId,
                     });
                     navigate({

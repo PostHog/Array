@@ -8,40 +8,18 @@ import type {
   CanvasDataResult,
   FreeformVersion,
 } from "./freeformSchemas";
-import type {
-  CanvasGenEventPayload,
-  CanvasGenerateInput,
-  CanvasThreadInput,
-} from "./genSchemas";
-import type {
-  DashboardQueryResult,
-  DashboardQueryRunInput,
-} from "./querySchemas";
 import type { CanvasTemplate, CanvasTemplateSummary } from "./templateSchemas";
 
 // Structural service interfaces the host-router routers depend on. The concrete
 // implementations live in the desktop app's main process and are bound to the
 // tokens in identifiers.ts; the router only needs the method surface.
 
-export interface ICanvasGenService {
-  generate(input: CanvasGenerateInput): Promise<void>;
-  reset(input: CanvasThreadInput): Promise<void>;
-  /** Async iterable of canvas stream events (for the onEvent subscription). */
-  toIterable(
-    event: "canvas-event",
-    opts?: { signal?: AbortSignal },
-  ): AsyncIterable<CanvasGenEventPayload>;
-}
-
 export interface ICanvasTemplatesService {
   list(): CanvasTemplateSummary[];
   get(id: string): CanvasTemplate | undefined;
-  /** The system prompt for a template, falling back to the default template. */
-  systemPromptFor(id: string | undefined): string;
   /**
-   * The React-tier (freeform iframe) system prompt for a template, falling back
-   * to the generic freeform sandbox. Used by the freeform gen path for canvases
-   * whose `kind` is "freeform" — distinct from the json-render `systemPromptFor`.
+   * The freeform (React iframe) system prompt for a template, falling back to
+   * the generic freeform sandbox prompt.
    */
   freeformSystemPromptFor(id: string | undefined): string;
 }
@@ -52,13 +30,7 @@ export interface IDashboardsService {
   create(input: {
     channelId: string;
     name: string;
-    spec: Record<string, unknown> | null;
     templateId?: string;
-  }): Promise<DashboardRecord>;
-  update(input: {
-    id: string;
-    name?: string;
-    spec: Record<string, unknown> | null;
   }): Promise<DashboardRecord>;
   saveFreeform(input: {
     id: string;
@@ -72,18 +44,6 @@ export interface IDashboardsService {
     taskId: string | null;
   }): Promise<DashboardRecord>;
   delete(id: string): Promise<void>;
-  refresh(input: {
-    id: string;
-    elementKeys?: string[];
-    touchUpdatedAt?: boolean;
-  }): Promise<{
-    updated: number;
-    failures: { elementKey: string; error: string }[];
-  }>;
-}
-
-export interface IDashboardQueryService {
-  run(input: DashboardQueryRunInput): Promise<DashboardQueryResult[]>;
 }
 
 export interface ICanvasDataService {

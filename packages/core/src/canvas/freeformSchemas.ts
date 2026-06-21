@@ -1,20 +1,8 @@
 import { z } from "zod";
 
-// The template id for freeform-React canvases. Stored on a canvas's meta the
-// same way "dashboard"/"web-analytics"/"blank" are, so the render path can tell
-// a freeform canvas (code in an iframe) from a json-render one (spec tree).
+// The template id for freeform-React canvases. Stored on a canvas's meta so the
+// generation path can resolve the right system prompt.
 export const FREEFORM_TEMPLATE_ID = "freeform";
-
-// Template ids that render on the React (freeform iframe) tier rather than the
-// json-render catalog. A canvas created from one of these gets `kind: "freeform"`
-// (see dashboardsService.create), so it streams React code and renders in the
-// sandbox. The generic freeform sandbox plus the opinionated dashboard /
-// web-analytics templates (which now build React apps, not json-render specs).
-export const REACT_TIER_TEMPLATE_IDS: ReadonlySet<string> = new Set([
-  FREEFORM_TEMPLATE_ID,
-  "dashboard",
-  "web-analytics",
-]);
 
 // A single point in a freeform canvas's edit history. Every agent turn appends
 // one full-file snapshot (Q7: full-file rewrite); the user can revert to any of
@@ -37,8 +25,7 @@ export const freeformVersionSchema = z.object({
 });
 export type FreeformVersion = z.infer<typeof freeformVersionSchema>;
 
-// The freeform-specific payload that rides in a canvas's file-system `meta`
-// blob, alongside the json-render fields. Absent on json-render canvases.
+// The freeform-specific payload that rides in a canvas's file-system `meta` blob.
 export const freeformCanvasSchema = z.object({
   // The currently-rendered source (mirrors the version pointed to by
   // currentVersionId; duplicated so the renderer needs only this field).

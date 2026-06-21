@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DashboardQueryService } from "./dashboardQueryService";
 import { DashboardsService } from "./dashboardsService";
 import type { DesktopFsClient, FsEntryBase } from "./desktopFsClient";
 
@@ -35,11 +34,7 @@ function fakeFs(rows: FsEntryBase[]) {
 describe("DashboardsService.list", () => {
   it("fetches with a parent-scoped, type-filtered query", async () => {
     const { fs, listByQuery } = fakeFs([]);
-    const service = new DashboardsService(
-      fs,
-      {} as DashboardQueryService,
-      {} as never,
-    );
+    const service = new DashboardsService(fs, {} as never);
 
     await service.list("chan-1");
 
@@ -56,11 +51,7 @@ describe("DashboardsService.list", () => {
       dashboardRow("b", "Newer", "chan-1", 300),
       dashboardRow("c", "Middle", "chan-1", 200),
     ]);
-    const service = new DashboardsService(
-      fs,
-      {} as DashboardQueryService,
-      {} as never,
-    );
+    const service = new DashboardsService(fs, {} as never);
 
     const result = await service.list("chan-1");
 

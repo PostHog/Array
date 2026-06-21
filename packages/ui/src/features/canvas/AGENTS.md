@@ -1,8 +1,10 @@
 # Canvas (Website space) — patterns
 
-Conventions for the channel-scoped Website space: channels, dashboards, and the
-gen-UI canvas. Read this before changing breadcrumbs, dashboard naming, or the
-canvas generation harness. The root `AGENTS.md` architecture rules still apply.
+Conventions for the channel-scoped Website space: channels and canvases. A canvas
+is an agent-authored single-file React app rendered in a sandboxed iframe (the
+freeform tier — there is no longer a json-render/declarative tier). Read this
+before changing breadcrumbs, canvas naming, or the canvas generation harness. The
+root `AGENTS.md` architecture rules still apply.
 
 ## Spaces & chrome
 
@@ -31,25 +33,24 @@ canvas generation harness. The root `AGENTS.md` architecture rules still apply.
 - Crumbs reflect navigable parents above the current page; the current page is
   the H1, never a crumb of itself.
 
-## Dashboard naming
+## Canvas naming
 
-- **The dashboard's H1 is its name.** The canvas harness always emits a top-level
-  `Heading` (level 1) as the first child of the root `Page`
-  (see `CANVAS_SYSTEM_PROMPT` in `genui/catalog.ts`). `dashboardTitleFromSpec`
-  (`genui/dashboardTitle.ts`) reads that H1.
-- **Editing the H1 renames the dashboard.** On save, the derived title is passed
-  as the dashboard `name`; there is no separate name field or rename UI.
+- **A canvas's name is its file-system path segment**, set at creation
+  (`Untitled canvas` by default; the template picker / `useCreateAndOpenDashboard`
+  drive it) and copied with a `(fork)` suffix on fork. It is independent of any
+  heading the agent renders inside the React app.
 
 ## Storage
 
-- Dashboards are **backed by the PostHog desktop file system**, not local files.
-  A dashboard is a `dashboard`-typed row nested under its channel folder; its
-  name is the last path segment (the H1) and the json-render spec rides in
-  `meta.spec`. See `@posthog/core/canvas/dashboardsService.ts`; the `meta` payload
-  is typed + documented as `DashboardFileMeta` in `dashboardSchemas.ts`. This
-  keeps dashboard and channel names in sync with the backend — the same surface
-  that owns channels (top-level `folder` rows, see `hooks/useChannels.ts`).
-- `meta.spec` is **last-write-wins, unversioned**. A polling refresh and a
-  concurrent edit elsewhere can clobber each other (no `base_version` on `meta`).
-  Acceptable for now; revisit with optimistic concurrency / versioning if
-  multi-client editing becomes real.
+- Canvases are **backed by the PostHog desktop file system**, not local files.
+  A canvas is a `dashboard`-typed row nested under its channel folder; its name
+  is the last path segment. The agent-authored React source + edit history ride
+  in `meta` (`code`, `versions`, `currentVersionId`, `context`, `templateId`).
+  See `@posthog/core/canvas/dashboardsService.ts`; the `meta` payload is typed +
+  documented as `DashboardFileMeta` in `dashboardSchemas.ts`. This keeps canvas
+  and channel names in sync with the backend — the same surface that owns
+  channels (top-level `folder` rows, see `hooks/useChannels.ts`).
+- `meta` is **last-write-wins, unversioned** at the fs layer (no `base_version`).
+  Freeform autosaves the whole file each agent turn, so a concurrent edit from
+  another client can clobber. Acceptable for now; revisit with optimistic
+  concurrency if multi-client editing becomes real.
