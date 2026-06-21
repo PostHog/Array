@@ -56,57 +56,6 @@ export const freeformCanvasSchema = z.object({
 export type FreeformCanvas = z.infer<typeof freeformCanvasSchema>;
 
 // ---------------------------------------------------------------------------
-// Code-stream events: the agent writes a single React file (not json-render
-// patches), so we stream prose + full-file code snapshots instead of specs.
-// Mirrors genSchemas' CanvasStreamEvent shape for the json-render agent.
-// ---------------------------------------------------------------------------
-export const freeformStreamEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("started") }),
-  z.object({ type: z.literal("prose"), text: z.string() }),
-  // A full-file source snapshot. The agent rewrites the whole file each turn, so
-  // each snapshot replaces (not appends to) the previous code.
-  z.object({ type: z.literal("code"), code: z.string() }),
-  z.object({
-    type: z.literal("tool"),
-    toolName: z.string(),
-    status: z.string(),
-  }),
-  z.object({ type: z.literal("done") }),
-  z.object({ type: z.literal("error"), message: z.string() }),
-]);
-export type FreeformStreamEvent = z.infer<typeof freeformStreamEventSchema>;
-
-// Input for a freeform generation turn. Mirrors canvasGenerateInput but seeds
-// the agent with the current CODE (not a spec) so it rewrites the existing file
-// instead of starting blank.
-export const freeformGenerateInput = z.object({
-  threadId: z.string().min(1),
-  prompt: z.string().min(1),
-  // The canvas's current source, sent each turn so the session is anchored to
-  // what's on screen even after a renderer reload. Empty/absent = new canvas.
-  currentCode: z.string().nullish(),
-  // The canvas's template id, so the agent gets the matching React-tier prompt
-  // (generic sandbox vs the opinionated dashboard / web-analytics prompt).
-  templateId: z.string().optional(),
-  model: z.string().optional(),
-});
-export type FreeformGenerateInput = z.infer<typeof freeformGenerateInput>;
-
-export const freeformThreadInput = z.object({ threadId: z.string().min(1) });
-export type FreeformThreadInput = z.infer<typeof freeformThreadInput>;
-
-export const FreeformGenEvent = { Event: "freeform-event" } as const;
-
-export interface FreeformGenEventPayload {
-  threadId: string;
-  event: FreeformStreamEvent;
-}
-
-export interface FreeformGenEvents {
-  [FreeformGenEvent.Event]: FreeformGenEventPayload;
-}
-
-// ---------------------------------------------------------------------------
 // Canvas data avenue: the host-side query the postMessage `ph.query` shim calls.
 // Routed through PostHog's cached query runner (the same avenue insights use, so
 // caching + cold-boot are handled), never a bare uncached /query (the token is

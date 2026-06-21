@@ -18,7 +18,6 @@ import { externalAppsRouter } from "@posthog/host-router/routers/external-apps.r
 import { fileWatcherRouter } from "@posthog/host-router/routers/file-watcher.router";
 import { focusRouter } from "@posthog/host-router/routers/focus.router";
 import { foldersRouter } from "@posthog/host-router/routers/folders.router";
-import { freeformGenRouter } from "@posthog/host-router/routers/freeform-gen.router";
 import { fsRouter } from "@posthog/host-router/routers/fs.router";
 import { gitRouter } from "@posthog/host-router/routers/git.router";
 import { githubIntegrationRouter } from "@posthog/host-router/routers/github-integration.router";
@@ -70,7 +69,6 @@ export const trpcRouter = router({
   fileWatcher: fileWatcherRouter,
   focus: focusRouter,
   folders: foldersRouter,
-  freeformGen: freeformGenRouter,
   fs: fsRouter,
   git: gitRouter,
   githubIntegration: githubIntegrationRouter,

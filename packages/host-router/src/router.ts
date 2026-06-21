@@ -19,7 +19,6 @@ import { externalAppsRouter } from "./routers/external-apps.router";
 import { fileWatcherRouter } from "./routers/file-watcher.router";
 import { focusRouter } from "./routers/focus.router";
 import { foldersRouter } from "./routers/folders.router";
-import { freeformGenRouter } from "./routers/freeform-gen.router";
 import { fsRouter } from "./routers/fs.router";
 import { gitRouter } from "./routers/git.router";
 import { githubIntegrationRouter } from "./routers/github-integration.router";
@@ -67,7 +66,6 @@ export const hostRouter = router({
   fileWatcher: fileWatcherRouter,
   focus: focusRouter,
   folders: foldersRouter,
-  freeformGen: freeformGenRouter,
   fs: fsRouter,
   git: gitRouter,
   handoff: handoffRouter,

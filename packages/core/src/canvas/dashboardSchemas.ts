@@ -25,6 +25,9 @@ export const dashboardRecordSchema = z.object({
   currentVersionId: z.string().optional(),
   // Freeform only: the live author-written context (markdown) passed to the agent.
   context: z.string().optional(),
+  // Id of the task currently generating this canvas (freeform gen runs as a
+  // dedicated task, like CONTEXT.md). null/absent = no generation in flight.
+  generationTaskId: z.string().nullish(),
   // Display name of whoever created the file-system row (from the backend's
   // `created_by` user). Absent for rows the API returns without a creator.
   createdBy: z.string().optional(),
@@ -53,6 +56,8 @@ export const dashboardFileMetaSchema = z.object({
   currentVersionId: z.string().optional(),
   // Freeform only: the live author-written context (markdown) passed to the agent.
   context: z.string().optional(),
+  // Id of the task currently generating this canvas (see dashboardRecordSchema).
+  generationTaskId: z.string().nullish(),
   // Display name of the creator, stamped at create time. We can't rely on the
   // FS row's `created_by` (the list endpoint doesn't expand it), so we store our
   // own. Absent on boards created before this field existed.
@@ -108,6 +113,13 @@ export const saveFreeformInput = z.object({
 });
 
 export const dashboardIdInput = z.object({ id: z.string().min(1) });
+
+// Set (or clear, when taskId is null) the canvas's generation-task association.
+// Stored in the row's meta so every client polling the canvas sees the run.
+export const setGenerationTaskInput = z.object({
+  id: z.string().min(1),
+  taskId: z.string().nullable(),
+});
 
 // The active time window a dashboard's time-based queries run against. `from`
 // and `to` are epoch ms; `name` is the picker label (e.g. "Last 7 days"). Stored

@@ -23,20 +23,21 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
   const spec = dashboard?.spec as Spec | null | undefined;
   const templateId = dashboard?.templateId;
   const isFreeform = dashboard?.kind === "freeform";
-  const ensureCode = useFreeformChatStore((s) => s.ensureCode);
+  const syncFromRecord = useFreeformChatStore((s) => s.syncFromRecord);
 
   // Seed the freeform thread from the saved record (code + version history) when
-  // its data lands, so undo/redo and the live render reflect what's stored.
+  // its data lands, so undo/redo and the live render reflect what's stored — and
+  // adopt a version a generation task just published.
   useEffect(() => {
     if (!isFreeform || !dashboard) return;
-    ensureCode(threadId, {
+    syncFromRecord(threadId, {
       code: dashboard.code,
       versions: dashboard.versions,
       currentVersionId: dashboard.currentVersionId,
       templateId: dashboard.templateId,
       context: dashboard.context,
     });
-  }, [isFreeform, dashboard, threadId, ensureCode]);
+  }, [isFreeform, dashboard, threadId, syncFromRecord]);
 
   // Entering edit on an existing dashboard: seed the canvas thread with the
   // saved spec so the agent refines the current board instead of a blank

@@ -6,9 +6,6 @@ import type {
   CanvasCaptureResult,
   CanvasDataQueryInput,
   CanvasDataResult,
-  FreeformGenEventPayload,
-  FreeformGenerateInput,
-  FreeformThreadInput,
   FreeformVersion,
 } from "./freeformSchemas";
 import type {
@@ -34,15 +31,6 @@ export interface ICanvasGenService {
     event: "canvas-event",
     opts?: { signal?: AbortSignal },
   ): AsyncIterable<CanvasGenEventPayload>;
-}
-
-export interface IFreeformGenService {
-  generate(input: FreeformGenerateInput): Promise<void>;
-  reset(input: FreeformThreadInput): Promise<void>;
-  toIterable(
-    event: "freeform-event",
-    opts?: { signal?: AbortSignal },
-  ): AsyncIterable<FreeformGenEventPayload>;
 }
 
 export interface ICanvasTemplatesService {
@@ -78,6 +66,10 @@ export interface IDashboardsService {
     code: string;
     versions: FreeformVersion[];
     currentVersionId?: string;
+  }): Promise<DashboardRecord>;
+  setGenerationTask(input: {
+    id: string;
+    taskId: string | null;
   }): Promise<DashboardRecord>;
   delete(id: string): Promise<void>;
   refresh(input: {

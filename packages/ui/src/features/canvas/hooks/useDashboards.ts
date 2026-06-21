@@ -68,6 +68,11 @@ export function useDashboardMutations() {
   const saveFreeform = useMutation(
     trpc.dashboards.saveFreeform.mutationOptions({ onSuccess: invalidate }),
   );
+  const setGenerationTask = useMutation(
+    trpc.dashboards.setGenerationTask.mutationOptions({
+      onSuccess: invalidate,
+    }),
+  );
 
   return {
     saveDashboard: (id: string, spec: Spec | null, name?: string) =>
@@ -89,6 +94,10 @@ export function useDashboardMutations() {
         templateId,
       }),
     deleteDashboard: (id: string) => remove.mutateAsync({ id }),
+    // Record (or clear) the task generating this canvas. Shared via the row's
+    // meta so every client polling the canvas sees the in-flight generation.
+    setGenerationTask: (id: string, taskId: string | null) =>
+      setGenerationTask.mutateAsync({ id, taskId }),
     // Explicitly persist a freeform canvas's current code + history (autosave
     // already runs each turn; this is the manual Save affordance).
     saveFreeformDashboard: (

@@ -229,6 +229,30 @@ export class DashboardsService {
     return toRecord((await res.json()) as FsEntry);
   }
 
+  // Record (or clear, when taskId is null) the task currently generating this
+  // canvas. Merges into meta like the other writers so it never clobbers
+  // code/versions; the agent's MCP publish likewise merges, so the two coexist.
+  async setGenerationTask(input: {
+    id: string;
+    taskId: string | null;
+  }): Promise<DashboardRecord> {
+    const entry = await this.getEntry(input.id);
+    const prevMeta = entry?.meta ?? {};
+    const meta: DashboardFileMeta = {
+      ...prevMeta,
+      generationTaskId: input.taskId,
+    };
+    const res = await this.fs.fetch(`${encodeURIComponent(input.id)}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meta }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to set generation task (${res.status})`);
+    }
+    return toRecord((await res.json()) as FsEntry);
+  }
+
   async delete(id: string): Promise<void> {
     const res = await this.fs.fetch(`${encodeURIComponent(id)}/`, {
       method: "DELETE",
@@ -341,6 +365,7 @@ function toRecord(entry: FsEntry): DashboardRecord {
     versions: meta.versions,
     currentVersionId: meta.currentVersionId,
     context: meta.context,
+    generationTaskId: meta.generationTaskId,
     // Prefer our stamped meta; fall back to the FS row's creator if present.
     createdBy: meta.createdBy ?? creatorName(entry.created_by),
     createdAt,

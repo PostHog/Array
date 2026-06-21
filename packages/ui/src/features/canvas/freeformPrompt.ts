@@ -1,0 +1,60 @@
+import { freeformSystemPromptFor } from "@posthog/core/canvas/canvasTemplates";
+
+// Builds the prompt for the task that generates a freeform (React) canvas. Like
+// CONTEXT.md generation, this runs as a normal agent task in the channel's repo,
+// so the agent has the default system prompt — the freeform authoring contract
+// (imports, the `ph` data shim, Quill/style rules) therefore has to live in the
+// task's content (its first user message). The canvas is not a file on disk — it
+// lives in PostHog — so the agent publishes the result via the PostHog MCP tool
+// `desktop-file-system-canvas-partial-update` rather than replying with code or
+// writing a file.
+export function buildFreeformGenerationPrompt(input: {
+  dashboardId: string;
+  name: string;
+  channelName: string;
+  templateId?: string;
+  instruction: string;
+  // The current source, when editing an existing canvas. Omitted for a first build.
+  currentCode?: string;
+}): string {
+  const {
+    dashboardId,
+    name,
+    channelName,
+    templateId,
+    instruction,
+    currentCode,
+  } = input;
+
+  const contract = freeformSystemPromptFor(templateId);
+  const isEdit = !!currentCode?.trim();
+
+  const header = isEdit
+    ? `Edit the freeform React canvas "${name}" in the channel "${channelName}".`
+    : `Build a freeform React canvas "${name}" for the channel "${channelName}".`;
+
+  const currentBlock = isEdit
+    ? `\n[Current code] — the canvas as it stands now. Rewrite the WHOLE file with the change applied; do not output a partial file.\n\n\`\`\`tsx\n${currentCode}\n\`\`\`\n`
+    : "";
+
+  return `${header}
+
+What the user wants:
+${instruction}
+${currentBlock}
+Follow this authoring contract for the canvas (imports, the \`ph\` data shim, and
+style rules):
+
+${contract}
+
+PUBLISHING — this OVERRIDES any instruction above about replying with the code in
+a fenced \`\`\`tsx block. In this task you do NOT reply with the code. When the
+canvas is ready, PUBLISH it by calling the PostHog MCP tool
+\`desktop-file-system-canvas-partial-update\` exactly once with:
+- id: "${dashboardId}"
+- code: the COMPLETE single-file React source for the canvas.
+
+The canvas lives in PostHog, not on disk — calling that MCP tool is what saves it.
+Do not write a local file. Verify event/property names via the PostHog MCP before
+using them, and operate only on this project.`;
+}
