@@ -38,13 +38,18 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
   const [contextPanelResizing, setContextPanelResizing] = useState(false);
 
   const handleContextChipClick = useCallback(() => {
-    setContextPanelOpen((open) => !open);
-    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-      action_type: "view_context",
-      surface: "new_task",
-      channel_id: channelId,
-    });
-  }, [channelId]);
+    const nextOpen = !contextPanelOpen;
+    setContextPanelOpen(nextOpen);
+    // Only count opening the panel, not closing it, so an open→close→open
+    // cycle doesn't inflate the metric.
+    if (nextOpen) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "view_context",
+        surface: "new_task",
+        channel_id: channelId,
+      });
+    }
+  }, [channelId, contextPanelOpen]);
 
   const onTaskCreated = useCallback(
     (task: Task) => {

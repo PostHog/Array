@@ -31,22 +31,32 @@ function renderPanel(
 }
 
 describe("ChannelContextPanel", () => {
-  it("renders the channel-qualified CONTEXT.md title and body", () => {
+  it.each([
+    {
+      channelName: "project-bluebird",
+      expectedTitle: "#project-bluebird CONTEXT.md",
+    },
+    { channelName: undefined, expectedTitle: "CONTEXT.md" },
+  ])(
+    "renders title '$expectedTitle' for channelName=$channelName",
+    ({ channelName, expectedTitle }) => {
+      render(
+        <Theme>
+          <ChannelContextPanel
+            channelName={channelName}
+            body="body"
+            onClose={vi.fn()}
+          />
+        </Theme>,
+      );
+      expect(screen.getByText(expectedTitle)).toBeInTheDocument();
+    },
+  );
+
+  it("renders the markdown body", () => {
     renderPanel();
-    expect(
-      screen.getByText("#project-bluebird CONTEXT.md"),
-    ).toBeInTheDocument();
     expect(screen.getByText("Heading")).toBeInTheDocument();
     expect(screen.getByText("context")).toBeInTheDocument();
-  });
-
-  it("omits the channel prefix when no name is given", () => {
-    render(
-      <Theme>
-        <ChannelContextPanel body="body" onClose={vi.fn()} />
-      </Theme>,
-    );
-    expect(screen.getByText("CONTEXT.md")).toBeInTheDocument();
   });
 
   it("calls onClose when the close button is clicked", async () => {
