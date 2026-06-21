@@ -13,6 +13,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
+import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
 import {
   navigateToAgents,
   navigateToCanvas,
@@ -151,6 +152,11 @@ export function ChannelsSidebar() {
         <ChannelsNav />
         <ChannelsList />
       </Box>
+
+      {/* Update prompt pinned above Settings, mirroring the Code-mode sidebar
+          (SidebarContent) so a ready update is offered in this space too. The
+          banner renders nothing unless an update is downloading/ready. */}
+      <UpdateBanner />
 
       {/* Settings pinned to the bottom. Settings is a full-page route, so this
           leaves the Channels space rather than highlighting in place. */}
