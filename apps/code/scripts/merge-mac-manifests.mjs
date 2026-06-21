@@ -19,7 +19,8 @@ export function mergeManifests(arm64, x64) {
     }
   }
 
-  return { ...arm64, files: mergedFiles };
+  const { path: _path, sha512: _sha512, size: _size, ...rest } = arm64;
+  return { ...rest, files: mergedFiles };
 }
 
 function main() {

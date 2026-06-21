@@ -5,6 +5,7 @@ const skipNotarize =
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
+  // Original release bundle id; changing it breaks existing installs' data dir and Keychain entries.
   appId: "com.posthog.array",
   productName: "PostHog Code",
   executableName: "PostHog Code",

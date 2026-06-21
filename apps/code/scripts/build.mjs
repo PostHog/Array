@@ -24,9 +24,11 @@ function runViteBuild(config) {
 }
 
 async function main() {
-  await runViteBuild("vite.main.config.mts");
-  await runViteBuild("vite.preload.config.mts");
-  await runViteBuild("vite.workspace-server.config.mts");
+  await Promise.all([
+    runViteBuild("vite.main.config.mts"),
+    runViteBuild("vite.preload.config.mts"),
+    runViteBuild("vite.workspace-server.config.mts"),
+  ]);
   await runViteBuild("vite.renderer.config.mts");
 }
 

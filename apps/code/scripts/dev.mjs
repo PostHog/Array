@@ -7,10 +7,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 
 const DEV_SERVER_PORT = 5173;
+const DEV_SERVER_READY = new RegExp(
+  `(localhost|127\\.0\\.0\\.1|\\[::1\\]):${DEV_SERVER_PORT}`,
+);
 
 const children = [];
+let shuttingDown = false;
 
 function killAll(signal = "SIGTERM") {
+  shuttingDown = true;
   for (const child of children) {
     if (!child.killed) {
       child.kill(signal);
@@ -126,10 +131,7 @@ async function main() {
   }
 
   forwardAndCheck(rendererServer.stdout, process.stdout, (line) => {
-    if (
-      devServerUrl === null &&
-      line.includes(`localhost:${DEV_SERVER_PORT}`)
-    ) {
+    if (devServerUrl === null && DEV_SERVER_READY.test(line)) {
       devServerUrl = `http://localhost:${DEV_SERVER_PORT}`;
       maybeStartElectron();
     }
@@ -158,6 +160,12 @@ async function main() {
     );
     children.push(child);
     child.on("error", onSpawnError(`vite watch (${readyKey})`));
+    child.on("close", (code) => {
+      if (shuttingDown || code === 0) return;
+      console.error(`vite watch (${readyKey}) exited with code ${code}`);
+      killAll("SIGTERM");
+      process.exit(code ?? 1);
+    });
     forwardAndCheck(child.stdout, process.stdout, (line) => {
       if (!watchReady[readyKey] && builtPattern.test(line)) {
         watchReady[readyKey] = true;
