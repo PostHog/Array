@@ -2,11 +2,10 @@ import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import {
   macOnlyNativeModules,
+  requiredNativeModules,
   runtimeNativeModules,
+  watcherPackageFor,
 } from "../runtime-dependencies";
-
-const ARCH_X64 = 1;
-const ARCH_ARM64 = 3;
 
 type BeforePackContext = {
   packager: { platform: { name: string } };
@@ -66,30 +65,22 @@ export default async function beforePack(context: BeforePackContext) {
   console.log(`[before-pack] local node_modules: ${localNodeModules}`);
 
   for (const dep of runtimeNativeModules) {
-    copyDep(dep, rootNodeModules, localNodeModules);
+    if (requiredNativeModules.includes(dep)) {
+      copyRequiredDep(dep, rootNodeModules, localNodeModules);
+    } else {
+      copyDep(dep, rootNodeModules, localNodeModules);
+    }
+  }
+
+  const watcherPkg = watcherPackageFor(platformName, arch);
+  if (watcherPkg) {
+    copyRequiredDep(watcherPkg, rootNodeModules, localNodeModules);
   }
 
   if (platformName === "mac") {
-    const watcherPkg =
-      arch === ARCH_X64
-        ? "@parcel/watcher-darwin-x64"
-        : "@parcel/watcher-darwin-arm64";
-    copyRequiredDep(watcherPkg, rootNodeModules, localNodeModules);
     for (const dep of macOnlyNativeModules) {
       copyDep(dep, rootNodeModules, localNodeModules);
     }
-  } else if (platformName === "win") {
-    const watcherPkg =
-      arch === ARCH_ARM64
-        ? "@parcel/watcher-win32-arm64"
-        : "@parcel/watcher-win32-x64";
-    copyRequiredDep(watcherPkg, rootNodeModules, localNodeModules);
-  } else if (platformName === "linux") {
-    const watcherPkg =
-      arch === ARCH_ARM64
-        ? "@parcel/watcher-linux-arm64-glibc"
-        : "@parcel/watcher-linux-x64-glibc";
-    copyRequiredDep(watcherPkg, rootNodeModules, localNodeModules);
   }
 
   const watcherBuild = path.join(localNodeModules, "@parcel/watcher/build");

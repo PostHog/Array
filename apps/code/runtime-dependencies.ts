@@ -29,6 +29,14 @@ export const runtimeNativeModules = [
   "is-number",
 ];
 
+// The base native modules that must exist when packaging; a missing one is a
+// broken build, not a warning. before-pack stages these with copyRequiredDep.
+export const requiredNativeModules = [
+  "node-pty",
+  "@parcel/watcher",
+  "better-sqlite3",
+];
+
 // file-icon (and its p-map dependency) is only used on macOS.
 export const macOnlyNativeModules = ["file-icon", "p-map"];
 
@@ -63,3 +71,34 @@ export const packagedFileGlobs = [
 export const asarUnpackGlobs = asarUnpackModules.map(
   (name) => `node_modules/${scopeOf(name)}/**`,
 );
+
+// Mirrors electron-builder's Arch enum (ia32=0, x64=1, armv7l=2, arm64=3).
+const ARCH_X64 = 1;
+const ARCH_ARM64 = 3;
+
+// The platform-specific @parcel/watcher prebuild before-pack must stage, keyed
+// by electron-builder's platform name and arch. The name is "windows", not
+// "win" (electron-builder's Platform.WINDOWS.name); matching "win" silently
+// skips staging and ships a broken Windows app. Returns null for an
+// unrecognized platform.
+export function watcherPackageFor(
+  platformName: string,
+  arch: number,
+): string | null {
+  if (platformName === "mac") {
+    return arch === ARCH_X64
+      ? "@parcel/watcher-darwin-x64"
+      : "@parcel/watcher-darwin-arm64";
+  }
+  if (platformName === "windows") {
+    return arch === ARCH_ARM64
+      ? "@parcel/watcher-win32-arm64"
+      : "@parcel/watcher-win32-x64";
+  }
+  if (platformName === "linux") {
+    return arch === ARCH_ARM64
+      ? "@parcel/watcher-linux-arm64-glibc"
+      : "@parcel/watcher-linux-x64-glibc";
+  }
+  return null;
+}
