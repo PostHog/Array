@@ -42,7 +42,12 @@ import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
+import {
+  NewCanvasDialog,
+  trackAndCreateCanvas,
+} from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
+import { useCanvasTemplates } from "@posthog/ui/features/canvas/hooks/useCanvasTemplates";
 import {
   useChannelStars,
   useChannelStarToggle,
@@ -58,6 +63,7 @@ import {
   useChannelTasks,
 } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
+  useCreateAndOpenDashboard,
   useDashboardMutations,
   useDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
@@ -626,6 +632,12 @@ function ChannelSection({
   const [open, setOpen] = useState(isActive);
   // Lifted so the hover button group stays visible while the menu is open.
   const [menuOpen, setMenuOpen] = useState(false);
+  // The "+" dropdown (New task / New canvas) and the canvas template picker it
+  // can open. Both keep the hover actions pinned while active.
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [canvasDialogOpen, setCanvasDialogOpen] = useState(false);
+  const canvasTemplates = useCanvasTemplates();
+  const createAndOpenCanvas = useCreateAndOpenDashboard(channel.id);
   // Only the first few tasks per channel show by default; "View more" reveals
   // another batch each click so a busy channel doesn't flood the sidebar.
   const [taskLimit, setTaskLimit] = useState(MAX_VISIBLE_TASKS_PER_CHANNEL);
@@ -687,7 +699,7 @@ function ChannelSection({
         <span
           className={cn(
             "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
-            menuOpen && "pr-8",
+            (menuOpen || newMenuOpen) && "pr-8",
           )}
         >
           {channel.name}
@@ -697,38 +709,79 @@ function ChannelSection({
             menu is open. */}
       <div className="absolute top-1 right-1">
         <ButtonGroup>
-          <Tooltip content="New task" side="top">
-            <Button
-              variant="outline"
-              size="icon-xs"
-              aria-label={`New task in ${channel.name}`}
-              onClick={() => {
-                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                  action_type: "new_task_open",
-                  surface: "sidebar",
-                  channel_id: channel.id,
-                });
-                navigate({
-                  to: "/website/$channelId/new",
-                  params: { channelId: channel.id },
-                });
-              }}
-              className={cn(
-                "transition-opacity group-hover:border-border",
-                menuOpen
-                  ? "opacity-100"
-                  : "opacity-0 group-hover/chan:opacity-100",
-              )}
+          <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
+            <Tooltip content="New" side="top">
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon-xs"
+                    aria-label={`New in ${channel.name}`}
+                    className={cn(
+                      "transition-opacity group-hover:border-border",
+                      newMenuOpen
+                        ? "opacity-100"
+                        : "opacity-0 group-hover/chan:opacity-100",
+                    )}
+                  >
+                    <PlusIcon size={14} weight="bold" />
+                  </Button>
+                }
+              />
+            </Tooltip>
+            <DropdownMenuContent
+              align="start"
+              side="bottom"
+              sideOffset={4}
+              className="w-auto min-w-fit"
             >
-              <PlusIcon size={14} weight="bold" />
-            </Button>
-          </Tooltip>
+              <DropdownMenuItem
+                onClick={() => {
+                  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                    action_type: "new_task_open",
+                    surface: "sidebar",
+                    channel_id: channel.id,
+                  });
+                  navigate({
+                    to: "/website/$channelId/new",
+                    params: { channelId: channel.id },
+                  });
+                }}
+              >
+                <FileTextIcon size={14} />
+                New task
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  // No templates loaded yet: create with the default template,
+                  // matching NewCanvasMenu's fallback. Otherwise pick one.
+                  if (canvasTemplates.length === 0) {
+                    trackAndCreateCanvas(
+                      channel.id,
+                      undefined,
+                      () => void createAndOpenCanvas(),
+                    );
+                  } else {
+                    setCanvasDialogOpen(true);
+                  }
+                }}
+              >
+                <ChartBarIcon size={14} />
+                New canvas
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <ChannelMenu
             channel={channel}
             open={menuOpen}
             onOpenChange={setMenuOpen}
           />
         </ButtonGroup>
+        <NewCanvasDialog
+          channelId={channel.id}
+          open={canvasDialogOpen}
+          onOpenChange={setCanvasDialogOpen}
+        />
       </div>
       {open && (
         // Children hang off a vertical guide line, like a tree.
