@@ -9,11 +9,13 @@ import {
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
+import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
+import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import {
   navigateToAgents,
   navigateToCanvas,
@@ -138,33 +140,47 @@ function ChannelsNav() {
 // pinned to the bottom. There is no app rail in this space; the nav rows above
 // are the cross-app navigation.
 export function ChannelsSidebar() {
+  const width = useChannelsSidebarStore((state) => state.width);
+  const setWidth = useChannelsSidebarStore((state) => state.setWidth);
+  const isResizing = useChannelsSidebarStore((state) => state.isResizing);
+  const setIsResizing = useChannelsSidebarStore((state) => state.setIsResizing);
+
   return (
-    <Flex direction="column" className="w-[220px] shrink-0 bg-gray-2">
-      {/* Workspace switcher — a compact bordered button. The title bar above
-          provides the window-drag region and stoplight clearance. */}
-      <Box className="shrink-0 p-2 pb-0">
-        <ProjectSwitcher triggerVariant="button" />
-      </Box>
+    <ResizableSidebar
+      open
+      width={width}
+      setWidth={setWidth}
+      isResizing={isResizing}
+      setIsResizing={setIsResizing}
+      side="left"
+    >
+      <Flex direction="column" className="h-full bg-gray-2">
+        {/* Workspace switcher — a compact bordered button. The title bar above
+            provides the window-drag region and stoplight clearance. */}
+        <Box className="shrink-0 p-2 pb-0">
+          <ProjectSwitcher triggerVariant="button" />
+        </Box>
 
-      {/* The whole nav (links + channel tree) scrolls as one — only the switcher
-          above and Settings below stay pinned. */}
-      <Box className="min-h-0 flex-1 overflow-y-auto">
-        <ChannelsNav />
-        <ChannelsList />
-      </Box>
+        {/* The whole nav (links + channel tree) scrolls as one — only the switcher
+            above and Settings below stay pinned. */}
+        <Box className="min-h-0 flex-1 overflow-y-auto">
+          <ChannelsNav />
+          <ChannelsList />
+        </Box>
 
-      <UpdateBanner />
+        <UpdateBanner />
 
-      {/* Settings pinned to the bottom. Settings is a full-page route, so this
-          leaves the Channels space rather than highlighting in place. */}
-      <Box className="shrink-0 p-2 pt-0">
-        <SidebarItem
-          depth={0}
-          icon={<GearSixIcon size={16} />}
-          label="Settings"
-          onClick={() => trackNav("settings", () => openSettings())}
-        />
-      </Box>
-    </Flex>
+        {/* Settings pinned to the bottom. Settings is a full-page route, so this
+            leaves the Channels space rather than highlighting in place. */}
+        <Box className="shrink-0 p-2 pt-0">
+          <SidebarItem
+            depth={0}
+            icon={<GearSixIcon size={16} />}
+            label="Settings"
+            onClick={() => trackNav("settings", () => openSettings())}
+          />
+        </Box>
+      </Flex>
+    </ResizableSidebar>
   );
 }
