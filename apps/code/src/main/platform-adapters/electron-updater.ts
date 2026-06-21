@@ -28,9 +28,8 @@ export class ElectronUpdater implements IUpdater {
   }
 
   public onCheckStart(handler: () => void): () => void {
-    const l = () => handler();
-    autoUpdater.on("checking-for-update", l);
-    return () => autoUpdater.off("checking-for-update", l);
+    autoUpdater.on("checking-for-update", handler);
+    return () => autoUpdater.off("checking-for-update", handler);
   }
 
   public onUpdateAvailable(handler: () => void): () => void {
@@ -46,9 +45,8 @@ export class ElectronUpdater implements IUpdater {
   }
 
   public onNoUpdate(handler: () => void): () => void {
-    const l = () => handler();
-    autoUpdater.on("update-not-available", l);
-    return () => autoUpdater.off("update-not-available", l);
+    autoUpdater.on("update-not-available", handler);
+    return () => autoUpdater.off("update-not-available", handler);
   }
 
   public onError(handler: (error: Error) => void): () => void {

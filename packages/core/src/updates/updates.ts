@@ -329,21 +329,21 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     }
   }
 
-  private handleUpdateDownloaded(releaseName?: string): void {
+  private handleUpdateDownloaded(version?: string): void {
     this.clearCheckTimeout();
 
     if (this.isUpdateStaged()) {
       this.log.info("Ignoring duplicate update-downloaded event", {
         existingVersion: this.downloadedVersion,
-        incomingVersion: releaseName,
+        incomingVersion: version,
       });
       return;
     }
 
-    this.downloadedVersion = releaseName ?? null;
+    this.downloadedVersion = version ?? null;
     this.transitionTo("ready", {
       reason: "update downloaded",
-      incomingVersion: releaseName ?? null,
+      incomingVersion: version ?? null,
     });
     this.clearCheckInterval();
     this.emitStatus(this.stagedStatusPayload());
