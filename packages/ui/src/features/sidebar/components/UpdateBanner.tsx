@@ -12,9 +12,8 @@ interface UpdateBannerProps {
 }
 
 export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
-  const { status, version, availableVersion, downloadPercent } =
+  const { status, version, availableVersion, downloadPercent, isEnabled } =
     useUpdateView();
-  const { isEnabled } = useUpdateView();
   const installUpdate = useInstallUpdate();
   const openModal = useUpdateModalStore((state) => state.open);
 
