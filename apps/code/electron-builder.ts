@@ -24,6 +24,9 @@ const config: Configuration = {
   nodeGypRebuild: false,
   generateUpdatesFilesForAllChannels: true,
 
+  // English-only product: drop the ~50 other Electron locales (~50 MB).
+  electronLanguages: ["en", "en-US"],
+
   beforePack,
 
   files: [
@@ -32,6 +35,11 @@ const config: Configuration = {
     "package.json",
     "!node_modules/**/*",
     ...packagedFileGlobs,
+    // Sourcemaps are uploaded to PostHog at build time, not consumed in the app.
+    "!**/*.map",
+    // better-sqlite3 ships its C amalgamation sources; only the built .node runs.
+    "!node_modules/better-sqlite3/deps/**",
+    "!node_modules/better-sqlite3/src/**",
   ],
 
   asarUnpack: [
