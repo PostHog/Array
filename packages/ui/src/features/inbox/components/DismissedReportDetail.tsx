@@ -19,14 +19,17 @@ interface DismissedReportDetailProps {
 }
 
 /**
- * Detail view for an archived (suppressed) report. Read-only re-read of what the
- * report was — summary + evidence — with a single Restore action. No triage
- * affordances (archive, discuss, create PR, reviewers): the report is out of the
- * pipeline until it's restored.
+ * Detail view for a terminal report shown in the Archive tab. Read-only re-read
+ * of what the report was — summary + evidence — with no triage affordances
+ * (archive, discuss, create PR, reviewers): the report is out of the pipeline.
  *
- * The gate keeps reports on the route that matches their status: a no-longer-
- * suppressed report opened here (stale URL or restored elsewhere) is redirected
- * to its current home, so this content only ever renders a suppressed report.
+ * Suppressed (user-archived) reports offer a single Restore action. Resolved
+ * (implementation PR merged) reports are reference-only — resolving is terminal,
+ * so there's nothing to restore and no Restore button is shown.
+ *
+ * The gate keeps reports on the route that matches their status: a report that
+ * is no longer terminal opened here (stale URL or restored elsewhere) is
+ * redirected to its current home.
  */
 export function DismissedReportDetail({
   reportId,
@@ -46,6 +49,9 @@ export function DismissedReportDetail({
 }
 
 function DismissedReportDetailContent({ report }: { report: SignalReport }) {
+  // Resolved reports are terminal (their PR already merged) — nothing to
+  // restore, so only suppressed reports get a Restore action.
+  const canRestore = report.status === "suppressed";
   return (
     <InboxDetailFrame
       report={report}
@@ -55,7 +61,7 @@ function DismissedReportDetailContent({ report }: { report: SignalReport }) {
       showDismiss={false}
       primaryAction={
         <>
-          <RestoreReportButton report={report} />
+          {canRestore && <RestoreReportButton report={report} />}
           <Button
             type="button"
             variant="outline"
