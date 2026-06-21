@@ -5,20 +5,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@posthog/git/queries", () => ({
   getChangedFiles: vi.fn(async () => new Set<string>()),
-  listAllFiles: vi.fn(async () => []),
+  listFiles: vi.fn(async () => []),
+  listUntrackedFiles: vi.fn(async () => []),
 }));
 
-import { getChangedFiles, listAllFiles } from "@posthog/git/queries";
+import {
+  getChangedFiles,
+  listFiles,
+  listUntrackedFiles,
+} from "@posthog/git/queries";
 import { FsService } from "./service";
 
 describe("FsService.listRepoFiles", () => {
   it("derives directory entries alongside files", async () => {
     vi.mocked(getChangedFiles).mockResolvedValue(new Set());
-    vi.mocked(listAllFiles).mockResolvedValue([
+    vi.mocked(listFiles).mockResolvedValue([
       "a.ts",
       "src/b.ts",
       "src/sub/c.ts",
     ]);
+    vi.mocked(listUntrackedFiles).mockResolvedValue([]);
 
     const service = new FsService();
     const entries = await service.listRepoFiles("/repo");
@@ -34,11 +40,12 @@ describe("FsService.listRepoFiles", () => {
 
   it("filters directories and files by query substring", async () => {
     vi.mocked(getChangedFiles).mockResolvedValue(new Set());
-    vi.mocked(listAllFiles).mockResolvedValue([
+    vi.mocked(listFiles).mockResolvedValue([
       "a.ts",
       "src/b.ts",
       "src/sub/c.ts",
     ]);
+    vi.mocked(listUntrackedFiles).mockResolvedValue([]);
 
     const service = new FsService();
     const entries = await service.listRepoFiles("/repo", "sub");
@@ -47,6 +54,29 @@ describe("FsService.listRepoFiles", () => {
       { path: "src/sub", kind: "directory" },
       { path: "src/sub/c.ts", kind: "file" },
     ]);
+  });
+
+  it("caps file list at MAX_REPO_FILES when repo is very large", async () => {
+    vi.mocked(getChangedFiles).mockResolvedValue(new Set());
+    const bigList = Array.from({ length: 60_000 }, (_, i) => `file${i}.ts`);
+    vi.mocked(listFiles).mockResolvedValue(bigList);
+    vi.mocked(listUntrackedFiles).mockResolvedValue([]);
+
+    const service = new FsService();
+    const entries = await service.listRepoFiles("/repo");
+
+    expect(entries.length).toBeLessThanOrEqual(50_000);
+  });
+
+  it("omits untracked files when git ls-files --others is aborted", async () => {
+    vi.mocked(getChangedFiles).mockResolvedValue(new Set());
+    vi.mocked(listFiles).mockResolvedValue(["tracked.ts"]);
+    vi.mocked(listUntrackedFiles).mockRejectedValue(new Error("AbortError"));
+
+    const service = new FsService();
+    const entries = await service.listRepoFiles("/repo");
+
+    expect(entries.some((e) => e.path === "tracked.ts")).toBe(true);
   });
 });
 

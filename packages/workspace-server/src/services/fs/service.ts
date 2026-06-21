@@ -1,6 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getChangedFiles, listAllFiles } from "@posthog/git/queries";
+import {
+  getChangedFiles,
+  listFiles,
+  listUntrackedFiles,
+} from "@posthog/git/queries";
 import { injectable } from "inversify";
 import type { BoundedReadResult, DirectoryEntry, FileEntry } from "./schemas";
 
@@ -8,6 +12,12 @@ import type { BoundedReadResult, DirectoryEntry, FileEntry } from "./schemas";
 export class FsService {
   private static readonly CACHE_TTL = 30000;
   private static readonly READ_REPO_FILES_CONCURRENCY = 24;
+  // Large repos (100k+ files) cause GC pressure that starves the session-init
+  // event loop. Cap the combined tracked + untracked list to bound allocation.
+  private static readonly MAX_REPO_FILES = 50_000;
+  // Abort git ls-files --others if it takes too long (unignored venvs, caches,
+  // or staticfiles directories can make it scan millions of entries).
+  private static readonly UNTRACKED_TIMEOUT_MS = 8_000;
   private cache = new Map<string, { files: FileEntry[]; timestamp: number }>();
 
   async listDirectory(dirPath: string): Promise<DirectoryEntry[]> {
@@ -43,7 +53,7 @@ export class FsService {
       const changedFiles = await getChangedFiles(repoPath);
 
       if (query?.trim()) {
-        const allFiles = await listAllFiles(repoPath);
+        const allFiles = await this.fetchAllFiles(repoPath);
         const directories = this.deriveDirectories(allFiles);
         const lowerQuery = query.toLowerCase();
         const matchingDirs = directories.filter((d) =>
@@ -64,7 +74,7 @@ export class FsService {
         return limit ? cached.files.slice(0, limit) : cached.files;
       }
 
-      const files = await listAllFiles(repoPath);
+      const files = await this.fetchAllFiles(repoPath);
       const directories = this.deriveDirectories(files);
       const entries = [
         ...this.toDirectoryEntries(directories),
@@ -219,6 +229,29 @@ export class FsService {
       name: path.basename(p),
       kind: "directory",
     }));
+  }
+
+  private async fetchAllFiles(repoPath: string): Promise<string[]> {
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      FsService.UNTRACKED_TIMEOUT_MS,
+    );
+    try {
+      const [tracked, untracked] = await Promise.all([
+        listFiles(repoPath),
+        listUntrackedFiles(repoPath, { abortSignal: controller.signal }).catch(
+          () => [],
+        ),
+      ]);
+      const combined = tracked.concat(untracked);
+      if (combined.length > FsService.MAX_REPO_FILES) {
+        combined.length = FsService.MAX_REPO_FILES;
+      }
+      return combined;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private deriveDirectories(files: string[]): string[] {
