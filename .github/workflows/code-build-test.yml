@@ -88,18 +88,22 @@ jobs:
           pnpm --filter @posthog/agent run build
 
       - name: Build app
+        env:
+          MATRIX_ARCH: ${{ matrix.arch }}
         working-directory: apps/code
         run: |
           pnpm exec electron-vite build
-          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+          if [[ "$MATRIX_ARCH" == "arm64" ]]; then
             pnpm exec electron-builder build --mac --arm64 --publish never --config electron-builder.ts
           else
             pnpm exec electron-builder build --mac --x64 --publish never --config electron-builder.ts
           fi
 
       - name: Verify package
+        env:
+          MATRIX_ARCH: ${{ matrix.arch }}
         run: |
-          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+          if [[ "$MATRIX_ARCH" == "arm64" ]]; then
             APP_BUNDLE="apps/code/out/mac-arm64/PostHog Code.app"
           else
             APP_BUNDLE="apps/code/out/mac/PostHog Code.app"
@@ -265,10 +269,12 @@ jobs:
           pnpm --filter @posthog/agent run build
 
       - name: Build app
+        env:
+          MATRIX_ARCH: ${{ matrix.arch }}
         working-directory: apps/code
         run: |
           pnpm exec electron-vite build
-          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+          if [[ "$MATRIX_ARCH" == "arm64" ]]; then
             pnpm exec electron-builder build --linux --arm64 --publish never --config electron-builder.ts
           else
             pnpm exec electron-builder build --linux --x64 --publish never --config electron-builder.ts
