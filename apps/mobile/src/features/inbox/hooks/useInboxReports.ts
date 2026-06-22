@@ -142,15 +142,19 @@ export function useSignalProcessingState(options?: { enabled?: boolean }) {
 
 export function useAvailableSuggestedReviewers(options?: {
   enabled?: boolean;
+  query?: string;
 }) {
   const { projectId, oauthAccessToken } = useAuthStore();
+  const query = options?.query?.trim() ?? "";
 
   return useQuery<AvailableSuggestedReviewersResponse>({
-    queryKey: [...inboxKeys.all, "available-reviewers"] as const,
-    queryFn: () => getAvailableSuggestedReviewers(),
+    queryKey: [...inboxKeys.all, "available-reviewers", query] as const,
+    queryFn: () => getAvailableSuggestedReviewers(query || undefined),
     enabled: !!projectId && !!oauthAccessToken && (options?.enabled ?? true),
     staleTime: 5 * 60 * 1000,
-    refetchInterval: 60_000,
+    // Only poll the unfiltered list; search terms are transient and each one
+    // would otherwise spawn its own background poller.
+    refetchInterval: query === "" ? 60_000 : false,
   });
 }
 
