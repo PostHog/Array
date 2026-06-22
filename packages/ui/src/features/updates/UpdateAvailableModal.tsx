@@ -1,9 +1,4 @@
-import {
-  ArrowDown,
-  ArrowRight,
-  ArrowsClockwise,
-  Gift,
-} from "@phosphor-icons/react";
+import { X } from "@phosphor-icons/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { ReleaseNotesSections } from "@posthog/ui/features/updates/ReleaseNotesSections";
@@ -15,9 +10,9 @@ import {
 } from "@posthog/ui/features/updates/updateStore";
 import {
   Button,
-  Code,
   Dialog,
   Flex,
+  IconButton,
   Progress,
   ScrollArea,
   Text,
@@ -50,9 +45,6 @@ export function UpdateAvailableModal() {
   } = useUpdateView();
   const installUpdate = useInstallUpdate();
   const hostTRPC = useHostTRPC();
-  const { data: currentVersion } = useQuery(
-    hostTRPC.os.getAppVersion.queryOptions(),
-  );
   const downloadMutation = useMutation(
     hostTRPC.updates.download.mutationOptions(),
   );
@@ -88,16 +80,9 @@ export function UpdateAvailableModal() {
     >
       <Dialog.Content maxWidth="440px">
         <Flex direction="column" gap="4">
-          <Flex align="center" gap="3">
-            <Flex
-              align="center"
-              justify="center"
-              className="size-10 shrink-0 rounded-full bg-accent-3 text-accent-11"
-            >
-              <Gift size={22} weight="duotone" />
-            </Flex>
-            <Flex direction="column">
-              <Dialog.Title className="mb-0" size="4">
+          <Flex justify="between" align="start" gap="3">
+            <Flex direction="column" gap="1">
+              <Dialog.Title className="mb-0">
                 {isReady ? "Update ready" : "Update available"}
               </Dialog.Title>
               <Dialog.Description>
@@ -108,22 +93,12 @@ export function UpdateAvailableModal() {
                 </Text>
               </Dialog.Description>
             </Flex>
+            <Dialog.Close>
+              <IconButton variant="ghost" color="gray" aria-label="Close">
+                <X size={16} />
+              </IconButton>
+            </Dialog.Close>
           </Flex>
-
-          {currentVersion ? (
-            <Flex
-              align="center"
-              justify="center"
-              gap="3"
-              className="rounded-3 border border-gray-5 bg-gray-2 px-3 py-2.5"
-            >
-              <Code variant="soft" color="gray">
-                {currentVersion}
-              </Code>
-              <ArrowRight size={14} className="shrink-0 text-gray-9" />
-              <Code variant="soft">{targetVersion ?? "latest"}</Code>
-            </Flex>
-          ) : null}
 
           {hasParsedNotes || rawNotes ? (
             <Flex direction="column" gap="2">
@@ -166,17 +141,12 @@ export function UpdateAvailableModal() {
           ) : null}
 
           <Flex justify="end" align="center" gap="2" mt="1">
-            <Button variant="soft" color="gray" size="2" onClick={close}>
-              Later
-            </Button>
             {isReady ? (
               <Button size="2" onClick={() => void installUpdate()}>
-                <ArrowsClockwise size={16} />
                 Restart to update
               </Button>
             ) : isDownloading ? (
               <Button size="2" disabled>
-                <ArrowsClockwise size={16} className="animate-spin" />
                 Downloading...
               </Button>
             ) : (
@@ -185,7 +155,6 @@ export function UpdateAvailableModal() {
                 onClick={() => downloadMutation.mutate(undefined)}
                 disabled={downloadMutation.isPending}
               >
-                <ArrowDown size={16} />
                 Download update
               </Button>
             )}
