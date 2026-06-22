@@ -1,6 +1,7 @@
 import { Cloud, Spinner } from "@phosphor-icons/react";
 import { Button as QuillButton } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useDiffStatsToggle } from "@posthog/ui/features/code-review/hooks/useDiffStatsToggle";
@@ -24,6 +25,7 @@ import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { useAppView } from "@posthog/ui/router/useAppView";
+import { track } from "@posthog/ui/shell/analytics";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
 import { isWindows } from "@posthog/ui/utils/platform";
 import { Box, Flex } from "@radix-ui/themes";
@@ -145,7 +147,13 @@ function BluebirdButton() {
       <QuillButton
         variant="outline"
         size="sm"
-        onClick={() => navigate({ to: "/website" })}
+        onClick={() => {
+          track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+            action_type: "enter_space",
+            surface: "header_button",
+          });
+          navigate({ to: "/website" });
+        }}
       >
         Bluebird
       </QuillButton>

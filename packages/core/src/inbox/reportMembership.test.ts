@@ -104,17 +104,44 @@ describe("inbox scope", () => {
 
 describe("tabFilters", () => {
   describe("isPullRequestReport", () => {
-    it("returns true when implementation_pr_url is set", () => {
+    it("returns true when a ready report has an implementation PR", () => {
       expect(
         isPullRequestReport(
-          fakeReport({ implementation_pr_url: "https://gh/p/1" }),
+          fakeReport({
+            status: "ready",
+            implementation_pr_url: "https://gh/p/1",
+          }),
         ),
       ).toBe(true);
     });
 
     it("returns false when implementation_pr_url is null", () => {
       expect(
-        isPullRequestReport(fakeReport({ implementation_pr_url: null })),
+        isPullRequestReport(
+          fakeReport({ status: "ready", implementation_pr_url: null }),
+        ),
+      ).toBe(false);
+    });
+
+    it("returns false for a PR whose report is no longer ready", () => {
+      expect(
+        isPullRequestReport(
+          fakeReport({
+            status: "candidate",
+            implementation_pr_url: "https://gh/p/1",
+          }),
+        ),
+      ).toBe(false);
+    });
+
+    it("returns false for a still-running PR", () => {
+      expect(
+        isPullRequestReport(
+          fakeReport({
+            status: "in_progress",
+            implementation_pr_url: "https://gh/p/1",
+          }),
+        ),
       ).toBe(false);
     });
 
@@ -167,6 +194,17 @@ describe("tabFilters", () => {
       expect(
         isReportTabReport(
           fakeReport({ implementation_pr_url: "https://gh/p/1" }),
+        ),
+      ).toBe(false);
+    });
+
+    it("excludes any PR-bearing report rather than surfacing it as a Report", () => {
+      expect(
+        isReportTabReport(
+          fakeReport({
+            status: "candidate",
+            implementation_pr_url: "https://gh/p/1",
+          }),
         ),
       ).toBe(false);
     });

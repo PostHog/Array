@@ -5,7 +5,15 @@ import {
   type HostToCanvasMessage,
 } from "@posthog/core/canvas/freeformSchemas";
 import { logger } from "@posthog/ui/shell/logger";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useThemeStore } from "@posthog/ui/shell/themeStore";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { buildSandboxDocument, type SandboxMode } from "./sandboxRuntime";
 
 const log = logger.scope("freeform-canvas");
@@ -31,6 +39,12 @@ export interface FreeformCanvasProps {
    * never crosses into the iframe.
    */
   analytics?: CanvasAnalyticsConfig;
+  /**
+   * Bump to force a full iframe reload (a fresh boot re-runs the app's data
+   * `useEffect`s = a real refresh). Folded into the srcDoc so changing it
+   * reloads the frame via the existing reload path.
+   */
+  refreshKey?: number;
 }
 
 // Renders a freeform-React canvas inside a null-origin sandboxed iframe and
@@ -43,9 +57,13 @@ export function FreeformCanvas({
   onError,
   onRendered,
   analytics,
+  refreshKey = 0,
 }: FreeformCanvasProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | null>(null);
+  // The canvas mirrors the host's light/dark theme. Passed via `init` (not the
+  // srcDoc) so a theme switch updates the running canvas in place, like `code`.
+  const theme = useThemeStore((s) => (s.isDarkMode ? "dark" : "light"));
   // Whether the iframe has announced it's ready for `init`. A ref, not state: it
   // only gates an imperative postMessage and is never shown on screen, so it
   // shouldn't trigger re-renders.
@@ -55,10 +73,12 @@ export function FreeformCanvas({
   // for posthog-js), not on code: code is injected via `init`, so changing it
   // never reloads the iframe — it re-renders in place.
   const analyticsHost = analytics?.apiHost;
-  const srcDoc = useMemo(
-    () => buildSandboxDocument(mode, analyticsHost),
-    [mode, analyticsHost],
-  );
+  const srcDoc = useMemo(() => {
+    const doc = buildSandboxDocument(mode, analyticsHost);
+    // Append the refresh nonce as a comment so a bump changes the srcDoc string,
+    // which reloads the iframe (re-announces "ready" → re-init → fresh run).
+    return refreshKey > 0 ? `${doc}\n<!-- refresh:${refreshKey} -->` : doc;
+  }, [mode, analyticsHost, refreshKey]);
 
   // Latest props, read by the once-bound listener + the (stable) postInit.
   const latest = useRef({
@@ -68,6 +88,7 @@ export function FreeformCanvas({
     code,
     mode,
     analytics,
+    theme,
   });
   latest.current = {
     onDataRequest,
@@ -76,6 +97,7 @@ export function FreeformCanvas({
     code,
     mode,
     analytics,
+    theme,
   };
 
   const postInit = useCallback(() => {
@@ -87,6 +109,7 @@ export function FreeformCanvas({
         code: p.code,
         mode: p.mode,
         analytics: p.analytics,
+        theme: p.theme,
       },
       "*",
     );
@@ -96,12 +119,16 @@ export function FreeformCanvas({
   // reload it re-announces "ready", so mark it not-ready until then. Ref write
   // only — no state update, no extra render.
   // biome-ignore lint/correctness/useExhaustiveDependencies: srcDoc identity tracks a reload.
-  useEffect(() => {
+  useLayoutEffect(() => {
     readyRef.current = false;
   }, [srcDoc]);
 
   // Subscribed once for the component's life; reads latest props via the ref.
-  useEffect(() => {
+  // Layout effect (not passive): the listener must be attached during commit,
+  // before the browser yields to the iframe's load task — otherwise the iframe's
+  // one-shot "ready" (and early data-request/error/resize) can fire before the
+  // listener exists and be lost, leaving the canvas blank on a cold first open.
+  useLayoutEffect(() => {
     const post = (msg: HostToCanvasMessage) => {
       iframeRef.current?.contentWindow?.postMessage(msg, "*");
     };
@@ -166,13 +193,35 @@ export function FreeformCanvas({
   // NB: reference code/mode/analytics DIRECTLY here (not via postInit, which
   // reads them off a ref) — otherwise the exhaustive-deps lint strips them from
   // the array as "unused" and the effect goes stale, never re-posting on change.
+  // Theme is NOT a dep: a re-init remounts the app (new Blob module = fresh
+  // component = reset state), so theme changes go through `set-theme` below
+  // instead. init still carries the current theme so the next mount is correct.
   useEffect(() => {
     if (!readyRef.current) return;
     iframeRef.current?.contentWindow?.postMessage(
-      { channel: "posthog-canvas", type: "init", code, mode, analytics },
+      {
+        channel: "posthog-canvas",
+        type: "init",
+        code,
+        mode,
+        analytics,
+        theme: latest.current.theme,
+      },
       "*",
     );
   }, [code, mode, analytics]);
+
+  // Live theme change: re-theme the running canvas in place (no remount), so a
+  // host theme toggle — or an OS light/dark flip under "system" — preserves all
+  // canvas state (filters, forms, scroll). Skipped until the iframe is ready;
+  // the init above already carries the correct theme for the first render.
+  useEffect(() => {
+    if (!readyRef.current) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      { channel: "posthog-canvas", type: "set-theme", theme },
+      "*",
+    );
+  }, [theme]);
 
   return (
     <iframe
@@ -183,7 +232,17 @@ export function FreeformCanvas({
       // isolation boundary).
       sandbox="allow-scripts"
       srcDoc={srcDoc}
-      className="w-full border-0 bg-white"
+      // Race-free init: by `load`, the iframe's module bootstrap has executed
+      // (so its message listener is registered and "ready" already posted), so
+      // posting init here reliably delivers the code — even if the one-shot
+      // "ready" message was missed. Re-posting is idempotent (mountSeq dedupes).
+      onLoad={() => {
+        readyRef.current = true;
+        postInit();
+      }}
+      // bg tracks the host theme so there's no white flash in dark mode before
+      // the iframe paints; the canvas body uses the same --background token.
+      className="w-full border-0 bg-background"
       style={{ height: height ? `${height}px` : "100%", minHeight: "100%" }}
     />
   );

@@ -4,9 +4,9 @@ import {
   dashboardRecordSchema,
   dashboardSummarySchema,
   listDashboardsInput,
-  refreshDashboardInput,
+  renameDashboardInput,
   saveFreeformInput,
-  updateDashboardInput,
+  setGenerationTaskInput,
 } from "@posthog/core/canvas/dashboardSchemas";
 import { DASHBOARDS_SERVICE } from "@posthog/core/canvas/identifiers";
 import type { IDashboardsService } from "@posthog/core/canvas/services";
@@ -34,12 +34,6 @@ export const dashboardsRouter = router({
     .mutation(({ ctx, input }) =>
       ctx.container.get<IDashboardsService>(DASHBOARDS_SERVICE).create(input),
     ),
-  update: publicProcedure
-    .input(updateDashboardInput)
-    .output(dashboardRecordSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.container.get<IDashboardsService>(DASHBOARDS_SERVICE).update(input),
-    ),
   saveFreeform: publicProcedure
     .input(saveFreeformInput)
     .output(dashboardRecordSchema)
@@ -48,16 +42,25 @@ export const dashboardsRouter = router({
         .get<IDashboardsService>(DASHBOARDS_SERVICE)
         .saveFreeform(input),
     ),
+  setGenerationTask: publicProcedure
+    .input(setGenerationTaskInput)
+    .output(dashboardRecordSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<IDashboardsService>(DASHBOARDS_SERVICE)
+        .setGenerationTask(input),
+    ),
+  rename: publicProcedure
+    .input(renameDashboardInput)
+    .output(dashboardRecordSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.container.get<IDashboardsService>(DASHBOARDS_SERVICE).rename(input),
+    ),
   delete: publicProcedure
     .input(dashboardIdInput)
     .mutation(({ ctx, input }) =>
       ctx.container
         .get<IDashboardsService>(DASHBOARDS_SERVICE)
         .delete(input.id),
-    ),
-  refresh: publicProcedure
-    .input(refreshDashboardInput)
-    .mutation(({ ctx, input }) =>
-      ctx.container.get<IDashboardsService>(DASHBOARDS_SERVICE).refresh(input),
     ),
 });

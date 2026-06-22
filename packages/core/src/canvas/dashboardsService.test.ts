@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DashboardQueryService } from "./dashboardQueryService";
 import { DashboardsService } from "./dashboardsService";
 import type { DesktopFsClient, FsEntryBase } from "./desktopFsClient";
 
@@ -35,11 +34,7 @@ function fakeFs(rows: FsEntryBase[]) {
 describe("DashboardsService.list", () => {
   it("fetches with a parent-scoped, type-filtered query", async () => {
     const { fs, listByQuery } = fakeFs([]);
-    const service = new DashboardsService(
-      fs,
-      {} as DashboardQueryService,
-      {} as never,
-    );
+    const service = new DashboardsService(fs, {} as never);
 
     await service.list("chan-1");
 
@@ -56,15 +51,57 @@ describe("DashboardsService.list", () => {
       dashboardRow("b", "Newer", "chan-1", 300),
       dashboardRow("c", "Middle", "chan-1", 200),
     ]);
-    const service = new DashboardsService(
-      fs,
-      {} as DashboardQueryService,
-      {} as never,
-    );
+    const service = new DashboardsService(fs, {} as never);
 
     const result = await service.list("chan-1");
 
     expect(result.map((d) => d.id)).toEqual(["b", "c", "a"]);
     expect(result[0]).toMatchObject({ name: "Newer", channelId: "chan-1" });
+  });
+});
+
+// Fake exposing getEntry (resolves the row to rename) + fetch (the PATCH).
+function fakeFsForRename(entry: FsEntryBase) {
+  const fetch = vi.fn(async (_path: string, init?: RequestInit) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ...entry,
+      path: JSON.parse((init?.body as string) ?? "{}").path ?? entry.path,
+    }),
+  }));
+  const fs = {
+    getEntry: async () => entry,
+    fetch,
+  };
+  return { fs: fs as unknown as DesktopFsClient, fetch };
+}
+
+describe("DashboardsService.rename", () => {
+  it("PATCHes a new last path segment built from the name", async () => {
+    const entry = dashboardRow("d1", "Untitled canvas", "chan-1", 100);
+    const { fs, fetch } = fakeFsForRename(entry);
+    const service = new DashboardsService(fs, {} as never);
+
+    const result = await service.rename({ id: "d1", name: "Churn by plan" });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [, init] = fetch.mock.calls[0];
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse((init?.body as string) ?? "{}").path).toBe(
+      "Channels/chan-1/Churn by plan",
+    );
+    expect(result.name).toBe("Churn by plan");
+  });
+
+  it("no-ops (no fetch) when the name resolves to the same path", async () => {
+    const entry = dashboardRow("d1", "Same name", "chan-1", 100);
+    const { fs, fetch } = fakeFsForRename(entry);
+    const service = new DashboardsService(fs, {} as never);
+
+    const result = await service.rename({ id: "d1", name: "Same name" });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(result.name).toBe("Same name");
   });
 });

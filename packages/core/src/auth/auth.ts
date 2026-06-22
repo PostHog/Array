@@ -421,37 +421,53 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return;
     }
 
+    this.setRestoringState(storedSession);
+
     try {
-      const restore = this.refreshAndSyncSession(storedSession);
+      const restore = this.ensureValidSession().then(() => undefined);
       const outcome = await withTimeout(restore, AUTH_BOOTSTRAP_DEADLINE_MS);
       if (outcome.result === "timeout") {
         this.logger.warn(
-          "Auth bootstrap exceeded deadline; completing anonymously and restoring in the background",
+          "Auth bootstrap exceeded deadline; keeping stored session in restoring state",
         );
-        // Keep awaiting so a late success still upgrades state; swallow rejection.
         restore.catch((error) => {
           this.logger.warn("Background auth restore failed after deadline", {
             error,
           });
+          this.handleStoredSessionRestoreFailure(storedSession);
         });
-        this.completeBootstrapAnonymously(storedSession);
       }
     } catch (error) {
       this.logger.warn("Failed to restore stored auth session", { error });
-      this.completeBootstrapAnonymously(storedSession);
+      this.handleStoredSessionRestoreFailure(storedSession);
     }
   }
-  private completeBootstrapAnonymously(
-    storedSession: StoredSessionInput,
-  ): void {
-    // Stored session stays on disk so connectivity/resume recovery can retry.
+
+  private setRestoringState(storedSession: StoredSessionInput): void {
     this.session = null;
-    this.setAnonymousState({
-      bootstrapComplete: true,
+    this.updateState({
+      status: "restoring",
+      bootstrapComplete: false,
       cloudRegion: storedSession.cloudRegion,
+      orgProjectsMap: {},
+      currentOrgId: null,
       currentProjectId: storedSession.selectedProjectId,
+      hasCodeAccess: null,
+      needsScopeReauth: false,
     });
   }
+
+  private handleStoredSessionRestoreFailure(
+    storedSession: StoredSessionInput,
+  ): void {
+    // Refresh-token auth errors clear the stored session and publish a real
+    // anonymous state from refreshSession. Transient/offline failures keep the
+    // stored session on disk, so consumers must not treat them as logout.
+    if (this.authSession.getCurrent()) {
+      this.setRestoringState(storedSession);
+    }
+  }
+
   private async ensureValidSession(
     forceRefresh = false,
   ): Promise<InMemorySession> {
@@ -469,13 +485,17 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
 
     const sessionInput = this.getSessionInputForRefresh();
 
-    this.refreshPromise = this.refreshSession(sessionInput).finally(() => {
+    const refreshAndSync = async (): Promise<InMemorySession> => {
+      const session = await this.refreshSession(sessionInput);
+      await this.syncAuthenticatedSession(session);
+      return session;
+    };
+
+    this.refreshPromise = refreshAndSync().finally(() => {
       this.refreshPromise = null;
     });
 
-    const session = await this.refreshPromise;
-    await this.syncAuthenticatedSession(session);
-    return session;
+    return this.refreshPromise;
   }
 
   private getSessionInputForRefresh(): StoredSessionInput {
@@ -726,12 +746,6 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     });
     await this.syncAuthenticatedSession(session);
   }
-  private async refreshAndSyncSession(
-    input: StoredSessionInput,
-  ): Promise<void> {
-    const session = await this.refreshSession(input);
-    await this.syncAuthenticatedSession(session);
-  }
   private async syncAuthenticatedSession(
     session: InMemorySession,
   ): Promise<void> {
@@ -958,10 +972,14 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     if (!stored) return;
     if (stored.scopeVersion < OAUTH_SCOPE_VERSION) return;
 
-    const storedSession = this.resolveStoredSession();
-    if (!storedSession) return;
+    if (!this.resolveStoredSession()) return;
 
-    this.recoveryPromise = this.refreshAndSyncSession(storedSession)
+    // Route through ensureValidSession so a refresh already in flight (e.g. the
+    // background bootstrap restore past its deadline) is shared instead of
+    // kicking a second concurrent token refresh that would burn the same
+    // rotating refresh token twice.
+    this.recoveryPromise = this.ensureValidSession()
+      .then(() => undefined)
       .catch((error) => {
         this.logger.warn("Session recovery failed", { error });
       })

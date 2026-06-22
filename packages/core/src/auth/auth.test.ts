@@ -305,7 +305,7 @@ describe("AuthService", () => {
     );
   });
 
-  it("completes bootstrap anonymously when the stored-session restore hangs", async () => {
+  it("keeps bootstrap restoring when the stored-session restore hangs", async () => {
     vi.useFakeTimers();
     try {
       seedStoredSession({ selectedProjectId: 42 });
@@ -318,8 +318,8 @@ describe("AuthService", () => {
       await initPromise;
 
       expect(service.getState()).toMatchObject({
-        status: "anonymous",
-        bootstrapComplete: true,
+        status: "restoring",
+        bootstrapComplete: false,
         cloudRegion: "us",
         currentProjectId: 42,
       });
@@ -345,7 +345,7 @@ describe("AuthService", () => {
       await vi.advanceTimersByTimeAsync(20_001);
       await initPromise;
 
-      expect(service.getState().status).toBe("anonymous");
+      expect(service.getState().status).toBe("restoring");
 
       resolveRefresh(
         mockTokenResponse({
@@ -360,6 +360,44 @@ describe("AuthService", () => {
         bootstrapComplete: true,
         currentProjectId: 42,
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shares the in-flight bootstrap refresh with token callers after the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      seedStoredSession({ selectedProjectId: 42 });
+      stubAuthFetch();
+      let resolveRefresh!: (value: unknown) => void;
+      oauthFlow.refreshToken.mockReturnValue(
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      );
+
+      const initPromise = service.initialize();
+      await vi.advanceTimersByTimeAsync(20_001);
+      await initPromise;
+
+      expect(service.getState().status).toBe("restoring");
+
+      const tokenPromise = service.getValidAccessToken();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(1);
+
+      resolveRefresh(
+        mockTokenResponse({
+          accessToken: "late-access-token",
+          refreshToken: "late-refresh-token",
+        }),
+      );
+
+      await expect(tokenPromise).resolves.toMatchObject({
+        accessToken: "late-access-token",
+      });
+      expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
@@ -512,7 +550,7 @@ describe("AuthService", () => {
       seedStoredSession({ selectedProjectId: 42 });
       vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: false });
       await service.initialize();
-      expect(service.getState().status).toBe("anonymous");
+      expect(service.getState().status).toBe("restoring");
 
       vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: true });
       oauthFlow.refreshToken.mockResolvedValue(mockTokenResponse());
@@ -640,7 +678,7 @@ describe("AuthService", () => {
       expect(sessionPort.getCurrent()).toBeNull();
     });
 
-    it("does not retry on unknown_error", async () => {
+    it("keeps restoring after a non-retryable unknown_error", async () => {
       seedStoredSession();
       oauthFlow.refreshToken.mockResolvedValue({
         success: false,
@@ -650,7 +688,7 @@ describe("AuthService", () => {
 
       await service.initialize();
 
-      expect(service.getState().status).toBe("anonymous");
+      expect(service.getState().status).toBe("restoring");
       expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(1);
     });
 
@@ -664,7 +702,7 @@ describe("AuthService", () => {
 
       await service.initialize();
 
-      expect(service.getState().status).toBe("anonymous");
+      expect(service.getState().status).toBe("restoring");
       expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(3);
     });
   });

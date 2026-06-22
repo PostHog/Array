@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { cloudRegion, type oAuthTokenResponse } from "./oauth.schemas";
 
-export const authStatusSchema = z.enum(["anonymous", "authenticated"]);
+export const authStatusSchema = z.enum([
+  "anonymous",
+  "restoring",
+  "authenticated",
+]);
 export type AuthStatus = z.infer<typeof authStatusSchema>;
 
 export const orgProjectsSchema = z.object({

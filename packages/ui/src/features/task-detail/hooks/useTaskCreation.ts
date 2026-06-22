@@ -19,7 +19,7 @@ import type { ExecutionMode, Task } from "@posthog/shared/domain-types";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToTaskPending } from "@posthog/ui/router/navigationBridge";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
 import { toast } from "../../../primitives/toast";
@@ -35,6 +35,7 @@ import {
   type EditorContent,
   extractFilePaths,
 } from "../../message-editor/content";
+import { useDraftStore } from "../../message-editor/draftStore";
 import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryStore";
 import type { EditorHandle } from "../../message-editor/types";
 import { useSettingsStore } from "../../settings/settingsStore";
@@ -47,6 +48,8 @@ const log = logger.scope("task-creation");
 
 interface UseTaskCreationOptions {
   editorRef: React.RefObject<EditorHandle | null>;
+  /** Draft-store session id for the editor; cleared on successful creation. */
+  sessionId: string;
   selectedDirectory: string;
   selectedRepository?: string | null;
   githubIntegrationId?: number;
@@ -63,6 +66,12 @@ interface UseTaskCreationOptions {
   signalReportId?: string;
   channelContext?: string;
   channelName?: string;
+  /**
+   * Channels "generic chat box" mode: drop the repo/branch requirement so a
+   * task can be submitted without picking a repo. The agent decides at runtime
+   * whether it needs one and attaches it lazily.
+   */
+  allowNoRepo?: boolean;
   onTaskCreated?: (task: Task) => void;
 }
 
@@ -126,6 +135,7 @@ async function trackTaskCreated(
 
 export function useTaskCreation({
   editorRef,
+  sessionId,
   selectedDirectory,
   selectedRepository,
   githubIntegrationId,
@@ -142,11 +152,13 @@ export function useTaskCreation({
   signalReportId,
   channelContext,
   channelName,
+  allowNoRepo,
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const hostClient = useHostTRPCClient();
   const trpc = useHostTRPC();
+  const queryClient = useQueryClient();
   const defaultAdditionalDirectoriesQuery = useQuery(
     trpc.additionalDirectories.listDefaults.queryOptions(),
   );
@@ -166,8 +178,11 @@ export function useTaskCreation({
   const { invalidateTasks } = useCreateTask();
   const { isOnline } = useConnectivity();
 
-  const hasRequiredPath =
-    workspaceMode === "cloud" ? !!selectedRepository : !!selectedDirectory;
+  const hasRequiredPath = allowNoRepo
+    ? true
+    : workspaceMode === "cloud"
+      ? !!selectedRepository
+      : !!selectedDirectory;
   const canSubmitBase =
     isAuthenticated && isOnline && hasRequiredPath && !isCreatingTask;
   const canSubmit = !!editorRef.current && canSubmitBase && !editorIsEmpty;
@@ -243,8 +258,10 @@ export function useTaskCreation({
         const serializedContent = contentToXml(content).trim();
         const filePaths = extractFilePaths(content);
         const input = prepareTaskInput(serializedContent, filePaths, {
-          selectedDirectory,
-          selectedRepository,
+          // In channels chat-box mode no repo is attached up front, even if a
+          // directory/repo is lingering in the persisted picker state.
+          selectedDirectory: allowNoRepo ? undefined : selectedDirectory,
+          selectedRepository: allowNoRepo ? null : selectedRepository,
           githubIntegrationId,
           githubUserIntegrationId,
           workspaceMode,
@@ -260,6 +277,7 @@ export function useTaskCreation({
           additionalDirectories,
           channelContext,
           channelName,
+          allowNoRepo,
         });
 
         if (executionMode) {
@@ -276,15 +294,19 @@ export function useTaskCreation({
             if (pendingTaskKey) {
               pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
             }
+            // Clear the draft BEFORE navigating away. When onTaskCreated
+            // navigates (e.g. channels), it can synchronously unmount/destroy
+            // the editor; clearing afterwards would throw in clearContent()
+            // before the persisted draft is wiped, leaving stale text behind.
+            if (!pendingTaskKey && !contentOverride) {
+              editor.clear();
+            }
             if (onTaskCreated) {
               onTaskCreated(output.task);
             } else {
               void openTask(output.task);
             }
             useTourStore.getState().completeTour(createFirstTaskTour.id);
-            if (!pendingTaskKey && !contentOverride) {
-              editor.clear();
-            }
             // Pre-flight already ran above for cloud; skip the service's duplicate check.
           },
           { skipCloudUsagePreflight: true },
@@ -292,7 +314,24 @@ export function useTaskCreation({
 
         if (result.success) {
           setAdditionalDirectoriesOverride(null);
+          // Guarantee the editor draft is wiped on success. editor.clear()
+          // above only runs inside the onTaskReady callback (and after it
+          // navigates the editor may be torn down); clearing the persisted
+          // draft directly here always runs and survives the unmount, so a
+          // submitted prompt never reappears on the next new task.
+          if (!contentOverride) {
+            useDraftStore.getState().actions.setDraft(sessionId, null);
+          }
           void trackTaskCreated(input, selectedDirectory, hostClient);
+          // Repo-less channel tasks create no workspace row (the agent runs in
+          // a scratch dir surfaced as a synthetic workspace), so the normal
+          // workspace.create invalidation never fires. Refresh the workspace
+          // cache so the task view resolves its cwd and skips the repo prompt.
+          if (allowNoRepo) {
+            void queryClient.invalidateQueries({
+              queryKey: trpc.workspace.getAll.queryKey(),
+            });
+          }
         }
 
         if (!result.success) {
@@ -332,6 +371,7 @@ export function useTaskCreation({
       canSubmit,
       canSubmitBase,
       editorRef,
+      sessionId,
       selectedDirectory,
       selectedRepository,
       githubIntegrationId,
@@ -348,10 +388,13 @@ export function useTaskCreation({
       additionalDirectories,
       channelContext,
       channelName,
+      allowNoRepo,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
       hostClient,
+      trpc,
+      queryClient,
       taskService,
     ],
   );

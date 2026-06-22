@@ -51,3 +51,135 @@ describe("TaskPrStatusService.getTaskPrStatus (missing worktree directory)", () 
     expect(gitService.getDiffStats).not.toHaveBeenCalled();
   });
 });
+
+describe("TaskPrStatusService revalidation PR detection", () => {
+  let service: TaskPrStatusService;
+  let gitService: {
+    getPrStatus: ReturnType<typeof vi.fn>;
+    getDiffStats: ReturnType<typeof vi.fn>;
+    getGitSyncStatus: ReturnType<typeof vi.fn>;
+    getPrUrlForBranch: ReturnType<typeof vi.fn>;
+    getPrDetailsByUrl: ReturnType<typeof vi.fn>;
+  };
+  let workspaceService: {
+    getWorkspace: ReturnType<typeof vi.fn>;
+    emit: ReturnType<typeof vi.fn>;
+  };
+  let workspaceRepo: {
+    findByTaskId: ReturnType<typeof vi.fn>;
+    updatePrCache: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    gitService = {
+      getPrStatus: vi.fn(),
+      getDiffStats: vi.fn().mockResolvedValue({ filesChanged: 0 }),
+      getGitSyncStatus: vi.fn().mockResolvedValue({ aheadOfDefault: 0 }),
+      getPrUrlForBranch: vi.fn(),
+      getPrDetailsByUrl: vi.fn(),
+    };
+    workspaceService = { getWorkspace: vi.fn(), emit: vi.fn() };
+    workspaceRepo = {
+      findByTaskId: vi.fn().mockReturnValue({ prUrl: null, prState: null }),
+      updatePrCache: vi.fn(),
+    };
+    service = new TaskPrStatusService(
+      gitService as unknown as GitService,
+      workspaceRepo as unknown as IWorkspaceRepository,
+      workspaceService as unknown as WorkspaceService,
+    );
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+  });
+
+  it.each([
+    {
+      name: "detects a PR on a local task's current branch with no linked branch",
+      taskId: "task-local",
+      workspace: { mode: "local", worktreePath: null, folderPath: "/repo" },
+      prStatus: {
+        prExists: true,
+        prState: "open",
+        prUrl: "https://github.com/acme/repo/pull/7",
+        isDraft: false,
+      },
+      diffStats: { filesChanged: 0 },
+      expectedRepoPath: "/repo",
+      expectDiffStatsCalled: false,
+      expectedCache: {
+        prUrl: "https://github.com/acme/repo/pull/7",
+        prState: "open",
+      },
+      expectedEmit: {
+        prUrl: "https://github.com/acme/repo/pull/7",
+        prState: "open",
+      },
+    },
+    {
+      name: "caches no PR for a local task whose branch has none, without checking diff",
+      taskId: "task-local",
+      workspace: { mode: "local", worktreePath: null, folderPath: "/repo" },
+      prStatus: { prExists: false },
+      diffStats: { filesChanged: 0 },
+      expectedRepoPath: "/repo",
+      expectDiffStatsCalled: false,
+      expectedCache: { prUrl: null, prState: null },
+      expectedEmit: null,
+    },
+    {
+      name: "still reports a worktree task's local diff when no PR exists",
+      taskId: "task-wt",
+      workspace: { mode: "worktree", worktreePath: "/wt", folderPath: null },
+      prStatus: { prExists: false },
+      diffStats: { filesChanged: 3 },
+      expectedRepoPath: "/wt",
+      expectDiffStatsCalled: true,
+      expectedCache: { prUrl: null, prState: null },
+      expectedEmit: null,
+    },
+  ])(
+    "$name",
+    async ({
+      taskId,
+      workspace,
+      prStatus,
+      diffStats,
+      expectedRepoPath,
+      expectDiffStatsCalled,
+      expectedCache,
+      expectedEmit,
+    }) => {
+      workspaceService.getWorkspace.mockResolvedValue({
+        ...workspace,
+        linkedBranch: null,
+      });
+      gitService.getPrStatus.mockResolvedValue(prStatus);
+      gitService.getDiffStats.mockResolvedValue(diffStats);
+
+      await service.getTaskPrStatus(taskId, null);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(gitService.getPrStatus).toHaveBeenCalledWith(expectedRepoPath);
+      if (expectDiffStatsCalled) {
+        expect(gitService.getDiffStats).toHaveBeenCalledWith(expectedRepoPath);
+      } else {
+        expect(gitService.getDiffStats).not.toHaveBeenCalled();
+      }
+      expect(workspaceRepo.updatePrCache).toHaveBeenCalledWith(
+        taskId,
+        expectedCache,
+      );
+      if (expectedEmit) {
+        expect(workspaceService.emit).toHaveBeenCalledWith(
+          "taskPrInfoChanged",
+          {
+            taskId,
+            ...expectedEmit,
+          },
+        );
+      } else {
+        expect(workspaceService.emit).not.toHaveBeenCalled();
+      }
+    },
+  );
+});

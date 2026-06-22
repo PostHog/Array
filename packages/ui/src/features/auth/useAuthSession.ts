@@ -39,13 +39,15 @@ function useAuthSubscriptionSync(): void {
   }, [hostClient]);
 }
 
-function useAuthIdentitySync(
-  authIdentity: string | null,
-  cloudRegion: "us" | "eu" | "dev" | null,
-): void {
+function useAuthIdentitySync(authState: AuthState): void {
+  const authIdentity = getAuthIdentity(authState);
+  const cloudRegion = authState.cloudRegion;
   const hostClient = useHostTRPCClient();
   useEffect(() => {
     if (!authIdentity) {
+      if (!authState.bootstrapComplete || authState.status === "restoring") {
+        return;
+      }
       resetUser();
       void hostClient.analytics.resetUser.mutate();
       clearAuthScopedQueries();
@@ -56,7 +58,13 @@ function useAuthIdentitySync(
     }
 
     useAuthUiStateStore.getState().clearStaleRegion();
-  }, [authIdentity, cloudRegion, hostClient]);
+  }, [
+    authIdentity,
+    authState.bootstrapComplete,
+    authState.status,
+    cloudRegion,
+    hostClient,
+  ]);
 }
 
 function useAuthAnalyticsIdentity(
@@ -124,7 +132,7 @@ export function useAuthSession() {
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
 
   useAuthSubscriptionSync();
-  useAuthIdentitySync(authIdentity, authState.cloudRegion);
+  useAuthIdentitySync(authState);
   useAuthAnalyticsIdentity(authIdentity, authState, currentUser);
   useSeatSync(authIdentity, billingEnabled);
 

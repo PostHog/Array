@@ -4,7 +4,6 @@ import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { archiveRouter } from "@posthog/host-router/routers/archive.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
 import { canvasDataRouter } from "@posthog/host-router/routers/canvas-data.router";
-import { canvasGenRouter } from "@posthog/host-router/routers/canvas-gen.router";
 import { canvasTemplatesRouter } from "@posthog/host-router/routers/canvas-templates.router";
 import { channelTasksRouter } from "@posthog/host-router/routers/channel-tasks.router";
 import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router";
@@ -18,7 +17,6 @@ import { externalAppsRouter } from "@posthog/host-router/routers/external-apps.r
 import { fileWatcherRouter } from "@posthog/host-router/routers/file-watcher.router";
 import { focusRouter } from "@posthog/host-router/routers/focus.router";
 import { foldersRouter } from "@posthog/host-router/routers/folders.router";
-import { freeformGenRouter } from "@posthog/host-router/routers/freeform-gen.router";
 import { fsRouter } from "@posthog/host-router/routers/fs.router";
 import { gitRouter } from "@posthog/host-router/routers/git.router";
 import { githubIntegrationRouter } from "@posthog/host-router/routers/github-integration.router";
@@ -55,7 +53,6 @@ export const trpcRouter = router({
   archive: archiveRouter,
   auth: authRouter,
   canvasData: canvasDataRouter,
-  canvasGen: canvasGenRouter,
   canvasTemplates: canvasTemplatesRouter,
   channelTasks: channelTasksRouter,
   dashboards: dashboardsRouter,
@@ -70,7 +67,6 @@ export const trpcRouter = router({
   fileWatcher: fileWatcherRouter,
   focus: focusRouter,
   folders: foldersRouter,
-  freeformGen: freeformGenRouter,
   fs: fsRouter,
   git: gitRouter,
   githubIntegration: githubIntegrationRouter,

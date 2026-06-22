@@ -4,15 +4,14 @@ import {
   buildSuggestedReviewerFilterParam,
   filterReportsBySearch,
   INBOX_PIPELINE_STATUS_FILTER,
+  INBOX_PULL_REQUEST_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@posthog/core/inbox/reportFiltering";
 import {
-  computeInboxTabCounts,
   INBOX_SCOPE_FOR_YOU,
   isExcludedFromInbox,
   isPullRequestReport,
   isReportTabReport,
-  matchesReviewerScope,
   parseTeammateInboxScope,
 } from "@posthog/core/inbox/reportMembership";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
@@ -80,7 +79,11 @@ export function useInboxAllReports(options?: {
 
   const query = useInboxReportsInfinite(
     {
-      status: INBOX_PIPELINE_STATUS_FILTER,
+      // The Pull requests tab shows only `ready` PRs (active review work),
+      // matching its count query and the PostHog Cloud inbox.
+      status: pullRequestsOnly
+        ? INBOX_PULL_REQUEST_STATUS_FILTER
+        : INBOX_PIPELINE_STATUS_FILTER,
       has_implementation_pr: pullRequestsOnly ? true : undefined,
       ordering: buildSignalReportListOrdering(sortField, sortDirection),
       source_product:
@@ -110,7 +113,7 @@ export function useInboxAllReports(options?: {
   // returns the real total regardless of page size.
   const pullRequestCountQuery = useInboxReports(
     {
-      status: INBOX_PIPELINE_STATUS_FILTER,
+      status: INBOX_PULL_REQUEST_STATUS_FILTER,
       has_implementation_pr: true,
       // Mirror the list query's active filters so the badge matches the tab
       // body. These are empty when `ignoreFilters` is set (sidebar usage), so
@@ -134,32 +137,25 @@ export function useInboxAllReports(options?: {
   const pullRequestTotal = pullRequestCountQuery.data?.count ?? 0;
 
   const scopedReports = useMemo(() => {
-    const byScope = ignoreScope
-      ? query.allReports
-      : query.allReports.filter((r) => matchesReviewerScope(r, scope));
+    // Reviewer scope is already applied server-side via `suggested_reviewers`.
+    // Don't re-filter on the `is_suggested_reviewer` boolean — it can disagree
+    // with that filter, dropping reports the count badge still counts.
     return searchQuery.trim()
-      ? filterReportsBySearch(byScope, searchQuery)
-      : byScope;
-  }, [query.allReports, scope, searchQuery, ignoreScope]);
+      ? filterReportsBySearch(query.allReports, searchQuery)
+      : query.allReports;
+  }, [query.allReports, searchQuery]);
 
   const counts = useMemo(() => {
-    const loaded = computeInboxTabCounts(query.allReports, scope);
-    // The list is an infinite query that only holds the pages loaded so far
-    // (100 per page), so the loaded-derived Reports count caps at the page size
-    // and reads as a misleading "100". Reports is the dominant bucket, so derive
-    // its true size from the backend total `count` (unaffected by the page cap)
-    // minus the non-report items the total also includes. PRs use the true
-    // `pullRequestTotal` (also a real backend count), so PRs sitting past the
-    // loaded page don't inflate Reports.
+    // Derive Reports from the backend total (the loaded list caps at the page
+    // size), subtracting PRs and the other non-report items the total includes.
+    // Scope is server-side, so no client reviewer recheck here either.
     const loadedOtherNonReport = query.allReports.filter(
       (r) =>
-        matchesReviewerScope(r, scope) &&
         !isExcludedFromInbox(r) &&
         !isReportTabReport(r) &&
         !isPullRequestReport(r),
     ).length;
     return {
-      ...loaded,
       // True backend counts, unaffected by the list's page-size cap.
       pulls: pullRequestTotal,
       reports: Math.max(
@@ -167,7 +163,7 @@ export function useInboxAllReports(options?: {
         query.totalCount - pullRequestTotal - loadedOtherNonReport,
       ),
     };
-  }, [query.allReports, query.totalCount, scope, pullRequestTotal]);
+  }, [query.allReports, query.totalCount, pullRequestTotal]);
 
   return {
     ...query,

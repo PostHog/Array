@@ -205,19 +205,6 @@ describe("extractSearchableText", () => {
     expect(extractSearchableText(item)).toBe("moving_to_worktree");
   });
 
-  it("extracts queued message content", () => {
-    const item: ConversationItem = {
-      type: "queued",
-      id: "14",
-      message: {
-        id: "q1",
-        content: "queued text",
-        queuedAt: 0,
-      },
-    };
-    expect(extractSearchableText(item)).toBe("queued text");
-  });
-
   it.each(["git_action", "skill_button_action", "git_action_result"] as const)(
     "returns empty string for %s items",
     (type) => {

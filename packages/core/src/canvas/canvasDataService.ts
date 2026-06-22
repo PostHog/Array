@@ -13,7 +13,7 @@ import type {
   CanvasDataQueryInput,
   CanvasDataResult,
 } from "./freeformSchemas";
-import { fetchCurrentUser, runHogQLQuery } from "./posthogApi";
+import { fetchCurrentUser, runQuery } from "./posthogApi";
 
 // Last-resort attribution if we can't resolve the signed-in user (and the
 // canvas didn't pass its own distinctId).
@@ -54,16 +54,25 @@ export class CanvasDataService {
 
   async query(input: CanvasDataQueryInput): Promise<CanvasDataResult> {
     try {
-      // Cache-first execution (the insights avenue): serve a fresh cached
-      // result if present, otherwise compute it now.
-      const { columns, results } = await runHogQLQuery(
-        this.authService,
-        input.hogql,
-        { refresh: "blocking" },
-      );
+      // A typed query node (TrendsQuery/etc.) runs as-is so the numbers match the
+      // PostHog UI; an inline HogQL string is the escape hatch. Cache-first
+      // execution (the insights avenue): serve a fresh cached result if present,
+      // otherwise compute it now.
+      const isTyped = input.query != null;
+      const node = isTyped
+        ? (input.query as Record<string, unknown>)
+        : { kind: "HogQLQuery", query: input.hogql as string };
+      const { columns, results } = await runQuery(this.authService, node, {
+        refresh: "blocking",
+      });
       return {
         columns,
-        results: results.map((r) => (Array.isArray(r) ? r : [r])),
+        // HogQL returns rows; normalise a bare scalar row to a 1-cell array.
+        // Typed nodes return SERIES OBJECTS — pass them through untouched (wrapping
+        // them in arrays is what made every value read as 0).
+        results: isTyped
+          ? results
+          : results.map((r) => (Array.isArray(r) ? r : [r])),
       };
     } catch (err) {
       this.log.warn("Canvas query failed", {

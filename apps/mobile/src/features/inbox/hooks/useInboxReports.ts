@@ -9,9 +9,13 @@ import {
   getSignalReportArtefacts,
   getSignalReportSignals,
   getSignalReports,
+  restoreSignalReport,
   updateSignalReportArtefact,
 } from "../api";
-import { INBOX_REFETCH_INTERVAL_MS } from "../constants";
+import {
+  INBOX_DISMISSED_STATUS_FILTER,
+  INBOX_REFETCH_INTERVAL_MS,
+} from "../constants";
 import { useInboxFilterStore } from "../stores/inboxFilterStore";
 import type {
   AvailableSuggestedReviewersResponse,
@@ -29,12 +33,15 @@ import {
   buildSignalReportListOrdering,
   buildStatusFilterParam,
   buildSuggestedReviewerFilterParam,
+  isArchivedReport,
 } from "../utils";
 
 export const inboxKeys = {
   all: ["inbox", "signal-reports"] as const,
   list: (params?: SignalReportsQueryParams) =>
     [...inboxKeys.all, "list", params ?? {}] as const,
+  archived: (params?: SignalReportsQueryParams) =>
+    [...inboxKeys.all, "archived", params ?? {}] as const,
   detail: (reportId: string) => [...inboxKeys.all, reportId, "detail"] as const,
   artefacts: (reportId: string) =>
     [...inboxKeys.all, reportId, "artefacts"] as const,
@@ -73,6 +80,30 @@ export function useInboxReports(options?: { enabled?: boolean }) {
     queryFn: () => getSignalReports(params),
     enabled: !!projectId && !!oauthAccessToken && (options?.enabled ?? true),
     refetchInterval: INBOX_REFETCH_INTERVAL_MS,
+  });
+
+  return {
+    reports: query.data?.results ?? [],
+    totalCount: query.data?.count ?? 0,
+    isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    error: query.error?.message ?? null,
+    refetch: query.refetch,
+  };
+}
+
+export function useArchivedReports(options?: { enabled?: boolean }) {
+  const { projectId, oauthAccessToken } = useAuthStore();
+
+  const params: SignalReportsQueryParams = {
+    status: INBOX_DISMISSED_STATUS_FILTER,
+    ordering: buildSignalReportListOrdering("updated_at", "desc"),
+  };
+
+  const query = useQuery<SignalReportsResponse>({
+    queryKey: inboxKeys.archived(params),
+    queryFn: () => getSignalReports(params),
+    enabled: !!projectId && !!oauthAccessToken && (options?.enabled ?? true),
   });
 
   return {
@@ -202,6 +233,27 @@ export function useDismissReport(reportId: string) {
     mutationFn: (input) => dismissSignalReport(reportId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inboxKeys.detail(reportId) });
+      queryClient.invalidateQueries({ queryKey: inboxKeys.all });
+    },
+  });
+}
+
+export function useRestoreReport() {
+  const queryClient = useQueryClient();
+
+  // Resolves to whether the report was actually re-queued. Revalidate against
+  // the server first so a stale row can't silently reopen an already-active
+  // report.
+  return useMutation<boolean, Error, string>({
+    mutationFn: async (reportId) => {
+      const current = await getSignalReport(reportId);
+      if (current && !isArchivedReport(current)) {
+        return false;
+      }
+      await restoreSignalReport(reportId);
+      return true;
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inboxKeys.all });
     },
   });

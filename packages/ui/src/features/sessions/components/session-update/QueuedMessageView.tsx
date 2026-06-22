@@ -1,48 +1,87 @@
-import { Clock, X } from "@phosphor-icons/react";
-import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
+import {
+  ArrowBendDownLeft,
+  ArrowUUpLeft,
+  Stack,
+  Trash,
+} from "@phosphor-icons/react";
+import { Button } from "@posthog/quill";
+import { Box, Flex, IconButton, Tooltip } from "@radix-ui/themes";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import type { QueuedMessage } from "../../sessionStore";
 import { hasFileMentions, parseFileMentions } from "./parseFileMentions";
 
 interface QueuedMessageViewProps {
   message: QueuedMessage;
+  onSteer?: () => void;
+  onReturnToEditor?: () => void;
   onRemove?: () => void;
+  supportsNativeSteer?: boolean;
 }
 
 export function QueuedMessageView({
   message,
+  onSteer,
+  onReturnToEditor,
   onRemove,
+  supportsNativeSteer = false,
 }: QueuedMessageViewProps) {
+  const steerTooltip = supportsNativeSteer
+    ? "Inject this message into the current turn at the next tool boundary."
+    : "Interrupt the current turn and resend with this message.";
+
   return (
-    <Box
-      className="group relative border-l-2 border-dashed bg-gray-2 py-2 pr-2 pl-3 opacity-70"
-      style={{ borderColor: "var(--gray-8)" }}
-    >
-      <Flex justify="between" align="start" gap="2">
-        <Box className="min-w-0 flex-1 font-medium text-[13px] [&>*:last-child]:mb-0">
+    <Box className="rounded-lg border border-gray-5 bg-card px-3 py-2">
+      <Flex align="center" gap="2">
+        <Stack size={14} className="shrink-0 text-gray-9" />
+        <Box className="min-w-0 flex-1 font-medium text-[13px] text-gray-12 [&>*:last-child]:mb-0">
           {hasFileMentions(message.content) ? (
             parseFileMentions(message.content)
           ) : (
             <MarkdownRenderer content={message.content} />
           )}
         </Box>
-        {onRemove && (
-          <IconButton
-            size="1"
-            variant="ghost"
-            color="gray"
-            className="shrink-0 opacity-0 group-hover:opacity-100"
-            onClick={onRemove}
-          >
-            <X size={12} />
-          </IconButton>
-        )}
-      </Flex>
-      <Flex align="center" gap="1" mt="1">
-        <Clock size={12} className="text-gray-9" />
-        <Text color="gray" className="text-[13px]">
-          Queued
-        </Text>
+        <Flex align="center" gap="1" className="shrink-0">
+          {onSteer && (
+            <Tooltip content={steerTooltip}>
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                aria-label="Steer this message"
+                onClick={onSteer}
+              >
+                <ArrowBendDownLeft size={12} />
+                <span>Steer</span>
+              </Button>
+            </Tooltip>
+          )}
+          {onReturnToEditor && (
+            <Tooltip content="Return to editor">
+              <IconButton
+                size="1"
+                variant="ghost"
+                color="gray"
+                aria-label="Return to editor"
+                onClick={onReturnToEditor}
+              >
+                <ArrowUUpLeft size={12} />
+              </IconButton>
+            </Tooltip>
+          )}
+          {onRemove && (
+            <Tooltip content="Discard">
+              <IconButton
+                size="1"
+                variant="ghost"
+                color="gray"
+                aria-label="Discard queued message"
+                onClick={onRemove}
+              >
+                <Trash size={12} />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Flex>
       </Flex>
     </Box>
   );

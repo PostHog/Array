@@ -5,6 +5,8 @@ import {
   SpinnerGapIcon,
 } from "@phosphor-icons/react";
 import { FolderInstructionsConflictError } from "@posthog/api-client/posthog-client";
+import { buildContextSaveProps } from "@posthog/core/canvas/canvasAnalytics";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
@@ -28,6 +30,7 @@ import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
+import { track } from "@posthog/ui/shell/analytics";
 import {
   Box,
   Button,
@@ -181,9 +184,17 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
         // concurrency check; otherwise we send the version we started from.
         baseVersion: latest?.version ?? 0,
       });
+      track(
+        ANALYTICS_EVENTS.CONTEXT_ACTION,
+        buildContextSaveProps({ channelId, hasInstructions, success: true }),
+      );
       setHasDraft(false);
       setMode("rendered");
     } catch {
+      track(
+        ANALYTICS_EVENTS.CONTEXT_ACTION,
+        buildContextSaveProps({ channelId, hasInstructions, success: false }),
+      );
       // Errors surface through `publishError` below; nothing to do here.
     }
   };
@@ -473,6 +484,17 @@ function GenerateWithAgent({
   const { generate, isStarting } = useGenerateContext(channelId, channelName);
   const lastUsedRunMode = useSettingsStore((s) => s.lastUsedRunMode);
 
+  // Fire generate_started, then kick off the generation task. Wrapping here
+  // covers both the local and cloud sub-pickers in one place.
+  const trackedGenerate = (target: GenerateContextTarget) => {
+    track(ANALYTICS_EVENTS.CONTEXT_ACTION, {
+      action_type: "generate_started",
+      channel_id: channelId,
+      execution_type: target.mode,
+    });
+    return generate(target);
+  };
+
   const [picking, setPicking] = useState(false);
   const [genMode, setGenMode] = useState<GenMode>(
     lastUsedRunMode === "cloud" ? "cloud" : "local",
@@ -498,9 +520,9 @@ function GenerateWithAgent({
         <SegmentedControl.Item value="cloud">Cloud</SegmentedControl.Item>
       </SegmentedControl.Root>
       {genMode === "local" ? (
-        <GenerateLocal generate={generate} isStarting={isStarting} />
+        <GenerateLocal generate={trackedGenerate} isStarting={isStarting} />
       ) : (
-        <GenerateCloud generate={generate} isStarting={isStarting} />
+        <GenerateCloud generate={trackedGenerate} isStarting={isStarting} />
       )}
     </Flex>
   );

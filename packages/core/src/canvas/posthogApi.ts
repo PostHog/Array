@@ -18,15 +18,17 @@ export interface HogQLResult {
 }
 
 /**
- * Run a HogQL query against the project's query endpoint and return its raw
- * columns + rows. `refresh` selects the execution mode — pass "blocking" for the
- * cached insights avenue (serve a fresh cached result, else compute). Throws on
- * no selected project, an HTTP failure, or a query error; callers map/shape the
- * rows and decide how to treat an empty result.
+ * Run a TYPED query node (`{ kind: "TrendsQuery" | "HogQLQuery" | … }`) against
+ * the project's query endpoint and return its raw columns + rows. This is the
+ * same endpoint + cache the insights/UI use, so a typed node returns the SAME
+ * numbers the product shows. `refresh` selects the execution mode — pass
+ * "blocking" for the cached avenue (serve a fresh cached result, else compute).
+ * Throws on no selected project, an HTTP failure, or a query error; callers
+ * map/shape the rows and decide how to treat an empty result.
  */
-export async function runHogQLQuery(
+export async function runQuery(
   authService: AuthService,
-  hogql: string,
+  query: Record<string, unknown>,
   opts?: { refresh?: string },
 ): Promise<HogQLResult> {
   const { apiHost } = await authService.getValidAccessToken();
@@ -42,7 +44,7 @@ export async function runHogQLQuery(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        query: { kind: "HogQLQuery", query: hogql },
+        query,
         ...(opts?.refresh ? { refresh: opts.refresh } : {}),
       }),
     },
@@ -58,6 +60,19 @@ export async function runHogQLQuery(
     columns: Array.isArray(body.columns) ? body.columns.map(String) : [],
     results: Array.isArray(body.results) ? body.results : [],
   };
+}
+
+/**
+ * Run an inline HogQL string. A thin wrapper over {@link runQuery} that boxes the
+ * SQL into a HogQLQuery node — the escape hatch for shapes a typed node can't
+ * express. Prefer a typed node (TrendsQuery/etc.) for standard metrics.
+ */
+export async function runHogQLQuery(
+  authService: AuthService,
+  hogql: string,
+  opts?: { refresh?: string },
+): Promise<HogQLResult> {
+  return runQuery(authService, { kind: "HogQLQuery", query: hogql }, opts);
 }
 
 export interface CurrentUser {

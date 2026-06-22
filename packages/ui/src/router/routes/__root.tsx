@@ -1,3 +1,4 @@
+import { ArrowSquareOut } from "@phosphor-icons/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
 import {
@@ -6,9 +7,15 @@ import {
   PROJECT_BLUEBIRD_FLAG,
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
+import {
+  FeedbackModal,
+  type FeedbackModalMode,
+} from "@posthog/ui/features/canvas/components/FeedbackModal";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
@@ -28,6 +35,7 @@ import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import LogosLandscape from "@posthog/ui/primitives/Logo";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
+import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { GlobalEventHandlers } from "@posthog/ui/shell/GlobalEventHandlers";
 import { HeaderRow } from "@posthog/ui/shell/HeaderRow";
@@ -36,6 +44,8 @@ import { logger } from "@posthog/ui/shell/logger";
 import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
+import { openUrlInBrowser } from "@posthog/ui/utils/browser";
+import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -91,6 +101,40 @@ export const Route = createRootRoute({
 function RootLayout() {
   const view = useAppView();
   const navigate = useNavigate();
+
+  // Feedback modal shown in the Channels title bar. Opened directly by "Leave
+  // feedback" (mode "feedback"), or as an intercept before navigating away —
+  // "Go back to Code" (mode "leaving") and "PostHog Web" (mode "posthog-web"),
+  // each of which routes once the modal is submitted or skipped.
+  const [feedbackMode, setFeedbackMode] = useState<FeedbackModalMode | null>(
+    null,
+  );
+  const currentProjectId = useAuthStateValue((s) => s.currentProjectId);
+
+  // The user's current project on the correct cloud (region comes from
+  // cloudRegion via getPostHogUrl), falling back to the account root. `null`
+  // when the region is unknown — the "PostHog Web" button is disabled then, so
+  // a click can never silently no-op.
+  const posthogWebUrl = getPostHogUrl(
+    currentProjectId ? `/project/${currentProjectId}` : "/",
+  );
+
+  // Both "Go back to Code" and "PostHog Web" open the feedback modal first and
+  // perform their navigation only once it's submitted or skipped.
+  const handleFeedbackFinished = () => {
+    const finishedMode = feedbackMode;
+    setFeedbackMode(null);
+    if (finishedMode === "leaving") {
+      navigate({ to: "/code" });
+    } else if (finishedMode === "posthog-web" && posthogWebUrl) {
+      void openUrlInBrowser(posthogWebUrl);
+    }
+  };
+
+  const handleOpenPostHogWeb = () => {
+    track(ANALYTICS_EVENTS.POSTHOG_WEB_OPENED);
+    setFeedbackMode("posthog-web");
+  };
   const {
     isOpen: commandMenuOpen,
     setOpen: setCommandMenuOpen,
@@ -216,15 +260,45 @@ function RootLayout() {
           <Box className="h-[14px] w-[26px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
             <LogosLandscape code={false} />
           </Box>
-          <div className="no-drag">
+          <Flex align="center" gap="2" className="no-drag">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate({ to: "/code" })}
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "leave_space",
+                  surface: "title_bar",
+                });
+                setFeedbackMode("leaving");
+              }}
             >
               Go back to Code
             </Button>
-          </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "leave_feedback",
+                  surface: "title_bar",
+                });
+                setFeedbackMode("feedback");
+              }}
+            >
+              Leave feedback
+            </Button>
+          </Flex>
+          <Flex align="center" className="no-drag ml-auto pr-3">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!posthogWebUrl}
+              onClick={handleOpenPostHogWeb}
+            >
+              <ArrowSquareOut size={14} />
+              PostHog Web
+            </Button>
+          </Flex>
         </Flex>
         <Flex flexGrow="1" overflow="hidden">
           <ChannelsSidebar />
@@ -247,6 +321,10 @@ function RootLayout() {
         />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        <FeedbackModal
+          mode={feedbackMode}
+          onFinished={handleFeedbackFinished}
+        />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />

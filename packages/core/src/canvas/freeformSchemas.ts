@@ -1,8 +1,7 @@
 import { z } from "zod";
 
-// The template id for freeform-React canvases. Stored on a canvas's meta the
-// same way "dashboard"/"web-analytics"/"blank" are, so the render path can tell
-// a freeform canvas (code in an iframe) from a json-render one (spec tree).
+// The template id for freeform-React canvases. Stored on a canvas's meta so the
+// generation path can resolve the right system prompt.
 export const FREEFORM_TEMPLATE_ID = "freeform";
 
 // A single point in a freeform canvas's edit history. Every agent turn appends
@@ -14,15 +13,19 @@ export const freeformVersionSchema = z.object({
   id: z.string(),
   // The complete single-file React source for this version.
   code: z.string(),
-  // The user prompt that produced this version (absent for the seed/empty one).
+  // The author-written context (markdown) passed to the agent, as it stood for
+  // this version. Snapshotted so reverting restores the context too. Absent on
+  // versions saved before the Context tab existed.
+  context: z.string().optional(),
+  // The user prompt that produced this version (absent for the seed/empty one,
+  // and for a version created by a context-only edit).
   prompt: z.string().optional(),
   // Epoch ms the version was created.
   createdAt: z.number(),
 });
 export type FreeformVersion = z.infer<typeof freeformVersionSchema>;
 
-// The freeform-specific payload that rides in a canvas's file-system `meta`
-// blob, alongside the json-render fields. Absent on json-render canvases.
+// The freeform-specific payload that rides in a canvas's file-system `meta` blob.
 export const freeformCanvasSchema = z.object({
   // The currently-rendered source (mirrors the version pointed to by
   // currentVersionId; duplicated so the renderer needs only this field).
@@ -33,76 +36,54 @@ export const freeformCanvasSchema = z.object({
   // Which version is live. Undo/redo moves this pointer; a new agent turn
   // truncates any "redo" tail (Q8: linear-discard) and appends.
   currentVersionId: z.string().optional(),
+  // The live author-written context (markdown), mirrors the version pointed to by
+  // currentVersionId. Prepended to every agent turn so the build is anchored to it.
+  context: z.string().default(""),
 });
 export type FreeformCanvas = z.infer<typeof freeformCanvasSchema>;
-
-// ---------------------------------------------------------------------------
-// Code-stream events: the agent writes a single React file (not json-render
-// patches), so we stream prose + full-file code snapshots instead of specs.
-// Mirrors genSchemas' CanvasStreamEvent shape for the json-render agent.
-// ---------------------------------------------------------------------------
-export const freeformStreamEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("started") }),
-  z.object({ type: z.literal("prose"), text: z.string() }),
-  // A full-file source snapshot. The agent rewrites the whole file each turn, so
-  // each snapshot replaces (not appends to) the previous code.
-  z.object({ type: z.literal("code"), code: z.string() }),
-  z.object({
-    type: z.literal("tool"),
-    toolName: z.string(),
-    status: z.string(),
-  }),
-  z.object({ type: z.literal("done") }),
-  z.object({ type: z.literal("error"), message: z.string() }),
-]);
-export type FreeformStreamEvent = z.infer<typeof freeformStreamEventSchema>;
-
-// Input for a freeform generation turn. Mirrors canvasGenerateInput but seeds
-// the agent with the current CODE (not a spec) so it rewrites the existing file
-// instead of starting blank.
-export const freeformGenerateInput = z.object({
-  threadId: z.string().min(1),
-  prompt: z.string().min(1),
-  // The canvas's current source, sent each turn so the session is anchored to
-  // what's on screen even after a renderer reload. Empty/absent = new canvas.
-  currentCode: z.string().nullish(),
-  model: z.string().optional(),
-});
-export type FreeformGenerateInput = z.infer<typeof freeformGenerateInput>;
-
-export const freeformThreadInput = z.object({ threadId: z.string().min(1) });
-export type FreeformThreadInput = z.infer<typeof freeformThreadInput>;
-
-export const FreeformGenEvent = { Event: "freeform-event" } as const;
-
-export interface FreeformGenEventPayload {
-  threadId: string;
-  event: FreeformStreamEvent;
-}
-
-export interface FreeformGenEvents {
-  [FreeformGenEvent.Event]: FreeformGenEventPayload;
-}
 
 // ---------------------------------------------------------------------------
 // Canvas data avenue: the host-side query the postMessage `ph.query` shim calls.
 // Routed through PostHog's cached query runner (the same avenue insights use, so
 // caching + cold-boot are handled), never a bare uncached /query (the token is
-// injected host-side; the iframe only sees this shape). Edit mode runs inline
-// HogQL; view/published mode (Phase 3) will reject inline and require a named,
-// server-stored insight via `run`.
+// injected host-side; the iframe only sees this shape).
+//
+// Two shapes (the agent picks per metric; see the canvas templates skill):
+//   • `query` — a TYPED query node (`{ kind: "TrendsQuery" | "FunnelsQuery" |
+//     "HogQLQuery" | … }`). PREFERRED: the product's own query runners compute it,
+//     so the numbers match the PostHog UI (sessionization, unique users, bounce
+//     rate, breakdowns, math) and the typed `dateRange` handles windows correctly.
+//   • `hogql` — an inline HogQL string (wrapped server-side as a HogQLQuery).
+//     Escape hatch for shapes a typed node can't express; the agent owns the SQL.
+// Exactly one must be present. Edit mode allows both; view/published mode (Phase 3)
+// rejects inline and requires a named, server-stored insight via `run`.
 // ---------------------------------------------------------------------------
-export const canvasDataQueryInput = z.object({
-  hogql: z.string().min(1),
-  // Reserved for bound parameters (Phase 3 named queries). Edit mode ignores it.
-  params: z.record(z.string(), z.unknown()).optional(),
-});
+export const canvasDataQueryInput = z
+  .object({
+    // A typed query node passed straight to the query runner. Opaque here (the
+    // node schemas are large + product-owned); validated by the API on execution.
+    query: z.record(z.string(), z.unknown()).optional(),
+    // Inline HogQL string (the escape hatch). Server wraps it as a HogQLQuery.
+    hogql: z.string().min(1).optional(),
+    // Reserved for bound parameters (Phase 3 named queries). Edit mode ignores it.
+    params: z.record(z.string(), z.unknown()).optional(),
+  })
+  .refine((v) => v.query != null || v.hogql != null, {
+    message: "ph.query requires a query node or a HogQL string",
+  });
 export type CanvasDataQueryInput = z.infer<typeof canvasDataQueryInput>;
 
 export const canvasDataResultSchema = z.object({
   columns: z.array(z.string()),
-  // Each row is an array of cell values, aligned to `columns`.
-  results: z.array(z.array(z.unknown())),
+  // The result rows. SHAPE DEPENDS ON THE QUERY KIND:
+  //   • HogQLQuery (inline `hogql`) → an array of ROWS, each row an array of cell
+  //     values aligned to `columns` (e.g. `[[123], [456]]`).
+  //   • Typed nodes (TrendsQuery/etc.) → an array of SERIES OBJECTS as PostHog
+  //     returns them — `{ data: number[], labels: string[], days: string[],
+  //     count, aggregated_value, compare_label, … }`. NOT rows-of-cells; passed
+  //     through untouched so the canvas reads the native trends shape.
+  // Hence `unknown` per element rather than `unknown[]`.
+  results: z.array(z.unknown()),
 });
 export type CanvasDataResult = z.infer<typeof canvasDataResultSchema>;
 
@@ -157,6 +138,13 @@ export const canvasAnalyticsConfigSchema = z.object({
 });
 export type CanvasAnalyticsConfig = z.infer<typeof canvasAnalyticsConfigSchema>;
 
+// The light/dark appearance the host wants the canvas to render in. Mirrors the
+// host's resolved theme (system preference already collapsed to light/dark).
+// The iframe toggles a `.dark` class on its document root from this — the same
+// mechanism the main app uses — so Quill's CSS tokens and `dark:` utilities flip.
+export const canvasThemeSchema = z.enum(["light", "dark"]);
+export type CanvasTheme = z.infer<typeof canvasThemeSchema>;
+
 // host -> iframe
 export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
   // First frame: hand the iframe its source + the run mode. The iframe does not
@@ -170,6 +158,18 @@ export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
     mode: z.enum(["edit", "view"]),
     // Present when analytics/replay should run in the iframe. Absent = no capture.
     analytics: canvasAnalyticsConfigSchema.optional(),
+    // The appearance to render in. Carried on `init` so the first render is
+    // already correct; live theme changes use the `set-theme` frame below
+    // (which re-themes without remounting). Absent = light.
+    theme: canvasThemeSchema.optional(),
+  }),
+  // Live theme change: re-apply light/dark WITHOUT remounting the app. Sent on
+  // its own (not folded into `init`) so toggling the host theme — or an OS
+  // dark/light flip under the "system" preference — doesn't reset canvas state.
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("set-theme"),
+    theme: canvasThemeSchema,
   }),
   // Reply to a data-request, correlated by `id`.
   z.object({
