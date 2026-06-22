@@ -14,7 +14,7 @@ The flow under test: a packaged old build checks a local feed, downloads a newer
 
 - A packaged build (not `pnpm dev`). Auto-update only runs when `app.isPackaged` is true.
 - For the full install and relaunch: a Developer ID signing identity. Squirrel.Mac only swaps a bundle whose signature matches the running app's designated requirement, so both builds must be signed with the same identity. Set `CSC_LINK` / `CSC_KEY_PASSWORD`, or have a Developer ID cert in your login keychain.
-  - Without a matching identity you can still watch check, available, download and ready. The final swap is the part that needs the signature.
+  - Without a matching identity you can still watch check, available, download and ready, but the final swap needs the signature. If you can't sign locally, skip the local build and pull the CI-signed pair instead (see below).
 - Notarization is intentionally skipped (`SKIP_NOTARIZE=1`). It is a Gatekeeper concern for first launch of a downloaded app, not what the in-place update verifies, and a locally built bundle carries no quarantine attribute.
 
 ## The harness
@@ -28,7 +28,7 @@ The flow under test: a packaged old build checks a local feed, downloads a newer
 | `apps/code/tests/e2e/playwright.update.config.ts` | Dedicated Playwright config; the only place the update spec runs |
 | `globalThis.__e2eUpdates` | Set in the main process when `POSTHOG_E2E_UPDATE_FEED` is present; lets the test drive `check` / `download` / `install` / `status` |
 
-## 1. Build the pair
+## Build the pair locally
 
 ```bash
 bash apps/code/scripts/dev-update/build-pair.sh
@@ -46,6 +46,31 @@ OLD_VERSION=1.0.0 NEW_VERSION=2.0.0 bash apps/code/scripts/dev-update/build-pair
 ```
 
 This takes a few minutes and may prompt for keychain access to sign.
+
+## Or: pull a signed pair from CI (no local signing)
+
+If you don't have a Developer ID cert, `build-pair.sh` produces unsigned builds and the swap won't complete. The nightly run signs both with PostHog's identity and uploads them as two separate artifacts. Squirrel verifies signatures cryptographically (it does not need the cert in your keychain), so the pulled pair updates locally just like a real release.
+
+Drop them into the same paths the local build produces, then use the run sections below unchanged:
+
+```bash
+# latest green run
+RUN=$(gh run list --workflow=code-update-e2e.yml --status success -L 1 \
+  --json databaseId -q '.[0].databaseId')
+
+# old 1.0.0 app -> apps/code/out/mac-arm64/PostHog Code.app
+gh run download "$RUN" -n update-old-build-1.0.0 -D /tmp/upd-old
+rm -rf apps/code/out/mac-arm64 && mkdir -p apps/code/out/mac-arm64
+ditto -x -k "/tmp/upd-old/PostHog-Code-1.0.0-arm64-mac.zip" apps/code/out/mac-arm64
+# harmless if already clear; needed only if you downloaded via the browser
+xattr -dr com.apple.quarantine "apps/code/out/mac-arm64/PostHog Code.app"
+
+# new 2.0.0 feed -> apps/code/out/dev-update-feed/
+rm -rf apps/code/out/dev-update-feed
+gh run download "$RUN" -n update-new-build-2.0.0 -D apps/code/out/dev-update-feed
+```
+
+The builds are signed but not notarized, so launch by the binary path (the manual section does this); `open`-ing the `.app` may trip Gatekeeper.
 
 ## 2a. Run it automated (Playwright)
 
@@ -97,7 +122,7 @@ A manual run swaps `out/mac-arm64` in place, so rerun `build-pair.sh` (or just t
 gh workflow run "Code Update E2E (macOS)"
 ```
 
-It builds the pair, runs the spec via `playwright.update.config.ts`, and asserts exactly one test actually ran, so a missing feed or a silent skip fails the job. The main log and the Squirrel ShipIt cache are uploaded as artifacts on every run.
+It builds the pair, runs the spec via `playwright.update.config.ts`, and asserts exactly one test actually ran, so a missing feed or a silent skip fails the job. Every run renders a proof summary on the run page and uploads, on pass or fail: the proof manifest, main log and Squirrel ShipIt cache (artifact `update-e2e-macos`), plus the two signed builds as their own artifacts (`update-old-build-1.0.0`, `update-new-build-2.0.0`) you can pull as shown above.
 
 ## Cleanup
 
