@@ -183,6 +183,19 @@ export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
 ]);
 export type HostToCanvasMessage = z.infer<typeof hostToCanvasMessageSchema>;
 
+// The ONLY navigations a canvas may request of the host. The canvas runs
+// untrusted code in a null-origin iframe, so this nested union IS the security
+// allowlist: there is no free-form path/route field, only these four targets.
+// `channelId` is intentionally absent — the host supplies it from the loaded
+// record so the iframe can never pick the channel, only which task/dashboard.
+export const canvasNavIntentSchema = z.discriminatedUnion("target", [
+  z.object({ target: z.literal("task"), taskId: z.string().min(1) }),
+  z.object({ target: z.literal("new-task") }),
+  z.object({ target: z.literal("canvas"), dashboardId: z.string().min(1) }),
+  z.object({ target: z.literal("new-canvas") }),
+]);
+export type CanvasNavIntent = z.infer<typeof canvasNavIntentSchema>;
+
 // iframe -> host
 export const canvasToHostMessageSchema = z.discriminatedUnion("type", [
   // Iframe runtime is mounted and ready to receive `init`.
@@ -220,6 +233,14 @@ export const canvasToHostMessageSchema = z.discriminatedUnion("type", [
     channel: z.literal(CANVAS_CHANNEL),
     type: z.literal("resize"),
     height: z.number(),
+  }),
+  // A request to navigate the host app. Fire-and-forget (no id/response). The
+  // `nav` payload is the allowlist above — the host drops anything that doesn't
+  // parse, so the iframe can only reach the four sanctioned destinations.
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("navigate"),
+    nav: canvasNavIntentSchema,
   }),
 ]);
 export type CanvasToHostMessage = z.infer<typeof canvasToHostMessageSchema>;

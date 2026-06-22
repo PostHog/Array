@@ -1,20 +1,31 @@
 import {
+  ArrowCounterClockwiseIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
   SpinnerGapIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
-import type { CanvasAnalyticsConfig } from "@posthog/core/canvas/freeformSchemas";
+import type {
+  CanvasAnalyticsConfig,
+  CanvasNavIntent,
+} from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import {
   useFreeformChatStore,
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
+import { toast } from "@posthog/ui/primitives/toast";
+import {
+  navigateToChannelDashboard,
+  navigateToChannelNewTask,
+  navigateToChannelTask,
+} from "@posthog/ui/router/navigationBridge";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import {
   Box,
@@ -23,7 +34,7 @@ import {
   ScrollArea,
   Text,
 } from "@radix-ui/themes";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { FreeformCanvas } from "./FreeformCanvas";
@@ -53,6 +64,7 @@ export function FreeformCanvasView({
   const undo = useFreeformChatStore((s) => s.undo);
   const redo = useFreeformChatStore((s) => s.redo);
   const setRuntimeError = useFreeformChatStore((s) => s.setRuntimeError);
+  const syncFromRecord = useFreeformChatStore((s) => s.syncFromRecord);
 
   const trpc = useHostTRPC();
 
@@ -73,6 +85,42 @@ export function FreeformCanvasView({
     () => channels.find((c) => c.id === channelId)?.name ?? "",
     [channels, channelId],
   );
+
+  // Only the channel's home canvas has a "default" template to reset to; regular
+  // canvases start blank. Gate the Reset action on this being the home canvas.
+  const isHomeCanvas = channels.some(
+    (c) => c.id === channelId && c.homeCanvasId === dashboardId,
+  );
+  const [isResetting, setIsResetting] = useState(false);
+  const resetHome = useMutation(
+    trpc.dashboards.resetHomeCanvas.mutationOptions(),
+  );
+
+  // Rebuild the home canvas from the default template. The host appends the
+  // regenerated source as a new version and keeps the prior one for undo, so
+  // syncFromRecord adopts the fresh head and the edit stays recoverable.
+  const onResetToDefault = useCallback(async () => {
+    setIsResetting(true);
+    try {
+      const record = await resetHome.mutateAsync({ channelId });
+      syncFromRecord(threadId, {
+        code: record.code,
+        versions: record.versions,
+        currentVersionId: record.currentVersionId,
+        templateId: record.templateId,
+        context: record.context,
+      });
+      toast.success("Canvas reset to default", {
+        description: "Undo to restore your previous version.",
+      });
+    } catch (error) {
+      toast.error("Couldn't reset canvas", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setIsResetting(false);
+    }
+  }, [channelId, threadId, resetHome, syncFromRecord]);
 
   // Run status: cloud reports via cloudStatus / latest_run.status; local is tied
   // to the live ACP session. Assume running while the task record loads.
@@ -137,6 +185,30 @@ export function FreeformCanvasView({
     [threadId, setRuntimeError],
   );
 
+  // Maps the canvas's allowlisted nav intent to real routing. channelId is
+  // host-supplied here (never from the iframe), so the canvas can only move
+  // within its own channel. The switch is exhaustive over the intent union.
+  const createAndOpen = useCreateAndOpenDashboard(channelId);
+  const onNavigate = useCallback(
+    (intent: CanvasNavIntent) => {
+      switch (intent.target) {
+        case "task":
+          navigateToChannelTask(channelId, intent.taskId);
+          break;
+        case "new-task":
+          navigateToChannelNewTask(channelId);
+          break;
+        case "canvas":
+          navigateToChannelDashboard(channelId, intent.dashboardId);
+          break;
+        case "new-canvas":
+          void createAndOpen();
+          break;
+      }
+    },
+    [channelId, createAndOpen],
+  );
+
   // The edit composer's draft, lifted so self-repair can prefill it.
   const [draft, setDraft] = useState("");
   const askAgentToFix = () => {
@@ -182,6 +254,18 @@ export function FreeformCanvasView({
                 <Text size="1" className="ml-1 text-gray-9">
                   v{idx + 1}/{versions.length}
                 </Text>
+              )}
+              {isHomeCanvas && (
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="ml-1"
+                  disabled={isGenerating || isResetting}
+                  onClick={onResetToDefault}
+                >
+                  <ArrowCounterClockwiseIcon size={14} />
+                  {isResetting ? "Resetting…" : "Reset to default"}
+                </Button>
               )}
             </Flex>
             {isGenerating && genTaskId ? (
@@ -237,6 +321,7 @@ export function FreeformCanvasView({
                   onDataRequest={handleFreeformDataRequest}
                   onError={onError}
                   onRendered={onRendered}
+                  onNavigate={onNavigate}
                   analytics={analytics}
                 />
               </ErrorBoundary>

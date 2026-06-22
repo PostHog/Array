@@ -139,6 +139,15 @@ export function buildSandboxDocument(
         }
         return call("capture", { event, properties: properties ?? {}, distinctId });
       },
+      // Navigate the host app. Fire-and-forget: the host validates the intent
+      // against its allowlist and routes within the current channel. The canvas
+      // cannot pick the channel or an arbitrary path — only these four targets.
+      navigate: {
+        toTask: (taskId) => post({ type: "navigate", nav: { target: "task", taskId } }),
+        toNewTask: () => post({ type: "navigate", nav: { target: "new-task" } }),
+        toCanvas: (dashboardId) => post({ type: "navigate", nav: { target: "canvas", dashboardId } }),
+        toNewCanvas: () => post({ type: "navigate", nav: { target: "new-canvas" } }),
+      },
     };
 
     // Boot posthog-js with the PUBLIC key the host passed in (never the read

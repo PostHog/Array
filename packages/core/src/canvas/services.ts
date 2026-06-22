@@ -44,6 +44,11 @@ export interface IDashboardsService {
     taskId: string | null;
   }): Promise<DashboardRecord>;
   rename(input: { id: string; name: string }): Promise<DashboardRecord>;
+  // Idempotently create + seed a channel's home canvas, returning it.
+  ensureHomeCanvas(channelId: string): Promise<DashboardRecord>;
+  // Append a fresh template version to the home canvas (non-destructive; the
+  // prior version stays in history so the edit can be restored via undo).
+  resetHomeCanvas(channelId: string): Promise<DashboardRecord>;
   delete(id: string): Promise<void>;
 }
 
