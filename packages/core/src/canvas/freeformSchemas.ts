@@ -138,6 +138,13 @@ export const canvasAnalyticsConfigSchema = z.object({
 });
 export type CanvasAnalyticsConfig = z.infer<typeof canvasAnalyticsConfigSchema>;
 
+// The light/dark appearance the host wants the canvas to render in. Mirrors the
+// host's resolved theme (system preference already collapsed to light/dark).
+// The iframe toggles a `.dark` class on its document root from this — the same
+// mechanism the main app uses — so Quill's CSS tokens and `dark:` utilities flip.
+export const canvasThemeSchema = z.enum(["light", "dark"]);
+export type CanvasTheme = z.infer<typeof canvasThemeSchema>;
+
 // host -> iframe
 export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
   // First frame: hand the iframe its source + the run mode. The iframe does not
@@ -151,6 +158,9 @@ export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
     mode: z.enum(["edit", "view"]),
     // Present when analytics/replay should run in the iframe. Absent = no capture.
     analytics: canvasAnalyticsConfigSchema.optional(),
+    // The appearance to render in. Re-sent (like `code`) when the host theme
+    // changes, so the canvas tracks light/dark live. Absent = light.
+    theme: canvasThemeSchema.optional(),
   }),
   // Reply to a data-request, correlated by `id`.
   z.object({

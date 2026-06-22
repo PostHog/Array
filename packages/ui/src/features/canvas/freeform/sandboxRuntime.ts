@@ -55,6 +55,10 @@ export function buildSandboxDocument(
   // calendar's \`bg-fill-hover\`, \`bg-fill-selected\`), so every token Quill maps
   // must be here or the component renders half-styled.
   corePlugins: { preflight: false },
+  // Drive \`dark:\` utilities off the \`.dark\` class (which the host toggles via
+  // the init theme), NOT prefers-color-scheme — so the canvas follows the user's
+  // PostHog theme, matching the main app, even when it differs from the OS.
+  darkMode: "class",
   plugins: [
     // Quill authors for Tailwind v4; \`not-disabled:\` is a v4 variant the Play
     // CDN (v3) lacks. The calendar uses \`not-disabled:hover:bg-fill-hover\`, so
@@ -165,6 +169,13 @@ export function buildSandboxDocument(
       }
     };
 
+    // --- theme: mirror the host's light/dark by toggling \`.dark\` on the root,
+    // exactly as the main app does. Quill's CSS tokens (:root / .dark) and the
+    // \`dark:\` Tailwind utilities both key off this class, so the whole canvas
+    // flips. Re-applied on every init, so a host theme change updates live.
+    const applyTheme = (theme) =>
+      document.documentElement.classList.toggle("dark", theme === "dark");
+
     // --- error reporting (feeds the host's self-repair loop) ---
     const reportError = (message, stack) =>
       post({ type: "error", message: String(message ?? "Unknown error"), stack });
@@ -257,6 +268,7 @@ export function buildSandboxDocument(
       const d = e.data;
       if (!d || d.channel !== CHANNEL) return;
       if (d.type === "init") {
+        applyTheme(d.theme);
         if (d.analytics) void bootAnalytics(d.analytics);
         void mount(d.code);
       } else if (d.type === "data-response") {
@@ -283,7 +295,9 @@ ${FREEFORM_QUILL_CSS_URLS.map(
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
-  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; color: #111; background: #fff; }
+  /* Track the theme via Quill's tokens (set on :root / .dark) so the page chrome
+     flips with the host theme; fall back to light if the tokens haven't loaded. */
+  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--foreground, #111); background: var(--background, #fff); }
   #root { min-height: 100vh; }
 </style>
 </head>

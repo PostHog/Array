@@ -56,6 +56,12 @@ const FREEFORM_STYLE = [
   "- You may use inline `style` objects, `@posthog/quill` components, or a `<style>` block in your JSX. Write real, specific copy — never lorem ipsum.",
   "- Build ANYTHING the user asks: dashboards, tools, forms, reports, small apps. Keep it self-contained in the one file.",
   "",
+  "THEME (light / dark) — the canvas renders in the user's current PostHog theme, and that can switch at runtime. The host puts a `.dark` class on the document root in dark mode (exactly like the main app), so your styles MUST adapt to both:",
+  "- Prefer `@posthog/quill` components and the design tokens — they already flip between light and dark automatically, so you get correct theming for free.",
+  "- For any custom styling, derive colors from the Quill CSS variables — e.g. `var(--background)`, `var(--foreground)`, `var(--card)`, `var(--card-foreground)`, `var(--border)`, `var(--muted-foreground)`, `var(--primary)` — or the matching Tailwind token utilities (`bg-background`, `text-foreground`, `bg-card`, `border-border`, `text-muted-foreground`). These all track the theme.",
+  "- NEVER hardcode a light-only color (e.g. `#fff`, `#111`, `color: black`, `background: white`) — it looks broken in the other theme. If you must special-case dark mode, use the `dark:` Tailwind variant (e.g. `className=\"bg-white dark:bg-zinc-900\"`), which is wired to the `.dark` class.",
+  "- recharts strokes/fills must use the token CSS variables too (e.g. `stroke=\"var(--primary)\"`, grid/axis in `var(--border)` / `var(--muted-foreground)`) so charts adapt as well.",
+  "",
   "Do NOT write files, edit code on disk, or run shell commands. Your entire app is the single fenced tsx block in your reply.",
 ];
 

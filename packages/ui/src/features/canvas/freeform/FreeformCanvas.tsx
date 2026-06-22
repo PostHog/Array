@@ -5,6 +5,7 @@ import {
   type HostToCanvasMessage,
 } from "@posthog/core/canvas/freeformSchemas";
 import { logger } from "@posthog/ui/shell/logger";
+import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildSandboxDocument, type SandboxMode } from "./sandboxRuntime";
 
@@ -53,6 +54,9 @@ export function FreeformCanvas({
 }: FreeformCanvasProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | null>(null);
+  // The canvas mirrors the host's light/dark theme. Passed via `init` (not the
+  // srcDoc) so a theme switch updates the running canvas in place, like `code`.
+  const theme = useThemeStore((s) => (s.isDarkMode ? "dark" : "light"));
   // Whether the iframe has announced it's ready for `init`. A ref, not state: it
   // only gates an imperative postMessage and is never shown on screen, so it
   // shouldn't trigger re-renders.
@@ -77,6 +81,7 @@ export function FreeformCanvas({
     code,
     mode,
     analytics,
+    theme,
   });
   latest.current = {
     onDataRequest,
@@ -85,6 +90,7 @@ export function FreeformCanvas({
     code,
     mode,
     analytics,
+    theme,
   };
 
   const postInit = useCallback(() => {
@@ -96,6 +102,7 @@ export function FreeformCanvas({
         code: p.code,
         mode: p.mode,
         analytics: p.analytics,
+        theme: p.theme,
       },
       "*",
     );
@@ -178,10 +185,10 @@ export function FreeformCanvas({
   useEffect(() => {
     if (!readyRef.current) return;
     iframeRef.current?.contentWindow?.postMessage(
-      { channel: "posthog-canvas", type: "init", code, mode, analytics },
+      { channel: "posthog-canvas", type: "init", code, mode, analytics, theme },
       "*",
     );
-  }, [code, mode, analytics]);
+  }, [code, mode, analytics, theme]);
 
   return (
     <iframe
@@ -192,7 +199,9 @@ export function FreeformCanvas({
       // isolation boundary).
       sandbox="allow-scripts"
       srcDoc={srcDoc}
-      className="w-full border-0 bg-white"
+      // bg tracks the host theme so there's no white flash in dark mode before
+      // the iframe paints; the canvas body uses the same --background token.
+      className="w-full border-0 bg-background"
       style={{ height: height ? `${height}px` : "100%", minHeight: "100%" }}
     />
   );
