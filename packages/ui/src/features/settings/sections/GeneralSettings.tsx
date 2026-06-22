@@ -35,20 +35,13 @@ export function GeneralSettings() {
   const theme = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
   // Power state
-  const {
-    preventSleepWhileRunning,
-    setPreventSleepWhileRunning,
-    downloadUpdatesAutomatically,
-    setDownloadUpdatesAutomatically,
-  } = useSettingsStore();
+  const { preventSleepWhileRunning, setPreventSleepWhileRunning } =
+    useSettingsStore();
   const { data: serverPreventSleep } = useQuery(
     hostTRPC.sleep.getEnabled.queryOptions(),
   );
   const preventSleepMutation = useMutation(
     hostTRPC.sleep.setEnabled.mutationOptions(),
-  );
-  const { data: updatesEnabled } = useQuery(
-    hostTRPC.updates.isEnabled.queryOptions(),
   );
 
   useEffect(() => {
@@ -68,18 +61,6 @@ export function GeneralSettings() {
       preventSleepMutation.mutate({ enabled: checked });
     },
     [setPreventSleepWhileRunning, preventSleepMutation],
-  );
-
-  const handleAutoDownloadChange = useCallback(
-    (checked: boolean) => {
-      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
-        setting_name: "download_updates_automatically",
-        new_value: checked,
-        old_value: !checked,
-      });
-      setDownloadUpdatesAutomatically(checked);
-    },
-    [setDownloadUpdatesAutomatically],
   );
 
   // Chat state
@@ -448,27 +429,6 @@ export function GeneralSettings() {
           size="1"
         />
       </SettingRow>
-
-      {updatesEnabled?.enabled ? (
-        <>
-          {/* Updates */}
-          <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
-            Updates
-          </Text>
-
-          <SettingRow
-            label="Download updates automatically"
-            description="Download new versions in the background and install them on the next quit. When off, you choose when to download each update."
-            noBorder
-          >
-            <Switch
-              checked={downloadUpdatesAutomatically}
-              onCheckedChange={handleAutoDownloadChange}
-              size="1"
-            />
-          </SettingRow>
-        </>
-      ) : null}
 
       {/* Fun */}
       <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">

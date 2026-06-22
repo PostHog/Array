@@ -1,9 +1,12 @@
 import { CheckCircle, XCircle } from "@phosphor-icons/react";
 import { deriveUpdateStatus } from "@posthog/core/settings/updateStatus";
 import { useHostTRPC } from "@posthog/host-router/react";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
-import { Badge, Button, Flex, Spinner, Text } from "@radix-ui/themes";
+import { Badge, Button, Flex, Spinner, Switch, Text } from "@radix-ui/themes";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,6 +16,15 @@ const log = logger.scope("updates-settings");
 export function UpdatesSettings() {
   const trpc = useHostTRPC();
   const { data: appVersion } = useQuery(trpc.os.getAppVersion.queryOptions());
+  const { data: updatesEnabled } = useQuery(
+    trpc.updates.isEnabled.queryOptions(),
+  );
+  const downloadUpdatesAutomatically = useSettingsStore(
+    (state) => state.downloadUpdatesAutomatically,
+  );
+  const setDownloadUpdatesAutomatically = useSettingsStore(
+    (state) => state.setDownloadUpdatesAutomatically,
+  );
   const [checkingForUpdates, setCheckingForUpdates] = useState(false);
   const [updatesDisabled, setUpdatesDisabled] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<{
@@ -60,6 +72,18 @@ export function UpdatesSettings() {
     }
   }, [checkUpdatesMutation]);
 
+  const handleAutoDownloadChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "download_updates_automatically",
+        new_value: checked,
+        old_value: !checked,
+      });
+      setDownloadUpdatesAutomatically(checked);
+    },
+    [setDownloadUpdatesAutomatically],
+  );
+
   useEffect(() => {
     if (!hasCheckedRef.current) {
       hasCheckedRef.current = true;
@@ -88,6 +112,19 @@ export function UpdatesSettings() {
           {appVersion || "Loading..."}
         </Badge>
       </SettingRow>
+
+      {updatesEnabled?.enabled ? (
+        <SettingRow
+          label="Download updates automatically"
+          description="Download new versions in the background and install them on the next quit. When off, you choose when to download each update."
+        >
+          <Switch
+            checked={downloadUpdatesAutomatically}
+            onCheckedChange={handleAutoDownloadChange}
+            size="1"
+          />
+        </SettingRow>
+      ) : null}
 
       <SettingRow
         label="Check for updates"
