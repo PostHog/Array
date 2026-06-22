@@ -15,6 +15,7 @@ import {
   IconButton,
   Progress,
   ScrollArea,
+  Skeleton,
   Text,
 } from "@radix-ui/themes";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -29,6 +30,20 @@ function formatSize(bytes: number | null): string {
   const mb = bytes / (1024 * 1024);
   if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
   return `${Math.round(mb)} MB`;
+}
+
+function ReleaseNotesSkeleton() {
+  return (
+    <Flex direction="column" gap="3">
+      {["improved", "fixed"].map((key) => (
+        <Flex key={key} direction="column" gap="2">
+          <Skeleton width="56px" height="12px" />
+          <Skeleton width="90%" height="14px" />
+          <Skeleton width="80%" height="14px" />
+        </Flex>
+      ))}
+    </Flex>
+  );
 }
 
 export function UpdateAvailableModal() {
@@ -48,7 +63,7 @@ export function UpdateAvailableModal() {
   const downloadMutation = useMutation(
     hostTRPC.updates.download.mutationOptions(),
   );
-  const { data: releasesData } = useQuery({
+  const { data: releasesData, isLoading: isLoadingReleases } = useQuery({
     ...hostTRPC.githubReleases.list.queryOptions(),
     enabled: isOpen,
   });
@@ -100,7 +115,7 @@ export function UpdateAvailableModal() {
             </Dialog.Close>
           </Flex>
 
-          {hasParsedNotes || rawNotes ? (
+          {hasParsedNotes || rawNotes || isLoadingReleases ? (
             <Flex direction="column" gap="2">
               <Text
                 size="1"
@@ -110,19 +125,23 @@ export function UpdateAvailableModal() {
               >
                 Release notes
               </Text>
-              <ScrollArea
-                type="auto"
-                scrollbars="vertical"
-                style={{ maxHeight: 240 }}
-              >
-                <div className="pr-3">
-                  {hasParsedNotes && parsedNotes ? (
-                    <ReleaseNotesSections notes={parsedNotes} />
-                  ) : rawNotes ? (
-                    <MarkdownRenderer content={rawNotes} />
-                  ) : null}
-                </div>
-              </ScrollArea>
+              {hasParsedNotes || rawNotes ? (
+                <ScrollArea
+                  type="auto"
+                  scrollbars="vertical"
+                  style={{ maxHeight: 240 }}
+                >
+                  <div className="pr-3">
+                    {hasParsedNotes && parsedNotes ? (
+                      <ReleaseNotesSections notes={parsedNotes} />
+                    ) : rawNotes ? (
+                      <MarkdownRenderer content={rawNotes} />
+                    ) : null}
+                  </div>
+                </ScrollArea>
+              ) : (
+                <ReleaseNotesSkeleton />
+              )}
             </Flex>
           ) : null}
 
@@ -141,6 +160,9 @@ export function UpdateAvailableModal() {
           ) : null}
 
           <Flex justify="end" align="center" gap="2" mt="1">
+            <Button variant="soft" color="gray" size="2" onClick={close}>
+              Later
+            </Button>
             {isReady ? (
               <Button size="2" onClick={() => void installUpdate()}>
                 Restart to update
