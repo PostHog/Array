@@ -367,7 +367,7 @@ export const useAuthStore = create<AuthState>()(
         // Clear React Query cache to prevent data leakage between sessions
         queryClient.clear();
 
-        set({ ...CLEARED_AUTH_STATE });
+        set(CLEARED_AUTH_STATE);
       },
     }),
     {
