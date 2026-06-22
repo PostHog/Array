@@ -1,8 +1,9 @@
 import { freeformSystemPromptFor } from "@posthog/core/canvas/canvasTemplates";
 
 // Builds the prompt for the task that generates a freeform (React) canvas. Like
-// CONTEXT.md generation, this runs as a normal agent task in the channel's repo,
-// so the agent has the default system prompt — the freeform authoring contract
+// CONTEXT.md generation, this runs as a normal repo-less agent task (no repo
+// picked up front), so the agent has the default system prompt — the freeform
+// authoring contract
 // (imports, the `ph` data shim, Quill/style rules) therefore has to live in the
 // task's content (its first user message). The canvas is not a file on disk — it
 // lives in PostHog — so the agent publishes the result via the PostHog MCP tool
