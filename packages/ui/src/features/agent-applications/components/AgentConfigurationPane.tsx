@@ -153,12 +153,12 @@ interface IdentityConsumers {
 }
 function identityConsumers(spec: AgentSpec, id: string): IdentityConsumers {
   return {
-    tools: arr(spec.tools)
-      .filter((t) => toolRequiresIdentity(t) === id)
-      .map(toolId),
-    mcps: arr(spec.mcps)
-      .filter((m) => mcpProvider(m) === id)
-      .map((m) => str(rec(m).id) ?? "mcp"),
+    tools: arr(spec.tools).flatMap((t) =>
+      toolRequiresIdentity(t) === id ? [toolId(t)] : [],
+    ),
+    mcps: arr(spec.mcps).flatMap((m) =>
+      mcpProvider(m) === id ? [str(rec(m).id) ?? "mcp"] : [],
+    ),
   };
 }
 function consumerCount(c: IdentityConsumers): number {
@@ -658,7 +658,7 @@ function DetailBody({
     case "identity":
       return (
         <IdentityBody
-          provider={findById(arr(spec.identity_providers), id)}
+          provider={findById(identityProviders(spec), id)}
           id={id}
           spec={spec}
           ctx={ctx}
@@ -916,8 +916,9 @@ function OptionRow({
           {items.length === 0 ? (
             <Text className="text-[12px] text-gray-10">none</Text>
           ) : (
-            items.map((x) => (
-              <Badge key={x} color="gray">
+            items.map((x, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: display-only chips; values (e.g. trusted_workspaces) can repeat
+              <Badge key={i} color="gray">
                 {x}
               </Badge>
             ))
