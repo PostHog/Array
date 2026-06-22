@@ -707,9 +707,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.sseAbortController = controller;
 
     watcher.connStartedAt = 0;
-    watcher.connSentLastEventId = watcher.lastEventId;
     watcher.connDataEventsReceived = 0;
-    const startLatest = Boolean(options?.startLatest && !watcher.lastEventId);
 
     // Resolve the read target once (proxy URL + token, or Django). The server owns the decision;
     // reused across reconnects so transport churn never re-mints a token.
@@ -745,6 +743,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       watcher.lastEventIdLeg = null;
     }
     watcher.streamLeg = leg;
+
+    // Captured after the leg-switch drop so they reflect what this connection actually sends:
+    // a dropped resume position means no Last-Event-ID and a start=latest reconnect.
+    watcher.connSentLastEventId = watcher.lastEventId;
+    const startLatest = Boolean(options?.startLatest && !watcher.lastEventId);
     // The proxy exposes a clean run-scoped path; the run-scoped token carries team and task.
     const url = new URL(
       usingProxy
@@ -879,7 +882,6 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         completedWatcher.cumulativeReconnectAttempts = 0;
         completedWatcher.selfHealAttempted = false;
       }
-
 
       await this.handleStreamCompletion(key, { reconnectOnDisconnect: true });
     } catch (error) {
