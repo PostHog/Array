@@ -32,6 +32,7 @@ import type {
   AgentSessionLogsParams,
   AgentSessionsListParams,
   AgentSlackManifest,
+  AgentUsersListResponse,
   BundleFile,
   DecideApprovalRequest,
 } from "@posthog/shared/agent-platform-types";
@@ -4093,6 +4094,9 @@ export class PostHogAPIClient {
     if (params?.revision_id) {
       url.searchParams.set("revision_id", params.revision_id);
     }
+    if (params?.agent_user_id) {
+      url.searchParams.set("agent_user_id", params.agent_user_id);
+    }
     if (params?.created_after) {
       url.searchParams.set("created_after", params.created_after);
     }
@@ -4541,6 +4545,34 @@ export class PostHogAPIClient {
     if (limit != null) url.searchParams.set("limit", String(limit));
     const response = await this.api.fetcher.fetch({ method: "get", url, path });
     return (await response.json()) as AgentMemoryTableRows;
+  }
+
+  // --- Users / connections --------------------------------------------------
+  // The agent's end-users (`agent_user`) and their linked external identities
+  // (`agent_identity_credential`). Connection metadata only — encrypted tokens
+  // never cross this boundary. Proxied Django → janitor → runtime store, same
+  // shape as the memory endpoints above.
+
+  /** List the agent's end-users, each with their linked connections. */
+  async listAgentUsers(idOrSlug: string): Promise<AgentUsersListResponse> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/users/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as Partial<AgentUsersListResponse>;
+    return { results: data.results ?? [], count: data.count ?? 0 };
+  }
+
+  /** Revoke one linked connection for an agent user (kept for audit, not deleted). */
+  async deleteAgentUserConnection(
+    idOrSlug: string,
+    agentUserId: string,
+    provider: string,
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/users/${encodeURIComponent(agentUserId)}/connections/${encodeURIComponent(provider)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    await this.api.fetcher.fetch({ method: "delete", url, path });
   }
 
   // --- Live chat (agent-ingress) -------------------------------------------

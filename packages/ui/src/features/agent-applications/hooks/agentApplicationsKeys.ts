@@ -97,6 +97,8 @@ export const agentApplicationsKeys = {
     ["agent-applications", "memory-tables", projectId, idOrSlug] as const,
   memoryTable: (projectId: number | null, idOrSlug: string, name: string) =>
     ["agent-applications", "memory-table", projectId, idOrSlug, name] as const,
+  users: (projectId: number | null, idOrSlug: string) =>
+    ["agent-applications", "users", projectId, idOrSlug] as const,
   fleetLiveSessions: (projectId: number | null) =>
     ["agent-applications", "fleet", "live-sessions", projectId] as const,
   fleetApprovals: (projectId: number | null, state?: string) =>

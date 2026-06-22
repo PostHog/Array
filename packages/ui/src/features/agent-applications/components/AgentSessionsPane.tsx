@@ -1,13 +1,29 @@
-import type { AgentSessionState } from "@posthog/shared/agent-platform-types";
+import type {
+  AgentSessionState,
+  AgentUserWithConnections,
+} from "@posthog/shared/agent-platform-types";
 import { Button } from "@posthog/ui/primitives/Button";
 import { Flex, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import { useAgentApplicationSessions } from "../hooks/useAgentApplicationSessions";
+import { useAgentUsers } from "../hooks/useAgentUsers";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 import { AgentSessionRow } from "./AgentSessionRow";
 import { RefreshIndicator } from "./RefreshIndicator";
 
 type Filter = AgentSessionState | "all";
+
+/** Short label for a user in the filter dropdown: display name if the trigger
+ *  stamped one, else the principal id, prefixed by kind. */
+function userLabel(u: AgentUserWithConnections): string {
+  const name =
+    typeof u.metadata?.display_name === "string"
+      ? u.metadata.display_name
+      : typeof u.metadata?.name === "string"
+        ? u.metadata.name
+        : u.principal_id;
+  return `${u.principal_kind}: ${name}`;
+}
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
@@ -23,13 +39,18 @@ const PAGE = 25;
 /** Per-agent Sessions pane: full session history with a state filter + paging. */
 export function AgentSessionsPane({ idOrSlug }: { idOrSlug: string }) {
   const [filter, setFilter] = useState<Filter>("all");
+  const [userId, setUserId] = useState<string>("all");
   const [limit, setLimit] = useState(PAGE);
 
   const { data, isLoading, isError, isFetching, dataUpdatedAt, refetch } =
     useAgentApplicationSessions(idOrSlug, {
       limit,
       state: filter === "all" ? undefined : [filter],
+      agent_user_id: userId === "all" ? undefined : userId,
     });
+
+  const { data: usersData } = useAgentUsers(idOrSlug);
+  const users = usersData?.results ?? [];
 
   const sessions = data?.results ?? [];
   const total = data?.count ?? sessions.length;
@@ -37,6 +58,11 @@ export function AgentSessionsPane({ idOrSlug }: { idOrSlug: string }) {
 
   function changeFilter(next: Filter) {
     setFilter(next);
+    setLimit(PAGE);
+  }
+
+  function changeUser(next: string) {
+    setUserId(next);
     setLimit(PAGE);
   }
 
@@ -60,11 +86,28 @@ export function AgentSessionsPane({ idOrSlug }: { idOrSlug: string }) {
               </button>
             ))}
           </Flex>
-          <RefreshIndicator
-            updatedAt={dataUpdatedAt}
-            isFetching={isFetching}
-            onRefresh={() => void refetch()}
-          />
+          <Flex align="center" gap="3" className="shrink-0">
+            {users.length > 0 ? (
+              <select
+                value={userId}
+                onChange={(e) => changeUser(e.target.value)}
+                aria-label="Filter by user"
+                className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2 py-1 text-[12px] text-gray-12"
+              >
+                <option value="all">All users</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {userLabel(u)}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <RefreshIndicator
+              updatedAt={dataUpdatedAt}
+              isFetching={isFetching}
+              onRefresh={() => void refetch()}
+            />
+          </Flex>
         </Flex>
 
         {isLoading ? (

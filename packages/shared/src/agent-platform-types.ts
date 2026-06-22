@@ -193,6 +193,48 @@ export interface AgentMemoryTableRows {
   rows: Record<string, unknown>[];
 }
 
+// The agent's end-users and their linked external identities. `agent_user` is
+// the stable per-principal identity (a Slack user, a JWT `sub`, a PostHog user);
+// `agent_identity_credential` is a durable OAuth link that user established so
+// the agent can act AS them on an external system. The API exposes connection
+// *metadata only* — encrypted tokens are NEVER serialized to the client.
+
+/** A linked external identity for an agent user. Credential material is omitted. */
+export interface AgentUserConnection {
+  id: string;
+  provider: string;
+  /** Granted scopes (plaintext; no secret material). */
+  scopes: string[];
+  /** `active` once linked; `revoked` after a disconnect (kept for audit). */
+  state: "active" | "revoked";
+  /** Proven external subject (e.g. a PostHog user uuid) for identity-establishing
+   *  providers; null for API-only links. */
+  subject: string | null;
+  /** When the access token expires, if the provider issues expiring tokens. */
+  access_expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+  revoked_at: string | null;
+}
+
+/** An agent end-user (`agent_user`) plus their linked connections. */
+export interface AgentUserWithConnections {
+  id: string;
+  /** Edge-identity kind: `slack` | `jwt` | `posthog` | `service` | … */
+  principal_kind: string;
+  /** Stable principal id within that kind (Slack user id, JWT `sub`, …). */
+  principal_id: string;
+  /** Optional trigger-stamped context (e.g. Slack workspace/display name). */
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  connections: AgentUserConnection[];
+}
+
+export interface AgentUsersListResponse {
+  results: AgentUserWithConnections[];
+  count: number;
+}
+
 export interface AgentSessionUsageTotal {
   tokens_in: number;
   tokens_out: number;
@@ -411,6 +453,8 @@ export interface AgentSessionsListParams {
   /** Comma-separated states accepted server-side; pass an array, joined by the client. */
   state?: AgentSessionState[];
   revision_id?: string;
+  /** Restrict to sessions started by this agent user (`agent_user.id`). */
+  agent_user_id?: string;
   created_after?: string;
   created_before?: string;
 }
