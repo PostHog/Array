@@ -120,6 +120,14 @@ export function buildSandboxDocument(
     window.ph = {
       // Run a named, server-stored query (the only shape allowed in view mode).
       run: (name, params) => call("run", { name, params: params ?? {} }),
+      // PREFERRED data path: load a SAVED, validated insight by its short id and
+      // render its STORED result from the insights endpoint (not a fresh /query/
+      // run). Pass the date picker's window to re-scope it:
+      // \`ph.loadInsight("AbC123", { dateRange: { date_from, date_to } })\`.
+      // Returns \`{ columns, results }\` — SAME shape as ph.query: a trends-style
+      // insight returns SERIES OBJECTS, a SQL insight returns ROWS.
+      loadInsight: (shortId, opts) =>
+        call("loadInsight", { shortId, dateRange: opts && opts.dateRange }),
       // Run a query. Pass a TYPED query node (\`{ kind: "TrendsQuery", … }\`) for
       // UI-matching numbers (preferred), or an inline HogQL string (escape hatch).
       // Edit mode only; rejected by the host in view mode.

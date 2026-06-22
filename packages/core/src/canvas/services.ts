@@ -6,6 +6,7 @@ import type {
   CanvasCaptureResult,
   CanvasDataQueryInput,
   CanvasDataResult,
+  CanvasLoadInsightInput,
   FreeformVersion,
 } from "./freeformSchemas";
 import type { CanvasTemplate, CanvasTemplateSummary } from "./templateSchemas";
@@ -54,6 +55,7 @@ export interface IDashboardsService {
 
 export interface ICanvasDataService {
   query(input: CanvasDataQueryInput): Promise<CanvasDataResult>;
+  loadInsight(input: CanvasLoadInsightInput): Promise<CanvasDataResult>;
   capture(input: CanvasCaptureInput): Promise<CanvasCaptureResult>;
   captureConfig(): Promise<CanvasCaptureConfig>;
 }

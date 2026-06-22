@@ -75,10 +75,11 @@ export type CanvasDataQueryInput = z.infer<typeof canvasDataQueryInput>;
 
 export const canvasDataResultSchema = z.object({
   columns: z.array(z.string()),
-  // The result rows. SHAPE DEPENDS ON THE QUERY KIND:
-  //   • HogQLQuery (inline `hogql`) → an array of ROWS, each row an array of cell
+  // The result rows. SHAPE DEPENDS ON THE QUERY KIND (true for both `ph.query`
+  // and `ph.loadInsight`):
+  //   • HogQLQuery / SQL insight → an array of ROWS, each row an array of cell
   //     values aligned to `columns` (e.g. `[[123], [456]]`).
-  //   • Typed nodes (TrendsQuery/etc.) → an array of SERIES OBJECTS as PostHog
+  //   • Typed nodes / trends-style insight → an array of SERIES OBJECTS as PostHog
   //     returns them — `{ data: number[], labels: string[], days: string[],
   //     count, aggregated_value, compare_label, … }`. NOT rows-of-cells; passed
   //     through untouched so the canvas reads the native trends shape.
@@ -86,6 +87,22 @@ export const canvasDataResultSchema = z.object({
   results: z.array(z.unknown()),
 });
 export type CanvasDataResult = z.infer<typeof canvasDataResultSchema>;
+
+// ---------------------------------------------------------------------------
+// Load-insight avenue: the host-side fetch behind the `ph.loadInsight` shim. The
+// canvas references a SAVED, validated PostHog insight by `short_id` and the host
+// returns its STORED result from the insights endpoint (not a fresh `/query/`
+// run). This is the preferred data path — every metric is a proven saved insight.
+// `dateRange` (the canvas date picker's window) is forwarded as the insight's
+// date override. The result is the same `{ columns, results }` shape as `ph.query`.
+// ---------------------------------------------------------------------------
+export const canvasLoadInsightInput = z.object({
+  shortId: z.string().min(1),
+  dateRange: z
+    .object({ date_from: z.string(), date_to: z.string() })
+    .optional(),
+});
+export type CanvasLoadInsightInput = z.infer<typeof canvasLoadInsightInput>;
 
 // Capture (write) avenue behind the `ph.capture` shim. The host sends the event
 // to the project using its PUBLIC project key (phc_…, safe to be client-side) —

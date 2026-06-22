@@ -56,5 +56,11 @@ canvas is ready, PUBLISH it by calling the PostHog MCP tool
 
 The canvas lives in PostHog, not on disk — calling that MCP tool is what saves it.
 Do not write a local file. Verify event/property names via the PostHog MCP before
-using them, and operate only on this project.`;
+using them, and operate only on this project.
+
+DATA — for each metric, first SAVE an insight via the PostHog MCP insight tools
+(prefer an insight query type — Trends, Funnels, Retention, web-analytics kinds —
+over raw SQL), record the \`short_id\` it returns, and load it in the canvas with
+\`ph.loadInsight(short_id, { dateRange })\`. Fall back to inline \`ph.query(...)\`/HogQL
+only when no insight can express the metric.`;
 }

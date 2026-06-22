@@ -2,6 +2,7 @@ import {
   canvasCaptureConfigSchema,
   canvasCaptureInput,
   canvasDataQueryInput,
+  canvasLoadInsightInput,
 } from "@posthog/core/canvas/freeformSchemas";
 import { CANVAS_DATA_SERVICE } from "@posthog/core/canvas/identifiers";
 import type { ICanvasDataService } from "@posthog/core/canvas/services";
@@ -14,6 +15,13 @@ export const canvasDataRouter = router({
     .input(canvasDataQueryInput)
     .mutation(({ ctx, input }) =>
       ctx.container.get<ICanvasDataService>(CANVAS_DATA_SERVICE).query(input),
+    ),
+  loadInsight: publicProcedure
+    .input(canvasLoadInsightInput)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<ICanvasDataService>(CANVAS_DATA_SERVICE)
+        .loadInsight(input),
     ),
   capture: publicProcedure
     .input(canvasCaptureInput)
