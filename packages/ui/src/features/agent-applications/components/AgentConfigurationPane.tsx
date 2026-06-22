@@ -3,6 +3,7 @@ import {
   ChatTextIcon,
   ClockIcon,
   CodeIcon,
+  FingerprintIcon,
   GaugeIcon,
   GlobeIcon,
   HardDrivesIcon,
@@ -126,6 +127,42 @@ function allSecretKeys(spec: AgentSpec, setKeys: string[]): string[] {
     for (const s of triggerRequiredSecretsFor(t)) set.add(s.key);
   for (const k of setKeys) set.add(k);
   return [...set].sort();
+}
+
+// --- Identity providers (the credential axis) ---
+// `spec.identity_providers[]` are the providers an asker can link against so the
+// agent acts AS them when a tool/MCP needs it. Two consumers are declared in the
+// spec and cross-linked here: custom tools (`requires_identity`) and MCP servers
+// (`auth.provider`). Native @posthog/* tools declare their provider intrinsically
+// in the tool registry, so they don't appear in the spec — noted in the UI.
+function identityProviders(spec: AgentSpec): unknown[] {
+  return arr(spec.identity_providers);
+}
+function providerId(p: unknown): string {
+  return str(rec(p).id) ?? "provider";
+}
+function toolRequiresIdentity(t: unknown): string | undefined {
+  return str(rec(t).requires_identity);
+}
+function mcpProvider(m: unknown): string | undefined {
+  return str(rec(rec(m).auth).provider);
+}
+interface IdentityConsumers {
+  tools: string[];
+  mcps: string[];
+}
+function identityConsumers(spec: AgentSpec, id: string): IdentityConsumers {
+  return {
+    tools: arr(spec.tools)
+      .filter((t) => toolRequiresIdentity(t) === id)
+      .map(toolId),
+    mcps: arr(spec.mcps)
+      .filter((m) => mcpProvider(m) === id)
+      .map((m) => str(rec(m).id) ?? "mcp"),
+  };
+}
+function consumerCount(c: IdentityConsumers): number {
+  return c.tools.length + c.mcps.length;
 }
 
 function WarnBadge({ title }: { title: string }) {
@@ -263,6 +300,28 @@ function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
             missing.length > 0 ? (
               <WarnBadge title={`Needs secret(s): ${missing.join(", ")}`} />
             ) : undefined,
+        };
+      }),
+    });
+  }
+
+  const identities = identityProviders(spec);
+  if (identities.length > 0) {
+    children.push({
+      type: "folder",
+      name: "identities",
+      path: "cfg:identities",
+      icon: <FingerprintIcon {...ICON} />,
+      children: identities.map((p) => {
+        const id = providerId(p);
+        const used = consumerCount(identityConsumers(spec, id));
+        return {
+          type: "file" as const,
+          name: id,
+          path: `cfg:identity/${id}`,
+          icon: <FingerprintIcon {...ICON} />,
+          trailing:
+            used === 0 ? <Badge color="amber">unused</Badge> : undefined,
         };
       }),
     });
@@ -409,6 +468,8 @@ const SECTION_INFO: Record<string, string> = {
   "cfg:skills":
     "Markdown playbooks the agent loads on demand. Only the description is in the prompt until loaded.",
   "cfg:mcps": "Remote MCP servers the agent connects to at session start.",
+  "cfg:identities":
+    "Identity providers an asker links against, so the agent can act AS them when a tool or MCP call needs it. Per-asker (binding: principal) by default.",
   "cfg:integrations":
     "Team-level integrations the agent reuses (configured once at the project level).",
   "cfg:secrets": "Env keys this agent reads. Values are never shown.",
@@ -479,6 +540,10 @@ function nodeHeader(
       return { icon: <HardDrivesIcon {...ICON} />, title: "MCP servers" };
     case "mcp":
       return { icon: <HardDrivesIcon {...ICON} />, title: id };
+    case "identities":
+      return { icon: <FingerprintIcon {...ICON} />, title: "Identities" };
+    case "identity":
+      return { icon: <FingerprintIcon {...ICON} />, title: id };
     case "integrations":
       return { icon: <LinkIcon {...ICON} />, title: "Integrations" };
     case "integration":
@@ -565,7 +630,13 @@ function DetailBody({
       return <ToolsOverview spec={spec} ctx={ctx} />;
     case "tool":
       return (
-        <ToolBody tool={findById(arr(spec.tools), id)} files={files} id={id} />
+        <ToolBody
+          tool={findById(arr(spec.tools), id)}
+          files={files}
+          id={id}
+          spec={spec}
+          ctx={ctx}
+        />
       );
     case "skills":
       return <SkillsOverview spec={spec} ctx={ctx} />;
@@ -579,7 +650,20 @@ function DetailBody({
     case "mcps":
       return <McpsOverview spec={spec} ctx={ctx} />;
     case "mcp":
-      return <McpBody mcp={findById(arr(spec.mcps), id)} ctx={ctx} />;
+      return (
+        <McpBody mcp={findById(arr(spec.mcps), id)} spec={spec} ctx={ctx} />
+      );
+    case "identities":
+      return <IdentitiesOverview spec={spec} ctx={ctx} />;
+    case "identity":
+      return (
+        <IdentityBody
+          provider={findById(arr(spec.identity_providers), id)}
+          id={id}
+          spec={spec}
+          ctx={ctx}
+        />
+      );
     case "integrations":
       return <IntegrationsOverview spec={spec} ctx={ctx} />;
     case "integration":
@@ -765,6 +849,157 @@ function TriggersOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   );
 }
 
+// Short, operator-facing hints for the well-known trigger config fields. Keyed
+// by field name (shared across trigger types); unknown fields render with no
+// hint. Mirrors the field docs on `TriggerSchema` in agent-shared/src/spec.
+const TRIGGER_FIELD_HINTS: Record<string, string> = {
+  mention_only:
+    "Only @-mentions start a session; plain channel messages are ignored.",
+  auto_resume_threads:
+    "Replies in an already-open thread continue without re-mentioning the bot.",
+  allow_workspace_participants:
+    "Any trusted-workspace user can advance the thread, not just the opener.",
+  allow_direct_messages:
+    "The bot also answers DMs and group DMs, not just channel mentions.",
+  ack_reaction:
+    "Emoji the bot adds the instant it receives a message, for sub-3s feedback.",
+  trusted_workspaces:
+    'Slack workspaces allowed to invoke this agent ("*" = any workspace).',
+  channel_id: "The channel this trigger is scoped to.",
+  schedule: "Cron expression for when the job fires.",
+  timezone: "IANA timezone the schedule is evaluated in.",
+  prompt:
+    "The task handed to the agent as the first message when the cron fires.",
+  external_key: "Reuses one rolling session across firings when set.",
+  catch_up: "What to fire for runs missed during downtime.",
+  max_catch_up_age_seconds: "How far back catch-up will look for missed runs.",
+  name: "Stable handle for this cron job (used in session metadata).",
+  allow_restart:
+    "A /send to a closed session reopens it instead of returning 410.",
+  path: "URL path the webhook is mounted at.",
+};
+
+function isLongText(v: string): boolean {
+  return v.length > 64 || v.includes("\n");
+}
+
+/** A single trigger config field rendered by value type: booleans as on/off
+ *  pills, string arrays as chips, long text in a block, scalars inline. */
+function OptionRow({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: unknown;
+  hint?: string;
+}) {
+  const human = label.replace(/_/g, " ");
+  if (typeof value === "boolean") {
+    return (
+      <OptionCard
+        label={human}
+        hint={hint}
+        trailing={
+          <Badge color={value ? "green" : "gray"}>{value ? "on" : "off"}</Badge>
+        }
+      />
+    );
+  }
+  if (Array.isArray(value)) {
+    const items = value.map((x) =>
+      typeof x === "string" ? x : JSON.stringify(x),
+    );
+    return (
+      <OptionCard label={human} hint={hint}>
+        <Flex gap="1.5" wrap="wrap">
+          {items.length === 0 ? (
+            <Text className="text-[12px] text-gray-10">none</Text>
+          ) : (
+            items.map((x) => (
+              <Badge key={x} color="gray">
+                {x}
+              </Badge>
+            ))
+          )}
+        </Flex>
+      </OptionCard>
+    );
+  }
+  if (typeof value === "string" && isLongText(value)) {
+    return (
+      <OptionCard label={human} hint={hint}>
+        <Text className="block whitespace-pre-wrap text-[12.5px] text-gray-12 leading-snug">
+          {value}
+        </Text>
+      </OptionCard>
+    );
+  }
+  const display =
+    typeof value === "string" || typeof value === "number"
+      ? String(value)
+      : JSON.stringify(value);
+  return (
+    <OptionCard
+      label={human}
+      hint={hint}
+      trailing={
+        <Text className="truncate text-[12.5px] text-gray-12 [font-family:var(--font-mono)]">
+          {display}
+        </Text>
+      }
+    />
+  );
+}
+
+function OptionCard({
+  label,
+  hint,
+  trailing,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  trailing?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="rounded-(--radius-2) border border-border bg-(--gray-2) px-3 py-2">
+      <Flex align="center" justify="between" gap="3">
+        <Text className="shrink-0 text-[11px] text-gray-10 uppercase tracking-wide">
+          {label}
+        </Text>
+        {trailing ? <span className="min-w-0 shrink-0">{trailing}</span> : null}
+      </Flex>
+      {hint ? (
+        <Text className="mt-0.5 block text-[11px] text-gray-10 leading-snug">
+          {hint}
+        </Text>
+      ) : null}
+      {children ? <div className="mt-1.5">{children}</div> : null}
+    </div>
+  );
+}
+
+function TriggerOptions({
+  type,
+  config,
+}: {
+  type: string;
+  config: Record<string, unknown>;
+}) {
+  const entries = Object.entries(config);
+  if (entries.length === 0)
+    return <Muted>No options for the {type} trigger.</Muted>;
+  return (
+    <Flex direction="column" gap="2">
+      {entries.map(([k, v]) => (
+        <OptionRow key={k} label={k} value={v} hint={TRIGGER_FIELD_HINTS[k]} />
+      ))}
+    </Flex>
+  );
+}
+
 function TriggerBody({ trigger, ctx }: { trigger: unknown; ctx: Ctx }) {
   const r = rec(trigger);
   const type = triggerType(trigger);
@@ -779,16 +1014,14 @@ function TriggerBody({ trigger, ctx }: { trigger: unknown; ctx: Ctx }) {
         <Muted>{TRIGGER_EXPLAINER[type]}</Muted>
       ) : null}
 
-      <Flex direction="column" gap="2">
-        <Row label="type" value={type} mono />
-        {Object.entries(config).map(([k, v]) => (
-          <Row
-            key={k}
-            label={k.replace(/_/g, " ")}
-            value={typeof v === "string" ? v : JSON.stringify(v)}
-          />
-        ))}
-      </Flex>
+      <Row label="type" value={type} mono />
+
+      <div>
+        <Subhead>Options</Subhead>
+        <div className="mt-1.5">
+          <TriggerOptions type={type} config={config} />
+        </div>
+      </div>
 
       {missing.length > 0 ? (
         <Attention>
@@ -970,13 +1203,18 @@ function ToolBody({
   tool,
   files,
   id,
+  spec,
+  ctx,
 }: {
   tool: unknown;
   files: BundleFile[];
   id: string;
+  spec: AgentSpec;
+  ctx: Ctx;
 }) {
   const r = rec(tool);
   const kind = str(r.kind);
+  const identity = toolRequiresIdentity(tool);
   const source = byPath(files, `tools/${id}/source.ts`);
   return (
     <Flex direction="column" gap="2">
@@ -995,6 +1233,9 @@ function ToolBody({
           {str(r.description)}
         </Text>
       ) : null}
+      {identity ? (
+        <IdentityLink provider={identity} spec={spec} ctx={ctx} />
+      ) : null}
       {source ? (
         <div className="mt-2">
           <Subhead>source · {source.path}</Subhead>
@@ -1002,6 +1243,43 @@ function ToolBody({
         </div>
       ) : null}
     </Flex>
+  );
+}
+
+/** A back-link from a tool/MCP to the identity provider it acts as. Warns when
+ *  the referenced provider id isn't declared in `spec.identity_providers[]`. */
+function IdentityLink({
+  provider,
+  spec,
+  ctx,
+}: {
+  provider: string;
+  spec: AgentSpec;
+  ctx: Ctx;
+}) {
+  const declared = identityProviders(spec).some(
+    (p) => providerId(p) === provider,
+  );
+  return (
+    <div>
+      <Subhead>Acts as identity</Subhead>
+      <div className="mt-1">
+        <JumpRow
+          icon={<FingerprintIcon {...ICON} />}
+          title={provider}
+          mono
+          subtitle={
+            declared
+              ? "per-asker linked identity"
+              : "not declared in identities"
+          }
+          trailing={
+            declared ? undefined : <Badge color="amber">undeclared</Badge>
+          }
+          onClick={() => ctx.onSelect(`cfg:identity/${provider}`)}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -1086,14 +1364,28 @@ function McpsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   );
 }
 
-function McpBody({ mcp, ctx }: { mcp: unknown; ctx: Ctx }) {
+function McpBody({
+  mcp,
+  spec,
+  ctx,
+}: {
+  mcp: unknown;
+  spec: AgentSpec;
+  ctx: Ctx;
+}) {
   const r = rec(mcp);
   const tools = arr(r.tools);
   const missing = mcpMissingSecrets(mcp, ctx.setKeys);
+  const provider = mcpProvider(mcp);
+  const integration = str(rec(r.auth).integration);
   return (
     <Flex direction="column" gap="3">
       {str(r.url) ? (
         <Row label="url" value={str(r.url) as string} mono />
+      ) : null}
+      {integration ? <Row label="integration" value={integration} /> : null}
+      {provider ? (
+        <IdentityLink provider={provider} spec={spec} ctx={ctx} />
       ) : null}
       {missing.length > 0 ? (
         <Attention>
@@ -1144,6 +1436,153 @@ function McpBody({ mcp, ctx }: { mcp: unknown; ctx: Ctx }) {
             })}
           </div>
         )}
+      </div>
+    </Flex>
+  );
+}
+
+function providerSummary(p: unknown, used: number): string {
+  const r = rec(p);
+  const binding = str(r.binding) === "agent" ? "shared (agent)" : "per-asker";
+  const parts = [str(r.kind), binding].filter(Boolean) as string[];
+  parts.push(used === 0 ? "unused" : `${used} consumer${used > 1 ? "s" : ""}`);
+  return parts.join(" · ");
+}
+
+function IdentitiesOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
+  const providers = identityProviders(spec);
+  if (providers.length === 0)
+    return <Muted>No identity providers declared.</Muted>;
+  return (
+    <Flex direction="column" gap="3">
+      <Muted>
+        Credentials the agent acts as, per asker — {providers.length}{" "}
+        configured. Custom tools and MCP servers link to a provider; jump in to
+        see which.
+      </Muted>
+      <Flex direction="column" gap="2">
+        {providers.map((p) => {
+          const id = providerId(p);
+          const used = consumerCount(identityConsumers(spec, id));
+          return (
+            <JumpRow
+              key={id}
+              icon={<FingerprintIcon {...ICON} />}
+              title={id}
+              mono
+              subtitle={providerSummary(p, used)}
+              trailing={
+                used === 0 ? <Badge color="amber">unused</Badge> : undefined
+              }
+              onClick={() => ctx.onSelect(`cfg:identity/${id}`)}
+            />
+          );
+        })}
+      </Flex>
+    </Flex>
+  );
+}
+
+function IdentityBody({
+  provider,
+  id,
+  spec,
+  ctx,
+}: {
+  provider: unknown;
+  id: string;
+  spec: AgentSpec;
+  ctx: Ctx;
+}) {
+  const r = rec(provider);
+  const declared = provider != null;
+  const kind = str(r.kind);
+  const binding = str(r.binding) ?? "principal";
+  const scopes = arr(r.scopes).filter(
+    (s): s is string => typeof s === "string",
+  );
+  const consumers = identityConsumers(spec, id);
+  const used = consumerCount(consumers);
+  return (
+    <Flex direction="column" gap="3">
+      {!declared ? (
+        <Attention tone="warn">
+          <Text className="text-[12px] text-gray-12">
+            A tool or MCP references identity{" "}
+            <code className="[font-family:var(--font-mono)]">{id}</code>, but it
+            isn't declared in <code>identity_providers</code>. Linking will fail
+            at runtime.
+          </Text>
+        </Attention>
+      ) : null}
+
+      <Flex direction="column" gap="2">
+        <Row label="id" value={id} mono />
+        {kind ? <Row label="kind" value={kind} /> : null}
+        <Row
+          label="binding"
+          value={
+            binding === "agent"
+              ? "agent — one shared link (not yet enforced)"
+              : "principal — one link per asker"
+          }
+        />
+        {str(r.authorize_url) ? (
+          <Row
+            label="authorize url"
+            value={str(r.authorize_url) as string}
+            mono
+          />
+        ) : null}
+        {str(r.client_id) ? (
+          <Row label="client id" value={str(r.client_id) as string} mono />
+        ) : null}
+      </Flex>
+
+      {scopes.length > 0 ? (
+        <div>
+          <Subhead>Scopes</Subhead>
+          <Flex gap="1.5" wrap="wrap" className="mt-1.5">
+            {scopes.map((s) => (
+              <Badge key={s} color="gray">
+                {s}
+              </Badge>
+            ))}
+          </Flex>
+        </div>
+      ) : null}
+
+      <div>
+        <Subhead>Used by · {used}</Subhead>
+        {used === 0 ? (
+          <Muted>No custom tool or MCP server declares this provider.</Muted>
+        ) : (
+          <Flex direction="column" gap="1.5" className="mt-1">
+            {consumers.tools.map((tid) => (
+              <JumpRow
+                key={`tool:${tid}`}
+                icon={<WrenchIcon {...ICON} />}
+                title={shortName(tid)}
+                subtitle="custom tool"
+                onClick={() => ctx.onSelect(`cfg:tool/${tid}`)}
+              />
+            ))}
+            {consumers.mcps.map((mid) => (
+              <JumpRow
+                key={`mcp:${mid}`}
+                icon={<HardDrivesIcon {...ICON} />}
+                title={mid}
+                subtitle="MCP server"
+                onClick={() => ctx.onSelect(`cfg:mcp/${mid}`)}
+              />
+            ))}
+          </Flex>
+        )}
+        <Text className="mt-2 block text-[11px] text-gray-10 leading-snug">
+          Native{" "}
+          <span className="[font-family:var(--font-mono)]">@posthog/*</span>{" "}
+          tools declare their provider intrinsically and aren't listed here.
+        </Text>
       </div>
     </Flex>
   );

@@ -148,6 +148,14 @@ export function AgentDetailLayout({
           <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
             {title}
           </Text>
+          {application?.slug ? (
+            <Text
+              className="rounded-(--radius-1) border border-border bg-(--gray-2) px-1.5 py-0.5 text-[12px] text-gray-10 [font-family:var(--font-mono)]"
+              title="Agent slug — its URL identifier"
+            >
+              {application.slug}
+            </Text>
+          ) : null}
           {application ? (
             <Badge color={application.live_revision ? "green" : "gray"}>
               {application.live_revision ? "Live" : "Draft"}
