@@ -476,8 +476,8 @@ function Section(props: {
         height: 460,
         display: "flex",
         flexDirection: "column",
-        background: "#ffffff",
-        border: "1px solid #e4e5de",
+        background: "var(--card-bg)",
+        border: "1px solid var(--card-border)",
         borderRadius: 16,
         overflow: "hidden",
         boxShadow:
@@ -490,7 +490,7 @@ function Section(props: {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "14px 16px",
-          borderBottom: "1px solid #eceee8",
+          borderBottom: "1px solid var(--header-border)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -508,7 +508,7 @@ function Section(props: {
               margin: 0,
               fontSize: 15,
               fontWeight: 600,
-              color: "#0d0d0d",
+              color: "var(--title)",
               letterSpacing: "-0.01em",
             }}
           >
@@ -526,9 +526,9 @@ function Section(props: {
             fontWeight: 500,
             padding: "4px 10px",
             borderRadius: 8,
-            border: "1px solid #d8dbd1",
-            background: "#f2f3ee",
-            color: "#3a4036",
+            border: "1px solid var(--btn-border)",
+            background: "var(--btn-bg)",
+            color: "var(--btn-color)",
             cursor: props.newDisabled ? "not-allowed" : "pointer",
             opacity: props.newDisabled ? 0.5 : 1,
           }}
@@ -542,7 +542,7 @@ function Section(props: {
           <div ref={sentinelRef} style={{ height: 1 }} />
         ) : null}
         {props.loading ? (
-          <div style={{ padding: 8, fontSize: 12, color: "#93998a" }}>Loading…</div>
+          <div style={{ padding: 8, fontSize: 12, color: "var(--meta)" }}>Loading…</div>
         ) : null}
       </div>
     </section>
@@ -566,7 +566,7 @@ function ListRow(props: { title: string; meta?: string; onClick?: () => void }) 
         padding: "8px 10px",
         borderRadius: 8,
         fontSize: 13,
-        color: "#3a4036",
+        color: "var(--row-color)",
         display: "flex",
         justifyContent: "space-between",
         gap: 8,
@@ -577,7 +577,7 @@ function ListRow(props: { title: string; meta?: string; onClick?: () => void }) 
         {props.title}
       </span>
       {props.meta ? (
-        <span style={{ color: "#93998a", fontSize: 11, flexShrink: 0 }}>{props.meta}</span>
+        <span style={{ color: "var(--meta)", fontSize: 11, flexShrink: 0 }}>{props.meta}</span>
       ) : null}
     </div>
   );
@@ -595,7 +595,7 @@ function Empty(props: { label: string }) {
         textAlign: "center",
         padding: 16,
         fontSize: 12,
-        color: "#a9af9f",
+        color: "var(--empty)",
       }}
     >
       {props.label}
@@ -670,9 +670,9 @@ function InboxSection() {
                 fontWeight: 500,
                 padding: "4px 10px",
                 borderRadius: 8,
-                border: "1px solid " + (active ? accent : "#d8dbd1"),
-                background: active ? accent + "14" : "#f2f3ee",
-                color: active ? accent : "#3a4036",
+                border: "1px solid " + (active ? accent : "var(--btn-border)"),
+                background: active ? accent + "14" : "var(--btn-bg)",
+                color: active ? accent : "var(--btn-color)",
                 cursor: "pointer",
               }}
             >
@@ -686,14 +686,29 @@ function InboxSection() {
   );
 }
 
+// Colors are CSS variables so the canvas follows the user's PostHog theme. The
+// iframe loader toggles a \`dark\` class on <html> (sandboxRuntime.applyTheme);
+// \`html.dark\` overrides win on specificity, so every value flips with no JS.
 const STYLE_TEXT =
+  ":root{" +
+  "--bg-from:#f4f5f0;--bg-to:#eceee8;--card-bg:#ffffff;--card-border:#e4e5de;" +
+  "--header-border:#eceee8;--title:#0d0d0d;--btn-border:#d8dbd1;--btn-bg:#f2f3ee;" +
+  "--btn-color:#3a4036;--btn-hover-bg:#eceee8;--btn-hover-border:#cbd0c3;" +
+  "--row-color:#3a4036;--row-hover-bg:#f2f3ee;--meta:#93998a;--empty:#a9af9f;" +
+  "--page-color:#3a4036;--scroll-thumb:#cbd0c3;--scroll-thumb-hover:#a9af9f}" +
+  "html.dark{" +
+  "--bg-from:#1b1d1a;--bg-to:#141613;--card-bg:#202220;--card-border:#33362e;" +
+  "--header-border:#2b2e27;--title:#f3f4ef;--btn-border:#3a3e34;--btn-bg:#2a2d26;" +
+  "--btn-color:#d4d7cd;--btn-hover-bg:#34372f;--btn-hover-border:#474c3f;" +
+  "--row-color:#d4d7cd;--row-hover-bg:#2a2d26;--meta:#8a917e;--empty:#6f7567;" +
+  "--page-color:#d4d7cd;--scroll-thumb:#3a3e34;--scroll-thumb-hover:#4a4f42}" +
   ".ph-btn{transition:background .15s ease,border-color .15s ease,color .15s ease}" +
-  ".ph-btn:hover{background:#eceee8;border-color:#cbd0c3}" +
+  ".ph-btn:hover{background:var(--btn-hover-bg);border-color:var(--btn-hover-border)}" +
   ".ph-row{transition:background .12s ease}" +
-  ".ph-row:hover{background:#f2f3ee}" +
+  ".ph-row:hover{background:var(--row-hover-bg)}" +
   "*::-webkit-scrollbar{width:10px;height:10px}" +
-  "*::-webkit-scrollbar-thumb{background:#cbd0c3;border-radius:8px;border:2px solid transparent;background-clip:padding-box}" +
-  "*::-webkit-scrollbar-thumb:hover{background:#a9af9f;background-clip:padding-box}";
+  "*::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:8px;border:2px solid transparent;background-clip:padding-box}" +
+  "*::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover);background-clip:padding-box}";
 
 export default function ChannelHome() {
   return (
@@ -705,10 +720,11 @@ export default function ChannelHome() {
         alignItems: "center",
         justifyContent: "center",
         padding: 40,
-        background: "linear-gradient(180deg, #f4f5f0 0%, #eceee8 100%)",
+        background:
+          "linear-gradient(180deg, var(--bg-from) 0%, var(--bg-to) 100%)",
         fontFamily:
           '"Open Runde", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-        color: "#3a4036",
+        color: "var(--page-color)",
       }}
     >
       <style>{STYLE_TEXT}</style>
