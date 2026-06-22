@@ -740,10 +740,7 @@ export interface SignalSourceConnectedProperties {
 }
 
 // Agents page events (the `/code/agents` configuration surface)
-export type AgentsActionType =
-  | "run_setup_agent"
-  | "change_autostart_priority"
-  | "open_mcp_servers";
+export type AgentsActionType = "run_setup_agent" | "open_mcp_servers";
 
 export interface AgentsViewedProperties {
   /** Whether code access (GitHub) is connected — gates responder configuration. */
@@ -760,8 +757,6 @@ export interface AgentsViewedProperties {
 
 export interface AgentsActionProperties {
   action_type: AgentsActionType;
-  /** New threshold for `change_autostart_priority` (P0–P4, or null for "Never"). */
-  autostart_priority?: string | null;
   /** Whether `run_setup_agent` successfully created the setup task. */
   success?: boolean;
 }
