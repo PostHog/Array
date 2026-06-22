@@ -13,6 +13,7 @@ import {
   normalizeRunStatus,
   prettifyScoutSkillName,
   runDurationSeconds,
+  type ScoutOrigin,
   runMatchesFilter,
   type ScoutRunFilter,
   scoutRunOutcomeLabel,
@@ -77,15 +78,17 @@ describe("naming", () => {
     );
   });
 
-  it("reads scout origin from the config's scout_origin field", () => {
-    expect(getScoutOrigin({ scout_origin: "canonical" })).toBe("canonical");
-    expect(getScoutOrigin({ scout_origin: "custom" })).toBe("custom");
-  });
-
-  it("treats a missing scout_origin (older backends) as custom", () => {
-    expect(getScoutOrigin({})).toBe("custom");
-    expect(getScoutOrigin(null)).toBe("custom");
-    expect(getScoutOrigin(undefined)).toBe("custom");
+  it.each<
+    [Pick<ScoutConfig, "scout_origin"> | null | undefined, ScoutOrigin]
+  >([
+    [{ scout_origin: "canonical" }, "canonical"],
+    [{ scout_origin: "custom" }, "custom"],
+    // A missing field (older backends) or no config falls back to custom.
+    [{}, "custom"],
+    [null, "custom"],
+    [undefined, "custom"],
+  ])("getScoutOrigin(%o) returns %s", (input, expected) => {
+    expect(getScoutOrigin(input)).toBe(expected);
   });
 });
 
