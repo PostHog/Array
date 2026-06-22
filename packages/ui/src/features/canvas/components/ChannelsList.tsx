@@ -39,13 +39,6 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
   cn,
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -64,8 +57,12 @@ import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
-import { CanvasTemplateList } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
+import {
+  NewCanvasDialog,
+  trackAndCreateCanvas,
+} from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
+import { useCanvasTemplates } from "@posthog/ui/features/canvas/hooks/useCanvasTemplates";
 import {
   useChannelStars,
   useChannelStarToggle,
@@ -82,6 +79,7 @@ import {
   usePrefetchChannelTasks,
 } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
+  useCreateAndOpenDashboard,
   useDashboardMutations,
   useDashboards,
   usePrefetchDashboards,
@@ -739,10 +737,12 @@ function ChannelSection({
   const [open, setOpen] = useState(isActive);
   // Lifted so the hover button group stays visible while the menu is open.
   const [menuOpen, setMenuOpen] = useState(false);
-  // The "New…" picker dialog, and the nested "Choose a template" dialog it
-  // stacks on top when "New canvas" is chosen.
-  const [pickerOpen, setPickerOpen] = useState(false);
+  // The "+" dropdown (New task / New canvas) and the canvas template picker it
+  // can open. Both keep the hover actions pinned while active.
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false);
+  const canvasTemplates = useCanvasTemplates();
+  const createAndOpenCanvas = useCreateAndOpenDashboard(channel.id);
   // Shared by the "..." dropdown and the right-click context menu so both offer
   // the same star / edit / rename / delete actions.
   const {
@@ -872,31 +872,79 @@ function ChannelSection({
             </ContextMenuContent>
           </ContextMenu>
         </CollapsibleHeader>
-        {/* Hover actions: new task + the options menu. Stay visible while the
-            menu is open. */}
+        {/* Hover actions: the "+" dropdown (New task / New canvas) and the
+            options menu. Stay visible while either is open. */}
         <div className="absolute top-1 right-1">
           <ButtonGroup>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-xs"
-                    aria-label={`New in ${channel.name}`}
-                    onClick={() => setPickerOpen(true)}
-                    className={cn(
-                      "gap-1 transition-opacity group-hover:border-border",
-                      menuOpen || pickerOpen
-                        ? "opacity-100"
-                        : "opacity-0 group-hover/chan:opacity-100",
-                    )}
-                  >
-                    <PlusIcon size={12} weight="bold" />
-                  </Button>
-                }
-              />
-              <TooltipContent side="top">New…</TooltipContent>
-            </Tooltip>
+            <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="outline"
+                          size="icon-xs"
+                          aria-label={`New in ${channel.name}`}
+                          className={cn(
+                            "gap-1 transition-opacity group-hover:border-border",
+                            menuOpen || newMenuOpen
+                              ? "opacity-100"
+                              : "opacity-0 group-hover/chan:opacity-100",
+                          )}
+                        >
+                          <PlusIcon size={12} weight="bold" />
+                        </Button>
+                      }
+                    />
+                  }
+                />
+                <TooltipContent side="top">New…</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent
+                align="start"
+                side="bottom"
+                sideOffset={4}
+                className="w-auto min-w-fit"
+              >
+                <DropdownMenuItem
+                  onClick={() => {
+                    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                      action_type: "new_task_open",
+                      surface: "sidebar",
+                      channel_id: channel.id,
+                    });
+                    navigate({
+                      to: "/website/$channelId/new",
+                      params: { channelId: channel.id },
+                    });
+                  }}
+                >
+                  <FileTextIcon size={14} />
+                  New task
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    // No templates loaded yet: create with the default
+                    // template, matching NewCanvasMenu's fallback. Otherwise
+                    // open the template picker.
+                    if (canvasTemplates.length === 0) {
+                      trackAndCreateCanvas(
+                        channel.id,
+                        undefined,
+                        "sidebar",
+                        () => void createAndOpenCanvas(),
+                      );
+                    } else {
+                      setCanvasOpen(true);
+                    }
+                  }}
+                >
+                  <ChartBarIcon size={14} />
+                  New canvas
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <ChannelMenu
               channelName={channel.name}
               actions={actions}
@@ -904,78 +952,13 @@ function ChannelSection({
               onOpenChange={setMenuOpen}
             />
           </ButtonGroup>
+          <NewCanvasDialog
+            channelId={channel.id}
+            surface="sidebar"
+            open={canvasOpen}
+            onOpenChange={setCanvasOpen}
+          />
         </div>
-        {/* "New…" picker: choose task vs canvas. "New canvas" opens the
-            template picker as a Base UI nested dialog, so it stacks on top and
-            dismissing it returns here. */}
-        <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-          <DialogContent className="max-w-md gap-0">
-            <DialogHeader>
-              <DialogTitle>Create new</DialogTitle>
-              <DialogDescription>
-                Add a task or a canvas to {channel.name}.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogBody className="gap-0 [&_*[data-slot=scroll-area-viewport]]:p-2">
-              <Button
-                variant="default"
-                className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal py-3 text-left"
-                onClick={() => {
-                  setPickerOpen(false);
-                  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                    action_type: "new_task_open",
-                    surface: "sidebar",
-                    channel_id: channel.id,
-                  });
-                  navigate({
-                    to: "/website/$channelId/new",
-                    params: { channelId: channel.id },
-                  });
-                }}
-              >
-                <span className="font-medium">New task</span>
-                <span className="font-normal text-muted-foreground/80 text-xs [text-wrap:initial]">
-                  Describe something for the agent to work on in this channel.
-                </span>
-              </Button>
-              <Dialog open={canvasOpen} onOpenChange={setCanvasOpen}>
-                <DialogTrigger
-                  render={(props) => (
-                    <Button
-                      variant="default"
-                      className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal py-3 text-left"
-                      {...props}
-                    />
-                  )}
-                >
-                  <span className="font-medium">New canvas…</span>
-                  <span className="font-normal text-muted-foreground/80 text-xs [text-wrap:initial]">
-                    Build a dashboard or freeform canvas from a template.
-                  </span>
-                </DialogTrigger>
-                <DialogContent className="max-w-md gap-0">
-                  <DialogHeader>
-                    <DialogTitle>Choose a template</DialogTitle>
-                    <DialogDescription>
-                      This gives the agent context for which guardrails to
-                      follow when generating UI.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <DialogBody className="flex flex-col gap-2 [&_*[data-slot=scroll-area-viewport]]:p-2">
-                    <CanvasTemplateList
-                      channelId={channel.id}
-                      surface="sidebar"
-                      onPicked={() => {
-                        setCanvasOpen(false);
-                        setPickerOpen(false);
-                      }}
-                    />
-                  </DialogBody>
-                </DialogContent>
-              </Dialog>
-            </DialogBody>
-          </DialogContent>
-        </Dialog>
         {/* Children hang off a vertical guide line, like a tree. The folder
             variant's own inset is removed so the guide line controls indent. */}
         <CollapsibleContent className="px-0">
