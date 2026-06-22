@@ -6,7 +6,10 @@ import type {
 /** Formats a USD spend value for the fleet / agent stat strips. */
 export function formatSpendUsd(value: number | null | undefined): string {
   if (value == null) return "$0";
-  if (value === 0) return "$0";
+  // Clamp non-positive to $0: cost is never legitimately negative, and an
+  // upstream cost-calc artifact (negative `$ai_total_cost_usd`) shouldn't
+  // surface as "-$2.74" or fall into the sub-cent "<$0.01" branch below.
+  if (value <= 0) return "$0";
   if (value < 0.01) return "<$0.01";
   return `$${value.toLocaleString(undefined, {
     minimumFractionDigits: 2,
