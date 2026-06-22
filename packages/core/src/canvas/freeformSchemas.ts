@@ -1,20 +1,8 @@
 import { z } from "zod";
 
-// The template id for freeform-React canvases. Stored on a canvas's meta the
-// same way "dashboard"/"web-analytics"/"blank" are, so the render path can tell
-// a freeform canvas (code in an iframe) from a json-render one (spec tree).
+// The template id for freeform-React canvases. Stored on a canvas's meta so the
+// generation path can resolve the right system prompt.
 export const FREEFORM_TEMPLATE_ID = "freeform";
-
-// Template ids that render on the React (freeform iframe) tier rather than the
-// json-render catalog. A canvas created from one of these gets `kind: "freeform"`
-// (see dashboardsService.create), so it streams React code and renders in the
-// sandbox. The generic freeform sandbox plus the opinionated dashboard /
-// web-analytics templates (which now build React apps, not json-render specs).
-export const REACT_TIER_TEMPLATE_IDS: ReadonlySet<string> = new Set([
-  FREEFORM_TEMPLATE_ID,
-  "dashboard",
-  "web-analytics",
-]);
 
 // A single point in a freeform canvas's edit history. Every agent turn appends
 // one full-file snapshot (Q7: full-file rewrite); the user can revert to any of
@@ -37,8 +25,7 @@ export const freeformVersionSchema = z.object({
 });
 export type FreeformVersion = z.infer<typeof freeformVersionSchema>;
 
-// The freeform-specific payload that rides in a canvas's file-system `meta`
-// blob, alongside the json-render fields. Absent on json-render canvases.
+// The freeform-specific payload that rides in a canvas's file-system `meta` blob.
 export const freeformCanvasSchema = z.object({
   // The currently-rendered source (mirrors the version pointed to by
   // currentVersionId; duplicated so the renderer needs only this field).
@@ -54,57 +41,6 @@ export const freeformCanvasSchema = z.object({
   context: z.string().default(""),
 });
 export type FreeformCanvas = z.infer<typeof freeformCanvasSchema>;
-
-// ---------------------------------------------------------------------------
-// Code-stream events: the agent writes a single React file (not json-render
-// patches), so we stream prose + full-file code snapshots instead of specs.
-// Mirrors genSchemas' CanvasStreamEvent shape for the json-render agent.
-// ---------------------------------------------------------------------------
-export const freeformStreamEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("started") }),
-  z.object({ type: z.literal("prose"), text: z.string() }),
-  // A full-file source snapshot. The agent rewrites the whole file each turn, so
-  // each snapshot replaces (not appends to) the previous code.
-  z.object({ type: z.literal("code"), code: z.string() }),
-  z.object({
-    type: z.literal("tool"),
-    toolName: z.string(),
-    status: z.string(),
-  }),
-  z.object({ type: z.literal("done") }),
-  z.object({ type: z.literal("error"), message: z.string() }),
-]);
-export type FreeformStreamEvent = z.infer<typeof freeformStreamEventSchema>;
-
-// Input for a freeform generation turn. Mirrors canvasGenerateInput but seeds
-// the agent with the current CODE (not a spec) so it rewrites the existing file
-// instead of starting blank.
-export const freeformGenerateInput = z.object({
-  threadId: z.string().min(1),
-  prompt: z.string().min(1),
-  // The canvas's current source, sent each turn so the session is anchored to
-  // what's on screen even after a renderer reload. Empty/absent = new canvas.
-  currentCode: z.string().nullish(),
-  // The canvas's template id, so the agent gets the matching React-tier prompt
-  // (generic sandbox vs the opinionated dashboard / web-analytics prompt).
-  templateId: z.string().optional(),
-  model: z.string().optional(),
-});
-export type FreeformGenerateInput = z.infer<typeof freeformGenerateInput>;
-
-export const freeformThreadInput = z.object({ threadId: z.string().min(1) });
-export type FreeformThreadInput = z.infer<typeof freeformThreadInput>;
-
-export const FreeformGenEvent = { Event: "freeform-event" } as const;
-
-export interface FreeformGenEventPayload {
-  threadId: string;
-  event: FreeformStreamEvent;
-}
-
-export interface FreeformGenEvents {
-  [FreeformGenEvent.Event]: FreeformGenEventPayload;
-}
 
 // ---------------------------------------------------------------------------
 // Canvas data avenue: the host-side query the postMessage `ph.query` shim calls.

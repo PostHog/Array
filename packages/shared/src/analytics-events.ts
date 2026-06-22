@@ -796,6 +796,7 @@ export type ChannelActionType =
   | "edit_context_open"
   | "new_task_open"
   | "new_task_suggestion"
+  | "view_context"
   | "file_task"
   | "unfile_task"
   | "archive_task"

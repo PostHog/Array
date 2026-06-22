@@ -3,63 +3,50 @@ import { logger } from "@posthog/ui/shell/logger";
 import { create } from "zustand";
 import { hostClient } from "../hostClient";
 
-const log = logger.scope("freeform-chat-store");
+const log = logger.scope("freeform-edit-store");
 
-export interface FreeformMessage {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-}
-
+// Working copy of a freeform canvas's source + edit history. Generation no
+// longer streams in-process — it runs as a dedicated task that publishes the
+// result into the canvas's saved record (see useGenerateFreeformCanvas). This
+// store now owns only the EDIT concerns: seeding from the saved record, version
+// browsing (undo/redo/revert), the author context, runtime-error tracking, and
+// autosave of manual changes.
 export interface FreeformThreadState {
-  messages: FreeformMessage[];
   /** The currently-rendered source. */
   code: string;
   /** Ordered edit history (oldest first). */
   versions: FreeformVersion[];
   /** Which version is live (undo/redo moves this). */
   currentVersionId: string | null;
-  /** The canvas's template id, so the agent gets the matching React-tier prompt
-   * (generic sandbox vs the opinionated dashboard / web-analytics prompt). */
+  /** The canvas's template id, so a generation task gets the matching prompt. */
   templateId: string | null;
-  /** Author-written context (markdown), prepended to every agent turn. Mirrors
-   * the live version's context; edited in the Context tab. */
+  /** Author-written context (markdown), passed to a generation task. */
   context: string;
-  isStreaming: boolean;
   /** True while an autosave is in flight (drives the toolbar's saving spinner). */
   isSaving: boolean;
-  lastTool: string | null;
-  /** Agent/stream error (chat-level). */
-  error: string | null;
   /** Latest runtime/compile error reported by the sandbox (self-repair signal). */
   runtimeError: string | null;
-  // The user prompt of the in-flight turn, stamped onto the version it produces.
-  pendingPrompt: string | null;
 }
 
 export const EMPTY_FREEFORM_THREAD: FreeformThreadState = {
-  messages: [],
   code: "",
   versions: [],
   currentVersionId: null,
   templateId: null,
   context: "",
-  isStreaming: false,
   isSaving: false,
-  lastTool: null,
-  error: null,
   runtimeError: null,
-  pendingPrompt: null,
 };
 
 interface FreeformChatStore {
   threads: Record<string, FreeformThreadState>;
 
-  send: (threadId: string, prompt: string) => Promise<void>;
-  reset: (threadId: string) => Promise<void>;
   /** Seed a thread from a saved record (only if the thread is still empty).
-   * The templateId is recorded regardless so the agent uses the right prompt. */
+   * The templateId is recorded regardless so a generation gets the right prompt. */
   ensureCode: (threadId: string, record: SavedFreeform) => void;
+  /** Reconcile a thread with the latest saved record: adopt a newly-published
+   * version (e.g. produced by a generation task) over the local working copy. */
+  syncFromRecord: (threadId: string, record: SavedFreeform) => void;
   /** Live-update the context text as the user types (no version/save yet). */
   setContext: (threadId: string, context: string) => void;
   /** Commit a context edit (on blur / debounce): if it changed, snapshot a new
@@ -75,13 +62,6 @@ interface FreeformChatStore {
   revert: (threadId: string) => void;
   /** Cancel a version browse: jump back to the latest version (no save). */
   goToLatest: (threadId: string) => void;
-
-  // Stream handlers (driven by the subscription registrar).
-  appendProse: (threadId: string, text: string) => void;
-  setCode: (threadId: string, code: string) => void;
-  noteTool: (threadId: string, toolName: string, status: string) => void;
-  finish: (threadId: string) => void;
-  fail: (threadId: string, message: string) => void;
 }
 
 // The saved-record shape used to seed / revert a thread.
@@ -89,9 +69,9 @@ interface SavedFreeform {
   code?: string;
   versions?: FreeformVersion[];
   currentVersionId?: string;
-  /** The canvas's template id (drives which React-tier prompt the agent uses). */
+  /** The canvas's template id (drives which React-tier prompt a task uses). */
   templateId?: string;
-  /** Author-written context (markdown) passed to the agent. */
+  /** Author-written context (markdown) passed to a generation task. */
   context?: string;
 }
 
@@ -137,87 +117,26 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
     }
   };
 
+  const seed = (threadId: string, record: SavedFreeform) =>
+    patch(threadId, (prev) => ({
+      ...prev,
+      code: record.code ?? "",
+      versions: record.versions ?? [],
+      currentVersionId:
+        record.currentVersionId ?? record.versions?.at(-1)?.id ?? null,
+      templateId: record.templateId ?? prev.templateId,
+      context: record.context ?? "",
+    }));
+
   return {
     threads: {},
 
-    send: async (threadId, prompt) => {
-      const text = prompt.trim();
-      const current = get().threads[threadId] ?? EMPTY_FREEFORM_THREAD;
-      if (!text || current.isStreaming) return;
-
-      const userMessage: FreeformMessage = {
-        id: newId(),
-        role: "user",
-        text,
-      };
-      const assistantMessage: FreeformMessage = {
-        id: newId(),
-        role: "assistant",
-        text: "",
-      };
-      patch(threadId, (prev) => ({
-        ...prev,
-        messages: [...prev.messages, userMessage, assistantMessage],
-        isStreaming: true,
-        error: null,
-        lastTool: null,
-        pendingPrompt: text,
-      }));
-
-      // Anchor the agent to the current file + clock. The system prompt is frozen
-      // at session start, so the live code rides each turn (Q7: full-file rewrite
-      // means the agent must see the whole current file to rewrite it).
-      const now = new Date();
-      const contextBlock = current.context.trim()
-        ? [
-            "[Canvas context] The author wrote the following context for this canvas. Treat it as authoritative requirements/notes and honor it throughout:",
-            current.context.trim(),
-          ].join("\n")
-        : "";
-      const parts = [
-        `[Now] ${now.toISOString()} (epoch ms ${now.getTime()}).`,
-        contextBlock,
-        current.code
-          ? [
-              "[Context] You are editing the existing app below. Rewrite the WHOLE file with the requested change; keep everything else intact.",
-              "```tsx",
-              current.code,
-              "```",
-            ].join("\n")
-          : "[Context] You are starting a new, empty app.",
-        "",
-        text,
-      ];
-      try {
-        await hostClient().freeformGen.generate.mutate({
-          threadId,
-          prompt: parts.filter(Boolean).join("\n"),
-          currentCode: current.code || null,
-          templateId: current.templateId ?? undefined,
-        });
-      } catch (error) {
-        log.error("Freeform generate failed", { error });
-        get().fail(
-          threadId,
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    },
-
-    reset: async (threadId) => {
-      patch(threadId, () => ({ ...EMPTY_FREEFORM_THREAD }));
-      await hostClient()
-        .freeformGen.reset.mutate({ threadId })
-        .catch(() => {});
-    },
-
     ensureCode: (threadId, record) => {
       const cur = get().threads[threadId];
-      // Record the templateId regardless (cheap metadata that picks the agent's
-      // prompt); only seed code/history when the thread is still empty.
-      if (cur?.isStreaming || cur?.code) {
-        // Record the templateId + context regardless (cheap metadata); don't
-        // touch code/history once the thread is live.
+      // Once the thread has code, only refresh cheap metadata (templateId /
+      // context) — never clobber the working copy. syncFromRecord handles
+      // adopting a freshly-generated version.
+      if (cur?.code) {
         if (
           (record.templateId && cur?.templateId !== record.templateId) ||
           (record.context !== undefined && cur?.context !== record.context)
@@ -230,15 +149,30 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         }
         return;
       }
-      patch(threadId, (prev) => ({
-        ...prev,
-        code: record.code ?? "",
-        versions: record.versions ?? [],
-        currentVersionId:
-          record.currentVersionId ?? record.versions?.at(-1)?.id ?? null,
-        templateId: record.templateId ?? prev.templateId,
-        context: record.context ?? "",
-      }));
+      seed(threadId, record);
+    },
+
+    syncFromRecord: (threadId, record) => {
+      const cur = get().threads[threadId];
+      // Empty working copy → just seed.
+      if (!cur || (!cur.code && cur.versions.length === 0)) {
+        seed(threadId, record);
+        return;
+      }
+      // A generation task publishes a brand-new version. If the record points at
+      // a version the local copy doesn't have AND carries more history, adopt it
+      // (the generation result wins over any local browsing).
+      const localHasHead =
+        !!record.currentVersionId &&
+        cur.versions.some((v) => v.id === record.currentVersionId);
+      const recordIsNewer =
+        (record.versions?.length ?? 0) > cur.versions.length;
+      if (record.currentVersionId && !localHasHead && recordIsNewer) {
+        seed(threadId, record);
+        return;
+      }
+      // Otherwise just keep template/context metadata fresh.
+      get().ensureCode(threadId, record);
     },
 
     setContext: (threadId, context) => {
@@ -343,96 +277,11 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         };
       });
     },
-
-    appendProse: (threadId, text) => {
-      patch(threadId, (prev) => ({
-        ...prev,
-        messages: appendToLastAssistant(prev.messages, text),
-      }));
-    },
-
-    setCode: (threadId, code) => {
-      // Live stream snapshot: update what's rendered, clear stale runtime error.
-      patch(threadId, (prev) => ({ ...prev, code, runtimeError: null }));
-    },
-
-    noteTool: (threadId, toolName, status) => {
-      patch(threadId, (prev) => ({
-        ...prev,
-        lastTool: status === "completed" ? null : toolName,
-      }));
-    },
-
-    finish: (threadId) => {
-      let committed = false;
-      patch(threadId, (prev) => {
-        // Commit a new version from the streamed code (Q8: linear-discard — drop
-        // any redo tail beyond the current pointer before appending).
-        const currentCode = prev.code;
-        const headId = prev.currentVersionId;
-        const headIdx = prev.versions.findIndex((v) => v.id === headId);
-        const base =
-          headIdx === -1 ? prev.versions : prev.versions.slice(0, headIdx + 1);
-        const unchanged = base.at(-1)?.code === currentCode;
-        if (unchanged || !currentCode) {
-          // Clear pendingPrompt too, so a no-op turn's prompt can't get stamped
-          // onto the next version that actually changes the code.
-          return {
-            ...prev,
-            isStreaming: false,
-            lastTool: null,
-            pendingPrompt: null,
-          };
-        }
-        const version: FreeformVersion = {
-          id: newId(),
-          code: currentCode,
-          context: prev.context,
-          prompt: prev.pendingPrompt ?? undefined,
-          createdAt: Date.now(),
-        };
-        committed = true;
-        return {
-          ...prev,
-          isStreaming: false,
-          lastTool: null,
-          pendingPrompt: null,
-          versions: [...base, version],
-          currentVersionId: version.id,
-        };
-      });
-      // Autosave the new version.
-      if (committed) void persist(threadId);
-    },
-
-    fail: (threadId, message) => {
-      patch(threadId, (prev) => ({
-        ...prev,
-        isStreaming: false,
-        lastTool: null,
-        error: message,
-      }));
-    },
   };
 });
 
 export function useFreeformThread(threadId: string): FreeformThreadState {
   return useFreeformChatStore(
     (s) => s.threads[threadId] ?? EMPTY_FREEFORM_THREAD,
-  );
-}
-
-function appendToLastAssistant(
-  messages: FreeformMessage[],
-  text: string,
-): FreeformMessage[] {
-  const last = messages[messages.length - 1];
-  if (!last || last.role !== "assistant") return messages;
-  // Prose arrives as suffix DELTAs of the (trimmed) accumulated prose string, so
-  // each delta already carries its own leading whitespace — concatenate directly
-  // rather than inserting a newline (which would split sentences mid-stream).
-  const joined = `${last.text}${text}`;
-  return messages.map((m, i) =>
-    i === messages.length - 1 ? { ...m, text: joined } : m,
   );
 }

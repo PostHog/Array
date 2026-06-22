@@ -35,6 +35,12 @@ export const workspaceSchema = z.object({
   baseBranch: z.string().nullable(),
   linkedBranch: z.string().nullable(),
   createdAt: z.string(),
+  /**
+   * Synthetic workspace for a repo-less channel task: its folderPath is a
+   * scratch dir, not a registered folder. Marks it so callers (e.g. the
+   * navigation task binder) don't try to register it as a folder or git-init it.
+   */
+  isScratch: z.boolean().optional(),
 });
 
 export type WorktreeInfo = z.infer<typeof worktreeInfoSchema>;

@@ -1,4 +1,4 @@
-import type { HomeWorkstream } from "@posthog/core/home/schemas";
+import type { HomeSnapshot, HomeWorkstream } from "@posthog/core/home/schemas";
 import {
   REPORT_MODEL_RESOLVER,
   type ReportModelResolver,
@@ -12,20 +12,27 @@ import {
   type TaskCreationInput,
 } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { homeKeys } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
+import { useQuickActionStore } from "@posthog/ui/features/home/stores/quickActionStore";
+import { insertOptimisticTask } from "@posthog/ui/features/home/utils/optimisticTask";
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
+import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { toast } from "@posthog/ui/primitives/toast";
-import { navigateToTaskPending } from "@posthog/ui/router/navigationBridge";
-import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
+import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
-import { pendingTaskPromptStoreApi } from "@posthog/ui/shell/pendingTaskPromptStore";
-import { useCallback, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 import type { BoundAction } from "./useBoundActions";
 
 const log = logger.scope("home-quick-action");
+
+export interface RunWorkstreamAction {
+  run: (action: BoundAction, workstream: HomeWorkstream) => void;
+}
 
 // The agent runs the bound skill when the prompt starts with `/<skill-id>`, so
 // embed it directly; the descriptive prompt follows as the instruction. With no
@@ -41,10 +48,14 @@ function buildSkillPrompt(action: BoundAction): string {
 /**
  * Runs a bound workflow action as a one-click cloud task: embeds the skill as a
  * `/<skill-id>` prefix and starts a cloud run on the workstream's repo + branch.
- * Falls back to the new-task screen (prompt prefilled) when it can't start
- * cleanly — offline, signed out, or the repo has no GitHub integration.
+ * Stays on Home — the new task is spliced into the workstream's task list
+ * optimistically and `isPending` disables the trigger while it starts. Falls
+ * back to the new-task screen (prompt prefilled) when it can't start cleanly —
+ * offline, signed out, or the repo has no GitHub integration.
  */
-export function useRunWorkstreamAction() {
+export function useRunWorkstreamAction(): RunWorkstreamAction {
+  // Shared, workstream-keyed in-flight state so the row and the open detail panel
+  // (independent hook instances) can't both start a task for the same workstream.
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );
@@ -56,9 +67,14 @@ export function useRunWorkstreamAction() {
   const lastUsedModel = useSettingsStore((s) => s.lastUsedModel);
   const taskService = useService<TaskService>(TASK_SERVICE);
   const modelResolver = useService<ReportModelResolver>(REPORT_MODEL_RESOLVER);
-  const inFlightRef = useRef(false);
+  const queryClient = useQueryClient();
+  // Fire-and-forget nudge so the server worker rebuilds the snapshot sooner; the
+  // optimistic splice covers the gap until the next poll reconciles.
+  const refreshHome = useAuthenticatedMutation((client) =>
+    client.refreshHomeSnapshot(),
+  );
 
-  return useCallback(
+  const run = useCallback(
     (action: BoundAction, workstream: HomeWorkstream) => {
       const promptText = buildSkillPrompt(action);
       // The GitHub integration map and cloud repo selector are keyed by the full
@@ -85,16 +101,9 @@ export function useRunWorkstreamAction() {
         return;
       }
 
-      if (inFlightRef.current) return;
-      inFlightRef.current = true;
-
-      const pendingTaskKey =
-        globalThis.crypto?.randomUUID?.() ?? `pending-${Date.now()}`;
-      pendingTaskPromptStoreApi.set(pendingTaskKey, {
-        promptText,
-        attachments: [],
-      });
-      navigateToTaskPending(pendingTaskKey);
+      const quickActions = useQuickActionStore.getState();
+      if (quickActions.inFlight[workstream.id]) return;
+      quickActions.start(workstream.id);
 
       void (async () => {
         try {
@@ -109,7 +118,6 @@ export function useRunWorkstreamAction() {
             );
           }
           if (!model) {
-            pendingTaskPromptStoreApi.clear(pendingTaskKey);
             toast.error("Couldn't start task", {
               description:
                 "No model is configured. Pick a model for this quick action.",
@@ -129,12 +137,25 @@ export function useRunWorkstreamAction() {
             githubUserIntegrationId,
             adapter,
             model,
+            homeQuickActionLabel: action.label,
           };
 
           const result = await taskService.createTask(input, (output) => {
+            // Stay on Home: refresh the task caches and splice the new run into
+            // this workstream's list so it shows up immediately (tagged with the
+            // quick action), then let the server worker reconcile on the next poll.
             invalidateTasks(output.task);
-            pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
-            void openTask(output.task);
+            queryClient.setQueryData<HomeSnapshot>(homeKeys.snapshot, (old) =>
+              old
+                ? insertOptimisticTask(
+                    old,
+                    workstream.id,
+                    output.task,
+                    action.label,
+                  )
+                : old,
+            );
+            void refreshHome.mutateAsync().catch(() => {});
           });
 
           if (result.success) {
@@ -149,7 +170,6 @@ export function useRunWorkstreamAction() {
             });
             return;
           }
-          pendingTaskPromptStoreApi.clear(pendingTaskKey);
           toast.error("Failed to start task", { description: result.error });
           log.error("Quick action task creation failed", {
             failedStep: result.failedStep,
@@ -157,14 +177,13 @@ export function useRunWorkstreamAction() {
           });
           fallbackToTaskInput();
         } catch (error) {
-          pendingTaskPromptStoreApi.clear(pendingTaskKey);
           const description =
             error instanceof Error ? error.message : "Unknown error";
           toast.error("Failed to start task", { description });
           log.error("Quick action task creation threw", { error });
           fallbackToTaskInput();
         } finally {
-          inFlightRef.current = false;
+          useQuickActionStore.getState().finish(workstream.id);
         }
       })();
     },
@@ -173,6 +192,8 @@ export function useRunWorkstreamAction() {
       isOnline,
       cloudRegion,
       invalidateTasks,
+      queryClient,
+      refreshHome.mutateAsync,
       getUserIntegrationIdForRepo,
       lastUsedAdapter,
       lastUsedModel,
@@ -180,4 +201,6 @@ export function useRunWorkstreamAction() {
       modelResolver,
     ],
   );
+
+  return { run };
 }

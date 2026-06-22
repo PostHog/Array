@@ -1,24 +1,11 @@
-import { isNonEmptySpec } from "@json-render/core";
-import {
-  FunnelIcon,
-  GitForkIcon,
-  PencilSimpleIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+import { GitForkIcon, PencilSimpleIcon, XIcon } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import { DashboardDateRangeControl } from "@posthog/ui/features/canvas/components/DashboardDateRangeControl";
-import { DashboardRefreshControl } from "@posthog/ui/features/canvas/components/DashboardRefreshControl";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
-import { dashboardTitleFromSpec } from "@posthog/ui/features/canvas/genui/dashboardTitle";
 import {
   useDashboard,
   useDashboardMutations,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
-import {
-  useCanvasChatStore,
-  useCanvasThread,
-} from "@posthog/ui/features/canvas/stores/canvasChatStore";
 import {
   useDashboardEditStore,
   useIsDashboardEditing,
@@ -42,159 +29,7 @@ function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
 }
 
-// Templates whose canvases carry the data toolbar (Filter + date range +
-// refresh) — the ones with refreshable, time-scoped queries.
-const DATA_TEMPLATES = ["dashboard", "web-analytics"];
-
-// Edit toggle + (in edit mode) Save / Save-as-fork for the active dashboard.
-// Sits on the right of the single canvas toolbar, beside the refresh control.
-function DashboardEditControls({
-  channelId,
-  dashboardId,
-}: {
-  channelId: string;
-  dashboardId: string;
-}) {
-  const navigate = useNavigate();
-  const editing = useIsDashboardEditing(dashboardId);
-  const setEditing = useDashboardEditStore((s) => s.setEditing);
-  const resetThread = useCanvasChatStore((s) => s.reset);
-
-  const threadId = threadIdFor(dashboardId);
-  const { dashboard } = useDashboard(dashboardId);
-  const { spec: liveSpec } = useCanvasThread(threadId);
-  const { saveDashboard, createDashboard, isSaving } = useDashboardMutations();
-
-  const savedSpec = dashboard?.spec ?? null;
-  const hasSpec = isNonEmptySpec(liveSpec);
-  const dirty =
-    hasSpec && JSON.stringify(liveSpec) !== JSON.stringify(savedSpec);
-
-  const onSave = () => {
-    if (!dirty) return;
-    // The h1 title is the dashboard's name: sync it to the file on every save so
-    // renaming the canvas title renames the saved dashboard.
-    saveDashboard(dashboardId, liveSpec, dashboardTitleFromSpec(liveSpec))
-      .then(() => {
-        track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-          action_type: "save",
-          surface: "canvas",
-          channel_id: channelId,
-          dashboard_id: dashboardId,
-          kind: "json-render",
-          success: true,
-        });
-      })
-      .catch((error) => {
-        track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-          action_type: "save",
-          surface: "canvas",
-          channel_id: channelId,
-          dashboard_id: dashboardId,
-          kind: "json-render",
-          success: false,
-        });
-        toast.error("Couldn't save dashboard", {
-          description: error instanceof Error ? error.message : String(error),
-        });
-      });
-  };
-
-  const onFork = async () => {
-    if (!hasSpec) return;
-    try {
-      const title =
-        dashboardTitleFromSpec(liveSpec) ?? dashboard?.name ?? "Canvas";
-      const name = `${title} (fork)`;
-      const record = await createDashboard(channelId, name, liveSpec);
-      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-        action_type: "fork",
-        surface: "canvas",
-        channel_id: channelId,
-        dashboard_id: dashboardId,
-        kind: "json-render",
-        success: true,
-      });
-      setEditing(record.id, true);
-      void navigate({
-        to: "/website/$channelId/dashboards/$dashboardId",
-        params: { channelId, dashboardId: record.id },
-      });
-    } catch (error) {
-      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-        action_type: "fork",
-        surface: "canvas",
-        channel_id: channelId,
-        dashboard_id: dashboardId,
-        kind: "json-render",
-        success: false,
-      });
-      toast.error("Couldn't fork dashboard", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-
-  const onToggleEdit = () => {
-    track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-      action_type: "edit_toggle",
-      surface: "canvas",
-      channel_id: channelId,
-      dashboard_id: dashboardId,
-      kind: "json-render",
-      editing: !editing,
-    });
-    if (editing) {
-      // Cancel: drop unsaved edits. Resetting the thread clears the live spec so
-      // re-entering edit re-seeds from the saved dashboard; the file is untouched.
-      void resetThread(threadId);
-      setEditing(dashboardId, false);
-    } else {
-      setEditing(dashboardId, true);
-    }
-  };
-
-  return (
-    <Flex align="center" gap="2" className="no-drag">
-      {editing && (
-        <>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={!dirty || isSaving}
-            onClick={onSave}
-          >
-            Save
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!hasSpec}
-            onClick={onFork}
-          >
-            <GitForkIcon size={14} />
-            Save as fork
-          </Button>
-        </>
-      )}
-      <Button
-        variant="outline"
-        size="sm"
-        data-selected={editing}
-        onClick={onToggleEdit}
-      >
-        {editing ? (
-          <XIcon size={14} />
-        ) : (
-          <PencilSimpleIcon size={14} weight="regular" />
-        )}
-        {editing ? "Cancel" : "Edit"}
-      </Button>
-    </Flex>
-  );
-}
-
-// Edit toggle + autosave status + Fork for a FREEFORM canvas. Freeform
+// Edit toggle + autosave status + Fork for a canvas. Freeform
 // autosaves every turn, so the toolbar shows a saving spinner rather than a Save
 // button. When the user undoes to an older version, the autosave status is
 // replaced by Revert (adopt the viewed version, dropping newer ones) + Cancel
@@ -357,27 +192,13 @@ export function WebsiteLayout() {
   const isDashboardDetail = Boolean(channelId && dashboardId);
   // The dashboards grid (a channel with no sub-view selected).
   const isDashboardsGrid = Boolean(channelId) && pathname === base;
-  const editing = useIsDashboardEditing(dashboardId ?? "");
-
-  // The data controls (Filter + date range + query refresh) are data-template
-  // chrome: only the data-driven templates (Dashboard, Web analytics) have
-  // refreshable, time-scoped queries. A Blank canvas shows none of it. Legacy
-  // canvases (no templateId) default to "dashboard", so they keep the toolbar.
-  const { dashboard } = useDashboard(dashboardId ?? "");
-  const isDataTemplate = DATA_TEMPLATES.includes(
-    dashboard?.templateId ?? "dashboard",
-  );
 
   // Whether the single toolbar should render: the canvases grid, or any single
-  // canvas (including Blank/Freeform, so Edit lives here too).
+  // canvas (so Edit lives here too).
   const showToolbar =
     Boolean(channelId) && (isDashboardsGrid || isDashboardDetail);
   // The channel's new-task screen (no header store content of its own).
   const isNewTask = Boolean(channelId) && pathname === `${base}/new`;
-  // The left-hand data controls (Filter + date range) only apply to the grid and
-  // data-template canvases.
-  const showDataControls =
-    isDashboardsGrid || (isDashboardDetail && isDataTemplate);
 
   return (
     <Flex direction="column" height="100%" overflow="hidden">
@@ -400,59 +221,24 @@ export function WebsiteLayout() {
         </Flex>
       )}
 
-      {/* Single canvas toolbar (no breadcrumb row): data controls on the left,
-          actions (Edit / Save / New canvas) on the right. */}
+      {/* Single canvas toolbar (no breadcrumb row): canvas actions (Edit /
+          Save as fork / New canvas) on the right. Freeform canvases own their
+          own date control in-app (Quill DateTimePicker). */}
       {showToolbar && (
         <Flex
           align="center"
-          justify="between"
+          justify="end"
           gap="2"
           className="h-10 shrink-0 border-gray-6 border-b px-3"
         >
-          <Flex align="center" gap="2">
-            {showDataControls && (
-              // Placeholder — filtering isn't wired up yet, so keep it disabled.
-              <Button variant="outline" size="sm" disabled>
-                <FunnelIcon size={14} />
-                Filter
-              </Button>
-            )}
-            {/* Legacy json-render data canvases only: the toolbar picker drives
-                their stored queries. Freeform canvases own their date control
-                in-app (Quill DateTimePicker), so the toolbar one is hidden. */}
-            {isDashboardDetail &&
-              dashboardId &&
-              isDataTemplate &&
-              dashboard?.kind !== "freeform" && (
-                <DashboardDateRangeControl
-                  dashboardId={dashboardId}
-                  channelId={channelId}
-                />
-              )}
-          </Flex>
-          <Flex align="center" gap="2">
-            {isDashboardDetail && dashboardId && isDataTemplate && !editing && (
-              <DashboardRefreshControl
-                dashboardId={dashboardId}
-                channelId={channelId}
-              />
-            )}
-            {isDashboardDetail && channelId && dashboardId ? (
-              dashboard?.kind === "freeform" ? (
-                <FreeformEditControls
-                  channelId={channelId}
-                  dashboardId={dashboardId}
-                />
-              ) : (
-                <DashboardEditControls
-                  channelId={channelId}
-                  dashboardId={dashboardId}
-                />
-              )
-            ) : isDashboardsGrid && channelId ? (
-              <NewCanvasMenu channelId={channelId} />
-            ) : null}
-          </Flex>
+          {isDashboardDetail && channelId && dashboardId ? (
+            <FreeformEditControls
+              channelId={channelId}
+              dashboardId={dashboardId}
+            />
+          ) : isDashboardsGrid && channelId ? (
+            <NewCanvasMenu channelId={channelId} />
+          ) : null}
         </Flex>
       )}
       <Box flexGrow="1" overflow="hidden">

@@ -421,7 +421,6 @@ function DashboardRow({
         surface: "sidebar",
         channel_id: channelId,
         dashboard_id: dashboard.id,
-        kind: dashboard.kind,
         success: true,
       });
       // Deleting destroys the canvas, including any child routes under it, so
@@ -440,7 +439,6 @@ function DashboardRow({
         surface: "sidebar",
         channel_id: channelId,
         dashboard_id: dashboard.id,
-        kind: dashboard.kind,
         success: false,
       });
       toast.error("Couldn't delete canvas", {
@@ -467,7 +465,6 @@ function DashboardRow({
                       surface: "sidebar",
                       channel_id: channelId,
                       dashboard_id: dashboard.id,
-                      kind: dashboard.kind,
                       template_id: dashboard.templateId,
                     });
                     navigate({
@@ -788,10 +785,25 @@ function ChannelSection({
   // Tasks are private to each user. A task filed by someone else won't be in
   // `tasks` (it isn't shared with me), so hide it rather than rendering an
   // "Untitled task" placeholder. Also drop archived tasks.
-  const visibleFiledTasks = filedTasks.filter(
-    ({ taskId }) =>
-      !archivedTaskIds.has(taskId) && tasks?.some((t) => t.id === taskId),
+  // Order by each task's own last-updated time (most recent first) so a
+  // channel surfaces what's actively moving, rather than the order tasks were
+  // filed. `filedTasks` arrives sorted by filing time; this re-sorts by the
+  // task's `updated_at`. A single id→ms map keeps both the membership filter
+  // and the sort O(1) per item; `|| 0` guards against a malformed date
+  // (`Date.parse` → NaN) and a task that isn't loaded.
+  const taskUpdatedAtMs = new Map(
+    tasks?.map((t) => [t.id, Date.parse(t.updated_at) || 0]) ?? [],
   );
+  const visibleFiledTasks = filedTasks
+    .filter(
+      ({ taskId }) =>
+        !archivedTaskIds.has(taskId) && taskUpdatedAtMs.has(taskId),
+    )
+    .sort(
+      (a, b) =>
+        (taskUpdatedAtMs.get(b.taskId) ?? 0) -
+        (taskUpdatedAtMs.get(a.taskId) ?? 0),
+    );
   const displayedFiledTasks = visibleFiledTasks.slice(0, taskLimit);
   const hiddenTaskCount = visibleFiledTasks.length - displayedFiledTasks.length;
   // Reveal one more batch, capped at the remaining count.

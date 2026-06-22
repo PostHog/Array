@@ -292,6 +292,7 @@ export class TaskCreationSaga extends Saga<
             prAuthorshipMode,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
+            homeQuickAction: input.homeQuickActionLabel,
             initialPermissionMode: input.adapter
               ? (input.executionMode ??
                 (input.adapter === "codex" ? "auto" : "plan"))

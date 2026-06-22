@@ -310,3 +310,30 @@ export async function dismissSignalReport(
 
   return await response.json();
 }
+
+/** Re-queue a dismissed report into the inbox via the `potential` transition. */
+export async function restoreSignalReport(
+  reportId: string,
+): Promise<SignalReport> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/state/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ state: "potential" }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      errorText || "Failed to restore signal report",
+    );
+  }
+
+  return await response.json();
+}
