@@ -13,8 +13,8 @@ import {
   normalizeRunStatus,
   prettifyScoutSkillName,
   runDurationSeconds,
-  type ScoutOrigin,
   runMatchesFilter,
+  type ScoutOrigin,
   type ScoutRunFilter,
   scoutRunOutcomeLabel,
   scoutSkillNameFromSlug,
@@ -78,9 +78,7 @@ describe("naming", () => {
     );
   });
 
-  it.each<
-    [Pick<ScoutConfig, "scout_origin"> | null | undefined, ScoutOrigin]
-  >([
+  it.each<[Pick<ScoutConfig, "scout_origin"> | null | undefined, ScoutOrigin]>([
     [{ scout_origin: "canonical" }, "canonical"],
     [{ scout_origin: "custom" }, "custom"],
     // A missing field (older backends) or no config falls back to custom.
