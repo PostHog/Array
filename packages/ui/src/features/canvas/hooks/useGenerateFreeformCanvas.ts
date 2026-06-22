@@ -12,6 +12,7 @@ import {
   isPlaceholderCanvasName,
   useDashboardMutations,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -42,6 +43,10 @@ export function useGenerateFreeformCanvas(args: {
   const { invalidateTasks } = useCreateTask();
   const { fileTask } = useChannelTaskMutations();
   const { setGenerationTask, renameDashboard } = useDashboardMutations();
+  // The channel's CONTEXT.md, passed to the agent as optional background so the
+  // generated canvas starts with the shared context. Absent/empty is fine.
+  const { data: instructions } = useFolderInstructions(channelId);
+  const channelContext = instructions?.content;
   const [isStarting, setIsStarting] = useState(false);
 
   const generate = useCallback(
@@ -64,6 +69,8 @@ export function useGenerateFreeformCanvas(args: {
             taskDescription: `Generate canvas "${name}"`,
             workspaceMode: "local",
             allowNoRepo: true,
+            channelContext,
+            channelName,
           },
           (output) => invalidateTasks(output.task),
         );
@@ -117,6 +124,7 @@ export function useGenerateFreeformCanvas(args: {
       name,
       channelName,
       templateId,
+      channelContext,
     ],
   );
 
