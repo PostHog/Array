@@ -86,6 +86,38 @@ describe("enrichDescriptionWithFileContent", () => {
     },
   );
 
+  it.each([
+    {
+      label: "cloud description summary",
+      description: "Attached files: pasted-text.txt",
+    },
+    {
+      label: "numbered prompt list item",
+      description: "1. [Attached files: pasted-text.txt]",
+    },
+  ])(
+    "reads explicit file paths for attachment-only prompt -- $label",
+    async ({ description }) => {
+      readAbsoluteFile.mockResolvedValue("Refactor the auth flow and add tests");
+      const result = await makeService().enrichDescriptionWithFileContent(
+        description,
+        ["/tmp/clip/pasted-text.txt"],
+      );
+      expect(result).toBe("Refactor the auth flow and add tests");
+      expect(readAbsoluteFile).toHaveBeenCalledWith("/tmp/clip/pasted-text.txt");
+    },
+  );
+
+  it("ignores explicit file paths when the prompt has real typed text", async () => {
+    const description = "Fix the login bug\n\nAttached files: pasted-text.txt";
+    const result = await makeService().enrichDescriptionWithFileContent(
+      description,
+      ["/tmp/clip/pasted-text.txt"],
+    );
+    expect(result).toBe(description);
+    expect(readAbsoluteFile).not.toHaveBeenCalled();
+  });
+
   it("truncates content longer than 500 chars", async () => {
     const longContent = "x".repeat(600);
     readAbsoluteFile.mockResolvedValue(longContent);

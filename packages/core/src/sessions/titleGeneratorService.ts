@@ -13,7 +13,11 @@ import {
   type TitleGeneratorLogger,
 } from "./titleGeneratorIdentifiers";
 
-const ATTACHED_FILES_REGEX = /^\[?Attached files:.*]?$/gm;
+// Matches the attachment-summary line we synthesize for prompts that carry no
+// typed text — both the bare `Attached files: a.txt` description form and the
+// `1. [Attached files: a.txt]` form produced by formatPromptsForTitleInput, so
+// such a prompt is treated as "no real text" and we fall back to file content.
+const ATTACHED_FILES_REGEX = /^(?:\d+\.\s*)?\[?Attached files:.*$/gm;
 const PASTED_TEXT_SNIPPET_LIMIT = 500;
 
 const SYSTEM_PROMPT = `You are a title and summary generator. Output using exactly this format:

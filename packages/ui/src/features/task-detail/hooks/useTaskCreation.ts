@@ -26,6 +26,7 @@ import { toast } from "../../../primitives/toast";
 import { track } from "../../../shell/analytics";
 import { logger } from "../../../shell/logger";
 import { pendingTaskPromptStoreApi } from "../../../shell/pendingTaskPromptStore";
+import { titleAttachmentStoreApi } from "../../../shell/titleAttachmentStore";
 import { useAuthStateValue } from "../../auth/store";
 import { assertCloudUsageAvailable } from "../../billing/preflightCloudUsage";
 import { useUsageLimitStore } from "../../billing/usageLimitStore";
@@ -288,6 +289,14 @@ export function useTaskCreation({
           input,
           (output) => {
             invalidateTasks(output.task);
+            // Stash the prompt's local attachment paths so the chat-title
+            // generator can read their contents when naming the task — needed
+            // for pasted-text prompts whose only signal is the file body, and
+            // especially for cloud tasks where the local path is otherwise lost
+            // once the file is uploaded as an artifact.
+            if (filePaths.length > 0) {
+              titleAttachmentStoreApi.set(output.task.id, filePaths);
+            }
             if (signalReportId) {
               clearTaskInputReportAssociation();
             }
