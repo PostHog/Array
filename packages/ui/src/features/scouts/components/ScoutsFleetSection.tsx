@@ -141,7 +141,7 @@ function useTrackFleetViewed(configs: ScoutConfig[]) {
       enabled_count: configs.filter((config) => config.enabled).length,
       dry_run_count: configs.filter((config) => !config.emit).length,
       custom_count: configs.filter(
-        (config) => getScoutOrigin(config.skill_name) === "custom",
+        (config) => getScoutOrigin(config) === "custom",
       ).length,
       is_empty: configs.length === 0,
     });

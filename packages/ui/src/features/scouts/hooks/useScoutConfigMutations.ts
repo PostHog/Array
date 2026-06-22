@@ -28,7 +28,7 @@ function trackConfigChange(
     if (newValue === undefined) continue;
     track(ANALYTICS_EVENTS.SCOUT_CONFIG_CHANGED, {
       skill_name: previousConfig.skill_name,
-      scout_origin: getScoutOrigin(previousConfig.skill_name),
+      scout_origin: getScoutOrigin(previousConfig),
       setting,
       new_value: newValue,
       old_value: previousConfig[setting],

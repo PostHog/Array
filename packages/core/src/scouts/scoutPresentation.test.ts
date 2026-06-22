@@ -77,9 +77,15 @@ describe("naming", () => {
     );
   });
 
-  it("classifies canonical vs custom scouts", () => {
-    expect(getScoutOrigin("signals-scout-error-tracking")).toBe("canonical");
-    expect(getScoutOrigin("signals-scout-react-performance")).toBe("custom");
+  it("reads scout origin from the config's scout_origin field", () => {
+    expect(getScoutOrigin({ scout_origin: "canonical" })).toBe("canonical");
+    expect(getScoutOrigin({ scout_origin: "custom" })).toBe("custom");
+  });
+
+  it("treats a missing scout_origin (older backends) as custom", () => {
+    expect(getScoutOrigin({})).toBe("custom");
+    expect(getScoutOrigin(null)).toBe("custom");
+    expect(getScoutOrigin(undefined)).toBe("custom");
   });
 });
 

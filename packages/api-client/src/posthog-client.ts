@@ -235,6 +235,13 @@ export interface ScoutConfig {
    * absent entirely on backends predating the field.
    */
   description?: string;
+  /**
+   * Where the scout came from: "canonical" for a scout PostHog ships and
+   * maintains (seeded from products/signals/skills), "custom" for one a team
+   * hand-authored. The serializer defaults to "custom" when the skill is absent;
+   * the field itself is absent entirely on backends predating it.
+   */
+  scout_origin?: "canonical" | "custom";
   run_interval_minutes: number;
   last_run_at: string | null;
   created_at: string;
