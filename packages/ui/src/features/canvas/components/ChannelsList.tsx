@@ -888,7 +888,7 @@ function ChannelSection({
                           aria-label={`New in ${channel.name}`}
                           className={cn(
                             "gap-1 transition-opacity group-hover:border-border",
-                            menuOpen || newMenuOpen
+                            menuOpen || newMenuOpen || canvasOpen
                               ? "opacity-100"
                               : "opacity-0 group-hover/chan:opacity-100",
                           )}
