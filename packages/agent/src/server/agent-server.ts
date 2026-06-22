@@ -253,8 +253,8 @@ export class AgentServer {
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
-  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL; the chain
-  // serializes attributions so when a run opens several PRs the most recent one wins.
+  // Reset per session. `evaluatedPrUrls` dedupes per URL; `prAttributionChain` serializes
+  // attributions so the most recently created PR in a run wins.
   private readonly evaluatedPrUrls = new Set<string>();
   private prAttributionChain: Promise<void> = Promise.resolve();
   private lastReportedBranch: string | null = null;
@@ -2400,8 +2400,7 @@ ${signedCommitInstructions}
     const prUrl = findPrUrl(JSON.stringify(update));
     if (!prUrl || this.evaluatedPrUrls.has(prUrl)) return;
     this.evaluatedPrUrls.add(prUrl);
-    // Serialize attributions so detection order is preserved when a run opens several PRs:
-    // output.pr_url is a single value, and the most recently created PR is the useful one.
+    // Chain so attributions run in detection order; later PRs overwrite earlier ones.
     this.prAttributionChain = this.prAttributionChain
       .catch(() => {})
       .then(() => this.attachPrIfCreatedThisRun(payload, prUrl));
@@ -2426,8 +2425,7 @@ ${signedCommitInstructions}
       return;
     }
 
-    // Only PRs created during this run — never one the agent merely viewed. This also keeps an
-    // older viewed PR from overwriting the one this run just created.
+    // Only attribute PRs created during this run, not ones the agent merely viewed.
     if (!wasCreatedRecently(createdAt, Date.now())) return;
 
     this.detectedPrUrl = prUrl;
