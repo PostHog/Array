@@ -1,7 +1,7 @@
 import {
+  ArchiveIcon,
   ArrowCounterClockwiseIcon,
   LightningIcon,
-  ThumbsDownIcon,
 } from "@phosphor-icons/react";
 import { extractRepoSelectionRepository } from "@posthog/core/inbox/artefacts";
 import {
@@ -288,7 +288,7 @@ export function ReportCard(props: ReportCardProps) {
                     props.onDismiss();
                   }}
                 >
-                  <ThumbsDownIcon size={14} />
+                  <ArchiveIcon size={14} />
                 </UiButton>
                 <Button
                   type="button"
