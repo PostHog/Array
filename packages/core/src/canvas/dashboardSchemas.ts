@@ -91,6 +91,12 @@ export const saveFreeformInput = z.object({
 
 export const dashboardIdInput = z.object({ id: z.string().min(1) });
 
+// Rename a canvas (changes the last path segment, i.e. its display title).
+export const renameDashboardInput = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+});
+
 // Set (or clear, when taskId is null) the canvas's generation-task association.
 // Stored in the row's meta so every client polling the canvas sees the run.
 export const setGenerationTaskInput = z.object({

@@ -13,6 +13,17 @@ import { useCallback } from "react";
 
 const log = logger.scope("dashboards");
 
+// Default name for a canvas created without one. Also the marker we use to
+// detect a still-unnamed canvas worth auto-naming from its generation prompt.
+export const UNTITLED_CANVAS_NAME = "Untitled canvas";
+
+// True when a canvas name is a placeholder (never user-chosen), so auto-naming
+// from a generation prompt is safe and won't clobber a real title.
+export function isPlaceholderCanvasName(name: string): boolean {
+  const trimmed = name.trim();
+  return trimmed === UNTITLED_CANVAS_NAME || trimmed === "Untitled dashboard";
+}
+
 /** Saved canvases for a channel (file-backed freeform React apps). */
 export function useDashboards(channelId: string | undefined): {
   dashboards: DashboardSummary[];
@@ -86,6 +97,9 @@ export function useDashboardMutations() {
       onSuccess: invalidate,
     }),
   );
+  const rename = useMutation(
+    trpc.dashboards.rename.mutationOptions({ onSuccess: invalidate }),
+  );
 
   return {
     createDashboard: (channelId: string, name: string, templateId?: string) =>
@@ -95,6 +109,10 @@ export function useDashboardMutations() {
     // meta so every client polling the canvas sees the in-flight generation.
     setGenerationTask: (id: string, taskId: string | null) =>
       setGenerationTask.mutateAsync({ id, taskId }),
+    // Rename a canvas (changes its display title). Used to auto-name a freshly
+    // created canvas from its generation prompt.
+    renameDashboard: (id: string, name: string) =>
+      rename.mutateAsync({ id, name }),
     // Explicitly persist a freeform canvas's current code + history (autosave
     // already runs each turn; this is the manual Save affordance).
     saveFreeformDashboard: (
@@ -143,7 +161,7 @@ export function useCreateAndOpenDashboard(
     async (opts) => {
       if (!channelId) return;
       const templateId = opts?.templateId ?? "freeform";
-      const name = opts?.name ?? "Untitled canvas";
+      const name = opts?.name ?? UNTITLED_CANVAS_NAME;
       try {
         const record = await createDashboard(channelId, name, templateId);
         setEditing(record.id, true);

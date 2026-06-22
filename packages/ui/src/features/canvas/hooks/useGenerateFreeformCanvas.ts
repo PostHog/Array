@@ -1,3 +1,5 @@
+import { TITLE_GENERATOR_SERVICE } from "@posthog/core/sessions/titleGeneratorIdentifiers";
+import type { TitleGeneratorService } from "@posthog/core/sessions/titleGeneratorService";
 import {
   TASK_SERVICE,
   type TaskService,
@@ -5,7 +7,10 @@ import {
 import { useService } from "@posthog/di/react";
 import { buildFreeformGenerationPrompt } from "@posthog/ui/features/canvas/freeformPrompt";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
-import { useDashboardMutations } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import {
+  isPlaceholderCanvasName,
+  useDashboardMutations,
+} from "@posthog/ui/features/canvas/hooks/useDashboards";
 import type { GenerateContextTarget } from "@posthog/ui/features/canvas/hooks/useGenerateContext";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -30,9 +35,12 @@ export function useGenerateFreeformCanvas(args: {
 }) {
   const { dashboardId, channelId, name, channelName, templateId } = args;
   const taskService = useService<TaskService>(TASK_SERVICE);
+  const titleGenerator = useService<TitleGeneratorService>(
+    TITLE_GENERATOR_SERVICE,
+  );
   const { invalidateTasks } = useCreateTask();
   const { fileTask } = useChannelTaskMutations();
-  const { setGenerationTask } = useDashboardMutations();
+  const { setGenerationTask, renameDashboard } = useDashboardMutations();
   const [isStarting, setIsStarting] = useState(false);
 
   const generate = useCallback(
@@ -82,6 +90,18 @@ export function useGenerateFreeformCanvas(args: {
         // are best-effort: a failure here shouldn't undo a started task.
         void fileTask(channelId, task.id, task.title).catch(() => {});
         void setGenerationTask(dashboardId, task.id).catch(() => {});
+        // Auto-name a still-unnamed canvas from its generation prompt, using the
+        // same helper model that names tasks. Best-effort: a failure (or a user
+        // who already named the canvas) leaves the existing title untouched.
+        if (isPlaceholderCanvasName(name)) {
+          void titleGenerator
+            .generateTitleAndSummary(opts.instruction)
+            .then(async (res) => {
+              const title = res?.title?.trim();
+              if (title) await renameDashboard(dashboardId, title);
+            })
+            .catch(() => {});
+        }
         return task.id;
       } finally {
         setIsStarting(false);
@@ -89,9 +109,11 @@ export function useGenerateFreeformCanvas(args: {
     },
     [
       taskService,
+      titleGenerator,
       invalidateTasks,
       fileTask,
       setGenerationTask,
+      renameDashboard,
       dashboardId,
       channelId,
       name,

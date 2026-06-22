@@ -195,6 +195,25 @@ export class DashboardsService {
     return toRecord((await res.json()) as FsEntry);
   }
 
+  // Rename a canvas by rewriting the last path segment (the title). Touches only
+  // the path, leaving meta (code/versions/etc.) intact — used to auto-name a
+  // freshly-created canvas from its generation prompt.
+  async rename(input: { id: string; name: string }): Promise<DashboardRecord> {
+    const entry = await this.getEntry(input.id);
+    if (!entry) throw new Error("Dashboard not found");
+    const parent = parentPath(entry.path);
+    const next = sanitizeSegment(input.name);
+    const newPath = parent ? `${parent}/${next}` : next;
+    if (newPath === entry.path) return toRecord(entry);
+    const res = await this.fs.fetch(`${encodeURIComponent(input.id)}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: newPath }),
+    });
+    if (!res.ok) throw new Error(`Failed to rename canvas (${res.status})`);
+    return toRecord((await res.json()) as FsEntry);
+  }
+
   async delete(id: string): Promise<void> {
     const res = await this.fs.fetch(`${encodeURIComponent(id)}/`, {
       method: "DELETE",

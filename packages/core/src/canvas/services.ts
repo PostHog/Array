@@ -43,6 +43,7 @@ export interface IDashboardsService {
     id: string;
     taskId: string | null;
   }): Promise<DashboardRecord>;
+  rename(input: { id: string; name: string }): Promise<DashboardRecord>;
   delete(id: string): Promise<void>;
 }
 
