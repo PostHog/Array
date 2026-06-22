@@ -85,6 +85,7 @@ import {
   usePrefetchDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
+import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
@@ -382,7 +383,7 @@ function ChildRow({
 }
 
 // A single saved canvas under a channel — navigates to its detail view, with a
-// right-click menu to delete it.
+// right-click menu to rename (inline) or delete it.
 function DashboardRow({
   channelId,
   dashboard,
@@ -394,8 +395,35 @@ function DashboardRow({
 }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { deleteDashboard, isDeleting } = useDashboardMutations();
+  const { deleteDashboard, isDeleting, renameDashboard } =
+    useDashboardMutations();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+
+  const onRename = async (next: string) => {
+    setRenaming(false);
+    try {
+      await renameDashboard(dashboard.id, next);
+      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+        action_type: "rename",
+        surface: "sidebar",
+        channel_id: channelId,
+        dashboard_id: dashboard.id,
+        success: true,
+      });
+    } catch (error) {
+      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+        action_type: "rename",
+        surface: "sidebar",
+        channel_id: channelId,
+        dashboard_id: dashboard.id,
+        success: false,
+      });
+      toast.error("Couldn't rename canvas", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
   const onDelete = async () => {
     try {
@@ -431,6 +459,22 @@ function DashboardRow({
     }
   };
 
+  // While renaming, swap the row for an inline editor that saves on Enter/blur.
+  if (renaming) {
+    return (
+      <div className="flex w-full items-start gap-2 px-2 py-1">
+        <span className="mt-px shrink-0">
+          {iconForTemplate(dashboard.templateId)}
+        </span>
+        <HeaderTitleEditor
+          initialTitle={dashboard.name}
+          onSubmit={onRename}
+          onCancel={() => setRenaming(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <>
       <ContextMenu>
@@ -463,6 +507,11 @@ function DashboardRow({
           <TooltipContent side="right">{dashboard.name}</TooltipContent>
         </Tooltip>
         <ContextMenuContent>
+          <ContextMenuItem onClick={() => setRenaming(true)}>
+            <PencilSimpleIcon size={14} />
+            Rename…
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem
             variant="destructive"
             disabled={isDeleting}

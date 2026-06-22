@@ -818,6 +818,7 @@ export type DashboardActionType =
   | "open"
   | "create"
   | "delete"
+  | "rename"
   | "save"
   | "fork"
   | "edit_toggle"
