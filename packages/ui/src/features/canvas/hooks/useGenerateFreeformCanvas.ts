@@ -95,9 +95,9 @@ export function useGenerateFreeformCanvas(args: {
         // who already named the canvas) leaves the existing title untouched.
         if (isPlaceholderCanvasName(name)) {
           void titleGenerator
-            .generateTitleAndSummary(opts.instruction)
-            .then(async (res) => {
-              const title = res?.title?.trim();
+            .generateCanvasName(opts.instruction)
+            .then(async (generated) => {
+              const title = generated?.trim();
               if (title) await renameDashboard(dashboardId, title);
             })
             .catch(() => {});

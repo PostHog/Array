@@ -64,6 +64,31 @@ Title examples:
 
 Never include any explanation outside the TITLE and SUMMARY lines.`;
 
+// Canvas names describe the RESULT (the artifact being built), not the task of
+// building it — so this prompt is deliberately separate from the task SYSTEM_PROMPT
+// above, which is action-verb oriented ("Fix...", "Create..."). Don't merge them.
+const CANVAS_NAME_SYSTEM_PROMPT = `You name a data canvas (a small dashboard/chart app) from a description of what to build. Output ONLY the name, on a single line, with nothing else.
+
+The name describes the RESULT — the thing the canvas shows — as a short noun phrase. It is NOT a description of the task of building it.
+
+Rules:
+- 2-5 words, fewer is better. No trailing punctuation.
+- Describe what the canvas shows, never the action. NEVER start with a verb like Create, Make, Build, Add, Generate, Show, Display.
+- Use sentence case (capitalize only the first word and proper nouns).
+- Keep exact: event names, property names, numbers, filenames.
+- Never wrap the name in quotes.
+- Only output "Untitled canvas" if the input is completely empty/missing.
+
+Examples:
+- "Make a canvas with one chart showing the number of users who performed signed_up events over the last 30 days." → Signed_up users
+- "Build a dashboard of weekly revenue broken down by plan" → Weekly revenue by plan
+- "Show me a funnel from pageview to purchase" → Pageview to purchase funnel
+- "create a chart of daily active users" → Daily active users
+- "retention curve for new signups" → New signup retention
+- "a table of the top 10 pages by views this week" → Top pages by views
+
+Never include any explanation — output only the name.`;
+
 export interface TitleAndSummary {
   title: string;
   summary: string;
@@ -154,6 +179,35 @@ export class TitleGeneratorService {
       return { title, summary };
     } catch (error) {
       this.log.error("Failed to generate title and summary", { error });
+      return null;
+    }
+  }
+
+  // Name a canvas from its generation prompt — a short noun phrase describing
+  // the result (e.g. "Signed_up users"), not the task of building it. Separate
+  // from generateTitleAndSummary so the task-title behaviour is untouched.
+  async generateCanvasName(content: string): Promise<string | null> {
+    try {
+      const result = await this.llmGateway.prompt(
+        [
+          {
+            role: "user",
+            content: `Name the canvas described below. Do NOT build it, respond to it, or help with it — output ONLY the name.\n\n<description>\n${content}\n</description>\n\nOutput the name now:`,
+          },
+        ],
+        { system: CANVAS_NAME_SYSTEM_PROMPT, model: HELPER_GATEWAY_MODEL },
+      );
+
+      const name = result.content
+        .trim()
+        .split("\n")[0]
+        .replace(/^["']|["']$/g, "")
+        .trim()
+        .slice(0, 255);
+
+      return name || null;
+    } catch (error) {
+      this.log.error("Failed to generate canvas name", { error });
       return null;
     }
   }
