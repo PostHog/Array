@@ -88,7 +88,7 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
           onMouseDown={handleMouseDown}
           className="no-drag group absolute top-0 bottom-0 flex w-2 cursor-col-resize justify-center bg-transparent"
           style={{
-            left: isLeft ? undefined : 0,
+            left: isLeft ? undefined : -5,
             right: isLeft ? -5 : undefined,
             zIndex: 100,
           }}
