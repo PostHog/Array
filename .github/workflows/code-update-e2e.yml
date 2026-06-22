@@ -102,15 +102,68 @@ jobs:
             }
           '
 
-      - name: Upload report and logs
+      - name: Render update proof summary
+        if: always()
+        working-directory: apps/code
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = "out/update-proof/proof.json";
+            if (!fs.existsSync(p)) { console.log("no proof file was written"); process.exit(0); }
+            const d = JSON.parse(fs.readFileSync(p, "utf8"));
+            const cell = (v) => v === undefined || v === null ? "-" : String(v).replace(/\|/g, "\\|").replace(/\n/g, " ");
+            const rows = [
+              ["Result", d.result],
+              ["Old version", d.oldVersion],
+              ["New version", d.newVersion],
+              ["Booted on", d.bootedOn],
+              ["Feed offered", d.feedAvailableVersion],
+              ["Downloaded", d.downloaded],
+              ["Bundle after swap", d.bundleVersionAfterSwap],
+              ["Auto-relaunched exe", d.autoRelaunchedExecutable],
+              ["Fresh launch version", d.freshLaunchVersion],
+              ["ShipIt cache", d.shipItExists ? (d.shipItEntries || []).join(", ") : "missing"],
+              ["Failed step", d.failedStep],
+              ["Error", d.error],
+              ["Finished", d.finishedAt],
+            ];
+            const md = ["## macOS auto-update proof: " + d.result, "", "| Check | Value |", "| --- | --- |"]
+              .concat(rows.map((r) => "| " + r[0] + " | " + cell(r[1]) + " |"))
+              .join("\n");
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + "\n");
+            console.log(md);
+          '
+
+      - name: Upload proof, report and logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: update-e2e-macos
           path: |
-            apps/code/playwright-results/
+            apps/code/out/update-proof/
             apps/code/out/update-report.json
+            apps/code/playwright-results/
             /Users/runner/.posthog-code/logs/
             /Users/runner/Library/Caches/com.posthog.array.ShipIt/
           if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload old build (1.0.0)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: update-old-build-1.0.0
+          path: |
+            apps/code/out/PostHog-Code-1.0.0-arm64-mac.zip
+            apps/code/out/PostHog-Code-1.0.0-arm64-mac.zip.blockmap
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload new build feed (2.0.0)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: update-new-build-2.0.0
+          path: apps/code/out/dev-update-feed/
+          if-no-files-found: warn
           retention-days: 7

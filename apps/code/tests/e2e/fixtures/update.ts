@@ -1,5 +1,11 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -17,10 +23,37 @@ export const SHIPIT_DIR = path.join(
   "Library/Caches/com.posthog.array.ShipIt",
 );
 
+export const PROOF_DIR = path.join(OUT_DIR, "update-proof");
+const PROOF_FILE = path.join(PROOF_DIR, "proof.json");
+
 const SERVE_SCRIPT = path.join(
   __dirname,
   "../../../scripts/dev-update/serve.mjs",
 );
+
+// A single legible record of the update, written on pass and fail, that the
+// workflow turns into a run-page summary and uploads as the proof artifact.
+export type UpdateProof = {
+  result: "PASS" | "FAIL";
+  oldVersion: string;
+  newVersion: string;
+  bootedOn?: string;
+  feedAvailableVersion?: string;
+  downloaded?: boolean;
+  bundleVersionAfterSwap?: string;
+  autoRelaunchedExecutable?: string;
+  freshLaunchVersion?: string;
+  shipItExists?: boolean;
+  shipItEntries?: string[];
+  failedStep?: string;
+  error?: string;
+  finishedAt?: string;
+};
+
+export function writeProof(proof: UpdateProof): void {
+  mkdirSync(PROOF_DIR, { recursive: true });
+  writeFileSync(PROOF_FILE, `${JSON.stringify(proof, null, 2)}\n`);
+}
 
 // Copy the pristine built app into a disposable run dir so the in-place update
 // swap never mutates the build output, which lets a retry start from 1.0.0

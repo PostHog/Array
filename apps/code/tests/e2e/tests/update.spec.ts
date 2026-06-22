@@ -20,7 +20,9 @@ import {
   SHIPIT_DIR,
   shipItEvidence,
   startFeedServer,
+  type UpdateProof,
   waitUntil,
+  writeProof,
 } from "../fixtures/update";
 
 type UpdateStatus = {
@@ -56,20 +58,29 @@ test.describe("macOS auto-update", () => {
   test("downloads, installs and relaunches into the new version", async () => {
     test.setTimeout(5 * 60_000);
 
-    expect(
-      existsSync(PRISTINE_APP),
-      `missing built app at ${PRISTINE_APP}; run scripts/dev-update/build-pair.sh`,
-    ).toBe(true);
-    expect(
-      existsSync(FEED_DIR),
-      `missing feed at ${FEED_DIR}; run scripts/dev-update/build-pair.sh`,
-    ).toBe(true);
-
-    prepareRunApp();
-    const feed = startFeedServer(FEED_PORT);
+    const proof: UpdateProof = {
+      result: "FAIL",
+      oldVersion: OLD_VERSION,
+      newVersion: NEW_VERSION,
+    };
+    let feed: ReturnType<typeof startFeedServer> | undefined;
 
     try {
+      proof.failedStep = "preconditions";
+      expect(
+        existsSync(PRISTINE_APP),
+        `missing built app at ${PRISTINE_APP}; run scripts/dev-update/build-pair.sh`,
+      ).toBe(true);
+      expect(
+        existsSync(FEED_DIR),
+        `missing feed at ${FEED_DIR}; run scripts/dev-update/build-pair.sh`,
+      ).toBe(true);
+
+      prepareRunApp();
+      feed = startFeedServer(FEED_PORT);
+
       // Phase 1: drive the real download + install on the old build.
+      proof.failedStep = "launch";
       const app = await electron.launch({
         executablePath: RUN_APP_BIN,
         args: [],
@@ -91,25 +102,32 @@ test.describe("macOS auto-update", () => {
         .toBe("object");
 
       // Prove we actually start on the old version, so the swap is real.
+      proof.failedStep = "start-version";
       const startVersion = await app.evaluate(({ app: a }) => a.getVersion());
+      proof.bootedOn = startVersion;
       expect(startVersion, "run app should start on the old version").toBe(
         OLD_VERSION,
       );
 
+      proof.failedStep = "update-available";
       await app.evaluate(() => (globalThis as Hooked).__e2eUpdates.check());
       await pollStatus(
         app,
         (s) => s.available === true && s.availableVersion === NEW_VERSION,
         "update never became available",
       );
+      proof.feedAvailableVersion = NEW_VERSION;
 
+      proof.failedStep = "download";
       await app.evaluate(() => (globalThis as Hooked).__e2eUpdates.download());
       await pollStatus(
         app,
         (s) => s.updateReady === true,
         "update never finished downloading",
       );
+      proof.downloaded = true;
 
+      proof.failedStep = "install-and-swap";
       const closed = app.waitForEvent("close");
       void app
         .evaluate(() => {
@@ -124,16 +142,21 @@ test.describe("macOS auto-update", () => {
         120_000,
         "bundle was not swapped to the new version",
       );
+      proof.bundleVersionAfterSwap = readBundleVersion(RUN_APP);
 
       // Squirrel relaunches the installed app (isForceRunAfter=true); confirm the
       // auto-relaunched process actually came up running from the swapped bundle.
+      proof.failedStep = "auto-relaunch";
       await waitUntil(
         () => runningAppExecutables().some((exe) => exe.includes(RUN_DIR)),
         60_000,
         "Squirrel did not auto-relaunch the updated app",
       );
+      proof.autoRelaunchedExecutable = runningAppExecutables().find((exe) =>
+        exe.includes(RUN_DIR),
+      );
       console.log(
-        `Auto-relaunched from swapped bundle: ${runningAppExecutables().join(", ")}`,
+        `Auto-relaunched from swapped bundle: ${proof.autoRelaunchedExecutable}`,
       );
 
       killApp();
@@ -143,17 +166,20 @@ test.describe("macOS auto-update", () => {
         "relaunched instance did not exit",
       );
 
+      proof.failedStep = "fresh-launch";
       const updated = await electron.launch({
         executablePath: RUN_APP_BIN,
         args: [],
         env: { ...process.env, ELECTRON_DISABLE_GPU: "1" },
       });
       const version = await updated.evaluate(({ app: a }) => a.getVersion());
+      proof.freshLaunchVersion = version;
       expect(version).toBe(NEW_VERSION);
       await updated.close();
 
       // Mechanism evidence: our updater drove a real download and install, and
       // Squirrel.Mac's ShipIt is what performed the in-place swap.
+      proof.failedStep = "evidence";
       const mainLog = readMainLog();
       expect(
         mainLog,
@@ -163,6 +189,8 @@ test.describe("macOS auto-update", () => {
         "Installing update and restarting",
       );
       const shipIt = shipItEvidence();
+      proof.shipItExists = shipIt.exists;
+      proof.shipItEntries = shipIt.entries;
       console.log(
         `Squirrel ShipIt cache: exists=${shipIt.exists} entries=[${shipIt.entries.join(", ")}]`,
       );
@@ -170,8 +198,17 @@ test.describe("macOS auto-update", () => {
         shipIt.exists,
         `no Squirrel ShipIt cache at ${SHIPIT_DIR}; the swap was not performed by Squirrel`,
       ).toBe(true);
+
+      proof.failedStep = undefined;
+      proof.result = "PASS";
+    } catch (err) {
+      proof.error = err instanceof Error ? err.message : String(err);
+      throw err;
     } finally {
-      feed.kill();
+      feed?.kill();
+      killApp();
+      proof.finishedAt = new Date().toISOString();
+      writeProof(proof);
     }
   });
 });
