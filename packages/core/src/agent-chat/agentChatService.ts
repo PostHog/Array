@@ -1,4 +1,5 @@
 import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
+import type { DecideApprovalRequest } from "@posthog/shared/agent-platform-types";
 import { injectable } from "inversify";
 import { agentChatStore } from "./agentChatStore";
 import type {
@@ -461,6 +462,29 @@ export class AgentChatService {
         // Best-effort.
       }
     }
+  }
+
+  /**
+   * Decide a `principal`-type tool approval for this chat's session at the
+   * ingress, carrying the session's preview token so the ingress can
+   * principal-match. On approve the runner wakes, dispatches the tool, and the
+   * open `/listen` stream resumes the chat naturally — same as `/send`.
+   */
+  async decideApproval(
+    client: PostHogAPIClient,
+    session: AgentChatSession,
+    approvalId: string,
+    body: DecideApprovalRequest,
+  ): Promise<void> {
+    const rt = this.runtime(session);
+    await this.withPreviewToken(client, rt, session, (token) =>
+      client.decideAgentApprovalViaIngress(
+        session.ingressBaseUrl,
+        approvalId,
+        body,
+        token,
+      ),
+    );
   }
 
   /**

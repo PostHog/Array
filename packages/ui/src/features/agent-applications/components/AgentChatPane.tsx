@@ -212,6 +212,7 @@ export function AgentChatPane({
                   <AgentChatPendingApprovalCard
                     idOrSlug={idOrSlug}
                     approval={pendingApproval}
+                    decide={chat.decideApproval}
                   />
                 ) : null
               }

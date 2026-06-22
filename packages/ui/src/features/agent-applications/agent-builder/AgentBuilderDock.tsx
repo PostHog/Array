@@ -272,6 +272,7 @@ export function AgentBuilderDock() {
               <AgentChatPendingApprovalCard
                 idOrSlug={AGENT_BUILDER_SLUG}
                 approval={pendingApproval}
+                decide={chat.decideApproval}
               />
             ) : null
           }

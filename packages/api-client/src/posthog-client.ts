@@ -4621,6 +4621,32 @@ export class PostHogAPIClient {
     });
   }
 
+  /**
+   * Decide a `principal`-type tool approval at the ingress, as the session
+   * principal. The ingress authenticates the preview token / passthrough bearer
+   * and enforces principal-match — this is the session owner clearing their own
+   * gated call, not the owner-console (Django) decision path. `agent`-type
+   * approvals are NOT decidable here; they go through `decideAgentApproval`.
+   */
+  async decideAgentApprovalViaIngress(
+    ingressBaseUrl: string,
+    approvalId: string,
+    body: DecideApprovalRequest,
+    previewToken?: string | null,
+  ): Promise<{ ok: boolean; state: string }> {
+    const url = new URL(
+      `${ingressBaseUrl.replace(/\/$/, "")}/approvals/${encodeURIComponent(approvalId)}/decide`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
+      overrides: { body: JSON.stringify(body) },
+    });
+    return (await response.json()) as { ok: boolean; state: string };
+  }
+
   /** Return a client-tool result to an open session. */
   async sendAgentClientToolResult(
     ingressBaseUrl: string,
