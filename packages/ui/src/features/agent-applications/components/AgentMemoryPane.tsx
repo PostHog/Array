@@ -56,8 +56,6 @@ export function AgentMemoryPane({ idOrSlug }: { idOrSlug: string }) {
   );
 }
 
-// --- files ------------------------------------------------------------------
-
 function toFileTree(node: AgentMemoryTreeNode): FileTreeNode {
   return {
     type: node.type,
@@ -163,8 +161,6 @@ function MemoryFileDetail({
     </div>
   );
 }
-
-// --- tables -----------------------------------------------------------------
 
 function MemoryTables({ idOrSlug }: { idOrSlug: string }) {
   const [selected, setSelected] = useState<string | null>(null);

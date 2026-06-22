@@ -1,3 +1,4 @@
+import { agentChatCoreModule } from "@posthog/core/agent-chat/agentChat.module";
 import { billingCoreModule } from "@posthog/core/billing/billing.module";
 import { inboxCoreModule } from "@posthog/core/inbox/inbox.module";
 import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
@@ -25,6 +26,7 @@ import { container } from "@renderer/di/container";
 
 export function registerDesktopContributions(): void {
   for (const module of [
+    agentChatCoreModule,
     agentUiModule,
     authUiModule,
     billingUiModule,

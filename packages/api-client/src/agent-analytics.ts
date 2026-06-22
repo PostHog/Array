@@ -36,11 +36,18 @@ export interface AgentAnalyticsRaw {
 /** Only the agents' own traffic — not the team's other LLM events. */
 const AGENT_ORIGIN = "properties.$ai_origin = 'agent_platform_runner'";
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * Shared WHERE scope. `applicationId` (a trusted UUID from the agent record)
- * narrows the board to a single agent for the per-agent Observability tab.
+ * Shared WHERE scope narrowing the board to a single agent. `applicationId` is
+ * a trusted server UUID, but reject anything non-UUID before interpolating it
+ * into HogQL rather than rely on that.
  */
 function scope(applicationId?: string): string {
+  if (applicationId && !UUID_RE.test(applicationId)) {
+    throw new Error("agent analytics: applicationId must be a UUID");
+  }
   const agent = applicationId
     ? ` AND properties.$agent_application_id = '${applicationId}'`
     : "";

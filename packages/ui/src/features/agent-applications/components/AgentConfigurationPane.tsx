@@ -43,7 +43,7 @@ import { FileExplorer, type FileTreeNode } from "./FileExplorer";
 import { SecretEditor } from "./SecretEditor";
 import { SlackSetupCard } from "./SlackSetupCard";
 
-// --- value readers (spec items are loosely typed on the wire) ---------------
+// Value readers — spec items are loosely typed on the wire.
 function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
 }
@@ -135,8 +135,6 @@ function WarnBadge({ title }: { title: string }) {
     </span>
   );
 }
-
-// --- tree -------------------------------------------------------------------
 
 function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
   // Order chosen for how operators read an agent: what it is, what starts it,
@@ -298,8 +296,6 @@ function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
   return { type: "folder", name: "root", children };
 }
 
-// --- pane -------------------------------------------------------------------
-
 export function AgentConfigurationPane({
   idOrSlug,
   selectedNode,
@@ -402,8 +398,6 @@ export function AgentConfigurationPane({
     </AgentDetailLayout>
   );
 }
-
-// --- detail dispatch --------------------------------------------------------
 
 const SECTION_INFO: Record<string, string> = {
   "cfg:model":
@@ -614,8 +608,6 @@ function findById(items: unknown[], id: string): unknown {
 function byPath(files: BundleFile[], path: string): BundleFile | undefined {
   return files.find((f) => f.path === path);
 }
-
-// --- bodies -----------------------------------------------------------------
 
 function ModelBody({ spec }: { spec: AgentSpec }) {
   return (
@@ -1264,8 +1256,6 @@ function BundleFileBody({
   }
   return <CodeBlock>{file.content}</CodeBlock>;
 }
-
-// --- shared bits ------------------------------------------------------------
 
 function Row({
   label,

@@ -31,12 +31,15 @@ describe("buildAgentAnalyticsQueries", () => {
   });
 
   it("narrows to a single application id when given", () => {
-    const q = buildAgentAnalyticsQueries("app-uuid-123");
-    expect(q.kpi).toContain(
-      "properties.$agent_application_id = 'app-uuid-123'",
-    );
-    expect(q.byModel).toContain(
-      "properties.$agent_application_id = 'app-uuid-123'",
+    const id = "11111111-2222-3333-4444-555566667777";
+    const q = buildAgentAnalyticsQueries(id);
+    expect(q.kpi).toContain(`properties.$agent_application_id = '${id}'`);
+    expect(q.byModel).toContain(`properties.$agent_application_id = '${id}'`);
+  });
+
+  it("rejects a non-uuid application id", () => {
+    expect(() => buildAgentAnalyticsQueries("app-uuid-123")).toThrow(
+      /must be a UUID/,
     );
   });
 });

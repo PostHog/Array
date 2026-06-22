@@ -1,11 +1,5 @@
-// Domain types for the agent_platform product surface (deployed agents,
-// their revisions, sessions, approvals, and fleet rollups). These mirror the
-// PostHog Cloud REST serializers (Django app `agent_platform`) and are the wire
-// shapes returned by the corresponding PostHogAPIClient methods. Field names
-// stay snake_case to match the JSON exactly, as with the other shared wire
-// types (see inbox-types.ts).
-
-// --- Enums -----------------------------------------------------------------
+// Wire shapes mirroring the PostHog Cloud REST serializers (Django app
+// `agent_platform`). Field names stay snake_case to match the JSON exactly.
 
 export type AgentSessionState =
   | "queued"
@@ -33,8 +27,6 @@ export type AgentApprovalRequestState =
   | "expired";
 
 export type AgentApprovalDecision = "approve" | "reject";
-
-// --- Applications ----------------------------------------------------------
 
 /** Resolved creator (from `created_by_id`), or null if unset/deleted. */
 export interface AgentApplicationCreator {
@@ -65,12 +57,9 @@ export interface AgentApplication {
   ingress_base_url: string | null;
 }
 
-// --- Revisions -------------------------------------------------------------
-
 /**
- * The agent spec carried on a revision. Fully typed elaboration (triggers,
- * tools, mcps, skills, limits) lands with the config editor milestone; for now
- * the known top-level fields are surfaced and the rest passes through.
+ * The agent spec carried on a revision. Known top-level fields are surfaced and
+ * the rest passes through pending fully-typed elaboration.
  */
 export interface AgentSpec {
   model: string;
@@ -104,16 +93,12 @@ export interface AgentRevision {
   updated_at: string;
 }
 
-// --- Preview tokens --------------------------------------------------------
 // `…/agent_applications/{id}/preview-token/?revision_id=<uuid>` mints a
 // short-lived HS256 JWT that authorizes the ingress to route /run /send /listen
 // /cancel against a non-live revision. Sent on those calls via the
 // `X-Agent-Preview-Token` header (or `?preview_token=` query for EventSource),
-// alongside the usual PostHog bearer (which the fetcher attaches regardless
-// of host).
-//
-// The response is self-describing: `endpoints` carries the per-trigger preview
-// URLs the caller should hit directly, so the client never has to derive a
+// alongside the usual PostHog bearer. The response's `endpoints` carry the
+// per-trigger preview URLs to hit directly, so the client never derives a
 // revision-scoped ingress URL by string-mangling `application.ingress_base_url`.
 
 /** Per-trigger preview URLs, keyed by trigger type → action → absolute URL. */
@@ -138,7 +123,6 @@ export interface AgentPreviewToken {
   preview_proxy: Record<string, unknown>;
 }
 
-// --- Bundle files ----------------------------------------------------------
 // `…/revisions/{id}/bundle/` returns a typed bundle ({ agent_md, skills, tools });
 // the client flattens it into these per-file rows keyed by canonical path
 // (agent.md, skills/<id>/SKILL.md, tools/<id>/source.ts, tools/<id>/schema.json).
@@ -151,7 +135,6 @@ export interface BundleFile {
   language: BundleFileLanguage;
 }
 
-// --- Slack setup -----------------------------------------------------------
 // `…/revisions/{id}/slack_manifest/` derives the Slack app manifest from the
 // revision's slack trigger + tools (scopes + event subscriptions computed).
 
@@ -164,7 +147,6 @@ export interface AgentSlackManifest {
   interactivity_url: string | null;
 }
 
-// --- Memory ----------------------------------------------------------------
 // The agent's S3-backed memory store: markdown files (`…/memory/…`) plus the
 // JSONL reference tables the @posthog/table-* tools write.
 
@@ -211,8 +193,6 @@ export interface AgentMemoryTableRows {
   rows: Record<string, unknown>[];
 }
 
-// --- Sessions --------------------------------------------------------------
-
 export interface AgentSessionUsageTotal {
   tokens_in: number;
   tokens_out: number;
@@ -258,11 +238,10 @@ export interface AgentApplicationSessionsListResponse {
   count: number;
 }
 
-// --- Conversation transcript (stored shape on a session) -------------------
-// The runtime persists pi-ai's `conversation` array. The SSE→ACP adapter and
-// the session-detail transcript both narrow these `content` parts at runtime.
-// Part shapes mirror what the agent-console apiClient narrows (text/thinking/
-// toolCall for assistants; text/image for users; text for tool results).
+// Stored conversation shape on a session: the runtime persists pi-ai's
+// `conversation` array. Part shapes mirror what the agent-console apiClient
+// narrows (text/thinking/toolCall for assistants; text/image for users; text
+// for tool results).
 
 export interface AgentTextPart {
   type: "text";
@@ -352,7 +331,6 @@ export interface AgentApplicationSessionDetail {
   conversation_total_turns?: number;
 }
 
-// --- Session logs ----------------------------------------------------------
 // `…/sessions/{id}/logs/` returns rows from the shared ClickHouse `log_entries`
 // table via `fetch_log_entries` — the same flat shape hog_function logs use.
 
@@ -377,8 +355,6 @@ export interface AgentSessionLogsParams {
   before?: string;
 }
 
-// --- Fleet -----------------------------------------------------------------
-
 export interface AgentFleetLiveSessionSummary {
   id: string;
   application_id: string;
@@ -398,8 +374,6 @@ export interface AgentFleetLiveSessionSummary {
 export interface AgentFleetLiveSessionsResponse {
   results: AgentFleetLiveSessionSummary[];
 }
-
-// --- Approvals -------------------------------------------------------------
 
 export interface AgentApprovalRequest {
   id: string;
@@ -431,8 +405,6 @@ export interface DecideApprovalRequest {
   reason?: string;
 }
 
-// --- Query params ----------------------------------------------------------
-
 export interface AgentSessionsListParams {
   limit?: number;
   offset?: number;
@@ -450,11 +422,10 @@ export interface AgentApprovalsListParams {
   offset?: number;
 }
 
-// --- Live session events (agent-ingress SSE stream) ------------------------
-// The chat trigger's `/listen` endpoint streams these as `text/event-stream`
-// JSON frames. The SSE→ACP adapter folds them into ACP messages the native
-// ConversationView renders. The `kind` discriminator and `data` payloads come
-// from `agent-ingress/src/triggers/chat.ts` + `agent-runner/src/loop/bus.ts`.
+// Live session events from the chat trigger's `/listen` endpoint (SSE
+// `text/event-stream` JSON frames). The `kind` discriminator and `data`
+// payloads come from `agent-ingress/src/triggers/chat.ts` +
+// `agent-runner/src/loop/bus.ts`.
 
 interface AgentSessionEventBase {
   session_id: string;
@@ -565,12 +536,9 @@ export type AgentClientToolResultEvent = AgentSessionEventBase & {
 };
 
 /**
- * Draft-preview only. The server fires this on `/listen` ~5s before the
- * preview token expires (and then closes the stream): the client mints a
- * fresh token and reconnects to the same session. The kind alone is the
- * signal — `data` is structurally `Record<string, unknown>` (matching
- * `AgentClosedEvent`) for the discriminated-union shape, but no fields are
- * defined or read.
+ * Draft-preview only. Server fires this on `/listen` ~5s before the preview
+ * token expires (then closes the stream); the client mints a fresh token and
+ * reconnects. The kind alone is the signal — `data` is unused.
  */
 export type AgentPreviewTokenRequiredEvent = AgentSessionEventBase & {
   kind: "preview_token_required";
@@ -599,14 +567,11 @@ export type AgentSessionEvent =
 /** Discriminator values for {@link AgentSessionEvent}. */
 export type AgentSessionEventKind = AgentSessionEvent["kind"];
 
-// --- Observability / analytics --------------------------------------------
-// The runner captures `$ai_*` AI-observability events into the team's OWN
-// PostHog project (tagged `$ai_origin = 'agent_platform_runner'` and
-// `$agent_application_id`). The observability surface rolls those up via HogQL
-// (`/query/`) into the shapes below. These are the *derived* analytics shapes
-// the client produces from raw HogQL grids — not a backend wire serializer —
-// but they live here so the UI hooks can import them alongside the other
-// agent-platform types.
+// The runner captures `$ai_*` observability events into the team's OWN PostHog
+// project (tagged `$ai_origin = 'agent_platform_runner'`, `$agent_application_id`);
+// the observability surface rolls those up via HogQL. These are the *derived*
+// analytics shapes the client produces from raw HogQL grids — not a backend wire
+// serializer — but live here so UI hooks import them alongside the other types.
 
 export interface AgentAnalyticsKpis {
   spendUsd: number;

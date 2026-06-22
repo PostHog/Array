@@ -20,9 +20,8 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
   const page = useAgentBuilderStore((s) => s.page);
   const followRef = useRef(followMode);
   followRef.current = followMode;
-  // Latest page context without re-creating the handler each render — used to
-  // resolve the revision a `set_secret` punch-out targets when the agent
-  // doesn't name one in the tool args.
+  // Latest page context without re-creating the handler each render — resolves
+  // the revision a `set_secret` punch-out targets when the agent omits one.
   const pageRef = useRef(page);
   pageRef.current = page;
 
