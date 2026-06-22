@@ -1,3 +1,4 @@
+import { ArrowSquareOut } from "@phosphor-icons/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
 import {
@@ -6,6 +7,8 @@ import {
   PROJECT_BLUEBIRD_FLAG,
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
 import {
@@ -31,6 +34,7 @@ import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import LogosLandscape from "@posthog/ui/primitives/Logo";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
+import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { GlobalEventHandlers } from "@posthog/ui/shell/GlobalEventHandlers";
 import { HeaderRow } from "@posthog/ui/shell/HeaderRow";
@@ -39,6 +43,8 @@ import { logger } from "@posthog/ui/shell/logger";
 import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
+import { openUrlInBrowser } from "@posthog/ui/utils/browser";
+import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -96,15 +102,37 @@ function RootLayout() {
   const navigate = useNavigate();
 
   // Feedback modal shown in the Channels title bar. Opened directly by "Leave
-  // feedback" (mode "feedback") or as an intercept before "Go back to Code"
-  // (mode "leaving", which routes to /code once submitted or skipped).
+  // feedback" (mode "feedback"), or as an intercept before navigating away —
+  // "Go back to Code" (mode "leaving") and "PostHog Web" (mode "posthog-web"),
+  // each of which routes once the modal is submitted or skipped.
   const [feedbackMode, setFeedbackMode] = useState<FeedbackModalMode | null>(
     null,
   );
+  const currentProjectId = useAuthStateValue((s) => s.currentProjectId);
+
+  // The user's current project on the correct cloud (region comes from
+  // cloudRegion via getPostHogUrl), falling back to the account root. `null`
+  // when the region is unknown — the "PostHog Web" button is disabled then, so
+  // a click can never silently no-op.
+  const posthogWebUrl = getPostHogUrl(
+    currentProjectId ? `/project/${currentProjectId}` : "/",
+  );
+
+  // Both "Go back to Code" and "PostHog Web" open the feedback modal first and
+  // perform their navigation only once it's submitted or skipped.
   const handleFeedbackFinished = () => {
-    const wasLeaving = feedbackMode === "leaving";
+    const finishedMode = feedbackMode;
     setFeedbackMode(null);
-    if (wasLeaving) navigate({ to: "/code" });
+    if (finishedMode === "leaving") {
+      navigate({ to: "/code" });
+    } else if (finishedMode === "posthog-web" && posthogWebUrl) {
+      void openUrlInBrowser(posthogWebUrl);
+    }
+  };
+
+  const handleOpenPostHogWeb = () => {
+    track(ANALYTICS_EVENTS.POSTHOG_WEB_OPENED);
+    setFeedbackMode("posthog-web");
   };
   const {
     isOpen: commandMenuOpen,
@@ -223,7 +251,7 @@ function RootLayout() {
 
   if (isChannelsSpace) {
     return (
-      <Flex direction="column" height="100vh" className="bg-gray-2">
+      <Flex direction="column" height="100vh" className="bg-chrome">
         {/* Full-width title bar: a window-drag region carrying the PostHog
             mark. The left padding clears the macOS stoplights. */}
         <Flex align="center" gap="3" className="drag h-10 shrink-0 pl-[78px]">
@@ -234,16 +262,39 @@ function RootLayout() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setFeedbackMode("leaving")}
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "leave_space",
+                  surface: "title_bar",
+                });
+                setFeedbackMode("leaving");
+              }}
             >
               Go back to Code
             </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setFeedbackMode("feedback")}
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "leave_feedback",
+                  surface: "title_bar",
+                });
+                setFeedbackMode("feedback");
+              }}
             >
               Leave feedback
+            </Button>
+          </Flex>
+          <Flex align="center" className="no-drag ml-auto pr-3">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!posthogWebUrl}
+              onClick={handleOpenPostHogWeb}
+            >
+              <ArrowSquareOut size={14} />
+              PostHog Web
             </Button>
           </Flex>
         </Flex>
@@ -251,8 +302,8 @@ function RootLayout() {
           <ChannelsSidebar />
           {/* Content sits in a bordered, rounded card inset from the window
               edges — the framed pane from the design. */}
-          <Box flexGrow="1" className="overflow-hidden pr-2 pb-2">
-            <Box className="h-full overflow-hidden rounded-sm border border-gray-6 bg-gray-1">
+          <Box flexGrow="1" className="overflow-hidden">
+            <Box className="h-full overflow-hidden rounded-tl-sm border-border border-t border-l bg-background">
               <Outlet />
             </Box>
           </Box>

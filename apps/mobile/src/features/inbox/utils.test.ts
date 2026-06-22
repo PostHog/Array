@@ -9,7 +9,9 @@ import {
   buildInboxViewedProperties,
   buildPriorityFilterParam,
   buildReviewerOptions,
+  dismissalReasonLabel,
   formatSignalReportSummaryMarkdown,
+  isArchivedReport,
   orderSuggestedReviewers,
   reviewerMatchesAvailable,
   toSuggestedReviewerWriteContent,
@@ -357,6 +359,27 @@ describe("buildPriorityFilterParam", () => {
     },
   ])("$name", ({ input, expected }) => {
     expect(buildPriorityFilterParam([...input])).toBe(expected);
+  });
+});
+
+describe("isArchivedReport", () => {
+  it.each([
+    { status: "suppressed" as SignalReportStatus, expected: true },
+    { status: "ready" as SignalReportStatus, expected: false },
+    { status: "potential" as SignalReportStatus, expected: false },
+    { status: "deleted" as SignalReportStatus, expected: false },
+  ])("is $expected for $status", ({ status, expected }) => {
+    expect(isArchivedReport({ status })).toBe(expected);
+  });
+});
+
+describe("dismissalReasonLabel", () => {
+  it.each([
+    { value: "analysis_wrong", expected: "Agent's analysis is wrong" },
+    { value: "other", expected: "Something else…" },
+    { value: "totally_unknown_code", expected: "totally_unknown_code" },
+  ])("maps $value", ({ value, expected }) => {
+    expect(dismissalReasonLabel(value)).toBe(expected);
   });
 });
 

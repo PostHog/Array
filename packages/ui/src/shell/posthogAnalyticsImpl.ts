@@ -55,8 +55,15 @@ export function initializePostHog(sessionId?: string) {
   }
 
   posthog.init(apiKey, {
+    defaults: "2026-05-30",
     api_host: apiHost,
     ui_host: uiHost,
+    // The epoch turns capture_pageview into "history_change". This app routes via
+    // createHashHistory() (packages/ui/src/router/router.ts), so the route lives in
+    // the URL hash and $pathname is identical for every screen — automatic pageviews
+    // would collapse all routes into one and corrupt route-level analytics. Opt out
+    // and rely on explicit instrumentation instead.
+    capture_pageview: false,
     disable_session_recording: false,
     session_idle_timeout_seconds: SESSION_IDLE_TIMEOUT_SECONDS,
     ...(sessionId ? { bootstrap: { sessionID: sessionId } } : {}),
@@ -219,31 +226,37 @@ export function track<K extends keyof EventPropertyMap>(
 }
 
 /**
- * Record a survey response via posthog-js's `survey sent` event. The survey
- * must already exist (and be launched) in the project the app reports to, or
- * the response will not attach to it.
+ * Record a survey response via posthog-js's `survey sent` event. Pass one entry
+ * per answered question; they're submitted together as a single response. The
+ * survey must already exist (and be launched) in the project the app reports to,
+ * or the response will not attach to it.
  */
 export function captureSurveyResponse({
   surveyId,
-  questionId,
-  response,
+  responses,
 }: {
   surveyId: string;
-  questionId: string;
-  response: string;
+  responses: Array<{ questionId: string; response: string }>;
 }) {
   if (!isInitialized) {
     return;
   }
 
-  posthog.capture("survey sent", {
+  const properties: Record<string, unknown> = {
     $survey_id: surveyId,
-    $survey_questions: [{ id: questionId }],
-    // Newer ingestion keys responses by question id; `$survey_response` is the
-    // legacy single-question key. Send both so the response attaches either way.
-    [`$survey_response_${questionId}`]: response,
-    $survey_response: response,
-  });
+    $survey_questions: responses.map(({ questionId }) => ({ id: questionId })),
+  };
+  // Newer ingestion keys each response by question id.
+  for (const { questionId, response } of responses) {
+    properties[`$survey_response_${questionId}`] = response;
+  }
+  // `$survey_response` is the legacy single-question key; only set it when there
+  // is exactly one answer, otherwise it would be ambiguous.
+  if (responses.length === 1) {
+    properties.$survey_response = responses[0].response;
+  }
+
+  posthog.capture("survey sent", properties);
 }
 
 /**

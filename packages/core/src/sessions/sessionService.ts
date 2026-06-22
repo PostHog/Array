@@ -439,6 +439,14 @@ export class SessionService {
     string,
     Promise<SessionConfigOption[]>
   >();
+  /**
+   * Initial cloud prompt text (user message + any channel CONTEXT.md block),
+   * stashed by task creation keyed by taskId. The cloud sandbox takes seconds to
+   * boot and echo this back, so the optimistic placeholder would otherwise show
+   * the bare task description with no CONTEXT.md chip until the echo lands. Seed
+   * the placeholder with this richer text instead, then drop it once consumed.
+   */
+  private initialCloudOptimisticPrompt = new Map<string, string>();
 
   constructor(private readonly d: SessionServiceDeps) {
     this.cloudRunIdleTracker = new CloudRunIdleTracker();
@@ -3321,6 +3329,20 @@ export class SessionService {
     return () => {};
   }
 
+  /**
+   * Stash the initial cloud prompt (user message plus any channel CONTEXT.md
+   * block) so the optimistic placeholder can render it — and its CONTEXT.md
+   * chip — immediately, instead of waiting for the sandbox to boot and echo it
+   * back. Best-effort: lost on reload, where the merge layer dedupes the echo
+   * against the bare placeholder instead.
+   */
+  rememberInitialCloudPrompt(taskId: string, content: string): void {
+    const trimmed = content.trim();
+    if (trimmed) {
+      this.initialCloudOptimisticPrompt.set(taskId, content);
+    }
+  }
+
   private hydrateCloudTaskSessionFromLogs(
     taskId: string,
     taskRunId: string,
@@ -3347,13 +3369,21 @@ export class SessionService {
       // Seed the optimistic user-message bubble whenever the agent has
       // not yet recorded an initial `session/prompt` request — covers the
       // brand-new task case as well as "agent has emitted lifecycle
-      // notifications but hasn't received its first prompt yet".
-      if (!hasUserPrompt && taskDescription?.trim()) {
+      // notifications but hasn't received its first prompt yet". Prefer the
+      // stashed initial prompt (which carries the channel CONTEXT.md block, so
+      // its chip renders right away) over the bare task description.
+      const seedContent =
+        this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
+      if (!hasUserPrompt && seedContent?.trim()) {
         this.d.store.appendOptimisticItem(taskRunId, {
           type: "user_message",
-          content: taskDescription,
+          content: seedContent,
           timestamp: Date.now(),
         });
+      }
+      if (hasUserPrompt) {
+        // The real prompt has landed; the stash is no longer needed.
+        this.initialCloudOptimisticPrompt.delete(taskId);
       }
 
       if (rawEntries.length === 0) {

@@ -66,6 +66,9 @@ import {
 import { inject, injectable, preDestroy } from "inversify";
 import { WORKSPACE_REPOSITORY } from "../../db/identifiers";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
+import type { FoldersService } from "../folders/folders";
+import { FOLDERS_SERVICE } from "../folders/identifiers";
+import type { RegisteredFolder } from "../folders/schemas";
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
@@ -372,6 +375,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly workspaceRepository: IWorkspaceRepository,
     @inject(WORKSPACE_SETTINGS_SERVICE)
     private readonly workspaceSettings: IWorkspaceSettings,
+    @inject(FOLDERS_SERVICE)
+    private readonly foldersService: FoldersService,
     @inject(AGENT_LOGGER)
     loggerFactory: AgentLogger,
   ) {
@@ -535,6 +540,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     additionalDirectories?: string[],
     systemPromptOverride?: string,
     channelMode?: boolean,
+    knownLocalFolders?: RegisteredFolder[],
   ): {
     append: string;
   } {
@@ -575,16 +581,30 @@ When creating pull requests, add the following footer at the end of the PR descr
 \`\`\``;
 
     if (channelMode) {
+      const localFolders = (knownLocalFolders ?? []).filter(
+        (f) => f.exists !== false,
+      );
+      const localFoldersBlock = localFolders.length
+        ? `\n\nThe user already has these repositories checked out locally on this machine. Prefer reusing one of these over cloning anything:\n${localFolders
+            .map(
+              (f) =>
+                `  - ${f.name} — ${f.path}${f.remoteUrl ? ` (${f.remoteUrl})` : ""}`,
+            )
+            .join("\n")}`
+        : "";
+
       prompt += `
 
 ## Channel task (no repository attached)
 You are running in a PostHog channel as a general-purpose assistant. This task may NOT need a code repository at all — it could be data analysis via PostHog tools, drafting a message, or answering a question. Do not assume you need a repo.
 
 - Your working directory is a scratch directory, not a git checkout. Treat it as empty.
-- Decide from the user's request (and the channel CONTEXT.md included above, if any) whether the task actually requires working inside a code repository.
-- Only if a repository is genuinely required: pick which one from the request and CONTEXT.md. Repositories named in CONTEXT.md are the most likely candidates — prefer them. Call \`list_repos\` to see what is available.
-- Bring a repo into your workspace with the \`clone_repo\` tool (pass \`owner/repo\`). It clones into a subdirectory of your working directory and returns the path — cd into that path for all git work.
-- If a repository is required but you cannot confidently determine which one, use the AskUserQuestion tool to ask the user to choose before cloning. Do not guess.`;
+- Decide from the user's request (and the channel CONTEXT.md included above, if any) whether the task actually requires working inside a code repository. If it doesn't, just do the work in the scratch directory — do NOT attach a repo.
+
+If a repository IS genuinely required, attach one in this priority order:
+1. **Reuse a folder the user already has locally.** ${localFolders.length ? "Pick the one that best matches the request and the channel CONTEXT.md, then `cd` into its absolute path and do all git and file work there. It is already on disk — do NOT clone it again." : "If the user names a folder or path, `cd` into that absolute path and work there."}
+2. **If you can't confidently pick one** (none clearly match, or it's ambiguous), use the AskUserQuestion tool to ask the user which local folder to use, or for the path where the folder lives on this machine. Do not guess.
+3. **Only as a last resort** — when the user has no local copy, or explicitly wants a fresh checkout — clone from remote. Call \`list_repos\` to see what's available (prefer repos named in CONTEXT.md), then **confirm with the user via AskUserQuestion before cloning**, and use \`clone_repo\` (pass \`owner/repo\`); it clones into a subdirectory of your working directory and returns the path to \`cd\` into.${localFoldersBlock}`;
     }
 
     if (customInstructions) {
@@ -660,6 +680,13 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
       this.workspaceSettings.getWorktreeLocation(),
     );
 
+    // In channel mode the agent decides at runtime whether it needs a repo. Give
+    // it the user's previously-used local folders so it can reuse one (or ask)
+    // instead of cloning from remote. Only fetched for channel sessions.
+    const knownLocalFolders = channelMode
+      ? await this.foldersService.getFolders().catch(() => [])
+      : [];
+
     const additionalDirectories =
       taskId === "__preview__"
         ? []
@@ -717,6 +744,7 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
         additionalDirectories,
         systemPromptOverride,
         channelMode,
+        knownLocalFolders,
       );
 
       const bundledSkillsDir = join(

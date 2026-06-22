@@ -79,6 +79,8 @@ interface TaskChatComposerProps {
   messagingMode: MessagingMode;
   queuedCount: number;
   onToggleMessagingMode: () => void;
+  /** A queued message pulled back for editing; pass a fresh object to restore. */
+  restoredDraft?: { text: string; attachments: PendingAttachment[] };
 }
 
 function modeIcon(mode: ExecutionMode, color: string, size = 14): ReactNode {
@@ -164,6 +166,7 @@ export function TaskChatComposer({
   messagingMode,
   queuedCount,
   onToggleMessagingMode,
+  restoredDraft,
 }: TaskChatComposerProps) {
   const themeColors = useThemeColors();
   const [message, setMessage] = useState(() => initialMessage ?? "");
@@ -174,6 +177,12 @@ export function TaskChatComposer({
     if (!initialMessage) return;
     setMessage(initialMessage);
   }, [initialMessage]);
+
+  useEffect(() => {
+    if (!restoredDraft) return;
+    setMessage(restoredDraft.text);
+    setAttachments(restoredDraft.attachments);
+  }, [restoredDraft]);
 
   const appendTranscript = useCallback((transcript: string) => {
     setMessage((prev) => (prev ? `${prev} ${transcript}` : transcript));

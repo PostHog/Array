@@ -1,6 +1,8 @@
 export const scoutQueryKeys = {
   configs: (projectId: number | null) =>
     ["scouts", "configs", projectId] as const,
+  metadata: (projectId: number | null) =>
+    ["scouts", "metadata", projectId] as const,
   runs: (projectId: number | null) => ["scouts", "runs", projectId] as const,
   emissions: (projectId: number | null, runId: string) =>
     ["scouts", "emissions", projectId, runId] as const,
