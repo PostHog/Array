@@ -40,6 +40,14 @@ export class ElectronUpdater implements IUpdater {
     // next quit, with an in-app Restart button for immediate install.
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
+
+    // E2E only: redirect the updater at a local feed so a packaged build can be
+    // driven through a real download and install against test artifacts. The env
+    // var is never set in production.
+    const e2eFeedUrl = process.env.POSTHOG_E2E_UPDATE_FEED;
+    if (e2eFeedUrl) {
+      autoUpdater.setFeedURL({ provider: "generic", url: e2eFeedUrl });
+    }
   }
 
   public isSupported(): boolean {
