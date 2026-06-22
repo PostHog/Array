@@ -16,7 +16,7 @@ echo "==> electron-vite build"
 pnpm exec electron-vite build
 
 echo "==> build NEW $NEW_VERSION (feed artifacts)"
-pnpm exec electron-builder build --mac zip --arm64 \
+pnpm exec electron-builder build --mac zip --arm64 --publish never \
   -c.extraMetadata.version="$NEW_VERSION" --config electron-builder.ts
 
 rm -rf "$FEED_DIR"
@@ -26,7 +26,7 @@ cp "out/PostHog-Code-${NEW_VERSION}-arm64-mac.zip.blockmap" "$FEED_DIR/"
 cp "out/latest-mac.yml" "$FEED_DIR/"
 
 echo "==> build OLD $OLD_VERSION (runnable app left in out/mac-arm64)"
-pnpm exec electron-builder build --mac zip --arm64 \
+pnpm exec electron-builder build --mac zip --arm64 --publish never \
   -c.extraMetadata.version="$OLD_VERSION" --config electron-builder.ts
 
 echo "==> feed=$FEED_DIR"
