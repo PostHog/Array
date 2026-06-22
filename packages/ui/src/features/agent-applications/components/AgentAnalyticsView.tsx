@@ -1,14 +1,12 @@
 import {
-  ArrowDownIcon,
   ArrowSquareOutIcon,
-  ArrowUpIcon,
   ChartLineIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
 import {
   BarChart,
+  MetricCard,
   type Series,
-  Sparkline,
   useChartTheme,
 } from "@posthog/quill-charts";
 import type {
@@ -25,6 +23,19 @@ const usd = (v: number): string =>
 const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
 const secs = (v: number): string => `${v.toFixed(v < 10 ? 1 : 0)}s`;
 const int = (v: number): string => v.toLocaleString();
+
+// Delta-pill label: magnitude only — MetricCard's arrow + colour carry the
+// direction (sign of the change) and good/bad (`goodDirection`).
+const pctDelta = (p: number): string => `${Math.abs(Math.round(p))}%`;
+const ppDelta = (p: number): string => `${Math.abs(p).toFixed(1)}pp`;
+
+// Compact uppercase tile label, matching the surrounding panes (MetricCard's
+// own title styling is larger than this strip wants).
+const tileTitle = (label: string): ReactNode => (
+  <span className="text-[11px] text-gray-10 uppercase tracking-wide">
+    {label}
+  </span>
+);
 
 /**
  * The agent observability dashboard: top-line KPIs with 14-day spark trends +
@@ -111,11 +122,12 @@ export function AgentAnalyticsKpiStrip({
   data: AgentAnalyticsData | undefined;
   isLoading?: boolean;
 }) {
+  const theme = useChartTheme();
   if (isLoading && !data) {
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
-          <Skel key={i} className="h-20" />
+          <Skel key={i} className="h-28" />
         ))}
       </div>
     );
@@ -124,127 +136,80 @@ export function AgentAnalyticsKpiStrip({
     return <EmptyHint text="No AI activity in the last 7 days." />;
   }
   const { kpis, deltas, daily } = data;
+  // Cost can come back negative from upstream LLM-observability cost calc (a
+  // negative `$ai_total_cost_usd` on some generations). A negative aggregate
+  // spend is never meaningful to show, so clamp the headline + sparkline to 0.
+  const spendSeries = daily.spend.map((v) => Math.max(0, v));
   return (
     <Flex className="overflow-hidden rounded-(--radius-2) border border-border bg-(--color-panel-solid)">
-      <KpiTile
-        label="Spend · 7d"
-        value={usd(kpis.spendUsd)}
-        delta={deltas.spend}
-        goodDirection="down"
-        trend={daily.spend}
-      />
-      <KpiTile
-        label="Sessions · 7d"
-        value={int(kpis.sessions)}
-        delta={deltas.sessions}
-        goodDirection="up"
-        trend={daily.sessions}
-      />
-      <KpiTile
-        label="Failure rate · 7d"
-        value={pct(kpis.failureRate)}
-        delta={deltas.failureRatePoints}
-        deltaUnit="pp"
-        goodDirection="down"
-        attention={kpis.failureRate > 0}
-      />
-      <KpiTile label="p95 latency · 7d" value={secs(kpis.p95LatencyS)} last />
+      <KpiCell>
+        <MetricCard
+          title={tileTitle("Spend · 7d")}
+          value={Math.max(0, kpis.spendUsd)}
+          data={spendSeries}
+          labels={daily.labels}
+          theme={theme}
+          formatValue={(v) => usd(Math.max(0, v))}
+          change={deltas.spend != null ? { value: deltas.spend } : null}
+          formatChange={pctDelta}
+          goodDirection="down"
+          sparklineHeight={28}
+        />
+      </KpiCell>
+      <KpiCell>
+        <MetricCard
+          title={tileTitle("Sessions · 7d")}
+          value={kpis.sessions}
+          data={daily.sessions}
+          labels={daily.labels}
+          theme={theme}
+          formatValue={int}
+          change={deltas.sessions != null ? { value: deltas.sessions } : null}
+          formatChange={pctDelta}
+          goodDirection="up"
+          sparklineHeight={28}
+        />
+      </KpiCell>
+      <KpiCell>
+        <MetricCard
+          title={tileTitle("Failure rate · 7d")}
+          value={kpis.failureRate}
+          data={daily.failureRate}
+          labels={daily.labels}
+          theme={theme}
+          formatValue={pct}
+          change={
+            deltas.failureRatePoints != null
+              ? { value: deltas.failureRatePoints }
+              : null
+          }
+          formatChange={ppDelta}
+          goodDirection="down"
+          sparklineHeight={28}
+        />
+      </KpiCell>
+      <KpiCell last>
+        <MetricCard
+          title={tileTitle("p95 latency · 7d")}
+          value={kpis.p95LatencyS}
+          theme={theme}
+          formatValue={secs}
+          change={null}
+          sparklineHeight={28}
+        />
+      </KpiCell>
     </Flex>
   );
 }
 
-function KpiTile({
-  label,
-  value,
-  delta,
-  deltaUnit = "%",
-  goodDirection,
-  attention,
-  trend,
-  last,
-}: {
-  label: string;
-  value: string;
-  delta?: number | null;
-  deltaUnit?: "%" | "pp";
-  goodDirection?: "up" | "down";
-  attention?: boolean;
-  trend?: number[];
-  last?: boolean;
-}) {
-  const theme = useChartTheme();
-  const hasDelta =
-    delta != null && Number.isFinite(delta) && goodDirection != null;
-  const hasTrend = (trend?.length ?? 0) > 1;
+/** One cell of the connected KPI strip: equal width with a divider between. */
+function KpiCell({ children, last }: { children: ReactNode; last?: boolean }) {
   return (
-    <Flex
-      direction="column"
-      gap="1"
+    <div
       className={`min-w-0 flex-1 px-4 py-3 ${last ? "" : "border-(--gray-5) border-r"}`}
     >
-      <Text className="truncate text-[11px] text-gray-10 uppercase tracking-wide">
-        {label}
-      </Text>
-      <Flex align="baseline" gap="2">
-        <Text
-          className={`font-semibold text-[18px] tabular-nums leading-none ${
-            attention ? "text-(--amber-11)" : "text-gray-12"
-          }`}
-        >
-          {value}
-        </Text>
-        {hasDelta ? (
-          <DeltaChip
-            value={delta as number}
-            unit={deltaUnit}
-            goodDirection={goodDirection as "up" | "down"}
-          />
-        ) : null}
-      </Flex>
-      {hasTrend ? (
-        <div className="mt-1 h-6 w-full">
-          <Sparkline
-            data={trend as number[]}
-            theme={theme}
-            height={24}
-            fillOpacity={0.15}
-          />
-        </div>
-      ) : (
-        <Text className="text-[11px] text-gray-9">
-          {hasDelta ? "vs prior 7d" : " "}
-        </Text>
-      )}
-    </Flex>
-  );
-}
-
-function DeltaChip({
-  value,
-  unit,
-  goodDirection,
-}: {
-  value: number;
-  unit: "%" | "pp";
-  goodDirection: "up" | "down";
-}) {
-  const up = value >= 0;
-  const good = goodDirection === "up" ? up : !up;
-  const Arrow = up ? ArrowUpIcon : ArrowDownIcon;
-  const magnitude =
-    unit === "pp"
-      ? Math.abs(value).toFixed(1)
-      : String(Math.abs(Math.round(value)));
-  return (
-    <span
-      className={`inline-flex items-center gap-0.5 font-medium text-[11px] tabular-nums ${
-        good ? "text-(--green-11)" : "text-(--red-11)"
-      }`}
-    >
-      <Arrow size={11} />
-      {magnitude}
-      {unit}
-    </span>
+      {children}
+    </div>
   );
 }
 
