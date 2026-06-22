@@ -276,7 +276,7 @@ export const useSettingsStore = create<SettingsStore>()(
       hedgehogMode: false,
       slotMachineMode: false,
       mcpAppsDisabledServers: [],
-      downloadUpdatesAutomatically: false,
+      downloadUpdatesAutomatically: true,
       lastSeenChangelogVersion: null,
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
       setSlotMachineMode: (enabled) => set({ slotMachineMode: enabled }),
