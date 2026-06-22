@@ -1524,7 +1524,7 @@ export class PostHogAPIClient {
   }
 
   async getScoutMetadata(projectId: number): Promise<ScoutMetadata> {
-    return await this.scoutGet<ScoutMetadata>(projectId, "metadata/current/");
+    return this.scoutGet<ScoutMetadata>(projectId, "metadata/current/");
   }
 
   async updateScoutConfig(
