@@ -95,10 +95,7 @@ export class CanvasDataService {
       const insight = await fetchInsightByShortId(
         this.authService,
         input.shortId,
-        {
-          dateFrom: input.dateRange?.date_from,
-          dateTo: input.dateRange?.date_to,
-        },
+        { dateRange: input.dateRange },
       );
       // Mirror the shape handling in `query`: a SQL insight returns rows (coerce a
       // bare scalar row to a 1-cell array); a trends-style insight returns SERIES

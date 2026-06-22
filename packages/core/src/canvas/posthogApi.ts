@@ -90,7 +90,6 @@ export interface InsightFetchResult {
   columns: string[];
   /** The insight's precomputed `result` (series objects for trends, rows for SQL). */
   results: unknown[];
-  hasMore: boolean;
 }
 
 /**
@@ -98,14 +97,20 @@ export interface InsightFetchResult {
  * the insights endpoint (`/insights/?short_id=…&refresh=blocking`) — the same
  * cache the PostHog UI reads, so the numbers match the insight as shown there.
  * This is how a canvas loads a proven, saved insight instead of re-running a raw
- * query against `/query/`. `dateFrom`/`dateTo` are forwarded as the insight's
- * window override when present. Throws on no selected project, an HTTP failure,
- * or an unknown short id.
+ * query against `/query/`.
+ *
+ * `dateRange` re-scopes the insight for this request only via `filters_override`
+ * (the product's per-request override) — NOT the flat `date_from`/`date_to` query
+ * params, which are LIST filters that would exclude the insight from the result
+ * set. `short_id` still matches the insight regardless, so the lookup is robust;
+ * if the saved insight's window can't be overridden (e.g. a raw-SQL insight) it
+ * simply returns its saved window. Throws on no selected project, an HTTP
+ * failure, or an unknown short id.
  */
 export async function fetchInsightByShortId(
   authService: AuthService,
   shortId: string,
-  opts?: { dateFrom?: string; dateTo?: string },
+  opts?: { dateRange?: { date_from: string; date_to: string } },
 ): Promise<InsightFetchResult> {
   const { apiHost } = await authService.getValidAccessToken();
   const projectId = authService.getState().currentProjectId;
@@ -117,8 +122,9 @@ export async function fetchInsightByShortId(
     short_id: shortId,
     refresh: "blocking",
   });
-  if (opts?.dateFrom) params.set("date_from", opts.dateFrom);
-  if (opts?.dateTo) params.set("date_to", opts.dateTo);
+  if (opts?.dateRange) {
+    params.set("filters_override", JSON.stringify(opts.dateRange));
+  }
 
   const response = await authService.authenticatedFetch(
     fetch,
@@ -134,7 +140,6 @@ export async function fetchInsightByShortId(
       query?: { kind?: string } | null;
       columns?: string[] | null;
       result?: unknown;
-      hasMore?: boolean | null;
     }>;
   };
   const insight = body.results?.[0];
@@ -147,7 +152,6 @@ export async function fetchInsightByShortId(
     queryKind: insight.query?.kind ?? null,
     columns: Array.isArray(insight.columns) ? insight.columns.map(String) : [],
     results: Array.isArray(insight.result) ? insight.result : [],
-    hasMore: !!insight.hasMore,
   };
 }
 

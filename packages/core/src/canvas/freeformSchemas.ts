@@ -93,8 +93,9 @@ export type CanvasDataResult = z.infer<typeof canvasDataResultSchema>;
 // canvas references a SAVED, validated PostHog insight by `short_id` and the host
 // returns its STORED result from the insights endpoint (not a fresh `/query/`
 // run). This is the preferred data path — every metric is a proven saved insight.
-// `dateRange` (the canvas date picker's window) is forwarded as the insight's
-// date override. The result is the same `{ columns, results }` shape as `ph.query`.
+// `dateRange` (the canvas date picker's window) re-scopes the insight for this
+// request via `filters_override`. The result is the same `{ columns, results }`
+// shape as `ph.query`.
 // ---------------------------------------------------------------------------
 export const canvasLoadInsightInput = z.object({
   shortId: z.string().min(1),

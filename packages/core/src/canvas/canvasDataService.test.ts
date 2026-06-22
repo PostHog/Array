@@ -27,7 +27,6 @@ function insight(partial: Partial<InsightFetchResult>): InsightFetchResult {
     queryKind: "TrendsQuery",
     columns: [],
     results: [],
-    hasMore: false,
     ...partial,
   };
 }
@@ -37,37 +36,50 @@ describe("CanvasDataService.loadInsight", () => {
     fetchInsightByShortId.mockReset();
   });
 
-  it("passes a trends-style insight's series objects through untouched", async () => {
-    const series = [
-      { data: [1, 2, 3], days: ["a", "b", "c"], count: 6, label: "Signups" },
-    ];
-    fetchInsightByShortId.mockResolvedValue(
-      insight({ queryKind: "TrendsQuery", columns: [], results: series }),
-    );
+  // Both cases exercise the same result-shape coercion keyed off `queryKind`: a
+  // trends-style insight returns SERIES OBJECTS (pass through untouched — wrapping
+  // them reads every value as 0); a SQL insight returns ROWS (coerce scalars).
+  const series = [
+    { data: [1, 2, 3], days: ["a", "b", "c"], count: 6, label: "Signups" },
+  ];
+  it.each([
+    {
+      name: "trends-style series objects pass through untouched",
+      queryKind: "TrendsQuery",
+      columns: [],
+      results: series,
+      expectedColumns: [],
+      expectedResults: series,
+    },
+    {
+      name: "SQL scalar rows are coerced to 1-cell arrays",
+      queryKind: "HogQLQuery",
+      columns: ["count"],
+      results: [123, [456]],
+      expectedColumns: ["count"],
+      expectedResults: [[123], [456]],
+    },
+  ])(
+    "coerces the result shape by insight type: $name",
+    async ({
+      queryKind,
+      columns,
+      results,
+      expectedColumns,
+      expectedResults,
+    }) => {
+      fetchInsightByShortId.mockResolvedValue(
+        insight({ queryKind, columns, results }),
+      );
 
-    const result = await makeService().loadInsight({ shortId: "abc123" });
+      const result = await makeService().loadInsight({ shortId: "abc123" });
 
-    // Series objects must NOT be wrapped in arrays (wrapping reads every value as 0).
-    expect(result.results).toBe(series);
-    expect(result.columns).toEqual([]);
-  });
+      expect(result.columns).toEqual(expectedColumns);
+      expect(result.results).toEqual(expectedResults);
+    },
+  );
 
-  it("coerces a SQL insight's scalar rows to 1-cell arrays", async () => {
-    fetchInsightByShortId.mockResolvedValue(
-      insight({
-        queryKind: "HogQLQuery",
-        columns: ["count"],
-        results: [123, [456]],
-      }),
-    );
-
-    const result = await makeService().loadInsight({ shortId: "abc123" });
-
-    expect(result.columns).toEqual(["count"]);
-    expect(result.results).toEqual([[123], [456]]);
-  });
-
-  it("forwards the date-picker window as dateFrom/dateTo", async () => {
+  it("forwards the date-picker window as a filters_override", async () => {
     fetchInsightByShortId.mockResolvedValue(insight({}));
 
     await makeService().loadInsight({
@@ -78,7 +90,7 @@ describe("CanvasDataService.loadInsight", () => {
     expect(fetchInsightByShortId).toHaveBeenCalledWith(
       expect.anything(),
       "abc123",
-      { dateFrom: "2026-01-01", dateTo: "2026-02-01" },
+      { dateRange: { date_from: "2026-01-01", date_to: "2026-02-01" } },
     );
   });
 
