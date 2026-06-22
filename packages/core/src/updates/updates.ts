@@ -326,6 +326,7 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       availableVersion: this.availableInfo?.version,
       releaseNotes: this.availableInfo?.releaseNotes ?? undefined,
       releaseDate: this.availableInfo?.releaseDate,
+      downloadSizeBytes: this.availableInfo?.sizeBytes ?? undefined,
     };
   }
 
@@ -338,6 +339,7 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       releaseDate: this.availableInfo?.releaseDate,
       downloadPercent: this.downloadProgress?.percent,
       bytesPerSecond: this.downloadProgress?.bytesPerSecond,
+      downloadSizeBytes: this.availableInfo?.sizeBytes ?? undefined,
     };
   }
 

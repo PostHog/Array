@@ -20,6 +20,7 @@ interface UpdateView {
   releaseNotes: string | null;
   downloadPercent: number | null;
   bytesPerSecond: number | null;
+  downloadSizeBytes: number | null;
   isEnabled: boolean;
 }
 
@@ -31,6 +32,7 @@ export function useUpdateView(): UpdateView {
     releaseNotes: state.releaseNotes,
     downloadPercent: state.downloadPercent,
     bytesPerSecond: state.bytesPerSecond,
+    downloadSizeBytes: state.downloadSizeBytes,
     isEnabled: state.isEnabled,
   }));
 }

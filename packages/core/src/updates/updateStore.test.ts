@@ -34,6 +34,7 @@ describe("deriveUpdateUiStatus", () => {
       releaseDate: null,
       downloadPercent: null,
       bytesPerSecond: null,
+      downloadSizeBytes: null,
     });
   });
 

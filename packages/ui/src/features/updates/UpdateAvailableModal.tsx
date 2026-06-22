@@ -29,6 +29,13 @@ function formatSpeed(bytesPerSecond: number | null): string {
   return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
 }
 
+function formatSize(bytes: number | null): string {
+  if (!bytes || bytes <= 0) return "";
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${Math.round(mb)} MB`;
+}
+
 export function UpdateAvailableModal() {
   const isOpen = useUpdateModalStore((state) => state.isOpen);
   const close = useUpdateModalStore((state) => state.close);
@@ -39,6 +46,7 @@ export function UpdateAvailableModal() {
     releaseNotes,
     downloadPercent,
     bytesPerSecond,
+    downloadSizeBytes,
   } = useUpdateView();
   const installUpdate = useInstallUpdate();
   const hostTRPC = useHostTRPC();
@@ -55,6 +63,7 @@ export function UpdateAvailableModal() {
 
   const targetVersion = version ?? availableVersion;
   const percent = Math.round(downloadPercent ?? 0);
+  const sizeLabel = formatSize(downloadSizeBytes);
   const isDownloading = status === "downloading";
   const isReady = status === "ready" || status === "installing";
 
@@ -94,7 +103,7 @@ export function UpdateAvailableModal() {
               <Dialog.Description>
                 <Text color="gray" size="2">
                   {targetVersion
-                    ? `PostHog Code ${targetVersion}`
+                    ? `PostHog Code ${targetVersion}${sizeLabel ? ` · ${sizeLabel}` : ""}`
                     : "A new version is available"}
                 </Text>
               </Dialog.Description>

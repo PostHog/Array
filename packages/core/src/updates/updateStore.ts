@@ -17,6 +17,7 @@ interface UpdateState {
   releaseDate: string | null;
   downloadPercent: number | null;
   bytesPerSecond: number | null;
+  downloadSizeBytes: number | null;
   isEnabled: boolean;
   menuCheckPending: boolean;
 
@@ -36,6 +37,7 @@ export const updateStore = createStore<UpdateState>((set) => ({
   releaseDate: null,
   downloadPercent: null,
   bytesPerSecond: null,
+  downloadSizeBytes: null,
   isEnabled: false,
   menuCheckPending: false,
 
@@ -68,6 +70,10 @@ export const updateStore = createStore<UpdateState>((set) => ({
         update.bytesPerSecond !== undefined
           ? update.bytesPerSecond
           : state.bytesPerSecond,
+      downloadSizeBytes:
+        update.downloadSizeBytes !== undefined
+          ? update.downloadSizeBytes
+          : state.downloadSizeBytes,
     })),
 }));
 
@@ -84,6 +90,7 @@ export interface UpdateStatusUpdate {
   releaseDate?: string | null;
   downloadPercent?: number | null;
   bytesPerSecond?: number | null;
+  downloadSizeBytes?: number | null;
 }
 
 export function deriveUpdateUiStatus(
@@ -106,6 +113,7 @@ export function deriveUpdateUiStatus(
       releaseDate: payload.releaseDate ?? null,
       downloadPercent: payload.downloadPercent ?? null,
       bytesPerSecond: payload.bytesPerSecond ?? null,
+      downloadSizeBytes: payload.downloadSizeBytes ?? null,
     };
   }
 
@@ -115,6 +123,7 @@ export function deriveUpdateUiStatus(
       availableVersion: payload.availableVersion ?? null,
       releaseNotes: payload.releaseNotes ?? null,
       releaseDate: payload.releaseDate ?? null,
+      downloadSizeBytes: payload.downloadSizeBytes ?? null,
     };
   }
 

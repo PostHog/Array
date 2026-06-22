@@ -24,6 +24,12 @@ function normalizeReleaseNotes(
   return joined.length > 0 ? joined : null;
 }
 
+function pickDownloadSize(files: UpdateInfo["files"]): number | null {
+  if (!files?.length) return null;
+  const sizes = files.map((file) => file.size ?? 0).filter((size) => size > 0);
+  return sizes.length > 0 ? Math.max(...sizes) : null;
+}
+
 @injectable()
 export class ElectronUpdater implements IUpdater {
   constructor() {
@@ -74,6 +80,7 @@ export class ElectronUpdater implements IUpdater {
         releaseNotes: normalizeReleaseNotes(info.releaseNotes),
         releaseDate: info.releaseDate,
         releaseName: info.releaseName,
+        sizeBytes: pickDownloadSize(info.files),
       });
     autoUpdater.on("update-available", l);
     return () => autoUpdater.off("update-available", l);

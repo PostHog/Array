@@ -26,6 +26,7 @@ export const updatesStatusOutput = z.object({
   releaseDate: z.string().optional(),
   downloadPercent: z.number().optional(),
   bytesPerSecond: z.number().optional(),
+  downloadSizeBytes: z.number().nullable().optional(),
   error: z.string().optional(),
 });
 

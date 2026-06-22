@@ -1,12 +1,10 @@
 import { ArrowsClockwise, Gift, Spinner } from "@phosphor-icons/react";
-import { useHostTRPC } from "@posthog/host-router/react";
 import { useUpdateModalStore } from "@posthog/ui/features/updates/updateModalStore";
 import {
   useInstallUpdate,
   useUpdateView,
 } from "@posthog/ui/features/updates/updateStore";
 import { Box } from "@radix-ui/themes";
-import { useMutation } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 
 interface UpdateBannerProps {
@@ -18,10 +16,6 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
     useUpdateView();
   const installUpdate = useInstallUpdate();
   const openModal = useUpdateModalStore((state) => state.open);
-  const hostTRPC = useHostTRPC();
-  const downloadMutation = useMutation(
-    hostTRPC.updates.download.mutationOptions(),
-  );
 
   const isVisible =
     isEnabled &&
@@ -109,8 +103,10 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
                     onClick={openModal}
                     className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
                   >
-                    <span className="font-medium">Update available</span>
-                    <span className="text-[11px] text-[var(--green-a11)]">
+                    <span className="truncate font-medium">
+                      Update available
+                    </span>
+                    <span className="truncate text-[11px] text-[var(--green-a11)]">
                       {availableVersion
                         ? `Version ${availableVersion}`
                         : "View details"}
@@ -118,11 +114,10 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
                   </button>
                   <button
                     type="button"
-                    className="shrink-0 rounded-2 bg-[var(--green-a4)] px-2 py-1 font-medium text-[12px] text-[var(--green-11)] transition-colors hover:bg-[var(--green-a5)] disabled:opacity-60"
-                    onClick={() => downloadMutation.mutate(undefined)}
-                    disabled={downloadMutation.isPending}
+                    onClick={openModal}
+                    className="shrink-0 rounded-2 bg-[var(--green-a4)] px-2.5 py-1 font-medium text-[12px] text-[var(--green-11)] transition-colors hover:bg-[var(--green-a5)]"
                   >
-                    Download
+                    View
                   </button>
                 </div>
               </BannerCard>

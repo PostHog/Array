@@ -3,6 +3,7 @@ export interface UpdateAvailableInfo {
   releaseNotes: string | null;
   releaseDate?: string;
   releaseName?: string | null;
+  sizeBytes?: number | null;
 }
 
 export interface UpdateDownloadProgress {
