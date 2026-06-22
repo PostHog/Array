@@ -1,10 +1,10 @@
 import { Text } from "@components/text";
-import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
 import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import { useThemeColors } from "@/lib/theme";
 import type { SignalReport } from "../types";
+import { formatReportTimestamp } from "../utils";
 
 interface ReportListRowProps {
   report: SignalReport;
@@ -34,12 +34,7 @@ const priorityColorMap: Record<string, string> = {
 
 function ReportListRowComponent({ report, onPress }: ReportListRowProps) {
   const themeColors = useThemeColors();
-  const updatedAt = new Date(report.updated_at);
-  const hoursSince = differenceInHours(new Date(), updatedAt);
-  const timeDisplay =
-    hoursSince < 24
-      ? formatDistanceToNow(updatedAt, { addSuffix: true })
-      : format(updatedAt, "MMM d");
+  const timeDisplay = formatReportTimestamp(new Date(report.updated_at));
 
   const dotKind = statusDotMap[report.status] ?? "muted";
   const dotColor =

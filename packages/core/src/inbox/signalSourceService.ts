@@ -371,19 +371,6 @@ export class SignalSourceService {
     });
   }
 
-  async updateUserAutonomyPriority(
-    client: PostHogAPIClient,
-    priority: string | null,
-  ): Promise<void> {
-    if (priority === null) {
-      await client.deleteSignalUserAutonomyConfig();
-      return;
-    }
-    await client.updateSignalUserAutonomyConfig({
-      autostart_priority: priority,
-    });
-  }
-
   buildSlackNotificationBody(updates: {
     integrationId?: number | null;
     channel?: string | null;

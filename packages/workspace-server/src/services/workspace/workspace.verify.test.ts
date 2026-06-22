@@ -166,10 +166,14 @@ describe("WorkspaceService.verifyWorkspaceExists", () => {
       mode: "local",
       folderPath: scratchPath,
       worktreePath: null,
+      // Marked so the navigation task binder skips folder registration (and the
+      // "initialize git" dialog) for repo-less channel tasks.
+      isScratch: true,
     });
 
     const all = await service.getAllWorkspaces();
     expect(all[TASK_ID]?.folderPath).toBe(scratchPath);
+    expect(all[TASK_ID]?.isScratch).toBe(true);
 
     // It is not backed by a DB row.
     expect(workspaceRepo.findByTaskId(TASK_ID)).toBeNull();

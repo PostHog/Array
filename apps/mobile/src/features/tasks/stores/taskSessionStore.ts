@@ -160,6 +160,8 @@ interface BatchAnalysis {
   hasVisibleAgentOutput: boolean;
   externalUserMessageCount: number;
   agentMessageFinalized: boolean;
+  // Latest compaction state seen in the batch (undefined = no change).
+  compacting?: boolean;
 }
 
 function analyzeEntries(
@@ -173,6 +175,7 @@ function analyzeEntries(
   let hasVisibleAgentOutput = false;
   let externalUserMessageCount = 0;
   let agentMessageFinalized = false;
+  let compacting: boolean | undefined;
 
   for (const entry of entries) {
     const method = entry.notification?.method;
@@ -190,6 +193,18 @@ function analyzeEntries(
       if (method === "_posthog/error") {
         hasTurnFailed = true;
       }
+    }
+
+    if (method === "_posthog/status") {
+      const params = entry.notification?.params as
+        | { status?: string; isComplete?: boolean }
+        | undefined;
+      if (params?.status === "compacting") {
+        compacting = !params.isComplete;
+      }
+    }
+    if (method === "_posthog/compact_boundary") {
+      compacting = false;
     }
 
     if (
@@ -222,6 +237,7 @@ function analyzeEntries(
     hasVisibleAgentOutput,
     externalUserMessageCount,
     agentMessageFinalized,
+    compacting,
   };
 }
 
@@ -284,6 +300,10 @@ export interface TaskSession {
   // here so the response can be routed back to the awaiting tool call.
   cloudPermissionRequestIds?: Record<string, string>;
   pendingPermissions?: Record<string, CloudPendingPermissionRequest>;
+  // True while the agent is compacting context. Steering cancels and resends
+  // the running turn, which would abort an in-flight compaction, so queued
+  // messages are held until compaction ends.
+  isCompacting?: boolean;
 }
 
 interface TaskSessionStore {
@@ -317,6 +337,8 @@ interface TaskSessionStore {
     attachments?: PendingAttachment[],
   ) => Promise<void>;
   flushQueuedMessages: (taskId: string) => Promise<void>;
+  /** Drop one queued message and resend it now as a steer (interrupt + resend). */
+  steerQueuedMessage: (taskId: string, messageId: string) => Promise<void>;
   setConfigOption: (
     taskId: string,
     configId: string,
@@ -794,6 +816,33 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     }
   },
 
+  steerQueuedMessage: async (taskId: string, messageId: string) => {
+    const session = get().getSessionForTask(taskId);
+    // Steering only makes sense against a live turn. Mid-compaction it would
+    // abort the compaction; with no turn running there is nothing to interrupt
+    // and the message drains via the normal turn-end flush.
+    if (!session || !session.isPromptPending || session.isCompacting) return;
+
+    const message = useMessageQueueStore
+      .getState()
+      .getQueue(taskId)
+      .find((m) => m.id === messageId);
+    if (!message) return;
+
+    useMessageQueueStore.getState().remove(taskId, messageId);
+    try {
+      await get().sendInterrupting(
+        taskId,
+        message.content,
+        message.attachments,
+      );
+    } catch (err) {
+      // Restore at the head so a failed steer never silently drops the message.
+      useMessageQueueStore.getState().prepend(taskId, [message]);
+      throw err;
+    }
+  },
+
   getSessionForTask: (taskId: string) => {
     return Object.values(get().sessions).find((s) => s.taskId === taskId);
   },
@@ -951,6 +1000,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
               isPromptPending: nextIsPromptPending,
               awaitingPing: nextAwaitingPing,
               awaitingAgentOutput: nextAwaitingAgentOutput,
+              isCompacting: analysis.compacting ?? current.isCompacting,
               localUserEchoes: echoSet.size > 0 ? echoSet : undefined,
               lastEventAt: events.length > 0 ? Date.now() : current.lastEventAt,
             },

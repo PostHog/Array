@@ -13,7 +13,6 @@ import { useService } from "@posthog/di/react";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS, getCloudUrlFromRegion } from "@posthog/shared";
 import { SELF_DRIVING_SETUP_TASK_FLAG } from "@posthog/shared/constants";
-import type { SignalReportPriority } from "@posthog/shared/types";
 import { useTrackAgentsViewed } from "@posthog/ui/features/agents/hooks/useTrackAgentsViewed";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -34,7 +33,6 @@ import {
   useUserRepositoryIntegration,
 } from "@posthog/ui/features/integrations/useIntegrations";
 import { ScoutsFleetSection } from "@posthog/ui/features/scouts/components/ScoutsFleetSection";
-import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { GitHubIntegrationSection } from "@posthog/ui/features/settings/sections/GitHubIntegrationSection";
 import { SlackInboxNotificationsSettings } from "@posthog/ui/features/settings/sections/SlackInboxNotificationsSettings";
 import {
@@ -52,24 +50,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { toast as sonnerToast } from "sonner";
-
-const AUTOSTART_PRIORITY_OPTIONS: {
-  value: SignalReportPriority;
-  label: string;
-}[] = [
-  { value: "P0", label: "P0 – Critical only" },
-  { value: "P1", label: "P1 – High and above" },
-  { value: "P2", label: "P2 – Medium and above" },
-  { value: "P3", label: "P3 – Low and above" },
-  { value: "P4", label: "P4 – All priorities" },
-];
-
-const NEVER_AUTOSTART_VALUE = "__never__";
-
-const USER_AUTOSTART_OPTIONS: { value: string; label: string }[] = [
-  { value: NEVER_AUTOSTART_VALUE, label: "Never – review everything first" },
-  ...AUTOSTART_PRIORITY_OPTIONS,
-];
 
 const AUTONOMY_SETUP_PROMPT = `Set up PostHog Self-driving for this product.
 
@@ -101,7 +81,6 @@ export function ConfigureAgentsSection() {
     handleSetupCancel,
     userAutonomyConfig,
     userAutonomyConfigLoading,
-    handleUpdateUserAutonomyPriority,
     evaluationsUrl,
   } = useSignalSourceManager();
   const { hasGithubIntegration, isLoadingIntegrations } =
@@ -113,8 +92,6 @@ export function ConfigureAgentsSection() {
   } = useIntegrations();
   const isLoadingSlack = isLoadingIntegrations || isLoadingSlackIntegrations;
   const showSetupTask = useFeatureFlag(SELF_DRIVING_SETUP_TASK_FLAG);
-  const userAutostartPriority =
-    userAutonomyConfig?.autostart_priority ?? NEVER_AUTOSTART_VALUE;
 
   // Derive from the query data, not the store-backed `hasGithubIntegration`: the
   // store is hydrated by a passive effect that lags the query by a render, so the
@@ -226,47 +203,6 @@ export function ConfigureAgentsSection() {
           showHeader={false}
           showTopBorder={false}
         />
-      </Subsection>
-
-      <Subsection
-        title="Auto-start"
-        description="Self-driving can start coding tasks automatically when a report is immediately actionable and assigned to you."
-      >
-        <Flex
-          align="center"
-          justify="between"
-          gap="4"
-          className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5"
-        >
-          <Flex direction="column" gap="1" className="min-w-0">
-            <Text className="font-medium text-[13px] text-gray-12">
-              Your PR auto-start threshold
-            </Text>
-            <Text className="max-w-xl text-[12px] text-gray-11 leading-snug">
-              Reports at or above this priority can start an implementation task
-              for you. The backend deduplicates per report, and these runs count
-              toward usage.
-            </Text>
-          </Flex>
-          {userAutonomyConfigLoading ? (
-            <Box className="h-8 w-[260px] shrink-0 animate-pulse rounded bg-(--gray-3)" />
-          ) : (
-            <SettingsOptionSelect
-              value={userAutostartPriority}
-              options={USER_AUTOSTART_OPTIONS}
-              ariaLabel="PR auto-start threshold"
-              className="min-w-[260px] max-w-[300px]"
-              onValueChange={(value) => {
-                const priority = value === NEVER_AUTOSTART_VALUE ? null : value;
-                track(ANALYTICS_EVENTS.AGENTS_ACTION, {
-                  action_type: "change_autostart_priority",
-                  autostart_priority: priority,
-                });
-                void handleUpdateUserAutonomyPriority(priority);
-              }}
-            />
-          )}
-        </Flex>
       </Subsection>
 
       <Subsection

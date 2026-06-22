@@ -270,6 +270,17 @@ export class TaskCreationSaga extends Saga<
               ? `${messageText}\n\n${channelContextText}`
               : channelContextText
             : messageText;
+
+          // The sandbox echoes pendingUserMessage back once it boots; until then
+          // the optimistic placeholder would show the bare task description with
+          // no CONTEXT.md chip. Hand the channel-context-bearing message to the
+          // session service so it seeds the placeholder right away.
+          if (channelContextText && pendingUserMessage) {
+            this.deps.sessionService.rememberInitialCloudPrompt(
+              task.id,
+              pendingUserMessage,
+            );
+          }
           const taskRun = await this.deps.posthogClient.createTaskRun(task.id, {
             environment: "cloud",
             mode: "interactive",
@@ -281,6 +292,7 @@ export class TaskCreationSaga extends Saga<
             prAuthorshipMode,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
+            homeQuickAction: input.homeQuickActionLabel,
             initialPermissionMode: input.adapter
               ? (input.executionMode ??
                 (input.adapter === "codex" ? "auto" : "plan"))

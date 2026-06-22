@@ -1,5 +1,4 @@
-import { ArrowRightIcon, GithubLogoIcon } from "@phosphor-icons/react";
-import type { SignalReportPriority } from "@posthog/shared/domain-types";
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { DataSourceSetup } from "@posthog/ui/features/inbox/components/DataSourceSetup";
 import {
   SignalSourceToggles,
@@ -8,26 +7,10 @@ import {
 import { useSignalSourceManager } from "@posthog/ui/features/inbox/hooks/useSignalSourceManager";
 import { useRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
-import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { AutostartBaseBranchesSettings } from "@posthog/ui/features/settings/sections/AutostartBaseBranchesSettings";
 import { GitHubIntegrationSection } from "@posthog/ui/features/settings/sections/GitHubIntegrationSection";
 import { SlackInboxNotificationsSettings } from "@posthog/ui/features/settings/sections/SlackInboxNotificationsSettings";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
-
-const PRIORITY_OPTIONS: { value: SignalReportPriority; label: string }[] = [
-  { value: "P0", label: "P0 — Critical only" },
-  { value: "P1", label: "P1 — High and above" },
-  { value: "P2", label: "P2 — Medium and above" },
-  { value: "P3", label: "P3 — Low and above" },
-  { value: "P4", label: "P4 — All priorities" },
-];
-
-const NEVER_VALUE = "__never__";
-
-const USER_PRIORITY_OPTIONS: { value: string; label: string }[] = [
-  { value: NEVER_VALUE, label: "Never – opt out of auto-assigned tasks" },
-  ...PRIORITY_OPTIONS,
-];
 
 interface SignalSourcesSettingsProps {
   /** Slack channel combobox is inside a Radix modal dialog (Inbox configuration). */
@@ -53,9 +36,6 @@ export function SignalSourcesSettings({
     handleSetup,
     handleSetupComplete,
     handleSetupCancel,
-    userAutonomyConfig,
-    userAutonomyConfigLoading,
-    handleUpdateUserAutonomyPriority,
     teamConfig,
     teamConfigLoading,
     handleUpdateAutostartBaseBranches,
@@ -63,9 +43,6 @@ export function SignalSourcesSettings({
 
   const { hasGithubIntegration, isLoadingIntegrations } =
     useRepositoryIntegration();
-
-  const userPriorityValue =
-    userAutonomyConfig?.autostart_priority ?? NEVER_VALUE;
 
   return (
     <Flex direction="column" gap="4">
@@ -116,43 +93,6 @@ export function SignalSourcesSettings({
           </Box>
         </Tooltip>
       )}
-      <Flex
-        direction="column"
-        gap="2"
-        pt="3"
-        style={{ borderTop: "1px dashed var(--gray-5)" }}
-      >
-        <Flex direction="column" gap="1">
-          <Flex align="center" gap="2">
-            <Box className="shrink-0 text-(--gray-11)">
-              <GithubLogoIcon size={16} />
-            </Box>
-            <Text className="font-medium text-(--gray-12) text-sm">
-              Your PR auto-start threshold
-            </Text>
-          </Flex>
-          <Text className="text-(--gray-11) text-[13px]">
-            Automatically start tasks assigned to you for reports at or above
-            this priority. These count toward your usage. Choose
-            &quot;Never&quot; to opt out.
-          </Text>
-        </Flex>
-        {userAutonomyConfigLoading ? (
-          <Box className="h-[32px] w-[260px] animate-pulse rounded bg-gray-3" />
-        ) : (
-          <SettingsOptionSelect
-            value={userPriorityValue}
-            options={USER_PRIORITY_OPTIONS}
-            ariaLabel="PR auto-start threshold"
-            className="min-w-[260px] max-w-[300px]"
-            onValueChange={(value) =>
-              void handleUpdateUserAutonomyPriority(
-                value === NEVER_VALUE ? null : value,
-              )
-            }
-          />
-        )}
-      </Flex>
       <AutostartBaseBranchesSettings
         branches={teamConfig?.autostart_base_branches ?? {}}
         onChange={(next) => void handleUpdateAutostartBaseBranches(next)}

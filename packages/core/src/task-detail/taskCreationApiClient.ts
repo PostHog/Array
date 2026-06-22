@@ -13,6 +13,7 @@ export interface CreateTaskRunClientOptions {
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: string;
+  homeQuickAction?: string;
 }
 
 export interface StartTaskRunClientOptions {

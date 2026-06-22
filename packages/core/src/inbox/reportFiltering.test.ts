@@ -99,12 +99,25 @@ describe("filterReportsBySearch", () => {
 
 describe("buildSignalReportListOrdering", () => {
   it.each([
-    ["total_weight", "desc", "status,-total_weight"],
-    ["created_at", "asc", "status,created_at"],
-    ["signal_count", "desc", "status,-signal_count"],
-  ] as const)("orders by status then %s (%s)", (field, direction, expected) => {
-    expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
-  });
+    ["total_weight", "desc", "status,-total_weight,priority"],
+    ["created_at", "asc", "status,created_at,priority"],
+    ["signal_count", "desc", "status,-signal_count,priority"],
+  ] as const)(
+    "orders by status then %s (%s), tiebreaking by priority",
+    (field, direction, expected) => {
+      expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
+    },
+  );
+
+  it.each([
+    ["priority", "asc", "status,priority,-created_at"],
+    ["priority", "desc", "status,-priority,-created_at"],
+  ] as const)(
+    "tiebreaks %s (%s) by newest first",
+    (field, direction, expected) => {
+      expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
+    },
+  );
 
   it("does not float the current user's reports via ordering", () => {
     expect(buildSignalReportListOrdering("priority", "asc")).not.toContain(

@@ -60,6 +60,8 @@ type Command = {
   keywords?: string;
   icon: React.ReactNode;
   action: CommandMenuAction;
+  /** Channel in scope for the bluebird open-channel / open-task actions. */
+  channelId?: string;
   onRun: () => void;
 };
 
@@ -282,6 +284,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
             keywords: channel?.name,
             icon: <TaskCommandIcon task={task} />,
             action: "open-task" as CommandMenuAction,
+            channelId: bluebirdEnabled ? channel?.id : undefined,
             onRun: () => {
               closeSettingsDialog();
               // Bluebird: a task filed to a channel opens in the channel-
@@ -310,6 +313,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           keywords: "channel",
           icon: <HashIcon size={12} className="text-gray-11" />,
           action: "open-channel" as CommandMenuAction,
+          channelId: channel.id,
           onRun: () => {
             closeSettingsDialog();
             navigateToChannel(channel.id);
@@ -334,7 +338,10 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     if (id === null) return;
     const cmd = allCommands.find((c) => c.id === id);
     if (!cmd) return;
-    track(ANALYTICS_EVENTS.COMMAND_MENU_ACTION, { action_type: cmd.action });
+    track(ANALYTICS_EVENTS.COMMAND_MENU_ACTION, {
+      action_type: cmd.action,
+      channel_id: cmd.channelId,
+    });
     cmd.onRun();
     onOpenChange(false);
     setQuery("");

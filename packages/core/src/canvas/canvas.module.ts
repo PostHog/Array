@@ -2,26 +2,21 @@ import { ContainerModule } from "inversify";
 import { CanvasDataService } from "./canvasDataService";
 import { CanvasTemplatesService } from "./canvasTemplatesService";
 import { ChannelTasksService } from "./channelTasksService";
-import { DashboardQueryService } from "./dashboardQueryService";
 import { DashboardsService } from "./dashboardsService";
 import { DESKTOP_FS_CLIENT, DesktopFsClient } from "./desktopFsClient";
 import {
   CANVAS_DATA_SERVICE,
   CANVAS_TEMPLATES_SERVICE,
   CHANNEL_TASKS_SERVICE,
-  DASHBOARD_QUERY_SERVICE,
   DASHBOARDS_SERVICE,
 } from "./identifiers";
 
-// Host-agnostic canvas services (dashboards + their HogQL refresh). They only
+// Host-agnostic canvas services (dashboards + freeform canvas data). They only
 // need AuthService + fetch, so they live in @posthog/core and any host (desktop,
 // web, server) can bind them by loading this module.
 export const canvasCoreModule = new ContainerModule(({ bind }) => {
   bind(DesktopFsClient).toSelf().inSingletonScope();
   bind(DESKTOP_FS_CLIENT).toService(DesktopFsClient);
-
-  bind(DashboardQueryService).toSelf().inSingletonScope();
-  bind(DASHBOARD_QUERY_SERVICE).toService(DashboardQueryService);
 
   bind(CanvasDataService).toSelf().inSingletonScope();
   bind(CANVAS_DATA_SERVICE).toService(CanvasDataService);
@@ -33,7 +28,7 @@ export const canvasCoreModule = new ContainerModule(({ bind }) => {
   bind(CHANNEL_TASKS_SERVICE).toService(ChannelTasksService);
 
   // Canvas templates: host-agnostic (pure prompt strings), no deps. The
-  // host-router canvas-templates router and CanvasGenService resolve it by token.
+  // host-router canvas-templates router resolves it by token.
   bind(CanvasTemplatesService).toSelf().inSingletonScope();
   bind(CANVAS_TEMPLATES_SERVICE).toService(CanvasTemplatesService);
 });
