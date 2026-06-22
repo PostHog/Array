@@ -41,6 +41,7 @@ import { SUSPENSION_SERVICE } from "../suspension/identifiers";
 import type { SuspensionService } from "../suspension/suspension";
 import {
   deleteWorktree as deleteGitWorktree,
+  listLinkedWorktrees,
   listTwigWorktrees,
   resolveLocalWorktreePath,
 } from "../worktree-query/worktree-query";
@@ -434,28 +435,87 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
   ): Promise<CheckWorktreeBranchOutput> {
     const { mainRepoPath, branch } = options;
 
-    const defaultBranch = await getDefaultBranch(mainRepoPath, {
-      abortSignal: signal,
-    }).catch(() =>
-      getCurrentBranch(mainRepoPath, { abortSignal: signal }).then(
-        (b) => b ?? "main",
+    const [existingWorktree, defaultBranch] = await Promise.all([
+      this.findExistingWorktreeForBranch(mainRepoPath, branch),
+      getDefaultBranch(mainRepoPath, { abortSignal: signal }).catch(() =>
+        getCurrentBranch(mainRepoPath, { abortSignal: signal }).then(
+          (b) => b ?? "main",
+        ),
       ),
-    );
+    ]);
+    // Reuse is only offered for an *unused* worktree. If a task already holds
+    // the worktree on this branch, report that task instead so the renderer can
+    // block the duplicate and point the user at it.
+    let worktree: {
+      existingWorktreePath: string | null;
+      existingWorktreeTaskId: string | null;
+    } = { existingWorktreePath: null, existingWorktreeTaskId: null };
+    if (existingWorktree) {
+      const [occupant] = this.getWorktreeTasks(existingWorktree.worktreePath);
+      worktree = occupant
+        ? {
+            existingWorktreePath: null,
+            existingWorktreeTaskId: occupant.taskId,
+          }
+        : {
+            existingWorktreePath: existingWorktree.worktreePath,
+            existingWorktreeTaskId: null,
+          };
+    }
+
     if (branch === defaultBranch) {
-      return { status: "trunk" };
+      return { status: "trunk", ...worktree };
     }
 
     if (await branchExists(mainRepoPath, branch, { abortSignal: signal })) {
-      return { status: "local" };
+      return { status: "local", ...worktree };
     }
 
     if (
       await remoteBranchExists(mainRepoPath, branch, { abortSignal: signal })
     ) {
-      return { status: "remote-only" };
+      return { status: "remote-only", ...worktree };
     }
 
-    return { status: "missing" };
+    return { status: "missing", ...worktree };
+  }
+
+  /**
+   * Finds a worktree already checked out on `branch` in any location, returning
+   * it as a `WorktreeInfo` ready to reuse, or null when none exists. Worktrees
+   * outside the managed base path qualify too: the stored `path` column is the
+   * source of truth for a task's worktree, so an externally-created worktree
+   * round-trips just like a managed one.
+   */
+  private async findExistingWorktreeForBranch(
+    mainRepoPath: string,
+    branch: string,
+  ): Promise<WorktreeInfo | null> {
+    const linkedWorktrees = await listLinkedWorktrees(mainRepoPath);
+    const match = linkedWorktrees.find((wt) => wt.branch === branch);
+    if (!match) return null;
+
+    // `worktreeName` is a cosmetic label only; `worktreePath` is authoritative.
+    // Recover the name layout-aware for managed worktrees: new layout is
+    // `<base>/<name>/<repo>` (name is the parent dir), legacy is
+    // `<base>/<repo>/<name>` (name is the final segment). For an external
+    // worktree neither layout holds, so the final segment is a sensible label.
+    const repoName = path.basename(mainRepoPath);
+    const finalSegment = path.basename(match.worktreePath);
+    const worktreeName =
+      finalSegment === repoName
+        ? path.basename(path.dirname(match.worktreePath))
+        : finalSegment;
+
+    // baseBranch/createdAt are unknown for an already-existing worktree; mirror
+    // WorktreeManager.listWorktrees() and leave them empty rather than fabricate.
+    return {
+      worktreePath: match.worktreePath,
+      worktreeName,
+      branchName: branch,
+      baseBranch: "",
+      createdAt: "",
+    };
   }
 
   async createWorkspace(options: CreateWorkspaceInput): Promise<WorkspaceInfo> {
@@ -489,6 +549,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       branch,
       useExistingBranch,
       allowRemoteBranchCheckout,
+      reuseExistingWorktree,
     } = options;
 
     const existingWorkspace = await this.getWorkspaceInfo(taskId);
@@ -586,7 +647,26 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         this.provisioning.emitOutput(taskId, data);
       };
 
-      if (isTrunkSelected) {
+      const existingWorktree = reuseExistingWorktree
+        ? await this.findExistingWorktreeForBranch(mainRepoPath, selectedBranch)
+        : null;
+
+      // Reuse only an unused worktree. The renderer already gates on this, but
+      // re-check here so a lost race (the worktree got claimed between preflight
+      // and now) fails the saga step rather than sharing one worktree across two
+      // tasks.
+      if (existingWorktree) {
+        const [occupant] = this.getWorktreeTasks(existingWorktree.worktreePath);
+        if (occupant) {
+          throw new Error(
+            `Worktree at ${existingWorktree.worktreePath} is already used by task ${occupant.taskId}`,
+          );
+        }
+        this.log.info(
+          `Reusing existing worktree for branch ${selectedBranch}: ${existingWorktree.worktreePath}`,
+        );
+        worktree = existingWorktree;
+      } else if (isTrunkSelected) {
         this.log.info(
           `Trunk branch selected (${defaultBranch}), creating detached worktree`,
         );

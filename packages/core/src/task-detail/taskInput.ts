@@ -10,6 +10,7 @@ export interface PrepareTaskInputOptions {
   workspaceMode: WorkspaceMode;
   branch?: string | null;
   allowRemoteBranchCheckout?: boolean;
+  reuseExistingWorktree?: boolean;
   executionMode?: ExecutionMode;
   adapter?: "claude" | "codex";
   model?: string;
@@ -42,6 +43,7 @@ export function prepareTaskInput(
     workspaceMode: options.workspaceMode,
     branch: options.branch,
     allowRemoteBranchCheckout: options.allowRemoteBranchCheckout,
+    reuseExistingWorktree: options.reuseExistingWorktree,
     executionMode: options.executionMode,
     adapter: options.adapter,
     model: options.model,

@@ -23,6 +23,9 @@ export interface TaskCreationInput {
   // When the branch exists only on the remote, opt in to fetching and checking
   // it out locally into the worktree (set after the user confirms).
   allowRemoteBranchCheckout?: boolean;
+  // When a worktree is already checked out on the branch, opt in to reusing it
+  // for this task instead of creating a new one (set after the user confirms).
+  reuseExistingWorktree?: boolean;
   githubIntegrationId?: number;
   githubUserIntegrationId?: string;
   executionMode?: ExecutionMode;

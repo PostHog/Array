@@ -100,6 +100,7 @@ export class TaskCreationSaga extends Saga<
             mode: workspaceMode,
             branch: branch ?? undefined,
             allowRemoteBranchCheckout: input.allowRemoteBranchCheckout,
+            reuseExistingWorktree: input.reuseExistingWorktree,
           });
         },
         rollback: async () => {
