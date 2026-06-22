@@ -240,6 +240,26 @@ export interface ScoutConfig {
   created_at: string;
 }
 
+/** A team's enforced scout run caps and current usage, as dispatch applies them. */
+export interface ScoutLimits {
+  max_runs_per_tick: number;
+  /** Null when the daily budget is uncapped. */
+  max_runs_per_day: number | null;
+  runs_today: number;
+  /** Null when the daily budget is uncapped. */
+  runs_remaining_today: number | null;
+}
+
+/**
+ * Team-scoped scout metadata from the `signals-scout` flag: enrollment, an optional
+ * announcement banner, and the enforced run limits. `banner_message` is null when unset.
+ */
+export interface ScoutMetadata {
+  enrolled: boolean;
+  banner_message: string | null;
+  limits: ScoutLimits;
+}
+
 export interface ScoutRun {
   run_id: string;
   skill_name: string;
@@ -1501,6 +1521,10 @@ export class PostHogAPIClient {
       { results: ScoutConfig[] } | ScoutConfig[]
     >(projectId, "configs/");
     return Array.isArray(data) ? data : (data.results ?? []);
+  }
+
+  async getScoutMetadata(projectId: number): Promise<ScoutMetadata> {
+    return await this.scoutGet<ScoutMetadata>(projectId, "metadata/current/");
   }
 
   async updateScoutConfig(
