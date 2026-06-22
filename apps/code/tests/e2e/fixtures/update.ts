@@ -78,6 +78,31 @@ export function isAppRunning(): boolean {
   }
 }
 
+// Executable paths of the running main app processes (not helpers). Used to prove
+// Squirrel's auto-relaunched process is running from the swapped bundle.
+export function runningAppExecutables(): string[] {
+  let pids: string[];
+  try {
+    pids = execFileSync("pgrep", ["-x", "PostHog Code"], { encoding: "utf8" })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+  return pids
+    .map((pid) => {
+      try {
+        return execFileSync("ps", ["-p", pid, "-o", "comm="], {
+          encoding: "utf8",
+        }).trim();
+      } catch {
+        return "";
+      }
+    })
+    .filter(Boolean);
+}
+
 export function killApp(): void {
   try {
     execFileSync("pkill", ["-x", "PostHog Code"]);

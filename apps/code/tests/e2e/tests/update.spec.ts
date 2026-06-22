@@ -13,8 +13,10 @@ import {
   prepareRunApp,
   RUN_APP,
   RUN_APP_BIN,
+  RUN_DIR,
   readBundleVersion,
   readMainLog,
+  runningAppExecutables,
   SHIPIT_DIR,
   shipItEvidence,
   startFeedServer,
@@ -122,6 +124,18 @@ test.describe("macOS auto-update", () => {
         120_000,
         "bundle was not swapped to the new version",
       );
+
+      // Squirrel relaunches the installed app (isForceRunAfter=true); confirm the
+      // auto-relaunched process actually came up running from the swapped bundle.
+      await waitUntil(
+        () => runningAppExecutables().some((exe) => exe.includes(RUN_DIR)),
+        60_000,
+        "Squirrel did not auto-relaunch the updated app",
+      );
+      console.log(
+        `Auto-relaunched from swapped bundle: ${runningAppExecutables().join(", ")}`,
+      );
+
       killApp();
       await waitUntil(
         () => !isAppRunning(),
