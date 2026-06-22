@@ -9,9 +9,15 @@ name: Code Update E2E (macOS)
 on:
   # Temporary: also run on this branch so the harness can be exercised on the PR.
   # Remove this push trigger once merged; nightly + dispatch is the steady state.
+  # Docs and the local-only run-from-ci helper do not affect CI, so skip rebuilds
+  # for those and use workflow_dispatch / the nightly schedule on demand instead.
   push:
     branches:
       - test/macos-auto-update-e2e
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "apps/code/scripts/dev-update/run-from-ci.sh"
   schedule:
     - cron: "0 7 * * *"
   workflow_dispatch:
