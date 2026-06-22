@@ -5,7 +5,14 @@ import {
   type HostToCanvasMessage,
 } from "@posthog/core/canvas/freeformSchemas";
 import { logger } from "@posthog/ui/shell/logger";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { buildSandboxDocument, type SandboxMode } from "./sandboxRuntime";
 
 const log = logger.scope("freeform-canvas");
@@ -105,12 +112,16 @@ export function FreeformCanvas({
   // reload it re-announces "ready", so mark it not-ready until then. Ref write
   // only — no state update, no extra render.
   // biome-ignore lint/correctness/useExhaustiveDependencies: srcDoc identity tracks a reload.
-  useEffect(() => {
+  useLayoutEffect(() => {
     readyRef.current = false;
   }, [srcDoc]);
 
   // Subscribed once for the component's life; reads latest props via the ref.
-  useEffect(() => {
+  // Layout effect (not passive): the listener must be attached during commit,
+  // before the browser yields to the iframe's load task — otherwise the iframe's
+  // one-shot "ready" (and early data-request/error/resize) can fire before the
+  // listener exists and be lost, leaving the canvas blank on a cold first open.
+  useLayoutEffect(() => {
     const post = (msg: HostToCanvasMessage) => {
       iframeRef.current?.contentWindow?.postMessage(msg, "*");
     };
@@ -192,6 +203,14 @@ export function FreeformCanvas({
       // isolation boundary).
       sandbox="allow-scripts"
       srcDoc={srcDoc}
+      // Race-free init: by `load`, the iframe's module bootstrap has executed
+      // (so its message listener is registered and "ready" already posted), so
+      // posting init here reliably delivers the code — even if the one-shot
+      // "ready" message was missed. Re-posting is idempotent (mountSeq dedupes).
+      onLoad={() => {
+        readyRef.current = true;
+        postInit();
+      }}
       className="w-full border-0 bg-white"
       style={{ height: height ? `${height}px` : "100%", minHeight: "100%" }}
     />
