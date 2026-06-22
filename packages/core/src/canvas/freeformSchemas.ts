@@ -158,9 +158,18 @@ export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
     mode: z.enum(["edit", "view"]),
     // Present when analytics/replay should run in the iframe. Absent = no capture.
     analytics: canvasAnalyticsConfigSchema.optional(),
-    // The appearance to render in. Re-sent (like `code`) when the host theme
-    // changes, so the canvas tracks light/dark live. Absent = light.
+    // The appearance to render in. Carried on `init` so the first render is
+    // already correct; live theme changes use the `set-theme` frame below
+    // (which re-themes without remounting). Absent = light.
     theme: canvasThemeSchema.optional(),
+  }),
+  // Live theme change: re-apply light/dark WITHOUT remounting the app. Sent on
+  // its own (not folded into `init`) so toggling the host theme — or an OS
+  // dark/light flip under the "system" preference — doesn't reset canvas state.
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("set-theme"),
+    theme: canvasThemeSchema,
   }),
   // Reply to a data-request, correlated by `id`.
   z.object({

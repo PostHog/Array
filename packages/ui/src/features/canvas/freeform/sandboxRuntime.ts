@@ -172,7 +172,7 @@ export function buildSandboxDocument(
     // --- theme: mirror the host's light/dark by toggling \`.dark\` on the root,
     // exactly as the main app does. Quill's CSS tokens (:root / .dark) and the
     // \`dark:\` Tailwind utilities both key off this class, so the whole canvas
-    // flips. Re-applied on every init, so a host theme change updates live.
+    // flips. Applied on init and on every live \`set-theme\` frame.
     const applyTheme = (theme) =>
       document.documentElement.classList.toggle("dark", theme === "dark");
 
@@ -271,6 +271,9 @@ export function buildSandboxDocument(
         applyTheme(d.theme);
         if (d.analytics) void bootAnalytics(d.analytics);
         void mount(d.code);
+      } else if (d.type === "set-theme") {
+        // Re-theme in place — no mount(), so the app keeps all its state.
+        applyTheme(d.theme);
       } else if (d.type === "data-response") {
         const p = pending.get(d.id);
         if (!p) return;

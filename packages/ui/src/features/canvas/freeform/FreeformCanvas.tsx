@@ -6,7 +6,14 @@ import {
 } from "@posthog/core/canvas/freeformSchemas";
 import { logger } from "@posthog/ui/shell/logger";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { buildSandboxDocument, type SandboxMode } from "./sandboxRuntime";
 
 const log = logger.scope("freeform-canvas");
@@ -112,12 +119,16 @@ export function FreeformCanvas({
   // reload it re-announces "ready", so mark it not-ready until then. Ref write
   // only — no state update, no extra render.
   // biome-ignore lint/correctness/useExhaustiveDependencies: srcDoc identity tracks a reload.
-  useEffect(() => {
+  useLayoutEffect(() => {
     readyRef.current = false;
   }, [srcDoc]);
 
   // Subscribed once for the component's life; reads latest props via the ref.
-  useEffect(() => {
+  // Layout effect (not passive): the listener must be attached during commit,
+  // before the browser yields to the iframe's load task — otherwise the iframe's
+  // one-shot "ready" (and early data-request/error/resize) can fire before the
+  // listener exists and be lost, leaving the canvas blank on a cold first open.
+  useLayoutEffect(() => {
     const post = (msg: HostToCanvasMessage) => {
       iframeRef.current?.contentWindow?.postMessage(msg, "*");
     };
@@ -182,13 +193,35 @@ export function FreeformCanvas({
   // NB: reference code/mode/analytics DIRECTLY here (not via postInit, which
   // reads them off a ref) — otherwise the exhaustive-deps lint strips them from
   // the array as "unused" and the effect goes stale, never re-posting on change.
+  // Theme is NOT a dep: a re-init remounts the app (new Blob module = fresh
+  // component = reset state), so theme changes go through `set-theme` below
+  // instead. init still carries the current theme so the next mount is correct.
   useEffect(() => {
     if (!readyRef.current) return;
     iframeRef.current?.contentWindow?.postMessage(
-      { channel: "posthog-canvas", type: "init", code, mode, analytics, theme },
+      {
+        channel: "posthog-canvas",
+        type: "init",
+        code,
+        mode,
+        analytics,
+        theme: latest.current.theme,
+      },
       "*",
     );
-  }, [code, mode, analytics, theme]);
+  }, [code, mode, analytics]);
+
+  // Live theme change: re-theme the running canvas in place (no remount), so a
+  // host theme toggle — or an OS light/dark flip under "system" — preserves all
+  // canvas state (filters, forms, scroll). Skipped until the iframe is ready;
+  // the init above already carries the correct theme for the first render.
+  useEffect(() => {
+    if (!readyRef.current) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      { channel: "posthog-canvas", type: "set-theme", theme },
+      "*",
+    );
+  }, [theme]);
 
   return (
     <iframe
@@ -199,6 +232,14 @@ export function FreeformCanvas({
       // isolation boundary).
       sandbox="allow-scripts"
       srcDoc={srcDoc}
+      // Race-free init: by `load`, the iframe's module bootstrap has executed
+      // (so its message listener is registered and "ready" already posted), so
+      // posting init here reliably delivers the code — even if the one-shot
+      // "ready" message was missed. Re-posting is idempotent (mountSeq dedupes).
+      onLoad={() => {
+        readyRef.current = true;
+        postInit();
+      }}
       // bg tracks the host theme so there's no white flash in dark mode before
       // the iframe paints; the canvas body uses the same --background token.
       className="w-full border-0 bg-background"
