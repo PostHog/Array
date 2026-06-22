@@ -8,7 +8,14 @@ import type {
 import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import { TypedEventEmitter } from "@posthog/shared";
 // biome-ignore lint/style/noRestrictedImports: Electron-only by design; see host-boundary-allowlist.json
-import { clipboard, Menu, MenuItem, shell, WebContentsView } from "electron";
+import {
+  clipboard,
+  Menu,
+  MenuItem,
+  session,
+  shell,
+  WebContentsView,
+} from "electron";
 import { inject, injectable, preDestroy } from "inversify";
 import type { ElectronMainWindow } from "../../platform-adapters/electron-main-window";
 import { logger } from "../../utils/logger";
@@ -41,6 +48,29 @@ export class BrowserService
     private readonly mainWindow: ElectronMainWindow,
   ) {
     super();
+    this.setupSession();
+  }
+
+  // Grant browser permission requests (clipboard, notifications, etc.) for
+  // localhost origins — this is a developer tool and local dev servers need
+  // these APIs. All other origins are denied because we have no permission
+  // prompt UI.
+  private setupSession(): void {
+    const browserSession = session.fromPartition("persist:browser");
+    browserSession.setPermissionRequestHandler(
+      (webContents, _permission, callback) => {
+        try {
+          const { hostname } = new URL(webContents.getURL());
+          if (hostname === "localhost" || hostname === "127.0.0.1") {
+            callback(true);
+            return;
+          }
+        } catch {
+          // ignore malformed URLs
+        }
+        callback(false);
+      },
+    );
   }
 
   private static readonly SAFE_PROTOCOLS = new Set(["https:", "http:"]);
