@@ -85,8 +85,8 @@ import {
   usePrefetchDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
-import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
+import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -507,7 +507,10 @@ function DashboardRow({
           <TooltipContent side="right">{dashboard.name}</TooltipContent>
         </Tooltip>
         <ContextMenuContent>
-          <ContextMenuItem onClick={() => setRenaming(true)}>
+          <ContextMenuItem
+            disabled={isDeleting}
+            onClick={() => setRenaming(true)}
+          >
             <PencilSimpleIcon size={14} />
             Rename…
           </ContextMenuItem>
