@@ -399,9 +399,17 @@ function DashboardRow({
     useDashboardMutations();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  // The name typed on a failed rename, kept so the retry keeps the user's text.
+  const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  // Bumped on failure to remount the editor, resetting its one-shot submit guard.
+  const [renameAttempt, setRenameAttempt] = useState(0);
+
+  const closeRename = () => {
+    setRenaming(false);
+    setRenameDraft(null);
+  };
 
   const onRename = async (next: string) => {
-    setRenaming(false);
     try {
       await renameDashboard(dashboard.id, next);
       track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
@@ -411,7 +419,11 @@ function DashboardRow({
         dashboard_id: dashboard.id,
         success: true,
       });
+      closeRename();
     } catch (error) {
+      // Keep the editor open with the typed text so the rename can be retried.
+      setRenameDraft(next);
+      setRenameAttempt((n) => n + 1);
       track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
         action_type: "rename",
         surface: "sidebar",
@@ -467,9 +479,10 @@ function DashboardRow({
           {iconForTemplate(dashboard.templateId)}
         </span>
         <HeaderTitleEditor
-          initialTitle={dashboard.name}
+          key={renameAttempt}
+          initialTitle={renameDraft ?? dashboard.name}
           onSubmit={onRename}
-          onCancel={() => setRenaming(false)}
+          onCancel={closeRename}
         />
       </div>
     );
