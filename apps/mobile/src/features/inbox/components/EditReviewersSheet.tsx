@@ -36,7 +36,7 @@ export function EditReviewersSheet({
   const themeColors = useThemeColors();
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query, 250);
-  const { data: available, isFetching } = useAvailableSuggestedReviewers({
+  const { data: available, isLoading } = useAvailableSuggestedReviewers({
     enabled: visible,
     query: debouncedQuery,
   });
@@ -84,7 +84,7 @@ export function EditReviewersSheet({
         </View>
 
         {options.length === 0 ? (
-          isFetching ? (
+          isLoading ? (
             <View className="flex-1 items-center justify-center">
               <ActivityIndicator size="large" color={themeColors.accent[9]} />
             </View>

@@ -39,13 +39,16 @@ describe("useAvailableSuggestedReviewers", () => {
     vi.clearAllMocks();
   });
 
-  it("forwards a trimmed query to the server", async () => {
-    await renderHook("  alice  ");
-    expect(getAvailableSuggestedReviewers).toHaveBeenCalledWith("alice");
-  });
-
-  it("omits the query param when empty", async () => {
-    await renderHook("   ");
-    expect(getAvailableSuggestedReviewers).toHaveBeenCalledWith(undefined);
+  it.each([
+    { name: "forwards a trimmed query", query: "  alice  ", expected: "alice" },
+    {
+      name: "omits a whitespace-only query",
+      query: "   ",
+      expected: undefined,
+    },
+    { name: "omits an undefined query", query: undefined, expected: undefined },
+  ])("$name to the server", async ({ query, expected }) => {
+    await renderHook(query);
+    expect(getAvailableSuggestedReviewers).toHaveBeenCalledWith(expected);
   });
 });
