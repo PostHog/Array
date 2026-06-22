@@ -1,6 +1,13 @@
-import { ArrowDown, ArrowsClockwise } from "@phosphor-icons/react";
+import {
+  ArrowDown,
+  ArrowRight,
+  ArrowsClockwise,
+  Gift,
+} from "@phosphor-icons/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import { ReleaseNotesSections } from "@posthog/ui/features/updates/ReleaseNotesSections";
+import { parseReleaseNotes } from "@posthog/ui/features/updates/releaseNotes";
 import { useUpdateModalStore } from "@posthog/ui/features/updates/updateModalStore";
 import {
   useInstallUpdate,
@@ -41,11 +48,27 @@ export function UpdateAvailableModal() {
   const downloadMutation = useMutation(
     hostTRPC.updates.download.mutationOptions(),
   );
+  const { data: releasesData } = useQuery({
+    ...hostTRPC.githubReleases.list.queryOptions(),
+    enabled: isOpen,
+  });
 
   const targetVersion = version ?? availableVersion;
   const percent = Math.round(downloadPercent ?? 0);
   const isDownloading = status === "downloading";
   const isReady = status === "ready" || status === "installing";
+
+  const releases = releasesData?.releases ?? [];
+  const latestRelease = releases.find((r) => !r.isPrerelease) ?? releases[0];
+  const noteRelease =
+    releases.find((r) => r.version === targetVersion) ?? latestRelease;
+  const rawNotes = noteRelease?.notes?.trim()
+    ? noteRelease.notes
+    : releaseNotes;
+  const parsedNotes = rawNotes ? parseReleaseNotes(rawNotes) : null;
+  const hasParsedNotes =
+    !!parsedNotes &&
+    (parsedNotes.improved.length > 0 || parsedNotes.fixed.length > 0);
 
   return (
     <Dialog.Root
@@ -54,35 +77,53 @@ export function UpdateAvailableModal() {
         if (!open) close();
       }}
     >
-      <Dialog.Content maxWidth="460px">
-        <Flex direction="column" gap="3">
-          <Flex direction="column" gap="1">
-            <Dialog.Title className="mb-0">Update Available</Dialog.Title>
-            <Dialog.Description>
-              <Text color="gray" size="2">
-                {targetVersion
-                  ? `PostHog Code ${targetVersion} is ready`
-                  : "A new version is ready"}
-              </Text>
-            </Dialog.Description>
+      <Dialog.Content maxWidth="440px">
+        <Flex direction="column" gap="4">
+          <Flex align="center" gap="3">
+            <Flex
+              align="center"
+              justify="center"
+              className="size-10 shrink-0 rounded-full bg-accent-3 text-accent-11"
+            >
+              <Gift size={22} weight="duotone" />
+            </Flex>
+            <Flex direction="column">
+              <Dialog.Title className="mb-0" size="4">
+                {isReady ? "Update ready" : "Update available"}
+              </Dialog.Title>
+              <Dialog.Description>
+                <Text color="gray" size="2">
+                  {targetVersion
+                    ? `PostHog Code ${targetVersion}`
+                    : "A new version is available"}
+                </Text>
+              </Dialog.Description>
+            </Flex>
           </Flex>
 
           {currentVersion ? (
             <Flex
               align="center"
-              gap="2"
-              className="rounded-3 border border-gray-5 bg-gray-2 px-3 py-2"
+              justify="center"
+              gap="3"
+              className="rounded-3 border border-gray-5 bg-gray-2 px-3 py-2.5"
             >
-              <Text size="2" color="gray">
-                You're currently on version
-              </Text>
-              <Code variant="soft">{currentVersion}</Code>
+              <Code variant="soft" color="gray">
+                {currentVersion}
+              </Code>
+              <ArrowRight size={14} className="shrink-0 text-gray-9" />
+              <Code variant="soft">{targetVersion ?? "latest"}</Code>
             </Flex>
           ) : null}
 
-          {releaseNotes ? (
-            <Flex direction="column" gap="1">
-              <Text size="2" weight="medium" color="gray">
+          {hasParsedNotes || rawNotes ? (
+            <Flex direction="column" gap="2">
+              <Text
+                size="1"
+                weight="medium"
+                color="gray"
+                className="uppercase tracking-wide"
+              >
                 Release notes
               </Text>
               <ScrollArea
@@ -91,7 +132,11 @@ export function UpdateAvailableModal() {
                 style={{ maxHeight: 240 }}
               >
                 <div className="pr-3">
-                  <MarkdownRenderer content={releaseNotes} />
+                  {hasParsedNotes && parsedNotes ? (
+                    <ReleaseNotesSections notes={parsedNotes} />
+                  ) : rawNotes ? (
+                    <MarkdownRenderer content={rawNotes} />
+                  ) : null}
                 </div>
               </ScrollArea>
             </Flex>
@@ -111,27 +156,28 @@ export function UpdateAvailableModal() {
             </Flex>
           ) : null}
 
-          <Flex justify="end" align="center" gap="3" mt="1">
-            <Button variant="ghost" color="gray" onClick={close}>
+          <Flex justify="end" align="center" gap="2" mt="1">
+            <Button variant="soft" color="gray" size="2" onClick={close}>
               Later
             </Button>
             {isReady ? (
-              <Button onClick={() => void installUpdate()}>
+              <Button size="2" onClick={() => void installUpdate()}>
                 <ArrowsClockwise size={16} />
                 Restart to update
               </Button>
             ) : isDownloading ? (
-              <Button disabled>
+              <Button size="2" disabled>
                 <ArrowsClockwise size={16} className="animate-spin" />
                 Downloading...
               </Button>
             ) : (
               <Button
+                size="2"
                 onClick={() => downloadMutation.mutate(undefined)}
                 disabled={downloadMutation.isPending}
               >
                 <ArrowDown size={16} />
-                Download Update
+                Download update
               </Button>
             )}
           </Flex>

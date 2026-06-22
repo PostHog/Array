@@ -1,10 +1,12 @@
 import { ArrowsClockwise, Gift, Spinner } from "@phosphor-icons/react";
+import { useHostTRPC } from "@posthog/host-router/react";
 import { useUpdateModalStore } from "@posthog/ui/features/updates/updateModalStore";
 import {
   useInstallUpdate,
   useUpdateView,
 } from "@posthog/ui/features/updates/updateStore";
 import { Box } from "@radix-ui/themes";
+import { useMutation } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 
 interface UpdateBannerProps {
@@ -16,6 +18,10 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
     useUpdateView();
   const installUpdate = useInstallUpdate();
   const openModal = useUpdateModalStore((state) => state.open);
+  const hostTRPC = useHostTRPC();
+  const downloadMutation = useMutation(
+    hostTRPC.updates.download.mutationOptions(),
+  );
 
   const isVisible =
     isEnabled &&
@@ -96,21 +102,29 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
           <AnimatePresence mode="wait">
             {status === "available" && (
               <BannerCard key="available">
-                <button
-                  type="button"
-                  onClick={openModal}
-                  className="flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-left text-[13px] text-[var(--green-11)] transition-colors hover:bg-[var(--green-a4)]"
-                >
+                <div className="flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
                   <Gift size={20} weight="duotone" className="shrink-0" />
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <button
+                    type="button"
+                    onClick={openModal}
+                    className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
+                  >
                     <span className="font-medium">Update available</span>
                     <span className="text-[11px] text-[var(--green-a11)]">
                       {availableVersion
                         ? `Version ${availableVersion}`
-                        : "Click to view details"}
+                        : "View details"}
                     </span>
-                  </div>
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-2 bg-[var(--green-a4)] px-2 py-1 font-medium text-[12px] text-[var(--green-11)] transition-colors hover:bg-[var(--green-a5)] disabled:opacity-60"
+                    onClick={() => downloadMutation.mutate(undefined)}
+                    disabled={downloadMutation.isPending}
+                  >
+                    Download
+                  </button>
+                </div>
               </BannerCard>
             )}
 
