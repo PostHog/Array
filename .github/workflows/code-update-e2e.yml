@@ -89,11 +89,11 @@ jobs:
       - name: Run macOS update E2E
         working-directory: apps/code
         env:
-          PLAYWRIGHT_JSON_OUTPUT_NAME: out/update-report.json
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ github.workspace }}/apps/code/out/update-report.json
         run: |
           pnpm exec playwright test --config=tests/e2e/playwright.update.config.ts
           node -e '
-            const r = require("./out/update-report.json");
+            const r = require(process.env.GITHUB_WORKSPACE + "/apps/code/out/update-report.json");
             const s = r.stats || {};
             console.log("update e2e stats:", JSON.stringify(s));
             if (s.expected !== 1 || s.skipped || s.unexpected || s.flaky) {
