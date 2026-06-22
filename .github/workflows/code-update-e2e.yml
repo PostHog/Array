@@ -89,16 +89,28 @@ jobs:
       - name: Run macOS update E2E
         working-directory: apps/code
         env:
-          RUN_UPDATE_E2E: "1"
-        run: pnpm exec playwright test --config=tests/e2e/playwright.config.ts tests/e2e/tests/update.spec.ts
+          PLAYWRIGHT_JSON_OUTPUT_NAME: out/update-report.json
+        run: |
+          pnpm exec playwright test --config=tests/e2e/playwright.update.config.ts
+          node -e '
+            const r = require("./out/update-report.json");
+            const s = r.stats || {};
+            console.log("update e2e stats:", JSON.stringify(s));
+            if (s.expected !== 1 || s.skipped || s.unexpected || s.flaky) {
+              console.error("FAIL: expected exactly one passing update test");
+              process.exit(1);
+            }
+          '
 
-      - name: Upload report and logs on failure
-        if: failure()
+      - name: Upload report and logs
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: update-e2e-macos
           path: |
-            apps/code/playwright-report/
             apps/code/playwright-results/
+            apps/code/out/update-report.json
             /Users/runner/.posthog-code/logs/
+            /Users/runner/Library/Caches/com.posthog.array.ShipIt/
+          if-no-files-found: ignore
           retention-days: 7

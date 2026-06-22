@@ -14,6 +14,9 @@ import {
   RUN_APP,
   RUN_APP_BIN,
   readBundleVersion,
+  readMainLog,
+  SHIPIT_DIR,
+  shipItEvidence,
   startFeedServer,
   waitUntil,
 } from "../fixtures/update";
@@ -40,15 +43,13 @@ type Hooked = typeof globalThis & { __e2eUpdates: E2eHook };
 
 const FEED_PORT = 8788;
 const FEED_URL = `http://127.0.0.1:${FEED_PORT}`;
+const OLD_VERSION = "1.0.0";
 const NEW_VERSION = "2.0.0";
 
 test.describe("macOS auto-update", () => {
-  // Runs only in the dedicated code-update-e2e workflow, which builds the signed
-  // feed first. The general e2e suite has no feed, so it skips this spec.
-  test.skip(
-    process.platform !== "darwin" || process.env.RUN_UPDATE_E2E !== "1",
-    "macOS-only; set RUN_UPDATE_E2E=1 (needs scripts/dev-update/build-pair.sh)",
-  );
+  // Runs only via playwright.update.config.ts; the general e2e suite excludes
+  // this file by path, so there is no env gate that could silently skip it.
+  test.skip(process.platform !== "darwin", "macOS-only update flow");
 
   test("downloads, installs and relaunches into the new version", async () => {
     test.setTimeout(5 * 60_000);
@@ -86,6 +87,12 @@ test.describe("macOS auto-update", () => {
           },
         )
         .toBe("object");
+
+      // Prove we actually start on the old version, so the swap is real.
+      const startVersion = await app.evaluate(({ app: a }) => a.getVersion());
+      expect(startVersion, "run app should start on the old version").toBe(
+        OLD_VERSION,
+      );
 
       await app.evaluate(() => (globalThis as Hooked).__e2eUpdates.check());
       await pollStatus(
@@ -130,6 +137,25 @@ test.describe("macOS auto-update", () => {
       const version = await updated.evaluate(({ app: a }) => a.getVersion());
       expect(version).toBe(NEW_VERSION);
       await updated.close();
+
+      // Mechanism evidence: our updater drove a real download and install, and
+      // Squirrel.Mac's ShipIt is what performed the in-place swap.
+      const mainLog = readMainLog();
+      expect(
+        mainLog,
+        "main.log missing the completed-download marker",
+      ).toContain("Update downloaded, awaiting user confirmation");
+      expect(mainLog, "main.log missing the install marker").toContain(
+        "Installing update and restarting",
+      );
+      const shipIt = shipItEvidence();
+      console.log(
+        `Squirrel ShipIt cache: exists=${shipIt.exists} entries=[${shipIt.entries.join(", ")}]`,
+      );
+      expect(
+        shipIt.exists,
+        `no Squirrel ShipIt cache at ${SHIPIT_DIR}; the swap was not performed by Squirrel`,
+      ).toBe(true);
     } finally {
       feed.kill();
     }

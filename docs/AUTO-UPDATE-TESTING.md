@@ -25,7 +25,7 @@ The flow under test: a packaged old build checks a local feed, downloads a newer
 | `apps/code/scripts/dev-update/serve.mjs` | Dependency-free, range-capable static server for the feed |
 | `apps/code/tests/e2e/tests/update.spec.ts` | Two-phase Playwright test: drive download and install, then assert the swap and relaunch |
 | `POSTHOG_E2E_UPDATE_FEED` env | When set, the updater points at this URL instead of GitHub (gated, inert in production) |
-| `RUN_UPDATE_E2E` env | When set to `1`, the Playwright spec actually runs; otherwise it skips |
+| `apps/code/tests/e2e/playwright.update.config.ts` | Dedicated Playwright config; the only place the update spec runs |
 | `globalThis.__e2eUpdates` | Set in the main process when `POSTHOG_E2E_UPDATE_FEED` is present; lets the test drive `check` / `download` / `install` / `status` |
 
 ## 1. Build the pair
@@ -52,11 +52,11 @@ This takes a few minutes and may prompt for keychain access to sign.
 The spec starts its own feed server, copies the `1.0.0` app to a disposable run dir (so a rerun starts clean), drives the full flow and asserts the relaunched app is `2.0.0`.
 
 ```bash
-RUN_UPDATE_E2E=1 pnpm --filter code exec playwright test \
-  --config=tests/e2e/playwright.config.ts tests/e2e/tests/update.spec.ts
+pnpm --filter code exec playwright test \
+  --config=tests/e2e/playwright.update.config.ts
 ```
 
-Without `RUN_UPDATE_E2E=1` the spec skips, which is why the general e2e suite ignores it.
+The spec runs only through this dedicated config. The general e2e suite excludes it by path (`testIgnore` in `playwright.config.ts`), so it never runs there without a feed.
 
 ## 2b. Run it manually (real UI)
 
@@ -97,7 +97,7 @@ A manual run swaps `out/mac-arm64` in place, so rerun `build-pair.sh` (or just t
 gh workflow run "Code Update E2E (macOS)"
 ```
 
-It builds the pair, serves the feed and runs `update.spec.ts` with `RUN_UPDATE_E2E=1`.
+It builds the pair, runs the spec via `playwright.update.config.ts`, and asserts exactly one test actually ran, so a missing feed or a silent skip fails the job. The main log and the Squirrel ShipIt cache are uploaded as artifacts on every run.
 
 ## Cleanup
 

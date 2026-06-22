@@ -1,5 +1,6 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 
 const OUT_DIR = path.join(__dirname, "../../../out");
@@ -9,6 +10,12 @@ export const FEED_DIR = path.join(OUT_DIR, "dev-update-feed");
 export const RUN_DIR = path.join(OUT_DIR, "e2e-update-run");
 export const RUN_APP = path.join(RUN_DIR, "PostHog Code.app");
 export const RUN_APP_BIN = path.join(RUN_APP, "Contents/MacOS/PostHog Code");
+
+export const MAIN_LOG = path.join(homedir(), ".posthog-code/logs/main.log");
+export const SHIPIT_DIR = path.join(
+  homedir(),
+  "Library/Caches/com.posthog.array.ShipIt",
+);
 
 const SERVE_SCRIPT = path.join(
   __dirname,
@@ -41,6 +48,25 @@ export function readBundleVersion(appPath: string): string {
     ],
     { encoding: "utf8" },
   ).trim();
+}
+
+export function readMainLog(): string {
+  try {
+    return readFileSync(MAIN_LOG, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+// Squirrel.Mac's ShipIt helper performs the in-place swap and leaves its cache
+// under ~/Library/Caches/<bundleId>.ShipIt, which is direct evidence the install
+// went through Squirrel rather than anything the test did itself.
+export function shipItEvidence(): { exists: boolean; entries: string[] } {
+  try {
+    return { exists: true, entries: readdirSync(SHIPIT_DIR) };
+  } catch {
+    return { exists: false, entries: [] };
+  }
 }
 
 export function isAppRunning(): boolean {
