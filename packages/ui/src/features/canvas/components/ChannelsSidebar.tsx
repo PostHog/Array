@@ -161,10 +161,10 @@ export function ChannelsSidebar() {
           <ProjectSwitcher triggerVariant="button" />
         </Box>
 
-        {/* The whole nav (links + channel tree) scrolls as one — only the switcher
-            above and Settings below stay pinned. */}
+        {/* The global nav links stay pinned below the switcher; only the channel
+            tree scrolls when it overflows. */}
+        <ChannelsNav />
         <Box className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto">
-          <ChannelsNav />
           <ChannelsList />
         </Box>
 
