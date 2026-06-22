@@ -88,6 +88,8 @@ jobs:
 
       - name: Run macOS update E2E
         working-directory: apps/code
+        env:
+          RUN_UPDATE_E2E: "1"
         run: pnpm exec playwright test --config=tests/e2e/playwright.config.ts tests/e2e/tests/update.spec.ts
 
       - name: Upload report and logs on failure

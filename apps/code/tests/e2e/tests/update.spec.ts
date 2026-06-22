@@ -43,7 +43,12 @@ const FEED_URL = `http://127.0.0.1:${FEED_PORT}`;
 const NEW_VERSION = "2.0.0";
 
 test.describe("macOS auto-update", () => {
-  test.skip(process.platform !== "darwin", "macOS-only update flow");
+  // Runs only in the dedicated code-update-e2e workflow, which builds the signed
+  // feed first. The general e2e suite has no feed, so it skips this spec.
+  test.skip(
+    process.platform !== "darwin" || process.env.RUN_UPDATE_E2E !== "1",
+    "macOS-only; set RUN_UPDATE_E2E=1 (needs scripts/dev-update/build-pair.sh)",
+  );
 
   test("downloads, installs and relaunches into the new version", async () => {
     test.setTimeout(5 * 60_000);
