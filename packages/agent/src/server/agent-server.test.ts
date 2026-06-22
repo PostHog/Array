@@ -1296,10 +1296,9 @@ describe("AgentServer HTTP Mode", () => {
     });
 
     it("does not let an older PR the run only viewed overwrite the one it created", async () => {
-      const s = createServer() as unknown as PrTestServer;
-      s.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
       const viewed = "https://github.com/PostHog/posthog.com/pull/1";
       // The created PR reads as recent; the later, merely-viewed PR reads as old.
+      const s = setup(justNow());
       s.fetchPrCreatedAt = vi.fn(async (url: string) =>
         url === PR_URL ? justNow() : longAgo,
       );
