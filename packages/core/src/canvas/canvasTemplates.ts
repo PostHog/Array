@@ -56,6 +56,7 @@ const FREEFORM_STYLE = [
   "",
   "STYLE:",
   "- You may use inline `style` objects, `@posthog/quill` components, or a `<style>` block in your JSX. Write real, specific copy — never lorem ipsum.",
+  '- SPECIAL CHARACTERS: write Unicode glyphs (curly quotes “ ” ‘ ’, ellipsis …, middot ·, en/em dashes – —, arrows, emoji) as the LITERAL character directly in the source. Do NOT use `\\uXXXX` escape sequences in JSX text or attribute values — `\\u` escapes are only decoded inside JavaScript string/template literals, so in JSX text they render verbatim (e.g. `\\u201c` shows up as the text `u201c`). If you must use an escape, wrap it in an expression container: `{"\\u2026"}`.',
   "- Build ANYTHING the user asks: dashboards, tools, forms, reports, small apps. Keep it self-contained in the one file.",
   "",
   "THEME (light / dark) — the canvas renders in the user's current PostHog theme, and that can switch at runtime. The host puts a `.dark` class on the document root in dark mode (exactly like the main app), so your styles MUST adapt to both:",
