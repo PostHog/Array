@@ -65,16 +65,13 @@ describe("ToolMessage posthog-exec error reason", () => {
     ["error", true],
     ["completed", true],
     ["running", false],
-  ])(
-    "status=%s → output visible after expand: %s",
-    (status, expectVisible) => {
-      const renderer = render({ ...base, status });
-      expand(renderer);
-      if (expectVisible) {
-        expect(tree(renderer)).toContain(ERROR_OUTPUT);
-      } else {
-        expect(tree(renderer)).not.toContain(ERROR_OUTPUT);
-      }
-    },
-  );
+  ])("status=%s → output visible after expand: %s", (status, expectVisible) => {
+    const renderer = render({ ...base, status });
+    expand(renderer);
+    if (expectVisible) {
+      expect(tree(renderer)).toContain(ERROR_OUTPUT);
+    } else {
+      expect(tree(renderer)).not.toContain(ERROR_OUTPUT);
+    }
+  });
 });
