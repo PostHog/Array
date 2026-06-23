@@ -23,6 +23,8 @@ const isMac =
 
 export function ReportDetailActions({ report }: ReportDetailActionsProps) {
   const showCreatePr = canCreateImplementationPr(report);
+  // Resolved reports are terminal — their PR already merged, so no actions apply.
+  const isResolved = report.status === "resolved";
   const { data: artefactsResp } = useInboxReportArtefacts(report.id);
   const cloudRepository = extractRepoSelectionRepository(
     artefactsResp?.results,
@@ -63,6 +65,11 @@ export function ReportDetailActions({ report }: ReportDetailActionsProps) {
   }, [createPrReport, fireAction]);
 
   const submitDisabled = discussQuestion.trim().length === 0 || isDiscussing;
+
+  // Terminal reports get no detail actions (guarded after hooks to satisfy rules-of-hooks).
+  if (isResolved) {
+    return null;
+  }
 
   return (
     <>

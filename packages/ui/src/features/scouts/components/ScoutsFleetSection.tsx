@@ -31,6 +31,7 @@ import { useScoutChatTask } from "../hooks/useScoutChatTask";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
+import { ScoutAlphaBanner } from "./ScoutAlphaBanner";
 import { ScoutHelperSkillLinks } from "./ScoutHelperSkillLinks";
 import { ScoutRowCard } from "./ScoutRowCard";
 
@@ -94,6 +95,7 @@ export function ScoutsFleetSection() {
 
   return (
     <Flex direction="column" gap="3">
+      <ScoutAlphaBanner />
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
@@ -139,7 +141,7 @@ function useTrackFleetViewed(configs: ScoutConfig[]) {
       enabled_count: configs.filter((config) => config.enabled).length,
       dry_run_count: configs.filter((config) => !config.emit).length,
       custom_count: configs.filter(
-        (config) => getScoutOrigin(config.skill_name) === "custom",
+        (config) => getScoutOrigin(config) === "custom",
       ).length,
       is_empty: configs.length === 0,
     });
@@ -295,26 +297,29 @@ function ScoutChatCta({
 function ScoutsEmptyState() {
   useTrackFleetViewed(EMPTY_CONFIGS);
   return (
-    <Flex
-      direction="column"
-      gap="2"
-      align="start"
-      className="rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-5 py-5"
-    >
-      <Flex align="center" gap="2">
-        <CompassIcon size={18} className="text-(--iris-9)" />
-        <Text className="font-medium text-[13px] text-gray-12">
-          No scouts on this project yet
+    <Flex direction="column" gap="3">
+      <ScoutAlphaBanner />
+      <Flex
+        direction="column"
+        gap="2"
+        align="start"
+        className="rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-5 py-5"
+      >
+        <Flex align="center" gap="2">
+          <CompassIcon size={18} className="text-(--iris-9)" />
+          <Text className="font-medium text-[13px] text-gray-12">
+            No scouts on this project yet
+          </Text>
+        </Flex>
+        <Text className="max-w-2xl text-[12.5px] text-gray-11 leading-snug">
+          Scouts are rolling out gradually. Once your project is enrolled, the
+          canonical fleet appears here automatically and you can add custom
+          scouts by creating{" "}
+          <span className="font-mono text-[11px]">signals-scout-*</span> skills
+          in PostHog.
         </Text>
+        <ScoutHelperSkillLinks surface="empty_state" />
       </Flex>
-      <Text className="max-w-2xl text-[12.5px] text-gray-11 leading-snug">
-        Scouts are rolling out gradually. Once your project is enrolled, the
-        canonical fleet appears here automatically and you can add custom scouts
-        by creating{" "}
-        <span className="font-mono text-[11px]">signals-scout-*</span> skills in
-        PostHog.
-      </Text>
-      <ScoutHelperSkillLinks surface="empty_state" />
     </Flex>
   );
 }

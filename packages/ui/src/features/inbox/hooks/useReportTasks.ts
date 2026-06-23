@@ -1,19 +1,54 @@
 import type {
   SignalReportStatus,
-  SignalReportTask,
   Task,
+  TaskRunArtefactContent,
 } from "@posthog/shared/types";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 
-type Relationship = SignalReportTask["relationship"];
+// Task↔report associations are unlabelled — a task's purpose is derived from the report's
+// `task_run` artefacts (the signals pipeline writes product="signals" with one of these types;
+// custom agents write their own (product, type) pair).
+export type ReportTaskPurpose = "research" | "implementation" | "other";
 
-const DISPLAYED_RELATIONSHIPS: Relationship[] = ["implementation", "research"];
-
-interface ReportTaskData {
+export interface ReportTaskData {
   task: Task;
-  relationship: Relationship;
+  purpose: ReportTaskPurpose;
+  /** Human-readable row label — "Research" / "Implementation" / a humanized custom pair. */
+  purposeLabel: string;
   startedAt: string;
 }
+
+function humanizeIdentifier(value: string): string {
+  const words = value.replace(/[_-]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function derivePurpose(taskRun: {
+  product: string;
+  type: string;
+}): { purpose: ReportTaskPurpose; purposeLabel: string } | null {
+  if (taskRun.product === "signals") {
+    if (taskRun.type === "research") {
+      return { purpose: "research", purposeLabel: "Research" };
+    }
+    if (taskRun.type === "implementation") {
+      return { purpose: "implementation", purposeLabel: "Implementation" };
+    }
+    // repo_selection runs are plumbing, not report work — never displayed (matches the
+    // pre-derivation behavior of only showing research/implementation).
+    return null;
+  }
+  return {
+    purpose: "other",
+    purposeLabel: `${humanizeIdentifier(taskRun.product)} — ${humanizeIdentifier(taskRun.type)}`,
+  };
+}
+
+const PURPOSE_ORDER: ReportTaskPurpose[] = [
+  "implementation",
+  "research",
+  "other",
+];
 
 export function useReportTasks(
   reportId: string,
@@ -27,24 +62,50 @@ export function useReportTasks(
   return useAuthenticatedQuery<ReportTaskData[]>(
     ["inbox", "report-tasks", reportId],
     async (client) => {
-      const reportTasks = await client.getSignalReportTasks(reportId);
-      const relevant = reportTasks.filter((rt) =>
-        DISPLAYED_RELATIONSHIPS.includes(rt.relationship),
+      // task_run artefacts ARE the task↔report association — one entry per associated task,
+      // keyed by content.task_id (earliest artefact wins for startedAt). The runtime `type`
+      // check is authoritative (the generic fallback artefact keeps `type: string` and
+      // defeats static narrowing).
+      const artefacts = await client.getSignalReportArtefacts(reportId);
+      const taskRunByTaskId = new Map<
+        string,
+        { product: string; type: string; startedAt: string }
+      >();
+      for (const artefact of artefacts.results) {
+        if (artefact.type !== "task_run") continue;
+        const content = artefact.content as TaskRunArtefactContent;
+        const existing = taskRunByTaskId.get(content.task_id);
+        if (existing && existing.startedAt <= artefact.created_at) continue;
+        taskRunByTaskId.set(content.task_id, {
+          product: content.product,
+          type: content.type,
+          startedAt: artefact.created_at,
+        });
+      }
+
+      const relevant = [...taskRunByTaskId.entries()].flatMap(
+        ([taskId, run]) => {
+          const derived = derivePurpose(run);
+          return derived
+            ? [{ taskId, startedAt: run.startedAt, ...derived }]
+            : [];
+        },
       );
+
       const tasks = await Promise.all(
-        relevant.map(async (rt) => {
-          const task = await client.getTask(rt.task_id);
+        relevant.map(async ({ taskId, startedAt, purpose, purposeLabel }) => {
+          const task = await client.getTask(taskId);
           return {
             task,
-            relationship: rt.relationship,
-            startedAt: rt.created_at,
+            purpose,
+            purposeLabel,
+            startedAt,
           };
         }),
       );
       return tasks.sort(
         (a, b) =>
-          DISPLAYED_RELATIONSHIPS.indexOf(a.relationship) -
-          DISPLAYED_RELATIONSHIPS.indexOf(b.relationship),
+          PURPOSE_ORDER.indexOf(a.purpose) - PURPOSE_ORDER.indexOf(b.purpose),
       );
     },
     {

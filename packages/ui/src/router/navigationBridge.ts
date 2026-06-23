@@ -46,6 +46,23 @@ export function navigateToChannelTask(channelId: string, taskId: string): void {
   });
 }
 
+export function navigateToChannelNewTask(channelId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/website/$channelId/new",
+    params: { channelId },
+  });
+}
+
+export function navigateToChannelDashboard(
+  channelId: string,
+  dashboardId: string,
+): void {
+  void getRouterOrNull()?.navigate({
+    to: "/website/$channelId/dashboards/$dashboardId",
+    params: { channelId, dashboardId },
+  });
+}
+
 export function navigateToFolderSettings(folderId: string): void {
   void getRouterOrNull()?.navigate({
     to: "/folders/$folderId",
@@ -95,6 +112,13 @@ export function navigateToScoutDetail(
 
 export function navigateToAgents(): void {
   void getRouterOrNull()?.navigate({ to: "/code/agents" });
+}
+
+export function navigateToApproval(requestId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/agents/applications/approvals",
+    search: { request: requestId },
+  });
 }
 
 export function navigateToArchived(): void {

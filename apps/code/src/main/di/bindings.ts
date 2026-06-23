@@ -9,10 +9,6 @@ import type {
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
 import type {
-  CANVAS_GEN_SERVICE,
-  FREEFORM_GEN_SERVICE,
-} from "@posthog/core/canvas/identifiers";
-import type {
   CLOUD_TASK_AUTH,
   ICloudTaskAuth,
 } from "@posthog/core/cloud-task/identifiers";
@@ -48,7 +44,9 @@ import type {
   SLACK_INTEGRATION_SERVICE,
 } from "@posthog/core/integrations/identifiers";
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
+import type { ApprovalLinkService } from "@posthog/core/links/approval-link";
 import type {
+  APPROVAL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   SCOUT_LINK_SERVICE,
@@ -99,8 +97,6 @@ import type {
   GIT_PR_STATUS_PROVIDER,
   IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
-import type { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
-import type { FreeformGenService } from "@posthog/host-router/services/freeform-gen.service";
 import type {
   ANALYTICS_SERVICE,
   IAnalytics,
@@ -239,6 +235,7 @@ import type { WorkspaceServerService } from "../services/workspace-server/servic
 import type { rendererStore } from "../utils/store";
 import type {
   APP_LIFECYCLE_SERVICE as MAIN_APP_LIFECYCLE_SERVICE,
+  APPROVAL_LINK_SERVICE as MAIN_APPROVAL_LINK_SERVICE,
   ARCHIVE_REPOSITORY as MAIN_ARCHIVE_REPOSITORY,
   AUTH_PREFERENCE_REPOSITORY as MAIN_AUTH_PREFERENCE_REPOSITORY,
   AUTH_SERVICE as MAIN_AUTH_SERVICE,
@@ -407,10 +404,12 @@ export interface MainBindings {
   [MAIN_INBOX_LINK_SERVICE]: InboxLinkService;
   [MAIN_SCOUT_LINK_SERVICE]: ScoutLinkService;
   [MAIN_NEW_TASK_LINK_SERVICE]: NewTaskLinkService;
+  [MAIN_APPROVAL_LINK_SERVICE]: ApprovalLinkService;
   [TASK_LINK_SERVICE]: TaskLinkService;
   [INBOX_LINK_SERVICE]: InboxLinkService;
   [SCOUT_LINK_SERVICE]: ScoutLinkService;
   [NEW_TASK_LINK_SERVICE]: NewTaskLinkService;
+  [APPROVAL_LINK_SERVICE]: ApprovalLinkService;
 
   // Watcher registry
   [MAIN_WATCHER_REGISTRY_SERVICE]: WatcherRegistryService;
@@ -431,8 +430,6 @@ export interface MainBindings {
   [LOGS_SERVICE]: ILogsService;
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
   [MAIN_DISCORD_PRESENCE_SERVICE]: DiscordPresenceService;
-  [CANVAS_GEN_SERVICE]: CanvasGenService;
-  [FREEFORM_GEN_SERVICE]: FreeformGenService;
 
   // ws-server git service (bound to(GitService))
   [WS_GIT_SERVICE]: GitService;

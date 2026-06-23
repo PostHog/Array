@@ -7,6 +7,7 @@ import {
 import { parsePrUrl } from "@posthog/core/inbox/reportPresentation";
 import { Button } from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
+import { ReportActivitySection } from "@posthog/ui/features/inbox/components/detail/ReportActivitySection";
 import { InboxDetailFrame } from "@posthog/ui/features/inbox/components/InboxDetailFrame";
 import { InboxMetaSeparator } from "@posthog/ui/features/inbox/components/InboxMetaRow";
 import { InboxReportDetailGate } from "@posthog/ui/features/inbox/components/InboxReportDetailGate";
@@ -114,6 +115,7 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
     >
       <ReportTasksSection report={report} />
       <SuggestedReviewersSection report={report} />
+      <ReportActivitySection reportId={report.id} />
     </InboxDetailFrame>
   );
 }

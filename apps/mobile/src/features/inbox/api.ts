@@ -15,7 +15,6 @@ import type {
   SignalReportSignalsResponse,
   SignalReportsQueryParams,
   SignalReportsResponse,
-  SignalReportTask,
   SuggestedReviewerWriteEntry,
 } from "./types";
 
@@ -150,28 +149,6 @@ export async function getAvailableSuggestedReviewers(
     .filter((r): r is AvailableSuggestedReviewer => r !== null);
 
   return { results, count: results.length };
-}
-
-export async function getSignalReportTasks(
-  reportId: string,
-): Promise<SignalReportTask[]> {
-  const baseUrl = getBaseUrl();
-  const projectId = getProjectId();
-
-  const response = await authedFetch(
-    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/tasks/`,
-  );
-
-  if (!response.ok) {
-    throw new HttpError(
-      response.status,
-      response.statusText,
-      "Failed to fetch signal report tasks",
-    );
-  }
-
-  const data = await response.json();
-  return data.results ?? [];
 }
 
 export async function getSignalReportArtefacts(

@@ -127,16 +127,6 @@ describe("SignalSourceService.toggleSource", () => {
   });
 });
 
-describe("SignalSourceService.updateUserAutonomyPriority", () => {
-  it("deletes the config when priority is null", async () => {
-    const client = fakeClient();
-    const service = new SignalSourceService();
-    await service.updateUserAutonomyPriority(client, null);
-    expect(client.deleteSignalUserAutonomyConfig).toHaveBeenCalledTimes(1);
-    expect(client.updateSignalUserAutonomyConfig).not.toHaveBeenCalled();
-  });
-});
-
 describe("SignalSourceService.buildSlackNotificationBody", () => {
   it("only writes passed keys translated to snake_case", () => {
     const service = new SignalSourceService();

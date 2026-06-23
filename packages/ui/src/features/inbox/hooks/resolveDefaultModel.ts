@@ -5,23 +5,31 @@ import type { QueryClient } from "@tanstack/react-query";
 const log = logger.scope("resolve-default-model");
 
 /**
- * Resolve the default model for the given adapter via the preview-config
- * tRPC query. Returns the server's `currentValue` for the `model` option, or
- * undefined if the call fails or the option is missing.
+ * Resolve the model for the given adapter via the preview-config tRPC query.
  *
- * Used by inbox flows that create cloud tasks directly (Discuss, Create PR)
- * without going through TaskInput – they need a model to pass to the saga
- * and the user hasn't necessarily picked one yet.
+ * `preferredModel` (e.g. the persisted last-used model) is honoured only if the
+ * gateway still offers it; otherwise the server default (`currentValue`) is
+ * returned. Returns undefined if the call fails or the option is missing.
+ *
+ * Used by one-click flows that create cloud tasks directly (Discuss, Create PR,
+ * scout chat) without going through TaskInput – they need a model to pass to the
+ * saga. Validating the preferred model here is what keeps a stale persisted id
+ * the gateway no longer offers from reaching the run and 403-ing.
  */
 export async function resolveDefaultModel(
   queryClient: QueryClient,
   apiHost: string,
   adapter: "claude" | "codex",
   modelResolver: ReportModelResolver,
+  preferredModel?: string | null,
 ): Promise<string | undefined> {
   void queryClient;
   try {
-    return await modelResolver.resolveDefaultModel(apiHost, adapter);
+    return await modelResolver.resolveDefaultModel(
+      apiHost,
+      adapter,
+      preferredModel,
+    );
   } catch (error) {
     log.warn("Failed to resolve default model", { error, adapter });
   }

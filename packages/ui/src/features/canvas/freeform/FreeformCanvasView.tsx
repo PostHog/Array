@@ -1,30 +1,56 @@
 import {
+  ArrowCounterClockwiseIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
+  ShapesIcon,
+  SpinnerGapIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
-import { buildCanvasPromptProps } from "@posthog/core/canvas/canvasAnalytics";
 import type { CanvasAnalyticsConfig } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
-import { Button } from "@posthog/quill";
-import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import {
+  Button,
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@posthog/quill";
+import { isTerminalStatus } from "@posthog/shared/domain-types";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useFreeformChatStore,
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
-import { track } from "@posthog/ui/shell/analytics";
+import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
-import { Flex, ScrollArea, Text } from "@radix-ui/themes";
+import {
+  Box,
+  Flex,
+  Button as RadixButton,
+  ScrollArea,
+  Text,
+} from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo } from "react";
+import { Link } from "@tanstack/react-router";
+import { useCallback, useMemo, useState } from "react";
 import { FreeformCanvas } from "./FreeformCanvas";
-import { FreeformChat } from "./FreeformChat";
+import { FreeformGenerateBar } from "./FreeformGenerateBar";
 import { handleFreeformDataRequest } from "./freeformDataBridge";
-import { registerFreeformSubscription } from "./freeformSubscription";
+import { useCanvasNavigation, useHomeCanvasReset } from "./useHomeCanvasView";
 
-// A freeform (React-in-iframe) canvas: the sandboxed app on the left, a chat
-// panel on the right (edit mode only). Streams code from the agent and renders
-// it live; tracks version history for undo/redo.
+// The dashboardId a thread is keyed on ("dashboard:<id>" → "<id>").
+function dashboardIdOf(threadId: string): string {
+  return threadId.replace(/^dashboard:/, "");
+}
+
+// A freeform (React-in-iframe) canvas: the sandboxed app, with version controls
+// and an edit composer (edit mode only). Generation runs as a dedicated task —
+// when one is in flight the screen shows a "Generating… View task" state, like
+// CONTEXT.md. The published result is adopted into the canvas record and synced
+// into the working copy by WebsiteDashboard.
 export function FreeformCanvasView({
   threadId,
   interactive,
@@ -32,27 +58,77 @@ export function FreeformCanvasView({
   threadId: string;
   interactive: boolean;
 }) {
-  const { code, versions, currentVersionId, runtimeError, isStreaming } =
+  const dashboardId = dashboardIdOf(threadId);
+  const { code, versions, currentVersionId, runtimeError } =
     useFreeformThread(threadId);
   const undo = useFreeformChatStore((s) => s.undo);
   const redo = useFreeformChatStore((s) => s.redo);
-  const send = useFreeformChatStore((s) => s.send);
   const setRuntimeError = useFreeformChatStore((s) => s.setRuntimeError);
 
-  useEffect(() => registerFreeformSubscription(threadId), [threadId]);
-
-  // Public capture key + the signed-in user's distinct_id, so posthog-js can run
-  // inside the iframe (analytics + session replay). Edit mode runs on a
-  // null-origin sandbox (no storage) → memory session (persist:false).
   const trpc = useHostTRPC();
-  const { data: captureConfig } = useQuery(
-    trpc.canvasData.captureConfig.queryOptions(undefined, {
-      staleTime: 5 * 60_000,
-    }),
+
+  // The generation-task association lives in the canvas record's meta. Poll it
+  // while a task is running so the published code + the cleared association show
+  // up without a manual refresh (WebsiteDashboard re-syncs the working copy).
+  const { data: dashboard } = useQuery(
+    trpc.dashboards.get.queryOptions(
+      { id: dashboardId },
+      { enabled: !!dashboardId, staleTime: 4000 },
+    ),
   );
-  // Memoised on the (stable) query result so its identity doesn't change every
-  // render — otherwise FreeformCanvas's init effect re-fires and re-posts the
-  // whole file to the iframe on every render during streaming.
+  const genTaskId = dashboard?.generationTaskId ?? null;
+  const channelId = dashboard?.channelId ?? "";
+
+  const { channels } = useChannels();
+  const channelName = useMemo(
+    () => channels.find((c) => c.id === channelId)?.name ?? "",
+    [channels, channelId],
+  );
+
+  // The "Reset to default" affordance, shown only on a channel's home canvas.
+  const {
+    isHomeCanvas,
+    isResetting,
+    reset: onResetToDefault,
+  } = useHomeCanvasReset({ channelId, dashboardId, threadId });
+
+  // Run status: cloud reports via cloudStatus / latest_run.status; local is tied
+  // to the live ACP session. Assume running while the task record loads.
+  const { data: genTask, isLoading: genTaskLoading } = useQuery({
+    ...taskDetailQuery(genTaskId ?? ""),
+    enabled: !!genTaskId,
+    refetchInterval: genTaskId ? 5000 : false,
+  });
+  const genSession = useSessionForTask(genTaskId ?? undefined);
+  const running = (() => {
+    if (!genTaskId) return false;
+    if (genTaskLoading) return true;
+    if (genTask?.latest_run?.environment === "cloud") {
+      const cloudStatus =
+        genSession?.cloudStatus ?? genTask?.latest_run?.status ?? null;
+      return !isTerminalStatus(cloudStatus);
+    }
+    return (
+      genSession?.status === "connecting" || genSession?.status === "connected"
+    );
+  })();
+  const isGenerating = !!genTaskId && running;
+
+  // Poll the record while generating so a just-published canvas appears.
+  useQuery(
+    trpc.dashboards.get.queryOptions(
+      { id: dashboardId },
+      {
+        enabled: !!dashboardId && isGenerating,
+        refetchInterval: isGenerating ? 4000 : false,
+      },
+    ),
+  );
+
+  const trpcCapture = trpc.canvasData.captureConfig.queryOptions(undefined, {
+    staleTime: 5 * 60_000,
+  });
+  const { data: captureConfig } = useQuery(trpcCapture);
   const analytics: CanvasAnalyticsConfig | undefined = useMemo(
     () =>
       captureConfig
@@ -79,22 +155,21 @@ export function FreeformCanvasView({
     [threadId, setRuntimeError],
   );
 
-  // Q7 self-repair: hand the runtime error back to the agent to fix.
+  // Routes the canvas's allowlisted nav intents within this channel.
+  const onNavigate = useCanvasNavigation(channelId);
+
+  // The edit composer's draft, lifted so self-repair can prefill it.
+  const [draft, setDraft] = useState("");
   const askAgentToFix = () => {
     if (!runtimeError) return;
-    const text = `The app threw a runtime error: "${runtimeError}". Fix it and rewrite the whole file.`;
-    track(
-      ANALYTICS_EVENTS.CANVAS_PROMPT_SENT,
-      buildCanvasPromptProps({
-        surface: "freeform",
-        threadId,
-        text,
-        fromSuggestion: false,
-        intent: "ask_agent_to_fix",
-      }),
+    setDraft(
+      `The app threw a runtime error: "${runtimeError}". Fix it and rewrite the whole file.`,
     );
-    void send(threadId, text);
   };
+
+  const showCanvas = !!code;
+  const showGeneratingState = isGenerating && !code;
+  const showComposer = interactive && !isGenerating;
 
   return (
     <Flex height="100%" overflow="hidden">
@@ -110,7 +185,7 @@ export function FreeformCanvasView({
                 size="icon"
                 variant="default"
                 aria-label="Undo"
-                disabled={!canUndo || isStreaming}
+                disabled={!canUndo || isGenerating}
                 onClick={() => undo(threadId)}
               >
                 <ArrowUUpLeftIcon size={16} />
@@ -119,7 +194,7 @@ export function FreeformCanvasView({
                 size="icon"
                 variant="default"
                 aria-label="Redo"
-                disabled={!canRedo || isStreaming}
+                disabled={!canRedo || isGenerating}
                 onClick={() => redo(threadId)}
               >
                 <ArrowUUpRightIcon size={16} />
@@ -129,61 +204,149 @@ export function FreeformCanvasView({
                   v{idx + 1}/{versions.length}
                 </Text>
               )}
-            </Flex>
-            {runtimeError && (
-              <Flex align="center" gap="2">
-                <Flex align="center" gap="1" className="text-red-11">
-                  <WarningIcon size={14} />
-                  <Text size="1">Runtime error</Text>
-                </Flex>
+              {isHomeCanvas && (
                 <Button
                   size="sm"
-                  variant="outline"
-                  disabled={isStreaming}
-                  onClick={askAgentToFix}
+                  variant="default"
+                  className="ml-1"
+                  disabled={isGenerating || isResetting}
+                  onClick={onResetToDefault}
                 >
-                  Ask agent to fix
+                  <ArrowCounterClockwiseIcon size={14} />
+                  {isResetting ? "Resetting…" : "Reset to default"}
                 </Button>
+              )}
+            </Flex>
+            {isGenerating && genTaskId ? (
+              <Flex align="center" gap="2">
+                <SpinnerGapIcon
+                  size={14}
+                  className="animate-spin text-accent-9"
+                />
+                <Text size="1" className="text-gray-10">
+                  Generating
+                </Text>
+                <RadixButton size="1" variant="soft" asChild>
+                  <Link
+                    to="/website/$channelId/tasks/$taskId"
+                    params={{ channelId, taskId: genTaskId }}
+                  >
+                    View task
+                  </Link>
+                </RadixButton>
               </Flex>
+            ) : (
+              runtimeError && (
+                <Flex align="center" gap="2">
+                  <Flex align="center" gap="1" className="text-red-11">
+                    <WarningIcon size={14} />
+                    <Text size="1">Runtime error</Text>
+                  </Flex>
+                  <Button size="sm" variant="outline" onClick={askAgentToFix}>
+                    Ask agent to fix
+                  </Button>
+                </Flex>
+              )
             )}
           </Flex>
         )}
 
-        <ScrollArea className="flex-1">
-          {code ? (
-            <ErrorBoundary name="freeform-canvas" resetKey={threadId}>
-              <FreeformCanvas
-                code={code}
-                mode="edit"
-                onDataRequest={handleFreeformDataRequest}
-                onError={onError}
-                onRendered={onRendered}
-                analytics={analytics}
-              />
-            </ErrorBoundary>
-          ) : (
-            <Flex
-              direction="column"
-              align="center"
-              justify="center"
-              height="100%"
-              gap="1"
-              className="px-6 text-center"
-            >
-              <Text size="3" weight="bold" className="text-gray-12">
-                Freeform canvas
-              </Text>
-              <Text size="2" className="text-gray-10">
-                {interactive
-                  ? "Ask the agent on the right to build a React app from your PostHog data."
-                  : "This canvas is empty. Hit Edit to build it with the agent."}
-              </Text>
-            </Flex>
-          )}
-        </ScrollArea>
-      </Flex>
+        <Box position="relative" className="min-h-0 flex-1">
+          {/* Swooping accent bar across the top while a generation task runs. */}
+          <div
+            aria-hidden
+            className={
+              isGenerating
+                ? "quill-section-loading quill-section-loading--active"
+                : "quill-section-loading"
+            }
+          />
+          <ScrollArea className="h-full">
+            {showCanvas ? (
+              <ErrorBoundary name="freeform-canvas" resetKey={threadId}>
+                <FreeformCanvas
+                  code={code}
+                  mode="edit"
+                  onDataRequest={handleFreeformDataRequest}
+                  onError={onError}
+                  onRendered={onRendered}
+                  onNavigate={onNavigate}
+                  analytics={analytics}
+                />
+              </ErrorBoundary>
+            ) : showGeneratingState ? (
+              <GeneratingState channelId={channelId} taskId={genTaskId ?? ""} />
+            ) : (
+              <Empty className="h-full">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <ShapesIcon size={24} />
+                  </EmptyMedia>
+                  <EmptyTitle>Freeform canvas</EmptyTitle>
+                  <EmptyDescription>
+                    {interactive
+                      ? "Describe the canvas below to build it with an agent."
+                      : "This canvas is empty. Hit Edit to build it with an agent."}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </ScrollArea>
+        </Box>
 
-      {interactive && <FreeformChat threadId={threadId} />}
+        {showComposer && (
+          <Box className="shrink-0 border-gray-6 border-t bg-gray-2 p-3">
+            <FreeformGenerateBar
+              dashboardId={dashboardId}
+              channelId={channelId}
+              channelName={channelName}
+              name={dashboard?.name ?? "Canvas"}
+              templateId={dashboard?.templateId}
+              currentCode={code || undefined}
+              value={draft}
+              onValueChange={setDraft}
+            />
+          </Box>
+        )}
+      </Flex>
     </Flex>
+  );
+}
+
+// Centered status shown while a generation task runs on an empty canvas, with a
+// button to jump to the task doing the work.
+function GeneratingState({
+  channelId,
+  taskId,
+}: {
+  channelId: string;
+  taskId: string;
+}) {
+  return (
+    <Empty className="h-full">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
+        </EmptyMedia>
+        <EmptyTitle>Generating</EmptyTitle>
+        <EmptyDescription>An agent is building this canvas.</EmptyDescription>
+      </EmptyHeader>
+      {taskId && (
+        <EmptyContent>
+          <Button
+            variant="primary"
+            size="default"
+            render={
+              <Link
+                to="/website/$channelId/tasks/$taskId"
+                params={{ channelId, taskId }}
+              />
+            }
+          >
+            View task
+          </Button>
+        </EmptyContent>
+      )}
+    </Empty>
   );
 }

@@ -19,10 +19,6 @@ import {
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
 import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
-import {
-  CANVAS_GEN_SERVICE,
-  FREEFORM_GEN_SERVICE,
-} from "@posthog/core/canvas/identifiers";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
@@ -50,7 +46,9 @@ import { GIT_DIFF_SOURCE } from "@posthog/core/git-pr/identifiers";
 import { handoffModule } from "@posthog/core/handoff/handoff.module";
 import { HANDOFF_HOST } from "@posthog/core/handoff/identifiers";
 import { integrationsModule } from "@posthog/core/integrations/integrations.module";
+import { ApprovalLinkService } from "@posthog/core/links/approval-link";
 import {
+  APPROVAL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   SCOUT_LINK_SERVICE,
@@ -94,8 +92,6 @@ import {
   GIT_PR_STATUS_PROVIDER,
   type IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
-import { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
-import { FreeformGenService } from "@posthog/host-router/services/freeform-gen.service";
 import { ANALYTICS_SERVICE } from "@posthog/platform/analytics";
 import { APP_LIFECYCLE_SERVICE } from "@posthog/platform/app-lifecycle";
 import { APP_META_SERVICE } from "@posthog/platform/app-meta";
@@ -251,6 +247,7 @@ import { rendererStore } from "../utils/store";
 import type { MainBindings } from "./bindings";
 import {
   APP_LIFECYCLE_SERVICE as MAIN_APP_LIFECYCLE_SERVICE,
+  APPROVAL_LINK_SERVICE as MAIN_APPROVAL_LINK_SERVICE,
   ARCHIVE_REPOSITORY as MAIN_ARCHIVE_REPOSITORY,
   AUTH_PREFERENCE_REPOSITORY as MAIN_AUTH_PREFERENCE_REPOSITORY,
   AUTH_SERVICE as MAIN_AUTH_SERVICE,
@@ -625,6 +622,10 @@ container.bind(MAIN_SCOUT_LINK_SERVICE).to(ScoutLinkService);
 container.bind(SCOUT_LINK_SERVICE).toService(MAIN_TOKENS.ScoutLinkService);
 container.bind(MAIN_NEW_TASK_LINK_SERVICE).to(NewTaskLinkService);
 container.bind(NEW_TASK_LINK_SERVICE).toService(MAIN_TOKENS.NewTaskLinkService);
+container.bind(MAIN_APPROVAL_LINK_SERVICE).to(ApprovalLinkService);
+container
+  .bind(APPROVAL_LINK_SERVICE)
+  .toService(MAIN_TOKENS.ApprovalLinkService);
 container.load(watcherRegistryModule);
 container
   .bind(MAIN_WATCHER_REGISTRY_SERVICE)
@@ -708,10 +709,6 @@ container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
 container.bind(MAIN_TOKENS.DiscordPresenceService).to(DiscordPresenceService);
 
 // Canvas / dashboards (project-bluebird). The host-agnostic dashboard services
-// live in @posthog/core (bound via canvasCoreModule); CanvasGenService is the
-// desktop-bound agent surface (a singleton holding per-thread agent state + a
-// forwarding loop for app life). Both resolve through ctx.container in the
-// host-router routers.
+// live in @posthog/core (bound via canvasCoreModule) and resolve through
+// ctx.container in the host-router routers.
 container.load(canvasCoreModule);
-container.bind(CANVAS_GEN_SERVICE).to(CanvasGenService).inSingletonScope();
-container.bind(FREEFORM_GEN_SERVICE).to(FreeformGenService).inSingletonScope();
