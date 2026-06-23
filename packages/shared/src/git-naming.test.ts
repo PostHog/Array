@@ -13,10 +13,11 @@ describe("normalizeBranchPrefix", () => {
     expect(normalizeBranchPrefix("  team/  ")).toBe("team/");
   });
 
-  it("preserves a trailing slash or dash verbatim", () => {
+  it("guarantees exactly one trailing slash", () => {
+    expect(normalizeBranchPrefix("team")).toBe("team/");
     expect(normalizeBranchPrefix("team/")).toBe("team/");
-    expect(normalizeBranchPrefix("team-")).toBe("team-");
-    expect(normalizeBranchPrefix("team")).toBe("team");
+    expect(normalizeBranchPrefix("team//")).toBe("team/");
+    expect(normalizeBranchPrefix("team-")).toBe("team-/");
   });
 
   it("strips leading slashes and collapses repeated slashes", () => {
