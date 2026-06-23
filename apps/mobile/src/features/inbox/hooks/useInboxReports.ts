@@ -4,6 +4,7 @@ import {
   type DismissSignalReportInput,
   dismissSignalReport,
   getAvailableSuggestedReviewers,
+  getCommitDiff,
   getSignalProcessingState,
   getSignalReport,
   getSignalReportArtefacts,
@@ -19,6 +20,7 @@ import {
 import { useInboxFilterStore } from "../stores/inboxFilterStore";
 import type {
   AvailableSuggestedReviewersResponse,
+  CommitDiffResponse,
   SignalProcessingStateResponse,
   SignalReport,
   SignalReportArtefactsResponse,
@@ -47,6 +49,8 @@ export const inboxKeys = {
     [...inboxKeys.all, reportId, "artefacts"] as const,
   signals: (reportId: string) =>
     [...inboxKeys.all, reportId, "signals"] as const,
+  commitDiff: (reportId: string, artefactId: string) =>
+    [...inboxKeys.all, reportId, "artefacts", artefactId, "diff"] as const,
   processingState: ["inbox", "signal-processing-state"] as const,
 };
 
@@ -164,6 +168,27 @@ export function useInboxReportArtefacts(reportId: string | null) {
       return getSignalReportArtefacts(reportId);
     },
     enabled: !!projectId && !!oauthAccessToken && !!reportId,
+    // The log is a live work record — agents append artefacts while a report
+    // is open, so refresh it gently rather than trusting the default staleTime.
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+  });
+}
+
+export function useCommitDiff(
+  reportId: string,
+  artefactId: string,
+  enabled: boolean,
+) {
+  const { projectId, oauthAccessToken } = useAuthStore();
+
+  return useQuery<CommitDiffResponse>({
+    queryKey: inboxKeys.commitDiff(reportId, artefactId),
+    queryFn: () => getCommitDiff(reportId, artefactId),
+    // A commit's diff is immutable, so only fetch once expanded and never retry.
+    enabled: enabled && !!projectId && !!oauthAccessToken,
+    staleTime: 5 * 60_000,
+    retry: false,
   });
 }
 

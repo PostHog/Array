@@ -33,6 +33,7 @@ import {
   type DismissReportResult,
   DismissReportSheet,
 } from "@/features/inbox/components/DismissReportSheet";
+import { ReportActivity } from "@/features/inbox/components/ReportActivity";
 import { SignalCard } from "@/features/inbox/components/SignalCard";
 import {
   type ReviewerActionExtra,
@@ -568,6 +569,9 @@ export default function ReportDetailScreen() {
         {signalsQuery.isLoading && (
           <Text className="text-[12px] text-gray-9">Loading signals…</Text>
         )}
+
+        {/* Activity log */}
+        <ReportActivity reportId={report.id} artefacts={artefacts} />
       </ScrollView>
 
       <View

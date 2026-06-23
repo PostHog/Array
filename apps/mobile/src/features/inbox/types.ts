@@ -145,32 +145,58 @@ export interface SuggestedReviewerWriteEntry {
   github_name?: string;
 }
 
+export interface ArtefactUser {
+  uuid?: string;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+}
+
+export interface CommitContent {
+  repository: string;
+  branch: string;
+  commit_sha: string;
+  message: string;
+  note?: string | null;
+}
+
+export interface TaskRunArtefactContent {
+  task_id: string;
+  product: string;
+  type: string;
+}
+
+export interface CommitDiffResponse {
+  diff: string;
+  truncated: boolean;
+}
+
+/**
+ * Fields shared by every artefact row. `created_by` / `task_id` carry
+ * attribution: at most one is set — `created_by` for user writes, `task_id`
+ * for agent writes, neither for system writes.
+ */
+interface BaseArtefact {
+  id: string;
+  created_at: string;
+  created_by?: ArtefactUser | null;
+  task_id?: string | null;
+}
+
 export type ReportArtefact =
-  | {
-      id: string;
+  | (BaseArtefact & {
       type: "priority_judgment";
-      created_at: string;
       content: PriorityJudgmentContent;
-    }
-  | {
-      id: string;
+    })
+  | (BaseArtefact & {
       type: "actionability_judgment";
-      created_at: string;
       content: ActionabilityJudgmentContent;
-    }
-  | {
-      id: string;
-      type: "signal_finding";
-      created_at: string;
-      content: SignalFindingContent;
-    }
-  | SuggestedReviewersArtefact
-  | {
-      id: string;
-      type: string;
-      created_at: string;
-      content: unknown;
-    };
+    })
+  | (BaseArtefact & { type: "signal_finding"; content: SignalFindingContent })
+  | (BaseArtefact & { type: "commit"; content: CommitContent })
+  | (BaseArtefact & { type: "task_run"; content: TaskRunArtefactContent })
+  | (BaseArtefact & SuggestedReviewersArtefact)
+  | (BaseArtefact & { type: string; content: unknown });
 
 export interface SignalReportArtefactsResponse {
   results: ReportArtefact[];
