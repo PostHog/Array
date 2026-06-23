@@ -2230,6 +2230,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         enrichedReadCache: this.enrichedReadCache,
         logger: this.logger,
         registerHooks: false,
+        isImportReplay: true,
       };
 
       for (const msg of messages) {

@@ -55,14 +55,23 @@ function hashString(s: string): string {
   return Math.abs(hash).toString(36);
 }
 
-export function getSessionJsonlPath(sessionId: string, cwd: string): string {
-  const configDir =
-    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+export function encodeCwdToProjectKey(cwd: string): string {
   let projectKey = cwd.replace(/[^a-zA-Z0-9]/g, "-");
   if (projectKey.length > MAX_PROJECT_KEY_LENGTH) {
     projectKey = `${projectKey.slice(0, MAX_PROJECT_KEY_LENGTH)}-${hashString(cwd)}`;
   }
-  return path.join(configDir, "projects", projectKey, `${sessionId}.jsonl`);
+  return projectKey;
+}
+
+export function getSessionJsonlPath(sessionId: string, cwd: string): string {
+  const configDir =
+    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  return path.join(
+    configDir,
+    "projects",
+    encodeCwdToProjectKey(cwd),
+    `${sessionId}.jsonl`,
+  );
 }
 
 export function rebuildConversation(

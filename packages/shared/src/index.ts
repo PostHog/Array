@@ -134,6 +134,7 @@ export {
 } from "./seat";
 export {
   type AcpMessage,
+  IMPORTED_USER_PROMPT_META_KEY,
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcResponse,
