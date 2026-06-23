@@ -417,7 +417,7 @@ export function PrCommentThread({
       >
         <div className="flex gap-1">
           {/* Caret lives in a fixed gutter so it stays put when toggling. */}
-          <div className="shrink-0 pt-1.5">
+          <div className="shrink-0 pt-2.5">
             <ToggleCaret collapsed={isCollapsed} onToggle={toggleCollapsed} />
           </div>
 
