@@ -219,6 +219,109 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  describe("warmTask", () => {
+    function makeClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    it("posts the repository + integration + branch and returns the warm run identifiers", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () =>
+          JSON.stringify({ task_id: "task-1", run_id: "run-1" }),
+      });
+      const client = makeClient(fetch);
+
+      await expect(
+        client.warmTask({
+          repository: "PostHog/posthog",
+          github_integration: 42,
+          branch: "feature/warm",
+        }),
+      ).resolves.toEqual({ task_id: "task-1", run_id: "run-1" });
+
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "post",
+          path: "/api/projects/123/tasks/warm/",
+          overrides: {
+            body: JSON.stringify({
+              repository: "PostHog/posthog",
+              github_integration: 42,
+              branch: "feature/warm",
+            }),
+          },
+        }),
+      );
+    });
+
+    it("sends a null branch when none is provided", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () =>
+          JSON.stringify({ task_id: "task-1", run_id: "run-1" }),
+      });
+      const client = makeClient(fetch);
+
+      await client.warmTask({
+        repository: "PostHog/posthog",
+        github_integration: 42,
+      });
+
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          overrides: {
+            body: JSON.stringify({
+              repository: "PostHog/posthog",
+              github_integration: 42,
+              branch: null,
+            }),
+          },
+        }),
+      );
+    });
+
+    it("returns null on an empty 200 body (feature disabled / capped / no-op)", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () => "",
+      });
+      const client = makeClient(fetch);
+
+      await expect(
+        client.warmTask({
+          repository: "PostHog/posthog",
+          github_integration: 42,
+        }),
+      ).resolves.toBeNull();
+    });
+
+    it("throws on a non-ok response", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValue({ ok: false, statusText: "Bad Request" });
+      const client = makeClient(fetch);
+
+      await expect(
+        client.warmTask({
+          repository: "PostHog/posthog",
+          github_integration: 42,
+        }),
+      ).rejects.toThrow("Bad Request");
+    });
+  });
+
   describe("getSignalReport", () => {
     function makeClient(fetch: ReturnType<typeof vi.fn>) {
       const client = new PostHogAPIClient(

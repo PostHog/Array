@@ -2136,6 +2136,7 @@ export class PostHogAPIClient {
       > & {
         github_integration?: number | null;
         github_user_integration?: string | null;
+        branch?: string | null;
       },
   ) {
     const teamId = await this.getTeamId();
@@ -2269,6 +2270,36 @@ export class PostHogAPIClient {
     );
 
     return data as unknown as Task;
+  }
+
+  async warmTask(options: {
+    repository: string;
+    github_integration: number;
+    branch?: string | null;
+  }): Promise<{ task_id: string; run_id: string } | null> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/warm/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({
+          repository: options.repository,
+          github_integration: options.github_integration,
+          branch: options.branch ?? null,
+        }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to warm task: ${response.statusText}`);
+    }
+    const text = await response.text();
+    if (!text) {
+      return null;
+    }
+    return JSON.parse(text) as { task_id: string; run_id: string };
   }
 
   async prepareTaskStagedArtifactUploads(

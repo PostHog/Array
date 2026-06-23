@@ -228,6 +228,9 @@ export function useTaskCreation({
 
       const content = contentOverride ?? editor.getContent();
       const plainPromptText = contentToPlainText(content).trim();
+      const serializedContent = contentToXml(content).trim();
+      const filePaths = extractFilePaths(content);
+
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
       const pendingTaskKey = shouldShowPendingView
         ? (globalThis.crypto?.randomUUID?.() ?? `pending-${Date.now()}`)
@@ -255,8 +258,6 @@ export function useTaskCreation({
           }
         }
 
-        const serializedContent = contentToXml(content).trim();
-        const filePaths = extractFilePaths(content);
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
