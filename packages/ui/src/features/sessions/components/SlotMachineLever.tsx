@@ -1,7 +1,7 @@
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { Box, Flex, Tooltip } from "@radix-ui/themes";
 import { motion, useAnimationControls } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /** Reel faces. The hedgehog is the jackpot symbol. */
 const REEL_SYMBOLS = ["🍒", "🍋", "🔔", "⭐", "💎", "7️⃣", "🦔"] as const;
@@ -29,8 +29,19 @@ export function SlotMachineLever({ spinning }: SlotMachineLeverProps) {
   const [reels, setReels] = useState<[string, string, string]>(randomReels);
   const [pullSpin, setPullSpin] = useState(false);
   const lever = useAnimationControls();
+  const pullSpinTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isSpinning = enabled && (spinning || pullSpin);
+
+  // Clear any pending pull-spin timer on unmount so it doesn't fire against
+  // stale state after the session ends.
+  useEffect(() => {
+    return () => {
+      if (pullSpinTimeout.current !== null) {
+        clearTimeout(pullSpinTimeout.current);
+      }
+    };
+  }, []);
 
   // Cycle the reels rapidly while spinning, then let them rest on their last
   // values once the run (or manual pull) finishes.
@@ -48,7 +59,12 @@ export function SlotMachineLever({ spinning }: SlotMachineLeverProps) {
       transition: { duration: 0.55, times: [0, 0.32, 1], ease: "easeInOut" },
     });
     setPullSpin(true);
-    setTimeout(() => setPullSpin(false), 800);
+    // Restart the timer on each pull so rapid clicks keep the reels spinning
+    // until 800ms after the most recent press.
+    if (pullSpinTimeout.current !== null) {
+      clearTimeout(pullSpinTimeout.current);
+    }
+    pullSpinTimeout.current = setTimeout(() => setPullSpin(false), 800);
   }, [lever]);
 
   if (!enabled) return null;
