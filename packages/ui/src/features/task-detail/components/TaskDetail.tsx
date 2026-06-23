@@ -5,6 +5,7 @@ import { useHotkeys, useHotkeysContext } from "react-hotkeys-hook";
 import { useBlurOnEscape } from "../../../hooks/useBlurOnEscape";
 import { useSetHeaderContent } from "../../../hooks/useSetHeaderContent";
 import { logger } from "../../../shell/logger";
+import { ChannelBreadcrumb } from "../../canvas/components/ChannelBreadcrumb";
 import { CloudReviewPage } from "../../code-review/components/CloudReviewPage";
 import { ReviewPage } from "../../code-review/components/ReviewPage";
 import { useReviewNavigationStore } from "../../code-review/reviewNavigationStore";
@@ -28,9 +29,18 @@ const log = logger.scope("task-detail");
 
 interface TaskDetailProps {
   task: Task;
+  /**
+   * When the task is opened inside a channel, the channel name to prefix the
+   * header title with as a "# channel / title" breadcrumb. Omitted for the
+   * plain Code task view.
+   */
+  channelName?: string;
 }
 
-export function TaskDetail({ task: initialTask }: TaskDetailProps) {
+export function TaskDetail({
+  task: initialTask,
+  channelName,
+}: TaskDetailProps) {
   const taskId = initialTask.id;
 
   const { task } = useTaskData({ taskId, initialTask });
@@ -104,32 +114,47 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const handleTitleEditCancel = useCallback(() => {
     setIsEditingTitle(false);
   }, []);
+  const trailing = openTargetPath ? (
+    <ExternalAppsOpener targetPath={openTargetPath} />
+  ) : null;
   const headerContent = useMemo(
-    () => (
-      <Flex align="center" justify="between" gap="2" width="100%">
-        {isEditingTitle ? (
-          <HeaderTitleEditor
-            initialTitle={task.title}
-            onSubmit={handleTitleEditSubmit}
-            onCancel={handleTitleEditCancel}
-          />
-        ) : (
-          <Tooltip content={task.title} side="bottom" delayDuration={300}>
-            <Text
-              truncate
-              className="no-drag min-w-0 font-medium text-[13px]"
-              onDoubleClick={() => setIsEditingTitle(true)}
-            >
-              {task.title}
-            </Text>
-          </Tooltip>
-        )}
-        {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
-      </Flex>
-    ),
+    () =>
+      // Inside a channel, prefix the editable title with the channel
+      // breadcrumb ("# channel / title"); the plain Code view keeps the bare
+      // title. Both share the same inline-rename editor.
+      channelName ? (
+        <ChannelBreadcrumb
+          channelName={channelName}
+          leafLabel={task.title}
+          onRename={handleTitleEditSubmit}
+          trailing={trailing}
+        />
+      ) : (
+        <Flex align="center" justify="between" gap="2" width="100%">
+          {isEditingTitle ? (
+            <HeaderTitleEditor
+              initialTitle={task.title}
+              onSubmit={handleTitleEditSubmit}
+              onCancel={handleTitleEditCancel}
+            />
+          ) : (
+            <Tooltip content={task.title} side="bottom" delayDuration={300}>
+              <Text
+                truncate
+                className="no-drag min-w-0 font-medium text-[13px]"
+                onDoubleClick={() => setIsEditingTitle(true)}
+              >
+                {task.title}
+              </Text>
+            </Tooltip>
+          )}
+          {trailing}
+        </Flex>
+      ),
     [
+      channelName,
       task.title,
-      openTargetPath,
+      trailing,
       isEditingTitle,
       handleTitleEditSubmit,
       handleTitleEditCancel,

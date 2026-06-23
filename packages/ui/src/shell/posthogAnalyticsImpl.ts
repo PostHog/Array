@@ -55,8 +55,15 @@ export function initializePostHog(sessionId?: string) {
   }
 
   posthog.init(apiKey, {
+    defaults: "2026-05-30",
     api_host: apiHost,
     ui_host: uiHost,
+    // The epoch turns capture_pageview into "history_change". This app routes via
+    // createHashHistory() (packages/ui/src/router/router.ts), so the route lives in
+    // the URL hash and $pathname is identical for every screen — automatic pageviews
+    // would collapse all routes into one and corrupt route-level analytics. Opt out
+    // and rely on explicit instrumentation instead.
+    capture_pageview: false,
     disable_session_recording: false,
     session_idle_timeout_seconds: SESSION_IDLE_TIMEOUT_SECONDS,
     ...(sessionId ? { bootstrap: { sessionID: sessionId } } : {}),
@@ -76,6 +83,14 @@ export function initializePostHog(sessionId?: string) {
   posthog.unregister("signal_report_id");
 
   isInitialized = true;
+
+  // Dev-only: expose the posthog instance so flags can be toggled from the
+  // renderer console, e.g. `posthog.featureFlags.override({ "agent-platform": true })`
+  // (and `posthog.featureFlags.override(false)` to clear). The module build
+  // doesn't attach to window otherwise.
+  if (import.meta.env.DEV) {
+    (window as unknown as { posthog?: typeof posthog }).posthog = posthog;
+  }
 
   registerPersistentSuperProperties();
 

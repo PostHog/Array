@@ -2,10 +2,8 @@ import {
   ArchiveIcon,
   CaretDownIcon,
   ChartBarIcon,
-  ChartLineIcon,
   CodeIcon,
   DotsThreeIcon,
-  FileIcon,
   FileTextIcon,
   FolderIcon,
   HashIcon,
@@ -57,6 +55,7 @@ import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
+import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import {
   NewCanvasDialog,
   trackAndCreateCanvas,
@@ -82,6 +81,7 @@ import {
   useCreateAndOpenDashboard,
   useDashboardMutations,
   useDashboards,
+  useOpenHomeCanvas,
   usePrefetchDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
@@ -98,20 +98,6 @@ import { hostClient } from "../hostClient";
 // Cap how many tasks each channel shows by default; the rest hide behind a
 // "View more" button so a busy channel doesn't dominate the sidebar.
 const MAX_VISIBLE_TASKS_PER_CHANNEL = 5;
-
-// A canvas's leading icon, chosen from its template so the tree reads at a
-// glance: bar chart for dashboards, line chart for web-analytics, plain file for
-// blank canvases.
-function iconForTemplate(templateId: string): ReactNode {
-  switch (templateId) {
-    case "web-analytics":
-      return <ChartLineIcon size={16} className="text-gray-9" />;
-    case "blank":
-      return <FileIcon size={16} className="text-gray-9" />;
-    default:
-      return <ChartBarIcon size={16} className="text-gray-9" />;
-  }
-}
 
 // Short "x ago" stamp for an item's subtitle. Coarse on purpose — the sidebar
 // just needs recency at a glance, not a precise duration.
@@ -723,6 +709,7 @@ function ChannelSection({
   channels: Channel[];
 }) {
   const navigate = useNavigate();
+  const openHomeCanvas = useOpenHomeCanvas();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { data: tasks } = useTasks();
   const archivedTaskIds = useArchivedTaskIds();
@@ -811,6 +798,10 @@ function ChannelSection({
     hiddenTaskCount,
     MAX_VISIBLE_TASKS_PER_CHANNEL,
   );
+  const hasChildren =
+    dashboards.length > 0 ||
+    displayedFiledTasks.length > 0 ||
+    hiddenTaskCount > 0;
 
   return (
     <Box
@@ -849,10 +840,7 @@ function ChannelSection({
                       surface: "sidebar",
                       channel_id: channel.id,
                     });
-                    navigate({
-                      to: "/website/$channelId",
-                      params: { channelId: channel.id },
-                    });
+                    void openHomeCanvas(channel);
                   }}
                   className="w-full min-w-0 justify-start ps-8 data-selected:bg-fill-selected data-selected:text-gray-12"
                 >
@@ -961,64 +949,66 @@ function ChannelSection({
         </div>
         {/* Children hang off a vertical guide line, like a tree. The folder
             variant's own inset is removed so the guide line controls indent. */}
-        <CollapsibleContent className="px-0">
-          <Flex
-            direction="column"
-            gap="px"
-            className="mt-px ml-[11px] border-gray-6 border-l pl-2 empty:hidden"
-          >
-            {dashboards.map((d) => (
-              <DashboardRow
-                key={d.id}
-                channelId={channel.id}
-                dashboard={d}
-                active={pathname === `${base}/dashboards/${d.id}`}
-              />
-            ))}
-            {displayedFiledTasks.map(({ id: channelTaskId, taskId }) => {
-              const task = tasks?.find((t) => t.id === taskId);
-              const title = task?.title || "Untitled task";
-              return (
-                <TaskRow
-                  key={channelTaskId}
-                  channelTaskId={channelTaskId}
+        {hasChildren && (
+          <CollapsibleContent className="px-0">
+            <Flex
+              direction="column"
+              gap="px"
+              className="mt-px ml-[11px] border-gray-6 border-l pl-2 empty:hidden"
+            >
+              {dashboards.map((d) => (
+                <DashboardRow
+                  key={d.id}
                   channelId={channel.id}
-                  taskId={taskId}
-                  task={task}
-                  title={title}
-                  active={pathname === `${base}/tasks/${taskId}`}
-                  onClick={() =>
-                    navigate({
-                      to: "/website/$channelId/tasks/$taskId",
-                      params: { channelId: channel.id, taskId },
-                    })
-                  }
-                  channels={channels}
+                  dashboard={d}
+                  active={pathname === `${base}/dashboards/${d.id}`}
                 />
-              );
-            })}
-            {hiddenTaskCount > 0 && (
-              <Button
-                variant="default"
-                size="default"
-                onClick={() => {
-                  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                    action_type: "view_more_tasks",
-                    surface: "sidebar",
-                    channel_id: channel.id,
-                  });
-                  setTaskLimit((n) => n + MAX_VISIBLE_TASKS_PER_CHANNEL);
-                }}
-                className="w-full min-w-0 justify-start gap-2 text-[13px] text-gray-10"
-              >
-                <span className="inline-flex size-[14px] shrink-0 items-center justify-center">
-                  <CaretDownIcon size={12} />
-                </span>
-                View {nextBatchCount} more
-              </Button>
-            )}
-          </Flex>
-        </CollapsibleContent>
+              ))}
+              {displayedFiledTasks.map(({ id: channelTaskId, taskId }) => {
+                const task = tasks?.find((t) => t.id === taskId);
+                const title = task?.title || "Untitled task";
+                return (
+                  <TaskRow
+                    key={channelTaskId}
+                    channelTaskId={channelTaskId}
+                    channelId={channel.id}
+                    taskId={taskId}
+                    task={task}
+                    title={title}
+                    active={pathname === `${base}/tasks/${taskId}`}
+                    onClick={() =>
+                      navigate({
+                        to: "/website/$channelId/tasks/$taskId",
+                        params: { channelId: channel.id, taskId },
+                      })
+                    }
+                    channels={channels}
+                  />
+                );
+              })}
+              {hiddenTaskCount > 0 && (
+                <Button
+                  variant="default"
+                  size="default"
+                  onClick={() => {
+                    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                      action_type: "view_more_tasks",
+                      surface: "sidebar",
+                      channel_id: channel.id,
+                    });
+                    setTaskLimit((n) => n + MAX_VISIBLE_TASKS_PER_CHANNEL);
+                  }}
+                  className="w-full min-w-0 justify-start gap-2 text-[13px] text-gray-10"
+                >
+                  <span className="inline-flex size-[14px] shrink-0 items-center justify-center">
+                    <CaretDownIcon size={12} />
+                  </span>
+                  View {nextBatchCount} more
+                </Button>
+              )}
+            </Flex>
+          </CollapsibleContent>
+        )}
       </Collapsible>
       {/* One modal for both the dropdown and context-menu "Rename" actions. */}
       <RenameChannelModal
@@ -1103,7 +1093,7 @@ export function ChannelsList() {
     <TooltipProvider delay={600}>
       <Flex direction="column" gap="px" className="px-2 pb-2">
         <Box className="py-1.5">
-          <Separator />
+          <Separator className="bg-border" />
         </Box>
 
         {starred.length > 0 && (

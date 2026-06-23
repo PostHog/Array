@@ -1,5 +1,6 @@
 import {
   type CanvasAnalyticsConfig,
+  type CanvasNavIntent,
   type CanvasToHostMessage,
   canvasToHostMessageSchema,
   type HostToCanvasMessage,
@@ -34,6 +35,12 @@ export interface FreeformCanvasProps {
   /** Called once the canvas has rendered successfully (clears error state). */
   onRendered?: () => void;
   /**
+   * Called when the canvas requests a host navigation. The intent is already
+   * validated against the allowlist; this component stays channel-agnostic and
+   * just forwards it — the caller maps it to actual routing.
+   */
+  onNavigate?: (intent: CanvasNavIntent) => void;
+  /**
    * Bootstrap config for in-iframe posthog-js (analytics + session replay).
    * Absent = no capture/replay. Only the PUBLIC key is here; the private token
    * never crosses into the iframe.
@@ -56,6 +63,7 @@ export function FreeformCanvas({
   onDataRequest,
   onError,
   onRendered,
+  onNavigate,
   analytics,
   refreshKey = 0,
 }: FreeformCanvasProps) {
@@ -85,6 +93,7 @@ export function FreeformCanvas({
     onDataRequest,
     onError,
     onRendered,
+    onNavigate,
     code,
     mode,
     analytics,
@@ -94,6 +103,7 @@ export function FreeformCanvas({
     onDataRequest,
     onError,
     onRendered,
+    onNavigate,
     code,
     mode,
     analytics,
@@ -172,6 +182,10 @@ export function FreeformCanvas({
           break;
         case "resize":
           setHeight(msg.height);
+          break;
+        case "navigate":
+          // msg.nav is already allowlist-validated by safeParse below.
+          latest.current.onNavigate?.(msg.nav);
           break;
       }
     };

@@ -76,13 +76,6 @@ export interface AvailableSuggestedReviewersResponse {
   count: number;
 }
 
-export interface SignalReportTask {
-  id: string;
-  relationship: string;
-  task_id: string;
-  created_at: string;
-}
-
 export interface Signal {
   signal_id: string;
   content: string;

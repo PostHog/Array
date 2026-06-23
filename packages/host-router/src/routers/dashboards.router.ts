@@ -3,6 +3,7 @@ import {
   dashboardIdInput,
   dashboardRecordSchema,
   dashboardSummarySchema,
+  ensureHomeCanvasInput,
   listDashboardsInput,
   renameDashboardInput,
   saveFreeformInput,
@@ -55,6 +56,22 @@ export const dashboardsRouter = router({
     .output(dashboardRecordSchema)
     .mutation(({ ctx, input }) =>
       ctx.container.get<IDashboardsService>(DASHBOARDS_SERVICE).rename(input),
+    ),
+  ensureHomeCanvas: publicProcedure
+    .input(ensureHomeCanvasInput)
+    .output(dashboardRecordSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<IDashboardsService>(DASHBOARDS_SERVICE)
+        .ensureHomeCanvas(input.channelId),
+    ),
+  resetHomeCanvas: publicProcedure
+    .input(ensureHomeCanvasInput)
+    .output(dashboardRecordSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<IDashboardsService>(DASHBOARDS_SERVICE)
+        .resetHomeCanvas(input.channelId),
     ),
   delete: publicProcedure
     .input(dashboardIdInput)

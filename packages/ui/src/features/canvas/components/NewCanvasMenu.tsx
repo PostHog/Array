@@ -67,8 +67,8 @@ export function CanvasTemplateList({
             );
           }}
         >
-          <span className="font-medium text-gray-12">{t.name}</span>
-          <span className="font-normal text-gray-10 text-xs [text-wrap:initial]">
+          <span className="font-medium">{t.name}</span>
+          <span className="font-normal text-muted-foreground/80 text-xs [text-wrap:initial]">
             {t.description}
           </span>
         </Button>
@@ -101,7 +101,7 @@ export function NewCanvasDialog({
             generating UI.
           </DialogDescription>
         </DialogHeader>
-        <DialogBody className="[&_*[data-slot=scroll-area-viewport]]:py-0">
+        <DialogBody className="[&_*[data-slot=scroll-area-viewport]]:px-2 [&_*[data-slot=scroll-area-viewport]]:py-px">
           <CanvasTemplateList
             channelId={channelId}
             surface={surface}

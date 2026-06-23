@@ -1,19 +1,21 @@
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
+import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
 import { ChannelContextPanel } from "@posthog/ui/features/canvas/components/ChannelContextPanel";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import { TaskInput } from "@posthog/ui/features/task-detail/components/TaskInput";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
+import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 // A channel's "New task" view. Reuses /code's TaskInput, but routes the created
 // task into the channel (/website/$channelId/tasks/$id) instead of /code, and
@@ -25,6 +27,20 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
   const { fileTask } = useChannelTaskMutations();
   const { channels } = useChannels();
   const channelName = channels.find((c) => c.id === channelId)?.name;
+
+  // Surface the channel breadcrumb in the shared header, same as the other
+  // channel scenes ("# channel / New task").
+  useSetHeaderContent(
+    useMemo(
+      () => (
+        <ChannelBreadcrumb
+          channelName={channelName ?? "Channel"}
+          leafLabel="New task"
+        />
+      ),
+      [channelName],
+    ),
+  );
   // The channel's CONTEXT.md, passed to the agent as optional background so
   // tasks created here start with the shared context. Absent/empty is fine.
   const { data: instructions } = useFolderInstructions(channelId);

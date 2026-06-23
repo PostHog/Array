@@ -23,6 +23,7 @@ import {
   type ThreadGrouping,
   type ThreadRow,
 } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
+import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 import { ToolCallGroupChip } from "@posthog/ui/features/sessions/components/new-thread/ToolCallGroupChip";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
 import {
@@ -72,6 +73,18 @@ interface ConversationViewProps {
   task?: Task;
   slackThreadUrl?: string;
   compact?: boolean;
+  /**
+   * Override the global collapse setting for this view. Used by surfaces like
+   * the live-agent chat preview, where folding the agent's prose into a tool
+   * chip hides the response — they pass `"none"` to render everything inline.
+   */
+  collapseMode?: CollapseMode;
+  /**
+   * Allow horizontal scrolling of the transcript viewport. Defaults to true.
+   * Narrow surfaces (the Agent Builder dock) pass false to avoid a horizontal
+   * scrollbar from off-edge content; nested code blocks keep their own scroll.
+   */
+  scrollX?: boolean;
 }
 
 export function ConversationView({
@@ -83,6 +96,8 @@ export function ConversationView({
   task,
   slackThreadUrl,
   compact = false,
+  collapseMode: collapseModeProp,
+  scrollX = true,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -99,7 +114,10 @@ export function ConversationView({
   const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
   const showDebugLogs = debugLogsCloudRuns;
 
-  const collapseMode = useSettingsStore((s) => s.conversationCollapseMode);
+  const collapseModeSetting = useSettingsStore(
+    (s) => s.conversationCollapseMode,
+  );
+  const collapseMode = collapseModeProp ?? collapseModeSetting;
   const groupOverrides = useGroupOverrides();
   const sessionViewActions = useSessionViewActions();
 
@@ -365,6 +383,7 @@ export function ConversationView({
             itemClassName="mx-auto px-2 py-1.5"
             itemStyle={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
             footer={footer}
+            scrollX={scrollX}
           />
         </SessionTaskIdProvider>
         {showScrollButton && (

@@ -68,7 +68,7 @@ describe("useUpdateSuggestedReviewers", () => {
     vi.clearAllMocks();
   });
 
-  it("optimistically patches the suggested_reviewers artefact in the cache", async () => {
+  it("optimistically appends a new latest reviewers row, keeping the prior one", async () => {
     mockUpdateArtefact.mockResolvedValue(artefact([reviewer("octocat")]));
     const { result, queryClient } = renderUpdateHook();
 
@@ -92,12 +92,21 @@ describe("useUpdateSuggestedReviewers", () => {
     ]);
 
     const cached = queryClient.getQueryData<SignalReportArtefactsResponse>(key);
-    const cachedArtefact = cached?.results.find((a) => a.id === ARTEFACT_ID) as
-      | SuggestedReviewersArtefact
-      | undefined;
-    expect(cachedArtefact?.content.map((r) => r.github_login)).toEqual([
+    const reviewerRows = (cached?.results ?? []).filter(
+      (a): a is SuggestedReviewersArtefact => a.type === "suggested_reviewers",
+    );
+    // The prior row is preserved untouched as history.
+    const priorRow = reviewerRows.find((a) => a.id === ARTEFACT_ID);
+    expect(priorRow?.content.map((r) => r.github_login)).toEqual([
       "octocat",
+      "hubot",
     ]);
+    // A new synthetic row is appended and is the latest (current reviewers).
+    const latest = reviewerRows.reduce((a, b) =>
+      a.created_at > b.created_at ? a : b,
+    );
+    expect(latest.id).not.toBe(ARTEFACT_ID);
+    expect(latest.content.map((r) => r.github_login)).toEqual(["octocat"]);
   });
 
   it("rolls back the cache when the request fails", async () => {

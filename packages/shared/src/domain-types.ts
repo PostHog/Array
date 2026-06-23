@@ -26,7 +26,7 @@ export const effortLevelSchema = z.enum([
 ]);
 export type EffortLevel = z.infer<typeof effortLevelSchema>;
 
-interface UserBasic {
+export interface UserBasic {
   id: number;
   uuid: string;
   distinct_id?: string | null;
@@ -309,19 +309,36 @@ export interface SignalReportArtefactContent {
   distance_to_centroid: number | null;
 }
 
-export interface SignalReportArtefact {
+/**
+ * Fields shared by every artefact row. `created_by` / `task_id` carry attribution:
+ * at most one is set — `created_by` for user writes, `task_id` for agent writes,
+ * neither for system (pipeline) writes.
+ */
+export interface SignalReportArtefactBase {
   id: string;
+  created_at: string;
+  updated_at?: string | null;
+  /** User the artefact is attributed to, when a user produced it. */
+  created_by?: UserBasic | null;
+  /** Task the artefact is attributed to, when an agent produced it. */
+  task_id?: string | null;
+  /**
+   * True when the row's content did not match its type's expected shape and was
+   * normalized to a plain text preview instead — the entry still renders rather
+   * than silently vanishing from the activity log.
+   */
+  degraded?: boolean;
+}
+
+export interface SignalReportArtefact extends SignalReportArtefactBase {
   type: string;
   content: SignalReportArtefactContent;
-  created_at: string;
 }
 
 /** Artefact with `type: "priority_judgment"` — priority assessment from the agentic report. */
-export interface PriorityJudgmentArtefact {
-  id: string;
+export interface PriorityJudgmentArtefact extends SignalReportArtefactBase {
   type: "priority_judgment";
   content: PriorityJudgmentContent;
-  created_at: string;
 }
 
 export interface PriorityJudgmentContent {
@@ -330,11 +347,10 @@ export interface PriorityJudgmentContent {
 }
 
 /** Artefact with `type: "actionability_judgment"` — actionability assessment from the agentic report. */
-export interface ActionabilityJudgmentArtefact {
-  id: string;
+export interface ActionabilityJudgmentArtefact
+  extends SignalReportArtefactBase {
   type: "actionability_judgment";
   content: ActionabilityJudgmentContent;
-  created_at: string;
 }
 
 export interface ActionabilityJudgmentContent {
@@ -343,12 +359,23 @@ export interface ActionabilityJudgmentContent {
   already_addressed: boolean;
 }
 
+/** Artefact with `type: "safety_judgment"` — the prompt-injection safety verdict for the report. */
+export interface SafetyJudgmentArtefact extends SignalReportArtefactBase {
+  type: "safety_judgment";
+  content: SafetyJudgmentContent;
+}
+
+export interface SafetyJudgmentContent {
+  /** True when the report's signals are judged safe to act on. */
+  choice: boolean;
+  /** Why the report was judged unsafe; null when safe. */
+  explanation: string | null;
+}
+
 /** Artefact with `type: "signal_finding"` — per-signal research finding from the agentic report. */
-export interface SignalFindingArtefact {
-  id: string;
+export interface SignalFindingArtefact extends SignalReportArtefactBase {
   type: "signal_finding";
   content: SignalFindingContent;
-  created_at: string;
 }
 
 export interface SignalFindingContent {
@@ -360,11 +387,9 @@ export interface SignalFindingContent {
 }
 
 /** Artefact with `type: "repo_selection"` - selected repository for the report run. */
-export interface RepoSelectionArtefact {
-  id: string;
+export interface RepoSelectionArtefact extends SignalReportArtefactBase {
   type: "repo_selection";
   content: RepoSelectionContent;
-  created_at: string;
 }
 
 export interface RepoSelectionContent {
@@ -373,19 +398,15 @@ export interface RepoSelectionContent {
 }
 
 /** Artefact with `type: "suggested_reviewers"` — content is an enriched reviewer list. */
-export interface SuggestedReviewersArtefact {
-  id: string;
+export interface SuggestedReviewersArtefact extends SignalReportArtefactBase {
   type: "suggested_reviewers";
   content: SuggestedReviewer[];
-  created_at: string;
 }
 
 /** Artefact with `type: "dismissal"` — captures the user's rationale when suppressing a report. */
-export interface DismissalArtefact {
-  id: string;
+export interface DismissalArtefact extends SignalReportArtefactBase {
   type: "dismissal";
   content: DismissalContent;
-  created_at: string;
 }
 
 export interface DismissalContent {
@@ -396,6 +417,93 @@ export interface DismissalContent {
   user_id: number | null;
   /** PostHog UUID of the dismisser, when available. */
   user_uuid: string | null;
+}
+
+// ── Log artefacts ────────────────────────────────────────────────────────────
+// Append-but-deletable "work log" entries that accumulate on a report. Distinct
+// from the status artefacts above (judgments, reviewers) which are latest-wins.
+// Content shapes mirror products/signals/backend/artefact_schemas.py.
+
+/** Artefact with `type: "code_reference"` — a contiguous span of source lines. */
+export interface CodeReferenceArtefact extends SignalReportArtefactBase {
+  type: "code_reference";
+  content: CodeReferenceContent;
+}
+
+export interface CodeReferenceContent {
+  file_path: string;
+  start_line: number;
+  end_line: number;
+  contents: string;
+  relevance_note: string;
+}
+
+/** Artefact with `type: "line_reference"` — a single source line callout (a point). */
+export interface LineReferenceArtefact extends SignalReportArtefactBase {
+  type: "line_reference";
+  content: LineReferenceContent;
+}
+
+export interface LineReferenceContent {
+  file_path: string;
+  line: number;
+  note: string;
+  /** The exact source text of the referenced line, if available. */
+  contents?: string | null;
+}
+
+/** Artefact with `type: "commit"` — one commit pushed in relation to the report. */
+export interface CommitArtefact extends SignalReportArtefactBase {
+  type: "commit";
+  content: CommitContent;
+}
+
+export interface CommitContent {
+  repository: string;
+  branch: string;
+  commit_sha: string;
+  message: string;
+  note?: string | null;
+}
+
+/** Artefact with `type: "task_run"` — a reference to a `tasks.Task` run for the report. */
+export interface TaskRunArtefact extends SignalReportArtefactBase {
+  type: "task_run";
+  content: TaskRunArtefactContent;
+}
+
+export interface TaskRunArtefactContent {
+  task_id: string;
+  run_id?: string | null;
+  /**
+   * Product that ran the task — `signals` for the built-in pipeline, or a custom agent's
+   * product identifier (mirrors backend TaskRunArtefact).
+   */
+  product: string;
+  /**
+   * Task type within the product — e.g. `research` / `implementation` / `repo_selection` for the
+   * signals pipeline, or a custom agent's type identifier.
+   */
+  type: string;
+}
+
+/** Artefact with `type: "note"` — a free-form note authored by an agent or by code. */
+export interface NoteArtefact extends SignalReportArtefactBase {
+  type: "note";
+  content: NoteContent;
+}
+
+export interface NoteContent {
+  note: string;
+  author?: string | null;
+}
+
+/** Response from the `commit` artefact diff endpoint — the commit rendered against its parent. */
+export interface CommitDiffResponse {
+  /** Unified diff (patch) text introduced by the commit. */
+  diff: string;
+  /** True when the diff was too large to return in full and has been truncated. */
+  truncated: boolean;
 }
 
 export interface SuggestedReviewerCommit {
@@ -472,16 +580,24 @@ export interface SignalReportSignalsResponse {
   signals: Signal[];
 }
 
+/** Any artefact returned by the report `artefacts/` endpoint, discriminated on `type`. */
+export type AnySignalReportArtefact =
+  | SignalReportArtefact
+  | PriorityJudgmentArtefact
+  | ActionabilityJudgmentArtefact
+  | SafetyJudgmentArtefact
+  | SignalFindingArtefact
+  | RepoSelectionArtefact
+  | SuggestedReviewersArtefact
+  | DismissalArtefact
+  | CodeReferenceArtefact
+  | LineReferenceArtefact
+  | CommitArtefact
+  | TaskRunArtefact
+  | NoteArtefact;
+
 export interface SignalReportArtefactsResponse {
-  results: (
-    | SignalReportArtefact
-    | PriorityJudgmentArtefact
-    | ActionabilityJudgmentArtefact
-    | SignalFindingArtefact
-    | RepoSelectionArtefact
-    | SuggestedReviewersArtefact
-    | DismissalArtefact
-  )[];
+  results: AnySignalReportArtefact[];
   count: number;
   unavailableReason?:
     | "forbidden"
@@ -514,27 +630,6 @@ export interface SignalReportsQueryParams {
    * reports, `false` only non-PR reports. Pair with `limit: 1` to count PR reports cheaply.
    */
   has_implementation_pr?: boolean;
-}
-
-/** Values match `SignalReportTask.Relationship` on the PostHog API. */
-export const SIGNAL_REPORT_TASK_RELATIONSHIPS = [
-  "repo_selection",
-  "research",
-  "implementation",
-] as const;
-
-export type SignalReportTaskRelationship =
-  (typeof SIGNAL_REPORT_TASK_RELATIONSHIPS)[number];
-
-/** Inbox / cloud PR tasks must use this when creating the `SignalReportTask` link. */
-export const SIGNAL_REPORT_TASK_IMPLEMENTATION_RELATIONSHIP: SignalReportTaskRelationship =
-  "implementation";
-
-export interface SignalReportTask {
-  id: string;
-  relationship: SignalReportTaskRelationship;
-  task_id: string;
-  created_at: string;
 }
 
 export interface SignalTeamConfig {

@@ -22,17 +22,20 @@ Inbox has four tabs and one reviewer-scope control:
 | Pull requests | `/code/inbox/pulls` | Reports with `implementation_pr_url` set |
 | Reports | `/code/inbox/reports` | Reports without a PR and not currently running |
 | Runs | `/code/inbox/runs` | Reports that are still in progress or waiting on input |
-| Archive | `/code/inbox/dismissed` | Reports the user archived/suppressed (`status === "suppressed"`) |
+| Archive | `/code/inbox/dismissed` | Terminal reports: archived/suppressed (`status === "suppressed"`) and resolved-by-merged-PR (`status === "resolved"`) |
 
 Detail pages live under the same tab: `/code/inbox/<tab>/$reportId`.
 
 The Archive tab (route `/code/inbox/dismissed`, user-facing label "Archive") is
-the exception: suppressed reports are excluded from the
-main pipeline query, so the tab fetches them with a dedicated `status=suppressed`
-query (`useInboxDismissedReports`). Its detail view (`DismissedReportDetail`) is
-read-only — summary + evidence + a single Restore action, no triage affordances —
-and depends on the backend serving suppressed reports on the `retrieve`/`signals`
-read paths (PostHog/posthog#64019). Restore uses `useInboxRestoreReport`, which
+the exception: it holds the two terminal, not-in-inbox states — `suppressed`
+(user-archived) and `resolved` (implementation PR merged) — both excluded from
+the main pipeline query, so the tab fetches them with a dedicated
+`status=suppressed,resolved` query (`useInboxDismissedReports`). Its detail view
+(`DismissedReportDetail`) is read-only — summary + evidence, no triage
+affordances — and depends on the backend serving these reports on the
+`retrieve`/`signals` read paths (PostHog/posthog#64019). Suppressed cards offer a
+single Restore action; resolved cards are reference-only (terminal, no restore),
+badged "Resolved". Restore uses `useInboxRestoreReport`, which
 reuses the `state` action's `potential` ("reopen") transition — the only reopen
 path the backend exposes. The reviewer scope control is hidden on this tab since
 the archive list is not scoped, and the tab carries no count badge. The

@@ -108,13 +108,14 @@ container.bind<ReportModelResolver>(REPORT_MODEL_RESOLVER).toConstantValue({
   async resolveDefaultModel(
     apiHost: string,
     adapter: "claude" | "codex",
+    preferredModel?: string | null,
   ): Promise<string | undefined> {
     try {
       const options = await hostTrpcClient.agent.getPreviewConfigOptions.query({
         apiHost,
         adapter,
       });
-      return selectModelFromOptions(options);
+      return selectModelFromOptions(options, preferredModel);
     } catch (error) {
       reportModelResolverLog.warn("Failed to resolve default model", {
         error,

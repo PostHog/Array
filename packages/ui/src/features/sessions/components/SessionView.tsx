@@ -421,6 +421,7 @@ export function SessionView({
                   taskId={taskId}
                   task={task}
                   slackThreadUrl={slackThreadUrl}
+                  scrollX={false}
                 />
                 <Box className="border-gray-4 border-t">
                   <Box
@@ -505,6 +506,7 @@ export function SessionView({
                   task={task}
                   slackThreadUrl={slackThreadUrl}
                   compact={compact}
+                  scrollX={false}
                 />
 
                 <SessionResourcesBar events={events} />
