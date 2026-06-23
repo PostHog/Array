@@ -1,7 +1,9 @@
+import { validateBranchName } from "@posthog/core/git-interaction/branchName";
 import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
 import {
   BRANCH_PREFIX,
   type ExecutionMode,
+  normalizeBranchPrefix,
   type WorkspaceMode,
 } from "@posthog/shared";
 import {
@@ -245,7 +247,16 @@ export const useSettingsStore = create<SettingsStore>()(
 
       // Version control
       branchPrefix: BRANCH_PREFIX,
-      setBranchPrefix: (prefix) => set({ branchPrefix: prefix }),
+      // Self-enforcing on write: normalize the format and reject anything that
+      // would yield an invalid git ref, so no caller can persist a bad prefix
+      // (the agent and cloud paths read this value verbatim). validateBranchName
+      // (in @posthog/core) owns the ref rules; @posthog/shared's
+      // normalizeBranchPrefix is format-only since shared can't depend on core.
+      setBranchPrefix: (prefix) => {
+        const normalized = normalizeBranchPrefix(prefix);
+        if (validateBranchName(`${normalized}x`) !== null) return;
+        set({ branchPrefix: normalized });
+      },
 
       // System / power / permissions
       allowBypassPermissions: false,

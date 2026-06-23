@@ -24,7 +24,6 @@ import {
   type SendMessagesWith,
   useSettingsStore,
 } from "@posthog/ui/features/settings/settingsStore";
-import { useDebounce } from "@posthog/ui/primitives/hooks/useDebounce";
 import { track } from "@posthog/ui/shell/analytics";
 import type { ThemePreference } from "@posthog/ui/shell/themeStore";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
@@ -114,34 +113,36 @@ export function GeneralSettings() {
     setBranchPrefix,
   } = useSettingsStore();
 
-  // Branch prefix uses a local draft committed on debounce, so typing stays
-  // responsive and we only normalize/persist once the user pauses.
+  // The input holds a raw draft so typing stays responsive (no normalize/snap
+  // mid-keystroke); it's committed on blur. The preview/error are derived, not
+  // stored.
   const [draftBranchPrefix, setDraftBranchPrefix] = useState(branchPrefix);
-  const debouncedBranchPrefix = useDebounce(draftBranchPrefix, 500);
   const normalizedDraftPrefix = normalizeBranchPrefix(draftBranchPrefix);
   // Validate the prefix the way it is actually used — in front of a slug — so a
-  // value like "my team/" (space) or "feat/." is rejected before it can reach
-  // the agent prompt or a git_signed_commit call and produce an invalid ref.
+  // value like "my team/" (space) or "feat/." surfaces an error before it can
+  // reach the agent prompt or a git_signed_commit call.
   const branchPrefixError = validateBranchName(
     `${normalizedDraftPrefix}example`,
   );
 
+  // Mirror external store changes (async persisted-state hydration, or the
+  // setter normalizing the value) back into the editable draft.
   useEffect(() => {
     setDraftBranchPrefix(branchPrefix);
   }, [branchPrefix]);
 
-  useEffect(() => {
-    const normalized = normalizeBranchPrefix(debouncedBranchPrefix);
+  const commitBranchPrefix = useCallback(() => {
+    const normalized = normalizeBranchPrefix(draftBranchPrefix);
     if (normalized === branchPrefix) return;
-    // Never persist a prefix that would produce an invalid branch name; the
-    // workspace-server schema also caps length at 100.
+    // The store setter rejects invalid prefixes; skip the no-op + analytics
+    // when we already know it won't take.
     if (validateBranchName(`${normalized}example`) !== null) return;
     setBranchPrefix(normalized);
     track(ANALYTICS_EVENTS.SETTING_CHANGED, {
       setting_name: "branch_prefix",
       new_value: normalized !== BRANCH_PREFIX,
     });
-  }, [debouncedBranchPrefix, branchPrefix, setBranchPrefix]);
+  }, [draftBranchPrefix, branchPrefix, setBranchPrefix]);
 
   // Sync toggle off if the user denied notification permission at the OS level
   useEffect(() => {
@@ -572,6 +573,7 @@ export function GeneralSettings() {
           <TextField.Root
             value={draftBranchPrefix}
             onChange={(e) => setDraftBranchPrefix(e.target.value)}
+            onBlur={commitBranchPrefix}
             placeholder={BRANCH_PREFIX}
             size="1"
             maxLength={MAX_BRANCH_PREFIX_LENGTH}
