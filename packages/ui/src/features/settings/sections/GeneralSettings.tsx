@@ -5,6 +5,7 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import {
   ANALYTICS_EVENTS,
   BRANCH_PREFIX,
+  MAX_BRANCH_PREFIX_LENGTH,
   normalizeBranchPrefix,
 } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -573,7 +574,7 @@ export function GeneralSettings() {
             onChange={(e) => setDraftBranchPrefix(e.target.value)}
             placeholder={BRANCH_PREFIX}
             size="1"
-            maxLength={100}
+            maxLength={MAX_BRANCH_PREFIX_LENGTH}
             className="min-w-[240px]"
             spellCheck={false}
             color={branchPrefixError ? "red" : undefined}

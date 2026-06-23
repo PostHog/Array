@@ -2,6 +2,7 @@ import type {
   RequestPermissionRequest,
   PermissionOption as SdkPermissionOption,
 } from "@agentclientprotocol/sdk";
+import { MAX_BRANCH_PREFIX_LENGTH } from "@posthog/shared";
 import { effortLevelSchema } from "@posthog/shared/domain-types";
 import { z } from "zod";
 
@@ -49,7 +50,7 @@ export const startSessionInput = z.object({
   additionalDirectories: z.array(z.string()).optional(),
   customInstructions: z.string().max(2000).optional(),
   /** Prefix the agent applies to branches it creates (e.g. "posthog-code/"). */
-  branchPrefix: z.string().max(100).optional(),
+  branchPrefix: z.string().max(MAX_BRANCH_PREFIX_LENGTH).optional(),
   /**
    * Replaces the PostHog system prompt entirely for this session. Used by
    * constrained, single-purpose surfaces (e.g. the canvas generator) that drive
@@ -190,7 +191,7 @@ export const reconnectSessionInput = z.object({
   model: z.string().optional(),
   customInstructions: z.string().max(2000).optional(),
   /** Prefix the agent applies to branches it creates (e.g. "posthog-code/"). */
-  branchPrefix: z.string().max(100).optional(),
+  branchPrefix: z.string().max(MAX_BRANCH_PREFIX_LENGTH).optional(),
   effort: effortLevelSchema.optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
 });
