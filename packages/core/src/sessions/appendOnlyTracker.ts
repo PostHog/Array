@@ -5,8 +5,10 @@ import type { AcpMessage } from "@posthog/shared";
  * appended since the last call so streaming stays O(appended), not O(history).
  *
  * An append is detected by reference identity: same-or-greater length with the
- * first and previous-last elements unchanged. Any other shape (prepend, replace,
- * reorder, truncate) discards the state and rebuilds from scratch.
+ * first and previous-boundary elements unchanged; otherwise the state is rebuilt.
+ * This assumes an append-only log — a mid-array edit that keeps both ends reads
+ * as an append and is missed, which is safe because the session event log only
+ * ever grows.
  *
  * `processEvent` mutates `state`; `getResult` projects it, allocating a fresh
  * value so a retained result never sees `state` mutate underneath it.
