@@ -6,6 +6,7 @@ import {
   useBoundActions,
 } from "@posthog/ui/features/home/hooks/useBoundActions";
 import { useRunWorkstreamAction } from "@posthog/ui/features/home/hooks/useRunWorkstreamAction";
+import { useQuickActionStore } from "@posthog/ui/features/home/stores/quickActionStore";
 import {
   SITUATION_VISUAL,
   type SituationCss,
@@ -27,6 +28,8 @@ export interface WorkstreamPresentation {
   generating: boolean;
   /** A task in this workstream is blocked awaiting a permission response. */
   needsPermission: boolean;
+  /** Distinct quick-action labels that have been run against this workstream, newest first. */
+  quickActions: string[];
   primaryBound: BoundAction | null;
   restBound: BoundAction[];
   primaryIsPr: boolean;
@@ -35,6 +38,8 @@ export interface WorkstreamPresentation {
   showTaskInMenu: boolean;
   hasMenu: boolean;
   runAction: (action: BoundAction) => void;
+  /** True while a quick action is starting a task; disable the row's action controls. */
+  isRunningAction: boolean;
   openTask: () => void;
   openPr: () => void;
 }
@@ -48,7 +53,10 @@ export function useWorkstreamPresentation(
 ): WorkstreamPresentation {
   const { data: tasks = [] } = useTasks();
   const boundActions = useBoundActions(workstream);
-  const run = useRunWorkstreamAction();
+  const { run } = useRunWorkstreamAction();
+  const isRunningAction = useQuickActionStore(
+    (s) => !!s.inFlight[workstream.id],
+  );
 
   const pr = workstream.pr;
   const headTask = workstream.tasks[0];
@@ -62,6 +70,13 @@ export function useWorkstreamPresentation(
   );
   const generating = workstream.tasks.some((t) => t.isGenerating);
   const needsPermission = workstream.tasks.some((t) => t.needsPermission);
+  const quickActions = [
+    ...new Set(
+      workstream.tasks
+        .map((t) => t.quickAction)
+        .filter((label): label is string => !!label),
+    ),
+  ];
 
   const primaryBound = boundActions[0] ?? null;
   const restBound = primaryBound ? boundActions.slice(1) : [];
@@ -81,6 +96,7 @@ export function useWorkstreamPresentation(
     extraSituations,
     generating,
     needsPermission,
+    quickActions,
     primaryBound,
     restBound,
     primaryIsPr,
@@ -89,6 +105,7 @@ export function useWorkstreamPresentation(
     showTaskInMenu,
     hasMenu,
     runAction: (action) => run(action, workstream),
+    isRunningAction,
     openTask: () => {
       if (!headTask) return;
       const task = tasks.find((t) => t.id === headTask.id);

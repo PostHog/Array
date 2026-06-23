@@ -4,8 +4,12 @@ import {
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { taskKeys } from "@posthog/ui/features/tasks/taskKeys";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -30,6 +34,23 @@ export function useTaskDeepLink() {
     (state) => state.status === "authenticated",
   );
   const hasFetchedPending = useRef(false);
+
+  // A task filed to a Project Bluebird channel opens in the channel-organized
+  // view under /website, keeping the channels chrome — mirroring CommandMenu.
+  // Gate the channel fetches behind the flag so they never reach ungated users.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const { channels } = useChannels({ enabled: bluebirdEnabled });
+  const channelMap = useTaskChannelMap(channels, { enabled: bluebirdEnabled });
+  // Mirror the latest map into a ref so the stable `handleOpenTask` callback can
+  // read it without listing the map in its deps — otherwise the callback (and
+  // the onOpenTask subscription below) would be recreated on every channel poll.
+  const channelMapRef = useRef(channelMap);
+  useEffect(() => {
+    channelMapRef.current = channelMap;
+  }, [channelMap]);
 
   const handleOpenTask = useCallback(
     async (taskId: string, taskRunId?: string) => {
@@ -67,7 +88,13 @@ export function useTaskDeepLink() {
         queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
 
         markAsViewed(taskId);
-        void openTaskHelper(task);
+        const channel = bluebirdEnabled
+          ? channelMapRef.current.get(task.id)
+          : undefined;
+        void openTaskHelper(
+          task,
+          channel ? { channelId: channel.id } : undefined,
+        );
 
         log.info(
           `Successfully opened task from deep link: ${taskId}${taskRunId ? `, run: ${taskRunId}` : ""}`,
@@ -77,7 +104,7 @@ export function useTaskDeepLink() {
         toast.error("Failed to open task");
       }
     },
-    [markAsViewed, queryClient, taskService],
+    [markAsViewed, queryClient, taskService, bluebirdEnabled],
   );
 
   // Check for pending deep link on mount (for cold start via deep link)

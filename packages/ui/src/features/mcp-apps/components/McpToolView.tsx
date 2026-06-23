@@ -56,7 +56,9 @@ export function McpToolView({
 
   const output = stripCodeFences(getContentText(content) ?? "");
   const hasOutput = output.trim().length > 0;
-  const showOutput = isComplete && hasOutput;
+  // Surface output for failures too, otherwise a failed call shows "(Failed)"
+  // with no reason — the error text lives in `content`.
+  const showOutput = (isComplete || isFailed) && hasOutput;
 
   const body =
     fullInput || showOutput ? (

@@ -1,18 +1,15 @@
 # Freeform React Canvases — Design Plan
 
-> Status: design agreed via grilling session (2026-06-18). Not yet implemented.
-> Scope: replace the **Blank** canvas template with agent-authored freeform React,
-> executed in a sandboxed iframe, shareable externally without leaking credentials.
+> Status: edit-tier shipped; publish/sharing tiers (below) scoped, not yet built.
+> Scope: canvases are agent-authored freeform React, executed in a sandboxed
+> iframe, shareable externally without leaking credentials.
 
 ## Summary
 
-Today a canvas is a declarative **json-render** spec (JSONL patches → flat element
-map → React component tree via `@json-render/react`, no iframe). This plan keeps
-**Dashboard** and **Web Analytics** on json-render and replaces only **Blank** with
-freeform React: the user talks to an agent, the agent writes a single React file
-(JSX, runtime — no user-managed build step), and we render it in a sandboxed iframe.
-Canvases are shareable with external people via a unique URL, with PostHog
-credentials never present in the iframe.
+A canvas is a freeform React app: the user talks to an agent, the agent writes a
+single React file (JSX, runtime — no user-managed build step), and we render it in
+a sandboxed iframe. Canvases are shareable with external people via a unique URL,
+with PostHog credentials never present in the iframe.
 
 Driven by all four motivations surfaced in grilling: arbitrary interactivity,
 external shareability, easier/more reliable agent authoring, and the catalog's
@@ -39,8 +36,9 @@ provide the data avenue that internally handles caching and cold-boot issues;
   them by reference. The insight layer owns caching + cold-boot, which also makes the
   live public proxy cheap and resilient (external views hit cached insight results,
   not cold queries).
-- This replaces the current `dashboardQueryService` pattern (which runs HogQL against
-  `/api/projects/{id}/query/`) for freeform canvases.
+- Freeform canvases query through `canvasDataService` (`ph.query` → host →
+  `/api/projects/{id}/query/`, cached `refresh: "blocking"`). The named-insight
+  avenue above is the planned public-tier model (see the two-tier security model).
 
 ---
 

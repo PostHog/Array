@@ -1,3 +1,4 @@
+import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
 import { TaskInput } from "@posthog/ui/features/task-detail/components/TaskInput";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { createFileRoute } from "@tanstack/react-router";
@@ -21,6 +22,7 @@ function WebsiteNewTaskRoute() {
       initialModel={view.initialModel}
       initialMode={view.initialMode}
       reportAssociation={view.reportAssociation}
+      suggestions={CHANNEL_TASK_SUGGESTIONS}
     />
   );
 }

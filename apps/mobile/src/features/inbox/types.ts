@@ -1,3 +1,5 @@
+import type { DismissalReasonOptionValue } from "./constants";
+
 export type SignalReportStatus =
   | "potential"
   | "candidate"
@@ -29,6 +31,8 @@ export interface SignalReport {
   priority?: SignalReportPriority | null;
   actionability?: SignalReportActionability | null;
   already_addressed?: boolean | null;
+  dismissal_reason?: DismissalReasonOptionValue | null;
+  dismissal_note?: string | null;
   is_suggested_reviewer?: boolean;
   source_products?: string[];
   implementation_pr_url?: string | null;

@@ -26,7 +26,6 @@ import {
 import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 import { ToolCallGroupChip } from "@posthog/ui/features/sessions/components/new-thread/ToolCallGroupChip";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
-import { QueuedMessageView } from "@posthog/ui/features/sessions/components/session-update/QueuedMessageView";
 import {
   type RenderItem,
   SessionUpdateView,
@@ -42,7 +41,6 @@ import { useContextUsage } from "@posthog/ui/features/sessions/hooks/useContextU
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
 import { useConversationSearch } from "@posthog/ui/features/sessions/hooks/useConversationSearch";
 import {
-  sessionStoreSetters,
   useOptimisticItemsForTask,
   usePendingPermissionsForTask,
   useQueuedMessagesForTask,
@@ -158,20 +156,10 @@ export function ConversationView({
 
   const pendingPermissions = usePendingPermissionsForTask(taskId ?? "");
   const pendingPermissionsCount = pendingPermissions.size;
-  const queuedMessages = useQueuedMessagesForTask(taskId);
+  const queuedCount = useQueuedMessagesForTask(taskId).length;
   const optimisticItems = useOptimisticItemsForTask(taskId);
   const session = useSessionForTask(taskId);
   const pausedDurationMs = session?.pausedDurationMs ?? 0;
-
-  const queuedItems = useMemo<Extract<ConversationItem, { type: "queued" }>[]>(
-    () =>
-      queuedMessages.map((msg) => ({
-        type: "queued" as const,
-        id: msg.id,
-        message: msg,
-      })),
-    [queuedMessages],
-  );
 
   const isCloud = session?.isCloud ?? false;
 
@@ -180,10 +168,9 @@ export function ConversationView({
       mergeConversationItems({
         conversationItems,
         optimisticItems,
-        queuedItems,
         isCloud,
       }),
-    [conversationItems, optimisticItems, queuedItems, isCloud],
+    [conversationItems, optimisticItems, isCloud],
   );
 
   // Fold each completed turn's tool-call work into a collapsible chip, and emit
@@ -292,21 +279,6 @@ export function ConversationView({
           return <TurnCancelledView interruptReason={item.interruptReason} />;
         case "user_shell_execute":
           return <UserShellExecuteView item={item} />;
-        case "queued":
-          return (
-            <QueuedMessageView
-              message={item.message}
-              onRemove={
-                taskId
-                  ? () =>
-                      sessionStoreSetters.removeQueuedMessage(
-                        taskId,
-                        item.message.id,
-                      )
-                  : undefined
-              }
-            />
-          );
       }
     },
     [repoPath, taskId, slackThreadUrl, firstUserMessageId, initialItemIds],
@@ -366,7 +338,7 @@ export function ConversationView({
             : null
         }
         lastStopReason={lastTurnInfo?.stopReason}
-        queuedCount={queuedMessages.length}
+        queuedCount={queuedCount}
         hasPendingPermission={pendingPermissionsCount > 0}
         pausedDurationMs={pausedDurationMs}
         isCompacting={isCompacting}

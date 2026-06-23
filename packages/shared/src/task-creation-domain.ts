@@ -43,6 +43,16 @@ export interface TaskCreationInput {
   channelContext?: string;
   /** Display name of that channel, embedded in the context block for the UI. */
   channelName?: string;
+  /**
+   * When true, the task may be created without a repo/branch. Used by the
+   * channels "generic chat box": the agent decides at runtime whether it needs
+   * a repo and attaches one lazily. A local session still starts, in a scratch
+   * working directory, so non-code tasks (analysis, email) can run repo-less.
+   */
+  allowNoRepo?: boolean;
+  // Label of the Home-tab quick action that started this run (e.g. "Fix CI"), so the
+  // workstream can show which quick actions have been run against it.
+  homeQuickActionLabel?: string;
 }
 
 export interface TaskCreationOutput {

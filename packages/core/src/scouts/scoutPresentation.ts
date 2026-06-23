@@ -4,34 +4,17 @@ import type { ScoutConfig, ScoutRun } from "@posthog/api-client/posthog-client";
 // (which cannot import core) and the UI share one slug implementation.
 export { scoutSkillNameFromSlug, scoutSkillSlug } from "@posthog/shared";
 
-/**
- * Canonical scouts shipped in the PostHog repo (products/signals/skills).
- * The configs endpoint does not yet distinguish canonical from hand-authored
- * skills (scouts-ui api gap 4); until it carries `seeded_by`, classify by
- * this known-name list.
- */
-export const CANONICAL_SCOUT_SKILLS = new Set<string>([
-  "signals-scout-general",
-  "signals-scout-anomaly-detection",
-  "signals-scout-ai-observability",
-  "signals-scout-csp-violations",
-  "signals-scout-data-pipelines",
-  "signals-scout-error-tracking",
-  "signals-scout-experiments",
-  "signals-scout-feature-flags",
-  "signals-scout-health-checks",
-  "signals-scout-logs",
-  "signals-scout-observability-gaps",
-  "signals-scout-revenue-analytics",
-  "signals-scout-session-replay",
-  "signals-scout-surveys",
-  "signals-scout-web-analytics",
-]);
-
 export type ScoutOrigin = "canonical" | "custom";
 
-export function getScoutOrigin(skillName: string): ScoutOrigin {
-  return CANONICAL_SCOUT_SKILLS.has(skillName) ? "canonical" : "custom";
+/**
+ * Origin comes straight from the configs endpoint's `scout_origin` field, which
+ * the backend computes from the skill's `seeded_by` metadata. Older backends
+ * omit the field; treat those scouts as custom.
+ */
+export function getScoutOrigin(
+  config: Pick<ScoutConfig, "scout_origin"> | null | undefined,
+): ScoutOrigin {
+  return config?.scout_origin === "canonical" ? "canonical" : "custom";
 }
 
 /** "signals-scout-error-tracking" → "Error tracking" */

@@ -1,6 +1,7 @@
 import type {
   CanvasCaptureInput,
   CanvasDataQueryInput,
+  CanvasLoadInsightInput,
 } from "@posthog/core/canvas/freeformSchemas";
 import { hostClient } from "../hostClient";
 
@@ -15,12 +16,28 @@ export async function handleFreeformDataRequest(
   switch (method) {
     case "query": {
       const input = payload as CanvasDataQueryInput;
-      if (!input?.hogql || typeof input.hogql !== "string") {
-        throw new Error("ph.query(hogql) requires a HogQL string");
+      const hasQuery = input?.query != null && typeof input.query === "object";
+      const hasHogql =
+        typeof input?.hogql === "string" && input.hogql.length > 0;
+      if (!hasQuery && !hasHogql) {
+        throw new Error(
+          "ph.query requires a typed query node or a HogQL string",
+        );
       }
       return hostClient().canvasData.query.mutate({
+        query: input.query,
         hogql: input.hogql,
         params: input.params,
+      });
+    }
+    case "loadInsight": {
+      const input = payload as CanvasLoadInsightInput;
+      if (!input?.shortId || typeof input.shortId !== "string") {
+        throw new Error("ph.loadInsight(shortId) requires an insight short id");
+      }
+      return hostClient().canvasData.loadInsight.mutate({
+        shortId: input.shortId,
+        dateRange: input.dateRange,
       });
     }
     case "capture": {
