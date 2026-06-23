@@ -18,7 +18,13 @@ import { Button } from "@posthog/quill";
 import type { PrReviewComment } from "@posthog/shared";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { Avatar, Badge, Box, Flex, Text } from "@radix-ui/themes";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { PluggableList } from "unified";
@@ -44,6 +50,25 @@ function toPreview(body: string): string {
     .replace(/[#>*_`~-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function ToggleCaret({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={collapsed ? "Expand thread" : "Collapse thread"}
+      className="-ml-0.5 flex shrink-0 cursor-pointer items-center rounded p-0.5 text-[var(--gray-10)] hover:bg-[var(--gray-4)] hover:text-[var(--gray-12)]"
+    >
+      {collapsed ? <CaretRight size={14} /> : <CaretDown size={14} />}
+    </button>
+  );
 }
 
 interface ThreadActionBarProps {
@@ -177,10 +202,12 @@ function CommentBody({
   comment,
   showLineAbove = false,
   showLineBelow = false,
+  leading,
 }: {
   comment: PrReviewComment;
   showLineAbove?: boolean;
   showLineBelow?: boolean;
+  leading?: ReactNode;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [isOverflowing, setIsOverflowing] = useState(false);
@@ -214,6 +241,7 @@ function CommentBody({
       </div>
       <div className="min-w-0 flex-1 pt-1.5 pb-1.5">
         <Flex align="center" gap="2" className="mb-0.5">
+          {leading}
           <Text className="font-medium text-[13px] text-[var(--gray-12)]">
             {comment.user.login}
           </Text>
@@ -353,65 +381,68 @@ export function PrCommentThread({
     if (!success) setIsResolved(!next);
   }, [isResolved, nodeId, resolve]);
 
+  const toggleCollapsed = useCallback(
+    () => setIsCollapsed((prev) => !prev),
+    [],
+  );
+  const hasBadges = isResolved || isFileLevel || isOutdated;
+
   return (
     <div className="px-3 py-1.5" style={{ contain: "inline-size" }}>
       <div
         data-pr-comment-thread=""
         className={`overflow-hidden whitespace-normal rounded-md border border-[var(--gray-5)] bg-[var(--gray-2)] px-2.5 py-2 font-sans ${isResolved ? "opacity-60" : ""}`}
       >
-        <Flex align="center" gap="1" className={isCollapsed ? "" : "mb-1.5"}>
-          <button
-            type="button"
-            onClick={() => setIsCollapsed((prev) => !prev)}
-            aria-label={isCollapsed ? "Expand thread" : "Collapse thread"}
-            className="-ml-0.5 flex shrink-0 cursor-pointer items-center rounded p-0.5 text-[var(--gray-10)] hover:bg-[var(--gray-4)] hover:text-[var(--gray-12)]"
-          >
-            {isCollapsed ? <CaretRight size={14} /> : <CaretDown size={14} />}
-          </button>
-          {isResolved && (
-            <Badge color="green" size="1" variant="soft">
-              <CheckCircle size={12} weight="fill" />
-              Resolved
-            </Badge>
-          )}
-          {isFileLevel && (
-            <Badge color="gray" size="1" variant="soft">
-              <File size={12} />
-              File comment
-            </Badge>
-          )}
-          {isOutdated && (
-            <Badge color="yellow" size="1" variant="soft">
-              <WarningCircle size={12} weight="fill" />
-              Outdated
-            </Badge>
-          )}
-          {isCollapsed && (
-            <button
-              type="button"
-              onClick={() => setIsCollapsed(false)}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
-            >
-              <Text className="shrink-0 font-medium text-[13px] text-[var(--gray-12)]">
-                {comments[0]?.user.login}
-              </Text>
-              <Text className="min-w-0 flex-1 truncate text-[13px] text-[var(--gray-10)]">
-                {toPreview(comments[0]?.body ?? "")}
-              </Text>
-              {comments.length > 1 && (
-                <Badge
-                  color="gray"
-                  size="1"
-                  variant="soft"
-                  className="shrink-0"
-                >
-                  <ChatCircle size={11} />
-                  {comments.length}
-                </Badge>
-              )}
-            </button>
-          )}
-        </Flex>
+        {(isCollapsed || hasBadges) && (
+          <Flex align="center" gap="1" className={isCollapsed ? "" : "mb-1.5"}>
+            {isCollapsed && (
+              <ToggleCaret collapsed onToggle={toggleCollapsed} />
+            )}
+            {isResolved && (
+              <Badge color="green" size="1" variant="soft">
+                <CheckCircle size={12} weight="fill" />
+                Resolved
+              </Badge>
+            )}
+            {isFileLevel && (
+              <Badge color="gray" size="1" variant="soft">
+                <File size={12} />
+                File comment
+              </Badge>
+            )}
+            {isOutdated && (
+              <Badge color="yellow" size="1" variant="soft">
+                <WarningCircle size={12} weight="fill" />
+                Outdated
+              </Badge>
+            )}
+            {isCollapsed && (
+              <button
+                type="button"
+                onClick={() => setIsCollapsed(false)}
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+              >
+                <Text className="shrink-0 font-medium text-[13px] text-[var(--gray-12)]">
+                  {comments[0]?.user.login}
+                </Text>
+                <Text className="min-w-0 flex-1 truncate text-[13px] text-[var(--gray-10)]">
+                  {toPreview(comments[0]?.body ?? "")}
+                </Text>
+                {comments.length > 1 && (
+                  <Badge
+                    color="gray"
+                    size="1"
+                    variant="soft"
+                    className="shrink-0"
+                  >
+                    <ChatCircle size={11} />
+                    {comments.length}
+                  </Badge>
+                )}
+              </button>
+            )}
+          </Flex>
+        )}
 
         {!isCollapsed &&
           comments.map((comment, index) => (
@@ -420,6 +451,11 @@ export function PrCommentThread({
               comment={comment}
               showLineAbove={index > 0}
               showLineBelow={index < comments.length - 1 || !!pendingReply}
+              leading={
+                index === 0 ? (
+                  <ToggleCaret collapsed={false} onToggle={toggleCollapsed} />
+                ) : undefined
+              }
             />
           ))}
 
