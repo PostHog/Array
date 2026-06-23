@@ -22,9 +22,11 @@ function flatDaily(): unknown[][] {
 }
 
 describe("buildAgentAnalyticsQueries", () => {
-  it("scopes to agent-platform origin only when no application id", () => {
+  it("scopes to any agent-platform traffic when no application id", () => {
     const q = buildAgentAnalyticsQueries();
-    expect(q.kpi).toContain("$ai_origin = 'agent_platform_runner'");
+    // Attribution key, not $ai_origin — the gateway's cost event lacks origin.
+    expect(q.kpi).toContain("notEmpty(properties.$agent_application_id)");
+    expect(q.kpi).not.toContain("$ai_origin");
     expect(q.kpi).not.toContain("$agent_application_id =");
     expect(q.kpi).toContain("event = '$ai_generation'");
     expect(q.toolErrors).toContain("event = '$ai_span'");

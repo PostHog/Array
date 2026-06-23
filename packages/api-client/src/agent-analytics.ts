@@ -1,13 +1,12 @@
-// Agent observability analytics — rolls up the agents' `$ai_*` AI-observability
-// events (the runner captures them into the team's OWN PostHog project) into a
+// Agent observability analytics — rolls up the agents' `$ai_*` events into a
 // cross-agent / per-agent dashboard. Read-only HogQL via the `/query/` endpoint.
 //
-// Everything is scoped to `$ai_origin = 'agent_platform_runner'` so a team's
-// *other* LLM usage (their own posthog-ai apps) never bleeds into the agent
-// view. The runner stamps these props in `agent-shared`'s `analytics-sink`
-// (`$ai_origin`, `$agent_application_id`, `$ai_trace_id`, `$ai_total_cost_usd`,
-// `$ai_latency` in seconds, `$ai_is_error`, `$ai_model`, token counts; tool
-// spans carry `$ai_span_name`).
+// Scoped on `$agent_application_id` (the per-agent attribution key), NOT
+// `$ai_origin`: on the ai-gateway path the cost-bearing `$ai_generation` is
+// emitted by the gateway, which carries `$agent_application_id` (forwarded by
+// the runner via X-PostHog-Properties) but not `$ai_origin`. The attribution
+// key is present on generations (gateway or direct), tool spans, and traces, so
+// it unifies both paths and keeps a team's other LLM usage out of the view.
 //
 // The query builders + shaping are kept here (pure, unit-tested) so the client
 // method stays a thin "fire queries, shape result" passthrough.
@@ -33,25 +32,25 @@ export interface AgentAnalyticsRaw {
   toolErrors: HogQLGrid;
 }
 
-/** Only the agents' own traffic — not the team's other LLM events. */
-const AGENT_ORIGIN = "properties.$ai_origin = 'agent_platform_runner'";
+/** Any agent-platform traffic — a team's other LLM usage has no agent id. */
+const AGENT_SCOPE = "notEmpty(properties.$agent_application_id)";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Shared WHERE scope narrowing the board to a single agent. `applicationId` is
- * a trusted server UUID, but reject anything non-UUID before interpolating it
- * into HogQL rather than rely on that.
+ * Shared WHERE scope. With an `applicationId` (per-agent tab) it narrows to that
+ * agent; without one (fleet board) it matches any agent traffic via the
+ * attribution key. `applicationId` is a trusted server UUID, but reject
+ * non-UUIDs before interpolating into HogQL rather than rely on that.
  */
 function scope(applicationId?: string): string {
   if (applicationId && !UUID_RE.test(applicationId)) {
     throw new Error("agent analytics: applicationId must be a UUID");
   }
-  const agent = applicationId
-    ? ` AND properties.$agent_application_id = '${applicationId}'`
-    : "";
-  return `${AGENT_ORIGIN}${agent}`;
+  return applicationId
+    ? `properties.$agent_application_id = '${applicationId}'`
+    : AGENT_SCOPE;
 }
 
 const kpiQuery = (id?: string): string => `
@@ -91,7 +90,7 @@ SELECT
   coalesce(quantile(0.95)(toFloat(properties.$ai_latency)), 0) AS p95
 FROM events
 WHERE event = '$ai_generation' AND ${scope(id)}
-  AND timestamp > now() - INTERVAL 7 DAY AND notEmpty(properties.$agent_application_id)
+  AND timestamp > now() - INTERVAL 7 DAY
 GROUP BY agent_id ORDER BY cost DESC LIMIT 50
 `;
 

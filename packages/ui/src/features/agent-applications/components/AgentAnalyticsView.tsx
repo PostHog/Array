@@ -222,7 +222,10 @@ function CostByModelChart({ rows }: { rows: AgentAnalyticsModelRow[] }) {
     { key: "cost", label: "Cost (USD)", data: rows.map((r) => r.spendUsd) },
   ];
   return (
-    <div className="h-56 w-full">
+    // flex-col + fixed height: the quill BarChart sizes its canvas by filling a
+    // flex-column parent (its root is `flex-1`); a plain block collapses the
+    // canvas to height 0 and the chart renders blank.
+    <div className="flex h-56 w-full flex-col">
       <BarChart
         series={series}
         labels={rows.map((r) => r.model)}
