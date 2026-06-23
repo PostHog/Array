@@ -7,6 +7,7 @@ export type SignalReportStatus =
   | "ready"
   | "failed"
   | "pending_input"
+  | "resolved"
   | "suppressed"
   | "deleted";
 

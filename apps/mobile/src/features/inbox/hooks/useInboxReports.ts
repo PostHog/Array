@@ -29,11 +29,12 @@ import type {
   SuggestedReviewerWriteEntry,
 } from "../types";
 import {
+  buildArchiveListOrdering,
   buildPriorityFilterParam,
   buildSignalReportListOrdering,
   buildStatusFilterParam,
   buildSuggestedReviewerFilterParam,
-  isArchivedReport,
+  isRestorableReport,
 } from "../utils";
 
 export const inboxKeys = {
@@ -97,7 +98,7 @@ export function useArchivedReports(options?: { enabled?: boolean }) {
 
   const params: SignalReportsQueryParams = {
     status: INBOX_DISMISSED_STATUS_FILTER,
-    ordering: buildSignalReportListOrdering("updated_at", "desc"),
+    ordering: buildArchiveListOrdering("updated_at", "desc"),
   };
 
   const query = useQuery<SignalReportsResponse>({
@@ -247,7 +248,7 @@ export function useRestoreReport() {
   return useMutation<boolean, Error, string>({
     mutationFn: async (reportId) => {
       const current = await getSignalReport(reportId);
-      if (current && !isArchivedReport(current)) {
+      if (current && !isRestorableReport(current)) {
         return false;
       }
       await restoreSignalReport(reportId);

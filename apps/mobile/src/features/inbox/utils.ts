@@ -44,8 +44,17 @@ export function formatReportTimestamp(date: Date): string {
     : format(date, "MMM d");
 }
 
-/** A report is archived when it has been dismissed (suppressed). */
+/**
+ * Archive membership: `suppressed` (user-archived) and `resolved` (PR merged).
+ * Only `suppressed` is restorable; `resolved` is terminal, shown for reference.
+ */
 export function isArchivedReport(
+  report: Pick<SignalReport, "status">,
+): boolean {
+  return report.status === "suppressed" || report.status === "resolved";
+}
+
+export function isRestorableReport(
   report: Pick<SignalReport, "status">,
 ): boolean {
   return report.status === "suppressed";
@@ -62,6 +71,8 @@ export function inboxStatusLabel(status: SignalReportStatus): string {
   switch (status) {
     case "ready":
       return "Ready";
+    case "resolved":
+      return "Resolved";
     case "pending_input":
       return "Needs input";
     case "in_progress":
@@ -93,6 +104,19 @@ export function buildSignalReportListOrdering(
 ): string {
   const fieldKey = direction === "desc" ? `-${field}` : field;
   return `status,-is_suggested_reviewer,${fieldKey}`;
+}
+
+/**
+ * Ordering for the Archive view, which lists two terminal statuses
+ * (`suppressed` + `resolved`). Unlike the pipeline ordering, it must not prefix
+ * with `status`: that would group one terminal state ahead of the other before
+ * the time sort, burying recent items behind older ones from the sibling status.
+ */
+export function buildArchiveListOrdering(
+  field: SignalReportOrderingField,
+  direction: "asc" | "desc",
+): string {
+  return direction === "desc" ? `-${field}` : field;
 }
 
 /**

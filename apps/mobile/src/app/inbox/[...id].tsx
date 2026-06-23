@@ -72,6 +72,7 @@ const statusColorMap: Record<string, { bg: string; text: string }> = {
   candidate: { bg: "bg-status-info/20", text: "text-status-info" },
   potential: { bg: "bg-gray-5/20", text: "text-gray-9" },
   failed: { bg: "bg-status-error/20", text: "text-status-error" },
+  resolved: { bg: "bg-status-success/20", text: "text-status-success" },
   suppressed: { bg: "bg-gray-5/20", text: "text-gray-9" },
   deleted: { bg: "bg-gray-5/20", text: "text-gray-9" },
 };

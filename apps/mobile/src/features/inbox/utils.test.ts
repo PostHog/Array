@@ -6,12 +6,14 @@ import type {
   SuggestedReviewer,
 } from "./types";
 import {
+  buildArchiveListOrdering,
   buildInboxViewedProperties,
   buildPriorityFilterParam,
   buildReviewerOptions,
   dismissalReasonLabel,
   formatSignalReportSummaryMarkdown,
   isArchivedReport,
+  isRestorableReport,
   orderSuggestedReviewers,
   reviewerMatchesAvailable,
   toSuggestedReviewerWriteContent,
@@ -362,14 +364,38 @@ describe("buildPriorityFilterParam", () => {
   });
 });
 
+describe("buildArchiveListOrdering", () => {
+  it.each([
+    { direction: "desc" as const, expected: "-updated_at" },
+    { direction: "asc" as const, expected: "updated_at" },
+  ])(
+    "sorts by field without a status prefix ($direction)",
+    ({ direction, expected }) => {
+      expect(buildArchiveListOrdering("updated_at", direction)).toBe(expected);
+    },
+  );
+});
+
 describe("isArchivedReport", () => {
   it.each([
     { status: "suppressed" as SignalReportStatus, expected: true },
+    { status: "resolved" as SignalReportStatus, expected: true },
     { status: "ready" as SignalReportStatus, expected: false },
     { status: "potential" as SignalReportStatus, expected: false },
     { status: "deleted" as SignalReportStatus, expected: false },
   ])("is $expected for $status", ({ status, expected }) => {
     expect(isArchivedReport({ status })).toBe(expected);
+  });
+});
+
+describe("isRestorableReport", () => {
+  it.each([
+    { status: "suppressed" as SignalReportStatus, expected: true },
+    { status: "resolved" as SignalReportStatus, expected: false },
+    { status: "ready" as SignalReportStatus, expected: false },
+    { status: "deleted" as SignalReportStatus, expected: false },
+  ])("is $expected for $status", ({ status, expected }) => {
+    expect(isRestorableReport({ status })).toBe(expected);
   });
 });
 
