@@ -328,7 +328,7 @@ export interface ScoutEmission {
   confidence: number;
   severity: string | null;
   /** Slug tags the scout attached to this finding (lowercase kebab-case, e.g. `cost-spike`). */
-  tags: string[];
+  tags?: string[];
   source_id: string;
   emitted_at: string;
 }
