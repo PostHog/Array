@@ -30,9 +30,12 @@ export function buildFreeformGenerationPrompt(input: {
   const contract = freeformSystemPromptFor(templateId);
   const isEdit = !!currentCode?.trim();
 
+  // The header points back to the user's request, which leads the message
+  // (outside this block). Without that pointer the agent can read the header as
+  // a self-contained task and under-weight the actual instruction above.
   const header = isEdit
-    ? `Edit the freeform React canvas "${name}" in the channel "${channelName}".`
-    : `Build a freeform React canvas "${name}" for the channel "${channelName}".`;
+    ? `Edit the freeform React canvas "${name}" in the channel "${channelName}", per the user's request at the start of this message.`
+    : `Build a freeform React canvas "${name}" for the channel "${channelName}", per the user's request at the start of this message.`;
 
   const currentBlock = isEdit
     ? `\n[Current code] — the canvas as it stands now. Rewrite the WHOLE file with the change applied; do not output a partial file.\n\n\`\`\`tsx\n${currentCode}\n\`\`\`\n`
