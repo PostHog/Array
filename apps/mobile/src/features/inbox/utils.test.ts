@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   AvailableSuggestedReviewer,
   SignalReport,
+  SignalReportOrderingField,
   SignalReportStatus,
   SuggestedReviewer,
 } from "./types";
@@ -9,6 +10,7 @@ import {
   buildInboxViewedProperties,
   buildPriorityFilterParam,
   buildReviewerOptions,
+  buildSignalReportListOrdering,
   dismissalReasonLabel,
   formatSignalReportSummaryMarkdown,
   isArchivedReport,
@@ -338,6 +340,46 @@ describe("reviewerMatchesAvailable", () => {
   ])("$name", ({ reviewer, expected }) => {
     expect(reviewerMatchesAvailable(reviewer, makeAvailable())).toBe(expected);
   });
+});
+
+describe("buildSignalReportListOrdering", () => {
+  it.each([
+    {
+      field: "priority" as SignalReportOrderingField,
+      direction: "desc" as const,
+      expected: "status,-is_suggested_reviewer,-priority,-created_at",
+    },
+    {
+      field: "priority" as SignalReportOrderingField,
+      direction: "asc" as const,
+      expected: "status,-is_suggested_reviewer,priority,-created_at",
+    },
+    {
+      field: "signal_count" as SignalReportOrderingField,
+      direction: "desc" as const,
+      expected: "status,-is_suggested_reviewer,-signal_count",
+    },
+    {
+      field: "total_weight" as SignalReportOrderingField,
+      direction: "asc" as const,
+      expected: "status,-is_suggested_reviewer,total_weight",
+    },
+    {
+      field: "created_at" as SignalReportOrderingField,
+      direction: "desc" as const,
+      expected: "status,-is_suggested_reviewer,-created_at",
+    },
+    {
+      field: "updated_at" as SignalReportOrderingField,
+      direction: "asc" as const,
+      expected: "status,-is_suggested_reviewer,updated_at",
+    },
+  ])(
+    "orders $field $direction as $expected",
+    ({ field, direction, expected }) => {
+      expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
+    },
+  );
 });
 
 describe("buildPriorityFilterParam", () => {

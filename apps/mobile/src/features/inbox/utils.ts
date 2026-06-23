@@ -86,13 +86,16 @@ export function inboxStatusLabel(status: SignalReportStatus): string {
  * 1. Status rank (ready first)
  * 2. Suggested reviewer (current user first)
  * 3. User-selected field
+ *
+ * Priority is a coarse 5-bucket rank, so ties are broken by newest first.
  */
 export function buildSignalReportListOrdering(
   field: SignalReportOrderingField,
   direction: "asc" | "desc",
 ): string {
   const fieldKey = direction === "desc" ? `-${field}` : field;
-  return `status,-is_suggested_reviewer,${fieldKey}`;
+  const tiebreak = field === "priority" ? ",-created_at" : "";
+  return `status,-is_suggested_reviewer,${fieldKey}${tiebreak}`;
 }
 
 /**
