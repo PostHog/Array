@@ -188,7 +188,7 @@ export function ArchivedReportList({
           Archive is empty
         </Text>
         <Text className="text-center text-[13px] text-gray-11">
-          Reports you dismiss and resolved reports show up here.
+          Dismissed and resolved reports show up here.
         </Text>
       </View>
     );

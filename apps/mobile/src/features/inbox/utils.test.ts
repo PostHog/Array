@@ -12,7 +12,6 @@ import {
   buildReviewerOptions,
   dismissalReasonLabel,
   formatSignalReportSummaryMarkdown,
-  isArchivedReport,
   isRestorableReport,
   orderSuggestedReviewers,
   reviewerMatchesAvailable,
@@ -374,18 +373,6 @@ describe("buildArchiveListOrdering", () => {
       expect(buildArchiveListOrdering("updated_at", direction)).toBe(expected);
     },
   );
-});
-
-describe("isArchivedReport", () => {
-  it.each([
-    { status: "suppressed" as SignalReportStatus, expected: true },
-    { status: "resolved" as SignalReportStatus, expected: true },
-    { status: "ready" as SignalReportStatus, expected: false },
-    { status: "potential" as SignalReportStatus, expected: false },
-    { status: "deleted" as SignalReportStatus, expected: false },
-  ])("is $expected for $status", ({ status, expected }) => {
-    expect(isArchivedReport({ status })).toBe(expected);
-  });
 });
 
 describe("isRestorableReport", () => {

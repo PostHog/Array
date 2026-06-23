@@ -48,12 +48,6 @@ export function formatReportTimestamp(date: Date): string {
  * Archive membership: `suppressed` (user-archived) and `resolved` (PR merged).
  * Only `suppressed` is restorable; `resolved` is terminal, shown for reference.
  */
-export function isArchivedReport(
-  report: Pick<SignalReport, "status">,
-): boolean {
-  return report.status === "suppressed" || report.status === "resolved";
-}
-
 export function isRestorableReport(
   report: Pick<SignalReport, "status">,
 ): boolean {
