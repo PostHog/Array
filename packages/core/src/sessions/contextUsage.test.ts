@@ -110,4 +110,25 @@ describe("createContextUsageTracker", () => {
     expect(result?.used).toBe(50_000);
     expect(result?.size).toBe(200_000);
   });
+
+  it("rebuilds when the event list is truncated", () => {
+    const tracker = createContextUsageTracker();
+    const earlier = usageUpdateEvent(50_000, 200_000);
+    const later = usageUpdateEvent(80_000, 200_000);
+
+    expect(tracker.update([earlier, later])?.used).toBe(80_000);
+    // Dropping the latest usage event must lower the reported value, not keep
+    // the stale append-path total.
+    expect(tracker.update([earlier])?.used).toBe(50_000);
+  });
+
+  it("rebuilds when the tail changes at the same length", () => {
+    const tracker = createContextUsageTracker();
+    const first = usageUpdateEvent(50_000, 200_000);
+    const replaced = usageUpdateEvent(30_000, 200_000);
+
+    tracker.update([first, usageUpdateEvent(80_000, 200_000)]);
+    const events = [first, replaced];
+    expect(tracker.update(events)).toEqual(extractContextUsage(events));
+  });
 });

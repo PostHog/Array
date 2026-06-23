@@ -146,7 +146,7 @@ function turnEndEvent(id: number): AcpMessage {
     ts: id,
     message: {
       jsonrpc: "2.0",
-      id: `turn-${id}`,
+      id,
       result: { stopReason: "end_turn" },
     },
   };

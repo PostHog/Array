@@ -3,6 +3,7 @@ import {
   POSTHOG_NOTIFICATIONS,
 } from "@posthog/agent/acp-extensions";
 import type { PostHogProductId } from "@posthog/agent/posthog-products";
+import { createAppendOnlyTracker } from "@posthog/core/sessions/appendOnlyTracker";
 import { type AcpMessage, isJsonRpcNotification } from "@posthog/shared";
 
 export interface ResourceProduct {
@@ -29,43 +30,19 @@ export function accumulateSessionResources(
   return [...byId.values()];
 }
 
+interface SessionResourcesState {
+  byId: Map<PostHogProductId, ResourceProduct>;
+  products: ResourceProduct[];
+}
+
 export function createSessionResourcesTracker() {
-  let byId = new Map<PostHogProductId, ResourceProduct>();
-  let products: ResourceProduct[] = [];
-  let processedCount = 0;
-  let firstEventRef: AcpMessage | null = null;
-  let boundaryEventRef: AcpMessage | null = null;
-
-  const reset = () => {
-    byId = new Map<PostHogProductId, ResourceProduct>();
-    products = [];
-    processedCount = 0;
-    firstEventRef = null;
-    boundaryEventRef = null;
-  };
-
-  const update = (events: AcpMessage[]): ResourceProduct[] => {
-    const canAppend =
-      events.length >= processedCount &&
-      (processedCount === 0 || events[0] === firstEventRef) &&
-      (processedCount === 0 || events[processedCount - 1] === boundaryEventRef);
-
-    if (!canAppend) {
-      reset();
-    }
-
-    for (let i = processedCount; i < events.length; i++) {
-      collectResourcesFromEvent(events[i], byId, products);
-    }
-
-    processedCount = events.length;
-    firstEventRef = events[0] ?? null;
-    boundaryEventRef = events[processedCount - 1] ?? null;
-
-    return products;
-  };
-
-  return { update, reset };
+  return createAppendOnlyTracker<SessionResourcesState, ResourceProduct[]>({
+    init: () => ({ byId: new Map(), products: [] }),
+    processEvent: (state, event) => {
+      collectResourcesFromEvent(event, state.byId, state.products);
+    },
+    getResult: (state) => state.products,
+  });
 }
 
 function collectResourcesFromEvent(

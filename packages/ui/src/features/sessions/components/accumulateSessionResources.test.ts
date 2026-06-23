@@ -95,4 +95,23 @@ describe("accumulateSessionResources", () => {
       { id: "product_analytics", label: "Product analytics" },
     ]);
   });
+
+  it("rebuilds without carrying over products when the list is replaced", () => {
+    const tracker = createSessionResourcesTracker();
+
+    tracker.update([
+      resourcesUsedMsg(1, [{ id: "feature_flags", label: "Feature flags" }]),
+      resourcesUsedMsg(2, [{ id: "experiments", label: "Experiments" }]),
+    ]);
+
+    // A shorter, unrelated list breaks the append invariant — the prior
+    // products must not leak into the result.
+    expect(
+      tracker.update([
+        resourcesUsedMsg(3, [
+          { id: "product_analytics", label: "Product analytics" },
+        ]),
+      ]),
+    ).toEqual([{ id: "product_analytics", label: "Product analytics" }]);
+  });
 });

@@ -1,4 +1,5 @@
 import type { AcpMessage } from "@posthog/shared";
+import { createAppendOnlyTracker } from "./appendOnlyTracker";
 
 export interface ContextBreakdown {
   systemPrompt: number;
@@ -39,45 +40,24 @@ export function extractContextUsage(events: AcpMessage[]): ContextUsage | null {
   return { ...aggregate, breakdown };
 }
 
+interface ContextUsageState {
+  aggregate: ContextUsageAggregate | null;
+  breakdown: ContextBreakdown | null;
+}
+
 export function createContextUsageTracker() {
-  let aggregate: ContextUsageAggregate | null = null;
-  let breakdown: ContextBreakdown | null = null;
-  let processedCount = 0;
-  let firstEventRef: AcpMessage | null = null;
-  let boundaryEventRef: AcpMessage | null = null;
-
-  const reset = () => {
-    aggregate = null;
-    breakdown = null;
-    processedCount = 0;
-    firstEventRef = null;
-    boundaryEventRef = null;
-  };
-
-  const update = (events: AcpMessage[]): ContextUsage | null => {
-    const canAppend =
-      events.length >= processedCount &&
-      (processedCount === 0 || events[0] === firstEventRef) &&
-      (processedCount === 0 || events[processedCount - 1] === boundaryEventRef);
-
-    if (!canAppend) {
-      reset();
-    }
-
-    for (let i = processedCount; i < events.length; i++) {
-      const msg = events[i].message;
-      aggregate = extractAggregate(msg) ?? aggregate;
-      breakdown = extractBreakdown(msg) ?? breakdown;
-    }
-
-    processedCount = events.length;
-    firstEventRef = events[0] ?? null;
-    boundaryEventRef = events[processedCount - 1] ?? null;
-
-    return aggregate ? { ...aggregate, breakdown } : null;
-  };
-
-  return { update, reset };
+  return createAppendOnlyTracker<ContextUsageState, ContextUsage | null>({
+    init: () => ({ aggregate: null, breakdown: null }),
+    processEvent: (state, event) => {
+      const msg = event.message;
+      state.aggregate = extractAggregate(msg) ?? state.aggregate;
+      state.breakdown = extractBreakdown(msg) ?? state.breakdown;
+    },
+    getResult: (state) =>
+      state.aggregate
+        ? { ...state.aggregate, breakdown: state.breakdown }
+        : null,
+  });
 }
 
 function extractAggregate(

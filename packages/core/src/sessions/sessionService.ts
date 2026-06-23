@@ -39,6 +39,7 @@ import {
   type Task,
 } from "@posthog/shared/domain-types";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
+import { createAppendOnlyTracker } from "./appendOnlyTracker";
 import type { CloudArtifactClient } from "./cloudArtifactIdentifiers";
 import { classifyCloudLogAppend } from "./cloudLogGap";
 import { CloudLogGapReconciler } from "./cloudLogGapReconciler";
@@ -360,56 +361,32 @@ export function selectLatestPlan(events: AcpMessage[]): SessionPlan | null {
 }
 
 export function createLatestPlanTracker() {
-  let plan: SessionPlan | null = null;
-  let processedCount = 0;
-  let firstEventRef: AcpMessage | null = null;
-  let boundaryEventRef: AcpMessage | null = null;
-
-  const reset = () => {
-    plan = null;
-    processedCount = 0;
-    firstEventRef = null;
-    boundaryEventRef = null;
-  };
-
-  const update = (events: AcpMessage[]): SessionPlan | null => {
-    const canAppend =
-      events.length >= processedCount &&
-      (processedCount === 0 || events[0] === firstEventRef) &&
-      (processedCount === 0 || events[processedCount - 1] === boundaryEventRef);
-
-    if (!canAppend) {
-      reset();
-    }
-
-    for (let i = processedCount; i < events.length; i++) {
-      const msg = events[i].message;
+  return createAppendOnlyTracker<
+    { plan: SessionPlan | null },
+    SessionPlan | null
+  >({
+    init: () => ({ plan: null }),
+    processEvent: (state, event) => {
+      const msg = event.message;
 
       if (
         isJsonRpcResponse(msg) &&
         (msg.result as { stopReason?: string })?.stopReason !== undefined
       ) {
-        plan = null;
-        continue;
+        state.plan = null;
+        return;
       }
 
       if (isJsonRpcNotification(msg) && msg.method === "session/update") {
         const update = (msg.params as { update?: { sessionUpdate?: string } })
           ?.update;
         if (update?.sessionUpdate === "plan") {
-          plan = update as SessionPlan;
+          state.plan = update as SessionPlan;
         }
       }
-    }
-
-    processedCount = events.length;
-    firstEventRef = events[0] ?? null;
-    boundaryEventRef = events[processedCount - 1] ?? null;
-
-    return plan;
-  };
-
-  return { update, reset };
+    },
+    getResult: (state) => state.plan,
+  });
 }
 
 export const SESSION_SERVICE = Symbol.for("posthog.core.sessions.service");
