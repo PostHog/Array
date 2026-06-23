@@ -68,6 +68,11 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
         width: open ? `${width}px` : "0",
         minWidth: open ? `${width}px` : "0",
         maxWidth: open ? `${width}px` : "0",
+        // Clip the full-width inner content when collapsed so the nav can't paint
+        // outside the zero-width box and overlap the page (e.g. inbox/agents,
+        // which leave that region transparent). Keep overflow visible when open
+        // so the resize handle, positioned just outside the edge, stays clickable.
+        overflow: open ? "visible" : "hidden",
         transition: isResizing ? "none" : "width 0.2s ease-in-out",
         borderLeft: !isLeft && open ? "1px solid var(--border)" : "none",
         borderRight: isLeft && open ? "1px solid var(--border)" : "none",
