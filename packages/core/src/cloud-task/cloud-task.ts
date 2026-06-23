@@ -24,12 +24,8 @@ import {
 } from "./schemas";
 import { type SseEvent, SseEventParser } from "./sse-parser";
 
-// Transport reconnect backoff. The first SSE_RECONNECT_FLAT_ATTEMPTS retries fire at the base
-// delay (a stopped agent-proxy is usually reachable again within a couple seconds), then the
-// delay grows exponentially up to the cap: 0.5, 0.5, 0.5, 1, 2, 4, 8, 16, 30s. MAX_SSE_RECONNECT_
-// ATTEMPTS is sized so this schedule still spans ~60s of wall-clock before the watcher gives up,
-// matching the prior give-up window while reconnecting an order of magnitude faster in the common
-// case (a quick proxy restart now recovers in ~1.5s instead of ~16s).
+// Reconnect backoff: flat base delay for the first SSE_RECONNECT_FLAT_ATTEMPTS attempts, then
+// exponential up to the cap (0.5, 0.5, 0.5, 1, 2, 4, 8, 16, 30s), spanning ~60s before giving up.
 const MAX_SSE_RECONNECT_ATTEMPTS = 9;
 const MAX_CUMULATIVE_RECONNECT_ATTEMPTS = 30;
 const SSE_RECONNECT_BASE_DELAY_MS = 500;
@@ -40,9 +36,7 @@ const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
 
-// Durable end-of-stream sentinel emitted by the server (and the agent-proxy) once a run's
-// event stream is complete. It is the authoritative "no more events, ever" signal — the
-// client stops on it without consulting run status (status-unaware durable-stream contract).
+// Authoritative end-of-stream sentinel. The client stops on it without consulting run status.
 const STREAM_END_EVENT_NAME = "stream-end";
 
 interface SessionLogsPage {
@@ -97,8 +91,7 @@ interface TaskRunStateEvent {
   completed_at?: string | null;
 }
 
-// Which endpoint a stream connection reads from. Event ids are only meaningful within
-// the leg that issued them: the proxy and Django id spaces are unrelated.
+// Which endpoint a connection reads from. Event ids are only meaningful within their issuing leg.
 type StreamLeg = "proxy" | "django";
 
 interface WatcherState {
@@ -140,17 +133,13 @@ interface WatcherState {
   needsPostBootstrapReconnect: boolean;
   needsStopAfterBootstrap: boolean;
   streamEnded: boolean;
-  // True once the watcher has consumed its one automatic re-bootstrap recovery for the
-  // current trouble window; re-armed by a real data event or a healthy-length connection.
+  // Consumes one automatic re-bootstrap recovery; re-armed by a data event or healthy connection.
   selfHealAttempted: boolean;
-  // Read-leg routing, resolved once from the stream_token endpoint and reused across reconnects.
   // streamBaseUrl set => read via the agent-proxy with streamReadToken; null => read from Django.
   streamTargetResolved: boolean;
   streamBaseUrl: string | null;
   streamReadToken: string | null;
-  // True once stream_token resolved OK: servers with that endpoint always emit the stream-end
-  // sentinel. False for old servers (404), where the client must fall back to legacy status
-  // polling to detect the end of a run.
+  // True once stream_token resolved. False for old servers (404), which fall back to status polling.
   durableStreamEnabled: boolean;
 }
 
@@ -349,17 +338,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       hasSnapshot: watcher.hasEmittedSnapshot,
     });
 
-    // Retry means "start over from scratch". A watcher usually fails because its resume
-    // state is poisoned (e.g. a Last-Event-ID the server answers with instant empty
-    // streams); reconnecting with that state preserved loops straight back into the same
-    // failure. Re-bootstrapping re-resolves the read leg and re-emits a fresh snapshot,
-    // which also heals any entries missed while the stream was broken.
+    // Start over from scratch: a poisoned resume position loops straight back into the same
+    // failure, so re-bootstrap to re-resolve the read leg and emit a fresh snapshot.
     this.resetWatcherForRebootstrap(watcher);
     void this.bootstrapWatcher(key);
   }
 
-  // Returns a watcher to its pre-bootstrap state so bootstrapWatcher can rebuild it from
-  // server truth: budgets, buffers, resume position and read-leg routing all reset.
+  // Resets a watcher to its pre-bootstrap state so bootstrapWatcher can rebuild it from server truth.
   private resetWatcherForRebootstrap(watcher: WatcherState): void {
     watcher.reconnectAttempts = 0;
     watcher.streamErrorAttempts = 0;
@@ -709,8 +694,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.connStartedAt = 0;
     watcher.connDataEventsReceived = 0;
 
-    // Resolve the read target once (proxy URL + token, or Django). The server owns the decision;
-    // reused across reconnects so transport churn never re-mints a token.
+    // Resolve the read target once (proxy URL + token, or Django), reused across reconnects.
     if (!watcher.streamTargetResolved) {
       await this.resolveStreamTarget(watcher);
       const resolvedWatcher = this.watchers.get(key);
@@ -730,9 +714,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       ? watcher.streamBaseUrl?.replace(/\/+$/, "")
       : watcher.apiHost;
     const leg: StreamLeg = usingProxy ? "proxy" : "django";
-    // Resuming a proxy stream from a Django id (or vice versa) is undefined: the id
-    // spaces are unrelated. Drop the resume position on a leg switch and let
-    // start=latest plus the next snapshot cover the gap.
+    // Proxy and Django id spaces are unrelated, so drop the resume position on a leg switch and
+    // let start=latest plus the next snapshot cover the gap.
     if (watcher.lastEventId && watcher.lastEventIdLeg !== leg) {
       this.log.info("Cloud task stream leg changed, dropping resume position", {
         key,
@@ -744,11 +727,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
     watcher.streamLeg = leg;
 
-    // Captured after the leg-switch drop so they reflect what this connection actually sends:
-    // a dropped resume position means no Last-Event-ID and a start=latest reconnect.
+    // Captured after the leg-switch drop so they reflect what this connection actually sends.
     watcher.connSentLastEventId = watcher.lastEventId;
     const startLatest = Boolean(options?.startLatest && !watcher.lastEventId);
-    // The proxy exposes a clean run-scoped path; the run-scoped token carries team and task.
     const url = new URL(
       usingProxy
         ? `${base}/v1/runs/${watcher.runId}/stream`
@@ -767,8 +748,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       headers.Authorization = `Bearer ${watcher.streamReadToken}`;
     }
 
-    // Debug level: this fires on every reconnect, which during transport churn is
-    // multiple times per second and would otherwise dominate the log file.
+    // Debug level: fires on every reconnect and would otherwise dominate the log file.
     this.log.debug("Opening cloud task stream", {
       usingProxy,
       streamUrl: url.toString(),
@@ -779,17 +759,15 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     );
     const decoder = new TextDecoder();
 
-    // Tracks whether the response body was opened and how long it stayed open,
-    // so a long-lived connection cut by transport churn isn't penalized as a
-    // failed reconnect attempt (see SSE_HEALTHY_CONNECTION_MS).
+    // Track how long the body stayed open so healthy long-lived connections cut by churn
+    // aren't penalized as failed reconnects (see SSE_HEALTHY_CONNECTION_MS).
     let connectedAt = 0;
     let streamWasEstablished = false;
     let bytesReceived = 0;
     let eventsReceived = 0;
 
     try {
-      // The proxy authenticates with the run-scoped Bearer token, not the user session, so it
-      // takes a plain fetch. The Django leg still goes through authenticatedFetch.
+      // The proxy authenticates with the run-scoped Bearer token; the Django leg uses the session.
       const response = usingProxy
         ? await fetch(url.toString(), {
             method: "GET",
@@ -869,10 +847,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         lastEventId: watcher.lastEventId,
       });
 
-      // A long-lived connection that closed cleanly is healthy transport churn, not a
-      // reconnect loop. Clear the cumulative budget so an idle run (keepalives only —
-      // nothing else resets it) can ride out proxy timeout cycles indefinitely, while
-      // instant-EOF loops still exhaust it.
+      // A long-lived clean close is healthy churn, not a loop: clear the cumulative budget so an
+      // idle run can ride out proxy timeout cycles, while instant-EOF loops still exhaust it.
       const completedWatcher = this.watchers.get(key);
       if (
         completedWatcher &&
@@ -891,11 +867,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         return;
       }
 
-      // Proxy-leg 401: the run-scoped read token expired mid-watch (short TTL) or its signing
-      // key rotated. Re-resolve the read target — which mints a fresh token, or routes back to
-      // Django if the rollout flag was turned off meanwhile — instead of failing. Django-leg
-      // 401 stays fatal below (the user session expired). Counting the attempt bounds
-      // persistent proxy 401s by the transport reconnect budget.
+      // Proxy-leg 401: the read token expired or its signing key rotated. Re-resolve to mint a
+      // fresh token (or route back to Django) instead of failing. Django-leg 401 stays fatal below.
       const unauthorizedWatcher = this.watchers.get(key);
       if (
         error instanceof CloudTaskStreamError &&
@@ -940,8 +913,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           watcher.streamErrorAttempts += 1;
         } else if (wasHealthyStream) {
           watcher.streamErrorAttempts = 0;
-          // Same as the clean-EOF path: a healthy-length connection proves this is
-          // timeout cycling, not a loop, so an idle run never exhausts the budget.
+          // A healthy-length connection proves timeout cycling, not a loop.
           watcher.cumulativeReconnectAttempts = 0;
           watcher.selfHealAttempted = false;
         }
@@ -1002,18 +974,15 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return;
     }
 
-    // A keepalive or real event proves the transport recovered, so clear the
-    // transport reconnect budget. A keepalive stops here: it does NOT clear the
-    // backend-error budget, since it doesn't prove the stream itself produced
-    // data.
+    // A keepalive or real event proves the transport recovered. A keepalive does not clear the
+    // backend-error budget, which only a real data event below resets.
     watcher.reconnectAttempts = 0;
 
     if (isKeepaliveEvent(event)) {
       return;
     }
 
-    // A real data event proves the stream materialized; clear the backend-error
-    // and cumulative budgets too, and re-arm the one-shot self-heal recovery.
+    // A real data event proves the stream materialized; clear the remaining budgets and re-arm self-heal.
     watcher.streamErrorAttempts = 0;
     watcher.cumulativeReconnectAttempts = 0;
     watcher.selfHealAttempted = false;
@@ -1107,8 +1076,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const watcher = this.watchers.get(key);
     if (!watcher || watcher.bufferedLogBatches.length === 0) return;
 
-    // Content-based dedup because SSE IDs (Redis stream IDs) don't exist in
-    // the S3-backed historical entries — the JSON payload is the only shared key
+    // Content-based dedup: SSE ids don't exist in the historical entries, so the payload is the key.
     const historicalCounts = new Map<string, number>();
     for (const entry of historicalEntries) {
       const serialized = JSON.stringify(entry);
@@ -1296,8 +1264,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     options: { countAttempt?: boolean } = {},
   ): void {
     const watcher = this.watchers.get(key);
-    // No isTerminalStatus gate: the reconnect loop is status-unaware and only stops on the
-    // stream-end sentinel (handled in handleStreamCompletion) or the budget exhaustion below.
+    // Status-unaware: the loop only stops on the stream-end sentinel or budget exhaustion below.
     if (!watcher || watcher.failed) {
       return;
     }
@@ -1306,8 +1273,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       clearTimeout(watcher.reconnectTimeoutId);
     }
 
-    // Cumulative counter bounds runaway loops that clean-EOF (countAttempt=false)
-    // and would otherwise dodge `reconnectAttempts`.
+    // Bounds runaway loops that clean-EOF (countAttempt=false) and dodge reconnectAttempts.
     watcher.cumulativeReconnectAttempts += 1;
     const countAttempt = options.countAttempt ?? true;
     if (countAttempt) {
@@ -1317,12 +1283,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     if (
       watcher.cumulativeReconnectAttempts > MAX_CUMULATIVE_RECONNECT_ATTEMPTS
     ) {
-      // A poisoned resume position (a Last-Event-ID the server answers with instant
-      // empty streams) burns through the budget without a single error frame. Before
-      // surfacing a failure, rebuild once from scratch — fresh read leg, fresh snapshot,
-      // no resume position — the same recovery an app restart performs. A data event or
-      // a healthy-length connection re-arms the attempt; if the rebuilt watcher loops
-      // straight back here, fail for real.
+      // A poisoned resume position burns the budget without an error frame. Rebuild once from
+      // scratch (the app-restart recovery) before failing; if it loops straight back, fail for real.
       if (!watcher.selfHealAttempted) {
         watcher.reconnectTimeoutId = null;
         this.log.warn(
@@ -1343,8 +1305,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return;
     }
 
-    // The watcher fails once either budget is exhausted: transport reconnect
-    // failures or backend stream-error frames.
+    // Fail once either budget (transport reconnect or backend stream-error) is exhausted.
     const attemptCount = Math.max(
       watcher.reconnectAttempts,
       watcher.streamErrorAttempts,
@@ -1398,10 +1359,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     const { reconnectOnDisconnect } = options;
 
-    // Bootstrap owns the snapshot lifecycle, so it must be consulted before the
-    // stream-end stop: stopping mid-bootstrap deletes the watcher before the
-    // snapshot is emitted and silently discards the backlog plus any live
-    // entries buffered during bootstrap. Record intent and let bootstrap finish.
+    // Bootstrap owns the snapshot lifecycle: stopping mid-bootstrap would discard the backlog and
+    // buffered live entries. Record intent and let bootstrap finish.
     if (watcher.isBootstrapping) {
       if (watcher.streamEnded || !reconnectOnDisconnect) {
         watcher.needsStopAfterBootstrap = true;
@@ -1411,22 +1370,15 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return;
     }
 
-    // On a durable stream the end-of-stream sentinel is the ONLY signal that ends the watch. The
-    // client is unaware of sandbox/run status and assumes the transport breaks mid-message
-    // constantly, so any disconnect without stream-end is just transport churn to ride out by
-    // reconnecting. We never poll run status to decide whether to stop — that would drop the tail
-    // if the stream cut right as the run went terminal but before stream-end arrived. Status is
-    // updated for display only, from the task_run_state events the stream itself carries.
+    // The stream-end sentinel is the only signal that ends a durable watch. Any disconnect without
+    // it is transport churn to reconnect through; status is tracked for display only, never to stop.
     if (watcher.streamEnded) {
       await this.finalizeWatcherStop(key);
       return;
     }
 
-    // Legacy mode (old server or rollout flag off): the stream carries no end-of-run sentinel,
-    // so a disconnect is the old contract — poll run status to decide between stopping and
-    // reconnecting. The reconnect budgets deliberately keep the new semantics (no reset on
-    // polled progress; that defeated the runaway-loop cap and let a poisoned stream churn for
-    // hours), so the self-heal recovery stays active here too.
+    // Legacy mode (old server): no sentinel, so poll run status on disconnect to decide stop vs
+    // reconnect. The reconnect budgets keep the new semantics, so self-heal stays active here too.
     if (!watcher.durableStreamEnabled && reconnectOnDisconnect) {
       const run = await this.fetchTaskRun(watcher);
       const legacyWatcher = this.watchers.get(key);
@@ -1472,11 +1424,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     await this.finalizeWatcherStop(key);
   }
 
-  // Stops a watcher whose stream is durably complete. Status normally arrives via the
-  // task_run_state events the stream carries, but if the stream ended without a terminal
-  // status (dropped final frame or a server bug), fetch it once so the session is not left
-  // permanently "in progress" with no watcher behind it. The poll never decides WHETHER to
-  // stop — stream-end already did — it only repairs the displayed status.
+  // Stops a watcher whose stream is durably complete. Repairs the displayed status if the stream
+  // ended non-terminal (dropped final frame); the poll never decides whether to stop.
   private async finalizeWatcherStop(key: string): Promise<void> {
     const watcher = this.watchers.get(key);
     if (!watcher) return;
@@ -1622,8 +1571,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         method: "GET",
       });
       if (!response.ok) {
-        // Reachable but refused (or an old server without the endpoint): read from Django
-        // with legacy status-polling semantics and don't retry resolution.
+        // Refused, or an old server without the endpoint: read from Django with status polling.
         watcher.streamBaseUrl = null;
         watcher.streamReadToken = null;
         watcher.durableStreamEnabled = false;
@@ -1641,9 +1589,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       };
       watcher.streamReadToken = data.token ?? null;
       watcher.streamBaseUrl = data.stream_base_url ?? null;
-      // Every server with the stream_token endpoint emits the stream-end sentinel, so the
-      // endpoint resolving at all is the capability signal that opts this watcher into the
-      // status-unaware contract. Old servers 404 above and stay on legacy status polling.
+      // The endpoint resolving at all opts this watcher into the status-unaware contract;
+      // old servers 404 above and stay on legacy status polling.
       watcher.durableStreamEnabled = true;
       watcher.streamTargetResolved = true;
       this.log.info("Cloud task stream target resolved", {
@@ -1654,8 +1601,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         durableStream: watcher.durableStreamEnabled,
       });
     } catch (error) {
-      // Transient failure: leave unresolved so the next reconnect retries; connectSse falls back
-      // to the Django leg meanwhile since streamBaseUrl stays null.
+      // Transient failure: leave unresolved so the next reconnect retries and falls back to Django.
       watcher.streamBaseUrl = null;
       watcher.streamReadToken = null;
       this.log.warn("Cloud task stream target resolution failed", {

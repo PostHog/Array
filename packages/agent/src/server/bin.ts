@@ -33,8 +33,7 @@ const envSchema = z.object({
     .enum(["low", "medium", "high", "xhigh", "max"])
     .optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN: z.string().min(1).optional(),
-  // Routes the event-ingest POST to the standalone agent-proxy; other API calls keep using
-  // POSTHOG_API_URL. Falls back to POSTHOG_API_URL when unset.
+  // Base URL for the event-ingest POST only; falls back to POSTHOG_API_URL when unset.
   POSTHOG_TASK_RUN_EVENT_INGEST_URL: z.url().optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS: z
     .string()
@@ -196,11 +195,8 @@ program
       process.exit(0);
     });
 
-    // A hard crash would otherwise leave the run non-terminal and the user staring
-    // at a generic "Cloud stream disconnected". Mark the run failed before exiting
-    // so the desktop surfaces a real error instead of a silent stall. The deadline
-    // guarantees we exit even if reportFatalError's network calls hang at crash time
-    // (e.g. API unreachable during a restart), so we never block pod shutdown.
+    // Mark the run failed before exiting so a hard crash surfaces a real error instead of a
+    // silent stall. The deadline guarantees we exit even if the report hangs at crash time.
     const FATAL_ERROR_REPORT_DEADLINE_MS = 5_000;
     const handleFatalError = async (error: unknown) => {
       try {

@@ -8,8 +8,7 @@ import {
 
 interface TaskRunEventStreamSenderConfig {
   apiUrl: string;
-  // Base URL for the event-ingest POST only. Lets the deployment route ingest to the
-  // standalone agent-proxy while the rest of the agent's API calls stay on apiUrl.
+  // Base URL for the event-ingest POST only; falls back to apiUrl (Django path) when unset.
   eventIngestBaseUrl?: string;
   projectId: number;
   taskId: string;
@@ -88,8 +87,6 @@ export class TaskRunEventStreamSender {
   private bufferRevision = 0;
 
   constructor(private readonly config: TaskRunEventStreamSenderConfig) {
-    // When routed to the agent-proxy, use its clean run-scoped path; the run-scoped
-    // token carries team and task. Falling back to apiUrl keeps the Django path.
     const usingProxy = Boolean(config.eventIngestBaseUrl);
     const ingestBase = (config.eventIngestBaseUrl ?? config.apiUrl).replace(
       /\/$/,
@@ -356,8 +353,7 @@ export class TaskRunEventStreamSender {
     delayOverrideMs?: number,
   ): void {
     this.clearStreamWindowClose(stream);
-    // Rotate long-lived uploads even when the agent goes idle; this is a
-    // transport boundary, not a batching window.
+    // Rotate long-lived uploads even when idle: a transport boundary, not a batching window.
     const delayMs =
       delayOverrideMs ??
       Math.max(0, stream.startedAtMs + this.streamWindowMs - Date.now());

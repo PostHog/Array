@@ -1776,10 +1776,8 @@ describe("CloudTaskService", () => {
       )
       .mockImplementation(() => Promise.resolve(makeInProgressRun()));
 
-    // Each connection opens but delivers NOTHING, then is transport-cut at 65s.
-    // Healthiness is duration-only on purpose — it must NOT depend on keepalive
-    // frames surviving the proxy — so even a frame-less long-lived cut is healthy
-    // and never exhausts the budget.
+    // Each connection opens, delivers nothing, then is transport-cut at 65s. Healthiness is
+    // duration-only (not keepalive frames), so even a frame-less long-lived cut never exhausts the budget.
     mockStreamFetch.mockImplementation(() => {
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
@@ -1921,10 +1919,8 @@ describe("CloudTaskService", () => {
       )
       .mockImplementation(() => Promise.resolve(makeInProgressRun()));
 
-    // First 3 connections fail fast at the transport level (established, then
-    // errored immediately, no frame) and accrue reconnect attempts. The 4th
-    // delivers a keepalive and stays open — proving the transport recovered, so
-    // the accrued attempts must reset rather than carry forward into the budget.
+    // First 3 connections fail fast at the transport level and accrue reconnect attempts. The 4th
+    // delivers a keepalive and stays open, proving recovery, so the accrued attempts must reset.
     let streamCall = 0;
     const keepaliveControllerRef: {
       current: ReadableStreamDefaultController<Uint8Array> | null;
@@ -2028,12 +2024,9 @@ describe("CloudTaskService", () => {
       ) // bootstrap: fetchSessionLogs
       .mockImplementation(() => Promise.resolve(makeInProgressRun()));
 
-    // Connections 1-4 each emit a backend `event: error` frame, building the
-    // backend-error budget to 4 — those reconnects correctly pace on
-    // streamErrorAttempts. Connection 5 is held open until the test injects a
-    // quick TRANSPORT cut, which must pace its reconnect on the just-incremented
-    // transport budget (1 -> ~2s), NOT on the stale backend-error budget
-    // (4 -> ~16s). Math.max(both) for the delay would wrongly use the latter.
+    // Connections 1-4 each emit a backend error frame, pacing reconnects on streamErrorAttempts.
+    // Connection 5 is held open until a quick transport cut, which must pace on the transport budget
+    // (1 -> ~2s), not the stale backend-error budget (4 -> ~16s). Math.max(both) would use the latter.
     let streamCall = 0;
     const transportControllerRef: {
       current: ReadableStreamDefaultController<Uint8Array> | null;
