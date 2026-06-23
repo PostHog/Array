@@ -67,7 +67,7 @@ export function DismissedTab() {
       <InboxLoadMore
         hasNextPage={hasNextPage}
         isFetchingNextPage={isFetchingNextPage}
-        onLoadMore={() => void fetchNextPage()}
+        onLoadMore={() => void fetchNextPage({ cancelRefetch: false })}
       />
     </Flex>
   );
