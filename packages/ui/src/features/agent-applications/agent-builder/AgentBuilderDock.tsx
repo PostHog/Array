@@ -117,10 +117,7 @@ export function AgentBuilderDock() {
       }),
     clientTools,
   });
-  const { data: pendingApproval } = useAgentChatPendingApproval(
-    AGENT_BUILDER_SLUG,
-    chat.sessionId,
-  );
+  const pendingApproval = useAgentChatPendingApproval(CHAT_ID);
 
   // Resolve a pending set_secret: PUT the value straight to the env-keys API
   // (never through the agent), then wake the parked session with the outcome.

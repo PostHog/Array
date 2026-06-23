@@ -1,4 +1,5 @@
 import type { AcpMessage } from "@posthog/shared";
+import type { AgentApprovalRequest } from "@posthog/shared/agent-platform-types";
 import { createStore } from "zustand/vanilla";
 
 /**
@@ -26,6 +27,13 @@ export interface AgentChatState {
   status: AgentChatStatus;
   /** Accumulated ACP messages (mapper output) for ConversationView. */
   messages: AcpMessage[];
+  /**
+   * The approval-gated tool call this chat is currently paused on, or null. Set
+   * by the service when it sees a `queued` approval marker on the stream (it
+   * one-shot-fetches the full request from the ingress); cleared when the marker
+   * resolves or the user decides. Drives the inline approval card — no polling.
+   */
+  pendingApproval: AgentApprovalRequest | null;
   error: string | null;
 }
 
@@ -34,6 +42,7 @@ export const EMPTY_CHAT: AgentChatState = {
   sessionId: null,
   status: "idle",
   messages: [],
+  pendingApproval: null,
   error: null,
 };
 
@@ -46,6 +55,10 @@ interface AgentChatStore {
   setSessionId: (chatId: string, sessionId: string) => void;
   setStatus: (chatId: string, status: AgentChatStatus) => void;
   appendMessages: (chatId: string, messages: AcpMessage[]) => void;
+  setPendingApproval: (
+    chatId: string,
+    approval: AgentApprovalRequest | null,
+  ) => void;
   setError: (chatId: string, error: string | null) => void;
   reset: (chatId: string) => void;
 }
@@ -82,6 +95,8 @@ export const agentChatStore = createStore<AgentChatStore>((set) => {
           },
         };
       }),
+    setPendingApproval: (chatId, approval) =>
+      set(patch(chatId, { pendingApproval: approval })),
     setError: (chatId, error) => set(patch(chatId, { error })),
     reset: (chatId) => set(patch(chatId, { ...EMPTY_CHAT })),
   };

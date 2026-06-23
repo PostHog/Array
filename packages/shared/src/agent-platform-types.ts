@@ -553,6 +553,19 @@ export type AgentToolResultEvent = AgentSessionEventBase & {
     ok?: boolean;
     output?: unknown;
     error?: string;
+    /**
+     * Present when this result is an approval-gated call's synthetic outcome.
+     * `state: "queued"` means it's awaiting a decision — the chat service keys
+     * the inline approval card off it (then one-shot-fetches the full request).
+     * A later result with the same `request_id` and a non-queued state clears
+     * the card. `allow_edit` + `approver_scope` mirror the persisted envelope.
+     */
+    approval?: {
+      request_id: string;
+      state: string;
+      allow_edit?: boolean;
+      approver_scope?: AgentApproverScope;
+    };
   };
 };
 
