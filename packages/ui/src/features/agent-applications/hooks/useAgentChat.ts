@@ -142,7 +142,11 @@ export function useAgentChat({
     (approvalId: string, body: DecideApprovalRequest): Promise<void> =>
       ingressBaseUrl
         ? service.decideApproval(client, session, approvalId, body)
-        : Promise.resolve(),
+        : // No live session to decide against — reject (not a silent resolve) so
+          // the card's mutation shows an error, not a false success toast.
+          Promise.reject(
+            new Error("This chat has no live session to decide the approval."),
+          ),
     [service, client, session, ingressBaseUrl],
   );
 

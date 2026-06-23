@@ -10,6 +10,7 @@ import { Flex, Text } from "@radix-ui/themes";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useAuthStateValue } from "../../auth/store";
+import { agentApplicationsKeys } from "../hooks/agentApplicationsKeys";
 import { approvalStateColor, approvalStateLabel } from "../utils/format";
 import { AgentApprovalDecisionForm } from "./AgentApprovalDecisionForm";
 import { ArgsSection } from "./AgentApprovalDetail";
@@ -53,7 +54,7 @@ export function AgentChatPendingApprovalCard({
       // Clear the card now rather than waiting for the 2s poll; the server-side
       // row has flipped and the stream resumes the chat on approve.
       void queryClient.invalidateQueries({
-        queryKey: ["agent-applications", "approvals", projectId, idOrSlug],
+        queryKey: agentApplicationsKeys.approvalsPrefix(projectId, idOrSlug),
       });
     },
     onError: (err) => {

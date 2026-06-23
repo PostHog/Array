@@ -6,6 +6,7 @@ import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStateValue } from "../../auth/store";
+import { agentApplicationsKeys } from "./agentApplicationsKeys";
 
 interface DecideArgs {
   approvalId: string;
@@ -38,12 +39,7 @@ export function useDecideAgentApproval(idOrSlug: string) {
     onMutate: async ({ approvalId }) => {
       // Cancel in-flight approvals queries so a slow refetch can't overwrite
       // the optimistic clear after the user has already moved on.
-      const prefix = [
-        "agent-applications",
-        "approvals",
-        projectId,
-        idOrSlug,
-      ] as const;
+      const prefix = agentApplicationsKeys.approvalsPrefix(projectId, idOrSlug);
       await queryClient.cancelQueries({ queryKey: prefix });
       const snapshot: ApprovalCacheSnapshot =
         queryClient.getQueriesData<unknown>({ queryKey: prefix });
@@ -95,7 +91,7 @@ export function useDecideAgentApproval(idOrSlug: string) {
       // Converge with server truth — handles next-in-line pending approvals
       // for the same session, and refreshes any state-filtered list views.
       void queryClient.invalidateQueries({
-        queryKey: ["agent-applications", "approvals", projectId, idOrSlug],
+        queryKey: agentApplicationsKeys.approvalsPrefix(projectId, idOrSlug),
       });
     },
   });

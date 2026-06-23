@@ -19,6 +19,13 @@ export const agentApplicationsKeys = {
       idOrSlug,
       sessionId,
     ] as const,
+  /**
+   * Shared prefix for every approval query of an agent — both the list
+   * (`approvals`) and the in-chat pending-approval poll (`chatPendingApproval`)
+   * live under it, so invalidating this prefix clears both at once.
+   */
+  approvalsPrefix: (projectId: number | null, idOrSlug: string) =>
+    ["agent-applications", "approvals", projectId, idOrSlug] as const,
   approvals: (projectId: number | null, idOrSlug: string, state?: string) =>
     [
       "agent-applications",
