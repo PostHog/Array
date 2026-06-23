@@ -169,6 +169,12 @@ export type NewSessionMeta = {
   model?: string;
   /** Base branch of the task's repo (e.g. "master"), for the signed-git tools. */
   baseBranch?: string;
+  /**
+   * Repo-less channel "generic chat box" session: enables the lazy-repo tools
+   * (list_repos / clone_repo) and channel guidance. The agent decides at
+   * runtime whether it needs a repo and clones one only if so.
+   */
+  channelMode?: boolean;
   jsonSchema?: Record<string, unknown> | null;
   mcpToolApprovals?: McpToolApprovals;
   claudeCode?: {

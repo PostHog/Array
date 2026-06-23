@@ -264,9 +264,36 @@ export interface ScoutConfig {
    * absent entirely on backends predating the field.
    */
   description?: string;
+  /**
+   * Where the scout came from: "canonical" for a scout PostHog ships and
+   * maintains (seeded from products/signals/skills), "custom" for one a team
+   * hand-authored. The serializer defaults to "custom" when the skill is absent;
+   * the field itself is absent entirely on backends predating it.
+   */
+  scout_origin?: "canonical" | "custom";
   run_interval_minutes: number;
   last_run_at: string | null;
   created_at: string;
+}
+
+/** A team's enforced scout run caps and current usage, as dispatch applies them. */
+export interface ScoutLimits {
+  max_runs_per_tick: number;
+  /** Null when the daily budget is uncapped. */
+  max_runs_per_day: number | null;
+  runs_today: number;
+  /** Null when the daily budget is uncapped. */
+  runs_remaining_today: number | null;
+}
+
+/**
+ * Team-scoped scout metadata from the `signals-scout` flag: enrollment, an optional
+ * announcement banner, and the enforced run limits. `banner_message` is null when unset.
+ */
+export interface ScoutMetadata {
+  enrolled: boolean;
+  banner_message: string | null;
+  limits: ScoutLimits;
 }
 
 export interface ScoutRun {
@@ -437,6 +464,7 @@ interface CloudRunOptions {
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: PermissionMode;
+  homeQuickAction?: string;
 }
 
 interface CreateTaskRunOptions extends CloudRunOptions {
@@ -514,6 +542,9 @@ function buildCloudRunRequestBody(
   }
   if (options?.initialPermissionMode) {
     body.initial_permission_mode = options.initialPermissionMode;
+  }
+  if (options?.homeQuickAction) {
+    body.home_quick_action = options.homeQuickAction;
   }
 
   return body;
@@ -1538,6 +1569,10 @@ export class PostHogAPIClient {
       { results: ScoutConfig[] } | ScoutConfig[]
     >(projectId, "configs/");
     return Array.isArray(data) ? data : (data.results ?? []);
+  }
+
+  async getScoutMetadata(projectId: number): Promise<ScoutMetadata> {
+    return this.scoutGet<ScoutMetadata>(projectId, "metadata/current/");
   }
 
   async updateScoutConfig(
@@ -4559,6 +4594,12 @@ export class PostHogAPIClient {
     const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/users/`;
     const url = new URL(`${this.api.baseUrl}${path}`);
     const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    // The fetcher doesn't throw on non-2xx — surface a genuine failure so the
+    // pane shows its error branch rather than masking it as "no users yet"
+    // (a non-2xx that still returns JSON would otherwise coalesce to `[]`).
+    if (!response.ok) {
+      throw new Error(`Failed to load agent users: ${response.status}`);
+    }
     const data = (await response.json()) as Partial<AgentUsersListResponse>;
     return { results: data.results ?? [], count: data.count ?? 0 };
   }
@@ -4572,7 +4613,17 @@ export class PostHogAPIClient {
     const teamId = await this.getTeamId();
     const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/users/${encodeURIComponent(agentUserId)}/connections/${encodeURIComponent(provider)}/`;
     const url = new URL(`${this.api.baseUrl}${path}`);
-    await this.api.fetcher.fetch({ method: "delete", url, path });
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path,
+    });
+    // The fetcher doesn't throw on non-2xx. Revoke is a destructive, audited
+    // action — fail loudly so the caller's onError fires instead of a false
+    // "Connection revoked" success. 404 is treated as already-gone (idempotent).
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Failed to revoke connection: ${response.status}`);
+    }
   }
 
   // --- Live chat (agent-ingress) -------------------------------------------

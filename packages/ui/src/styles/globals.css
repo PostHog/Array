@@ -60,6 +60,57 @@
 @source "../../../../node_modules/@posthog/quill/dist/**/*.js";
 
 /*
+ * Indeterminate "section loading" bar — a thin accent bar that swoops across the
+ * top of a container while work is in flight (e.g. a canvas agent turn). Mirrors
+ * PostHog Cloud's LemonTableLoader. Put it as an absolutely-positioned child of a
+ * `position: relative` container and toggle the `--active` modifier to reveal it.
+ */
+.quill-section-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  width: 100%;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Barely-there track; the moving bar is the hard Quill brand color. */
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  transition: height 200ms ease;
+}
+
+.quill-section-loading::after {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  content: "";
+  background: var(--primary);
+  animation: quill-section-loading-swoop 1.5s linear infinite;
+}
+
+.quill-section-loading--active {
+  height: 0.125rem;
+}
+
+@keyframes quill-section-loading-swoop {
+  0% {
+    left: 0;
+    width: 33.333%;
+    transform: translateX(-100%);
+  }
+  50% {
+    width: 50%;
+  }
+  100% {
+    left: 100%;
+    width: 33.333%;
+    transform: translateX(100%);
+  }
+}
+
+/*
  * Quill ships its dialog backdrop at `opacity-20` (light) / `opacity-70`
  * (dark). The light value is barely visible — bump it so dialogs feel
  * properly modal across the app, matching Radix Themes.

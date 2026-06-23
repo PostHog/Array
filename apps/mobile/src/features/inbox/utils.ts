@@ -1,4 +1,6 @@
+import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import type { InboxViewedProperties } from "@/lib/analytics";
+import { DISMISSAL_REASON_OPTIONS } from "./constants";
 import type {
   AvailableSuggestedReviewer,
   SignalReport,
@@ -33,6 +35,27 @@ export function formatSignalReportSummaryMarkdown(content: string): string {
   }
 
   return result;
+}
+
+/** Relative time for the last day, absolute "MMM d" beyond it. */
+export function formatReportTimestamp(date: Date): string {
+  return differenceInHours(new Date(), date) < 24
+    ? formatDistanceToNow(date, { addSuffix: true })
+    : format(date, "MMM d");
+}
+
+/** A report is archived when it has been dismissed (suppressed). */
+export function isArchivedReport(
+  report: Pick<SignalReport, "status">,
+): boolean {
+  return report.status === "suppressed";
+}
+
+/** Human label for a persisted dismissal reason, falling back to the raw code. */
+export function dismissalReasonLabel(value: string): string {
+  return (
+    DISMISSAL_REASON_OPTIONS.find((o) => o.value === value)?.label ?? value
+  );
 }
 
 export function inboxStatusLabel(status: SignalReportStatus): string {

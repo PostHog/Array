@@ -103,7 +103,7 @@ export function ScoutRowCard({
               </a>
             </Tooltip>
           ) : null}
-          <ScoutOriginBadge skillName={config.skill_name} />
+          <ScoutOriginBadge config={config} />
           <DryRunBadge config={config} />
           <Text className="whitespace-nowrap text-[11px] text-gray-10">
             {formatRunIntervalShort(config.run_interval_minutes)}

@@ -54,6 +54,10 @@ import {
   STORAGE_PATHS_SERVICE,
 } from "@posthog/platform/storage-paths";
 import {
+  type IWorkspaceSettings,
+  WORKSPACE_SETTINGS_SERVICE,
+} from "@posthog/platform/workspace-settings";
+import {
   type AcpMessage,
   isAuthError,
   serializeError,
@@ -62,11 +66,15 @@ import {
 import { inject, injectable, preDestroy } from "inversify";
 import { WORKSPACE_REPOSITORY } from "../../db/identifiers";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
+import type { FoldersService } from "../folders/folders";
+import { FOLDERS_SERVICE } from "../folders/identifiers";
+import type { RegisteredFolder } from "../folders/schemas";
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import { loadSessionEnvOverrides } from "../session-env/loader";
+import { isScratchPath } from "../workspace/scratch";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
 import { cleanupCodexHome, prepareCodexHome } from "./codex-home";
 import { discoverExternalPlugins } from "./discover-plugins";
@@ -365,6 +373,10 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly storagePaths: IStoragePaths,
     @inject(WORKSPACE_REPOSITORY)
     private readonly workspaceRepository: IWorkspaceRepository,
+    @inject(WORKSPACE_SETTINGS_SERVICE)
+    private readonly workspaceSettings: IWorkspaceSettings,
+    @inject(FOLDERS_SERVICE)
+    private readonly foldersService: FoldersService,
     @inject(AGENT_LOGGER)
     loggerFactory: AgentLogger,
   ) {
@@ -527,6 +539,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     customInstructions?: string,
     additionalDirectories?: string[],
     systemPromptOverride?: string,
+    channelMode?: boolean,
+    knownLocalFolders?: RegisteredFolder[],
   ): {
     append: string;
   } {
@@ -565,6 +579,33 @@ When creating pull requests, add the following footer at the end of the PR descr
 ---
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
 \`\`\``;
+
+    if (channelMode) {
+      const localFolders = (knownLocalFolders ?? []).filter(
+        (f) => f.exists !== false,
+      );
+      const localFoldersBlock = localFolders.length
+        ? `\n\nThe user already has these repositories checked out locally on this machine. Prefer reusing one of these over cloning anything:\n${localFolders
+            .map(
+              (f) =>
+                `  - ${f.name} — ${f.path}${f.remoteUrl ? ` (${f.remoteUrl})` : ""}`,
+            )
+            .join("\n")}`
+        : "";
+
+      prompt += `
+
+## Channel task (no repository attached)
+You are running in a PostHog channel as a general-purpose assistant. This task may NOT need a code repository at all — it could be data analysis via PostHog tools, drafting a message, or answering a question. Do not assume you need a repo.
+
+- Your working directory is a scratch directory, not a git checkout. Treat it as empty.
+- Decide from the user's request (and the channel CONTEXT.md included above, if any) whether the task actually requires working inside a code repository. If it doesn't, just do the work in the scratch directory — do NOT attach a repo.
+
+If a repository IS genuinely required, attach one in this priority order:
+1. **Reuse a folder the user already has locally.** ${localFolders.length ? "Pick the one that best matches the request and the channel CONTEXT.md, then `cd` into its absolute path and do all git and file work there. It is already on disk — do NOT clone it again." : "If the user names a folder or path, `cd` into that absolute path and work there."}
+2. **If you can't confidently pick one** (none clearly match, or it's ambiguous), use the AskUserQuestion tool to ask the user which local folder to use, or for the path where the folder lives on this machine. Do not guess.
+3. **Only as a last resort** — when the user has no local copy, or explicitly wants a fresh checkout — clone from remote. Call \`list_repos\` to see what's available (prefer repos named in CONTEXT.md), then **confirm with the user via AskUserQuestion before cloning**, and use \`clone_repo\` (pass \`owner/repo\`); it clones into a subdirectory of your working directory and returns the path to \`cd\` into.${localFoldersBlock}`;
+    }
 
     if (customInstructions) {
       prompt += `\n\nUser custom instructions:\n${customInstructions}`;
@@ -631,6 +672,21 @@ When creating pull requests, add the following footer at the end of the PR descr
     // Preview config doesn't need a real repo — use a temp directory
     const repoPath = taskId === "__preview__" ? tmpdir() : rawRepoPath;
 
+    // Repo-less channel tasks run in a scratch dir. Detecting it server-side
+    // (rather than plumbing a flag from the client) keeps channel mode correct
+    // across reconnects, where the same scratch repoPath is passed back in.
+    const channelMode = isScratchPath(
+      repoPath,
+      this.workspaceSettings.getWorktreeLocation(),
+    );
+
+    // In channel mode the agent decides at runtime whether it needs a repo. Give
+    // it the user's previously-used local folders so it can reuse one (or ask)
+    // instead of cloning from remote. Only fetched for channel sessions.
+    const knownLocalFolders = channelMode
+      ? await this.foldersService.getFolders().catch(() => [])
+      : [];
+
     const additionalDirectories =
       taskId === "__preview__"
         ? []
@@ -687,6 +743,8 @@ When creating pull requests, add the following footer at the end of the PR descr
         customInstructions,
         additionalDirectories,
         systemPromptOverride,
+        channelMode,
+        knownLocalFolders,
       );
 
       const bundledSkillsDir = join(
@@ -884,6 +942,7 @@ When creating pull requests, add the following footer at the end of the PR descr
             environment: "local",
             sessionId: existingSessionId,
             systemPrompt,
+            ...(channelMode && { channelMode }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
@@ -909,6 +968,7 @@ When creating pull requests, add the following footer at the end of the PR descr
             taskRunId,
             environment: "local",
             systemPrompt,
+            ...(channelMode && { channelMode }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),

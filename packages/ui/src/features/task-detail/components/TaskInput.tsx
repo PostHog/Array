@@ -10,6 +10,7 @@ import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
 import { DotPatternBackground } from "../../../primitives/DotPatternBackground";
@@ -55,6 +56,10 @@ import { useInitialDirectoryFromFolderId } from "../hooks/useInitialDirectoryFro
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
+import {
+  type SuggestedPrompt,
+  SuggestedPromptCard,
+} from "./SuggestedPromptCard";
 import { SuggestedTasksPanel } from "./SuggestedTasksPanel";
 import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
 
@@ -71,6 +76,31 @@ interface TaskInputProps {
   channelContext?: string;
   /** Display name of the channel the CONTEXT.md came from (for the chip). */
   channelName?: string;
+  /**
+   * Channels "generic chat box" mode: hide the repo/branch pickers and let the
+   * task be submitted without a repo. The agent decides at runtime whether it
+   * needs a repo and attaches one lazily.
+   */
+  allowNoRepo?: boolean;
+  /**
+   * Channels new-task starter prompts. When provided, a column of suggestion
+   * cards renders below the input while it's empty; clicking one fills the
+   * composer. Channels-only — omitted on the /code new-task screen.
+   */
+  suggestions?: SuggestedPrompt[];
+  /**
+   * Called when a starter-prompt suggestion card is clicked, with the card's
+   * label. Optional analytics hook for the channels new-task screen; has no
+   * effect on the fill behaviour.
+   */
+  onSuggestionSelect?: (label: string) => void;
+  /**
+   * Called when the channel CONTEXT.md chip is clicked (not its dismiss × ).
+   * When provided, the chip's icon+label becomes a button — the channels
+   * new-task screen uses it to open the CONTEXT.md in a side panel. Without it
+   * the chip is non-interactive (only dismissable).
+   */
+  onContextChipClick?: () => void;
 }
 
 export function TaskInput({
@@ -84,6 +114,10 @@ export function TaskInput({
   reportAssociation,
   channelContext,
   channelName,
+  allowNoRepo,
+  suggestions,
+  onSuggestionSelect,
+  onContextChipClick,
 }: TaskInputProps = {}) {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const trpc = useHostTRPC();
@@ -525,6 +559,7 @@ export function TaskInput({
     setAdditionalDirectories,
   } = useTaskCreation({
     editorRef,
+    sessionId,
     selectedDirectory,
     selectedRepository: selectedCloudRepository,
     githubUserIntegrationId: selectedGithubUserIntegrationId,
@@ -544,6 +579,7 @@ export function TaskInput({
     signalReportId: activeReportAssociation?.reportId,
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
+    allowNoRepo,
   });
 
   const handleModeChange = useCallback(
@@ -666,7 +702,12 @@ export function TaskInput({
         <DotPatternBackground className="h-[100.333%]" />
         <div
           style={{
-            top: "50%",
+            // Raise the input when the suggestion cards are shown so the longer
+            // list below it isn't squished against the bottom of the viewport.
+            // Note: this is NOT tied to `editorIsEmpty` — the input keeps its
+            // position as the user types so the box doesn't jump down when the
+            // suggestions fade out (and back in when the prompt is cleared).
+            top: suggestions && suggestions.length > 0 ? "38%" : "50%",
             transform: "translate(-50%, -50%)",
           }}
           className="absolute left-1/2 z-[1] flex w-[calc(100%-2rem)] max-w-[600px] flex-col gap-2"
@@ -683,7 +724,7 @@ export function TaskInput({
               onCloudEnvironmentChange={setSelectedCloudEnvId}
               size="1"
             />
-            {workspaceMode === "worktree" && (
+            {!allowNoRepo && workspaceMode === "worktree" && (
               <EnvironmentSelector
                 repoPath={effectiveRepoPath ?? null}
                 value={selectedEnvironment}
@@ -696,88 +737,94 @@ export function TaskInput({
                 }
               />
             )}
-            <ButtonGroup
-              ref={buttonGroupRef}
-              data-tour="folder-picker"
-              data-tour-ready={
-                (
-                  workspaceMode === "cloud"
-                    ? selectedRepository
-                    : selectedDirectory
-                )
-                  ? "true"
-                  : undefined
-              }
-            >
-              {workspaceMode === "cloud" ? (
-                <GitHubRepoPicker
-                  value={selectedRepository}
-                  onChange={handleRepositorySelect}
-                  repositories={
-                    isCloudRepoPickerOpen
-                      ? visibleCloudRepositories
-                      : repositories
+            {!allowNoRepo && (
+              <ButtonGroup
+                ref={buttonGroupRef}
+                data-tour="folder-picker"
+                data-tour-ready={
+                  (
+                    workspaceMode === "cloud"
+                      ? selectedRepository
+                      : selectedDirectory
+                  )
+                    ? "true"
+                    : undefined
+                }
+              >
+                {workspaceMode === "cloud" ? (
+                  <GitHubRepoPicker
+                    value={selectedRepository}
+                    onChange={handleRepositorySelect}
+                    repositories={
+                      isCloudRepoPickerOpen
+                        ? visibleCloudRepositories
+                        : repositories
+                    }
+                    isLoading={
+                      isLoadingRepos ||
+                      (isCloudRepoPickerOpen && cloudRepositoriesLoading)
+                    }
+                    isRefreshing={isRefreshingRepos}
+                    onRefresh={handleRefreshRepositories}
+                    open={isCloudRepoPickerOpen}
+                    onOpenChange={handleCloudRepoPickerOpenChange}
+                    searchQuery={cloudRepoSearchQuery}
+                    onSearchQueryChange={handleCloudRepoSearchChange}
+                    hasMore={cloudRepositoriesHasMore}
+                    onLoadMore={handleLoadMoreCloudRepositories}
+                    placeholder="Select repository..."
+                    size="1"
+                    disabled={isCreatingTask}
+                  />
+                ) : (
+                  <FolderPicker
+                    value={selectedDirectory}
+                    onChange={setSelectedDirectory}
+                    placeholder="Select repository..."
+                    anchor={buttonGroupRef}
+                  />
+                )}
+                <BranchSelector
+                  repoPath={
+                    workspaceMode === "cloud"
+                      ? selectedCloudRepository
+                      : selectedDirectory
                   }
-                  isLoading={
-                    isLoadingRepos ||
-                    (isCloudRepoPickerOpen && cloudRepositoriesLoading)
+                  currentBranch={currentBranch}
+                  defaultBranch={
+                    workspaceMode === "cloud"
+                      ? cloudDefaultBranch
+                      : defaultBranch
                   }
-                  isRefreshing={isRefreshingRepos}
-                  onRefresh={handleRefreshRepositories}
-                  open={isCloudRepoPickerOpen}
-                  onOpenChange={handleCloudRepoPickerOpenChange}
-                  searchQuery={cloudRepoSearchQuery}
-                  onSearchQueryChange={handleCloudRepoSearchChange}
-                  hasMore={cloudRepositoriesHasMore}
-                  onLoadMore={handleLoadMoreCloudRepositories}
-                  placeholder="Select repository..."
-                  size="1"
-                  disabled={isCreatingTask}
-                />
-              ) : (
-                <FolderPicker
-                  value={selectedDirectory}
-                  onChange={setSelectedDirectory}
-                  placeholder="Select repository..."
+                  disabled={
+                    isCreatingTask ||
+                    (workspaceMode === "cloud" && !selectedCloudRepository)
+                  }
+                  loading={workspaceMode === "cloud" ? false : branchLoading}
+                  workspaceMode={workspaceMode}
+                  selectedBranch={selectedBranch}
+                  onBranchSelect={setSelectedBranch}
+                  busyState={busyState}
+                  cloudBranches={cloudBranches}
+                  cloudBranchesLoading={cloudBranchesLoading}
+                  isRefreshing={cloudBranchesRefreshing}
+                  cloudBranchesFetchingMore={cloudBranchesFetchingMore}
+                  cloudBranchesHasMore={cloudBranchesHasMore}
+                  cloudSearchQuery={cloudBranchSearchQuery}
+                  onCloudPickerClose={handleCloudBranchPickerClose}
+                  onCloudSearchChange={handleCloudBranchSearchChange}
+                  onCloudBranchCommit={handleCloudBranchPickerClose}
+                  onCloudLoadMore={handleLoadMoreCloudBranches}
+                  onRefresh={
+                    workspaceMode === "cloud"
+                      ? handleRefreshBranches
+                      : undefined
+                  }
                   anchor={buttonGroupRef}
                 />
-              )}
-              <BranchSelector
-                repoPath={
-                  workspaceMode === "cloud"
-                    ? selectedCloudRepository
-                    : selectedDirectory
-                }
-                currentBranch={currentBranch}
-                defaultBranch={
-                  workspaceMode === "cloud" ? cloudDefaultBranch : defaultBranch
-                }
-                disabled={
-                  isCreatingTask ||
-                  (workspaceMode === "cloud" && !selectedCloudRepository)
-                }
-                loading={workspaceMode === "cloud" ? false : branchLoading}
-                workspaceMode={workspaceMode}
-                selectedBranch={selectedBranch}
-                onBranchSelect={setSelectedBranch}
-                busyState={busyState}
-                cloudBranches={cloudBranches}
-                cloudBranchesLoading={cloudBranchesLoading}
-                isRefreshing={cloudBranchesRefreshing}
-                cloudBranchesFetchingMore={cloudBranchesFetchingMore}
-                cloudBranchesHasMore={cloudBranchesHasMore}
-                cloudSearchQuery={cloudBranchSearchQuery}
-                onCloudPickerClose={handleCloudBranchPickerClose}
-                onCloudSearchChange={handleCloudBranchSearchChange}
-                onCloudBranchCommit={handleCloudBranchPickerClose}
-                onCloudLoadMore={handleLoadMoreCloudBranches}
-                onRefresh={
-                  workspaceMode === "cloud" ? handleRefreshBranches : undefined
-                }
-                anchor={buttonGroupRef}
-              />
-            </ButtonGroup>
-            {workspaceMode !== "cloud" && (
+              </ButtonGroup>
+            )}
+            {!allowNoRepo && workspaceMode !== "cloud" && (
               <AdditionalDirectoriesButton
                 values={additionalDirectories}
                 onChange={setAdditionalDirectories}
@@ -882,10 +929,27 @@ export function TaskInput({
               <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
                 <span className="shrink-0 text-gray-10">Using:</span>
                 <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
-                  <FileText size={12} />
-                  <span className="truncate">
-                    {channelName ? `#${channelName} ` : ""}CONTEXT.md
-                  </span>
+                  {onContextChipClick ? (
+                    <Tooltip content="View this context">
+                      <button
+                        type="button"
+                        onClick={onContextChipClick}
+                        className="inline-flex min-w-0 items-center gap-1 rounded text-[var(--gray-11)] hover:text-gray-12"
+                      >
+                        <FileText size={12} />
+                        <span className="truncate">
+                          {channelName ? `#${channelName} ` : ""}CONTEXT.md
+                        </span>
+                      </button>
+                    </Tooltip>
+                  ) : (
+                    <>
+                      <FileText size={12} />
+                      <span className="truncate">
+                        {channelName ? `#${channelName} ` : ""}CONTEXT.md
+                      </span>
+                    </>
+                  )}
                   <Tooltip content="Don't include this context">
                     <button
                       type="button"
@@ -908,7 +972,58 @@ export function TaskInput({
               )}
           </Flex>
           <div className="absolute top-full right-0 left-0 z-10">
-            <SuggestedTasksPanel />
+            {suggestions ? (
+              <AnimatePresence>
+                {suggestions.length > 0 && editorIsEmpty && (
+                  <motion.div
+                    key="suggestions"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
+                    className="mt-6 flex flex-col gap-2"
+                  >
+                    <Text
+                      size="1"
+                      weight="medium"
+                      className="px-2.5 text-(--gray-11)"
+                    >
+                      Suggestions
+                    </Text>
+                    <div className="grid grid-cols-2 gap-2">
+                      {suggestions.map((suggestion) => (
+                        <SuggestedPromptCard
+                          key={suggestion.label}
+                          suggestion={suggestion}
+                          onSelect={() => {
+                            onSuggestionSelect?.(suggestion.label);
+                            // Use pending content (not setContent) so the
+                            // multi-line template — intro + "User input:" fill-in
+                            // lines — keeps its line breaks; focuses at the end.
+                            useDraftStore
+                              .getState()
+                              .actions.setPendingContent(sessionId, {
+                                segments: [
+                                  { type: "text", text: suggestion.prompt },
+                                ],
+                              });
+                            // Bug/feature suggestions start in plan mode; the
+                            // analysis ones start in auto mode.
+                            if (
+                              isValidConfigValue(modeOption, suggestion.mode)
+                            ) {
+                              setConfigOption(modeOption.id, suggestion.mode);
+                            }
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            ) : (
+              <SuggestedTasksPanel />
+            )}
           </div>
         </div>
       </Flex>

@@ -12,6 +12,7 @@ import {
   useAgentUsers,
   useDisconnectAgentUserConnection,
 } from "../hooks/useAgentUsers";
+import { userDisplayName } from "../utils/format";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 import { RefreshIndicator } from "./RefreshIndicator";
 
@@ -86,12 +87,7 @@ function UserCard({
   idOrSlug: string;
   user: AgentUserWithConnections;
 }) {
-  const displayName =
-    typeof user.metadata?.display_name === "string"
-      ? user.metadata.display_name
-      : typeof user.metadata?.name === "string"
-        ? user.metadata.name
-        : null;
+  const displayName = userDisplayName(user);
 
   return (
     <div className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3">

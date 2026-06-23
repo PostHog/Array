@@ -119,7 +119,7 @@ export function ScoutDetailView({
     viewTrackedFor.current = skillName;
     track(ANALYTICS_EVENTS.SCOUT_DETAIL_VIEWED, {
       skill_name: skillName,
-      scout_origin: getScoutOrigin(skillName),
+      scout_origin: getScoutOrigin(config),
       has_config: Boolean(config),
       enabled: config?.enabled ?? null,
       emit: config?.emit ?? null,

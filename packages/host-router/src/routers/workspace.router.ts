@@ -10,6 +10,8 @@ import {
   createWorkspaceOutput,
   deleteWorkspaceInput,
   deleteWorktreeInput,
+  ensureScratchDirInput,
+  ensureScratchDirOutput,
   getAllTaskTimestampsOutput,
   getAllWorkspacesOutput,
   getLocalTasksInput,
@@ -112,6 +114,13 @@ export const workspaceRouter = router({
     .query(({ ctx, input }) =>
       getService(ctx.container).verifyWorkspaceExists(input.taskId),
     ),
+
+  ensureScratchDir: publicProcedure
+    .input(ensureScratchDirInput)
+    .output(ensureScratchDirOutput)
+    .mutation(async ({ ctx, input }) => ({
+      path: await getService(ctx.container).ensureScratchDir(input.taskId),
+    })),
 
   getInfo: publicProcedure
     .input(getWorkspaceInfoInput)

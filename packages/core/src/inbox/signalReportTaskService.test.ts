@@ -76,6 +76,21 @@ describe("SignalReportTaskService", () => {
     expect(result.status).toBe("created");
   });
 
+  it("forwards the override to the resolver as a preference, not a hard selection", async () => {
+    // The resolver validates the override against the gateway's available
+    // models, so it must receive it rather than the service short-circuiting.
+    const { service, modelResolver } = makeService();
+    await service.createSignalReportTask(
+      makeInput({ modelOverride: "claude-sonnet" }),
+      vi.fn(),
+    );
+    expect(modelResolver.resolveDefaultModel).toHaveBeenCalledWith(
+      expect.any(String),
+      "claude",
+      "claude-sonnet",
+    );
+  });
+
   it("aborts with missing-model when no model can be resolved", async () => {
     const { service, createTask } = makeService(
       {},
@@ -87,6 +102,22 @@ describe("SignalReportTaskService", () => {
     );
     expect(result.status).toBe("missing-model");
     expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the explicit override when the resolver fails transiently", async () => {
+    // A transient resolver failure returns undefined; a caller-supplied override
+    // is already a concrete model, so the run should use it rather than block.
+    const { service, createTask } = makeService(
+      {},
+      { resolveDefaultModel: vi.fn().mockResolvedValue(undefined) },
+    );
+    const result = await service.createSignalReportTask(
+      makeInput({ modelOverride: "claude-sonnet" }),
+      vi.fn(),
+    );
+    expect(result.status).toBe("created");
+    expect(createTask).toHaveBeenCalledTimes(1);
+    expect(createTask.mock.calls[0][0].model).toBe("claude-sonnet");
   });
 
   it("returns create-failed when the saga fails", async () => {

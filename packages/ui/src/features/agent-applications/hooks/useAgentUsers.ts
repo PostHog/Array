@@ -12,7 +12,11 @@ export function useAgentUsers(idOrSlug: string) {
   return useAuthenticatedQuery<AgentUsersListResponse>(
     agentApplicationsKeys.users(projectId, idOrSlug),
     (client) => client.listAgentUsers(idOrSlug),
-    { enabled: !!projectId && !!idOrSlug, staleTime: 15_000 },
+    // No retry: this only powers an optional filter dropdown (hidden when
+    // empty). Until the `/users/` endpoint ships it 404s, and the Sessions tab
+    // that calls this auto-polls — retrying would multiply avoidable failing
+    // traffic for a feature that degrades gracefully to "no dropdown".
+    { enabled: !!projectId && !!idOrSlug, staleTime: 15_000, retry: false },
   );
 }
 

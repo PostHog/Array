@@ -136,6 +136,7 @@ export function WorkstreamOverflowMenu({
   onOpenPr,
   onOpenTask,
   size = "sm",
+  runDisabled = false,
 }: {
   restBound: BoundAction[];
   showPrInMenu: boolean;
@@ -144,6 +145,8 @@ export function WorkstreamOverflowMenu({
   onOpenPr: () => void;
   onOpenTask: () => void;
   size?: "sm" | "xs";
+  /** Disables the task-starting actions while one is already in flight. */
+  runDisabled?: boolean;
 }) {
   const sparkleSize = size === "xs" ? 11 : 12;
   const dotsSize = size === "xs" ? 15 : 16;
@@ -158,6 +161,7 @@ export function WorkstreamOverflowMenu({
         {restBound.map((action) => (
           <DropdownMenu.Item
             key={`${action.situationId}::${action.id}`}
+            disabled={runDisabled}
             onSelect={() => onRun(action)}
           >
             <Sparkle size={sparkleSize} />

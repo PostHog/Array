@@ -13,8 +13,9 @@ import { useInboxRestoreReport } from "@posthog/ui/features/inbox/hooks/useInbox
 import { Flex } from "@radix-ui/themes";
 
 /**
- * Archive tab: reports the user has archived (suppressed) from the inbox,
- * newest first. Each card can be restored back into the pipeline, or opened in
+ * Archive tab: terminal reports, newest first — ones the user archived
+ * (suppressed, restorable back into the pipeline) and ones resolved by a merged
+ * implementation PR (shown for reference only, not restorable). Each card opens
  * a read-only detail view (summary + evidence) — no triage affordances.
  */
 export function DismissedTab() {
@@ -40,8 +41,9 @@ export function DismissedTab() {
             </EmptyMedia>
             <EmptyTitle>No archived reports</EmptyTitle>
             <EmptyDescription>
-              Reports you archive from your inbox show up here. You can restore
-              any of them back to the inbox.
+              Reports you archive from your inbox show up here, and you can
+              restore any of them. Resolved reports (their pull request merged)
+              also appear here for reference.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

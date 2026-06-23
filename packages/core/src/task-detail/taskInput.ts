@@ -3,7 +3,7 @@ import type { TaskCreationInput, WorkspaceMode } from "@posthog/shared";
 import type { ExecutionMode } from "@posthog/shared/domain-types";
 
 export interface PrepareTaskInputOptions {
-  selectedDirectory: string;
+  selectedDirectory?: string;
   selectedRepository?: string | null;
   githubIntegrationId?: number;
   githubUserIntegrationId?: string;
@@ -20,6 +20,7 @@ export interface PrepareTaskInputOptions {
   additionalDirectories?: string[];
   channelContext?: string;
   channelName?: string;
+  allowNoRepo?: boolean;
 }
 
 export function prepareTaskInput(
@@ -55,6 +56,7 @@ export function prepareTaskInput(
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,
     channelName: options.channelName,
+    allowNoRepo: options.allowNoRepo,
   };
 }
 

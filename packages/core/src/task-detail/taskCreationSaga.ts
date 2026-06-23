@@ -204,6 +204,22 @@ export class TaskCreationSaga extends Saga<
 
     const shouldStartCloudRun = workspaceMode === "cloud" && !task.latest_run;
 
+    // Channels "generic chat box": a repo-less local/worktree task still starts
+    // an agent, in a per-task scratch dir. Provision it before signalling the
+    // task is ready so the task view resolves the scratch dir as its cwd (a
+    // synthetic local workspace) instead of showing the repo-picker prompt.
+    let scratchCwd: string | null = null;
+    if (
+      !repoPath &&
+      !input.taskId &&
+      workspaceMode !== "cloud" &&
+      input.allowNoRepo
+    ) {
+      scratchCwd = await this.readOnlyStep("scratch_dir", () =>
+        this.deps.host.ensureScratchDir(task.id),
+      );
+    }
+
     if (!hasProvisioning && !shouldStartCloudRun && this.deps.onTaskReady) {
       this.deps.onTaskReady({ task, workspace });
     }
@@ -254,6 +270,17 @@ export class TaskCreationSaga extends Saga<
               ? `${messageText}\n\n${channelContextText}`
               : channelContextText
             : messageText;
+
+          // The sandbox echoes pendingUserMessage back once it boots; until then
+          // the optimistic placeholder would show the bare task description with
+          // no CONTEXT.md chip. Hand the channel-context-bearing message to the
+          // session service so it seeds the placeholder right away.
+          if (channelContextText && pendingUserMessage) {
+            this.deps.sessionService.rememberInitialCloudPrompt(
+              task.id,
+              pendingUserMessage,
+            );
+          }
           const taskRun = await this.deps.posthogClient.createTaskRun(task.id, {
             environment: "cloud",
             mode: "interactive",
@@ -265,6 +292,7 @@ export class TaskCreationSaga extends Saga<
             prAuthorshipMode,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
+            homeQuickAction: input.homeQuickActionLabel,
             initialPermissionMode: input.adapter
               ? (input.executionMode ??
                 (input.adapter === "codex" ? "auto" : "plan"))
@@ -318,9 +346,13 @@ export class TaskCreationSaga extends Saga<
       }
     }
 
-    const agentCwd =
-      workspace?.worktreePath ?? workspace?.folderPath ?? repoPath;
     const isCloudCreate = !input.taskId && workspaceMode === "cloud";
+    const agentCwd =
+      workspace?.worktreePath ??
+      workspace?.folderPath ??
+      repoPath ??
+      scratchCwd;
+
     const shouldConnect = !isCloudCreate && (!!input.taskId || !!agentCwd);
 
     if (shouldConnect) {

@@ -103,6 +103,7 @@ function SuggestedReviewersBody({
   const { data: availableReviewers, isFetching } =
     useInboxAvailableSuggestedReviewers({
       enabled: !!client && addOpen,
+      query: deferredQuery,
     });
 
   const addableOptions = useMemo(() => {

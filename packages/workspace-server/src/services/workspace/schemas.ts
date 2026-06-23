@@ -65,6 +65,14 @@ export const verifyWorkspaceInput = z.object({
   taskId: z.string(),
 });
 
+export const ensureScratchDirInput = z.object({
+  taskId: z.string(),
+});
+
+export const ensureScratchDirOutput = z.object({
+  path: z.string(),
+});
+
 export const getWorkspaceInfoInput = z.object({
   taskId: z.string(),
 });
