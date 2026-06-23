@@ -46,40 +46,37 @@ describe("canvasFrameStore", () => {
     expect(slots[0]?.inputs.code).toBe("A2");
   });
 
-  it("reuses the least-recently-active slot when the pool is full (warm reuse)", () => {
+  // Each op is "reg:<id>" (register) or "act:<id>" (activate); `expected` maps a
+  // canvas id to its final slot index (-1 = evicted). The pool size is 2.
+  it.each([
+    {
+      name: "reuses the least-recently-active slot when the pool is full",
+      ops: ["reg:a", "act:a", "reg:b", "act:b", "reg:c"],
+      expected: { a: -1, b: 1, c: 0 },
+    },
+    {
+      name: "never evicts the active canvas, even if it is the oldest activated",
+      ops: ["reg:a", "act:a", "reg:b", "act:b", "act:a", "reg:c"],
+      expected: { a: 0, b: -1, c: 1 },
+    },
+    {
+      name: "re-activating keeps a canvas off the eviction block",
+      ops: ["reg:a", "act:a", "reg:b", "act:b", "act:a", "act:b", "reg:c"],
+      expected: { a: -1, b: 1, c: 0 },
+    },
+  ])("$name", ({ ops, expected }) => {
     const { register, activate } = useCanvasFrameStore.getState();
-    register("a", inputs("A"));
-    activate("a");
-    register("b", inputs("B"));
-    activate("b");
-
-    // a is now the LRU; opening c must reuse a's physical slot (index 0), not b's.
-    register("c", inputs("C"));
-
-    expect(slotIndexOf("a")).toBe(-1);
-    expect(slotIndexOf("c")).toBe(0);
-    expect(slotIndexOf("b")).toBe(1);
+    for (const op of ops) {
+      const [kind, id] = op.split(":");
+      if (kind === "reg") register(id, inputs(id.toUpperCase()));
+      else activate(id);
+    }
+    for (const [id, slot] of Object.entries(expected)) {
+      expect(slotIndexOf(id)).toBe(slot);
+    }
     expect(useCanvasFrameStore.getState().slots.filter(Boolean)).toHaveLength(
       2,
     );
-  });
-
-  it("never evicts the active canvas, even if it is the least-recently-active", () => {
-    const { register, activate } = useCanvasFrameStore.getState();
-    register("a", inputs("A"));
-    activate("a"); // active, but oldest
-    register("b", inputs("B"));
-    activate("b");
-    activate("a"); // a active again; b is now LRU but a stays active
-
-    // Force a full pool, then deactivate so a is active with the oldest stamp.
-    useCanvasFrameStore.setState({ activeDashboardId: "a" });
-    register("c", inputs("C"));
-
-    // c must take b's slot, never the active a.
-    expect(slotIndexOf("a")).toBe(0);
-    expect(slotIndexOf("b")).toBe(-1);
-    expect(slotIndexOf("c")).toBe(1);
   });
 
   it("setRect skips no-op writes (no new slots array)", () => {

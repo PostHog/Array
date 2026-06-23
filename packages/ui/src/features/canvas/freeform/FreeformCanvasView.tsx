@@ -32,7 +32,7 @@ import {
   ScrollArea,
   Text,
 } from "@radix-ui/themes";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
@@ -144,6 +144,15 @@ export function FreeformCanvasView({
   const idx = versions.findIndex((v) => v.id === currentVersionId);
   const canUndo = idx > 0;
   const canRedo = idx !== -1 && idx < versions.length - 1;
+
+  // The data bridge is a pure function; the QueryClient (its read cache) is
+  // injected here rather than resolved inside it.
+  const queryClient = useQueryClient();
+  const onDataRequest = useCallback(
+    (method: string, payload: unknown) =>
+      handleFreeformDataRequest(method, payload, queryClient),
+    [queryClient],
+  );
 
   const onError = useCallback(
     (message: string) => setRuntimeError(threadId, message),
@@ -269,7 +278,7 @@ export function FreeformCanvasView({
                 dashboardId={dashboardId}
                 code={code}
                 analytics={analytics}
-                onDataRequest={handleFreeformDataRequest}
+                onDataRequest={onDataRequest}
                 onError={onError}
                 onRendered={onRendered}
                 onNavigate={onNavigate}
