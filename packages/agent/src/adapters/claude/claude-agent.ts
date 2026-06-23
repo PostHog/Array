@@ -1848,6 +1848,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const [rawModelOptions] = await Promise.all([
       this.getModelConfigOptions(
         settingsManager.getSettings().model || meta?.model || undefined,
+        this.options?.gatewayEnv?.anthropicBaseUrl,
       ),
       ...(meta?.taskRunId
         ? [
