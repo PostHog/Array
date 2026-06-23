@@ -70,32 +70,46 @@ describe("shortSha", () => {
 });
 
 describe("taskRunLabel", () => {
-  it("maps known signals task types to friendly labels", () => {
-    expect(taskRunLabel({ product: "signals", type: "repo_selection" })).toBe(
+  it.each([
+    [
+      "maps known signals task type to friendly label",
+      "signals",
+      "repo_selection",
       "Repo selection",
-    );
-  });
-
-  it("humanizes unknown identifiers", () => {
-    expect(taskRunLabel({ product: "custom", type: "code-review" })).toBe(
+    ],
+    [
+      "humanizes unknown signals task type",
+      "signals",
+      "unknown_op",
+      "Unknown op",
+    ],
+    [
+      "humanizes identifiers for other products",
+      "custom",
+      "code-review",
       "Code review",
-    );
+    ],
+  ] as const)("%s", (_desc, product, type, expected) => {
+    expect(taskRunLabel({ product, type })).toBe(expected);
   });
 });
 
 describe("attributionLabel", () => {
-  it("prefers the user's first name", () => {
-    expect(
-      attributionLabel({ created_by: { first_name: "Ada", email: "a@b.co" } }),
-    ).toBe("Ada");
-  });
-
-  it("falls back to email then agent then null", () => {
-    expect(attributionLabel({ created_by: { email: "a@b.co" } })).toBe(
+  it.each([
+    [
+      "prefers first name over email",
+      { created_by: { first_name: "Ada", email: "a@b.co" } },
+      "Ada",
+    ],
+    [
+      "falls back to email when first name is absent",
+      { created_by: { email: "a@b.co" } },
       "a@b.co",
-    );
-    expect(attributionLabel({ task_id: "t1" })).toBe("agent");
-    expect(attributionLabel({})).toBeNull();
+    ],
+    ["returns 'agent' when only task_id is set", { task_id: "t1" }, "agent"],
+    ["returns null when no attribution is present", {}, null],
+  ] as const)("%s", (_desc, input, expected) => {
+    expect(attributionLabel(input)).toBe(expected);
   });
 });
 
