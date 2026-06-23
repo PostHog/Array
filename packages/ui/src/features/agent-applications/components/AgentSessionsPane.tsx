@@ -7,6 +7,7 @@ import { Flex, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import { useAgentApplicationSessions } from "../hooks/useAgentApplicationSessions";
 import { useAgentUsers } from "../hooks/useAgentUsers";
+import { userDisplayName } from "../utils/format";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 import { AgentSessionRow } from "./AgentSessionRow";
 import { RefreshIndicator } from "./RefreshIndicator";
@@ -16,13 +17,7 @@ type Filter = AgentSessionState | "all";
 /** Short label for a user in the filter dropdown: display name if the trigger
  *  stamped one, else the principal id, prefixed by kind. */
 function userLabel(u: AgentUserWithConnections): string {
-  const name =
-    typeof u.metadata?.display_name === "string"
-      ? u.metadata.display_name
-      : typeof u.metadata?.name === "string"
-        ? u.metadata.name
-        : u.principal_id;
-  return `${u.principal_kind}: ${name}`;
+  return `${u.principal_kind}: ${userDisplayName(u) ?? u.principal_id}`;
 }
 
 const FILTERS: { id: Filter; label: string }[] = [

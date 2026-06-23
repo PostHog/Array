@@ -970,7 +970,10 @@ function OptionCard({
         <Text className="shrink-0 text-[11px] text-gray-10 uppercase tracking-wide">
           {label}
         </Text>
-        {trailing ? <span className="min-w-0 shrink-0">{trailing}</span> : null}
+        {/* No `shrink-0`: the label is shrink-0, so letting this side shrink
+            gives an inner `truncate` a width bound to ellipsize a long scalar
+            against (small trailing chips/buttons are unaffected). */}
+        {trailing ? <span className="min-w-0">{trailing}</span> : null}
       </Flex>
       {hint ? (
         <Text className="mt-0.5 block text-[11px] text-gray-10 leading-snug">

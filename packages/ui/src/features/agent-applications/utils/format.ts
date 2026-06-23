@@ -2,7 +2,20 @@ import type {
   AgentApprovalRequestState,
   AgentRevisionState,
   AgentSessionState,
+  AgentUserWithConnections,
 } from "@posthog/shared/agent-platform-types";
+
+/**
+ * Display name from a user's trigger-stamped metadata (`display_name` → `name`),
+ * or null when neither is present. Shared by the Users pane and the Sessions
+ * user-filter so the resolution lives in one place.
+ */
+export function userDisplayName(user: AgentUserWithConnections): string | null {
+  const meta = user.metadata;
+  if (typeof meta?.display_name === "string") return meta.display_name;
+  if (typeof meta?.name === "string") return meta.name;
+  return null;
+}
 /** Formats a USD spend value for the fleet / agent stat strips. */
 export function formatSpendUsd(value: number | null | undefined): string {
   if (value == null) return "$0";
