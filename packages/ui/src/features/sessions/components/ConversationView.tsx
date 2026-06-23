@@ -22,8 +22,8 @@ import type {
   ThreadGrouping,
   ThreadRow,
 } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
-import { createIncrementalThreadGrouper } from "@posthog/ui/features/sessions/components/new-thread/incrementalThreadGrouping";
 import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
+import { createIncrementalThreadGrouper } from "@posthog/ui/features/sessions/components/new-thread/incrementalThreadGrouping";
 import { ToolCallGroupChip } from "@posthog/ui/features/sessions/components/new-thread/ToolCallGroupChip";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
 import {
