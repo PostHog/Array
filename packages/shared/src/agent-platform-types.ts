@@ -417,6 +417,19 @@ export interface AgentFleetLiveSessionsResponse {
   results: AgentFleetLiveSessionSummary[];
 }
 
+/**
+ * Who clears a gated call. `principal` = the session's own principal decides at
+ * the ingress (generic identity match); `agent` = the owning team's admins
+ * decide in the console. Mirrors `ApprovalType` in agent-shared `spec.ts`.
+ */
+export type AgentApprovalType = "principal" | "agent";
+
+/** Resolved approval policy stamped on the request at queue time. */
+export interface AgentApproverScope {
+  type: AgentApprovalType;
+  allow_edit: boolean;
+}
+
 export interface AgentApprovalRequest {
   id: string;
   session_id: string;
@@ -429,7 +442,7 @@ export interface AgentApprovalRequest {
   proposed_args: Record<string, unknown>;
   decided_args: Record<string, unknown> | null;
   assistant_message: Record<string, unknown>;
-  approver_scope: Record<string, unknown>;
+  approver_scope: AgentApproverScope;
   state: AgentApprovalRequestState;
   decision_by: string | null;
   decision_at: string | null;

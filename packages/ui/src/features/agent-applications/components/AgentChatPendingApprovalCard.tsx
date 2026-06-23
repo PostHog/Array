@@ -10,7 +10,6 @@ import { Flex, Text } from "@radix-ui/themes";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useAuthStateValue } from "../../auth/store";
-import { agentApplicationsKeys } from "../hooks/agentApplicationsKeys";
 import { approvalStateColor, approvalStateLabel } from "../utils/format";
 import { AgentApprovalDecisionForm } from "./AgentApprovalDecisionForm";
 import { ArgsSection } from "./AgentApprovalDetail";
@@ -40,10 +39,7 @@ export function AgentChatPendingApprovalCard({
 }) {
   const queryClient = useQueryClient();
   const projectId = useAuthStateValue((state) => state.currentProjectId);
-  const approvalType =
-    (approval.approver_scope as { type?: string } | undefined)?.type ??
-    "principal";
-  const isOwnerGate = approvalType === "agent";
+  const isOwnerGate = approval.approver_scope?.type === "agent";
 
   const mutation = useMutation<void, Error, DecideApprovalRequest>({
     mutationFn: (body) => decide(approval.id, body),
