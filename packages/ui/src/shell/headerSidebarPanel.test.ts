@@ -33,7 +33,7 @@ describe("getHeaderSidebarPanelLayout", () => {
       },
     },
     {
-      name: "collapsed on macOS reserves the traffic-light strip as left padding",
+      name: "collapsed on macOS reserves the traffic-light strip as left padding and drops the divider",
       input: { sidebarOpen: false, sidebarWidth: 256, isMac: true },
       expected: {
         width: "180px",
@@ -44,7 +44,7 @@ describe("getHeaderSidebarPanelLayout", () => {
       },
     },
     {
-      name: "collapsed off macOS needs no traffic-light padding",
+      name: "collapsed off macOS drops the divider and needs no traffic-light padding",
       input: { sidebarOpen: false, sidebarWidth: 256, isMac: false },
       expected: {
         width: "110px",
@@ -56,28 +56,5 @@ describe("getHeaderSidebarPanelLayout", () => {
     },
   ])("$name", ({ input, expected }) => {
     expect(getHeaderSidebarPanelLayout(input)).toEqual(expected);
-  });
-
-  // Regression guards for the bugs this helper fixes.
-  it("never reserves traffic-light padding while the sidebar is open", () => {
-    expect(
-      getHeaderSidebarPanelLayout({
-        sidebarOpen: true,
-        sidebarWidth: 256,
-        isMac: true,
-      }).paddingLeft,
-    ).toBeUndefined();
-  });
-
-  it("drops the divider when collapsed so it can't dangle over the page", () => {
-    for (const isMac of [true, false]) {
-      expect(
-        getHeaderSidebarPanelLayout({
-          sidebarOpen: false,
-          sidebarWidth: 256,
-          isMac,
-        }).showBorder,
-      ).toBe(false);
-    }
   });
 });
