@@ -52,25 +52,6 @@ function toPreview(body: string): string {
     .trim();
 }
 
-function ToggleCaret({
-  collapsed,
-  onToggle,
-}: {
-  collapsed: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-label={collapsed ? "Expand thread" : "Collapse thread"}
-      className="-ml-0.5 flex shrink-0 cursor-pointer items-center rounded p-0.5 text-[var(--gray-10)] hover:bg-[var(--gray-4)] hover:text-[var(--gray-12)]"
-    >
-      {collapsed ? <CaretRight size={14} /> : <CaretDown size={14} />}
-    </button>
-  );
-}
-
 interface ThreadActionBarProps {
   prUrl: string | null;
   taskId: string;
@@ -418,11 +399,23 @@ export function PrCommentThread({
         <div className="flex gap-1">
           {/* Caret lives in a fixed gutter so it stays put when toggling. */}
           <div className="shrink-0 pt-2.5">
-            <ToggleCaret collapsed={isCollapsed} onToggle={toggleCollapsed} />
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-label={isCollapsed ? "Expand thread" : "Collapse thread"}
+              className="-ml-0.5 flex shrink-0 cursor-pointer items-center rounded p-0.5 text-[var(--gray-10)] transition-colors hover:bg-[var(--gray-4)] hover:text-[var(--gray-12)]"
+            >
+              <CaretRight
+                size={14}
+                className={`transition-transform duration-200 ${
+                  isCollapsed ? "" : "rotate-90"
+                }`}
+              />
+            </button>
           </div>
 
           <div className="min-w-0 flex-1">
-            {isCollapsed ? (
+            {isCollapsed && (
               <button
                 type="button"
                 onClick={toggleCollapsed}
@@ -447,8 +440,15 @@ export function PrCommentThread({
                   </Badge>
                 )}
               </button>
-            ) : (
-              <>
+            )}
+
+            {/* Grid-rows trick animates the body height open/closed smoothly. */}
+            <div
+              className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+                isCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+              }`}
+            >
+              <div className="overflow-hidden">
                 {comments.map((comment, index) => (
                   <CommentBody
                     key={comment.id}
@@ -505,8 +505,8 @@ export function PrCommentThread({
                   onKeyDown={handleKeyDown}
                   textareaRefCallback={setTextareaRefCallback}
                 />
-              </>
-            )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
