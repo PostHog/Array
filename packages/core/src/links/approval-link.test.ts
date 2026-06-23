@@ -80,17 +80,17 @@ describe("ApprovalLinkService", () => {
     {
       name: "emits OpenApproval with the request id",
       path: "ar_abc123",
-      expected: { requestId: "ar_abc123" },
+      expected: { requestId: "ar_abc123", agent: null },
     },
     {
       name: "takes only the first path segment as the request id",
       path: "ar_abc123/extra/segments",
-      expected: { requestId: "ar_abc123" },
+      expected: { requestId: "ar_abc123", agent: null },
     },
     {
       name: "decodes a percent-encoded request id",
       path: "ar_abc%2D123",
-      expected: { requestId: "ar_abc-123" },
+      expected: { requestId: "ar_abc-123", agent: null },
     },
   ])("$name", ({ path, expected }) => {
     const listener = vi.fn();
@@ -102,11 +102,28 @@ describe("ApprovalLinkService", () => {
     expect(listener).toHaveBeenCalledWith(expected);
   });
 
+  it("carries the agent slug from the ?agent= query string", () => {
+    const listener = vi.fn();
+    service.on(ApprovalLinkEvent.OpenApproval, listener);
+
+    const result = deepLinkService.trigger(
+      "approval",
+      "ar_abc123",
+      "agent=my-agent",
+    );
+
+    expect(result).toBe(true);
+    expect(listener).toHaveBeenCalledWith({
+      requestId: "ar_abc123",
+      agent: "my-agent",
+    });
+  });
+
   it("queues a pending deep link when no listener is attached", () => {
     deepLinkService.trigger("approval", "ar_xyz789");
 
     const pending = service.consumePendingDeepLink();
-    expect(pending).toEqual({ requestId: "ar_xyz789" });
+    expect(pending).toEqual({ requestId: "ar_xyz789", agent: null });
 
     // Draining clears it
     expect(service.consumePendingDeepLink()).toBeNull();
