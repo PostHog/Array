@@ -4,6 +4,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
+import { CanvasFrameHost } from "@posthog/ui/features/canvas/freeform/CanvasFrameHost";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useDashboard,
@@ -286,6 +287,10 @@ export function WebsiteLayout() {
       <Box flexGrow="1" overflow="hidden">
         <Outlet />
       </Box>
+      {/* Warm-iframe pool for canvases. Mounted once here so it persists across
+          every in-space navigation; overlays itself onto the active canvas's
+          placeholder and stays warm-but-hidden otherwise. */}
+      <CanvasFrameHost />
     </Flex>
   );
 }
