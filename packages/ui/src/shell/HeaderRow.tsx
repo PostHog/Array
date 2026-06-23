@@ -164,11 +164,6 @@ function BluebirdButton() {
 export const HEADER_HEIGHT = 36;
 const COLLAPSED_WIDTH = 110;
 const WINDOWS_TITLEBAR_INSET = 140;
-// On macOS the native close/minimize/zoom buttons sit at the top-left
-// (trafficLightPosition x:12, ~64px wide). When the sidebar is collapsed the
-// left header section shrinks and its right-justified controls would slide
-// under those buttons, so reserve room for them. When the sidebar is open the
-// section is already wide enough that the controls clear the traffic lights.
 const MACOS_TRAFFIC_LIGHT_INSET = 70;
 
 export function HeaderRow() {
