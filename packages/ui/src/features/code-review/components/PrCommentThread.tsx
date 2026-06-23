@@ -39,8 +39,9 @@ const MAX_COMMENT_HEIGHT = 120;
 function toPreview(body: string): string {
   return body
     .replace(/```[\s\S]*?```/g, " ")
-    .replace(/[#>*_`~-]/g, " ")
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/[#>*_`~-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
