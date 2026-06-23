@@ -7,6 +7,10 @@ export interface LinkOverrides {
   cloudRegion?: CloudRegion | null;
 }
 
+export interface ErrorTrackingIssueLinkOverrides extends LinkOverrides {
+  fingerprint?: string | null;
+}
+
 function resolveProjectId(override?: number | null): number | null {
   if (override != null) return override;
   return useAuthStore.getState().authState.currentProjectId ?? null;
@@ -78,10 +82,12 @@ export function skillUrl(
 
 export function errorTrackingIssueUrl(
   issueId: string,
-  overrides?: LinkOverrides,
+  overrides?: ErrorTrackingIssueLinkOverrides,
 ): string | null {
-  return withProjectId(
-    (pid) => `/project/${pid}/error_tracking/${encodeURIComponent(issueId)}`,
-    overrides,
-  );
+  return withProjectId((pid) => {
+    const path = `/project/${pid}/error_tracking/${encodeURIComponent(issueId)}`;
+    return overrides?.fingerprint
+      ? `${path}?fingerprint=${encodeURIComponent(overrides.fingerprint)}`
+      : path;
+  }, overrides);
 }
