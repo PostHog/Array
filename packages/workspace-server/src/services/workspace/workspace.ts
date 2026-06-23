@@ -443,16 +443,27 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         ),
       ),
     ]);
+    // Trunk intentionally supports many coexisting detached worktrees, so never
+    // offer to reuse an existing worktree for it; a trunk task always gets its
+    // own.
+    if (branch === defaultBranch) {
+      return {
+        status: "trunk",
+        existingWorktreePath: null,
+        existingWorktreeTaskId: null,
+      };
+    }
+
     // Reuse is only offered for an *unused* worktree. If a task already holds
     // the worktree on this branch, report that task instead so the renderer can
     // block the duplicate and point the user at it.
-    let worktree: {
+    let reuseFields: {
       existingWorktreePath: string | null;
       existingWorktreeTaskId: string | null;
     } = { existingWorktreePath: null, existingWorktreeTaskId: null };
     if (existingWorktree) {
       const [occupant] = this.getWorktreeTasks(existingWorktree.worktreePath);
-      worktree = occupant
+      reuseFields = occupant
         ? {
             existingWorktreePath: null,
             existingWorktreeTaskId: occupant.taskId,
@@ -463,21 +474,17 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
           };
     }
 
-    if (branch === defaultBranch) {
-      return { status: "trunk", ...worktree };
-    }
-
     if (await branchExists(mainRepoPath, branch, { abortSignal: signal })) {
-      return { status: "local", ...worktree };
+      return { status: "local", ...reuseFields };
     }
 
     if (
       await remoteBranchExists(mainRepoPath, branch, { abortSignal: signal })
     ) {
-      return { status: "remote-only", ...worktree };
+      return { status: "remote-only", ...reuseFields };
     }
 
-    return { status: "missing", ...worktree };
+    return { status: "missing", ...reuseFields };
   }
 
   /**
@@ -697,15 +704,13 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
               ? checkoutError.message
               : String(checkoutError);
           if (errorMessage.includes("is already used by worktree")) {
-            this.log.info(
-              `Branch ${selectedBranch} is occupied, falling back to detached worktree`,
-            );
-            worktree = await worktreeManager.createWorktree({
-              baseBranch: selectedBranch,
-              onOutput,
-            });
-            this.log.info(
-              `Created detached worktree from occupied branch: ${worktree.worktreeName} at ${worktree.worktreePath}`,
+            // The branch already has a worktree. Reuse is handled upfront
+            // (checkWorktreeBranch + reuseExistingWorktree); reaching here means
+            // that path was bypassed (e.g. the preflight check errored). Fail
+            // loudly instead of creating a detached duplicate that lands on a
+            // detached HEAD rather than the requested branch.
+            throw new Error(
+              `Branch ${selectedBranch} already has a worktree checked out`,
             );
           } else if (
             allowRemoteBranchCheckout &&
@@ -1296,6 +1301,10 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       .map((a) => ({ taskId: a.taskId }));
   }
 
+  // Paths are compared verbatim against the stored `path` column, which holds
+  // git's reported worktree path as-is (the same value `listLinkedWorktrees`
+  // returns). Don't normalize one side only (e.g. add `path.resolve` here but
+  // not where the path is stored) or occupancy matching silently breaks.
   getWorktreeTasks(worktreePath: string): Array<{ taskId: string }> {
     const associations = this.getAllTaskAssociations();
     const result: Array<{ taskId: string }> = [];

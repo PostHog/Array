@@ -53,6 +53,24 @@ vi.mock("../worktree-query/worktree-query", async (importOriginal) => {
   };
 });
 
+// WorkspaceService constructs a WorktreeManager internally; stub the git-backed
+// creation methods so tests can drive the create-path branches without real git.
+const mockWorktreeManager = {
+  createWorktree: vi.fn(),
+  createWorktreeForExistingBranch: vi.fn(),
+  createWorktreeForRemoteBranch: vi.fn(),
+};
+
+vi.mock("@posthog/git/worktree", () => ({
+  WorktreeManager: class {
+    createWorktree = mockWorktreeManager.createWorktree;
+    createWorktreeForExistingBranch =
+      mockWorktreeManager.createWorktreeForExistingBranch;
+    createWorktreeForRemoteBranch =
+      mockWorktreeManager.createWorktreeForRemoteBranch;
+  },
+}));
+
 function createMocks() {
   const agent = {
     cancelSessionsByTaskId: vi.fn(async () => {}),
@@ -367,8 +385,8 @@ describe("WorkspaceService", () => {
         },
       ]);
       // Associate a task with that worktree path so getWorktreeTasks finds it.
-      // deriveWorktreePath (new layout) reconstructs <base>/<name>/<repo>, so
-      // name "feature-x" + repo "repo" resolves to the path above.
+      // Occupancy matches on the stored `path` column (set explicitly below),
+      // not on anything derived from `name` + repo.
       const folder = mocks.repositoryRepo.create({ path: mainRepoPath });
       const occupantWorkspace = mocks.workspaceRepo.create({
         taskId: "occupant-task",
@@ -393,6 +411,26 @@ describe("WorkspaceService", () => {
       });
     });
 
+    it("does not offer reuse for a worktree on the trunk branch", async () => {
+      // Trunk supports many coexisting detached worktrees, so an existing
+      // worktree on it must not be offered for reuse.
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([
+        {
+          worktreePath: "/tmp/worktrees/main/repo",
+          head: "abc123",
+          branch: "main",
+        },
+      ]);
+
+      expect(
+        await service.checkWorktreeBranch({ mainRepoPath, branch: "main" }),
+      ).toEqual({
+        status: "trunk",
+        existingWorktreePath: null,
+        existingWorktreeTaskId: null,
+      });
+    });
+
     it("falls back to the current branch as trunk when getDefaultBranch fails", async () => {
       vi.mocked(getDefaultBranch).mockRejectedValue(new Error("no remote"));
       vi.mocked(getCurrentBranch).mockResolvedValue("develop");
@@ -413,6 +451,12 @@ describe("WorkspaceService", () => {
     beforeEach(() => {
       vi.mocked(getDefaultBranch).mockResolvedValue("main");
       vi.mocked(getCurrentBranch).mockResolvedValue("main");
+      // This package's vitest config does not reset mocks between tests, so
+      // default to no linked worktrees; each test sets its own value.
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([]);
+      mockWorktreeManager.createWorktree.mockReset();
+      mockWorktreeManager.createWorktreeForExistingBranch.mockReset();
+      mockWorktreeManager.createWorktreeForRemoteBranch.mockReset();
       // The reuse success path checks whether the worktree has files; pretend it
       // does so the empty-workspace warning branch (and its fs reads) is skipped.
       vi.mocked(hasTrackedFiles).mockResolvedValue(true);
@@ -457,6 +501,33 @@ describe("WorkspaceService", () => {
       );
     });
 
+    it("reuses an unused worktree and stores its layout-aware name (new layout)", async () => {
+      // New layout is <base>/<name>/<repo>, so the final segment equals the repo
+      // name ("repo") and the name is the parent dir ("feature-x"). No task owns
+      // it, so reuse proceeds and the recovered name is persisted.
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([
+        {
+          worktreePath: "/tmp/worktrees/feature-x/repo",
+          head: "abc123",
+          branch: "feature/x",
+        },
+      ]);
+      const createWorktree = vi.spyOn(mocks.worktreeRepo, "create");
+
+      const workspace = await service.createWorkspace(reuseInput("new-task"));
+
+      expect(workspace.worktree?.worktreeName).toBe("feature-x");
+      expect(workspace.worktree?.worktreePath).toBe(
+        "/tmp/worktrees/feature-x/repo",
+      );
+      expect(createWorktree).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "feature-x",
+          path: "/tmp/worktrees/feature-x/repo",
+        }),
+      );
+    });
+
     it("fails the create step when the worktree was claimed between preflight and create", async () => {
       vi.mocked(listLinkedWorktrees).mockResolvedValue([
         {
@@ -466,8 +537,9 @@ describe("WorkspaceService", () => {
         },
       ]);
       // Associate another task with that worktree path so the re-check's
-      // getWorktreeTasks finds an occupant (same fixture as the checkWorktreeBranch
-      // occupied case: new layout <base>/<name>/<repo> round-trips to the path).
+      // getWorktreeTasks finds an occupant. Occupancy matches on the stored
+      // `path` column (set explicitly below), same as the checkWorktreeBranch
+      // occupied case.
       const folder = mocks.repositoryRepo.create({ path: mainRepoPath });
       const occupantWorkspace = mocks.workspaceRepo.create({
         taskId: "occupant-task",
@@ -484,126 +556,25 @@ describe("WorkspaceService", () => {
         service.createWorkspace(reuseInput("new-task")),
       ).rejects.toThrow(/already used by task occupant-task/);
     });
-  });
 
-  describe("worktree path resolved from the stored row", () => {
-    const tempDirs: string[] = [];
+    it("fails instead of creating a detached worktree when an occupied branch is hit without the reuse flag", async () => {
+      // No reuse flag: the upfront reuse path is bypassed (e.g. the preflight
+      // check errored), so creation falls through to a branch checkout, and git
+      // reports the branch is already used by a worktree. The old behavior
+      // silently created a detached duplicate; it must now fail loudly.
+      mockWorktreeManager.createWorktreeForExistingBranch.mockRejectedValue(
+        new Error("fatal: 'feature/x' is already used by worktree at /wt"),
+      );
 
-    afterEach(() => {
-      for (const dir of tempDirs.splice(0)) {
-        fs.rmSync(dir, { recursive: true, force: true });
-      }
-    });
-
-    function mkTemp(prefix: string): string {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-      tempDirs.push(dir);
-      return dir;
-    }
-
-    it("projects an externally-located worktree from its stored path", async () => {
-      const externalPath = "/external/checkout/my-worktree";
-      seedWorktreeTask(mocks, {
-        taskId: "ext",
-        repoPath: "/code/myrepo",
-        name: "fancy-slug",
-        worktreePath: externalPath,
-      });
-
-      expect(await service.getWorkspace("ext")).toMatchObject({
-        mode: "worktree",
-        worktreePath: externalPath,
-        worktreeName: "fancy-slug",
-      });
-      expect(await service.getWorkspaceInfo("ext")).toMatchObject({
-        mode: "worktree",
-        worktree: expect.objectContaining({
-          worktreePath: externalPath,
-          worktreeName: "fancy-slug",
+      await expect(
+        service.createWorkspace({
+          ...reuseInput("new-task"),
+          reuseExistingWorktree: false,
         }),
-      });
+      ).rejects.toThrow(/already has a worktree checked out/);
+
+      expect(mockWorktreeManager.createWorktree).not.toHaveBeenCalled();
     });
-
-    it("matches occupancy by the stored path, not a derived one", () => {
-      const externalPath = "/external/checkout/my-worktree";
-      seedWorktreeTask(mocks, {
-        taskId: "ext",
-        repoPath: "/code/myrepo",
-        name: "fancy-slug",
-        worktreePath: externalPath,
-      });
-
-      expect(service.getWorktreeTasks(externalPath)).toEqual([
-        { taskId: "ext" },
-      ]);
-      // The name would derive to <base>/<name>/<repo>; that path must not match.
-      expect(
-        service.getWorktreeTasks("/tmp/worktrees/fancy-slug/myrepo"),
-      ).toEqual([]);
-    });
-
-    it("verifies existence by the stored external path", async () => {
-      const externalPath = mkTemp("external-wt-");
-      seedWorktreeTask(mocks, {
-        taskId: "ext",
-        repoPath: "/code/myrepo",
-        name: "fancy-slug",
-        worktreePath: externalPath,
-      });
-
-      // The on-disk worktree lives at its stored external path; a derived
-      // <base>/<name>/<repo> would not exist, so this would report missing.
-      expect(await service.verifyWorkspaceExists("ext")).toEqual({
-        exists: true,
-      });
-
-      fs.rmSync(externalPath, { recursive: true, force: true });
-      expect(await service.verifyWorkspaceExists("ext")).toEqual({
-        exists: false,
-        missingPath: externalPath,
-      });
-    });
-
-    // Identical setup (empty managed `<base>/<repo>` parent, then delete the only
-    // worktree for that repo); only the stored worktree path differs. This proves
-    // the cleanup guard discriminates on whether the path is under the base path,
-    // rather than always (or never) reclaiming the parent folder.
-    it.each([
-      {
-        label:
-          "leaves the managed parent folder alone for an external worktree",
-        makeWorktreePath: () => mkTemp("external-wt-"),
-        managedParentSurvives: true,
-      },
-      {
-        label:
-          "reclaims the empty managed parent folder for a worktree under the base path",
-        makeWorktreePath: (base: string) =>
-          path.join(base, "some-name", "myrepo"),
-        managedParentSurvives: false,
-      },
-    ])(
-      "deleteWorkspace via the stored path $label",
-      async ({ makeWorktreePath, managedParentSurvives }) => {
-        const base = mkTemp("wt-base-");
-        mocks.workspaceSettings.getWorktreeLocation = () => base;
-
-        const repoPath = "/code/myrepo";
-        const managedParent = path.join(base, "myrepo");
-        fs.mkdirSync(managedParent);
-
-        seedWorktreeTask(mocks, {
-          taskId: "task",
-          repoPath,
-          name: "some-name",
-          worktreePath: makeWorktreePath(base),
-        });
-
-        await service.deleteWorkspace("task", repoPath);
-
-        expect(fs.existsSync(managedParent)).toBe(managedParentSurvives);
-      },
-    );
   });
 
   describe("worktree path resolved from the stored row", () => {
