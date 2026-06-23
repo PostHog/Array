@@ -17,11 +17,9 @@ export const MAX_BRANCH_PREFIX_LENGTH = 40;
  * slash-terminated namespace (`team` → `team/`).
  */
 export function normalizeBranchPrefix(input?: string | null): string {
-  const trimmed = (input ?? "").trim();
-  if (trimmed === "") return BRANCH_PREFIX;
-  const cleaned = trimmed
-    .replace(/^\/+/, "")
-    .replace(/\/{2,}/g, "/")
-    .replace(/\/+$/, "");
-  return cleaned === "" ? BRANCH_PREFIX : `${cleaned}/`;
+  // Split on "/" and drop empty segments — this strips leading/trailing slashes
+  // and collapses repeats in linear time, avoiding the backtracking a regex
+  // like /\/+$/ would incur on adversarial input (CodeQL ReDoS).
+  const segments = (input ?? "").trim().split("/").filter(Boolean);
+  return segments.length === 0 ? BRANCH_PREFIX : `${segments.join("/")}/`;
 }
