@@ -35,6 +35,13 @@ export type TabData =
       body: string;
     }
   | {
+      // A read-only snapshot of the canvas generation instructions (authoring
+      // contract + publishing/data rules) sent with a canvas-generation task's
+      // prompt, shown exactly as the agent received them.
+      type: "canvas-instructions";
+      body: string;
+    }
+  | {
       type: "other";
     };
 

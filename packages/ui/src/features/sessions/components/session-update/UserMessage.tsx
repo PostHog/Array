@@ -5,6 +5,7 @@ import {
   Copy,
   File,
   FileText,
+  Scroll,
   SlackLogo,
 } from "@phosphor-icons/react";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
@@ -16,6 +17,7 @@ import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import { useFeatureFlag } from "../../../feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "../../../panels/panelLayoutStore";
 import type { UserMessageAttachment } from "../../userMessageTypes";
+import { extractCanvasInstructions } from "./canvasInstructions";
 import { extractChannelContext } from "./channelContext";
 import {
   hasFileMentions,
@@ -59,11 +61,13 @@ export const UserMessage = memo(function UserMessage({
   animate = true,
   taskId,
 }: UserMessageProps) {
-  // A channel's CONTEXT.md, if injected into this prompt, is collapsed into a
-  // clickable tag instead of rendered inline; the rest of the prompt renders
-  // normally. Clicking the tag opens the snapshot as a file tab. The clickable
-  // tag + split tab is a project-bluebird feature, but we always strip the block
-  // so the raw <channel_context> XML never leaks for flag-off viewers.
+  // A channel's CONTEXT.md and the canvas generation instructions, if injected
+  // into this prompt, are each collapsed into a clickable tag instead of
+  // rendered inline; the rest of the prompt renders normally. Clicking a tag
+  // opens the snapshot as a split tab. The clickable tag + split tab is a
+  // project-bluebird feature, but we always strip the blocks so the raw
+  // <channel_context>/<canvas_generation_instructions> XML never leaks for
+  // flag-off viewers.
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
@@ -72,10 +76,23 @@ export const UserMessage = memo(function UserMessage({
     () => extractChannelContext(content),
     [content],
   );
-  const displayContent = channelContext ? channelContext.stripped : content;
+  const afterChannelContext = channelContext
+    ? channelContext.stripped
+    : content;
+  const canvasInstructions = useMemo(
+    () => extractCanvasInstructions(afterChannelContext),
+    [afterChannelContext],
+  );
+  const displayContent = canvasInstructions
+    ? canvasInstructions.stripped
+    : afterChannelContext;
   const showChannelContextTag = !!channelContext && bluebirdEnabled;
+  const showCanvasInstructionsTag = !!canvasInstructions && bluebirdEnabled;
   const openChannelContextInSplit = usePanelLayoutStore(
     (s) => s.openChannelContextInSplit,
+  );
+  const openCanvasInstructionsInSplit = usePanelLayoutStore(
+    (s) => s.openCanvasInstructionsInSplit,
   );
 
   const containsFileMentions = hasFileMentions(displayContent);
@@ -129,29 +146,45 @@ export const UserMessage = memo(function UserMessage({
           ) : (
             <MarkdownRenderer content={displayContent} />
           )}
-          {showChannelContextTag && channelContext && (
+          {(showChannelContextTag || showCanvasInstructionsTag) && (
             <Flex
               wrap="wrap"
               gap="1"
               className={displayContent ? "mt-1.5" : ""}
             >
-              <MentionChip
-                icon={<FileText size={12} />}
-                label={`${
-                  channelContext.mention.name
-                    ? `#${channelContext.mention.name} `
-                    : ""
-                }CONTEXT.md`}
-                onClick={
-                  taskId
-                    ? () =>
-                        openChannelContextInSplit(taskId, {
-                          channelName: channelContext.mention.name,
-                          body: channelContext.mention.body,
-                        })
-                    : undefined
-                }
-              />
+              {showChannelContextTag && channelContext && (
+                <MentionChip
+                  icon={<FileText size={12} />}
+                  label={`${
+                    channelContext.mention.name
+                      ? `#${channelContext.mention.name} `
+                      : ""
+                  }CONTEXT.md`}
+                  onClick={
+                    taskId
+                      ? () =>
+                          openChannelContextInSplit(taskId, {
+                            channelName: channelContext.mention.name,
+                            body: channelContext.mention.body,
+                          })
+                      : undefined
+                  }
+                />
+              )}
+              {showCanvasInstructionsTag && canvasInstructions && (
+                <MentionChip
+                  icon={<Scroll size={12} />}
+                  label="Canvas instructions"
+                  onClick={
+                    taskId
+                      ? () =>
+                          openCanvasInstructionsInSplit(taskId, {
+                            body: canvasInstructions.body,
+                          })
+                      : undefined
+                  }
+                />
+              )}
             </Flex>
           )}
           {showAttachmentChips && (
