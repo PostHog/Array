@@ -17,7 +17,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import { isTerminalStatus } from "@posthog/shared/domain-types";
+import { isCanvasGenerationRunning } from "@posthog/ui/features/canvas/freeform/canvasGenerationStatus";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useFreeformChatStore,
@@ -91,26 +91,21 @@ export function FreeformCanvasView({
     reset: onResetToDefault,
   } = useHomeCanvasReset({ channelId, dashboardId, threadId });
 
-  // Run status: cloud reports via cloudStatus / latest_run.status; local is tied
-  // to the live ACP session. Assume running while the task record loads.
+  // Run status derivation (cloud vs local) lives in a pure, tested helper; a
+  // terminal run record always ends "running" so a stale session can't strand
+  // the canvas on "Generating".
   const { data: genTask, isLoading: genTaskLoading } = useQuery({
     ...taskDetailQuery(genTaskId ?? ""),
     enabled: !!genTaskId,
     refetchInterval: genTaskId ? 5000 : false,
   });
   const genSession = useSessionForTask(genTaskId ?? undefined);
-  const running = (() => {
-    if (!genTaskId) return false;
-    if (genTaskLoading) return true;
-    if (genTask?.latest_run?.environment === "cloud") {
-      const cloudStatus =
-        genSession?.cloudStatus ?? genTask?.latest_run?.status ?? null;
-      return !isTerminalStatus(cloudStatus);
-    }
-    return (
-      genSession?.status === "connecting" || genSession?.status === "connected"
-    );
-  })();
+  const running = isCanvasGenerationRunning({
+    genTaskId,
+    genTaskLoading,
+    latestRun: genTask?.latest_run,
+    session: genSession,
+  });
   const isGenerating = !!genTaskId && running;
 
   // Poll the record while generating so a just-published canvas appears.
