@@ -1682,7 +1682,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       ...initialInProcess,
     };
 
-    const systemPrompt = buildSystemPrompt(meta?.systemPrompt);
+    const systemPrompt = buildSystemPrompt(
+      meta?.systemPrompt,
+      meta?.branchPrefix,
+    );
 
     if (meta?.mcpToolApprovals) {
       setMcpToolApprovalStates(meta.mcpToolApprovals);

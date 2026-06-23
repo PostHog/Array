@@ -271,6 +271,7 @@ export function useTaskCreation({
           adapter,
           model,
           reasoningLevel,
+          branchPrefix: useSettingsStore.getState().branchPrefix,
           environmentId,
           sandboxEnvironmentId,
           signalReportId,

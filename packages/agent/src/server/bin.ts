@@ -98,6 +98,10 @@ program
   .option("--createPr <boolean>", "Whether this run may publish changes")
   .option("--baseBranch <branch>", "Base branch for PR creation")
   .option(
+    "--branchPrefix <prefix>",
+    'Prefix for branches the agent creates (default "posthog-code/")',
+  )
+  .option(
     "--claudeCodeConfig <json>",
     "Claude Code config as JSON (systemPrompt, systemPromptAppend, plugins)",
   )
@@ -170,6 +174,7 @@ program
       createPr,
       mcpServers,
       baseBranch: options.baseBranch,
+      branchPrefix: options.branchPrefix,
       claudeCode,
       allowedDomains,
       runtimeAdapter: env.POSTHOG_CODE_RUNTIME_ADAPTER,

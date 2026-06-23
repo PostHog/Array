@@ -1,5 +1,9 @@
 import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
-import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
+import {
+  BRANCH_PREFIX,
+  type ExecutionMode,
+  type WorkspaceMode,
+} from "@posthog/shared";
 import {
   COLLAPSE_MODE_DEFAULT,
   type CollapseMode,
@@ -118,6 +122,10 @@ interface SettingsStore {
   diffOpenMode: DiffOpenMode;
   setDiffOpenMode: (mode: DiffOpenMode) => void;
 
+  // Version control
+  branchPrefix: string;
+  setBranchPrefix: (prefix: string) => void;
+
   // System / power / permissions
   allowBypassPermissions: boolean;
   preventSleepWhileRunning: boolean;
@@ -235,6 +243,10 @@ export const useSettingsStore = create<SettingsStore>()(
       diffOpenMode: "auto",
       setDiffOpenMode: (mode) => set({ diffOpenMode: mode }),
 
+      // Version control
+      branchPrefix: BRANCH_PREFIX,
+      setBranchPrefix: (prefix) => set({ branchPrefix: prefix }),
+
       // System / power / permissions
       allowBypassPermissions: false,
       preventSleepWhileRunning: false,
@@ -332,6 +344,9 @@ export const useSettingsStore = create<SettingsStore>()(
 
         // Diff viewer
         diffOpenMode: state.diffOpenMode,
+
+        // Version control
+        branchPrefix: state.branchPrefix,
 
         // System / power / permissions
         allowBypassPermissions: state.allowBypassPermissions,

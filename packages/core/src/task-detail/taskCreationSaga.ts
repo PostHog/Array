@@ -285,6 +285,7 @@ export class TaskCreationSaga extends Saga<
             adapter: input.adapter,
             model: input.model,
             reasoningLevel: input.reasoningLevel,
+            branchPrefix: input.branchPrefix,
             sandboxEnvironmentId: input.sandboxEnvironmentId,
             prAuthorshipMode,
             runSource: input.cloudRunSource ?? "manual",

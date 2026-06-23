@@ -8,6 +8,7 @@ import type {
   StoredLogEntry,
 } from "@posthog/shared";
 import {
+  BRANCH_PREFIX,
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
   SEAT_PRODUCT_KEY,
@@ -465,6 +466,8 @@ interface CloudRunOptions {
   adapter?: CloudRuntimeAdapter;
   model?: string;
   reasoningLevel?: string;
+  /** Prefix the agent applies to branches it creates (e.g. "posthog-code/"). */
+  branchPrefix?: string;
   sandboxEnvironmentId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
   runSource?: CloudRunSource;
@@ -551,6 +554,10 @@ function buildCloudRunRequestBody(
   }
   if (options?.homeQuickAction) {
     body.home_quick_action = options.homeQuickAction;
+  }
+  // Only send a customized prefix; the backend defaults to "posthog-code/".
+  if (options?.branchPrefix && options.branchPrefix !== BRANCH_PREFIX) {
+    body.branch_prefix = options.branchPrefix;
   }
 
   return body;

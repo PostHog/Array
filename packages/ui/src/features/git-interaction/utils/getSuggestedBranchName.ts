@@ -2,7 +2,9 @@ import {
   deriveBranchName,
   suggestBranchName,
 } from "@posthog/core/git-interaction/branchName";
+import { normalizeBranchPrefix } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import type { QueryClient } from "@tanstack/react-query";
 import type { GitCacheKeyProvider } from "../gitCacheProvider";
 
@@ -24,12 +26,16 @@ export function getSuggestedBranchName(
     ? String(task.task_number)
     : (task?.slug ?? taskId);
 
-  if (!repoPath) return deriveBranchName(task?.title ?? "", fallbackId);
+  const prefix = normalizeBranchPrefix(
+    useSettingsStore.getState().branchPrefix,
+  );
+
+  if (!repoPath) return deriveBranchName(task?.title ?? "", fallbackId, prefix);
 
   const cached =
     queryClient.getQueryData<string[]>(
       provider.gitQueryKey("getAllBranches", { directoryPath: repoPath }),
     ) ?? [];
 
-  return suggestBranchName(task?.title ?? "", fallbackId, cached);
+  return suggestBranchName(task?.title ?? "", fallbackId, cached, prefix);
 }

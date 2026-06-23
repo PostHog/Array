@@ -14,6 +14,7 @@ import {
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
+import { normalizeBranchPrefix } from "@posthog/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import packageJson from "../../package.json" with { type: "json" };
@@ -1071,6 +1072,9 @@ export class AgentServer {
         jsonSchema: preTask?.json_schema ?? null,
         permissionMode: initialPermissionMode,
         ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
+        ...(this.config.branchPrefix && {
+          branchPrefix: this.config.branchPrefix,
+        }),
         ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
       },
     });
@@ -1736,6 +1740,7 @@ export class AgentServer {
     slackThreadUrl?: string | null,
   ): string {
     const taskId = this.config.taskId;
+    const branchPrefix = normalizeBranchPrefix(this.config.branchPrefix);
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
     const isSlack = this.getCloudInteractionOrigin() === "slack";
     const identityInstructions = isSlack
@@ -1764,7 +1769,7 @@ Commits MUST be signed. \`git commit\` and \`git push\` are blocked in this envi
 To commit: stage your changes with \`git add\`, then call the \`git_signed_commit\` tool (full
 name \`${SIGNED_COMMIT_QUALIFIED_TOOL_NAME}\`) with a \`message\` (and optional \`body\`/\`paths\`).
 It creates a GitHub-signed ("Verified") commit on the branch and keeps your local checkout in
-sync. To start a new branch, pass \`branch\` (prefixed with \`posthog-code/\`) — the tool creates
+sync. To start a new branch, pass \`branch\` (prefixed with \`${branchPrefix}\`) — the tool creates
 it on the remote for you.
 
 ## Updating from the base branch
@@ -1901,7 +1906,7 @@ ${signedCommitInstructions}
 # Cloud Task Execution
 
 After completing the requested changes:
-1. Pick a new branch name prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`)
+1. Pick a new branch name prefixed with \`${branchPrefix}\` (e.g. \`${branchPrefix}fix-login-redirect\`)
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with \`branch\` set to that name and a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). The tool creates the branch on the remote and a signed commit on it.
 3. Before opening the PR, prepare the body:
    - Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.

@@ -48,4 +48,14 @@ describe("deriveBranchName", () => {
       "posthog-code/task-abc123",
     );
   });
+
+  it("applies a custom prefix when provided", () => {
+    expect(deriveBranchName("Fix login bug", "abc123", "team/")).toBe(
+      "team/fix-login-bug",
+    );
+  });
+
+  it("applies a custom prefix to the task-ID fallback", () => {
+    expect(deriveBranchName("", "abc123", "team/")).toBe("team/task-abc123");
+  });
 });

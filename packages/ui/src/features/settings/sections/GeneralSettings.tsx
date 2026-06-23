@@ -1,7 +1,11 @@
 import { ArrowSquareOut } from "@phosphor-icons/react";
 import { buildPostHogUrl } from "@posthog/core/settings/posthogUrl";
 import { useHostTRPC } from "@posthog/host-router/react";
-import { ANALYTICS_EVENTS } from "@posthog/shared";
+import {
+  ANALYTICS_EVENTS,
+  BRANCH_PREFIX,
+  normalizeBranchPrefix,
+} from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import {
   COLLAPSE_MODE_OPTIONS,
@@ -18,6 +22,7 @@ import {
   type SendMessagesWith,
   useSettingsStore,
 } from "@posthog/ui/features/settings/settingsStore";
+import { useDebounce } from "@posthog/ui/primitives/hooks/useDebounce";
 import { track } from "@posthog/ui/shell/analytics";
 import type { ThemePreference } from "@posthog/ui/shell/themeStore";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
@@ -30,9 +35,10 @@ import {
   Slider,
   Switch,
   Text,
+  TextField,
 } from "@radix-ui/themes";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export function GeneralSettings() {
@@ -102,7 +108,28 @@ export function GeneralSettings() {
     setSendMessagesWith,
     setConversationCollapseMode,
     setHedgehogMode,
+    branchPrefix,
+    setBranchPrefix,
   } = useSettingsStore();
+
+  // Branch prefix uses a local draft committed on debounce, so typing stays
+  // responsive and we only normalize/persist once the user pauses.
+  const [draftBranchPrefix, setDraftBranchPrefix] = useState(branchPrefix);
+  const debouncedBranchPrefix = useDebounce(draftBranchPrefix, 500);
+
+  useEffect(() => {
+    setDraftBranchPrefix(branchPrefix);
+  }, [branchPrefix]);
+
+  useEffect(() => {
+    const normalized = normalizeBranchPrefix(debouncedBranchPrefix);
+    if (normalized === branchPrefix) return;
+    setBranchPrefix(normalized);
+    track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+      setting_name: "branch_prefix",
+      new_value: normalized !== BRANCH_PREFIX,
+    });
+  }, [debouncedBranchPrefix, branchPrefix, setBranchPrefix]);
 
   // Sync toggle off if the user denied notification permission at the OS level
   useEffect(() => {
@@ -517,6 +544,31 @@ export function GeneralSettings() {
             <Select.Item value="10000">10,000 chars</Select.Item>
           </Select.Content>
         </Select.Root>
+      </SettingRow>
+
+      {/* Version control */}
+      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+        Version control
+      </Text>
+
+      <SettingRow
+        label="Branch prefix"
+        description="Prefix applied to branches PostHog Code creates for new pull requests"
+        noBorder
+      >
+        <Flex direction="column" align="end" gap="1">
+          <TextField.Root
+            value={draftBranchPrefix}
+            onChange={(e) => setDraftBranchPrefix(e.target.value)}
+            placeholder={BRANCH_PREFIX}
+            size="1"
+            className="min-w-[240px]"
+            spellCheck={false}
+          />
+          <Text color="gray" className="text-[12px]">
+            e.g. {normalizeBranchPrefix(draftBranchPrefix)}fix-login-redirect
+          </Text>
+        </Flex>
       </SettingRow>
 
       {/* Editor */}

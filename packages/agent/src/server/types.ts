@@ -24,6 +24,8 @@ export interface AgentServerConfig {
   version?: string;
   mcpServers?: RemoteMcpServer[];
   baseBranch?: string;
+  /** Prefix the agent applies to branches it creates (e.g. "posthog-code/"). */
+  branchPrefix?: string;
   claudeCode?: ClaudeCodeConfig;
   allowedDomains?: string[];
   runtimeAdapter?: "claude" | "codex";

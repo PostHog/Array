@@ -29,6 +29,8 @@ export interface TaskCreationInput {
   adapter?: "claude" | "codex";
   model?: string;
   reasoningLevel?: string;
+  /** Prefix the agent applies to branches it creates (e.g. "posthog-code/"). */
+  branchPrefix?: string;
   environmentId?: string;
   sandboxEnvironmentId?: string;
   cloudPrAuthorshipMode?: PrAuthorshipMode;

@@ -26,7 +26,7 @@ import {
 } from "../hooks";
 import type { CodeExecutionMode } from "../tools";
 import type { EffortLevel } from "../types";
-import { APPENDED_INSTRUCTIONS } from "./instructions";
+import { buildAppendedInstructions } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
 import { DEFAULT_MODEL } from "./models";
 import type { SettingsManager } from "./settings";
@@ -74,11 +74,13 @@ export interface BuildOptionsParams {
 
 export function buildSystemPrompt(
   customPrompt?: unknown,
+  branchPrefix?: string | null,
 ): Options["systemPrompt"] {
+  const appended = buildAppendedInstructions(branchPrefix);
   const defaultPrompt: Options["systemPrompt"] = {
     type: "preset",
     preset: "claude_code",
-    append: APPENDED_INSTRUCTIONS,
+    append: appended,
   };
 
   if (!customPrompt) {
@@ -86,7 +88,7 @@ export function buildSystemPrompt(
   }
 
   if (typeof customPrompt === "string") {
-    return customPrompt + APPENDED_INSTRUCTIONS;
+    return customPrompt + appended;
   }
 
   if (
@@ -97,7 +99,7 @@ export function buildSystemPrompt(
   ) {
     return {
       ...defaultPrompt,
-      append: customPrompt.append + APPENDED_INSTRUCTIONS,
+      append: customPrompt.append + appended,
     };
   }
 

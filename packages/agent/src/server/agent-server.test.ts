@@ -1406,6 +1406,15 @@ describe("AgentServer HTTP Mode", () => {
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
 
+    it("uses a configured branch prefix in the cloud prompt", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "signal_report";
+      const s = createServer({ branchPrefix: "team/" });
+      const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt();
+      expect(prompt).toContain("team/fix-login-redirect");
+      expect(prompt).not.toContain("posthog-code/fix-login-redirect");
+      delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+    });
+
     it("returns PR-update prompt for existing PRs on Slack-origin runs", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
       const s = createServer();

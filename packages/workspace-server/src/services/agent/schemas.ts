@@ -48,6 +48,8 @@ export const startSessionInput = z.object({
   adapter: z.enum(["claude", "codex"]).optional(),
   additionalDirectories: z.array(z.string()).optional(),
   customInstructions: z.string().max(2000).optional(),
+  /** Prefix the agent applies to branches it creates (e.g. "posthog-code/"). */
+  branchPrefix: z.string().max(100).optional(),
   /**
    * Replaces the PostHog system prompt entirely for this session. Used by
    * constrained, single-purpose surfaces (e.g. the canvas generator) that drive
@@ -187,6 +189,8 @@ export const reconnectSessionInput = z.object({
   permissionMode: z.string().optional(),
   model: z.string().optional(),
   customInstructions: z.string().max(2000).optional(),
+  /** Prefix the agent applies to branches it creates (e.g. "posthog-code/"). */
+  branchPrefix: z.string().max(100).optional(),
   effort: effortLevelSchema.optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
 });

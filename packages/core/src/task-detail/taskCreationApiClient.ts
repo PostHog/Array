@@ -8,6 +8,8 @@ export interface CreateTaskRunClientOptions {
   adapter?: "claude" | "codex";
   model?: string;
   reasoningLevel?: string;
+  /** Prefix the agent applies to branches it creates (e.g. "posthog-code/"). */
+  branchPrefix?: string;
   sandboxEnvironmentId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
   runSource?: CloudRunSource;

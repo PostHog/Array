@@ -14,6 +14,7 @@ export interface PrepareTaskInputOptions {
   adapter?: "claude" | "codex";
   model?: string;
   reasoningLevel?: string;
+  branchPrefix?: string;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
   signalReportId?: string;
@@ -46,6 +47,7 @@ export function prepareTaskInput(
     adapter: options.adapter,
     model: options.model,
     reasoningLevel: options.reasoningLevel,
+    branchPrefix: options.branchPrefix,
     environmentId: options.environmentId ?? undefined,
     sandboxEnvironmentId: options.sandboxEnvironmentId,
     cloudPrAuthorshipMode:
