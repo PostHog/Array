@@ -27,6 +27,10 @@ export function mergeConversationItems({
   optimisticItems,
   isCloud,
 }: MergeConversationItemsArgs): ConversationItem[] {
+  if (optimisticItems.length === 0) {
+    return conversationItems;
+  }
+
   if (!isCloud) {
     return [...conversationItems, ...optimisticItems];
   }

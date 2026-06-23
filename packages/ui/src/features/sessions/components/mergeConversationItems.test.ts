@@ -73,15 +73,31 @@ describe("mergeConversationItems", () => {
   });
 
   it("cloud: dedupe is no-op when there are no optimistic items", () => {
+    const conversationItems = [
+      userMessage("a", "first"),
+      userMessage("b", "second"),
+    ];
     const result = mergeConversationItems({
-      conversationItems: [
-        userMessage("a", "first"),
-        userMessage("b", "second"),
-      ],
+      conversationItems,
       optimisticItems: [],
       isCloud: true,
     });
     expect(result.map((i) => i.id)).toEqual(["a", "b"]);
+    expect(result).toBe(conversationItems);
+  });
+
+  it("local: merge is no-op when there are no optimistic items", () => {
+    const conversationItems = [
+      userMessage("a", "first"),
+      userMessage("b", "second"),
+    ];
+    const result = mergeConversationItems({
+      conversationItems,
+      optimisticItems: [],
+      isCloud: false,
+    });
+    expect(result.map((i) => i.id)).toEqual(["a", "b"]);
+    expect(result).toBe(conversationItems);
   });
 
   it("cloud: renders follow-up optimistic messages at the tail", () => {

@@ -18,8 +18,10 @@ export interface ContextUsage {
   breakdown: ContextBreakdown | null;
 }
 
+type ContextUsageAggregate = Omit<ContextUsage, "breakdown">;
+
 export function extractContextUsage(events: AcpMessage[]): ContextUsage | null {
-  let aggregate: Omit<ContextUsage, "breakdown"> | null = null;
+  let aggregate: ContextUsageAggregate | null = null;
   let breakdown: ContextBreakdown | null = null;
 
   for (let i = events.length - 1; i >= 0; i--) {
@@ -37,9 +39,50 @@ export function extractContextUsage(events: AcpMessage[]): ContextUsage | null {
   return { ...aggregate, breakdown };
 }
 
+export function createContextUsageTracker() {
+  let aggregate: ContextUsageAggregate | null = null;
+  let breakdown: ContextBreakdown | null = null;
+  let processedCount = 0;
+  let firstEventRef: AcpMessage | null = null;
+  let boundaryEventRef: AcpMessage | null = null;
+
+  const reset = () => {
+    aggregate = null;
+    breakdown = null;
+    processedCount = 0;
+    firstEventRef = null;
+    boundaryEventRef = null;
+  };
+
+  const update = (events: AcpMessage[]): ContextUsage | null => {
+    const canAppend =
+      events.length >= processedCount &&
+      (processedCount === 0 || events[0] === firstEventRef) &&
+      (processedCount === 0 || events[processedCount - 1] === boundaryEventRef);
+
+    if (!canAppend) {
+      reset();
+    }
+
+    for (let i = processedCount; i < events.length; i++) {
+      const msg = events[i].message;
+      aggregate = extractAggregate(msg) ?? aggregate;
+      breakdown = extractBreakdown(msg) ?? breakdown;
+    }
+
+    processedCount = events.length;
+    firstEventRef = events[0] ?? null;
+    boundaryEventRef = events[processedCount - 1] ?? null;
+
+    return aggregate ? { ...aggregate, breakdown } : null;
+  };
+
+  return { update, reset };
+}
+
 function extractAggregate(
   msg: AcpMessage["message"],
-): Omit<ContextUsage, "breakdown"> | null {
+): ContextUsageAggregate | null {
   if (
     "method" in msg &&
     msg.method === "session/update" &&

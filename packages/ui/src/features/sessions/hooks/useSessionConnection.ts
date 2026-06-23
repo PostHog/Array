@@ -1,4 +1,5 @@
 import {
+  type ReconcileSessionState,
   SESSION_SERVICE,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
@@ -8,7 +9,7 @@ import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import type { AgentSession } from "@posthog/ui/features/sessions/sessionStore";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useChatTitleGenerator } from "./useChatTitleGenerator";
 
 interface UseSessionConnectionOptions {
@@ -35,6 +36,41 @@ export function useSessionConnection({
   useChatTitleGenerator(task);
 
   const taskRunId = session?.taskRunId;
+  const sessionTaskId = session?.taskId;
+  const sessionTaskTitle = session?.taskTitle;
+  const sessionStatus = session?.status;
+  const sessionIsCloud = session?.isCloud;
+  const sessionIdleKilled = session?.idleKilled;
+  const needsEventCount = !repoPath && !isCloud;
+  const sessionEventCount = needsEventCount ? (session?.events.length ?? 0) : 0;
+  const connectionSession = useMemo<ReconcileSessionState | undefined>(() => {
+    if (
+      taskRunId === undefined ||
+      sessionTaskId === undefined ||
+      sessionTaskTitle === undefined ||
+      sessionStatus === undefined
+    ) {
+      return undefined;
+    }
+    return {
+      taskRunId,
+      taskId: sessionTaskId,
+      taskTitle: sessionTaskTitle,
+      status: sessionStatus,
+      isCloud: sessionIsCloud,
+      idleKilled: sessionIdleKilled,
+      eventCount: sessionEventCount,
+    };
+  }, [
+    taskRunId,
+    sessionTaskId,
+    sessionTaskTitle,
+    sessionStatus,
+    sessionIsCloud,
+    sessionIdleKilled,
+    sessionEventCount,
+  ]);
+
   useEffect(() => {
     if (!taskRunId) return;
     return sessionService.startActivityHeartbeat(taskRunId);
@@ -43,7 +79,7 @@ export function useSessionConnection({
   useEffect(() => {
     return sessionService.reconcileTaskConnection({
       task,
-      session,
+      session: connectionSession,
       repoPath,
       isCloud,
       isSuspended,
@@ -60,7 +96,7 @@ export function useSessionConnection({
     });
   }, [
     task,
-    session,
+    connectionSession,
     repoPath,
     isCloud,
     isSuspended,
