@@ -1,4 +1,5 @@
 import { ArrowSquareOut } from "@phosphor-icons/react";
+import { validateBranchName } from "@posthog/core/git-interaction/branchName";
 import { buildPostHogUrl } from "@posthog/core/settings/posthogUrl";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
@@ -116,6 +117,13 @@ export function GeneralSettings() {
   // responsive and we only normalize/persist once the user pauses.
   const [draftBranchPrefix, setDraftBranchPrefix] = useState(branchPrefix);
   const debouncedBranchPrefix = useDebounce(draftBranchPrefix, 500);
+  const normalizedDraftPrefix = normalizeBranchPrefix(draftBranchPrefix);
+  // Validate the prefix the way it is actually used — in front of a slug — so a
+  // value like "my team/" (space) or "feat/." is rejected before it can reach
+  // the agent prompt or a git_signed_commit call and produce an invalid ref.
+  const branchPrefixError = validateBranchName(
+    `${normalizedDraftPrefix}example`,
+  );
 
   useEffect(() => {
     setDraftBranchPrefix(branchPrefix);
@@ -124,6 +132,9 @@ export function GeneralSettings() {
   useEffect(() => {
     const normalized = normalizeBranchPrefix(debouncedBranchPrefix);
     if (normalized === branchPrefix) return;
+    // Never persist a prefix that would produce an invalid branch name; the
+    // workspace-server schema also caps length at 100.
+    if (validateBranchName(`${normalized}example`) !== null) return;
     setBranchPrefix(normalized);
     track(ANALYTICS_EVENTS.SETTING_CHANGED, {
       setting_name: "branch_prefix",
@@ -562,12 +573,20 @@ export function GeneralSettings() {
             onChange={(e) => setDraftBranchPrefix(e.target.value)}
             placeholder={BRANCH_PREFIX}
             size="1"
+            maxLength={100}
             className="min-w-[240px]"
             spellCheck={false}
+            color={branchPrefixError ? "red" : undefined}
           />
-          <Text color="gray" className="text-[12px]">
-            e.g. {normalizeBranchPrefix(draftBranchPrefix)}fix-login-redirect
-          </Text>
+          {branchPrefixError ? (
+            <Text color="red" className="text-[12px]">
+              {branchPrefixError}
+            </Text>
+          ) : (
+            <Text color="gray" className="text-[12px]">
+              e.g. {normalizedDraftPrefix}fix-login-redirect
+            </Text>
+          )}
         </Flex>
       </SettingRow>
 
