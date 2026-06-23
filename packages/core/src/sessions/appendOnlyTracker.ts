@@ -1,19 +1,15 @@
 import type { AcpMessage } from "@posthog/shared";
 
 /**
- * Folds a session event log into running state, processing only the events
- * appended since the last call. The log grows by append during streaming, so
- * re-scanning the whole array on every token is O(history) per render; this
- * keeps a cursor and only visits the new tail.
+ * Folds a growing session event log into running state, visiting only the tail
+ * appended since the last call so streaming stays O(appended), not O(history).
  *
- * An append is detected by reference identity: the array is the same length or
- * longer, and its first and previous-last elements are still the same objects.
- * Any other shape (prepend, replace, in-place reorder, truncate) breaks that
- * invariant, so the state is discarded and rebuilt from scratch.
+ * An append is detected by reference identity: same-or-greater length with the
+ * first and previous-last elements unchanged. Any other shape (prepend, replace,
+ * reorder, truncate) discards the state and rebuilds from scratch.
  *
- * `processEvent` mutates `state` in place; `getResult` projects it into the
- * value callers consume (and may allocate a fresh object each call so callers
- * never observe `state` mutating underneath a retained result).
+ * `processEvent` mutates `state`; `getResult` projects it, allocating a fresh
+ * value so a retained result never sees `state` mutate underneath it.
  */
 export function createAppendOnlyTracker<State, Result>(config: {
   init: () => State;
