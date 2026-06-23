@@ -1,6 +1,7 @@
 import {
   ArrowCounterClockwise,
   CaretDown,
+  CaretRight,
   CaretUp,
   ChatCircle,
   CheckCircle,
@@ -33,6 +34,16 @@ const ghRehypePlugins: PluggableList = [
 ];
 
 const MAX_COMMENT_HEIGHT = 120;
+
+/** Strip markdown noise to a single-line preview for the collapsed header. */
+function toPreview(body: string): string {
+  return body
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#>*_`~-]/g, " ")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 interface ThreadActionBarProps {
   prUrl: string | null;
@@ -278,6 +289,10 @@ export function PrCommentThread({
   const [showReplyBox, setShowReplyBox] = useState(false);
   const [pendingReply, setPendingReply] = useState<string | null>(null);
   const [isResolved, setIsResolved] = useState(initialIsResolved);
+  // Resolved/outdated threads add up — start them collapsed.
+  const [isCollapsed, setIsCollapsed] = useState(
+    initialIsResolved || isOutdated,
+  );
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -343,39 +358,71 @@ export function PrCommentThread({
         data-pr-comment-thread=""
         className={`overflow-hidden whitespace-normal rounded-md border border-[var(--gray-5)] bg-[var(--gray-2)] px-2.5 py-2 font-sans ${isResolved ? "opacity-60" : ""}`}
       >
-        {(isResolved || isOutdated || isFileLevel) && (
-          <Flex align="center" gap="1" className="mb-1.5">
-            {isResolved && (
-              <Badge color="green" size="1" variant="soft">
-                <CheckCircle size={12} weight="fill" />
-                Resolved
-              </Badge>
-            )}
-            {isFileLevel && (
-              <Badge color="gray" size="1" variant="soft">
-                <File size={12} />
-                File comment
-              </Badge>
-            )}
-            {isOutdated && (
-              <Badge color="yellow" size="1" variant="soft">
-                <WarningCircle size={12} weight="fill" />
-                Outdated
-              </Badge>
-            )}
-          </Flex>
-        )}
+        <Flex align="center" gap="1" className={isCollapsed ? "" : "mb-1.5"}>
+          <button
+            type="button"
+            onClick={() => setIsCollapsed((prev) => !prev)}
+            aria-label={isCollapsed ? "Expand thread" : "Collapse thread"}
+            className="-ml-0.5 flex shrink-0 cursor-pointer items-center rounded p-0.5 text-[var(--gray-10)] hover:bg-[var(--gray-4)] hover:text-[var(--gray-12)]"
+          >
+            {isCollapsed ? <CaretRight size={14} /> : <CaretDown size={14} />}
+          </button>
+          {isResolved && (
+            <Badge color="green" size="1" variant="soft">
+              <CheckCircle size={12} weight="fill" />
+              Resolved
+            </Badge>
+          )}
+          {isFileLevel && (
+            <Badge color="gray" size="1" variant="soft">
+              <File size={12} />
+              File comment
+            </Badge>
+          )}
+          {isOutdated && (
+            <Badge color="yellow" size="1" variant="soft">
+              <WarningCircle size={12} weight="fill" />
+              Outdated
+            </Badge>
+          )}
+          {isCollapsed && (
+            <button
+              type="button"
+              onClick={() => setIsCollapsed(false)}
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+            >
+              <Text className="shrink-0 font-medium text-[13px] text-[var(--gray-12)]">
+                {comments[0]?.user.login}
+              </Text>
+              <Text className="min-w-0 flex-1 truncate text-[13px] text-[var(--gray-10)]">
+                {toPreview(comments[0]?.body ?? "")}
+              </Text>
+              {comments.length > 1 && (
+                <Badge
+                  color="gray"
+                  size="1"
+                  variant="soft"
+                  className="shrink-0"
+                >
+                  <ChatCircle size={11} />
+                  {comments.length}
+                </Badge>
+              )}
+            </button>
+          )}
+        </Flex>
 
-        {comments.map((comment, index) => (
-          <CommentBody
-            key={comment.id}
-            comment={comment}
-            showLineAbove={index > 0}
-            showLineBelow={index < comments.length - 1 || !!pendingReply}
-          />
-        ))}
+        {!isCollapsed &&
+          comments.map((comment, index) => (
+            <CommentBody
+              key={comment.id}
+              comment={comment}
+              showLineAbove={index > 0}
+              showLineBelow={index < comments.length - 1 || !!pendingReply}
+            />
+          ))}
 
-        {pendingReply && (
+        {!isCollapsed && pendingReply && (
           <div className="flex gap-2 opacity-50">
             <div className="flex flex-col items-center">
               <div className="h-1.5 w-0.5 rounded-full bg-[var(--gray-5)]" />
@@ -397,23 +444,25 @@ export function PrCommentThread({
           </div>
         )}
 
-        <ThreadActionBar
-          prUrl={prUrl}
-          taskId={taskId}
-          filePath={filePath}
-          endLine={endLine}
-          side={side}
-          comments={comments}
-          isResolved={isResolved}
-          onResolveToggle={handleResolveToggle}
-          showReplyBox={showReplyBox}
-          pendingReply={pendingReply}
-          onShowReplyBox={() => setShowReplyBox(true)}
-          onHideReplyBox={() => setShowReplyBox(false)}
-          onSubmitReply={handleReplySubmit}
-          onKeyDown={handleKeyDown}
-          textareaRefCallback={setTextareaRefCallback}
-        />
+        {!isCollapsed && (
+          <ThreadActionBar
+            prUrl={prUrl}
+            taskId={taskId}
+            filePath={filePath}
+            endLine={endLine}
+            side={side}
+            comments={comments}
+            isResolved={isResolved}
+            onResolveToggle={handleResolveToggle}
+            showReplyBox={showReplyBox}
+            pendingReply={pendingReply}
+            onShowReplyBox={() => setShowReplyBox(true)}
+            onHideReplyBox={() => setShowReplyBox(false)}
+            onSubmitReply={handleReplySubmit}
+            onKeyDown={handleKeyDown}
+            textareaRefCallback={setTextareaRefCallback}
+          />
+        )}
       </div>
     </div>
   );
