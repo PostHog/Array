@@ -75,10 +75,11 @@ export type CanvasDataQueryInput = z.infer<typeof canvasDataQueryInput>;
 
 export const canvasDataResultSchema = z.object({
   columns: z.array(z.string()),
-  // The result rows. SHAPE DEPENDS ON THE QUERY KIND:
-  //   • HogQLQuery (inline `hogql`) → an array of ROWS, each row an array of cell
+  // The result rows. SHAPE DEPENDS ON THE QUERY KIND (true for both `ph.query`
+  // and `ph.loadInsight`):
+  //   • HogQLQuery / SQL insight → an array of ROWS, each row an array of cell
   //     values aligned to `columns` (e.g. `[[123], [456]]`).
-  //   • Typed nodes (TrendsQuery/etc.) → an array of SERIES OBJECTS as PostHog
+  //   • Typed nodes / trends-style insight → an array of SERIES OBJECTS as PostHog
   //     returns them — `{ data: number[], labels: string[], days: string[],
   //     count, aggregated_value, compare_label, … }`. NOT rows-of-cells; passed
   //     through untouched so the canvas reads the native trends shape.
@@ -86,6 +87,23 @@ export const canvasDataResultSchema = z.object({
   results: z.array(z.unknown()),
 });
 export type CanvasDataResult = z.infer<typeof canvasDataResultSchema>;
+
+// ---------------------------------------------------------------------------
+// Load-insight avenue: the host-side fetch behind the `ph.loadInsight` shim. The
+// canvas references a SAVED, validated PostHog insight by `short_id` and the host
+// returns its STORED result from the insights endpoint (not a fresh `/query/`
+// run). This is the preferred data path — every metric is a proven saved insight.
+// `dateRange` (the canvas date picker's window) re-scopes the insight for this
+// request via `filters_override`. The result is the same `{ columns, results }`
+// shape as `ph.query`.
+// ---------------------------------------------------------------------------
+export const canvasLoadInsightInput = z.object({
+  shortId: z.string().min(1),
+  dateRange: z
+    .object({ date_from: z.string(), date_to: z.string() })
+    .optional(),
+});
+export type CanvasLoadInsightInput = z.infer<typeof canvasLoadInsightInput>;
 
 // Capture (write) avenue behind the `ph.capture` shim. The host sends the event
 // to the project using its PUBLIC project key (phc_…, safe to be client-side) —
@@ -183,6 +201,19 @@ export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
 ]);
 export type HostToCanvasMessage = z.infer<typeof hostToCanvasMessageSchema>;
 
+// The ONLY navigations a canvas may request of the host. The canvas runs
+// untrusted code in a null-origin iframe, so this nested union IS the security
+// allowlist: there is no free-form path/route field, only these four targets.
+// `channelId` is intentionally absent — the host supplies it from the loaded
+// record so the iframe can never pick the channel, only which task/dashboard.
+export const canvasNavIntentSchema = z.discriminatedUnion("target", [
+  z.object({ target: z.literal("task"), taskId: z.string().min(1) }),
+  z.object({ target: z.literal("new-task") }),
+  z.object({ target: z.literal("canvas"), dashboardId: z.string().min(1) }),
+  z.object({ target: z.literal("new-canvas") }),
+]);
+export type CanvasNavIntent = z.infer<typeof canvasNavIntentSchema>;
+
 // iframe -> host
 export const canvasToHostMessageSchema = z.discriminatedUnion("type", [
   // Iframe runtime is mounted and ready to receive `init`.
@@ -220,6 +251,14 @@ export const canvasToHostMessageSchema = z.discriminatedUnion("type", [
     channel: z.literal(CANVAS_CHANNEL),
     type: z.literal("resize"),
     height: z.number(),
+  }),
+  // A request to navigate the host app. Fire-and-forget (no id/response). The
+  // `nav` payload is the allowlist above — the host drops anything that doesn't
+  // parse, so the iframe can only reach the four sanctioned destinations.
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("navigate"),
+    nav: canvasNavIntentSchema,
   }),
 ]);
 export type CanvasToHostMessage = z.infer<typeof canvasToHostMessageSchema>;

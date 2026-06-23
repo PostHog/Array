@@ -6,6 +6,7 @@ import type {
   CanvasCaptureResult,
   CanvasDataQueryInput,
   CanvasDataResult,
+  CanvasLoadInsightInput,
   FreeformVersion,
 } from "./freeformSchemas";
 import type { CanvasTemplate, CanvasTemplateSummary } from "./templateSchemas";
@@ -44,11 +45,17 @@ export interface IDashboardsService {
     taskId: string | null;
   }): Promise<DashboardRecord>;
   rename(input: { id: string; name: string }): Promise<DashboardRecord>;
+  // Idempotently create + seed a channel's home canvas, returning it.
+  ensureHomeCanvas(channelId: string): Promise<DashboardRecord>;
+  // Append a fresh template version to the home canvas (non-destructive; the
+  // prior version stays in history so the edit can be restored via undo).
+  resetHomeCanvas(channelId: string): Promise<DashboardRecord>;
   delete(id: string): Promise<void>;
 }
 
 export interface ICanvasDataService {
   query(input: CanvasDataQueryInput): Promise<CanvasDataResult>;
+  loadInsight(input: CanvasLoadInsightInput): Promise<CanvasDataResult>;
   capture(input: CanvasCaptureInput): Promise<CanvasCaptureResult>;
   captureConfig(): Promise<CanvasCaptureConfig>;
 }

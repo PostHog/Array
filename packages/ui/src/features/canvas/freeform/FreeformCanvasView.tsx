@@ -1,12 +1,22 @@
 import {
+  ArrowCounterClockwiseIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
+  ShapesIcon,
   SpinnerGapIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
 import type { CanvasAnalyticsConfig } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
-import { Button } from "@posthog/quill";
+import {
+  Button,
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@posthog/quill";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
@@ -29,6 +39,7 @@ import { useCallback, useMemo, useState } from "react";
 import { FreeformCanvas } from "./FreeformCanvas";
 import { FreeformGenerateBar } from "./FreeformGenerateBar";
 import { handleFreeformDataRequest } from "./freeformDataBridge";
+import { useCanvasNavigation, useHomeCanvasReset } from "./useHomeCanvasView";
 
 // The dashboardId a thread is keyed on ("dashboard:<id>" → "<id>").
 function dashboardIdOf(threadId: string): string {
@@ -73,6 +84,13 @@ export function FreeformCanvasView({
     () => channels.find((c) => c.id === channelId)?.name ?? "",
     [channels, channelId],
   );
+
+  // The "Reset to default" affordance, shown only on a channel's home canvas.
+  const {
+    isHomeCanvas,
+    isResetting,
+    reset: onResetToDefault,
+  } = useHomeCanvasReset({ channelId, dashboardId, threadId });
 
   // Run status: cloud reports via cloudStatus / latest_run.status; local is tied
   // to the live ACP session. Assume running while the task record loads.
@@ -137,6 +155,9 @@ export function FreeformCanvasView({
     [threadId, setRuntimeError],
   );
 
+  // Routes the canvas's allowlisted nav intents within this channel.
+  const onNavigate = useCanvasNavigation(channelId);
+
   // The edit composer's draft, lifted so self-repair can prefill it.
   const [draft, setDraft] = useState("");
   const askAgentToFix = () => {
@@ -182,6 +203,18 @@ export function FreeformCanvasView({
                 <Text size="1" className="ml-1 text-gray-9">
                   v{idx + 1}/{versions.length}
                 </Text>
+              )}
+              {isHomeCanvas && (
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="ml-1"
+                  disabled={isGenerating || isResetting}
+                  onClick={onResetToDefault}
+                >
+                  <ArrowCounterClockwiseIcon size={14} />
+                  {isResetting ? "Resetting…" : "Reset to default"}
+                </Button>
               )}
             </Flex>
             {isGenerating && genTaskId ? (
@@ -237,29 +270,26 @@ export function FreeformCanvasView({
                   onDataRequest={handleFreeformDataRequest}
                   onError={onError}
                   onRendered={onRendered}
+                  onNavigate={onNavigate}
                   analytics={analytics}
                 />
               </ErrorBoundary>
             ) : showGeneratingState ? (
               <GeneratingState channelId={channelId} taskId={genTaskId ?? ""} />
             ) : (
-              <Flex
-                direction="column"
-                align="center"
-                justify="center"
-                height="100%"
-                gap="1"
-                className="px-6 text-center"
-              >
-                <Text size="3" weight="bold" className="text-gray-12">
-                  Freeform canvas
-                </Text>
-                <Text size="2" className="text-gray-10">
-                  {interactive
-                    ? "Describe the canvas below to build it with an agent."
-                    : "This canvas is empty. Hit Edit to build it with an agent."}
-                </Text>
-              </Flex>
+              <Empty className="h-full">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <ShapesIcon size={24} />
+                  </EmptyMedia>
+                  <EmptyTitle>Freeform canvas</EmptyTitle>
+                  <EmptyDescription>
+                    {interactive
+                      ? "Describe the canvas below to build it with an agent."
+                      : "This canvas is empty. Hit Edit to build it with an agent."}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             )}
           </ScrollArea>
         </Box>
@@ -293,33 +323,30 @@ function GeneratingState({
   taskId: string;
 }) {
   return (
-    <Flex
-      direction="column"
-      align="center"
-      justify="center"
-      height="100%"
-      gap="4"
-      className="mx-auto max-w-[440px] px-6 text-center"
-    >
-      <Box className="rounded-lg border border-gray-6 border-dashed p-3">
-        <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
-      </Box>
-      <Flex direction="column" gap="1" align="center">
-        <Text className="font-medium text-[14px] text-gray-12">Generating</Text>
-        <Text className="text-[13px] text-gray-10">
-          An agent is building this canvas.
-        </Text>
-      </Flex>
+    <Empty className="h-full">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
+        </EmptyMedia>
+        <EmptyTitle>Generating</EmptyTitle>
+        <EmptyDescription>An agent is building this canvas.</EmptyDescription>
+      </EmptyHeader>
       {taskId && (
-        <RadixButton size="2" variant="soft" asChild>
-          <Link
-            to="/website/$channelId/tasks/$taskId"
-            params={{ channelId, taskId }}
+        <EmptyContent>
+          <Button
+            variant="primary"
+            size="default"
+            render={
+              <Link
+                to="/website/$channelId/tasks/$taskId"
+                params={{ channelId, taskId }}
+              />
+            }
           >
             View task
-          </Link>
-        </RadixButton>
+          </Button>
+        </EmptyContent>
       )}
-    </Flex>
+    </Empty>
   );
 }

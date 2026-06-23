@@ -12,8 +12,13 @@ import type {
   CanvasCaptureResult,
   CanvasDataQueryInput,
   CanvasDataResult,
+  CanvasLoadInsightInput,
 } from "./freeformSchemas";
-import { fetchCurrentUser, runQuery } from "./posthogApi";
+import {
+  fetchCurrentUser,
+  fetchInsightByShortId,
+  runQuery,
+} from "./posthogApi";
 
 // Last-resort attribution if we can't resolve the signed-in user (and the
 // canvas didn't pass its own distinctId).
@@ -76,6 +81,36 @@ export class CanvasDataService {
       };
     } catch (err) {
       this.log.warn("Canvas query failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+  }
+
+  // The preferred data avenue: load a SAVED insight by short id and return its
+  // STORED result from the insights endpoint (not a fresh /query/ run). The
+  // canvas date picker's window rides along as the insight's date override.
+  async loadInsight(input: CanvasLoadInsightInput): Promise<CanvasDataResult> {
+    try {
+      const insight = await fetchInsightByShortId(
+        this.authService,
+        input.shortId,
+        { dateRange: input.dateRange },
+      );
+      // Mirror the shape handling in `query`: a SQL insight returns rows (coerce a
+      // bare scalar row to a 1-cell array); a trends-style insight returns SERIES
+      // OBJECTS, which must pass through untouched (wrapping them reads every value
+      // as 0).
+      const isRows = insight.queryKind === "HogQLQuery";
+      return {
+        columns: insight.columns,
+        results: isRows
+          ? insight.results.map((r) => (Array.isArray(r) ? r : [r]))
+          : insight.results,
+      };
+    } catch (err) {
+      this.log.warn("Canvas loadInsight failed", {
+        shortId: input.shortId,
         error: err instanceof Error ? err.message : String(err),
       });
       throw err;

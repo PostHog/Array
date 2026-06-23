@@ -1,6 +1,7 @@
 import type {
   CanvasCaptureInput,
   CanvasDataQueryInput,
+  CanvasLoadInsightInput,
 } from "@posthog/core/canvas/freeformSchemas";
 import { hostClient } from "../hostClient";
 
@@ -27,6 +28,16 @@ export async function handleFreeformDataRequest(
         query: input.query,
         hogql: input.hogql,
         params: input.params,
+      });
+    }
+    case "loadInsight": {
+      const input = payload as CanvasLoadInsightInput;
+      if (!input?.shortId || typeof input.shortId !== "string") {
+        throw new Error("ph.loadInsight(shortId) requires an insight short id");
+      }
+      return hostClient().canvasData.loadInsight.mutate({
+        shortId: input.shortId,
+        dateRange: input.dateRange,
       });
     }
     case "capture": {

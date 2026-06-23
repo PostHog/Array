@@ -1,4 +1,4 @@
-import { ThumbsDownIcon } from "@phosphor-icons/react";
+import { ArchiveIcon } from "@phosphor-icons/react";
 import { extractRepoSelectionRepository } from "@posthog/core/inbox/artefacts";
 import {
   deriveHeadline,
@@ -154,7 +154,7 @@ export function PullRequestCard({
               onDismiss();
             }}
           >
-            <ThumbsDownIcon size={14} />
+            <ArchiveIcon size={14} />
           </UiButton>
           <Button
             type="button"

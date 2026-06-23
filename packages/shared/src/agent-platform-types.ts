@@ -1,0 +1,634 @@
+// Wire shapes mirroring the PostHog Cloud REST serializers (Django app
+// `agent_platform`). Field names stay snake_case to match the JSON exactly.
+
+export type AgentSessionState =
+  | "queued"
+  | "running"
+  | "completed"
+  | "closed"
+  | "cancelled"
+  | "failed";
+
+export type AgentSessionPrincipalKind =
+  | "anonymous"
+  | "service"
+  | "internal"
+  | "shared_secret"
+  | "slack";
+
+export type AgentRevisionState = "draft" | "ready" | "live" | "archived";
+
+export type AgentApprovalRequestState =
+  | "queued"
+  | "approving"
+  | "dispatched"
+  | "dispatched_failed"
+  | "rejected"
+  | "expired";
+
+export type AgentApprovalDecision = "approve" | "reject";
+
+/** Resolved creator (from `created_by_id`), or null if unset/deleted. */
+export interface AgentApplicationCreator {
+  id?: number;
+  first_name?: string;
+  email?: string;
+}
+
+export interface AgentApplication {
+  id: string;
+  team_id: number;
+  name: string;
+  /** Globally-unique URL identifier; server-minted unless explicitly allowed. */
+  slug?: string;
+  description?: string;
+  live_revision: string | null;
+  archived?: boolean;
+  archived_at: string | null;
+  created_by_id: number | null;
+  created_by: AgentApplicationCreator | null;
+  created_at: string;
+  updated_at: string;
+  /** Slack Event Subscriptions request URL; null without a public ingress URL. */
+  slack_events_url: string | null;
+  /** Slack Interactivity request URL; null without a public ingress URL. */
+  slack_interactivity_url: string | null;
+  /** Mode-aware base URL the agent's trigger routes hang off; null without ingress. */
+  ingress_base_url: string | null;
+}
+
+/**
+ * The agent spec carried on a revision. Known top-level fields are surfaced and
+ * the rest passes through pending fully-typed elaboration.
+ */
+export interface AgentSpec {
+  model: string;
+  triggers?: unknown[];
+  tools?: unknown[];
+  mcps?: unknown[];
+  skills?: unknown[];
+  integrations?: string[];
+  secrets?: string[];
+  limits?: {
+    max_turns?: number;
+    max_tool_calls?: number;
+    max_wall_seconds?: number;
+  };
+  entrypoint?: string;
+  reasoning?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  [key: string]: unknown;
+}
+
+export interface AgentRevision {
+  id: string;
+  application: string;
+  parent_revision?: string | null;
+  state: AgentRevisionState;
+  bundle_uri?: string;
+  bundle_sha256: string | null;
+  spec?: AgentSpec;
+  created_by_id: number | null;
+  created_by: AgentApplicationCreator | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// `…/agent_applications/{id}/preview-token/?revision_id=<uuid>` mints a
+// short-lived HS256 JWT that authorizes the ingress to route /run /send /listen
+// /cancel against a non-live revision. Sent on those calls via the
+// `X-Agent-Preview-Token` header (or `?preview_token=` query for EventSource),
+// alongside the usual PostHog bearer. The response's `endpoints` carry the
+// per-trigger preview URLs to hit directly, so the client never derives a
+// revision-scoped ingress URL by string-mangling `application.ingress_base_url`.
+
+/** Per-trigger preview URLs, keyed by trigger type → action → absolute URL. */
+export type AgentPreviewEndpoints = Record<string, Record<string, string>>;
+
+export interface AgentPreviewToken {
+  /** HS256 JWT bound to (app, revision). Short TTL. */
+  token: string;
+  /** Token TTL in seconds from issue; mint a fresh one before this elapses. */
+  expires_in: number;
+  /** `<application_slug>-<revision_uuid_hex>` — the slug ingress uses in routing. */
+  ingress_slug: string;
+  /**
+   * Per-trigger ingress URLs derived from this revision's `spec.triggers[]`.
+   * Empty when no public agent-ingress URL is configured for the active routing mode.
+   * Shape: `{ chat: { run, send, listen, cancel, client_tool_result }, slack: {...} }`.
+   */
+  endpoints: AgentPreviewEndpoints;
+  /** Header/query names + per-trigger accepted auth modes. Opaque to most callers. */
+  auth: Record<string, unknown>;
+  /** Server-side proxy alternative — opaque shape; preferred path is direct-to-ingress. */
+  preview_proxy: Record<string, unknown>;
+}
+
+// `…/revisions/{id}/bundle/` returns a typed bundle ({ agent_md, skills, tools });
+// the client flattens it into these per-file rows keyed by canonical path
+// (agent.md, skills/<id>/SKILL.md, tools/<id>/source.ts, tools/<id>/schema.json).
+
+export type BundleFileLanguage = "markdown" | "typescript" | "json" | "text";
+
+export interface BundleFile {
+  path: string;
+  content: string;
+  language: BundleFileLanguage;
+}
+
+// `…/revisions/{id}/slack_manifest/` derives the Slack app manifest from the
+// revision's slack trigger + tools (scopes + event subscriptions computed).
+
+export interface AgentSlackManifest {
+  revision_id: string;
+  /** Opaque Slack app manifest JSON to paste into "create from manifest". */
+  manifest: Record<string, unknown>;
+  notes: string[];
+  events_url: string | null;
+  interactivity_url: string | null;
+}
+
+// The agent's S3-backed memory store: markdown files (`…/memory/…`) plus the
+// JSONL reference tables the @posthog/table-* tools write.
+
+export interface AgentMemoryHeader {
+  path: string;
+  description: string;
+  tags: string[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AgentMemoryFile extends AgentMemoryHeader {
+  content: string;
+}
+
+/** Pre-aggregated folder tree from `…/memory/tree/`. */
+export interface AgentMemoryTreeNode {
+  name: string;
+  type: "folder" | "file";
+  path?: string;
+  description?: string;
+  tags?: string[];
+  children?: AgentMemoryTreeNode[];
+}
+
+export interface AgentMemorySearchResult {
+  path: string;
+  description: string;
+  tags: string[];
+  score: number;
+  snippet?: string | null;
+}
+
+export interface AgentMemoryTableHeader {
+  name: string;
+  size: number;
+}
+
+export interface AgentMemoryTableRows {
+  name: string;
+  total: number;
+  returned: number;
+  limit: number;
+  rows: Record<string, unknown>[];
+}
+
+export interface AgentSessionUsageTotal {
+  tokens_in: number;
+  tokens_out: number;
+  cache_read: number;
+  cache_write: number;
+  cost_input: number;
+  cost_output: number;
+  cost_cache_read: number;
+  cost_cache_write: number;
+  cost_total: number;
+}
+
+export interface AgentSessionPrincipal {
+  kind: AgentSessionPrincipalKind;
+  /** Stable principal id (PAT id, slack user id, …); absent for anonymous. */
+  id?: string;
+  team_id?: number;
+}
+
+/** Trigger-specific metadata stamped at session creation; shape varies by kind. */
+export type AgentSessionTriggerMetadata = Record<string, unknown>;
+
+export interface AgentSessionSummary {
+  id: string;
+  application_id: string;
+  revision_id: string;
+  state: AgentSessionState;
+  external_key: string | null;
+  trigger_metadata?: AgentSessionTriggerMetadata | null;
+  principal: AgentSessionPrincipal | null;
+  /** Count of messages in the conversation. */
+  turns: number;
+  /** Last assistant text (~120 chars); null before any assistant turn. */
+  preview: string | null;
+  usage_total: AgentSessionUsageTotal;
+  retry_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentApplicationSessionsListResponse {
+  results: AgentSessionSummary[];
+  count: number;
+}
+
+// Stored conversation shape on a session: the runtime persists pi-ai's
+// `conversation` array. Part shapes mirror what the agent-console apiClient
+// narrows (text/thinking/toolCall for assistants; text/image for users; text
+// for tool results).
+
+export interface AgentTextPart {
+  type: "text";
+  text: string;
+}
+
+export interface AgentThinkingPart {
+  type: "thinking";
+  thinking: string;
+}
+
+export interface AgentImagePart {
+  type: "image";
+  [key: string]: unknown;
+}
+
+export interface AgentToolCallPart {
+  type: "toolCall";
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export type AgentAssistantContentPart =
+  | AgentTextPart
+  | AgentThinkingPart
+  | AgentToolCallPart;
+
+export type AgentUserContentPart = AgentTextPart | AgentImagePart;
+
+export interface AgentConversationUserMessage {
+  role: "user";
+  /** String shorthand, or an array of text/image parts. */
+  content: string | AgentUserContentPart[];
+  /** Epoch milliseconds. */
+  timestamp: number;
+}
+
+export interface AgentConversationAssistantMessage {
+  role: "assistant";
+  /** Array of text/thinking/toolCall parts. */
+  content: AgentAssistantContentPart[];
+  timestamp: number;
+  api?: string;
+  provider?: string;
+  model?: string;
+  usage?: Record<string, unknown>;
+  stopReason?: string;
+  errorMessage?: string;
+}
+
+export interface AgentConversationToolResultMessage {
+  /** Wire value is `toolResult` (NOT `tool`) — matches the runtime serializer. */
+  role: "toolResult";
+  toolCallId: string;
+  toolName: string;
+  /** Array of text parts (image parts are dropped on render). */
+  content: AgentTextPart[];
+  isError: boolean;
+  timestamp: number;
+}
+
+export type AgentConversationMessage =
+  | AgentConversationUserMessage
+  | AgentConversationAssistantMessage
+  | AgentConversationToolResultMessage;
+
+export interface AgentApplicationSessionDetail {
+  id: string;
+  application_id: string;
+  revision_id: string;
+  team_id: number;
+  state: AgentSessionState;
+  external_key: string | null;
+  trigger_metadata?: AgentSessionTriggerMetadata | null;
+  principal: AgentSessionPrincipal | null;
+  usage_total: AgentSessionUsageTotal;
+  conversation: AgentConversationMessage[];
+  /** Messages that arrived while a turn was in flight. */
+  pending_inputs: AgentConversationMessage[];
+  retry_count: number;
+  created_at: string;
+  updated_at: string;
+  /** True when `last_n` was supplied AND the full conversation exceeded it. */
+  conversation_trimmed: boolean;
+  /** Total messages in the untrimmed conversation; present only when trimmed. */
+  conversation_total_turns?: number;
+}
+
+// `…/sessions/{id}/logs/` returns rows from the shared ClickHouse `log_entries`
+// table via `fetch_log_entries` — the same flat shape hog_function logs use.
+
+export type AgentLogLevel = "DEBUG" | "LOG" | "INFO" | "WARN" | "ERROR";
+
+export interface AgentSessionLogEntry {
+  log_source_id: string;
+  instance_id: string;
+  /** ISO timestamp. */
+  timestamp: string;
+  /** One of AgentLogLevel, but server may emit other casings — keep it open. */
+  level: string;
+  message: string;
+}
+
+export interface AgentSessionLogsParams {
+  limit?: number;
+  /** Comma-separated levels server-side; pass an array, joined by the client. */
+  level?: AgentLogLevel[];
+  search?: string;
+  after?: string;
+  before?: string;
+}
+
+export interface AgentFleetLiveSessionSummary {
+  id: string;
+  application_id: string;
+  revision_id: string;
+  team_id: number;
+  state: AgentSessionState;
+  external_key: string | null;
+  trigger_metadata?: AgentSessionTriggerMetadata | null;
+  principal: AgentSessionPrincipal | null;
+  turns: number;
+  preview: string | null;
+  usage_total: AgentSessionUsageTotal;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentFleetLiveSessionsResponse {
+  results: AgentFleetLiveSessionSummary[];
+}
+
+export interface AgentApprovalRequest {
+  id: string;
+  session_id: string;
+  application_id: string;
+  team_id: number;
+  revision_id: string;
+  turn: number;
+  tool_call_id: string;
+  tool_name: string;
+  proposed_args: Record<string, unknown>;
+  decided_args: Record<string, unknown> | null;
+  assistant_message: Record<string, unknown>;
+  approver_scope: Record<string, unknown>;
+  state: AgentApprovalRequestState;
+  decision_by: string | null;
+  decision_at: string | null;
+  decision_reason: string | null;
+  dispatch_outcome: Record<string, unknown> | null;
+  created_at: string;
+  expires_at: string;
+}
+
+/** Body for POST …/approvals/{id}/decide/. */
+export interface DecideApprovalRequest {
+  decision: AgentApprovalDecision;
+  /** Honoured only when the tool's approval_policy.allow_edit is true. */
+  edited_args?: Record<string, unknown>;
+  reason?: string;
+}
+
+export interface AgentSessionsListParams {
+  limit?: number;
+  offset?: number;
+  /** Comma-separated states accepted server-side; pass an array, joined by the client. */
+  state?: AgentSessionState[];
+  revision_id?: string;
+  created_after?: string;
+  created_before?: string;
+}
+
+export interface AgentApprovalsListParams {
+  state?: AgentApprovalRequestState;
+  agent_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// Live session events from the chat trigger's `/listen` endpoint (SSE
+// `text/event-stream` JSON frames). The `kind` discriminator and `data`
+// payloads come from `agent-ingress/src/triggers/chat.ts` +
+// `agent-runner/src/loop/bus.ts`.
+
+interface AgentSessionEventBase {
+  session_id: string;
+  /** ISO timestamp the runner stamped on the frame. */
+  ts: string;
+}
+
+/** Session accepted and the runner started — `{ team_id, agent, rev }`. */
+export type AgentSessionStartedEvent = AgentSessionEventBase & {
+  kind: "session_started";
+  data: { team_id?: number; agent?: string; rev?: string };
+};
+
+/** Server-confirmed user message, echoed when drained from `pending_inputs`. */
+export type AgentUserMessageEvent = AgentSessionEventBase & {
+  kind: "user_message";
+  data: { text: string; timestamp?: string };
+};
+
+/** A new assistant turn began — `{ turn }` is the turn index. */
+export type AgentTurnStartedEvent = AgentSessionEventBase & {
+  kind: "turn_started";
+  data: { turn?: number };
+};
+
+/** Streaming assistant text fragment. */
+export type AgentAssistantTextDeltaEvent = AgentSessionEventBase & {
+  kind: "assistant_text_delta";
+  data: { turn?: number; text: string };
+};
+
+/** Streaming assistant thinking fragment. */
+export type AgentAssistantThinkingDeltaEvent = AgentSessionEventBase & {
+  kind: "assistant_thinking_delta";
+  data: { turn?: number; thinking: string };
+};
+
+/** A tool call appeared (name known, args still streaming). */
+export type AgentToolCallStartEvent = AgentSessionEventBase & {
+  kind: "tool_call_start";
+  data: { turn?: number; id: string; name: string };
+};
+
+/** Incremental tool-call args — string fragment or partial object. */
+export type AgentToolCallArgsDeltaEvent = AgentSessionEventBase & {
+  kind: "tool_call_args_delta";
+  data: { turn?: number; id: string; argsDelta: unknown };
+};
+
+/** Turn-end snapshot of the full assistant text (deltas already filled it). */
+export type AgentAssistantTextEvent = AgentSessionEventBase & {
+  kind: "assistant_text";
+  data: { text: string };
+};
+
+/** Canonical tool call with finalized args. */
+export type AgentToolCallEvent = AgentSessionEventBase & {
+  kind: "tool_call";
+  data: { id: string; name: string; args?: Record<string, unknown> };
+};
+
+/** Tool result — `ok` plus `output` on success, `error` on failure. */
+export type AgentToolResultEvent = AgentSessionEventBase & {
+  kind: "tool_result";
+  data: {
+    id: string;
+    tool?: string;
+    ok?: boolean;
+    output?: unknown;
+    error?: string;
+  };
+};
+
+/** Turn finished; session stays open for more input. */
+export type AgentCompletedEvent = AgentSessionEventBase & {
+  kind: "completed";
+  data: { turns?: number; summary?: unknown };
+};
+
+/** Session parked for a steering message (`@posthog/meta-ask-for-input`). */
+export type AgentWaitingEvent = AgentSessionEventBase & {
+  kind: "waiting";
+  data: { turns?: number; prompt?: string };
+};
+
+/** Terminal failure — `reason` is for owners/logs, not end users. */
+export type AgentFailedEvent = AgentSessionEventBase & {
+  kind: "failed";
+  data: { reason?: string; turns?: number };
+};
+
+/** Session sealed (terminal); no further `/send`s accepted. */
+export type AgentClosedEvent = AgentSessionEventBase & {
+  kind: "closed";
+  data: Record<string, unknown>;
+};
+
+/** Model invoked a client-fulfilled tool; the host runs it and posts back. */
+export type AgentClientToolCallEvent = AgentSessionEventBase & {
+  kind: "client_tool_call";
+  data: { call_id: string; tool_id: string; args?: Record<string, unknown> };
+};
+
+/** A client tool's outcome landed (sync POST or interactive `/send` wake). */
+export type AgentClientToolResultEvent = AgentSessionEventBase & {
+  kind: "client_tool_result";
+  data: { call_id: string; result?: unknown; error?: string };
+};
+
+/**
+ * Draft-preview only. Server fires this on `/listen` ~5s before the preview
+ * token expires (then closes the stream); the client mints a fresh token and
+ * reconnects. The kind alone is the signal — `data` is unused.
+ */
+export type AgentPreviewTokenRequiredEvent = AgentSessionEventBase & {
+  kind: "preview_token_required";
+  data: Record<string, unknown>;
+};
+
+export type AgentSessionEvent =
+  | AgentSessionStartedEvent
+  | AgentUserMessageEvent
+  | AgentTurnStartedEvent
+  | AgentAssistantTextDeltaEvent
+  | AgentAssistantThinkingDeltaEvent
+  | AgentToolCallStartEvent
+  | AgentToolCallArgsDeltaEvent
+  | AgentAssistantTextEvent
+  | AgentToolCallEvent
+  | AgentToolResultEvent
+  | AgentCompletedEvent
+  | AgentWaitingEvent
+  | AgentFailedEvent
+  | AgentClosedEvent
+  | AgentClientToolCallEvent
+  | AgentClientToolResultEvent
+  | AgentPreviewTokenRequiredEvent;
+
+/** Discriminator values for {@link AgentSessionEvent}. */
+export type AgentSessionEventKind = AgentSessionEvent["kind"];
+
+// The runner captures `$ai_*` observability events into the team's OWN PostHog
+// project (tagged `$ai_origin = 'agent_platform_runner'`, `$agent_application_id`);
+// the observability surface rolls those up via HogQL. These are the *derived*
+// analytics shapes the client produces from raw HogQL grids — not a backend wire
+// serializer — but live here so UI hooks import them alongside the other types.
+
+export interface AgentAnalyticsKpis {
+  spendUsd: number;
+  sessions: number;
+  /** 0..1 — share of generations that errored. */
+  failureRate: number;
+  /** p95 model latency, seconds. */
+  p95LatencyS: number;
+}
+
+export interface AgentAnalyticsDaily {
+  /** Short date labels, oldest → newest (14 days). */
+  labels: string[];
+  spend: number[];
+  sessions: number[];
+  /** 0..1 per day. */
+  failureRate: number[];
+}
+
+export interface AgentAnalyticsDeltas {
+  /** Percent change vs the prior 7 days (e.g. 12 = +12%). `null` when undefined. */
+  spend: number | null;
+  sessions: number | null;
+  /** Change in failure rate, in percentage points. `null` when undefined. */
+  failureRatePoints: number | null;
+}
+
+export interface AgentAnalyticsAgentRow {
+  id: string;
+  name: string;
+  sessions: number;
+  spendUsd: number;
+  failureRate: number;
+  p95LatencyS: number;
+  tokens: number;
+}
+
+export interface AgentAnalyticsModelRow {
+  model: string;
+  spendUsd: number;
+  calls: number;
+}
+
+export interface AgentAnalyticsToolRow {
+  tool: string;
+  calls: number;
+  errors: number;
+  errorRate: number;
+}
+
+export interface AgentAnalyticsData {
+  kpis: AgentAnalyticsKpis;
+  daily: AgentAnalyticsDaily;
+  deltas: AgentAnalyticsDeltas;
+  byAgent: AgentAnalyticsAgentRow[];
+  byModel: AgentAnalyticsModelRow[];
+  toolErrors: AgentAnalyticsToolRow[];
+  /** True when there is no agent AI activity in the window — drives the empty state. */
+  empty: boolean;
+}

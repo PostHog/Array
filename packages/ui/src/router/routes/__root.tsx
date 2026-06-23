@@ -8,6 +8,7 @@ import {
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
@@ -163,6 +164,7 @@ function RootLayout() {
   useTaskDeepLink();
   useInboxDeepLink();
   useScoutDeepLink();
+  useApprovalDeepLink();
   useSetupDiscovery();
   useNewTaskDeepLink();
 
@@ -251,7 +253,7 @@ function RootLayout() {
 
   if (isChannelsSpace) {
     return (
-      <Flex direction="column" height="100vh" className="bg-gray-2">
+      <Flex direction="column" height="100vh" className="bg-chrome">
         {/* Full-width title bar: a window-drag region carrying the PostHog
             mark. The left padding clears the macOS stoplights. */}
         <Flex align="center" gap="3" className="drag h-10 shrink-0 pl-[78px]">
@@ -302,8 +304,8 @@ function RootLayout() {
           <ChannelsSidebar />
           {/* Content sits in a bordered, rounded card inset from the window
               edges — the framed pane from the design. */}
-          <Box flexGrow="1" className="overflow-hidden pr-2 pb-2">
-            <Box className="h-full overflow-hidden rounded-sm border border-gray-6 bg-gray-1">
+          <Box flexGrow="1" className="overflow-hidden">
+            <Box className="h-full overflow-hidden rounded-tl-sm border-border border-t border-l bg-background">
               <Outlet />
             </Box>
           </Box>

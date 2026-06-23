@@ -154,7 +154,7 @@ export function ChannelsSidebar() {
       setIsResizing={setIsResizing}
       side="left"
     >
-      <Flex direction="column" className="h-full bg-gray-2">
+      <Flex direction="column" className="h-full bg-chrome">
         {/* Workspace switcher — a compact bordered button. The title bar above
             provides the window-drag region and stoplight clearance. */}
         <Box className="shrink-0 p-2 pb-0">
@@ -172,7 +172,7 @@ export function ChannelsSidebar() {
 
         {/* Settings pinned to the bottom. Settings is a full-page route, so this
             leaves the Channels space rather than highlighting in place. */}
-        <Box className="shrink-0 p-2 pt-0">
+        <Box className="shrink-0 border-border border-t p-2">
           <SidebarItem
             depth={0}
             icon={<GearSixIcon size={16} />}

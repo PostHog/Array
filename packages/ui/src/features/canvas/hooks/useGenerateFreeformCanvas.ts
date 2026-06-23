@@ -5,27 +5,27 @@ import {
   type TaskService,
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
+import { useHostTRPC } from "@posthog/host-router/react";
 import { buildFreeformGenerationPrompt } from "@posthog/ui/features/canvas/freeformPrompt";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
   isPlaceholderCanvasName,
   useDashboardMutations,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
-import type { GenerateContextTarget } from "@posthog/ui/features/canvas/hooks/useGenerateContext";
+import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { toast } from "@posthog/ui/primitives/toast";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
-// Where the canvas-generation task runs: a local clone or a connected GitHub
-// repo (cloud). Same shape as CONTEXT.md generation — canvas gen doesn't read
-// repo code, but the task system is repo-bound, so it runs in the channel repo.
-export type { GenerateContextTarget as GenerateCanvasTarget } from "@posthog/ui/features/canvas/hooks/useGenerateContext";
-
-// Kicks off freeform canvas generation as a normal task (local or cloud), files
-// it to the channel, and records it as the canvas's generation task (in the
-// canvas's meta) so every client's canvas view tracks the in-flight run. The
-// agent publishes the result via the `desktop-file-system-canvas-partial-update`
-// MCP tool — mirrors useGenerateContext.
+// Kicks off freeform canvas generation as a repo-less task, files it to the
+// channel, and records it as the canvas's generation task (in the canvas's meta)
+// so every client's canvas view tracks the in-flight run. Canvas generation
+// reads PostHog data via the MCP rather than repo code, so no repo is selected
+// up front — the agent attaches one lazily only if it decides it needs one. The
+// task runs in a per-task scratch dir (local) and the agent publishes the result
+// via the `desktop-file-system-canvas-partial-update` MCP tool — mirrors
+// useGenerateContext.
 export function useGenerateFreeformCanvas(args: {
   dashboardId: string;
   channelId: string;
@@ -38,43 +38,40 @@ export function useGenerateFreeformCanvas(args: {
   const titleGenerator = useService<TitleGeneratorService>(
     TITLE_GENERATOR_SERVICE,
   );
+  const trpc = useHostTRPC();
+  const queryClient = useQueryClient();
   const { invalidateTasks } = useCreateTask();
   const { fileTask } = useChannelTaskMutations();
   const { setGenerationTask, renameDashboard } = useDashboardMutations();
+  // The channel's CONTEXT.md, passed to the agent as optional background so the
+  // generated canvas starts with the shared context. Absent/empty is fine.
+  const { data: instructions } = useFolderInstructions(channelId);
+  const channelContext = instructions?.content;
   const [isStarting, setIsStarting] = useState(false);
 
   const generate = useCallback(
-    async (
-      target: GenerateContextTarget,
-      opts: { instruction: string; currentCode?: string },
-    ): Promise<string | null> => {
+    async (opts: {
+      instruction: string;
+      currentCode?: string;
+    }): Promise<string | null> => {
       setIsStarting(true);
       try {
-        const base = {
-          content: buildFreeformGenerationPrompt({
-            dashboardId,
-            name,
-            channelName,
-            templateId,
-            instruction: opts.instruction,
-            currentCode: opts.currentCode,
-          }),
-          taskDescription: `Generate canvas "${name}"`,
-        };
         const result = await taskService.createTask(
-          target.mode === "cloud"
-            ? {
-                ...base,
-                repository: target.repository,
-                githubUserIntegrationId: target.githubUserIntegrationId,
-                workspaceMode: "cloud",
-                branch: target.branch ?? null,
-              }
-            : {
-                ...base,
-                repoPath: target.repoPath,
-                workspaceMode: "local",
-              },
+          {
+            content: buildFreeformGenerationPrompt({
+              dashboardId,
+              name,
+              channelName,
+              templateId,
+              instruction: opts.instruction,
+              currentCode: opts.currentCode,
+            }),
+            taskDescription: `Generate canvas "${name}"`,
+            workspaceMode: "local",
+            allowNoRepo: true,
+            channelContext,
+            channelName,
+          },
           (output) => invalidateTasks(output.task),
         );
 
@@ -90,6 +87,12 @@ export function useGenerateFreeformCanvas(args: {
         // are best-effort: a failure here shouldn't undo a started task.
         void fileTask(channelId, task.id, task.title).catch(() => {});
         void setGenerationTask(dashboardId, task.id).catch(() => {});
+        // Repo-less tasks create no workspace row, so the usual workspace.create
+        // invalidation never fires — refresh the cache so the task view resolves
+        // its scratch cwd instead of showing the repo-picker prompt.
+        void queryClient.invalidateQueries({
+          queryKey: trpc.workspace.getAll.queryKey(),
+        });
         // Auto-name a still-unnamed canvas from its generation prompt, using the
         // same helper model that names tasks. Best-effort: a failure (or a user
         // who already named the canvas) leaves the existing title untouched.
@@ -110,6 +113,8 @@ export function useGenerateFreeformCanvas(args: {
     [
       taskService,
       titleGenerator,
+      trpc,
+      queryClient,
       invalidateTasks,
       fileTask,
       setGenerationTask,
@@ -119,6 +124,7 @@ export function useGenerateFreeformCanvas(args: {
       name,
       channelName,
       templateId,
+      channelContext,
     ],
   );
 

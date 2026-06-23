@@ -1,7 +1,10 @@
 import { GitForkIcon, PencilSimpleIcon, XIcon } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
+import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useDashboard,
   useDashboardMutations,
@@ -17,13 +20,14 @@ import {
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex } from "@radix-ui/themes";
 import {
   Outlet,
   useNavigate,
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 
 function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
@@ -173,8 +177,40 @@ function FreeformEditControls({
   );
 }
 
-// Canvas toolbar + content outlet for the Website space (channel-scoped). No
-// breadcrumb row — a single toolbar carries the data controls and actions.
+// "# channel / canvas" breadcrumb for a single canvas, with the leaf inline-
+// renamable and a tier icon (dashboard / web-analytics / freeform app).
+function CanvasBreadcrumb({
+  channelName,
+  dashboardId,
+  trailing,
+}: {
+  channelName: string;
+  dashboardId: string;
+  trailing?: ReactNode;
+}) {
+  const { dashboard } = useDashboard(dashboardId);
+  const { renameDashboard } = useDashboardMutations();
+  const name = dashboard?.name ?? "Canvas";
+
+  return (
+    <ChannelBreadcrumb
+      channelName={channelName}
+      leafIcon={iconForTemplate(dashboard?.templateId ?? "", {
+        size: 12,
+        // No color here: the breadcrumb's leaf <span> owns the icon color so it
+        // can be styled in one place.
+        className: "",
+      })}
+      leafLabel={name}
+      onRename={(next) => void renameDashboard(dashboardId, next)}
+      trailing={trailing}
+    />
+  );
+}
+
+// Canvas toolbar + content outlet for the Website space (channel-scoped). A
+// single toolbar carries the channel breadcrumb (left) and data controls /
+// actions (right).
 export function WebsiteLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const params = useParams({ strict: false });
@@ -189,6 +225,11 @@ export function WebsiteLayout() {
   const dashboardId = params.dashboardId;
   const base = channelId ? `/website/${channelId}` : "/website";
 
+  const { channels } = useChannels();
+  const channelName = channelId
+    ? (channels.find((c) => c.id === channelId)?.name ?? "Channel")
+    : "Channel";
+
   const isDashboardDetail = Boolean(channelId && dashboardId);
   // The dashboards grid (a channel with no sub-view selected).
   const isDashboardsGrid = Boolean(channelId) && pathname === base;
@@ -197,48 +238,49 @@ export function WebsiteLayout() {
   // canvas (so Edit lives here too).
   const showToolbar =
     Boolean(channelId) && (isDashboardsGrid || isDashboardDetail);
-  // The channel's new-task screen (no header store content of its own).
-  const isNewTask = Boolean(channelId) && pathname === `${base}/new`;
 
   return (
     <Flex direction="column" height="100%" overflow="hidden">
-      {/* Title bar for non-canvas views (no breadcrumbs): channel-scoped task
-          detail and channel context push their title into the header store;
-          channel-less mirrored pages (Home, Skills, …) do too. The new-task
-          screen has no header content, so label it explicitly. Hidden when the
-          canvas toolbar is showing (grid / a single canvas). */}
-      {!showToolbar && (headerContent || isNewTask) && (
+      {/* Title bar for non-canvas views: every channel scene (task detail,
+          new task, CONTEXT.md) pushes its "# channel / leaf" breadcrumb into
+          the header store, as do channel-less mirrored pages (Home, Skills, …).
+          Hidden when the canvas toolbar is showing (grid / a single canvas). */}
+      {!showToolbar && headerContent && (
         <Flex
           align="center"
           gap="2"
           className="h-10 shrink-0 border-gray-6 border-b px-3"
         >
-          {headerContent ?? (
-            <Text size="2" weight="medium" className="text-gray-12">
-              New task
-            </Text>
-          )}
+          {headerContent}
         </Flex>
       )}
 
-      {/* Single canvas toolbar (no breadcrumb row): canvas actions (Edit /
-          Save as fork / New canvas) on the right. Freeform canvases own their
-          own date control in-app (Quill DateTimePicker). */}
-      {showToolbar && (
+      {/* Single canvas toolbar: the "# channel / canvas" breadcrumb (left) and
+          canvas actions (Edit / Save as fork / New canvas) on the right.
+          Freeform canvases own their own date control in-app (DateTimePicker). */}
+      {showToolbar && channelId && (
         <Flex
           align="center"
-          justify="end"
-          gap="2"
-          className="h-10 shrink-0 border-gray-6 border-b px-3"
+          className="h-10 shrink-0 border-border border-b px-3"
         >
-          {isDashboardDetail && channelId && dashboardId ? (
-            <FreeformEditControls
-              channelId={channelId}
+          {isDashboardDetail && dashboardId ? (
+            <CanvasBreadcrumb
+              channelName={channelName}
               dashboardId={dashboardId}
+              trailing={
+                <FreeformEditControls
+                  channelId={channelId}
+                  dashboardId={dashboardId}
+                />
+              }
             />
-          ) : isDashboardsGrid && channelId ? (
-            <NewCanvasMenu channelId={channelId} />
-          ) : null}
+          ) : (
+            <ChannelBreadcrumb
+              channelName={channelName}
+              leafLabel="Canvases"
+              trailing={<NewCanvasMenu channelId={channelId} />}
+            />
+          )}
         </Flex>
       )}
       <Box flexGrow="1" overflow="hidden">

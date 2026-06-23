@@ -1,4 +1,5 @@
 import type { Task } from "@posthog/shared/domain-types";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { TaskDetail } from "@posthog/ui/features/task-detail/components/TaskDetail";
 import {
   getCachedTask,
@@ -19,10 +20,12 @@ export const Route = createFileRoute("/website/$channelId/tasks/$taskId")({
 });
 
 function ChannelTaskDetailRoute() {
-  const { taskId } = Route.useParams();
+  const { channelId, taskId } = Route.useParams();
   const loaderTask = Route.useLoaderData();
   const { data: tasks } = useTasks();
   const fromList = tasks?.find((t) => t.id === taskId);
+  const { channels } = useChannels();
+  const channelName = channels.find((c) => c.id === channelId)?.name;
 
   const { data: fetched } = useQuery({
     ...taskDetailQuery(taskId),
@@ -35,5 +38,11 @@ function ChannelTaskDetailRoute() {
     return <RoutePending />;
   }
 
-  return <TaskDetail key={task.id} task={task} />;
+  return (
+    <TaskDetail
+      key={task.id}
+      task={task}
+      channelName={channelName ?? "Channel"}
+    />
+  );
 }

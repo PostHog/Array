@@ -3,10 +3,10 @@ import { validateChannelName } from "@posthog/core/canvas/channelName";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useOpenHomeCanvas } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Dialog, Flex, IconButton, Text, TextField } from "@radix-ui/themes";
-import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 // Matches Slack's "Create a channel" naming constraint.
@@ -22,7 +22,7 @@ export function CreateChannelModal({
   onOpenChange,
 }: CreateChannelModalProps) {
   const { createChannel, isCreating } = useChannelMutations();
-  const navigate = useNavigate();
+  const openHomeCanvas = useOpenHomeCanvas();
   const [name, setName] = useState("");
 
   // Reset the field each time the modal opens so a previous draft never lingers.
@@ -40,18 +40,14 @@ export function CreateChannelModal({
 
   const submit = async () => {
     if (!trimmed || validationError || isCreating) return;
+    let channel: Awaited<ReturnType<typeof createChannel>>;
     try {
-      const channel = await createChannel(trimmed);
+      channel = await createChannel(trimmed);
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
         action_type: "create",
         surface: "sidebar",
         channel_id: channel.id,
         success: true,
-      });
-      onOpenChange(false);
-      void navigate({
-        to: "/website/$channelId",
-        params: { channelId: channel.id },
       });
     } catch (error) {
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -62,7 +58,12 @@ export function CreateChannelModal({
       toast.error("Couldn't create channel", {
         description: error instanceof Error ? error.message : String(error),
       });
+      return;
     }
+    onOpenChange(false);
+    // Create + seed the channel's home canvas and open it in the main pane. A
+    // freshly created channel has no homeCanvasId yet, so this creates one.
+    await openHomeCanvas(channel);
   };
 
   return (
