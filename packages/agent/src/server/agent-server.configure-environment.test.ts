@@ -254,6 +254,22 @@ describe("AgentServer.configureEnvironment", () => {
     );
   });
 
+  it("routes PostHog AI origin through the posthog_ai product", () => {
+    buildServer("interactive").configureEnvironment({
+      originProduct: "posthog_ai",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/posthog_ai",
+    );
+    expect(process.env.ANTHROPIC_BASE_URL).toBe(
+      "https://gateway.us.posthog.com/posthog_ai",
+    );
+    expect(process.env.OPENAI_BASE_URL).toBe(
+      "https://gateway.us.posthog.com/posthog_ai/v1",
+    );
+  });
+
   it("appends the resolved product to a LLM_GATEWAY_URL override base", () => {
     // The override is treated as a base URL. The product slug is always
     // appended so the gateway routes to the correct product config — a bare
