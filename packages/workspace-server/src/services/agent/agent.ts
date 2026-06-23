@@ -274,6 +274,12 @@ interface SessionConfig {
   model?: string;
   /** JSON Schema for structured task output — when set, the agent gets a create_output tool */
   jsonSchema?: Record<string, unknown> | null;
+  /**
+   * Session ID of an imported Claude Code CLI transcript already present in
+   * CLAUDE_CONFIG_DIR. Starts the session via loadSession so prior history is
+   * replayed to the client. Claude adapter only.
+   */
+  importedSessionId?: string;
 }
 
 interface ManagedSession {
@@ -899,7 +905,50 @@ If a repository IS genuinely required, attach one in this priority order:
       });
 
       let configOptions: SessionConfigOption[] | undefined;
-      let agentSessionId: string;
+      let agentSessionId: string | undefined;
+
+      // Imported Claude Code CLI session: the transcript JSONL was copied
+      // into CLAUDE_CONFIG_DIR at import time, so load it directly and let
+      // the adapter replay its history to the client. On failure, fall
+      // through to a fresh session so the task still starts.
+      if (!isReconnect && config.importedSessionId && adapter !== "codex") {
+        const importedSessionId = config.importedSessionId;
+        try {
+          const loadResponse = await connection.loadSession({
+            sessionId: importedSessionId,
+            cwd: repoPath,
+            mcpServers: sessionMcpServers,
+            _meta: {
+              ...(logUrl && {
+                persistence: { taskId, runId: taskRunId, logUrl },
+              }),
+              taskRunId,
+              environment: "local",
+              sessionId: importedSessionId,
+              systemPrompt,
+              ...(channelMode && { channelMode }),
+              mcpToolApprovals: toolApprovals,
+              ...(permissionMode && { permissionMode }),
+              ...(model != null && { model }),
+              ...(jsonSchema && { jsonSchema }),
+              claudeCode: {
+                options: claudeCodeOptions,
+              },
+            },
+          });
+          configOptions = loadResponse?.configOptions ?? undefined;
+          agentSessionId = importedSessionId;
+        } catch (err) {
+          this.log.warn(
+            "Failed to load imported session, creating new session instead",
+            {
+              taskId,
+              taskRunId,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+        }
+      }
 
       // Claude-specific: hydrate session JSONL from PostHog before resuming.
       // If hydration finds no conversation to restore, skip the resume and
@@ -961,7 +1010,7 @@ If a repository IS genuinely required, attach one in this priority order:
         });
         configOptions = resumeResponse?.configOptions ?? undefined;
         agentSessionId = existingSessionId;
-      } else {
+      } else if (agentSessionId === undefined) {
         if (isReconnect) {
           this.log.info("No sessionId for reconnect, creating new session", {
             taskId,
@@ -1863,6 +1912,8 @@ For git operations while detached:
       effort: "effort" in params ? params.effort : undefined,
       model: "model" in params ? params.model : undefined,
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
+      importedSessionId:
+        "importedSessionId" in params ? params.importedSessionId : undefined,
     };
   }
 

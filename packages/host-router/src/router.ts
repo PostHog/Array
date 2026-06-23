@@ -7,6 +7,7 @@ import { authRouter } from "./routers/auth.router";
 import { canvasDataRouter } from "./routers/canvas-data.router";
 import { canvasTemplatesRouter } from "./routers/canvas-templates.router";
 import { channelTasksRouter } from "./routers/channel-tasks.router";
+import { claudeCliSessionsRouter } from "./routers/claude-cli-sessions.router";
 import { cloudTaskRouter } from "./routers/cloud-task.router";
 import { connectivityRouter } from "./routers/connectivity.router";
 import { contextMenuRouter } from "./routers/context-menu.router";
@@ -53,6 +54,7 @@ export const hostRouter = router({
   canvasData: canvasDataRouter,
   canvasTemplates: canvasTemplatesRouter,
   channelTasks: channelTasksRouter,
+  claudeCliSessions: claudeCliSessionsRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,

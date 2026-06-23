@@ -147,6 +147,7 @@ import {
 } from "@posthog/workspace-server/services/archive/identifiers";
 import { authProxyModule } from "@posthog/workspace-server/services/auth-proxy/auth-proxy.module";
 import { AUTH_PROXY_AUTH } from "@posthog/workspace-server/services/auth-proxy/identifiers";
+import { claudeCliSessionsModule } from "@posthog/workspace-server/services/claude-cli-sessions/claude-cli-sessions.module";
 import { enrichmentModule } from "@posthog/workspace-server/services/enrichment/enrichment.module";
 import {
   ENRICHMENT_AUTH,
@@ -586,6 +587,7 @@ container.bind(MAIN_POSTHOG_PLUGIN_SERVICE).toService(POSTHOG_PLUGIN_SERVICE);
 container.load(skillsModule);
 container.load(skillsMarketplaceModule);
 container.load(onboardingImportModule);
+container.load(claudeCliSessionsModule);
 container.load(additionalDirectoriesModule);
 container.bind(MAIN_SLEEP_SERVICE).to(SleepService);
 container.bind(SLEEP_SERVICE).toService(MAIN_SLEEP_SERVICE);

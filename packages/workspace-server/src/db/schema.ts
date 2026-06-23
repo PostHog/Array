@@ -121,6 +121,28 @@ export const defaultAdditionalDirectories = sqliteTable(
   },
 );
 
+export const claudeSessionImports = sqliteTable(
+  "claude_session_imports",
+  {
+    id: id(),
+    /** Session id of the original Claude Code CLI session in ~/.claude. */
+    sourceSessionId: text().notNull(),
+    /** Fresh session id the imported snapshot lives under in CLAUDE_CONFIG_DIR. */
+    importedSessionId: text().notNull().unique(),
+    taskId: text().notNull(),
+    repoPath: text().notNull(),
+    /** Fingerprint of the source file at import time, for divergence detection. */
+    sourceMtimeMs: integer().notNull(),
+    sourceSizeBytes: integer().notNull(),
+    sourceLastEntryUuid: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("claude_session_imports_source_idx").on(t.sourceSessionId),
+    index("claude_session_imports_task_idx").on(t.taskId),
+  ],
+);
+
 export const authPreferences = sqliteTable(
   "auth_preferences",
   {

@@ -153,6 +153,7 @@ async function withTestContext(
     suspensionRepo as never,
     taskMetadataRepo as never,
     workspaceSettings as never,
+    { deleteImportForTask: async () => {} },
     archiveLogger as never,
   );
 

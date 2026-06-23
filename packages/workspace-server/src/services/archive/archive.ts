@@ -40,6 +40,10 @@ import type {
   WorkspaceRepository,
 } from "../../db/repositories/workspace-repository";
 import type { WorktreeRepository } from "../../db/repositories/worktree-repository";
+import {
+  IMPORTED_SESSION_CLEANER,
+  type ImportedSessionCleaner,
+} from "../claude-cli-sessions/identifiers";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import {
@@ -77,6 +81,8 @@ export class ArchiveService {
     private readonly taskMetadataRepo: ITaskMetadataRepository,
     @inject(WORKSPACE_SETTINGS_SERVICE)
     private readonly workspaceSettings: IWorkspaceSettings,
+    @inject(IMPORTED_SESSION_CLEANER)
+    private readonly importedSessionCleaner: ImportedSessionCleaner,
     @inject(ROOT_LOGGER)
     rootLogger: RootLogger,
   ) {
@@ -501,6 +507,14 @@ export class ArchiveService {
 
   async deleteArchivedTask(taskId: string): Promise<void> {
     this.log.info(`Deleting archived task ${taskId}`);
+
+    // Drop any imported CLI snapshot for this task. Best-effort: a cleanup
+    // failure must not block deleting the archived task.
+    await this.importedSessionCleaner
+      .deleteImportForTask(taskId)
+      .catch((error) => {
+        this.log.warn("Failed to clean up imported session", { taskId, error });
+      });
 
     const workspace = this.workspaceRepo.findByTaskId(taskId);
     if (!workspace) {
