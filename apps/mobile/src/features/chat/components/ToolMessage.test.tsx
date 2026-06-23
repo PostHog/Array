@@ -56,22 +56,25 @@ const base: ToolMessageProps = {
 };
 
 describe("ToolMessage posthog-exec error reason", () => {
-  it("shows the captured error output for a failed call when expanded", () => {
+  it("hides output in the collapsed state for a failed call", () => {
     const renderer = render(base);
     expect(tree(renderer)).not.toContain(ERROR_OUTPUT);
-    expand(renderer);
-    expect(tree(renderer)).toContain(ERROR_OUTPUT);
   });
 
-  it("still shows output for a completed call when expanded", () => {
-    const renderer = render({ ...base, status: "completed" });
-    expand(renderer);
-    expect(tree(renderer)).toContain(ERROR_OUTPUT);
-  });
-
-  it("does not show output while the call is still running", () => {
-    const renderer = render({ ...base, status: "running" });
-    expand(renderer);
-    expect(tree(renderer)).not.toContain(ERROR_OUTPUT);
-  });
+  it.each<[ToolMessageProps["status"], boolean]>([
+    ["error", true],
+    ["completed", true],
+    ["running", false],
+  ])(
+    "status=%s → output visible after expand: %s",
+    (status, expectVisible) => {
+      const renderer = render({ ...base, status });
+      expand(renderer);
+      if (expectVisible) {
+        expect(tree(renderer)).toContain(ERROR_OUTPUT);
+      } else {
+        expect(tree(renderer)).not.toContain(ERROR_OUTPUT);
+      }
+    },
+  );
 });
