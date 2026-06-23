@@ -732,8 +732,10 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const startLatest = Boolean(options?.startLatest && !watcher.lastEventId);
     const url = new URL(
       usingProxy
-        ? `${base}/v1/runs/${watcher.runId}/stream`
-        : `${base}/api/projects/${watcher.teamId}/tasks/${watcher.taskId}/runs/${watcher.runId}/stream/`,
+        ? `${base}/v1/runs/${encodeURIComponent(watcher.runId)}/stream`
+        : `${base}/api/projects/${watcher.teamId}/tasks/${encodeURIComponent(
+            watcher.taskId,
+          )}/runs/${encodeURIComponent(watcher.runId)}/stream/`,
     );
     if (startLatest) {
       url.searchParams.set("start", "latest");
