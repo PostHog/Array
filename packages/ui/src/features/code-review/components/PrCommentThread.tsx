@@ -403,7 +403,7 @@ export function PrCommentThread({
               type="button"
               onClick={toggleCollapsed}
               aria-label={isCollapsed ? "Expand thread" : "Collapse thread"}
-              className="-ml-0.5 flex shrink-0 cursor-pointer items-center rounded p-0.5 text-[var(--gray-10)] transition-colors hover:bg-[var(--gray-4)] hover:text-[var(--gray-12)]"
+              className="-ml-0.5 before:-inset-2 relative flex shrink-0 cursor-pointer items-center rounded p-0.5 text-[var(--gray-10)] transition-colors before:absolute before:content-[''] hover:bg-[var(--gray-4)] hover:text-[var(--gray-12)]"
             >
               <CaretRight
                 size={14}
