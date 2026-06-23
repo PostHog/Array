@@ -6,6 +6,7 @@ import {
 import { Spinner } from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
 import { DetailBackLink } from "@posthog/ui/features/inbox/components/DetailBackLink";
+import type { InboxListRoute } from "@posthog/ui/features/inbox/hooks/useInboxBackTarget";
 import { useInboxReportById } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import {
   type InboxDetailTab,
@@ -18,12 +19,17 @@ import { type ReactNode, useEffect } from "react";
 interface InboxReportDetailGateProps {
   reportId: string;
   cachedReport?: SignalReport | null;
-  backTo:
-    | "/code/inbox/pulls"
-    | "/code/inbox/reports"
-    | "/code/inbox/runs"
-    | "/code/inbox/dismissed";
+  backTo: InboxListRoute;
   backLabel: string;
+  /**
+   * Where the missing-report shell's back link points, when it should differ
+   * from `backTo`. The Archive detail sets these to the recorded origin so the
+   * link follows the user's path in, while `backTo` stays the route identity
+   * that drives the status↔route redirect and engagement tracking below.
+   * Defaults to `backTo`/`backLabel`.
+   */
+  backLinkTo?: string;
+  backLinkLabel?: string;
   missingCopy: string;
   children: (report: SignalReport) => ReactNode;
 }
@@ -57,6 +63,8 @@ export function InboxReportDetailGate({
   cachedReport = null,
   backTo,
   backLabel,
+  backLinkTo,
+  backLinkLabel,
   missingCopy,
   children,
 }: InboxReportDetailGateProps) {
@@ -110,8 +118,16 @@ export function InboxReportDetailGate({
       to: redirectTo,
       params: { reportId: redirectReportId },
       replace: true,
+      // Carry where we came from into the Archive route so its back link reads
+      // "Back to reports/pulls/runs" rather than "Back to archive". This branch
+      // only fires from a non-Archive route, so `backTo` is the pipeline origin
+      // the user is returning to.
+      state:
+        redirectTo === "/code/inbox/dismissed/$reportId"
+          ? { inboxBackOrigin: { to: backTo, label: backLabel } }
+          : undefined,
     });
-  }, [redirectTo, redirectReportId, navigate]);
+  }, [redirectTo, redirectReportId, navigate, backTo, backLabel]);
 
   if ((isLoading && !resolvedReport) || statusUnconfirmed) {
     return (
@@ -139,7 +155,10 @@ export function InboxReportDetailGate({
           gap="3"
           className="border-(--gray-5) border-b px-6 py-6"
         >
-          <DetailBackLink to={backTo} label={backLabel} />
+          <DetailBackLink
+            to={backLinkTo ?? backTo}
+            label={backLinkLabel ?? backLabel}
+          />
           <Text className="text-[13px] text-gray-11">{missingCopy}</Text>
         </Flex>
       </Flex>

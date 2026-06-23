@@ -8,6 +8,10 @@ import { Button } from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
 import { InboxDetailFrame } from "@posthog/ui/features/inbox/components/InboxDetailFrame";
 import { InboxReportDetailGate } from "@posthog/ui/features/inbox/components/InboxReportDetailGate";
+import {
+  type InboxBackTarget,
+  useInboxBackTarget,
+} from "@posthog/ui/features/inbox/hooks/useInboxBackTarget";
 import { useInboxRestoreReport } from "@posthog/ui/features/inbox/hooks/useInboxRestoreReport";
 import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 import { Spinner } from "@radix-ui/themes";
@@ -35,28 +39,44 @@ export function DismissedReportDetail({
   reportId,
   cachedReport = null,
 }: DismissedReportDetailProps) {
+  // Follow the user's path in: if they archived a report while viewing it, the
+  // redirect here recorded its origin (Reports / Pulls / Runs) so the back link
+  // returns there. Arriving directly (deep link, Archive-tab click, refresh)
+  // falls back to "Back to archive".
+  const back = useInboxBackTarget({
+    to: "/code/inbox/dismissed",
+    label: "Back to archive",
+  });
   return (
     <InboxReportDetailGate
       reportId={reportId}
       cachedReport={cachedReport}
       backTo="/code/inbox/dismissed"
       backLabel="Back to archive"
+      backLinkTo={back.to}
+      backLinkLabel={back.label}
       missingCopy="This report couldn't be found. It may have been deleted."
     >
-      {(report) => <DismissedReportDetailContent report={report} />}
+      {(report) => <DismissedReportDetailContent report={report} back={back} />}
     </InboxReportDetailGate>
   );
 }
 
-function DismissedReportDetailContent({ report }: { report: SignalReport }) {
+function DismissedReportDetailContent({
+  report,
+  back,
+}: {
+  report: SignalReport;
+  back: InboxBackTarget;
+}) {
   // Resolved reports are terminal (their PR already merged) — nothing to
   // restore, so only suppressed reports get a Restore action.
   const canRestore = report.status === "suppressed";
   return (
     <InboxDetailFrame
       report={report}
-      backTo="/code/inbox/dismissed"
-      backLabel="Back to archive"
+      backTo={back.to}
+      backLabel={back.label}
       fallbackTitle="Untitled report"
       showDismiss={false}
       primaryAction={
