@@ -14,7 +14,11 @@ import type {
   StoredLogEntry,
   UserShellExecuteParams,
 } from "@posthog/shared";
-import { isJsonRpcNotification, isJsonRpcRequest } from "@posthog/shared";
+import {
+  IMPORTED_USER_PROMPT_META_KEY,
+  isJsonRpcNotification,
+  isJsonRpcRequest,
+} from "@posthog/shared";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
 import { extractPromptDisplayContent } from "./promptContent";
 
@@ -22,11 +26,45 @@ import { extractPromptDisplayContent } from "./promptContent";
  * Convert a stored log entry to an ACP message.
  */
 function storedEntryToAcpMessage(entry: StoredLogEntry): AcpMessage {
+  const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now();
+  const promoted = promoteImportedUserPrompt(entry, ts);
+  if (promoted) return promoted;
   return {
     type: "acp_message",
-    ts: entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now(),
+    ts,
     message: (entry.notification ?? {}) as JsonRpcMessage,
   };
+}
+
+/**
+ * A typed user prompt replayed from an imported Claude Code session arrives as
+ * a `user_message_chunk` tagged with `_meta.importedUserPrompt`. The renderer
+ * ignores raw user_message_chunks (live, user turns render from session/prompt
+ * requests), so promote the tagged ones into a session/prompt user event. Only
+ * affects imported sessions; normal logs carry no such marker.
+ */
+function promoteImportedUserPrompt(
+  entry: StoredLogEntry,
+  ts: number,
+): AcpMessage | null {
+  const notification = entry.notification as
+    | { method?: string; params?: { update?: Record<string, unknown> } }
+    | undefined;
+  if (notification?.method !== "session/update") return null;
+  const update = notification.params?.update;
+  const meta = update?._meta as Record<string, unknown> | undefined;
+  if (
+    !update ||
+    update.sessionUpdate !== "user_message_chunk" ||
+    meta?.[IMPORTED_USER_PROMPT_META_KEY] !== true
+  ) {
+    return null;
+  }
+  const content = update.content as
+    | { type?: string; text?: string }
+    | undefined;
+  if (content?.type !== "text" || !content.text) return null;
+  return createUserMessageEvent(content.text, ts);
 }
 
 /**

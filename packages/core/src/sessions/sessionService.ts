@@ -289,6 +289,11 @@ export interface ConnectParams {
   adapter?: "claude" | "codex";
   model?: string;
   reasoningLevel?: string;
+  /**
+   * Session ID of an imported Claude Code CLI transcript already copied into
+   * the app's Claude config dir. The agent loads it and replays its history.
+   */
+  importedSessionId?: string;
 }
 
 export interface CloudConnectionAuth {
@@ -607,6 +612,7 @@ export class SessionService {
       adapter,
       model,
       reasoningLevel,
+      importedSessionId,
     } = params;
     const { id: taskId, latest_run: latestRun } = task;
     const taskTitle = task.title || task.description || "Task";
@@ -716,6 +722,7 @@ export class SessionService {
           adapter,
           model,
           reasoningLevel,
+          importedSessionId,
         );
       }
     } catch (error) {
@@ -1195,6 +1202,7 @@ export class SessionService {
     adapter?: "claude" | "codex",
     model?: string,
     reasoningLevel?: string,
+    importedSessionId?: string,
   ): Promise<void> {
     const { client } = auth;
     if (!client) {
@@ -1221,12 +1229,32 @@ export class SessionService {
         ? (reasoningLevel as EffortLevel)
         : undefined,
       model: preferredModel,
+      importedSessionId,
     });
 
     const session = createBaseSession(taskRun.id, taskId, taskTitle);
     session.channel = result.channel;
     session.status = "connected";
     session.adapter = adapter;
+
+    // An imported CLI session had its history replayed during agent.start;
+    // the replay is already in the local run log, so load it for the UI.
+    if (importedSessionId) {
+      try {
+        const { rawEntries } = await this.fetchSessionLogs(
+          undefined,
+          taskRun.id,
+        );
+        session.events = convertStoredEntriesToEvents(rawEntries);
+      } catch {
+        this.d.log.warn(
+          "Failed to load replayed history for imported session",
+          {
+            taskRunId: taskRun.id,
+          },
+        );
+      }
+    }
     const configOptions = result.configOptions as
       | SessionConfigOption[]
       | undefined;
