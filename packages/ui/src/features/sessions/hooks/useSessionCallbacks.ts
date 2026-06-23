@@ -1,3 +1,4 @@
+import { xmlToContent } from "@posthog/core/message-editor/content";
 import {
   combineQueuedCloudPrompts,
   promptToQueuedEditorContent,
@@ -48,7 +49,16 @@ export function useSessionCallbacks({
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
+  // Serialized text of the most recent non-steer send, used to refill the
+  // composer if that turn is cancelled before the agent starts working.
+  const lastSentTextRef = useRef<string | null>(null);
+
   const messagingMode = useMessagingMode(taskId);
+
+  const isViewingTask = useCallback(() => {
+    const view = getAppViewSnapshot();
+    return view?.type === "task-detail" && view?.taskId === taskId;
+  }, [taskId]);
 
   const handleSendPrompt = useCallback(
     async (text: string) => {
@@ -71,14 +81,17 @@ export function useSessionCallbacks({
       try {
         markAsViewed(taskId);
         markActivity(taskId);
-        await sessionService.sendPrompt(taskId, text, {
-          steer: messagingMode === "steer",
-        });
 
-        const view = getAppViewSnapshot();
-        const isViewingTask =
-          view?.type === "task-detail" && view?.taskId === taskId;
-        if (isViewingTask) {
+        const steer = messagingMode === "steer";
+        // A steer folds into the running turn rather than starting its own, so it
+        // isn't a candidate for refill-on-cancel. Whether a non-steer send starts
+        // a turn or is queued, refill stays correct: a queued message is restored
+        // from the queue on cancel (below), which takes priority over this text.
+        lastSentTextRef.current = steer ? null : text;
+
+        await sessionService.sendPrompt(taskId, text, { steer });
+
+        if (isViewingTask()) {
           markAsViewed(taskId);
         }
       } catch (error) {
@@ -96,10 +109,18 @@ export function useSessionCallbacks({
       task.latest_run,
       sessionService,
       messagingMode,
+      isViewingTask,
     ],
   );
 
   const handleCancelPrompt = useCallback(async () => {
+    // Consume the stash up front so a second cancel can't refill twice. The
+    // cancelled message stays in history (it's already in the agent's context);
+    // we only refill the composer when the agent hadn't started working yet.
+    const justSent = lastSentTextRef.current;
+    lastSentTextRef.current = null;
+    const agentStarted = sessionService.hasAgentStartedCurrentTurn(taskId);
+
     const queuedMessages = sessionStoreSetters.dequeueMessages(taskId);
     const result = await sessionService.cancelPrompt(taskId);
     log.info("Prompt cancelled", { success: result });
@@ -109,6 +130,7 @@ export function useSessionCallbacks({
       : queuedMessages.map((message) => message.content).join("\n\n");
 
     if (queuedPrompt) {
+      // Queued messages are the more recent intent, so they win over justSent.
       const pendingContent = sessionRef.current?.isCloud
         ? promptToQueuedEditorContent(queuedPrompt)
         : {
@@ -121,9 +143,13 @@ export function useSessionCallbacks({
           };
 
       setPendingContent(taskId, pendingContent);
+    } else if (justSent && !agentStarted && isViewingTask()) {
+      // Refill the just-sent message so it can be edited and re-sent, but only
+      // while focused on this chat. xmlToContent restores attachment chips.
+      setPendingContent(taskId, xmlToContent(justSent));
     }
     requestFocus(taskId);
-  }, [taskId, setPendingContent, requestFocus, sessionService]);
+  }, [taskId, setPendingContent, requestFocus, sessionService, isViewingTask]);
 
   const handleRetry = useCallback(async () => {
     try {

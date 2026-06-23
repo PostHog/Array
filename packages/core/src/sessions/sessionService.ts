@@ -2177,6 +2177,31 @@ export class SessionService {
   }
 
   /**
+   * Whether the agent has begun working on the turn currently in flight. Used to
+   * decide whether cancelling can refill the composer with the just-sent message:
+   * before the prompt echo lands the message is still optimistic and no output is
+   * possible (refill is safe); once any output has streamed the turn was real
+   * work, so the message stays put. Works for local and cloud — both populate
+   * optimistic items and events from their respective transports.
+   */
+  hasAgentStartedCurrentTurn(taskId: string): boolean {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return false;
+    // Echo not yet processed: the just-sent prompt is still an optimistic item
+    // (cleared atomically when the echo arrives), so no output can exist for it.
+    if (session.optimisticItems.length > 0) return false;
+    // Echo landed: the most recent session/prompt is this turn — any agent event
+    // after it (text, thinking, or a tool call) means work has started.
+    for (let i = session.events.length - 1; i >= 0; i--) {
+      const msg = session.events[i].message;
+      if (isJsonRpcRequest(msg) && msg.method === "session/prompt")
+        return false;
+      if (classifyTurnEventKind(msg) !== "other") return true;
+    }
+    return false;
+  }
+
+  /**
    * Cancel the current prompt.
    */
   async cancelPrompt(taskId: string): Promise<boolean> {
