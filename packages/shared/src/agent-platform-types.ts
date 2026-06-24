@@ -470,7 +470,7 @@ export interface AgentSessionsListParams {
   agent_user_id?: string;
   created_after?: string;
   created_before?: string;
-  /** Case-insensitive server-side match over the session id and external key. */
+  /** Case-insensitive server-side match over the conversation text, id, and external key. */
   search?: string;
 }
 

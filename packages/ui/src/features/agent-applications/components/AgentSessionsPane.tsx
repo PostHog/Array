@@ -103,7 +103,7 @@ export function AgentSessionsPane({ idOrSlug }: { idOrSlug: string }) {
               type="search"
               value={queryInput}
               onChange={(e) => changeQuery(e.currentTarget.value)}
-              placeholder="Search by id or external key…"
+              placeholder="Search conversations…"
               aria-label="Search sessions"
               className="h-8 w-full rounded-(--radius-2) border border-border bg-(--color-panel-solid) pr-2 pl-8 text-[12.5px]"
             />
