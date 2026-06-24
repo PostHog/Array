@@ -715,6 +715,72 @@ describe("AuthService", () => {
       expect(service.getState().status).toBe("restoring");
       expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(3);
     });
+
+    it("uses the current access token when a preemptive refresh fails before expiry", async () => {
+      vi.useFakeTimers();
+      try {
+        oauthFlow.startFlow.mockResolvedValue(
+          mockTokenResponse({
+            accessToken: "current-access-token",
+            refreshToken: "current-refresh-token",
+          }),
+        );
+        stubAuthFetch();
+
+        await service.initialize();
+        await service.login("us");
+
+        oauthFlow.refreshToken.mockReset();
+        oauthFlow.refreshToken.mockResolvedValue({
+          success: false,
+          error: "Token refresh failed: 500 Internal Server Error",
+          errorCode: "server_error",
+        });
+
+        await vi.advanceTimersByTimeAsync(3_599_500);
+
+        await expect(service.getValidAccessToken()).resolves.toMatchObject({
+          accessToken: "current-access-token",
+        });
+        expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(3);
+        expect(service.getState().status).toBe("authenticated");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not use the current access token when refresh token auth fails", async () => {
+      vi.useFakeTimers();
+      try {
+        oauthFlow.startFlow.mockResolvedValue(
+          mockTokenResponse({
+            accessToken: "current-access-token",
+            refreshToken: "current-refresh-token",
+          }),
+        );
+        stubAuthFetch();
+
+        await service.initialize();
+        await service.login("us");
+
+        oauthFlow.refreshToken.mockReset();
+        oauthFlow.refreshToken.mockResolvedValue({
+          success: false,
+          error: "Token revoked",
+          errorCode: "auth_error",
+        });
+
+        await vi.advanceTimersByTimeAsync(3_599_500);
+
+        await expect(service.getValidAccessToken()).rejects.toThrow(
+          "Token revoked",
+        );
+        expect(service.getState().status).toBe("anonymous");
+        expect(sessionPort.getCurrent()).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe("transient org fetch failures", () => {
