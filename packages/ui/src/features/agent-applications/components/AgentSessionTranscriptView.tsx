@@ -41,7 +41,7 @@ export function AgentSessionTranscriptView({
       <Flex
         direction="column"
         gap="3"
-        className="relative shrink-0 cursor-default select-none px-6 pt-5 pb-3"
+        className="relative shrink-0 cursor-default select-none px-6 pt-5"
       >
         <AgentBuilderHeaderControls />
         <Link
