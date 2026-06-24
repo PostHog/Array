@@ -113,8 +113,10 @@ function RootLayout() {
   const canGoBack = useCanGoBack();
   // Forward availability isn't exposed by the router (and history.length counts
   // pre-app entries, so it can't be compared to __TSR_index). Track the newest
-  // index we've reached: a PUSH/REPLACE wipes the forward stack and becomes the
-  // new newest; BACK/GO move us below it. Forward is live while we're below it.
+  // index we've reached: only a PUSH wipes the forward stack, so it resets the
+  // newest to the current index. REPLACE mutates the current entry in place
+  // (index unchanged, forward entries intact) and BACK/GO just move within the
+  // existing stack, so both keep the max. Forward is live while below it.
   const historyIndex = useRouterState({
     select: (s) => s.location.state.__TSR_index,
   });
@@ -123,9 +125,7 @@ function RootLayout() {
     return router.history.subscribe(({ location, action }) => {
       const idx = location.state.__TSR_index;
       setNewestIndex((prev) =>
-        action.type === "PUSH" || action.type === "REPLACE"
-          ? idx
-          : Math.max(prev, idx),
+        action.type === "PUSH" ? idx : Math.max(prev, idx),
       );
     });
   }, [router]);

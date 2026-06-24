@@ -8,6 +8,7 @@ import {
   useModeConfigOptionForTask,
   usePendingPermissionsForTask,
 } from "@posthog/ui/features/sessions/useSession";
+import { toast } from "@posthog/ui/primitives/toast";
 import { Dialog, VisuallyHidden } from "@radix-ui/themes";
 import { useCallback, useMemo } from "react";
 
@@ -38,18 +39,26 @@ export function CanvasPermissionDialog({ taskId }: { taskId: string }) {
       answers?: Record<string, string>,
     ) => {
       if (!firstPendingPermission) return;
-      const plan = await sessionService.resolvePermissionSelection(
-        taskId,
-        firstPendingPermission,
-        optionId,
-        modeOption,
-        customInput,
-        answers,
-      );
-      // "Type here to tell the agent…" with no custom-input option attached is
-      // re-sent as a steering prompt, same as the task view.
-      if (plan.resendPromptText) {
-        await sessionService.sendPrompt(taskId, plan.resendPromptText);
+      try {
+        const plan = await sessionService.resolvePermissionSelection(
+          taskId,
+          firstPendingPermission,
+          optionId,
+          modeOption,
+          customInput,
+          answers,
+        );
+        // "Type here to tell the agent…" with no custom-input option attached
+        // is re-sent as a steering prompt, same as the task view. The response
+        // is already resolved by here, so a send failure must be surfaced —
+        // otherwise the user's text is silently dropped.
+        if (plan.resendPromptText) {
+          await sessionService.sendPrompt(taskId, plan.resendPromptText);
+        }
+      } catch (error) {
+        toast.error("Couldn't send your response to the agent", {
+          description: error instanceof Error ? error.message : String(error),
+        });
       }
     },
     [firstPendingPermission, taskId, modeOption, sessionService],
@@ -57,10 +66,16 @@ export function CanvasPermissionDialog({ taskId }: { taskId: string }) {
 
   const handleCancel = useCallback(async () => {
     if (!firstPendingPermission) return;
-    await sessionService.cancelPermissionAndPrompt(
-      taskId,
-      firstPendingPermission.toolCallId,
-    );
+    try {
+      await sessionService.cancelPermissionAndPrompt(
+        taskId,
+        firstPendingPermission.toolCallId,
+      );
+    } catch (error) {
+      toast.error("Couldn't cancel the request", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
   }, [firstPendingPermission, taskId, sessionService]);
 
   const open = !!firstPendingPermission;
