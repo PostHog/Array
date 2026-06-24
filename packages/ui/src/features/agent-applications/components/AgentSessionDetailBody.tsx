@@ -67,9 +67,12 @@ function cronFiredBy(
 export function AgentSessionDetailBody({
   idOrSlug,
   sessionId,
+  showStateBadge = true,
 }: {
   idOrSlug: string;
   sessionId: string;
+  /** Hide the state badge when the host already shows it (full-screen header). */
+  showStateBadge?: boolean;
 }) {
   const {
     data: session,
@@ -100,7 +103,7 @@ export function AgentSessionDetailBody({
       >
         <Flex align="center" justify="between" gap="2">
           <Flex align="center" gap="2" wrap="wrap">
-            {session ? (
+            {showStateBadge && session ? (
               <Badge color={sessionStateColor(session.state)}>
                 {session.state}
               </Badge>
