@@ -4646,6 +4646,60 @@ export class PostHogAPIClient {
   }
 
   /**
+   * Write a single bundle file on a draft revision. The server accepts
+   * `agent.md` and `skills/<id>/SKILL.md` paths only — tool source / schema
+   * stay read-only this round. Ready / live / archived revisions return 409.
+   */
+  async updateAgentDraftBundleFile(
+    idOrSlug: string,
+    revisionId: string,
+    filePath: string,
+    content: string,
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/bundle/file/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "put",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({ path: filePath, content }),
+      },
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
+  /**
+   * Bulk-import a set of `.md` files into a draft revision's bundle — the
+   * migration hatch for porting an existing multi-file agent in one paste.
+   * Sets `agent_md` if present and merges `skills[]` by id (adds new ids,
+   * overwrites bodies for existing ids; skills not mentioned are left alone).
+   * Draft-only; ready / live / archived return 409.
+   */
+  async importAgentDraftBundle(
+    idOrSlug: string,
+    revisionId: string,
+    body: {
+      agent_md?: string;
+      skills?: { id: string; description?: string; body: string }[];
+    },
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/bundle/import/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify(body),
+      },
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
+  /**
    * A revision's bundle, flattened to per-file rows. The server returns a typed
    * `{ bundle: { agent_md, skills[], tools[] } }`; we expand it to the canonical
    * file paths the explorer renders (agent.md, skills/<id>/SKILL.md,

@@ -21,6 +21,7 @@ import {
   WrenchIcon,
 } from "@phosphor-icons/react";
 import type {
+  AgentRevisionState,
   AgentSpec,
   BundleFile,
 } from "@posthog/shared/agent-platform-types";
@@ -29,12 +30,13 @@ import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
 import { Flex, Text } from "@radix-ui/themes";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentEnvKeys } from "../hooks/useAgentEnvKeys";
 import { useAgentRevision } from "../hooks/useAgentRevision";
 import { useAgentRevisionBundle } from "../hooks/useAgentRevisionBundle";
 import { useAgentRevisions } from "../hooks/useAgentRevisions";
+import { useUpdateAgentDraftBundleFile } from "../hooks/useUpdateAgentDraftBundleFile";
 import { triggerRequiredSecretsFor } from "../utils/triggerSecrets";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 import { AgentRevisionBar } from "./AgentRevisionBar";
@@ -62,6 +64,8 @@ const USAGE_HOST = "https://<ingress-host>";
 interface Ctx {
   idOrSlug: string;
   revisionId: string;
+  /** State of the revision being viewed — gates the editable .md surface. */
+  revisionState: AgentRevisionState;
   ingressBaseUrl?: string;
   setKeys: string[];
   onSelect: (node: string) => void;
@@ -398,6 +402,13 @@ export function AgentConfigurationPane({
     ? {
         idOrSlug,
         revisionId,
+        // `revision` may still be loading; fall back to the picker's view so
+        // the editable-on-draft gating doesn't briefly flash on for a ready
+        // revision while data resolves. Default to `ready` (immutable).
+        revisionState:
+          revision?.state ??
+          revisions?.find((r) => r.id === revisionId)?.state ??
+          "ready",
         ingressBaseUrl: application?.ingress_base_url ?? undefined,
         setKeys,
         onSelect: onSelectNode,
@@ -620,6 +631,15 @@ function DetailBody({
         <BundleFileBody
           file={byPath(files, "agent.md")}
           emptyLabel="No agent.md in this revision."
+          editable={
+            ctx.revisionState === "draft"
+              ? {
+                  idOrSlug: ctx.idOrSlug,
+                  revisionId: ctx.revisionId,
+                  path: "agent.md",
+                }
+              : undefined
+          }
         />
       );
     case "triggers":
@@ -645,6 +665,8 @@ function DetailBody({
         <SkillBody
           skill={findById(arr(spec.skills), id)}
           file={byPath(files, `skills/${id}/SKILL.md`)}
+          id={id}
+          ctx={ctx}
         />
       );
     case "mcps":
@@ -1318,22 +1340,37 @@ function SkillsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
 function SkillBody({
   skill,
   file,
+  id,
+  ctx,
 }: {
   skill: unknown;
   file: BundleFile | undefined;
+  id: string;
+  ctx: Ctx;
 }) {
   const r = rec(skill);
+  const skillId = str(r.id) ?? id;
+  const path = `skills/${skillId}/SKILL.md`;
   return (
     <Flex direction="column" gap="2">
-      <Row label="id" value={str(r.id) ?? "skill"} mono />
+      <Row label="id" value={skillId} mono />
       <Text className="text-[12.5px] text-gray-11 leading-snug">
         {str(r.description) ?? "No description."}
       </Text>
       <div className="mt-2">
-        <Subhead>body · skills/{str(r.id)}/SKILL.md</Subhead>
+        <Subhead>body · {path}</Subhead>
         <BundleFileBody
           file={file}
           emptyLabel="Body not in the loaded bundle."
+          editable={
+            ctx.revisionState === "draft"
+              ? {
+                  idOrSlug: ctx.idOrSlug,
+                  revisionId: ctx.revisionId,
+                  path,
+                }
+              : undefined
+          }
         />
       </div>
     </Flex>
@@ -1682,13 +1719,31 @@ function SecretBody({
   );
 }
 
+interface EditableBundle {
+  idOrSlug: string;
+  revisionId: string;
+  /** Canonical bundle path written through the per-file PUT endpoint. */
+  path: string;
+}
+
 function BundleFileBody({
   file,
   emptyLabel = "Not in the loaded bundle.",
+  editable,
 }: {
   file: BundleFile | undefined;
   emptyLabel?: string;
+  editable?: EditableBundle;
 }) {
+  if (editable) {
+    return (
+      <EditableMarkdownBody
+        file={file}
+        emptyLabel={emptyLabel}
+        editable={editable}
+      />
+    );
+  }
   if (!file) return <Muted>{emptyLabel}</Muted>;
   if (file.language === "markdown") {
     return (
@@ -1698,6 +1753,108 @@ function BundleFileBody({
     );
   }
   return <CodeBlock>{file.content}</CodeBlock>;
+}
+
+/**
+ * Edit/view toggle backed by the per-file PUT endpoint. Used for `agent.md`
+ * and `skills/<id>/SKILL.md` on draft revisions. Tool source / schema stay on
+ * the read-only branch above. When `file` is undefined (e.g. a skill scaffold
+ * with no body yet) we still let the user write fresh content for `path`.
+ */
+function EditableMarkdownBody({
+  file,
+  emptyLabel,
+  editable,
+}: {
+  file: BundleFile | undefined;
+  emptyLabel: string;
+  editable: EditableBundle;
+}) {
+  const initial = file?.content ?? "";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(initial);
+  const mutation = useUpdateAgentDraftBundleFile(
+    editable.idOrSlug,
+    editable.revisionId,
+  );
+
+  // Reset local state when the underlying content changes — covers the
+  // post-save refetch landing and navigation between files (two files with
+  // byte-identical content is vanishingly rare). We deliberately don't reset
+  // mutation state; a fresh `mutate()` clears any inline error anyway.
+  useEffect(() => {
+    setDraft(initial);
+    setEditing(false);
+  }, [initial]);
+
+  if (!editing) {
+    return (
+      <Flex direction="column" gap="2">
+        <Flex justify="end">
+          <Button
+            size="1"
+            variant="soft"
+            color="gray"
+            onClick={() => setEditing(true)}
+          >
+            Edit
+          </Button>
+        </Flex>
+        {file ? (
+          <div className="text-[13px]">
+            <MarkdownRenderer content={file.content} />
+          </div>
+        ) : (
+          <Muted>{emptyLabel}</Muted>
+        )}
+      </Flex>
+    );
+  }
+
+  return (
+    <Flex direction="column" gap="2">
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.currentTarget.value)}
+        disabled={mutation.isPending}
+        spellCheck={false}
+        className="min-h-[280px] w-full resize-y rounded-(--radius-2) border border-border bg-(--color-panel-solid) p-3 text-[12.5px] text-gray-12 [font-family:var(--font-mono)] focus:border-(--accent-7) focus:outline-none"
+      />
+      {mutation.isError ? (
+        <Text className="text-(--red-11) text-[12px]">
+          {mutation.error?.message ?? "Save failed"}
+        </Text>
+      ) : null}
+      <Flex justify="end" gap="2">
+        <Button
+          size="1"
+          variant="soft"
+          color="gray"
+          disabled={mutation.isPending}
+          onClick={() => {
+            setDraft(initial);
+            setEditing(false);
+            mutation.reset();
+          }}
+        >
+          Cancel
+        </Button>
+        <Button
+          size="1"
+          loading={mutation.isPending}
+          disabled={draft === initial}
+          onClick={() =>
+            mutation.mutate(
+              { path: editable.path, content: draft },
+              { onSuccess: () => setEditing(false) },
+            )
+          }
+        >
+          Save
+        </Button>
+      </Flex>
+    </Flex>
+  );
 }
 
 function Row({
