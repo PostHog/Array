@@ -1,0 +1,90 @@
+import { renderHook } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Capture the mutationFn the hook hands to react-query so we can exercise the
+// create-draft-vs-patch branching directly, without a live QueryClient.
+let mutationFn: (vars: {
+  revision: { id: string; state: string };
+  spec: unknown;
+}) => Promise<unknown>;
+
+vi.mock("@tanstack/react-query", () => ({
+  useMutation: (opts: { mutationFn: typeof mutationFn }) => {
+    mutationFn = opts.mutationFn;
+    return { mutate: vi.fn() };
+  },
+  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+}));
+
+const client = {
+  createAgentDraftRevisionFrom: vi.fn(),
+  updateAgentRevisionSpec: vi.fn(),
+};
+
+vi.mock("@posthog/ui/features/auth/authClient", () => ({
+  useAuthenticatedClient: () => client,
+}));
+vi.mock("../../auth/store", () => ({
+  useAuthStateValue: () => 1,
+}));
+
+import { useApplyAgentSpec } from "./useApplyAgentSpec";
+
+describe("useApplyAgentSpec", () => {
+  beforeEach(() => {
+    client.createAgentDraftRevisionFrom.mockReset();
+    client.updateAgentRevisionSpec.mockReset();
+  });
+
+  it("PATCHes a draft in place — no new draft branched", async () => {
+    client.updateAgentRevisionSpec.mockResolvedValue({
+      id: "d1",
+      state: "draft",
+    });
+    renderHook(() => useApplyAgentSpec("agent-slug", "app-1"));
+    const spec = { model_policy: { mode: "auto", level: "high" } };
+
+    await mutationFn({ revision: { id: "d1", state: "draft" }, spec });
+
+    expect(client.createAgentDraftRevisionFrom).not.toHaveBeenCalled();
+    expect(client.updateAgentRevisionSpec).toHaveBeenCalledWith(
+      "agent-slug",
+      "d1",
+      spec,
+    );
+  });
+
+  it("clones to a fresh draft then PATCHes it when the source isn't a draft", async () => {
+    client.createAgentDraftRevisionFrom.mockResolvedValue({
+      id: "new-draft",
+      state: "draft",
+    });
+    client.updateAgentRevisionSpec.mockResolvedValue({
+      id: "new-draft",
+      state: "draft",
+    });
+    renderHook(() => useApplyAgentSpec("agent-slug", "app-1"));
+    const spec = { model_policy: { mode: "manual", models: [{ model: "x" }] } };
+
+    await mutationFn({ revision: { id: "live-1", state: "live" }, spec });
+
+    expect(client.createAgentDraftRevisionFrom).toHaveBeenCalledWith(
+      "app-1",
+      "live-1",
+    );
+    expect(client.updateAgentRevisionSpec).toHaveBeenCalledWith(
+      "agent-slug",
+      "new-draft",
+      spec,
+    );
+  });
+
+  it("throws when a clone is needed but the application id is missing", async () => {
+    renderHook(() => useApplyAgentSpec("agent-slug", undefined));
+
+    await expect(
+      mutationFn({ revision: { id: "live-1", state: "live" }, spec: {} }),
+    ).rejects.toThrow(/Application/);
+    expect(client.createAgentDraftRevisionFrom).not.toHaveBeenCalled();
+  });
+});

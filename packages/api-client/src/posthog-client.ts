@@ -4660,7 +4660,9 @@ export class PostHogAPIClient {
         }),
       },
     });
-    return (await response.json()) as AgentRevision;
+    // new_draft wraps the created revision: `{ revision, source_revision_id }`.
+    const data = (await response.json()) as { revision: AgentRevision };
+    return data.revision;
   }
 
   /** The served-model catalog + curated auto-level → model map (project-agnostic;
