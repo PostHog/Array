@@ -848,7 +848,7 @@ describe("PostHogAPIClient", () => {
         json: async () => ({ id: "draft-1", state: "draft" }),
       });
       const client = makeClient(fetch);
-      const spec = { model_policy: { mode: "auto", level: "high" } };
+      const spec = { models: { mode: "auto", level: "high" } };
 
       await client.updateAgentRevisionSpec(
         "agent-slug",

@@ -76,7 +76,7 @@ export interface AgentModelEntry {
 /**
  * How a revision picks its model. `auto` resolves a maintained, priority-ordered,
  * cross-provider list from `level` at runtime; `manual` pins an author-ordered
- * fallback list (primary first). Mirrors `spec.model_policy` in the backend.
+ * fallback list (primary first). Mirrors `spec.models` in the backend.
  */
 export type AgentModelPolicy =
   | { mode: "auto"; level?: AgentModelLevel; reasoning?: AgentReasoningEffort }
@@ -111,8 +111,8 @@ export interface ModelCatalog {
  */
 export interface AgentSpec {
   /** Model selection. `model` is the legacy single-string form; current specs
-   *  carry `model_policy`. One or the other is present. */
-  model_policy?: AgentModelPolicy;
+   *  carry `models`. One or the other is present. */
+  models?: AgentModelPolicy;
   model?: string;
   triggers?: unknown[];
   tools?: unknown[];
@@ -125,7 +125,6 @@ export interface AgentSpec {
     max_tool_calls?: number;
     max_wall_seconds?: number;
   };
-  entrypoint?: string;
   reasoning?: AgentReasoningEffort;
   [key: string]: unknown;
 }

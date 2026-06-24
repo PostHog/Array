@@ -706,19 +706,14 @@ function byPath(files: BundleFile[], path: string): BundleFile | undefined {
 
 function ModelBody({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   return (
-    <Flex direction="column" gap="4">
-      <AgentModelConfig
-        spec={spec}
-        idOrSlug={ctx.idOrSlug}
-        applicationId={ctx.applicationId}
-        revisionId={ctx.revisionId}
-        revisionState={ctx.revisionState}
-        onSelectRevision={ctx.onSelectRevision}
-      />
-      {spec.entrypoint ? (
-        <Row label="entrypoint" value={spec.entrypoint} mono />
-      ) : null}
-    </Flex>
+    <AgentModelConfig
+      spec={spec}
+      idOrSlug={ctx.idOrSlug}
+      applicationId={ctx.applicationId}
+      revisionId={ctx.revisionId}
+      revisionState={ctx.revisionState}
+      onSelectRevision={ctx.onSelectRevision}
+    />
   );
 }
 

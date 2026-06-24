@@ -50,7 +50,7 @@ export function AgentModelConfig({
 }) {
   const { catalog } = useModelCatalog();
   const apply = useApplyAgentSpec(idOrSlug, applicationId);
-  const initial = spec.model_policy;
+  const initial = spec.models;
 
   const [mode, setMode] = useState<"auto" | "manual">(initial?.mode ?? "auto");
   const [level, setLevel] = useState<AgentModelLevel>(
@@ -85,11 +85,20 @@ export function AgentModelConfig({
     setManual(initial?.mode === "manual" ? initial.models : []);
   }
 
+  function changeMode(next: "auto" | "manual") {
+    // Switching to manual with an empty list seeds it from the level you were
+    // on, so you start from auto's choices and edit rather than a blank slate.
+    if (next === "manual" && manual.length === 0) {
+      setManual((catalog.levels[level] ?? []).map((model) => ({ model })));
+    }
+    setMode(next);
+  }
+
   function save() {
     apply.mutate(
       {
         revision: { id: revisionId, state: revisionState ?? "draft" },
-        spec: { ...spec, model_policy: policy },
+        spec: { ...spec, models: policy },
       },
       { onSuccess: (rev) => onSelectRevision?.(rev.id) },
     );
@@ -137,7 +146,7 @@ export function AgentModelConfig({
           label="mode"
           icon={<SlidersHorizontalIcon size={14} />}
           value={mode}
-          onChange={(v) => setMode(v as "auto" | "manual")}
+          onChange={(v) => changeMode(v as "auto" | "manual")}
           options={MODE_OPTIONS}
         />
 

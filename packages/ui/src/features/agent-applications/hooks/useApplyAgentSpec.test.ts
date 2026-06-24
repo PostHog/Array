@@ -42,7 +42,7 @@ describe("useApplyAgentSpec", () => {
       state: "draft",
     });
     renderHook(() => useApplyAgentSpec("agent-slug", "app-1"));
-    const spec = { model_policy: { mode: "auto", level: "high" } };
+    const spec = { models: { mode: "auto", level: "high" } };
 
     await mutationFn({ revision: { id: "d1", state: "draft" }, spec });
 
@@ -64,7 +64,7 @@ describe("useApplyAgentSpec", () => {
       state: "draft",
     });
     renderHook(() => useApplyAgentSpec("agent-slug", "app-1"));
-    const spec = { model_policy: { mode: "manual", models: [{ model: "x" }] } };
+    const spec = { models: { mode: "manual", models: [{ model: "x" }] } };
 
     await mutationFn({ revision: { id: "live-1", state: "live" }, spec });
 
