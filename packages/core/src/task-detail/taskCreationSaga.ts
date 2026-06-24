@@ -263,15 +263,22 @@ export class TaskCreationSaga extends Saga<
           // The conversation UI parses them identically. Order: user's message,
           // then personalization (user-level), then channel context (workspace-
           // level background).
-          const customInstructionsText = buildCustomInstructionsText(
-            input.customInstructions,
-          );
+          const messageText = transport?.messageText;
+          // Personalization augments the user's first message — fold it in only
+          // when there is message text to augment. A file-only upload with no
+          // typed text has nothing to personalize, and a block-only message
+          // would strip to an empty bubble in the UI and get deduped against the
+          // sandbox echo, leaving a blank placeholder. Channel context renders as
+          // a chip even alone, so it isn't gated this way.
+          const customInstructionsText = messageText
+            ? buildCustomInstructionsText(input.customInstructions)
+            : null;
           const channelContextText = buildChannelContextText(
             input.channelContext,
             input.channelName,
           );
           const pendingUserMessage =
-            [transport?.messageText, customInstructionsText, channelContextText]
+            [messageText, customInstructionsText, channelContextText]
               .filter((part): part is string => !!part)
               .join("\n\n") || undefined;
 

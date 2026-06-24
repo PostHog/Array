@@ -59,8 +59,6 @@ export function prepareTaskInput(
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,
     channelName: options.channelName,
-    // Local tasks get custom instructions via the workspace-server system
-    // prompt; only cloud needs it folded into the first message here.
     customInstructions: isCloud ? options.customInstructions : undefined,
     allowNoRepo: options.allowNoRepo,
   };
