@@ -563,8 +563,10 @@ export function TaskInput({
     modelOption?.type === "select" ? modelOption.currentValue : undefined;
   const adapterDefault = adapter === "codex" ? "auto" : "plan";
   const modeFallback =
-    defaultInitialTaskMode === "last_used"
-      ? (lastUsedInitialTaskMode ?? adapterDefault)
+    defaultInitialTaskMode === "last_used" &&
+    lastUsedInitialTaskMode &&
+    isValidConfigValue(modeOption, lastUsedInitialTaskMode)
+      ? lastUsedInitialTaskMode
       : adapterDefault;
   const currentExecutionMode =
     getCurrentModeFromConfigOptions(modeOption ? [modeOption] : undefined) ??
