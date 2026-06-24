@@ -64,8 +64,8 @@ export function AgentSessionsPane({ idOrSlug }: { idOrSlug: string }) {
   return (
     <AgentDetailLayout idOrSlug={idOrSlug} activeTab="sessions">
       <Flex direction="column" gap="4">
-        <Flex align="center" justify="between" gap="3">
-          <Flex gap="1.5" wrap="wrap">
+        <Flex align="center" gap="3" wrap="wrap">
+          <Flex gap="2" wrap="wrap" className="min-w-0 flex-1">
             {FILTERS.map((f) => (
               <button
                 key={f.id}
@@ -81,13 +81,13 @@ export function AgentSessionsPane({ idOrSlug }: { idOrSlug: string }) {
               </button>
             ))}
           </Flex>
-          <Flex align="center" gap="3" className="shrink-0">
+          <Flex align="center" gap="3" wrap="wrap" className="min-w-0 shrink-0">
             {users.length > 0 ? (
               <select
                 value={userId}
                 onChange={(e) => changeUser(e.target.value)}
                 aria-label="Filter by user"
-                className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2 py-1 text-[12px] text-gray-12"
+                className="min-w-0 max-w-full rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2 py-1 text-[12px] text-gray-12"
               >
                 <option value="all">All users</option>
                 {users.map((u) => (

@@ -43,8 +43,8 @@ export function AgentApprovalsPane({
     : null;
 
   const filters = (
-    <Flex align="center" justify="between" gap="3">
-      <Flex gap="1.5" wrap="wrap">
+    <Flex align="center" justify="between" gap="3" wrap="wrap">
+      <Flex gap="2" wrap="wrap" className="min-w-0">
         {APPROVAL_FILTERS.map((f) => (
           <button
             key={f.id}

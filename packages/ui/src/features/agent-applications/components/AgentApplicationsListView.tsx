@@ -2,6 +2,7 @@ import {
   ArrowSquareOutIcon,
   CaretRightIcon,
   LockKeyIcon,
+  MagnifyingGlassIcon,
   RobotIcon,
 } from "@phosphor-icons/react";
 import type {
@@ -10,10 +11,11 @@ import type {
 } from "@posthog/shared/agent-platform-types";
 import { AgentsTabLayout } from "@posthog/ui/features/agents/components/AgentsTabLayout";
 import { Badge } from "@posthog/ui/primitives/Badge";
+import { Button } from "@posthog/ui/primitives/Button";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import { useAgentAnalytics } from "../hooks/useAgentAnalytics";
 import { useAgentApplications } from "../hooks/useAgentApplications";
@@ -24,11 +26,15 @@ import { AgentAnalyticsKpiStrip } from "./AgentAnalyticsView";
 import { AgentDetailEmptyState } from "./AgentDetailLayout";
 import { AgentFleetLiveSessionsPanel } from "./AgentFleetLiveSessionsPanel";
 
+type StatusFilter = "all" | "live" | "drafts";
+
+/** Agents per page in the fleet list. */
+const PAGE_SIZE = 8;
+
 /**
  * The Applications tab. Renders the deployed-agent fleet as the primary
- * surface, with operational / activity / live-now panels appearing below the
- * list only when they have something to say. A quiet fleet still feels like a
- * launchpad: just the agents, sectioned LIVE vs DRAFTS.
+ * surface: a searchable, status-filtered, paged list with the 7-day activity
+ * strip pinned at the top and operational / live-now panels below.
  */
 export function AgentApplicationsListView() {
   const region = useAuthStateValue((s) => s.cloudRegion);
@@ -56,62 +62,68 @@ export function AgentApplicationsListView() {
     return map;
   }, [analytics]);
 
-  // Split LIVE vs DRAFT so the operational view foregrounds what's serving
-  // traffic; drafts dim and section below.
-  const { liveApps, draftApps } = useMemo(() => {
-    const live: AgentApplication[] = [];
-    const draft: AgentApplication[] = [];
-    for (const app of applications ?? []) {
-      if (app.live_revision != null) live.push(app);
-      else draft.push(app);
-    }
-    return { liveApps: live, draftApps: draft };
-  }, [applications]);
+  // Live agents sort ahead of drafts so the operational view foregrounds what's
+  // serving traffic. Search + status filter + paging keep a large fleet
+  // navigable.
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(0);
+
+  const allApps = useMemo(() => applications ?? [], [applications]);
+  const liveCount = useMemo(
+    () => allApps.filter((a) => a.live_revision != null).length,
+    [allApps],
+  );
+  const draftCount = allApps.length - liveCount;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return allApps
+      .filter((app) => {
+        if (status === "live" && app.live_revision == null) return false;
+        if (status === "drafts" && app.live_revision != null) return false;
+        if (!q) return true;
+        return (
+          app.name.toLowerCase().includes(q) ||
+          (app.slug?.toLowerCase().includes(q) ?? false) ||
+          (app.description?.toLowerCase().includes(q) ?? false)
+        );
+      })
+      .sort(
+        (a, b) =>
+          Number(b.live_revision != null) - Number(a.live_revision != null),
+      );
+  }, [allApps, status, query]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageItems = filtered.slice(
+    safePage * PAGE_SIZE,
+    safePage * PAGE_SIZE + PAGE_SIZE,
+  );
+
+  function changeStatus(next: StatusFilter) {
+    setStatus(next);
+    setPage(0);
+  }
+
+  function changeQuery(next: string) {
+    setQuery(next);
+    setPage(0);
+  }
+
+  const statusFilters: { id: StatusFilter; label: string; count: number }[] = [
+    { id: "all", label: "All", count: allApps.length },
+    { id: "live", label: "Live", count: liveCount },
+    { id: "drafts", label: "Drafts", count: draftCount },
+  ];
 
   return (
     <AgentsTabLayout activeTab="applications">
       <Flex direction="column" gap="6">
-        <section>
-          {isLoading ? (
-            <ApplicationsSkeleton />
-          ) : isError ? (
-            <AgentDetailEmptyState
-              title="Couldn't load applications"
-              description={
-                error instanceof Error
-                  ? error.message
-                  : "The agent platform API returned an error."
-              }
-            />
-          ) : !applications || applications.length === 0 ? (
-            <AgentDetailEmptyState
-              title="No agents yet"
-              description="Deployed agents on the agent platform will show up here."
-            />
-          ) : (
-            <Flex direction="column" gap="5">
-              <AgentsSection
-                label="Live"
-                apps={liveApps}
-                statsById={statsById}
-              />
-              {draftApps.length > 0 ? (
-                <AgentsSection
-                  label="Drafts"
-                  apps={draftApps}
-                  statsById={statsById}
-                  dimmed
-                />
-              ) : null}
-            </Flex>
-          )}
-        </section>
-
-        <OperationalStrip pendingCount={pendingCount} />
-
         {hasAnalytics ? (
           <section>
-            <Flex align="center" justify="between" className="mb-3">
+            <Flex align="center" justify="between" gap="3" className="mb-3">
               <Text className="font-semibold text-[13px] text-gray-12">
                 Activity · last 7 days
               </Text>
@@ -119,7 +131,7 @@ export function AgentApplicationsListView() {
                 <button
                   type="button"
                   onClick={() => openExternalUrl(aiObservabilityUrl)}
-                  className="inline-flex items-center gap-1 text-[12px] text-gray-11 no-underline hover:text-gray-12"
+                  className="inline-flex shrink-0 items-center gap-1 text-[12px] text-gray-11 no-underline hover:text-gray-12"
                 >
                   Open in AI observability
                   <ArrowSquareOutIcon size={12} />
@@ -133,48 +145,127 @@ export function AgentApplicationsListView() {
           </section>
         ) : null}
 
+        <section>
+          {isLoading ? (
+            <ApplicationsSkeleton />
+          ) : isError ? (
+            <AgentDetailEmptyState
+              title="Couldn't load applications"
+              description={
+                error instanceof Error
+                  ? error.message
+                  : "The agent platform API returned an error."
+              }
+            />
+          ) : allApps.length === 0 ? (
+            <AgentDetailEmptyState
+              title="No agents yet"
+              description="Deployed agents on the agent platform will show up here."
+            />
+          ) : (
+            <Flex direction="column" gap="3">
+              <Flex align="center" justify="between" gap="3" wrap="wrap">
+                <div className="relative min-w-0 flex-1 sm:max-w-xs">
+                  <MagnifyingGlassIcon
+                    size={13}
+                    className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 text-gray-10"
+                  />
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => changeQuery(e.currentTarget.value)}
+                    placeholder="Search agents…"
+                    aria-label="Search agents"
+                    className="h-8 w-full rounded-(--radius-2) border border-border bg-(--color-panel-solid) pr-2 pl-8 text-[12.5px]"
+                  />
+                </div>
+                <Flex gap="2" wrap="wrap" className="shrink-0">
+                  {statusFilters.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => changeStatus(f.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] ${
+                        status === f.id
+                          ? "border-(--accent-7) bg-(--accent-3) text-gray-12"
+                          : "border-border text-gray-11 hover:border-(--gray-7)"
+                      }`}
+                    >
+                      {f.label}
+                      <span className="text-[11px] text-gray-10 tabular-nums">
+                        {f.count}
+                      </span>
+                    </button>
+                  ))}
+                </Flex>
+              </Flex>
+
+              {pageItems.length === 0 ? (
+                <AgentDetailEmptyState
+                  title="No matching agents"
+                  description="No agents match your search and filters."
+                />
+              ) : (
+                <Flex direction="column" gap="2">
+                  {pageItems.map((app) => (
+                    <ApplicationRow
+                      key={app.id}
+                      application={app}
+                      stats={statsById.get(app.id)}
+                    />
+                  ))}
+                </Flex>
+              )}
+
+              {filtered.length > 0 ? (
+                <Flex
+                  align="center"
+                  justify="between"
+                  gap="3"
+                  wrap="wrap"
+                  className="pt-1"
+                >
+                  <Text className="text-[11px] text-gray-10 tabular-nums">
+                    Showing {safePage * PAGE_SIZE + 1}–
+                    {safePage * PAGE_SIZE + pageItems.length} of{" "}
+                    {filtered.length}
+                  </Text>
+                  {pageCount > 1 ? (
+                    <Flex align="center" gap="2">
+                      <Button
+                        variant="soft"
+                        size="1"
+                        disabled={safePage === 0}
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                      >
+                        Previous
+                      </Button>
+                      <Text className="text-[11px] text-gray-10 tabular-nums">
+                        {safePage + 1} / {pageCount}
+                      </Text>
+                      <Button
+                        variant="soft"
+                        size="1"
+                        disabled={safePage >= pageCount - 1}
+                        onClick={() =>
+                          setPage((p) => Math.min(pageCount - 1, p + 1))
+                        }
+                      >
+                        Next
+                      </Button>
+                    </Flex>
+                  ) : null}
+                </Flex>
+              ) : null}
+            </Flex>
+          )}
+        </section>
+
+        <OperationalStrip pendingCount={pendingCount} />
+
         <AgentFleetLiveSessionsPanel />
       </Flex>
     </AgentsTabLayout>
-  );
-}
-
-/** A labeled group of agent rows; `dimmed` softens drafts so live agents
- * dominate the visual hierarchy. */
-function AgentsSection({
-  label,
-  apps,
-  statsById,
-  dimmed,
-}: {
-  label: string;
-  apps: AgentApplication[];
-  statsById: Map<string, AgentAnalyticsAgentRow>;
-  dimmed?: boolean;
-}) {
-  if (apps.length === 0) return null;
-  return (
-    <Flex direction="column" gap="2">
-      <Flex align="center" gap="2">
-        <Text className="text-[11px] text-gray-10 uppercase tracking-wide">
-          {label}
-        </Text>
-        <Text className="text-[11px] text-gray-9 tabular-nums">
-          {apps.length}
-        </Text>
-      </Flex>
-      <div className={dimmed ? "opacity-70" : undefined}>
-        <Flex direction="column" gap="2">
-          {apps.map((app) => (
-            <ApplicationRow
-              key={app.id}
-              application={app}
-              stats={statsById.get(app.id)}
-            />
-          ))}
-        </Flex>
-      </div>
-    </Flex>
   );
 }
 
