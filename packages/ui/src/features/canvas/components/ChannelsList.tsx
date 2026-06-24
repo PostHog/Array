@@ -52,7 +52,7 @@ import {
 } from "@posthog/quill";
 
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import type { Task } from "@posthog/shared/domain-types";
+import { isTerminalStatus, type Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
@@ -383,10 +383,21 @@ function ChildRow({
   );
 }
 
-// The generation task tied to a canvas, shown nested beneath the canvas name.
-// Unlike a filed TaskRow this is a compact, single-line row — just the task icon
-// and title (no status subtitle) — with a down-then-right elbow marking it as
-// belonging to the canvas above it. Clicking opens the task.
+// A canvas generation task is "active" while its run hasn't reached a terminal
+// state. Mirrors FreeformCanvasView's `running` check, but off the task record
+// alone (no session) so the channel can compute it for dedup without fetching a
+// session per task. A run that's loading / not yet started counts as active.
+function isCanvasGenerationTaskActive(task: Task | undefined): boolean {
+  if (!task) return false;
+  return !isTerminalStatus(task.latest_run?.status);
+}
+
+// The generation task tied to a canvas, shown nested beneath the canvas name
+// while it's still generating. Once the run finishes the row disappears (the
+// canvas itself then reflects the result). Unlike a filed TaskRow this is a
+// compact, single-line row — just the task icon and title (no status subtitle)
+// — with a down-then-right elbow marking it as belonging to the canvas above
+// it. Clicking opens the task.
 function CanvasGenerationTaskRow({
   channelId,
   taskId,
@@ -410,8 +421,9 @@ function CanvasGenerationTaskRow({
   });
 
   // Tasks are private to their creator; if the generation task isn't in this
-  // user's list there's nothing to link to, so render nothing.
-  if (!task) return null;
+  // user's list there's nothing to link to, so render nothing. Once generation
+  // finishes, drop the row — the canvas now shows the result.
+  if (!task || !isCanvasGenerationTaskActive(task)) return null;
 
   const title = task.title || "Untitled task";
   const active = pathname === `/website/${channelId}/tasks/${taskId}`;
@@ -937,10 +949,23 @@ function ChannelSection({
   const taskUpdatedAtMs = new Map(
     tasks?.map((t) => [t.id, Date.parse(t.updated_at) || 0]) ?? [],
   );
+  // A canvas's generation task is shown nested under the canvas while it's
+  // still generating; don't also list it flat below. Once it finishes it drops
+  // out of this set and reappears in the regular list (if filed there).
+  const nestedGenerationTaskIds = new Set(
+    dashboards
+      .map((d) => d.generationTaskId)
+      .filter((id): id is string => !!id)
+      .filter((id) =>
+        isCanvasGenerationTaskActive(tasks?.find((t) => t.id === id)),
+      ),
+  );
   const visibleFiledTasks = filedTasks
     .filter(
       ({ taskId }) =>
-        !archivedTaskIds.has(taskId) && taskUpdatedAtMs.has(taskId),
+        !archivedTaskIds.has(taskId) &&
+        taskUpdatedAtMs.has(taskId) &&
+        !nestedGenerationTaskIds.has(taskId),
     )
     .sort(
       (a, b) =>
