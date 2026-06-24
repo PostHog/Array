@@ -26,30 +26,23 @@ import { ScoutRunBoxes } from "./ScoutRunBoxes";
 
 /**
  * The one scout card: name, badges, cadence, emitted count, run boxes,
- * enable switch, and a gear that expands the settings form. Used both as the
- * fleet list row and as the header card on the scout detail screen, so the
- * two surfaces always look and behave the same.
+ * enable switch, and a gear that expands the settings form. Used as the fleet
+ * list row; the scout detail screen builds its own header from the same parts.
  */
 export function ScoutRowCard({
   config,
   rollup,
   onUpdate,
   linkToDetail = true,
-  windowLabel,
 }: {
   config: ScoutConfig;
   rollup: ScoutRollup | undefined;
   onUpdate: (configId: string, updates: ScoutConfigUpdate) => void;
   linkToDetail?: boolean;
-  /** Label for the runs window (e.g. "last 3 days"); shown in the detail-header stats line. */
-  windowLabel?: string;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const cloudSkillUrl = skillUrl(config.skill_name);
   const surface: ScoutSurface = linkToDetail ? "fleet_list" : "scout_detail";
-  // The detail-page header reads as a settings panel: full description as text,
-  // stats under the title, toggle at the far right. Fleet rows stay compact.
-  const isDetail = !linkToDetail;
 
   const description = config.description?.trim();
   // `relative z-[1]` lifts the name above the Link's full-card `after:inset-0`
@@ -59,14 +52,11 @@ export function ScoutRowCard({
       {prettifyScoutSkillName(config.skill_name)}
     </Text>
   );
-  // Fleet rows tuck the description into a tooltip; the detail header shows it as
-  // full text below the title instead, so the name carries no tooltip there.
-  const title =
-    description && !isDetail ? (
-      <Tooltip content={description}>{titleText}</Tooltip>
-    ) : (
-      titleText
-    );
+  const title = description ? (
+    <Tooltip content={description}>{titleText}</Tooltip>
+  ) : (
+    titleText
+  );
 
   return (
     <Flex
@@ -117,7 +107,7 @@ export function ScoutRowCard({
           <Text className="whitespace-nowrap text-[11px] text-gray-10">
             {formatRunIntervalShort(config.run_interval_minutes)}
           </Text>
-          {!isDetail && rollup && rollup.emittedCount > 0 ? (
+          {rollup && rollup.emittedCount > 0 ? (
             <Text className="whitespace-nowrap text-[11px] text-gray-10">
               · {rollup.emittedCount} signal
               {rollup.emittedCount === 1 ? "" : "s"} emitted
@@ -128,11 +118,7 @@ export function ScoutRowCard({
           <ScoutRunBoxes runs={rollup?.runs ?? []} />
         </Box>
         <Flex align="center" gap="3" className="relative shrink-0">
-          {/* Fleet rows lead with the toggle; the detail header puts it far
-              right, after the chat + gear controls. */}
-          {isDetail ? null : (
-            <ScoutEnabledSwitch config={config} onUpdate={onUpdate} />
-          )}
+          <ScoutEnabledSwitch config={config} onUpdate={onUpdate} />
           <ScoutChatButton skillName={config.skill_name} surface={surface} />
           <Tooltip content="Scout settings">
             <button
@@ -157,24 +143,8 @@ export function ScoutRowCard({
               <GearSixIcon size={14} />
             </button>
           </Tooltip>
-          {isDetail ? (
-            <ScoutEnabledSwitch config={config} onUpdate={onUpdate} />
-          ) : null}
         </Flex>
       </Flex>
-      {isDetail && rollup && rollup.runCount > 0 ? (
-        <Text className="mt-2 text-[12.5px] text-gray-11">
-          {windowLabel ? capitalize(windowLabel) : "Runs"}: {rollup.runCount}{" "}
-          runs · {rollup.completedCount} completed · {rollup.failedCount} failed
-          · {rollup.emittedCount} signal{rollup.emittedCount === 1 ? "" : "s"}{" "}
-          emitted
-        </Text>
-      ) : null}
-      {isDetail && description ? (
-        <Text className="mt-2 text-[12.5px] text-gray-11 leading-snug">
-          {description}
-        </Text>
-      ) : null}
       {settingsOpen ? (
         <Box className="mt-3 border-(--gray-4) border-t pt-3">
           <ScoutConfigForm config={config} onUpdate={onUpdate} />
@@ -184,15 +154,11 @@ export function ScoutRowCard({
   );
 }
 
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
 /**
  * Icon-only chat CTA on the row: fires a one-click auto-mode cloud task asking
  * the exploring-signals-scouts skill about this specific scout.
  */
-function ScoutChatButton({
+export function ScoutChatButton({
   skillName,
   surface,
 }: {

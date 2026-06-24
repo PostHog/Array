@@ -32,7 +32,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
-import { ScoutRowCard } from "./ScoutRowCard";
+import { ScoutDetailHeader } from "./ScoutDetailHeader";
 import { ScoutSignalsSection } from "./ScoutSignalsSection";
 import { ScoutTaskRunLink } from "./ScoutTaskRunLink";
 
@@ -134,43 +134,49 @@ export function ScoutDetailView({
     <Flex direction="column" className="h-full min-h-0">
       <Flex
         direction="column"
-        gap="0.5"
-        className="cursor-default select-none border-(--gray-5) border-b px-6 pt-5 pb-5"
+        gap="2"
+        className="border-(--gray-5) border-b px-6 pt-5 pb-5"
       >
         <Link
           to="/code/agents"
-          className="mb-1 flex w-fit items-center gap-1 text-[12px] text-gray-10 no-underline hover:text-gray-12"
+          className="flex w-fit items-center gap-1 text-[12px] text-gray-10 no-underline hover:text-gray-12"
         >
           <ArrowLeftIcon size={12} />
           Agents
         </Link>
-        <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
-          {displayName}
-        </Text>
+        {configsLoading ? (
+          <Box className="h-7 w-64 animate-pulse rounded bg-(--gray-3)" />
+        ) : config ? (
+          <ScoutDetailHeader
+            config={config}
+            rollup={rollup}
+            onUpdate={updateConfig}
+            windowLabel={scoutRunsWindowLabel(runsWindow)}
+            displayName={displayName}
+          />
+        ) : (
+          <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
+            {displayName}
+          </Text>
+        )}
       </Flex>
 
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto max-w-4xl px-6 py-6">
           <Flex direction="column" gap="5">
-            {configsLoading ? (
-              <Box className="h-20 w-full animate-pulse rounded-(--radius-3) bg-(--gray-3)" />
-            ) : configsError ? (
+            {configsError ? (
               <Text className="text-(--red-11) text-[12.5px]">
                 Couldn&apos;t load this scout&apos;s config.
               </Text>
-            ) : config ? (
-              <ScoutRowCard
-                config={config}
-                rollup={rollup}
-                onUpdate={updateConfig}
-                linkToDetail={false}
-                windowLabel={scoutRunsWindowLabel(runsWindow)}
-              />
-            ) : (
+            ) : !configsLoading && !config ? (
               <Text className="text-[12.5px] text-gray-11">
                 No config found for this scout on the current project.
               </Text>
-            )}
+            ) : config?.description?.trim() ? (
+              <Text className="text-pretty text-[13px] text-gray-11 leading-relaxed">
+                {config.description.trim()}
+              </Text>
+            ) : null}
 
             <ScoutSignalsSection
               runs={scoutRuns}
