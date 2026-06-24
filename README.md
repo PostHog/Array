@@ -5,18 +5,18 @@
 
 Found a bug or have feedback? [Open an issue](https://github.com/PostHog/code/issues/new) on GitHub.
 
-# PostHog Code
+# 🦔 PostHog Code
 
 This is the monorepo for PostHog Code apps and the agent framework that powers them.
 
-## Development
+## 🦔 Development
 
-### Prerequisites
+### 🦔 Prerequisites
 
 - Node.js 22+
 - pnpm 10.23.0
 
-### Setup
+### 🦔 Setup
 
 ```bash
 # Install pnpm if you haven't already
@@ -32,7 +32,7 @@ cp .env.example .env
 
 ```
 
-### Running in Development
+### 🦔 Running in Development
 
 By default, `pnpm dev` uses phrocs (our custom process runner) to run the agent and code app in parallel. phrocs auto-installs on first run and reads the `mprocs.yaml` config file. The binary is downloaded to `bin/phrocs` and is git-ignored.
 
@@ -53,7 +53,7 @@ pnpm dev:mprocs
 
 > **Want to connect to a local PostHog instance?** See [docs/LOCAL-DEVELOPMENT.md](./docs/LOCAL-DEVELOPMENT.md) for OAuth setup and connecting to localhost:8010.
 
-### Utility Scripts
+### 🦔 Utility Scripts
 
 Scripts in `scripts/` for development and debugging:
 
@@ -62,7 +62,7 @@ Scripts in `scripts/` for development and debugging:
 | `scripts/clean-posthog-code-macos.sh` | Remove all PostHog Code app data from macOS (caches, preferences, logs, saved state). Use `--app` flag to also delete PostHog Code.app from /Applications. |
 | `scripts/test-access-token.js` | Validate a PostHog OAuth access token by testing API endpoints. Usage: `node scripts/test-access-token.js <token> <project_id> [region]` |
 
-## Project Structure
+## 🦔 Project Structure
 
 ```
 posthog-code/
@@ -77,7 +77,7 @@ posthog-code/
 │   └── shared/          # Shared utilities (Saga pattern, etc.)
 ```
 
-## Documentation
+## 🦔 Documentation
 
 | File | Description |
 |------|-------------|
@@ -91,10 +91,10 @@ posthog-code/
 | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) | Common issues and fixes |
 | [docs/DEEP-LINKS.md](./docs/DEEP-LINKS.md) | `posthog-code://` deep link schemes and parameters |
 
-## Contributing
+## 🦔 Contributing
 
 We love contributions big and small. See [CONTRIBUTING.md](./CONTRIBUTING.md) to get started.
 
-## Troubleshooting
+## 🦔 Troubleshooting
 
 See [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) for common issues (black screen, Electron install failures, native module crashes, Secretive commit signing, etc.).
