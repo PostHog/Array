@@ -1609,7 +1609,7 @@ export class PostHogAPIClient {
   }
 
   async getGithubUserIntegrations(): Promise<UserGitHubIntegration[]> {
-    const urlPath = `/api/users/@me/integrations/`;
+    const urlPath = `/api/users/@me/integrations/?kind=github`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
     const response = await this.api.fetcher.fetch({
       method: "get",
