@@ -1,5 +1,6 @@
 import {
   ArchiveIcon,
+  ArrowElbowDownRightIcon,
   CaretDownIcon,
   ChartBarIcon,
   CodeIcon,
@@ -382,6 +383,89 @@ function ChildRow({
   );
 }
 
+// The generation task tied to a canvas, shown nested beneath the canvas name.
+// Unlike a filed TaskRow this is a compact, single-line row — just the task icon
+// and title (no status subtitle) — with a down-then-right elbow marking it as
+// belonging to the canvas above it. Clicking opens the task.
+function CanvasGenerationTaskRow({
+  channelId,
+  taskId,
+}: {
+  channelId: string;
+  taskId: string;
+}) {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { data: tasks } = useTasks();
+  const task = tasks?.find((t) => t.id === taskId);
+  const taskData = useChannelTaskData(task);
+  const workspace = useWorkspace(taskId);
+  const workspaceMode =
+    workspace?.mode ??
+    (taskData?.taskRunEnvironment === "cloud" ? "cloud" : undefined);
+  const { prState, hasDiff } = useTaskPrStatus({
+    id: taskId,
+    cloudPrUrl: taskData?.cloudPrUrl ?? null,
+    taskRunEnvironment: taskData?.taskRunEnvironment ?? null,
+  });
+
+  // Tasks are private to their creator; if the generation task isn't in this
+  // user's list there's nothing to link to, so render nothing.
+  if (!task) return null;
+
+  const title = task.title || "Untitled task";
+  const active = pathname === `/website/${channelId}/tasks/${taskId}`;
+  const icon = taskData ? (
+    <TaskIcon
+      workspaceMode={workspaceMode}
+      isGenerating={taskData.isGenerating}
+      isUnread={taskData.isUnread}
+      isPinned={taskData.isPinned}
+      isSuspended={taskData.isSuspended}
+      needsPermission={taskData.needsPermission}
+      taskRunStatus={taskData.taskRunStatus}
+      originProduct={taskData.originProduct}
+      slackThreadUrl={taskData.slackThreadUrl}
+      prState={prState}
+      hasDiff={hasDiff}
+      size={12}
+    />
+  ) : (
+    <CodeIcon size={12} className="text-gray-9" />
+  );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="default"
+            size="default"
+            data-selected={active || undefined}
+            onClick={() =>
+              navigate({
+                to: "/website/$channelId/tasks/$taskId",
+                params: { channelId, taskId },
+              })
+            }
+            className="h-auto w-full items-center justify-start gap-1 py-0.5 pr-2 pl-5 text-left data-selected:bg-fill-selected data-selected:text-gray-12"
+          >
+            <ArrowElbowDownRightIcon
+              size={12}
+              className="shrink-0 text-muted-foreground/70"
+            />
+            <span className="shrink-0">{icon}</span>
+            <span className="truncate text-[11px] text-gray-11 leading-tight">
+              {title}
+            </span>
+          </Button>
+        }
+      />
+      <TooltipContent side="right">{title}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 // A single saved canvas under a channel — navigates to its detail view, with a
 // right-click menu to rename (inline) or delete it.
 function DashboardRow({
@@ -538,6 +622,13 @@ function DashboardRow({
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
+
+      {dashboard.generationTaskId ? (
+        <CanvasGenerationTaskRow
+          channelId={channelId}
+          taskId={dashboard.generationTaskId}
+        />
+      ) : null}
 
       <ConfirmDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent className="max-w-md">

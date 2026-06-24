@@ -90,6 +90,7 @@ export class DashboardsService {
           createdBy,
           updatedAt,
           code,
+          generationTaskId,
         }) => ({
           id,
           channelId: cid,
@@ -98,6 +99,7 @@ export class DashboardsService {
           createdBy,
           updatedAt,
           code,
+          generationTaskId,
         }),
       );
   }

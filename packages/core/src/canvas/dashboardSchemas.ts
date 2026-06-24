@@ -71,6 +71,10 @@ export const dashboardSummarySchema = z.object({
   // The React source, included so the grid can render a live preview without an
   // N+1 of get()s (it rides in the FS row's meta, already loaded when listing).
   code: z.string().optional(),
+  // Id of the task currently generating this canvas (see dashboardRecordSchema).
+  // Surfaced on the summary so the sidebar can show the run nested under the
+  // canvas without a per-canvas get().
+  generationTaskId: z.string().nullish(),
 });
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
 
