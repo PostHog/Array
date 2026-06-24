@@ -1024,6 +1024,7 @@ export class SessionService {
     }
     this.d.adapterStore.removeAdapter(taskRunId);
     this.d.removePersistedConfigOptions(taskRunId);
+    if (session) this._saveModeBaselines.delete(session.taskId);
   }
 
   /**

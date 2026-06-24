@@ -151,6 +151,7 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
             // Background run, so skip plan mode and let it act.
             executionMode: "auto",
             homeQuickActionLabel: action.label,
+            reasoningLevel: saveModeResult.effort,
             systemPromptOverride: saveModeResult.systemReminder ?? undefined,
           };
 
