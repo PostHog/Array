@@ -306,9 +306,11 @@ export class AgentChatService {
       "live" | "terminal" | "unknown"
     > => {
       try {
-        const detail = await client.getAgentApplicationSession(
-          session.agentSlug,
+        const detail = await client.getAgentSessionViaIngress(
+          session.ingressBaseUrl,
           sessionId,
+          undefined,
+          await this.getPreviewToken(client, rt, session),
         );
         return !detail || TERMINAL_SESSION_STATES.has(detail.state)
           ? "terminal"
@@ -636,9 +638,11 @@ export class AgentChatService {
     s.setSessionId(session.chatId, sessionId);
     s.setStatus(session.chatId, "starting");
     try {
-      const detail = await client.getAgentApplicationSession(
-        session.agentSlug,
+      const detail = await client.getAgentSessionViaIngress(
+        session.ingressBaseUrl,
         sessionId,
+        undefined,
+        await this.getPreviewToken(client, rt, session),
       );
       // A newer resume/new-chat won the race while we were fetching.
       if (

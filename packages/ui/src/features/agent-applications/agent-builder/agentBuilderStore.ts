@@ -68,6 +68,20 @@ interface AgentBuilderStore {
   seed: AgentBuilderSeed | null;
   /** In-flight set_secret punch-out the dock renders a form for (ephemeral). */
   pendingSecret: PendingSecret | null;
+  /**
+   * The dock's most recent chat session (persisted) plus the project/org it
+   * belongs to. On reload the dock resumes it from the slug-routed ingress so
+   * the conversation survives a refresh — the in-memory `agentChatStore`
+   * doesn't. The context is stamped so resume only restores a session in the
+   * project/org it started in: the builder threads `project_id` into its tools
+   * and the session is org-scoped at the ingress, so a conversation doesn't
+   * carry across a project/org switch.
+   */
+  lastSession: {
+    id: string;
+    projectId: number | null;
+    orgId: string | null;
+  } | null;
 
   toggleVisible: () => void;
   setVisible: (visible: boolean) => void;
@@ -78,6 +92,13 @@ interface AgentBuilderStore {
   /** Mark a seed handled (no-op if a newer seed has since replaced it). */
   consumeSeed: (seq: number) => void;
   setPendingSecret: (pending: PendingSecret | null) => void;
+  setLastSession: (
+    session: {
+      id: string;
+      projectId: number | null;
+      orgId: string | null;
+    } | null,
+  ) => void;
 }
 
 export const useAgentBuilderStore = create<AgentBuilderStore>()(
@@ -88,6 +109,7 @@ export const useAgentBuilderStore = create<AgentBuilderStore>()(
       page: { kind: "unknown" },
       seed: null,
       pendingSecret: null,
+      lastSession: null,
 
       toggleVisible: () => set((s) => ({ visible: !s.visible })),
       setVisible: (visible) => set({ visible }),
@@ -101,12 +123,18 @@ export const useAgentBuilderStore = create<AgentBuilderStore>()(
       consumeSeed: (seq) =>
         set((s) => (s.seed?.seq === seq ? { seed: null } : s)),
       setPendingSecret: (pendingSecret) => set({ pendingSecret }),
+      setLastSession: (lastSession) => set({ lastSession }),
     }),
     {
       name: "agent-builder-dock",
       storage: electronStorage,
-      // Page + seed are ephemeral; only remember the user's layout prefs.
-      partialize: (s) => ({ visible: s.visible, followMode: s.followMode }),
+      // Page + seed are ephemeral; persist the layout prefs + the last session
+      // (with its project/org) so the dock can resume across a reload.
+      partialize: (s) => ({
+        visible: s.visible,
+        followMode: s.followMode,
+        lastSession: s.lastSession,
+      }),
     },
   ),
 );
