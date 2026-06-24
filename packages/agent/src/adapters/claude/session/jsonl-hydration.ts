@@ -497,6 +497,7 @@ export async function hydrateSessionJsonl(params: {
   permissionMode?: string;
   posthogAPI: PostHogAPIClient;
   log: HydrationLog;
+  conversation?: ConversationTurn[];
 }): Promise<boolean> {
   const { posthogAPI, log } = params;
 
@@ -509,40 +510,46 @@ export async function hydrateSessionJsonl(params: {
       // File doesn't exist, proceed with hydration
     }
 
-    const taskRun = await posthogAPI.getTaskRun(params.taskId, params.runId);
-    if (!taskRun.log_url) {
-      log.info("No log URL, skipping JSONL hydration");
-      return false;
+    let allTurns: ConversationTurn[];
+    if (params.conversation && params.conversation.length > 0) {
+      allTurns = params.conversation;
+    } else {
+      const taskRun = await posthogAPI.getTaskRun(params.taskId, params.runId);
+      if (!taskRun.log_url) {
+        log.info("No log URL, skipping JSONL hydration");
+        return false;
+      }
+
+      const entries = await posthogAPI.fetchTaskRunLogs(taskRun);
+      if (entries.length === 0) {
+        log.info("No S3 log entries, skipping JSONL hydration");
+        return false;
+      }
+
+      const entryCounts: Record<string, number> = {};
+      for (const entry of entries) {
+        const method = entry.notification?.method ?? "unknown";
+        const entryParams = entry.notification?.params as
+          | Record<string, unknown>
+          | undefined;
+        const update = entryParams?.update as
+          | { sessionUpdate?: string }
+          | undefined;
+        const key = update?.sessionUpdate
+          ? `${method}:${update.sessionUpdate}`
+          : method;
+        entryCounts[key] = (entryCounts[key] ?? 0) + 1;
+      }
+      log.info("S3 log entry breakdown", {
+        totalEntries: entries.length,
+        types: entryCounts,
+      });
+
+      allTurns = rebuildConversation(entries);
     }
 
-    const entries = await posthogAPI.fetchTaskRunLogs(taskRun);
-    if (entries.length === 0) {
-      log.info("No S3 log entries, skipping JSONL hydration");
-      return false;
-    }
-
-    const entryCounts: Record<string, number> = {};
-    for (const entry of entries) {
-      const method = entry.notification?.method ?? "unknown";
-      const entryParams = entry.notification?.params as
-        | Record<string, unknown>
-        | undefined;
-      const update = entryParams?.update as
-        | { sessionUpdate?: string }
-        | undefined;
-      const key = update?.sessionUpdate
-        ? `${method}:${update.sessionUpdate}`
-        : method;
-      entryCounts[key] = (entryCounts[key] ?? 0) + 1;
-    }
-    log.info("S3 log entry breakdown", {
-      totalEntries: entries.length,
-      types: entryCounts,
-    });
-
-    const allTurns = rebuildConversation(entries);
     if (allTurns.length === 0) {
-      log.info("No conversation in S3 logs, skipping JSONL hydration");
+      log.info("No conversation to hydrate, skipping JSONL hydration");
       return false;
     }
 

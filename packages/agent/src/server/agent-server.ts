@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -22,6 +22,10 @@ import {
   createAcpConnection,
   type InProcessAcpConnection,
 } from "../adapters/acp-connection";
+import {
+  getSessionJsonlPath,
+  hydrateSessionJsonl,
+} from "../adapters/claude/session/jsonl-hydration";
 import type { GatewayEnv } from "../adapters/claude/session/options";
 import {
   type AgentErrorClassification,
@@ -259,6 +263,7 @@ export class AgentServer {
   private readonly evaluatedPrUrls = new Set<string>();
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
+  private nativeResume: { sessionId: string; warm: boolean } | null = null;
   // Guards against concurrent session initialization. autoInitializeSession() and
   // the GET /events SSE handler can both call initializeSession() — the SSE connection
   // often arrives while newSession() is still awaited (this.session is still null),
@@ -590,6 +595,79 @@ export class AgentServer {
     }
   }
 
+  private async prepareNativeResume(
+    payload: JwtPayload,
+    posthogAPI: PostHogAPIClient,
+    preTaskRun: TaskRun | null,
+    runtimeAdapter: "claude" | "codex",
+    cwd: string,
+    permissionMode: PermissionMode,
+  ): Promise<{ sessionId: string; warm: boolean } | null> {
+    if (runtimeAdapter !== "claude") return null;
+
+    const resumeRunId = this.getResumeRunId(preTaskRun);
+    if (!resumeRunId) return null;
+
+    if (!this.resumeState) {
+      await this.loadResumeState(payload.task_id, resumeRunId, payload.run_id);
+    }
+
+    const priorSessionId = this.resumeState?.sessionId ?? null;
+    if (!priorSessionId) {
+      this.logger.debug("No prior session id; using summary resume fallback", {
+        resumeRunId,
+      });
+      return null;
+    }
+
+    let warm = false;
+    try {
+      await access(getSessionJsonlPath(priorSessionId, cwd));
+      warm = true;
+    } catch {
+      warm = false;
+    }
+
+    try {
+      const hasSession = await hydrateSessionJsonl({
+        sessionId: priorSessionId,
+        cwd,
+        taskId: payload.task_id,
+        runId: resumeRunId,
+        model: this.config.model,
+        permissionMode,
+        posthogAPI,
+        conversation: this.resumeState?.conversation,
+        log: {
+          info: (msg, data) => this.logger.debug(msg, data),
+          warn: (msg, data) => this.logger.warn(msg, data),
+        },
+      });
+      if (!hasSession) {
+        this.logger.debug(
+          "No session JSONL to resume; using summary fallback",
+          {
+            resumeRunId,
+            priorSessionId,
+          },
+        );
+        return null;
+      }
+    } catch (error) {
+      this.logger.warn(
+        "Session JSONL hydration failed; using summary fallback",
+        {
+          priorSessionId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      return null;
+    }
+
+    this.logger.debug("Native resume prepared", { priorSessionId, warm });
+    return { sessionId: priorSessionId, warm };
+  }
+
   async stop(): Promise<void> {
     this.logger.debug("Stopping agent server...");
 
@@ -909,6 +987,9 @@ export class AgentServer {
       await this.cleanupSession();
     }
 
+    this.resumeState = null;
+    this.nativeResume = null;
+
     this.logger.debug("Initializing session", {
       runId: payload.run_id,
       taskId: payload.task_id,
@@ -1059,29 +1140,57 @@ export class AgentServer {
         : runtimeAdapter === "codex"
           ? "auto"
           : "bypassPermissions";
-    const sessionResponse = await clientConnection.newSession({
-      cwd: this.config.repositoryPath ?? "/tmp/workspace",
-      mcpServers: this.config.mcpServers ?? [],
-      _meta: {
-        sessionId: payload.run_id,
-        taskRunId: payload.run_id,
-        taskId: payload.task_id,
-        environment: "cloud",
-        systemPrompt: sessionSystemPrompt,
-        ...(this.config.model && { model: this.config.model }),
-        allowedDomains: this.config.allowedDomains,
-        jsonSchema: preTask?.json_schema ?? null,
-        permissionMode: initialPermissionMode,
-        ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
-        ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
-      },
-    });
+    const sessionCwd = this.config.repositoryPath ?? "/tmp/workspace";
+    const sessionMeta = {
+      sessionId: payload.run_id,
+      taskRunId: payload.run_id,
+      taskId: payload.task_id,
+      environment: "cloud",
+      systemPrompt: sessionSystemPrompt,
+      ...(this.config.model && { model: this.config.model }),
+      allowedDomains: this.config.allowedDomains,
+      jsonSchema: preTask?.json_schema ?? null,
+      permissionMode: initialPermissionMode,
+      ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
+      ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
+    };
 
-    const acpSessionId = sessionResponse.sessionId;
-    this.logger.debug("ACP session created", {
-      acpSessionId,
-      runId: payload.run_id,
-    });
+    const nativeResume = await this.prepareNativeResume(
+      payload,
+      posthogAPI,
+      preTaskRun,
+      runtimeAdapter,
+      sessionCwd,
+      initialPermissionMode,
+    );
+
+    let acpSessionId: string;
+    if (nativeResume) {
+      await clientConnection.resumeSession({
+        sessionId: nativeResume.sessionId,
+        cwd: sessionCwd,
+        mcpServers: this.config.mcpServers ?? [],
+        _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
+      });
+      acpSessionId = nativeResume.sessionId;
+      this.nativeResume = nativeResume;
+      this.logger.debug("ACP session resumed", {
+        acpSessionId,
+        runId: payload.run_id,
+        warm: nativeResume.warm,
+      });
+    } else {
+      const sessionResponse = await clientConnection.newSession({
+        cwd: sessionCwd,
+        mcpServers: this.config.mcpServers ?? [],
+        _meta: sessionMeta,
+      });
+      acpSessionId = sessionResponse.sessionId;
+      this.logger.debug("ACP session created", {
+        acpSessionId,
+        runId: payload.run_id,
+      });
+    }
 
     this.prAttributed = false;
     this.evaluatedPrUrls.clear();
@@ -1207,6 +1316,11 @@ export class AgentServer {
       }
     }
 
+    if (this.nativeResume) {
+      await this.sendResumeContinuation(payload, taskRun);
+      return;
+    }
+
     if (!this.resumeState) {
       const resumeRunId = this.getResumeRunId(taskRun);
       if (resumeRunId) {
@@ -1218,7 +1332,6 @@ export class AgentServer {
       }
     }
 
-    // Resume flow: if we have resume state, format conversation history as context
     if (this.resumeState && this.resumeState.conversation.length > 0) {
       await this.sendResumeMessage(payload, taskRun);
       return;
@@ -1288,44 +1401,14 @@ export class AgentServer {
     taskRun: TaskRun | null,
   ): Promise<void> {
     if (!this.session || !this.resumeState) return;
+    const resumeState = this.resumeState;
 
-    try {
+    await this.runResumeTurn(payload, "Resume message", async () => {
       const conversationSummary = formatConversationForResume(
-        this.resumeState.conversation,
+        resumeState.conversation,
       );
 
-      let checkpointApplied = false;
-      if (
-        this.resumeState.latestGitCheckpoint &&
-        this.config.repositoryPath &&
-        this.posthogAPI
-      ) {
-        try {
-          const checkpointTracker = new HandoffCheckpointTracker({
-            repositoryPath: this.config.repositoryPath,
-            taskId: payload.task_id,
-            runId: payload.run_id,
-            apiClient: this.posthogAPI,
-            logger: this.logger.child("HandoffCheckpoint"),
-          });
-          const metrics = await checkpointTracker.applyFromHandoff(
-            this.resumeState.latestGitCheckpoint,
-          );
-          checkpointApplied = true;
-          this.logger.debug("Git checkpoint applied", {
-            branch: this.resumeState.latestGitCheckpoint.branch,
-            head: this.resumeState.latestGitCheckpoint.head,
-            packBytes: metrics.packBytes,
-            indexBytes: metrics.indexBytes,
-            totalBytes: metrics.totalBytes,
-          });
-        } catch (error) {
-          this.logger.warn("Failed to apply git checkpoint", {
-            error: error instanceof Error ? error.message : String(error),
-            branch: this.resumeState.latestGitCheckpoint.branch,
-          });
-        }
-      }
+      const checkpointApplied = await this.applyResumeGitCheckpoint(payload);
 
       const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
 
@@ -1365,26 +1448,72 @@ export class AgentServer {
 
       this.logger.debug("Sending resume message", {
         taskId: payload.task_id,
-        conversationTurns: this.resumeState.conversation.length,
+        conversationTurns: resumeState.conversation.length,
         promptLength: promptBlocksToText(resumePromptBlocks).length,
         hasPendingUserMessage: !!pendingUserPrompt?.length,
         checkpointApplied,
-        hasGitCheckpoint: !!this.resumeState.latestGitCheckpoint,
-        gitCheckpointBranch:
-          this.resumeState.latestGitCheckpoint?.branch ?? null,
+        hasGitCheckpoint: !!resumeState.latestGitCheckpoint,
+        gitCheckpointBranch: resumeState.latestGitCheckpoint?.branch ?? null,
       });
 
-      // Clear resume state so it's not reused
       this.resumeState = null;
+      return resumePromptBlocks;
+    });
+  }
+
+  private async sendResumeContinuation(
+    payload: JwtPayload,
+    taskRun: TaskRun | null,
+  ): Promise<void> {
+    if (!this.session) return;
+
+    await this.runResumeTurn(payload, "Resume continuation", async () => {
+      const checkpointApplied = this.nativeResume?.warm
+        ? false
+        : await this.applyResumeGitCheckpoint(payload);
+
+      const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
+      const prompt: ContentBlock[] = pendingUserPrompt?.length
+        ? pendingUserPrompt
+        : [
+            {
+              type: "text",
+              text: "Continue from where you left off. The user is waiting for your response.",
+            },
+          ];
+
+      this.logger.debug("Sending resume continuation", {
+        taskId: payload.task_id,
+        sessionId: this.nativeResume?.sessionId,
+        warm: this.nativeResume?.warm,
+        checkpointApplied,
+        hasPendingUserMessage: !!pendingUserPrompt?.length,
+      });
+
+      this.resumeState = null;
+      this.nativeResume = null;
+      return prompt;
+    });
+  }
+
+  private async runResumeTurn(
+    payload: JwtPayload,
+    logLabel: string,
+    buildPrompt: () => Promise<ContentBlock[]>,
+  ): Promise<void> {
+    if (!this.session) return;
+
+    try {
+      const prompt = await buildPrompt();
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
 
       const result = await this.session.clientConnection.prompt({
         sessionId: this.session.acpSessionId,
-        prompt: resumePromptBlocks,
+        prompt,
       });
 
-      this.logger.debug("Resume message completed", {
+      this.logger.debug(`${logLabel} completed`, {
         stopReason: result.stopReason,
       });
 
@@ -1398,11 +1527,49 @@ export class AgentServer {
         await this.relayAgentResponse(payload);
       }
     } catch (error) {
-      this.logger.error("Failed to send resume message", error);
+      this.logger.error(`Failed to send ${logLabel.toLowerCase()}`, error);
       if (this.session) {
         await this.session.logWriter.flushAll();
       }
       await this.classifyAndSignalFailure(payload, "resume", error);
+    }
+  }
+
+  private async applyResumeGitCheckpoint(
+    payload: JwtPayload,
+  ): Promise<boolean> {
+    if (
+      !this.resumeState?.latestGitCheckpoint ||
+      !this.config.repositoryPath ||
+      !this.posthogAPI
+    ) {
+      return false;
+    }
+    try {
+      const checkpointTracker = new HandoffCheckpointTracker({
+        repositoryPath: this.config.repositoryPath,
+        taskId: payload.task_id,
+        runId: payload.run_id,
+        apiClient: this.posthogAPI,
+        logger: this.logger.child("HandoffCheckpoint"),
+      });
+      const metrics = await checkpointTracker.applyFromHandoff(
+        this.resumeState.latestGitCheckpoint,
+      );
+      this.logger.debug("Git checkpoint applied", {
+        branch: this.resumeState.latestGitCheckpoint.branch,
+        head: this.resumeState.latestGitCheckpoint.head,
+        packBytes: metrics.packBytes,
+        indexBytes: metrics.indexBytes,
+        totalBytes: metrics.totalBytes,
+      });
+      return true;
+    } catch (error) {
+      this.logger.warn("Failed to apply git checkpoint", {
+        error: error instanceof Error ? error.message : String(error),
+        branch: this.resumeState.latestGitCheckpoint.branch,
+      });
+      return false;
     }
   }
 
