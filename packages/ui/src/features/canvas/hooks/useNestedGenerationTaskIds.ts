@@ -14,12 +14,12 @@ const EMPTY_SET: ReadonlySet<string> = new Set();
 const EMPTY_STRING_MAP: ReadonlyMap<string, string> = new Map();
 
 // Which canvas generation tasks should be shown nested under their canvas in
-// the channel tree. A generation task stays pinned under its canvas while it's
-// still generating, and afterwards until the user has actually looked at the
-// result (i.e. it's unread). Once it's both finished and seen — including when
-// the user stops the run from its own view, which clears `isGenerating` and
-// marks it read — it drops out and falls back into the channel's regular task
-// list.
+// the channel tree. A generation task nests while it's actively generating, and
+// stays nested afterwards until the user has actually looked at the task — i.e.
+// there's activity they haven't seen. (A never-viewed task counts as unseen, so
+// it stays put rather than vanishing the instant it finishes.) Opening the task
+// marks it viewed and drops it back into the channel's regular list; sending a
+// follow-up starts it generating again and re-nests it.
 //
 // Derived in bulk from one sessions + timestamps read (rather than per row) so
 // the channel can both render the nested rows and dedupe them out of the flat
@@ -58,7 +58,13 @@ export function useNestedGenerationTaskIds(
         slackTaskIds: EMPTY_SET,
         slackThreadUrlByTaskId: EMPTY_STRING_MAP,
       });
-      if (data.isGenerating || data.isUnread) nested.add(taskId);
+      // `isUnread` requires a prior view (lastViewedAt set); a never-viewed
+      // task isn't "unread" but is still unseen, so check activity-vs-view
+      // directly to keep a just-finished, never-opened task nested.
+      const lastViewedAt = timestamps[taskId]?.lastViewedAt;
+      const hasUnseenActivity =
+        lastViewedAt == null || data.lastActivityAt > lastViewedAt;
+      if (data.isGenerating || hasUnseenActivity) nested.add(taskId);
     }
     return nested;
   }, [dashboards, tasks, sessions, timestamps]);
