@@ -28,8 +28,6 @@ export const POSTHOG_PRODUCTS = {
   logs: "Logs",
   apm: "APM",
   sql: "SQL",
-  /** Generic fallback for a recognized-PostHog call we don't classify yet. */
-  posthog: "PostHog",
 } as const;
 
 export type PostHogProductId = keyof typeof POSTHOG_PRODUCTS;
@@ -38,7 +36,8 @@ export type PostHogProductId = keyof typeof POSTHOG_PRODUCTS;
  * Domain prefix → product, or `null` for admin/meta/introspection domains we
  * deliberately do not surface (listing projects, reading the activity log,
  * managing tasks, searching docs, …). A sub-tool whose domain is absent here
- * falls back to the generic `posthog` product rather than disappearing.
+ * surfaces nothing — every chip in the bar is already a PostHog resource, so a
+ * generic "PostHog" fallback chip would be redundant.
  */
 const DOMAIN_PRODUCT: Record<string, PostHogProductId | null> = {
   // Experiments
@@ -337,8 +336,9 @@ function classifyQuery(type: string): PostHogProductId | null {
 
 /**
  * Map a PostHog MCP `call` sub-tool (e.g. `feature-flag-update`, `query-trends`)
- * to a product id. Returns `null` when the sub-tool is an admin/meta domain we
- * deliberately don't surface, or when the name is empty.
+ * to a product id. Returns `null` when the name is empty, or when the domain is
+ * one we don't surface — either a known admin/meta domain or an unrecognized
+ * one (no point in a generic "PostHog" chip inside a PostHog-resources bar).
  */
 export function classifyPostHogSubTool(
   subTool: string,
@@ -359,6 +359,6 @@ export function classifyPostHogSubTool(
     }
   }
 
-  if (best === null) return "posthog";
+  if (best === null) return null;
   return DOMAIN_PRODUCT[best];
 }

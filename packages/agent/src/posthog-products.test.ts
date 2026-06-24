@@ -69,8 +69,8 @@ describe("classifyPostHogSubTool", () => {
     },
   );
 
-  it("falls back to the generic product for unrecognized domains", () => {
-    expect(classifyPostHogSubTool("brand-new-thing-list")).toBe("posthog");
+  it("returns null for unrecognized domains rather than a generic chip", () => {
+    expect(classifyPostHogSubTool("brand-new-thing-list")).toBeNull();
   });
 
   it.each(["", "   "])("returns null for empty input %j", (subTool) => {
