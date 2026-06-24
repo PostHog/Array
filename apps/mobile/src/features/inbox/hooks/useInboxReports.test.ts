@@ -30,23 +30,30 @@ function page(count: number, resultCount: number): SignalReportsResponse {
 }
 
 describe("getReportsNextPageParam", () => {
-  it("returns the next offset while more reports remain", () => {
-    const first = page(250, 100);
-    expect(getReportsNextPageParam(first, [first])).toBe(100);
-
-    const second = page(250, 100);
-    expect(getReportsNextPageParam(second, [first, second])).toBe(200);
-  });
-
-  it("returns undefined once every report is loaded", () => {
-    const first = page(150, 100);
-    const second = page(150, 50);
-    expect(getReportsNextPageParam(second, [first, second])).toBeUndefined();
-  });
-
-  it("returns undefined when the first page already holds everything", () => {
-    const only = page(40, 40);
-    expect(getReportsNextPageParam(only, [only])).toBeUndefined();
+  it.each([
+    {
+      name: "offset after the first page when more remain",
+      pages: [page(250, 100)],
+      expected: 100,
+    },
+    {
+      name: "offset after later pages when more remain",
+      pages: [page(250, 100), page(250, 100)],
+      expected: 200,
+    },
+    {
+      name: "undefined once every report is loaded",
+      pages: [page(150, 100), page(150, 50)],
+      expected: undefined,
+    },
+    {
+      name: "undefined when the first page already holds everything",
+      pages: [page(40, 40)],
+      expected: undefined,
+    },
+  ])("returns the $name", ({ pages, expected }) => {
+    const lastPage = pages[pages.length - 1];
+    expect(getReportsNextPageParam(lastPage, pages)).toBe(expected);
   });
 });
 
