@@ -86,6 +86,7 @@ import {
   usePrefetchDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useNestedGenerationTaskIds } from "@posthog/ui/features/canvas/hooks/useNestedGenerationTaskIds";
+import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
 import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
@@ -858,6 +859,7 @@ function TaskRow({
   channels: Channel[];
 }) {
   const taskData = useChannelTaskData(task);
+  const session = useSessionForTask(taskId);
   const workspace = useWorkspace(taskId);
   const workspaceMode =
     workspace?.mode ??
@@ -887,11 +889,19 @@ function TaskRow({
   );
 
   // A short status word under the title (running / merged / …), mirroring the
-  // task's live state. Falls back to the run status when there's no PR yet.
+  // task's live state. Repo-less local tasks (e.g. canvas generation) have no
+  // backend run record, so `taskRunStatus` is undefined once the turn ends —
+  // fall back to the live session so the row still shows a status line.
   const status =
     taskData?.isGenerating === true
       ? "running"
-      : (prState ?? taskData?.taskRunStatus ?? undefined);
+      : (prState ??
+        taskData?.taskRunStatus ??
+        (session
+          ? session.status === "error"
+            ? "failed"
+            : "completed"
+          : undefined));
 
   return (
     <TaskRowContextMenu
