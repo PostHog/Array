@@ -71,6 +71,13 @@
       "when": 1779747695689,
       "tag": "0009_bake_default_directories",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1782258190575,
+      "tag": "0010_wet_norrin_radd",
+      "breakpoints": true
     }
   ]
 }
