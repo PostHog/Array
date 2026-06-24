@@ -9,6 +9,7 @@ import {
   TASK_SERVICE,
   type TaskService,
 } from "../task-detail/taskService";
+import { buildPostHogUrl } from "../settings/posthogUrl";
 import { REPORT_MODEL_RESOLVER, type ReportModelResolver } from "./identifiers";
 import {
   buildCreatePrReportPrompt,
@@ -25,6 +26,7 @@ export interface CreateSignalReportTaskInput {
   cloudRepository: string | null;
   githubUserIntegrationId: string | null;
   cloudRegion: CloudRegion | null;
+  projectId?: number | null;
   adapter: "claude" | "codex";
   modelOverride?: string | null;
   reasoningLevel?: string;
@@ -90,7 +92,16 @@ export class SignalReportTaskService {
           })
         : buildCreatePrReportPrompt({
             reportId: input.reportId,
-            isDevBuild: input.isDevBuild,
+            // Web URL rather than a `posthog-code://` deep link: the prompt runs
+            // in a cloud task and may be echoed into the PR, where only an https
+            // link works.
+            reportUrl:
+              input.projectId != null
+                ? buildPostHogUrl(
+                    `/project/${input.projectId}/inbox/${input.reportId}`,
+                    input.cloudRegion,
+                  )
+                : null,
             feedback: input.feedback,
           });
 

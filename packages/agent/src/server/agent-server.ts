@@ -961,10 +961,19 @@ export class AgentServer {
       "slack_thread_url",
     );
 
+    // Web backlink to the inbox report that spawned this task, so the
+    // auto-generated PR can point back at it. Built from the same pieces as the
+    // report's `_posthogUrl`: <apiUrl>/project/<projectId>/inbox/<reportId>.
+    const signalReportId = preTask?.signal_report;
+    const inboxReportUrl = signalReportId
+      ? `${this.config.apiUrl.replace(/\/$/, "")}/project/${this.config.projectId}/inbox/${signalReportId}`
+      : null;
+
     const runtimeAdapter = this.getRuntimeAdapter();
     const sessionSystemPrompt = this.buildSessionSystemPrompt(
       prUrl,
       slackThreadUrl,
+      inboxReportUrl,
     );
     const codexInstructions =
       runtimeAdapter === "codex"
@@ -1640,8 +1649,13 @@ export class AgentServer {
   private buildSessionSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string | { append: string } {
-    const cloudAppend = this.buildCloudSystemPrompt(prUrl, slackThreadUrl);
+    const cloudAppend = this.buildCloudSystemPrompt(
+      prUrl,
+      slackThreadUrl,
+      inboxReportUrl,
+    );
     const userPrompt = this.config.claudeCode?.systemPrompt;
 
     // String override: combine user prompt with cloud instructions
@@ -1737,6 +1751,7 @@ export class AgentServer {
   private buildCloudSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string {
     const taskId = this.config.taskId;
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
@@ -1811,7 +1826,9 @@ we want:
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
     const prFooter = slackThreadUrl
       ? `*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](${slackThreadUrl})*`
-      : `*Created with [PostHog Code](https://posthog.com/code?ref=pr)*`;
+      : inboxReportUrl
+        ? `*Created with [PostHog Code](https://posthog.com/code?ref=pr) from an [inbox report](${inboxReportUrl})*`
+        : `*Created with [PostHog Code](https://posthog.com/code?ref=pr)*`;
 
     if (prUrl) {
       if (!shouldAutoCreatePr) {

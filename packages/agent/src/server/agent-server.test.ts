@@ -204,11 +204,13 @@ interface TestableServer {
   buildCloudSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string;
   buildDetectedPrContext(prUrl: string): string;
   buildSessionSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string | { append: string };
   buildCodexInstructions(systemPrompt: string | { append: string }): string;
   getRuntimeAdapter(): "claude" | "codex";
@@ -1680,6 +1682,42 @@ describe("AgentServer HTTP Mode", () => {
           expect(prompt).not.toContain(
             "this task started from a Slack thread, also link it",
           );
+        } finally {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
+      });
+
+      it("embeds the inbox report link in the footer for a signal_report run", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "signal_report";
+        try {
+          const prompt = (
+            createServer() as unknown as TestableServer
+          ).buildCloudSystemPrompt(
+            null,
+            null,
+            "http://localhost:8000/project/1/inbox/rep_1",
+          );
+          expect(prompt).toContain(
+            "*Created with [PostHog Code](https://posthog.com/code?ref=pr) from an [inbox report](http://localhost:8000/project/1/inbox/rep_1)*",
+          );
+          expect(prompt).not.toContain("Slack thread");
+        } finally {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
+      });
+
+      it("prefers the Slack thread link over the inbox report link when both are present", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+        try {
+          const prompt = (
+            createServer() as unknown as TestableServer
+          ).buildCloudSystemPrompt(
+            null,
+            "https://posthog.slack.com/archives/C123/p456",
+            "http://localhost:8000/project/1/inbox/rep_1",
+          );
+          expect(prompt).toContain("from a [Slack thread]");
+          expect(prompt).not.toContain("from an [inbox report]");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
