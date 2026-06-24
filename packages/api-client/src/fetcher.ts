@@ -10,13 +10,6 @@ export const buildApiFetcher: (
   config: ApiFetcherConfig,
 ) => Parameters<typeof createApiClient>[0] = (config) => {
   const userAgent = `posthog/desktop.hog.dev; version: ${config.appVersion}`;
-  const isManualRedirectResponse = (
-    input: Parameters<Parameters<typeof createApiClient>[0]["fetch"]>[0],
-    response: Response,
-  ): boolean =>
-    input.overrides?.redirect === "manual" &&
-    response.status >= 300 &&
-    response.status < 400;
 
   const makeRequest = async (
     input: Parameters<Parameters<typeof createApiClient>[0]["fetch"]>[0],
@@ -85,11 +78,7 @@ export const buildApiFetcher: (
     fetch: async (input) => {
       let response = await makeRequest(input, await config.getAccessToken());
 
-      if (
-        !response.ok &&
-        !isManualRedirectResponse(input, response) &&
-        (await isAuthFailure(response))
-      ) {
+      if (!response.ok && (await isAuthFailure(response))) {
         try {
           response = await makeRequest(
             input,
@@ -108,7 +97,7 @@ export const buildApiFetcher: (
         }
       }
 
-      if (!response.ok && !isManualRedirectResponse(input, response)) {
+      if (!response.ok) {
         const cloned = response.clone();
         const errorResponse = await response
           .json()

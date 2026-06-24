@@ -418,16 +418,13 @@ describe("PostHogAPIClient", () => {
     );
   });
 
-  it("returns the redirect location when authorizing an MCP installation", async () => {
+  it("returns the redirect URL when authorizing an MCP installation", async () => {
     const fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 302,
-      headers: new Headers({
-        location: "https://auth.example.com/authorize?state=abc",
+      ok: true,
+      status: 200,
+      json: async () => ({
+        redirect_url: "https://auth.example.com/authorize?state=abc",
       }),
-      json: async () => {
-        throw new Error("redirect response should not be parsed as JSON");
-      },
     });
     const client = new PostHogAPIClient(
       "http://localhost:8000",
@@ -459,9 +456,9 @@ describe("PostHogAPIClient", () => {
       expect.objectContaining({
         method: "get",
         path: "/api/environments/123/mcp_server_installations/authorize/",
-        overrides: { redirect: "manual" },
       }),
     );
+    expect(fetch.mock.calls[0][0]).not.toHaveProperty("overrides");
   });
 
   describe("warmTask", () => {

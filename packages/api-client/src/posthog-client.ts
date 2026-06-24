@@ -4229,18 +4229,7 @@ export class PostHogAPIClient {
       method: "get",
       url,
       path,
-      overrides: { redirect: "manual" },
     });
-
-    if (response.status >= 300 && response.status < 400) {
-      const redirectUrl = response.headers.get("location");
-      if (!redirectUrl) {
-        throw new Error(
-          "Failed to authorize MCP installation: missing redirect location",
-        );
-      }
-      return { redirect_url: redirectUrl };
-    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
