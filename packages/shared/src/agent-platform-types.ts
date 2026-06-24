@@ -470,6 +470,8 @@ export interface AgentSessionsListParams {
   agent_user_id?: string;
   created_after?: string;
   created_before?: string;
+  /** Case-insensitive server-side match over id, external key, and transcript. */
+  search?: string;
 }
 
 export interface AgentApprovalsListParams {

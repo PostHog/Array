@@ -4425,6 +4425,9 @@ export class PostHogAPIClient {
     if (params?.created_before) {
       url.searchParams.set("created_before", params.created_before);
     }
+    if (params?.search?.trim()) {
+      url.searchParams.set("search", params.search.trim());
+    }
     const response = await this.api.fetcher.fetch({ method: "get", url, path });
     const data = (await response.json()) as {
       results?: AgentApplicationSessionsListResponse["results"];
