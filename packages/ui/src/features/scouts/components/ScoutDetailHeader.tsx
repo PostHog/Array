@@ -27,6 +27,7 @@ export function ScoutDetailHeader({
   onUpdate,
   windowLabel,
   displayName,
+  runsLoading,
 }: {
   config: ScoutConfig;
   rollup: ScoutRollup | undefined;
@@ -34,6 +35,8 @@ export function ScoutDetailHeader({
   /** Label for the runs window (e.g. "last 3 days") shown in the stats line. */
   windowLabel: string;
   displayName: string;
+  /** Runs load separately from the config; reserve the stats row while pending. */
+  runsLoading: boolean;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const cloudSkillUrl = skillUrl(config.skill_name);
@@ -97,7 +100,9 @@ export function ScoutDetailHeader({
         <ScoutEnabledSwitch config={config} onUpdate={onUpdate} />
       </Flex>
 
-      {rollup && rollup.runCount > 0 ? (
+      {runsLoading ? (
+        <Box className="h-[18px] w-80 max-w-full animate-pulse rounded bg-(--gray-3)" />
+      ) : rollup && rollup.runCount > 0 ? (
         <Flex align="center" gap="3" wrap="wrap">
           <Text className="text-[12.5px] text-gray-11">
             {capitalize(windowLabel)}: {rollup.runCount} runs ·{" "}

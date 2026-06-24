@@ -153,6 +153,7 @@ export function ScoutDetailView({
             onUpdate={updateConfig}
             windowLabel={scoutRunsWindowLabel(runsWindow)}
             displayName={displayName}
+            runsLoading={runsLoading}
           />
         ) : (
           <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
