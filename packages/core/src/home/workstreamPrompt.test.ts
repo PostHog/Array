@@ -74,50 +74,65 @@ describe("buildSkillPrompt", () => {
   });
 });
 
+interface PromptCase {
+  name: string;
+  workstream: HomeWorkstream;
+  contains: string[];
+  notContains: string[];
+}
+
+const contextCases: PromptCase[] = [
+  {
+    name: "includes repo, branch, and PR number/url/CI when a PR is present",
+    workstream: makeWs({ pr: makePr() }),
+    contains: [
+      "- Repository: PostHog/code",
+      "- Branch: feat/the-thing",
+      "- Pull request #2910: Add the thing",
+      "https://github.com/posthog/code/pull/2910",
+      "CI: failing",
+    ],
+    notContains: [],
+  },
+  {
+    name: "includes review decision and unresolved threads when set",
+    workstream: makeWs({
+      pr: makePr({ reviewDecision: "changes_requested", unresolvedThreads: 3 }),
+    }),
+    contains: ["Review: changes_requested", "Unresolved review threads: 3"],
+    notContains: [],
+  },
+  {
+    name: "omits review decision and unresolved threads when unset",
+    workstream: makeWs({ pr: makePr() }),
+    contains: [],
+    notContains: ["Review:", "Unresolved review threads"],
+  },
+  {
+    name: "falls back to the bare PR url when there is no PR snapshot",
+    workstream: makeWs({
+      pr: null,
+      prUrl: "https://github.com/posthog/code/pull/42",
+    }),
+    contains: ["- Pull request: https://github.com/posthog/code/pull/42"],
+    notContains: [],
+  },
+  {
+    name: "emits a branch-only block when there is no PR at all",
+    workstream: makeWs({ pr: null, prUrl: null, branch: "wip" }),
+    contains: ["- Branch: wip"],
+    notContains: ["Pull request"],
+  },
+];
+
 describe("buildWorkstreamContext", () => {
-  it("includes the PR number, url, and CI status when a PR is present", () => {
-    const context = buildWorkstreamContext(makeWs({ pr: makePr() }));
-    expect(context).toContain("- Repository: PostHog/code");
-    expect(context).toContain("- Branch: feat/the-thing");
-    expect(context).toContain("- Pull request #2910: Add the thing");
-    expect(context).toContain("https://github.com/posthog/code/pull/2910");
-    expect(context).toContain("CI: failing");
+  it.each(contextCases)("$name", ({ workstream, contains, notContains }) => {
+    const context = buildWorkstreamContext(workstream);
+    for (const text of contains) expect(context).toContain(text);
+    for (const text of notContains) expect(context).not.toContain(text);
   });
 
-  it("includes review decision and unresolved threads only when set", () => {
-    const withReview = buildWorkstreamContext(
-      makeWs({
-        pr: makePr({
-          reviewDecision: "changes_requested",
-          unresolvedThreads: 3,
-        }),
-      }),
-    );
-    expect(withReview).toContain("Review: changes_requested");
-    expect(withReview).toContain("Unresolved review threads: 3");
-
-    const withoutReview = buildWorkstreamContext(makeWs({ pr: makePr() }));
-    expect(withoutReview).not.toContain("Review:");
-    expect(withoutReview).not.toContain("Unresolved review threads");
-  });
-
-  it("falls back to the bare PR url when there is no PR snapshot", () => {
-    const context = buildWorkstreamContext(
-      makeWs({ pr: null, prUrl: "https://github.com/posthog/code/pull/42" }),
-    );
-    expect(context).toContain(
-      "- Pull request: https://github.com/posthog/code/pull/42",
-    );
-  });
-
-  it("emits a branch-only block when there is no PR at all", () => {
-    const context = buildWorkstreamContext(
-      makeWs({ pr: null, prUrl: null, branch: "wip" }),
-    );
-    expect(context).toContain("- Branch: wip");
-    expect(context).not.toContain("Pull request");
-  });
-
+  // Exact-match case (asserts emptiness, not substrings), kept separate.
   it("returns an empty string when there is nothing to anchor to", () => {
     expect(
       buildWorkstreamContext(
@@ -127,21 +142,36 @@ describe("buildWorkstreamContext", () => {
   });
 });
 
-describe("buildQuickActionPrompt", () => {
-  it("appends the workstream context after the skill prompt", () => {
-    const prompt = buildQuickActionPrompt(
-      makeAction(),
-      makeWs({ pr: makePr() }),
-    );
-    expect(prompt.startsWith("/fix-ci\n\nGet the checks green.")).toBe(true);
-    expect(prompt).toContain("- Pull request #2910: Add the thing");
-  });
+const SKILL_PREFIX = "/fix-ci\n\nGet the checks green.";
 
-  it("is just the skill prompt when the workstream has no context", () => {
-    const prompt = buildQuickActionPrompt(
-      makeAction(),
-      makeWs({ repoFullPath: null, branch: null, pr: null, prUrl: null }),
-    );
-    expect(prompt).toBe("/fix-ci\n\nGet the checks green.");
-  });
+const quickActionCases: PromptCase[] = [
+  {
+    name: "appends the workstream context after the skill prompt",
+    workstream: makeWs({ pr: makePr() }),
+    contains: [SKILL_PREFIX, "- Pull request #2910: Add the thing"],
+    notContains: [],
+  },
+  {
+    name: "is just the skill prompt when the workstream has no context",
+    workstream: makeWs({
+      repoFullPath: null,
+      branch: null,
+      pr: null,
+      prUrl: null,
+    }),
+    contains: [SKILL_PREFIX],
+    notContains: ["Context for this task"],
+  },
+];
+
+describe("buildQuickActionPrompt", () => {
+  it.each(quickActionCases)(
+    "$name",
+    ({ workstream, contains, notContains }) => {
+      const prompt = buildQuickActionPrompt(makeAction(), workstream);
+      expect(prompt.startsWith(SKILL_PREFIX)).toBe(true);
+      for (const text of contains) expect(prompt).toContain(text);
+      for (const text of notContains) expect(prompt).not.toContain(text);
+    },
+  );
 });
