@@ -164,21 +164,13 @@ export function ScoutDetailView({
                 rollup={rollup}
                 onUpdate={updateConfig}
                 linkToDetail={false}
+                windowLabel={scoutRunsWindowLabel(runsWindow)}
               />
             ) : (
               <Text className="text-[12.5px] text-gray-11">
                 No config found for this scout on the current project.
               </Text>
             )}
-
-            {rollup && rollup.runCount > 0 ? (
-              <Text className="text-[12.5px] text-gray-11">
-                {capitalize(scoutRunsWindowLabel(runsWindow))}:{" "}
-                {rollup.runCount} runs · {rollup.completedCount} completed ·{" "}
-                {rollup.failedCount} failed · {rollup.emittedCount} signal
-                {rollup.emittedCount === 1 ? "" : "s"} emitted
-              </Text>
-            ) : null}
 
             <ScoutSignalsSection
               runs={scoutRuns}
@@ -360,10 +352,6 @@ function RunGlyph({ status, emitted }: { status: string; emitted: number }) {
     return <Text className="font-medium text-(--iris-9) text-[12px]">◆</Text>;
   }
   return <Text className="text-[12px] text-gray-8">·</Text>;
-}
-
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function RunListSkeleton() {
