@@ -75,6 +75,8 @@ export const startSessionInput = z.object({
    * history is replayed to the client. Claude adapter only.
    */
   importedSessionId: z.string().optional(),
+  /** Newline-delimited x-posthog-property-* lines for save-mode telemetry. */
+  saveModeHeaders: z.string().optional(),
 });
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;

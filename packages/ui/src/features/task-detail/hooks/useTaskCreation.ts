@@ -1,4 +1,8 @@
 import {
+  resolveSaveMode,
+  type SaveMode,
+} from "@posthog/core/save-mode/saveMode";
+import {
   getErrorTitle,
   prepareTaskInput,
 } from "@posthog/core/task-detail/taskInput";
@@ -90,6 +94,7 @@ async function trackTaskCreated(
   input: TaskCreationInput,
   selectedDirectory: string,
   hostClient: HostTrpcClient,
+  saveMode?: SaveMode,
 ): Promise<void> {
   try {
     const workspaceMode = input.workspaceMode ?? "local";
@@ -130,6 +135,7 @@ async function trackTaskCreated(
       uses_worktree_link: usesWorktreeLink,
       uses_worktree_include: usesWorktreeInclude,
       adapter: input.adapter,
+      save_mode: saveMode,
     });
   } catch (error) {
     log.warn("Failed to track Task created event", { error });
@@ -182,6 +188,7 @@ export function useTaskCreation({
   const { isOnline } = useConnectivity();
   // Used to name the task occupying a branch's worktree when reuse is blocked.
   const { data: tasks } = useTasks();
+  const saveMode = useSettingsStore((s) => s.saveMode);
 
   const hasRequiredPath = allowNoRepo
     ? true
@@ -286,6 +293,20 @@ export function useTaskCreation({
           }
         }
 
+        const saveModeResult =
+          workspaceMode !== "cloud"
+            ? resolveSaveMode({
+                mode: saveMode,
+                requestedModel: model ?? "",
+                requestedEffort:
+                  (reasoningLevel as
+                    | "low"
+                    | "medium"
+                    | "high"
+                    | "xhigh"
+                    | "max") ?? "medium",
+              })
+            : null;
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
@@ -299,8 +320,8 @@ export function useTaskCreation({
           reuseExistingWorktree,
           executionMode,
           adapter,
-          model,
-          reasoningLevel,
+          model: saveModeResult?.model ?? model,
+          reasoningLevel: saveModeResult?.effort ?? reasoningLevel,
           environmentId,
           sandboxEnvironmentId,
           signalReportId,
@@ -309,6 +330,7 @@ export function useTaskCreation({
           channelName,
           customInstructions: useSettingsStore.getState().customInstructions,
           allowNoRepo,
+          systemPromptOverride: saveModeResult?.systemReminder ?? undefined,
         });
 
         if (executionMode) {
@@ -371,7 +393,7 @@ export function useTaskCreation({
           if (!contentOverride) {
             useDraftStore.getState().actions.setDraft(sessionId, null);
           }
-          void trackTaskCreated(input, selectedDirectory, hostClient);
+          void trackTaskCreated(input, selectedDirectory, hostClient, saveMode);
           // Repo-less channel tasks create no workspace row (the agent runs in
           // a scratch dir surfaced as a synthetic workspace), so the normal
           // workspace.create invalidation never fires. Refresh the workspace
@@ -446,6 +468,7 @@ export function useTaskCreation({
       queryClient,
       taskService,
       tasks,
+      saveMode,
     ],
   );
 

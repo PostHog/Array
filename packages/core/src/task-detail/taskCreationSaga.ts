@@ -427,6 +427,8 @@ export class TaskCreationSaga extends Saga<
             connectParams.importedSessionId = importedClaude.importedSessionId;
             connectParams.adapter = "claude";
           }
+          if (input.systemPromptOverride)
+            connectParams.systemPromptOverride = input.systemPromptOverride;
 
           this.deps.sessionService.connectToTask(connectParams);
           return { taskId: task.id };

@@ -60,6 +60,9 @@ export function buildGatewayPropertyHeaders(
 }
 
 function getGatewayBaseUrl(posthogHost: string): string {
+  const override = process.env.LLM_GATEWAY_BASE_URL;
+  if (override) return override.replace(/\/$/, "");
+
   const url = new URL(posthogHost);
   const hostname = url.hostname;
 

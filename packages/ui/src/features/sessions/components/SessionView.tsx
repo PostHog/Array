@@ -29,6 +29,7 @@ import { PlanStatusBar } from "@posthog/ui/features/sessions/components/PlanStat
 import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/QueuedMessagesDock";
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
+import { SaveModeToggle } from "@posthog/ui/features/sessions/components/SaveModeToggle";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
@@ -640,14 +641,17 @@ export function SessionView({
                             />
                           }
                           reasoningSelector={
-                            thoughtOption ? (
-                              <ReasoningLevelSelector
-                                thoughtOption={thoughtOption}
-                                adapter={adapter}
-                                onChange={handleThoughtChange}
-                                disabled={!isRunning}
-                              />
-                            ) : null
+                            <>
+                              {thoughtOption ? (
+                                <ReasoningLevelSelector
+                                  thoughtOption={thoughtOption}
+                                  adapter={adapter}
+                                  onChange={handleThoughtChange}
+                                  disabled={!isRunning}
+                                />
+                              ) : null}
+                              <SaveModeToggle taskId={taskId} />
+                            </>
                           }
                           messagingModeToggle={
                             taskId ? (

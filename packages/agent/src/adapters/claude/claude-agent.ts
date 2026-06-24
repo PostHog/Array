@@ -1744,6 +1744,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         this.ensureLocalToolsConnected("guard-hook"),
       taskState,
       gatewayEnv: this.options?.gatewayEnv,
+      saveModeHeaders: meta?.saveModeHeaders,
       onTaskStateChange: async () => {
         await this.client.sessionUpdate({
           sessionId,

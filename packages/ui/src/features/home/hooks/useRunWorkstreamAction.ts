@@ -4,6 +4,10 @@ import {
   REPORT_MODEL_RESOLVER,
   type ReportModelResolver,
 } from "@posthog/core/inbox/identifiers";
+import {
+  type EffortLevel,
+  resolveSaveMode,
+} from "@posthog/core/save-mode/saveMode";
 import { TASK_SERVICE } from "@posthog/core/task-detail/identifiers";
 import type { TaskService } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
@@ -55,6 +59,7 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
   const { getUserIntegrationIdForRepo } = useUserRepositoryIntegration();
   const lastUsedAdapter = useSettingsStore((s) => s.lastUsedAdapter);
   const lastUsedModel = useSettingsStore((s) => s.lastUsedModel);
+  const saveMode = useSettingsStore((s) => s.saveMode);
   const taskService = useService<TaskService>(TASK_SERVICE);
   const modelResolver = useService<ReportModelResolver>(REPORT_MODEL_RESOLVER);
   const queryClient = useQueryClient();
@@ -124,8 +129,16 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
             return;
           }
 
-          // `content` carries the skill prefix; `taskDescription` is the clean
-          // title.
+          // Save Mode (alpha): downshift the model when the user opted in.
+          const saveModeResult = resolveSaveMode({
+            mode: saveMode,
+            requestedModel: model,
+            requestedEffort: "high" as EffortLevel,
+          });
+          model = saveModeResult.model;
+
+          // `content` carries the skill prefix to the agent; `taskDescription`
+          // is the clean prompt used for the task title and description.
           const input: TaskCreationInput = {
             content: promptText,
             taskDescription: action.prompt.trim() || action.label,
@@ -138,6 +151,7 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
             // Background run, so skip plan mode and let it act.
             executionMode: "auto",
             homeQuickActionLabel: action.label,
+            systemPromptOverride: saveModeResult.systemReminder ?? undefined,
           };
 
           const result = await taskService.createTask(input, (output) => {
@@ -167,6 +181,9 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
               has_branch: !!branch,
               cloud_run_source: "manual",
               adapter,
+              save_mode: saveMode,
+              effective_model: saveModeResult.model,
+              effective_effort: saveModeResult.effort,
             });
             return;
           }
@@ -197,6 +214,7 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
       getUserIntegrationIdForRepo,
       lastUsedAdapter,
       lastUsedModel,
+      saveMode,
       taskService,
       modelResolver,
     ],

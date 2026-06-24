@@ -69,6 +69,9 @@ export interface TaskCreationInput {
    * session last worked on, linked so the branch-mismatch prompt can fire.
    */
   importedClaudeSession?: { sourceSessionId: string; branch?: string | null };
+  /** System prompt text appended after the default PostHog coding prompt. Set by
+   * Save Mode (terseness reminder) or special surfaces (canvas generator). */
+  systemPromptOverride?: string;
 }
 
 export interface TaskCreationOutput {

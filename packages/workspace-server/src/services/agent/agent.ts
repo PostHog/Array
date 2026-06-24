@@ -280,6 +280,8 @@ interface SessionConfig {
    * replayed to the client. Claude adapter only.
    */
   importedSessionId?: string;
+  /** Newline-delimited x-posthog-property-* headers for save-mode telemetry. */
+  saveModeHeaders?: string;
 }
 
 interface ManagedSession {
@@ -680,6 +682,7 @@ If a repository IS genuinely required, attach one in this priority order:
       effort,
       model,
       jsonSchema,
+      saveModeHeaders,
     } = config;
 
     // Preview config doesn't need a real repo — use a temp directory
@@ -1003,6 +1006,7 @@ If a repository IS genuinely required, attach one in this priority order:
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
             ...(jsonSchema && { jsonSchema }),
+            ...(saveModeHeaders && { saveModeHeaders }),
             claudeCode: {
               options: claudeCodeOptions,
             },
@@ -1029,6 +1033,7 @@ If a repository IS genuinely required, attach one in this priority order:
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
             ...(jsonSchema && { jsonSchema }),
+            ...(saveModeHeaders && { saveModeHeaders }),
             claudeCode: {
               options: claudeCodeOptions,
             },
@@ -1914,6 +1919,8 @@ For git operations while detached:
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
       importedSessionId:
         "importedSessionId" in params ? params.importedSessionId : undefined,
+      saveModeHeaders:
+        "saveModeHeaders" in params ? params.saveModeHeaders : undefined,
     };
   }
 

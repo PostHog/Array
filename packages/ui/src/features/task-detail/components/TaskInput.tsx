@@ -47,6 +47,7 @@ import { useAutoFocusOnTyping } from "../../message-editor/useAutoFocusOnTyping"
 import { resolveAndAttachDroppedFiles } from "../../message-editor/utils/persistFile";
 import { DropZoneOverlay } from "../../sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
+import { SaveModeToggle } from "../../sessions/components/SaveModeToggle";
 import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
 import {
@@ -928,14 +929,17 @@ export function TaskInput({
                 />
               }
               reasoningSelector={
-                !isPreviewLoading && (
-                  <ReasoningLevelSelector
-                    thoughtOption={thoughtOption}
-                    adapter={adapter}
-                    onChange={handleThoughtChange}
-                    disabled={isCreatingTask}
-                  />
-                )
+                <>
+                  {!isPreviewLoading && (
+                    <ReasoningLevelSelector
+                      thoughtOption={thoughtOption}
+                      adapter={adapter}
+                      onChange={handleThoughtChange}
+                      disabled={isCreatingTask}
+                    />
+                  )}
+                  <SaveModeToggle />
+                </>
               }
               getPromptHistory={getPromptHistory}
               onEmptyChange={handleEditorEmptyChange}

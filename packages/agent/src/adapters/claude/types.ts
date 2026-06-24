@@ -177,6 +177,8 @@ export type NewSessionMeta = {
   channelMode?: boolean;
   jsonSchema?: Record<string, unknown> | null;
   mcpToolApprovals?: McpToolApprovals;
+  /** Newline-delimited x-posthog-property-* lines stamping save-mode telemetry on $ai_generation events. */
+  saveModeHeaders?: string;
   claudeCode?: {
     options?: Options;
     emitRawSDKMessages?: boolean | SDKMessageFilter[];

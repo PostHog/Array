@@ -38,6 +38,7 @@ import {
   isTerminalStatus,
   type Task,
 } from "@posthog/shared/domain-types";
+import { resolveSaveMode, type SaveMode } from "../save-mode/saveMode";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
 import { createAppendOnlyTracker } from "./appendOnlyTracker";
 import type { CloudArtifactClient } from "./cloudArtifactIdentifiers";
@@ -294,6 +295,7 @@ export interface ConnectParams {
    * the app's Claude config dir. The agent loads it and replays its history.
    */
   importedSessionId?: string;
+  systemPromptOverride?: string;
 }
 
 export interface CloudConnectionAuth {
@@ -472,6 +474,10 @@ function classifyTurnEventKind(
 }
 
 export class SessionService {
+  private _saveModeBaselines = new Map<
+    string,
+    { model: string | null; effort: string | null }
+  >();
   private connectingTasks = new Map<string, Promise<void>>();
   private reconcilingTasks = new Set<string>();
   private activityHeartbeats = new Map<
@@ -613,6 +619,7 @@ export class SessionService {
       model,
       reasoningLevel,
       importedSessionId,
+      systemPromptOverride,
     } = params;
     const { id: taskId, latest_run: latestRun } = task;
     const taskTitle = task.title || task.description || "Task";
@@ -723,6 +730,7 @@ export class SessionService {
           model,
           reasoningLevel,
           importedSessionId,
+          systemPromptOverride,
         );
       }
     } catch (error) {
@@ -1203,6 +1211,7 @@ export class SessionService {
     model?: string,
     reasoningLevel?: string,
     importedSessionId?: string,
+    systemPromptOverride?: string,
   ): Promise<void> {
     const { client } = auth;
     if (!client) {
@@ -1230,6 +1239,7 @@ export class SessionService {
         : undefined,
       model: preferredModel,
       importedSessionId,
+      systemPromptOverride,
     });
 
     const session = createBaseSession(taskRun.id, taskId, taskTitle);
@@ -2997,6 +3007,86 @@ export class SessionService {
     }
 
     await this.setSessionConfigOption(taskId, configOption.id, value);
+  }
+
+  async applySaveMode(taskId: string, mode: SaveMode): Promise<boolean> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session?.configOptions) return false;
+
+    const modelOpt = getConfigOptionByCategory(session.configOptions, "model");
+    const effortOpt = getConfigOptionByCategory(
+      session.configOptions,
+      "thought_level",
+    );
+
+    const currentModel = modelOpt ? String(modelOpt.currentValue ?? "") : null;
+    const currentEffort = effortOpt
+      ? String(effortOpt.currentValue ?? "medium")
+      : null;
+
+    if (mode === "off") {
+      const baseline = this._saveModeBaselines.get(taskId);
+      this._saveModeBaselines.delete(taskId);
+      if (!baseline) return false;
+
+      const ops: Promise<void>[] = [];
+      if (baseline.model && baseline.model !== currentModel) {
+        ops.push(
+          this.setSessionConfigOptionByCategory(
+            taskId,
+            "model",
+            baseline.model,
+          ),
+        );
+      }
+      if (baseline.effort && baseline.effort !== currentEffort) {
+        ops.push(
+          this.setSessionConfigOptionByCategory(
+            taskId,
+            "thought_level",
+            baseline.effort,
+          ),
+        );
+      }
+      await Promise.all(ops);
+      return ops.length > 0;
+    }
+
+    if (!this._saveModeBaselines.has(taskId)) {
+      this._saveModeBaselines.set(taskId, {
+        model: currentModel,
+        effort: currentEffort,
+      });
+    }
+
+    const baseline = this._saveModeBaselines.get(taskId) ?? {
+      model: currentModel,
+      effort: currentEffort,
+    };
+    const result = resolveSaveMode({
+      mode,
+      requestedModel:
+        baseline.model ?? currentModel ?? this.d.DEFAULT_GATEWAY_MODEL,
+      requestedEffort: (baseline.effort ?? "medium") as EffortLevel,
+    });
+
+    const ops: Promise<void>[] = [];
+    if (modelOpt && result.model !== currentModel) {
+      ops.push(
+        this.setSessionConfigOptionByCategory(taskId, "model", result.model),
+      );
+    }
+    if (effortOpt && result.effort !== currentEffort) {
+      ops.push(
+        this.setSessionConfigOptionByCategory(
+          taskId,
+          "thought_level",
+          result.effort,
+        ),
+      );
+    }
+    await Promise.all(ops);
+    return ops.length > 0;
   }
 
   /**

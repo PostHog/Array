@@ -75,6 +75,9 @@ export interface TaskCreateProperties {
   /** Worktree mode: repo has a non-empty .worktreeinclude file */
   uses_worktree_include?: boolean;
   adapter?: "claude" | "codex";
+  save_mode?: "off" | "balanced" | "max_save";
+  effective_model?: string;
+  effective_effort?: string;
 }
 
 export interface TaskViewProperties {
@@ -226,6 +229,22 @@ export interface SettingChangedProperties {
   setting_name: string;
   new_value: string | boolean | number;
   old_value?: string | boolean | number;
+}
+
+export interface BrowserTabOpenedProperties {
+  source: "window_open" | "user" | "chat_link";
+  has_initial_url: boolean;
+}
+
+export interface LinkClickedInChatProperties {
+  destination: "embedded_browser" | "system_browser" | "copy_link";
+}
+
+export interface SaveModeChangedProperties {
+  new_mode: "off" | "balanced" | "max_save";
+  old_mode: "off" | "balanced" | "max_save";
+  context: "session" | "new-task";
+  task_id?: string;
 }
 
 // Error events
@@ -973,6 +992,11 @@ export const ANALYTICS_EVENTS = {
 
   // Settings events
   SETTING_CHANGED: "Setting changed",
+  SAVE_MODE_CHANGED: "Save mode changed",
+
+  // Browser panel events
+  BROWSER_TAB_OPENED: "Browser tab opened",
+  LINK_CLICKED_IN_CHAT: "Link clicked in chat",
 
   // Feedback events
   TASK_FEEDBACK: "Task feedback",
@@ -1116,6 +1140,11 @@ export type EventPropertyMap = {
 
   // Settings events
   [ANALYTICS_EVENTS.SETTING_CHANGED]: SettingChangedProperties;
+  [ANALYTICS_EVENTS.SAVE_MODE_CHANGED]: SaveModeChangedProperties;
+
+  // Browser panel events
+  [ANALYTICS_EVENTS.BROWSER_TAB_OPENED]: BrowserTabOpenedProperties;
+  [ANALYTICS_EVENTS.LINK_CLICKED_IN_CHAT]: LinkClickedInChatProperties;
 
   // Feedback events
   [ANALYTICS_EVENTS.TASK_FEEDBACK]: TaskFeedbackProperties;

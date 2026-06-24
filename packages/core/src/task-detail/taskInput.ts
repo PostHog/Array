@@ -23,6 +23,7 @@ export interface PrepareTaskInputOptions {
   channelName?: string;
   customInstructions?: string;
   allowNoRepo?: boolean;
+  systemPromptOverride?: string;
 }
 
 export function prepareTaskInput(
@@ -61,6 +62,7 @@ export function prepareTaskInput(
     channelName: options.channelName,
     customInstructions: isCloud ? options.customInstructions : undefined,
     allowNoRepo: options.allowNoRepo,
+    systemPromptOverride: options.systemPromptOverride,
   };
 }
 

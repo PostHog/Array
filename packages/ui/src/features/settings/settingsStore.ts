@@ -1,4 +1,5 @@
 import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
+import type { SaveMode } from "@posthog/core/save-mode/saveMode";
 import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
 import {
   COLLAPSE_MODE_DEFAULT,
@@ -152,6 +153,10 @@ interface SettingsStore {
   recordHintShown: (key: string) => void;
   markHintLearned: (key: string) => void;
 
+  // Save mode
+  saveMode: SaveMode;
+  setSaveMode: (mode: SaveMode) => void;
+
   _hasHydrated: boolean;
   setHasHydrated: (hydrated: boolean) => void;
 }
@@ -277,6 +282,10 @@ export const useSettingsStore = create<SettingsStore>()(
       setMcpAppsDisabledServers: (servers) =>
         set({ mcpAppsDisabledServers: servers }),
 
+      // Save mode
+      saveMode: "off",
+      setSaveMode: (mode) => set({ saveMode: mode }),
+
       // Onboarding hints
       hints: {},
       shouldShowHint: (key, max = 3) => {
@@ -360,6 +369,9 @@ export const useSettingsStore = create<SettingsStore>()(
         hedgehogMode: state.hedgehogMode,
         slotMachineMode: state.slotMachineMode,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
+
+        // Save mode
+        saveMode: state.saveMode,
 
         // Onboarding hints
         hints: state.hints,

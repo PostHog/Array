@@ -1,4 +1,5 @@
 import { ArrowSquareOut } from "@phosphor-icons/react";
+import type { SaveMode } from "@posthog/core/save-mode/saveMode";
 import { buildPostHogUrl } from "@posthog/core/settings/posthogUrl";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
@@ -69,6 +70,7 @@ export function GeneralSettings() {
     defaultInitialTaskMode,
     defaultMessagingMode,
     defaultReasoningEffort,
+    saveMode,
     diffOpenMode,
     sendMessagesWith,
     conversationCollapseMode,
@@ -78,6 +80,7 @@ export function GeneralSettings() {
     setDefaultInitialTaskMode,
     setDefaultMessagingMode,
     setDefaultReasoningEffort,
+    setSaveMode,
     setDiffOpenMode,
     setSendMessagesWith,
     setConversationCollapseMode,
@@ -313,6 +316,24 @@ export function GeneralSettings() {
             <Select.Item value="high">High</Select.Item>
             <Select.Item value="xhigh">Extra High</Select.Item>
             <Select.Item value="max">Max</Select.Item>
+          </Select.Content>
+        </Select.Root>
+      </SettingRow>
+
+      <SettingRow
+        label="Save mode"
+        description="Reduce cost on new tasks — caps effort and routes to a cheaper model (alpha)"
+      >
+        <Select.Root
+          value={saveMode}
+          onValueChange={(value) => setSaveMode(value as SaveMode)}
+          size="1"
+        >
+          <Select.Trigger className="min-w-[100px]" />
+          <Select.Content>
+            <Select.Item value="off">Off</Select.Item>
+            <Select.Item value="balanced">Balanced</Select.Item>
+            <Select.Item value="max_save">Maximum savings</Select.Item>
           </Select.Content>
         </Select.Root>
       </SettingRow>
