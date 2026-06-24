@@ -1,4 +1,5 @@
 import type { HomeSnapshot, HomeWorkstream } from "@posthog/core/home/schemas";
+import { buildQuickActionPrompt } from "@posthog/core/home/workstreamPrompt";
 import {
   REPORT_MODEL_RESOLVER,
   type ReportModelResolver,
@@ -34,17 +35,6 @@ export interface RunWorkstreamAction {
   run: (action: BoundAction, workstream: HomeWorkstream) => void;
 }
 
-// The agent runs the bound skill when the prompt starts with `/<skill-id>`, so
-// embed it directly; the descriptive prompt follows as the instruction. With no
-// skill bound, send the prompt on its own.
-function buildSkillPrompt(action: BoundAction): string {
-  const body = action.prompt.trim();
-  const skillId = action.skillId.trim();
-  if (!skillId) return body;
-  const command = `/${skillId}`;
-  return body ? `${command}\n\n${body}` : command;
-}
-
 /**
  * Runs a bound workflow action as a one-click cloud task: embeds the skill as a
  * `/<skill-id>` prefix and starts a cloud run on the workstream's repo + branch.
@@ -76,7 +66,7 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
 
   const run = useCallback(
     (action: BoundAction, workstream: HomeWorkstream) => {
-      const promptText = buildSkillPrompt(action);
+      const promptText = buildQuickActionPrompt(action, workstream);
       // The GitHub integration map and cloud repo selector are keyed by the full
       // "org/repo" slug, so resolve from `repoFullPath`, not the bare `repoName`.
       const repo = workstream.repoFullPath?.toLowerCase() ?? null;
@@ -134,8 +124,8 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
             return;
           }
 
-          // `content` carries the skill prefix to the agent; `taskDescription`
-          // is the clean prompt used for the task title and description.
+          // `content` carries the skill prefix; `taskDescription` is the clean
+          // title.
           const input: TaskCreationInput = {
             content: promptText,
             taskDescription: action.prompt.trim() || action.label,
@@ -145,6 +135,8 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
             githubUserIntegrationId,
             adapter,
             model,
+            // Background run, so skip plan mode and let it act.
+            executionMode: "auto",
             homeQuickActionLabel: action.label,
           };
 
