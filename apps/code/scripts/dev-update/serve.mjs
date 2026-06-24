@@ -48,8 +48,15 @@ const server = createServer((req, res) => {
 
   if (range) {
     const match = /bytes=(\d*)-(\d*)/.exec(range);
-    const start = match?.[1] ? Number(match[1]) : 0;
-    const end = match?.[2] ? Number(match[2]) : stat.size - 1;
+    let start = 0;
+    let end = stat.size - 1;
+    if (match?.[1]) {
+      start = Number(match[1]);
+      if (match[2]) end = Number(match[2]);
+    } else if (match?.[2]) {
+      // Suffix range (bytes=-N): the last N bytes of the file.
+      start = Math.max(0, stat.size - Number(match[2]));
+    }
     res.writeHead(206, {
       "Content-Type": type,
       "Content-Range": `bytes ${start}-${end}/${stat.size}`,
