@@ -383,7 +383,7 @@ app.whenReady().then(async () => {
   initializeDeepLinks();
 
   if (process.env.POSTHOG_E2E_UPDATE_FEED) {
-    const updates = container.get<UpdatesService>(MAIN_TOKENS.UpdatesService);
+    const updates = container.get<UpdatesService>(UPDATES_SERVICE);
     Object.assign(globalThis, {
       __e2eUpdates: {
         check: () => updates.checkForUpdates(),
