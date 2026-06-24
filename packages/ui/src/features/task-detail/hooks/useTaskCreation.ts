@@ -306,6 +306,10 @@ export function useTaskCreation({
           additionalDirectories,
           channelContext,
           channelName,
+          // Cloud-only: the user's personalization (Settings → Personalization).
+          // prepareTaskInput drops it for local tasks, which already receive it
+          // via the workspace-server system prompt.
+          customInstructions: useSettingsStore.getState().customInstructions,
           allowNoRepo,
         });
 

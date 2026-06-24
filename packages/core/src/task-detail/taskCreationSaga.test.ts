@@ -204,6 +204,50 @@ describe("TaskCreationSaga", () => {
     );
   });
 
+  it("folds custom personalization into the cloud prompt and stashes it for the optimistic placeholder", async () => {
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+    vi.mocked(sessionService.rememberInitialCloudPrompt).mockClear();
+
+    const saga = new TaskCreationSaga({
+      posthogClient: {
+        createTask: vi.fn().mockResolvedValue(createdTask),
+        deleteTask: vi.fn(),
+        getTask: vi.fn(),
+        createTaskRun: createTaskRunMock,
+        startTaskRun: startTaskRunMock,
+        sendRunCommand: vi.fn(),
+        updateTask: vi.fn(),
+      } as never,
+      host,
+      sessionService,
+      track: vi.fn(),
+    });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      customInstructions: "Always respond in British English.",
+    });
+
+    expect(result.success).toBe(true);
+    const sentMessage = startTaskRunMock.mock.calls[0][2]
+      .pendingUserMessage as string;
+    // Prompt leads, personalization follows as a tagged block.
+    expect(sentMessage).toContain("Ship the fix");
+    expect(sentMessage).toContain("<user_custom_instructions>");
+    expect(sentMessage).toContain("Always respond in British English.");
+    // The augmented message is stashed so the optimistic placeholder matches the
+    // sandbox echo.
+    expect(sessionService.rememberInitialCloudPrompt).toHaveBeenCalledWith(
+      "task-123",
+      sentMessage,
+    );
+  });
+
   it("starts a repo-less channel task in a scratch dir (allowNoRepo)", async () => {
     const createdTask = createTask({ repository: undefined });
     const createTaskMock = vi.fn().mockResolvedValue(createdTask);
