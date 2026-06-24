@@ -15,6 +15,7 @@ import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { homeKeys } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
 import { useQuickActionStore } from "@posthog/ui/features/home/stores/quickActionStore";
 import { insertOptimisticTask } from "@posthog/ui/features/home/utils/optimisticTask";
+import { buildQuickActionPrompt } from "@posthog/ui/features/home/utils/workstreamPrompt";
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
@@ -32,17 +33,6 @@ const log = logger.scope("home-quick-action");
 
 export interface RunWorkstreamAction {
   run: (action: BoundAction, workstream: HomeWorkstream) => void;
-}
-
-// The agent runs the bound skill when the prompt starts with `/<skill-id>`, so
-// embed it directly; the descriptive prompt follows as the instruction. With no
-// skill bound, send the prompt on its own.
-function buildSkillPrompt(action: BoundAction): string {
-  const body = action.prompt.trim();
-  const skillId = action.skillId.trim();
-  if (!skillId) return body;
-  const command = `/${skillId}`;
-  return body ? `${command}\n\n${body}` : command;
 }
 
 /**
@@ -76,7 +66,9 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
 
   const run = useCallback(
     (action: BoundAction, workstream: HomeWorkstream) => {
-      const promptText = buildSkillPrompt(action);
+      // Anchor the run to the workstream's PR/branch so a background quick
+      // action knows what it's acting on instead of asking the user "which PR?".
+      const promptText = buildQuickActionPrompt(action, workstream);
       // The GitHub integration map and cloud repo selector are keyed by the full
       // "org/repo" slug, so resolve from `repoFullPath`, not the bare `repoName`.
       const repo = workstream.repoFullPath?.toLowerCase() ?? null;
@@ -145,6 +137,9 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
             githubUserIntegrationId,
             adapter,
             model,
+            // Quick actions are background runs: start them in auto so they act
+            // on the workstream without first stopping to present a plan.
+            executionMode: "auto",
             homeQuickActionLabel: action.label,
           };
 
