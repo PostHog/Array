@@ -5,7 +5,7 @@ import {
   useInboxCloudTaskRunner,
 } from "@posthog/ui/features/inbox/hooks/useInboxCloudTaskRunner";
 import { useSignalTeamConfig } from "@posthog/ui/features/inbox/hooks/useSignalTeamConfig";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 interface UseCreatePrReportOptions {
   reportId: string;
@@ -18,8 +18,12 @@ interface UseCreatePrReportReturn {
    * Create an auto-mode implementation task for the report. Adds the task to the
    * sidebar and surfaces a success toast with a "View task" action instead of
    * navigating away.
+   *
+   * `feedback` is optional free-text steering passed straight into the agent's
+   * prompt, so the user can give direction at Create-PR time instead of waiting
+   * for the run and correcting it after the fact.
    */
-  createPrReport: () => Promise<void>;
+  createPrReport: (feedback?: string) => Promise<void>;
   /** True while the task is being created. */
   isCreatingPr: boolean;
 }
@@ -42,11 +46,17 @@ export function useCreatePrReport({
   const { data: teamConfig } = useSignalTeamConfig();
   const baseBranchOverrides = teamConfig?.autostart_base_branches ?? null;
 
+  // Holds the steering text for the in-flight run. `buildInput` is invoked
+  // synchronously inside `run()`, so the ref is always current when read; a ref
+  // (vs state) keeps `buildInput`/`run` stable and avoids a re-render race.
+  const feedbackRef = useRef<string | undefined>(undefined);
+
   const buildInput = useCallback(
     (ctx: InboxCloudTaskInputContext): TaskCreationInput => {
       const prompt = buildCreatePrReportPrompt({
         reportId,
         isDevBuild: import.meta.env.DEV,
+        feedback: feedbackRef.current,
       });
       const targetRepo = ctx.cloudRepository.toLowerCase();
       const baseBranch = baseBranchOverrides
@@ -105,5 +115,13 @@ export function useCreatePrReport({
     redirectOnSuccess: false,
   });
 
-  return { createPrReport: run, isCreatingPr: isRunning };
+  const createPrReport = useCallback(
+    async (feedback?: string) => {
+      feedbackRef.current = feedback?.trim() || undefined;
+      await run();
+    },
+    [run],
+  );
+
+  return { createPrReport, isCreatingPr: isRunning };
 }
