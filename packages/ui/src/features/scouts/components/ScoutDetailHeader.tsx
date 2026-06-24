@@ -44,7 +44,7 @@ export function ScoutDetailHeader({
   return (
     <Flex direction="column" gap="2">
       <Flex align="center" gap="2">
-        <Text className="truncate font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
+        <Text className="min-w-0 truncate font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
           {displayName}
         </Text>
         <ScoutOriginBadge config={config} />
