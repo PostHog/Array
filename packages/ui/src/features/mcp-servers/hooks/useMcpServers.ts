@@ -18,7 +18,7 @@ import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
 // `mcpKeys` + `createOAuthCallback` now live in the shared mcp-server-manager
 // module (also used by the agent-applications builder). Re-exported here so
@@ -29,7 +29,6 @@ export function useMcpServers() {
   const trpc = useHostTRPC();
   const trpcClient = useHostTRPCClient();
   const oauth = useMemo(() => createOAuthCallback(trpcClient), [trpcClient]);
-  const [installingId, setInstallingId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: installations, isLoading: installationsLoading } =
@@ -111,18 +110,15 @@ export function useMcpServers() {
           toast.error(data.error);
         }
         invalidateInstallations();
-        setInstallingId(null);
       },
       onError: (error: Error) => {
         toast.error(error.message || "Failed to connect server");
-        setInstallingId(null);
       },
     },
   );
 
   const installTemplate = useCallback(
     (template: McpRecommendedServer, opts?: { api_key?: string }) => {
-      setInstallingId(template.id);
       installTemplateMutation.mutate({
         template_id: template.id,
         api_key: opts?.api_key,
@@ -130,6 +126,10 @@ export function useMcpServers() {
     },
     [installTemplateMutation],
   );
+
+  const installingId = installTemplateMutation.isPending
+    ? (installTemplateMutation.variables?.template_id ?? null)
+    : null;
 
   const installCustomMutation = useAuthenticatedMutation(
     (
