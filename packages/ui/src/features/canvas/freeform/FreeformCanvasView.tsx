@@ -37,6 +37,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
+import { CanvasPermissionDialog } from "./CanvasPermissionDialog";
 import { FreeformGenerateBar } from "./FreeformGenerateBar";
 import { handleFreeformDataRequest } from "./freeformDataBridge";
 import { useCanvasNavigation, useHomeCanvasReset } from "./useHomeCanvasView";
@@ -201,6 +202,11 @@ export function FreeformCanvasView({
 
   return (
     <Flex height="100%" overflow="hidden">
+      {/* A generating canvas can pause on a tool-permission request; surface it
+          here so the user can approve without opening the underlying task. */}
+      {interactive && genTaskId && (
+        <CanvasPermissionDialog taskId={genTaskId} />
+      )}
       <Flex direction="column" className="flex-1 bg-gray-1" overflow="hidden">
         {interactive && (
           <Flex
