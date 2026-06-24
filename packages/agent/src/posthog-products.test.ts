@@ -3,6 +3,7 @@ import {
   classifyPostHogExecCall,
   classifyPostHogSqlQuery,
   classifyPostHogSubTool,
+  isUnclassifiedPostHogSubTool,
   POSTHOG_PRODUCTS,
   type PostHogProductId,
 } from "./posthog-products";
@@ -20,6 +21,23 @@ describe("classifyPostHogSubTool", () => {
     ["cdp-functions-list", "cdp"],
     ["insight-create", "product_analytics"],
   ])("maps resource sub-tool %s to %s", (subTool, product) => {
+    expect(classifyPostHogSubTool(subTool)).toBe(product);
+  });
+
+  // Domains whose canonical token differs from the longer per-sub-tool name we
+  // used to key on — these previously fell through to the generic fallback.
+  it.each([
+    ["llma-evaluation-list", "llm_analytics"],
+    ["llma-clustering-get", "llm_analytics"],
+    ["llma-trace-get", "llm_analytics"],
+    ["notebook-create", "product_analytics"],
+    ["cdp-function-update", "cdp"],
+    ["cdp-function-templates-list", "cdp"],
+    ["external-data-schemas-list", "data_warehouse"],
+    ["event-definition-list", "product_analytics"],
+    ["web-analytics-weekly-digest-get", "web_analytics"],
+    ["vision-scanners-create", "session_replay"],
+  ])("maps newly-covered sub-tool %s to %s", (subTool, product) => {
     expect(classifyPostHogSubTool(subTool)).toBe(product);
   });
 
@@ -89,6 +107,35 @@ describe("classifyPostHogSubTool", () => {
     for (const id of ids) {
       expect(POSTHOG_PRODUCTS[id]).toBeDefined();
     }
+  });
+});
+
+describe("isUnclassifiedPostHogSubTool", () => {
+  it.each(["brand-new-thing-list", "totally-made-up-get"])(
+    "flags genuinely-unknown domain %s",
+    (subTool) => {
+      expect(isUnclassifiedPostHogSubTool(subTool)).toBe(true);
+    },
+  );
+
+  it.each([
+    // Mapped product domains.
+    "experiment-list",
+    "llma-evaluation-list",
+    "vision-scanners-create",
+    // Deliberately-suppressed admin/meta domains — recognized, not unknown.
+    "project-get",
+    "docs-search",
+    "tasks-list",
+    // Special-cased call shapes.
+    "query-trends",
+    "execute-sql",
+    "activity-log-list",
+    // Empty input.
+    "",
+    "   ",
+  ])("does not flag recognized or special-cased call %j", (subTool) => {
+    expect(isUnclassifiedPostHogSubTool(subTool)).toBe(false);
   });
 });
 
