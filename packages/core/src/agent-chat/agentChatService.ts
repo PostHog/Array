@@ -523,9 +523,9 @@ export class AgentChatService {
             request_id,
             token,
           );
-          // Drop the result if the stream was superseded (new chat / revision
-          // flip) while the fetch was in flight.
-          if (detail && rt.epoch === epoch) {
+          // Skip if the stream was superseded (epoch) or the approval was
+          // already decided while the fetch was in flight (re-checked state).
+          if (detail && detail.state === "queued" && rt.epoch === epoch) {
             agentChatStore.getState().setPendingApproval(chatId, detail);
           }
         } catch {
