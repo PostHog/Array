@@ -17,8 +17,10 @@ const EMPTY_STRING_MAP: ReadonlyMap<string, string> = new Map();
 // the channel tree. A generation task nests while it's actively generating, and
 // stays nested afterwards until the user has actually looked at the task — i.e.
 // there's activity they haven't seen. (A never-viewed task counts as unseen, so
-// it stays put rather than vanishing the instant it finishes.) Opening the task
-// marks it viewed and drops it back into the channel's regular list; sending a
+// it stays put rather than vanishing the instant it finishes.) The task being
+// viewed right now stays nested too, so it doesn't jump out from under the
+// canvas while the user is still on its task view (opening it marks it viewed);
+// it drops into the channel's regular list once they navigate away. Sending a
 // follow-up starts it generating again and re-nests it.
 //
 // Derived in bulk from one sessions + timestamps read (rather than per row) so
@@ -27,6 +29,7 @@ const EMPTY_STRING_MAP: ReadonlyMap<string, string> = new Map();
 export function useNestedGenerationTaskIds(
   dashboards: DashboardSummary[],
   tasks: Task[] | undefined,
+  openTaskId: string | undefined,
 ): ReadonlySet<string> {
   const sessions = useSessions();
   const { timestamps } = useTaskViewed();
@@ -64,8 +67,9 @@ export function useNestedGenerationTaskIds(
       const lastViewedAt = timestamps[taskId]?.lastViewedAt;
       const hasUnseenActivity =
         lastViewedAt == null || data.lastActivityAt > lastViewedAt;
-      if (data.isGenerating || hasUnseenActivity) nested.add(taskId);
+      if (data.isGenerating || hasUnseenActivity || taskId === openTaskId)
+        nested.add(taskId);
     }
     return nested;
-  }, [dashboards, tasks, sessions, timestamps]);
+  }, [dashboards, tasks, sessions, timestamps, openTaskId]);
 }

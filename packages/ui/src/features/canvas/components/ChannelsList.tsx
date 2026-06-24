@@ -1007,8 +1007,17 @@ function ChannelSection({
   // A canvas's generation task is shown nested under the canvas while it's
   // generating (and until the user has seen the result); don't also list it
   // flat below. Once it drops out of this set it reappears in the regular list
-  // (if filed there).
-  const nestedGenerationTaskIds = useNestedGenerationTaskIds(dashboards, tasks);
+  // (if filed there). The currently-open task stays nested so it doesn't jump
+  // out from under the canvas while still being viewed.
+  const openTaskPrefix = `${base}/tasks/`;
+  const openTaskId = pathname.startsWith(openTaskPrefix)
+    ? pathname.slice(openTaskPrefix.length).split("/")[0]
+    : undefined;
+  const nestedGenerationTaskIds = useNestedGenerationTaskIds(
+    dashboards,
+    tasks,
+    openTaskId,
+  );
   const visibleFiledTasks = filedTasks
     .filter(
       ({ taskId }) =>
