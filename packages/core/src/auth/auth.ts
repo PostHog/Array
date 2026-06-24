@@ -421,15 +421,20 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return;
     }
 
-    this.setRestoringState(storedSession);
+    this.setRestoringState(storedSession, false);
 
     try {
       const restore = this.ensureValidSession().then(() => undefined);
       const outcome = await withTimeout(restore, AUTH_BOOTSTRAP_DEADLINE_MS);
       if (outcome.result === "timeout") {
         this.logger.warn(
-          "Auth bootstrap exceeded deadline; keeping stored session in restoring state",
+          "Auth bootstrap exceeded deadline; completing bootstrap while the restore continues in the background",
         );
+        // A stored session that is merely slow to refresh must not strand the
+        // renderer on the boot screen. Complete bootstrap but stay "restoring"
+        // so a late success still upgrades and consumers don't treat the delay
+        // as a logout.
+        this.completeBootstrapWhileRestoring(storedSession);
         restore.catch((error) => {
           this.logger.warn("Background auth restore failed after deadline", {
             error,
@@ -443,11 +448,14 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     }
   }
 
-  private setRestoringState(storedSession: StoredSessionInput): void {
+  private setRestoringState(
+    storedSession: StoredSessionInput,
+    bootstrapComplete: boolean,
+  ): void {
     this.session = null;
     this.updateState({
       status: "restoring",
-      bootstrapComplete: false,
+      bootstrapComplete,
       cloudRegion: storedSession.cloudRegion,
       orgProjectsMap: {},
       currentOrgId: null,
@@ -457,15 +465,23 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     });
   }
 
+  private completeBootstrapWhileRestoring(
+    storedSession: StoredSessionInput,
+  ): void {
+    // Only meaningful while the stored session is still on disk: a rejected
+    // refresh token clears it and publishes a real anonymous state instead.
+    // Transient/offline failures keep the session, so stay "restoring" (no
+    // logout side effects) but flip bootstrapComplete so the renderer leaves
+    // the boot gate rather than stranding on the loading screen.
+    if (this.authSession.getCurrent()) {
+      this.setRestoringState(storedSession, true);
+    }
+  }
+
   private handleStoredSessionRestoreFailure(
     storedSession: StoredSessionInput,
   ): void {
-    // Refresh-token auth errors clear the stored session and publish a real
-    // anonymous state from refreshSession. Transient/offline failures keep the
-    // stored session on disk, so consumers must not treat them as logout.
-    if (this.authSession.getCurrent()) {
-      this.setRestoringState(storedSession);
-    }
+    this.completeBootstrapWhileRestoring(storedSession);
   }
 
   private async ensureValidSession(
