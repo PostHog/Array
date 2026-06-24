@@ -390,7 +390,11 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
             </InputGroupAddon>
           </InputGroup>
           {slotMachineMode && !inStopMode && (
-            <SlotMachineSubmit disabled={submitBlocked} onSubmit={doSubmit} />
+            <SlotMachineSubmit
+              disabled={submitBlocked}
+              onSubmit={doSubmit}
+              tourTarget={tourTarget}
+            />
           )}
         </Flex>
       </Flex>

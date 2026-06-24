@@ -12,6 +12,12 @@ interface SlotMachineSubmitProps {
   disabled: boolean;
   /** Fires the prompt. Called on the lever's downswing. */
   onSubmit: () => void;
+  /**
+   * Tour anchor prefix. When set, the lever carries `data-tour="<target>-submit"`
+   * so the create-first-task tour's submit step can still find and advance off
+   * it while slot machine mode is enabled.
+   */
+  tourTarget?: string;
 }
 
 /**
@@ -22,6 +28,7 @@ interface SlotMachineSubmitProps {
 export function SlotMachineSubmit({
   disabled,
   onSubmit,
+  tourTarget,
 }: SlotMachineSubmitProps) {
   const lever = useAnimationControls();
   const submitTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -67,6 +74,7 @@ export function SlotMachineSubmit({
         disabled={disabled}
         aria-label="Pull the slot machine lever to send"
         className="group relative flex w-9 shrink-0 cursor-pointer items-end justify-center self-stretch disabled:cursor-not-allowed disabled:opacity-40"
+        {...(tourTarget && { "data-tour": `${tourTarget}-submit` })}
       >
         {/* Housing the arm pivots out of, bolted to the side of the machine. */}
         <span className="-translate-x-1/2 absolute bottom-0 left-1/2 h-3 w-5 rounded-t-[3px] bg-gradient-to-b from-gray-7 to-gray-9 shadow-sm" />
