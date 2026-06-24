@@ -98,18 +98,15 @@ export function ScoutDetailHeader({
       </Flex>
 
       {rollup && rollup.runCount > 0 ? (
-        <Text className="text-[12.5px] text-gray-11">
-          {capitalize(windowLabel)}: {rollup.runCount} runs ·{" "}
-          {rollup.completedCount} completed · {rollup.failedCount} failed ·{" "}
-          {rollup.emittedCount} signal{rollup.emittedCount === 1 ? "" : "s"}{" "}
-          emitted
-        </Text>
-      ) : null}
-
-      {rollup && rollup.runs.length > 0 ? (
-        <Box>
-          <ScoutRunBoxes runs={rollup.runs} />
-        </Box>
+        <Flex align="center" gap="3" wrap="wrap">
+          <Text className="text-[12.5px] text-gray-11">
+            {capitalize(windowLabel)}: {rollup.runCount} runs ·{" "}
+            {rollup.completedCount} completed · {rollup.failedCount} failed ·{" "}
+            {rollup.emittedCount} signal{rollup.emittedCount === 1 ? "" : "s"}{" "}
+            emitted
+          </Text>
+          {rollup.runs.length > 0 ? <ScoutRunBoxes runs={rollup.runs} /> : null}
+        </Flex>
       ) : null}
 
       {settingsOpen ? (
