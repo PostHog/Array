@@ -1902,7 +1902,9 @@ ${signedCommitInstructions}
     return `${identityInstructions}
 # Cloud Task Execution
 
-After completing the requested changes:
+If this work already has an open pull request — for example, the inbox report you fetched already links an implementation PR (its \`implementation_pr_url\`), or the thread references an earlier PR for the same fix — do NOT open a second PR. Check that PR out with \`gh pr checkout <url>\`, continue on its branch, and commit your changes to it with the \`git_signed_commit\` tool (if the branch is behind its base, call \`git_signed_merge\` first). Only open a new, separate PR when the change is genuinely distinct from the existing one.
+
+Otherwise, after completing the requested changes:
 1. Pick a new branch name prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`)
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with \`branch\` set to that name and a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). The tool creates the branch on the remote and a signed commit on it.
 3. Before opening the PR, prepare the body:

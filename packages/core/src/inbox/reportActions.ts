@@ -37,7 +37,7 @@ export function buildCreatePrReportPrompt({
   feedback,
 }: BuildCreatePrReportPromptOptions): string {
   const reportLink = `${getDeeplinkProtocol(isDevBuild)}://inbox/${reportId}`;
-  const base = `Act on PostHog inbox report ${reportId} ([inbox item](${reportLink})). Use the inbox MCP tools to fetch the report, its contributing findings, and any suggested reviewers; investigate the root cause; implement the fix; and open a PR. If you can't fetch the report, stop and report that instead of guessing what it contains.`;
+  const base = `Act on PostHog inbox report ${reportId} ([inbox item](${reportLink})). Use the inbox MCP tools to fetch the report, its contributing findings, any suggested reviewers, and any implementation PR already linked to it; investigate the root cause; and implement the fix.\n\nIf the report already has a linked implementation PR (check the report's \`implementation_pr_url\`) and it is still open, you are iterating on existing work: check that PR out with \`gh pr checkout <url>\`, continue on its branch, and commit your changes to that same PR. Do NOT open a second PR for the same fix. Otherwise, open a PR. Only open a separate PR alongside an existing one when the user's feedback clearly asks for a distinct change.\n\nIf you can't fetch the report, stop and report that instead of guessing what it contains.`;
   const trimmedFeedback = feedback?.trim();
   if (!trimmedFeedback) return base;
   return `${base}\n\nAdditional feedback from the user (take this into account, including any questions raised in the report thread):\n${trimmedFeedback}`;
