@@ -13,7 +13,6 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
 import { buildSandboxDocument, type SandboxMode } from "./sandboxRuntime";
 
@@ -68,7 +67,6 @@ export function FreeformCanvas({
   refreshKey = 0,
 }: FreeformCanvasProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState<number | null>(null);
   // The canvas mirrors the host's light/dark theme. Passed via `init` (not the
   // srcDoc) so a theme switch updates the running canvas in place, like `code`.
   const theme = useThemeStore((s) => (s.isDarkMode ? "dark" : "light"));
@@ -136,7 +134,7 @@ export function FreeformCanvas({
   // Subscribed once for the component's life; reads latest props via the ref.
   // Layout effect (not passive): the listener must be attached during commit,
   // before the browser yields to the iframe's load task — otherwise the iframe's
-  // one-shot "ready" (and early data-request/error/resize) can fire before the
+  // one-shot "ready" (and early data-request/error) can fire before the
   // listener exists and be lost, leaving the canvas blank on a cold first open.
   useLayoutEffect(() => {
     const post = (msg: HostToCanvasMessage) => {
@@ -179,9 +177,6 @@ export function FreeformCanvas({
           break;
         case "rendered":
           latest.current.onRendered?.();
-          break;
-        case "resize":
-          setHeight(msg.height);
           break;
         case "navigate":
           // msg.nav is already allowlist-validated by safeParse below.
@@ -256,8 +251,7 @@ export function FreeformCanvas({
       }}
       // bg tracks the host theme so there's no white flash in dark mode before
       // the iframe paints; the canvas body uses the same --background token.
-      className="w-full border-0 bg-background"
-      style={{ height: height ? `${height}px` : "100%", minHeight: "100%" }}
+      className="h-full w-full border-0 bg-background"
     />
   );
 }
