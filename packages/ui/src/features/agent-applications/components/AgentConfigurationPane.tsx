@@ -37,6 +37,7 @@ import { useAgentRevisionBundle } from "../hooks/useAgentRevisionBundle";
 import { useAgentRevisions } from "../hooks/useAgentRevisions";
 import { triggerRequiredSecretsFor } from "../utils/triggerSecrets";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
+import { AgentModelConfig } from "./AgentModelConfig";
 import { AgentRevisionBar } from "./AgentRevisionBar";
 import { CopyButton } from "./CopyButton";
 import { CronFireButton } from "./CronFireButton";
@@ -460,7 +461,7 @@ export function AgentConfigurationPane({
 
 const SECTION_INFO: Record<string, string> = {
   "cfg:model":
-    "The model every request goes to. `reasoning` sets the extended-thinking budget; limits cap a run's turns, tool calls and wall time.",
+    "How the agent picks its model. `auto` resolves a level (low/medium/high) to a maintained cross-provider list at runtime; `manual` pins an explicit priority list. `reasoning` sets the extended-thinking budget.",
   "cfg:instructions":
     "The agent's entrypoint prompt (agent.md) — the always-on system instructions.",
   "cfg:triggers": "What can start a session — chat, webhook, mcp, slack, cron.",
@@ -695,9 +696,8 @@ function byPath(files: BundleFile[], path: string): BundleFile | undefined {
 
 function ModelBody({ spec }: { spec: AgentSpec }) {
   return (
-    <Flex direction="column" gap="2">
-      <Row label="model" value={spec.model ?? "not set"} mono />
-      <Row label="reasoning" value={spec.reasoning ?? "default"} />
+    <Flex direction="column" gap="4">
+      <AgentModelConfig spec={spec} />
       {spec.entrypoint ? (
         <Row label="entrypoint" value={spec.entrypoint} mono />
       ) : null}

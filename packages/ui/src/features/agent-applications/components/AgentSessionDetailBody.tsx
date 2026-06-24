@@ -19,6 +19,9 @@ interface SessionMetrics {
   messages: number;
   toolCalls: number;
   errors: number;
+  /** Distinct models that answered, in first-seen order. Usually one; more than
+   *  one means the turn(s) fell back across the policy list. */
+  models: string[];
 }
 
 function computeMetrics(
@@ -26,12 +29,14 @@ function computeMetrics(
 ): SessionMetrics {
   let toolCalls = 0;
   let errors = 0;
+  const models: string[] = [];
   for (const msg of session.conversation) {
     if (msg.role === "assistant") {
       for (const part of msg.content) {
         if (part.type === "toolCall") toolCalls += 1;
       }
       if (msg.errorMessage) errors += 1;
+      if (msg.model && !models.includes(msg.model)) models.push(msg.model);
     } else if (msg.role === "toolResult" && msg.isError) {
       errors += 1;
     }
@@ -40,6 +45,7 @@ function computeMetrics(
     messages: session.conversation_total_turns ?? session.conversation.length,
     toolCalls,
     errors,
+    models,
   };
 }
 
@@ -134,6 +140,18 @@ export function AgentSessionDetailBody({
                   label="Tool calls"
                   value={String(metrics.toolCalls)}
                 />
+                {metrics.models.length > 0 ? (
+                  <MetricItem
+                    label="Model"
+                    value={
+                      metrics.models.length === 1
+                        ? metrics.models[0]
+                        : `${metrics.models[0]} +${metrics.models.length - 1}`
+                    }
+                    title={metrics.models.join(", ")}
+                    mono
+                  />
+                ) : null}
                 <MetricItem
                   label="Cost"
                   value={formatSpendUsd(session.usage_total.cost_total)}
@@ -219,10 +237,14 @@ function MetricItem({
   label,
   value,
   tone,
+  mono,
+  title,
 }: {
   label: string;
   value: string;
   tone?: "bad";
+  mono?: boolean;
+  title?: string;
 }) {
   return (
     <Flex direction="column" gap="0.5">
@@ -230,9 +252,10 @@ function MetricItem({
         {label}
       </Text>
       <Text
+        title={title}
         className={`font-semibold text-[14px] leading-none ${
           tone === "bad" ? "text-(--red-11)" : "text-gray-12"
-        }`}
+        } ${mono ? "text-[12.5px] [font-family:var(--font-mono)]" : ""}`}
       >
         {value}
       </Text>
