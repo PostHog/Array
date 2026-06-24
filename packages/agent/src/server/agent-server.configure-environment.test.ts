@@ -246,17 +246,14 @@ describe("AgentServer.configureEnvironment", () => {
   });
 
   it("routes PostHog AI origin through the posthog_ai product", () => {
-    buildServer("interactive").configureEnvironment({
+    const env = buildServer("interactive").configureEnvironment({
       originProduct: "posthog_ai",
     });
 
-    expect(process.env.LLM_GATEWAY_URL).toBe(
+    expect(env.anthropicBaseUrl).toBe(
       "https://gateway.us.posthog.com/posthog_ai",
     );
-    expect(process.env.ANTHROPIC_BASE_URL).toBe(
-      "https://gateway.us.posthog.com/posthog_ai",
-    );
-    expect(process.env.OPENAI_BASE_URL).toBe(
+    expect(env.openaiBaseUrl).toBe(
       "https://gateway.us.posthog.com/posthog_ai/v1",
     );
   });
