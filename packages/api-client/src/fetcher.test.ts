@@ -26,6 +26,16 @@ describe("buildApiFetcher", () => {
     };
     return response;
   };
+  const redirect = (location: string) =>
+    ({
+      ok: false,
+      status: 302,
+      headers: new Headers({ location }),
+      json: () => Promise.reject(new Error("redirect has no JSON body")),
+      clone: () => ({
+        text: () => Promise.resolve(""),
+      }),
+    }) as Response;
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -126,6 +136,27 @@ describe("buildApiFetcher", () => {
 
     await expect(fetcher.fetch(mockInput)).rejects.toThrow("[400]");
     expect(refreshAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("returns manual redirect responses without treating them as errors", async () => {
+    const refreshAccessToken = vi.fn().mockResolvedValue("new-token");
+    mockFetch.mockResolvedValueOnce(redirect("https://auth.example.com"));
+
+    const fetcher = buildApiFetcher({
+      getAccessToken: vi.fn().mockResolvedValue("token"),
+      refreshAccessToken,
+      appVersion: "test",
+    });
+
+    const response = await fetcher.fetch({
+      ...mockInput,
+      overrides: { redirect: "manual" },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("https://auth.example.com");
+    expect(refreshAccessToken).not.toHaveBeenCalled();
+    expect(mockFetch.mock.calls[0][1].redirect).toBe("manual");
   });
 
   it("throws when the retry still returns 401", async () => {

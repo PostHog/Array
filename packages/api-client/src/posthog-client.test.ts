@@ -418,6 +418,52 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it("returns the redirect location when authorizing an MCP installation", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 302,
+      headers: new Headers({
+        location: "https://auth.example.com/authorize?state=abc",
+      }),
+      json: async () => {
+        throw new Error("redirect response should not be parsed as JSON");
+      },
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await expect(
+      client.authorizeMcpInstallation({
+        installation_id: "inst-123",
+        install_source: "posthog-code",
+        posthog_code_callback_url: "posthog-code://mcp-oauth-complete",
+      }),
+    ).resolves.toEqual({
+      redirect_url: "https://auth.example.com/authorize?state=abc",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "get",
+        path: "/api/environments/123/mcp_server_installations/authorize/",
+        overrides: { redirect: "manual" },
+      }),
+    );
+  });
+
   describe("warmTask", () => {
     function makeClient(fetch: ReturnType<typeof vi.fn>) {
       const client = new PostHogAPIClient(
