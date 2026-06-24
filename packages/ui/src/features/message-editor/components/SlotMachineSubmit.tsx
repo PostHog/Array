@@ -1,6 +1,11 @@
 import { Tooltip } from "@radix-ui/themes";
 import { motion, useAnimationControls } from "framer-motion";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
+
+// The arm reaches the bottom of its swing at ~270ms (0.45 of the 0.6s tween).
+// Fire the prompt there so the pull visibly completes before submitting flips
+// the composer into loading and unmounts the lever.
+const SUBMIT_DELAY_MS = 260;
 
 interface SlotMachineSubmitProps {
   /** Blocks the pull and greys out the handle (empty editor / external block). */
@@ -19,22 +24,35 @@ export function SlotMachineSubmit({
   onSubmit,
 }: SlotMachineSubmitProps) {
   const lever = useAnimationControls();
+  const submitTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Don't leave a pending submit timer to fire after the lever unmounts.
+  useEffect(() => {
+    return () => {
+      if (submitTimeout.current !== null) {
+        clearTimeout(submitTimeout.current);
+      }
+    };
+  }, []);
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
       if (disabled) return;
-      // Swing the arm down and let it spring back, firing the prompt on the
-      // downswing so the send feels like the pull caused it.
+      // Swing the arm down and let it spring back. The submit is deferred to
+      // the bottom of the swing so the pull plays out before the prompt fires.
       void lever.start({
         rotate: [0, 72, 0],
         transition: {
-          duration: 0.55,
-          times: [0, 0.4, 1],
+          duration: 0.6,
+          times: [0, 0.45, 1],
           ease: ["easeIn", "easeOut"],
         },
       });
-      onSubmit();
+      if (submitTimeout.current !== null) {
+        clearTimeout(submitTimeout.current);
+      }
+      submitTimeout.current = setTimeout(onSubmit, SUBMIT_DELAY_MS);
     },
     [disabled, lever, onSubmit],
   );
