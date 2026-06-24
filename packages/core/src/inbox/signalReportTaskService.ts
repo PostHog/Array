@@ -4,12 +4,12 @@ import {
   type TaskCreationOutput,
 } from "@posthog/shared";
 import { inject, injectable } from "inversify";
+import { buildPostHogUrl } from "../settings/posthogUrl";
 import {
   type CreateTaskResult,
   TASK_SERVICE,
   type TaskService,
 } from "../task-detail/taskService";
-import { buildPostHogUrl } from "../settings/posthogUrl";
 import { REPORT_MODEL_RESOLVER, type ReportModelResolver } from "./identifiers";
 import {
   buildCreatePrReportPrompt,
