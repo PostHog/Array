@@ -27,8 +27,9 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { Box, Flex, Grid } from "@radix-ui/themes";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { memo, useState } from "react";
+import { memo, useCallback, useState } from "react";
 
 // Render each canvas's live app at 1/SCALE of the card width, then shrink so it
 // fits inside the fixed-height preview frame as a thumbnail.
@@ -153,23 +154,24 @@ const DashboardCard = memo(function DashboardCard({
   );
 });
 
-// Preview data handler for freeform cards: swallow captures so a thumbnail never
-// emits analytics events, but still let queries through so the preview shows
-// real-ish content. (posthog-js itself is never booted — no `analytics` prop —
-// so there's no autocapture/pageview/replay from previews either.)
-function previewDataRequest(
-  method: string,
-  payload: unknown,
-): Promise<unknown> {
-  if (method === "capture") return Promise.resolve({ ok: true });
-  return handleFreeformDataRequest(method, payload);
-}
-
 // A freeform (React-in-iframe) canvas preview: the app rendered at PREVIEW_SCALE
 // in a clipped frame, the same shape as DashboardPreview. Deferred until near
 // the viewport, and runs with NO analytics so it fires no events.
 function FreeformPreview({ code }: { code?: string }) {
   const [ref, inView] = useInView<HTMLDivElement>(PREVIEW_VIEWPORT);
+
+  // Preview data handler: swallow captures so a thumbnail never emits analytics
+  // events, but let reads through (cached, shared with the full view) so the
+  // preview shows real-ish content. (posthog-js itself is never booted — no
+  // `analytics` prop — so there's no autocapture/pageview/replay either.)
+  const queryClient = useQueryClient();
+  const onDataRequest = useCallback(
+    (method: string, payload: unknown) =>
+      method === "capture"
+        ? Promise.resolve({ ok: true })
+        : handleFreeformDataRequest(method, payload, queryClient),
+    [queryClient],
+  );
 
   return (
     <Box
@@ -196,7 +198,7 @@ function FreeformPreview({ code }: { code?: string }) {
               <FreeformCanvas
                 code={code}
                 mode="edit"
-                onDataRequest={previewDataRequest}
+                onDataRequest={onDataRequest}
               />
             </ErrorBoundary>
           </Box>

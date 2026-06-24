@@ -18,6 +18,7 @@ import {
   type DismissReportDialogResult,
 } from "@posthog/ui/features/inbox/components/DismissReportDialog";
 import { InboxBulkSelectionBar } from "@posthog/ui/features/inbox/components/InboxBulkSelectionBar";
+import { InboxLoadMore } from "@posthog/ui/features/inbox/components/InboxLoadMore";
 import { InboxSearchFilterBar } from "@posthog/ui/features/inbox/components/InboxSearchFilterBar";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import {
@@ -97,7 +98,14 @@ export function InboxReportListTab({
   CardListWrapper,
   pullRequestsOnly = false,
 }: InboxReportListTabProps) {
-  const { scopedReports, allReports, isLoading } = useInboxAllReports({
+  const {
+    scopedReports,
+    allReports,
+    isLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInboxAllReports({
     pullRequestsOnly,
   });
   const scope = useInboxReviewerScopeStore((s) => s.scope);
@@ -177,7 +185,7 @@ export function InboxReportListTab({
           />
         ) : null}
 
-        {matchingReports.length === 0 ? (
+        {matchingReports.length === 0 && !hasNextPage ? (
           <Empty className="mx-auto max-w-md py-16">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -188,28 +196,40 @@ export function InboxReportListTab({
             </EmptyHeader>
           </Empty>
         ) : (
-          <CardListContainer
-            reports={matchingReports}
-            Wrapper={CardListWrapper}
-          >
-            <Flex direction="column" gap="3">
-              {matchingReports.map((report) => (
-                <Card
-                  key={report.id}
-                  report={report}
-                  isSelected={isReportSelected(report.id)}
-                  onRowClick={(event) => handleReportClick(report.id, event)}
-                  onDismiss={() => setDismissReport(report)}
-                  dismissDisabledReason={
-                    suppressDisabledByReportId.get(report.id) ?? null
-                  }
-                  isDismissPending={
-                    dismissReport?.id === report.id && dismissMutationPending
-                  }
-                />
-              ))}
-            </Flex>
-          </CardListContainer>
+          <>
+            {matchingReports.length > 0 && (
+              <CardListContainer
+                reports={matchingReports}
+                Wrapper={CardListWrapper}
+              >
+                <Flex direction="column" gap="3">
+                  {matchingReports.map((report) => (
+                    <Card
+                      key={report.id}
+                      report={report}
+                      isSelected={isReportSelected(report.id)}
+                      onRowClick={(event) =>
+                        handleReportClick(report.id, event)
+                      }
+                      onDismiss={() => setDismissReport(report)}
+                      dismissDisabledReason={
+                        suppressDisabledByReportId.get(report.id) ?? null
+                      }
+                      isDismissPending={
+                        dismissReport?.id === report.id &&
+                        dismissMutationPending
+                      }
+                    />
+                  ))}
+                </Flex>
+              </CardListContainer>
+            )}
+            <InboxLoadMore
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              onLoadMore={() => void fetchNextPage({ cancelRefetch: false })}
+            />
+          </>
         )}
       </Flex>
 

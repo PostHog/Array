@@ -16,6 +16,7 @@ export interface CreateWorkspaceArgs {
   mode: WorkspaceMode;
   branch?: string;
   allowRemoteBranchCheckout?: boolean;
+  reuseExistingWorktree?: boolean;
 }
 
 export interface CreatedWorkspaceInfo {

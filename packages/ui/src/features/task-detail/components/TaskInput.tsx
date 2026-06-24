@@ -52,7 +52,10 @@ import {
   type AgentAdapter,
   useSettingsStore,
 } from "../../settings/settingsStore";
-import { useInitialDirectoryFromFolderId } from "../hooks/useInitialDirectoryFromFolderId";
+import {
+  areReposReady,
+  useInitialRepoSelectionFromFolderId,
+} from "../hooks/useInitialRepoSelectionFromFolderId";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
@@ -144,6 +147,7 @@ export function TaskInput({
   );
   const {
     setLastUsedLocalWorkspaceMode,
+    lastUsedLocalWorkspaceMode,
     lastUsedWorkspaceMode,
     setLastUsedWorkspaceMode,
     lastUsedAdapter,
@@ -500,7 +504,29 @@ export function TaskInput({
     setLastUsedCloudRepository,
   ]);
 
-  useInitialDirectoryFromFolderId(view.folderId, folders, setSelectedDirectory);
+  // Switch mode for a folder-scoped prefill ("+" in the sidebar) without persisting it as
+  // the user's mode preference. Marks the mode as resolved so the last-used resolver above
+  // doesn't override the explicit pick.
+  const switchWorkspaceModeForFolder = useCallback((mode: WorkspaceMode) => {
+    didResolveWorkspaceModeRef.current = true;
+    setWorkspaceModeState(mode);
+  }, []);
+
+  useInitialRepoSelectionFromFolderId({
+    folderId: view.folderId,
+    folders,
+    repositories,
+    reposLoaded: areReposReady({
+      isLoadingRepos,
+      repositoriesCount: repositories.length,
+      hasGithubIntegration,
+    }),
+    currentMode: workspaceMode,
+    lastUsedLocalMode: lastUsedLocalWorkspaceMode,
+    setSelectedDirectory,
+    setSelectedRepository,
+    switchWorkspaceMode: switchWorkspaceModeForFolder,
+  });
 
   useEffect(() => {
     setCloudBranchSearchQuery("");

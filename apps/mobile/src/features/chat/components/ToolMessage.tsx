@@ -963,6 +963,9 @@ export function ToolMessage({
     const outputText = resultText ? stripAnsi(resultText) : null;
     const hasOutput = !!outputText?.trim();
     const isExpandable = !!fullInput || hasOutput;
+    // Surface output for failures too — otherwise a failed call shows "Failed"
+    // with no reason, even though the error text lives in the result content.
+    const showOutput = (isCompleted || isFailed) && hasOutput;
 
     return (
       <View className={`px-4 py-1 ${isRunning ? "bg-accent-3/30" : ""}`}>
@@ -1016,7 +1019,7 @@ export function ToolMessage({
           </View>
         )}
 
-        {isOpen && isCompleted && hasOutput && outputText && (
+        {isOpen && showOutput && outputText && (
           <View className="mt-1.5 ml-5 rounded border border-gray-6 bg-gray-2 px-2 py-1.5">
             <Text
               className="font-mono text-[11px] text-gray-11 leading-4"

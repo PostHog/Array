@@ -7,7 +7,7 @@ import {
   closeTabsToRight as coreCloseTabsToRight,
   keepTab as coreKeepTab,
   moveTab as coreMoveTab,
-  openContextInSplit as coreOpenContextInSplit,
+  openReadonlyTabInSplit as coreOpenReadonlyTabInSplit,
   openTab as coreOpenTab,
   openTabInSplit as coreOpenTabInSplit,
   reorderTabs as coreReorderTabs,
@@ -54,6 +54,10 @@ export interface PanelLayoutStore {
   openChannelContextInSplit: (
     taskId: string,
     context: { channelName: string | null; body: string },
+  ) => void;
+  openCanvasInstructionsInSplit: (
+    taskId: string,
+    instructions: { body: string },
   ) => void;
   keepTab: (taskId: string, panelId: string, tabId: string) => void;
   closeTab: (taskId: string, panelId: string, tabId: string) => void;
@@ -173,11 +177,26 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
             state,
             taskId,
             (layout) =>
-              coreOpenContextInSplit(
+              coreOpenReadonlyTabInSplit(layout, tabId, label, {
+                type: "context",
+                channelName: context.channelName,
+                body: context.body,
+              }) as Partial<TaskLayout>,
+          ),
+        );
+      },
+
+      openCanvasInstructionsInSplit: (taskId, instructions) => {
+        set((state) =>
+          updateTaskLayout(
+            state,
+            taskId,
+            (layout) =>
+              coreOpenReadonlyTabInSplit(
                 layout,
-                tabId,
-                label,
-                context,
+                "canvas-instructions",
+                "Canvas instructions",
+                { type: "canvas-instructions", body: instructions.body },
               ) as Partial<TaskLayout>,
           ),
         );

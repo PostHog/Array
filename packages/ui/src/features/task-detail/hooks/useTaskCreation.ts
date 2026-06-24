@@ -40,8 +40,10 @@ import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryS
 import type { EditorHandle } from "../../message-editor/types";
 import { useSettingsStore } from "../../settings/settingsStore";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
+import { useTasks } from "../../tasks/useTasks";
 import { useTourStore } from "../../tour/tourStore";
 import { createFirstTaskTour } from "../../tour/tours/createFirstTaskTour";
+import { useExistingWorktreeConfirmStore } from "../stores/existingWorktreeConfirmStore";
 import { useRemoteBranchConfirmStore } from "../stores/remoteBranchConfirmStore";
 
 const log = logger.scope("task-creation");
@@ -177,6 +179,8 @@ export function useTaskCreation({
   );
   const { invalidateTasks } = useCreateTask();
   const { isOnline } = useConnectivity();
+  // Used to name the task occupying a branch's worktree when reuse is blocked.
+  const { data: tasks } = useTasks();
 
   const hasRequiredPath = allowNoRepo
     ? true
@@ -199,18 +203,41 @@ export function useTaskCreation({
         return false;
       }
 
-      // If the chosen worktree branch only exists on the remote, confirm before
-      // fetching and checking it out locally. Done before the pending view so
-      // the dialog (and a cancel) don't leave a half-started task on screen.
+      // Confirm a couple of worktree branch situations before starting the
+      // task. Done before the pending view so a dialog (and a cancel) don't
+      // leave a half-started task on screen. Reusing an existing worktree takes
+      // priority over checking out a remote branch.
       let allowRemoteBranchCheckout = false;
+      let reuseExistingWorktree = false;
       if (workspaceMode === "worktree" && branch && selectedDirectory) {
         try {
-          const { status } =
+          const { status, existingWorktreePath, existingWorktreeTaskId } =
             await hostClient.workspace.checkWorktreeBranch.query({
               mainRepoPath: selectedDirectory,
               branch,
             });
-          if (status === "remote-only") {
+          if (existingWorktreeTaskId) {
+            // The branch's worktree already belongs to another task. Don't
+            // create a duplicate; point the user at the task using it.
+            const occupant = tasks?.find(
+              (t) => t.id === existingWorktreeTaskId,
+            );
+            toast.error("Worktree already in use", {
+              description: occupant
+                ? `${branch} already has a worktree used by "${occupant.title}". Open that task to keep working there.`
+                : `${branch} already has a worktree used by another task.`,
+            });
+            return false;
+          }
+          if (existingWorktreePath) {
+            const confirmed = await useExistingWorktreeConfirmStore
+              .getState()
+              .confirm(branch, existingWorktreePath);
+            if (!confirmed) {
+              return false;
+            }
+            reuseExistingWorktree = true;
+          } else if (status === "remote-only") {
             const confirmed = await useRemoteBranchConfirmStore
               .getState()
               .confirm(branch);
@@ -267,6 +294,7 @@ export function useTaskCreation({
           workspaceMode,
           branch,
           allowRemoteBranchCheckout,
+          reuseExistingWorktree,
           executionMode,
           adapter,
           model,
@@ -396,6 +424,7 @@ export function useTaskCreation({
       trpc,
       queryClient,
       taskService,
+      tasks,
     ],
   );
 

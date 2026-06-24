@@ -7,7 +7,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { track } from "@posthog/ui/shell/analytics";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { SeverityBadge } from "./ScoutBadges";
 import { ScoutLinkedReportChip } from "./ScoutLinkedReportChip";
@@ -91,6 +91,21 @@ export function ScoutEmissionCard({
       >
         <MarkdownRenderer content={emission.description} />
       </Box>
+      {emission.tags?.length ? (
+        <Flex gap="1" mt="2" wrap="wrap">
+          {emission.tags.map((tag) => (
+            <Badge
+              key={tag}
+              variant="soft"
+              color="gray"
+              size="1"
+              className="text-[11px]"
+            >
+              {tag}
+            </Badge>
+          ))}
+        </Flex>
+      ) : null}
       {expanded ? (
         <Flex
           align="center"

@@ -22,6 +22,7 @@ import {
   createAcpConnection,
   type InProcessAcpConnection,
 } from "../adapters/acp-connection";
+import type { GatewayEnv } from "../adapters/claude/session/options";
 import {
   type AgentErrorClassification,
   classifyAgentError,
@@ -938,7 +939,7 @@ export class AgentServer {
       }),
     ]);
 
-    this.configureEnvironment({
+    const gatewayEnv = this.configureEnvironment({
       isInternal: preTask?.internal === true,
       originProduct: preTask?.origin_product,
       signalReportId: preTask?.signal_report,
@@ -988,11 +989,12 @@ export class AgentServer {
       deviceType: deviceInfo.type,
       logWriter,
       logger: this.logger,
+      claudeGatewayEnv: runtimeAdapter !== "codex" ? gatewayEnv : undefined,
       codexOptions:
         runtimeAdapter === "codex"
           ? {
               cwd: this.config.repositoryPath ?? "/tmp/workspace",
-              apiBaseUrl: process.env.OPENAI_BASE_URL,
+              apiBaseUrl: gatewayEnv.openaiBaseUrl,
               apiKey: this.config.apiKey,
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
@@ -2041,7 +2043,7 @@ ${signedCommitInstructions}
     taskRunId?: string | null;
     taskUserId?: number | null;
     taskTitle?: string | null;
-  } = {}): void {
+  } = {}): GatewayEnv {
     const { apiKey, apiUrl, projectId } = this.config;
     const product = resolveGatewayProduct({ isInternal, originProduct });
     const gatewayUrl = resolveLlmGatewayUrl(
@@ -2069,24 +2071,28 @@ ${signedCommitInstructions}
       task_title: taskTitle,
     });
 
+    // Server-level constants that don't vary per task — safe to keep in
+    // process.env so spawned tools (PostHog MCP, workspace-server, etc.) can
+    // reach the PostHog API without explicit threading.
     Object.assign(process.env, {
-      // PostHog
       POSTHOG_API_KEY: apiKey,
       POSTHOG_API_URL: apiUrl,
       POSTHOG_API_HOST: apiUrl,
       POSTHOG_AUTH_HEADER: `Bearer ${apiKey}`,
       POSTHOG_PROJECT_ID: String(projectId),
-      // Anthropic
-      ANTHROPIC_API_KEY: apiKey,
-      ANTHROPIC_AUTH_TOKEN: apiKey,
-      ANTHROPIC_BASE_URL: gatewayUrl,
-      ANTHROPIC_CUSTOM_HEADERS: customHeaders,
-      // OpenAI (for models like GPT-4, o1, etc.)
-      OPENAI_API_KEY: apiKey,
-      OPENAI_BASE_URL: openaiBaseUrl,
-      // Generic gateway
-      LLM_GATEWAY_URL: gatewayUrl,
     });
+
+    // Task-specific gateway config is returned rather than written to
+    // process.env so that concurrent sessions do not clobber each other's
+    // gateway URL, auth token, or custom headers.
+    return {
+      anthropicBaseUrl: gatewayUrl,
+      anthropicAuthToken: apiKey,
+      openaiBaseUrl,
+      openaiApiKey: apiKey,
+      anthropicCustomHeaders: customHeaders,
+      posthogProjectId: String(projectId),
+    };
   }
 
   private buildSlackQuestionRelayResponse(

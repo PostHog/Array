@@ -226,7 +226,6 @@
                       "electron",
                       "node:*",
                       "@posthog/*",
-                      "!@posthog/core",
                       "!@posthog/shared",
                       "!@posthog/shared/*"
                     ],
@@ -256,7 +255,6 @@
                       "electron",
                       "node:*",
                       "@posthog/*",
-                      "!@posthog/core",
                       "!@posthog/api-client",
                       "!@posthog/workspace-server"
                     ],
@@ -282,12 +280,7 @@
               "options": {
                 "patterns": [
                   {
-                    "group": [
-                      "electron",
-                      "node:*",
-                      "@posthog/*",
-                      "!@posthog/core"
-                    ],
+                    "group": ["electron", "node:*", "@posthog/*"],
                     "message": "platform is interface-only."
                   }
                 ]
@@ -313,8 +306,14 @@
                 },
                 "patterns": [
                   {
-                    "group": ["@posthog/ui", "@posthog/api-client"],
-                    "message": "workspace-server must not depend on UI or the PostHog API."
+                    "group": [
+                      "@posthog/ui",
+                      "@posthog/api-client",
+                      "@posthog/core",
+                      "@posthog/workspace-client",
+                      "@posthog/host-router"
+                    ],
+                    "message": "workspace-server must not depend on UI, the PostHog API, core, workspace-client, or host-router."
                   }
                 ]
               }

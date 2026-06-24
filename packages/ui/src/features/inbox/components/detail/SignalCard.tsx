@@ -688,11 +688,13 @@ function SessionRecordingVideo({
 
 function ErrorTrackingSignalCard({
   signal,
+  extra,
   verified,
   codePaths,
   dataQueried,
 }: {
   signal: Signal;
+  extra: ErrorTrackingExtra;
   verified?: boolean;
   codePaths?: string[];
   dataQueried?: string;
@@ -700,7 +702,11 @@ function ErrorTrackingSignalCard({
   const projectId = useAuthStateValue((s) => s.currentProjectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const issueUrl = signal.source_id
-    ? errorTrackingIssueUrl(signal.source_id, { projectId, cloudRegion })
+    ? errorTrackingIssueUrl(signal.source_id, {
+        projectId,
+        cloudRegion,
+        fingerprint: extra.fingerprint,
+      })
     : null;
 
   return (
@@ -904,6 +910,7 @@ export function SignalCard({
     content = (
       <ErrorTrackingSignalCard
         signal={signal}
+        extra={extra}
         verified={verified}
         codePaths={codePaths}
         dataQueried={dataQueried}

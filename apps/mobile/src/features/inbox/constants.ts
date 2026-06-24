@@ -2,8 +2,12 @@
 export const INBOX_PIPELINE_STATUS_FILTER =
   "potential,candidate,in_progress,ready,pending_input";
 
-/** Status filter for the Archive view — reports the user has dismissed. */
-export const INBOX_DISMISSED_STATUS_FILTER = "suppressed";
+/**
+ * Status filter for the Archive view — the two terminal, not-in-inbox states:
+ * `suppressed` (user archived it; restorable) and `resolved` (its
+ * implementation PR merged; terminal, reference only).
+ */
+export const INBOX_DISMISSED_STATUS_FILTER = "suppressed,resolved";
 
 /** Polling interval for inbox queries (ms). */
 export const INBOX_REFETCH_INTERVAL_MS = 5_000;

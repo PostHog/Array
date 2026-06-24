@@ -7,6 +7,7 @@ import {
   EmptyTitle,
 } from "@posthog/quill";
 import { CardSkeleton } from "@posthog/ui/features/inbox/components/CardSkeleton";
+import { InboxLoadMore } from "@posthog/ui/features/inbox/components/InboxLoadMore";
 import { ReportCard } from "@posthog/ui/features/inbox/components/ReportCard";
 import { useInboxDismissedReports } from "@posthog/ui/features/inbox/hooks/useInboxDismissedReports";
 import { useInboxRestoreReport } from "@posthog/ui/features/inbox/hooks/useInboxRestoreReport";
@@ -19,7 +20,8 @@ import { Flex } from "@radix-ui/themes";
  * a read-only detail view (summary + evidence) — no triage affordances.
  */
 export function DismissedTab() {
-  const { reports, isLoading } = useInboxDismissedReports();
+  const { reports, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    useInboxDismissedReports();
   const restore = useInboxRestoreReport();
   const restoringId = restore.isPending ? restore.variables : null;
 
@@ -62,6 +64,11 @@ export function DismissedTab() {
           isRestorePending={restoringId === report.id}
         />
       ))}
+      <InboxLoadMore
+        hasNextPage={hasNextPage}
+        isFetchingNextPage={isFetchingNextPage}
+        onLoadMore={() => void fetchNextPage({ cancelRefetch: false })}
+      />
     </Flex>
   );
 }

@@ -1,4 +1,4 @@
-import { MAIN_TOKENS } from "@main/di/tokens";
+import { SECURE_STORE_BACKEND } from "@main/di/tokens";
 import { decrypt, encrypt } from "@main/utils/encryption";
 import { logger } from "@main/utils/logger";
 import { inject, injectable } from "inversify";
@@ -28,7 +28,7 @@ export interface SecureStoreBackend {
 @injectable()
 export class SecureStoreService {
   constructor(
-    @inject(MAIN_TOKENS.SecureStoreBackend)
+    @inject(SECURE_STORE_BACKEND)
     private readonly store: SecureStoreBackend,
   ) {}
 

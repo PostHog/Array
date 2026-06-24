@@ -12,7 +12,12 @@ import {
 import { useThemeColors } from "@/lib/theme";
 import { useArchivedReports, useRestoreReport } from "../hooks/useInboxReports";
 import type { SignalReport } from "../types";
-import { dismissalReasonLabel, formatReportTimestamp } from "../utils";
+import {
+  dismissalReasonLabel,
+  formatReportTimestamp,
+  inboxStatusLabel,
+  isRestorableReport,
+} from "../utils";
 
 interface ArchivedReportListProps {
   onReportPress?: (report: SignalReport) => void;
@@ -36,6 +41,7 @@ const ArchivedRow = memo(function ArchivedRow({
 }: ArchivedRowProps) {
   const themeColors = useThemeColors();
   const when = formatReportTimestamp(new Date(report.updated_at));
+  const restorable = isRestorableReport(report);
   const reasonLabel = report.dismissal_reason
     ? dismissalReasonLabel(report.dismissal_reason)
     : null;
@@ -55,7 +61,16 @@ const ArchivedRow = memo(function ArchivedRow({
         </Text>
 
         <View className="mt-1 flex-row flex-wrap items-center gap-2">
-          <Text className="text-[11px] text-gray-9">Archived {when}</Text>
+          {restorable ? (
+            <Text className="text-[11px] text-gray-9">Archived {when}</Text>
+          ) : (
+            <>
+              <Text className="rounded bg-status-success/20 px-1.5 py-0.5 font-medium text-[11px] text-status-success">
+                {inboxStatusLabel(report.status)}
+              </Text>
+              <Text className="text-[11px] text-gray-9">{when}</Text>
+            </>
+          )}
           {reasonLabel ? (
             <Text className="rounded bg-gray-3 px-1.5 py-0.5 text-[11px] text-gray-11">
               {reasonLabel}
@@ -64,25 +79,27 @@ const ArchivedRow = memo(function ArchivedRow({
         </View>
       </View>
 
-      <Pressable
-        onPress={() => onRestore(report.id)}
-        disabled={restoring}
-        hitSlop={8}
-        accessibilityLabel="Restore report to inbox"
-        accessibilityRole="button"
-        className="flex-row items-center gap-1.5 self-center rounded-full border border-gray-6 px-3 py-1.5 active:bg-gray-3"
-      >
-        {restoring ? (
-          <ActivityIndicator size="small" color={themeColors.gray[11]} />
-        ) : (
-          <>
-            <ArrowCounterClockwise size={14} color={themeColors.gray[11]} />
-            <Text className="font-medium text-[12px] text-gray-11">
-              Restore
-            </Text>
-          </>
-        )}
-      </Pressable>
+      {restorable ? (
+        <Pressable
+          onPress={() => onRestore(report.id)}
+          disabled={restoring}
+          hitSlop={8}
+          accessibilityLabel="Restore report to inbox"
+          accessibilityRole="button"
+          className="flex-row items-center gap-1.5 self-center rounded-full border border-gray-6 px-3 py-1.5 active:bg-gray-3"
+        >
+          {restoring ? (
+            <ActivityIndicator size="small" color={themeColors.gray[11]} />
+          ) : (
+            <>
+              <ArrowCounterClockwise size={14} color={themeColors.gray[11]} />
+              <Text className="font-medium text-[12px] text-gray-11">
+                Restore
+              </Text>
+            </>
+          )}
+        </Pressable>
+      ) : null}
     </Pressable>
   );
 });
@@ -171,7 +188,7 @@ export function ArchivedReportList({
           Archive is empty
         </Text>
         <Text className="text-center text-[13px] text-gray-11">
-          Reports you dismiss show up here.
+          Dismissed and resolved reports show up here.
         </Text>
       </View>
     );

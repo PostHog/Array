@@ -27,7 +27,7 @@ import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
-import { isWindows } from "@posthog/ui/utils/platform";
+import { isMac, isWindows } from "@posthog/ui/utils/platform";
 import { Box, Flex } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -164,6 +164,7 @@ function BluebirdButton() {
 export const HEADER_HEIGHT = 36;
 const COLLAPSED_WIDTH = 110;
 const WINDOWS_TITLEBAR_INSET = 140;
+const MACOS_TRAFFIC_LIGHT_INSET = 70;
 
 export function HeaderRow() {
   const content = useHeaderStore((state) => state.content);
@@ -209,8 +210,10 @@ export function HeaderRow() {
         px="2"
         pr="3"
         style={{
-          width: sidebarOpen ? `${sidebarWidth}px` : `${COLLAPSED_WIDTH}px`,
-          minWidth: `${COLLAPSED_WIDTH}px`,
+          width: sidebarOpen
+            ? `${sidebarWidth}px`
+            : `${COLLAPSED_WIDTH + (isMac ? MACOS_TRAFFIC_LIGHT_INSET : 0)}px`,
+          minWidth: `${COLLAPSED_WIDTH + (isMac ? MACOS_TRAFFIC_LIGHT_INSET : 0)}px`,
           transition: isResizing ? "none" : "width 0.2s ease-in-out",
         }}
         className="relative h-full gap-2 border-r border-r-(--gray-6)"

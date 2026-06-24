@@ -17,7 +17,7 @@ import {
   shell,
 } from "electron";
 import { container } from "./di/container";
-import { MAIN_TOKENS } from "./di/tokens";
+import { AUTH_SERVICE, UPDATES_SERVICE } from "./di/tokens";
 import { isDevBuild } from "./utils/env";
 import { getLogFilePath } from "./utils/logger";
 
@@ -113,7 +113,7 @@ function buildAppMenu(): MenuItemConstructorOptions {
               label: "Check for Updates...",
               click: () => {
                 container
-                  .get<UpdatesService>(MAIN_TOKENS.UpdatesService)
+                  .get<UpdatesService>(UPDATES_SERVICE)
                   .triggerMenuCheck();
               },
             },
@@ -222,7 +222,7 @@ function buildFileMenu(): MenuItemConstructorOptions {
             label: "Force refresh of OAuth token",
             click: () => {
               container
-                .get<AuthService>(MAIN_TOKENS.AuthService)
+                .get<AuthService>(AUTH_SERVICE)
                 .refreshAccessToken()
                 .then(() => {
                   dialog.showMessageBox({

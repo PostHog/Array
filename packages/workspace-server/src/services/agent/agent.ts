@@ -627,9 +627,6 @@ If a repository IS genuinely required, attach one in this priority order:
     this.validateSessionParams(params);
     const config = this.toSessionConfig(params);
     const session = await this.getOrCreateSession(config, false);
-    if (!session) {
-      throw new Error("Failed to create session");
-    }
     return this.toSessionResponse(session);
   }
 
@@ -648,6 +645,16 @@ If a repository IS genuinely required, attach one in this priority order:
     return session ? this.toSessionResponse(session) : null;
   }
 
+  private async getOrCreateSession(
+    config: SessionConfig,
+    isReconnect: false,
+    isRetry?: boolean,
+  ): Promise<ManagedSession>;
+  private async getOrCreateSession(
+    config: SessionConfig,
+    isReconnect: true,
+    isRetry?: boolean,
+  ): Promise<ManagedSession | null>;
   private async getOrCreateSession(
     config: SessionConfig,
     isReconnect: boolean,
@@ -1024,7 +1031,10 @@ If a repository IS genuinely required, attach one in this priority order:
           `Auth error during ${isReconnect ? "reconnect" : "create"}, retrying`,
           { taskRunId },
         );
-        return this.getOrCreateSession(config, isReconnect, true);
+        if (isReconnect) {
+          return this.getOrCreateSession(config, true, true);
+        }
+        return this.getOrCreateSession(config, false, true);
       }
       // When the in-process ACP layer masks a thrown error as a generic
       // "Internal error", the real text survives in `data.details`. Surface it

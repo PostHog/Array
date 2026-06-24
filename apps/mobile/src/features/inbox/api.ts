@@ -8,6 +8,7 @@ const log = logger.scope("inbox-api");
 import type {
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
+  CommitDiffResponse,
   ReportArtefact,
   SignalProcessingStateResponse,
   SignalReport,
@@ -174,6 +175,33 @@ export async function getSignalReportArtefacts(
   const data = await response.json();
   const results: ReportArtefact[] = data.results ?? [];
   return { results, count: data.count ?? results.length };
+}
+
+/** Fetch a commit artefact's diff against its parent (lazily, on demand). */
+export async function getCommitDiff(
+  reportId: string,
+  artefactId: string,
+): Promise<CommitDiffResponse> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/artefacts/${artefactId}/diff/`,
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Couldn’t load the diff",
+    );
+  }
+
+  const data = await response.json();
+  return {
+    diff: typeof data.diff === "string" ? data.diff : "",
+    truncated: data.truncated === true,
+  };
 }
 
 /** Replace the content of a report artefact (full PUT, not a partial update). */

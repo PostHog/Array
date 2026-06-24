@@ -27,6 +27,9 @@ function renderWithFlags(node: ReactNode, bluebirdEnabled: boolean) {
 const PROMPT_WITH_CONTEXT =
   'do the thing\n<channel_context channel="billing">\n# Billing\n</channel_context>';
 
+const PROMPT_WITH_CANVAS_INSTRUCTIONS =
+  "add a retention chart\n\n<canvas_generation_instructions>\nauthoring contract\n</canvas_generation_instructions>";
+
 describe("UserMessage", () => {
   // useFeatureFlag falls back to import.meta.env.DEV, which is true under
   // vitest. Pin DEV off in the flag-gating cases so they exercise the flag
@@ -74,5 +77,32 @@ describe("UserMessage", () => {
     expect(screen.queryByText("#billing CONTEXT.md")).not.toBeInTheDocument();
     // The raw <channel_context> XML must never leak to flag-off viewers.
     expect(screen.queryByText(/channel_context/)).not.toBeInTheDocument();
+  });
+
+  it("shows the canvas-instructions tag when project-bluebird is enabled", () => {
+    vi.stubEnv("DEV", false);
+    renderWithFlags(
+      <UserMessage content={PROMPT_WITH_CANVAS_INSTRUCTIONS} taskId="task-1" />,
+      true,
+    );
+
+    expect(screen.getByText("add a retention chart")).toBeInTheDocument();
+    expect(screen.getByText("Canvas instructions")).toBeInTheDocument();
+    // The contract body is collapsed into the tag, not rendered inline.
+    expect(screen.queryByText("authoring contract")).not.toBeInTheDocument();
+  });
+
+  it("hides the canvas-instructions tag but still strips the block when off", () => {
+    vi.stubEnv("DEV", false);
+    renderWithFlags(
+      <UserMessage content={PROMPT_WITH_CANVAS_INSTRUCTIONS} taskId="task-1" />,
+      false,
+    );
+
+    expect(screen.getByText("add a retention chart")).toBeInTheDocument();
+    expect(screen.queryByText("Canvas instructions")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/canvas_generation_instructions/),
+    ).not.toBeInTheDocument();
   });
 });

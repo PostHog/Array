@@ -18,12 +18,12 @@ import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
-import {
-  buildThreadGroups,
-  type ThreadGrouping,
-  type ThreadRow,
+import type {
+  ThreadGrouping,
+  ThreadRow,
 } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
 import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
+import { createIncrementalThreadGrouper } from "@posthog/ui/features/sessions/components/new-thread/incrementalThreadGrouping";
 import { ToolCallGroupChip } from "@posthog/ui/features/sessions/components/new-thread/ToolCallGroupChip";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
 import {
@@ -176,9 +176,14 @@ export function ConversationView({
   // Fold each completed turn's tool-call work into a collapsible chip, and emit
   // the keepMounted indices (standalone MCP-app rows, whose iframes must survive
   // scrolling) + the item→row map in the same pass.
+  const threadGrouperRef = useRef<ReturnType<
+    typeof createIncrementalThreadGrouper
+  > | null>(null);
+  threadGrouperRef.current ??= createIncrementalThreadGrouper();
+  const threadGrouper = threadGrouperRef.current;
   const grouping = useMemo<ThreadGrouping>(
-    () => buildThreadGroups(items, collapseMode, groupOverrides),
-    [items, collapseMode, groupOverrides],
+    () => threadGrouper.update(items, collapseMode, groupOverrides),
+    [items, collapseMode, groupOverrides, threadGrouper],
   );
   const threadRows = grouping.rows;
   const rowKeepMounted = grouping.keepMounted;

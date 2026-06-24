@@ -1,6 +1,7 @@
 import {
   ArrowCounterClockwise,
   CaretDown,
+  CaretRight,
   CaretUp,
   ChatCircle,
   CheckCircle,
@@ -17,7 +18,13 @@ import { Button } from "@posthog/quill";
 import type { PrReviewComment } from "@posthog/shared";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { Avatar, Badge, Box, Flex, Text } from "@radix-ui/themes";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { PluggableList } from "unified";
@@ -33,6 +40,17 @@ const ghRehypePlugins: PluggableList = [
 ];
 
 const MAX_COMMENT_HEIGHT = 120;
+
+/** Strip markdown noise to a single-line preview for the collapsed header. */
+function toPreview(body: string): string {
+  return body
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/[#>*_`~-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 interface ThreadActionBarProps {
   prUrl: string | null;
@@ -165,10 +183,12 @@ function CommentBody({
   comment,
   showLineAbove = false,
   showLineBelow = false,
+  badges,
 }: {
   comment: PrReviewComment;
   showLineAbove?: boolean;
   showLineBelow?: boolean;
+  badges?: ReactNode;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [isOverflowing, setIsOverflowing] = useState(false);
@@ -208,6 +228,7 @@ function CommentBody({
           <Text className="text-[13px] text-[var(--gray-9)]">
             {formatRelativeTimeShort(comment.created_at)}
           </Text>
+          {badges}
         </Flex>
         <Box
           ref={contentRef}
@@ -278,6 +299,10 @@ export function PrCommentThread({
   const [showReplyBox, setShowReplyBox] = useState(false);
   const [pendingReply, setPendingReply] = useState<string | null>(null);
   const [isResolved, setIsResolved] = useState(initialIsResolved);
+  // Resolved/outdated threads add up — start them collapsed.
+  const [isCollapsed, setIsCollapsed] = useState(
+    initialIsResolved || isOutdated,
+  );
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -337,83 +362,153 @@ export function PrCommentThread({
     if (!success) setIsResolved(!next);
   }, [isResolved, nodeId, resolve]);
 
+  const toggleCollapsed = useCallback(
+    () => setIsCollapsed((prev) => !prev),
+    [],
+  );
+
+  const badges = (
+    <>
+      {isResolved && (
+        <Badge color="green" size="1" variant="soft">
+          <CheckCircle size={12} weight="fill" />
+          Resolved
+        </Badge>
+      )}
+      {isFileLevel && (
+        <Badge color="gray" size="1" variant="soft">
+          <File size={12} />
+          File comment
+        </Badge>
+      )}
+      {isOutdated && (
+        <Badge color="yellow" size="1" variant="soft">
+          <WarningCircle size={12} weight="fill" />
+          Outdated
+        </Badge>
+      )}
+    </>
+  );
+
   return (
     <div className="px-3 py-1.5" style={{ contain: "inline-size" }}>
       <div
         data-pr-comment-thread=""
         className={`overflow-hidden whitespace-normal rounded-md border border-[var(--gray-5)] bg-[var(--gray-2)] px-2.5 py-2 font-sans ${isResolved ? "opacity-60" : ""}`}
       >
-        {(isResolved || isOutdated || isFileLevel) && (
-          <Flex align="center" gap="1" className="mb-1.5">
-            {isResolved && (
-              <Badge color="green" size="1" variant="soft">
-                <CheckCircle size={12} weight="fill" />
-                Resolved
-              </Badge>
-            )}
-            {isFileLevel && (
-              <Badge color="gray" size="1" variant="soft">
-                <File size={12} />
-                File comment
-              </Badge>
-            )}
-            {isOutdated && (
-              <Badge color="yellow" size="1" variant="soft">
-                <WarningCircle size={12} weight="fill" />
-                Outdated
-              </Badge>
-            )}
-          </Flex>
-        )}
+        <div className="flex gap-1">
+          {/* Caret lives in a fixed gutter so it stays put when toggling. */}
+          <div className="shrink-0 pt-2.5">
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-label={isCollapsed ? "Expand thread" : "Collapse thread"}
+              className="-ml-0.5 before:-inset-2 relative flex shrink-0 cursor-pointer items-center rounded p-0.5 text-[var(--gray-10)] transition-colors before:absolute before:content-[''] hover:bg-[var(--gray-4)] hover:text-[var(--gray-12)]"
+            >
+              <CaretRight
+                size={14}
+                className={`transition-transform duration-200 ${
+                  isCollapsed ? "" : "rotate-90"
+                }`}
+              />
+            </button>
+          </div>
 
-        {comments.map((comment, index) => (
-          <CommentBody
-            key={comment.id}
-            comment={comment}
-            showLineAbove={index > 0}
-            showLineBelow={index < comments.length - 1 || !!pendingReply}
-          />
-        ))}
-
-        {pendingReply && (
-          <div className="flex gap-2 opacity-50">
-            <div className="flex flex-col items-center">
-              <div className="h-1.5 w-0.5 rounded-full bg-[var(--gray-5)]" />
-              <Avatar size="1" radius="full" fallback="" className="shrink-0" />
-            </div>
-            <div className="min-w-0 flex-1 pt-1.5 pb-1.5">
-              <Flex align="center" gap="2" className="mb-0.5">
-                <Text className="font-medium text-[13px] text-[var(--gray-12)]">
-                  Sending...
+          <div className="min-w-0 flex-1">
+            {isCollapsed && (
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 py-1.5 text-left"
+              >
+                {badges}
+                <Text className="shrink-0 font-medium text-[13px] text-[var(--gray-12)]">
+                  {comments[0]?.user.login}
                 </Text>
-              </Flex>
-              <div className="text-[13px] text-[var(--gray-11)] leading-relaxed">
-                <MarkdownRenderer
-                  content={pendingReply}
-                  rehypePlugins={ghRehypePlugins}
+                <Text className="min-w-0 flex-1 truncate text-[13px] text-[var(--gray-10)]">
+                  {toPreview(comments[0]?.body ?? "")}
+                </Text>
+                {comments.length > 1 && (
+                  <Badge
+                    color="gray"
+                    size="1"
+                    variant="soft"
+                    className="shrink-0"
+                  >
+                    <ChatCircle size={11} />
+                    {comments.length}
+                  </Badge>
+                )}
+              </button>
+            )}
+
+            {/* Grid-rows trick animates the body height open/closed smoothly. */}
+            <div
+              className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+                isCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+              }`}
+            >
+              <div className="overflow-hidden">
+                {comments.map((comment, index) => (
+                  <CommentBody
+                    key={comment.id}
+                    comment={comment}
+                    showLineAbove={index > 0}
+                    showLineBelow={
+                      index < comments.length - 1 || !!pendingReply
+                    }
+                    badges={index === 0 ? badges : undefined}
+                  />
+                ))}
+
+                {pendingReply && (
+                  <div className="flex gap-2 opacity-50">
+                    <div className="flex flex-col items-center">
+                      <div className="h-1.5 w-0.5 rounded-full bg-[var(--gray-5)]" />
+                      <Avatar
+                        size="1"
+                        radius="full"
+                        fallback=""
+                        className="shrink-0"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1 pt-1.5 pb-1.5">
+                      <Flex align="center" gap="2" className="mb-0.5">
+                        <Text className="font-medium text-[13px] text-[var(--gray-12)]">
+                          Sending...
+                        </Text>
+                      </Flex>
+                      <div className="text-[13px] text-[var(--gray-11)] leading-relaxed">
+                        <MarkdownRenderer
+                          content={pendingReply}
+                          rehypePlugins={ghRehypePlugins}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <ThreadActionBar
+                  prUrl={prUrl}
+                  taskId={taskId}
+                  filePath={filePath}
+                  endLine={endLine}
+                  side={side}
+                  comments={comments}
+                  isResolved={isResolved}
+                  onResolveToggle={handleResolveToggle}
+                  showReplyBox={showReplyBox}
+                  pendingReply={pendingReply}
+                  onShowReplyBox={() => setShowReplyBox(true)}
+                  onHideReplyBox={() => setShowReplyBox(false)}
+                  onSubmitReply={handleReplySubmit}
+                  onKeyDown={handleKeyDown}
+                  textareaRefCallback={setTextareaRefCallback}
                 />
               </div>
             </div>
           </div>
-        )}
-
-        <ThreadActionBar
-          prUrl={prUrl}
-          taskId={taskId}
-          filePath={filePath}
-          endLine={endLine}
-          side={side}
-          comments={comments}
-          isResolved={isResolved}
-          onResolveToggle={handleResolveToggle}
-          showReplyBox={showReplyBox}
-          pendingReply={pendingReply}
-          onShowReplyBox={() => setShowReplyBox(true)}
-          onHideReplyBox={() => setShowReplyBox(false)}
-          onSubmitReply={handleReplySubmit}
-          onKeyDown={handleKeyDown}
-          textareaRefCallback={setTextareaRefCallback}
-        />
+        </div>
       </div>
     </div>
   );
