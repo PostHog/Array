@@ -1,7 +1,6 @@
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import {
   deriveTaskData,
-  type FullTask,
   narrowFullTask,
   type TaskSession,
 } from "@posthog/core/sidebar/buildSidebarData";
@@ -52,7 +51,7 @@ export function useNestedGenerationTaskIds(
       // Tasks are private to their creator; one that isn't in our list can't be
       // shown (or deduped) — leave it out.
       if (!task) continue;
-      const data = deriveTaskData(narrowFullTask(task as unknown as FullTask), {
+      const data = deriveTaskData(narrowFullTask(task), {
         session: sessionByTaskId.get(taskId) as TaskSession | undefined,
         workspace: undefined,
         timestamp: timestamps[taskId],

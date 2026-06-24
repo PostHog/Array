@@ -15,6 +15,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
+import type { TaskData } from "@posthog/core/sidebar/sidebarData.types";
 import {
   AlertDialogClose,
   AlertDialogContent,
@@ -50,7 +51,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@posthog/quill";
-
+import type { WorkspaceMode } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
@@ -88,7 +89,10 @@ import {
 import { useNestedGenerationTaskIds } from "@posthog/ui/features/canvas/hooks/useNestedGenerationTaskIds";
 import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
 import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
-import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
+import {
+  type SidebarPrState,
+  useTaskPrStatus,
+} from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
@@ -543,6 +547,45 @@ function TaskRowContextMenu({
   );
 }
 
+// The status icon shared by both channel task rows. Maps a row's derived
+// `TaskData` onto the sidebar `<TaskIcon>` (cloud run status, PR state,
+// generating / unread / pinned, etc.), falling back to a neutral code icon
+// until the data loads. Defined once so `TaskRow` and `CanvasGenerationTaskRow`
+// can't drift apart on icon fidelity.
+function TaskStatusIcon({
+  taskData,
+  prState,
+  hasDiff,
+  workspaceMode,
+  size,
+}: {
+  taskData: TaskData | undefined;
+  prState: SidebarPrState;
+  hasDiff: boolean;
+  workspaceMode: WorkspaceMode | undefined;
+  size: number;
+}) {
+  if (!taskData) {
+    return <CodeIcon size={size} className="text-gray-9" />;
+  }
+  return (
+    <TaskIcon
+      workspaceMode={workspaceMode}
+      isGenerating={taskData.isGenerating}
+      isUnread={taskData.isUnread}
+      isPinned={taskData.isPinned}
+      isSuspended={taskData.isSuspended}
+      needsPermission={taskData.needsPermission}
+      taskRunStatus={taskData.taskRunStatus}
+      originProduct={taskData.originProduct}
+      slackThreadUrl={taskData.slackThreadUrl}
+      prState={prState}
+      hasDiff={hasDiff}
+      size={size}
+    />
+  );
+}
+
 // The generation task tied to a canvas, shown nested beneath the canvas name
 // while it's generating and afterwards until the user has seen the result (see
 // useNestedGenerationTaskIds — the parent only renders this row when it should
@@ -582,23 +625,14 @@ function CanvasGenerationTaskRow({
 
   const title = task.title || "Untitled task";
   const active = pathname === `/website/${channelId}/tasks/${taskId}`;
-  const icon = taskData ? (
-    <TaskIcon
-      workspaceMode={workspaceMode}
-      isGenerating={taskData.isGenerating}
-      isUnread={taskData.isUnread}
-      isPinned={taskData.isPinned}
-      isSuspended={taskData.isSuspended}
-      needsPermission={taskData.needsPermission}
-      taskRunStatus={taskData.taskRunStatus}
-      originProduct={taskData.originProduct}
-      slackThreadUrl={taskData.slackThreadUrl}
+  const icon = (
+    <TaskStatusIcon
+      taskData={taskData}
       prState={prState}
       hasDiff={hasDiff}
+      workspaceMode={workspaceMode}
       size={12}
     />
-  ) : (
-    <CodeIcon size={12} className="text-gray-9" />
   );
 
   return (
@@ -800,10 +834,10 @@ function DashboardRow({
         </ContextMenuContent>
       </ContextMenu>
 
-      {generationTask && dashboard.generationTaskId ? (
+      {generationTask ? (
         <CanvasGenerationTaskRow
           channelId={channelId}
-          taskId={dashboard.generationTaskId}
+          taskId={generationTask.id}
           task={generationTask}
           channelTaskId={generationChannelTaskId}
           channels={channels}
@@ -869,29 +903,22 @@ function TaskRow({
     cloudPrUrl: taskData?.cloudPrUrl ?? null,
     taskRunEnvironment: taskData?.taskRunEnvironment ?? null,
   });
-  const icon = taskData ? (
-    <TaskIcon
-      workspaceMode={workspaceMode}
-      isGenerating={taskData.isGenerating}
-      isUnread={taskData.isUnread}
-      isPinned={taskData.isPinned}
-      isSuspended={taskData.isSuspended}
-      needsPermission={taskData.needsPermission}
-      taskRunStatus={taskData.taskRunStatus}
-      originProduct={taskData.originProduct}
-      slackThreadUrl={taskData.slackThreadUrl}
+  const icon = (
+    <TaskStatusIcon
+      taskData={taskData}
       prState={prState}
       hasDiff={hasDiff}
+      workspaceMode={workspaceMode}
       size={16}
     />
-  ) : (
-    <CodeIcon size={16} className="text-gray-9" />
   );
 
   // A short status word under the title (running / merged / …), mirroring the
   // task's live state. Repo-less local tasks (e.g. canvas generation) have no
   // backend run record, so `taskRunStatus` is undefined once the turn ends —
-  // fall back to the live session so the row still shows a status line.
+  // fall back to the live session so the row still shows a status line. A
+  // session still mid-handshake ("connecting") is on its way to generating, so
+  // treat it as running rather than letting it flash "completed".
   const status =
     taskData?.isGenerating === true
       ? "running"
@@ -900,7 +927,9 @@ function TaskRow({
         (session
           ? session.status === "error"
             ? "failed"
-            : "completed"
+            : session.status === "connecting"
+              ? "running"
+              : "completed"
           : undefined));
 
   return (
