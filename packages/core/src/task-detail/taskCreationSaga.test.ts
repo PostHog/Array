@@ -284,7 +284,9 @@ describe("TaskCreationSaga", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(startTaskRunMock.mock.calls[0][2].pendingUserMessage).toBeUndefined();
+    expect(
+      startTaskRunMock.mock.calls[0][2].pendingUserMessage,
+    ).toBeUndefined();
     expect(sessionService.rememberInitialCloudPrompt).not.toHaveBeenCalled();
   });
 
