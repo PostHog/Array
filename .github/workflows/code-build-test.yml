@@ -45,9 +45,12 @@ jobs:
       POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
       CSC_LINK: ${{ secrets.APPLE_CODESIGN_CERT_BASE64 }}
       CSC_KEY_PASSWORD: ${{ secrets.APPLE_CODESIGN_CERT_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # Sign but do not notarize. This build-test verifies the packaging pipeline,
+      # not Gatekeeper distribution; the runner can launch a signed-but-unnotarized
+      # app for the smoke test. Notarization runs only in the tag release
+      # (code-release.yml), where Apple's notary service and agreements apply.
+      SKIP_NOTARIZE: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
