@@ -632,7 +632,7 @@ export function SessionView({
                     />
                   </ComposerSlot>
                 ) : (
-                  <Box className="relative">
+                  <Box className="relative shrink-0">
                     <Box
                       className={`absolute inset-0 flex min-h-[66px] items-center justify-center gap-2 transition-opacity duration-200 ${
                         isRunning
