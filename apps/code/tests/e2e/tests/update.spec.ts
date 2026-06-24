@@ -64,6 +64,8 @@ test.describe("macOS auto-update", () => {
       newVersion: NEW_VERSION,
     };
     let feed: ReturnType<typeof startFeedServer> | undefined;
+    let app: ElectronApplication | undefined;
+    let updated: ElectronApplication | undefined;
 
     try {
       proof.failedStep = "preconditions";
@@ -81,7 +83,7 @@ test.describe("macOS auto-update", () => {
 
       // Phase 1: drive the real download + install on the old build.
       proof.failedStep = "launch";
-      const app = await electron.launch({
+      app = await electron.launch({
         executablePath: RUN_APP_BIN,
         args: [],
         env: {
@@ -167,7 +169,7 @@ test.describe("macOS auto-update", () => {
       );
 
       proof.failedStep = "fresh-launch";
-      const updated = await electron.launch({
+      updated = await electron.launch({
         executablePath: RUN_APP_BIN,
         args: [],
         env: { ...process.env, ELECTRON_DISABLE_GPU: "1" },
@@ -205,6 +207,8 @@ test.describe("macOS auto-update", () => {
       proof.error = err instanceof Error ? err.message : String(err);
       throw err;
     } finally {
+      await app?.close().catch(() => {});
+      await updated?.close().catch(() => {});
       feed?.kill();
       killApp();
       proof.finishedAt = new Date().toISOString();
