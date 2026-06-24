@@ -21,6 +21,7 @@ import {
   WrenchIcon,
 } from "@phosphor-icons/react";
 import type {
+  AgentRevisionState,
   AgentSpec,
   BundleFile,
 } from "@posthog/shared/agent-platform-types";
@@ -63,9 +64,15 @@ const USAGE_HOST = "https://<ingress-host>";
 interface Ctx {
   idOrSlug: string;
   revisionId: string;
+  /** Application UUID — needed to branch a new draft on save. */
+  applicationId?: string;
+  /** State of the viewed revision — drives draft-only edit vs auto-clone. */
+  revisionState?: AgentRevisionState;
   ingressBaseUrl?: string;
   setKeys: string[];
   onSelect: (node: string) => void;
+  /** Select a revision in the picker (used to jump to a freshly branched draft). */
+  onSelectRevision?: (revisionId: string) => void;
   onOpenSession?: (sessionId: string) => void;
 }
 
@@ -399,9 +406,12 @@ export function AgentConfigurationPane({
     ? {
         idOrSlug,
         revisionId,
+        applicationId: application?.id,
+        revisionState: revision?.state,
         ingressBaseUrl: application?.ingress_base_url ?? undefined,
         setKeys,
         onSelect: onSelectNode,
+        onSelectRevision,
         onOpenSession,
       }
     : null;
@@ -615,7 +625,7 @@ function DetailBody({
 }) {
   switch (section) {
     case "model":
-      return <ModelBody spec={spec} />;
+      return <ModelBody key={ctx.revisionId} spec={spec} ctx={ctx} />;
     case "instructions":
       return (
         <BundleFileBody
@@ -694,10 +704,17 @@ function byPath(files: BundleFile[], path: string): BundleFile | undefined {
   return files.find((f) => f.path === path);
 }
 
-function ModelBody({ spec }: { spec: AgentSpec }) {
+function ModelBody({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   return (
     <Flex direction="column" gap="4">
-      <AgentModelConfig spec={spec} />
+      <AgentModelConfig
+        spec={spec}
+        idOrSlug={ctx.idOrSlug}
+        applicationId={ctx.applicationId}
+        revisionId={ctx.revisionId}
+        revisionState={ctx.revisionState}
+        onSelectRevision={ctx.onSelectRevision}
+      />
       {spec.entrypoint ? (
         <Row label="entrypoint" value={spec.entrypoint} mono />
       ) : null}

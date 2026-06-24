@@ -13,12 +13,15 @@ import type {
   AgentModelLevel,
   AgentModelPolicy,
   AgentReasoningEffort,
+  AgentRevisionState,
   AgentSpec,
   ModelCatalogEntry,
 } from "@posthog/shared/agent-platform-types";
 import { Badge } from "@posthog/ui/primitives/Badge";
+import { Button } from "@posthog/ui/primitives/Button";
 import { Flex, Popover, Text } from "@radix-ui/themes";
 import { type ReactNode, type RefCallback, useMemo, useState } from "react";
+import { useApplyAgentSpec } from "../hooks/useApplyAgentSpec";
 import { useModelCatalog } from "../hooks/useModelCatalog";
 
 /**
@@ -30,8 +33,23 @@ import { useModelCatalog } from "../hooks/useModelCatalog";
  * the UX. The catalog comes from `useModelCatalog` (a stand-in for the
  * model-info endpoint).
  */
-export function AgentModelConfig({ spec }: { spec: AgentSpec }) {
+export function AgentModelConfig({
+  spec,
+  idOrSlug,
+  applicationId,
+  revisionId,
+  revisionState,
+  onSelectRevision,
+}: {
+  spec: AgentSpec;
+  idOrSlug: string;
+  applicationId?: string;
+  revisionId: string;
+  revisionState?: AgentRevisionState;
+  onSelectRevision?: (revisionId: string) => void;
+}) {
   const { catalog } = useModelCatalog();
+  const apply = useApplyAgentSpec(idOrSlug, applicationId);
   const initial = spec.model_policy;
 
   const [mode, setMode] = useState<"auto" | "manual">(initial?.mode ?? "auto");
@@ -53,14 +71,67 @@ export function AgentModelConfig({ spec }: { spec: AgentSpec }) {
   const dirty =
     JSON.stringify(policy) !==
     JSON.stringify(initial ?? { mode: "auto", level: "medium" });
+  const willBranch = revisionState !== "draft";
 
   const byId = useMemo(
     () => new Map(catalog.models.map((m) => [m.model, m])),
     [catalog.models],
   );
 
+  function reset() {
+    setMode(initial?.mode ?? "auto");
+    setLevel(initial?.mode === "auto" ? (initial.level ?? "medium") : "medium");
+    setReasoning(initial?.mode === "auto" ? initial.reasoning : spec.reasoning);
+    setManual(initial?.mode === "manual" ? initial.models : []);
+  }
+
+  function save() {
+    apply.mutate(
+      {
+        revision: { id: revisionId, state: revisionState ?? "draft" },
+        spec: { ...spec, model_policy: policy },
+      },
+      { onSuccess: (rev) => onSelectRevision?.(rev.id) },
+    );
+  }
+
   return (
     <Flex direction="column" gap="4">
+      {dirty ? (
+        <Flex
+          direction="column"
+          gap="1.5"
+          className="rounded-(--radius-2) border border-(--amber-6) bg-(--amber-2) px-3 py-2"
+        >
+          <Flex align="center" justify="between" gap="2">
+            <Text className="text-[12px] text-amber-11">
+              {willBranch
+                ? "Unsaved changes — saving branches a new draft."
+                : "Unsaved changes."}
+            </Text>
+            <Flex gap="2" className="shrink-0">
+              <Button
+                size="1"
+                variant="soft"
+                color="gray"
+                disabled={apply.isPending}
+                onClick={reset}
+              >
+                Reset
+              </Button>
+              <Button size="1" loading={apply.isPending} onClick={save}>
+                {willBranch ? "Save to new draft" : "Save"}
+              </Button>
+            </Flex>
+          </Flex>
+          {apply.isError ? (
+            <Text className="text-(--red-11) text-[11px]">
+              {apply.error?.message ?? "Save failed"}
+            </Text>
+          ) : null}
+        </Flex>
+      ) : null}
+
       <Flex direction="column" gap="3">
         <Select
           label="mode"
@@ -104,14 +175,7 @@ export function AgentModelConfig({ spec }: { spec: AgentSpec }) {
         <ManualEditor models={manual} byId={byId} onChange={setManual} />
       )}
 
-      <Flex align="center" justify="between" gap="2" wrap="wrap">
-        <Subhead>browse all models · {catalog.models.length}</Subhead>
-        {dirty ? (
-          <Text className="text-[11px] text-amber-11">
-            preview — not saved yet
-          </Text>
-        ) : null}
-      </Flex>
+      <Subhead>browse all models · {catalog.models.length}</Subhead>
       <ModelBrowser
         models={catalog.models}
         canAdd={mode === "manual"}
