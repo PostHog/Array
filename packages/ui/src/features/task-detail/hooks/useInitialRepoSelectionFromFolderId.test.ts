@@ -149,6 +149,21 @@ describe("resolveRepoSelectionForFolder", () => {
         nextMode: undefined,
       },
     },
+    {
+      name: "local-only folder already in a local mode: keep mode, no switch",
+      input: {
+        remoteUrl: null,
+        repositories: ["posthog/posthog"],
+        reposLoaded: true,
+        currentMode: "worktree",
+        lastUsedLocalMode: "local",
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: undefined,
+        nextMode: undefined,
+      },
+    },
   ])("$name", ({ input: { remoteUrl, ...rest }, expected }) => {
     expect(
       resolveRepoSelectionForFolder({
@@ -362,6 +377,93 @@ describe("useInitialRepoSelectionFromFolderId", () => {
       });
     expect(setSelectedDirectory).not.toHaveBeenCalled();
     expect(setSelectedRepository).not.toHaveBeenCalled();
+    expect(setWorkspaceMode).not.toHaveBeenCalled();
+  });
+
+  it("re-syncs the same folderId after it is cleared to undefined", () => {
+    const folders = [folder("a", "/repos/a", "posthog/a")];
+    const repositories = ["posthog/a"];
+    const { rerender, setSelectedDirectory } = renderRepoSelectionHook({
+      folderId: "a",
+      folders,
+      repositories,
+      reposLoaded: true,
+      currentMode: "cloud",
+    });
+    expect(setSelectedDirectory).toHaveBeenCalledExactlyOnceWith("/repos/a");
+
+    // Clearing folderId resets the guards so the same folder can prefill again.
+    rerender({
+      folderId: undefined,
+      folders,
+      repositories,
+      reposLoaded: true,
+      currentMode: "cloud",
+    });
+    expect(setSelectedDirectory).toHaveBeenCalledTimes(1);
+
+    rerender({
+      folderId: "a",
+      folders,
+      repositories,
+      reposLoaded: true,
+      currentMode: "cloud",
+    });
+    expect(setSelectedDirectory).toHaveBeenCalledTimes(2);
+    expect(setSelectedDirectory).toHaveBeenLastCalledWith("/repos/a");
+  });
+
+  it("does not re-apply the cloud repo when repositories changes for the same folderId", () => {
+    const folders = [folder("a", "/repos/a", "posthog/a")];
+    const { rerender, setSelectedRepository } = renderRepoSelectionHook({
+      folderId: "a",
+      folders,
+      repositories: ["posthog/a"],
+      reposLoaded: true,
+      currentMode: "cloud",
+    });
+    expect(setSelectedRepository).toHaveBeenCalledExactlyOnceWith("posthog/a");
+
+    // A later integrations-list update must not clobber a repo the user edited.
+    rerender({
+      folderId: "a",
+      folders,
+      repositories: ["posthog/a", "posthog/b"],
+      reposLoaded: true,
+      currentMode: "cloud",
+    });
+    expect(setSelectedRepository).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the live mode (not the mount-time mode) for the deferred cloud decision", () => {
+    const folders = [folder("a", "/repos/a", null)];
+    const repositories: string[] = [];
+    const { rerender, setWorkspaceMode } = renderRepoSelectionHook({
+      folderId: "a",
+      folders,
+      repositories,
+      reposLoaded: false,
+      currentMode: "cloud",
+    });
+    expect(setWorkspaceMode).not.toHaveBeenCalled();
+
+    // User leaves cloud while the integrations list is still loading.
+    rerender({
+      folderId: "a",
+      folders,
+      repositories,
+      reposLoaded: false,
+      currentMode: "local",
+    });
+    // Integrations settle: the decision reads the live "local" mode and must not
+    // switch. Had it used the stale "cloud", it would fall back to a local mode.
+    rerender({
+      folderId: "a",
+      folders,
+      repositories,
+      reposLoaded: true,
+      currentMode: "local",
+    });
     expect(setWorkspaceMode).not.toHaveBeenCalled();
   });
 });

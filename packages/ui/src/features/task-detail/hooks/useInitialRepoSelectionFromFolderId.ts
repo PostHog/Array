@@ -1,6 +1,7 @@
 import { parseRepository, type WorkspaceMode } from "@posthog/shared";
 import { useEffect, useRef } from "react";
 import type { RegisteredFolder } from "../../folders/types";
+import type { LocalWorkspaceMode } from "../../settings/settingsStore";
 
 export interface ReposReadyInput {
   /** True while the integrations + per-installation repo queries are in flight. */
@@ -12,7 +13,7 @@ export interface ReposReadyInput {
 }
 
 /**
- * Whether the cloud-repo list has *settled* — i.e. it's safe to conclude a folder is or
+ * Whether the cloud-repo list has *settled*, i.e. it's safe to conclude a folder is or
  * isn't cloud-capable. Distinguishes "settled empty because the user has no GitHub
  * integration" (ready) from "transiently empty while per-installation repo queries are
  * still producing data" (not ready). The latter window is real: `isLoadingRepos` can flip
@@ -36,7 +37,7 @@ export interface RepoSelectionInput {
   reposLoaded: boolean;
   currentMode: WorkspaceMode;
   /** Mode to fall back to when leaving cloud (local or worktree). */
-  lastUsedLocalMode: WorkspaceMode;
+  lastUsedLocalMode: LocalWorkspaceMode;
 }
 
 export interface RepoSelection {
@@ -45,7 +46,7 @@ export interface RepoSelection {
   /** Cloud `owner/repo` slug to select, or undefined to leave the cloud pick as-is. */
   cloudRepository?: string;
   /** Workspace mode to switch to, or undefined to keep the current mode. */
-  nextMode?: WorkspaceMode;
+  nextMode?: LocalWorkspaceMode;
 }
 
 /**
@@ -54,7 +55,7 @@ export interface RepoSelection {
  * workspace mode must change.
  *
  * Rules (see plan): prefill both selectors; keep the current mode when it can represent
- * the repo; only switch when it can't — i.e. you're in cloud but the repo has no cloud
+ * the repo; only switch when it can't, i.e. you're in cloud but the repo has no cloud
  * counterpart (no remote slug, or the slug isn't a connected integration), in which case
  * fall back to the last-used local mode.
  */
@@ -96,7 +97,7 @@ export interface UseInitialRepoSelectionParams {
   reposLoaded: boolean;
   currentMode: WorkspaceMode;
   /** Mode to fall back to when leaving cloud (local or worktree). */
-  lastUsedLocalMode: WorkspaceMode;
+  lastUsedLocalMode: LocalWorkspaceMode;
   setSelectedDirectory: (path: string) => void;
   setSelectedRepository: (repo: string) => void;
   /** Switches the workspace mode (without persisting it as the user's preference). */
@@ -124,7 +125,7 @@ export function useInitialRepoSelectionFromFolderId({
   switchWorkspaceMode,
 }: UseInitialRepoSelectionParams) {
   // Two guards: the local directory syncs immediately (once the folder loads), while the
-  // cloud repo + mode decision waits for the integrations list — so it isn't marked "done"
+  // cloud repo + mode decision waits for the integrations list, so it isn't marked "done"
   // before it can tell whether the repo is cloud-capable.
   const dirInitRef = useRef<string | undefined>(undefined);
   const repoModeInitRef = useRef<string | undefined>(undefined);
