@@ -69,8 +69,8 @@ export function AgentModelConfig({
       : { mode: "manual", models: manual };
 
   const dirty =
-    JSON.stringify(policy) !==
-    JSON.stringify(initial ?? { mode: "auto", level: "medium" });
+    stableStringify(policy) !==
+    stableStringify(initial ?? { mode: "auto", level: "medium" });
   const willBranch = revisionState !== "draft";
 
   const byId = useMemo(
@@ -682,7 +682,27 @@ function Muted({ children }: { children: ReactNode }) {
 }
 
 function fmtUsd(n: number): string {
-  return `$${n}`;
+  // Fixed precision so the cost column reads consistently ($1.00, $0.075)
+  // and survives float noise from the catalog API.
+  return `$${n.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  })}`;
+}
+
+/**
+ * Deterministic JSON: recursively sorts object keys so the dirty check
+ * doesn't fire just because the server serialised `spec.models` with a
+ * different key order than the locally-built policy. Arrays keep their order.
+ */
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, val) =>
+    val && typeof val === "object" && !Array.isArray(val)
+      ? Object.fromEntries(
+          Object.entries(val).sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : val,
+  );
 }
 
 function fmtCtx(n: number): string {

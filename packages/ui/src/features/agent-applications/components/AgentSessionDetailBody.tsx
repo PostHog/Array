@@ -30,13 +30,17 @@ function computeMetrics(
   let toolCalls = 0;
   let errors = 0;
   const models: string[] = [];
+  const seenModels = new Set<string>();
   for (const msg of session.conversation) {
     if (msg.role === "assistant") {
       for (const part of msg.content) {
         if (part.type === "toolCall") toolCalls += 1;
       }
       if (msg.errorMessage) errors += 1;
-      if (msg.model && !models.includes(msg.model)) models.push(msg.model);
+      if (msg.model && !seenModels.has(msg.model)) {
+        seenModels.add(msg.model);
+        models.push(msg.model);
+      }
     } else if (msg.role === "toolResult" && msg.isError) {
       errors += 1;
     }
