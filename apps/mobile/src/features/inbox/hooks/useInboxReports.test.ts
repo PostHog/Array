@@ -16,7 +16,39 @@ vi.mock("../api", () => ({
     getAvailableSuggestedReviewers(query),
 }));
 
-import { useAvailableSuggestedReviewers } from "./useInboxReports";
+import type { SignalReport, SignalReportsResponse } from "../types";
+import {
+  getReportsNextPageParam,
+  useAvailableSuggestedReviewers,
+} from "./useInboxReports";
+
+function page(count: number, resultCount: number): SignalReportsResponse {
+  return {
+    count,
+    results: Array.from({ length: resultCount }, () => ({}) as SignalReport),
+  };
+}
+
+describe("getReportsNextPageParam", () => {
+  it("returns the next offset while more reports remain", () => {
+    const first = page(250, 100);
+    expect(getReportsNextPageParam(first, [first])).toBe(100);
+
+    const second = page(250, 100);
+    expect(getReportsNextPageParam(second, [first, second])).toBe(200);
+  });
+
+  it("returns undefined once every report is loaded", () => {
+    const first = page(150, 100);
+    const second = page(150, 50);
+    expect(getReportsNextPageParam(second, [first, second])).toBeUndefined();
+  });
+
+  it("returns undefined when the first page already holds everything", () => {
+    const only = page(40, 40);
+    expect(getReportsNextPageParam(only, [only])).toBeUndefined();
+  });
+});
 
 async function renderHook(query?: string) {
   const client = new QueryClient({
