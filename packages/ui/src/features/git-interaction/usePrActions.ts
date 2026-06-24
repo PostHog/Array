@@ -18,7 +18,10 @@ export function usePrActions(prUrl: string | null) {
         toast.success(PR_ACTION_LABELS[variables.action]);
         queryClient.setQueryData(
           trpc.git.getPrDetailsByUrl.queryKey({ prUrl: variables.prUrl }),
-          getOptimisticPrState(variables.action),
+          (prev) => ({
+            ...getOptimisticPrState(variables.action),
+            headRefName: prev?.headRefName ?? null,
+          }),
         );
         // The inbox Pulls list reads PR status from the batched
         // `getPrDiffStatsBatch` query (separate cache, 5-min staleTime), so
