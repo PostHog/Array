@@ -20,9 +20,8 @@ interface SlotMachineLeverProps {
 }
 
 /**
- * A fun easter egg (gated behind the `slotMachineMode` setting): a tiny
- * slot machine whose reels spin while a task runs. Pull the lever to kick off
- * an extra spin — every agent run is a gamble. Three hedgehogs is the jackpot.
+ * Easter egg gated behind the `slotMachineMode` setting: a tiny slot machine
+ * whose reels spin while a task runs. Three hedgehogs is the jackpot.
  */
 export function SlotMachineLever({ spinning }: SlotMachineLeverProps) {
   const enabled = useSettingsStore((state) => state.slotMachineMode);
@@ -43,8 +42,6 @@ export function SlotMachineLever({ spinning }: SlotMachineLeverProps) {
     };
   }, []);
 
-  // Cycle the reels rapidly while spinning, then let them rest on their last
-  // values once the run (or manual pull) finishes.
   useEffect(() => {
     if (!isSpinning) return;
     const id = setInterval(() => {
@@ -69,46 +66,40 @@ export function SlotMachineLever({ spinning }: SlotMachineLeverProps) {
 
   if (!enabled) return null;
 
-  const jackpot =
-    !isSpinning &&
-    reels[0] === reels[1] &&
-    reels[1] === reels[2] &&
-    reels[0] === "🦔";
+  const jackpot = !isSpinning && reels.every((symbol) => symbol === "🦔");
 
   return (
-    <Tooltip content="Pull to gamble on your task 🎰">
+    <Flex
+      align="center"
+      gap="1"
+      className="shrink-0 select-none"
+      style={{ WebkitUserSelect: "none" }}
+    >
       <Flex
         align="center"
         gap="1"
-        className="shrink-0 select-none"
-        style={{ WebkitUserSelect: "none" }}
+        className={`rounded-sm border border-gray-6 bg-gray-2 px-1 py-[1px] ${
+          jackpot ? "animate-pulse" : ""
+        }`}
       >
-        {/* Reels */}
-        <Flex
-          align="center"
-          gap="1"
-          className={`rounded-sm border border-gray-6 bg-gray-2 px-1 py-[1px] ${
-            jackpot ? "animate-pulse" : ""
-          }`}
-        >
-          {reels.map((symbol, index) => (
-            <motion.span
-              // biome-ignore lint/suspicious/noArrayIndexKey: fixed 3-reel layout
-              key={index}
-              animate={isSpinning ? { y: [-1, 1, -1] } : { y: 0 }}
-              transition={
-                isSpinning
-                  ? { duration: 0.18, repeat: Infinity, ease: "linear" }
-                  : { type: "spring", stiffness: 500, damping: 18 }
-              }
-              className="w-[14px] text-center text-[12px] leading-none"
-            >
-              {symbol}
-            </motion.span>
-          ))}
-        </Flex>
+        {reels.map((symbol, index) => (
+          <motion.span
+            // biome-ignore lint/suspicious/noArrayIndexKey: fixed 3-reel layout
+            key={index}
+            animate={isSpinning ? { y: [-1, 1, -1] } : { y: 0 }}
+            transition={
+              isSpinning
+                ? { duration: 0.18, repeat: Infinity, ease: "linear" }
+                : { type: "spring", stiffness: 500, damping: 18 }
+            }
+            className="w-[14px] text-center text-[12px] leading-none"
+          >
+            {symbol}
+          </motion.span>
+        ))}
+      </Flex>
 
-        {/* Lever */}
+      <Tooltip content="Pull to gamble on your task 🎰">
         <button
           type="button"
           onClick={pull}
@@ -120,13 +111,11 @@ export function SlotMachineLever({ spinning }: SlotMachineLeverProps) {
             style={{ originY: 1, originX: 0.5 }}
             className="flex h-full flex-col items-center"
           >
-            {/* Knob */}
             <Box className="h-[6px] w-[6px] rounded-full bg-red-9" />
-            {/* Shaft */}
             <Box className="w-[2px] flex-1 bg-gray-8" />
           </motion.div>
         </button>
-      </Flex>
-    </Tooltip>
+      </Tooltip>
+    </Flex>
   );
 }

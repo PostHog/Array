@@ -620,7 +620,7 @@ export function GeneralSettings() {
 
       <SettingRow
         label="Slot machine mode 🎰"
-        description="Show a pull-able slot machine lever while a task is running. Every run is a gamble — pull the handle and watch the reels spin."
+        description="Show a pull-able slot machine lever while a task is running. Every run is a gamble. Pull the handle and watch the reels spin."
         noBorder
       >
         <Switch

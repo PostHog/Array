@@ -126,6 +126,7 @@ describe("feature settingsStore cloud selections", () => {
   it.each([
     ["lastUsedWorkspaceMode", "local", "cloud"],
     ["debugLogsCloudRuns", false, true],
+    ["slotMachineMode", false, true],
   ] as const)("rehydrates %s", async (field, initial, persisted) => {
     getItem.mockResolvedValue(
       JSON.stringify({ state: { [field]: persisted }, version: 0 }),
