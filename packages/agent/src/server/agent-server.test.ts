@@ -1406,6 +1406,27 @@ describe("AgentServer HTTP Mode", () => {
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
 
+    it.each([
+      { label: "Slack", origin: "slack" },
+      { label: "signal_report", origin: "signal_report" },
+    ])(
+      "guards the auto-PR prompt against duplicating an existing PR on $label-origin runs",
+      ({ origin }) => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = origin;
+        const s = createServer();
+        const prompt = (
+          s as unknown as TestableServer
+        ).buildCloudSystemPrompt();
+        // Still the new-PR branch...
+        expect(prompt).toContain("gh pr create --draft");
+        // ...but tells the agent to continue an existing linked PR instead of duplicating.
+        expect(prompt).toContain("implementation_pr_url");
+        expect(prompt).toContain("gh pr checkout <url>");
+        expect(prompt).toMatch(/do not open a second PR/i);
+        delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+      },
+    );
+
     it("returns PR-update prompt for existing PRs on Slack-origin runs", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
       const s = createServer();
