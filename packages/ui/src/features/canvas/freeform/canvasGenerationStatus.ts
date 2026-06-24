@@ -32,7 +32,7 @@ export function isCanvasGenerationRunning({
   if (genTaskLoading) return true;
 
   if (latestRun?.environment === "cloud") {
-    const cloudStatus = session?.cloudStatus ?? latestRun?.status ?? null;
+    const cloudStatus = session?.cloudStatus ?? latestRun.status;
     return !isTerminalStatus(cloudStatus);
   }
 

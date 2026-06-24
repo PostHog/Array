@@ -58,6 +58,19 @@ describe("isCanvasGenerationRunning", () => {
     ).toBe(expected);
   });
 
+  it("is running when loaded with no run record yet but a connected session", () => {
+    // A task whose first run hasn't been created falls through to the local
+    // path; isTerminalStatus(undefined) is false, so a live session decides.
+    expect(
+      isCanvasGenerationRunning({
+        genTaskId: "t1",
+        genTaskLoading: false,
+        latestRun: undefined,
+        session: session("connected"),
+      }),
+    ).toBe(true);
+  });
+
   it.each<[string, Run, Session | undefined, boolean]>([
     [
       "session connected",
