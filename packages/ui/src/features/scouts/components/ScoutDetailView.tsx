@@ -173,7 +173,7 @@ export function ScoutDetailView({
                 No config found for this scout on the current project.
               </Text>
             ) : config?.description?.trim() ? (
-              <Text className="text-pretty text-[13px] text-gray-11 leading-relaxed">
+              <Text className="text-pretty text-[12.5px] text-gray-11 leading-relaxed">
                 {config.description.trim()}
               </Text>
             ) : null}
