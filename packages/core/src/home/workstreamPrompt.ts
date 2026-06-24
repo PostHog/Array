@@ -1,11 +1,9 @@
-import type { HomeWorkstream } from "@posthog/core/home/schemas";
-import type { WorkflowAction } from "@posthog/core/workflow/schemas";
+import type { WorkflowAction } from "../workflow/schemas";
+import type { HomeWorkstream } from "./schemas";
 
 type SkillAction = Pick<WorkflowAction, "skillId" | "prompt">;
 
-// The agent runs the bound skill when the prompt starts with `/<skill-id>`, so
-// embed it directly; the descriptive prompt follows as the instruction. With no
-// skill bound, send the prompt on its own.
+// The agent runs the bound skill when the prompt opens with `/<skill-id>`.
 export function buildSkillPrompt(action: SkillAction): string {
   const body = action.prompt.trim();
   const skillId = action.skillId.trim();
@@ -14,11 +12,8 @@ export function buildSkillPrompt(action: SkillAction): string {
   return body ? `${command}\n\n${body}` : command;
 }
 
-// Pins a one-click run to the PR/branch its workstream represents so a
-// background quick action knows exactly what it's acting on, instead of landing
-// on the host repo's default branch and asking the user "which PR?". Only the
-// fields the snapshot actually carries are emitted, so a branch-only workstream
-// still gets a useful block and a bare one contributes nothing.
+// Anchors a background run to the PR/branch it's meant to act on so it doesn't
+// have to ask the user which one.
 export function buildWorkstreamContext(workstream: HomeWorkstream): string {
   const lines: string[] = [];
   if (workstream.repoFullPath) {
@@ -42,14 +37,11 @@ export function buildWorkstreamContext(workstream: HomeWorkstream): string {
     lines.push(`- Pull request: ${workstream.prUrl}`);
   }
   if (lines.length === 0) return "";
-  return `\n\nContext for this task (already known — don't ask the user for it):\n${lines.join(
-    "\n",
-  )}`;
+  const header =
+    "Context for this task (already known — don't ask the user for it):";
+  return `\n\n${header}\n${lines.join("\n")}`;
 }
 
-// Full prompt for a one-click quick action: the skill command plus the action's
-// instruction, anchored to the workstream's PR/branch so a background run has
-// the signal it needs to act without prompting the user.
 export function buildQuickActionPrompt(
   action: SkillAction,
   workstream: HomeWorkstream,

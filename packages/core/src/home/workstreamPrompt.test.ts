@@ -1,7 +1,7 @@
-import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
-import type { HomeWorkstream } from "@posthog/core/home/schemas";
-import type { WorkflowAction } from "@posthog/core/workflow/schemas";
 import { describe, expect, it } from "vitest";
+import type { WorkflowAction } from "../workflow/schemas";
+import type { PrSnapshot } from "./prSnapshot";
+import type { HomeWorkstream } from "./schemas";
 import {
   buildQuickActionPrompt,
   buildSkillPrompt,
@@ -76,9 +76,7 @@ describe("buildSkillPrompt", () => {
 
 describe("buildWorkstreamContext", () => {
   it("includes the PR number, url, and CI status when a PR is present", () => {
-    const context = buildWorkstreamContext(
-      makeWs({ pr: makePr(), prUrl: makePr().url }),
-    );
+    const context = buildWorkstreamContext(makeWs({ pr: makePr() }));
     expect(context).toContain("- Repository: PostHog/code");
     expect(context).toContain("- Branch: feat/the-thing");
     expect(context).toContain("- Pull request #2910: Add the thing");
