@@ -26,6 +26,10 @@ import type { IRepositoryRepository } from "@posthog/workspace-server/db/reposit
 import { createMockRepositoryRepository } from "@posthog/workspace-server/db/repositories/repository-repository.mock";
 import { createMockSuspensionRepository } from "@posthog/workspace-server/db/repositories/suspension-repository.mock";
 import {
+  createMockTaskMetadataRepository,
+  type MockTaskMetadataRepository,
+} from "@posthog/workspace-server/db/repositories/task-metadata-repository.mock";
+import {
   createMockWorkspaceRepository,
   type MockWorkspaceRepository,
 } from "@posthog/workspace-server/db/repositories/workspace-repository.mock";
@@ -69,6 +73,7 @@ interface TestContext {
   workspaceRepo: MockWorkspaceRepository;
   worktreeRepo: MockWorktreeRepository;
   archiveRepo: MockArchiveRepository;
+  taskMetadataRepo: MockTaskMetadataRepository;
   repoPath: string;
   repoId: string;
   worktreeBasePath: string;
@@ -135,6 +140,7 @@ async function withTestContext(
   };
 
   const suspensionRepo = createMockSuspensionRepository();
+  const taskMetadataRepo = createMockTaskMetadataRepository();
 
   const service = new ArchiveService(
     mocks.sessionCanceller as never,
@@ -145,6 +151,7 @@ async function withTestContext(
     worktreeRepo as never,
     archiveRepo as never,
     suspensionRepo as never,
+    taskMetadataRepo as never,
     workspaceSettings as never,
     archiveLogger as never,
   );
@@ -211,6 +218,7 @@ async function withTestContext(
     workspaceRepo,
     worktreeRepo,
     archiveRepo,
+    taskMetadataRepo,
     repoPath,
     repoId,
     worktreeBasePath,
@@ -419,6 +427,42 @@ describe("ArchiveService integration", () => {
           branchName: null,
           checkpointId: null,
         });
+        // The archive must persist for a rowless task — otherwise the sidebar
+        // never learns it's archived and the row reappears on the next refetch.
+        expect(ctx.service.getArchivedTaskIds()).toContain("nonexistent");
+        expect(ctx.service.isArchived("nonexistent")).toBe(true);
+        expect(ctx.service.getArchivedTasks()).toContainEqual(
+          expect.objectContaining({ taskId: "nonexistent", mode: "cloud" }),
+        );
+      }));
+
+    it("rejects archiving a rowless task that is already archived", () =>
+      withTestContext({ hasWorkspace: false }, async (ctx) => {
+        await ctx.service.archiveTask({ taskId: "nonexistent" });
+        await expect(
+          ctx.service.archiveTask({ taskId: "nonexistent" }),
+        ).rejects.toThrow("already archived");
+      }));
+
+    it("unarchives a rowless task by clearing its metadata flag", () =>
+      withTestContext({ hasWorkspace: false }, async (ctx) => {
+        await ctx.service.archiveTask({ taskId: "nonexistent" });
+
+        const result = await ctx.service.unarchiveTask("nonexistent");
+
+        expect(result).toEqual({ taskId: "nonexistent", worktreeName: null });
+        expect(ctx.service.getArchivedTaskIds()).not.toContain("nonexistent");
+        expect(ctx.service.isArchived("nonexistent")).toBe(false);
+      }));
+
+    it("deletes a rowless archived task", () =>
+      withTestContext({ hasWorkspace: false }, async (ctx) => {
+        await ctx.service.archiveTask({ taskId: "nonexistent" });
+
+        await ctx.service.deleteArchivedTask("nonexistent");
+
+        expect(ctx.service.getArchivedTaskIds()).not.toContain("nonexistent");
+        expect(ctx.taskMetadataRepo.findByTaskId("nonexistent")).toBeNull();
       }));
 
     it("unarchives task without repository association", () =>

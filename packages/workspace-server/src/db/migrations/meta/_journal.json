@@ -78,6 +78,13 @@
       "when": 1782258190575,
       "tag": "0010_wet_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1782359760458,
+      "tag": "0011_spotty_paibok",
+      "breakpoints": true
     }
   ]
 }

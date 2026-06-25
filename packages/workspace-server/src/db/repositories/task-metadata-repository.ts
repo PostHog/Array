@@ -13,6 +13,7 @@ export interface TaskMetadataPatch {
   pinnedAt?: string | null;
   lastViewedAt?: string | null;
   lastActivityAt?: string | null;
+  archivedAt?: string | null;
 }
 
 /**
@@ -25,7 +26,9 @@ export interface ITaskMetadataRepository {
   findByTaskId(taskId: string): TaskMetadataRow | null;
   findAll(): TaskMetadataRow[];
   findAllPinned(): TaskMetadataRow[];
+  findAllArchived(): TaskMetadataRow[];
   upsert(taskId: string, patch: TaskMetadataPatch): void;
+  delete(taskId: string): void;
 }
 
 @injectable()
@@ -61,6 +64,14 @@ export class TaskMetadataRepository implements ITaskMetadataRepository {
       .all();
   }
 
+  findAllArchived(): TaskMetadataRow[] {
+    return this.db
+      .select()
+      .from(taskMetadata)
+      .where(isNotNull(taskMetadata.archivedAt))
+      .all();
+  }
+
   upsert(taskId: string, patch: TaskMetadataPatch): void {
     const timestamp = now();
     this.db
@@ -71,5 +82,9 @@ export class TaskMetadataRepository implements ITaskMetadataRepository {
         set: { ...patch, updatedAt: timestamp },
       })
       .run();
+  }
+
+  delete(taskId: string): void {
+    this.db.delete(taskMetadata).where(eq(taskMetadata.taskId, taskId)).run();
   }
 }
