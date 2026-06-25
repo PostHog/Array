@@ -17,6 +17,9 @@ interface UseWarmTaskOptions {
   githubIntegrationId?: number;
   branch?: string | null;
   editorIsEmpty: boolean;
+  runtimeAdapter?: string | null;
+  model?: string | null;
+  reasoningEffort?: string | null;
 }
 
 export function useWarmTask({
@@ -25,6 +28,9 @@ export function useWarmTask({
   githubIntegrationId,
   branch,
   editorIsEmpty,
+  runtimeAdapter,
+  model,
+  reasoningEffort,
 }: UseWarmTaskOptions): void {
   const enabled = useFeatureFlag(TASKS_PREWARM_SANDBOX_FLAG);
   const client = useOptionalAuthenticatedClient();
@@ -34,6 +40,9 @@ export function useWarmTask({
 
   const isCloud = workspaceMode === "cloud";
   const normalizedBranch = branch ?? null;
+  const normalizedRuntimeAdapter = runtimeAdapter ?? null;
+  const normalizedModel = model ?? null;
+  const normalizedReasoningEffort = reasoningEffort ?? null;
   const eligible =
     enabled &&
     isCloud &&
@@ -43,7 +52,7 @@ export function useWarmTask({
     !editorIsEmpty;
   const key =
     selectedRepository && githubIntegrationId !== undefined
-      ? `${githubIntegrationId}:${selectedRepository}:${normalizedBranch ?? ""}`
+      ? `${githubIntegrationId}:${selectedRepository}:${normalizedBranch ?? ""}:${normalizedRuntimeAdapter ?? ""}:${normalizedModel ?? ""}:${normalizedReasoningEffort ?? ""}`
       : null;
 
   useEffect(() => {
@@ -65,6 +74,9 @@ export function useWarmTask({
     const repository = selectedRepository;
     const githubIntegration = githubIntegrationId as number;
     const warmBranch = normalizedBranch;
+    const warmRuntimeAdapter = normalizedRuntimeAdapter;
+    const warmModel = normalizedModel;
+    const warmReasoningEffort = normalizedReasoningEffort;
     debounceRef.current = setTimeout(() => {
       debounceRef.current = null;
       lastWarmedKeyRef.current = key;
@@ -73,6 +85,9 @@ export function useWarmTask({
           repository,
           github_integration: githubIntegration,
           branch: warmBranch,
+          runtime_adapter: warmRuntimeAdapter,
+          model: warmModel,
+          reasoning_effort: warmReasoningEffort,
         })
         .catch((error) => {
           lastWarmedKeyRef.current = null;
@@ -88,5 +103,8 @@ export function useWarmTask({
     selectedRepository,
     githubIntegrationId,
     normalizedBranch,
+    normalizedRuntimeAdapter,
+    normalizedModel,
+    normalizedReasoningEffort,
   ]);
 }

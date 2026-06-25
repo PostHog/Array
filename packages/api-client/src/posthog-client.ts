@@ -2139,6 +2139,9 @@ export class PostHogAPIClient {
         github_integration?: number | null;
         github_user_integration?: string | null;
         branch?: string | null;
+        runtime_adapter?: string | null;
+        model?: string | null;
+        reasoning_effort?: string | null;
       },
   ) {
     const teamId = await this.getTeamId();
@@ -2278,6 +2281,9 @@ export class PostHogAPIClient {
     repository: string;
     github_integration: number;
     branch?: string | null;
+    runtime_adapter?: string | null;
+    model?: string | null;
+    reasoning_effort?: string | null;
   }): Promise<{ task_id: string; run_id: string } | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/tasks/warm/`;
@@ -2291,6 +2297,9 @@ export class PostHogAPIClient {
           repository: options.repository,
           github_integration: options.github_integration,
           branch: options.branch ?? null,
+          runtime_adapter: options.runtime_adapter ?? null,
+          model: options.model ?? null,
+          reasoning_effort: options.reasoning_effort ?? null,
         }),
       },
     });

@@ -498,6 +498,16 @@ export class TaskCreationSaga extends Saga<
             input.workspaceMode === "cloud"
               ? (input.branch ?? null)
               : undefined,
+          runtime_adapter:
+            input.workspaceMode === "cloud"
+              ? (input.adapter ?? null)
+              : undefined,
+          model:
+            input.workspaceMode === "cloud" ? (input.model ?? null) : undefined,
+          reasoning_effort:
+            input.workspaceMode === "cloud"
+              ? (input.reasoningLevel ?? null)
+              : undefined,
           signal_report: input.signalReportId ?? undefined,
         });
         return result as unknown as Task;
