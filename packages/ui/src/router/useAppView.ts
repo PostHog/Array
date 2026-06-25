@@ -30,6 +30,7 @@ export interface AppView {
   initialCloudRepository?: string;
   initialModel?: string;
   initialMode?: string;
+  folderRunEnvironment?: "local" | "cloud";
   reportAssociation?: TaskInputReportAssociation;
 }
 
@@ -143,6 +144,7 @@ export function useAppView(): AppView {
         initialCloudRepository: prefill.initialCloudRepository,
         initialModel: prefill.initialModel,
         initialMode: prefill.initialMode,
+        folderRunEnvironment: prefill.folderRunEnvironment,
         reportAssociation: prefill.reportAssociation,
         taskInputRequestId: prefill.requestId,
       };

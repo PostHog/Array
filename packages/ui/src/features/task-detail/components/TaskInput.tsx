@@ -536,6 +536,7 @@ export function TaskInput({
     }),
     currentMode: workspaceMode,
     lastUsedLocalMode: lastUsedLocalWorkspaceMode,
+    mostRecentEnvironment: view.folderRunEnvironment,
     setSelectedDirectory,
     setSelectedRepository,
     switchWorkspaceMode: switchWorkspaceModeForFolder,
