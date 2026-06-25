@@ -19,6 +19,7 @@ vi.mock("@tanstack/react-query", () => ({
 const client = {
   createAgentDraftRevisionFrom: vi.fn(),
   updateAgentRevisionSpec: vi.fn(),
+  transitionAgentRevision: vi.fn(),
 };
 
 vi.mock("@posthog/ui/features/auth/authClient", () => ({
@@ -34,6 +35,7 @@ describe("useApplyAgentSpec", () => {
   beforeEach(() => {
     client.createAgentDraftRevisionFrom.mockReset();
     client.updateAgentRevisionSpec.mockReset();
+    client.transitionAgentRevision.mockReset();
   });
 
   it("PATCHes a draft in place — no new draft branched", async () => {
@@ -86,5 +88,37 @@ describe("useApplyAgentSpec", () => {
       mutationFn({ revision: { id: "live-1", state: "live" }, spec: {} }),
     ).rejects.toThrow(/Application/);
     expect(client.createAgentDraftRevisionFrom).not.toHaveBeenCalled();
+  });
+
+  it("archives the orphaned draft (and rethrows) when the PATCH fails after a clone", async () => {
+    client.createAgentDraftRevisionFrom.mockResolvedValue({
+      id: "new-draft",
+      state: "draft",
+    });
+    const patchErr = new Error("spec.models: invalid");
+    client.updateAgentRevisionSpec.mockRejectedValue(patchErr);
+    client.transitionAgentRevision.mockResolvedValue({ id: "new-draft" });
+    renderHook(() => useApplyAgentSpec("agent-slug", "app-1"));
+
+    await expect(
+      mutationFn({ revision: { id: "live-1", state: "live" }, spec: {} }),
+    ).rejects.toThrow(patchErr);
+    // The just-cloned, never-landed draft gets archived as cleanup.
+    expect(client.transitionAgentRevision).toHaveBeenCalledWith(
+      "agent-slug",
+      "new-draft",
+      "archive",
+    );
+  });
+
+  it("does NOT archive when an in-place draft PATCH fails (nothing was cloned)", async () => {
+    client.updateAgentRevisionSpec.mockRejectedValue(new Error("boom"));
+    renderHook(() => useApplyAgentSpec("agent-slug", "app-1"));
+
+    await expect(
+      mutationFn({ revision: { id: "d1", state: "draft" }, spec: {} }),
+    ).rejects.toThrow(/boom/);
+    expect(client.createAgentDraftRevisionFrom).not.toHaveBeenCalled();
+    expect(client.transitionAgentRevision).not.toHaveBeenCalled();
   });
 });

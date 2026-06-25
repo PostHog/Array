@@ -32,7 +32,8 @@ export function useApplyAgentSpec(
   >({
     mutationFn: async ({ revision, spec }) => {
       let targetId = revision.id;
-      if (revision.state !== "draft") {
+      const clonedDraft = revision.state !== "draft";
+      if (clonedDraft) {
         if (!applicationId) {
           throw new Error("Application not loaded yet");
         }
@@ -42,7 +43,21 @@ export function useApplyAgentSpec(
         );
         targetId = draft.id;
       }
-      return client.updateAgentRevisionSpec(idOrSlug, targetId, spec);
+      try {
+        return await client.updateAgentRevisionSpec(idOrSlug, targetId, spec);
+      } catch (err) {
+        // If we cloned a fresh draft and the spec PATCH then failed, that
+        // draft is an orphan (a copy of the source with no edit landed).
+        // Archive it best-effort so repeated failed applies don't pile up
+        // empty drafts; never mask the original error. A pre-existing draft
+        // passed in by the caller is left untouched.
+        if (clonedDraft) {
+          await client
+            .transitionAgentRevision(idOrSlug, targetId, "archive")
+            .catch(() => undefined);
+        }
+        throw err;
+      }
     },
     onSuccess: () => {
       for (const key of [
