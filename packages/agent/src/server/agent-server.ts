@@ -637,7 +637,6 @@ export class AgentServer {
         model: this.config.model,
         permissionMode,
         posthogAPI,
-        conversation: this.resumeState?.conversation,
         log: {
           info: (msg, data) => this.logger.debug(msg, data),
           warn: (msg, data) => this.logger.warn(msg, data),
