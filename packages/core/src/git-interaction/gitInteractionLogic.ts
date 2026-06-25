@@ -31,6 +31,10 @@ interface GitComputed {
   actions: GitMenuAction[];
   primaryAction: GitMenuAction;
   pushDisabledReason: string | null;
+  // Surfaced as a named field (like pushDisabledReason) because a disabled
+  // create-pr action is dropped from `actions`, so its reason would otherwise
+  // be unreadable by consumers and tests.
+  createPrDisabledReason: string | null;
   prBaseBranch: string | null;
   prHeadBranch: string | null;
   prUrl: string | null;
@@ -179,6 +183,7 @@ export function computeGitInteractionState(input: GitState): GitComputed {
       actions: [branchAction],
       primaryAction: branchAction,
       pushDisabledReason: "Create a branch first.",
+      createPrDisabledReason: "Create a branch first.",
       prBaseBranch: input.defaultBranch,
       prHeadBranch: null,
       prUrl: null,
@@ -207,6 +212,7 @@ export function computeGitInteractionState(input: GitState): GitComputed {
       actions,
       primaryAction,
       pushDisabledReason: "Create a feature branch first.",
+      createPrDisabledReason,
       prBaseBranch: input.defaultBranch,
       prHeadBranch: input.currentBranch,
       prUrl: input.prStatus?.prUrl ?? null,
@@ -238,6 +244,7 @@ export function computeGitInteractionState(input: GitState): GitComputed {
     pushDisabledReason: getPushDisabledReason(input, repoReason, {
       assumeWillHaveCommits: true,
     }),
+    createPrDisabledReason,
     prBaseBranch: input.prStatus?.baseBranch ?? input.defaultBranch,
     prHeadBranch: input.prStatus?.headBranch ?? input.currentBranch,
     prUrl: input.prStatus?.prUrl ?? null,

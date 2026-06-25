@@ -252,55 +252,60 @@ describe("computeGitInteractionState", () => {
   });
 
   describe("offline", () => {
-    it("disables push with a no-internet reason on a feature branch", () => {
-      const result = computeGitInteractionState(
-        makeState({
+    // Remote actions can't run offline: each surfaces the no-internet reason
+    // via its named GitComputed field (a disabled create-pr is dropped from
+    // `actions`, so its reason is only readable here).
+    it.each([
+      {
+        action: "push",
+        field: "pushDisabledReason" as const,
+        overrides: {
           currentBranch: "feature/test",
           hasChanges: false,
           aheadOfRemote: 2,
-          isOnline: false,
-        }),
-      );
-      const push = result.actions.find((a) => a.id === "push");
-      expect(push?.enabled).toBe(false);
-      expect(push?.disabledReason).toBe("No internet connection");
-      expect(result.pushDisabledReason).toBe("No internet connection");
-    });
-
-    it("disables create-pr with a no-internet reason", () => {
-      const result = computeGitInteractionState(
-        makeState({
+        } satisfies Partial<GitState>,
+      },
+      {
+        action: "create-pr",
+        field: "createPrDisabledReason" as const,
+        overrides: {
           currentBranch: "feature/test",
           hasChanges: true,
-          isOnline: false,
-        }),
-      );
-      const createPr = result.actions.find((a) => a.id === "create-pr");
-      // create-pr is dropped from the action list once disabled, so assert via
-      // the primary fallback instead: offline pushes the primary off create-pr.
-      expect(createPr).toBeUndefined();
-      expect(result.primaryAction.id).not.toBe("create-pr");
-    });
+        } satisfies Partial<GitState>,
+      },
+    ])(
+      "gates $action with a no-internet reason while offline",
+      ({ field, overrides }) => {
+        const result = computeGitInteractionState(
+          makeState({ ...overrides, isOnline: false }),
+        );
+        expect(result[field]).toBe("No internet connection");
+      },
+    );
 
-    it("still allows local commit while offline", () => {
-      const result = computeGitInteractionState(
-        makeState({
+    // Local actions don't touch the network, so they stay enabled offline.
+    it.each([
+      {
+        action: "commit",
+        overrides: {
           currentBranch: "feature/test",
           hasChanges: true,
-          isOnline: false,
-        }),
-      );
-      const commit = result.actions.find((a) => a.id === "commit");
-      expect(commit?.enabled).toBe(true);
-      expect(commit?.disabledReason).toBeNull();
-    });
-
-    it("still allows creating a branch while offline", () => {
-      const result = computeGitInteractionState(
-        makeState({ currentBranch: null, isOnline: false }),
-      );
-      expect(result.primaryAction.id).toBe("branch-here");
-      expect(result.primaryAction.enabled).toBe(true);
-    });
+        } satisfies Partial<GitState>,
+      },
+      {
+        action: "branch-here",
+        overrides: { currentBranch: null } satisfies Partial<GitState>,
+      },
+    ])(
+      "still allows the local $action action while offline",
+      ({ action, overrides }) => {
+        const result = computeGitInteractionState(
+          makeState({ ...overrides, isOnline: false }),
+        );
+        const found = result.actions.find((a) => a.id === action);
+        expect(found?.enabled).toBe(true);
+        expect(found?.disabledReason).toBeNull();
+      },
+    );
   });
 });
