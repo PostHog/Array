@@ -306,6 +306,7 @@ export class TaskCreationSaga extends Saga<
                 task.id,
                 taskRun.id,
                 transport.filePaths,
+                transport.skillBundles,
               )
             : [];
 

@@ -3871,6 +3871,7 @@ describe("SessionService", () => {
       expect(mockSessionStoreSetters.enqueueMessage).toHaveBeenCalledWith(
         "task-123",
         "before boot",
+        prompt,
       );
       const wroteIsPromptPendingTrue =
         mockSessionStoreSetters.updateSession.mock.calls.some(
