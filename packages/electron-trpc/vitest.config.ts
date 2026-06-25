@@ -7,6 +7,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
+    // Disable retries so flaky-test detection sees raw pass/fail results.
+    retry: 0,
+    reporters: [
+      "default",
+      ["junit", { outputFile: "./junit.xml", addFileAttribute: true }],
+    ],
     coverage: {
       all: true,
       include: ["src/**/*"],

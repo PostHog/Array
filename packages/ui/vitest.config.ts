@@ -20,6 +20,12 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    // Disable retries so flaky-test detection sees raw pass/fail results.
+    retry: 0,
+    reporters: [
+      "default",
+      ["junit", { outputFile: "./junit.xml", addFileAttribute: true }],
+    ],
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
