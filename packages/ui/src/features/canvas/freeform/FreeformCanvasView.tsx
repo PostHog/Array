@@ -40,7 +40,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
 import { CanvasGenerateHero } from "./CanvasGenerateHero";
 import { CanvasPermissionDialog } from "./CanvasPermissionDialog";
@@ -101,13 +101,19 @@ export function FreeformCanvasView({
   const genTaskId = dashboard?.generationTaskId ?? null;
   const channelId = dashboard?.channelId ?? "";
 
-  // The run whose chat the panel shows. Once the record's genTaskId resolves it
-  // is the single source of truth; the local bridge is cleared so the panel
-  // reverts to the composer when the run finishes and the association clears.
-  const effectiveTaskId = genTaskId ?? startedTaskId;
-  useEffect(() => {
+  // Reconcile the optimistic bridge against the polled record during render
+  // (not via an effect, which would flash a stale frame): once the record
+  // reports its own generationTaskId, drop the bridge so the panel reverts to
+  // the composer when the run later clears the association.
+  const [prevGenTaskId, setPrevGenTaskId] = useState(genTaskId);
+  if (genTaskId !== prevGenTaskId) {
+    setPrevGenTaskId(genTaskId);
     if (genTaskId) setStartedTaskId(null);
-  }, [genTaskId]);
+  }
+
+  // The run whose chat the panel shows: the record's id, or the optimistic
+  // bridge until the poll catches up.
+  const effectiveTaskId = genTaskId ?? startedTaskId;
 
   const { channels } = useChannels();
   const channelName = useMemo(
@@ -228,7 +234,13 @@ export function FreeformCanvasView({
   };
 
   const showCanvas = !!code;
-  const showGeneratingState = !code && !!effectiveTaskId;
+  // Actively building: the optimistic bridge right after submit (before the
+  // record's genTaskId resolves), or a live run. Once genTaskId resolves we key
+  // off `isGenerating`, which short-circuits on a terminal run — so a
+  // failed/cancelled run with a lingering generationTaskId doesn't strand the
+  // canvas body on the spinner.
+  const isBuilding = genTaskId ? isGenerating : !!startedTaskId;
+  const showGeneratingState = !code && isBuilding;
   // The empty-canvas landing: a centered composer with suggestions, shown until
   // a canvas exists or a generation is in flight. After submit the composer
   // floats into the side panel.
@@ -238,10 +250,11 @@ export function FreeformCanvasView({
 
   return (
     <Flex height="100%" overflow="hidden" position="relative">
-      {/* While the panel is minimized the embedded chat isn't visible, so a
-          paused tool-permission request would have nowhere to go — surface it
-          as a modal instead. When the panel is open, the chat handles it. */}
-      {interactive && effectiveTaskId && collapsed && (
+      {/* When the embedded chat isn't visible — panel minimized, or still shut
+          mid-slide-in (waitingForHeroExit) — a paused tool-permission request
+          would have nowhere to go, so surface it as a modal. When the panel is
+          open, the chat handles it. */}
+      {interactive && effectiveTaskId && (collapsed || waitingForHeroExit) && (
         <CanvasPermissionDialog taskId={effectiveTaskId} />
       )}
       <Flex
