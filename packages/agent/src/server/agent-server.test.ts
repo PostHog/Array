@@ -1281,15 +1281,32 @@ describe("AgentServer HTTP Mode", () => {
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
 
-    it("attributes only the first when two distinct recent PRs race", async () => {
-      // Both fetch as recent; without the post-await guard each would attribute.
+    it("attributes the most recent PR when a run opens several, in detection order", async () => {
+      // output.pr_url holds one value; the latest PR the run created is the useful one.
       const s = setup(justNow());
       const second = "https://github.com/PostHog/posthog.com/pull/17765";
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(second));
       await flush();
-      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith("t", "r", {
+        output: { pr_url: second },
+      });
+      expect(s.detectedPrUrl).toBe(second);
+    });
+
+    it("does not let an older PR the run only viewed overwrite the one it created", async () => {
+      const viewed = "https://github.com/PostHog/posthog.com/pull/1";
+      // The created PR reads as recent; the later, merely-viewed PR reads as old.
+      const s = setup(justNow());
+      s.fetchPrCreatedAt = vi.fn(async (url: string) =>
+        url === PR_URL ? justNow() : longAgo,
+      );
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(viewed));
+      await flush();
       expect(s.detectedPrUrl).toBe(PR_URL);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -43,6 +43,20 @@ export const workspaces = sqliteTable(
   (t) => [index("workspaces_repository_id_idx").on(t.repositoryId)],
 );
 
+// Pin / view / activity metadata for tasks that have no `workspaces` row —
+// repo-less channel tasks (e.g. canvas generation) whose working dir is a
+// scratch dir, not a tracked workspace. Tasks WITH a workspace row keep this
+// metadata on their workspace row; this table is the fallback home so the
+// per-device viewed/pinned state survives reload for the rowless ones too.
+export const taskMetadata = sqliteTable("task_metadata", {
+  taskId: text().primaryKey(),
+  pinnedAt: text(),
+  lastViewedAt: text(),
+  lastActivityAt: text(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
 export const worktrees = sqliteTable("worktrees", {
   id: id(),
   workspaceId: text()

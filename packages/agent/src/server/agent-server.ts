@@ -254,9 +254,10 @@ export class AgentServer {
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
-  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
-  private prAttributed = false;
+  // Reset per session. `evaluatedPrUrls` dedupes per URL; `prAttributionChain` serializes
+  // attributions so the most recently created PR in a run wins.
   private readonly evaluatedPrUrls = new Set<string>();
+  private prAttributionChain: Promise<void> = Promise.resolve();
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
   // Guards against concurrent session initialization. autoInitializeSession() and
@@ -1083,8 +1084,8 @@ export class AgentServer {
       runId: payload.run_id,
     });
 
-    this.prAttributed = false;
     this.evaluatedPrUrls.clear();
+    this.prAttributionChain = Promise.resolve();
 
     this.session = {
       payload,
@@ -2403,18 +2404,22 @@ ${signedCommitInstructions}
     payload: JwtPayload,
     update: Record<string, unknown> | undefined,
   ): void {
-    if (this.prAttributed || !update) return;
+    if (!update) return;
     const prUrl = findPrUrl(JSON.stringify(update));
     if (!prUrl || this.evaluatedPrUrls.has(prUrl)) return;
     this.evaluatedPrUrls.add(prUrl);
-    void this.attachPrIfCreatedThisRun(payload, prUrl);
+    // Chain so attributions run in detection order; later PRs overwrite earlier ones.
+    this.prAttributionChain = this.prAttributionChain
+      .catch(() => {})
+      .then(() => this.attachPrIfCreatedThisRun(payload, prUrl));
   }
 
   private async attachPrIfCreatedThisRun(
     payload: JwtPayload,
     prUrl: string,
   ): Promise<void> {
-    if (this.prAttributed) return;
+    // Already the attributed PR (e.g. seeded from a Slack notification, or re-detected).
+    if (prUrl === this.detectedPrUrl) return;
 
     let createdAt: string | null;
     try {
@@ -2428,11 +2433,9 @@ ${signedCommitInstructions}
       return;
     }
 
+    // Only attribute PRs created during this run, not ones the agent merely viewed.
     if (!wasCreatedRecently(createdAt, Date.now())) return;
-    // Re-check after the await: another URL may have attributed while we waited.
-    if (this.prAttributed) return;
 
-    this.prAttributed = true;
     this.detectedPrUrl = prUrl;
 
     try {
