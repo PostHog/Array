@@ -716,56 +716,50 @@ describe("AgentServer HTTP Mode", () => {
       mode: "interactive",
     };
 
-    it("marks the run failed and tags a genuine agent error on a follow-up turn", async () => {
-      const testServer = createFailureTestServer();
+    it.each([
+      ["genuine agent error (terminal)", "boom", "agent_error", true],
+      [
+        "transient upstream timeout (recoverable)",
+        "API Error: The operation timed out.",
+        "upstream_timeout",
+        false,
+      ],
+    ] as const)(
+      "tags and handles a follow-up %s",
+      async (_name, errorMessage, expectedErrorType, expectsFailed) => {
+        const testServer = createFailureTestServer();
 
-      await testServer.handleTurnFailure(
-        interactivePayload,
-        "followup",
-        new Error("boom"),
-      );
+        await testServer.handleTurnFailure(
+          interactivePayload,
+          "followup",
+          new Error(errorMessage),
+        );
 
-      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
-        expect.objectContaining({
-          notification: expect.objectContaining({
-            method: "session/update",
-            params: expect.objectContaining({
-              update: expect.objectContaining({
-                sessionUpdate: "error",
-                errorType: "agent_error",
+        expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+          expect.objectContaining({
+            notification: expect.objectContaining({
+              method: "session/update",
+              params: expect.objectContaining({
+                update: expect.objectContaining({
+                  sessionUpdate: "error",
+                  errorType: expectedErrorType,
+                }),
               }),
             }),
           }),
-        }),
-      );
-      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledWith(
-        "task-1",
-        "run-1",
-        expect.objectContaining({ status: "failed" }),
-      );
-    });
+        );
 
-    it("leaves a transient upstream timeout recoverable on an interactive follow-up", async () => {
-      const testServer = createFailureTestServer();
-
-      await testServer.handleTurnFailure(
-        interactivePayload,
-        "followup",
-        new Error("API Error: The operation timed out."),
-      );
-
-      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
-        expect.objectContaining({
-          notification: expect.objectContaining({
-            method: "session/update",
-            params: expect.objectContaining({
-              update: expect.objectContaining({ sessionUpdate: "error" }),
-            }),
-          }),
-        }),
-      );
-      expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
-    });
+        if (expectsFailed) {
+          expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledWith(
+            "task-1",
+            "run-1",
+            expect.objectContaining({ status: "failed" }),
+          );
+        } else {
+          expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+        }
+      },
+    );
 
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();

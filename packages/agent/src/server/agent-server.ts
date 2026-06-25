@@ -1313,7 +1313,9 @@ export class AgentServer {
       ? UPSTREAM_PROVIDER_FAILURE_MESSAGE
       : message || "Agent error";
     const recoverable =
-      isUpstreamFailure && this.getEffectiveMode(payload) === "interactive";
+      isUpstreamFailure &&
+      phase === "followup" &&
+      this.getEffectiveMode(payload) === "interactive";
 
     this.logger.error(`send_${phase}_task_message_failed`, {
       classification,
