@@ -12,6 +12,7 @@ import {
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { isContentlessTask } from "@posthog/shared/domain-types";
 import { DeepLinkApprovalModal } from "@posthog/ui/features/agent-applications/components/DeepLinkApprovalModal";
 import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -207,7 +208,14 @@ function RootLayout() {
       (t) =>
         t.latest_run?.environment === "cloud" &&
         !workspaces[t.id] &&
-        !reconcilingTaskIds.current.has(t.id),
+        !reconcilingTaskIds.current.has(t.id) &&
+        // Skip prewarm placeholders. The prewarm-sandbox feature creates an
+        // empty cloud task while the user is still typing; adopting it here
+        // would give it a local workspace and surface a nameless, perpetually
+        // "loading agent" task in the sidebar that the user never created
+        // (GROW-52). Real tasks always carry the submitted prompt as their
+        // description.
+        !isContentlessTask(t),
     );
     if (missing.length === 0) return;
     const missingIds = missing.map((t) => t.id);
