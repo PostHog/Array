@@ -44,6 +44,11 @@ const mockTrpcFs = vi.hoisted(() => ({
   readFileAsBase64: { query: vi.fn() },
 }));
 
+const mockTrpcSkills = vi.hoisted(() => ({
+  list: { query: vi.fn() },
+  bundleLocal: { query: vi.fn() },
+}));
+
 const mockTrpcHandoff = vi.hoisted(() => ({
   preflightToCloud: { query: vi.fn() },
   executeToCloud: { mutate: vi.fn() },
@@ -260,6 +265,7 @@ vi.mock("@posthog/di/container", () => ({
         logs: mockTrpcLogs,
         cloudTask: mockTrpcCloudTask,
         fs: mockTrpcFs,
+        skills: mockTrpcSkills,
         handoff: mockTrpcHandoff,
         os: mockTrpcOs,
       };
@@ -415,6 +421,10 @@ describe("SessionService", () => {
       unsubscribe: vi.fn(),
     });
     mockTrpcFs.readFileAsBase64.query.mockResolvedValue(null);
+    mockTrpcSkills.list.query.mockResolvedValue([]);
+    mockTrpcSkills.bundleLocal.query.mockRejectedValue(
+      new Error("Unexpected skill bundle upload"),
+    );
     mockTrpcHandoff.preflightToCloud.query.mockResolvedValue({
       canHandoff: true,
     });
@@ -3997,6 +4007,101 @@ describe("SessionService", () => {
           params: {
             content: "read this",
             artifact_ids: ["artifact-1"],
+          },
+        }),
+      );
+    });
+
+    it("resolves raw local skill slash commands before sending cloud follow-ups", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "in_progress",
+        }),
+      );
+      mockTrpcSkills.list.query.mockResolvedValue([
+        {
+          name: "local-test-skill",
+          description: "Local user skill",
+          source: "user",
+          path: "/Users/example/.claude/skills/local-test-skill",
+        },
+      ]);
+      mockTrpcSkills.bundleLocal.query.mockResolvedValue({
+        name: "local-test-skill",
+        source: "user",
+        fileName: "local-test-skill.zip",
+        contentType: "application/zip",
+        contentBase64: btoa("skill-bundle"),
+        contentSha256:
+          "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        size: 12,
+      });
+      mockAuthenticatedClient.prepareTaskRunArtifactUploads.mockResolvedValue([
+        {
+          id: "skill-prep-1",
+          name: "local-test-skill.zip",
+          type: "skill_bundle",
+          source: "posthog_code_skill",
+          size: 12,
+          content_type: "application/zip",
+          storage_path: "tasks/artifacts/local-test-skill.zip",
+          expires_in: 3600,
+          presigned_post: {
+            url: "https://uploads.example.com",
+            fields: { key: "tasks/artifacts/local-test-skill.zip" },
+          },
+        },
+      ]);
+      mockAuthenticatedClient.finalizeTaskRunArtifactUploads.mockResolvedValue([
+        {
+          id: "skill-artifact-1",
+          name: "local-test-skill.zip",
+          type: "skill_bundle",
+          source: "posthog_code_skill",
+          size: 12,
+          content_type: "application/zip",
+          storage_path: "tasks/artifacts/local-test-skill.zip",
+          uploaded_at: "2026-04-16T00:00:00Z",
+        },
+      ]);
+      mockTrpcCloudTask.sendCommand.mutate.mockResolvedValue({
+        success: true,
+        result: { queued: true },
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({ ok: true } as Response),
+      );
+
+      const result = await service.sendPrompt("task-123", "/local-test-skill");
+
+      expect(result.stopReason).toBe("queued");
+      expect(mockTrpcSkills.bundleLocal.query).toHaveBeenCalledWith({
+        name: "local-test-skill",
+        source: "user",
+        path: "/Users/example/.claude/skills/local-test-skill",
+      });
+      expect(
+        mockAuthenticatedClient.prepareTaskRunArtifactUploads,
+      ).toHaveBeenCalledWith("task-123", "run-123", [
+        expect.objectContaining({
+          name: "local-test-skill.zip",
+          type: "skill_bundle",
+          source: "posthog_code_skill",
+          metadata: expect.objectContaining({
+            skill_name: "local-test-skill",
+            skill_source: "user",
+          }),
+        }),
+      ]);
+      expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "user_message",
+          params: {
+            content: "/local-test-skill",
+            artifact_ids: ["skill-artifact-1"],
           },
         }),
       );

@@ -644,6 +644,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
         label: chip.label,
         pastedText: false,
         chipId: chip.chipId,
+        skillPath: chip.skillPath,
+        skillSource: chip.skillSource,
+        skillName: chip.skillName,
       });
       draft.saveDraft(editor, attachments);
     },

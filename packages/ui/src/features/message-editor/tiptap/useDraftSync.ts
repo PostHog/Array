@@ -25,6 +25,9 @@ function tiptapJsonToEditorContent(json: JSONContent): EditorContent {
           id: node.attrs.id,
           label: node.attrs.label,
           pastedText: node.attrs.pastedText,
+          skillPath: node.attrs.skillPath,
+          skillSource: node.attrs.skillSource,
+          skillName: node.attrs.skillName,
         },
       });
     } else if (node.type === "doc" && node.content) {
@@ -81,6 +84,9 @@ function editorContentToTiptapJson(content: EditorContent): JSONContent {
           id: seg.chip.id,
           label: seg.chip.label,
           pastedText: seg.chip.pastedText ?? false,
+          skillPath: seg.chip.skillPath,
+          skillSource: seg.chip.skillSource,
+          skillName: seg.chip.skillName,
         },
       });
     }

@@ -45,6 +45,7 @@ import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
 } from "../../shell/queryClient";
+import { resolveLocalSkillPrompt } from "../message-editor/commands";
 
 export { SessionService };
 
@@ -59,8 +60,9 @@ function buildSessionServiceDeps(): SessionServiceDeps {
   const queryClient = resolveService<ImperativeQueryClient>(
     IMPERATIVE_QUERY_CLIENT,
   );
-  const cloudArtifactService = new CloudArtifactService((filePath) =>
-    trpc.fs.readFileAsBase64.query({ filePath }),
+  const cloudArtifactService = new CloudArtifactService(
+    (filePath) => trpc.fs.readFileAsBase64.query({ filePath }),
+    (skillBundleRef) => trpc.skills.bundleLocal.query(skillBundleRef),
   );
 
   return {
@@ -126,18 +128,22 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       cloudPromptToBlocks,
       combineQueuedCloudPrompts,
       getCloudPromptTransport,
-      uploadRunAttachments: (client, taskId, runId, filePaths) =>
+      resolveLocalSkillCommandPrompt: (prompt) =>
+        resolveLocalSkillPrompt(prompt, () => trpc.skills.list.query()),
+      uploadRunAttachments: (client, taskId, runId, filePaths, skillBundles) =>
         cloudArtifactService.uploadRunAttachments(
           client,
           taskId,
           runId,
           filePaths,
+          skillBundles,
         ),
-      uploadTaskStagedAttachments: (client, taskId, filePaths) =>
+      uploadTaskStagedAttachments: (client, taskId, filePaths, skillBundles) =>
         cloudArtifactService.uploadTaskStagedAttachments(
           client,
           taskId,
           filePaths,
+          skillBundles,
         ),
     },
   };
