@@ -13,8 +13,7 @@ function setOnline(isOnline: boolean) {
 
 describe("NetworkReconnectContribution", () => {
   beforeEach(() => {
-    // The store is a process-wide singleton shared with the contribution; reset
-    // it to the default online state before each case.
+    // Reset the process-wide singleton store between cases.
     setOnline(true);
   });
 

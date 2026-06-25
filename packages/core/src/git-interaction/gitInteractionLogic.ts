@@ -20,8 +20,6 @@ interface GitState {
     headBranch: string | null;
     prUrl: string | null;
   } | null;
-  /** Remote actions (push/sync/publish, create PR) gate on this; local
-   * actions (commit, new branch) don't. */
   isOnline: boolean;
 }
 

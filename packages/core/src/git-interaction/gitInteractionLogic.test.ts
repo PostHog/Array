@@ -252,8 +252,6 @@ describe("computeGitInteractionState", () => {
   });
 
   describe("offline", () => {
-    // create-pr is dropped from `actions` when disabled, so its reason is read
-    // from the named field.
     it.each([
       {
         action: "push",
