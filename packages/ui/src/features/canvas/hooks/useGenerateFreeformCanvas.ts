@@ -13,6 +13,7 @@ import {
   useDashboardMutations,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
+import { useCanvasGenerationTrackerStore } from "@posthog/ui/features/canvas/stores/canvasGenerationTrackerStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -89,6 +90,11 @@ export function useGenerateFreeformCanvas(args: {
         // are best-effort: a failure here shouldn't undo a started task.
         void fileTask(channelId, task.id, task.title).catch(() => {});
         void setGenerationTask(dashboardId, task.id).catch(() => {});
+        // Track this run so a toast (with a link back here) fires when it
+        // finishes, even after the user navigates to another canvas.
+        useCanvasGenerationTrackerStore
+          .getState()
+          .track({ taskId: task.id, dashboardId, channelId, name });
         // Repo-less tasks create no workspace row, so the usual workspace.create
         // invalidation never fires — refresh the cache so the task view resolves
         // its scratch cwd instead of showing the repo-picker prompt.
@@ -103,7 +109,14 @@ export function useGenerateFreeformCanvas(args: {
             .generateCanvasName(opts.instruction)
             .then(async (generated) => {
               const title = generated?.trim();
-              if (title) await renameDashboard(dashboardId, title);
+              if (title) {
+                await renameDashboard(dashboardId, title);
+                // Keep the tracked generation's name in sync so its completion
+                // toast reads the real title, not "Untitled canvas".
+                useCanvasGenerationTrackerStore
+                  .getState()
+                  .updateName(task.id, title);
+              }
             })
             .catch(() => {});
         }

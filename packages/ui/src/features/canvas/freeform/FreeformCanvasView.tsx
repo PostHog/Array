@@ -17,8 +17,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import { isTerminalStatus } from "@posthog/shared/domain-types";
-import { isCanvasGenerationRunning } from "@posthog/ui/features/canvas/freeform/canvasGenerationStatus";
+import {
+  isCanvasGenerating,
+  isCanvasGenerationRunning,
+} from "@posthog/ui/features/canvas/freeform/canvasGenerationStatus";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useFreeformChatStore,
@@ -114,24 +116,14 @@ export function FreeformCanvasView({
     session: genSession,
   });
   // Whether the agent is actively producing the canvas right now. Drives the
-  // "Generating…" UI (notice, composer, undo/redo). A local session stays
-  // "connected" after its single generation prompt completes, so key off the
-  // pending prompt, not the connection — otherwise the notice never clears. A
-  // terminal run record always wins so a stuck session can't strand the notice.
-  const isGenerating = (() => {
-    if (!genTaskId) return false;
-    if (genTaskLoading) return true;
-    if (genTask?.latest_run?.environment === "cloud") {
-      const cloudStatus =
-        genSession?.cloudStatus ?? genTask?.latest_run?.status ?? null;
-      return !isTerminalStatus(cloudStatus);
-    }
-    if (isTerminalStatus(genTask?.latest_run?.status)) return false;
-    return (
-      genSession?.status === "connecting" ||
-      genSession?.isPromptPending === true
-    );
-  })();
+  // "Generating…" UI (notice, composer, undo/redo). Shares the tested helper
+  // with the completion-toast watcher so both read the same signal.
+  const isGenerating = isCanvasGenerating({
+    genTaskId,
+    genTaskLoading,
+    latestRun: genTask?.latest_run,
+    session: genSession,
+  });
 
   // Poll the record while the session is alive so a just-published canvas
   // appears (the publish lands while the prompt is still pending).

@@ -23,7 +23,7 @@ import {
 import { fetchAuthState } from "@posthog/ui/features/auth/authQueries";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
 import { useAddDirectoryDialogStore } from "@posthog/ui/features/folder-picker/addDirectoryDialogStore";
-import { TaskNotificationService } from "@posthog/ui/features/notifications/notifications";
+import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
 import { useSessionAdapterStore } from "@posthog/ui/features/sessions/sessionAdapterStore";
 import {
   getPersistedConfigOptions,
@@ -79,12 +79,12 @@ function buildSessionServiceDeps(): SessionServiceDeps {
     },
     buildPermissionToolMetadata,
     notifyPermissionRequest: (taskTitle, taskId) =>
-      resolveService(TaskNotificationService).notifyPermissionRequest(
+      resolveService(NotificationBus).notifyPermissionRequest(
         taskTitle,
         taskId,
       ),
     notifyPromptComplete: (taskTitle, stopReason, taskId) =>
-      resolveService(TaskNotificationService).notifyPromptComplete(
+      resolveService(NotificationBus).notifyPromptComplete(
         taskTitle,
         stopReason,
         taskId,

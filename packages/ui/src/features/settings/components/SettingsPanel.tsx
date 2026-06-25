@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   ArrowsClockwise,
+  Bell,
   CaretRight,
   Code,
   CreditCard,
@@ -33,6 +34,7 @@ import { DiscordSettings } from "@posthog/ui/features/settings/sections/DiscordS
 import { EnvironmentsSettings } from "@posthog/ui/features/settings/sections/environments/EnvironmentsSettings";
 import { GeneralSettings } from "@posthog/ui/features/settings/sections/GeneralSettings";
 import { GitHubSettings } from "@posthog/ui/features/settings/sections/GitHubSettings";
+import { NotificationsSettings } from "@posthog/ui/features/settings/sections/NotificationsSettings";
 import { PersonalizationSettings } from "@posthog/ui/features/settings/sections/PersonalizationSettings";
 import { PlanUsageSettings } from "@posthog/ui/features/settings/sections/PlanUsageSettings";
 import { ShortcutsSettings } from "@posthog/ui/features/settings/sections/ShortcutsSettings";
@@ -58,6 +60,7 @@ interface SidebarItem {
 
 const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "general", label: "General", icon: <GearSix size={16} /> },
+  { id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
   { id: "plan-usage", label: "Plan & usage", icon: <CreditCard size={16} /> },
   { id: "workspaces", label: "Workspaces", icon: <Folder size={16} /> },
   { id: "worktrees", label: "Worktrees", icon: <TreeStructure size={16} /> },
@@ -80,6 +83,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
 
 const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   general: "General",
+  notifications: "Notifications",
   "plan-usage": "Plan & usage",
   workspaces: "Workspaces",
   worktrees: "Worktrees",
@@ -99,6 +103,7 @@ const CATEGORY_TITLES: Record<SettingsCategory, string> = {
 
 const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   general: GeneralSettings,
+  notifications: NotificationsSettings,
   "plan-usage": PlanUsageSettings,
   workspaces: WorkspacesSettings,
   worktrees: WorktreesSettings,

@@ -1,175 +1,92 @@
-import {
-  CheckIcon,
-  InfoIcon,
-  WarningCircleIcon,
-  WarningIcon,
-  XIcon,
-} from "@phosphor-icons/react";
-import { Card, Flex, IconButton, Spinner, Text } from "@radix-ui/themes";
-import type { ReactNode } from "react";
-import { toast as sonnerToast } from "sonner";
+import { toast as quillToast } from "@posthog/quill";
 
-interface ToastAction {
+// Thin wrapper over quill's toast so the whole app shares one import and a
+// stable `(title, options)` signature. Quill (base-ui under the hood) owns
+// rendering, stacking, auto-dismiss, hover-to-pause, and the close button —
+// which is why this exists instead of a hand-rolled sonner custom toast.
+
+export interface ToastAction {
   label: string;
   onClick: () => void;
 }
 
-interface ToastProps {
-  id: string | number;
-  type: "loading" | "success" | "error" | "info" | "warning";
-  title: ReactNode;
+export interface ToastOptions {
   description?: string;
+  // A caller-chosen stable id: upserts (creates or replaces) the toast with
+  // that id so it never stacks — matching sonner's `{ id }`. quill itself can't
+  // pick an id at create time, so the wrapper maps it (see idRegistry).
+  id?: string;
   action?: ToastAction;
+  // Auto-dismiss delay in ms. Maps to quill's `timeout`. Omit for the provider
+  // default; loading toasts never auto-dismiss regardless.
+  duration?: number;
 }
 
-function ToastComponent(props: ToastProps) {
-  const { id, type, title, description, action } = props;
+// The second argument may be a bare description string (sonner-style shorthand)
+// or the full options object.
+type Detail = string | ToastOptions;
 
-  const getIcon = () => {
-    switch (type) {
-      case "loading":
-        return <Spinner size="1" />;
-      case "success":
-        return <CheckIcon size={16} weight="bold" color="var(--green-9)" />;
-      case "error":
-        return (
-          <WarningCircleIcon size={16} weight="bold" color="var(--red-9)" />
-        );
-      case "info":
-        return <InfoIcon size={16} weight="bold" color="var(--blue-9)" />;
-      case "warning":
-        return <WarningIcon size={16} weight="bold" color="var(--amber-9)" />;
-    }
+type Level = "success" | "error" | "info" | "warning" | "loading";
+
+// Maps a caller-chosen stable id → quill's generated id, so `{ id }` behaves as
+// an upsert: the first call creates a quill toast and records the mapping; a
+// repeat call (or a different level) updates that same toast instead of
+// stacking; `dismiss(id)` resolves through here. Entries self-clean on close.
+const idRegistry = new Map<string, string>();
+
+function normalize(detail?: Detail): ToastOptions {
+  return typeof detail === "string" ? { description: detail } : (detail ?? {});
+}
+
+function emit(
+  level: Level,
+  title: string,
+  detail: Detail | undefined,
+  defaultTimeout?: number,
+): string {
+  const o = normalize(detail);
+  // base-ui auto-dismisses any non-loading toast with `timeout > 0`; it has no
+  // Infinity special-case (Infinity would fire immediately), so a request to
+  // never auto-dismiss maps to `0`.
+  const requested = o.duration ?? defaultTimeout;
+  const timeout = requested === Number.POSITIVE_INFINITY ? 0 : requested;
+  const fields = {
+    title,
+    description: o.description,
+    timeout,
+    action: o.action,
   };
 
-  return (
-    <Card size="2">
-      <Flex gap="3" align="start">
-        <Flex className="shrink-0 pt-[2px]">{getIcon()}</Flex>
-        <Flex direction="column" gap="1" className="min-w-0 flex-1">
-          <Flex align="center" justify="between" gap="2">
-            <Text className="font-medium text-[13px]">{title}</Text>
-            <Flex align="center" gap="2" className="shrink-0">
-              {action && (
-                <Text
-                  color="blue"
-                  onClick={() => {
-                    action.onClick();
-                    sonnerToast.dismiss(id);
-                  }}
-                  className="cursor-pointer font-medium text-[13px]"
-                >
-                  {action.label}
-                </Text>
-              )}
-              {type !== "loading" && (
-                <IconButton
-                  size="1"
-                  variant="ghost"
-                  color="gray"
-                  onClick={() => sonnerToast.dismiss(id)}
-                >
-                  <XIcon size={12} className="pointer-events-none" />
-                </IconButton>
-              )}
-            </Flex>
-          </Flex>
-          {description && (
-            <Text color="gray" className="break-words text-[13px]">
-              {description}
-            </Text>
-          )}
-        </Flex>
-      </Flex>
-    </Card>
-  );
+  if (o.id !== undefined) {
+    const stableId = o.id;
+    const existing = idRegistry.get(stableId);
+    if (existing !== undefined) {
+      quillToast.update(existing, { type: level, ...fields });
+      return stableId;
+    }
+    const quillId = quillToast[level]({
+      ...fields,
+      onClose: () => {
+        if (idRegistry.get(stableId) === quillId) idRegistry.delete(stableId);
+      },
+    });
+    idRegistry.set(stableId, quillId);
+    return stableId;
+  }
+
+  return quillToast[level](fields);
 }
 
 export const toast = {
-  dismiss: (id?: string | number) => sonnerToast.dismiss(id),
-
-  loading: (title: ReactNode, description?: string) => {
-    return sonnerToast.custom((id) => (
-      <ToastComponent
-        id={id}
-        type="loading"
-        title={title}
-        description={description}
-      />
-    ));
-  },
-
-  success: (
-    title: ReactNode,
-    options?: {
-      description?: string;
-      id?: string | number;
-      action?: ToastAction;
-      duration?: number;
-    },
-  ) => {
-    return sonnerToast.custom(
-      (id) => (
-        <ToastComponent
-          id={id}
-          type="success"
-          title={title}
-          description={options?.description}
-          action={options?.action}
-        />
-      ),
-      { id: options?.id, duration: options?.duration },
-    );
-  },
-
-  error: (
-    title: ReactNode,
-    options?: { description?: string; id?: string | number; duration?: number },
-  ) => {
-    return sonnerToast.custom(
-      (id) => (
-        <ToastComponent
-          id={id}
-          type="error"
-          title={title}
-          description={options?.description}
-        />
-      ),
-      { id: options?.id, duration: options?.duration ?? 5000 },
-    );
-  },
-
-  info: (title: ReactNode, description?: string) => {
-    return sonnerToast.custom((id) => (
-      <ToastComponent
-        id={id}
-        type="info"
-        title={title}
-        description={description}
-      />
-    ));
-  },
-
-  warning: (
-    title: ReactNode,
-    options?: {
-      description?: string;
-      id?: string | number;
-      duration?: number;
-      action?: ToastAction;
-    },
-  ) => {
-    return sonnerToast.custom(
-      (id) => (
-        <ToastComponent
-          id={id}
-          type="warning"
-          title={title}
-          description={options?.description}
-          action={options?.action}
-        />
-      ),
-      { id: options?.id, duration: options?.duration },
-    );
+  success: (title: string, detail?: Detail) => emit("success", title, detail),
+  // Errors linger a touch longer than the default, matching prior behavior.
+  error: (title: string, detail?: Detail) => emit("error", title, detail, 5000),
+  info: (title: string, detail?: Detail) => emit("info", title, detail),
+  warning: (title: string, detail?: Detail) => emit("warning", title, detail),
+  loading: (title: string, detail?: Detail) => emit("loading", title, detail),
+  dismiss: (id?: string) => {
+    if (id === undefined) return;
+    quillToast.dismiss(idRegistry.get(id) ?? id);
+    idRegistry.delete(id);
   },
 };
