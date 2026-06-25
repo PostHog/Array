@@ -332,6 +332,11 @@ export interface DeepLinkIssueFailedProperties {
   error_message?: string;
 }
 
+export interface DeepLinkCanvasProperties {
+  channel_id: string;
+  dashboard_id: string;
+}
+
 // Feedback events
 export interface TaskFeedbackProperties {
   task_id: string;
@@ -825,7 +830,8 @@ export type DashboardActionType =
   | "revert"
   | "refresh"
   | "poll_mode_change"
-  | "date_range_apply";
+  | "date_range_apply"
+  | "link_copied";
 
 export interface DashboardActionProperties {
   action_type: DashboardActionType;
@@ -1010,6 +1016,7 @@ export const ANALYTICS_EVENTS = {
   DEEP_LINK_PLAN: "Deep link plan",
   DEEP_LINK_ISSUE: "Deep link issue",
   DEEP_LINK_ISSUE_FAILED: "Deep link issue failed",
+  DEEP_LINK_CANVAS: "Deep link canvas",
 
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
@@ -1152,6 +1159,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.DEEP_LINK_PLAN]: DeepLinkPlanProperties;
   [ANALYTICS_EVENTS.DEEP_LINK_ISSUE]: DeepLinkIssueProperties;
   [ANALYTICS_EVENTS.DEEP_LINK_ISSUE_FAILED]: DeepLinkIssueFailedProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_CANVAS]: DeepLinkCanvasProperties;
 
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;
