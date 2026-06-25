@@ -1353,18 +1353,20 @@ describe("AuthService", () => {
         if (url.includes("/api/users/@me/")) {
           return {
             ok: true,
-            json: vi
-              .fn()
-              .mockResolvedValue({ uuid: "user-1", organization: { id: "org-1" } }),
+            json: vi.fn().mockResolvedValue({
+              uuid: "user-1",
+              organization: { id: "org-1" },
+            }),
           } as unknown as Response;
         }
 
         if (/\/api\/organizations\/([^/]+)\/$/.test(url)) {
           return {
             ok: true,
-            json: vi
-              .fn()
-              .mockResolvedValue({ name: "Org 1", teams: [{ id: 42, name: "Project 42" }] }),
+            json: vi.fn().mockResolvedValue({
+              name: "Org 1",
+              teams: [{ id: 42, name: "Project 42" }],
+            }),
           } as unknown as Response;
         }
 
@@ -1372,7 +1374,10 @@ describe("AuthService", () => {
       }) as unknown as typeof fetch;
 
     const okBody = (body: unknown): Response =>
-      ({ ok: true, json: vi.fn().mockResolvedValue(body) }) as unknown as Response;
+      ({
+        ok: true,
+        json: vi.fn().mockResolvedValue(body),
+      }) as unknown as Response;
 
     beforeEach(() => {
       seedStoredSession();
