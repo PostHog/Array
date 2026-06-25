@@ -924,6 +924,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       { hasCodeAccess: this.state.hasCodeAccess },
     );
   }
+
   /**
    * Resolves Code invite access. Only a 2xx response with an explicit boolean
    * `has_access` is authoritative; everything else (offline, network error,

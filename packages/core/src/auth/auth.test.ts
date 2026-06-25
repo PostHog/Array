@@ -1389,18 +1389,39 @@ describe("AuthService", () => {
       );
     });
 
-    it("denies access when the server explicitly reports no access", async () => {
-      vi.stubGlobal(
-        "fetch",
-        authFetchWithCheck(() => okBody({ has_access: false })),
-      );
+    // null (not false) for an inconclusive check: the UI shows "Checking
+    // access…" rather than the invite screen, and the next sync re-checks.
+    it.each([
+      {
+        name: "grants access when the server reports has_access true",
+        checkAccess: () => okBody({ has_access: true }),
+        expected: true,
+      },
+      {
+        name: "denies access when the server explicitly reports no access",
+        checkAccess: () => okBody({ has_access: false }),
+        expected: false,
+      },
+      {
+        name: "stays indeterminate when the check throws",
+        checkAccess: () => {
+          throw new Error("network down");
+        },
+        expected: null,
+      },
+      {
+        name: "stays indeterminate on a 2xx response without a has_access flag",
+        checkAccess: () => okBody({}),
+        expected: null,
+      },
+    ])("$name", async ({ checkAccess, expected }) => {
+      vi.stubGlobal("fetch", authFetchWithCheck(checkAccess));
 
       await service.initialize();
 
-      expect(service.getState()).toMatchObject({
-        status: "authenticated",
-        hasCodeAccess: false,
-      });
+      const state = service.getState();
+      expect(state.status).toBe("authenticated");
+      expect(state.hasCodeAccess).toBe(expected);
     });
 
     it("keeps a confirmed grant when a later check fails with a network error", async () => {
@@ -1447,32 +1468,21 @@ describe("AuthService", () => {
       expect(service.getState().hasCodeAccess).toBe(true);
     });
 
-    it("stays indeterminate (never auto-denies) when the check is inconclusive", async () => {
+    it("recovers within the retry loop when a later attempt succeeds", async () => {
+      let attempts = 0;
       vi.stubGlobal(
         "fetch",
         authFetchWithCheck(() => {
-          throw new Error("network down");
+          attempts += 1;
+          if (attempts === 1) throw new Error("transient");
+          return okBody({ has_access: true });
         }),
       );
 
       await service.initialize();
 
-      const state = service.getState();
-      expect(state.status).toBe("authenticated");
-      // null, not false: the UI shows "Checking access…" rather than the
-      // invite screen, and the next sync re-checks.
-      expect(state.hasCodeAccess).toBeNull();
-    });
-
-    it("ignores a 2xx response without an explicit has_access flag", async () => {
-      vi.stubGlobal(
-        "fetch",
-        authFetchWithCheck(() => okBody({})),
-      );
-
-      await service.initialize();
-
-      expect(service.getState().hasCodeAccess).toBeNull();
+      expect(service.getState().hasCodeAccess).toBe(true);
+      expect(attempts).toBeGreaterThanOrEqual(2);
     });
   });
 });
