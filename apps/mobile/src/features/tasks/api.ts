@@ -302,6 +302,41 @@ export async function runTaskAutomation(
   return await parseJsonResponse<TaskAutomation>(response);
 }
 
+export async function warmTask(options: {
+  repository: string;
+  github_integration: number;
+  branch?: string | null;
+}): Promise<{ task_id: string; run_id: string } | null> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/warm/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        repository: options.repository,
+        github_integration: options.github_integration,
+        branch: options.branch ?? null,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to warm task",
+    );
+  }
+
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  return JSON.parse(text) as { task_id: string; run_id: string };
+}
+
 export async function createTask(options: CreateTaskOptions): Promise<Task> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
