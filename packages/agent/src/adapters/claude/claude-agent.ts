@@ -459,6 +459,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       promptReplayed = true;
     }
 
+    if (commandMatch && !isLocalOnlyCommand) {
+      await this.refreshSlashCommandsForPrompt(commandMatch[1]);
+    }
+
     if (this.session.promptRunning) {
       const isSteer = isSteerMeta(params._meta);
       if (isSteer) {
@@ -2164,6 +2168,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
   private async sendAvailableCommandsUpdate(): Promise<void> {
     const commands = await this.session.query.supportedCommands();
+    this.session.knownSlashCommands = collectKnownSlashCommands(commands);
     const available = getAvailableSlashCommands(commands);
     await this.client.sessionUpdate({
       sessionId: this.sessionId,
@@ -2173,6 +2178,27 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       },
     });
     this.updateBreakdownCategory("skills", estimateSkillsTokens(available));
+  }
+
+  private async refreshSlashCommandsForPrompt(command: string): Promise<void> {
+    const commandName = command.slice(1);
+    if (this.session.knownSlashCommands?.has(commandName)) {
+      return;
+    }
+    if (commandName.includes(":") || commandName.includes("__")) {
+      return;
+    }
+
+    try {
+      await this.session.query.reloadSkills();
+      await this.sendAvailableCommandsUpdate();
+    } catch (error) {
+      this.logger.warn("Failed to refresh slash commands before prompt", {
+        sessionId: this.sessionId,
+        command,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /** Update one category of the context-breakdown baseline so the next
