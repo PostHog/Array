@@ -76,14 +76,6 @@ export function isTerminalStatus(
   );
 }
 
-/**
- * A task with no prompt yet: neither a title nor a description. The
- * prewarm-sandbox feature creates an empty cloud task server-side to warm a
- * sandbox while the user is still typing, before any prompt is submitted. These
- * placeholders must not be surfaced as real user tasks (e.g. in the sidebar) —
- * a genuinely created task always carries the submitted prompt as its
- * description, so this never matches one.
- */
 export function isContentlessTask(task: {
   title?: string | null;
   description?: string | null;

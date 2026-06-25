@@ -209,12 +209,6 @@ function RootLayout() {
         t.latest_run?.environment === "cloud" &&
         !workspaces[t.id] &&
         !reconcilingTaskIds.current.has(t.id) &&
-        // Skip prewarm placeholders. The prewarm-sandbox feature creates an
-        // empty cloud task while the user is still typing; adopting it here
-        // would give it a local workspace and surface a nameless, perpetually
-        // "loading agent" task in the sidebar that the user never created
-        // (GROW-52). Real tasks always carry the submitted prompt as their
-        // description.
         !isContentlessTask(t),
     );
     if (missing.length === 0) return;
