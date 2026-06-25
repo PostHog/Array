@@ -1366,8 +1366,6 @@ describe("AuthService", () => {
       );
     });
 
-    // null (not false) for an inconclusive check: the UI shows "Checking
-    // access…" rather than the invite screen, and the next sync re-checks.
     it.each([
       {
         name: "grants access when the server reports has_access true",
@@ -1401,8 +1399,6 @@ describe("AuthService", () => {
       expect(state.hasCodeAccess).toBe(expected);
     });
 
-    // A transient blip on a later check must not be mistaken for a revoked
-    // invite — a previously confirmed grant stays granted.
     it.each([
       {
         name: "a network error",
