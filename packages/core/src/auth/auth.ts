@@ -71,6 +71,13 @@ interface TokenResponseOptions {
   selectedProjectId: number | null;
 }
 
+// A Code invite access check is only authoritative when the server gives a
+// clear yes/no. Anything else (offline, network error, timeout, non-2xx, or an
+// unparseable body) is "indeterminate" and must not be mistaken for a denial.
+type CodeAccessOutcome =
+  | { kind: "resolved"; hasAccess: boolean }
+  | { kind: "indeterminate" };
+
 @injectable()
 export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private state: AuthState = {
@@ -910,26 +917,93 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return;
     }
 
-    try {
-      const apiHost = getCloudUrlFromRegion(this.session.cloudRegion);
-      const response = await this.executeAuthenticatedFetch(
-        fetch,
-        `${apiHost}/api/code/invites/check-access/`,
-        {},
-        this.session.accessToken,
-      );
-      const data = (await response.json().catch(() => ({}))) as {
-        has_access?: boolean;
-      };
+    const outcome = await this.checkCodeAccess(this.session);
 
-      this.updateState({ hasCodeAccess: data.has_access === true });
-    } catch (error) {
-      this.logger.warn("Failed to update code access state", { error });
-      this.updateState({ hasCodeAccess: false });
+    if (outcome.kind === "resolved") {
+      this.updateState({ hasCodeAccess: outcome.hasAccess });
+      return;
     }
+
+    // Indeterminate: a network blip, timeout, or transient/unauthorized
+    // response is not proof that the invite was revoked, so it must not clobber
+    // a known value and strand the user on the invite screen. Keep whatever we
+    // already know — a confirmed `true` stays `true`; a still-unknown `null`
+    // stays `null` (the UI keeps showing "Checking access…") — and let the next
+    // session sync re-check.
+    this.logger.warn(
+      "Code access check was inconclusive; keeping previous value",
+      { hasCodeAccess: this.state.hasCodeAccess },
+    );
+  }
+  /**
+   * Resolves Code invite access for the given session.
+   *
+   * Only a successful (2xx) response carrying an explicit boolean `has_access`
+   * is authoritative. Offline status, network errors, timeouts, non-2xx
+   * responses (including a 401/403 from an unexpectedly rejected token), and
+   * unparseable or incomplete bodies are all treated as indeterminate and
+   * retried with backoff, so a transient failure never masquerades as a denied
+   * invite. The freshly synced access token is used directly rather than
+   * routing through `authenticatedFetch`, because this runs inside the
+   * bootstrap/refresh flow where re-entering the token-refresh machinery would
+   * deadlock.
+   */
+  private async checkCodeAccess(
+    session: InMemorySession,
+  ): Promise<CodeAccessOutcome> {
+    const url = `${getCloudUrlFromRegion(session.cloudRegion)}/api/code/invites/check-access/`;
+
+    for (
+      let attempt = 0;
+      attempt < AuthService.CODE_ACCESS_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      if (!this.connectivity.getStatus().isOnline) {
+        return { kind: "indeterminate" };
+      }
+
+      try {
+        const response = await this.executeAuthenticatedFetch(
+          fetch,
+          url,
+          {},
+          session.accessToken,
+        );
+
+        if (response.ok) {
+          const data = (await response.json().catch(() => null)) as {
+            has_access?: unknown;
+          } | null;
+          if (data && typeof data.has_access === "boolean") {
+            return { kind: "resolved", hasAccess: data.has_access };
+          }
+          this.logger.warn("Code access response missing has_access flag", {
+            status: response.status,
+          });
+        } else {
+          this.logger.warn("Code access check returned non-OK status", {
+            status: response.status,
+          });
+        }
+      } catch (error) {
+        this.logger.warn("Code access check request failed", {
+          error,
+          attempt,
+        });
+      }
+
+      const isLastAttempt =
+        attempt === AuthService.CODE_ACCESS_MAX_ATTEMPTS - 1;
+      if (!isLastAttempt) {
+        await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
+      }
+    }
+
+    return { kind: "indeterminate" };
   }
   private static readonly REFRESH_MAX_ATTEMPTS = 3;
   private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
+  private static readonly CODE_ACCESS_MAX_ATTEMPTS = 3;
   private static readonly ORG_RECOVERY_MAX_ATTEMPTS = 5;
   private static readonly REFRESH_BACKOFF: BackoffOptions = {
     initialDelayMs: 1_000,
