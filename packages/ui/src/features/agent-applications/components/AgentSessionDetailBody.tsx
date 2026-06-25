@@ -67,9 +67,12 @@ function cronFiredBy(
 export function AgentSessionDetailBody({
   idOrSlug,
   sessionId,
+  showStateBadge = true,
 }: {
   idOrSlug: string;
   sessionId: string;
+  /** Hide the state badge when the host already shows it (full-screen header). */
+  showStateBadge?: boolean;
 }) {
   const {
     data: session,
@@ -98,9 +101,11 @@ export function AgentSessionDetailBody({
         gap="3"
         className="shrink-0 cursor-default select-none border-(--gray-5) border-b px-6 pt-4"
       >
-        <Flex align="center" justify="between" gap="2">
+        {(showStateBadge && session) ||
+        firedBy ||
+        session?.conversation_trimmed ? (
           <Flex align="center" gap="2" wrap="wrap">
-            {session ? (
+            {showStateBadge && session ? (
               <Badge color={sessionStateColor(session.state)}>
                 {session.state}
               </Badge>
@@ -118,32 +123,39 @@ export function AgentSessionDetailBody({
               </Badge>
             ) : null}
           </Flex>
+        ) : null}
+
+        <Flex align="center" justify="between" gap="3">
+          <Flex gap="5" wrap="wrap" className="min-w-0">
+            {session && metrics ? (
+              <>
+                <MetricItem label="Messages" value={String(metrics.messages)} />
+                <MetricItem
+                  label="Tool calls"
+                  value={String(metrics.toolCalls)}
+                />
+                <MetricItem
+                  label="Cost"
+                  value={formatSpendUsd(session.usage_total.cost_total)}
+                />
+                <MetricItem
+                  label="Duration"
+                  value={formatDuration(session.created_at, session.updated_at)}
+                />
+                <MetricItem
+                  label="Errors"
+                  value={String(metrics.errors)}
+                  tone={metrics.errors > 0 ? "bad" : undefined}
+                />
+              </>
+            ) : null}
+          </Flex>
           <RefreshIndicator
             updatedAt={dataUpdatedAt}
             isFetching={isFetching}
             onRefresh={() => void refetch()}
           />
         </Flex>
-
-        {session && metrics ? (
-          <Flex gap="5" wrap="wrap" className="pb-1">
-            <MetricItem label="Messages" value={String(metrics.messages)} />
-            <MetricItem label="Tool calls" value={String(metrics.toolCalls)} />
-            <MetricItem
-              label="Cost"
-              value={formatSpendUsd(session.usage_total.cost_total)}
-            />
-            <MetricItem
-              label="Duration"
-              value={formatDuration(session.created_at, session.updated_at)}
-            />
-            <MetricItem
-              label="Errors"
-              value={String(metrics.errors)}
-              tone={metrics.errors > 0 ? "bad" : undefined}
-            />
-          </Flex>
-        ) : null}
 
         <Flex gap="1" className="-mb-px">
           {(["conversation", "logs"] as const).map((t) => (

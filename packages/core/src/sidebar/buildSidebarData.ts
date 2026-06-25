@@ -1,4 +1,4 @@
-import type { TaskRunStatus } from "@posthog/shared/domain-types";
+import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { getRepositoryInfo } from "./groupTasks";
 import type { TaskData } from "./sidebarData.types";
 
@@ -35,7 +35,10 @@ export interface SidebarTask {
   } | null;
 }
 
-export function narrowFullTask(task: FullTask): SidebarTask {
+// Accepts both the local `FullTask` shape and the canonical `Task` from
+// `@posthog/shared` so callers holding a real `Task` can narrow it directly,
+// without an `as unknown as FullTask` escape hatch.
+export function narrowFullTask(task: FullTask | Task): SidebarTask {
   const slackThreadUrl = task.latest_run?.state?.slack_thread_url;
   return {
     id: task.id,

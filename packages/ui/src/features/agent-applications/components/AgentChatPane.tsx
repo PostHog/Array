@@ -89,21 +89,19 @@ export function AgentChatPane({
   const hasChatTrigger = (revision?.spec?.triggers ?? []).some(
     (t) => rec(t).type === "chat",
   );
+  // Keyed by revision so a draft preview and the live chat coexist in the store
+  // without trampling each other.
+  const chatId = isDraftPreview
+    ? `preview:${idOrSlug}:${revisionId}`
+    : `preview:${idOrSlug}`;
   const chat = useAgentChat({
-    // Keyed by revision so a draft preview and the live chat coexist in the
-    // store without trampling each other.
-    chatId: isDraftPreview
-      ? `preview:${idOrSlug}:${revisionId}`
-      : `preview:${idOrSlug}`,
+    chatId,
     agentSlug: idOrSlug,
     ingressBaseUrl,
     revisionId: isDraftPreview ? revisionId : null,
     recordHistory: true,
   });
-  const { data: pendingApproval } = useAgentChatPendingApproval(
-    idOrSlug,
-    chat.sessionId,
-  );
+  const pendingApproval = useAgentChatPendingApproval(chatId);
   const chats = useChatHistoryStore((s) => s.byAgent[idOrSlug]) ?? EMPTY_CHATS;
   const removeChat = useChatHistoryStore((s) => s.remove);
 

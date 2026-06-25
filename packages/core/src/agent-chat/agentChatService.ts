@@ -1,5 +1,8 @@
 import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
-import type { DecideApprovalRequest } from "@posthog/shared/agent-platform-types";
+import type {
+  AgentSessionEvent,
+  DecideApprovalRequest,
+} from "@posthog/shared/agent-platform-types";
 import { injectable } from "inversify";
 import { agentChatStore } from "./agentChatStore";
 import type {
@@ -15,6 +18,30 @@ const TERMINAL_SESSION_STATES = new Set([
   "cancelled",
   "failed",
 ]);
+
+/**
+ * The request id when `text` is the runner's rejection wake envelope
+ * (`{"approval":{"state":"rejected",…}}`), else null. A reject lands as a
+ * `user_message` (no tool_call_id), so this is how the live stream clears the
+ * inline card for a session decided elsewhere (e.g. Slack).
+ */
+function rejectedApprovalRequestId(text: string | undefined): string | null {
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as {
+      approval?: { request_id?: string; state?: string };
+    };
+    if (
+      parsed.approval?.state === "rejected" &&
+      typeof parsed.approval.request_id === "string"
+    ) {
+      return parsed.approval.request_id;
+    }
+  } catch {
+    // Not JSON / not an approval envelope — a normal user message.
+  }
+  return null;
+}
 
 /**
  * Bounded reconnect budget for a dropped `/listen` tail. A re-attach that yields
@@ -234,6 +261,7 @@ export class AgentChatService {
           }
           madeProgress = true;
           store.appendMessages(chatId, rt.mapper.apply(event));
+          this.trackApprovalState(client, rt, session, chatId, epoch, event);
           if (event.kind === "client_tool_call") {
             void this.dispatchClientTool(
               client,
@@ -278,9 +306,11 @@ export class AgentChatService {
       "live" | "terminal" | "unknown"
     > => {
       try {
-        const detail = await client.getAgentApplicationSession(
-          session.agentSlug,
+        const detail = await client.getAgentSessionViaIngress(
+          session.ingressBaseUrl,
           sessionId,
+          undefined,
+          await this.getPreviewToken(client, rt, session),
         );
         return !detail || TERMINAL_SESSION_STATES.has(detail.state)
           ? "terminal"
@@ -465,6 +495,61 @@ export class AgentChatService {
   }
 
   /**
+   * Keep `chat.pendingApproval` in sync with the stream — what drives the inline
+   * approval card, with no polling. A `queued` approval marker triggers a
+   * one-shot fetch of the full request from the ingress (principal-authed,
+   * cross-project, with the draft preview token when present); a non-queued
+   * marker for that request, or a rejection wake, clears it.
+   */
+  private trackApprovalState(
+    client: PostHogAPIClient,
+    rt: ChatRuntime,
+    session: AgentChatSession,
+    chatId: string,
+    epoch: number,
+    event: AgentSessionEvent,
+  ): void {
+    if (event.kind === "tool_result" && event.data.approval) {
+      const { request_id, state } = event.data.approval;
+      if (state !== "queued") {
+        this.clearPendingApprovalIf(chatId, request_id);
+        return;
+      }
+      void (async () => {
+        try {
+          const token = await this.getPreviewToken(client, rt, session);
+          const detail = await client.getAgentApprovalViaIngress(
+            session.ingressBaseUrl,
+            request_id,
+            token,
+          );
+          // Skip if the stream was superseded (epoch) or the approval was
+          // already decided while the fetch was in flight (re-checked state).
+          if (detail && detail.state === "queued" && rt.epoch === epoch) {
+            agentChatStore.getState().setPendingApproval(chatId, detail);
+          }
+        } catch {
+          // Best-effort: the card just won't show; a reattach or a later marker
+          // retries. Never let a detail fetch break the stream.
+        }
+      })();
+      return;
+    }
+    if (event.kind === "user_message") {
+      const rejectedId = rejectedApprovalRequestId(event.data.text);
+      if (rejectedId) this.clearPendingApprovalIf(chatId, rejectedId);
+    }
+  }
+
+  /** Clear the chat's pending approval only when it's the named request. */
+  private clearPendingApprovalIf(chatId: string, requestId: string): void {
+    const cur = agentChatStore.getState().chats[chatId]?.pendingApproval;
+    if (cur?.id === requestId) {
+      agentChatStore.getState().setPendingApproval(chatId, null);
+    }
+  }
+
+  /**
    * Decide a `principal`-type tool approval for this chat's session at the
    * ingress, carrying the session's preview token so the ingress can
    * principal-match. On approve the runner wakes, dispatches the tool, and the
@@ -485,6 +570,10 @@ export class AgentChatService {
         token,
       ),
     );
+    // Clear the inline card now — the stream's resolved marker clears it too,
+    // but the approve→dispatch (or reject→wake) can lag, so don't leave the user
+    // staring at a card they've already decided.
+    agentChatStore.getState().setPendingApproval(session.chatId, null);
   }
 
   /**
@@ -549,9 +638,11 @@ export class AgentChatService {
     s.setSessionId(session.chatId, sessionId);
     s.setStatus(session.chatId, "starting");
     try {
-      const detail = await client.getAgentApplicationSession(
-        session.agentSlug,
+      const detail = await client.getAgentSessionViaIngress(
+        session.ingressBaseUrl,
         sessionId,
+        undefined,
+        await this.getPreviewToken(client, rt, session),
       );
       // A newer resume/new-chat won the race while we were fetching.
       if (

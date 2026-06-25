@@ -245,13 +245,6 @@ export const canvasToHostMessageSchema = z.discriminatedUnion("type", [
     channel: z.literal(CANVAS_CHANNEL),
     type: z.literal("rendered"),
   }),
-  // The iframe reporting its content height so the host can size it without
-  // an inner scrollbar.
-  z.object({
-    channel: z.literal(CANVAS_CHANNEL),
-    type: z.literal("resize"),
-    height: z.number(),
-  }),
   // A request to navigate the host app. Fire-and-forget (no id/response). The
   // `nav` payload is the allowlist above — the host drops anything that doesn't
   // parse, so the iframe can only reach the four sanctioned destinations.

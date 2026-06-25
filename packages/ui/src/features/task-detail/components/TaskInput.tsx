@@ -32,6 +32,7 @@ import {
   getBranchNameInputState,
 } from "../../git-interaction/utils/branchCreation";
 import { useInboxReportSelectionStore } from "../../inbox/stores/inboxReportSelectionStore";
+import { useIntegrationSelectors } from "../../integrations/store";
 import {
   useUserGithubBranches,
   useUserGithubRepositories,
@@ -58,6 +59,7 @@ import {
 } from "../hooks/useInitialRepoSelectionFromFolderId";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
+import { useWarmTask } from "../hooks/useWarmTask";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import {
   type SuggestedPrompt,
@@ -312,6 +314,10 @@ export function TaskInput({
   const selectedInstallationId = selectedCloudRepository
     ? getInstallationIdForRepo(selectedCloudRepository)
     : undefined;
+
+  const { githubIntegrations: orgGithubIntegrations } =
+    useIntegrationSelectors();
+  const orgGithubIntegrationId = orgGithubIntegrations[0]?.id;
 
   const {
     data: cloudBranchData,
@@ -571,6 +577,17 @@ export function TaskInput({
     modeFallback;
   const currentReasoningLevel =
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+
+  useWarmTask({
+    workspaceMode,
+    selectedRepository: selectedCloudRepository,
+    githubIntegrationId: orgGithubIntegrationId,
+    branch: workspaceMode === "cloud" ? selectedBranch : null,
+    editorIsEmpty,
+    runtimeAdapter: adapter ?? null,
+    model: currentModel,
+    reasoningEffort: currentReasoningLevel,
+  });
 
   const branchForTaskCreation =
     effectiveWorkspaceMode === "worktree" || effectiveWorkspaceMode === "cloud"
@@ -1034,8 +1051,10 @@ export function TaskInput({
                                 ],
                               });
                             // Bug/feature suggestions start in plan mode; the
-                            // analysis ones start in auto mode.
+                            // analysis ones start in auto mode. Suggestions
+                            // without a mode leave the composer's mode as-is.
                             if (
+                              suggestion.mode &&
                               isValidConfigValue(modeOption, suggestion.mode)
                             ) {
                               setConfigOption(modeOption.id, suggestion.mode);

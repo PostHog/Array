@@ -7,3 +7,4 @@ export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
 // Gates the entire canvas feature: the app rail's Channels space, the /website
 // routes, channels and dashboards.
 export const PROJECT_BLUEBIRD_FLAG = "project-bluebird";
+export const TASKS_PREWARM_SANDBOX_FLAG = "tasks-prewarm-sandbox";

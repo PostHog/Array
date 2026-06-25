@@ -21,6 +21,7 @@ export interface PrepareTaskInputOptions {
   additionalDirectories?: string[];
   channelContext?: string;
   channelName?: string;
+  customInstructions?: string;
   allowNoRepo?: boolean;
 }
 
@@ -58,6 +59,7 @@ export function prepareTaskInput(
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,
     channelName: options.channelName,
+    customInstructions: isCloud ? options.customInstructions : undefined,
     allowNoRepo: options.allowNoRepo,
   };
 }

@@ -47,6 +47,13 @@ export interface TaskCreationInput {
   /** Display name of that channel, embedded in the context block for the UI. */
   channelName?: string;
   /**
+   * The user's saved personalization (Settings → Personalization custom
+   * instructions). Cloud-only: local tasks already receive these through the
+   * workspace-server system prompt, so the saga folds this into the cloud run's
+   * first message instead, to avoid double-injecting.
+   */
+  customInstructions?: string;
+  /**
    * When true, the task may be created without a repo/branch. Used by the
    * channels "generic chat box": the agent decides at runtime whether it needs
    * a repo and attaches one lazily. A local session still starts, in a scratch

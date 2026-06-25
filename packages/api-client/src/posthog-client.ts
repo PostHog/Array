@@ -1609,7 +1609,7 @@ export class PostHogAPIClient {
   }
 
   async getGithubUserIntegrations(): Promise<UserGitHubIntegration[]> {
-    const urlPath = `/api/users/@me/integrations/`;
+    const urlPath = `/api/users/@me/integrations/?kind=github`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
     const response = await this.api.fetcher.fetch({
       method: "get",
@@ -2138,6 +2138,10 @@ export class PostHogAPIClient {
       > & {
         github_integration?: number | null;
         github_user_integration?: string | null;
+        branch?: string | null;
+        runtime_adapter?: string | null;
+        model?: string | null;
+        reasoning_effort?: string | null;
       },
   ) {
     const teamId = await this.getTeamId();
@@ -2271,6 +2275,42 @@ export class PostHogAPIClient {
     );
 
     return data as unknown as Task;
+  }
+
+  async warmTask(options: {
+    repository: string;
+    github_integration: number;
+    branch?: string | null;
+    runtime_adapter?: string | null;
+    model?: string | null;
+    reasoning_effort?: string | null;
+  }): Promise<{ task_id: string; run_id: string } | null> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/warm/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({
+          repository: options.repository,
+          github_integration: options.github_integration,
+          branch: options.branch ?? null,
+          runtime_adapter: options.runtime_adapter ?? null,
+          model: options.model ?? null,
+          reasoning_effort: options.reasoning_effort ?? null,
+        }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to warm task: ${response.statusText}`);
+    }
+    const text = await response.text();
+    if (!text) {
+      return null;
+    }
+    return JSON.parse(text) as { task_id: string; run_id: string };
   }
 
   async prepareTaskStagedArtifactUploads(
@@ -4425,6 +4465,9 @@ export class PostHogAPIClient {
     if (params?.created_before) {
       url.searchParams.set("created_before", params.created_before);
     }
+    if (params?.search?.trim()) {
+      url.searchParams.set("search", params.search.trim());
+    }
     const response = await this.api.fetcher.fetch({ method: "get", url, path });
     const data = (await response.json()) as {
       results?: AgentApplicationSessionsListResponse["results"];
@@ -5037,6 +5080,73 @@ export class PostHogAPIClient {
       overrides: { body: JSON.stringify(body) },
     });
     return (await response.json()) as { ok: boolean; state: string };
+  }
+
+  /**
+   * Fetch one approval by id straight from the agent's ingress, authenticated as
+   * the session principal (the shared bearer). Powers the deep-link approval
+   * modal: no project-scoped lookup, so it resolves from any project. Returns
+   * null on 404/403 (gone, or the caller isn't the session principal).
+   */
+  async getAgentApprovalViaIngress(
+    ingressBaseUrl: string,
+    approvalId: string,
+    previewToken?: string | null,
+  ): Promise<AgentApprovalRequest | null> {
+    const url = new URL(
+      `${ingressBaseUrl.replace(/\/$/, "")}/approvals/${encodeURIComponent(approvalId)}`,
+    );
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: url.pathname,
+        parameters: previewTokenHeader(previewToken),
+      });
+      return (await response.json()) as AgentApprovalRequest;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("[404]") || msg.includes("[403]")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch a session's transcript straight from the agent's ingress, authenticated
+   * as the session principal — cross-project transcript reload (dock reopen, a
+   * web chat-list opening a past session, repainting a pending-approval card
+   * after a reconnect). Mirrors `getAgentApplicationSession`'s shape; `lastN`
+   * trims to the trailing messages. Null on 404/403.
+   */
+  async getAgentSessionViaIngress(
+    ingressBaseUrl: string,
+    sessionId: string,
+    lastN?: number,
+    previewToken?: string | null,
+  ): Promise<AgentApplicationSessionDetail | null> {
+    const url = new URL(
+      `${ingressBaseUrl.replace(/\/$/, "")}/sessions/${encodeURIComponent(sessionId)}`,
+    );
+    if (lastN != null) {
+      url.searchParams.set("last_n", String(lastN));
+    }
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: url.pathname,
+        parameters: previewTokenHeader(previewToken),
+      });
+      return (await response.json()) as AgentApplicationSessionDetail;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("[404]") || msg.includes("[403]")) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   /** Return a client-tool result to an open session. */

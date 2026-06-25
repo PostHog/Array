@@ -15,6 +15,7 @@ const mockClient = vi.hoisted(() => ({
   sendAgentMessage: vi.fn(),
   cancelAgentSession: vi.fn(),
   getAgentApplicationSession: vi.fn(),
+  getAgentSessionViaIngress: vi.fn(),
   sendAgentClientToolResult: vi.fn(),
   sendAgentInteractiveToolResult: vi.fn(),
   mintAgentPreviewToken: vi.fn(),
@@ -87,7 +88,7 @@ describe("AgentChatService /listen reconnect", () => {
     expect(mockClient.streamAgentSession).toHaveBeenCalledTimes(2);
     // A live drop never asks the api whether the session ended — the re-attach
     // produced output, so we know it's still going.
-    expect(mockClient.getAgentApplicationSession).not.toHaveBeenCalled();
+    expect(mockClient.getAgentSessionViaIngress).not.toHaveBeenCalled();
     const chat = agentChatStore.getState().chats[chatId];
     expect(chat?.status).toBe("completed");
     expect(chat?.error).toBeNull();
@@ -99,7 +100,7 @@ describe("AgentChatService /listen reconnect", () => {
     mockClient.streamAgentSession.mockImplementationOnce(() =>
       streamThenDrop(),
     );
-    mockClient.getAgentApplicationSession.mockResolvedValue({
+    mockClient.getAgentSessionViaIngress.mockResolvedValue({
       state: "completed",
       conversation: [],
     });
@@ -107,9 +108,9 @@ describe("AgentChatService /listen reconnect", () => {
     void service.send(client, session(chatId), "go");
     await vi.advanceTimersByTimeAsync(0);
 
-    // Silent re-attach → we ask the api, see it's terminal, and stop. No retry,
-    // no error.
-    expect(mockClient.getAgentApplicationSession).toHaveBeenCalledTimes(1);
+    // Silent re-attach → we ask the ingress, see it's terminal, and stop. No
+    // retry, no error.
+    expect(mockClient.getAgentSessionViaIngress).toHaveBeenCalledTimes(1);
     expect(mockClient.streamAgentSession).toHaveBeenCalledTimes(1);
     const chat = agentChatStore.getState().chats[chatId];
     expect(chat?.status).toBe("completed");
@@ -142,7 +143,7 @@ describe("AgentChatService /listen reconnect", () => {
     // No reconnect: the terminal frame ends the tail, so neither the stream nor
     // the liveness probe is re-invoked.
     expect(mockClient.streamAgentSession).toHaveBeenCalledTimes(1);
-    expect(mockClient.getAgentApplicationSession).not.toHaveBeenCalled();
+    expect(mockClient.getAgentSessionViaIngress).not.toHaveBeenCalled();
     // The still-open socket is released on the terminal exit.
     expect(captured?.aborted).toBe(true);
   });
@@ -151,7 +152,7 @@ describe("AgentChatService /listen reconnect", () => {
     const chatId = "give-up";
     // Always drops with no events; the api keeps reporting the run as live.
     mockClient.streamAgentSession.mockImplementation(() => streamThenDrop());
-    mockClient.getAgentApplicationSession.mockResolvedValue({
+    mockClient.getAgentSessionViaIngress.mockResolvedValue({
       state: "running",
       conversation: [],
     });

@@ -26,6 +26,7 @@ import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
+import { getHeaderSidebarPanelLayout } from "@posthog/ui/shell/headerSidebarPanel";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
 import { isMac, isWindows } from "@posthog/ui/utils/platform";
 import { Box, Flex } from "@radix-ui/themes";
@@ -162,9 +163,7 @@ function BluebirdButton() {
 }
 
 export const HEADER_HEIGHT = 36;
-const COLLAPSED_WIDTH = 110;
 const WINDOWS_TITLEBAR_INSET = 140;
-const MACOS_TRAFFIC_LIGHT_INSET = 70;
 
 export function HeaderRow() {
   const content = useHeaderStore((state) => state.content);
@@ -174,6 +173,11 @@ export function HeaderRow() {
   const sidebarWidth = useSidebarStore((state) => state.width);
   const isResizing = useSidebarStore((state) => state.isResizing);
   const setIsResizing = useSidebarStore((state) => state.setIsResizing);
+  const panel = getHeaderSidebarPanelLayout({
+    sidebarOpen,
+    sidebarWidth,
+    isMac,
+  });
 
   const activeTaskId = view.type === "task-detail" ? view.taskId : undefined;
   // Read the live task from the list cache instead of a stale snapshot off the
@@ -206,17 +210,20 @@ export function HeaderRow() {
     >
       <Flex
         align="center"
-        justify="end"
+        justify={panel.justify}
         px="2"
         pr="3"
         style={{
-          width: sidebarOpen
-            ? `${sidebarWidth}px`
-            : `${COLLAPSED_WIDTH + (isMac ? MACOS_TRAFFIC_LIGHT_INSET : 0)}px`,
-          minWidth: `${COLLAPSED_WIDTH + (isMac ? MACOS_TRAFFIC_LIGHT_INSET : 0)}px`,
+          width: panel.width,
+          minWidth: panel.minWidth,
+          paddingLeft: panel.paddingLeft,
           transition: isResizing ? "none" : "width 0.2s ease-in-out",
         }}
-        className="relative h-full gap-2 border-r border-r-(--gray-6)"
+        className={
+          panel.showBorder
+            ? "relative h-full gap-2 border-r border-r-(--gray-6)"
+            : "relative h-full gap-2"
+        }
       >
         <BluebirdButton />
         <SidebarTrigger />
