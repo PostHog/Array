@@ -6,11 +6,13 @@ import {
   CaretDownIcon,
   GaugeIcon,
   MagnifyingGlassIcon,
+  ScalesIcon,
   SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
 import type {
   AgentModelEntry,
   AgentModelLevel,
+  AgentModelOptimizeFor,
   AgentModelPolicy,
   AgentReasoningEffort,
   AgentRevisionState,
@@ -62,15 +64,25 @@ export function AgentModelConfig({
   const [manual, setManual] = useState<AgentModelEntry[]>(
     initial?.mode === "manual" ? initial.models : [],
   );
+  const [optimizeFor, setOptimizeFor] = useState<AgentModelOptimizeFor>(
+    initial?.optimize_for ?? "cost",
+  );
 
   const policy: AgentModelPolicy =
     mode === "auto"
-      ? { mode: "auto", level, ...(reasoning ? { reasoning } : {}) }
-      : { mode: "manual", models: manual };
+      ? {
+          mode: "auto",
+          level,
+          optimize_for: optimizeFor,
+          ...(reasoning ? { reasoning } : {}),
+        }
+      : { mode: "manual", models: manual, optimize_for: optimizeFor };
 
   const dirty =
     stableStringify(policy) !==
-    stableStringify(initial ?? { mode: "auto", level: "medium" });
+    stableStringify(
+      initial ?? { mode: "auto", level: "medium", optimize_for: "cost" },
+    );
   const willBranch = revisionState !== "draft";
 
   const byId = useMemo(
@@ -83,6 +95,7 @@ export function AgentModelConfig({
     setLevel(initial?.mode === "auto" ? (initial.level ?? "medium") : "medium");
     setReasoning(initial?.mode === "auto" ? initial.reasoning : spec.reasoning);
     setManual(initial?.mode === "manual" ? initial.models : []);
+    setOptimizeFor(initial?.optimize_for ?? "cost");
   }
 
   function changeMode(next: "auto" | "manual") {
@@ -150,6 +163,14 @@ export function AgentModelConfig({
           options={MODE_OPTIONS}
         />
 
+        <Select
+          label="optimize for"
+          icon={<ScalesIcon size={14} />}
+          value={optimizeFor}
+          onChange={(v) => setOptimizeFor(v as AgentModelOptimizeFor)}
+          options={OPTIMIZE_OPTIONS}
+        />
+
         {mode === "auto" ? (
           <>
             <Select
@@ -209,6 +230,21 @@ const MODE_OPTIONS = [
     value: "manual",
     title: "Manual",
     description: "Explicit, author-ordered fallback list you pin yourself.",
+  },
+] as const;
+
+const OPTIMIZE_OPTIONS = [
+  {
+    value: "cost",
+    title: "Cost",
+    description:
+      "Pin the first working model for the whole session — keeps the prompt cache warm, no mid-session failover.",
+  },
+  {
+    value: "availability",
+    title: "Availability",
+    description:
+      "Fail over to the next model if the session's model goes down — survives outages, but re-reads context cold.",
   },
 ] as const;
 

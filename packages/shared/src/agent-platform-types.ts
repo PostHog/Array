@@ -66,6 +66,14 @@ export type AgentReasoningEffort =
 
 export type AgentModelLevel = "low" | "medium" | "high";
 
+/**
+ * Session model stability vs. resilience. `cost` (default): pin the first served
+ * model for the whole session — warm prompt cache, no cross-model failover.
+ * `availability`: lead with the last-served model but fail over on failure.
+ * Mirrors `spec.models.optimize_for` in the backend.
+ */
+export type AgentModelOptimizeFor = "cost" | "availability";
+
 /** One model in a manual policy: a canonical model id (e.g.
  *  `anthropic/claude-sonnet-4-6`) plus an optional per-model reasoning override. */
 export interface AgentModelEntry {
@@ -79,8 +87,17 @@ export interface AgentModelEntry {
  * fallback list (primary first). Mirrors `spec.models` in the backend.
  */
 export type AgentModelPolicy =
-  | { mode: "auto"; level?: AgentModelLevel; reasoning?: AgentReasoningEffort }
-  | { mode: "manual"; models: AgentModelEntry[] };
+  | {
+      mode: "auto";
+      level?: AgentModelLevel;
+      reasoning?: AgentReasoningEffort;
+      optimize_for?: AgentModelOptimizeFor;
+    }
+  | {
+      mode: "manual";
+      models: AgentModelEntry[];
+      optimize_for?: AgentModelOptimizeFor;
+    };
 
 /**
  * A served model + its cost profile, as the model browser shows it. Mirrors the
