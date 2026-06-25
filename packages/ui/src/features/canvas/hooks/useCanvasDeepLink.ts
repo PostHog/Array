@@ -1,8 +1,6 @@
 import { useHostTRPC } from "@posthog/host-router/react";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { navigateToChannelDashboard } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
@@ -20,23 +18,22 @@ const log = logger.scope("canvas-deep-link");
  *
  * Mirrors `useScoutDeepLink`: drains any link that arrived before the renderer
  * was ready (the main process clears its pending entry on read) and also
- * subscribes for links delivered while the app is already running. Gated on
- * project-bluebird — the Channels space (and canvases) only exist behind it.
+ * subscribes for links delivered while the app is already running. The live
+ * subscription acts on every link unconditionally — gating it behind the
+ * project-bluebird flag would drop a link that arrives before the flag resolves
+ * (the main process emits rather than queues once a listener is attached, so a
+ * discarded payload is unrecoverable). Navigation is safe regardless: the
+ * Channels space is flag-gated at the route, which redirects out when off.
  */
 export function useCanvasDeepLink() {
   const trpcReact = useHostTRPC();
   const isAuthenticated = useAuthStateValue(
     (s) => s.status === "authenticated",
   );
-  const bluebirdEnabled = useFeatureFlag(
-    PROJECT_BLUEBIRD_FLAG,
-    import.meta.env.DEV,
-  );
-  const enabled = isAuthenticated && bluebirdEnabled;
 
   const pendingDeepLink = useQuery(
     trpcReact.deepLink.getPendingCanvasLink.queryOptions(undefined, {
-      enabled,
+      enabled: isAuthenticated,
       // Drain once per session – the main process clears its pending entry on read.
       staleTime: Number.POSITIVE_INFINITY,
       refetchOnWindowFocus: false,
@@ -56,17 +53,16 @@ export function useCanvasDeepLink() {
   }, []);
 
   useEffect(() => {
-    if (!enabled) return;
     const pending = pendingDeepLink.data;
     if (pending?.channelId && pending?.dashboardId) {
       openCanvas(pending.channelId, pending.dashboardId);
     }
-  }, [enabled, pendingDeepLink.data, openCanvas]);
+  }, [pendingDeepLink.data, openCanvas]);
 
   useSubscription(
     trpcReact.deepLink.onOpenCanvas.subscriptionOptions(undefined, {
       onData: (data) => {
-        if (enabled && data?.channelId && data?.dashboardId) {
+        if (data?.channelId && data?.dashboardId) {
           openCanvas(data.channelId, data.dashboardId);
         }
       },
