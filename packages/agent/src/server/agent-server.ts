@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
   ContentBlock,
+  PromptResponse,
   RequestPermissionRequest,
   RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
@@ -82,6 +83,7 @@ import type { AgentServerConfig } from "./types";
 const agentErrorClassificationSchema = z.enum([
   "upstream_stream_terminated",
   "upstream_connection_error",
+  "upstream_timeout",
   "upstream_provider_failure",
   "agent_error",
 ]) satisfies z.ZodType<AgentErrorClassification>;
@@ -93,6 +95,7 @@ const upstreamProviderFailureClassifications =
   new Set<AgentErrorClassification>([
     "upstream_stream_terminated",
     "upstream_connection_error",
+    "upstream_timeout",
     "upstream_provider_failure",
   ]);
 
@@ -788,17 +791,31 @@ export class AgentServer {
 
         this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
 
-        const result = await this.session.clientConnection.prompt({
-          sessionId: this.session.acpSessionId,
-          prompt,
-          ...(this.detectedPrUrl && {
-            _meta: {
-              // Keep the live-session PR override aligned with the startup
-              // prompt policy so non-Slack runs remain review-first.
-              prContext: this.buildDetectedPrContext(this.detectedPrUrl),
-            },
-          }),
-        });
+        let result: PromptResponse;
+        try {
+          result = await this.session.clientConnection.prompt({
+            sessionId: this.session.acpSessionId,
+            prompt,
+            ...(this.detectedPrUrl && {
+              _meta: {
+                // Keep the live-session PR override aligned with the startup
+                // prompt policy so non-Slack runs remain review-first.
+                prContext: this.buildDetectedPrContext(this.detectedPrUrl),
+              },
+            }),
+          });
+        } catch (error) {
+          await this.session.logWriter.flushAll();
+          const { recoverable } = await this.handleTurnFailure(
+            this.session.payload,
+            "followup",
+            error,
+          );
+          if (!recoverable) {
+            throw error;
+          }
+          return { stopReason: "error_recoverable" };
+        }
 
         this.logger.debug("User message completed", {
           stopReason: result.stopReason,
@@ -1284,22 +1301,65 @@ export class AgentServer {
     return { classification: classifyAgentError(message), message };
   }
 
-  private classifyAndSignalFailure(
+  private async handleTurnFailure(
     payload: JwtPayload,
-    phase: "initial" | "resume",
+    phase: "initial" | "resume" | "followup",
     error: unknown,
-  ): Promise<void> {
+  ): Promise<{ recoverable: boolean }> {
     const { classification, message } = this.extractErrorClassification(error);
-    const errorMessage = upstreamProviderFailureClassifications.has(
-      classification,
-    )
+    const isUpstreamFailure =
+      upstreamProviderFailureClassifications.has(classification);
+    const displayMessage = isUpstreamFailure
       ? UPSTREAM_PROVIDER_FAILURE_MESSAGE
       : message || "Agent error";
+    const recoverable =
+      isUpstreamFailure && this.getEffectiveMode(payload) === "interactive";
+
     this.logger.error(`send_${phase}_task_message_failed`, {
       classification,
       message,
+      recoverable,
     });
-    return this.signalTaskComplete(payload, "error", errorMessage);
+
+    this.broadcastTurnFailure(classification, displayMessage);
+
+    if (recoverable) {
+      this.broadcastTurnComplete("error_recoverable");
+      return { recoverable: true };
+    }
+
+    await this.signalTaskComplete(payload, "error", displayMessage);
+    return { recoverable: false };
+  }
+
+  private broadcastTurnFailure(
+    classification: AgentErrorClassification,
+    message: string,
+  ): void {
+    if (!this.session) return;
+    const notification = {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: this.session.acpSessionId,
+        update: {
+          sessionUpdate: "error",
+          errorType: classification,
+          message,
+        },
+      },
+    };
+
+    this.broadcastEvent({
+      type: "notification",
+      timestamp: new Date().toISOString(),
+      notification,
+    });
+
+    this.session.logWriter.appendRawLine(
+      this.session.payload.run_id,
+      JSON.stringify(notification),
+    );
   }
 
   private async sendInitialTaskMessage(
@@ -1401,7 +1461,7 @@ export class AgentServer {
       if (this.session) {
         await this.session.logWriter.flushAll();
       }
-      await this.classifyAndSignalFailure(payload, "initial", error);
+      await this.handleTurnFailure(payload, "initial", error);
     }
   }
 
@@ -1540,7 +1600,7 @@ export class AgentServer {
       if (this.session) {
         await this.session.logWriter.flushAll();
       }
-      await this.classifyAndSignalFailure(payload, "resume", error);
+      await this.handleTurnFailure(payload, "resume", error);
     }
   }
 

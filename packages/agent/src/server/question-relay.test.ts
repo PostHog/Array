@@ -95,6 +95,8 @@ describe("Question relay", () => {
   it.each([
     ["API Error: terminated", "upstream_stream_terminated"],
     ["API Error: Connection error", "upstream_connection_error"],
+    ["API Error: The operation timed out.", "upstream_timeout"],
+    ["API Error: Request timed out.", "upstream_timeout"],
     ["API Error: 429 rate_limit_error", "upstream_provider_failure"],
     ["API Error: 529 overloaded_error", "upstream_provider_failure"],
     ["API Error: 503 internal_error", "upstream_provider_failure"],
