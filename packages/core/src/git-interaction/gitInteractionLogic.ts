@@ -20,8 +20,8 @@ interface GitState {
     headBranch: string | null;
     prUrl: string | null;
   } | null;
-  /** Network reachability. Remote actions (push/sync/publish, create PR) are
-   * gated on this; local actions (commit, new branch) are not. */
+  /** Remote actions (push/sync/publish, create PR) gate on this; local
+   * actions (commit, new branch) don't. */
   isOnline: boolean;
 }
 
@@ -31,9 +31,8 @@ interface GitComputed {
   actions: GitMenuAction[];
   primaryAction: GitMenuAction;
   pushDisabledReason: string | null;
-  // Surfaced as a named field (like pushDisabledReason) because a disabled
-  // create-pr action is dropped from `actions`, so its reason would otherwise
-  // be unreadable by consumers and tests.
+  // Named like pushDisabledReason: a disabled create-pr is dropped from
+  // `actions`, so its reason is only readable here.
   createPrDisabledReason: string | null;
   prBaseBranch: string | null;
   prHeadBranch: string | null;

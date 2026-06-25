@@ -9,16 +9,11 @@ import {
   type ConnectivityClient,
 } from "./connectivityClient";
 
-/** How long the green "Back online" confirmation lingers before collapsing. */
 const BACK_ONLINE_VISIBLE_MS = 2_500;
 
 /**
- * Slim shell banner that surfaces the global connectivity state. While offline
- * it explains that network actions are paused and offers a manual Retry (which
- * forces an immediate reachability probe); on recovery it briefly confirms
- * "Back online" then collapses. The underlying detection is server-side and
- * already debounced (it only reports offline after repeated probe failures), so
- * this renders the settled state without re-debouncing.
+ * Shell banner for the global connectivity state: while offline, offers a Retry
+ * that forces an immediate probe; briefly shows "Back online" on recovery.
  */
 export function ConnectivityBanner() {
   const { isOnline } = useConnectivity();
@@ -42,7 +37,6 @@ export function ConnectivityBanner() {
     }
 
     if (!isOnline) {
-      // A fresh outage supersedes any lingering "back online" confirmation.
       setShowBackOnline(false);
     }
 

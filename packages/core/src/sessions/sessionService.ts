@@ -3873,12 +3873,9 @@ export class SessionService {
   }
 
   /**
-   * Recovers sessions after the network comes back online. Retries cloud
-   * streams that exhausted their SSE reconnect budget and flushes cloud message
-   * queues that stranded while offline — the same two recovery steps the
-   * window-focus and auth-restored paths already perform, now also driven by the
-   * connectivity transition. Local sessions need no action here: they reconnect
-   * on their own when `reconcileLocalConnection` re-fires as `isOnline` flips.
+   * Recovers cloud sessions after reconnect: retries errored streams and
+   * flushes stranded queues (same steps as the window-focus and auth-restored
+   * paths). Local sessions recover on their own via `reconcileLocalConnection`.
    */
   public recoverAfterReconnect(): void {
     this.retryUnhealthyCloudSessions();

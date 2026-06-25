@@ -252,9 +252,8 @@ describe("computeGitInteractionState", () => {
   });
 
   describe("offline", () => {
-    // Remote actions can't run offline: each surfaces the no-internet reason
-    // via its named GitComputed field (a disabled create-pr is dropped from
-    // `actions`, so its reason is only readable here).
+    // create-pr is dropped from `actions` when disabled, so its reason is read
+    // from the named field.
     it.each([
       {
         action: "push",
@@ -283,7 +282,6 @@ describe("computeGitInteractionState", () => {
       },
     );
 
-    // Local actions don't touch the network, so they stay enabled offline.
     it.each([
       {
         action: "commit",
