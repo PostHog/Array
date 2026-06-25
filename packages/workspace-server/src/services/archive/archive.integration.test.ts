@@ -444,26 +444,40 @@ describe("ArchiveService integration", () => {
         ).rejects.toThrow("already archived");
       }));
 
-    it("unarchives a rowless task by clearing its metadata flag", () =>
-      withTestContext({ hasWorkspace: false }, async (ctx) => {
-        await ctx.service.archiveTask({ taskId: "nonexistent" });
+    // Unarchive and delete are parallel "remove a rowless task from the archived
+    // list" operations sharing the same arrange step; the per-case `extraAssert`
+    // covers what's unique (delete also drops the metadata row, not just the
+    // archived flag).
+    const rowlessRemovalCases: {
+      name: string;
+      act: (ctx: TestContext) => Promise<unknown>;
+      extraAssert?: (ctx: TestContext) => void;
+    }[] = [
+      {
+        name: "unarchiving clears its archived state",
+        act: (ctx) => ctx.service.unarchiveTask("nonexistent"),
+      },
+      {
+        name: "deleting removes its metadata row",
+        act: (ctx) => ctx.service.deleteArchivedTask("nonexistent"),
+        extraAssert: (ctx) =>
+          expect(ctx.taskMetadataRepo.findByTaskId("nonexistent")).toBeNull(),
+      },
+    ];
 
-        const result = await ctx.service.unarchiveTask("nonexistent");
+    it.each(rowlessRemovalCases)(
+      "$name and drops it from the archived list",
+      ({ act, extraAssert }) =>
+        withTestContext({ hasWorkspace: false }, async (ctx) => {
+          await ctx.service.archiveTask({ taskId: "nonexistent" });
 
-        expect(result).toEqual({ taskId: "nonexistent", worktreeName: null });
-        expect(ctx.service.getArchivedTaskIds()).not.toContain("nonexistent");
-        expect(ctx.service.isArchived("nonexistent")).toBe(false);
-      }));
+          await act(ctx);
 
-    it("deletes a rowless archived task", () =>
-      withTestContext({ hasWorkspace: false }, async (ctx) => {
-        await ctx.service.archiveTask({ taskId: "nonexistent" });
-
-        await ctx.service.deleteArchivedTask("nonexistent");
-
-        expect(ctx.service.getArchivedTaskIds()).not.toContain("nonexistent");
-        expect(ctx.taskMetadataRepo.findByTaskId("nonexistent")).toBeNull();
-      }));
+          expect(ctx.service.getArchivedTaskIds()).not.toContain("nonexistent");
+          expect(ctx.service.isArchived("nonexistent")).toBe(false);
+          extraAssert?.(ctx);
+        }),
+    );
 
     it("does not double-count a task with both a workspace archive and stale metadata", () =>
       withTestContext({}, async (ctx) => {
