@@ -53,6 +53,11 @@ export const taskMetadata = sqliteTable("task_metadata", {
   pinnedAt: text(),
   lastViewedAt: text(),
   lastActivityAt: text(),
+  // Archive state for rowless tasks. Tasks WITH a `workspaces` row record their
+  // archived state in the `archives` table; rowless channel tasks have no such
+  // row, so this timestamp is their only home — without it, archiving them is a
+  // silent no-op and they reappear on the next refetch.
+  archivedAt: text(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

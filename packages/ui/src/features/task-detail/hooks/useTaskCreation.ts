@@ -306,6 +306,7 @@ export function useTaskCreation({
           additionalDirectories,
           channelContext,
           channelName,
+          customInstructions: useSettingsStore.getState().customInstructions,
           allowNoRepo,
         });
 

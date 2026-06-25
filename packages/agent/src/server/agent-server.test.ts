@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import jwt from "jsonwebtoken";
 import { type SetupServerApi, setupServer } from "msw/node";
 import {
@@ -10,9 +12,18 @@ import {
   it,
   vi,
 } from "vitest";
-import { createTestRepo, type TestRepo } from "../test/fixtures/api";
+import { getSessionJsonlPath } from "../adapters/claude/session/jsonl-hydration";
+import type { PermissionMode } from "../execution-mode";
+import type { PostHogAPIClient } from "../posthog-api";
+import type { ResumeState } from "../resume";
+import {
+  createMockApiClient,
+  createTaskRun,
+  createTestRepo,
+  type TestRepo,
+} from "../test/fixtures/api";
 import { createPostHogHandlers } from "../test/mocks/msw-handlers";
-import type { TaskRun } from "../types";
+import type { StoredEntry, TaskRun } from "../types";
 import {
   AgentServer,
   isTurnCompleteNotification,
@@ -219,6 +230,18 @@ interface TestableServer {
   ): { claudeCode: { options: Record<string, unknown> } } | undefined;
 }
 
+interface NativeResumeTestServer {
+  resumeState: ResumeState | null;
+  prepareNativeResume(
+    payload: JwtPayload,
+    posthogAPI: PostHogAPIClient,
+    preTaskRun: TaskRun | null,
+    runtimeAdapter: "claude" | "codex",
+    cwd: string,
+    permissionMode: PermissionMode,
+  ): Promise<{ sessionId: string; warm: boolean } | null>;
+}
+
 let nextTestPort = 20000;
 
 function getNextTestPort(): number {
@@ -272,6 +295,21 @@ function createTestJwt(
       expiresIn: expiresInSeconds,
     },
   );
+}
+
+function sessionUpdateEntry(
+  sessionUpdate: string,
+  extra: Record<string, unknown> = {},
+): StoredEntry {
+  return {
+    type: "notification",
+    timestamp: new Date().toISOString(),
+    notification: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { update: { sessionUpdate, ...extra } },
+    },
+  };
 }
 
 // Test RSA key pair (2048-bit, for testing only)
@@ -1203,6 +1241,101 @@ describe("AgentServer HTTP Mode", () => {
       expect(meta?.claudeCode.options).toEqual({
         plugins: [{ type: "local", path: "/tmp/plugin" }],
       });
+    });
+  });
+
+  describe("native resume", () => {
+    it("hydrates cold sessions from S3 logs instead of cached resume conversation", async () => {
+      const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+      process.env.CLAUDE_CONFIG_DIR = join(repo.path, ".claude-test");
+
+      try {
+        const s = createServer() as unknown as NativeResumeTestServer;
+        s.resumeState = {
+          conversation: [
+            {
+              role: "user",
+              content: [{ type: "text", text: "continue" }],
+            },
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "visible answer only" }],
+            },
+          ],
+          latestGitCheckpoint: null,
+          interrupted: false,
+          logEntryCount: 3,
+          sessionId: "prior-session",
+        };
+
+        const posthogAPI = createMockApiClient();
+        (posthogAPI.getTaskRun as ReturnType<typeof vi.fn>).mockResolvedValue(
+          createTaskRun({ id: "previous-run", log_url: "s3://logs" }),
+        );
+        (
+          posthogAPI.fetchTaskRunLogs as ReturnType<typeof vi.fn>
+        ).mockResolvedValue([
+          sessionUpdateEntry("user_message", {
+            content: { type: "text", text: "continue" },
+          }),
+          sessionUpdateEntry("agent_thought_chunk", {
+            content: {
+              type: "thinking",
+              thinking: "preserve extended thinking",
+            },
+          }),
+          sessionUpdateEntry("agent_message", {
+            content: { type: "text", text: "visible answer" },
+          }),
+        ]);
+
+        const result = await s.prepareNativeResume(
+          {
+            task_id: "test-task-id",
+            run_id: "test-run-id",
+            team_id: 1,
+            user_id: 1,
+            distinct_id: "test-distinct-id",
+            mode: "interactive",
+          },
+          posthogAPI,
+          createTaskRun({
+            id: "test-run-id",
+            state: { resume_from_run_id: "previous-run" },
+          }),
+          "claude",
+          repo.path,
+          "bypassPermissions",
+        );
+
+        expect(result).toEqual({ sessionId: "prior-session", warm: false });
+        expect(posthogAPI.fetchTaskRunLogs).toHaveBeenCalledTimes(1);
+
+        const jsonl = await readFile(
+          getSessionJsonlPath("prior-session", repo.path),
+          "utf-8",
+        );
+        const blocks = jsonl
+          .trim()
+          .split("\n")
+          .flatMap((line) => {
+            const parsed = JSON.parse(line) as {
+              message?: { content?: unknown[] };
+            };
+            return parsed.message?.content ?? [];
+          });
+
+        expect(blocks).toContainEqual({
+          type: "thinking",
+          thinking: "preserve extended thinking",
+        });
+      } finally {
+        if (originalConfigDir === undefined) {
+          delete process.env.CLAUDE_CONFIG_DIR;
+        } else {
+          process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
+        }
+      }
     });
   });
 

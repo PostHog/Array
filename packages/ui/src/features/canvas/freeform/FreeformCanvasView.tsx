@@ -93,7 +93,7 @@ export function FreeformCanvasView({
   // The generation-task association lives in the canvas record's meta. Poll it
   // while a task is running so the published code + the cleared association show
   // up without a manual refresh (WebsiteDashboard re-syncs the working copy).
-  const { data: dashboard } = useQuery(
+  const { data: dashboard, isLoading: dashboardLoading } = useQuery(
     trpc.dashboards.get.queryOptions(
       { id: dashboardId },
       { enabled: !!dashboardId, staleTime: 4000 },
@@ -236,16 +236,27 @@ export function FreeformCanvasView({
     editorRef.current?.focus();
   };
 
-  const showCanvas = !!code;
+  // The working copy (`code`) is only seeded from the record by WebsiteDashboard
+  // once `dashboards.get` lands, so fall back to the record's stored code to
+  // bridge the gap before that seed runs — the seeded value is identical, so a
+  // canvas with content renders right away instead of flashing the empty state.
+  // Deriving from the record rather than waiting on the seed also means a seed
+  // that never runs can't strand the canvas on a spinner.
+  const renderCode = code || dashboard?.code || "";
+  const showCanvas = !!renderCode;
   // `isGenerating` keys off the effective task (the optimistic bridge right after
   // submit, then the polled record) and short-circuits on a terminal run — so a
-  // failed/cancelled run can't strand the canvas body on the spinner, on either
-  // path.
-  const showGeneratingState = !code && isGenerating;
-  // The empty-canvas landing: a centered composer with suggestions, shown until
-  // a canvas exists or a generation is in flight. After submit the composer
-  // floats into the side panel.
-  const showHero = interactive && !code && !effectiveTaskId;
+  // failed/cancelled run can't strand the canvas body on the spinner.
+  const showGeneratingState = !renderCode && isGenerating;
+  // While the record is still being fetched we don't yet know whether the canvas
+  // has content, so show a spinner instead of the empty state / hero. Bounded by
+  // the query, so it resolves once the fetch settles.
+  const showLoadingState = !renderCode && !isGenerating && dashboardLoading;
+  // The empty-canvas landing: a centered composer with suggestions. Held back
+  // until the record settles (so it doesn't flash over a canvas that has content)
+  // and only when no run is in flight. After submit it floats into the panel.
+  const showHero =
+    interactive && !renderCode && !effectiveTaskId && !dashboardLoading;
   // The side panel only exists once there's a canvas or an active run.
   const showPanel = interactive && (showCanvas || !!effectiveTaskId);
 
@@ -373,7 +384,7 @@ export function FreeformCanvasView({
             <Box className="h-full w-full">
               <CanvasFramePlaceholder
                 dashboardId={dashboardId}
-                code={code}
+                code={renderCode}
                 analytics={analytics}
                 onDataRequest={onDataRequest}
                 onError={onError}
@@ -388,6 +399,8 @@ export function FreeformCanvasView({
                   channelId={channelId}
                   taskId={effectiveTaskId ?? ""}
                 />
+              ) : showLoadingState ? (
+                <LoadingState />
               ) : (
                 <Empty className="h-full border-0">
                   <EmptyHeader>
@@ -426,7 +439,7 @@ export function FreeformCanvasView({
             channelName={channelName}
             name={dashboard?.name ?? "Canvas"}
             templateId={dashboard?.templateId}
-            currentCode={code || undefined}
+            currentCode={renderCode || undefined}
             editorRef={editorRef}
             onStarted={setStartedTaskId}
           />
@@ -461,6 +474,21 @@ export function FreeformCanvasView({
         )}
       </AnimatePresence>
     </Flex>
+  );
+}
+
+// Shown while the canvas record is still loading, so a canvas that actually has
+// content doesn't flash the empty state before its code syncs into the thread.
+function LoadingState() {
+  return (
+    <Empty className="h-full">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
+        </EmptyMedia>
+        <EmptyTitle>Loading canvas</EmptyTitle>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
