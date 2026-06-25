@@ -12,7 +12,11 @@ export default defineConfig({
   workers: 1,
   // junit.xml (resolved next to this config) is uploaded to Trunk in CI.
   reporter: isCI
-    ? [["junit", { outputFile: "junit.xml" }], ["github"], ["html", { open: "never" }]]
+    ? [
+        ["junit", { outputFile: "junit.xml" }],
+        ["github"],
+        ["html", { open: "never" }],
+      ]
     : [["junit", { outputFile: "junit.xml" }], ["list"]],
   outputDir: "../playwright-results",
   use: {
