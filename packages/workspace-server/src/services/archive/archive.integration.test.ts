@@ -465,6 +465,32 @@ describe("ArchiveService integration", () => {
         expect(ctx.taskMetadataRepo.findByTaskId("nonexistent")).toBeNull();
       }));
 
+    it("does not double-count a task with both a workspace archive and stale metadata", () =>
+      withTestContext({}, async (ctx) => {
+        // Task owns a workspace + archive (the authoritative record) yet also
+        // carries a lingering archivedAt in task_metadata. It must appear once.
+        const workspace = ctx.workspaceRepo.create({
+          taskId: TASK_ID,
+          repositoryId: null,
+          mode: "cloud",
+        });
+        ctx.archiveRepo.create({
+          workspaceId: workspace.id,
+          branchName: null,
+          checkpointId: null,
+        });
+        ctx.taskMetadataRepo.upsert(TASK_ID, {
+          archivedAt: new Date().toISOString(),
+        });
+
+        expect(
+          ctx.service.getArchivedTaskIds().filter((id) => id === TASK_ID),
+        ).toHaveLength(1);
+        expect(
+          ctx.service.getArchivedTasks().filter((t) => t.taskId === TASK_ID),
+        ).toHaveLength(1);
+      }));
+
     it("unarchives task without repository association", () =>
       withTestContext({}, async (ctx) => {
         const workspace = ctx.workspaceRepo.create({

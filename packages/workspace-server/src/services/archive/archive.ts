@@ -27,11 +27,14 @@ import type {
   ArchiveRepository,
 } from "../../db/repositories/archive-repository";
 import type { RepositoryRepository } from "../../db/repositories/repository-repository";
-import type { ITaskMetadataRepository } from "../../db/repositories/task-metadata-repository";
 import type {
   SuspensionReason,
   SuspensionRepository,
 } from "../../db/repositories/suspension-repository";
+import type {
+  ITaskMetadataRepository,
+  TaskMetadataRow,
+} from "../../db/repositories/task-metadata-repository";
 import type {
   Workspace,
   WorkspaceRepository,
@@ -451,10 +454,10 @@ export class ArchiveService {
       const worktree = this.worktreeRepo.findByWorkspaceId(workspace.id);
       return this.toArchivedTask(workspace, archive, worktree?.name ?? null);
     });
-    const rowless = this.taskMetadataRepo.findAllArchived().map(
+    const rowless = this.rowlessArchived().map(
       (meta): ArchivedTask => ({
         taskId: meta.taskId,
-        // `findAllArchived` only returns rows with a non-null `archivedAt`.
+        // `rowlessArchived` only returns rows with a non-null `archivedAt`.
         archivedAt: meta.archivedAt as string,
         folderId: "",
         mode: "cloud",
@@ -466,6 +469,16 @@ export class ArchiveService {
     return [...fromWorkspaces, ...rowless];
   }
 
+  // Tasks archived via `task_metadata` (no `workspaces` row). A task that has a
+  // workspace row is owned by the `archives` table, so it's excluded here even
+  // if an `archivedAt` lingers in its metadata — otherwise it would surface
+  // twice in the archived lists.
+  private rowlessArchived(): TaskMetadataRow[] {
+    return this.taskMetadataRepo
+      .findAllArchived()
+      .filter((meta) => !this.workspaceRepo.findByTaskId(meta.taskId));
+  }
+
   getArchivedTaskIds(): string[] {
     const fromWorkspaces = this.archiveRepo
       .findAll()
@@ -474,9 +487,7 @@ export class ArchiveService {
         return workspace?.taskId;
       })
       .filter((id): id is string => id !== undefined);
-    const rowless = this.taskMetadataRepo
-      .findAllArchived()
-      .map((meta) => meta.taskId);
+    const rowless = this.rowlessArchived().map((meta) => meta.taskId);
     return [...fromWorkspaces, ...rowless];
   }
 
