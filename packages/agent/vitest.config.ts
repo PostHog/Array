@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
+import { trunkTestOptions } from "../../vitest.config.base";
 
 export default defineConfig({
   resolve: {
@@ -9,12 +10,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    // Disable retries so flaky-test detection sees raw pass/fail results.
-    retry: 0,
-    reporters: [
-      "default",
-      ["junit", { outputFile: "./junit.xml", addFileAttribute: true }],
-    ],
+    ...trunkTestOptions,
     environment: "node",
     include: ["src/**/*.test.ts"],
     exclude: ["**/node_modules/**", "**/dist/**"],

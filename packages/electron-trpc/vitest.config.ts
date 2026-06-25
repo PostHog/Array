@@ -2,17 +2,13 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+import { trunkTestOptions } from "../../vitest.config.base";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
-    // Disable retries so flaky-test detection sees raw pass/fail results.
-    retry: 0,
-    reporters: [
-      "default",
-      ["junit", { outputFile: "./junit.xml", addFileAttribute: true }],
-    ],
+    ...trunkTestOptions,
     coverage: {
       all: true,
       include: ["src/**/*"],
