@@ -6,10 +6,12 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { FreeformGenerateBar } from "@posthog/ui/features/canvas/freeform/FreeformGenerateBar";
+import type { EditorHandle } from "@posthog/ui/features/message-editor/types";
 import { EmbeddedSessionView } from "@posthog/ui/features/sessions/components/EmbeddedSessionView";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
+import type { Ref } from "react";
 
 // The canvas's right-hand dock. While a generation/edit run is in flight it
 // shows that run's live chat (steering/queue included); otherwise it shows the
@@ -24,8 +26,7 @@ export function CanvasSidePanel({
   name,
   templateId,
   currentCode,
-  draft,
-  onDraftChange,
+  editorRef,
   onStarted,
 }: {
   effectiveTaskId: string | null;
@@ -36,8 +37,8 @@ export function CanvasSidePanel({
   name: string;
   templateId?: string;
   currentCode?: string;
-  draft: string;
-  onDraftChange: (next: string) => void;
+  // Exposes the edit composer's editor so self-repair can prefill it.
+  editorRef?: Ref<EditorHandle>;
   onStarted?: (taskId: string) => void;
 }) {
   const isChat = !!effectiveTaskId;
@@ -47,7 +48,7 @@ export function CanvasSidePanel({
       <Flex
         align="center"
         justify="between"
-        className="shrink-0 border-gray-6 border-b px-3 py-2"
+        className="h-10 shrink-0 items-center border-b bg-chrome px-3"
       >
         <Flex align="center" gap="2" className="min-w-0">
           {isChat ? (
@@ -77,14 +78,14 @@ export function CanvasSidePanel({
         ) : (
           <Flex direction="column" className="h-full p-3">
             <FreeformGenerateBar
+              ref={editorRef}
+              sessionId={`canvas:${dashboardId}`}
               dashboardId={dashboardId}
               channelId={channelId}
               channelName={channelName}
               name={name}
               templateId={templateId}
               currentCode={currentCode}
-              value={draft}
-              onValueChange={onDraftChange}
               onStarted={onStarted}
             />
           </Flex>

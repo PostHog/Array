@@ -1,9 +1,11 @@
 import { ShapesIcon } from "@phosphor-icons/react";
 import { CANVAS_GENERATE_SUGGESTIONS } from "@posthog/ui/features/canvas/freeform/canvasGenerateSuggestions";
 import { FreeformGenerateBar } from "@posthog/ui/features/canvas/freeform/FreeformGenerateBar";
+import type { EditorHandle } from "@posthog/ui/features/message-editor/types";
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { DotPatternBackground } from "@posthog/ui/primitives/DotPatternBackground";
 import { Flex, Text } from "@radix-ui/themes";
+import { useRef } from "react";
 
 // The empty-canvas landing state: a centered composer with starter-prompt
 // suggestions below it. Once the user submits, the canvas record records a
@@ -15,8 +17,6 @@ export function CanvasGenerateHero({
   channelName,
   name,
   templateId,
-  value,
-  onValueChange,
   onStarted,
 }: {
   dashboardId: string;
@@ -24,10 +24,11 @@ export function CanvasGenerateHero({
   channelName: string;
   name: string;
   templateId?: string;
-  value: string;
-  onValueChange: (next: string) => void;
   onStarted?: (taskId: string) => void;
 }) {
+  // Lets a suggestion card drop its prompt straight into the editor.
+  const editorRef = useRef<EditorHandle>(null);
+
   return (
     <Flex
       direction="column"
@@ -49,19 +50,18 @@ export function CanvasGenerateHero({
             Build a canvas
           </Text>
           <Text size="2" className="text-gray-10">
-            Describe what you want and an agent builds a React app from your
-            PostHog data.
+            Describe what you want and an agent builds it.
           </Text>
         </Flex>
 
         <FreeformGenerateBar
+          ref={editorRef}
+          sessionId={`canvas:${dashboardId}`}
           dashboardId={dashboardId}
           channelId={channelId}
           channelName={channelName}
           name={name}
           templateId={templateId}
-          value={value}
-          onValueChange={onValueChange}
           onStarted={onStarted}
         />
 
@@ -74,7 +74,10 @@ export function CanvasGenerateHero({
               <SuggestedPromptCard
                 key={suggestion.label}
                 suggestion={suggestion}
-                onSelect={() => onValueChange(suggestion.prompt)}
+                onSelect={() => {
+                  editorRef.current?.setContent(suggestion.prompt);
+                  editorRef.current?.focus();
+                }}
               />
             ))}
           </div>

@@ -26,6 +26,7 @@ import {
   useFreeformChatStore,
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
+import type { EditorHandle } from "@posthog/ui/features/message-editor/types";
 import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
@@ -40,7 +41,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
 import { CanvasGenerateHero } from "./CanvasGenerateHero";
 import { CanvasPermissionDialog } from "./CanvasPermissionDialog";
@@ -222,15 +223,17 @@ export function FreeformCanvasView({
   // Routes the canvas's allowlisted nav intents within this channel.
   const onNavigate = useCanvasNavigation(channelId);
 
-  // The edit composer's draft, lifted so self-repair can prefill it.
-  const [draft, setDraft] = useState("");
+  // The edit composer's editor handle, so self-repair can prefill it.
+  const editorRef = useRef<EditorHandle>(null);
   const askAgentToFix = () => {
     if (!runtimeError) return;
-    // Prefill the panel composer and make sure it's visible.
+    // Reveal the panel composer and prefill it. The panel stays mounted while
+    // collapsed, so the editor handle is available even from a minimized panel.
     setCollapsed(false);
-    setDraft(
+    editorRef.current?.setContent(
       `The app threw a runtime error: "${runtimeError}". Fix it and rewrite the whole file.`,
     );
+    editorRef.current?.focus();
   };
 
   const showCanvas = !!code;
@@ -264,7 +267,7 @@ export function FreeformCanvasView({
           <Flex
             align="center"
             justify="between"
-            className="shrink-0 border-gray-6 border-b bg-gray-2 px-3 py-1.5"
+            className="h-10 shrink-0 items-center border-b bg-chrome px-3"
           >
             <Flex align="center" gap="1">
               <Button
@@ -386,7 +389,7 @@ export function FreeformCanvasView({
                   taskId={effectiveTaskId ?? ""}
                 />
               ) : (
-                <Empty className="h-full">
+                <Empty className="h-full border-0">
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
                       <ShapesIcon size={24} />
@@ -424,8 +427,7 @@ export function FreeformCanvasView({
             name={dashboard?.name ?? "Canvas"}
             templateId={dashboard?.templateId}
             currentCode={code || undefined}
-            draft={draft}
-            onDraftChange={setDraft}
+            editorRef={editorRef}
             onStarted={setStartedTaskId}
           />
         </ResizableSidebar>
@@ -449,8 +451,6 @@ export function FreeformCanvasView({
               channelName={channelName}
               name={dashboard?.name ?? "Canvas"}
               templateId={dashboard?.templateId}
-              value={draft}
-              onValueChange={setDraft}
               onStarted={(id) => {
                 // Hold the panel shut until the hero finishes sliding down.
                 setWaitingForHeroExit(true);
@@ -474,7 +474,7 @@ function GeneratingState({
   taskId: string;
 }) {
   return (
-    <Empty className="h-full">
+    <Empty className="h-full border-0">
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
