@@ -151,6 +151,9 @@ describe("AuthService", () => {
         string,
         { name: string; projects: { id: number; name: string }[] }
       >;
+      // Overrides the /api/code/invites/check-access/ response (defaults to
+      // granting access). May throw to simulate a network error.
+      checkAccess?: () => Response;
     } = {},
   ) => {
     const accountKey = options.accountKey ?? "user-1";
@@ -186,6 +189,9 @@ describe("AuthService", () => {
           } as unknown as Response;
         }
 
+        if (options.checkAccess) {
+          return options.checkAccess();
+        }
         return {
           ok: true,
           json: vi.fn().mockResolvedValue({ has_access: true }),
@@ -1344,35 +1350,6 @@ describe("AuthService", () => {
   });
 
   describe("code access resilience", () => {
-    // A fetch stub whose user/org endpoints always succeed, so only the
-    // check-access endpoint's behaviour varies between tests.
-    const authFetchWithCheck = (checkAccess: () => Response) =>
-      vi.fn(async (input: string | Request) => {
-        const url = typeof input === "string" ? input : input.url;
-
-        if (url.includes("/api/users/@me/")) {
-          return {
-            ok: true,
-            json: vi.fn().mockResolvedValue({
-              uuid: "user-1",
-              organization: { id: "org-1" },
-            }),
-          } as unknown as Response;
-        }
-
-        if (/\/api\/organizations\/([^/]+)\/$/.test(url)) {
-          return {
-            ok: true,
-            json: vi.fn().mockResolvedValue({
-              name: "Org 1",
-              teams: [{ id: 42, name: "Project 42" }],
-            }),
-          } as unknown as Response;
-        }
-
-        return checkAccess();
-      }) as unknown as typeof fetch;
-
     const okBody = (body: unknown): Response =>
       ({
         ok: true,
@@ -1415,7 +1392,7 @@ describe("AuthService", () => {
         expected: null,
       },
     ])("$name", async ({ checkAccess, expected }) => {
-      vi.stubGlobal("fetch", authFetchWithCheck(checkAccess));
+      stubAuthFetch({ checkAccess });
 
       await service.initialize();
 
@@ -1424,60 +1401,52 @@ describe("AuthService", () => {
       expect(state.hasCodeAccess).toBe(expected);
     });
 
-    it("keeps a confirmed grant when a later check fails with a network error", async () => {
-      let failCheck = false;
-      vi.stubGlobal(
-        "fetch",
-        authFetchWithCheck(() => {
-          if (failCheck) throw new Error("network down");
-          return okBody({ has_access: true });
-        }),
-      );
+    // A transient blip on a later check must not be mistaken for a revoked
+    // invite — a previously confirmed grant stays granted.
+    it.each([
+      {
+        name: "a network error",
+        fail: (): Response => {
+          throw new Error("network down");
+        },
+      },
+      {
+        name: "a 401",
+        fail: (): Response =>
+          ({
+            ok: false,
+            status: 401,
+            json: vi.fn().mockResolvedValue({}),
+          }) as unknown as Response,
+      },
+    ])(
+      "keeps a confirmed grant when a later check hits $name",
+      async ({ fail }) => {
+        let shouldFail = false;
+        stubAuthFetch({
+          checkAccess: () =>
+            shouldFail ? fail() : okBody({ has_access: true }),
+        });
 
-      await service.initialize();
-      expect(service.getState().hasCodeAccess).toBe(true);
+        await service.initialize();
+        expect(service.getState().hasCodeAccess).toBe(true);
 
-      failCheck = true;
-      await service.refreshAccessToken();
+        shouldFail = true;
+        await service.refreshAccessToken();
 
-      // A transient blip must not be mistaken for a revoked invite.
-      expect(service.getState().hasCodeAccess).toBe(true);
-    });
-
-    it("keeps a confirmed grant when a later check returns 401", async () => {
-      let unauthorized = false;
-      vi.stubGlobal(
-        "fetch",
-        authFetchWithCheck(() =>
-          unauthorized
-            ? ({
-                ok: false,
-                status: 401,
-                json: vi.fn().mockResolvedValue({}),
-              } as unknown as Response)
-            : okBody({ has_access: true }),
-        ),
-      );
-
-      await service.initialize();
-      expect(service.getState().hasCodeAccess).toBe(true);
-
-      unauthorized = true;
-      await service.refreshAccessToken();
-
-      expect(service.getState().hasCodeAccess).toBe(true);
-    });
+        expect(service.getState().hasCodeAccess).toBe(true);
+      },
+    );
 
     it("recovers within the retry loop when a later attempt succeeds", async () => {
       let attempts = 0;
-      vi.stubGlobal(
-        "fetch",
-        authFetchWithCheck(() => {
+      stubAuthFetch({
+        checkAccess: () => {
           attempts += 1;
           if (attempts === 1) throw new Error("transient");
           return okBody({ has_access: true });
-        }),
-      );
+        },
+      });
 
       await service.initialize();
 
