@@ -3,6 +3,7 @@ import {
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
   ShapesIcon,
+  SidebarSimpleIcon,
   SpinnerGapIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
@@ -20,25 +21,30 @@ import {
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { isCanvasGenerationRunning } from "@posthog/ui/features/canvas/freeform/canvasGenerationStatus";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useCanvasChatPanelStore } from "@posthog/ui/features/canvas/stores/canvasChatPanelStore";
 import {
   useFreeformChatStore,
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
+import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import {
   Box,
   Flex,
   Button as RadixButton,
   ScrollArea,
   Text,
+  Tooltip,
 } from "@radix-ui/themes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
+import { CanvasGenerateHero } from "./CanvasGenerateHero";
 import { CanvasPermissionDialog } from "./CanvasPermissionDialog";
-import { FreeformGenerateBar } from "./FreeformGenerateBar";
+import { CanvasSidePanel } from "./CanvasSidePanel";
 import { handleFreeformDataRequest } from "./freeformDataBridge";
 import { useCanvasNavigation, useHomeCanvasReset } from "./useHomeCanvasView";
 
@@ -66,6 +72,21 @@ export function FreeformCanvasView({
   const redo = useFreeformChatStore((s) => s.redo);
   const setRuntimeError = useFreeformChatStore((s) => s.setRuntimeError);
 
+  // Right-hand panel state (persisted minimize + width). `startedTaskId` is a
+  // local bridge so the composer floats to the side immediately on submit,
+  // before the canvas record's polled generationTaskId catches up.
+  const [startedTaskId, setStartedTaskId] = useState<string | null>(null);
+  const collapsed = useCanvasChatPanelStore((s) => s.collapsed);
+  const setCollapsed = useCanvasChatPanelStore((s) => s.setCollapsed);
+  const panelWidth = useCanvasChatPanelStore((s) => s.width);
+  const setPanelWidth = useCanvasChatPanelStore((s) => s.setWidth);
+  const [isResizingPanel, setIsResizingPanel] = useState(false);
+  // Set when a generation is kicked off from the hero, so the panel stays shut
+  // (width 0) until the hero finishes sliding down (onExitComplete), then opens
+  // — the sequenced slide-in. Every other path leaves it false, so the panel is
+  // open from the start (no delay on cold load or minimize/expand).
+  const [waitingForHeroExit, setWaitingForHeroExit] = useState(false);
+
   const trpc = useHostTRPC();
 
   // The generation-task association lives in the canvas record's meta. Poll it
@@ -79,6 +100,14 @@ export function FreeformCanvasView({
   );
   const genTaskId = dashboard?.generationTaskId ?? null;
   const channelId = dashboard?.channelId ?? "";
+
+  // The run whose chat the panel shows. Once the record's genTaskId resolves it
+  // is the single source of truth; the local bridge is cleared so the panel
+  // reverts to the composer when the run finishes and the association clears.
+  const effectiveTaskId = genTaskId ?? startedTaskId;
+  useEffect(() => {
+    if (genTaskId) setStartedTaskId(null);
+  }, [genTaskId]);
 
   const { channels } = useChannels();
   const channelName = useMemo(
@@ -191,23 +220,35 @@ export function FreeformCanvasView({
   const [draft, setDraft] = useState("");
   const askAgentToFix = () => {
     if (!runtimeError) return;
+    // Prefill the panel composer and make sure it's visible.
+    setCollapsed(false);
     setDraft(
       `The app threw a runtime error: "${runtimeError}". Fix it and rewrite the whole file.`,
     );
   };
 
   const showCanvas = !!code;
-  const showGeneratingState = isGenerating && !code;
-  const showComposer = interactive && !isGenerating;
+  const showGeneratingState = !code && !!effectiveTaskId;
+  // The empty-canvas landing: a centered composer with suggestions, shown until
+  // a canvas exists or a generation is in flight. After submit the composer
+  // floats into the side panel.
+  const showHero = interactive && !code && !effectiveTaskId;
+  // The side panel only exists once there's a canvas or an active run.
+  const showPanel = interactive && (showCanvas || !!effectiveTaskId);
 
   return (
-    <Flex height="100%" overflow="hidden">
-      {/* A generating canvas can pause on a tool-permission request; surface it
-          here so the user can approve without opening the underlying task. */}
-      {interactive && genTaskId && (
-        <CanvasPermissionDialog taskId={genTaskId} />
+    <Flex height="100%" overflow="hidden" position="relative">
+      {/* While the panel is minimized the embedded chat isn't visible, so a
+          paused tool-permission request would have nowhere to go — surface it
+          as a modal instead. When the panel is open, the chat handles it. */}
+      {interactive && effectiveTaskId && collapsed && (
+        <CanvasPermissionDialog taskId={effectiveTaskId} />
       )}
-      <Flex direction="column" className="flex-1 bg-gray-1" overflow="hidden">
+      <Flex
+        direction="column"
+        className="min-w-0 flex-1 bg-gray-1"
+        overflow="hidden"
+      >
         {interactive && (
           <Flex
             align="center"
@@ -251,37 +292,53 @@ export function FreeformCanvasView({
                 </Button>
               )}
             </Flex>
-            {isGenerating && genTaskId ? (
-              <Flex align="center" gap="2">
-                <SpinnerGapIcon
-                  size={14}
-                  className="animate-spin text-accent-9"
-                />
-                <Text size="1" className="text-gray-10">
-                  Generating
-                </Text>
-                <RadixButton size="1" variant="soft" asChild>
-                  <Link
-                    to="/website/$channelId/tasks/$taskId"
-                    params={{ channelId, taskId: genTaskId }}
+            <Flex align="center" gap="2">
+              {isGenerating && genTaskId ? (
+                <>
+                  <SpinnerGapIcon
+                    size={14}
+                    className="animate-spin text-accent-9"
+                  />
+                  <Text size="1" className="text-gray-10">
+                    Generating
+                  </Text>
+                  <RadixButton size="1" variant="soft" asChild>
+                    <Link
+                      to="/website/$channelId/tasks/$taskId"
+                      params={{ channelId, taskId: genTaskId }}
+                    >
+                      View task
+                    </Link>
+                  </RadixButton>
+                </>
+              ) : (
+                runtimeError && (
+                  <>
+                    <Flex align="center" gap="1" className="text-red-11">
+                      <WarningIcon size={14} />
+                      <Text size="1">Runtime error</Text>
+                    </Flex>
+                    <Button size="sm" variant="outline" onClick={askAgentToFix}>
+                      Ask agent to fix
+                    </Button>
+                  </>
+                )
+              )}
+              {showPanel && collapsed && (
+                <Tooltip
+                  content={effectiveTaskId ? "Show chat" : "Edit canvas"}
+                >
+                  <Button
+                    size="icon"
+                    variant="default"
+                    aria-label="Show panel"
+                    onClick={() => setCollapsed(false)}
                   >
-                    View task
-                  </Link>
-                </RadixButton>
-              </Flex>
-            ) : (
-              runtimeError && (
-                <Flex align="center" gap="2">
-                  <Flex align="center" gap="1" className="text-red-11">
-                    <WarningIcon size={14} />
-                    <Text size="1">Runtime error</Text>
-                  </Flex>
-                  <Button size="sm" variant="outline" onClick={askAgentToFix}>
-                    Ask agent to fix
+                    <SidebarSimpleIcon size={16} />
                   </Button>
-                </Flex>
-              )
-            )}
+                </Tooltip>
+              )}
+            </Flex>
           </Flex>
         )}
 
@@ -315,7 +372,7 @@ export function FreeformCanvasView({
               {showGeneratingState ? (
                 <GeneratingState
                   channelId={channelId}
-                  taskId={genTaskId ?? ""}
+                  taskId={effectiveTaskId ?? ""}
                 />
               ) : (
                 <Empty className="h-full">
@@ -325,9 +382,7 @@ export function FreeformCanvasView({
                     </EmptyMedia>
                     <EmptyTitle>Freeform canvas</EmptyTitle>
                     <EmptyDescription>
-                      {interactive
-                        ? "Describe the canvas below to build it with an agent."
-                        : "This canvas is empty. Hit Edit to build it with an agent."}
+                      This canvas is empty. Hit Edit to build it with an agent.
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
@@ -335,22 +390,64 @@ export function FreeformCanvasView({
             </ScrollArea>
           )}
         </Box>
+      </Flex>
 
-        {showComposer && (
-          <Box className="shrink-0 border-gray-6 border-t bg-gray-2 p-3">
-            <FreeformGenerateBar
+      {showPanel && (
+        <ResizableSidebar
+          open={!collapsed && !waitingForHeroExit}
+          width={panelWidth}
+          setWidth={setPanelWidth}
+          isResizing={isResizingPanel}
+          setIsResizing={setIsResizingPanel}
+          side="right"
+        >
+          {!collapsed && (
+            <CanvasSidePanel
+              effectiveTaskId={effectiveTaskId}
+              onMinimize={() => setCollapsed(true)}
               dashboardId={dashboardId}
               channelId={channelId}
               channelName={channelName}
               name={dashboard?.name ?? "Canvas"}
               templateId={dashboard?.templateId}
               currentCode={code || undefined}
+              draft={draft}
+              onDraftChange={setDraft}
+              onStarted={setStartedTaskId}
+            />
+          )}
+        </ResizableSidebar>
+      )}
+
+      {/* The empty-canvas landing: a centered composer with suggestions,
+          overlaying the canvas area. On submit it slides down; once it's gone
+          (onExitComplete) the side panel slides in from the right. */}
+      <AnimatePresence onExitComplete={() => setWaitingForHeroExit(false)}>
+        {showHero && (
+          <motion.div
+            key="canvas-hero"
+            initial={false}
+            exit={{ y: "100%", opacity: 0 }}
+            transition={{ duration: 0.32, ease: [0.4, 0, 0.2, 1] }}
+            className="absolute inset-0 z-20 bg-gray-1"
+          >
+            <CanvasGenerateHero
+              dashboardId={dashboardId}
+              channelId={channelId}
+              channelName={channelName}
+              name={dashboard?.name ?? "Canvas"}
+              templateId={dashboard?.templateId}
               value={draft}
               onValueChange={setDraft}
+              onStarted={(id) => {
+                // Hold the panel shut until the hero finishes sliding down.
+                setWaitingForHeroExit(true);
+                setStartedTaskId(id);
+              }}
             />
-          </Box>
+          </motion.div>
         )}
-      </Flex>
+      </AnimatePresence>
     </Flex>
   );
 }
