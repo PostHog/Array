@@ -29,11 +29,9 @@ import { useModelCatalog } from "../hooks/useModelCatalog";
 /**
  * The rich model section: an interactive policy editor (mode + level +
  * reasoning), a preview of what an `auto` level resolves to, and a searchable
- * browser of every served model with its cost profile.
- *
- * Editing is local-state only — there's no save wired yet; the point is to see
- * the UX. The catalog comes from `useModelCatalog` (a stand-in for the
- * model-info endpoint).
+ * browser of every served model with its cost profile. Save goes through
+ * `useApplyAgentSpec`, which PATCHes a draft in place or branches a fresh
+ * draft from a non-draft revision first.
  */
 export function AgentModelConfig({
   spec,

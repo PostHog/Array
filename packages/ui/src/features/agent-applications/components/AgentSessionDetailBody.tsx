@@ -257,9 +257,9 @@ function MetricItem({
       </Text>
       <Text
         title={title}
-        className={`font-semibold text-[14px] leading-none ${
-          tone === "bad" ? "text-(--red-11)" : "text-gray-12"
-        } ${mono ? "text-[12.5px] [font-family:var(--font-mono)]" : ""}`}
+        className={`font-semibold leading-none ${
+          mono ? "text-[12.5px] [font-family:var(--font-mono)]" : "text-[14px]"
+        } ${tone === "bad" ? "text-(--red-11)" : "text-gray-12"}`}
       >
         {value}
       </Text>
