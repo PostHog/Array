@@ -56,15 +56,15 @@ describe("warmTask", () => {
     );
   });
 
-  it("defaults a missing branch to null", async () => {
-    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+  it("serializes a missing branch as null", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ task_id: "task-1", run_id: "run-1" }), {
+        status: 200,
+      }),
+    );
 
-    const result = await warmTask({
-      repository: "posthog/posthog",
-      github_integration: 7,
-    });
+    await warmTask({ repository: "posthog/posthog", github_integration: 7 });
 
-    expect(result).toBeNull();
     expect(mockFetch).toHaveBeenCalledWith(
       "https://app.posthog.test/api/projects/42/tasks/warm/",
       expect.objectContaining({
@@ -75,6 +75,17 @@ describe("warmTask", () => {
         }),
       }),
     );
+  });
+
+  it("returns null when the response body is empty", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+
+    const result = await warmTask({
+      repository: "posthog/posthog",
+      github_integration: 7,
+    });
+
+    expect(result).toBeNull();
   });
 
   it("throws an HttpError on a failed response", async () => {

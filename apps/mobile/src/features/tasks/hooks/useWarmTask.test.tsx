@@ -114,46 +114,57 @@ describe("useWarmTask", () => {
     expect(mockWarmTask).toHaveBeenCalledOnce();
   });
 
-  it("does not re-fire for the same selection", async () => {
+  it("does not re-fire for the same key after the composer empties and refills", async () => {
     const { rerender } = render(composing);
     await flushDebounce();
     expect(mockWarmTask).toHaveBeenCalledOnce();
 
-    rerender({ ...composing });
+    // Toggling `composerIsEmpty` flips `eligible` (a dep), so the effect
+    // re-runs with the same key — the `lastWarmedKeyRef` guard, not React's
+    // bail-out, is what blocks a second warm.
+    rerender({ ...composing, composerIsEmpty: true });
+    await flushDebounce();
+    rerender({ ...composing, composerIsEmpty: false });
     await flushDebounce();
     expect(mockWarmTask).toHaveBeenCalledOnce();
   });
 
-  it("warms the new selection when the repository changes", async () => {
-    const { rerender } = render(composing);
-    await flushDebounce();
-    expect(mockWarmTask).toHaveBeenCalledOnce();
+  it.each<{
+    name: string;
+    change: Partial<Props>;
+    expectedRepository: string;
+    expectedBranch: string;
+  }>([
+    {
+      name: "repository",
+      change: { repository: "acme/other" },
+      expectedRepository: "acme/other",
+      expectedBranch: "main",
+    },
+    {
+      name: "branch",
+      change: { branch: "feature/x" },
+      expectedRepository: "acme/repo",
+      expectedBranch: "feature/x",
+    },
+  ])(
+    "warms the new selection when the $name changes",
+    async ({ change, expectedRepository, expectedBranch }) => {
+      const { rerender } = render(composing);
+      await flushDebounce();
+      expect(mockWarmTask).toHaveBeenCalledOnce();
 
-    rerender({ ...composing, repository: "acme/other" });
-    await flushDebounce();
+      rerender({ ...composing, ...change });
+      await flushDebounce();
 
-    expect(mockWarmTask).toHaveBeenLastCalledWith({
-      repository: "acme/other",
-      github_integration: 42,
-      branch: "main",
-    });
-    expect(mockWarmTask).toHaveBeenCalledTimes(2);
-  });
-
-  it("warms the new selection when the branch changes", async () => {
-    const { rerender } = render(composing);
-    await flushDebounce();
-
-    rerender({ ...composing, branch: "feature/x" });
-    await flushDebounce();
-
-    expect(mockWarmTask).toHaveBeenLastCalledWith({
-      repository: "acme/repo",
-      github_integration: 42,
-      branch: "feature/x",
-    });
-    expect(mockWarmTask).toHaveBeenCalledTimes(2);
-  });
+      expect(mockWarmTask).toHaveBeenLastCalledWith({
+        repository: expectedRepository,
+        github_integration: 42,
+        branch: expectedBranch,
+      });
+      expect(mockWarmTask).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("warms again for a new selection after a failed warm", async () => {
     mockWarmTask.mockRejectedValueOnce(new Error("boom"));
