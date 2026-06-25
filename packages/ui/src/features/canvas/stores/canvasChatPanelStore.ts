@@ -12,7 +12,6 @@ interface CanvasChatPanelState {
   collapsed: boolean;
   width: number;
   setCollapsed: (collapsed: boolean) => void;
-  toggleCollapsed: () => void;
   setWidth: (width: number) => void;
 }
 
@@ -22,7 +21,6 @@ export const useCanvasChatPanelStore = create<CanvasChatPanelState>()(
       collapsed: false,
       width: DEFAULT_PANEL_WIDTH,
       setCollapsed: (collapsed) => set({ collapsed }),
-      toggleCollapsed: () => set((state) => ({ collapsed: !state.collapsed })),
       setWidth: (width) => set({ width }),
     }),
     {

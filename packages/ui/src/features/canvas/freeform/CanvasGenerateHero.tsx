@@ -69,7 +69,7 @@ export function CanvasGenerateHero({
           <Text size="1" weight="medium" className="px-1 text-gray-11">
             Suggestions
           </Text>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {CANVAS_GENERATE_SUGGESTIONS.map((suggestion) => (
               <SuggestedPromptCard
                 key={suggestion.label}

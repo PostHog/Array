@@ -132,18 +132,18 @@ export function FreeformCanvasView({
   // terminal run record always ends "running" so a stale session can't strand
   // the canvas on "Generating".
   const { data: genTask, isLoading: genTaskLoading } = useQuery({
-    ...taskDetailQuery(genTaskId ?? ""),
-    enabled: !!genTaskId,
-    refetchInterval: genTaskId ? 5000 : false,
+    ...taskDetailQuery(effectiveTaskId ?? ""),
+    enabled: !!effectiveTaskId,
+    refetchInterval: effectiveTaskId ? 5000 : false,
   });
-  const genSession = useSessionForTask(genTaskId ?? undefined);
+  const genSession = useSessionForTask(effectiveTaskId ?? undefined);
   // Whether the run's session is still alive. Drives record polling so a freshly
   // published canvas gets picked up. A local ACP session stays "connected" after
   // its generation prompt finishes, so this keeps syncing until it disconnects.
   // Uses the shared, tested helper, which also stops once the run record is
   // terminal so a stale/stuck session can't keep us polling forever.
   const isSyncing = isCanvasGenerationRunning({
-    genTaskId,
+    genTaskId: effectiveTaskId,
     genTaskLoading,
     latestRun: genTask?.latest_run,
     session: genSession,
@@ -154,7 +154,7 @@ export function FreeformCanvasView({
   // pending prompt, not the connection — otherwise the notice never clears. A
   // terminal run record always wins so a stuck session can't strand the notice.
   const isGenerating = (() => {
-    if (!genTaskId) return false;
+    if (!effectiveTaskId) return false;
     if (genTaskLoading) return true;
     if (genTask?.latest_run?.environment === "cloud") {
       const cloudStatus =
@@ -234,13 +234,11 @@ export function FreeformCanvasView({
   };
 
   const showCanvas = !!code;
-  // Actively building: the optimistic bridge right after submit (before the
-  // record's genTaskId resolves), or a live run. Once genTaskId resolves we key
-  // off `isGenerating`, which short-circuits on a terminal run — so a
-  // failed/cancelled run with a lingering generationTaskId doesn't strand the
-  // canvas body on the spinner.
-  const isBuilding = genTaskId ? isGenerating : !!startedTaskId;
-  const showGeneratingState = !code && isBuilding;
+  // `isGenerating` keys off the effective task (the optimistic bridge right after
+  // submit, then the polled record) and short-circuits on a terminal run — so a
+  // failed/cancelled run can't strand the canvas body on the spinner, on either
+  // path.
+  const showGeneratingState = !code && isGenerating;
   // The empty-canvas landing: a centered composer with suggestions, shown until
   // a canvas exists or a generation is in flight. After submit the composer
   // floats into the side panel.
@@ -306,7 +304,7 @@ export function FreeformCanvasView({
               )}
             </Flex>
             <Flex align="center" gap="2">
-              {isGenerating && genTaskId ? (
+              {isGenerating && effectiveTaskId ? (
                 <>
                   <SpinnerGapIcon
                     size={14}
@@ -318,7 +316,7 @@ export function FreeformCanvasView({
                   <RadixButton size="1" variant="soft" asChild>
                     <Link
                       to="/website/$channelId/tasks/$taskId"
-                      params={{ channelId, taskId: genTaskId }}
+                      params={{ channelId, taskId: effectiveTaskId }}
                     >
                       View task
                     </Link>
@@ -414,21 +412,22 @@ export function FreeformCanvasView({
           setIsResizing={setIsResizingPanel}
           side="right"
         >
-          {!collapsed && (
-            <CanvasSidePanel
-              effectiveTaskId={effectiveTaskId}
-              onMinimize={() => setCollapsed(true)}
-              dashboardId={dashboardId}
-              channelId={channelId}
-              channelName={channelName}
-              name={dashboard?.name ?? "Canvas"}
-              templateId={dashboard?.templateId}
-              currentCode={code || undefined}
-              draft={draft}
-              onDraftChange={setDraft}
-              onStarted={setStartedTaskId}
-            />
-          )}
+          {/* Kept mounted while collapsed (the sidebar hides it via width:0 +
+              overflow:hidden) so the embedded run's session — and its activity
+              heartbeat — stays alive and chat scroll survives a minimize. */}
+          <CanvasSidePanel
+            effectiveTaskId={effectiveTaskId}
+            onMinimize={() => setCollapsed(true)}
+            dashboardId={dashboardId}
+            channelId={channelId}
+            channelName={channelName}
+            name={dashboard?.name ?? "Canvas"}
+            templateId={dashboard?.templateId}
+            currentCode={code || undefined}
+            draft={draft}
+            onDraftChange={setDraft}
+            onStarted={setStartedTaskId}
+          />
         </ResizableSidebar>
       )}
 
