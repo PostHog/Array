@@ -5,7 +5,7 @@ import { createStore } from "zustand/vanilla";
 /**
  * Domain state for deployed-agent live chats. Keyed by an opaque `chatId` so
  * several chats can be live at once — e.g. the always-on agent builder dock
- * (`"agent-builder"`) and a per-agent preview (`"preview:<slug>"`) side by side.
+ * (`"agent-builder"`) and a per-agent chat (`"preview:<slug>"`) side by side.
  * The UI hook (`useAgentChat`) owns the transport (run/send/cancel + the SSE
  * loop, via the api-client) and pumps mapped `AcpMessage`s in here; components
  * read one chat by id and render it through `ConversationView`.

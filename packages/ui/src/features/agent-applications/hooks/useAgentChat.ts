@@ -35,12 +35,13 @@ export interface UseAgentChatOptions {
   agentSlug: string;
   ingressBaseUrl: string | null;
   /**
-   * When set, this chat targets a specific non-live revision. The service mints
-   * a short-lived preview token and attaches it on every ingress call. Leave
-   * null/unset to use the agent's currently live revision.
+   * When set, this chat routes to a specific non-live revision. The service
+   * mints a short-lived ingress JWT scoped to that revision and attaches it on
+   * every call; side effects still run for real. Leave null/unset to use the
+   * agent's currently live revision.
    */
   revisionId?: string | null;
-  /** Index started sessions in the local recent-chats rail (preview only). */
+  /** Index started sessions in the local recent-chats rail. */
   recordHistory?: boolean;
   /**
    * Supplies the "what am I looking at" object. When set, it's prepended as a

@@ -4,7 +4,7 @@ import { useStore } from "zustand";
 
 /**
  * The approval-gated tool call this chat is currently paused on, or null —
- * what drives the inline approval card in the live preview / agent builder dock.
+ * what drives the inline approval card in the chat pane / agent builder dock.
  *
  * The chat service maintains it from the stream: a `queued` approval marker
  * triggers a one-shot fetch of the full request from the ingress, and a

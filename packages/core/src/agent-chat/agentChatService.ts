@@ -104,7 +104,7 @@ interface ChatRuntime {
  * Drives live chats against deployed agents' ingress: starts/sends/cancels via
  * the api-client, streams SSE through the host's mapper, and pumps the resulting
  * ACP messages into the core `agentChatStore` keyed by `chatId` (so the agent
- * builder dock and per-agent previews coexist). One `ChatRuntime` per chat holds
+ * builder dock and per-agent chats coexist). One `ChatRuntime` per chat holds
  * the reconnect loop, epoch supersede, and preview-token cache.
  *
  * The renderer hook supplies the authenticated client per call and the UI seams
