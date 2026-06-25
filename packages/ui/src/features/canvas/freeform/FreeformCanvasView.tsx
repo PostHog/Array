@@ -71,7 +71,7 @@ export function FreeformCanvasView({
   // The generation-task association lives in the canvas record's meta. Poll it
   // while a task is running so the published code + the cleared association show
   // up without a manual refresh (WebsiteDashboard re-syncs the working copy).
-  const { data: dashboard } = useQuery(
+  const { data: dashboard, isLoading: dashboardLoading } = useQuery(
     trpc.dashboards.get.queryOptions(
       { id: dashboardId },
       { enabled: !!dashboardId, staleTime: 4000 },
@@ -198,6 +198,13 @@ export function FreeformCanvasView({
 
   const showCanvas = !!code;
   const showGeneratingState = isGenerating && !code;
+  // Don't flash the empty state while the record is still resolving: the working
+  // copy (`code`) is only seeded from the record by WebsiteDashboard once the
+  // `dashboards.get` query lands, so until the record is fetched — or in the gap
+  // before a record that already has code syncs into the thread — treat the
+  // canvas as loading, not empty.
+  const showLoadingState =
+    !code && !isGenerating && (dashboardLoading || !!dashboard?.code);
   const showComposer = interactive && !isGenerating;
 
   return (
@@ -317,6 +324,8 @@ export function FreeformCanvasView({
                   channelId={channelId}
                   taskId={genTaskId ?? ""}
                 />
+              ) : showLoadingState ? (
+                <LoadingState />
               ) : (
                 <Empty className="h-full">
                   <EmptyHeader>
@@ -352,6 +361,21 @@ export function FreeformCanvasView({
         )}
       </Flex>
     </Flex>
+  );
+}
+
+// Shown while the canvas record is still loading, so a canvas that actually has
+// content doesn't flash the empty state before its code syncs into the thread.
+function LoadingState() {
+  return (
+    <Empty className="h-full">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
+        </EmptyMedia>
+        <EmptyTitle>Loading canvas</EmptyTitle>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
