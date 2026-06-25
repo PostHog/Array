@@ -160,6 +160,7 @@ container.bind(UPDATES_CLIENT).toConstantValue(updatesClient);
 // connectivity client — passthrough over the renderer host client
 const connectivityClient: ConnectivityClient = {
   getStatus: () => trpcClient.connectivity.getStatus.query(),
+  checkNow: () => trpcClient.connectivity.checkNow.mutate(),
   onStatusChange: (sub) =>
     trpcClient.connectivity.onStatusChange.subscribe(undefined, sub),
 };

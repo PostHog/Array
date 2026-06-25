@@ -3872,6 +3872,19 @@ export class SessionService {
     }
   }
 
+  /**
+   * Recovers sessions after the network comes back online. Retries cloud
+   * streams that exhausted their SSE reconnect budget and flushes cloud message
+   * queues that stranded while offline — the same two recovery steps the
+   * window-focus and auth-restored paths already perform, now also driven by the
+   * connectivity transition. Local sessions need no action here: they reconnect
+   * on their own when `reconcileLocalConnection` re-fires as `isOnline` flips.
+   */
+  public recoverAfterReconnect(): void {
+    this.retryUnhealthyCloudSessions();
+    this.flushQueuedCloudMessagesAfterAuthRestored();
+  }
+
   public flushQueuedCloudMessagesAfterAuthRestored(): void {
     const sessions = this.d.store.getSessions();
     for (const session of Object.values(sessions)) {

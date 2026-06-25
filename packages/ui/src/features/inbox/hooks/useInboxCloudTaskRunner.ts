@@ -11,10 +11,12 @@ import {
 import { useService } from "@posthog/di/react";
 import { ANALYTICS_EVENTS, getCloudUrlFromRegion } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDefaultModel";
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
+import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { toast } from "@posthog/ui/primitives/toast";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
@@ -106,10 +108,16 @@ export function useInboxCloudTaskRunner({
   const modelResolver = useService<ReportModelResolver>(REPORT_MODEL_RESOLVER);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const queryClient = useQueryClient();
+  const { isOnline } = useConnectivity();
 
   const run = useCallback(async () => {
     if (isRunning) return;
     const log = logger.scope(loggerScope);
+
+    if (!isOnline) {
+      showOfflineToast();
+      return;
+    }
 
     if (!cloudRepository) {
       toast.error(copy.errorTitle, { description: copy.missingRepository });
@@ -244,6 +252,7 @@ export function useInboxCloudTaskRunner({
     }
   }, [
     isRunning,
+    isOnline,
     loggerScope,
     cloudRepository,
     cloudRegion,

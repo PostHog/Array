@@ -19,6 +19,7 @@ function makeState(overrides: Partial<GitState> = {}): GitState {
     ghStatus: { installed: true, authenticated: true },
     repoInfo: { owner: "test", repo: "test" },
     prStatus: null,
+    isOnline: true,
     ...overrides,
   };
 }
@@ -247,6 +248,59 @@ describe("computeGitInteractionState", () => {
         makeState({ isRepo: false, currentBranch: null }),
       );
       expect(result.primaryAction.enabled).toBe(false);
+    });
+  });
+
+  describe("offline", () => {
+    it("disables push with a no-internet reason on a feature branch", () => {
+      const result = computeGitInteractionState(
+        makeState({
+          currentBranch: "feature/test",
+          hasChanges: false,
+          aheadOfRemote: 2,
+          isOnline: false,
+        }),
+      );
+      const push = result.actions.find((a) => a.id === "push");
+      expect(push?.enabled).toBe(false);
+      expect(push?.disabledReason).toBe("No internet connection");
+      expect(result.pushDisabledReason).toBe("No internet connection");
+    });
+
+    it("disables create-pr with a no-internet reason", () => {
+      const result = computeGitInteractionState(
+        makeState({
+          currentBranch: "feature/test",
+          hasChanges: true,
+          isOnline: false,
+        }),
+      );
+      const createPr = result.actions.find((a) => a.id === "create-pr");
+      // create-pr is dropped from the action list once disabled, so assert via
+      // the primary fallback instead: offline pushes the primary off create-pr.
+      expect(createPr).toBeUndefined();
+      expect(result.primaryAction.id).not.toBe("create-pr");
+    });
+
+    it("still allows local commit while offline", () => {
+      const result = computeGitInteractionState(
+        makeState({
+          currentBranch: "feature/test",
+          hasChanges: true,
+          isOnline: false,
+        }),
+      );
+      const commit = result.actions.find((a) => a.id === "commit");
+      expect(commit?.enabled).toBe(true);
+      expect(commit?.disabledReason).toBeNull();
+    });
+
+    it("still allows creating a branch while offline", () => {
+      const result = computeGitInteractionState(
+        makeState({ currentBranch: null, isOnline: false }),
+      );
+      expect(result.primaryAction.id).toBe("branch-here");
+      expect(result.primaryAction.enabled).toBe(true);
     });
   });
 });

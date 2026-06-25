@@ -23,6 +23,7 @@ import {
 } from "@posthog/ui/features/canvas/components/FeedbackModal";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
+import { ConnectivityBanner } from "@posthog/ui/features/connectivity/ConnectivityBanner";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
 import { useTaskDeepLink } from "@posthog/ui/features/deep-links/useTaskDeepLink";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -347,6 +348,7 @@ function RootLayout() {
             </Button>
           </Flex>
         </Flex>
+        <ConnectivityBanner />
         <Flex flexGrow="1" overflow="hidden">
           <ChannelsSidebar />
           {/* Content sits in a bordered, rounded card inset from the window
@@ -385,6 +387,7 @@ function RootLayout() {
   if (isSettingsRoute) {
     return (
       <Flex direction="column" height="100vh">
+        <ConnectivityBanner />
         <Outlet />
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
         <KeyboardShortcutsSheet
@@ -411,6 +414,7 @@ function RootLayout() {
     <Flex height="100vh">
       <Flex direction="column" flexGrow="1" overflow="hidden">
         <HeaderRow />
+        <ConnectivityBanner />
         <Flex flexGrow="1" overflow="hidden">
           <MainSidebar />
           <Box flexGrow="1" overflow="hidden">

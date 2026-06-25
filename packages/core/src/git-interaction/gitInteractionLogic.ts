@@ -20,7 +20,12 @@ interface GitState {
     headBranch: string | null;
     prUrl: string | null;
   } | null;
+  /** Network reachability. Remote actions (push/sync/publish, create PR) are
+   * gated on this; local actions (commit, new branch) are not. */
+  isOnline: boolean;
 }
+
+const OFFLINE_REASON = "No internet connection";
 
 interface GitComputed {
   actions: GitMenuAction[];
@@ -74,6 +79,7 @@ function getPushDisabledReason(
   opts?: { assumeWillHaveCommits?: boolean },
 ): string | null {
   if (repoReason) return repoReason;
+  if (!s.isOnline) return OFFLINE_REASON;
 
   if (s.behind > 0) {
     return "Sync branch with remote first.";
@@ -96,6 +102,7 @@ function getCreatePrDisabledReason(
   repoReason: string | null,
 ): string | null {
   if (repoReason) return repoReason;
+  if (!s.isOnline) return OFFLINE_REASON;
 
   if (!s.ghStatus) return "Checking GitHub CLI status...";
   if (!s.ghStatus.installed) return "Install GitHub CLI: `brew install gh`";
