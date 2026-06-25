@@ -41,7 +41,7 @@ export interface UseAgentChatOptions {
    * agent's currently live revision.
    */
   revisionId?: string | null;
-  /** Index started sessions in the local recent-chats rail. */
+  /** Index started sessions in the local chat-history rail. */
   recordHistory?: boolean;
   /**
    * Supplies the "what am I looking at" object. When set, it's prepended as a

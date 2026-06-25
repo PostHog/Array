@@ -3,13 +3,13 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 /**
- * Locally-persisted index of recent chats the user started against an agent
+ * Locally-persisted index of chats the user started against an agent
  * *from this app*. These are the only sessions surfaced in the chat pane's
  * rail — deliberately NOT the agent's full server session list, which can
  * include real customer conversations. Keyed by agent slug; each entry is just
  * enough to re-attach (`/listen` replays the transcript) and label the rail.
  */
-export interface RecentChatEntry {
+export interface ChatHistoryEntry {
   sessionId: string;
   /** First user message of the chat, for the rail label. */
   title: string;
@@ -25,9 +25,9 @@ export interface RecentChatEntry {
 }
 
 interface ChatHistoryState {
-  byAgent: Record<string, RecentChatEntry[]>;
-  /** Record (or move-to-top) a recent chat the user started here. */
-  record: (agentKey: string, entry: RecentChatEntry) => void;
+  byAgent: Record<string, ChatHistoryEntry[]>;
+  /** Record (or move-to-top) a chat the user started here. */
+  record: (agentKey: string, entry: ChatHistoryEntry) => void;
   remove: (agentKey: string, sessionId: string) => void;
 }
 

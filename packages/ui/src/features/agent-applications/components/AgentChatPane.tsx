@@ -11,7 +11,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import {
-  type RecentChatEntry,
+  type ChatHistoryEntry,
   useChatHistoryStore,
 } from "../chat/chatHistoryStore";
 import { useAgentApplication } from "../hooks/useAgentApplication";
@@ -23,7 +23,7 @@ import { AgentChatPendingApprovalCard } from "./AgentChatPendingApprovalCard";
 import { AgentChatSurface } from "./AgentChatSurface";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 
-const EMPTY_CHATS: RecentChatEntry[] = [];
+const EMPTY_CHATS: ChatHistoryEntry[] = [];
 
 function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
@@ -111,8 +111,8 @@ export function AgentChatPane({
   // expander reveals the rest on demand.
   const currentRev = isDraftRevisionChat ? (revisionId ?? null) : null;
   const { matchingChats, otherChats } = useMemo(() => {
-    const matching: RecentChatEntry[] = [];
-    const other: RecentChatEntry[] = [];
+    const matching: ChatHistoryEntry[] = [];
+    const other: ChatHistoryEntry[] = [];
     for (const c of chats) {
       if ((c.revisionId ?? null) === currentRev) matching.push(c);
       else other.push(c);
@@ -148,7 +148,7 @@ export function AgentChatPane({
 
   // The rail mixes chats from every revision; decide per click whether to
   // resume inline (same target) or navigate to a different revision's surface.
-  const handleRailSelect = (entry: RecentChatEntry) => {
+  const handleRailSelect = (entry: ChatHistoryEntry) => {
     if ((entry.revisionId ?? null) === currentRev) {
       chat.resume(entry.sessionId);
       return;
@@ -285,15 +285,15 @@ function ChatHistoryRail({
   onSelect,
   onDelete,
 }: {
-  chats: RecentChatEntry[];
+  chats: ChatHistoryEntry[];
   /** Chats from other revisions — hidden behind an expander to keep this surface focused. */
-  otherChats: RecentChatEntry[];
+  otherChats: ChatHistoryEntry[];
   showOthers: boolean;
   onToggleShowOthers: () => void;
   activeSessionId: string | null;
   onNewChat: () => void;
   /** Receives the full entry so the parent can route by revision, not just resume. */
-  onSelect: (entry: RecentChatEntry) => void;
+  onSelect: (entry: ChatHistoryEntry) => void;
   onDelete: (sessionId: string) => void;
 }) {
   return (
@@ -366,9 +366,9 @@ function RailEntry({
   onSelect,
   onDelete,
 }: {
-  entry: RecentChatEntry;
+  entry: ChatHistoryEntry;
   active: boolean;
-  onSelect: (entry: RecentChatEntry) => void;
+  onSelect: (entry: ChatHistoryEntry) => void;
   onDelete: (sessionId: string) => void;
 }) {
   return (
