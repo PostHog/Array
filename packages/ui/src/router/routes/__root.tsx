@@ -1,4 +1,8 @@
-import { ArrowSquareOut } from "@phosphor-icons/react";
+import {
+  ArrowSquareOut,
+  CaretLeftIcon,
+  CaretRightIcon,
+} from "@phosphor-icons/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
 import {
@@ -8,6 +12,7 @@ import {
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { DeepLinkApprovalModal } from "@posthog/ui/features/agent-applications/components/DeepLinkApprovalModal";
 import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
@@ -52,7 +57,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   createRootRoute,
   Outlet,
+  useCanGoBack,
   useNavigate,
+  useRouter,
   useRouterState,
 } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -102,6 +109,27 @@ export const Route = createRootRoute({
 function RootLayout() {
   const view = useAppView();
   const navigate = useNavigate();
+  const router = useRouter();
+  const canGoBack = useCanGoBack();
+  // Forward availability isn't exposed by the router (and history.length counts
+  // pre-app entries, so it can't be compared to __TSR_index). Track the newest
+  // index we've reached: only a PUSH wipes the forward stack, so it resets the
+  // newest to the current index. REPLACE mutates the current entry in place
+  // (index unchanged, forward entries intact) and BACK/GO just move within the
+  // existing stack, so both keep the max. Forward is live while below it.
+  const historyIndex = useRouterState({
+    select: (s) => s.location.state.__TSR_index,
+  });
+  const [newestIndex, setNewestIndex] = useState(historyIndex);
+  useEffect(() => {
+    return router.history.subscribe(({ location, action }) => {
+      const idx = location.state.__TSR_index;
+      setNewestIndex((prev) =>
+        action.type === "PUSH" ? idx : Math.max(prev, idx),
+      );
+    });
+  }, [router]);
+  const canGoForward = historyIndex < newestIndex;
 
   // Feedback modal shown in the Channels title bar. Opened directly by "Leave
   // feedback" (mode "feedback"), or as an intercept before navigating away —
@@ -165,7 +193,7 @@ function RootLayout() {
   useTaskDeepLink();
   useInboxDeepLink();
   useScoutDeepLink();
-  useApprovalDeepLink();
+  const approvalDeepLink = useApprovalDeepLink();
   useSetupDiscovery();
   useNewTaskDeepLink();
 
@@ -262,6 +290,24 @@ function RootLayout() {
             <LogosLandscape code={false} />
           </Box>
           <Flex align="center" gap="2" className="no-drag">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Back"
+              disabled={!canGoBack}
+              onClick={() => router.history.back()}
+            >
+              <CaretLeftIcon size={14} />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Forward"
+              disabled={!canGoForward}
+              onClick={() => router.history.forward()}
+            >
+              <CaretRightIcon size={14} />
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -394,6 +440,12 @@ function RootLayout() {
         <TourOverlay />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        {approvalDeepLink.pending ? (
+          <DeepLinkApprovalModal
+            pending={approvalDeepLink.pending}
+            onClose={approvalDeepLink.clear}
+          />
+        ) : null}
         <ExistingWorktreeDialog />
         <HedgehogMode />
         {import.meta.env.DEV && (

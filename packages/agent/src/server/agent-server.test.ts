@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import jwt from "jsonwebtoken";
 import { type SetupServerApi, setupServer } from "msw/node";
 import {
@@ -10,9 +12,18 @@ import {
   it,
   vi,
 } from "vitest";
-import { createTestRepo, type TestRepo } from "../test/fixtures/api";
+import { getSessionJsonlPath } from "../adapters/claude/session/jsonl-hydration";
+import type { PermissionMode } from "../execution-mode";
+import type { PostHogAPIClient } from "../posthog-api";
+import type { ResumeState } from "../resume";
+import {
+  createMockApiClient,
+  createTaskRun,
+  createTestRepo,
+  type TestRepo,
+} from "../test/fixtures/api";
 import { createPostHogHandlers } from "../test/mocks/msw-handlers";
-import type { TaskRun } from "../types";
+import type { StoredEntry, TaskRun } from "../types";
 import {
   AgentServer,
   isTurnCompleteNotification,
@@ -204,17 +215,31 @@ interface TestableServer {
   buildCloudSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string;
   buildDetectedPrContext(prUrl: string): string;
   buildSessionSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string | { append: string };
   buildCodexInstructions(systemPrompt: string | { append: string }): string;
   getRuntimeAdapter(): "claude" | "codex";
   buildClaudeCodeSessionMeta(
     runtimeAdapter: "claude" | "codex",
   ): { claudeCode: { options: Record<string, unknown> } } | undefined;
+}
+
+interface NativeResumeTestServer {
+  resumeState: ResumeState | null;
+  prepareNativeResume(
+    payload: JwtPayload,
+    posthogAPI: PostHogAPIClient,
+    preTaskRun: TaskRun | null,
+    runtimeAdapter: "claude" | "codex",
+    cwd: string,
+    permissionMode: PermissionMode,
+  ): Promise<{ sessionId: string; warm: boolean } | null>;
 }
 
 let nextTestPort = 20000;
@@ -270,6 +295,21 @@ function createTestJwt(
       expiresIn: expiresInSeconds,
     },
   );
+}
+
+function sessionUpdateEntry(
+  sessionUpdate: string,
+  extra: Record<string, unknown> = {},
+): StoredEntry {
+  return {
+    type: "notification",
+    timestamp: new Date().toISOString(),
+    notification: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { update: { sessionUpdate, ...extra } },
+    },
+  };
 }
 
 // Test RSA key pair (2048-bit, for testing only)
@@ -1204,6 +1244,101 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
+  describe("native resume", () => {
+    it("hydrates cold sessions from S3 logs instead of cached resume conversation", async () => {
+      const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+      process.env.CLAUDE_CONFIG_DIR = join(repo.path, ".claude-test");
+
+      try {
+        const s = createServer() as unknown as NativeResumeTestServer;
+        s.resumeState = {
+          conversation: [
+            {
+              role: "user",
+              content: [{ type: "text", text: "continue" }],
+            },
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "visible answer only" }],
+            },
+          ],
+          latestGitCheckpoint: null,
+          interrupted: false,
+          logEntryCount: 3,
+          sessionId: "prior-session",
+        };
+
+        const posthogAPI = createMockApiClient();
+        (posthogAPI.getTaskRun as ReturnType<typeof vi.fn>).mockResolvedValue(
+          createTaskRun({ id: "previous-run", log_url: "s3://logs" }),
+        );
+        (
+          posthogAPI.fetchTaskRunLogs as ReturnType<typeof vi.fn>
+        ).mockResolvedValue([
+          sessionUpdateEntry("user_message", {
+            content: { type: "text", text: "continue" },
+          }),
+          sessionUpdateEntry("agent_thought_chunk", {
+            content: {
+              type: "thinking",
+              thinking: "preserve extended thinking",
+            },
+          }),
+          sessionUpdateEntry("agent_message", {
+            content: { type: "text", text: "visible answer" },
+          }),
+        ]);
+
+        const result = await s.prepareNativeResume(
+          {
+            task_id: "test-task-id",
+            run_id: "test-run-id",
+            team_id: 1,
+            user_id: 1,
+            distinct_id: "test-distinct-id",
+            mode: "interactive",
+          },
+          posthogAPI,
+          createTaskRun({
+            id: "test-run-id",
+            state: { resume_from_run_id: "previous-run" },
+          }),
+          "claude",
+          repo.path,
+          "bypassPermissions",
+        );
+
+        expect(result).toEqual({ sessionId: "prior-session", warm: false });
+        expect(posthogAPI.fetchTaskRunLogs).toHaveBeenCalledTimes(1);
+
+        const jsonl = await readFile(
+          getSessionJsonlPath("prior-session", repo.path),
+          "utf-8",
+        );
+        const blocks = jsonl
+          .trim()
+          .split("\n")
+          .flatMap((line) => {
+            const parsed = JSON.parse(line) as {
+              message?: { content?: unknown[] };
+            };
+            return parsed.message?.content ?? [];
+          });
+
+        expect(blocks).toContainEqual({
+          type: "thinking",
+          thinking: "preserve extended thinking",
+        });
+      } finally {
+        if (originalConfigDir === undefined) {
+          delete process.env.CLAUDE_CONFIG_DIR;
+        } else {
+          process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
+        }
+      }
+    });
+  });
+
   describe("PR attribution", () => {
     const PR_URL = "https://github.com/PostHog/posthog.com/pull/17764";
     const payload: JwtPayload = {
@@ -1281,15 +1416,32 @@ describe("AgentServer HTTP Mode", () => {
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
 
-    it("attributes only the first when two distinct recent PRs race", async () => {
-      // Both fetch as recent; without the post-await guard each would attribute.
+    it("attributes the most recent PR when a run opens several, in detection order", async () => {
+      // output.pr_url holds one value; the latest PR the run created is the useful one.
       const s = setup(justNow());
       const second = "https://github.com/PostHog/posthog.com/pull/17765";
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(second));
       await flush();
-      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith("t", "r", {
+        output: { pr_url: second },
+      });
+      expect(s.detectedPrUrl).toBe(second);
+    });
+
+    it("does not let an older PR the run only viewed overwrite the one it created", async () => {
+      const viewed = "https://github.com/PostHog/posthog.com/pull/1";
+      // The created PR reads as recent; the later, merely-viewed PR reads as old.
+      const s = setup(justNow());
+      s.fetchPrCreatedAt = vi.fn(async (url: string) =>
+        url === PR_URL ? justNow() : longAgo,
+      );
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(viewed));
+      await flush();
       expect(s.detectedPrUrl).toBe(PR_URL);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1385,7 +1537,10 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("gh pr create --draft");
       expect(prompt).toContain("Generated-By: PostHog Code");
       expect(prompt).toContain("Task-Id: test-task-id");
-      expect(prompt).toContain("Created with [PostHog Code]");
+      // Slack-origin PRs are attributed to PostHog, not the PostHog Code app.
+      expect(prompt).toContain(
+        "Created with [PostHog](https://posthog.com?ref=pr)",
+      );
       // PR template detection (repo first, org `.github` fallback)
       expect(prompt).toContain(".github/pull_request_template.md");
       expect(prompt).toContain("org's `.github` repo");
@@ -1405,6 +1560,27 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("gh pr create --draft");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
+
+    it.each([
+      { label: "Slack", origin: "slack" },
+      { label: "signal_report", origin: "signal_report" },
+    ])(
+      "guards the auto-PR prompt against duplicating an existing PR on $label-origin runs",
+      ({ origin }) => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = origin;
+        const s = createServer();
+        const prompt = (
+          s as unknown as TestableServer
+        ).buildCloudSystemPrompt();
+        // Still the new-PR branch...
+        expect(prompt).toContain("gh pr create --draft");
+        // ...but tells the agent to continue an existing linked PR instead of duplicating.
+        expect(prompt).toContain("implementation_pr_url");
+        expect(prompt).toContain("gh pr checkout <url>");
+        expect(prompt).toMatch(/do not open a second PR/i);
+        delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+      },
+    );
 
     it("returns PR-update prompt for existing PRs on Slack-origin runs", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
@@ -1616,11 +1792,12 @@ describe("AgentServer HTTP Mode", () => {
           // brevity
           expect(prompt).toContain("Keep the PR description brief");
           expect(prompt).toContain("do NOT enumerate every change");
-          // plain footer, no Slack link
+          // plain footer, no Slack link; Slack-origin PRs are branded "PostHog"
           expect(prompt).toContain(
-            "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
+            "*Created with [PostHog](https://posthog.com?ref=pr)*",
           );
           expect(prompt).not.toContain("from a [Slack thread]");
+          expect(prompt).not.toContain("PostHog Code](https://posthog.com");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
@@ -1636,12 +1813,48 @@ describe("AgentServer HTTP Mode", () => {
             "https://posthog.slack.com/archives/C123/p456",
           );
           expect(prompt).toContain(
-            "*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
+            "*Created with [PostHog](https://posthog.com?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
           );
           // The Why bullet no longer carries the thread link.
           expect(prompt).not.toContain(
             "this task started from a Slack thread, also link it",
           );
+        } finally {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
+      });
+
+      it("embeds the inbox report link in the footer for a signal_report run", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "signal_report";
+        try {
+          const prompt = (
+            createServer() as unknown as TestableServer
+          ).buildCloudSystemPrompt(
+            null,
+            null,
+            "http://localhost:8000/project/1/inbox/rep_1",
+          );
+          expect(prompt).toContain(
+            "*Created with [PostHog](https://posthog.com?ref=pr) from an [inbox report](http://localhost:8000/project/1/inbox/rep_1)*",
+          );
+          expect(prompt).not.toContain("Slack thread");
+        } finally {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
+      });
+
+      it("prefers the Slack thread link over the inbox report link when both are present", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+        try {
+          const prompt = (
+            createServer() as unknown as TestableServer
+          ).buildCloudSystemPrompt(
+            null,
+            "https://posthog.slack.com/archives/C123/p456",
+            "http://localhost:8000/project/1/inbox/rep_1",
+          );
+          expect(prompt).toContain("from a [Slack thread]");
+          expect(prompt).not.toContain("from an [inbox report]");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
@@ -1675,7 +1888,7 @@ describe("AgentServer HTTP Mode", () => {
             "https://posthog.slack.com/archives/C123/p456",
           );
           expect(prompt).toContain(
-            "*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
+            "*Created with [PostHog](https://posthog.com?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
           );
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;

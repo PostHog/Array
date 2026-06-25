@@ -32,6 +32,7 @@ import {
   getBranchNameInputState,
 } from "../../git-interaction/utils/branchCreation";
 import { useInboxReportSelectionStore } from "../../inbox/stores/inboxReportSelectionStore";
+import { useIntegrationSelectors } from "../../integrations/store";
 import {
   useUserGithubBranches,
   useUserGithubRepositories,
@@ -58,6 +59,7 @@ import {
 } from "../hooks/useInitialRepoSelectionFromFolderId";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
+import { useWarmTask } from "../hooks/useWarmTask";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import {
   type SuggestedPrompt,
@@ -312,6 +314,17 @@ export function TaskInput({
   const selectedInstallationId = selectedCloudRepository
     ? getInstallationIdForRepo(selectedCloudRepository)
     : undefined;
+
+  const { githubIntegrations: orgGithubIntegrations } =
+    useIntegrationSelectors();
+  const orgGithubIntegrationId = orgGithubIntegrations[0]?.id;
+  useWarmTask({
+    workspaceMode,
+    selectedRepository: selectedCloudRepository,
+    githubIntegrationId: orgGithubIntegrationId,
+    branch: workspaceMode === "cloud" ? selectedBranch : null,
+    editorIsEmpty,
+  });
 
   const {
     data: cloudBranchData,

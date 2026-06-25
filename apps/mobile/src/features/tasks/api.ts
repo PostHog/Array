@@ -815,7 +815,9 @@ export async function getUserGithubIntegrations(): Promise<
 > {
   const baseUrl = getBaseUrl();
 
-  const response = await authedFetch(`${baseUrl}/api/users/@me/integrations/`);
+  const response = await authedFetch(
+    `${baseUrl}/api/users/@me/integrations/?kind=github`,
+  );
 
   if (!response.ok) {
     throw new HttpError(
@@ -828,7 +830,7 @@ export async function getUserGithubIntegrations(): Promise<
   const data = await parseJsonResponse<{ results?: UserGithubIntegration[] }>(
     response,
   );
-  return (data.results ?? []).filter((i) => i.kind === "github");
+  return data.results ?? [];
 }
 
 export async function getUserGithubRepositories(

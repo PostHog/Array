@@ -185,8 +185,8 @@ function FreeformPreview({ code }: { code?: string }) {
             style={{
               transform: `scale(${PREVIEW_SCALE})`,
               width: `${100 / PREVIEW_SCALE}%`,
-              // Fixed tall content height so the scaled iframe has something to
-              // fill before its first resize message arrives; the frame clips it.
+              // Fixed tall preview height for the scaled iframe to fill (the
+              // iframe is h-full); the frame clips whatever overflows.
               height: 600,
             }}
           >

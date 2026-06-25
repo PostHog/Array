@@ -478,6 +478,10 @@ export class TaskCreationSaga extends Saga<
             : "user_created",
           // The server associates the task with the report and records the implementation
           // task_run artefact — no relationship label is sent (associations are unlabelled).
+          branch:
+            input.workspaceMode === "cloud"
+              ? (input.branch ?? null)
+              : undefined,
           signal_report: input.signalReportId ?? undefined,
         });
         return result as unknown as Task;

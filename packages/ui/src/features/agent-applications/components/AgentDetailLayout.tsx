@@ -173,22 +173,24 @@ export function AgentDetailLayout({
             {application.description}
           </Text>
         ) : null}
-        <Flex gap="1" className="-mb-px">
-          {TABS.map((tab) => (
-            <Link
-              key={tab.id}
-              to={tab.to}
-              params={{ idOrSlug }}
-              className={`border-b-2 px-3 pb-2.5 text-[12.5px] no-underline ${
-                tab.id === activeTab
-                  ? "border-(--accent-9) font-medium text-gray-12"
-                  : "border-transparent text-gray-11 hover:text-gray-12"
-              }`}
-            >
-              {tab.label}
-            </Link>
-          ))}
-        </Flex>
+        <div className="scrollbar-overlay -mb-px">
+          <Flex gap="1" className="w-max">
+            {TABS.map((tab) => (
+              <Link
+                key={tab.id}
+                to={tab.to}
+                params={{ idOrSlug }}
+                className={`shrink-0 whitespace-nowrap border-b-2 px-3 pb-2.5 text-[12.5px] no-underline ${
+                  tab.id === activeTab
+                    ? "border-(--accent-9) font-medium text-gray-12"
+                    : "border-transparent text-gray-11 hover:text-gray-12"
+                }`}
+              >
+                {tab.label}
+              </Link>
+            ))}
+          </Flex>
+        </div>
       </Flex>
 
       {(() => {

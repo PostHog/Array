@@ -17,6 +17,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
+import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { isCanvasGenerationRunning } from "@posthog/ui/features/canvas/freeform/canvasGenerationStatus";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
@@ -36,6 +37,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
+import { CanvasPermissionDialog } from "./CanvasPermissionDialog";
 import { FreeformGenerateBar } from "./FreeformGenerateBar";
 import { handleFreeformDataRequest } from "./freeformDataBridge";
 import { useCanvasNavigation, useHomeCanvasReset } from "./useHomeCanvasView";
@@ -100,21 +102,45 @@ export function FreeformCanvasView({
     refetchInterval: genTaskId ? 5000 : false,
   });
   const genSession = useSessionForTask(genTaskId ?? undefined);
-  const running = isCanvasGenerationRunning({
+  // Whether the run's session is still alive. Drives record polling so a freshly
+  // published canvas gets picked up. A local ACP session stays "connected" after
+  // its generation prompt finishes, so this keeps syncing until it disconnects.
+  // Uses the shared, tested helper, which also stops once the run record is
+  // terminal so a stale/stuck session can't keep us polling forever.
+  const isSyncing = isCanvasGenerationRunning({
     genTaskId,
     genTaskLoading,
     latestRun: genTask?.latest_run,
     session: genSession,
   });
-  const isGenerating = !!genTaskId && running;
+  // Whether the agent is actively producing the canvas right now. Drives the
+  // "Generating…" UI (notice, composer, undo/redo). A local session stays
+  // "connected" after its single generation prompt completes, so key off the
+  // pending prompt, not the connection — otherwise the notice never clears. A
+  // terminal run record always wins so a stuck session can't strand the notice.
+  const isGenerating = (() => {
+    if (!genTaskId) return false;
+    if (genTaskLoading) return true;
+    if (genTask?.latest_run?.environment === "cloud") {
+      const cloudStatus =
+        genSession?.cloudStatus ?? genTask?.latest_run?.status ?? null;
+      return !isTerminalStatus(cloudStatus);
+    }
+    if (isTerminalStatus(genTask?.latest_run?.status)) return false;
+    return (
+      genSession?.status === "connecting" ||
+      genSession?.isPromptPending === true
+    );
+  })();
 
-  // Poll the record while generating so a just-published canvas appears.
+  // Poll the record while the session is alive so a just-published canvas
+  // appears (the publish lands while the prompt is still pending).
   useQuery(
     trpc.dashboards.get.queryOptions(
       { id: dashboardId },
       {
-        enabled: !!dashboardId && isGenerating,
-        refetchInterval: isGenerating ? 4000 : false,
+        enabled: !!dashboardId && isSyncing,
+        refetchInterval: isSyncing ? 4000 : false,
       },
     ),
   );
@@ -176,6 +202,11 @@ export function FreeformCanvasView({
 
   return (
     <Flex height="100%" overflow="hidden">
+      {/* A generating canvas can pause on a tool-permission request; surface it
+          here so the user can approve without opening the underlying task. */}
+      {interactive && genTaskId && (
+        <CanvasPermissionDialog taskId={genTaskId} />
+      )}
       <Flex direction="column" className="flex-1 bg-gray-1" overflow="hidden">
         {interactive && (
           <Flex

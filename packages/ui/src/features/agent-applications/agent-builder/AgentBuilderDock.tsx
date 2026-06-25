@@ -13,10 +13,9 @@ import { useAuthStateValue } from "../../auth/store";
 import { AgentChatPendingApprovalCard } from "../components/AgentChatPendingApprovalCard";
 import { AgentChatSurface } from "../components/AgentChatSurface";
 import { AgentDetailEmptyState } from "../components/AgentDetailLayout";
-import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { useAgentChatPendingApproval } from "../hooks/useAgentChatPendingApproval";
-import { resolveIngressBaseUrl } from "../utils/ingress";
+import { agentIngressBaseUrl } from "../utils/ingress";
 import { AgentBuilderSecretForm } from "./AgentBuilderSecretForm";
 import { AgentBuilderSeedDialog } from "./AgentBuilderSeedDialog";
 import {
@@ -73,12 +72,11 @@ function buildAgentBuilderContext(
  * drive the UI via `focus_*`.
  */
 export function AgentBuilderDock() {
-  const { data: application } = useAgentApplication(AGENT_BUILDER_SLUG);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
-  const ingressBaseUrl = resolveIngressBaseUrl(
-    application?.ingress_base_url,
-    cloudRegion,
-  );
+  // The builder is a first-party, slug-routed agent reachable from any project,
+  // so we address its ingress directly from (slug, region) rather than loading
+  // its API record — which is project-scoped and 404s outside its home project.
+  const ingressBaseUrl = agentIngressBaseUrl(AGENT_BUILDER_SLUG, cloudRegion);
 
   const client = useAuthenticatedClient();
   const currentProjectId = useAuthStateValue((s) => s.currentProjectId);
@@ -98,6 +96,8 @@ export function AgentBuilderDock() {
   const consumeSeed = useAgentBuilderStore((s) => s.consumeSeed);
   const pendingSecret = useAgentBuilderStore((s) => s.pendingSecret);
   const setPendingSecret = useAgentBuilderStore((s) => s.setPendingSecret);
+  const lastSession = useAgentBuilderStore((s) => s.lastSession);
+  const setLastSession = useAgentBuilderStore((s) => s.setLastSession);
   const [secretBusy, setSecretBusy] = useState(false);
   const [placeholder] = useState(
     () =>
@@ -119,10 +119,58 @@ export function AgentBuilderDock() {
       }),
     clientTools,
   });
-  const { data: pendingApproval } = useAgentChatPendingApproval(
-    AGENT_BUILDER_SLUG,
-    chat.sessionId,
-  );
+  const pendingApproval = useAgentChatPendingApproval(CHAT_ID);
+
+  // Persist the session (with its project/org) as it's assigned, so a reload can
+  // resume it in the right context.
+  useEffect(() => {
+    if (chat.sessionId) {
+      setLastSession({
+        id: chat.sessionId,
+        projectId: currentProjectId,
+        orgId: currentOrgId,
+      });
+    }
+  }, [chat.sessionId, currentProjectId, currentOrgId, setLastSession]);
+
+  // On (re)mount, rehydrate the last conversation from the ingress — the
+  // in-memory chat store doesn't survive a reload. Fires once, after the
+  // persisted `lastSession` has hydrated, and only when the chat is empty AND
+  // the session belongs to the current project/org. `resume` re-attaches
+  // `/listen` only if the session is still live; otherwise it's read-only
+  // history to continue from.
+  const resumedRef = useRef(false);
+  useEffect(() => {
+    if (resumedRef.current || !lastSession) return;
+    if (chat.sessionId || chat.messages.length > 0) {
+      resumedRef.current = true;
+      return;
+    }
+    resumedRef.current = true;
+    if (
+      lastSession.projectId === currentProjectId &&
+      lastSession.orgId === currentOrgId
+    ) {
+      void chat.resume(lastSession.id);
+    }
+  }, [lastSession, currentProjectId, currentOrgId, chat]);
+
+  // Switching project/org starts the dock fresh — a conversation belongs to the
+  // context it began in (the builder threads project_id into its tools; the
+  // session is org-scoped at the ingress, so it isn't reachable from another
+  // org). Skips the initial render so it doesn't wipe a just-resumed chat.
+  const contextKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${currentOrgId ?? ""}:${currentProjectId ?? ""}`;
+    if (contextKeyRef.current === null) {
+      contextKeyRef.current = key;
+      return;
+    }
+    if (contextKeyRef.current === key) return;
+    contextKeyRef.current = key;
+    chat.newChat();
+    setLastSession(null);
+  }, [currentProjectId, currentOrgId, chat, setLastSession]);
 
   // Resolve a pending set_secret: PUT the value straight to the env-keys API
   // (never through the agent), then wake the parked session with the outcome.
@@ -182,6 +230,7 @@ export function AgentBuilderDock() {
     if (!seedConfirm) return;
     setPendingSecret(null);
     chat.newChat();
+    setLastSession(null);
     chat.send(seedConfirm);
     setSeedConfirm(null);
   }
@@ -233,6 +282,7 @@ export function AgentBuilderDock() {
               onClick={() => {
                 setPendingSecret(null);
                 chat.newChat();
+                setLastSession(null);
               }}
             >
               <PlusIcon size={14} />
@@ -255,7 +305,7 @@ export function AgentBuilderDock() {
         <div className="p-4">
           <AgentDetailEmptyState
             title="Agent Builder unavailable"
-            description="The Agent Builder deployment has no reachable ingress in this environment."
+            description="Couldn't resolve your PostHog region, so the Agent Builder ingress can't be reached yet."
           />
         </div>
       ) : (

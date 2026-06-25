@@ -4,6 +4,7 @@ import { ArrowUp, Stop } from "@phosphor-icons/react";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { cycleModeOption } from "@posthog/ui/features/sessions/sessionStore";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { hasOpenOverlay } from "@posthog/ui/utils/overlay";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { EditorContent } from "@tiptap/react";
@@ -17,6 +18,7 @@ import { useTiptapEditor } from "../tiptap/useTiptapEditor";
 import type { EditorHandle } from "../types";
 import { AttachmentMenu } from "./AttachmentMenu";
 import { AttachmentsBar } from "./AttachmentsBar";
+import { SlotMachineSubmit } from "./SlotMachineSubmit";
 
 export type { EditorHandle };
 
@@ -107,6 +109,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
   ) => {
     const focusRequested = useDraftStore((s) => s.focusRequested[sessionId]);
     const clearFocusRequest = useDraftStore((s) => s.actions.clearFocusRequest);
+    const slotMachineMode = useSettingsStore((s) => s.slotMachineMode);
     const { data: skills } = useSkills();
 
     const {
@@ -278,13 +281,17 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       e.stopPropagation();
     }, []);
 
-    const handleSubmitClick = (e: React.MouseEvent) => {
-      e.stopPropagation();
+    const doSubmit = useCallback(() => {
       if (onSubmitClick) {
         onSubmitClick();
       } else {
         submit();
       }
+    }, [onSubmitClick, submit]);
+
+    const handleSubmitClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      doSubmit();
     };
 
     const submitBlocked = submitDisabledExternal || isEmpty;
@@ -292,92 +299,104 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       submitTooltipOverride ??
       (submitBlocked ? "Enter a message" : "Send message");
 
-    const submitButton =
-      isLoading && onCancel ? (
-        <Tooltip content="Stop">
-          <InputGroupButton
-            variant="destructive"
-            size="icon-sm"
-            onClick={onCancel}
-            aria-label="Stop"
-          >
-            <Stop size={14} weight="fill" />
-          </InputGroupButton>
-        </Tooltip>
-      ) : (
-        <Tooltip content={submitTooltip}>
-          <InputGroupButton
-            variant="primary"
-            size="icon-sm"
-            onClick={handleSubmitClick}
-            disabled={submitBlocked}
-            aria-label="Send message"
-            {...(tourTarget && { "data-tour": `${tourTarget}-submit` })}
-          >
-            <ArrowUp size={14} weight="bold" />
-          </InputGroupButton>
-        </Tooltip>
-      );
+    // Stop takes priority over everything: you cancel a run, you don't gamble
+    // on it. With slot machine mode on, the send affordance moves out to the
+    // pull-lever mounted beside the composer, so the toolbar slot is empty.
+    const inStopMode = isLoading && !!onCancel;
+    const submitButton = inStopMode ? (
+      <Tooltip content="Stop">
+        <InputGroupButton
+          variant="destructive"
+          size="icon-sm"
+          onClick={onCancel}
+          aria-label="Stop"
+        >
+          <Stop size={14} weight="fill" />
+        </InputGroupButton>
+      </Tooltip>
+    ) : slotMachineMode ? null : (
+      <Tooltip content={submitTooltip}>
+        <InputGroupButton
+          variant="primary"
+          size="icon-sm"
+          onClick={handleSubmitClick}
+          disabled={submitBlocked}
+          aria-label="Send message"
+          {...(tourTarget && { "data-tour": `${tourTarget}-submit` })}
+        >
+          <ArrowUp size={14} weight="bold" />
+        </InputGroupButton>
+      </Tooltip>
+    );
 
     return (
       <Flex direction="column" gap="1">
-        <InputGroup
-          onClick={handleContainerClick}
-          onContextMenu={handleContextMenu}
-          className={`h-auto cursor-text bg-card ${isBashMode ? "ring-1 ring-blue-9" : "focus-within:ring-1 focus-within:ring-purple-9"}`}
-          {...(tourTarget && {
-            "data-tour": `${tourTarget}-editor`,
-            "data-tour-ready": !isEmpty ? "true" : undefined,
-          })}
-        >
-          {attachments.length > 0 && (
-            <InputGroupAddon align="block-start">
-              <AttachmentsBar
-                attachments={attachments}
-                onRemove={removeAttachment}
-              />
-            </InputGroupAddon>
-          )}
-          <div
-            className={clsx(
-              "cli-editor-scroll relative min-h-[50px] w-full flex-1 overflow-y-auto px-2 py-2 text-[14px]",
-              editorHeight === "large" ? "max-h-[45vh]" : "max-h-[200px]",
-            )}
+        <Flex gap="2" align="stretch">
+          <InputGroup
+            onClick={handleContainerClick}
+            onContextMenu={handleContextMenu}
+            className={`h-auto flex-1 cursor-text bg-card ${isBashMode ? "ring-1 ring-blue-9" : "focus-within:ring-1 focus-within:ring-purple-9"}`}
+            {...(tourTarget && {
+              "data-tour": `${tourTarget}-editor`,
+              "data-tour-ready": !isEmpty ? "true" : undefined,
+            })}
           >
-            <EditorContent editor={editor} />
-          </div>
-          <InputGroupAddon align="block-end" className="p-1">
-            <AttachmentMenu
-              disabled={disabled}
-              repoPath={repoPath}
-              taskId={taskId}
-              onAddAttachment={addAttachment}
-              onAttachFiles={onAttachFiles}
-              onInsertChip={insertChip}
-              onRemoveChip={removeChipById}
-            />
-            {modeOption && onModeChange && (
-              <ModeSelector
-                modeOption={modeOption}
-                onChange={onModeChange}
-                allowBypassPermissions={allowBypassPermissions}
+            {attachments.length > 0 && (
+              <InputGroupAddon align="block-start">
+                <AttachmentsBar
+                  attachments={attachments}
+                  onRemove={removeAttachment}
+                />
+              </InputGroupAddon>
+            )}
+            <div
+              className={clsx(
+                "cli-editor-scroll relative min-h-[50px] w-full flex-1 overflow-y-auto px-2 py-2 text-[14px]",
+                editorHeight === "large" ? "max-h-[45vh]" : "max-h-[200px]",
+              )}
+            >
+              <EditorContent editor={editor} />
+            </div>
+            <InputGroupAddon align="block-end" className="p-1">
+              <AttachmentMenu
                 disabled={disabled}
+                repoPath={repoPath}
+                taskId={taskId}
+                onAddAttachment={addAttachment}
+                onAttachFiles={onAttachFiles}
+                onInsertChip={insertChip}
+                onRemoveChip={removeChipById}
               />
-            )}
-            {modelSelector && <span>{modelSelector}</span>}
-            {reasoningSelector && <span>{reasoningSelector}</span>}
-            {messagingModeToggle && <span>{messagingModeToggle}</span>}
-            {isBashMode && (
-              <Text className="font-mono text-(--blue-9) text-[13px]">
-                ! bash
-              </Text>
-            )}
-            <span className="ml-auto flex items-center gap-1">
-              {historyButton}
-              {submitButton}
-            </span>
-          </InputGroupAddon>
-        </InputGroup>
+              {modeOption && onModeChange && (
+                <ModeSelector
+                  modeOption={modeOption}
+                  onChange={onModeChange}
+                  allowBypassPermissions={allowBypassPermissions}
+                  disabled={disabled}
+                />
+              )}
+              {modelSelector && <span>{modelSelector}</span>}
+              {reasoningSelector && <span>{reasoningSelector}</span>}
+              {messagingModeToggle && <span>{messagingModeToggle}</span>}
+              {isBashMode && (
+                <Text className="font-mono text-(--blue-9) text-[13px]">
+                  ! bash
+                </Text>
+              )}
+              <span className="ml-auto flex items-center gap-1">
+                {historyButton}
+                {submitButton}
+              </span>
+            </InputGroupAddon>
+          </InputGroup>
+          {slotMachineMode && !inStopMode && (
+            <SlotMachineSubmit
+              disabled={submitBlocked}
+              onSubmit={doSubmit}
+              tourTarget={tourTarget}
+            />
+          )}
+        </Flex>
       </Flex>
     );
   },

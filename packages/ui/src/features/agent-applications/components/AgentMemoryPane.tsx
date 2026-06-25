@@ -28,7 +28,7 @@ export function AgentMemoryPane({ idOrSlug }: { idOrSlug: string }) {
   return (
     <AgentDetailLayout idOrSlug={idOrSlug} activeTab="memory" fill>
       <Flex direction="column" className="h-full min-h-0">
-        <Flex gap="1" className="shrink-0 border-(--gray-5) border-b px-4 py-2">
+        <Flex gap="2" className="shrink-0 border-(--gray-5) border-b px-4 py-2">
           {(["files", "tables"] as const).map((v) => (
             <button
               key={v}

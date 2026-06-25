@@ -3,6 +3,7 @@ import type {
   Task,
   TaskRunArtefactContent,
 } from "@posthog/shared/types";
+import { isTerminalStatus } from "@posthog/shared/types";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 
 // Task↔report associations are unlabelled — a task's purpose is derived from the report's
@@ -119,4 +120,31 @@ export function useReportTasks(
 export function getTaskPrUrl(task: Task): string | null {
   const prUrl = task.latest_run?.output?.pr_url;
   return typeof prUrl === "string" && prUrl.length > 0 ? prUrl : null;
+}
+
+/**
+ * Find an implementation task linked to the report whose work is still live, so
+ * re-engaging the report should resume it rather than spin up a duplicate PR. A
+ * task is continuable when its latest run already produced a PR (the report's
+ * `implementation_pr_url` may be stale or not yet set, but the task knows) or is
+ * still running. A failed/cancelled run with no PR is *not* continuable — the
+ * user can legitimately start a fresh attempt there.
+ *
+ * Prefers a task with a PR over a merely-running one; `reportTasks` is already
+ * implementation-first ordered, so the first match wins among equals.
+ */
+export function findContinuableImplementationTask(
+  reportTasks: ReportTaskData[] | undefined,
+): Task | null {
+  if (!reportTasks) return null;
+  const implementation = reportTasks.filter(
+    (t) => t.purpose === "implementation",
+  );
+  const withPr = implementation.find((t) => getTaskPrUrl(t.task));
+  if (withPr) return withPr.task;
+  const running = implementation.find((t) => {
+    const status = t.task.latest_run?.status;
+    return status != null && !isTerminalStatus(status);
+  });
+  return running?.task ?? null;
 }
