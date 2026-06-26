@@ -327,11 +327,11 @@ export function useTaskCreation({
             // Exclude folder chips — only file paths are readable by the title
             // generator's readAbsoluteFile call.
             const folderIds = new Set(
-              content.segments
-                .filter(
-                  (seg) => seg.type === "chip" && seg.chip.type === "folder",
-                )
-                .map((seg) => seg.chip.id),
+              content.segments.flatMap((seg) =>
+                seg.type === "chip" && seg.chip.type === "folder"
+                  ? [seg.chip.id]
+                  : [],
+              ),
             );
             const fileOnlyPaths = filePaths.filter((p) => !folderIds.has(p));
             if (fileOnlyPaths.length > 0) {

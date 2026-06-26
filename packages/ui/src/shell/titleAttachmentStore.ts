@@ -25,22 +25,20 @@ interface TitleAttachmentStore {
   clear: (taskId: string) => void;
 }
 
-const useTitleAttachmentStore = create<TitleAttachmentStore>(
-  (set, get) => ({
-    byTaskId: {},
-    set: (taskId, filePaths) =>
-      set((state) => ({
-        byTaskId: { ...state.byTaskId, [taskId]: filePaths },
-      })),
-    get: (taskId) => get().byTaskId[taskId],
-    clear: (taskId) =>
-      set((state) => {
-        if (!(taskId in state.byTaskId)) return state;
-        const { [taskId]: _removed, ...rest } = state.byTaskId;
-        return { byTaskId: rest };
-      }),
-  }),
-);
+const useTitleAttachmentStore = create<TitleAttachmentStore>((set, get) => ({
+  byTaskId: {},
+  set: (taskId, filePaths) =>
+    set((state) => ({
+      byTaskId: { ...state.byTaskId, [taskId]: filePaths },
+    })),
+  get: (taskId) => get().byTaskId[taskId],
+  clear: (taskId) =>
+    set((state) => {
+      if (!(taskId in state.byTaskId)) return state;
+      const { [taskId]: _removed, ...rest } = state.byTaskId;
+      return { byTaskId: rest };
+    }),
+}));
 
 export const titleAttachmentStoreApi = {
   set: (taskId: string, filePaths: string[]) =>
