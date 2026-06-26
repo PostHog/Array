@@ -6,6 +6,7 @@ import {
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
+import type { WorkspaceMode } from "@posthog/shared";
 import { buildFreeformGenerationPrompt } from "@posthog/ui/features/canvas/freeformPrompt";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
@@ -56,6 +57,10 @@ export function useGenerateFreeformCanvas(args: {
       currentCode?: string;
       // Default on (opt out in the bar): seed the starter scaffold on first build.
       useStarter?: boolean;
+      // Dev-only override (the bar exposes a local/cloud picker in dev so a
+      // local build of these features can be tested before merging). Production
+      // always runs in the cloud — see the default below.
+      workspaceMode?: WorkspaceMode;
     }): Promise<string | null> => {
       setIsStarting(true);
       try {
@@ -73,10 +78,11 @@ export function useGenerateFreeformCanvas(args: {
             taskDescription: `Generate canvas "${name}"`,
             // Unattended generation: run in auto mode so it doesn't stall on edit-approval prompts.
             executionMode: "auto" as const,
-            // Always a cloud run — canvas generation should never tie up (or
-            // depend on) the local machine. Hard-coded, not the sticky
-            // last-used workspace mode, so it's unaffected by prior local tasks.
-            workspaceMode: "cloud",
+            // Defaults to a cloud run — canvas generation should never tie up
+            // (or depend on) the local machine, and it's never the sticky
+            // last-used workspace mode. The dev-only picker can override to
+            // "local" to test a local build of these features before merging.
+            workspaceMode: opts.workspaceMode ?? "cloud",
             allowNoRepo: true,
             channelContext,
             channelName,

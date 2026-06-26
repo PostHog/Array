@@ -1,6 +1,11 @@
+import { Tooltip, TooltipContent, TooltipTrigger } from "@posthog/quill";
 import { useGenerateFreeformCanvas } from "@posthog/ui/features/canvas/hooks/useGenerateFreeformCanvas";
 import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
 import type { EditorHandle } from "@posthog/ui/features/message-editor/types";
+import {
+  type WorkspaceMode,
+  WorkspaceModeSelect,
+} from "@posthog/ui/features/task-detail/components/WorkspaceModeSelect";
 import { forwardRef, useState } from "react";
 
 // Composer that kicks off freeform canvas generation as a dedicated task: the
@@ -55,6 +60,10 @@ export const FreeformGenerateBar = forwardRef<
   const isEdit = !!currentCode?.trim();
   const [useStarter, setUseStarter] = useState(true);
 
+  // Generation always runs in the cloud, except the dev-only picker below lets a
+  // local build of these features be tested before it's merged to the cloud env.
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("cloud");
+
   const run = async (text: string) => {
     const instruction = text.trim();
     if (!instruction) return;
@@ -62,6 +71,7 @@ export const FreeformGenerateBar = forwardRef<
       instruction,
       currentCode,
       useStarter: !isEdit && useStarter,
+      workspaceMode,
     });
     if (taskId) onStarted?.(taskId);
   };
@@ -91,6 +101,23 @@ export const FreeformGenerateBar = forwardRef<
           Start from scaffold (faster, more consistent — uncheck to build from
           scratch)
         </label>
+      )}
+      {/* Dev-only: pick local vs cloud so a local build can be tested pre-merge. */}
+      {import.meta.env.DEV && (
+        <Tooltip>
+          <TooltipTrigger render={<div className="self-start px-1" />}>
+            <WorkspaceModeSelect
+              value={workspaceMode}
+              onChange={setWorkspaceMode}
+              overrideModes={["local", "cloud"]}
+              disabled={isStarting}
+              size="1"
+            />
+          </TooltipTrigger>
+          <TooltipContent>
+            Dev mode only — generation always runs in the cloud in production.
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   );
