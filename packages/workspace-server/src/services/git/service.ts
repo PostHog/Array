@@ -432,14 +432,25 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
 
   private readonly lastFetchTime = new Map<string, number>();
 
+  /**
+   * Always runs `git fetch`, bypassing the staleness throttle. Use when the
+   * caller has explicitly asked for a fresh view of the remote (e.g.,
+   * `fetchFromRemote: true`) — otherwise a fetch triggered by a preceding
+   * mutation can silently swallow this one and leave the snapshot stale at
+   * exactly the moment it mattered.
+   */
+  private async forceFetch(directoryPath: string): Promise<void> {
+    try {
+      await gitFetch(directoryPath);
+      this.lastFetchTime.set(directoryPath, Date.now());
+    } catch {}
+  }
+
   private async fetchIfStale(directoryPath: string): Promise<void> {
     const now = Date.now();
     const lastFetch = this.lastFetchTime.get(directoryPath) ?? 0;
     if (now - lastFetch > FETCH_THROTTLE_MS) {
-      try {
-        await gitFetch(directoryPath);
-        this.lastFetchTime.set(directoryPath, now);
-      } catch {}
+      await this.forceFetch(directoryPath);
     }
   }
 
@@ -448,7 +459,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
     fetchFromRemote = false,
   ): Promise<GitSyncStatus> {
     if (fetchFromRemote) {
-      await this.fetchIfStale(directoryPath);
+      await this.forceFetch(directoryPath);
     }
 
     const status = await getSyncStatus(directoryPath);

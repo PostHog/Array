@@ -325,6 +325,19 @@ describe("GitService integration (git-read + git-mutate)", () => {
       // Explicit fetch: `work` learns it is one commit behind.
       const fresh = await git.getGitSyncStatus(work, true);
       expect(fresh.behind).toBe(1);
+
+      // A second fetch immediately after must still hit the network — the
+      // staleness throttle must never silently swallow an opt-in
+      // fetchFromRemote=true call.
+      await fs.writeFile(
+        path.join(otherClone, "remote-only-2.txt"),
+        "from-other-2\n",
+      );
+      commitAll(otherClone, "from other clone (second)");
+      run("git push origin main", otherClone);
+
+      const fresher = await git.getGitSyncStatus(work, true);
+      expect(fresher.behind).toBe(2);
     }, 15_000);
   });
 });
