@@ -2,14 +2,6 @@ import { Cloud, GitFork, HardDrives } from "@phosphor-icons/react";
 import type { WorkspaceMode } from "@posthog/shared";
 import { Tooltip } from "../../../primitives/Tooltip";
 
-// Visual identity for each workspace mode, so a task's location (running on the
-// local checkout, in an isolated git worktree, or in the cloud) is legible at a
-// glance from the header without opening anything.
-//
-// Cloud mirrors the sidebar TaskIcon (Cloud glyph, accent). Worktree uses
-// GitFork rather than GitBranch on purpose: the sidebar already uses an amber
-// GitBranch to mean "has uncommitted changes", so reusing it here would be
-// ambiguous. Worktree gets teal — a hue none of the sidebar status icons use.
 const MODE_META: Record<
   WorkspaceMode,
   { Icon: typeof Cloud; label: string; color: string }
@@ -31,11 +23,6 @@ const MODE_META: Record<
   },
 };
 
-/**
- * Small icon shown before the task title that distinguishes where a task runs:
- * local working copy, isolated git worktree, or cloud. Renders nothing until
- * the workspace mode is known so it never flickers a wrong indicator.
- */
 export function WorkspaceModeBadge({ mode }: { mode?: WorkspaceMode }) {
   if (!mode) return null;
   const { Icon, label, color } = MODE_META[mode];
