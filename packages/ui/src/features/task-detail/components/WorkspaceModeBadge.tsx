@@ -26,7 +26,7 @@ const MODE_META: Record<
   },
   cloud: {
     Icon: Cloud,
-    label: "Cloud — runs in the cloud",
+    label: "Cloud — runs on a remote machine",
     color: "var(--accent-11)",
   },
 };
