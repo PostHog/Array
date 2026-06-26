@@ -324,8 +324,18 @@ export function useTaskCreation({
             // for pasted-text prompts whose only signal is the file body, and
             // especially for cloud tasks where the local path is otherwise lost
             // once the file is uploaded as an artifact.
-            if (filePaths.length > 0) {
-              titleAttachmentStoreApi.set(output.task.id, filePaths);
+            // Exclude folder chips — only file paths are readable by the title
+            // generator's readAbsoluteFile call.
+            const folderIds = new Set(
+              content.segments
+                .filter(
+                  (seg) => seg.type === "chip" && seg.chip.type === "folder",
+                )
+                .map((seg) => seg.chip.id),
+            );
+            const fileOnlyPaths = filePaths.filter((p) => !folderIds.has(p));
+            if (fileOnlyPaths.length > 0) {
+              titleAttachmentStoreApi.set(output.task.id, fileOnlyPaths);
             }
             if (signalReportId) {
               clearTaskInputReportAssociation();

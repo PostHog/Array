@@ -103,6 +103,11 @@ export function useChatTitleGenerator(task: Task): void {
         );
         const result = await titleGenerator.generateTitleAndSummary(content);
         if (result) {
+          // Drop the stash once a title has been successfully produced so the
+          // map doesn't grow across a long-lived session. Keeping it on failure
+          // lets the prompt-based regeneration at REGENERATE_INTERVAL pick it
+          // up and try again with the file contents.
+          titleAttachmentStoreApi.clear(taskId);
           const { title, summary } = result;
           const titleLocked = isAutoTitleLocked(
             getCachedTask(queryClient, taskId) ?? task,
@@ -152,7 +157,6 @@ export function useChatTitleGenerator(task: Task): void {
       } catch (error) {
         log.error("Failed to update task title", { taskId, error });
       } finally {
-        titleAttachmentStoreApi.clear(taskId);
         if (shouldGenerateFromPrompts) {
           lastGeneratedAtCount.current = promptCount;
         }

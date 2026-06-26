@@ -318,6 +318,26 @@ describe("useChatTitleGenerator", () => {
     expect(mockTitleAttachmentClear).toHaveBeenCalledWith(TASK_ID);
   });
 
+  it("does not clear stashed paths when generation returns null (keeps them for prompt-path retry)", async () => {
+    mockTitleAttachmentPaths.value = ["/tmp/clip/pasted-text.txt"];
+    mockGenerateTitle.mockResolvedValue(null);
+    mockPrompts.value = ["[Attached files: pasted-text.txt]"];
+
+    renderHook(() =>
+      useChatTitleGenerator(
+        createTask({
+          title: "",
+          description: "Attached files: pasted-text.txt",
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(mockGenerateTitle).toHaveBeenCalled();
+    });
+    expect(mockTitleAttachmentClear).not.toHaveBeenCalled();
+  });
+
   it("updates conversation summary when returned", async () => {
     mockGenerateTitle.mockResolvedValue({
       title: "Some title",

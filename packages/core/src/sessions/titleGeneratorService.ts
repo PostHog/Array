@@ -13,11 +13,15 @@ import {
   type TitleGeneratorLogger,
 } from "./titleGeneratorIdentifiers";
 
-// Matches the attachment-summary line we synthesize for prompts that carry no
-// typed text — both the bare `Attached files: a.txt` description form and the
-// `1. [Attached files: a.txt]` form produced by formatPromptsForTitleInput, so
-// such a prompt is treated as "no real text" and we fall back to file content.
-const ATTACHED_FILES_REGEX = /^(?:\d+\.\s*)?\[?Attached files:.*$/gm;
+// Matches the attachment-summary sentinel we synthesize for prompts that carry
+// no typed text. Three forms need stripping:
+//   "Attached files: a.txt"          — bare description (cloud task.description)
+//   "[Attached files: a.txt]"        — bracketed session-event sentinel
+//   "1. [Attached files: a.txt]"     — numbered form from formatPromptsForTitleInput
+// The bracketed forms require a literal `[` so that user text like
+// "1. Attached files: my notes" (no brackets) is never stripped.
+const ATTACHED_FILES_REGEX =
+  /^(?:(?:\d+\.\s*)?\[Attached files:[^\]]*\]|Attached files:.*)$/gm;
 const PASTED_TEXT_SNIPPET_LIMIT = 500;
 
 const SYSTEM_PROMPT = `You are a title and summary generator. Output using exactly this format:

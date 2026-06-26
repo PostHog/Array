@@ -122,6 +122,17 @@ describe("enrichDescriptionWithFileContent", () => {
     expect(readAbsoluteFile).not.toHaveBeenCalled();
   });
 
+  it("does not strip user text that starts with 'Attached files:' but has no brackets", async () => {
+    // "1. Attached files: xyz" (no brackets) is user-typed text, not a sentinel.
+    const description = "1. Attached files: here is my task\n2. please fix it";
+    const result = await makeService().enrichDescriptionWithFileContent(
+      description,
+      ["/tmp/clip/pasted-text.txt"],
+    );
+    expect(result).toBe(description);
+    expect(readAbsoluteFile).not.toHaveBeenCalled();
+  });
+
   it("truncates content longer than 500 chars", async () => {
     const longContent = "x".repeat(600);
     readAbsoluteFile.mockResolvedValue(longContent);
