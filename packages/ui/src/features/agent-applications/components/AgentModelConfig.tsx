@@ -476,10 +476,14 @@ function ModelBrowser({
             m.provider.toLowerCase().includes(needle),
         )
       : models;
+    // Blended per-Mtok cost (input + output), not input alone: reasoning
+    // models can have cheap input but dominant output, so input-only mis-ranks
+    // exactly the models cost-conscious authors most need to compare.
+    const blended = (m: ModelCatalogEntry) => m.input + m.output;
     const sorted = [...filtered];
     if (sort === "name") sorted.sort((a, b) => a.model.localeCompare(b.model));
-    if (sort === "cheapest") sorted.sort((a, b) => a.input - b.input);
-    if (sort === "priciest") sorted.sort((a, b) => b.input - a.input);
+    if (sort === "cheapest") sorted.sort((a, b) => blended(a) - blended(b));
+    if (sort === "priciest") sorted.sort((a, b) => blended(b) - blended(a));
     return sorted;
   }, [models, q, sort]);
 

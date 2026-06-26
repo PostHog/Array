@@ -63,7 +63,7 @@ export function useApplyAgentSpec(
       for (const key of [
         agentApplicationsKeys.detail(projectId, idOrSlug),
         agentApplicationsKeys.revisions(projectId, idOrSlug),
-        ["agent-applications", "revision", projectId, idOrSlug],
+        agentApplicationsKeys.revisionPrefix(projectId, idOrSlug),
       ]) {
         void queryClient.invalidateQueries({ queryKey: key });
       }
