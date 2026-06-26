@@ -300,5 +300,31 @@ describe("GitService integration (git-read + git-mutate)", () => {
       const result = await git.sync(work, "origin");
       expect(result.success).toBe(true);
     });
+
+    it("getGitSyncStatus does not fetch by default, fetches when fetchFromRemote=true", async () => {
+      // Another clone pushes a commit. The original `work` repo only learns
+      // about it after a fetch — so this lets us tell whether a sync-status
+      // read touched the network or not.
+      const otherClone = await fs.mkdtemp(path.join(os.tmpdir(), "git-other-"));
+      dirs.push(otherClone);
+      run(`git clone ${bare} ${otherClone}`, os.tmpdir());
+      run("git config user.email 'other@test.com'", otherClone);
+      run("git config user.name 'Other'", otherClone);
+      run("git config commit.gpgsign false", otherClone);
+      await fs.writeFile(
+        path.join(otherClone, "remote-only.txt"),
+        "from-other\n",
+      );
+      commitAll(otherClone, "from other clone");
+      run("git push origin main", otherClone);
+
+      // Default: no fetch, so `work` still thinks it is at the remote tip.
+      const stale = await git.getGitSyncStatus(work);
+      expect(stale.behind).toBe(0);
+
+      // Explicit fetch: `work` learns it is one commit behind.
+      const fresh = await git.getGitSyncStatus(work, true);
+      expect(fresh.behind).toBe(1);
+    }, 15_000);
   });
 });

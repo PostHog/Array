@@ -504,7 +504,7 @@ container.bind(GIT_DIFF_SOURCE).toDynamicValue((ctx) => {
     fetchIfStale: async (directoryPath: string) => {
       await git().getGitSyncStatus.query({
         directoryPath,
-        forceRefresh: true,
+        fetchFromRemote: true,
       });
     },
   };

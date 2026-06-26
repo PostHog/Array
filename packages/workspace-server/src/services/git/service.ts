@@ -445,12 +445,11 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
 
   private async getGitSyncStatusInternal(
     directoryPath: string,
-    forceRefresh = false,
+    fetchFromRemote = false,
   ): Promise<GitSyncStatus> {
-    if (forceRefresh) {
-      this.lastFetchTime.delete(directoryPath);
+    if (fetchFromRemote) {
+      await this.fetchIfStale(directoryPath);
     }
-    await this.fetchIfStale(directoryPath);
 
     const status = await getSyncStatus(directoryPath);
     return {
@@ -483,7 +482,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
       includeChangedFiles ? this.getChangedFilesHead(directoryPath) : null,
       includeDiffStats ? this.getDiffStats(directoryPath) : null,
       includeSyncStatus
-        ? this.getGitSyncStatusInternal(directoryPath, true)
+        ? this.getGitSyncStatusInternal(directoryPath, false)
         : null,
       includeLatestCommit ? this.getLatestCommit(directoryPath) : null,
     ]);
@@ -508,9 +507,9 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
 
   async getGitSyncStatus(
     directoryPath: string,
-    forceRefresh = false,
+    fetchFromRemote = false,
   ): Promise<GitSyncStatus> {
-    return this.getGitSyncStatusInternal(directoryPath, forceRefresh);
+    return this.getGitSyncStatusInternal(directoryPath, fetchFromRemote);
   }
 
   async createBranch(directoryPath: string, branchName: string): Promise<void> {
