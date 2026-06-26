@@ -558,6 +558,7 @@ export class AgentServer {
         () => {
           this.logger.debug(
             `HTTP server listening on port ${this.config.port}`,
+            { bootMs: Math.round(process.uptime() * 1000) },
           );
           resolve();
         },
@@ -1225,7 +1226,9 @@ export class AgentServer {
       },
     });
 
-    this.logger.debug("Session initialized successfully");
+    this.logger.debug("Session initialized successfully", {
+      bootMs: Math.round(process.uptime() * 1000),
+    });
     this.logger.debug(
       `Agent version: ${this.config.version ?? packageJson.version}`,
     );
