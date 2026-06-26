@@ -36,19 +36,13 @@ const MODE_META: Record<
  * local working copy, isolated git worktree, or cloud. Renders nothing until
  * the workspace mode is known so it never flickers a wrong indicator.
  */
-export function WorkspaceModeBadge({
-  mode,
-  size = 13,
-}: {
-  mode?: WorkspaceMode;
-  size?: number;
-}) {
+export function WorkspaceModeBadge({ mode }: { mode?: WorkspaceMode }) {
   if (!mode) return null;
   const { Icon, label, color } = MODE_META[mode];
   return (
     <Tooltip content={label} side="bottom" delayDuration={300}>
       <span className="no-drag flex shrink-0 items-center justify-center">
-        <Icon size={size} weight="fill" color={color} />
+        <Icon size={13} weight="fill" color={color} />
       </span>
     </Tooltip>
   );

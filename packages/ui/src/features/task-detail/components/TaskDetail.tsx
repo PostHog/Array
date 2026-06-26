@@ -128,6 +128,11 @@ export function TaskDetail({
       channelName ? (
         <ChannelBreadcrumb
           channelName={channelName}
+          leafIcon={
+            workspaceMode ? (
+              <WorkspaceModeBadge mode={workspaceMode} />
+            ) : undefined
+          }
           leafLabel={task.title}
           onRename={handleTitleEditSubmit}
           trailing={trailing}
