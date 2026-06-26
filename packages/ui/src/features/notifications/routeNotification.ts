@@ -1,16 +1,23 @@
 import type { NotificationTarget } from "@posthog/platform/notifications";
 
-// Whether two targets point at the same thing (same kind + ids).
+// Stable identity string for a target. A new kind is a compile error here (the
+// switch is exhaustive), so equality and key-based lookups stay in one place.
+export function targetKey(target: NotificationTarget): string {
+  switch (target.kind) {
+    case "task":
+      return `task:${target.taskId}`;
+    case "canvas":
+      return `canvas:${target.channelId}:${target.dashboardId}`;
+  }
+}
+
+// Whether two targets point at the same thing.
 export function targetsEqual(
   a: NotificationTarget | undefined,
   b: NotificationTarget | undefined,
 ): boolean {
-  if (!a || !b || a.kind !== b.kind) return false;
-  if (a.kind === "task" && b.kind === "task") return a.taskId === b.taskId;
-  if (a.kind === "canvas" && b.kind === "canvas") {
-    return a.channelId === b.channelId && a.dashboardId === b.dashboardId;
-  }
-  return false;
+  if (!a || !b) return false;
+  return targetKey(a) === targetKey(b);
 }
 
 export type NotificationChannel = "suppress" | "toast" | "native";
