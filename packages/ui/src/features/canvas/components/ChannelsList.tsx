@@ -58,12 +58,8 @@ import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTask
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
-import {
-  NewCanvasDialog,
-  trackAndCreateCanvas,
-} from "@posthog/ui/features/canvas/components/NewCanvasMenu";
+import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
-import { useCanvasTemplates } from "@posthog/ui/features/canvas/hooks/useCanvasTemplates";
 import {
   useChannelStars,
   useChannelStarToggle,
@@ -976,11 +972,9 @@ function ChannelSection({
   const [open, setOpen] = useState(isActive);
   // Lifted so the hover button group stays visible while the menu is open.
   const [menuOpen, setMenuOpen] = useState(false);
-  // The "+" dropdown (New task / New canvas) and the canvas template picker it
-  // can open. Both keep the hover actions pinned while active.
+  // The "+" dropdown (New task / New canvas). Keeps the hover actions pinned
+  // while open.
   const [newMenuOpen, setNewMenuOpen] = useState(false);
-  const [canvasOpen, setCanvasOpen] = useState(false);
-  const canvasTemplates = useCanvasTemplates();
   const createAndOpenCanvas = useCreateAndOpenDashboard(channel.id);
   // Shared by the "..." dropdown and the right-click context menu so both offer
   // the same star / edit / rename / delete actions.
@@ -1144,7 +1138,7 @@ function ChannelSection({
                           aria-label={`New in ${channel.name}`}
                           className={cn(
                             "gap-1 transition-opacity group-hover:border-border",
-                            menuOpen || newMenuOpen || canvasOpen
+                            menuOpen || newMenuOpen
                               ? "opacity-100"
                               : "opacity-0 group-hover/chan:opacity-100",
                           )}
@@ -1181,19 +1175,14 @@ function ChannelSection({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
-                    // No templates loaded yet: create with the default
-                    // template, matching NewCanvasMenu's fallback. Otherwise
-                    // open the template picker.
-                    if (canvasTemplates.length === 0) {
-                      trackAndCreateCanvas(
-                        channel.id,
-                        undefined,
-                        "sidebar",
-                        () => void createAndOpenCanvas(),
-                      );
-                    } else {
-                      setCanvasOpen(true);
-                    }
+                    // Create + open a canvas with the default template directly;
+                    // the canvas's own composer drives what gets built.
+                    trackAndCreateCanvas(
+                      channel.id,
+                      undefined,
+                      "sidebar",
+                      () => void createAndOpenCanvas(),
+                    );
                   }}
                 >
                   <ChartBarIcon size={14} />
@@ -1208,12 +1197,6 @@ function ChannelSection({
               onOpenChange={setMenuOpen}
             />
           </ButtonGroup>
-          <NewCanvasDialog
-            channelId={channel.id}
-            surface="sidebar"
-            open={canvasOpen}
-            onOpenChange={setCanvasOpen}
-          />
         </div>
         {/* Children hang off a vertical guide line, like a tree. The folder
             variant's own inset is removed so the guide line controls indent. */}

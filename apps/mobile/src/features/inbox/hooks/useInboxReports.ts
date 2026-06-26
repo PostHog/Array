@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useAuthStore } from "@/features/auth";
 import {
   type DismissSignalReportInput,
@@ -55,6 +61,16 @@ export const inboxKeys = {
   processingState: ["inbox", "signal-processing-state"] as const,
 };
 
+const REPORTS_PAGE_SIZE = 100;
+
+export function getReportsNextPageParam(
+  lastPage: SignalReportsResponse,
+  allPages: SignalReportsResponse[],
+): number | undefined {
+  const loaded = allPages.reduce((n, page) => n + page.results.length, 0);
+  return loaded < lastPage.count ? loaded : undefined;
+}
+
 export function useInboxReports(options?: { enabled?: boolean }) {
   const { projectId, oauthAccessToken } = useAuthStore();
   const sortField = useInboxFilterStore((s) => s.sortField);
@@ -80,20 +96,35 @@ export function useInboxReports(options?: { enabled?: boolean }) {
     priority: buildPriorityFilterParam(priorityFilter),
   };
 
-  const query = useQuery<SignalReportsResponse>({
+  const query = useInfiniteQuery({
     queryKey: inboxKeys.list(params),
-    queryFn: () => getSignalReports(params),
+    queryFn: ({ pageParam }) =>
+      getSignalReports({
+        ...params,
+        limit: REPORTS_PAGE_SIZE,
+        offset: pageParam,
+      }),
     enabled: !!projectId && !!oauthAccessToken && (options?.enabled ?? true),
     refetchInterval: INBOX_REFETCH_INTERVAL_MS,
+    initialPageParam: 0,
+    getNextPageParam: getReportsNextPageParam,
   });
 
+  const reports = useMemo(
+    () => query.data?.pages.flatMap((page) => page.results) ?? [],
+    [query.data?.pages],
+  );
+
   return {
-    reports: query.data?.results ?? [],
-    totalCount: query.data?.count ?? 0,
+    reports,
+    totalCount: query.data?.pages[0]?.count ?? 0,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     error: query.error?.message ?? null,
     refetch: query.refetch,
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    fetchNextPage: () => query.fetchNextPage({ cancelRefetch: false }),
   };
 }
 

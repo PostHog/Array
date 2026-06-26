@@ -1,4 +1,4 @@
-import { DotsThreeIcon, TrashIcon } from "@phosphor-icons/react";
+import { DotsThreeIcon, LinkIcon, TrashIcon } from "@phosphor-icons/react";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import {
   Badge,
@@ -22,6 +22,7 @@ import {
   useDashboardMutations,
   useDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import { copyCanvasLink } from "@posthog/ui/features/canvas/utils/copyCanvasLink";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
@@ -269,6 +270,14 @@ function DashboardCardMenu({
           }
         />
         <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
+          <DropdownMenuItem
+            onClick={() =>
+              void copyCanvasLink(channelId, id, "dashboards_grid")
+            }
+          >
+            <LinkIcon size={14} />
+            Copy link
+          </DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
             disabled={isDeleting}

@@ -509,7 +509,14 @@ export const gitRouter = router({
       ).git.getPrDetailsByUrl.query({
         prUrl: input.prUrl,
       });
-      return result ?? { state: "unknown", merged: false, draft: false };
+      return (
+        result ?? {
+          state: "unknown",
+          merged: false,
+          draft: false,
+          headRefName: null,
+        }
+      );
     }),
 
   updatePrByUrl: publicProcedure

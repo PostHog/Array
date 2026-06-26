@@ -14,6 +14,7 @@ import { Flex, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCloudPrUrl } from "../../git-interaction/useCloudPrUrl";
 import { useDraftStore } from "../../message-editor/draftStore";
+import { EmbeddedSessionView } from "../../sessions/components/EmbeddedSessionView";
 import { TaskIcon } from "../../sidebar/components/items/TaskIcon";
 import { useTaskPrStatus } from "../../sidebar/useTaskPrStatus";
 import { TaskInput } from "../../task-detail/components/TaskInput";
@@ -23,7 +24,6 @@ import type {
   CommandCenterCellData,
 } from "../hooks/useCommandCenterData";
 import { CommandCenterPRButton } from "./CommandCenterPRButton";
-import { CommandCenterSessionView } from "./CommandCenterSessionView";
 import { TaskSelector } from "./TaskSelector";
 
 interface CommandCenterPanelProps {
@@ -250,8 +250,7 @@ function PopulatedCell({
       </Flex>
 
       <Flex direction="column" className="min-h-0 flex-1">
-        <CommandCenterSessionView
-          taskId={cell.task.id}
+        <EmbeddedSessionView
           task={cell.task}
           isActiveSession={isActiveSession}
         />

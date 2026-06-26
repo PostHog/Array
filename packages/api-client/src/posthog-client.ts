@@ -32,9 +32,11 @@ import type {
   AgentSessionLogsParams,
   AgentSessionsListParams,
   AgentSlackManifest,
+  AgentSpec,
   AgentUsersListResponse,
   BundleFile,
   DecideApprovalRequest,
+  ModelCatalog,
 } from "@posthog/shared/agent-platform-types";
 import type {
   ActionabilityJudgmentArtefact,
@@ -2139,6 +2141,9 @@ export class PostHogAPIClient {
         github_integration?: number | null;
         github_user_integration?: string | null;
         branch?: string | null;
+        runtime_adapter?: string | null;
+        model?: string | null;
+        reasoning_effort?: string | null;
       },
   ) {
     const teamId = await this.getTeamId();
@@ -2278,6 +2283,9 @@ export class PostHogAPIClient {
     repository: string;
     github_integration: number;
     branch?: string | null;
+    runtime_adapter?: string | null;
+    model?: string | null;
+    reasoning_effort?: string | null;
   }): Promise<{ task_id: string; run_id: string } | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/tasks/warm/`;
@@ -2291,6 +2299,9 @@ export class PostHogAPIClient {
           repository: options.repository,
           github_integration: options.github_integration,
           branch: options.branch ?? null,
+          runtime_adapter: options.runtime_adapter ?? null,
+          model: options.model ?? null,
+          reasoning_effort: options.reasoning_effort ?? null,
         }),
       },
     });
@@ -4658,6 +4669,38 @@ export class PostHogAPIClient {
         }),
       },
     });
+    // new_draft wraps the created revision: `{ revision, source_revision_id }`.
+    const data = (await response.json()) as { revision: AgentRevision };
+    return data.revision;
+  }
+
+  /** The served-model catalog + curated auto-level → model map (project-agnostic;
+   * proxies the AI gateway catalog). Powers the config-pane model browser. */
+  async getAgentModelCatalog(): Promise<ModelCatalog> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}models/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    return (await response.json()) as ModelCatalog;
+  }
+
+  /** Update a draft revision's spec (PATCH). Draft-only on the server — a
+   * ready/live spec is frozen. Replaces `spec` wholesale, so callers send the
+   * full updated spec. Returns the updated revision. */
+  async updateAgentRevisionSpec(
+    idOrSlug: string,
+    revisionId: string,
+    spec: AgentSpec,
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path,
+      overrides: { body: JSON.stringify({ spec }) },
+    });
     return (await response.json()) as AgentRevision;
   }
 
@@ -4964,14 +5007,21 @@ export class PostHogAPIClient {
     ingressBaseUrl: string,
     message: string,
     previewToken?: string | null,
+    supportedClientTools?: readonly string[],
   ): Promise<{ session_id: string; resumed?: boolean }> {
     const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/run`);
+    // `supported_client_tools`: the kind:'client' tool ids this client can
+    // execute this session, so the runner exposes only those to the model.
+    const body: Record<string, unknown> = { message };
+    if (supportedClientTools && supportedClientTools.length > 0) {
+      body.supported_client_tools = supportedClientTools;
+    }
     const response = await this.api.fetcher.fetch({
       method: "post",
       url,
       path: url.pathname,
       parameters: previewTokenHeader(previewToken),
-      overrides: { body: JSON.stringify({ message }) },
+      overrides: { body: JSON.stringify(body) },
     });
     return (await response.json()) as { session_id: string; resumed?: boolean };
   }

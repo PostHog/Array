@@ -1,5 +1,6 @@
 import type { ConversationItem } from "./buildConversationItems";
 import { extractChannelContext } from "./session-update/channelContext";
+import { extractCustomInstructions } from "./session-update/customInstructions";
 
 interface MergeConversationItemsArgs {
   conversationItems: ConversationItem[];
@@ -9,11 +10,13 @@ interface MergeConversationItemsArgs {
 
 // The pinned optimistic bubble is seeded from the bare task description, but the
 // echoed `session/prompt` that streams back from the sandbox may additionally
-// carry the channel's CONTEXT.md, folded into the prompt at task creation (see
-// buildChannelContextText in @posthog/core). Dedupe and upgrade compare on the
-// channel-context-stripped text so the echo still matches its placeholder.
+// carry the channel's CONTEXT.md and/or the user's personalization, folded into
+// the prompt at task creation (see buildChannelContextText /
+// buildCustomInstructionsText in @posthog/core). Dedupe and upgrade compare on the
+// text with both blocks stripped so the echo still matches its placeholder.
 function strippedUserContent(content: string): string {
-  return extractChannelContext(content)?.stripped ?? content;
+  const withoutChannel = extractChannelContext(content)?.stripped ?? content;
+  return extractCustomInstructions(withoutChannel)?.stripped ?? withoutChannel;
 }
 
 // Cloud's initial optimistic is pinned to the top so the user's prompt stays
