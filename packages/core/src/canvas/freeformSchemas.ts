@@ -100,7 +100,7 @@ export type CanvasDataResult = z.infer<typeof canvasDataResultSchema>;
 export const canvasLoadInsightInput = z.object({
   shortId: z.string().min(1),
   dateRange: z
-    .object({ date_from: z.string(), date_to: z.string() })
+    .object({ date_from: z.string().nullish(), date_to: z.string().nullish() })
     .optional(),
 });
 export type CanvasLoadInsightInput = z.infer<typeof canvasLoadInsightInput>;

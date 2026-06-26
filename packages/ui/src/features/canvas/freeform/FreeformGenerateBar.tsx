@@ -1,7 +1,7 @@
 import { useGenerateFreeformCanvas } from "@posthog/ui/features/canvas/hooks/useGenerateFreeformCanvas";
 import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
 import type { EditorHandle } from "@posthog/ui/features/message-editor/types";
-import { forwardRef } from "react";
+import { forwardRef, useState } from "react";
 
 // Composer that kicks off freeform canvas generation as a dedicated task: the
 // user describes what they want and the agent builds + publishes the canvas. No
@@ -48,24 +48,50 @@ export const FreeformGenerateBar = forwardRef<
     templateId,
   });
 
+  // On a FIRST build we seed the agent with a known-good starter scaffold by
+  // default (faster, more consistent than authoring from scratch). Uncheck to
+  // opt out and have the agent build from a blank canvas. Only meaningful on an
+  // empty canvas, so the toggle is hidden in edit mode.
+  const isEdit = !!currentCode?.trim();
+  const [useStarter, setUseStarter] = useState(true);
+
   const run = async (text: string) => {
     const instruction = text.trim();
     if (!instruction) return;
-    const taskId = await generate({ instruction, currentCode });
+    const taskId = await generate({
+      instruction,
+      currentCode,
+      useStarter: !isEdit && useStarter,
+    });
     if (taskId) onStarted?.(taskId);
   };
 
   return (
-    <PromptInput
-      ref={ref}
-      sessionId={sessionId}
-      editorHeight="large"
-      disabled={isStarting}
-      isLoading={isStarting}
-      enableCommands
-      enableBashMode={false}
-      hideDefaultToolbar
-      onSubmit={(text) => void run(text)}
-    />
+    <div className="flex flex-col gap-1.5">
+      <PromptInput
+        ref={ref}
+        sessionId={sessionId}
+        editorHeight="large"
+        disabled={isStarting}
+        isLoading={isStarting}
+        enableCommands
+        enableBashMode={false}
+        hideDefaultToolbar
+        onSubmit={(text) => void run(text)}
+      />
+      {!isEdit && (
+        <label className="flex cursor-pointer select-none items-center gap-1.5 self-start px-1 text-muted-foreground text-xs">
+          <input
+            type="checkbox"
+            className="cursor-pointer"
+            checked={useStarter}
+            disabled={isStarting}
+            onChange={(e) => setUseStarter(e.target.checked)}
+          />
+          Start from scaffold (faster, more consistent — uncheck to build from
+          scratch)
+        </label>
+      )}
+    </div>
   );
 });
