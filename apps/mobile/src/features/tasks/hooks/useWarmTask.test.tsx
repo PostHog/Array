@@ -141,76 +141,62 @@ describe("useWarmTask", () => {
 
   it.each<{
     name: string;
+    initial?: Partial<Props>;
     change: Partial<Props>;
-    expectedRepository: string;
-    expectedBranch: string;
+    expected: Record<string, unknown>;
   }>([
     {
       name: "repository",
       change: { repository: "acme/other" },
-      expectedRepository: "acme/other",
-      expectedBranch: "main",
+      expected: {
+        repository: "acme/other",
+        github_integration: 42,
+        branch: "main",
+        ...NULL_RUNTIME,
+      },
     },
     {
       name: "branch",
       change: { branch: "feature/x" },
-      expectedRepository: "acme/repo",
-      expectedBranch: "feature/x",
+      expected: {
+        repository: "acme/repo",
+        github_integration: 42,
+        branch: "feature/x",
+        ...NULL_RUNTIME,
+      },
+    },
+    {
+      name: "model",
+      initial: {
+        runtimeAdapter: "claude",
+        model: "claude-opus-4-8",
+        reasoningEffort: "high",
+      },
+      change: { model: "claude-sonnet-4-6" },
+      expected: {
+        repository: "acme/repo",
+        github_integration: 42,
+        branch: "main",
+        runtime_adapter: "claude",
+        model: "claude-sonnet-4-6",
+        reasoning_effort: "high",
+      },
     },
   ])(
     "warms the new selection when the $name changes",
-    async ({ change, expectedRepository, expectedBranch }) => {
-      const { rerender } = render(composing);
+    async ({ initial, change, expected }) => {
+      const base = { ...composing, ...initial };
+      const { rerender } = render(base);
       await flushDebounce();
       expect(mockWarmTask).toHaveBeenCalledOnce();
 
-      rerender({ ...composing, ...change });
+      rerender({ ...base, ...change });
       await flushDebounce();
 
-      expect(mockWarmTask).toHaveBeenLastCalledWith({
-        repository: expectedRepository,
-        github_integration: 42,
-        branch: expectedBranch,
-        ...NULL_RUNTIME,
-      });
+      expect(mockWarmTask).toHaveBeenLastCalledWith(expected);
       expect(mockWarmTask).toHaveBeenCalledTimes(2);
     },
   );
-
-  it("forwards the selected runtime and re-warms when the model changes", async () => {
-    const { rerender } = render({
-      ...composing,
-      runtimeAdapter: "claude",
-      model: "claude-opus-4-8",
-      reasoningEffort: "high",
-    });
-    await flushDebounce();
-    expect(mockWarmTask).toHaveBeenLastCalledWith({
-      repository: "acme/repo",
-      github_integration: 42,
-      branch: "main",
-      runtime_adapter: "claude",
-      model: "claude-opus-4-8",
-      reasoning_effort: "high",
-    });
-
-    rerender({
-      ...composing,
-      runtimeAdapter: "claude",
-      model: "claude-sonnet-4-6",
-      reasoningEffort: "high",
-    });
-    await flushDebounce();
-    expect(mockWarmTask).toHaveBeenLastCalledWith({
-      repository: "acme/repo",
-      github_integration: 42,
-      branch: "main",
-      runtime_adapter: "claude",
-      model: "claude-sonnet-4-6",
-      reasoning_effort: "high",
-    });
-    expect(mockWarmTask).toHaveBeenCalledTimes(2);
-  });
 
   it("warms again for a new selection after a failed warm", async () => {
     mockWarmTask.mockRejectedValueOnce(new Error("boom"));
