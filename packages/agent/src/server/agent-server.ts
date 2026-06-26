@@ -249,6 +249,7 @@ function getTaskRunStateString(
 
 export class AgentServer {
   private config: AgentServerConfig;
+  private sessionReadyBootMs?: number;
   private logger: Logger;
   private server: ServerType | null = null;
   private session: ActiveSession | null = null;
@@ -364,7 +365,11 @@ export class AgentServer {
     const app = new Hono();
 
     app.get("/health", (c) => {
-      return c.json({ status: "ok", hasSession: !!this.session });
+      return c.json({
+        status: "ok",
+        hasSession: !!this.session,
+        bootMs: this.sessionReadyBootMs,
+      });
     });
 
     app.get("/events", async (c) => {
@@ -1226,8 +1231,9 @@ export class AgentServer {
       },
     });
 
+    this.sessionReadyBootMs = Math.round(process.uptime() * 1000);
     this.logger.debug("Session initialized successfully", {
-      bootMs: Math.round(process.uptime() * 1000),
+      bootMs: this.sessionReadyBootMs,
     });
     this.logger.debug(
       `Agent version: ${this.config.version ?? packageJson.version}`,
