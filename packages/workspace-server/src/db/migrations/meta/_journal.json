@@ -85,6 +85,13 @@
       "when": 1782359760458,
       "tag": "0011_spotty_paibok",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1782484832959,
+      "tag": "0012_claude_session_imports",
+      "breakpoints": true
     }
   ]
 }

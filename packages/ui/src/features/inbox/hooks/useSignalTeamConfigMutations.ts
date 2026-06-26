@@ -1,9 +1,9 @@
 import { signalsConfigKeys } from "@posthog/core/inbox/inboxQuery";
 import type { SignalTeamConfig } from "@posthog/shared/types";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { toast } from "sonner";
 
 const TEAM_CONFIG_QUERY_KEY = signalsConfigKeys.teamConfig;
 

@@ -30,6 +30,12 @@ export const sessionConfigSchema = z.object({
   additionalDirectories: z.array(z.string()).optional(),
   /** Permission mode to use for the session (e.g. "default", "acceptEdits", "plan", "bypassPermissions") */
   permissionMode: z.string().optional(),
+  /**
+   * Session ID of an imported Claude Code CLI transcript already present in
+   * CLAUDE_CONFIG_DIR. Starts the session via loadSession so the prior
+   * history is replayed to the client. Claude adapter only.
+   */
+  importedSessionId: z.string().optional(),
 });
 
 export type SessionConfig = z.infer<typeof sessionConfigSchema>;
@@ -63,6 +69,12 @@ export const startSessionInput = z.object({
   effort: effortLevelSchema.optional(),
   model: z.string().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
+  /**
+   * Session ID of an imported Claude Code CLI transcript already present in
+   * CLAUDE_CONFIG_DIR. Starts the session via loadSession so the prior
+   * history is replayed to the client. Claude adapter only.
+   */
+  importedSessionId: z.string().optional(),
 });
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;

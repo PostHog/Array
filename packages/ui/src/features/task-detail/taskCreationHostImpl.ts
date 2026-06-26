@@ -12,7 +12,9 @@ import type {
   CreatedWorkspaceInfo,
   CreateWorkspaceArgs,
   DetectedRepo,
+  ImportedClaudeCliSession,
   ITaskCreationHost,
+  RecordClaudeCliImportArgs,
   SetupActionDispatch,
   TaskEnvironment,
   TaskFolderInfo,
@@ -185,5 +187,36 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
       event,
       props,
     );
+  }
+
+  importClaudeCliSession(args: {
+    repoPath: string;
+    sourceSessionId: string;
+  }): Promise<ImportedClaudeCliSession> {
+    return hostClient().claudeCliSessions.import.mutate(args);
+  }
+
+  async deleteClaudeCliImport(args: {
+    repoPath: string;
+    importedSessionId: string;
+  }): Promise<void> {
+    await hostClient().claudeCliSessions.deleteImport.mutate(args);
+  }
+
+  async recordClaudeCliImport(args: RecordClaudeCliImportArgs): Promise<void> {
+    await hostClient().claudeCliSessions.recordImport.mutate(args);
+  }
+
+  async deleteClaudeCliImportRecord(args: {
+    importedSessionId: string;
+  }): Promise<void> {
+    await hostClient().claudeCliSessions.deleteImportRecord.mutate(args);
+  }
+
+  async linkTaskBranch(args: {
+    taskId: string;
+    branchName: string;
+  }): Promise<void> {
+    await hostClient().workspace.linkBranch.mutate(args);
   }
 }

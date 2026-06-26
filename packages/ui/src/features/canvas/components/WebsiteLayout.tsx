@@ -1,4 +1,9 @@
-import { GitForkIcon, PencilSimpleIcon, XIcon } from "@phosphor-icons/react";
+import {
+  GitForkIcon,
+  LinkIcon,
+  PencilSimpleIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
@@ -18,6 +23,7 @@ import {
   useFreeformChatStore,
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
+import { copyCanvasLink } from "@posthog/ui/features/canvas/utils/copyCanvasLink";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
@@ -151,6 +157,14 @@ function FreeformEditControls({
           Save as fork
         </Button>
       )}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => void copyCanvasLink(channelId, dashboardId, "canvas")}
+      >
+        <LinkIcon size={14} />
+        Copy link
+      </Button>
       <Button
         variant="outline"
         size="sm"

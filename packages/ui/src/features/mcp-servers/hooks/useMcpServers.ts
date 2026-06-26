@@ -12,10 +12,10 @@ import {
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useCallback, useMemo, useState } from "react";
-import { toast } from "sonner";
 
 export const mcpKeys = {
   servers: ["mcp", "servers"] as const,

@@ -158,6 +158,16 @@ interface SettingsStore {
 
 // ---------- Store ----------
 
+// Single source of truth for notification setting defaults — used both as the
+// store's initial values and by the Notifications settings "Reset to defaults".
+export const NOTIFICATION_DEFAULTS = {
+  desktopNotifications: true,
+  dockBadgeNotifications: true,
+  dockBounceNotifications: false,
+  completionSound: "none" as CompletionSound,
+  completionVolume: 80,
+};
+
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
@@ -210,11 +220,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
 
       // Notifications
-      desktopNotifications: true,
-      dockBadgeNotifications: true,
-      dockBounceNotifications: false,
-      completionSound: "none",
-      completionVolume: 80,
+      ...NOTIFICATION_DEFAULTS,
       setDesktopNotifications: (enabled) =>
         set({ desktopNotifications: enabled }),
       setDockBadgeNotifications: (enabled) =>

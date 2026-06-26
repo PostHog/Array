@@ -103,7 +103,7 @@ describe("CodexAcpAgent", () => {
       configOptions: [],
     } satisfies Partial<NewSessionResponse>);
 
-    await agent.newSession({
+    const response = await agent.newSession({
       cwd: process.cwd(),
       _meta: { permissionMode: "read-only" },
     } as never);
@@ -116,6 +116,47 @@ describe("CodexAcpAgent", () => {
       (agent as unknown as { sessionState: { permissionMode: string } })
         .sessionState.permissionMode,
     ).toBe("read-only");
+    expect(response.modes?.currentModeId).toBe("read-only");
+  });
+
+  it("returns the applied initial mode in config options", async () => {
+    const { agent } = createAgent();
+    mockCodexConnection.newSession.mockResolvedValue({
+      sessionId: "session-1",
+      modes: { currentModeId: "read-only", availableModes: [] },
+      configOptions: [
+        {
+          id: "mode",
+          name: "Mode",
+          type: "select",
+          category: "mode",
+          currentValue: "read-only",
+          options: [
+            { value: "read-only", name: "Read Only" },
+            { value: "auto", name: "Auto" },
+            { value: "full-access", name: "Full Access" },
+          ],
+        },
+      ],
+    } satisfies Partial<NewSessionResponse>);
+
+    const response = await agent.newSession({
+      cwd: process.cwd(),
+      _meta: { permissionMode: "full-access" },
+    } as never);
+
+    expect(mockCodexConnection.setSessionMode).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      modeId: "full-access",
+    });
+    expect(response.modes?.currentModeId).toBe("full-access");
+    expect(response.configOptions?.find((o) => o.id === "mode")).toEqual(
+      expect.objectContaining({ currentValue: "full-access" }),
+    );
+    expect(
+      (agent as unknown as { sessionState: { configOptions: unknown[] } })
+        .sessionState.configOptions,
+    ).toEqual(response.configOptions);
   });
 
   it("propagates taskRunId and fires SDK_SESSION when loading a cloud session", async () => {
@@ -178,6 +219,53 @@ describe("CodexAcpAgent", () => {
       (agent as unknown as { sessionState: { permissionMode: string } })
         .sessionState.permissionMode,
     ).toBe("read-only");
+  });
+
+  it("updates local permission state when changing codex mode config", async () => {
+    const { agent, client } = createAgent();
+    mockCodexConnection.newSession.mockResolvedValue({
+      sessionId: "session-1",
+      modes: { currentModeId: "auto", availableModes: [] },
+      configOptions: [],
+    } satisfies Partial<NewSessionResponse>);
+    mockCodexConnection.setSessionConfigOption.mockResolvedValue({
+      configOptions: [
+        {
+          id: "mode",
+          name: "Mode",
+          type: "select",
+          category: "mode",
+          currentValue: "full-access",
+          options: [
+            { value: "read-only", name: "Read Only" },
+            { value: "auto", name: "Auto" },
+            { value: "full-access", name: "Full Access" },
+          ],
+        },
+      ],
+    });
+
+    await agent.newSession({
+      cwd: process.cwd(),
+      _meta: { permissionMode: "auto" },
+    } as never);
+    await agent.setSessionConfigOption({
+      sessionId: "session-1",
+      configId: "mode",
+      value: "full-access",
+    });
+
+    expect(
+      (agent as unknown as { sessionState: { permissionMode: string } })
+        .sessionState.permissionMode,
+    ).toBe("full-access");
+    expect(client.sessionUpdate).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "current_mode_update",
+        currentModeId: "full-access",
+      },
+    });
   });
 
   it("prepends _meta.prContext to the forwarded prompt but not to the broadcast", async () => {

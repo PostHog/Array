@@ -41,7 +41,7 @@ import {
 } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { Badge } from "@posthog/ui/primitives/Badge";
-import { toast } from "@posthog/ui/primitives/toast";
+import { toast as sonnerToast, toast } from "@posthog/ui/primitives/toast";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
@@ -49,7 +49,6 @@ import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
-import { toast as sonnerToast } from "sonner";
 
 const AUTONOMY_SETUP_PROMPT = `Set up PostHog Self-driving for this product.
 

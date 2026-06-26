@@ -1,6 +1,6 @@
 import { buildInboxDeeplink } from "@posthog/shared/deeplink";
 import type { SignalReport } from "@posthog/shared/types";
-import { toast } from "sonner";
+import { toast } from "@posthog/ui/primitives/toast";
 
 /**
  * Copy a deep link (`<scheme>://inbox/{reportId}`) for an inbox report to the

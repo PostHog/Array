@@ -25,7 +25,10 @@ import {
   useAgentBuilderStore,
 } from "./agentBuilderStore";
 import { suggestionsForPage } from "./agentBuilderSuggestions";
-import { useAgentBuilderClientTools } from "./useAgentBuilderClientTools";
+import {
+  AGENT_BUILDER_CLIENT_TOOLS,
+  useAgentBuilderClientTools,
+} from "./useAgentBuilderClientTools";
 
 const CHAT_ID = AGENT_BUILDER_CHAT_ID;
 
@@ -118,6 +121,7 @@ export function AgentBuilderDock() {
         orgId: currentOrgId,
       }),
     clientTools,
+    supportedClientTools: AGENT_BUILDER_CLIENT_TOOLS,
   });
   const pendingApproval = useAgentChatPendingApproval(CHAT_ID);
 

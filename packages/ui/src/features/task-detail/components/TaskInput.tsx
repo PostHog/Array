@@ -61,11 +61,11 @@ import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { useWarmTask } from "../hooks/useWarmTask";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
+import { NewTaskSuggestions } from "./ContinueCliSessions";
 import {
   type SuggestedPrompt,
   SuggestedPromptCard,
 } from "./SuggestedPromptCard";
-import { SuggestedTasksPanel } from "./SuggestedTasksPanel";
 import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
 
 interface TaskInputProps {
@@ -569,8 +569,10 @@ export function TaskInput({
     modelOption?.type === "select" ? modelOption.currentValue : undefined;
   const adapterDefault = adapter === "codex" ? "auto" : "plan";
   const modeFallback =
-    defaultInitialTaskMode === "last_used"
-      ? (lastUsedInitialTaskMode ?? adapterDefault)
+    defaultInitialTaskMode === "last_used" &&
+    lastUsedInitialTaskMode &&
+    isValidConfigValue(modeOption, lastUsedInitialTaskMode)
+      ? lastUsedInitialTaskMode
       : adapterDefault;
   const currentExecutionMode =
     getCurrentModeFromConfigOptions(modeOption ? [modeOption] : undefined) ??
@@ -1067,7 +1069,11 @@ export function TaskInput({
                 )}
               </AnimatePresence>
             ) : (
-              <SuggestedTasksPanel />
+              <NewTaskSuggestions
+                repoPath={selectedDirectory || null}
+                workspaceMode={effectiveWorkspaceMode}
+                disabled={isCreatingTask}
+              />
             )}
           </div>
         </div>

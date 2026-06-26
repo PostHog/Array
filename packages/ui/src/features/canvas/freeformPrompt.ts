@@ -1,4 +1,5 @@
 import { freeformSystemPromptFor } from "@posthog/core/canvas/canvasTemplates";
+import { FREEFORM_STARTER_CODE } from "@posthog/core/canvas/freeformStarter";
 
 // Builds the prompt for the task that generates a freeform (React) canvas. Like
 // CONTEXT.md generation, this runs as a normal repo-less agent task (no repo
@@ -17,6 +18,10 @@ export function buildFreeformGenerationPrompt(input: {
   instruction: string;
   // The current source, when editing an existing canvas. Omitted for a first build.
   currentCode?: string;
+  // Default on (opt out via the generate bar): seed a known-good starter
+  // scaffold as the agent's baseline on a FIRST build, so it edits a compiling
+  // app instead of authoring boilerplate from scratch. Ignored when editing.
+  useStarter?: boolean;
 }): string {
   const {
     dashboardId,
@@ -25,6 +30,7 @@ export function buildFreeformGenerationPrompt(input: {
     templateId,
     instruction,
     currentCode,
+    useStarter,
   } = input;
 
   const contract = freeformSystemPromptFor(templateId);
@@ -41,6 +47,14 @@ export function buildFreeformGenerationPrompt(input: {
     ? `\n[Current code] — the canvas as it stands now. Rewrite the WHOLE file with the change applied; do not output a partial file.\n\n\`\`\`tsx\n${currentCode}\n\`\`\`\n`
     : "";
 
+  // First-build only: hand the agent a working scaffold to build ON instead of
+  // authoring from zero. It already wires the easy-to-get-wrong bits (date
+  // picker, theme tokens, loading skeletons, typed-node result reading).
+  const starterBlock =
+    !isEdit && useStarter
+      ? `\n[Starter scaffold] — begin from this WORKING baseline instead of authoring from scratch. It already wires the things that are easy to get wrong: the date picker, theme-aware tokens, per-card loading skeletons, and reading a typed-node result correctly. KEEP that wiring; replace the sample "total events" metric and the layout with what the user asked for, and output the COMPLETE rewritten file.\n\n\`\`\`tsx\n${FREEFORM_STARTER_CODE}\n\`\`\`\n`
+      : "";
+
   // The standing authoring contract + publishing/data rules are the same
   // boilerplate on every canvas generation — the user never typed them. Wrap
   // them in a `<canvas_generation_instructions>` element so the conversation UI
@@ -48,7 +62,7 @@ export function buildFreeformGenerationPrompt(input: {
   // inline (see extractCanvasInstructions). Kept after the user's instruction so
   // the request leads, mirroring how channel CONTEXT.md is appended.
   const instructions = `${header}
-${currentBlock}
+${currentBlock}${starterBlock}
 Follow this authoring contract for the canvas (imports, the \`ph\` data shim, and
 style rules):
 

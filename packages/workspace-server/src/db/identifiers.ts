@@ -27,3 +27,6 @@ export const DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY = Symbol.for(
 export const TASK_METADATA_REPOSITORY = Symbol.for(
   "posthog.workspace.taskMetadataRepository",
 );
+export const CLAUDE_SESSION_IMPORT_REPOSITORY = Symbol.for(
+  "posthog.workspace.claudeSessionImportRepository",
+);

@@ -19,7 +19,10 @@ import {
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import type { TaskCreationApiClient } from "./taskCreationApiClient";
-import type { ITaskCreationHost } from "./taskCreationHost";
+import type {
+  ImportedClaudeCliSession,
+  ITaskCreationHost,
+} from "./taskCreationHost";
 
 export interface TaskCreationDeps {
   posthogClient: TaskCreationApiClient;
@@ -51,11 +54,17 @@ export class TaskCreationSaga extends Saga<
         ? this.resolveFolder(input.repoPath)
         : undefined;
 
+    const importedClaude = await this.importClaudeSession(input);
+
     let task = taskId
       ? await this.readOnlyStep("fetch_task", () =>
           this.deps.posthogClient.getTask(taskId),
         )
       : await this.createTask(input);
+
+    if (importedClaude && input.repoPath) {
+      await this.recordClaudeImport(input, importedClaude, task.id);
+    }
 
     const repoKey = getTaskRepository(task);
     const repoPath =
@@ -125,6 +134,14 @@ export class TaskCreationSaga extends Saga<
         createdAt:
           workspaceInfo.worktree?.createdAt ?? new Date().toISOString(),
       };
+
+      // Link after the workspace row exists, so the branch-mismatch prompt can
+      // compare the session's branch against the live checkout.
+      if (importedClaude) {
+        this.linkImportedSessionBranch(input, task.id);
+        workspace.linkedBranch =
+          input.importedClaudeSession?.branch ?? workspace.linkedBranch;
+      }
     } else if (workspaceMode === "cloud") {
       await this.step({
         name: "cloud_workspace_creation",
@@ -406,6 +423,10 @@ export class TaskCreationSaga extends Saga<
           if (input.model) connectParams.model = input.model;
           if (input.reasoningLevel)
             connectParams.reasoningLevel = input.reasoningLevel;
+          if (importedClaude) {
+            connectParams.importedSessionId = importedClaude.importedSessionId;
+            connectParams.adapter = "claude";
+          }
 
           this.deps.sessionService.connectToTask(connectParams);
           return { taskId: task.id };
@@ -420,6 +441,84 @@ export class TaskCreationSaga extends Saga<
     }
 
     return { task, workspace };
+  }
+
+  /**
+   * Snapshot an existing Claude Code CLI transcript into the app's Claude
+   * config dir so the agent session can resume it. On rollback the copied
+   * transcript is removed so abandoned snapshots don't accumulate.
+   */
+  private async importClaudeSession(
+    input: TaskCreationInput,
+  ): Promise<ImportedClaudeCliSession | undefined> {
+    const repoPath = input.repoPath;
+    if (
+      input.taskId ||
+      !input.importedClaudeSession ||
+      !repoPath ||
+      (input.workspaceMode ?? "local") !== "local"
+    ) {
+      return undefined;
+    }
+    const { sourceSessionId } = input.importedClaudeSession;
+    return this.step({
+      name: "import_claude_session",
+      execute: () =>
+        this.deps.host.importClaudeCliSession({ repoPath, sourceSessionId }),
+      rollback: (imported) =>
+        this.deps.host.deleteClaudeCliImport({
+          repoPath,
+          importedSessionId: imported.importedSessionId,
+        }),
+    });
+  }
+
+  /**
+   * Link the task to the branch the CLI session worked on (best-effort, no
+   * checkout). The standard branch-mismatch prompt then offers to switch if
+   * the local checkout is elsewhere — consistent with how the app handles
+   * sending a message on a differing branch.
+   */
+  private linkImportedSessionBranch(
+    input: TaskCreationInput,
+    taskId: string,
+  ): void {
+    const branchName = input.importedClaudeSession?.branch;
+    if (!branchName) return;
+    this.deps.host.linkTaskBranch({ taskId, branchName }).catch((error) => {
+      this.log.warn("Failed to link imported session branch", { error });
+    });
+  }
+
+  /**
+   * Persist the import tracking row so the source session lists as `imported`
+   * and reopens to this task. A first-class step paired with the import: on
+   * rollback the row is dropped (by imported session id), so a later-step
+   * failure can never leave a row pointing at a discarded task. Awaited so it
+   * is ordered before any step that could trigger that rollback.
+   */
+  private async recordClaudeImport(
+    input: TaskCreationInput,
+    imported: ImportedClaudeCliSession,
+    taskId: string,
+  ): Promise<void> {
+    const sourceSessionId = input.importedClaudeSession?.sourceSessionId;
+    const repoPath = input.repoPath;
+    if (!sourceSessionId || !repoPath) return;
+    const { importedSessionId, fingerprint } = imported;
+    await this.step({
+      name: "record_claude_import",
+      execute: () =>
+        this.deps.host.recordClaudeCliImport({
+          sourceSessionId,
+          importedSessionId,
+          repoPath,
+          taskId,
+          fingerprint,
+        }),
+      rollback: () =>
+        this.deps.host.deleteClaudeCliImportRecord({ importedSessionId }),
+    });
   }
 
   private async resolveFolder(repoPath: string) {

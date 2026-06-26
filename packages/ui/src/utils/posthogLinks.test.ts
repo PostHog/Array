@@ -1,9 +1,20 @@
-import { errorTrackingIssueUrl } from "@posthog/ui/utils/posthogLinks";
+import {
+  canvasShareUrl,
+  errorTrackingIssueUrl,
+} from "@posthog/ui/utils/posthogLinks";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@posthog/ui/utils/urls", () => ({
   getPostHogUrl: (path: string) => `https://us.posthog.com${path}`,
 }));
+
+describe("canvasShareUrl", () => {
+  it("builds an https /code/canvas link with encoded ids", () => {
+    expect(canvasShareUrl("chan/1", "dash 2", "us")).toBe(
+      "https://us.posthog.com/code/canvas/chan%2F1/dash%202",
+    );
+  });
+});
 
 describe("errorTrackingIssueUrl", () => {
   it("links to the issue when no fingerprint is provided", () => {

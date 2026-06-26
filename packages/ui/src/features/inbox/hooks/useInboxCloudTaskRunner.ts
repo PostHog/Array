@@ -15,13 +15,12 @@ import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDef
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
-import { toast } from "@posthog/ui/primitives/toast";
+import { toast as sonnerToast, toast } from "@posthog/ui/primitives/toast";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import { toast as sonnerToast } from "sonner";
 
 /** Variant-specific copy used in the toasts/errors emitted by the runner. */
 export interface InboxCloudTaskCopy {

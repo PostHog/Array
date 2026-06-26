@@ -10,7 +10,6 @@ import {
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import {
   type AutoConvertLongText,
-  type CompletionSound,
   type DefaultInitialTaskMode,
   type DefaultMessagingMode,
   type DefaultReasoningEffort,
@@ -21,19 +20,9 @@ import {
 import { track } from "@posthog/ui/shell/analytics";
 import type { ThemePreference } from "@posthog/ui/shell/themeStore";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
-import { playCompletionSound } from "@posthog/ui/utils/sounds";
-import {
-  Button,
-  Flex,
-  Link,
-  Select,
-  Slider,
-  Switch,
-  Text,
-} from "@radix-ui/themes";
+import { Button, Flex, Link, Select, Switch, Text } from "@radix-ui/themes";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
-import { toast } from "sonner";
 
 export function GeneralSettings() {
   const hostTRPC = useHostTRPC();
@@ -76,11 +65,6 @@ export function GeneralSettings() {
 
   // Chat state
   const {
-    desktopNotifications,
-    dockBadgeNotifications,
-    dockBounceNotifications,
-    completionSound,
-    completionVolume,
     autoConvertLongText,
     defaultInitialTaskMode,
     defaultMessagingMode,
@@ -90,11 +74,6 @@ export function GeneralSettings() {
     conversationCollapseMode,
     hedgehogMode,
     slotMachineMode,
-    setDesktopNotifications,
-    setDockBadgeNotifications,
-    setDockBounceNotifications,
-    setCompletionSound,
-    setCompletionVolume,
     setAutoConvertLongText,
     setDefaultInitialTaskMode,
     setDefaultMessagingMode,
@@ -105,38 +84,6 @@ export function GeneralSettings() {
     setHedgehogMode,
     setSlotMachineMode,
   } = useSettingsStore();
-
-  // Sync toggle off if the user denied notification permission at the OS level
-  useEffect(() => {
-    if (window.Notification?.permission === "denied" && desktopNotifications) {
-      setDesktopNotifications(false);
-    }
-  }, [desktopNotifications, setDesktopNotifications]);
-
-  const notificationPermission = window.Notification?.permission;
-  const notificationsDenied = notificationPermission === "denied";
-
-  const handleDesktopNotificationsChange = useCallback(
-    async (checked: boolean) => {
-      if (checked) {
-        const permission = await window.Notification?.requestPermission?.();
-        if (permission !== "granted") {
-          toast.info("Notifications are blocked", {
-            description:
-              "Allow PostHog Code notifications in System Settings > Notifications",
-          });
-          return;
-        }
-      }
-      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
-        setting_name: "desktop_notifications",
-        new_value: checked,
-        old_value: desktopNotifications,
-      });
-      setDesktopNotifications(checked);
-    },
-    [desktopNotifications, setDesktopNotifications],
-  );
 
   // Appearance handlers
   const handleThemeChange = useCallback(
@@ -152,22 +99,6 @@ export function GeneralSettings() {
   );
 
   // Chat handlers
-  const handleCompletionSoundChange = useCallback(
-    (value: CompletionSound) => {
-      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
-        setting_name: "completion_sound",
-        new_value: value,
-        old_value: completionSound,
-      });
-      setCompletionSound(value);
-    },
-    [completionSound, setCompletionSound],
-  );
-
-  const handleTestSound = useCallback(() => {
-    playCompletionSound(completionSound, completionVolume);
-  }, [completionSound, completionVolume]);
-
   const handleAutoConvertLongTextChange = useCallback(
     (value: AutoConvertLongText) => {
       track(ANALYTICS_EVENTS.SETTING_CHANGED, {
@@ -319,112 +250,6 @@ export function GeneralSettings() {
           </Select.Content>
         </Select.Root>
       </SettingRow>
-
-      {/* Notifications */}
-      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
-        Notifications
-      </Text>
-
-      {notificationsDenied && (
-        <Text color="yellow" className="mb-2 text-[13px]">
-          Notifications are blocked by macOS. To enable them, open System
-          Settings &gt; Notifications &gt; PostHog Code and turn on Allow
-          Notifications.
-        </Text>
-      )}
-
-      <SettingRow
-        label="Push notifications"
-        description="Receive a desktop notification when the agent finishes a task or needs your input"
-      >
-        <Switch
-          checked={desktopNotifications}
-          onCheckedChange={handleDesktopNotificationsChange}
-          disabled={notificationsDenied}
-          size="1"
-        />
-      </SettingRow>
-
-      <SettingRow
-        label="Dock badge"
-        description="Display a badge on the dock icon when the agent finishes a task or needs your input"
-      >
-        <Switch
-          checked={dockBadgeNotifications}
-          onCheckedChange={setDockBadgeNotifications}
-          size="1"
-        />
-      </SettingRow>
-
-      <SettingRow
-        label="Bounce dock icon"
-        description="Bounce the dock icon when the agent finishes a task or needs your input"
-      >
-        <Switch
-          checked={dockBounceNotifications}
-          onCheckedChange={setDockBounceNotifications}
-          size="1"
-        />
-      </SettingRow>
-
-      <SettingRow
-        label="Sound effect"
-        description="Play a sound when the agent finishes a task or needs your input"
-        noBorder={completionSound === "none"}
-      >
-        <Flex align="center" gap="2">
-          <Select.Root
-            value={completionSound}
-            onValueChange={(value) =>
-              handleCompletionSoundChange(value as CompletionSound)
-            }
-            size="1"
-          >
-            <Select.Trigger className="min-w-[100px]" />
-            <Select.Content>
-              <Select.Item value="none">None</Select.Item>
-              <Select.Item value="guitar">Guitar solo</Select.Item>
-              <Select.Item value="danilo">I'm ready</Select.Item>
-              <Select.Item value="revi">Cute noise</Select.Item>
-              <Select.Item value="meep">Meep</Select.Item>
-              <Select.Item value="meep-smol">Meep (smol)</Select.Item>
-              <Select.Item value="bubbles">Bubbles</Select.Item>
-              <Select.Item value="drop">Drop</Select.Item>
-              <Select.Item value="knock">Knock</Select.Item>
-              <Select.Item value="ring">Ring</Select.Item>
-              <Select.Item value="shoot">Shoot</Select.Item>
-              <Select.Item value="slide">Slide</Select.Item>
-              <Select.Item value="switch">Switch</Select.Item>
-              <Select.Item value="wilhelm">Wilhelm scream</Select.Item>
-              <Select.Item value="icq">ICQ</Select.Item>
-            </Select.Content>
-          </Select.Root>
-          {completionSound !== "none" && (
-            <Button variant="soft" size="1" onClick={handleTestSound}>
-              Test
-            </Button>
-          )}
-        </Flex>
-      </SettingRow>
-
-      {completionSound !== "none" && (
-        <SettingRow label="Sound volume" noBorder>
-          <Flex align="center" gap="3">
-            <Slider
-              value={[completionVolume]}
-              onValueChange={([value]) => setCompletionVolume(value)}
-              min={0}
-              max={100}
-              step={1}
-              size="1"
-              className="w-[120px]"
-            />
-            <Text color="gray" className="text-[13px]">
-              {completionVolume}%
-            </Text>
-          </Flex>
-        </SettingRow>
-      )}
 
       {/* Input */}
       <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">

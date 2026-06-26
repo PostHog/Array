@@ -110,7 +110,7 @@ export interface InsightFetchResult {
 export async function fetchInsightByShortId(
   authService: AuthService,
   shortId: string,
-  opts?: { dateRange?: { date_from: string; date_to: string } },
+  opts?: { dateRange?: { date_from?: string | null; date_to?: string | null } },
 ): Promise<InsightFetchResult> {
   const { apiHost } = await authService.getValidAccessToken();
   const projectId = authService.getState().currentProjectId;

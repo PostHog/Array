@@ -23,6 +23,7 @@ import { useWorkspaceEvents } from "../../workspace/useWorkspaceEvents";
 import { HeaderTitleEditor } from "../HeaderTitleEditor";
 import { useTaskData } from "../hooks/useTaskData";
 import { ExternalAppsOpener } from "./ExternalAppsOpener";
+import { WorkspaceModeBadge } from "./WorkspaceModeBadge";
 
 const MIN_REVIEW_WIDTH = 300;
 const log = logger.scope("task-detail");
@@ -117,6 +118,8 @@ export function TaskDetail({
   const trailing = openTargetPath ? (
     <ExternalAppsOpener targetPath={openTargetPath} />
   ) : null;
+  const workspace = useWorkspace(taskId);
+  const workspaceMode = workspace?.mode;
   const headerContent = useMemo(
     () =>
       // Inside a channel, prefix the editable title with the channel
@@ -125,6 +128,11 @@ export function TaskDetail({
       channelName ? (
         <ChannelBreadcrumb
           channelName={channelName}
+          leafIcon={
+            workspaceMode ? (
+              <WorkspaceModeBadge mode={workspaceMode} />
+            ) : undefined
+          }
           leafLabel={task.title}
           onRename={handleTitleEditSubmit}
           trailing={trailing}
@@ -138,15 +146,18 @@ export function TaskDetail({
               onCancel={handleTitleEditCancel}
             />
           ) : (
-            <Tooltip content={task.title} side="bottom" delayDuration={300}>
-              <Text
-                truncate
-                className="no-drag min-w-0 font-medium text-[13px]"
-                onDoubleClick={() => setIsEditingTitle(true)}
-              >
-                {task.title}
-              </Text>
-            </Tooltip>
+            <Flex align="center" gap="2" minWidth="0">
+              <WorkspaceModeBadge mode={workspaceMode} />
+              <Tooltip content={task.title} side="bottom" delayDuration={300}>
+                <Text
+                  truncate
+                  className="no-drag min-w-0 font-medium text-[13px]"
+                  onDoubleClick={() => setIsEditingTitle(true)}
+                >
+                  {task.title}
+                </Text>
+              </Tooltip>
+            </Flex>
           )}
           {trailing}
         </Flex>
@@ -156,6 +167,7 @@ export function TaskDetail({
       task.title,
       trailing,
       isEditingTitle,
+      workspaceMode,
       handleTitleEditSubmit,
       handleTitleEditCancel,
     ],
@@ -166,7 +178,6 @@ export function TaskDetail({
   const reviewMode = useReviewNavigationStore(
     (s) => s.reviewModes[taskId] ?? "closed",
   );
-  const workspace = useWorkspace(taskId);
   const isCloud =
     workspace?.mode === "cloud" || task.latest_run?.environment === "cloud";
 

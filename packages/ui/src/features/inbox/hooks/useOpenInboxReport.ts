@@ -3,6 +3,7 @@ import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authCl
 import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
 import { reportKeys } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useInboxSignalsFilterStore } from "@posthog/ui/features/inbox/stores/inboxSignalsFilterStore";
+import { toast } from "@posthog/ui/primitives/toast";
 import {
   navigateToInboxDismissedDetail,
   navigateToInboxPullRequestDetail,
@@ -11,7 +12,6 @@ import {
 import { logger } from "@posthog/ui/shell/logger";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { toast } from "sonner";
 
 const log = logger.scope("open-inbox-report");
 

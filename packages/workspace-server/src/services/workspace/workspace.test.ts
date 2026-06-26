@@ -164,6 +164,7 @@ function makeService(mocks: ReturnType<typeof createMocks>): WorkspaceService {
     mocks.focus,
     mocks.workspaceSettings,
     mocks.analytics,
+    { deleteImportForTask: async () => {} },
     mocks.log,
   );
 }

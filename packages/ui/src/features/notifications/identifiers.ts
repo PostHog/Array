@@ -1,3 +1,4 @@
+import type { NotificationTarget } from "@posthog/platform/notifications";
 import type { CompletionSound } from "@posthog/ui/features/settings/settingsStore";
 
 export interface NotificationSettings {
@@ -18,7 +19,9 @@ export const NOTIFICATION_SETTINGS_PROVIDER = Symbol.for(
 
 export interface IActiveView {
   hasFocus(): boolean;
-  getActiveTaskId(): string | undefined;
+  // What the user is currently looking at, if it's a notifiable target (a task
+  // or canvas). Used to suppress notifications for the thing already on screen.
+  getActiveTarget(): NotificationTarget | undefined;
 }
 
 export const ACTIVE_VIEW_PROVIDER = Symbol.for(

@@ -39,6 +39,7 @@ import { useAgentRevisions } from "../hooks/useAgentRevisions";
 import { useUpdateAgentDraftBundleFile } from "../hooks/useUpdateAgentDraftBundleFile";
 import { triggerRequiredSecretsFor } from "../utils/triggerSecrets";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
+import { AgentModelConfig } from "./AgentModelConfig";
 import { AgentRevisionBar } from "./AgentRevisionBar";
 import { CopyButton } from "./CopyButton";
 import { CronFireButton } from "./CronFireButton";
@@ -64,11 +65,15 @@ const USAGE_HOST = "https://<ingress-host>";
 interface Ctx {
   idOrSlug: string;
   revisionId: string;
-  /** State of the revision being viewed — gates the editable .md surface. */
+  /** Application UUID — needed to branch a new draft on save. */
+  applicationId?: string;
+  /** State of the revision being viewed — gates the editable .md surface and drives draft-only edit vs auto-clone. */
   revisionState: AgentRevisionState;
   ingressBaseUrl?: string;
   setKeys: string[];
   onSelect: (node: string) => void;
+  /** Select a revision in the picker (used to jump to a freshly branched draft). */
+  onSelectRevision?: (revisionId: string) => void;
   onOpenSession?: (sessionId: string) => void;
 }
 
@@ -402,6 +407,7 @@ export function AgentConfigurationPane({
     ? {
         idOrSlug,
         revisionId,
+        applicationId: application?.id,
         // `revision` may still be loading; fall back to the picker's view so
         // the editable-on-draft gating doesn't briefly flash on for a ready
         // revision while data resolves. Default to `ready` (immutable).
@@ -412,6 +418,7 @@ export function AgentConfigurationPane({
         ingressBaseUrl: application?.ingress_base_url ?? undefined,
         setKeys,
         onSelect: onSelectNode,
+        onSelectRevision,
         onOpenSession,
       }
     : null;
@@ -471,7 +478,7 @@ export function AgentConfigurationPane({
 
 const SECTION_INFO: Record<string, string> = {
   "cfg:model":
-    "The model every request goes to. `reasoning` sets the extended-thinking budget; limits cap a run's turns, tool calls and wall time.",
+    "How the agent picks its model. `auto` resolves a level (low/medium/high) to a maintained cross-provider list at runtime; `manual` pins an explicit priority list. `reasoning` sets the extended-thinking budget.",
   "cfg:instructions":
     "The agent's entrypoint prompt (agent.md) — the always-on system instructions.",
   "cfg:triggers": "What can start a session — chat, webhook, mcp, slack, cron.",
@@ -625,7 +632,7 @@ function DetailBody({
 }) {
   switch (section) {
     case "model":
-      return <ModelBody spec={spec} />;
+      return <ModelBody key={ctx.revisionId} spec={spec} ctx={ctx} />;
     case "instructions":
       return (
         <BundleFileBody
@@ -715,15 +722,16 @@ function byPath(files: BundleFile[], path: string): BundleFile | undefined {
   return files.find((f) => f.path === path);
 }
 
-function ModelBody({ spec }: { spec: AgentSpec }) {
+function ModelBody({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   return (
-    <Flex direction="column" gap="2">
-      <Row label="model" value={spec.model ?? "not set"} mono />
-      <Row label="reasoning" value={spec.reasoning ?? "default"} />
-      {spec.entrypoint ? (
-        <Row label="entrypoint" value={spec.entrypoint} mono />
-      ) : null}
-    </Flex>
+    <AgentModelConfig
+      spec={spec}
+      idOrSlug={ctx.idOrSlug}
+      applicationId={ctx.applicationId}
+      revisionId={ctx.revisionId}
+      revisionState={ctx.revisionState}
+      onSelectRevision={ctx.onSelectRevision}
+    />
   );
 }
 

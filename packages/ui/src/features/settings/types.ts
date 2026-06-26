@@ -1,5 +1,6 @@
 export type SettingsCategory =
   | "general"
+  | "notifications"
   | "plan-usage"
   | "workspaces"
   | "worktrees"
@@ -18,6 +19,7 @@ export type SettingsCategory =
 
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   "general",
+  "notifications",
   "plan-usage",
   "workspaces",
   "worktrees",

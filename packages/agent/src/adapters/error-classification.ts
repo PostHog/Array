@@ -1,6 +1,7 @@
 export type AgentErrorClassification =
   | "upstream_stream_terminated"
   | "upstream_connection_error"
+  | "upstream_timeout"
   | "upstream_provider_failure"
   | "agent_error";
 
@@ -22,6 +23,9 @@ export function classifyAgentError(
   }
   if (/API Error:\s*Connection error\b/i.test(text)) {
     return "upstream_connection_error";
+  }
+  if (/API Error:.*\b(?:timed out|timeout)\b/i.test(text)) {
+    return "upstream_timeout";
   }
   if (UPSTREAM_PROVIDER_ERROR_STATUS_PATTERN.test(text)) {
     return "upstream_provider_failure";
