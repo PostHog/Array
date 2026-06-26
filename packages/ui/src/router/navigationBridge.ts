@@ -1,3 +1,4 @@
+import type { NotificationTarget } from "@posthog/platform/notifications";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
 import { track } from "@posthog/ui/shell/analytics";
@@ -68,6 +69,35 @@ export function navigateToFolderSettings(folderId: string): void {
     to: "/folders/$folderId",
     params: { folderId },
   });
+}
+
+// The channel-aware "open this notification target" handler, registered by
+// useOpenTargetDeepLink (the native-click consumer). Held here so imperative,
+// non-React callers — the in-app notification toast's action — open a target
+// through the SAME path as a native notification click. Crucially, a task filed
+// to a channel resolves to /website/$channelId/tasks/$taskId; direct
+// navigateToTaskDetail can't, since it doesn't know the channel.
+let openTargetHandler: ((target: NotificationTarget) => void) | null = null;
+
+export function setOpenTargetHandler(
+  handler: ((target: NotificationTarget) => void) | null,
+): void {
+  openTargetHandler = handler;
+}
+
+export function openNotificationTarget(target: NotificationTarget): void {
+  if (openTargetHandler) {
+    openTargetHandler(target);
+    return;
+  }
+  // Fallback when the deep-link handler isn't mounted yet (early boot, tests).
+  // Channel context is unavailable here, so a channel task opens under /code —
+  // acceptable for this rare gap; the registered handler covers the live app.
+  if (target.kind === "task") {
+    navigateToTaskDetail(target.taskId);
+  } else {
+    navigateToChannelDashboard(target.channelId, target.dashboardId);
+  }
 }
 
 export function navigateToHome(): void {

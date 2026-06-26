@@ -4,10 +4,7 @@ import {
   type NotificationTarget,
 } from "@posthog/platform/notifications";
 import { toast } from "@posthog/ui/primitives/toast";
-import {
-  navigateToChannelDashboard,
-  navigateToTaskDetail,
-} from "@posthog/ui/router/navigationBridge";
+import { openNotificationTarget } from "@posthog/ui/router/navigationBridge";
 import { playCompletionSound } from "@posthog/ui/utils/sounds";
 import { inject, injectable } from "inversify";
 import {
@@ -124,17 +121,11 @@ export class NotificationBus {
     target: NotificationTarget | undefined,
   ): { label: string; onClick: () => void } | undefined {
     if (!target) return undefined;
-    if (target.kind === "task") {
-      return {
-        label: "View task",
-        onClick: () => navigateToTaskDetail(target.taskId),
-      };
-    }
-    return {
-      label: "View canvas",
-      onClick: () =>
-        navigateToChannelDashboard(target.channelId, target.dashboardId),
-    };
+    // Route through the shared open-target handler so the toast click lands on
+    // the same place a native notification click would — channel-aware for
+    // tasks filed to a channel. Label is the only kind-specific bit.
+    const label = target.kind === "task" ? "View task" : "View canvas";
+    return { label, onClick: () => openNotificationTarget(target) };
   }
 
   private truncateTitle(title: string): string {

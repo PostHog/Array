@@ -33,6 +33,7 @@ vi.mock("@posthog/host-router/react", () => ({
 }));
 vi.mock("@posthog/ui/router/navigationBridge", () => ({
   navigateToChannelDashboard,
+  setOpenTargetHandler: vi.fn(),
 }));
 vi.mock("@posthog/ui/router/useOpenTask", () => ({ openTask: routerOpenTask }));
 vi.mock("@posthog/ui/features/sidebar/useTaskViewed", () => ({

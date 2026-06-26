@@ -1,7 +1,10 @@
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import type { NotificationTarget } from "@posthog/platform/notifications";
 import { useHandleOpenTask } from "@posthog/ui/features/deep-links/useHandleOpenTask";
-import { navigateToChannelDashboard } from "@posthog/ui/router/navigationBridge";
+import {
+  navigateToChannelDashboard,
+  setOpenTargetHandler,
+} from "@posthog/ui/router/navigationBridge";
 import { logger } from "@posthog/ui/shell/logger";
 import { useCallback, useEffect } from "react";
 
@@ -30,6 +33,14 @@ export function useOpenTargetDeepLink() {
     },
     [handleOpenTask],
   );
+
+  // Expose the same channel-aware routing to imperative, non-React callers (the
+  // in-app notification toast's action), so a toast click and a native click
+  // open a target identically.
+  useEffect(() => {
+    setOpenTargetHandler(handleTarget);
+    return () => setOpenTargetHandler(null);
+  }, [handleTarget]);
 
   useEffect(() => {
     let cancelled = false;
