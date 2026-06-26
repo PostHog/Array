@@ -423,7 +423,11 @@ describe("AgentServer HTTP Mode", () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body).toEqual({ status: "ok", hasSession: true });
+      expect(body).toEqual({
+        status: "ok",
+        hasSession: true,
+        bootMs: expect.any(Number),
+      });
     }, 30000);
   });
 
