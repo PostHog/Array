@@ -14,10 +14,10 @@ import { useCallback, useState } from "react";
 
 // Kicks off CONTEXT.md generation as a repo-less task. The user no longer picks
 // a folder/repo up front — the agent decides at runtime whether it needs one and
-// asks the user to clarify if it can't find the right one. The task runs in a
-// per-task scratch dir (local), is filed to the channel, and recorded
-// server-side as the channel's generation task so every user's CONTEXT.md view
-// can track it.
+// asks the user to clarify if it can't find the right one. The task runs as a
+// cloud run (not a local agent) so generation proceeds server-side regardless of
+// which client kicked it off, is filed to the channel, and recorded server-side
+// as the channel's generation task so every user's CONTEXT.md view can track it.
 export function useGenerateContext(channelId: string, channelName: string) {
   const taskService = useService<TaskService>(TASK_SERVICE);
   const trpc = useHostTRPC();
@@ -34,7 +34,10 @@ export function useGenerateContext(channelId: string, channelName: string) {
         {
           content: buildContextGenerationPrompt({ channelName, channelId }),
           taskDescription: `Generate CONTEXT.md for #${channelName}`,
-          workspaceMode: "local",
+          // Always a cloud run — generation should never tie up (or depend on)
+          // the local machine. Hard-coded, not the sticky last-used workspace
+          // mode, so it's unaffected by prior local tasks.
+          workspaceMode: "cloud",
           allowNoRepo: true,
         },
         (output) => invalidateTasks(output.task),
@@ -52,9 +55,8 @@ export function useGenerateContext(channelId: string, channelName: string) {
       // are best-effort: a failure here shouldn't undo a started task.
       void fileTask(channelId, task.id, task.title).catch(() => {});
       void setGenerationTask(task.id).catch(() => {});
-      // Repo-less tasks create no workspace row, so the usual workspace.create
-      // invalidation never fires — refresh the cache so the task view resolves
-      // its scratch cwd instead of showing the repo-picker prompt.
+      // Refresh the workspace cache so the new cloud workspace row appears and
+      // the task view resolves the cloud run instead of the repo-picker prompt.
       void queryClient.invalidateQueries({
         queryKey: trpc.workspace.getAll.queryKey(),
       });
