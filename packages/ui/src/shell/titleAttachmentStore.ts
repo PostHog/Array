@@ -25,7 +25,7 @@ interface TitleAttachmentStore {
   clear: (taskId: string) => void;
 }
 
-export const useTitleAttachmentStore = create<TitleAttachmentStore>(
+const useTitleAttachmentStore = create<TitleAttachmentStore>(
   (set, get) => ({
     byTaskId: {},
     set: (taskId, filePaths) =>
