@@ -423,7 +423,11 @@ describe("AgentServer HTTP Mode", () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body).toEqual({ status: "ok", hasSession: true });
+      expect(body).toEqual({
+        status: "ok",
+        hasSession: true,
+        bootMs: expect.any(Number),
+      });
     }, 30000);
   });
 
@@ -668,6 +672,98 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.stop).not.toHaveBeenCalled();
       expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
+
+    function createFailureTestServer() {
+      const appendRawLine = vi.fn();
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        eventStreamSender: {
+          enqueue: ReturnType<typeof vi.fn>;
+          stop: ReturnType<typeof vi.fn>;
+        };
+        posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+        session: unknown;
+        handleTurnFailure(
+          payload: JwtPayload,
+          phase: "initial" | "resume" | "followup",
+          error: unknown,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      testServer.session = {
+        acpSessionId: "acp-1",
+        payload: { run_id: "run-1" },
+        logWriter: { appendRawLine, flush: vi.fn(async () => {}) },
+      };
+      return testServer;
+    }
+
+    const interactivePayload: JwtPayload = {
+      run_id: "run-1",
+      task_id: "task-1",
+      team_id: 1,
+      user_id: 1,
+      distinct_id: "distinct-id",
+      mode: "interactive",
+    };
+
+    it.each([
+      ["genuine agent error (terminal)", "boom", "agent_error", true],
+      [
+        "transient upstream timeout (recoverable)",
+        "API Error: The operation timed out.",
+        "upstream_timeout",
+        false,
+      ],
+    ] as const)(
+      "tags and handles a follow-up %s",
+      async (_name, errorMessage, expectedErrorType, expectsFailed) => {
+        const testServer = createFailureTestServer();
+
+        await testServer.handleTurnFailure(
+          interactivePayload,
+          "followup",
+          new Error(errorMessage),
+        );
+
+        expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+          expect.objectContaining({
+            notification: expect.objectContaining({
+              method: "session/update",
+              params: expect.objectContaining({
+                update: expect.objectContaining({
+                  sessionUpdate: "error",
+                  errorType: expectedErrorType,
+                }),
+              }),
+            }),
+          }),
+        );
+
+        if (expectsFailed) {
+          expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledWith(
+            "task-1",
+            "run-1",
+            expect.objectContaining({ status: "failed" }),
+          );
+        } else {
+          expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+        }
+      },
+    );
 
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();

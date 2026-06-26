@@ -29,6 +29,10 @@ export function createMockTaskMetadataRepository(): MockTaskMetadataRepository {
         "lastActivityAt" in patch
           ? (patch.lastActivityAt ?? null)
           : (existing?.lastActivityAt ?? null),
+      archivedAt:
+        "archivedAt" in patch
+          ? (patch.archivedAt ?? null)
+          : (existing?.archivedAt ?? null),
       createdAt: existing?.createdAt ?? ts,
       updatedAt: ts,
     });
@@ -38,6 +42,11 @@ export function createMockTaskMetadataRepository(): MockTaskMetadataRepository {
     findByTaskId: (taskId) => rows.get(taskId) ?? null,
     findAll: () => [...rows.values()],
     findAllPinned: () => [...rows.values()].filter((r) => r.pinnedAt != null),
+    findAllArchived: () =>
+      [...rows.values()].filter((r) => r.archivedAt != null),
     upsert: apply,
+    delete: (taskId) => {
+      rows.delete(taskId);
+    },
   };
 }

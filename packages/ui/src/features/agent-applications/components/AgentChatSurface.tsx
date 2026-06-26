@@ -12,7 +12,7 @@ import { type KeyboardEvent, type ReactNode, useState } from "react";
 
 /**
  * The conversation + composer half of a deployed-agent chat, shared by the
- * per-agent preview pane and the agent builder dock. Renders the live ACP messages
+ * per-agent chat pane and the agent builder dock. Renders the live ACP messages
  * through the native `ConversationView` (collapse disabled so the agent's prose
  * shows inline) and an auto-growing composer with Enter-to-send / Cancel that
  * mirrors the main task chat's input shell.

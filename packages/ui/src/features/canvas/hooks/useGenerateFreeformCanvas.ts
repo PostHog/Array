@@ -54,6 +54,8 @@ export function useGenerateFreeformCanvas(args: {
     async (opts: {
       instruction: string;
       currentCode?: string;
+      // Default on (opt out in the bar): seed the starter scaffold on first build.
+      useStarter?: boolean;
     }): Promise<string | null> => {
       setIsStarting(true);
       try {
@@ -66,6 +68,7 @@ export function useGenerateFreeformCanvas(args: {
               templateId,
               instruction: opts.instruction,
               currentCode: opts.currentCode,
+              useStarter: opts.useStarter,
             }),
             taskDescription: `Generate canvas "${name}"`,
             // Unattended generation: run in auto mode so it doesn't stall on edit-approval prompts.

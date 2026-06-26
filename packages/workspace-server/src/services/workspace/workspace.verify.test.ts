@@ -60,6 +60,7 @@ function createService(worktreeBasePath: string) {
       getWorktreeLocation: () => worktreeBasePath,
     } as unknown as IWorkspaceSettings,
     { track: vi.fn() } as unknown as IAnalytics,
+    { deleteImportForTask: async () => {} },
     log,
   );
 

@@ -53,6 +53,11 @@ export const taskMetadata = sqliteTable("task_metadata", {
   pinnedAt: text(),
   lastViewedAt: text(),
   lastActivityAt: text(),
+  // Archive state for rowless tasks. Tasks WITH a `workspaces` row record their
+  // archived state in the `archives` table; rowless channel tasks have no such
+  // row, so this timestamp is their only home — without it, archiving them is a
+  // silent no-op and they reappear on the next refetch.
+  archivedAt: text(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -114,6 +119,28 @@ export const defaultAdditionalDirectories = sqliteTable(
     path: text().primaryKey(),
     createdAt: createdAt(),
   },
+);
+
+export const claudeSessionImports = sqliteTable(
+  "claude_session_imports",
+  {
+    id: id(),
+    /** Session id of the original Claude Code CLI session in ~/.claude. */
+    sourceSessionId: text().notNull(),
+    /** Fresh session id the imported snapshot lives under in CLAUDE_CONFIG_DIR. */
+    importedSessionId: text().notNull().unique(),
+    taskId: text().notNull(),
+    repoPath: text().notNull(),
+    /** Fingerprint of the source file at import time, for divergence detection. */
+    sourceMtimeMs: integer().notNull(),
+    sourceSizeBytes: integer().notNull(),
+    sourceLastEntryUuid: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("claude_session_imports_source_idx").on(t.sourceSessionId),
+    index("claude_session_imports_task_idx").on(t.taskId),
+  ],
 );
 
 export const authPreferences = sqliteTable(

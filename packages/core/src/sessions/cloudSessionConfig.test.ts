@@ -58,6 +58,20 @@ describe("buildCloudDefaultConfigOptions", () => {
     expect(codex.find((o) => o.id === "mode")?.currentValue).toBe("auto");
   });
 
+  it.each([
+    { initialMode: "auto", expected: "auto" },
+    { initialMode: "full-access", expected: "full-access" },
+    { initialMode: "plan", expected: "auto" },
+    { initialMode: "default", expected: "auto" },
+  ])(
+    "validates codex initial mode $initialMode",
+    ({ initialMode, expected }) => {
+      const options = buildCloudDefaultConfigOptions(initialMode, "codex");
+
+      expect(options.find((o) => o.id === "mode")?.currentValue).toBe(expected);
+    },
+  );
+
   it("appends extra options after the mode option", () => {
     const extra = [
       {

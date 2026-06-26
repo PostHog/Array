@@ -18,6 +18,7 @@ import {
   ARCHIVE_REPOSITORY,
   REPOSITORY_REPOSITORY,
   SUSPENSION_REPOSITORY,
+  TASK_METADATA_REPOSITORY,
   WORKSPACE_REPOSITORY,
   WORKTREE_REPOSITORY,
 } from "../../db/identifiers";
@@ -31,10 +32,18 @@ import type {
   SuspensionRepository,
 } from "../../db/repositories/suspension-repository";
 import type {
+  ITaskMetadataRepository,
+  TaskMetadataRow,
+} from "../../db/repositories/task-metadata-repository";
+import type {
   Workspace,
   WorkspaceRepository,
 } from "../../db/repositories/workspace-repository";
 import type { WorktreeRepository } from "../../db/repositories/worktree-repository";
+import {
+  IMPORTED_SESSION_CLEANER,
+  type ImportedSessionCleaner,
+} from "../claude-cli-sessions/identifiers";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import {
@@ -68,8 +77,12 @@ export class ArchiveService {
     private readonly archiveRepo: ArchiveRepository,
     @inject(SUSPENSION_REPOSITORY)
     private readonly suspensionRepo: SuspensionRepository,
+    @inject(TASK_METADATA_REPOSITORY)
+    private readonly taskMetadataRepo: ITaskMetadataRepository,
     @inject(WORKSPACE_SETTINGS_SERVICE)
     private readonly workspaceSettings: IWorkspaceSettings,
+    @inject(IMPORTED_SESSION_CLEANER)
+    private readonly importedSessionCleaner: ImportedSessionCleaner,
     @inject(ROOT_LOGGER)
     rootLogger: RootLogger,
   ) {
@@ -114,9 +127,25 @@ export class ArchiveService {
 
     const workspace = this.workspaceRepo.findByTaskId(taskId);
     if (!workspace) {
+      // Rowless channel task: no workspace/worktree to tear down. Record the
+      // archived state in task_metadata so it actually persists — otherwise
+      // `getArchivedTaskIds` never reports it and the row reappears on refetch.
+      const existing = this.taskMetadataRepo.findByTaskId(taskId);
+      if (existing?.archivedAt) {
+        throw new Error(`Task ${taskId} is already archived`);
+      }
+      const archivedAt = new Date().toISOString();
+      await step(
+        async () => {
+          this.taskMetadataRepo.upsert(taskId, { archivedAt });
+        },
+        async () => {
+          this.taskMetadataRepo.upsert(taskId, { archivedAt: null });
+        },
+      );
       return {
         taskId,
-        archivedAt: new Date().toISOString(),
+        archivedAt,
         folderId: "",
         mode: "cloud",
         worktreeName: null,
@@ -331,7 +360,13 @@ export class ArchiveService {
   ): Promise<{ taskId: string; worktreeName: string | null }> {
     const workspace = this.workspaceRepo.findByTaskId(taskId);
     if (!workspace) {
-      throw new Error(`Workspace not found: ${taskId}`);
+      // Rowless channel task archived via task_metadata — just clear the flag.
+      const meta = this.taskMetadataRepo.findByTaskId(taskId);
+      if (!meta?.archivedAt) {
+        throw new Error(`Workspace not found: ${taskId}`);
+      }
+      this.taskMetadataRepo.upsert(taskId, { archivedAt: null });
+      return { taskId, worktreeName: null };
     }
 
     const archive = this.archiveRepo.findByWorkspaceId(workspace.id);
@@ -418,38 +453,79 @@ export class ArchiveService {
   }
 
   getArchivedTasks(): ArchivedTask[] {
-    const archives = this.archiveRepo.findAll();
-    return archives.map((archive) => {
+    const fromWorkspaces = this.archiveRepo.findAll().map((archive) => {
       const workspace = this.workspaceRepo.findById(
         archive.workspaceId,
       ) as Workspace;
       const worktree = this.worktreeRepo.findByWorkspaceId(workspace.id);
       return this.toArchivedTask(workspace, archive, worktree?.name ?? null);
     });
+    const rowless = this.rowlessArchived().map(
+      (meta): ArchivedTask => ({
+        taskId: meta.taskId,
+        // `rowlessArchived` only returns rows with a non-null `archivedAt`.
+        archivedAt: meta.archivedAt as string,
+        folderId: "",
+        mode: "cloud",
+        worktreeName: null,
+        branchName: null,
+        checkpointId: null,
+      }),
+    );
+    return [...fromWorkspaces, ...rowless];
+  }
+
+  // Tasks archived via `task_metadata` (no `workspaces` row). A task that has a
+  // workspace row is owned by the `archives` table, so it's excluded here even
+  // if an `archivedAt` lingers in its metadata — otherwise it would surface
+  // twice in the archived lists.
+  private rowlessArchived(): TaskMetadataRow[] {
+    return this.taskMetadataRepo
+      .findAllArchived()
+      .filter((meta) => !this.workspaceRepo.findByTaskId(meta.taskId));
   }
 
   getArchivedTaskIds(): string[] {
-    const archives = this.archiveRepo.findAll();
-    return archives
+    const fromWorkspaces = this.archiveRepo
+      .findAll()
       .map((archive) => {
         const workspace = this.workspaceRepo.findById(archive.workspaceId);
         return workspace?.taskId;
       })
       .filter((id): id is string => id !== undefined);
+    const rowless = this.rowlessArchived().map((meta) => meta.taskId);
+    return [...fromWorkspaces, ...rowless];
   }
 
   isArchived(taskId: string): boolean {
     const workspace = this.workspaceRepo.findByTaskId(taskId);
-    if (!workspace) return false;
+    if (!workspace) {
+      return this.taskMetadataRepo.findByTaskId(taskId)?.archivedAt != null;
+    }
     return this.archiveRepo.findByWorkspaceId(workspace.id) !== null;
   }
 
   async deleteArchivedTask(taskId: string): Promise<void> {
     this.log.info(`Deleting archived task ${taskId}`);
 
+    // Drop any imported CLI snapshot for this task. Best-effort: a cleanup
+    // failure must not block deleting the archived task.
+    await this.importedSessionCleaner
+      .deleteImportForTask(taskId)
+      .catch((error) => {
+        this.log.warn("Failed to clean up imported session", { taskId, error });
+      });
+
     const workspace = this.workspaceRepo.findByTaskId(taskId);
     if (!workspace) {
-      throw new Error(`Workspace not found: ${taskId}`);
+      // Rowless channel task: its archived state lives in task_metadata.
+      const meta = this.taskMetadataRepo.findByTaskId(taskId);
+      if (!meta?.archivedAt) {
+        throw new Error(`Workspace not found: ${taskId}`);
+      }
+      this.taskMetadataRepo.delete(taskId);
+      this.log.info(`Deleted archived task ${taskId}`);
+      return;
     }
 
     const archive = this.archiveRepo.findByWorkspaceId(workspace.id);

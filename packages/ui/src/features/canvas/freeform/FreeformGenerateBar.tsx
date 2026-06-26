@@ -1,34 +1,45 @@
-import { SparkleIcon } from "@phosphor-icons/react";
 import { useGenerateFreeformCanvas } from "@posthog/ui/features/canvas/hooks/useGenerateFreeformCanvas";
-import { Button, Flex, Spinner, TextArea } from "@radix-ui/themes";
+import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
+import type { EditorHandle } from "@posthog/ui/features/message-editor/types";
+import { forwardRef, useState } from "react";
 
 // Composer that kicks off freeform canvas generation as a dedicated task: the
 // user describes what they want and the agent builds + publishes the canvas. No
 // repo is picked up front — the agent attaches one lazily only if it needs it.
 // Used both for the first build (empty canvas) and for follow-up edits
 // (currentCode passed in).
-export function FreeformGenerateBar({
-  dashboardId,
-  channelId,
-  channelName,
-  name,
-  templateId,
-  currentCode,
-  value,
-  onValueChange,
-  onStarted,
-}: {
-  dashboardId: string;
-  channelId: string;
-  channelName: string;
-  name: string;
-  templateId?: string;
-  currentCode?: string;
-  // Controlled draft text (so a self-repair action can prefill it).
-  value: string;
-  onValueChange: (next: string) => void;
-  onStarted?: (taskId: string) => void;
-}) {
+//
+// Shares the task composer's editor (PromptInput) so it matches it exactly — @
+// for files, / for skills, ↑↓ for history — but renders a blank toolbar for now:
+// just the send button, none of the attach/mode/model/history addons. The
+// forwarded ref exposes the editor handle so callers can prefill it (suggestion
+// cards, self-repair).
+export const FreeformGenerateBar = forwardRef<
+  EditorHandle,
+  {
+    dashboardId: string;
+    channelId: string;
+    channelName: string;
+    name: string;
+    templateId?: string;
+    currentCode?: string;
+    // Keys the editor's draft/command state; distinct per canvas.
+    sessionId: string;
+    onStarted?: (taskId: string) => void;
+  }
+>(function FreeformGenerateBar(
+  {
+    dashboardId,
+    channelId,
+    channelName,
+    name,
+    templateId,
+    currentCode,
+    sessionId,
+    onStarted,
+  },
+  ref,
+) {
   const { generate, isStarting } = useGenerateFreeformCanvas({
     dashboardId,
     channelId,
@@ -36,48 +47,51 @@ export function FreeformGenerateBar({
     channelName,
     templateId,
   });
-  const draft = value;
-  const setDraft = onValueChange;
-  const isEdit = !!currentCode?.trim();
 
-  const run = async () => {
-    const instruction = draft.trim();
+  // On a FIRST build we seed the agent with a known-good starter scaffold by
+  // default (faster, more consistent than authoring from scratch). Uncheck to
+  // opt out and have the agent build from a blank canvas. Only meaningful on an
+  // empty canvas, so the toggle is hidden in edit mode.
+  const isEdit = !!currentCode?.trim();
+  const [useStarter, setUseStarter] = useState(true);
+
+  const run = async (text: string) => {
+    const instruction = text.trim();
     if (!instruction) return;
-    const taskId = await generate({ instruction, currentCode });
-    if (taskId) {
-      setDraft("");
-      onStarted?.(taskId);
-    }
+    const taskId = await generate({
+      instruction,
+      currentCode,
+      useStarter: !isEdit && useStarter,
+    });
+    if (taskId) onStarted?.(taskId);
   };
 
   return (
-    <Flex
-      direction="column"
-      gap="2"
-      className="mx-auto w-full max-w-[480px] rounded-lg border border-gray-6 bg-gray-2 p-3"
-    >
-      <TextArea
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        placeholder={
-          isEdit
-            ? "Describe the change you want…"
-            : "Describe the canvas you want. The agent builds a React app from your PostHog data."
-        }
-        rows={3}
+    <div className="flex flex-col gap-1.5">
+      <PromptInput
+        ref={ref}
+        sessionId={sessionId}
+        editorHeight="large"
         disabled={isStarting}
+        isLoading={isStarting}
+        enableCommands
+        enableBashMode={false}
+        hideDefaultToolbar
+        onSubmit={(text) => void run(text)}
       />
-      <Flex align="center" justify="end" gap="2">
-        <Button
-          size="2"
-          variant="solid"
-          disabled={!draft.trim() || isStarting}
-          onClick={() => void run()}
-        >
-          {isStarting ? <Spinner size="1" /> : <SparkleIcon size={14} />}
-          {isEdit ? "Edit" : "Generate"}
-        </Button>
-      </Flex>
-    </Flex>
+      {!isEdit && (
+        <label className="flex cursor-pointer select-none items-center gap-1.5 self-start px-1 text-muted-foreground text-xs">
+          <input
+            type="checkbox"
+            className="cursor-pointer"
+            checked={useStarter}
+            disabled={isStarting}
+            onChange={(e) => setUseStarter(e.target.checked)}
+          />
+          Start from scaffold (faster, more consistent — uncheck to build from
+          scratch)
+        </label>
+      )}
+    </div>
   );
-}
+});

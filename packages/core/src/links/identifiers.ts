@@ -20,3 +20,4 @@ export const APPROVAL_LINK_SERVICE = Symbol.for(
 export const OPEN_TARGET_LINK_SERVICE = Symbol.for(
   "posthog.core.openTargetLinkService",
 );
+export const CANVAS_LINK_SERVICE = Symbol.for("posthog.core.canvasLinkService");

@@ -1,6 +1,7 @@
 import {
   buildChannelContextBlock,
   buildChannelContextText,
+  buildCustomInstructionsText,
   buildPromptBlocks,
 } from "@posthog/core/editor/prompt-builder";
 import type {
@@ -18,7 +19,10 @@ import {
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import type { TaskCreationApiClient } from "./taskCreationApiClient";
-import type { ITaskCreationHost } from "./taskCreationHost";
+import type {
+  ImportedClaudeCliSession,
+  ITaskCreationHost,
+} from "./taskCreationHost";
 
 export interface TaskCreationDeps {
   posthogClient: TaskCreationApiClient;
@@ -50,11 +54,17 @@ export class TaskCreationSaga extends Saga<
         ? this.resolveFolder(input.repoPath)
         : undefined;
 
+    const importedClaude = await this.importClaudeSession(input);
+
     let task = taskId
       ? await this.readOnlyStep("fetch_task", () =>
           this.deps.posthogClient.getTask(taskId),
         )
       : await this.createTask(input);
+
+    if (importedClaude && input.repoPath) {
+      await this.recordClaudeImport(input, importedClaude, task.id);
+    }
 
     const repoKey = getTaskRepository(task);
     const repoPath =
@@ -124,6 +134,14 @@ export class TaskCreationSaga extends Saga<
         createdAt:
           workspaceInfo.worktree?.createdAt ?? new Date().toISOString(),
       };
+
+      // Link after the workspace row exists, so the branch-mismatch prompt can
+      // compare the session's branch against the live checkout.
+      if (importedClaude) {
+        this.linkImportedSessionBranch(input, task.id);
+        workspace.linkedBranch =
+          input.importedClaudeSession?.branch ?? workspace.linkedBranch;
+      }
     } else if (workspaceMode === "cloud") {
       await this.step({
         name: "cloud_workspace_creation",
@@ -255,25 +273,40 @@ export class TaskCreationSaga extends Saga<
                 )
               : null;
 
-          // The local connect path appends channel CONTEXT.md to initialPrompt;
-          // cloud sends its first message as text, so fold the same block into
-          // pendingUserMessage here. The conversation UI parses it identically.
+          // The local connect path appends channel CONTEXT.md to initialPrompt
+          // and gets the user's personalization via the workspace-server system
+          // prompt; cloud sends its first message as text and has no client-side
+          // system-prompt seam, so fold both blocks into pendingUserMessage here.
+          // The conversation UI parses them identically. Order: user's message,
+          // then personalization (user-level), then channel context (workspace-
+          // level background).
+          const messageText = transport?.messageText;
+          // Personalization augments the user's first message — fold it in only
+          // when there is message text to augment. A file-only upload with no
+          // typed text has nothing to personalize, and a block-only message
+          // would strip to an empty bubble in the UI and get deduped against the
+          // sandbox echo, leaving a blank placeholder. Channel context renders as
+          // a chip even alone, so it isn't gated this way.
+          const customInstructionsText = messageText
+            ? buildCustomInstructionsText(input.customInstructions)
+            : null;
           const channelContextText = buildChannelContextText(
             input.channelContext,
             input.channelName,
           );
-          const messageText = transport?.messageText;
-          const pendingUserMessage = channelContextText
-            ? messageText
-              ? `${messageText}\n\n${channelContextText}`
-              : channelContextText
-            : messageText;
+          const pendingUserMessage =
+            [messageText, customInstructionsText, channelContextText]
+              .filter((part): part is string => !!part)
+              .join("\n\n") || undefined;
 
           // The sandbox echoes pendingUserMessage back once it boots; until then
           // the optimistic placeholder would show the bare task description with
-          // no CONTEXT.md chip. Hand the channel-context-bearing message to the
-          // session service so it seeds the placeholder right away.
-          if (channelContextText && pendingUserMessage) {
+          // no CONTEXT.md / personalization chip. Hand the augmented message to
+          // the session service so it seeds the placeholder right away.
+          if (
+            (channelContextText || customInstructionsText) &&
+            pendingUserMessage
+          ) {
             this.deps.sessionService.rememberInitialCloudPrompt(
               task.id,
               pendingUserMessage,
@@ -390,6 +423,10 @@ export class TaskCreationSaga extends Saga<
           if (input.model) connectParams.model = input.model;
           if (input.reasoningLevel)
             connectParams.reasoningLevel = input.reasoningLevel;
+          if (importedClaude) {
+            connectParams.importedSessionId = importedClaude.importedSessionId;
+            connectParams.adapter = "claude";
+          }
 
           this.deps.sessionService.connectToTask(connectParams);
           return { taskId: task.id };
@@ -404,6 +441,84 @@ export class TaskCreationSaga extends Saga<
     }
 
     return { task, workspace };
+  }
+
+  /**
+   * Snapshot an existing Claude Code CLI transcript into the app's Claude
+   * config dir so the agent session can resume it. On rollback the copied
+   * transcript is removed so abandoned snapshots don't accumulate.
+   */
+  private async importClaudeSession(
+    input: TaskCreationInput,
+  ): Promise<ImportedClaudeCliSession | undefined> {
+    const repoPath = input.repoPath;
+    if (
+      input.taskId ||
+      !input.importedClaudeSession ||
+      !repoPath ||
+      (input.workspaceMode ?? "local") !== "local"
+    ) {
+      return undefined;
+    }
+    const { sourceSessionId } = input.importedClaudeSession;
+    return this.step({
+      name: "import_claude_session",
+      execute: () =>
+        this.deps.host.importClaudeCliSession({ repoPath, sourceSessionId }),
+      rollback: (imported) =>
+        this.deps.host.deleteClaudeCliImport({
+          repoPath,
+          importedSessionId: imported.importedSessionId,
+        }),
+    });
+  }
+
+  /**
+   * Link the task to the branch the CLI session worked on (best-effort, no
+   * checkout). The standard branch-mismatch prompt then offers to switch if
+   * the local checkout is elsewhere — consistent with how the app handles
+   * sending a message on a differing branch.
+   */
+  private linkImportedSessionBranch(
+    input: TaskCreationInput,
+    taskId: string,
+  ): void {
+    const branchName = input.importedClaudeSession?.branch;
+    if (!branchName) return;
+    this.deps.host.linkTaskBranch({ taskId, branchName }).catch((error) => {
+      this.log.warn("Failed to link imported session branch", { error });
+    });
+  }
+
+  /**
+   * Persist the import tracking row so the source session lists as `imported`
+   * and reopens to this task. A first-class step paired with the import: on
+   * rollback the row is dropped (by imported session id), so a later-step
+   * failure can never leave a row pointing at a discarded task. Awaited so it
+   * is ordered before any step that could trigger that rollback.
+   */
+  private async recordClaudeImport(
+    input: TaskCreationInput,
+    imported: ImportedClaudeCliSession,
+    taskId: string,
+  ): Promise<void> {
+    const sourceSessionId = input.importedClaudeSession?.sourceSessionId;
+    const repoPath = input.repoPath;
+    if (!sourceSessionId || !repoPath) return;
+    const { importedSessionId, fingerprint } = imported;
+    await this.step({
+      name: "record_claude_import",
+      execute: () =>
+        this.deps.host.recordClaudeCliImport({
+          sourceSessionId,
+          importedSessionId,
+          repoPath,
+          taskId,
+          fingerprint,
+        }),
+      rollback: () =>
+        this.deps.host.deleteClaudeCliImportRecord({ importedSessionId }),
+    });
   }
 
   private async resolveFolder(repoPath: string) {
@@ -481,6 +596,16 @@ export class TaskCreationSaga extends Saga<
           branch:
             input.workspaceMode === "cloud"
               ? (input.branch ?? null)
+              : undefined,
+          runtime_adapter:
+            input.workspaceMode === "cloud"
+              ? (input.adapter ?? null)
+              : undefined,
+          model:
+            input.workspaceMode === "cloud" ? (input.model ?? null) : undefined,
+          reasoning_effort:
+            input.workspaceMode === "cloud"
+              ? (input.reasoningLevel ?? null)
               : undefined,
           signal_report: input.signalReportId ?? undefined,
         });

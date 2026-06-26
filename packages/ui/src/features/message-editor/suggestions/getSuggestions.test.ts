@@ -18,6 +18,7 @@ function seedSessionContext(taskId: string | undefined) {
 
 function seedSessionAvailableCommands(
   commands: { name: string; description: string }[],
+  adapter?: "claude" | "codex",
 ) {
   const events: AcpMessage[] = [
     {
@@ -40,6 +41,7 @@ function seedSessionAvailableCommands(
     state.sessions[TASK_RUN_ID] = {
       taskId: TASK_ID,
       taskRunId: TASK_RUN_ID,
+      adapter,
       events,
       processedLineCount: 0,
       configOptions: [],
@@ -66,6 +68,7 @@ interface Scenario {
   name: string;
   contextTaskId?: string;
   sessionCommands?: { name: string; description: string }[];
+  adapter?: "claude" | "codex";
   draftCommands?: { name: string; description: string }[];
   expectContains: string[];
   expectNotContains?: string[];
@@ -107,14 +110,31 @@ const SCENARIOS: Scenario[] = [
     expectContains: ["my-skill"],
   },
   {
-    name: "agent reporting an empty list suppresses the draft-store fallback",
+    name: "claude reporting an empty list suppresses the draft-store fallback",
     contextTaskId: TASK_ID,
+    adapter: "claude",
     draftCommands: [
       { name: "fallback-only", description: "Should not appear" },
     ],
     sessionCommands: [],
     expectContains: ["good", "bad", "feedback"],
     expectNotContains: ["fallback-only"],
+  },
+  {
+    name: "codex keeps draft-store skills when agent commands are empty",
+    contextTaskId: TASK_ID,
+    adapter: "codex",
+    draftCommands: [{ name: "fallback-skill", description: "User skill" }],
+    sessionCommands: [],
+    expectContains: ["fallback-skill"],
+  },
+  {
+    name: "codex merges agent commands and draft-store skills",
+    contextTaskId: TASK_ID,
+    adapter: "codex",
+    draftCommands: [{ name: "fallback-skill", description: "User skill" }],
+    sessionCommands: [{ name: "agent-cmd", description: "From agent" }],
+    expectContains: ["agent-cmd", "fallback-skill"],
   },
 ];
 
@@ -126,13 +146,15 @@ describe("getCommandSuggestions", () => {
     ({
       contextTaskId,
       sessionCommands,
+      adapter,
       draftCommands,
       expectContains,
       expectNotContains,
     }) => {
       if (contextTaskId) seedSessionContext(contextTaskId);
       if (draftCommands) seedDraftCommands(draftCommands);
-      if (sessionCommands) seedSessionAvailableCommands(sessionCommands);
+      if (sessionCommands)
+        seedSessionAvailableCommands(sessionCommands, adapter);
 
       const names = getCommandSuggestions(SESSION_ID, "").map(
         (s) => s.command.name,

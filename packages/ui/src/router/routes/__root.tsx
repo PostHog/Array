@@ -12,6 +12,7 @@ import {
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { isContentlessTask } from "@posthog/shared/domain-types";
 import { DeepLinkApprovalModal } from "@posthog/ui/features/agent-applications/components/DeepLinkApprovalModal";
 import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -21,6 +22,7 @@ import {
   FeedbackModal,
   type FeedbackModalMode,
 } from "@posthog/ui/features/canvas/components/FeedbackModal";
+import { useCanvasDeepLink } from "@posthog/ui/features/canvas/hooks/useCanvasDeepLink";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
@@ -195,6 +197,7 @@ function RootLayout() {
   useOpenTargetDeepLink();
   useInboxDeepLink();
   useScoutDeepLink();
+  useCanvasDeepLink();
   const approvalDeepLink = useApprovalDeepLink();
   useSetupDiscovery();
   useNewTaskDeepLink();
@@ -209,7 +212,8 @@ function RootLayout() {
       (t) =>
         t.latest_run?.environment === "cloud" &&
         !workspaces[t.id] &&
-        !reconcilingTaskIds.current.has(t.id),
+        !reconcilingTaskIds.current.has(t.id) &&
+        !isContentlessTask(t),
     );
     if (missing.length === 0) return;
     const missingIds = missing.map((t) => t.id);

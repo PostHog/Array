@@ -109,6 +109,9 @@ export const APPROVAL_LINK_SERVICE = Symbol.for(
 export const OPEN_TARGET_LINK_SERVICE = Symbol.for(
   "posthog.host.main.open-target-link.service",
 );
+export const CANVAS_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.canvas-link.service",
+);
 export const WATCHER_REGISTRY_SERVICE = Symbol.for(
   "posthog.host.main.watcher-registry.service",
 );
