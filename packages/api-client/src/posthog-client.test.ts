@@ -260,6 +260,42 @@ describe("PostHogAPIClient", () => {
               repository: "PostHog/posthog",
               github_integration: 42,
               branch: "feature/warm",
+              runtime_adapter: null,
+              model: null,
+              reasoning_effort: null,
+            }),
+          },
+        }),
+      );
+    });
+
+    it("forwards the selected runtime so the warm Run starts on it", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () =>
+          JSON.stringify({ task_id: "task-1", run_id: "run-1" }),
+      });
+      const client = makeClient(fetch);
+
+      await client.warmTask({
+        repository: "PostHog/posthog",
+        github_integration: 42,
+        branch: "feature/warm",
+        runtime_adapter: "codex",
+        model: "gpt-5.5",
+        reasoning_effort: "high",
+      });
+
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          overrides: {
+            body: JSON.stringify({
+              repository: "PostHog/posthog",
+              github_integration: 42,
+              branch: "feature/warm",
+              runtime_adapter: "codex",
+              model: "gpt-5.5",
+              reasoning_effort: "high",
             }),
           },
         }),
@@ -286,6 +322,9 @@ describe("PostHogAPIClient", () => {
               repository: "PostHog/posthog",
               github_integration: 42,
               branch: null,
+              runtime_adapter: null,
+              model: null,
+              reasoning_effort: null,
             }),
           },
         }),

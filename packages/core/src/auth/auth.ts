@@ -910,26 +910,84 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return;
     }
 
-    try {
-      const apiHost = getCloudUrlFromRegion(this.session.cloudRegion);
-      const response = await this.executeAuthenticatedFetch(
-        fetch,
-        `${apiHost}/api/code/invites/check-access/`,
-        {},
-        this.session.accessToken,
-      );
-      const data = (await response.json().catch(() => ({}))) as {
-        has_access?: boolean;
-      };
+    const hasAccess = await this.checkCodeAccess(this.session);
 
-      this.updateState({ hasCodeAccess: data.has_access === true });
-    } catch (error) {
-      this.logger.warn("Failed to update code access state", { error });
-      this.updateState({ hasCodeAccess: false });
+    if (hasAccess !== null) {
+      this.updateState({ hasCodeAccess: hasAccess });
+      return;
     }
+
+    // Indeterminate: a transient/unauthorized failure isn't proof the invite
+    // was revoked, so keep the prior value and let the next sync re-check.
+    this.logger.warn(
+      "Code access check was inconclusive; keeping previous value",
+      { hasCodeAccess: this.state.hasCodeAccess },
+    );
+  }
+
+  /**
+   * Resolves Code invite access. Only a 2xx response with an explicit boolean
+   * `has_access` is authoritative; everything else (offline, network error,
+   * non-2xx, malformed body) is indeterminate, retried with backoff, then
+   * returned as `null` so the caller keeps the prior value. Uses the synced
+   * token directly rather than `authenticatedFetch`, which would re-enter the
+   * refresh flow this runs inside and deadlock.
+   */
+  private async checkCodeAccess(
+    session: InMemorySession,
+  ): Promise<boolean | null> {
+    const url = `${getCloudUrlFromRegion(session.cloudRegion)}/api/code/invites/check-access/`;
+
+    for (
+      let attempt = 0;
+      attempt < AuthService.CODE_ACCESS_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      if (!this.connectivity.getStatus().isOnline) {
+        return null;
+      }
+
+      try {
+        const response = await this.executeAuthenticatedFetch(
+          fetch,
+          url,
+          {},
+          session.accessToken,
+        );
+
+        if (response.ok) {
+          const data = (await response.json().catch(() => null)) as {
+            has_access?: unknown;
+          } | null;
+          if (data && typeof data.has_access === "boolean") {
+            return data.has_access;
+          }
+          this.logger.warn("Code access response missing has_access flag", {
+            status: response.status,
+          });
+        } else {
+          this.logger.warn("Code access check returned non-OK status", {
+            status: response.status,
+          });
+        }
+      } catch (error) {
+        this.logger.warn("Code access check request failed", {
+          error,
+          attempt,
+        });
+      }
+
+      const isLastAttempt =
+        attempt === AuthService.CODE_ACCESS_MAX_ATTEMPTS - 1;
+      if (isLastAttempt) break;
+      await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
+    }
+
+    return null;
   }
   private static readonly REFRESH_MAX_ATTEMPTS = 3;
   private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
+  private static readonly CODE_ACCESS_MAX_ATTEMPTS = 3;
   private static readonly ORG_RECOVERY_MAX_ATTEMPTS = 5;
   private static readonly REFRESH_BACKOFF: BackoffOptions = {
     initialDelayMs: 1_000,

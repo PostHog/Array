@@ -14,3 +14,4 @@ export const NEW_TASK_LINK_SERVICE = Symbol.for(
 export const APPROVAL_LINK_SERVICE = Symbol.for(
   "posthog.core.approvalLinkService",
 );
+export const CANVAS_LINK_SERVICE = Symbol.for("posthog.core.canvasLinkService");

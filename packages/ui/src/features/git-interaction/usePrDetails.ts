@@ -55,6 +55,7 @@ export function usePrDetails(
       state: metaQuery.data?.state ?? null,
       merged: metaQuery.data?.merged ?? false,
       draft: metaQuery.data?.draft ?? false,
+      headRefName: metaQuery.data?.headRefName ?? null,
       isLoading: metaQuery.isLoading,
     },
     commentThreads,

@@ -247,10 +247,11 @@ export function AgentRevisionBar({
 
       <Flex gap="2">
         {/*
-         * Test — runs this not-yet-promoted revision through the live ingress
-         * with a preview token (the chat tab mints + attaches it via
-         * useAgentChat). Live uses the default Chat tab; archived can't be
-         * exercised.
+         * Test — routes this not-yet-promoted revision through the ingress
+         * with a short-lived JWT (the chat tab mints + attaches it via
+         * useAgentChat). Side effects run for real; the revision serving the
+         * request is the only difference from a live chat. Live uses the
+         * default Chat tab; archived can't be exercised.
          */}
         {selected.state !== "live" &&
         selected.state !== "archived" &&

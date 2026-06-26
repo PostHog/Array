@@ -4,6 +4,22 @@ import type { ClientToolHandler } from "../hooks/useAgentChat";
 import { useAgentBuilderStore } from "./agentBuilderStore";
 
 /**
+ * The `kind:'client'` tool ids the agent-builder dock can fulfil — sent to the
+ * runner as `supported_client_tools` at /run so it exposes only these to the
+ * model. Keep in sync with the handler below plus the built-in toast/get_context.
+ */
+export const AGENT_BUILDER_CLIENT_TOOLS = [
+  "set_secret",
+  "focus_tab",
+  "focus_file",
+  "focus_spec_section",
+  "focus_revision",
+  "focus_session",
+  "toast",
+  "get_context",
+] as const;
+
+/**
  * The agent builder's UI-driving client tools. The agent calls these to steer the
  * user's screen (`focus_*`, which navigate code's agent routes and report back
  * `{ focused }`) and to set secrets (`set_secret`, an interactive punch-out:

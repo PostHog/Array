@@ -11,7 +11,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import {
-  type PreviewChatEntry,
+  type ChatHistoryEntry,
   useChatHistoryStore,
 } from "../chat/chatHistoryStore";
 import { useAgentApplication } from "../hooks/useAgentApplication";
@@ -23,7 +23,7 @@ import { AgentChatPendingApprovalCard } from "./AgentChatPendingApprovalCard";
 import { AgentChatSurface } from "./AgentChatSurface";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 
-const EMPTY_CHATS: PreviewChatEntry[] = [];
+const EMPTY_CHATS: ChatHistoryEntry[] = [];
 
 function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
@@ -42,18 +42,19 @@ function relativeTime(ms: number): string {
 }
 
 /**
- * Live chat against a deployed agent (the console's "preview/test"). Streams the
- * agent-ingress SSE through the native `ConversationView`. Only meaningful for
- * agents that expose a chat trigger and have a public ingress URL.
+ * In-app chat against a deployed agent. Streams the agent-ingress SSE through
+ * the native `ConversationView`. Only meaningful for agents that expose a chat
+ * trigger and have a public ingress URL.
  *
- * A left rail lists the preview chats the user started *here* (persisted
- * locally — never the agent's full server session list, which can include real
- * customer chats), and a banner makes clear this talks to the deployed revision.
+ * A left rail lists the chats the user started *here* (persisted locally —
+ * never the agent's full server session list, which can include real customer
+ * chats), and a banner makes clear which revision this targets.
  *
  * When `revisionId` targets a non-live revision (the "Test draft" affordance
- * from the revision bar), the hook mints a short-lived preview token and
- * scopes the ingress to that draft; chatId/banner switch accordingly so a
- * draft session can't be confused with a live one.
+ * from the revision bar), the hook mints a short-lived ingress JWT and routes
+ * the run to that draft; chatId/banner switch accordingly so a draft session
+ * can't be confused with a live one. Side effects (Slack, approvals, tools)
+ * still run for real — only the revision serving the request differs.
  */
 export function AgentChatPane({
   idOrSlug,
@@ -73,12 +74,12 @@ export function AgentChatPane({
   const navigate = useNavigate();
   const { data: application } = useAgentApplication(idOrSlug);
   // null/equal-to-live → fall back to the live revision; explicit non-live
-  // revision id → draft preview mode.
+  // revision id → route this chat to the draft.
   const targetRevisionId =
     revisionId && revisionId !== application?.live_revision
       ? revisionId
       : (application?.live_revision ?? null);
-  const isDraftPreview =
+  const isDraftRevisionChat =
     !!revisionId && revisionId !== application?.live_revision;
   const { data: revision } = useAgentRevision(idOrSlug, targetRevisionId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
@@ -89,16 +90,16 @@ export function AgentChatPane({
   const hasChatTrigger = (revision?.spec?.triggers ?? []).some(
     (t) => rec(t).type === "chat",
   );
-  // Keyed by revision so a draft preview and the live chat coexist in the store
+  // Keyed by revision so a draft chat and the live chat coexist in the store
   // without trampling each other.
-  const chatId = isDraftPreview
+  const chatId = isDraftRevisionChat
     ? `preview:${idOrSlug}:${revisionId}`
     : `preview:${idOrSlug}`;
   const chat = useAgentChat({
     chatId,
     agentSlug: idOrSlug,
     ingressBaseUrl,
-    revisionId: isDraftPreview ? revisionId : null,
+    revisionId: isDraftRevisionChat ? revisionId : null,
     recordHistory: true,
   });
   const pendingApproval = useAgentChatPendingApproval(chatId);
@@ -106,12 +107,12 @@ export function AgentChatPane({
   const removeChat = useChatHistoryStore((s) => s.remove);
 
   // Partition the rail into "matches the current target" vs everything else
-  // so a live view doesn't drown in old draft previews (and vice-versa). The
+  // so a live view doesn't drown in old draft chats (and vice-versa). The
   // expander reveals the rest on demand.
-  const currentRev = isDraftPreview ? (revisionId ?? null) : null;
+  const currentRev = isDraftRevisionChat ? (revisionId ?? null) : null;
   const { matchingChats, otherChats } = useMemo(() => {
-    const matching: PreviewChatEntry[] = [];
-    const other: PreviewChatEntry[] = [];
+    const matching: ChatHistoryEntry[] = [];
+    const other: ChatHistoryEntry[] = [];
     for (const c of chats) {
       if ((c.revisionId ?? null) === currentRev) matching.push(c);
       else other.push(c);
@@ -147,7 +148,7 @@ export function AgentChatPane({
 
   // The rail mixes chats from every revision; decide per click whether to
   // resume inline (same target) or navigate to a different revision's surface.
-  const handleRailSelect = (entry: PreviewChatEntry) => {
+  const handleRailSelect = (entry: ChatHistoryEntry) => {
     if ((entry.revisionId ?? null) === currentRev) {
       chat.resume(entry.sessionId);
       return;
@@ -175,7 +176,7 @@ export function AgentChatPane({
           <AgentDetailEmptyState
             title="No chat trigger"
             description={
-              isDraftPreview
+              isDraftRevisionChat
                 ? "This draft revision doesn't expose a chat trigger, so there's nothing to chat with. Add a chat trigger via the agent builder to test it here."
                 : "This agent's live revision doesn't expose a chat trigger, so there's nothing to chat with. Add a chat trigger via the agent builder to test it here."
             }
@@ -194,9 +195,9 @@ export function AgentChatPane({
             onDelete={(sessionId) => removeChat(idOrSlug, sessionId)}
           />
           <Flex direction="column" className="min-w-0 flex-1">
-            <PreviewBanner
+            <RevisionChatBanner
               revisionId={targetRevisionId}
-              isDraft={isDraftPreview}
+              isDraft={isDraftRevisionChat}
               model={revision?.spec?.model}
               region={cloudRegion}
             />
@@ -229,7 +230,7 @@ export function AgentChatPane({
   );
 }
 
-function PreviewBanner({
+function RevisionChatBanner({
   revisionId,
   isDraft,
   model,
@@ -251,8 +252,8 @@ function PreviewBanner({
       <InfoIcon size={14} className="shrink-0 text-gray-10" />
       <Text className="text-[12px] text-gray-11 leading-snug">
         {isDraft
-          ? "Draft preview — messages run against an unpublished revision. Promote it to make this the live one."
-          : "Live preview — messages run against the currently deployed revision. Only chats you start here appear in the list."}
+          ? "Chatting with a draft revision — Slack posts, approvals, and tools all run for real. Promote the revision to make this the live one."
+          : "Chatting with the live revision — messages run against the currently deployed revision. Only chats you start here appear in the list."}
       </Text>
       <Flex align="center" gap="2" className="ml-auto shrink-0">
         {model ? (
@@ -284,15 +285,15 @@ function ChatHistoryRail({
   onSelect,
   onDelete,
 }: {
-  chats: PreviewChatEntry[];
+  chats: ChatHistoryEntry[];
   /** Chats from other revisions — hidden behind an expander to keep this surface focused. */
-  otherChats: PreviewChatEntry[];
+  otherChats: ChatHistoryEntry[];
   showOthers: boolean;
   onToggleShowOthers: () => void;
   activeSessionId: string | null;
   onNewChat: () => void;
   /** Receives the full entry so the parent can route by revision, not just resume. */
-  onSelect: (entry: PreviewChatEntry) => void;
+  onSelect: (entry: ChatHistoryEntry) => void;
   onDelete: (sessionId: string) => void;
 }) {
   return (
@@ -365,9 +366,9 @@ function RailEntry({
   onSelect,
   onDelete,
 }: {
-  entry: PreviewChatEntry;
+  entry: ChatHistoryEntry;
   active: boolean;
-  onSelect: (entry: PreviewChatEntry) => void;
+  onSelect: (entry: ChatHistoryEntry) => void;
   onDelete: (sessionId: string) => void;
 }) {
   return (
@@ -391,7 +392,7 @@ function RailEntry({
                 <span aria-hidden>·</span>
                 <span
                   className="rounded-(--radius-1) bg-(--amber-3) px-1 font-mono text-(--amber-11) text-[10px]"
-                  title={`Draft preview against revision ${entry.revisionId}`}
+                  title={`Chat against draft revision ${entry.revisionId}`}
                 >
                   rev {entry.revisionId.slice(0, 8)}
                 </span>

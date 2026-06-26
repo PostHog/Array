@@ -2141,6 +2141,9 @@ export class PostHogAPIClient {
         github_integration?: number | null;
         github_user_integration?: string | null;
         branch?: string | null;
+        runtime_adapter?: string | null;
+        model?: string | null;
+        reasoning_effort?: string | null;
       },
   ) {
     const teamId = await this.getTeamId();
@@ -2280,6 +2283,9 @@ export class PostHogAPIClient {
     repository: string;
     github_integration: number;
     branch?: string | null;
+    runtime_adapter?: string | null;
+    model?: string | null;
+    reasoning_effort?: string | null;
   }): Promise<{ task_id: string; run_id: string } | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/tasks/warm/`;
@@ -2293,6 +2299,9 @@ export class PostHogAPIClient {
           repository: options.repository,
           github_integration: options.github_integration,
           branch: options.branch ?? null,
+          runtime_adapter: options.runtime_adapter ?? null,
+          model: options.model ?? null,
+          reasoning_effort: options.reasoning_effort ?? null,
         }),
       },
     });
@@ -4998,14 +5007,21 @@ export class PostHogAPIClient {
     ingressBaseUrl: string,
     message: string,
     previewToken?: string | null,
+    supportedClientTools?: readonly string[],
   ): Promise<{ session_id: string; resumed?: boolean }> {
     const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/run`);
+    // `supported_client_tools`: the kind:'client' tool ids this client can
+    // execute this session, so the runner exposes only those to the model.
+    const body: Record<string, unknown> = { message };
+    if (supportedClientTools && supportedClientTools.length > 0) {
+      body.supported_client_tools = supportedClientTools;
+    }
     const response = await this.api.fetcher.fetch({
       method: "post",
       url,
       path: url.pathname,
       parameters: previewTokenHeader(previewToken),
-      overrides: { body: JSON.stringify({ message }) },
+      overrides: { body: JSON.stringify(body) },
     });
     return (await response.json()) as { session_id: string; resumed?: boolean };
   }

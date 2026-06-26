@@ -318,13 +318,6 @@ export function TaskInput({
   const { githubIntegrations: orgGithubIntegrations } =
     useIntegrationSelectors();
   const orgGithubIntegrationId = orgGithubIntegrations[0]?.id;
-  useWarmTask({
-    workspaceMode,
-    selectedRepository: selectedCloudRepository,
-    githubIntegrationId: orgGithubIntegrationId,
-    branch: workspaceMode === "cloud" ? selectedBranch : null,
-    editorIsEmpty,
-  });
 
   const {
     data: cloudBranchData,
@@ -584,6 +577,17 @@ export function TaskInput({
     modeFallback;
   const currentReasoningLevel =
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+
+  useWarmTask({
+    workspaceMode,
+    selectedRepository: selectedCloudRepository,
+    githubIntegrationId: orgGithubIntegrationId,
+    branch: workspaceMode === "cloud" ? selectedBranch : null,
+    editorIsEmpty,
+    runtimeAdapter: adapter ?? null,
+    model: currentModel,
+    reasoningEffort: currentReasoningLevel,
+  });
 
   const branchForTaskCreation =
     effectiveWorkspaceMode === "worktree" || effectiveWorkspaceMode === "cloud"
@@ -1047,8 +1051,10 @@ export function TaskInput({
                                 ],
                               });
                             // Bug/feature suggestions start in plan mode; the
-                            // analysis ones start in auto mode.
+                            // analysis ones start in auto mode. Suggestions
+                            // without a mode leave the composer's mode as-is.
                             if (
+                              suggestion.mode &&
                               isValidConfigValue(modeOption, suggestion.mode)
                             ) {
                               setConfigOption(modeOption.id, suggestion.mode);

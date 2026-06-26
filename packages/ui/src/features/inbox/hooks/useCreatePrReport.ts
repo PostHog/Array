@@ -1,5 +1,7 @@
 import { buildCreatePrReportPrompt } from "@posthog/core/inbox/reportActions";
+import { buildPostHogUrl } from "@posthog/core/settings/posthogUrl";
 import type { TaskCreationInput } from "@posthog/core/task-detail/taskService";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import {
   type InboxCloudTaskInputContext,
   useInboxCloudTaskRunner,
@@ -45,6 +47,8 @@ export function useCreatePrReport({
 }: UseCreatePrReportOptions): UseCreatePrReportReturn {
   const { data: teamConfig } = useSignalTeamConfig();
   const baseBranchOverrides = teamConfig?.autostart_base_branches ?? null;
+  const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
 
   // Holds the steering text for the in-flight run. `buildInput` is invoked
   // synchronously inside `run()`, so the ref is always current when read; a ref
@@ -53,9 +57,18 @@ export function useCreatePrReport({
 
   const buildInput = useCallback(
     (ctx: InboxCloudTaskInputContext): TaskCreationInput => {
+      // Web URL rather than a `posthog-code://` deep link: the prompt runs in a
+      // cloud task and may be echoed into the PR, where only an https link works.
+      const reportUrl =
+        projectId != null
+          ? buildPostHogUrl(
+              `/project/${projectId}/inbox/${reportId}`,
+              cloudRegion,
+            )
+          : null;
       const prompt = buildCreatePrReportPrompt({
         reportId,
-        isDevBuild: import.meta.env.DEV,
+        reportUrl,
         feedback: feedbackRef.current,
       });
       const targetRepo = ctx.cloudRepository.toLowerCase();
@@ -80,7 +93,7 @@ export function useCreatePrReport({
         signalReportId: reportId,
       };
     },
-    [baseBranchOverrides, reportId],
+    [baseBranchOverrides, reportId, cloudRegion, projectId],
   );
 
   const analyticsExtras = useMemo(

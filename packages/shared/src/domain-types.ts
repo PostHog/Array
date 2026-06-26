@@ -76,6 +76,13 @@ export function isTerminalStatus(
   );
 }
 
+export function isContentlessTask(task: {
+  title?: string | null;
+  description?: string | null;
+}): boolean {
+  return !task.title?.trim() && !task.description?.trim();
+}
+
 export interface TaskRun {
   id: string;
   task: string; // Task ID

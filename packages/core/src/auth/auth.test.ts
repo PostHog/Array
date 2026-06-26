@@ -151,6 +151,9 @@ describe("AuthService", () => {
         string,
         { name: string; projects: { id: number; name: string }[] }
       >;
+      // Overrides the /api/code/invites/check-access/ response (defaults to
+      // granting access). May throw to simulate a network error.
+      checkAccess?: () => Response;
     } = {},
   ) => {
     const accountKey = options.accountKey ?? "user-1";
@@ -186,6 +189,9 @@ describe("AuthService", () => {
           } as unknown as Response;
         }
 
+        if (options.checkAccess) {
+          return options.checkAccess();
+        }
         return {
           ok: true,
           json: vi.fn().mockResolvedValue({ has_access: true }),
@@ -1340,6 +1346,108 @@ describe("AuthService", () => {
 
       expect(state.hasCodeAccess).toBe(true);
       expect(redeemCallCount).toBe(2);
+    });
+  });
+
+  describe("code access resilience", () => {
+    const okBody = (body: unknown): Response =>
+      ({
+        ok: true,
+        json: vi.fn().mockResolvedValue(body),
+      }) as unknown as Response;
+
+    beforeEach(() => {
+      seedStoredSession();
+      oauthFlow.refreshToken.mockResolvedValue(
+        mockTokenResponse({
+          accessToken: "access-token",
+          refreshToken: "rotated-refresh-token",
+        }),
+      );
+    });
+
+    it.each([
+      {
+        name: "grants access when the server reports has_access true",
+        checkAccess: () => okBody({ has_access: true }),
+        expected: true,
+      },
+      {
+        name: "denies access when the server explicitly reports no access",
+        checkAccess: () => okBody({ has_access: false }),
+        expected: false,
+      },
+      {
+        name: "stays indeterminate when the check throws",
+        checkAccess: () => {
+          throw new Error("network down");
+        },
+        expected: null,
+      },
+      {
+        name: "stays indeterminate on a 2xx response without a has_access flag",
+        checkAccess: () => okBody({}),
+        expected: null,
+      },
+    ])("$name", async ({ checkAccess, expected }) => {
+      stubAuthFetch({ checkAccess });
+
+      await service.initialize();
+
+      const state = service.getState();
+      expect(state.status).toBe("authenticated");
+      expect(state.hasCodeAccess).toBe(expected);
+    });
+
+    it.each([
+      {
+        name: "a network error",
+        fail: (): Response => {
+          throw new Error("network down");
+        },
+      },
+      {
+        name: "a 401",
+        fail: (): Response =>
+          ({
+            ok: false,
+            status: 401,
+            json: vi.fn().mockResolvedValue({}),
+          }) as unknown as Response,
+      },
+    ])(
+      "keeps a confirmed grant when a later check hits $name",
+      async ({ fail }) => {
+        let shouldFail = false;
+        stubAuthFetch({
+          checkAccess: () =>
+            shouldFail ? fail() : okBody({ has_access: true }),
+        });
+
+        await service.initialize();
+        expect(service.getState().hasCodeAccess).toBe(true);
+
+        shouldFail = true;
+        await service.refreshAccessToken();
+
+        expect(service.getState().hasCodeAccess).toBe(true);
+      },
+    );
+
+    it("recovers within the retry loop when a later attempt succeeds", async () => {
+      let attempts = 0;
+      stubAuthFetch({
+        checkAccess: () => {
+          attempts += 1;
+          if (attempts === 1) throw new Error("transient");
+          return okBody({ has_access: true });
+        },
+      });
+
+      await service.initialize();
+
+      expect(service.getState().hasCodeAccess).toBe(true);
+      expect(attempts).toBeGreaterThanOrEqual(2);
     });
   });
 });

@@ -4,10 +4,12 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute(
   "/code/agents/applications/$idOrSlug/chat",
 )({
-  // `revision` opts into draft preview (the pane mints a preview token and
-  // scopes the ingress to that revision). `session` re-attaches a specific
-  // session on mount — set by rail clicks that cross revisions so the new
-  // mount resumes the right conversation instead of starting empty.
+  // `revision` routes this chat to a non-live revision (the pane mints a
+  // short-lived ingress JWT scoped to that revision; side effects still run
+  // for real, only the revision serving the request changes). `session`
+  // re-attaches a specific session on mount — set by rail clicks that cross
+  // revisions so the new mount resumes the right conversation instead of
+  // starting empty.
   validateSearch: (
     search: Record<string, unknown>,
   ): { revision?: string; session?: string } => ({

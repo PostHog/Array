@@ -541,8 +541,9 @@ export async function hydrateSessionJsonl(params: {
     });
 
     const allTurns = rebuildConversation(entries);
+
     if (allTurns.length === 0) {
-      log.info("No conversation in S3 logs, skipping JSONL hydration");
+      log.info("No conversation to hydrate, skipping JSONL hydration");
       return false;
     }
 
