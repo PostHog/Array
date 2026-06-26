@@ -17,41 +17,38 @@ function makeTask(overrides: Partial<Task>): Task {
 }
 
 describe("filterAndSortTasks", () => {
-  it("hides warm-sandbox placeholder tasks (no title and no description)", () => {
-    const placeholder = makeTask({ id: "warm", title: "", description: "" });
-    const real = makeTask({ id: "real" });
+  it.each([
+    { name: "empty title and description", title: "", description: "" },
+    { name: "whitespace-only fields", title: "   ", description: "\n\t" },
+  ])(
+    "hides warm-sandbox placeholder tasks ($name)",
+    ({ title, description }) => {
+      const placeholder = makeTask({ id: "warm", title, description });
+      const real = makeTask({ id: "real" });
 
-    const result = filterAndSortTasks(
-      [placeholder, real],
-      "updated",
-      false,
-      "",
-    );
+      const result = filterAndSortTasks(
+        [placeholder, real],
+        "updated",
+        false,
+        "",
+      );
 
-    expect(result.map((t) => t.id)).toEqual(["real"]);
-  });
+      expect(result.map((t) => t.id)).toEqual(["real"]);
+    },
+  );
 
-  it("keeps a real task that only has a description (title not landed yet)", () => {
-    const pending = makeTask({
-      id: "pending",
+  it.each([
+    {
+      name: "description only (title not landed yet)",
       title: "",
       description: "Fix login",
-    });
+    },
+    { name: "title only", title: "Fix login", description: "" },
+  ])("keeps a real task with $name", ({ title, description }) => {
+    const task = makeTask({ id: "real", title, description });
 
-    const result = filterAndSortTasks([pending], "updated", false, "");
+    const result = filterAndSortTasks([task], "updated", false, "");
 
-    expect(result.map((t) => t.id)).toEqual(["pending"]);
-  });
-
-  it("keeps a task that only has a title", () => {
-    const titled = makeTask({
-      id: "titled",
-      title: "Fix login",
-      description: "",
-    });
-
-    const result = filterAndSortTasks([titled], "updated", false, "");
-
-    expect(result.map((t) => t.id)).toEqual(["titled"]);
+    expect(result.map((t) => t.id)).toEqual(["real"]);
   });
 });
