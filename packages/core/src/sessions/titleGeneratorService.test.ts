@@ -98,13 +98,17 @@ describe("enrichDescriptionWithFileContent", () => {
   ])(
     "reads explicit file paths for attachment-only prompt -- $label",
     async ({ description }) => {
-      readAbsoluteFile.mockResolvedValue("Refactor the auth flow and add tests");
+      readAbsoluteFile.mockResolvedValue(
+        "Refactor the auth flow and add tests",
+      );
       const result = await makeService().enrichDescriptionWithFileContent(
         description,
         ["/tmp/clip/pasted-text.txt"],
       );
       expect(result).toBe("Refactor the auth flow and add tests");
-      expect(readAbsoluteFile).toHaveBeenCalledWith("/tmp/clip/pasted-text.txt");
+      expect(readAbsoluteFile).toHaveBeenCalledWith(
+        "/tmp/clip/pasted-text.txt",
+      );
     },
   );
 
