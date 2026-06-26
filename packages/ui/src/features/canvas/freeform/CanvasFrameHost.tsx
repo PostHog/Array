@@ -34,9 +34,9 @@ export function CanvasFrameHost() {
           left: rect?.left ?? 0,
           width: rect?.width ?? 0,
           height: rect?.height ?? 0,
-          // The slot owns scroll: the iframe grows to its content height and this
-          // box scrolls it, so scroll position survives in the warm frame.
-          overflow: active ? "auto" : "hidden",
+          // The iframe fills this slot exactly and scrolls its own content
+          // internally, so the wrapper only clips — it never scrolls.
+          overflow: "hidden",
           visibility: active ? "visible" : "hidden",
           pointerEvents: active ? "auto" : "none",
         };

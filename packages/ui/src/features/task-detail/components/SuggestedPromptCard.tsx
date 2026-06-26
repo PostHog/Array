@@ -8,8 +8,8 @@ export interface SuggestedPrompt {
   prompt: string;
   icon: Icon;
   color: string;
-  /** Task mode to apply when this suggestion is selected. */
-  mode: ExecutionMode;
+  /** Task mode to apply when this suggestion is selected, if it implies one. */
+  mode?: ExecutionMode;
 }
 
 export interface SuggestedPromptCardProps {

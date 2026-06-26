@@ -11,11 +11,16 @@ import "@renderer/di/container";
 import "@renderer/platform-adapters/updates";
 // Side effect: attaches window focus/visibility listeners so `focused` is accurate before inbox queries mount.
 import "@posthog/ui/shell/rendererWindowFocusStore";
+import {
+  BootErrorBoundary,
+  BootErrorScreen,
+} from "@components/BootErrorBoundary";
 import { Providers } from "@components/Providers";
 import { preloadHighlighter } from "@pierre/diffs";
 import { boot } from "@posthog/di/contribution";
 import { ServiceProvider } from "@posthog/di/react";
 import App from "@posthog/ui/shell/App";
+import { logger } from "@posthog/ui/shell/logger";
 import { initializePostHog } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { registerDesktopContributions } from "@renderer/desktop-contributions";
 import { container } from "@renderer/di/container";
@@ -80,18 +85,34 @@ if (bootstrapSessionId) {
   initializePostHog(bootstrapSessionId);
 }
 
-registerDesktopContributions();
-void boot(container);
+const bootLog = logger.scope("renderer-boot");
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");
 
-ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <ServiceProvider container={container}>
-      <Providers>
-        <App />
-      </Providers>
-    </ServiceProvider>
-  </React.StrictMode>,
-);
+const root = ReactDOM.createRoot(rootElement);
+
+try {
+  registerDesktopContributions();
+  boot(container).catch((error: unknown) => {
+    bootLog.error("Renderer boot sequence failed", error);
+    // Replaces the mounted tree without running effect cleanup; acceptable
+    // because a failed boot leaves the app unusable regardless.
+    root.render(<BootErrorScreen error={error} />);
+  });
+
+  root.render(
+    <React.StrictMode>
+      <BootErrorBoundary>
+        <ServiceProvider container={container}>
+          <Providers>
+            <App />
+          </Providers>
+        </ServiceProvider>
+      </BootErrorBoundary>
+    </React.StrictMode>,
+  );
+} catch (error) {
+  bootLog.error("Renderer failed to start", error);
+  root.render(<BootErrorScreen error={error} />);
+}

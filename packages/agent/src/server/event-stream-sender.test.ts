@@ -593,7 +593,7 @@ describe("TaskRunEventStreamSender", () => {
           }
         },
       }),
-      retryDelayMs: 5,
+      retryDelayMs: 10_000,
       stopTimeoutMs: 1,
     });
 

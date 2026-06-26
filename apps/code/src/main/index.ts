@@ -48,7 +48,25 @@ import type { SuspensionService } from "@posthog/workspace-server/services/suspe
 import type { WorkspaceService } from "@posthog/workspace-server/services/workspace/workspace";
 import { initializeDeepLinks, registerDeepLinkHandlers } from "./deep-links";
 import { container } from "./di/container";
-import { MAIN_TOKENS } from "./di/tokens";
+import {
+  APP_LIFECYCLE_SERVICE,
+  APPROVAL_LINK_SERVICE,
+  AUTH_SERVICE,
+  DATABASE_SERVICE,
+  DISCORD_PRESENCE_SERVICE,
+  EXTERNAL_APPS_SERVICE,
+  FILE_WATCHER_SERVICE,
+  INBOX_LINK_SERVICE,
+  FS_SERVICE as MAIN_FS_SERVICE,
+  NEW_TASK_LINK_SERVICE,
+  POSTHOG_PLUGIN_SERVICE,
+  SCOUT_LINK_SERVICE,
+  TASK_LINK_SERVICE,
+  UPDATES_SERVICE,
+  WORKSPACE_CLIENT,
+  WORKSPACE_SERVER_SERVICE,
+  WORKSPACE_SERVICE,
+} from "./di/tokens";
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
@@ -219,29 +237,27 @@ app.on("child-process-gone", (_event, details) => {
 });
 
 async function initializeServices(): Promise<void> {
-  container.get<DatabaseService>(MAIN_TOKENS.DatabaseService);
+  container.get<DatabaseService>(DATABASE_SERVICE);
   container.get<OAuthService>(OAUTH_SERVICE);
-  const authService = container.get<AuthService>(MAIN_TOKENS.AuthService);
+  const authService = container.get<AuthService>(AUTH_SERVICE);
   container.get<NotificationService>(NOTIFICATION_SERVICE);
-  container.get<UpdatesService>(MAIN_TOKENS.UpdatesService);
-  container.get<TaskLinkService>(MAIN_TOKENS.TaskLinkService);
-  container.get<InboxLinkService>(MAIN_TOKENS.InboxLinkService);
-  container.get<ScoutLinkService>(MAIN_TOKENS.ScoutLinkService);
-  container.get<NewTaskLinkService>(MAIN_TOKENS.NewTaskLinkService);
-  container.get<ApprovalLinkService>(MAIN_TOKENS.ApprovalLinkService);
+  container.get<UpdatesService>(UPDATES_SERVICE);
+  container.get<TaskLinkService>(TASK_LINK_SERVICE);
+  container.get<InboxLinkService>(INBOX_LINK_SERVICE);
+  container.get<ScoutLinkService>(SCOUT_LINK_SERVICE);
+  container.get<NewTaskLinkService>(NEW_TASK_LINK_SERVICE);
+  container.get<ApprovalLinkService>(APPROVAL_LINK_SERVICE);
   container.get<GitHubIntegrationService>(GITHUB_INTEGRATION_SERVICE);
   container.get<SlackIntegrationService>(SLACK_INTEGRATION_SERVICE);
-  container.get<ExternalAppsService>(MAIN_TOKENS.ExternalAppsService);
-  container.get<PosthogPluginService>(MAIN_TOKENS.PosthogPluginService);
+  container.get<ExternalAppsService>(EXTERNAL_APPS_SERVICE);
+  container.get<PosthogPluginService>(POSTHOG_PLUGIN_SERVICE);
   // Eagerly start the Discord presence service so it connects when enabled.
-  container.get<DiscordPresenceService>(MAIN_TOKENS.DiscordPresenceService);
+  container.get<DiscordPresenceService>(DISCORD_PRESENCE_SERVICE);
 
   await authService.initialize();
 
   // Initialize workspace branch watcher for live branch rename detection
-  const workspaceService = container.get<WorkspaceService>(
-    MAIN_TOKENS.WorkspaceService,
-  );
+  const workspaceService = container.get<WorkspaceService>(WORKSPACE_SERVICE);
   workspaceService.initBranchWatcher();
 
   const suspensionService =
@@ -310,18 +326,16 @@ app.whenReady().then(async () => {
   createWindow();
 
   const wsServer = container.get<WorkspaceServerService>(
-    MAIN_TOKENS.WorkspaceServerService,
+    WORKSPACE_SERVER_SERVICE,
   );
   const connection = await wsServer.start();
   const workspaceClient = createWorkspaceClient(connection);
-  container.bind(MAIN_TOKENS.WorkspaceClient).toConstantValue(workspaceClient);
+  container.bind(WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(GIT_WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(CONNECTIVITY_CLIENT).toConstantValue(workspaceClient);
   container.bind(ENVIRONMENT_CLIENT).toConstantValue(workspaceClient);
   const fileWatcherBridge = new FileWatcherBridge(workspaceClient);
-  container
-    .bind(MAIN_TOKENS.FileWatcherService)
-    .toConstantValue(fileWatcherBridge);
+  container.bind(FILE_WATCHER_SERVICE).toConstantValue(fileWatcherBridge);
   container.bind(FILE_WATCHER_CONTROL).toConstantValue(fileWatcherBridge);
   container.bind(FOCUS_WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(FOCUS_SESSION_STORE).toConstantValue(focusSessionStore);
@@ -358,8 +372,8 @@ app.whenReady().then(async () => {
       });
     },
   };
-  container.bind(MAIN_TOKENS.FsService).toConstantValue(fsCapability);
-  container.bind(FS_SERVICE).toService(MAIN_TOKENS.FsService);
+  container.bind(MAIN_FS_SERVICE).toConstantValue(fsCapability);
+  container.bind(FS_SERVICE).toService(MAIN_FS_SERVICE);
   await initializeServices();
   initializeDeepLinks();
 });
@@ -368,16 +382,22 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
+const teardownContainer = async (): Promise<void> => {
+  try {
+    await container.unbindAll();
+  } catch (error) {
+    log.warn("Failed to unbind container", error);
+  }
+};
+
 app.on("before-quit", async (event) => {
   try {
-    container
-      .get<WorkspaceServerService>(MAIN_TOKENS.WorkspaceServerService)
-      .stop();
+    container.get<WorkspaceServerService>(WORKSPACE_SERVER_SERVICE).stop();
   } catch {}
   let lifecycleService: AppLifecycleService;
   try {
     lifecycleService = container.get<AppLifecycleService>(
-      MAIN_TOKENS.AppLifecycleService,
+      APP_LIFECYCLE_SERVICE,
     );
   } catch {
     // Container already torn down (e.g. second quit during shutdown), let Electron quit
@@ -397,20 +417,21 @@ app.on("before-quit", async (event) => {
 
   event.preventDefault();
 
-  await lifecycleService.gracefulExit();
+  await lifecycleService.gracefulExit(teardownContainer);
 });
 
 const handleShutdownSignal = async (signal: string) => {
   log.info(`Received ${signal}, starting shutdown`);
   try {
     const lifecycleService = container.get<AppLifecycleService>(
-      MAIN_TOKENS.AppLifecycleService,
+      APP_LIFECYCLE_SERVICE,
     );
     if (lifecycleService.isShuttingDown) {
       log.warn(`${signal} received during shutdown, forcing exit`);
       process.exit(1);
     }
     await lifecycleService.shutdown();
+    await teardownContainer();
   } catch (_err) {
     // Container torn down or shutdown failed
   }

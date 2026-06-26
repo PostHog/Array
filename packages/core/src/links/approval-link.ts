@@ -16,8 +16,14 @@ export const ApprovalLinkEvent = {
 } as const;
 
 export interface ApprovalLinkPayload {
-  /** Agent tool-approval request id to open in the fleet approvals inbox. */
+  /** Agent tool-approval request id. */
   requestId: string;
+  /**
+   * Agent slug from `?agent=<slug>`, when present. Lets the renderer address
+   * the slug-routed ingress directly and decide the approval in a modal (works
+   * from any project). Null on legacy links → fall back to the fleet inbox.
+   */
+  agent: string | null;
 }
 
 export interface ApprovalLinkEvents {
@@ -50,12 +56,15 @@ export class ApprovalLinkService extends TypedEventEmitter<ApprovalLinkEvents> {
     super();
     this.log = rootLogger.scope("approval-link-service");
 
-    this.deepLinkService.registerHandler("approval", (path) =>
-      this.handleApprovalLink(path),
+    this.deepLinkService.registerHandler("approval", (path, searchParams) =>
+      this.handleApprovalLink(path, searchParams),
     );
   }
 
-  private handleApprovalLink(path: string): boolean {
+  private handleApprovalLink(
+    path: string,
+    searchParams: URLSearchParams,
+  ): boolean {
     const requestId = decodeSegment(path.split("/")[0]);
 
     if (!requestId) {
@@ -63,7 +72,10 @@ export class ApprovalLinkService extends TypedEventEmitter<ApprovalLinkEvents> {
       return false;
     }
 
-    const payload: ApprovalLinkPayload = { requestId };
+    const payload: ApprovalLinkPayload = {
+      requestId,
+      agent: searchParams.get("agent") || null,
+    };
 
     const hasListeners = this.listenerCount(ApprovalLinkEvent.OpenApproval) > 0;
 

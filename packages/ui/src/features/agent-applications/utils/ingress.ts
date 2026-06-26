@@ -23,3 +23,31 @@ export function resolveIngressBaseUrl(
   }
   return ingressBaseUrl;
 }
+
+/**
+ * Construct an agent's ingress base URL from `(slug, region)` alone, without
+ * loading its API record. The ingress is slug-routed and team-agnostic (the
+ * slug is a single global namespace), so this resolves an agent from any
+ * project — including one the agent isn't hosted in. Mirrors the deployed
+ * routing config (charts `AGENT_INGRESS_*`): us/eu address agents in domain mode
+ * (`<slug>.agents.<region>.posthog.com`); local dev uses the path-mode local
+ * ingress, which streams SSE (the dev quick-tunnel buffers it).
+ *
+ * Use this for first-party agents reachable cross-project (the agent builder).
+ * Per-agent console views stay on {@link resolveIngressBaseUrl} + the record,
+ * which carries other fields and is correctly project-scoped.
+ */
+export function agentIngressBaseUrl(
+  slug: string,
+  region: CloudRegion | null,
+): string | null {
+  if (!slug || !region) return null;
+  switch (region) {
+    case "us":
+      return `https://${slug}.agents.us.posthog.com`;
+    case "eu":
+      return `https://${slug}.agents.eu.posthog.com`;
+    case "dev":
+      return `${LOCAL_INGRESS_ORIGIN}/agents/${slug}`;
+  }
+}

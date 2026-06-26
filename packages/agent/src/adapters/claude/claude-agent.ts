@@ -122,6 +122,7 @@ import {
 import {
   buildSessionOptions,
   buildSystemPrompt,
+  type GatewayEnv,
   type ProcessSpawnedInfo,
 } from "./session/options";
 import { SettingsManager } from "./session/settings";
@@ -236,6 +237,8 @@ export interface ClaudeAcpAgentOptions {
   onMcpServersReady?: (serverNames: string[]) => void;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
   posthogApiConfig?: PostHogAPIConfig;
+  /** Explicit gateway config — avoids global process.env mutation across concurrent sessions. */
+  gatewayEnv?: GatewayEnv;
 }
 
 export class ClaudeAcpAgent extends BaseAcpAgent {
@@ -1740,6 +1743,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       onEnsureLocalToolsConnected: () =>
         this.ensureLocalToolsConnected("guard-hook"),
       taskState,
+      gatewayEnv: this.options?.gatewayEnv,
       onTaskStateChange: async () => {
         await this.client.sessionUpdate({
           sessionId,
@@ -1844,6 +1848,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const [rawModelOptions] = await Promise.all([
       this.getModelConfigOptions(
         settingsManager.getSettings().model || meta?.model || undefined,
+        this.options?.gatewayEnv?.anthropicBaseUrl,
       ),
       ...(meta?.taskRunId
         ? [

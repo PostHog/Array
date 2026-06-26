@@ -58,10 +58,9 @@ Inspect the connected PostHog project and repository, figure out which Self-driv
 const log = logger.scope("agents-setup-task");
 
 /**
- * Source products that count as Responders on this page. `displayValues` also
- * carries the legacy `signals_scout` toggle, but scouts render separately in
- * `ScoutsFleetSection` and are excluded from the responder roster — so they must
- * not inflate the responder counts in `AGENTS_VIEWED`.
+ * Source products that count as Responders on this page. Filtering
+ * `displayValues` through this set keeps non-responder sources out of the
+ * responder counts in `AGENTS_VIEWED`.
  */
 const RESPONDER_SOURCE_PRODUCTS = new Set<ResponderAgentSource>(
   RESPONDER_AGENT_GROUPS.flatMap((group) =>
@@ -100,8 +99,7 @@ export function ConfigureAgentsSection() {
   const trackedHasGithubIntegration = classifyIntegrations(
     integrationsData ?? [],
   ).hasGithubIntegration;
-  // Count only Responder sources; `displayValues` also includes `signals_scout`,
-  // which renders separately and would otherwise inflate the responder counts.
+  // Count only Responder sources so non-responder inputs don't inflate counts.
   const responderEntries = Object.entries(displayValues).filter(([source]) =>
     RESPONDER_SOURCE_PRODUCTS.has(source as ResponderAgentSource),
   );

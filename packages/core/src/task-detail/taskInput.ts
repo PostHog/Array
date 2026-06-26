@@ -10,6 +10,7 @@ export interface PrepareTaskInputOptions {
   workspaceMode: WorkspaceMode;
   branch?: string | null;
   allowRemoteBranchCheckout?: boolean;
+  reuseExistingWorktree?: boolean;
   executionMode?: ExecutionMode;
   adapter?: "claude" | "codex";
   model?: string;
@@ -20,6 +21,7 @@ export interface PrepareTaskInputOptions {
   additionalDirectories?: string[];
   channelContext?: string;
   channelName?: string;
+  customInstructions?: string;
   allowNoRepo?: boolean;
 }
 
@@ -42,6 +44,7 @@ export function prepareTaskInput(
     workspaceMode: options.workspaceMode,
     branch: options.branch,
     allowRemoteBranchCheckout: options.allowRemoteBranchCheckout,
+    reuseExistingWorktree: options.reuseExistingWorktree,
     executionMode: options.executionMode,
     adapter: options.adapter,
     model: options.model,
@@ -56,6 +59,7 @@ export function prepareTaskInput(
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,
     channelName: options.channelName,
+    customInstructions: isCloud ? options.customInstructions : undefined,
     allowNoRepo: options.allowNoRepo,
   };
 }

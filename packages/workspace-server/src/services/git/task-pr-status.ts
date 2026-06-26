@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { inject, injectable } from "inversify";
 import { WORKSPACE_REPOSITORY } from "../../db/identifiers";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
-import { TOKENS } from "../../di/tokens";
+import { GIT_SERVICE } from "../../di/tokens";
 import { WORKSPACE_SERVICE } from "../workspace/identifiers";
 import type {
   CachedPrUrlOutput,
@@ -17,7 +17,7 @@ export class TaskPrStatusService {
   private readonly taskPrRevalidations = new Map<string, Promise<void>>();
 
   constructor(
-    @inject(TOKENS.GitService)
+    @inject(GIT_SERVICE)
     private readonly gitService: GitService,
     @inject(WORKSPACE_REPOSITORY)
     private readonly workspaceRepo: IWorkspaceRepository,

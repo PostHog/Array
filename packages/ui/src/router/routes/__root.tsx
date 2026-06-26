@@ -1,4 +1,8 @@
-import { ArrowSquareOut } from "@phosphor-icons/react";
+import {
+  ArrowSquareOut,
+  CaretLeftIcon,
+  CaretRightIcon,
+} from "@phosphor-icons/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
 import {
@@ -8,6 +12,8 @@ import {
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { isContentlessTask } from "@posthog/shared/domain-types";
+import { DeepLinkApprovalModal } from "@posthog/ui/features/agent-applications/components/DeepLinkApprovalModal";
 import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
@@ -28,6 +34,7 @@ import { useSetupDiscovery } from "@posthog/ui/features/setup/useSetupDiscovery"
 import { MainSidebar } from "@posthog/ui/features/sidebar/components/MainSidebar";
 import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useVisualTaskOrder } from "@posthog/ui/features/sidebar/useVisualTaskOrder";
+import { ExistingWorktreeDialog } from "@posthog/ui/features/task-detail/components/ExistingWorktreeDialog";
 import { RemoteBranchCheckoutDialog } from "@posthog/ui/features/task-detail/components/RemoteBranchCheckoutDialog";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { TourOverlay } from "@posthog/ui/features/tour/components/TourOverlay";
@@ -51,7 +58,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   createRootRoute,
   Outlet,
+  useCanGoBack,
   useNavigate,
+  useRouter,
   useRouterState,
 } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -101,6 +110,27 @@ export const Route = createRootRoute({
 function RootLayout() {
   const view = useAppView();
   const navigate = useNavigate();
+  const router = useRouter();
+  const canGoBack = useCanGoBack();
+  // Forward availability isn't exposed by the router (and history.length counts
+  // pre-app entries, so it can't be compared to __TSR_index). Track the newest
+  // index we've reached: only a PUSH wipes the forward stack, so it resets the
+  // newest to the current index. REPLACE mutates the current entry in place
+  // (index unchanged, forward entries intact) and BACK/GO just move within the
+  // existing stack, so both keep the max. Forward is live while below it.
+  const historyIndex = useRouterState({
+    select: (s) => s.location.state.__TSR_index,
+  });
+  const [newestIndex, setNewestIndex] = useState(historyIndex);
+  useEffect(() => {
+    return router.history.subscribe(({ location, action }) => {
+      const idx = location.state.__TSR_index;
+      setNewestIndex((prev) =>
+        action.type === "PUSH" ? idx : Math.max(prev, idx),
+      );
+    });
+  }, [router]);
+  const canGoForward = historyIndex < newestIndex;
 
   // Feedback modal shown in the Channels title bar. Opened directly by "Leave
   // feedback" (mode "feedback"), or as an intercept before navigating away —
@@ -164,7 +194,7 @@ function RootLayout() {
   useTaskDeepLink();
   useInboxDeepLink();
   useScoutDeepLink();
-  useApprovalDeepLink();
+  const approvalDeepLink = useApprovalDeepLink();
   useSetupDiscovery();
   useNewTaskDeepLink();
 
@@ -178,7 +208,8 @@ function RootLayout() {
       (t) =>
         t.latest_run?.environment === "cloud" &&
         !workspaces[t.id] &&
-        !reconcilingTaskIds.current.has(t.id),
+        !reconcilingTaskIds.current.has(t.id) &&
+        !isContentlessTask(t),
     );
     if (missing.length === 0) return;
     const missingIds = missing.map((t) => t.id);
@@ -263,6 +294,24 @@ function RootLayout() {
           <Flex align="center" gap="2" className="no-drag">
             <Button
               variant="outline"
+              size="icon-sm"
+              aria-label="Back"
+              disabled={!canGoBack}
+              onClick={() => router.history.back()}
+            >
+              <CaretLeftIcon size={14} />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Forward"
+              disabled={!canGoForward}
+              onClick={() => router.history.forward()}
+            >
+              <CaretRightIcon size={14} />
+            </Button>
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => {
                 track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -325,6 +374,7 @@ function RootLayout() {
           mode={feedbackMode}
           onFinished={handleFeedbackFinished}
         />
+        <ExistingWorktreeDialog />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />
@@ -349,6 +399,7 @@ function RootLayout() {
         />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        <ExistingWorktreeDialog />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />
@@ -391,6 +442,13 @@ function RootLayout() {
         <TourOverlay />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        {approvalDeepLink.pending ? (
+          <DeepLinkApprovalModal
+            pending={approvalDeepLink.pending}
+            onClose={approvalDeepLink.clear}
+          />
+        ) : null}
+        <ExistingWorktreeDialog />
         <HedgehogMode />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>

@@ -30,18 +30,24 @@ export function buildFreeformGenerationPrompt(input: {
   const contract = freeformSystemPromptFor(templateId);
   const isEdit = !!currentCode?.trim();
 
+  // The header points back to the user's request, which leads the message
+  // (outside this block). Without that pointer the agent can read the header as
+  // a self-contained task and under-weight the actual instruction above.
   const header = isEdit
-    ? `Edit the freeform React canvas "${name}" in the channel "${channelName}".`
-    : `Build a freeform React canvas "${name}" for the channel "${channelName}".`;
+    ? `Edit the freeform React canvas "${name}" in the channel "${channelName}", per the user's request at the start of this message.`
+    : `Build a freeform React canvas "${name}" for the channel "${channelName}", per the user's request at the start of this message.`;
 
   const currentBlock = isEdit
     ? `\n[Current code] — the canvas as it stands now. Rewrite the WHOLE file with the change applied; do not output a partial file.\n\n\`\`\`tsx\n${currentCode}\n\`\`\`\n`
     : "";
 
-  return `${header}
-
-What the user wants:
-${instruction}
+  // The standing authoring contract + publishing/data rules are the same
+  // boilerplate on every canvas generation — the user never typed them. Wrap
+  // them in a `<canvas_generation_instructions>` element so the conversation UI
+  // collapses them into a single clickable tag instead of dumping the full body
+  // inline (see extractCanvasInstructions). Kept after the user's instruction so
+  // the request leads, mirroring how channel CONTEXT.md is appended.
+  const instructions = `${header}
 ${currentBlock}
 Follow this authoring contract for the canvas (imports, the \`ph\` data shim, and
 style rules):
@@ -64,4 +70,10 @@ DATA — for each metric, first SAVE an insight via the PostHog MCP insight tool
 over raw SQL), record the \`short_id\` it returns, and load it in the canvas with
 \`ph.loadInsight(short_id, { dateRange })\`. Fall back to inline \`ph.query(...)\`/HogQL
 only when no insight can express the metric.`;
+
+  return `${instruction}
+
+<canvas_generation_instructions>
+${instructions}
+</canvas_generation_instructions>`;
 }

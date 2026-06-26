@@ -89,6 +89,7 @@ export function GeneralSettings() {
     sendMessagesWith,
     conversationCollapseMode,
     hedgehogMode,
+    slotMachineMode,
     setDesktopNotifications,
     setDockBadgeNotifications,
     setDockBounceNotifications,
@@ -102,6 +103,7 @@ export function GeneralSettings() {
     setSendMessagesWith,
     setConversationCollapseMode,
     setHedgehogMode,
+    setSlotMachineMode,
   } = useSettingsStore();
 
   // Sync toggle off if the user denied notification permission at the OS level
@@ -260,6 +262,18 @@ export function GeneralSettings() {
       setHedgehogMode(checked);
     },
     [hedgehogMode, setHedgehogMode],
+  );
+
+  const handleSlotMachineModeChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "slot_machine_mode",
+        new_value: checked,
+        old_value: slotMachineMode,
+      });
+      setSlotMachineMode(checked);
+    },
+    [slotMachineMode, setSlotMachineMode],
   );
 
   const accountUrl = buildPostHogUrl("/settings/user", cloudRegion);
@@ -596,14 +610,22 @@ export function GeneralSettings() {
         Fun
       </Text>
 
-      <SettingRow
-        label="Hedgehog mode"
-        description={<HedgehogDescription />}
-        noBorder
-      >
+      <SettingRow label="Hedgehog mode" description={<HedgehogDescription />}>
         <Switch
           checked={hedgehogMode}
           onCheckedChange={handleHedgehogModeChange}
+          size="1"
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Slot machine mode 🎰"
+        description="Show a pull-able slot machine lever while a task is running. Every run is a gamble. Pull the handle and watch the reels spin."
+        noBorder
+      >
+        <Switch
+          checked={slotMachineMode}
+          onCheckedChange={handleSlotMachineModeChange}
           size="1"
         />
       </SettingRow>

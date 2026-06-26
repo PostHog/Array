@@ -4,26 +4,53 @@ import { navigateToApproval } from "@posthog/ui/router/navigationBridge";
 import { logger } from "@posthog/ui/shell/logger";
 import { useQuery } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const log = logger.scope("approval-deep-link");
 
+/** A deep link that should open the ingress-backed approval modal. */
+export interface PendingApprovalDeepLink {
+  requestId: string;
+  /** Agent slug — needed to address the slug-routed ingress. */
+  agent: string;
+}
+
 /**
- * Hook that handles agent approval deep links (`<scheme>://approval/{requestId}`,
- * e.g. `posthog-code://approval/ar_...` in production and `posthog-code-dev://…`
- * in local dev) and opens the fleet approvals inbox focused on that request. The
- * agent-runner emits these on a gated tool call so non-PostHog-Code clients
- * (Slack, MCP) can land on the approval.
+ * Handles agent approval deep links (`<scheme>://approval/{requestId}?agent=<slug>`).
+ * The agent-runner emits these on a gated tool call so non-PostHog-Code clients
+ * (MCP, a Slack link) can decide in the desktop app.
  *
- * Mirrors `useScoutDeepLink`: drains any link that arrived before the renderer
- * was ready (the main process clears its pending entry on read) and also
- * subscribes for links delivered while the app is already running.
+ * When the link carries `?agent=<slug>` we open an ingress-backed modal: fetch +
+ * decide go straight to the slug-routed ingress (principal-authed), so it works
+ * from any project. A legacy link without a slug falls back to the
+ * (project-scoped) fleet Approvals inbox.
+ *
+ * Mirrors `useScoutDeepLink`: drains a link that arrived before the renderer was
+ * ready (the main process clears its pending entry on read) and subscribes for
+ * links delivered while the app is already running. Returns the pending modal
+ * target (or null) for a host component to render.
  */
-export function useApprovalDeepLink() {
+export function useApprovalDeepLink(): {
+  pending: PendingApprovalDeepLink | null;
+  clear: () => void;
+} {
   const trpcReact = useHostTRPC();
   const isAuthenticated = useAuthStateValue(
     (s) => s.status === "authenticated",
   );
+  const [pending, setPending] = useState<PendingApprovalDeepLink | null>(null);
+
+  const open = useCallback((requestId: string, agent: string | null) => {
+    if (agent) {
+      log.info(`Opening approval modal: requestId=${requestId} agent=${agent}`);
+      setPending({ requestId, agent });
+    } else {
+      // Legacy link with no slug — can't address the ingress; fall back to the
+      // project-scoped fleet Approvals inbox.
+      log.info(`Opening approval in inbox (no agent): requestId=${requestId}`);
+      navigateToApproval(requestId);
+    }
+  }, []);
 
   const pendingDeepLink = useQuery(
     trpcReact.deepLink.getPendingApprovalLink.queryOptions(undefined, {
@@ -35,22 +62,19 @@ export function useApprovalDeepLink() {
     }),
   );
 
-  const openApproval = useCallback((requestId: string) => {
-    log.info(`Opening approval from deep link: requestId=${requestId}`);
-    navigateToApproval(requestId);
-  }, []);
-
   useEffect(() => {
     if (pendingDeepLink.data?.requestId) {
-      openApproval(pendingDeepLink.data.requestId);
+      open(pendingDeepLink.data.requestId, pendingDeepLink.data.agent);
     }
-  }, [pendingDeepLink.data, openApproval]);
+  }, [pendingDeepLink.data, open]);
 
   useSubscription(
     trpcReact.deepLink.onOpenApproval.subscriptionOptions(undefined, {
       onData: (data) => {
-        if (data?.requestId) openApproval(data.requestId);
+        if (data?.requestId) open(data.requestId, data.agent);
       },
     }),
   );
+
+  return { pending, clear: useCallback(() => setPending(null), []) };
 }

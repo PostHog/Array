@@ -11,6 +11,11 @@ import { useAgentBuilderStore } from "./agentBuilderStore";
  * disabled, the content renders unchanged with no dock or affordance. Hidden by
  * default; toggled via the edge affordance, the dock's hide button, or
  * Cmd/Ctrl+I. Panel sizes persist (`autoSaveId`).
+ *
+ * The content panel is always mounted in the same tree position; only the dock
+ * panel + resize handle toggle. Keeping the content's React identity stable
+ * across show/hide means panes don't remount — so per-pane state (the memory
+ * file you had open, a sessions filter, scroll position) survives toggling.
  */
 export function AgentBuilderDockLayout({ children }: { children: ReactNode }) {
   const enabled = useFeatureFlag(AGENT_PLATFORM_FLAG);
@@ -43,12 +48,9 @@ export function AgentBuilderDockLayout({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  // Collapsed: render content unchanged. The open affordance lives in the
+  // The content panel stays mounted whether the dock is open or not; only the
+  // dock panel + handle render conditionally. The open affordance lives in the
   // agents page headers (AgentBuilderHeaderControls); Cmd/Ctrl+Shift+I toggles.
-  if (!visible) {
-    return <>{children}</>;
-  }
-
   return (
     <PanelGroup
       direction="horizontal"
@@ -56,6 +58,7 @@ export function AgentBuilderDockLayout({ children }: { children: ReactNode }) {
       className="h-full min-h-0"
     >
       <Panel
+        id="agents-content"
         order={1}
         defaultSize={68}
         minSize={40}
@@ -63,16 +66,21 @@ export function AgentBuilderDockLayout({ children }: { children: ReactNode }) {
       >
         {children}
       </Panel>
-      <PanelResizeHandle className="w-px bg-(--gray-5) transition-colors hover:bg-(--gray-7) data-[resize-handle-state=drag]:bg-(--accent-9)" />
-      <Panel
-        order={2}
-        defaultSize={32}
-        minSize={22}
-        maxSize={48}
-        className="flex min-h-0 flex-col"
-      >
-        <AgentBuilderDock />
-      </Panel>
+      {visible ? (
+        <>
+          <PanelResizeHandle className="w-px bg-(--gray-5) transition-colors hover:bg-(--gray-7) data-[resize-handle-state=drag]:bg-(--accent-9)" />
+          <Panel
+            id="agents-dock"
+            order={2}
+            defaultSize={32}
+            minSize={22}
+            maxSize={48}
+            className="flex min-h-0 flex-col"
+          >
+            <AgentBuilderDock />
+          </Panel>
+        </>
+      ) : null}
     </PanelGroup>
   );
 }

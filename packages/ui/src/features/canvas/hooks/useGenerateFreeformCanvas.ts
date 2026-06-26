@@ -67,6 +67,8 @@ export function useGenerateFreeformCanvas(args: {
               currentCode: opts.currentCode,
             }),
             taskDescription: `Generate canvas "${name}"`,
+            // Unattended generation: run in auto mode so it doesn't stall on edit-approval prompts.
+            executionMode: "auto" as const,
             workspaceMode: "local",
             allowNoRepo: true,
             channelContext,

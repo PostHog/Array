@@ -47,4 +47,14 @@ describe("CodeBlock copy", () => {
     await userEvent.click(screen.getByLabelText("Copy code"));
     expect(writeText).toHaveBeenCalledWith("const x = 5;");
   });
+
+  it("omits the copy button when showCopy is false", () => {
+    renderInTheme(
+      <CodeBlock showCopy={false}>
+        <code>hello world</code>
+      </CodeBlock>,
+    );
+
+    expect(screen.queryByLabelText("Copy code")).toBeNull();
+  });
 });

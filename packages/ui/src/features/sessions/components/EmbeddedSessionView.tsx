@@ -2,22 +2,24 @@ import type { Task } from "@posthog/shared/domain-types";
 import { Flex } from "@radix-ui/themes";
 import { useEffect } from "react";
 import { useDraftStore } from "../../message-editor/draftStore";
-import { SessionView } from "../../sessions/components/SessionView";
-import { useSessionCallbacks } from "../../sessions/hooks/useSessionCallbacks";
-import { useSessionConnection } from "../../sessions/hooks/useSessionConnection";
-import { useSessionViewState } from "../../sessions/hooks/useSessionViewState";
+import { useSessionCallbacks } from "../hooks/useSessionCallbacks";
+import { useSessionConnection } from "../hooks/useSessionConnection";
+import { useSessionViewState } from "../hooks/useSessionViewState";
+import { SessionView } from "./SessionView";
 
-interface CommandCenterSessionViewProps {
-  taskId: string;
-  task: Task;
-  isActiveSession: boolean;
-}
-
-export function CommandCenterSessionView({
-  taskId,
+// A task's live session — the conversation thread plus the steering/queue
+// composer — embedded in a compact container. Reuses the same
+// state/connection/callback hooks as the full task view but drops the
+// workspace-setup / provisioning chrome that doesn't apply when a session is
+// shown inline. Shared by the command center and the canvas side panel.
+export function EmbeddedSessionView({
   task,
   isActiveSession,
-}: CommandCenterSessionViewProps) {
+}: {
+  task: Task;
+  isActiveSession?: boolean;
+}) {
+  const taskId = task.id;
   const { requestFocus } = useDraftStore((s) => s.actions);
 
   const {

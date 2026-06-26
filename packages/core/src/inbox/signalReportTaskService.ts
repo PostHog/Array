@@ -4,6 +4,7 @@ import {
   type TaskCreationOutput,
 } from "@posthog/shared";
 import { inject, injectable } from "inversify";
+import { buildPostHogUrl } from "../settings/posthogUrl";
 import {
   type CreateTaskResult,
   TASK_SERVICE,
@@ -25,6 +26,7 @@ export interface CreateSignalReportTaskInput {
   cloudRepository: string | null;
   githubUserIntegrationId: string | null;
   cloudRegion: CloudRegion | null;
+  projectId?: number | null;
   adapter: "claude" | "codex";
   modelOverride?: string | null;
   reasoningLevel?: string;
@@ -90,7 +92,16 @@ export class SignalReportTaskService {
           })
         : buildCreatePrReportPrompt({
             reportId: input.reportId,
-            isDevBuild: input.isDevBuild,
+            // Web URL rather than a `posthog-code://` deep link: the prompt runs
+            // in a cloud task and may be echoed into the PR, where only an https
+            // link works.
+            reportUrl:
+              input.projectId != null
+                ? buildPostHogUrl(
+                    `/project/${input.projectId}/inbox/${input.reportId}`,
+                    input.cloudRegion,
+                  )
+                : null,
             feedback: input.feedback,
           });
 
