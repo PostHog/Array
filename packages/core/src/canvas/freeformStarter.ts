@@ -1,10 +1,10 @@
-// A known-good STARTER scaffold for a freeform (React) canvas. Experimental:
-// instead of authoring the whole single-file app from scratch every time, the
-// generation path can seed this working baseline as the agent's starting point
-// (opt-in via the generate bar toggle). It already wires the pieces that are
-// easy to get wrong — the COMPACT date picker, theme-aware tokens, per-card
-// loading skeletons, and reading a TYPED-NODE result correctly — so the agent
-// edits a compiling app instead of re-deriving boilerplate.
+// A known-good STARTER scaffold for a freeform (React) canvas. Instead of
+// authoring the whole single-file app from scratch every time, the generation
+// path seeds this working baseline as the agent's starting point (on by default;
+// opt out via the generate bar toggle). It already wires the pieces that are
+// easy to get wrong — the date picker (self-sizing, no `compact`), theme-aware
+// tokens, per-card loading skeletons, and reading a TYPED-NODE result correctly
+// — so the agent edits a compiling app instead of re-deriving boilerplate.
 //
 // Stored as a string (like the prompt contracts) — it is injected into the
 // generation prompt, not compiled here. It imports ONLY whitelisted packages

@@ -401,21 +401,29 @@ function contentSecurityPolicy(
     : "";
 
   if (mode === "edit") {
+    // Only the ACTIVE Tailwind engine's CDN is trusted (not both), and the v4
+    // build is path-scoped to the @tailwindcss namespace on jsdelivr rather than
+    // the whole origin — both narrow the code-execution sandbox's egress to
+    // exactly what it fetches. v3's Play CDN loads from arbitrary sub-paths, so
+    // it stays origin-scoped (it's only the fallback, off by default).
+    const twCdn =
+      TAILWIND_ENGINE === "v4"
+        ? "https://cdn.jsdelivr.net/npm/@tailwindcss/"
+        : "https://cdn.tailwindcss.com";
     return [
       "default-src 'none'",
       // Inline bootstrap + esm.sh modules + the transpiled Blob module + the
-      // posthog-js recorder script + the in-browser Tailwind engine (v4 browser
-      // build from jsdelivr, or the legacy v3 Play CDN) — both JIT-compile, so
-      // 'unsafe-eval' is required. Edit-mode ONLY — view mode keeps egress locked
-      // and self-hosts styles instead.
-      `script-src 'unsafe-inline' 'unsafe-eval' blob: https://cdn.tailwindcss.com https://cdn.jsdelivr.net ${esm} ${ph}`,
+      // posthog-js recorder script + the in-browser Tailwind engine (JIT-compiles,
+      // so 'unsafe-eval' is required). Edit-mode ONLY — view mode keeps egress
+      // locked and self-hosts styles instead.
+      `script-src 'unsafe-inline' 'unsafe-eval' blob: ${twCdn} ${esm} ${ph}`,
       `style-src 'unsafe-inline' ${esm}`,
       `font-src data: ${esm}`,
       "img-src data: blob: https:",
       `worker-src blob:`,
-      // esm.sh + jsdelivr sub-fetches; canvas DATA goes over postMessage (not
+      // esm.sh + Tailwind CDN sub-fetches; canvas DATA goes over postMessage (not
       // connect), but posthog-js events/replay DO use connect to the PostHog hosts.
-      `connect-src ${esm} https://cdn.jsdelivr.net ${ph}`,
+      `connect-src ${esm} ${twCdn} ${ph}`,
     ].join("; ");
   }
   // view / published: self-hosted, frozen. Only egress is PostHog analytics.
