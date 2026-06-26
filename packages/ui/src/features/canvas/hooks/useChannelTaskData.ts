@@ -1,6 +1,5 @@
 import {
   deriveTaskData,
-  type FullTask,
   narrowFullTask,
   type TaskSession,
 } from "@posthog/core/sidebar/buildSidebarData";
@@ -30,7 +29,7 @@ export function useChannelTaskData(
 
   return useMemo(() => {
     if (!task) return undefined;
-    const sidebarTask = narrowFullTask(task as unknown as FullTask);
+    const sidebarTask = narrowFullTask(task);
     return deriveTaskData(sidebarTask, {
       session: session as TaskSession | undefined,
       workspace: workspace ?? undefined,

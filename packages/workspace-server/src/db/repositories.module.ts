@@ -6,6 +6,7 @@ import {
   DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
   REPOSITORY_REPOSITORY,
   SUSPENSION_REPOSITORY,
+  TASK_METADATA_REPOSITORY,
   WORKSPACE_REPOSITORY,
   WORKTREE_REPOSITORY,
 } from "./identifiers";
@@ -15,6 +16,7 @@ import { AuthSessionRepository } from "./repositories/auth-session-repository";
 import { DefaultAdditionalDirectoryRepository } from "./repositories/default-additional-directory-repository";
 import { RepositoryRepository } from "./repositories/repository-repository";
 import { SuspensionRepositoryImpl } from "./repositories/suspension-repository";
+import { TaskMetadataRepository } from "./repositories/task-metadata-repository";
 import { WorkspaceRepository } from "./repositories/workspace-repository";
 import { WorktreeRepository } from "./repositories/worktree-repository";
 
@@ -31,4 +33,5 @@ export const repositoriesModule = new ContainerModule(({ bind }) => {
   bind(DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY)
     .to(DefaultAdditionalDirectoryRepository)
     .inSingletonScope();
+  bind(TASK_METADATA_REPOSITORY).to(TaskMetadataRepository).inSingletonScope();
 });

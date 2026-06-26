@@ -74,7 +74,10 @@ export const SessionUpdateView = memo(function SessionUpdateView({
       return null;
     case "agent_message_chunk":
       return item.content.type === "text" ? (
-        <AgentMessage content={item.content.text} />
+        <AgentMessage
+          content={item.content.text}
+          isStreaming={turnComplete === false}
+        />
       ) : null;
     case "agent_thought_chunk":
       return item.content.type === "text" ? (

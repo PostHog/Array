@@ -305,7 +305,7 @@ describe("AuthService", () => {
     );
   });
 
-  it("keeps bootstrap restoring when the stored-session restore hangs", async () => {
+  it("completes bootstrap but stays restoring when the stored-session restore hangs", async () => {
     vi.useFakeTimers();
     try {
       seedStoredSession({ selectedProjectId: 42 });
@@ -317,9 +317,12 @@ describe("AuthService", () => {
       await vi.advanceTimersByTimeAsync(20_001);
       await initPromise;
 
+      // bootstrapComplete flips true at the deadline so the renderer leaves the
+      // boot gate; status stays restoring so a late success still upgrades and
+      // the stored session is not treated as a logout.
       expect(service.getState()).toMatchObject({
         status: "restoring",
-        bootstrapComplete: false,
+        bootstrapComplete: true,
         cloudRegion: "us",
         currentProjectId: 42,
       });

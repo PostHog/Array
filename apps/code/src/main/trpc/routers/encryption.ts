@@ -1,11 +1,10 @@
 import { container } from "@main/di/container";
-import { MAIN_TOKENS } from "@main/di/tokens";
+import { ENCRYPTION_SERVICE } from "@main/di/tokens";
 import type { EncryptionService } from "@main/services/encryption/service";
 import { z } from "zod";
 import { publicProcedure, router } from "../trpc";
 
-const getService = () =>
-  container.get<EncryptionService>(MAIN_TOKENS.EncryptionService);
+const getService = () => container.get<EncryptionService>(ENCRYPTION_SERVICE);
 
 export const encryptionRouter = router({
   encrypt: publicProcedure

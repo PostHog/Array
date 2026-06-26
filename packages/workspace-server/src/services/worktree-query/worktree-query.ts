@@ -74,6 +74,25 @@ export async function listTwigWorktrees(
     }));
 }
 
+/**
+ * Every linked git worktree for the repo, in any location (excludes the main
+ * repo). Unlike `listTwigWorktrees`, this is not limited to the managed base
+ * path, so it surfaces worktrees the user created by hand elsewhere. Pure git
+ * query; taskId enrichment is the caller's concern.
+ */
+export async function listLinkedWorktrees(
+  mainRepoPath: string,
+): Promise<RawTwigWorktree[]> {
+  const rawWorktrees = await listWorktrees(mainRepoPath);
+  return rawWorktrees
+    .filter((wt) => path.resolve(wt.path) !== path.resolve(mainRepoPath))
+    .map((wt) => ({
+      worktreePath: wt.path,
+      head: wt.head,
+      branch: wt.branch,
+    }));
+}
+
 async function hasExcludeFileEntries(
   mainRepoPath: string,
   fileName: string,

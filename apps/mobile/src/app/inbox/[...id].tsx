@@ -33,6 +33,7 @@ import {
   type DismissReportResult,
   DismissReportSheet,
 } from "@/features/inbox/components/DismissReportSheet";
+import { ReportActivity } from "@/features/inbox/components/ReportActivity";
 import { SignalCard } from "@/features/inbox/components/SignalCard";
 import {
   type ReviewerActionExtra,
@@ -72,6 +73,7 @@ const statusColorMap: Record<string, { bg: string; text: string }> = {
   candidate: { bg: "bg-status-info/20", text: "text-status-info" },
   potential: { bg: "bg-gray-5/20", text: "text-gray-9" },
   failed: { bg: "bg-status-error/20", text: "text-status-error" },
+  resolved: { bg: "bg-status-success/20", text: "text-status-success" },
   suppressed: { bg: "bg-gray-5/20", text: "text-gray-9" },
   deleted: { bg: "bg-gray-5/20", text: "text-gray-9" },
 };
@@ -568,6 +570,9 @@ export default function ReportDetailScreen() {
         {signalsQuery.isLoading && (
           <Text className="text-[12px] text-gray-9">Loading signals…</Text>
         )}
+
+        {/* Activity log */}
+        <ReportActivity reportId={report.id} artefacts={artefacts} />
       </ScrollView>
 
       <View

@@ -245,6 +245,35 @@ export class PostHogAPIClient {
     return manifest.slice(-artifacts.length);
   }
 
+  /** Signal reports the given task is associated with (via report task associations). */
+  async getSignalReportIdsForTask(taskId: string): Promise<string[]> {
+    const teamId = this.getTeamId();
+    const response = await this.apiRequest<{ results?: { id: string }[] }>(
+      `/api/projects/${teamId}/signals/reports/?task_id=${encodeURIComponent(taskId)}&limit=100`,
+    );
+    return (response.results ?? []).map((r) => r.id);
+  }
+
+  /**
+   * Append a log artefact to a signal report, attributed to `taskId` via the
+   * `X-PostHog-Task-Id` header (the server validates it against the token's team).
+   */
+  async createSignalReportArtefact(
+    reportId: string,
+    taskId: string,
+    body: { artefact_type: string; content: Record<string, unknown> },
+  ): Promise<void> {
+    const teamId = this.getTeamId();
+    await this.apiRequest(
+      `/api/projects/${teamId}/signals/reports/${reportId}/artefacts/`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: { "X-PostHog-Task-Id": taskId },
+      },
+    );
+  }
+
   /**
    * Download artifact content by storage path
    * Streams the file through the PostHog backend so the sandbox does not need

@@ -1,6 +1,9 @@
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
-import type { SessionService } from "@posthog/core/sessions/sessionService";
-import { SESSION_SERVICE } from "@posthog/core/sessions/sessionService";
+import {
+  createLatestPlanTracker,
+  SESSION_SERVICE,
+  type SessionService,
+} from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
@@ -230,9 +233,14 @@ export function SessionView({
 
   const isCloudRun = useIsWorkspaceCloudRun(taskId);
 
+  const latestPlanTrackerRef = useRef<ReturnType<
+    typeof createLatestPlanTracker
+  > | null>(null);
+  latestPlanTrackerRef.current ??= createLatestPlanTracker();
+  const latestPlanTracker = latestPlanTrackerRef.current;
   const latestPlan = useMemo(
-    (): Plan | null => sessionService.selectLatestPlan(events) as Plan | null,
-    [events, sessionService],
+    (): Plan | null => latestPlanTracker.update(events) as Plan | null,
+    [events, latestPlanTracker],
   );
 
   const handleSubmit = useCallback(
@@ -421,6 +429,7 @@ export function SessionView({
                   taskId={taskId}
                   task={task}
                   slackThreadUrl={slackThreadUrl}
+                  scrollX={false}
                 />
                 <Box className="border-gray-4 border-t">
                   <Box
@@ -505,6 +514,7 @@ export function SessionView({
                   task={task}
                   slackThreadUrl={slackThreadUrl}
                   compact={compact}
+                  scrollX={false}
                 />
 
                 <SessionResourcesBar events={events} />

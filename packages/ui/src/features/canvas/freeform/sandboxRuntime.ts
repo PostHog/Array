@@ -206,16 +206,6 @@ export function buildSandboxDocument(
       ),
     );
 
-    // --- size reporting so the host can grow the iframe (no inner scrollbar) ---
-    const reportSize = () => {
-      const h = document.documentElement.scrollHeight;
-      post({ type: "resize", height: h });
-    };
-    // Observe size ONCE for the iframe's life. mount() runs on every streamed
-    // code snapshot, so creating the observer there would leak one per snapshot
-    // and multiply resize messages.
-    new ResizeObserver(reportSize).observe(document.documentElement);
-
     let root = null;
     // mount() is async and is called once per streamed code snapshot, so several
     // runs overlap on their awaits. Without ordering, a slower EARLIER (partial,
@@ -268,11 +258,10 @@ export function buildSandboxDocument(
         root.render(
           React.createElement(Boundary, null, React.createElement(Comp)),
         );
-        // Let layout settle, then report success + size.
+        // Let layout settle, then report success.
         requestAnimationFrame(() => {
           if (seq !== mountSeq) return;
           post({ type: "rendered" });
-          reportSize();
         });
       } catch (err) {
         // Only the latest snapshot reports — a superseded partial's parse error
@@ -314,7 +303,9 @@ ${FREEFORM_QUILL_CSS_URLS.map(
 ).join("\n")}
 <style>
   *, *::before, *::after { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
+  /* Fill the iframe viewport exactly so overflow scrolls on the iframe's own root
+     scroller — the iframe is pinned to its parent's height and never grows it. */
+  html, body { margin: 0; padding: 0; height: 100%; }
   /* Track the theme via Quill's tokens (set on :root / .dark) so the page chrome
      flips with the host theme; fall back to light if the tokens haven't loaded. */
   body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--foreground, #111); background: var(--background, #fff); }

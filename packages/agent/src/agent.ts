@@ -2,6 +2,7 @@ import {
   createAcpConnection,
   type InProcessAcpConnection,
 } from "./adapters/acp-connection";
+import type { GatewayEnv } from "./adapters/claude/session/options";
 import {
   DEFAULT_CODEX_MODEL,
   DEFAULT_GATEWAY_MODEL,
@@ -50,7 +51,7 @@ export class Agent {
     }
   }
 
-  private async _configureLlmGateway(overrideUrl?: string): Promise<{
+  private async _resolveGatewayConfig(overrideUrl?: string): Promise<{
     gatewayUrl: string;
     apiKey: string;
   } | null> {
@@ -61,15 +62,9 @@ export class Agent {
     try {
       const gatewayUrl = overrideUrl ?? this.posthogAPI.getLlmGatewayUrl();
       const apiKey = await this.posthogAPI.getApiKey();
-
-      process.env.OPENAI_BASE_URL = `${gatewayUrl}/v1`;
-      process.env.OPENAI_API_KEY = apiKey;
-      process.env.ANTHROPIC_BASE_URL = gatewayUrl;
-      process.env.ANTHROPIC_AUTH_TOKEN = apiKey;
-
       return { gatewayUrl, apiKey };
     } catch (error) {
-      this.logger.error("Failed to configure LLM gateway", error);
+      this.logger.error("Failed to resolve LLM gateway config", error);
       throw error;
     }
   }
@@ -79,7 +74,7 @@ export class Agent {
     taskRunId: string,
     options: TaskExecutionOptions = {},
   ): Promise<InProcessAcpConnection> {
-    const gatewayConfig = await this._configureLlmGateway(options.gatewayUrl);
+    const gatewayConfig = await this._resolveGatewayConfig(options.gatewayUrl);
     this.taskRunId = taskRunId;
 
     let allowedModelIds: Set<string> | undefined;
@@ -115,6 +110,16 @@ export class Agent {
       sanitizedModel = DEFAULT_GATEWAY_MODEL;
     }
 
+    const claudeGatewayEnv: GatewayEnv | undefined =
+      options.adapter !== "codex" && gatewayConfig
+        ? {
+            anthropicBaseUrl: gatewayConfig.gatewayUrl,
+            anthropicAuthToken: gatewayConfig.apiKey,
+            openaiBaseUrl: `${gatewayConfig.gatewayUrl}/v1`,
+            openaiApiKey: gatewayConfig.apiKey,
+          }
+        : undefined;
+
     this.acpConnection = createAcpConnection({
       adapter: options.adapter,
       logWriter: this.sessionLogWriter,
@@ -127,6 +132,7 @@ export class Agent {
       allowedModelIds,
       posthogApiConfig: this.posthogApiConfig,
       enricherEnabled: this.enricherEnabled,
+      claudeGatewayEnv,
       codexOptions:
         options.adapter === "codex" && gatewayConfig
           ? {

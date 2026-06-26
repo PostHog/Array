@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  cachedDiffStats,
   extractCloudFileContent,
   extractCloudToolChangedFiles,
   type ParsedToolCall,
 } from "./cloudToolChanges";
+
+function diffObj(
+  newText: string,
+  oldText: string,
+): NonNullable<Parameters<typeof cachedDiffStats>[0]> {
+  return { type: "diff", path: "src/f.ts", newText, oldText };
+}
 
 function toolCall(overrides: Partial<ParsedToolCall>): ParsedToolCall {
   return {
@@ -61,6 +69,56 @@ describe("extractCloudToolChangedFiles", () => {
     const result = extractCloudToolChangedFiles(calls);
     expect(result).toHaveLength(1);
     expect(result[0].path).toBe("src/app.ts");
+  });
+
+  it.each([
+    {
+      name: "new file counts all lines as added",
+      kind: "write" as const,
+      oldText: undefined,
+      newText: "a\nb\nc",
+      added: 3,
+      removed: 0,
+    },
+    {
+      name: "modified file counts added and removed",
+      kind: "edit" as const,
+      oldText: "a\nb\nc",
+      newText: "a\nB\nc\nd",
+      added: 2,
+      removed: 1,
+    },
+    {
+      name: "pure removal counts removed only",
+      kind: "edit" as const,
+      oldText: "a\nb\nc",
+      newText: "a",
+      added: 0,
+      removed: 2,
+    },
+  ])("diff stats: $name", ({ kind, oldText, newText, added, removed }) => {
+    const calls = makeToolCalls(
+      toolCall({
+        toolCallId: "tc",
+        kind,
+        locations: [{ path: "src/f.ts" }],
+        content: diffContent("src/f.ts", newText, oldText),
+      }),
+    );
+    const [file] = extractCloudToolChangedFiles(calls);
+    expect(file.linesAdded).toBe(added);
+    expect(file.linesRemoved).toBe(removed);
+  });
+
+  it("memoizes diff stats by diff-object identity", () => {
+    const diff = diffObj("a\nB\nc", "a\nb\nc");
+    const first = cachedDiffStats(diff);
+    expect(cachedDiffStats(diff)).toBe(first);
+
+    const distinctButEqual = diffObj("a\nB\nc", "a\nb\nc");
+    const recomputed = cachedDiffStats(distinctButEqual);
+    expect(recomputed).not.toBe(first);
+    expect(recomputed).toEqual(first);
   });
 });
 

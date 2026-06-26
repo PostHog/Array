@@ -131,11 +131,16 @@ export abstract class BaseAcpAgent implements Agent {
     throw new Error("Method not implemented.");
   }
 
-  async getModelConfigOptions(currentModelOverride?: string): Promise<{
+  async getModelConfigOptions(
+    currentModelOverride?: string,
+    gatewayUrl?: string,
+  ): Promise<{
     currentModelId: string;
     options: SessionConfigSelectOption[];
   }> {
-    this.gatewayModels = await fetchGatewayModels();
+    this.gatewayModels = await fetchGatewayModels(
+      gatewayUrl ? { gatewayUrl } : undefined,
+    );
 
     const options = this.gatewayModels
       .filter((model) => isAnthropicModel(model))

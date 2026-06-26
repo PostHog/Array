@@ -11,8 +11,7 @@ import { SUSPENSION_SERVICE } from "@posthog/workspace-server/services/suspensio
 import type { SuspensionService } from "@posthog/workspace-server/services/suspension/suspension";
 import type { WatcherRegistryService } from "@posthog/workspace-server/services/watcher-registry/watcher-registry";
 import { inject, injectable } from "inversify";
-import { container } from "../../di/container";
-import { MAIN_TOKENS } from "../../di/tokens";
+import { WATCHER_REGISTRY_SERVICE } from "../../di/tokens";
 import { posthogNodeAnalytics } from "../../platform-adapters/posthog-analytics";
 import { withTimeout } from "../../utils/async";
 import { logger } from "../../utils/logger";
@@ -34,7 +33,7 @@ export class AppLifecycleService {
     private readonly db: DatabaseService,
     @inject(SUSPENSION_SERVICE)
     private readonly suspensionService: SuspensionService,
-    @inject(MAIN_TOKENS.WatcherRegistryService)
+    @inject(WATCHER_REGISTRY_SERVICE)
     private readonly watcherRegistry: WatcherRegistryService,
     @inject(PROCESS_TRACKING_SERVICE)
     private readonly processTracking: ProcessTrackingService,
@@ -103,15 +102,20 @@ export class AppLifecycleService {
   }
 
   /**
-   * Runs a full shutdown then exits the Electron app.
+   * Runs a full shutdown then exits the Electron app. The optional
+   * `beforeExit` hook lets the composition root tear down the DI container
+   * after shutdown completes but before the process exits.
    */
-  async gracefulExit(): Promise<void> {
+  async gracefulExit(beforeExit?: () => Promise<void>): Promise<void> {
     await this.shutdown();
+    if (beforeExit) {
+      await beforeExit();
+    }
     this.appLifecycle.exit(0);
   }
 
   /**
-   * Runs the full shutdown sequence: native resources, container, analytics.
+   * Runs the full shutdown sequence: native resources, database, analytics.
    */
   private async doShutdown(): Promise<void> {
     log.info("Shutdown started");
@@ -128,12 +132,6 @@ export class AppLifecycleService {
       this.db.close();
     } catch (error) {
       log.warn("Failed to close database during shutdown", error);
-    }
-
-    try {
-      await container.unbindAll();
-    } catch (error) {
-      log.warn("Failed to unbind container", error);
     }
 
     posthogNodeAnalytics.track(ANALYTICS_EVENTS.APP_QUIT);

@@ -3,6 +3,26 @@ import dns from "node:dns";
 import net from "node:net";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
+import { container } from "./di/container";
+import {
+  CONNECTIVITY_SERVICE,
+  ENVIRONMENT_SERVICE,
+  FOCUS_SERVICE,
+  FOCUS_SYNC_SERVICE,
+  FS_SERVICE,
+  GIT_SERVICE,
+  LOCAL_LOGS_SERVICE,
+  WATCHER_SERVICE,
+} from "./di/tokens";
+import type { ConnectivityService } from "./services/connectivity/service";
+import type { EnvironmentService } from "./services/environment/service";
+import type { FocusService } from "./services/focus/service";
+import type { FocusSyncService } from "./services/focus/sync-service";
+import type { FsService } from "./services/fs/service";
+import type { GitService } from "./services/git/service";
+import type { LocalLogsService } from "./services/local-logs/service";
+import type { WatcherService } from "./services/watcher/service";
+import { createAppRouter } from "./trpc";
 
 // Prefer IPv4 and disable "Happy Eyeballs" (mirrors apps/code main bootstrap).
 // This child makes all outbound HTTPS to PostHog/the gateway; its many-address
@@ -33,7 +53,17 @@ if (!sharedSecret || !Number.isInteger(port) || port <= 0 || port > 65_535) {
   process.exit(2);
 }
 
-const app = createApp({ sharedSecret });
+const router = createAppRouter({
+  focusService: container.get<FocusService>(FOCUS_SERVICE),
+  focusSyncService: container.get<FocusSyncService>(FOCUS_SYNC_SERVICE),
+  gitService: container.get<GitService>(GIT_SERVICE),
+  fsService: container.get<FsService>(FS_SERVICE),
+  watcherService: container.get<WatcherService>(WATCHER_SERVICE),
+  localLogsService: container.get<LocalLogsService>(LOCAL_LOGS_SERVICE),
+  connectivityService: container.get<ConnectivityService>(CONNECTIVITY_SERVICE),
+  environmentService: container.get<EnvironmentService>(ENVIRONMENT_SERVICE),
+});
+const app = createApp({ sharedSecret, router });
 
 let server: ReturnType<typeof serve> | null = null;
 let shuttingDown = false;

@@ -1,6 +1,7 @@
 import {
   buildChannelContextBlock,
   buildChannelContextText,
+  buildCustomInstructionsText,
   buildPromptBlocks,
 } from "@posthog/core/editor/prompt-builder";
 import type {
@@ -16,10 +17,7 @@ import {
   type Workspace,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import {
-  SIGNAL_REPORT_TASK_IMPLEMENTATION_RELATIONSHIP,
-  type Task,
-} from "@posthog/shared/domain-types";
+import type { Task } from "@posthog/shared/domain-types";
 import type { TaskCreationApiClient } from "./taskCreationApiClient";
 import type { ITaskCreationHost } from "./taskCreationHost";
 
@@ -100,6 +98,7 @@ export class TaskCreationSaga extends Saga<
             mode: workspaceMode,
             branch: branch ?? undefined,
             allowRemoteBranchCheckout: input.allowRemoteBranchCheckout,
+            reuseExistingWorktree: input.reuseExistingWorktree,
           });
         },
         rollback: async () => {
@@ -257,25 +256,40 @@ export class TaskCreationSaga extends Saga<
                 )
               : null;
 
-          // The local connect path appends channel CONTEXT.md to initialPrompt;
-          // cloud sends its first message as text, so fold the same block into
-          // pendingUserMessage here. The conversation UI parses it identically.
+          // The local connect path appends channel CONTEXT.md to initialPrompt
+          // and gets the user's personalization via the workspace-server system
+          // prompt; cloud sends its first message as text and has no client-side
+          // system-prompt seam, so fold both blocks into pendingUserMessage here.
+          // The conversation UI parses them identically. Order: user's message,
+          // then personalization (user-level), then channel context (workspace-
+          // level background).
+          const messageText = transport?.messageText;
+          // Personalization augments the user's first message — fold it in only
+          // when there is message text to augment. A file-only upload with no
+          // typed text has nothing to personalize, and a block-only message
+          // would strip to an empty bubble in the UI and get deduped against the
+          // sandbox echo, leaving a blank placeholder. Channel context renders as
+          // a chip even alone, so it isn't gated this way.
+          const customInstructionsText = messageText
+            ? buildCustomInstructionsText(input.customInstructions)
+            : null;
           const channelContextText = buildChannelContextText(
             input.channelContext,
             input.channelName,
           );
-          const messageText = transport?.messageText;
-          const pendingUserMessage = channelContextText
-            ? messageText
-              ? `${messageText}\n\n${channelContextText}`
-              : channelContextText
-            : messageText;
+          const pendingUserMessage =
+            [messageText, customInstructionsText, channelContextText]
+              .filter((part): part is string => !!part)
+              .join("\n\n") || undefined;
 
           // The sandbox echoes pendingUserMessage back once it boots; until then
           // the optimistic placeholder would show the bare task description with
-          // no CONTEXT.md chip. Hand the channel-context-bearing message to the
-          // session service so it seeds the placeholder right away.
-          if (channelContextText && pendingUserMessage) {
+          // no CONTEXT.md / personalization chip. Hand the augmented message to
+          // the session service so it seeds the placeholder right away.
+          if (
+            (channelContextText || customInstructionsText) &&
+            pendingUserMessage
+          ) {
             this.deps.sessionService.rememberInitialCloudPrompt(
               task.id,
               pendingUserMessage,
@@ -478,10 +492,23 @@ export class TaskCreationSaga extends Saga<
           origin_product: input.signalReportId
             ? "signal_report"
             : "user_created",
+          // The server associates the task with the report and records the implementation
+          // task_run artefact — no relationship label is sent (associations are unlabelled).
+          branch:
+            input.workspaceMode === "cloud"
+              ? (input.branch ?? null)
+              : undefined,
+          runtime_adapter:
+            input.workspaceMode === "cloud"
+              ? (input.adapter ?? null)
+              : undefined,
+          model:
+            input.workspaceMode === "cloud" ? (input.model ?? null) : undefined,
+          reasoning_effort:
+            input.workspaceMode === "cloud"
+              ? (input.reasoningLevel ?? null)
+              : undefined,
           signal_report: input.signalReportId ?? undefined,
-          signal_report_task_relationship: input.signalReportId
-            ? SIGNAL_REPORT_TASK_IMPLEMENTATION_RELATIONSHIP
-            : undefined,
         });
         return result as unknown as Task;
       },

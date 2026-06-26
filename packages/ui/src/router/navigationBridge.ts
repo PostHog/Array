@@ -114,6 +114,13 @@ export function navigateToAgents(): void {
   void getRouterOrNull()?.navigate({ to: "/code/agents" });
 }
 
+export function navigateToApproval(requestId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/agents/applications/approvals",
+    search: { request: requestId },
+  });
+}
+
 export function navigateToArchived(): void {
   void getRouterOrNull()?.navigate({ to: "/code/archived" });
 }

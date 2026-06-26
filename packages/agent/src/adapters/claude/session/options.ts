@@ -37,6 +37,22 @@ export interface ProcessSpawnedInfo {
   sessionId: string;
 }
 
+/**
+ * Gateway config threaded explicitly through session creation so that
+ * concurrent Agent instances do not clobber each other's values via
+ * global `process.env` mutation.
+ */
+export type GatewayEnv = {
+  anthropicBaseUrl: string;
+  anthropicAuthToken: string;
+  openaiBaseUrl: string;
+  openaiApiKey: string;
+  /** Task-specific custom headers forwarded to the gateway (e.g. task_id, run_id). */
+  anthropicCustomHeaders?: string;
+  /** PostHog project ID for per-team attribution headers. */
+  posthogProjectId?: string;
+};
+
 export interface BuildOptionsParams {
   cwd: string;
   mcpServers: Record<string, McpServerConfig>;
@@ -70,6 +86,8 @@ export interface BuildOptionsParams {
   /** Called after createTaskHook mutates taskState so callers can emit a plan
    * sessionUpdate to the client. */
   onTaskStateChange?: () => Promise<void>;
+  /** Explicit gateway config — prevents global process.env mutation. */
+  gatewayEnv?: GatewayEnv;
 }
 
 export function buildSystemPrompt(
@@ -116,13 +134,16 @@ function buildMcpServers(
   };
 }
 
-function buildEnvironment(): Record<string, string> {
+function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
   // Custom HTTP headers reach the model only through the Claude CLI subprocess,
   // which reads them from this env var (newline-delimited `name: value` lines)
   // — the SDK has no direct header option. We finalize them here, the single
   // chokepoint every session (desktop and cloud) funnels through.
   const headerLines: string[] = [];
-  const existingCustomHeaders = process.env.ANTHROPIC_CUSTOM_HEADERS;
+  // Prefer explicit gateway config over process.env so concurrent sessions
+  // do not clobber each other's task-specific headers.
+  const existingCustomHeaders =
+    gateway?.anthropicCustomHeaders ?? process.env.ANTHROPIC_CUSTOM_HEADERS;
   if (existingCustomHeaders) {
     headerLines.push(existingCustomHeaders);
   }
@@ -132,7 +153,7 @@ function buildEnvironment(): Record<string, string> {
   // the event; both entrypoints export POSTHOG_PROJECT_ID before this runs
   // (workspace-server auth-adapter.ts, server/agent-server.ts). Mirrors django's
   // get_llm_client(team_id=...).
-  const projectId = process.env.POSTHOG_PROJECT_ID;
+  const projectId = gateway?.posthogProjectId ?? process.env.POSTHOG_PROJECT_ID;
   if (projectId) {
     headerLines.push(`x-posthog-property-team_id: ${projectId}`);
   }
@@ -149,6 +170,18 @@ function buildEnvironment(): Record<string, string> {
 
   return {
     ...process.env,
+    // Explicit gateway values win over whatever happens to be in process.env.
+    // This prevents concurrent Agent instances from clobbering each other's
+    // gateway config when process.env was mutated globally.
+    ...(gateway?.anthropicBaseUrl && {
+      ANTHROPIC_BASE_URL: gateway.anthropicBaseUrl,
+    }),
+    ...(gateway?.anthropicAuthToken && {
+      ANTHROPIC_AUTH_TOKEN: gateway.anthropicAuthToken,
+      ANTHROPIC_API_KEY: gateway.anthropicAuthToken,
+    }),
+    ...(gateway?.openaiBaseUrl && { OPENAI_BASE_URL: gateway.openaiBaseUrl }),
+    ...(gateway?.openaiApiKey && { OPENAI_API_KEY: gateway.openaiApiKey }),
     ELECTRON_RUN_AS_NODE: "1",
     CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL: "true",
     // Offload all MCP tools by default
@@ -410,7 +443,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.mcpServers,
       loadUserClaudeJsonMcpServers(params.cwd, params.logger),
     ),
-    env: buildEnvironment(),
+    env: buildEnvironment(params.gatewayEnv),
     hooks: buildHooks(
       params.userProvidedOptions?.hooks,
       params.onModeChange,

@@ -1,4 +1,10 @@
 import {
+  ApprovalLinkEvent,
+  type ApprovalLinkPayload,
+  type ApprovalLinkService,
+} from "@posthog/core/links/approval-link";
+import {
+  APPROVAL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   SCOUT_LINK_SERVICE,
@@ -100,6 +106,26 @@ export const deepLinkRouter = router({
       return ctx.container
         .get<NewTaskLinkService>(NEW_TASK_LINK_SERVICE)
         .consumePendingLink();
+    },
+  ),
+
+  onOpenApproval: publicProcedure.subscription(async function* (opts) {
+    const service = opts.ctx.container.get<ApprovalLinkService>(
+      APPROVAL_LINK_SERVICE,
+    );
+    const iterable = service.toIterable(ApprovalLinkEvent.OpenApproval, {
+      signal: opts.signal,
+    });
+    for await (const data of iterable) {
+      yield data;
+    }
+  }),
+
+  getPendingApprovalLink: publicProcedure.query(
+    ({ ctx }): ApprovalLinkPayload | null => {
+      return ctx.container
+        .get<ApprovalLinkService>(APPROVAL_LINK_SERVICE)
+        .consumePendingDeepLink();
     },
   ),
 });

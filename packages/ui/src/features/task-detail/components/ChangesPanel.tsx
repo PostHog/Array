@@ -56,6 +56,7 @@ interface ChangesPanelProps {
 interface ChangedFileItemProps {
   file: ChangedFile;
   taskId: string;
+  fileKey: string;
   isActive: boolean;
   repoPath?: string;
   mainRepoPath?: string;
@@ -91,6 +92,7 @@ function CompactIconButton({
 function ChangedFileItem({
   file,
   taskId,
+  fileKey,
   isActive,
   repoPath,
   mainRepoPath,
@@ -115,8 +117,6 @@ function ChangedFileItem({
   const fileName = file.path.split("/").pop() || file.path;
   const fullPath = repoPath ? `${repoPath}/${file.path}` : file.path;
   const indicator = getStatusIndicator(file.status);
-
-  const fileKey = makeFileKey(file.staged, file.path);
 
   const handleClick = () => {
     track(ANALYTICS_EVENTS.FILE_DIFF_VIEWED, {
@@ -318,6 +318,7 @@ function CloudChangesPanel({ taskId, task }: ChangesPanelProps) {
         key={file.path}
         file={file}
         taskId={taskId}
+        fileKey={file.path}
         isActive={activeFilePath === file.path}
         depth={depth}
       />
@@ -452,6 +453,7 @@ function LocalWorkingTreeChangesPanel({
           key={key}
           file={file}
           taskId={taskId}
+          fileKey={key}
           repoPath={repoPath}
           isActive={activeFilePath === key}
           mainRepoPath={workspace?.folderPath}
@@ -538,18 +540,16 @@ function RemoteChangesList({
   );
 
   const renderFile = useCallback(
-    (file: ChangedFile, depth: number) => {
-      const key = makeFileKey(file.staged, file.path);
-      return (
-        <ChangedFileItem
-          key={key}
-          file={file}
-          taskId={taskId}
-          isActive={activeFilePath === key}
-          depth={depth}
-        />
-      );
-    },
+    (file: ChangedFile, depth: number) => (
+      <ChangedFileItem
+        key={file.path}
+        file={file}
+        taskId={taskId}
+        fileKey={file.path}
+        isActive={activeFilePath === file.path}
+        depth={depth}
+      />
+    ),
     [taskId, activeFilePath],
   );
 

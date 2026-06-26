@@ -200,7 +200,7 @@ export function createWindow(): void {
     ...platformWindowConfig,
     show: false,
     webPreferences: {
-      nodeIntegration: true,
+      nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
       enableBlinkFeatures: "GetDisplayMedia",

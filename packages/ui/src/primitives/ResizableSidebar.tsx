@@ -68,6 +68,7 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
         width: open ? `${width}px` : "0",
         minWidth: open ? `${width}px` : "0",
         maxWidth: open ? `${width}px` : "0",
+        overflow: open ? "visible" : "hidden",
         transition: isResizing ? "none" : "width 0.2s ease-in-out",
         borderLeft: !isLeft && open ? "1px solid var(--border)" : "none",
         borderRight: isLeft && open ? "1px solid var(--border)" : "none",

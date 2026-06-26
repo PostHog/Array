@@ -84,6 +84,14 @@ export function initializePostHog(sessionId?: string) {
 
   isInitialized = true;
 
+  // Dev-only: expose the posthog instance so flags can be toggled from the
+  // renderer console, e.g. `posthog.featureFlags.override({ "agent-platform": true })`
+  // (and `posthog.featureFlags.override(false)` to clear). The module build
+  // doesn't attach to window otherwise.
+  if (import.meta.env.DEV) {
+    (window as unknown as { posthog?: typeof posthog }).posthog = posthog;
+  }
+
   registerPersistentSuperProperties();
 
   for (const listener of pendingFlagListeners) {

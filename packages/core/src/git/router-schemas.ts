@@ -383,6 +383,7 @@ export const getPrDetailsByUrlOutput = z.object({
   state: z.string(),
   merged: z.boolean(),
   draft: z.boolean(),
+  headRefName: z.string().nullable(),
 });
 export type PrDetailsByUrlOutput = z.infer<typeof getPrDetailsByUrlOutput>;
 

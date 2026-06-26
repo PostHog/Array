@@ -22,7 +22,11 @@ import type { WorkspaceClient } from "@posthog/workspace-client/client";
 import type { IAuthPreferenceRepository } from "@posthog/workspace-server/db/repositories/auth-preference-repository";
 import type { IAuthSessionRepository } from "@posthog/workspace-server/db/repositories/auth-session-repository";
 import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
+import {
+  AUTH_PREFERENCE_REPOSITORY,
+  AUTH_SESSION_REPOSITORY,
+  WORKSPACE_CLIENT,
+} from "../../di/tokens";
 import { decrypt, encrypt } from "../../utils/encryption";
 
 @injectable()
@@ -66,7 +70,7 @@ export class OAuthFlowPortAdapter implements IAuthOAuthFlowService {
 @injectable()
 export class AuthSessionPortAdapter implements IAuthSessionStore {
   constructor(
-    @inject(MAIN_TOKENS.AuthSessionRepository)
+    @inject(AUTH_SESSION_REPOSITORY)
     private readonly repository: IAuthSessionRepository,
   ) {}
 
@@ -95,7 +99,7 @@ export class AuthSessionPortAdapter implements IAuthSessionStore {
 @injectable()
 export class AuthPreferencePortAdapter implements IAuthPreferenceStore {
   constructor(
-    @inject(MAIN_TOKENS.AuthPreferenceRepository)
+    @inject(AUTH_PREFERENCE_REPOSITORY)
     private readonly repository: IAuthPreferenceRepository,
   ) {}
 
@@ -147,7 +151,7 @@ export class ConnectivityPortAdapter implements IAuthConnectivity {
   private readonly handlers = new Set<(status: ConnectivityStatus) => void>();
 
   constructor(
-    @inject(MAIN_TOKENS.WorkspaceClient)
+    @inject(WORKSPACE_CLIENT)
     private readonly workspace: WorkspaceClient,
   ) {
     this.workspace.connectivity.onStatusChange.subscribe(undefined, {

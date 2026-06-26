@@ -930,7 +930,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         "api",
         `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`,
         "--jq",
-        "{state,merged,draft}",
+        "{state,merged,draft,headRefName: .head.ref}",
       ]);
 
       if (result.exitCode !== 0) {
@@ -941,6 +941,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         state: string;
         merged: boolean;
         draft: boolean;
+        headRefName: string | null;
       };
 
       return data;

@@ -36,9 +36,19 @@ describe("resolveGatewayProduct", () => {
       expected: "signals",
     },
     {
+      isInternal: false,
+      originProduct: "posthog_ai",
+      expected: "posthog_ai",
+    },
+    {
       isInternal: true,
       originProduct: "signals_scout",
       expected: "signals",
+    },
+    {
+      isInternal: true,
+      originProduct: "posthog_ai",
+      expected: "posthog_ai",
     },
   ] as const)(
     "isInternal=$isInternal originProduct=$originProduct -> $expected",
@@ -185,5 +195,11 @@ describe("getLlmGatewayUrl", () => {
     },
   ] as const)("$posthogHost -> $expected", ({ posthogHost, expected }) => {
     expect(getLlmGatewayUrl(posthogHost)).toBe(expected);
+  });
+
+  it("uses the PostHog AI product route when requested", () => {
+    expect(getLlmGatewayUrl("http://localhost:8000", "posthog_ai")).toBe(
+      "http://localhost:3308/posthog_ai",
+    );
   });
 });
