@@ -38,7 +38,7 @@ import {
   SIGNED_REWRITE_QUALIFIED_TOOL_NAME,
 } from "../adapters/signed-commit-shared";
 import type { PermissionMode } from "../execution-mode";
-import { DEFAULT_CODEX_MODEL } from "../gateway-models";
+import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { PostHogAPIClient } from "../posthog-api";
 import { findPrUrl, wasCreatedRecently } from "../pr-url-detector";
@@ -1054,6 +1054,12 @@ export class AgentServer {
       taskTitle: preTask?.title,
     });
 
+    if (this.config.repoReadyFile && gatewayEnv.anthropicBaseUrl) {
+      void fetchGatewayModels({
+        gatewayUrl: gatewayEnv.anthropicBaseUrl,
+      }).catch(() => {});
+    }
+
     const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
 
     // Unconditional so a re-init on the same instance drops a stale PR URL.
@@ -1186,6 +1192,8 @@ export class AgentServer {
       ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
       ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
     };
+
+    await this.waitForRepoReady();
 
     const nativeResume = await this.prepareNativeResume(
       payload,
@@ -1844,6 +1852,34 @@ export class AgentServer {
     const baseName = basename(name).trim();
     const normalizedName = baseName.replace(/[^\w.-]/g, "_");
     return normalizedName.length > 0 ? normalizedName : "attachment";
+  }
+
+  private async waitForRepoReady(): Promise<void> {
+    const readyFile = this.config.repoReadyFile;
+    if (!readyFile) return;
+
+    const REPO_READY_TIMEOUT_MS = 5 * 60_000;
+    const POLL_MS = 100;
+    const startedAt = Date.now();
+
+    for (;;) {
+      try {
+        await access(readyFile);
+        this.logger.debug("Repo-ready barrier released", {
+          readyFile,
+          waitedMs: Date.now() - startedAt,
+        });
+        return;
+      } catch {}
+      if (Date.now() - startedAt > REPO_READY_TIMEOUT_MS) {
+        this.logger.warn("Repo-ready barrier timed out; proceeding", {
+          readyFile,
+          waitedMs: Date.now() - startedAt,
+        });
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    }
   }
 
   private async autoInitializeSession(): Promise<void> {
