@@ -84,8 +84,6 @@ jobs:
           junit-paths: "apps/*/junit.xml,packages/*/junit.xml"
           org-slug: posthog-inc
           token: ${{ secrets.TRUNK_API_TOKEN }}
-        env:
-          TRUNK_API_TOKEN: ${{ secrets.TRUNK_API_TOKEN }}
 
   integration-test:
     needs: changes
@@ -169,8 +167,6 @@ jobs:
           junit-paths: "apps/code/tests/e2e/junit.xml"
           org-slug: posthog-inc
           token: ${{ secrets.TRUNK_API_TOKEN }}
-        env:
-          TRUNK_API_TOKEN: ${{ secrets.TRUNK_API_TOKEN }}
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
