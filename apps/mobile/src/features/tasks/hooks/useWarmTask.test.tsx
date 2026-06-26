@@ -29,6 +29,9 @@ interface Props {
   githubIntegrationId?: number | null;
   branch?: string | null;
   composerIsEmpty: boolean;
+  runtimeAdapter?: string | null;
+  model?: string | null;
+  reasoningEffort?: string | null;
 }
 
 const composing: Props = {
@@ -36,6 +39,12 @@ const composing: Props = {
   githubIntegrationId: 42,
   branch: "main",
   composerIsEmpty: false,
+};
+
+const NULL_RUNTIME = {
+  runtime_adapter: null,
+  model: null,
+  reasoning_effort: null,
 };
 
 function render(initial: Props) {
@@ -87,6 +96,7 @@ describe("useWarmTask", () => {
       repository: "acme/repo",
       github_integration: 42,
       branch: "main",
+      ...NULL_RUNTIME,
     });
   });
 
@@ -161,10 +171,46 @@ describe("useWarmTask", () => {
         repository: expectedRepository,
         github_integration: 42,
         branch: expectedBranch,
+        ...NULL_RUNTIME,
       });
       expect(mockWarmTask).toHaveBeenCalledTimes(2);
     },
   );
+
+  it("forwards the selected runtime and re-warms when the model changes", async () => {
+    const { rerender } = render({
+      ...composing,
+      runtimeAdapter: "claude",
+      model: "claude-opus-4-8",
+      reasoningEffort: "high",
+    });
+    await flushDebounce();
+    expect(mockWarmTask).toHaveBeenLastCalledWith({
+      repository: "acme/repo",
+      github_integration: 42,
+      branch: "main",
+      runtime_adapter: "claude",
+      model: "claude-opus-4-8",
+      reasoning_effort: "high",
+    });
+
+    rerender({
+      ...composing,
+      runtimeAdapter: "claude",
+      model: "claude-sonnet-4-6",
+      reasoningEffort: "high",
+    });
+    await flushDebounce();
+    expect(mockWarmTask).toHaveBeenLastCalledWith({
+      repository: "acme/repo",
+      github_integration: 42,
+      branch: "main",
+      runtime_adapter: "claude",
+      model: "claude-sonnet-4-6",
+      reasoning_effort: "high",
+    });
+    expect(mockWarmTask).toHaveBeenCalledTimes(2);
+  });
 
   it("warms again for a new selection after a failed warm", async () => {
     mockWarmTask.mockRejectedValueOnce(new Error("boom"));
