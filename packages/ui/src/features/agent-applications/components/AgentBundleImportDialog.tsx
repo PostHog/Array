@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { useImportAgentDraftBundle } from "../hooks/useImportAgentDraftBundle";
 
 const HEADER_RE = /^---\s*(.+?)\s*---\s*$/;
-const SKILL_PATH_RE = /^skills\/([a-z0-9-]+)\/SKILL\.md$/i;
+const SKILL_PATH_RE = /^skills\/([a-z0-9-]+)\/SKILL\.md$/;
 
 export interface ParsedBundle {
   agent_md?: string;

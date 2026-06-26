@@ -1746,6 +1746,9 @@ function BundleFileBody({
   if (editable) {
     return (
       <EditableMarkdownBody
+        // Remount when the user picks a different file so we start fresh
+        // instead of carrying draft/edit state across paths via an effect.
+        key={editable.path}
         file={file}
         emptyLabel={emptyLabel}
         editable={editable}
@@ -1786,14 +1789,13 @@ function EditableMarkdownBody({
     editable.revisionId,
   );
 
-  // Reset local state when the underlying content changes — covers the
-  // post-save refetch landing and navigation between files (two files with
-  // byte-identical content is vanishingly rare). We deliberately don't reset
-  // mutation state; a fresh `mutate()` clears any inline error anyway.
+  // Pull in upstream content changes (initial bundle load, post-save refetch),
+  // but only while the user isn't actively editing — otherwise an unrelated
+  // refetch (e.g. a concurrent bulk import) would silently wipe their draft.
+  // File-switch resets are handled by `key={editable.path}` at the call site.
   useEffect(() => {
-    setDraft(initial);
-    setEditing(false);
-  }, [initial]);
+    if (!editing) setDraft(initial);
+  }, [initial, editing]);
 
   if (!editing) {
     return (
