@@ -23,6 +23,7 @@ import type {
   ThreadRow,
 } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
 import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
+import { estimateThreadRow } from "@posthog/ui/features/sessions/components/new-thread/estimateThreadRow";
 import { createIncrementalThreadGrouper } from "@posthog/ui/features/sessions/components/new-thread/incrementalThreadGrouping";
 import { ToolCallGroupChip } from "@posthog/ui/features/sessions/components/new-thread/ToolCallGroupChip";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
@@ -381,6 +382,7 @@ export function ConversationView({
             ref={listRef}
             items={threadRows}
             getItemKey={getRowKey}
+            estimateItemSize={estimateThreadRow}
             renderItem={renderRow}
             onScrollStateChange={handleScrollStateChange}
             keepMounted={rowKeepMounted}

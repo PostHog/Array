@@ -17,6 +17,15 @@ interface VirtualizedListProps<T> {
   items: T[];
   renderItem: (item: T, index: number) => ReactNode;
   getItemKey?: (item: T, index: number) => string | number;
+  /**
+   * Pre-measurement height guess per row. Rows are measured for real once they
+   * mount, but until then the virtualizer lays them out at this estimate. A
+   * thread that opens scrolled to the bottom never mounts the rows above, so
+   * the first scroll-up corrects every one of them from the estimate to its
+   * true height at once — the closer the estimate, the smaller each correction
+   * and the less the content shifts. Falls back to a flat constant when unset.
+   */
+  estimateItemSize?: (item: T, index: number) => number;
   className?: string;
   itemClassName?: string;
   itemStyle?: CSSProperties;
@@ -49,6 +58,7 @@ function VirtualizedListInner<T>(
     items,
     renderItem,
     getItemKey,
+    estimateItemSize,
     className,
     itemClassName,
     itemStyle,
@@ -100,7 +110,12 @@ function VirtualizedListInner<T>(
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => ESTIMATED_ROW_SIZE,
+    estimateSize: (index) => {
+      const item = items[index];
+      return estimateItemSize && item !== undefined
+        ? estimateItemSize(item, index)
+        : ESTIMATED_ROW_SIZE;
+    },
     overscan: OVERSCAN,
     anchorTo: "end",
     followOnAppend: true,
@@ -111,6 +126,21 @@ function VirtualizedListInner<T>(
       return getItemKey ? getItemKey(item, index) : index;
     },
   });
+
+  // Keep already-visible content from jumping when a row ABOVE the viewport
+  // remeasures taller/shorter than its estimate. tanstack's default skips this
+  // compensation while scrolling backward (to avoid fighting momentum), but
+  // that's exactly when a first scroll-up corrects a run of never-measured rows
+  // — so the uncompensated growth shoves the viewport. Compensating
+  // unconditionally for above-viewport resizes holds the content steady. The
+  // bottom-follow path (anchorTo:"end") is handled before this predicate is
+  // consulted, so pinning to the end is unaffected. Not in 3.17's options type,
+  // so set on the instance directly.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
+    item,
+    _delta,
+    instance,
+  ) => item.start < (instance.scrollOffset ?? 0);
 
   const settleAtEnd = useCallback(() => {
     if (settleRafRef.current !== null) {
