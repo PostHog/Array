@@ -17,11 +17,6 @@ interface VirtualizedListProps<T> {
   items: T[];
   renderItem: (item: T, index: number) => ReactNode;
   getItemKey?: (item: T, index: number) => string | number;
-  /**
-   * Pre-measurement height guess per row, until it mounts and is measured. Falls
-   * back to a flat constant when unset.
-   */
-  estimateItemSize?: (item: T, index: number) => number;
   className?: string;
   itemClassName?: string;
   itemStyle?: CSSProperties;
@@ -57,7 +52,6 @@ function VirtualizedListInner<T>(
     items,
     renderItem,
     getItemKey,
-    estimateItemSize,
     className,
     itemClassName,
     itemStyle,
@@ -109,12 +103,7 @@ function VirtualizedListInner<T>(
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (index) => {
-      const item = items[index];
-      return estimateItemSize && item !== undefined
-        ? estimateItemSize(item, index)
-        : ESTIMATED_ROW_SIZE;
-    },
+    estimateSize: () => ESTIMATED_ROW_SIZE,
     overscan: OVERSCAN,
     anchorTo: "end",
     followOnAppend: true,
@@ -125,21 +114,6 @@ function VirtualizedListInner<T>(
       return getItemKey ? getItemKey(item, index) : index;
     },
   });
-
-  // Hold visible content steady when an above-viewport row resizes — tanstack
-  // skips this during backward scroll, exactly when a first scroll-up remeasures a
-  // run of never-measured rows and the growth shoves the viewport. A runtime field,
-  // not an option; set once in render (not an effect) so it precedes the first
-  // measurement pass.
-  const adjustAssignedRef = useRef(false);
-  if (!adjustAssignedRef.current) {
-    adjustAssignedRef.current = true;
-    virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
-      item,
-      _delta,
-      instance,
-    ) => item.start < (instance.scrollOffset ?? 0);
-  }
 
   const settleAtEnd = useCallback(() => {
     if (settleRafRef.current !== null) {
