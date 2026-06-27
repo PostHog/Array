@@ -171,6 +171,52 @@ export class HandoffCheckpointTracker {
     }
   }
 
+  /**
+   * Downloads a checkpoint's handoff pack and recreates its local ref
+   * (refs/posthog-code-checkpoint/<id>) WITHOUT mutating the working tree. Used by the
+   * cloud→local sync pass so every cloud/handoff turn becomes individually restorable.
+   * Only the pack is needed (the meta-commit is rebuilt from metadata); the index artifact
+   * is not downloaded.
+   */
+  async materializeCheckpointRef(
+    checkpoint: GitCheckpoint,
+    options?: { localGitState?: HandoffLocalGitState },
+  ): Promise<{ created: boolean; commit: string }> {
+    if (!this.apiClient) {
+      throw new Error(
+        "Cannot materialize handoff checkpoint: API client not configured",
+      );
+    }
+
+    const gitTracker = this.createGitTracker();
+    const tmpDir = await mkdtemp(
+      join(tmpdir(), `posthog-code-handoff-${checkpoint.checkpointId}-`),
+    );
+    const packPath = join(tmpDir, `${checkpoint.checkpointId}.pack`);
+
+    try {
+      const downloads = await this.downloadArtifacts([
+        {
+          key: "pack",
+          storagePath: checkpoint.artifactPath,
+          filePath: packPath,
+          label: "handoff pack",
+        },
+      ]);
+
+      const result = await gitTracker.materializeCheckpointRef({
+        checkpoint: this.toGitCheckpoint(checkpoint),
+        headPackPath: downloads.pack?.filePath,
+        localGitState: options?.localGitState,
+      });
+
+      return { created: result.created, commit: result.commit };
+    } finally {
+      await this.removeIfPresent(packPath);
+      await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   private toGitCheckpoint(checkpoint: GitCheckpoint): GitHandoffCheckpoint {
     return {
       checkpointId: checkpoint.checkpointId,
@@ -185,6 +231,7 @@ export class HandoffCheckpointTracker {
       upstreamRemote: checkpoint.upstreamRemote ?? null,
       upstreamMergeRef: checkpoint.upstreamMergeRef ?? null,
       remoteUrl: checkpoint.remoteUrl ?? null,
+      packBaseline: checkpoint.packBaseline ?? null,
     };
   }
 

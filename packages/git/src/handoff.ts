@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SagaLogger } from "@posthog/shared";
 import { createGitClient, type GitClient } from "./client";
-import { CaptureCheckpointSaga, deleteCheckpoint } from "./sagas/checkpoint";
+import {
+  CaptureCheckpointSaga,
+  deleteCheckpoint,
+  materializeCheckpointRefFromMetadata,
+} from "./sagas/checkpoint";
 
 const HANDOFF_HEAD_REF_PREFIX = "refs/posthog-code-handoff/head/";
 const CHECKPOINT_REF_PREFIX = "refs/posthog-code-checkpoint/";
@@ -31,6 +35,13 @@ export interface GitHandoffCheckpoint {
   upstreamRemote: string | null;
   upstreamMergeRef: string | null;
   remoteUrl: string | null;
+  /**
+   * The exact commit the differential pack was built against (negative ref). The
+   * receiver must have this commit's objects to unpack/apply. Recorded so the apply
+   * side can fetch this precise SHA — the receiver's clone tip may have diverged from
+   * it, but it's typically still reachable on the remote. Null = self-contained pack.
+   */
+  packBaseline?: string | null;
 }
 
 export interface GitHandoffArtifactFile {
@@ -118,13 +129,31 @@ export class GitHandoffTracker {
         checkpoint.checkpointId,
       );
 
-      const packBaselineRaw = localGitState?.upstreamHead ?? null;
-      // Verify the baseline exists before using as a negative ref. The sender's
-      // upstream HEAD may be a commit this repo doesn't have (e.g. pushed after
-      // the sandbox was created), which would make git pack-objects fail with
-      // "fatal: bad object <hash>". Fall back to a full pack if absent.
+      // Choose a differential baseline: a commit the RECEIVER already has, so the pack
+      // only carries the objects they lack. The sender's upstream HEAD is ideal; when it
+      // isn't supplied (e.g. per-turn cloud captures carry no handoff state) derive the
+      // branch's upstream tracking commit from git directly. Without any baseline,
+      // pack-objects has no negative ref and packs the ENTIRE repo, blowing past the 30MB
+      // artifact limit.
+      //
+      // One case we must block: packBaselineRaw === checkpoint.head. `^HEAD` excludes
+      // everything reachable from HEAD — including HEAD itself — yielding an empty pack that
+      // omits the very commit we're shipping, so the receiver's read-tree fails with
+      // "Not a valid commit name". All other cases (ancestor, diverged, or equal-to-tip with
+      // only worktree changes) are safe: `git pack-objects --revs` with a diverged baseline
+      // packs only objects unique to HEAD's ancestry, which is exactly what the receiver
+      // lacks. A correct full pack is always safer than a tiny broken one, so when no valid
+      // baseline is found we fall back to null.
+      const packBaselineRaw =
+        localGitState?.upstreamHead ??
+        (await this.resolveUpstreamBaseline(git, checkpoint.branch));
+      // Only exclude the baseline as a negative ref if it exists locally (otherwise
+      // pack-objects fails with "fatal: bad object") and is not identical to HEAD
+      // (which would produce an empty pack).
       const packBaseline =
-        packBaselineRaw && (await this.refExists(git, packBaselineRaw))
+        packBaselineRaw &&
+        packBaselineRaw !== checkpoint.head &&
+        (await this.refExists(git, packBaselineRaw))
           ? packBaselineRaw
           : null;
       const packRefs = [
@@ -158,6 +187,7 @@ export class GitHandoffTracker {
           upstreamRemote: tracking.upstreamRemote,
           upstreamMergeRef: tracking.upstreamMergeRef,
           remoteUrl: tracking.remoteUrl,
+          packBaseline,
         },
         headPack,
         indexFile,
@@ -179,6 +209,18 @@ export class GitHandoffTracker {
       onDivergedBranch,
     } = input;
     const git = createGitClient(this.repositoryPath);
+
+    this.logger?.info("Handoff apply: starting", {
+      checkpointId: checkpoint.checkpointId,
+      branch: checkpoint.branch,
+      head: checkpoint.head,
+      worktreeTree: checkpoint.worktreeTree,
+      packBaseline: checkpoint.packBaseline ?? null,
+      upstreamRemote: checkpoint.upstreamRemote,
+      upstreamMergeRef: checkpoint.upstreamMergeRef,
+      hasHeadPack: !!headPackPath,
+      hasLocalGitState: !!localGitState,
+    });
 
     if (headPackPath) {
       await this.ensureBaselineForApply(git, checkpoint, localGitState);
@@ -214,7 +256,16 @@ export class GitHandoffTracker {
     }
 
     await git.clean(["f", "d"]);
-    await git.raw(["read-tree", "--reset", "-u", checkpoint.worktreeTree]);
+    try {
+      await git.raw(["read-tree", "--reset", "-u", checkpoint.worktreeTree]);
+    } catch (err) {
+      this.logger?.error("Handoff apply: read-tree failed", {
+        worktreeTree: checkpoint.worktreeTree,
+        packBaseline: checkpoint.packBaseline ?? null,
+        err: String(err),
+      });
+      throw err;
+    }
 
     if (indexPath) {
       await this.restoreIndexFile(git, indexPath);
@@ -228,6 +279,61 @@ export class GitHandoffTracker {
       indexBytes,
       totalBytes: packBytes + indexBytes,
     };
+  }
+
+  /**
+   * Materializes a restorable checkpoint ref (refs/posthog-code-checkpoint/<id>) from a
+   * handoff pack WITHOUT mutating the working tree. Use this on the receiver to make every
+   * cloud/handoff checkpoint individually restorable after a cloud→local handoff: the
+   * caller's apply_git_checkpoint step already sets the final working-tree state, so the
+   * sync pass only needs to recreate the refs (applyFromHandoff resets the tree per call,
+   * which is both unnecessary here and clobbering).
+   *
+   * Unpacks the pack's objects (head/index/worktree trees + their blobs), then rebuilds the
+   * meta-commit + ref from the checkpoint metadata. Idempotent — a ref that already exists
+   * is left untouched.
+   */
+  async materializeCheckpointRef(
+    input: GitHandoffApplyInput,
+  ): Promise<{ created: boolean; commit: string; packBytes: number }> {
+    const { checkpoint, headPackPath, localGitState } = input;
+    const git = createGitClient(this.repositoryPath);
+
+    this.logger?.info("Handoff materialize: starting", {
+      checkpointId: checkpoint.checkpointId,
+      head: checkpoint.head,
+      worktreeTree: checkpoint.worktreeTree,
+      indexTree: checkpoint.indexTree,
+      hasHeadPack: !!headPackPath,
+    });
+
+    if (headPackPath) {
+      await this.ensureBaselineForApply(git, checkpoint, localGitState);
+      await this.unpackPackFile(headPackPath);
+    }
+
+    const result = await materializeCheckpointRefFromMetadata(
+      git,
+      this.repositoryPath,
+      {
+        checkpointId: checkpoint.checkpointId,
+        head: checkpoint.head,
+        branch: checkpoint.branch,
+        indexTree: checkpoint.indexTree,
+        worktreeTree: checkpoint.worktreeTree,
+        timestamp: checkpoint.timestamp,
+      },
+    );
+
+    const packBytes = headPackPath ? await this.getFileSize(headPackPath) : 0;
+
+    this.logger?.info("Handoff materialize: done", {
+      checkpointId: checkpoint.checkpointId,
+      created: result.created,
+      commit: result.commit,
+    });
+
+    return { ...result, packBytes };
   }
 
   private async captureObjectPack(
@@ -363,6 +469,10 @@ export class GitHandoffTracker {
 
   private async unpackPackFile(packPath: string): Promise<void> {
     const content = await readFile(packPath);
+    // pack-objects without --thin produces complete, self-contained packs. unpack-objects
+    // extracts each object as a loose file, which works correctly for self-contained packs.
+    // ensureBaselineForApply ensures the baseline's tree objects are present before this
+    // runs, so read-tree can resolve all subtree references after unpacking.
     await this.runGitWithBuffer(["unpack-objects", "-r"], content);
   }
 
@@ -408,22 +518,113 @@ export class GitHandoffTracker {
     checkpoint: GitHandoffCheckpoint,
     localGitState: HandoffLocalGitState | undefined,
   ): Promise<void> {
-    const tracking = this.getPreferredTracking(localGitState, checkpoint);
-    if (!tracking.upstreamRemote || !tracking.upstreamMergeRef) return;
+    // Always use the LOCAL remote for URL/connectivity — the checkpoint's remote may not
+    // be reachable from the receiver (e.g. "cloud-origin" → https://... from a test).
+    // But fetch the CHECKPOINT's branch ref, because the baseline lives on the sender's
+    // branch (e.g. a feature branch), not necessarily the receiver's current branch (which
+    // may be main).  The same GitHub origin hosts both branches.
+    const preferredTracking = this.getPreferredTracking(localGitState, checkpoint);
+    const upstreamRemote = preferredTracking.upstreamRemote;
+    const upstreamMergeRef = checkpoint.upstreamMergeRef ?? preferredTracking.upstreamMergeRef;
+    if (!upstreamRemote || !upstreamMergeRef) {
+      this.logger?.warn(
+        "Handoff baseline: no remote/ref to fetch baseline from; differential pack may fail to apply",
+        {
+          packBaseline: checkpoint.packBaseline ?? null,
+          upstreamRemote,
+          upstreamMergeRef,
+          hasLocalGitState: !!localGitState,
+        },
+      );
+      return;
+    }
 
-    await this.ensureRemoteForTracking(git, tracking).catch(() => {});
-    await git
-      .raw(["fetch", tracking.upstreamRemote, tracking.upstreamMergeRef])
-      .catch((err) => {
-        this.logger?.error(
-          "Handoff baseline fetch failed; if the pack excludes commits the receiver does not already have, the subsequent unpack/read-tree will fail with an object-missing error",
-          {
+    await this.ensureRemoteForTracking(git, preferredTracking).catch(() => {});
+
+    // The handoff pack is differential — it omits every object reachable from the sender's
+    // upstream baseline, assuming the receiver already has them. Cloud sandboxes are SHALLOW
+    // clones (--depth 1) and may not have the baseline commit's tree objects, causing
+    // read-tree to fail with "fatal: failed to unpack tree object".
+    //
+    // We deepen the clone enough to recover the baseline commit and its trees. --unshallow
+    // downloads the entire repo history (potentially GBs for large repos and always times
+    // out); bounded deepening is fast and covers any typical dev workflow.
+    let isShallow = false;
+    try {
+      isShallow =
+        (await git.raw(["rev-parse", "--is-shallow-repository"])).trim() === "true";
+    } catch {
+      // Older git without --is-shallow-repository — treat as non-shallow.
+    }
+
+    const baseline = checkpoint.packBaseline;
+    const baselinePresentBefore = baseline
+      ? await this.refExists(git, baseline)
+      : false;
+
+    this.logger?.info("Handoff baseline: resolved", {
+      baseline: baseline ?? null,
+      isShallow,
+      baselinePresentBefore,
+      upstreamRemote,
+      upstreamMergeRef,
+    });
+
+    if (isShallow && baseline) {
+      // Deepen to include packBaseline's commit and its tree objects.
+      // 200 commits covers weeks of typical development velocity.
+      await git
+        .raw(["fetch", "--deepen=200", upstreamRemote, upstreamMergeRef])
+        .catch((err) => {
+          this.logger?.error("Handoff deepen fetch failed", {
             err: String(err),
-            remote: tracking.upstreamRemote,
-            ref: tracking.upstreamMergeRef,
-          },
+            depth: 200,
+            remote: upstreamRemote,
+            ref: upstreamMergeRef,
+          });
+        });
+
+      this.logger?.info("Handoff baseline: after --deepen=200", {
+        baseline,
+        baselinePresent: await this.refExists(git, baseline),
+      });
+
+      if (!(await this.refExists(git, baseline))) {
+        // Baseline still absent — local was very stale. Try a deeper fetch
+        // (covers months-old baselines; cumulative on top of the first deepen).
+        await git
+          .raw(["fetch", "--deepen=2000", upstreamRemote, upstreamMergeRef])
+          .catch((err) => {
+            this.logger?.error("Handoff extended deepen failed", {
+              err: String(err),
+              depth: 2000,
+              remote: upstreamRemote,
+              ref: upstreamMergeRef,
+            });
+          });
+
+        this.logger?.info("Handoff baseline: after --deepen=2000", {
+          baseline,
+          baselinePresent: await this.refExists(git, baseline),
+        });
+
+        if (!(await this.refExists(git, baseline))) {
+          this.logger?.warn(
+            "Pack baseline not found after deepening; checkpoint apply may fail with missing-object errors",
+            { baseline, remote: upstreamRemote, ref: upstreamMergeRef },
+          );
+        }
+      }
+    } else if (!isShallow && baseline && !(await this.refExists(git, baseline))) {
+      // Non-shallow receiver, differential pack, baseline not yet present locally.
+      // Fetch to pull in the baseline objects before unpacking.
+      await git.raw(["fetch", upstreamRemote, upstreamMergeRef]).catch((err) => {
+        this.logger?.error(
+          "Handoff baseline fetch failed; unpack/read-tree may fail with missing-object errors",
+          { err: String(err), remote: upstreamRemote, ref: upstreamMergeRef },
         );
       });
+    }
   }
 
   private async ensureRemoteForTracking(
@@ -553,6 +754,34 @@ export class GitHandoffTracker {
     }
   }
 
+  /**
+   * Resolves the branch's upstream tracking commit from git directly, for callers that
+   * have no handoff state to supply one (e.g. per-turn cloud captures). Tries the branch's
+   * configured upstream, then the conventional origin/<branch>, then origin/HEAD. Returns
+   * the resolved commit SHA, or null when none can be resolved.
+   */
+  private async resolveUpstreamBaseline(
+    git: GitClient,
+    branch?: string | null,
+  ): Promise<string | null> {
+    const candidates = [
+      branch ? `${branch}@{upstream}` : null,
+      branch ? `origin/${branch}` : null,
+      "origin/HEAD",
+    ].filter((ref): ref is string => !!ref);
+    for (const ref of candidates) {
+      try {
+        const sha = (await git.revparse(["--verify", `${ref}^{commit}`])).trim();
+        if (sha) {
+          return sha;
+        }
+      } catch {
+        // Try the next candidate.
+      }
+    }
+    return null;
+  }
+
   private async isAncestor(
     ancestor: string,
     descendant: string,
@@ -596,11 +825,29 @@ export class GitHandoffTracker {
     const tempDir = await this.createTempDir(checkpointId);
     const packPrefix = path.join(tempDir, checkpointId);
 
-    // Pack the checkpoint ref + head commit; exclude baseline to keep packs differential.
+    // Pack the checkpoint ref + head commit; exclude baseline to keep packs
+    // differential. Verify the baseline exists before using it as a negative ref:
+    // the caller's upstream HEAD may be a commit this repo doesn't have (e.g. the
+    // upstream advanced after the local ref was recorded), which would make
+    // git pack-objects abort with "fatal: bad object <hash>" and silently drop the
+    // checkpoint. Fall back to a full pack if absent. Mirrors captureForHandoff().
+    //
+    // CRITICAL: the worktree/index trees MUST be explicit pack refs. The receiver
+    // applies the checkpoint with `read-tree --reset -u <worktreeTree>`, but the
+    // checkpoint commit's own tree is NOT necessarily the recorded worktreeTree
+    // (the commit may be built from a reconciled/index tree). Packing only the
+    // commit therefore omits the worktreeTree object, and a shallow receiver — which
+    // can't fall back to local history — fails with
+    // "fatal: failed to unpack tree object <worktreeTree>". Including them here
+    // mirrors captureForHandoff()'s ref list and keeps the pack self-sufficient.
+    const safeBaseline =
+      baseline && (await this.refExists(git, baseline)) ? baseline : null;
     const packRefs = [
       checkpointRef,
       meta.head,
-      baseline ? `^${baseline}` : null,
+      meta.worktreeTree,
+      meta.indexTree,
+      safeBaseline ? `^${safeBaseline}` : null,
     ].filter((r): r is string => !!r);
 
     const artifact = await this.captureObjectPack(packPrefix, packRefs);
@@ -619,6 +866,7 @@ export class GitHandoffTracker {
         upstreamRemote: tracking.upstreamRemote,
         upstreamMergeRef: tracking.upstreamMergeRef,
         remoteUrl: tracking.remoteUrl,
+        packBaseline: safeBaseline ?? null,
       },
     };
   }

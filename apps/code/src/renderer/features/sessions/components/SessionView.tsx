@@ -141,8 +141,9 @@ export function SessionView({
   const { allowBypassPermissions } = useSettingsStore();
   const { isOnline } = useConnectivity();
   const currentModeId = modeOption?.currentValue;
-  const handoffInProgress =
-    useSessionForTask(taskId)?.handoffInProgress ?? false;
+  const sessionForView = useSessionForTask(taskId);
+  const handoffInProgress = sessionForView?.handoffInProgress ?? false;
+  const isReconnecting = sessionForView?.isReconnecting ?? false;
 
   useEffect(() => {
     if (!taskId) return;
@@ -649,11 +650,13 @@ export function SessionView({
                           sessionId={sessionId}
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
-                          submitDisabledExternal={
-                            handoffInProgress || !isOnline
-                          }
+                          submitDisabledExternal={handoffInProgress || !isOnline}
                           submitTooltipOverride={
-                            !isOnline ? "No internet connection" : undefined
+                            !isOnline
+                              ? "No internet connection"
+                              : isReconnecting
+                                ? "Reconnecting to the agent, your message will be queued and sent in a moment."
+                                : undefined
                           }
                           isLoading={!!isPromptPending}
                           isActiveSession={isActiveSession}

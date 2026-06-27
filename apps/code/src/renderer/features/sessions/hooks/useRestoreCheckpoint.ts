@@ -21,10 +21,22 @@ export function useRestoreCheckpoint({
   );
   const [isRestoring, setIsRestoring] = useState(false);
 
-  const requestRestore = useCallback((checkpointId: string) => {
-    setPendingCheckpointId(checkpointId);
-    setDialogOpen(true);
-  }, []);
+  const requestRestore = useCallback(
+    (checkpointId: string) => {
+      // Don't let a new restore race the previous one's reconnect (the agent is
+      // mid-respawn and can't accept the resume yet).
+      const session = taskId
+        ? sessionStoreSetters.getSessionByTaskId(taskId)
+        : undefined;
+      if (session?.isReconnecting) {
+        toast.info("Hang on — finishing the previous restore.");
+        return;
+      }
+      setPendingCheckpointId(checkpointId);
+      setDialogOpen(true);
+    },
+    [taskId],
+  );
 
   const confirmRestore = useCallback(async () => {
     if (!pendingCheckpointId || !repoPath) return;
@@ -64,6 +76,7 @@ export function useRestoreCheckpoint({
             taskId,
             repoPath,
             restoreResult?.restoredSessionId,
+            restoreResult?.adapter,
           )
           .catch(() => {});
       }

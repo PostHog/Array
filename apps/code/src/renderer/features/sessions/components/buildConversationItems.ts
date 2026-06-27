@@ -86,6 +86,9 @@ interface ProgressCardState {
 interface TurnState {
   id: string;
   promptId: number;
+  /** Event timestamp when the turn started. Used to associate GIT_CHECKPOINT
+   *  notifications with the right turn when promptIds collide across a handoff. */
+  ts: number;
   isComplete: boolean;
   stopReason?: string;
   interruptReason?: string;
@@ -101,14 +104,18 @@ interface ItemBuilder {
   items: ConversationItem[];
   currentTurn: TurnState | null;
   pendingPrompts: Map<number, TurnState>;
-  /** All turns ever created, keyed by promptId. Used to associate GIT_CHECKPOINT
-   *  notifications with the correct turn regardless of stream order. */
-  allTurns: Map<number, TurnState>;
-  /** GIT_CHECKPOINT notifications deferred until after all turns are built,
-   *  so allTurns.get(promptId) is guaranteed to find the right entry. */
+  /** Every turn ever created, in creation (chronological) order. Used to
+   *  associate GIT_CHECKPOINT notifications with the correct turn even when
+   *  promptIds repeat across a local→cloud→local handoff (the cloud session and
+   *  post-restore turns reuse low promptId numbers). A Map keyed by promptId
+   *  would silently drop the earlier colliding turn. */
+  allTurnsList: TurnState[];
+  /** GIT_CHECKPOINT notifications deferred until after all turns are built, so
+   *  the association pass sees every turn regardless of stream/replay order. */
   pendingCheckpoints: Array<{
     checkpointId: string;
     promptId: number | undefined;
+    ts: number;
   }>;
   shellExecutes: Map<string, { item: UserShellExecute; index: number }>;
   isCompacting: boolean;
@@ -126,7 +133,7 @@ function createItemBuilder(): ItemBuilder {
     items: [],
     currentTurn: null,
     pendingPrompts: new Map(),
-    allTurns: new Map(),
+    allTurnsList: [],
     pendingCheckpoints: [],
     shellExecutes: new Map(),
     isCompacting: false,
@@ -220,12 +227,36 @@ export function buildConversationItems(
     b.currentTurn.context.turnComplete = true;
   }
 
-  // Post-pass: assign deferred checkpoints now that allTurns is fully populated.
-  for (const { checkpointId, promptId } of b.pendingCheckpoints) {
-    const targetTurn =
-      promptId !== undefined
-        ? (b.allTurns.get(promptId) ?? b.currentTurn)
-        : b.currentTurn;
+  // Post-pass: assign deferred checkpoints now that every turn is known.
+  //
+  // promptId is unique WITHIN a session but repeats across a local→cloud→local
+  // handoff (the cloud session restarts prompt numbering and post-restore turns
+  // reuse low ids), so a raw `allTurns.get(promptId)` mis-binds — the cloud/
+  // post-restore turns would steal the harness/alpha turns' checkpoints. Use
+  // promptId only when it identifies exactly one turn; otherwise fall back to the
+  // event timestamp, which is monotonic across the whole run. Process in ts order
+  // so the latest checkpoint inside a turn's window wins.
+  const checkpointsByTs = [...b.pendingCheckpoints].sort((a, c) => a.ts - c.ts);
+  for (const { checkpointId, promptId, ts } of checkpointsByTs) {
+    // Checkpoints with no promptId are internal handoff snapshots (e.g. the
+    // local pre-flight capture), not user-turn restore points — don't bind them
+    // to a turn's restore button.
+    if (promptId === undefined) continue;
+
+    const candidates = b.allTurnsList.filter((t) => t.promptId === promptId);
+    let targetTurn: TurnState | null;
+    if (candidates.length === 1) {
+      targetTurn = candidates[0];
+    } else {
+      // 0 (cloud promptId with no local twin) or >1 (handoff collision): bind to
+      // the latest turn that started at or before this checkpoint.
+      targetTurn = null;
+      for (const turn of b.allTurnsList) {
+        if (turn.ts <= ts) targetTurn = turn;
+      }
+      targetTurn = targetTurn ?? b.currentTurn;
+    }
+
     if (targetTurn) {
       targetTurn.lastCheckpointId = checkpointId;
       targetTurn.context.lastCheckpointId = checkpointId;
@@ -280,6 +311,7 @@ function handlePromptRequest(
   b.currentTurn = {
     id: turnId,
     promptId: msg.id,
+    ts,
     isComplete: false,
     durationMs: -ts,
     toolCalls,
@@ -290,7 +322,7 @@ function handlePromptRequest(
   };
 
   b.pendingPrompts.set(msg.id, b.currentTurn);
-  b.allTurns.set(msg.id, b.currentTurn);
+  b.allTurnsList.push(b.currentTurn);
 
   if (gitAction.isGitAction && gitAction.actionType) {
     b.items.push({
@@ -473,12 +505,13 @@ function handleNotification(
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT)) {
     const params = msg.params as { checkpointId?: string; promptId?: number };
     if (!params?.checkpointId) return;
-    // Defer until after all turns are built so allTurns.get(promptId) always
-    // finds the right entry, even if this notification arrives before the
-    // session/prompt events (e.g. after a reconnect replay).
+    // Defer until after all turns are built so the association pass sees every
+    // turn, even if this notification arrives before the session/prompt events
+    // (e.g. after a reconnect replay). ts disambiguates colliding promptIds.
     b.pendingCheckpoints.push({
       checkpointId: params.checkpointId,
       promptId: params.promptId,
+      ts,
     });
     return;
   }
@@ -582,6 +615,7 @@ function ensureImplicitTurn(b: ItemBuilder, ts: number) {
   b.currentTurn = {
     id: turnId,
     promptId: -1,
+    ts,
     isComplete: false,
     durationMs: 0,
     toolCalls,
@@ -590,6 +624,7 @@ function ensureImplicitTurn(b: ItemBuilder, ts: number) {
     itemCount: 0,
     lastCheckpointId: null,
   };
+  b.allTurnsList.push(b.currentTurn);
 }
 
 function extractUserPrompt(params: unknown): {

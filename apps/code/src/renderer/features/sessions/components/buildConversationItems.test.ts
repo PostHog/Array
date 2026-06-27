@@ -181,6 +181,64 @@ describe("buildConversationItems", () => {
     ).toBeNull();
   });
 
+  // Regression: across a local→cloud→local handoff the cloud session restarts
+  // prompt numbering, so promptIds collide (harness/alpha = 2/3, cloud-resume/beta
+  // reuse 2/3). A promptId-keyed Map would let the cloud turns steal the local
+  // turns' checkpoints, leaving harness+alpha with disabled restore icons. Each
+  // turn must keep its OWN checkpoint, and the internal (no-promptId) pre-flight
+  // snapshot must not bind to any turn's button.
+  it("associates checkpoints by timestamp when promptIds collide across a handoff", () => {
+    const preflightCheckpoint: AcpMessage = {
+      type: "acp_message",
+      ts: 9,
+      message: {
+        jsonrpc: "2.0",
+        method: POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
+        params: { checkpointId: "cp-preflight" }, // internal: no promptId
+      },
+    };
+
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 2, "harness"),
+        promptResponseMsg(2, 2),
+        turnCompleteMsg(3),
+        gitCheckpointMsg(4, "cp-harness", 2),
+        userPromptMsg(5, 3, "alpha"),
+        promptResponseMsg(6, 3),
+        turnCompleteMsg(7),
+        gitCheckpointMsg(8, "cp-alpha", 3),
+        preflightCheckpoint,
+        userPromptMsg(10, 2, "resuming"), // cloud reuses promptId 2
+        promptResponseMsg(11, 2),
+        turnCompleteMsg(12),
+        gitCheckpointMsg(13, "cp-cloudinit", 1), // cloud promptId has no local twin
+        userPromptMsg(14, 3, "beta"), // cloud reuses promptId 3
+        promptResponseMsg(15, 3),
+        turnCompleteMsg(16),
+        gitCheckpointMsg(17, "cp-beta", 2),
+      ],
+      null,
+    );
+
+    const checkpointIds = result.items
+      .filter((i) => i.type === "user_message")
+      .map((i) =>
+        i.type === "user_message"
+          ? (i.turnContext?.lastCheckpointId ?? null)
+          : null,
+      );
+
+    // harness, alpha, cloud-resume, beta — each its own checkpoint, none disabled.
+    expect(checkpointIds).toEqual([
+      "cp-harness",
+      "cp-alpha",
+      "cp-cloudinit",
+      "cp-beta",
+    ]);
+    expect(checkpointIds).not.toContain("cp-preflight");
+  });
+
   it("marks cloud turns complete from structured turn completion notifications", () => {
     const result = buildConversationItems(
       [userPromptMsg(10, 42, "hello"), turnCompleteMsg(25)],

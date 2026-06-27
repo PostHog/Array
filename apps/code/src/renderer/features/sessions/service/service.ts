@@ -592,7 +592,12 @@ export class SessionService {
     const storedAdapter = useSessionAdapterStore
       .getState()
       .getAdapter(taskRunId);
-    const resolvedAdapter = adapter ?? storedAdapter;
+    // Local-dev default: codex. When neither the cloud log nor the adapter store
+    // resolves an adapter (e.g. the cloud resume turn never surfaced one, or the
+    // task was created outside the normal startSession path), the agent would
+    // otherwise spawn the default "claude" runtime — which fails with no Claude
+    // credits. Falling back to codex keeps the local session on the task's runtime.
+    const resolvedAdapter = adapter ?? storedAdapter ?? "codex";
     const persistedConfigOptions = getPersistedConfigOptions(taskRunId);
 
     const previous = sessionStoreSetters.getSessions()[taskRunId];
@@ -1484,7 +1489,9 @@ export class SessionService {
     const hasQueuedMessages =
       freshSession &&
       freshSession.messageQueue.length > 0 &&
-      freshSession.status === "connected";
+      freshSession.status === "connected" &&
+      // Don't drain into an agent that's mid-respawn after a checkpoint restore.
+      !freshSession.isReconnecting;
 
     if (hasQueuedMessages) {
       setTimeout(() => {
@@ -1616,13 +1623,17 @@ export class SessionService {
       throw new Error(`Session is not ready (status: ${session.status})`);
     }
 
-    if (session.isPromptPending || session.isCompacting) {
+    if (session.isPromptPending || session.isCompacting || session.isReconnecting) {
       const promptText = extractPromptText(prompt);
       sessionStoreSetters.enqueueMessage(taskId, promptText);
       log.info("Message queued", {
         taskId,
         queueLength: session.messageQueue.length + 1,
-        reason: session.isCompacting ? "compacting" : "prompt_pending",
+        reason: session.isReconnecting
+          ? "reconnecting"
+          : session.isCompacting
+            ? "compacting"
+            : "prompt_pending",
       });
       return { stopReason: "queued" };
     }
@@ -1968,7 +1979,7 @@ export class SessionService {
       undefined,
       session.logUrl,
       undefined,
-      session.adapter ?? "claude",
+      session.adapter ?? "codex",
     );
 
     const artifactIds = await uploadRunAttachments(
@@ -2709,6 +2720,7 @@ export class SessionService {
     taskId: string,
     repoPath: string,
     restoredSessionId?: string | null,
+    restoredAdapter?: Adapter | null,
   ): Promise<void> {
     this.localRepoPaths.set(taskId, repoPath);
     const session = sessionStoreSetters.getSessionByTaskId(taskId);
@@ -2716,10 +2728,26 @@ export class SessionService {
 
     const { taskRunId, logUrl } = session;
 
+    // Resolve the adapter authoritatively. The restore mutation returns the live
+    // session's actual runtime (restoredAdapter); fall back to the persisted adapter
+    // store, then the in-memory session, then a hard "codex" default. The renderer's
+    // session.adapter can be stale "claude" for handed-off tasks (the main-side
+    // handoff saga drives the runtime, not this store), so the persisted store is
+    // preferred over it — trusting session.adapter would spawn the wrong runtime and
+    // fail with "Credit balance too low".
+    const resolvedAdapter: Adapter =
+      restoredAdapter ??
+      useSessionAdapterStore.getState().getAdapter(taskRunId) ??
+      session.adapter ??
+      "codex";
+
     // Block prompt input while reconnecting, but keep status=connected so
-    // the UI doesn't show a "Connecting to agent…" overlay.
+    // the UI doesn't show a "Connecting to agent…" overlay. Use the dedicated
+    // isReconnecting flag (NOT isPromptPending) so the UI reads "Reconnecting…"
+    // instead of masquerading as a live "agent is responding" turn (red Stop
+    // button + generating timer + "still responding" restore warning).
     sessionStoreSetters.updateSession(taskRunId, {
-      isPromptPending: true,
+      isReconnecting: true,
       promptStartedAt: null,
     });
 
@@ -2739,7 +2767,7 @@ export class SessionService {
     if (!auth) {
       sessionStoreSetters.updateSession(taskRunId, {
         status: "error",
-        isPromptPending: false,
+        isReconnecting: false,
         errorMessage: "Authentication required. Please sign in.",
       });
       return;
@@ -2760,6 +2788,14 @@ export class SessionService {
       },
     );
 
+    // Persist the resolved adapter so a subsequent restore/reconnect doesn't read
+    // a stale value and flip the runtime. The `session` object is frozen
+    // (immutable store state), so persist only through the store setters — a direct
+    // `session.adapter = …` throws "Cannot assign to read only property" and aborts
+    // the reconnect, leaving the UI spinning forever.
+    sessionStoreSetters.updateSession(taskRunId, { adapter: resolvedAdapter });
+    useSessionAdapterStore.getState().setAdapter(taskRunId, resolvedAdapter);
+
     try {
       const result = await trpcClient.agent.reconnect.mutate({
         taskId,
@@ -2769,20 +2805,54 @@ export class SessionService {
         projectId: auth.projectId,
         logUrl,
         sessionId: restoredSessionId ?? undefined,
-        adapter: session.adapter,
+        adapter: resolvedAdapter,
         permissionMode: persistedMode,
         customInstructions: customInstructions || undefined,
       });
 
       if (result) {
+        // Restore persisted config options (esp. the model) to the resumed runtime.
+        // agent.reconnect only carries permissionMode; without re-applying the model
+        // the gateway falls back to its default (a Claude model), so a codex task
+        // fails on the first post-restore turn with "Credit balance too low" — which
+        // is then treated as a fatal error and triggers a recovery reconnect that
+        // collapses the visible history. Mirrors reconnectToLocalSession.
+        if (persistedConfigOptions) {
+          await Promise.all(
+            persistedConfigOptions.map((opt) =>
+              trpcClient.agent.setConfigOption
+                .mutate({
+                  sessionId: taskRunId,
+                  configId: opt.id,
+                  value: String(opt.currentValue),
+                })
+                .catch((error) => {
+                  log.warn(
+                    "Failed to restore persisted config option after restore reconnect",
+                    {
+                      taskId,
+                      configId: opt.id,
+                      error,
+                    },
+                  );
+                }),
+            ),
+          );
+        }
         sessionStoreSetters.updateSession(taskRunId, {
           status: "connected",
-          isPromptPending: false,
+          isReconnecting: false,
         });
+        // Send anything the user queued while input was blocked during the
+        // reconnect (drainQueuedMessages skips while isReconnecting is set).
+        const reconnected = sessionStoreSetters.getSessions()[taskRunId];
+        if (reconnected) {
+          this.drainQueuedMessages(taskRunId, reconnected);
+        }
       } else {
         sessionStoreSetters.updateSession(taskRunId, {
           status: "error",
-          isPromptPending: false,
+          isReconnecting: false,
           errorMessage:
             "Session could not resume after restore. Please retry or start a new session.",
         });
@@ -2791,7 +2861,7 @@ export class SessionService {
       const msg = err instanceof Error ? err.message : String(err);
       sessionStoreSetters.updateSession(taskRunId, {
         status: "error",
-        isPromptPending: false,
+        isReconnecting: false,
         errorMessage: msg || "Failed to reconnect after restore.",
       });
     }

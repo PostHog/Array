@@ -30,6 +30,7 @@ export function useSessionViewState(taskId: string, task: Task) {
 
   const events = session?.events ?? [];
   const isPromptPending = session?.isPromptPending ?? false;
+  const isReconnecting = session?.isReconnecting ?? false;
   const promptStartedAt = session?.promptStartedAt;
 
   const isNewSessionWithInitialPrompt =
@@ -60,6 +61,7 @@ export function useSessionViewState(taskId: string, task: Task) {
     hasError,
     events,
     isPromptPending,
+    isReconnecting,
     promptStartedAt,
     isInitializing,
     cloudBranch,

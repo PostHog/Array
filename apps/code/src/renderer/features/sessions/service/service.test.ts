@@ -53,6 +53,13 @@ const mockTrpcOs = vi.hoisted(() => ({
   openExternal: { mutate: vi.fn() },
 }));
 
+const mockTrpcCheckpoint = vi.hoisted(() => ({
+  replayCheckpoints: {
+    mutate: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  restore: { mutate: vi.fn() },
+}));
+
 vi.mock("@renderer/trpc/client", () => ({
   trpcClient: {
     agent: mockTrpcAgent,
@@ -62,6 +69,7 @@ vi.mock("@renderer/trpc/client", () => ({
     fs: mockTrpcFs,
     handoff: mockTrpcHandoff,
     os: mockTrpcOs,
+    checkpoint: mockTrpcCheckpoint,
   },
 }));
 
@@ -4091,6 +4099,69 @@ describe("SessionService", () => {
           expect.objectContaining({ sessionId: "run-123" }),
         );
       });
+    });
+  });
+
+  describe("restoreCheckpointReconnect", () => {
+    it("blocks input via isReconnecting (not isPromptPending) and clears it on success", async () => {
+      const service = getSessionService();
+      const session = createMockSession({
+        status: "connected",
+        isCloud: false,
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": session,
+      });
+      mockTrpcAgent.cancel.mutate.mockResolvedValue(undefined);
+      mockTrpcAgent.reconnect.mutate.mockResolvedValue({});
+
+      await service.restoreCheckpointReconnect(
+        "task-123",
+        "/repo",
+        "sess-1",
+        "codex",
+      );
+
+      const patches = mockSessionStoreSetters.updateSession.mock.calls.map(
+        ([, patch]) => patch,
+      );
+
+      // Input is blocked through the dedicated reconnect flag…
+      expect(patches).toContainEqual(
+        expect.objectContaining({ isReconnecting: true }),
+      );
+      // …never through isPromptPending (which drives the "responding" UI).
+      expect(patches).not.toContainEqual(
+        expect.objectContaining({ isPromptPending: true }),
+      );
+      // …and is released once the agent resumes.
+      expect(patches).toContainEqual(
+        expect.objectContaining({ status: "connected", isReconnecting: false }),
+      );
+    });
+
+    it("clears isReconnecting when the reconnect fails", async () => {
+      const service = getSessionService();
+      const session = createMockSession({
+        status: "connected",
+        isCloud: false,
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": session,
+      });
+      mockTrpcAgent.cancel.mutate.mockResolvedValue(undefined);
+      mockTrpcAgent.reconnect.mutate.mockRejectedValue(new Error("boom"));
+
+      await service.restoreCheckpointReconnect("task-123", "/repo", "sess-1");
+
+      const patches = mockSessionStoreSetters.updateSession.mock.calls.map(
+        ([, patch]) => patch,
+      );
+      expect(patches).toContainEqual(
+        expect.objectContaining({ status: "error", isReconnecting: false }),
+      );
     });
   });
 

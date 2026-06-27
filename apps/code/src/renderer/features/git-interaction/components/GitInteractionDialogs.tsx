@@ -25,7 +25,7 @@ import {
   TextArea,
   TextField,
 } from "@radix-ui/themes";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { useState } from "react";
 
 const ICON_SIZE = 14;
@@ -148,6 +148,8 @@ interface GitDialogProps {
   error: string | null;
   buttonLabel: string;
   buttonDisabled?: boolean;
+  /** Color of the confirm button. Defaults to the accent color. */
+  buttonColor?: ComponentProps<typeof Button>["color"];
   isSubmitting: boolean;
   onSubmit: () => void;
   maxWidth?: string;
@@ -163,6 +165,7 @@ export function GitDialog({
   error,
   buttonLabel,
   buttonDisabled,
+  buttonColor,
   isSubmitting,
   onSubmit,
   maxWidth = "400px",
@@ -191,6 +194,7 @@ export function GitDialog({
             )}
             <Button
               size="1"
+              color={buttonColor}
               disabled={buttonDisabled || isSubmitting}
               loading={isSubmitting}
               onClick={onSubmit}

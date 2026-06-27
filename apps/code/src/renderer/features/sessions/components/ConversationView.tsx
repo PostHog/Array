@@ -127,6 +127,7 @@ export function ConversationView({
   );
 
   const isCloud = session?.isCloud ?? false;
+  const isReconnecting = session?.isReconnecting ?? false;
 
   const restore = useRestoreCheckpoint({
     repoPath: repoPath ?? undefined,
@@ -206,14 +207,18 @@ export function ConversationView({
                   : undefined
               }
               onRestoreCheckpoint={
-                item.turnContext?.lastCheckpointId
+                !isReconnecting && item.turnContext?.lastCheckpointId
                   ? () =>
                       restore.requestRestore(
                         item.turnContext?.lastCheckpointId as string,
                       )
                   : undefined
               }
-              restoreDisabledReason="No checkpoint was captured for this turn"
+              restoreDisabledReason={
+                isReconnecting && item.turnContext?.lastCheckpointId
+                  ? "Reconnecting to the agent after your last restore, you can restore again in a moment."
+                  : "No checkpoint was captured for this turn"
+              }
             />
           );
         case "git_action":
@@ -264,6 +269,7 @@ export function ConversationView({
       firstUserMessageId,
       initialItemIds,
       restore.requestRestore,
+      isReconnecting,
     ],
   );
 
@@ -319,6 +325,7 @@ export function ConversationView({
                   hasPendingPermission={pendingPermissionsCount > 0}
                   pausedDurationMs={pausedDurationMs}
                   isCompacting={isCompacting}
+                  isReconnecting={session?.isReconnecting ?? false}
                   usage={contextUsage}
                 />
               </div>

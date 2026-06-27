@@ -769,6 +769,84 @@ export async function listCheckpoints(
   });
 }
 
+export interface MaterializeCheckpointMetadata {
+  checkpointId: string;
+  head: string | null;
+  branch: string | null;
+  indexTree: string;
+  worktreeTree: string;
+  timestamp: string;
+}
+
+export interface MaterializeCheckpointResult {
+  created: boolean;
+  commit: string;
+}
+
+/**
+ * Recreates a checkpoint ref (refs/posthog-code-checkpoint/<id>) from metadata alone,
+ * without touching the working tree. Used when applying a handoff pack on the receiver:
+ * the pack carries the head/index/worktree OBJECTS but not the original meta-commit
+ * (captureForHandoff deletes its ref before packing), so the restorable meta-commit must
+ * be rebuilt here exactly as CaptureCheckpointSaga does — same meta-tree shape, message
+ * format, and author — so RevertCheckpointSaga can later resolve and restore it.
+ *
+ * Idempotent: if the ref already exists (e.g. the checkpoint was captured natively during
+ * a live local session), it is left untouched and `created: false` is returned. The
+ * index/worktree tree OBJECTS must already be present locally (unpacked from the pack).
+ */
+export async function materializeCheckpointRefFromMetadata(
+  git: GitClient,
+  baseDir: string,
+  meta: MaterializeCheckpointMetadata,
+): Promise<MaterializeCheckpointResult> {
+  const refName = `${CHECKPOINT_REF_PREFIX}${meta.checkpointId}`;
+
+  if (await refExists(git, refName)) {
+    const existing = (await git.revparse([refName])).trim();
+    return { created: false, commit: existing };
+  }
+
+  if (!meta.indexTree || !meta.worktreeTree) {
+    throw new Error(
+      `Cannot materialize checkpoint ${meta.checkpointId}: missing tree data`,
+    );
+  }
+
+  const metaTree = (
+    await createMetaTree(git, baseDir, meta.indexTree, meta.worktreeTree)
+  ).trim();
+
+  const message = formatCheckpointMessage({
+    head: meta.head,
+    branch: meta.branch,
+    indexTree: meta.indexTree,
+    worktreeTree: meta.worktreeTree,
+    timestamp: meta.timestamp,
+  });
+
+  const commitGit = git.env({
+    ...process.env,
+    GIT_AUTHOR_NAME: CHECKPOINT_AUTHOR.name,
+    GIT_AUTHOR_EMAIL: CHECKPOINT_AUTHOR.email,
+    GIT_COMMITTER_NAME: CHECKPOINT_AUTHOR.name,
+    GIT_COMMITTER_EMAIL: CHECKPOINT_AUTHOR.email,
+  });
+  const commit = (
+    await commitGit.raw([
+      "commit-tree",
+      metaTree,
+      ...(meta.head ? ["-p", meta.head] : []),
+      "-m",
+      message,
+    ])
+  ).trim();
+
+  await git.raw(["update-ref", refName, commit]);
+
+  return { created: true, commit };
+}
+
 export async function deleteCheckpoint(
   git: GitClient,
   checkpointId: string,

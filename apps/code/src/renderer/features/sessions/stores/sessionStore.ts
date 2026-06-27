@@ -89,6 +89,12 @@ export interface AgentSession {
   cloudBranch?: string | null;
   /** Whether a cloud-to-local handoff is in progress */
   handoffInProgress?: boolean;
+  /** Whether the local agent is being respawned/resumed after a checkpoint
+   * restore. Blocks prompt input WITHOUT the "agent is responding" semantics
+   * (no Stop button / generating timer). Tracked independently of
+   * `isPromptPending` so the post-restore reconnect window doesn't masquerade
+   * as a live turn. */
+  isReconnecting?: boolean;
   /** Number of session/prompt events to skip from polled logs (set during resume) */
   skipPolledPromptCount?: number;
   optimisticItems: OptimisticItem[];

@@ -566,50 +566,136 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
       "logs.ndjson",
     );
 
-    let content: string;
+    // [DIAGNOSTIC — task #23] Persist a per-checkpoint sync report to disk. The dev
+    // build keeps no on-disk main-process log and main→renderer forwarding is lossy,
+    // so this file is the reliable way to learn WHY cloud checkpoint refs don't get
+    // applied locally (no artifactPath vs apply-failure vs sync-not-running). Remove
+    // with the rest of the debug instrumentation (task #19).
+    const debug: {
+      runId: string;
+      ts: string;
+      seededLogFound: boolean;
+      source: string;
+      markers: Array<{
+        checkpointId: string;
+        device: unknown;
+        hasArtifactPath: boolean;
+        hasIndexArtifactPath: boolean;
+      }>;
+      applied: Array<{
+        checkpointId: string;
+        ok: boolean;
+        created?: boolean;
+        error?: string;
+      }>;
+    } = {
+      runId,
+      ts: new Date().toISOString(),
+      seededLogFound: false,
+      source: "none",
+      markers: [],
+      applied: [],
+    };
+    const writeDebug = () => {
+      try {
+        writeFileSync(
+          join(homedir(), ".posthog-code", "sessions", runId, "cloud-sync-debug.json"),
+          JSON.stringify(debug, null, 2),
+        );
+      } catch {
+        // best-effort
+      }
+    };
+
+    // Gather raw log entries. Prefer the local seeded cache, but FALL BACK to
+    // fetching the run log authoritatively from S3. The seed_local_logs step can
+    // be skipped (no cloudLogUrl) or not yet flushed when this runs — observed:
+    // seededLogFound=false — and depending on the local file alone silently drops
+    // every cloud checkpoint ref, so a later restore fails with "Checkpoint not
+    // found". The saga already proves the log is fetchable (resumeFromLog).
+    type RawEntry = {
+      notification?: { method?: string; params?: Record<string, unknown> };
+    };
+    let entries: RawEntry[] = [];
     try {
-      content = readFileSync(logPath, "utf-8");
+      const content = readFileSync(logPath, "utf-8");
+      debug.seededLogFound = true;
+      entries = content
+        .split("\n")
+        .filter((l) => l.trim())
+        .map((l) => {
+          try {
+            return JSON.parse(l) as RawEntry;
+          } catch {
+            return {} as RawEntry;
+          }
+        });
     } catch {
-      log.debug("No seeded logs found for cloud checkpoint sync — skipping", {
-        runId,
-      });
-      return;
+      debug.seededLogFound = false;
     }
 
-    const checkpointEvents: AgentTypes.GitCheckpointEvent[] = [];
-    for (const line of content.split("\n")) {
-      if (!line.trim()) continue;
+    const hasCloudMarker = (es: RawEntry[]): boolean =>
+      es.some(
+        (e) =>
+          e.notification?.method === POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT &&
+          Boolean(e.notification?.params?.artifactPath),
+      );
+
+    if (hasCloudMarker(entries)) {
+      debug.source = "local-cache";
+    } else {
+      // Local cache missing or carries no uploaded cloud checkpoints — fetch the
+      // authoritative S3 run log instead.
       try {
-        const entry = JSON.parse(line) as {
-          type?: string;
-          notification?: {
-            method?: string;
-            params?: Record<string, unknown>;
-          };
-        };
-        if (
-          entry.notification?.method === POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT
-        ) {
-          const params = entry.notification.params;
-          // Only process events that have S3 artifact paths (cloud captures) and
-          // that weren't already applied by the main apply_git_checkpoint step.
-          if (params?.checkpointId && params?.artifactPath) {
-            checkpointEvents.push(
-              params as unknown as AgentTypes.GitCheckpointEvent,
-            );
-          }
+        const taskRun = await apiClient.getTaskRun(taskId, runId);
+        const fetched = (await apiClient.fetchTaskRunLogs(
+          taskRun,
+        )) as unknown as RawEntry[];
+        if (fetched.length > 0) {
+          entries = fetched;
+          debug.source = "s3-fetch";
         }
-      } catch {
-        // Skip malformed lines
+      } catch (err) {
+        log.warn("Failed to fetch run log for cloud checkpoint sync", {
+          runId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
-    log.info("Syncing cloud checkpoints from seeded logs", {
+    const checkpointEvents: AgentTypes.GitCheckpointEvent[] = [];
+    for (const entry of entries) {
+      if (entry.notification?.method !== POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT) {
+        continue;
+      }
+      const params = entry.notification.params;
+      if (params?.checkpointId) {
+        // [DIAGNOSTIC] record EVERY checkpoint marker, even those without an
+        // artifactPath, so we can tell whether the cloud agent uploaded packs.
+        debug.markers.push({
+          checkpointId: String(params.checkpointId),
+          device: params.device,
+          hasArtifactPath: Boolean(params.artifactPath),
+          hasIndexArtifactPath: Boolean(params.indexArtifactPath),
+        });
+      }
+      // Only process events that have S3 artifact paths (cloud captures) and
+      // that weren't already applied by the main apply_git_checkpoint step.
+      if (params?.checkpointId && params?.artifactPath) {
+        checkpointEvents.push(
+          params as unknown as AgentTypes.GitCheckpointEvent,
+        );
+      }
+    }
+
+    log.info("Syncing cloud checkpoints", {
       runId,
+      source: debug.source,
       count: checkpointEvents.length,
     });
 
     if (checkpointEvents.length === 0) {
+      writeDebug();
       return;
     }
 
@@ -623,12 +709,14 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
     for (const event of checkpointEvents) {
       const checkpointId = event.checkpointId;
       try {
-        // Apply the pack to local git so RevertCheckpointSaga can use the ref.
-        // onDivergedBranch returns false (don't reset) for intermediate checkpoints;
-        // working-tree state is managed by the caller's apply_git_checkpoint step.
-        await tracker.applyFromHandoff(event, {
+        // Recreate the checkpoint git ref so RevertCheckpointSaga can resolve it. This is
+        // non-destructive (unpacks objects + rebuilds the ref, no working-tree mutation):
+        // the caller's apply_git_checkpoint step already set the final working-tree state,
+        // so the sync pass only needs to materialize refs. (applyFromHandoff, used before,
+        // never created the ref — it only unpacked objects + reset the tree — so cloud-origin
+        // restores failed with "Checkpoint not found".)
+        const { created } = await tracker.materializeCheckpointRef(event, {
           localGitState: undefined,
-          onDivergedBranch: async () => false,
         });
 
         // Register in agentService so the restore button appears immediately.
@@ -641,12 +729,19 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
             : Date.now(),
         });
 
+        debug.applied.push({ checkpointId, ok: true, created });
         log.info("Synced cloud checkpoint to local session", {
           runId,
           checkpointId,
           promptId: event.promptId,
+          created,
         });
       } catch (err) {
+        debug.applied.push({
+          checkpointId,
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
         log.warn("Failed to sync cloud checkpoint (non-fatal)", {
           runId,
           checkpointId,
@@ -655,6 +750,7 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
       }
     }
 
+    writeDebug();
     log.info("Cloud checkpoint sync complete", {
       runId,
       synced: checkpointEvents.length,

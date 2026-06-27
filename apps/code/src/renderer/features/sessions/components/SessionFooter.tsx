@@ -1,6 +1,6 @@
 import type { ContextUsage } from "@features/sessions/hooks/useContextUsage";
 import { Brain, Pause } from "@phosphor-icons/react";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
@@ -17,6 +17,9 @@ interface SessionFooterProps {
   hasPendingPermission?: boolean;
   pausedDurationMs?: number;
   isCompacting?: boolean;
+  /** Local agent is respawning/resuming after a checkpoint restore. Shown as a
+   * neutral "Reconnecting…" state — NOT the "responding" generating indicator. */
+  isReconnecting?: boolean;
   usage?: ContextUsage | null;
 }
 
@@ -30,6 +33,7 @@ export function SessionFooter({
   hasPendingPermission = false,
   pausedDurationMs,
   isCompacting = false,
+  isReconnecting = false,
   usage,
 }: SessionFooterProps) {
   const rightSide = (
@@ -38,6 +42,33 @@ export function SessionFooter({
       <ContextUsageIndicator usage={usage ?? null} />
     </Flex>
   );
+
+  // Post-restore reconnect: the agent is being respawned, not responding. Keep
+  // this distinct from the generating indicator (no timer, no stop button).
+  if (isReconnecting) {
+    return (
+      <Box className="pt-3 pb-1">
+        <Flex align="center" justify="between" gap="2">
+          <Flex
+            align="center"
+            gap="2"
+            className="min-w-0 select-none text-gray-10"
+            style={{ WebkitUserSelect: "none" }}
+          >
+            <Spinner size="1" className="shrink-0" />
+            <Text className="truncate text-[13px]">Reconnecting…</Text>
+            {queuedCount > 0 && (
+              <Text color="gray" className="truncate text-[13px]">
+                ({queuedCount} queued)
+              </Text>
+            )}
+          </Flex>
+          {rightSide}
+        </Flex>
+      </Box>
+    );
+  }
+
   if (isPromptPending && !isCompacting) {
     if (hasPendingPermission) {
       return (
