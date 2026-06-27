@@ -66,13 +66,30 @@ describe("estimateThreadRow", () => {
     expect(manyLines).toBeGreaterThan(oneLine);
   });
 
-  it("keeps chip-style rows well under the old flat 80px guess", () => {
-    expect(
-      estimateThreadRow(
-        itemRow({ type: "git_action", id: "g", actionType: "push" }),
-      ),
-    ).toBeLessThan(80);
-  });
+  it.each([
+    ["git_action", { type: "git_action", id: "c", actionType: "push" }, 36],
+    [
+      "skill_button_action",
+      { type: "skill_button_action", id: "c", buttonId: "add-analytics" },
+      44,
+    ],
+    [
+      "git_action_result",
+      { type: "git_action_result", id: "c", actionType: "push", turnId: "t" },
+      64,
+    ],
+    ["turn_cancelled", { type: "turn_cancelled", id: "c" }, 40],
+    [
+      "user_shell_execute",
+      { type: "user_shell_execute", id: "c", command: "ls", cwd: "/" },
+      64,
+    ],
+  ] as const satisfies readonly [string, ConversationItem, number][])(
+    "sizes the %s chip row at a fixed small height",
+    (_label, item, expected) => {
+      expect(estimateThreadRow(itemRow(item))).toBe(expected);
+    },
+  );
 
   it("estimates a new file by its full length, not a flat chip", () => {
     const big = estimateThreadRow(

@@ -136,11 +136,20 @@ function VirtualizedListInner<T>(
   // exactly when a first scroll-up remeasures a run of never-measured rows and
   // the growth shoves the viewport. The anchorTo:"end" bottom-follow runs before
   // this predicate, so it stays unaffected. A runtime field, not an option.
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
-    item,
-    _delta,
-    instance,
-  ) => item.start < (instance.scrollOffset ?? 0);
+  //
+  // Assigned once, synchronously in render, not in a mount effect: the
+  // virtualizer's first measurement pass runs during this render, so an effect
+  // would land too late and the default backward-scroll behavior would apply on
+  // that first measure.
+  const adjustAssignedRef = useRef(false);
+  if (!adjustAssignedRef.current) {
+    adjustAssignedRef.current = true;
+    virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
+      item,
+      _delta,
+      instance,
+    ) => item.start < (instance.scrollOffset ?? 0);
+  }
 
   const settleAtEnd = useCallback(() => {
     if (settleRafRef.current !== null) {
