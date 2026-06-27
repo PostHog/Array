@@ -6,7 +6,11 @@ import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
-import { ChannelHomeComposer } from "@posthog/ui/features/canvas/components/ChannelHomeComposer";
+import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
+import {
+  ChannelHomeComposer,
+  type ChannelHomeComposerHandle,
+} from "@posthog/ui/features/canvas/components/ChannelHomeComposer";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
@@ -15,6 +19,7 @@ import {
 } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
+import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -32,9 +37,10 @@ import {
   useState,
 } from "react";
 
-// Distance (px) over which the heading fades out as the history scrolls up,
-// so it reads like a channel intro that scrolls away behind the messages.
-const HEADING_FADE_DISTANCE = 140;
+// Distance (px) the list can scroll away from the bottom before the header has
+// fully faded. The header sits over the top of the list and is fully shown at
+// rest (pinned to the newest item); scrolling up to read history fades it out.
+const HEADER_FADE_DISTANCE = 160;
 
 type RecentItem = {
   key: string;
@@ -150,24 +156,38 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   }, [dashboards, filedTasks, tasks, archivedTaskIds, channelId, navigate]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [headingOpacity, setHeadingOpacity] = useState(1);
+  const composerRef = useRef<ChannelHomeComposerHandle>(null);
+  const [headerOpacity, setHeaderOpacity] = useState(1);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    setHeadingOpacity(Math.max(0, 1 - el.scrollTop / HEADING_FADE_DISTANCE));
+    // Full opacity when pinned to the bottom; fade out as the list scrolls up.
+    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
+    setHeaderOpacity(
+      Math.max(0, 1 - distanceFromBottom / HEADER_FADE_DISTANCE),
+    );
   }, []);
 
-  // Pin to the bottom (newest) on load and whenever the item count changes (the
-  // recent lists fetch async after mount), the way a chat view opens on its
-  // latest message.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: items.length is the intended re-pin trigger, even though the body reads it via the ref
+  // Pin to the bottom (newest) on load, when the item count changes (the recent
+  // lists fetch async after mount), and when the suggestions open below the
+  // list — the way a chat view opens on its latest message.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: items.length and suggestionsOpen are the intended re-pin triggers, even though the body reads layout via the ref
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
     handleScroll();
-  }, [handleScroll, items.length]);
+  }, [handleScroll, items.length, suggestionsOpen]);
+
+  const handleSuggestionSelect = useCallback(
+    (prompt: string, mode?: string) => {
+      composerRef.current?.applySuggestion(prompt, mode);
+      setSuggestionsOpen(false);
+    },
+    [],
+  );
 
   const onTaskCreated = useCallback(
     (task: Task) => {
@@ -203,17 +223,56 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   );
 
   return (
-    <div className="flex h-full min-w-0 flex-col">
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto"
-      >
-        <div className="mx-auto flex min-h-full w-full max-w-[680px] flex-col px-4">
-          <div
-            style={{ opacity: headingOpacity }}
-            className="pointer-events-none pt-16 pb-10 text-center"
-          >
+    <div className="flex h-full min-w-0 flex-col bg-gray-1">
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="absolute inset-0 overflow-y-auto"
+        >
+          <div className="mx-auto flex min-h-full w-full max-w-[680px] flex-col justify-end px-4 pt-28">
+            <div className="flex flex-col gap-0.5 pb-6">
+              {items.map((item) => (
+                <RecentItemRow key={item.key} item={item} />
+              ))}
+
+              {suggestionsOpen && (
+                <div className="flex flex-col gap-2 pt-4">
+                  <Text
+                    size="1"
+                    weight="medium"
+                    className="px-1 text-(--gray-11)"
+                  >
+                    Suggestions
+                  </Text>
+                  <div className="grid grid-cols-2 gap-2">
+                    {CHANNEL_TASK_SUGGESTIONS.map((suggestion) => (
+                      <SuggestedPromptCard
+                        key={suggestion.label}
+                        suggestion={suggestion}
+                        onSelect={() =>
+                          handleSuggestionSelect(
+                            suggestion.prompt,
+                            suggestion.mode,
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Header sits over the top of the list with a gradient that fades the
+            list out beneath it. Fully shown at rest; fades as the list scrolls
+            up so every task can be read. */}
+        <div
+          style={{ opacity: headerOpacity }}
+          className="pointer-events-none absolute inset-x-0 top-0"
+        >
+          <div className="mx-auto max-w-[680px] bg-gradient-to-b from-[var(--gray-1)] via-60% via-[var(--gray-1)] to-transparent px-4 pt-16 pb-24 text-center">
             <h1 className="font-semibold text-2xl text-gray-12 tracking-tight">
               What can I do for you today?
             </h1>
@@ -221,25 +280,18 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
               Ask anything, kick off a task, or pick up where you left off.
             </Text>
           </div>
-
-          <div className="flex-1" />
-
-          {items.length > 0 && (
-            <div className="flex flex-col gap-0.5 pb-6">
-              {items.map((item) => (
-                <RecentItemRow key={item.key} item={item} />
-              ))}
-            </div>
-          )}
         </div>
       </div>
 
       <div className="shrink-0">
         <ChannelHomeComposer
+          ref={composerRef}
           channelId={channelId}
           channelName={channelName}
           channelContext={channelContext}
           onTaskCreated={onTaskCreated}
+          suggestionsOpen={suggestionsOpen}
+          onToggleSuggestions={() => setSuggestionsOpen((v) => !v)}
         />
       </div>
     </div>
