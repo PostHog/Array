@@ -59,7 +59,10 @@ export function ChannelHomeComposer({
   } = useSettingsStore();
 
   const adapter = lastUsedAdapter;
-  const setAdapter = (next: AgentAdapter) => setLastUsedAdapter(next);
+  const setAdapter = useCallback(
+    (next: AgentAdapter) => setLastUsedAdapter(next),
+    [setLastUsedAdapter],
+  );
 
   const { modeOption, modelOption, thoughtOption, isLoading, setConfigOption } =
     usePreviewConfig(adapter);
