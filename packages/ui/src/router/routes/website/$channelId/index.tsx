@@ -1,11 +1,11 @@
-import { WebsiteDashboardsIndex } from "@posthog/ui/features/canvas/components/WebsiteDashboardsIndex";
+import { WebsiteChannelHome } from "@posthog/ui/features/canvas/components/WebsiteChannelHome";
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/website/$channelId/")({
-  component: ChannelDashboardsRoute,
+  component: ChannelHomeRoute,
 });
 
-function ChannelDashboardsRoute() {
+function ChannelHomeRoute() {
   const { channelId } = Route.useParams();
-  return <WebsiteDashboardsIndex channelId={channelId} />;
+  return <WebsiteChannelHome channelId={channelId} />;
 }

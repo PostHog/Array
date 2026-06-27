@@ -246,8 +246,10 @@ export function WebsiteLayout() {
     : "Channel";
 
   const isDashboardDetail = Boolean(channelId && dashboardId);
-  // The dashboards grid (a channel with no sub-view selected).
-  const isDashboardsGrid = Boolean(channelId) && pathname === base;
+  // The canvases grid (its own sub-route now that the channel index is the
+  // static homepage, which carries its own header content).
+  const isDashboardsGrid =
+    Boolean(channelId) && pathname === `${base}/canvases`;
 
   // Whether the single toolbar should render: the canvases grid, or any single
   // canvas (so Edit lives here too).

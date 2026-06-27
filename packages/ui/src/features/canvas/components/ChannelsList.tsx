@@ -79,7 +79,6 @@ import {
   useCreateAndOpenDashboard,
   useDashboardMutations,
   useDashboards,
-  useOpenHomeCanvas,
   usePrefetchDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useNestedGenerationTaskIds } from "@posthog/ui/features/canvas/hooks/useNestedGenerationTaskIds";
@@ -957,7 +956,6 @@ function ChannelSection({
   channels: Channel[];
 }) {
   const navigate = useNavigate();
-  const openHomeCanvas = useOpenHomeCanvas();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { data: tasks } = useTasks();
   const archivedTaskIds = useArchivedTaskIds();
@@ -1102,7 +1100,13 @@ function ChannelSection({
                       surface: "sidebar",
                       channel_id: channel.id,
                     });
-                    void openHomeCanvas(channel);
+                    // Clicking the channel name expands the channel in the tree
+                    // and opens its static homepage.
+                    setOpen(true);
+                    void navigate({
+                      to: "/website/$channelId",
+                      params: { channelId: channel.id },
+                    });
                   }}
                   className="w-full min-w-0 justify-start ps-8 data-selected:bg-fill-selected data-selected:text-gray-12"
                 >

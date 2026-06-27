@@ -26,10 +26,10 @@ import {
   MenuLabel,
 } from "@posthog/quill";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
+import { toast } from "@posthog/ui/primitives/toast";
 import { FIELD_TRIGGER_CLASS } from "@posthog/ui/styles/fieldTrigger";
 import { Flex, Text } from "@radix-ui/themes";
 import { type RefObject, useState } from "react";
-import { toast } from "sonner";
 
 interface FolderPickerProps {
   value: string;

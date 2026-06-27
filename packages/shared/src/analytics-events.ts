@@ -776,6 +776,7 @@ export type ChannelsSurface =
   | "sidebar"
   | "command_menu"
   | "new_task"
+  | "channel_home"
   | "dashboards_grid"
   | "canvas"
   | "context";
