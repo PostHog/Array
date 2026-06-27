@@ -18,9 +18,8 @@ interface VirtualizedListProps<T> {
   renderItem: (item: T, index: number) => ReactNode;
   getItemKey?: (item: T, index: number) => string | number;
   /**
-   * Pre-measurement height guess per row, used until a row mounts and is
-   * measured. The closer the guess, the less unmeasured rows shift when first
-   * scrolled into view. Falls back to a flat constant when unset.
+   * Pre-measurement height guess per row, until it mounts and is measured. Falls
+   * back to a flat constant when unset.
    */
   estimateItemSize?: (item: T, index: number) => number;
   className?: string;
@@ -45,13 +44,9 @@ export interface VirtualizedListHandle {
 
 const AT_BOTTOM_THRESHOLD = 50;
 const ESTIMATED_ROW_SIZE = 80;
-// Render this many rows beyond the viewport each way. Conversation rows are
-// tall and expensive (markdown, code blocks, diffs) and render async, so a row
-// first measured as it enters view both shifts the layout (its true height
-// replaces the estimate) and stutters (its paint lands on the visible frame).
-// A deep overscan moves that work ahead of the viewport: by the time a row is
-// visible it is already measured and painted. Measured to erase the scroll-up
-// layout shift; larger values add DOM cost without further smoothing.
+// Render rows well ahead so tall, async rows (markdown, code, diffs) measure and
+// paint off-screen instead of shifting and stuttering as they enter view. 12
+// erases the scroll-up shift empirically; higher only adds DOM cost.
 const OVERSCAN = 12;
 // A real upward drift, not a 1-frame measure transient: the DOM bottom sits
 // this far below the viewport. Well above any single append's measure gap.
@@ -131,16 +126,11 @@ function VirtualizedListInner<T>(
     },
   });
 
-  // Compensate scrollTop for any above-viewport resize so visible content holds
-  // steady. tanstack's default skips this during backward scroll, which is
-  // exactly when a first scroll-up remeasures a run of never-measured rows and
-  // the growth shoves the viewport. The anchorTo:"end" bottom-follow runs before
-  // this predicate, so it stays unaffected. A runtime field, not an option.
-  //
-  // Assigned once, synchronously in render, not in a mount effect: the
-  // virtualizer's first measurement pass runs during this render, so an effect
-  // would land too late and the default backward-scroll behavior would apply on
-  // that first measure.
+  // Hold visible content steady when an above-viewport row resizes — tanstack
+  // skips this during backward scroll, exactly when a first scroll-up remeasures a
+  // run of never-measured rows and the growth shoves the viewport. A runtime field,
+  // not an option; set once in render (not an effect) so it precedes the first
+  // measurement pass.
   const adjustAssignedRef = useRef(false);
   if (!adjustAssignedRef.current) {
     adjustAssignedRef.current = true;

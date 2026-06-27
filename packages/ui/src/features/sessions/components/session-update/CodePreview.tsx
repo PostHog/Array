@@ -12,11 +12,9 @@ import {
   useCodePreviewExtensions,
 } from "./useCodePreviewExtensions";
 
-// Settled height (px) of each diff, keyed by its stable cacheKey. @pierre/diffs
-// renders nothing until its highlight worker initializes, so a virtualized diff
-// row collapses to ~0 on every remount and the list above it lurches. Reserving
-// the last measured height as the container's min-height keeps the row stable
-// across remounts. Lives at module scope so it survives unmount/remount.
+// Settled height (px) per diff, keyed by cacheKey. @pierre/diffs renders nothing
+// until its highlight worker initializes, so a virtualized diff row collapses to ~0
+// on every remount. Module-scoped to survive unmount; reserved as min-height.
 const diffHeightCache = new Map<string, number>();
 
 interface CodePreviewProps {

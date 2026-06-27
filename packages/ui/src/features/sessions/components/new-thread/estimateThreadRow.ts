@@ -2,17 +2,15 @@ import type { ConversationItem } from "@posthog/ui/features/sessions/components/
 import type { ThreadRow } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
 import type { ToolCallContent } from "@posthog/ui/features/sessions/types";
 
-// Ballpark row heights (px) for the virtualizer's estimateSize; a real measure
-// replaces them on mount. Tuned to the 750px content column: ~95 chars per
-// 22px line.
+// Ballpark row heights (px); a real measure replaces them on mount. Tuned to the
+// 750px content column: ~95 chars per 22px line.
 const CHARS_PER_LINE = 95;
 const LINE_HEIGHT = 22;
 // itemClassName py-1.5 (6px top + bottom) wrapping every row.
 const ROW_PADDING = 12;
-// An edit tool call (EditToolView) renders its diff expanded by default, so the
-// body dominates the row. The unified diff collapses unchanged context, so its
-// height tracks the changed lines plus a few context lines per hunk, not the
-// whole file. CodePreview caps it at maxHeight 700px; a diff line is ~20px tall.
+// Edit tool calls (EditToolView) render the diff expanded by default. The unified
+// diff collapses unchanged context, so height tracks changed + a few context lines
+// per hunk, not the whole file. Capped at 700px (CodePreview); ~20px per line.
 const TOOL_ROW_HEADER = 36;
 const DIFF_LINE_HEIGHT = 20;
 const DIFF_MAX_HEIGHT = 700;
@@ -30,9 +28,8 @@ function countLines(text: string | null | undefined): number {
   return text ? text.split("\n").length : 0;
 }
 
-// Rough changed-line count by multiset difference — ignores position, but close
-// enough to size a diff without running a real one. A new file (no oldText) is
-// all additions and renders in full.
+// Rough changed-line count by multiset difference (ignores position) — enough to
+// size a diff without running a real one. A new file (no oldText) renders in full.
 function changedLineCount(
   oldText: string | null | undefined,
   newText: string,
@@ -114,11 +111,7 @@ function estimateConversationItem(item: ConversationItem): number {
   }
 }
 
-/**
- * Height guess for one thread row, fed to the virtualizer's estimateSize.
- * A collapsed tool-call group is just its chip; an expanded one is the stack of
- * its items.
- */
+/** Height guess for one thread row, fed to the virtualizer's estimateSize. */
 export function estimateThreadRow(row: ThreadRow): number {
   if (row.kind === "item") return estimateConversationItem(row.item);
   if (!row.expanded) return 44;
