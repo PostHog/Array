@@ -15,7 +15,7 @@ import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDef
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
-import { toast as sonnerToast, toast } from "@posthog/ui/primitives/toast";
+import { toast } from "@posthog/ui/primitives/toast";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
@@ -150,7 +150,7 @@ export function useInboxCloudTaskRunner({
     const model = resolvedModel ?? settings.lastUsedModel;
 
     if (!model) {
-      sonnerToast.dismiss(toastId);
+      toast.dismiss(toastId);
       toast.error(copy.errorTitle, { description: copy.missingModel });
       setIsRunning(false);
       return;
@@ -186,7 +186,7 @@ export function useInboxCloudTaskRunner({
       });
 
       if (result.success) {
-        sonnerToast.dismiss(toastId);
+        toast.dismiss(toastId);
         if (!redirectOnSuccess) {
           const task = createdTask;
           toast.success(copy.successTitle ?? "Task started", {
@@ -217,7 +217,7 @@ export function useInboxCloudTaskRunner({
           ...analyticsExtras,
         });
       } else {
-        sonnerToast.dismiss(toastId);
+        toast.dismiss(toastId);
         // Usage-limit blocks already show the upgrade modal; don't double-toast.
         if (!isUsageLimitResult(result)) {
           toast.error(copy.errorTitle, { description: result.error });
@@ -230,7 +230,7 @@ export function useInboxCloudTaskRunner({
         }
       }
     } catch (error) {
-      sonnerToast.dismiss(toastId);
+      toast.dismiss(toastId);
       const description =
         error instanceof Error ? error.message : "Unknown error";
       toast.error(copy.errorTitle, { description });

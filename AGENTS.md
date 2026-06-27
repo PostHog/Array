@@ -227,7 +227,6 @@ See [docs/conventions.md](./docs/conventions.md).
 - TanStack Query, TanStack Router
 - Zustand, InversifyJS (with `@inversifyjs/strongly-typed`), Zod
 - xterm.js, CodeMirror, Tiptap
-- Sonner
 
 ## Testing
 
