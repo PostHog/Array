@@ -80,7 +80,9 @@ function GridCell({
       }
       const selection = window.getSelection();
       if (selection && !selection.isCollapsed) return;
-      cellRef.current?.querySelector<HTMLElement>("[tabindex='0']")?.focus();
+      cellRef.current
+        ?.querySelector<HTMLElement>("[tabindex='0']")
+        ?.focus({ preventScroll: true });
     },
     [markActive],
   );
