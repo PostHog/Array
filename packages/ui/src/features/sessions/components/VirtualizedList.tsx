@@ -18,12 +18,9 @@ interface VirtualizedListProps<T> {
   renderItem: (item: T, index: number) => ReactNode;
   getItemKey?: (item: T, index: number) => string | number;
   /**
-   * Pre-measurement height guess per row. Rows are measured for real once they
-   * mount, but until then the virtualizer lays them out at this estimate. A
-   * thread that opens scrolled to the bottom never mounts the rows above, so
-   * the first scroll-up corrects every one of them from the estimate to its
-   * true height at once — the closer the estimate, the smaller each correction
-   * and the less the content shifts. Falls back to a flat constant when unset.
+   * Pre-measurement height guess per row, used until a row mounts and is
+   * measured. The closer the guess, the less unmeasured rows shift when first
+   * scrolled into view. Falls back to a flat constant when unset.
    */
   estimateItemSize?: (item: T, index: number) => number;
   className?: string;
@@ -48,7 +45,14 @@ export interface VirtualizedListHandle {
 
 const AT_BOTTOM_THRESHOLD = 50;
 const ESTIMATED_ROW_SIZE = 80;
-const OVERSCAN = 6;
+// Render this many rows beyond the viewport each way. Conversation rows are
+// tall and expensive (markdown, code blocks, diffs) and render async, so a row
+// first measured as it enters view both shifts the layout (its true height
+// replaces the estimate) and stutters (its paint lands on the visible frame).
+// A deep overscan moves that work ahead of the viewport: by the time a row is
+// visible it is already measured and painted. Measured to erase the scroll-up
+// layout shift; larger values add DOM cost without further smoothing.
+const OVERSCAN = 12;
 // A real upward drift, not a 1-frame measure transient: the DOM bottom sits
 // this far below the viewport. Well above any single append's measure gap.
 const FAR_DRIFT_THRESHOLD = 400;
@@ -127,15 +131,11 @@ function VirtualizedListInner<T>(
     },
   });
 
-  // Keep already-visible content from jumping when a row ABOVE the viewport
-  // remeasures taller/shorter than its estimate. tanstack's default skips this
-  // compensation while scrolling backward (to avoid fighting momentum), but
-  // that's exactly when a first scroll-up corrects a run of never-measured rows
-  // — so the uncompensated growth shoves the viewport. Compensating
-  // unconditionally for above-viewport resizes holds the content steady. The
-  // bottom-follow path (anchorTo:"end") is handled before this predicate is
-  // consulted, so pinning to the end is unaffected. Not in 3.17's options type,
-  // so set on the instance directly.
+  // Compensate scrollTop for any above-viewport resize so visible content holds
+  // steady. tanstack's default skips this during backward scroll, which is
+  // exactly when a first scroll-up remeasures a run of never-measured rows and
+  // the growth shoves the viewport. The anchorTo:"end" bottom-follow runs before
+  // this predicate, so it stays unaffected. A runtime field, not an option.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
     item,
     _delta,

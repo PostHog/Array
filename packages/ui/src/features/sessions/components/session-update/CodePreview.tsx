@@ -12,6 +12,13 @@ import {
   useCodePreviewExtensions,
 } from "./useCodePreviewExtensions";
 
+// Settled height (px) of each diff, keyed by its stable cacheKey. @pierre/diffs
+// renders nothing until its highlight worker initializes, so a virtualized diff
+// row collapses to ~0 on every remount and the list above it lurches. Reserving
+// the last measured height as the container's min-height keeps the row stable
+// across remounts. Lives at module scope so it survives unmount/remount.
+const diffHeightCache = new Map<string, number>();
+
 interface CodePreviewProps {
   content: string;
   filePath?: string;
@@ -128,6 +135,19 @@ function DiffPreview({
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
   const fileName = filePath?.split("/").pop() ?? "file";
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const reservedHeight = cacheKey ? diffHeightCache.get(cacheKey) : undefined;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !cacheKey) return;
+    const ro = new ResizeObserver(() => {
+      const h = el.offsetHeight;
+      if (h > 0) diffHeightCache.set(cacheKey, h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [cacheKey]);
+
   const oldFile = useMemo(
     () => ({
       name: fileName,
@@ -169,8 +189,12 @@ function DiffPreview({
         </div>
       )}
       <div
+        ref={scrollRef}
         className="scroll-mask-2"
-        style={maxHeight ? { maxHeight, overflow: "auto" } : undefined}
+        style={{
+          ...(maxHeight ? { maxHeight, overflow: "auto" } : {}),
+          minHeight: reservedHeight,
+        }}
       >
         <MultiFileDiff oldFile={oldFile} newFile={newFile} options={options} />
       </div>

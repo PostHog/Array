@@ -11,6 +11,24 @@ function itemRow(item: ConversationItem): ThreadRow {
   return { kind: "item", id: item.id, item };
 }
 
+function editToolCall(diff: {
+  path: string;
+  oldText?: string | null;
+  newText: string;
+}): ConversationItem {
+  return {
+    type: "session_update",
+    id: "t",
+    update: {
+      sessionUpdate: "tool_call",
+      toolCallId: "t",
+      title: "Edit",
+      content: [{ type: "diff", ...diff }],
+    },
+    turnContext: {} as never,
+  } as ConversationItem;
+}
+
 describe("estimateThreadRow", () => {
   it("estimates a collapsed tool group as just its chip", () => {
     const row: ThreadRow = {
@@ -54,5 +72,46 @@ describe("estimateThreadRow", () => {
         itemRow({ type: "git_action", id: "g", actionType: "push" }),
       ),
     ).toBeLessThan(80);
+  });
+
+  it("estimates a new file by its full length, not a flat chip", () => {
+    const big = estimateThreadRow(
+      itemRow(editToolCall({ path: "src/a.ts", newText: "x\n".repeat(40) })),
+    );
+    expect(big).toBeGreaterThan(300);
+  });
+
+  it("caps a huge diff at the CodePreview max height", () => {
+    const huge = estimateThreadRow(
+      itemRow(editToolCall({ path: "src/a.ts", newText: "x\n".repeat(5000) })),
+    );
+    expect(huge).toBeLessThan(800);
+  });
+
+  it("sizes a small edit in a large file by its hunk, not the whole file", () => {
+    const file = Array(500).fill("line").join("\n");
+    const edited = file.replace("line\nline\nline", "line\nCHANGED\nline");
+    const smallEdit = estimateThreadRow(
+      itemRow(
+        editToolCall({ path: "src/a.ts", oldText: file, newText: edited }),
+      ),
+    );
+    const fullFile = estimateThreadRow(
+      itemRow(editToolCall({ path: "src/a.ts", newText: file })),
+    );
+    expect(smallEdit).toBeLessThan(400);
+    expect(smallEdit).toBeLessThan(fullFile);
+  });
+
+  it("estimates a plan-file edit as collapsed (header only)", () => {
+    const plan = estimateThreadRow(
+      itemRow(
+        editToolCall({
+          path: "/home/user/.claude/plans/p.md",
+          newText: "x\n".repeat(200),
+        }),
+      ),
+    );
+    expect(plan).toBeLessThan(80);
   });
 });
