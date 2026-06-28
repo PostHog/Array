@@ -87,6 +87,50 @@ describe("commandCenterStore", () => {
     });
   });
 
+  describe("setBrainrotCell", () => {
+    it("marks the target cell as brainrot without disturbing others", () => {
+      useCommandCenterStore.setState({ cells: ["t1", null, null, null] });
+      useCommandCenterStore.getState().setBrainrotCell(2);
+      expect(useCommandCenterStore.getState().cells).toEqual([
+        "t1",
+        null,
+        "__brainrot__",
+        null,
+      ]);
+    });
+
+    it("does not dedupe, so multiple cells can be brainrot", () => {
+      useCommandCenterStore.getState().setBrainrotCell(0);
+      useCommandCenterStore.getState().setBrainrotCell(1);
+      expect(useCommandCenterStore.getState().cells).toEqual([
+        "__brainrot__",
+        "__brainrot__",
+        null,
+        null,
+      ]);
+    });
+
+    it("focuses the cell, clears its creating state, and marks the grid curated", () => {
+      useCommandCenterStore.setState({ creatingCells: [3] });
+      useCommandCenterStore.getState().setBrainrotCell(3);
+      const state = useCommandCenterStore.getState();
+      expect(state.activeCellIndex).toBe(3);
+      expect(state.activeTaskId).toBeNull();
+      expect(state.creatingCells).toEqual([]);
+      expect(state.hasAutofilled).toBe(true);
+    });
+
+    it("ignores out-of-range indices", () => {
+      useCommandCenterStore.getState().setBrainrotCell(9);
+      expect(useCommandCenterStore.getState().cells).toEqual([
+        null,
+        null,
+        null,
+        null,
+      ]);
+    });
+  });
+
   describe("hasAutofilled", () => {
     it("assigning a task marks the grid as curated", () => {
       useCommandCenterStore.getState().assignTask(0, "t1");
