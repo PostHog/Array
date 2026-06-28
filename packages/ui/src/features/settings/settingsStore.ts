@@ -163,6 +163,10 @@ interface SettingsStore {
   mcpAppsDisabledServers: string[];
   downloadUpdatesAutomatically: boolean;
   lastSeenChangelogVersion: string | null;
+  // Renders the conversation with the new ChatX (quill) primitives instead of
+  // the virtualized ConversationView. Local A/B toggle while the rebuild bakes.
+  useNewChatThread: boolean;
+  setUseNewChatThread: (enabled: boolean) => void;
   setHedgehogMode: (enabled: boolean) => void;
   setSlotMachineMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
@@ -320,6 +324,8 @@ export const useSettingsStore = create<SettingsStore>()(
       mcpAppsDisabledServers: [],
       downloadUpdatesAutomatically: true,
       lastSeenChangelogVersion: null,
+      useNewChatThread: false,
+      setUseNewChatThread: (enabled) => set({ useNewChatThread: enabled }),
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
       setSlotMachineMode: (enabled) => set({ slotMachineMode: enabled }),
       setDownloadUpdatesAutomatically: (enabled) =>
@@ -416,6 +422,7 @@ export const useSettingsStore = create<SettingsStore>()(
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
         downloadUpdatesAutomatically: state.downloadUpdatesAutomatically,
         lastSeenChangelogVersion: state.lastSeenChangelogVersion,
+        useNewChatThread: state.useNewChatThread,
 
         // Onboarding hints
         hints: state.hints,

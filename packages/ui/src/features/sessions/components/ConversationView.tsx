@@ -64,7 +64,7 @@ const DIFFS_HIGHLIGHTER_OPTIONS = {
   theme: { dark: "github-dark" as const, light: "github-light" as const },
 };
 
-interface ConversationViewProps {
+export interface ConversationViewProps {
   events: AcpMessage[];
   isPromptPending: boolean | null;
   promptStartedAt?: number | null;

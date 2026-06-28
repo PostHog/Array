@@ -99,6 +99,19 @@ overrides:
   # undici 8.4.1 dropped that assertion and handles the paused case gracefully;
   # node-gyp only uses stable public exports (fetch/Agent), so 8.x is safe.
   'node-gyp>undici': 8.4.1
+  # LOCAL DEV ONLY — point @posthog/quill at a packed tarball of the local mono build to
+  # test the ChatX thread primitives before publishing. A tarball (not link:) is used on
+  # purpose: link: symlinks into the mono's node_modules and drags in its React 18 types,
+  # colliding with this repo's React 19 (dual-React → broken typecheck + invalid-hook-call).
+  # The tarball is copied into this repo's store and deduped against React 19.
+  # Re-sync after a quill change:
+  #   (cd ../posthog/packages/quill/packages/quill && pnpm build && npm pack --pack-destination /Users/adamleithp/Dev/code/.local-quill)
+  # then rename the tgz to a content-hashed name and point the override at it (pnpm pins the
+  # tarball by integrity, so a stable filename gets cached stale across re-syncs):
+  #   cd .local-quill && cp posthog-quill-*.tgz posthog-quill-local-$(md5 -q posthog-quill-*.tgz | cut -c1-8).tgz
+  # update the line below to the new name, then `pnpm install`.
+  # Revert (back to catalog 0.3.0-beta.x) once the ChatX primitives are published to npm.
+  '@posthog/quill': file:./.local-quill/posthog-quill-local-d4357f58.tgz
 
 onlyBuiltDependencies:
   - '@parcel/watcher'

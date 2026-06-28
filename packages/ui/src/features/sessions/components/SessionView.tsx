@@ -17,7 +17,6 @@ import { useAutoFocusOnTyping } from "@posthog/ui/features/message-editor/useAut
 import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
 import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
-import { ConversationView } from "@posthog/ui/features/sessions/components/ConversationView";
 import {
   copyFromContextMenu,
   getGithubRefUrlFromEventTarget,
@@ -31,6 +30,7 @@ import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
+import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
@@ -421,7 +421,7 @@ export function SessionView({
           >
             {isSuspended ? (
               <>
-                <ConversationView
+                <ThreadView
                   events={events}
                   isPromptPending={isPromptPending}
                   promptStartedAt={promptStartedAt}
@@ -505,7 +505,7 @@ export function SessionView({
                     onRetry={onRetry}
                   />
                 )}
-                <ConversationView
+                <ThreadView
                   events={events}
                   isPromptPending={isPromptPending}
                   promptStartedAt={promptStartedAt}
