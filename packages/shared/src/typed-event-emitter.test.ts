@@ -112,6 +112,31 @@ describe("TypedEventEmitter", () => {
     expect(seen).toEqual(["a", "b", "a"]);
   });
 
+  it("emit does not surface a rejecting async listener as an unhandled rejection", async () => {
+    const e = new TypedEventEmitter<Events>();
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      // An async listener whose body rejects (here: throws synchronously before
+      // its first await, the shape of the DB-not-initialized bug this guards).
+      e.on("data", async () => {
+        throw new Error("listener boom");
+      });
+      const other = vi.fn();
+      e.on("data", other);
+
+      expect(e.emit("data", { value: 1 })).toBe(true);
+      // Later listeners still run despite the earlier one rejecting.
+      expect(other).toHaveBeenCalledWith({ value: 1 });
+
+      // Give the microtask queue and the unhandledRejection task a chance.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  });
+
   it("toIterable yields events that arrive while awaiting", async () => {
     const e = new TypedEventEmitter<Events>();
     const result = collect(e.toIterable("data"), 2);

@@ -32,6 +32,16 @@ export class DatabaseService {
     return this._db;
   }
 
+  /**
+   * Whether the database is ready to be read or written. False during the
+   * startup window before `initialize()` runs and after `close()` tears the
+   * connection down (`@preDestroy`). Callers on best-effort paths use this to
+   * bail gracefully instead of letting the `db` getter throw.
+   */
+  isInitialized(): boolean {
+    return this._db !== null;
+  }
+
   @postConstruct()
   initialize(): void {
     const dbPath = path.join(this.storagePaths.appDataPath, "posthog-code.db");

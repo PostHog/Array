@@ -155,7 +155,19 @@ export class TypedEventEmitter<TEvents> {
       return false;
     }
     for (const record of [...records]) {
-      record.fn(payload);
+      // An `async` listener returns a promise; if it rejects (or throws
+      // synchronously before its first await) the rejection would otherwise
+      // escape this fire-and-forget call and surface as an unhandled rejection.
+      // Swallow it here so one misbehaving listener can never crash the process
+      // or pollute error tracking — listeners that care must handle their own
+      // errors.
+      const result = record.fn(payload) as unknown;
+      if (
+        result != null &&
+        typeof (result as { then?: unknown }).then === "function"
+      ) {
+        (result as Promise<unknown>).then(undefined, () => {});
+      }
     }
     return true;
   }
