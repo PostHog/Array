@@ -11,7 +11,7 @@ interface TaskSelectorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onNewTask?: () => void;
-  onFocusMode?: () => void;
+  onBrainrot?: () => void;
   children: ReactNode;
 }
 
@@ -20,7 +20,7 @@ export function TaskSelector({
   open,
   onOpenChange,
   onNewTask,
-  onFocusMode,
+  onBrainrot,
   children,
 }: TaskSelectorProps) {
   const availableTasks = useAvailableTasks();
@@ -43,10 +43,10 @@ export function TaskSelector({
     }
   }, [onOpenChange, onNewTask]);
 
-  const handleFocusMode = useCallback(() => {
+  const handleBrainrot = useCallback(() => {
     onOpenChange(false);
-    onFocusMode?.();
-  }, [onOpenChange, onFocusMode]);
+    onBrainrot?.();
+  }, [onOpenChange, onBrainrot]);
 
   return (
     <Combobox.Root
@@ -93,11 +93,11 @@ export function TaskSelector({
                 <Plus size={11} weight="bold" />
                 New task
               </button>
-              {onFocusMode && (
+              {onBrainrot && (
                 <button
                   type="button"
                   className="combobox-footer-button"
-                  onClick={handleFocusMode}
+                  onClick={handleBrainrot}
                 >
                   <Lightning size={11} weight="bold" />
                   Brainrot

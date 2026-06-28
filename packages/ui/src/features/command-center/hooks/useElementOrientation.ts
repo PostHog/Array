@@ -2,8 +2,8 @@ import { type RefObject, useEffect, useState } from "react";
 
 export type Orientation = "landscape" | "portrait";
 
-// Tracks whether an element is currently wider than it is tall, so a video
-// source matching the cell's orientation can be chosen as the grid is resized.
+// Reports whether the element is wider than tall, so a matching-orientation
+// video can be chosen as the grid resizes.
 export function useElementOrientation(
   ref: RefObject<HTMLElement | null>,
 ): Orientation {

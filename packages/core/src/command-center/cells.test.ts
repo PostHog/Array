@@ -10,24 +10,30 @@ const EMPTY_INPUT = {
 };
 
 describe("buildCommandCenterCells", () => {
-  it("marks a brainrot sentinel cell as isBrainrot with no task", () => {
-    const [cell] = buildCommandCenterCells([BRAINROT_CELL], EMPTY_INPUT);
-    expect(cell).toMatchObject({
-      cellIndex: 0,
-      isBrainrot: true,
-      taskId: null,
-      task: undefined,
-      status: "idle",
-    });
-  });
-
-  it("treats an empty cell as a non-brainrot empty slot", () => {
-    const [cell] = buildCommandCenterCells([null], EMPTY_INPUT);
-    expect(cell).toMatchObject({ isBrainrot: false, taskId: null });
-  });
-
-  it("treats an unknown task id as a non-brainrot cell", () => {
-    const [cell] = buildCommandCenterCells(["missing"], EMPTY_INPUT);
-    expect(cell).toMatchObject({ isBrainrot: false, taskId: "missing" });
+  it.each([
+    {
+      name: "brainrot sentinel cell has isBrainrot and no task",
+      input: BRAINROT_CELL,
+      expected: {
+        cellIndex: 0,
+        isBrainrot: true,
+        taskId: null,
+        task: undefined,
+        status: "idle",
+      },
+    },
+    {
+      name: "empty cell is a non-brainrot empty slot",
+      input: null,
+      expected: { isBrainrot: false, taskId: null },
+    },
+    {
+      name: "unknown task id is a non-brainrot cell",
+      input: "missing",
+      expected: { isBrainrot: false, taskId: "missing" },
+    },
+  ])("$name", ({ input, expected }) => {
+    const [cell] = buildCommandCenterCells([input], EMPTY_INPUT);
+    expect(cell).toMatchObject(expected);
   });
 });

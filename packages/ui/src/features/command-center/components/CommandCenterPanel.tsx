@@ -8,9 +8,11 @@ import {
   Plus,
   X,
 } from "@phosphor-icons/react";
-import type { WorkspaceMode } from "@posthog/shared";
+import { isBrainrotCell } from "@posthog/core/command-center/grid";
+import { ANALYTICS_EVENTS, type WorkspaceMode } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { openTask } from "@posthog/ui/router/useOpenTask";
+import { track } from "@posthog/ui/shell/analytics";
 import { Flex, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import brainrotLandscape from "../../../assets/videos/brainrot-landscape.mp4";
@@ -110,9 +112,19 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
   const setBrainrotCell = useCommandCenterStore((s) => s.setBrainrotCell);
   const startCreating = useCommandCenterStore((s) => s.startCreating);
   const stopCreating = useCommandCenterStore((s) => s.stopCreating);
+  const layout = useCommandCenterStore((s) => s.layout);
+  const cells = useCommandCenterStore((s) => s.cells);
   const clearDraft = useDraftStore((s) => s.actions.setDraft);
 
   const sessionId = getCellSessionId(cellIndex);
+
+  const handleBrainrot = useCallback(() => {
+    track(ANALYTICS_EVENTS.BRAINROT_ACTIVATED, {
+      layout,
+      filled_cells: cells.filter((c) => c && !isBrainrotCell(c)).length,
+    });
+    setBrainrotCell(cellIndex);
+  }, [layout, cells, setBrainrotCell, cellIndex]);
 
   const handleTaskCreated = useCallback(
     (task: Task) => {
@@ -172,7 +184,7 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
           open={selectorOpen}
           onOpenChange={setSelectorOpen}
           onNewTask={() => startCreating(cellIndex)}
-          onFocusMode={() => setBrainrotCell(cellIndex)}
+          onBrainrot={handleBrainrot}
         >
           <button
             type="button"
@@ -223,6 +235,7 @@ function BrainrotCell({ cellIndex }: { cellIndex: number }) {
         <video
           key={orientation}
           src={src}
+          aria-label="Brainrot"
           autoPlay
           loop
           muted

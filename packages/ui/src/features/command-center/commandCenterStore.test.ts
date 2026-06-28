@@ -1,3 +1,4 @@
+import { BRAINROT_CELL } from "@posthog/core/command-center/grid";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@posthog/ui/shell/rendererStorage", () => ({
@@ -94,7 +95,7 @@ describe("commandCenterStore", () => {
       expect(useCommandCenterStore.getState().cells).toEqual([
         "t1",
         null,
-        "__brainrot__",
+        BRAINROT_CELL,
         null,
       ]);
     });
@@ -103,8 +104,8 @@ describe("commandCenterStore", () => {
       useCommandCenterStore.getState().setBrainrotCell(0);
       useCommandCenterStore.getState().setBrainrotCell(1);
       expect(useCommandCenterStore.getState().cells).toEqual([
-        "__brainrot__",
-        "__brainrot__",
+        BRAINROT_CELL,
+        BRAINROT_CELL,
         null,
         null,
       ]);
