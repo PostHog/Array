@@ -126,12 +126,11 @@ export function isCloudflareModelId(modelId: string): boolean {
 
 // Cloudflare Workers AI models (e.g. `@cf/zai-org/glm-5.2`). The gateway serves these over both its
 // OpenAI and Anthropic-Messages surfaces (it translates the `@cf/` path), so the Claude adapter can
-// drive them just like an Anthropic model.
+// drive them just like an Anthropic model. The `@cf/` path prefix is the structural, always-present
+// signal, so honour it regardless of `owned_by` — a Cloudflare-served model can report an upstream
+// owner (e.g. `@cf/openai/...` with `owned_by: "openai"`) and must still classify as Cloudflare.
 export function isCloudflareModel(model: GatewayModel): boolean {
-  if (model.owned_by) {
-    return model.owned_by === "cloudflare";
-  }
-  return isCloudflareModelId(model.id);
+  return isCloudflareModelId(model.id) || model.owned_by === "cloudflare";
 }
 
 export interface ModelInfo {

@@ -160,6 +160,8 @@ describe("isCloudflareModel", () => {
     { id: "claude-opus-4-8", owned_by: "anthropic", expected: false },
     { id: "@cf/zai-org/glm-5.2", owned_by: "", expected: true },
     { id: "gpt-5.5", owned_by: "", expected: false },
+    // A Cloudflare-served model can report an upstream owner; the `@cf/` prefix still wins.
+    { id: "@cf/openai/gpt-oss", owned_by: "openai", expected: true },
   ])(
     "isCloudflareModel($id, owned_by=$owned_by) → $expected",
     ({ id, owned_by, expected }) => {
