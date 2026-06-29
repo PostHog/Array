@@ -182,6 +182,7 @@ Rules for the body:
 - Be thorough but concise
 - Use markdown formatting
 - Only describe changes that are actually in the diff — do not invent or assume changes
+- Treat the target repository as public-readable. Do not include private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, or references to internal tickets / Slack threads / incidents — describe findings qualitatively instead
 ${templateHint}
 
 Do not include any explanation outside the TITLE and BODY sections.`;
