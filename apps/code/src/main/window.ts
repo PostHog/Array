@@ -20,6 +20,7 @@ import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import { type WindowStateSchema, windowStateStore } from "./utils/store";
+import { wireZoomRestoreOnLoad } from "./utils/zoom";
 
 const log = logger.scope("window");
 
@@ -37,7 +38,7 @@ function isPositionOnScreen(x: number, y: number): boolean {
   });
 }
 
-function getSavedWindowState(): WindowStateSchema {
+function getSavedWindowState(): Omit<WindowStateSchema, "zoomLevel"> {
   const state = {
     x: windowStateStore.get("x"),
     y: windowStateStore.get("y"),
@@ -257,6 +258,11 @@ export function createWindow(): void {
   setupEditableContextMenu(mainWindow);
   setupCrashLogging(mainWindow);
   buildApplicationMenu();
+
+  // Restore persisted zoom on every load — crash-recovery auto-reload (#2003)
+  // and Cmd+Shift+R both reset webContents zoom to 0, which is the root cause
+  // of issue #2959. See zoom.test.ts > wireZoomRestoreOnLoad for coverage.
+  wireZoomRestoreOnLoad(mainWindow);
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);

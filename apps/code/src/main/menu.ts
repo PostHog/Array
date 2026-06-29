@@ -20,6 +20,7 @@ import { container } from "./di/container";
 import { AUTH_SERVICE, UPDATES_SERVICE } from "./di/tokens";
 import { isDevBuild } from "./utils/env";
 import { getLogFilePath } from "./utils/logger";
+import { makeZoomMenuClickHandlers } from "./utils/zoom";
 
 function findLatestCrashDump(): string | null {
   const pendingDir = path.join(app.getPath("crashDumps"), "pending");
@@ -308,9 +309,32 @@ function buildViewMenu(): MenuItemConstructorOptions {
       },
       { role: "toggleDevTools" },
       { type: "separator" },
-      { role: "resetZoom" },
-      { role: "zoomIn" },
-      { role: "zoomOut" },
+      // Custom zoom handlers (replacing the native roles) so the level is
+      // persisted across reloads/restarts — see issue #2959. Click handler
+      // logic is extracted into zoom.ts and covered by zoom.test.ts >
+      // makeZoomMenuClickHandlers.
+      ...(() => {
+        const h = makeZoomMenuClickHandlers(() =>
+          BrowserWindow.getFocusedWindow(),
+        );
+        return [
+          {
+            label: "Reset Zoom",
+            accelerator: "CmdOrCtrl+0",
+            click: h.resetZoom,
+          },
+          {
+            label: "Zoom In",
+            accelerator: "CmdOrCtrl+Plus",
+            click: h.zoomIn,
+          },
+          {
+            label: "Zoom Out",
+            accelerator: "CmdOrCtrl+-",
+            click: h.zoomOut,
+          },
+        ];
+      })(),
       { type: "separator" },
       { role: "togglefullscreen" },
       { type: "separator" },
