@@ -117,6 +117,16 @@ export function isOpenAIModel(model: GatewayModel): boolean {
   return model.id.startsWith("gpt-") || model.id.startsWith("openai/");
 }
 
+// Cloudflare Workers AI models (e.g. `@cf/zai-org/glm-5.2`). The gateway serves these over both its
+// OpenAI and Anthropic-Messages surfaces (it translates the `@cf/` path), so the Claude adapter can
+// drive them just like an Anthropic model.
+export function isCloudflareModel(model: GatewayModel): boolean {
+  if (model.owned_by) {
+    return model.owned_by === "cloudflare";
+  }
+  return model.id.startsWith("@cf/");
+}
+
 export interface ModelInfo {
   id: string;
   owned_by?: string;

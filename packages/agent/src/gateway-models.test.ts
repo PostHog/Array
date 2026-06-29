@@ -3,9 +3,20 @@ import {
   fetchGatewayModels,
   fetchModelsList,
   formatGatewayModelName,
+  type GatewayModel,
   getClaudeModelRecency,
+  isAnthropicModel,
   isBlockedModelId,
+  isCloudflareModel,
 } from "./gateway-models";
+
+const model = (id: string, owned_by = ""): GatewayModel => ({
+  id,
+  owned_by,
+  context_window: 128000,
+  supports_streaming: true,
+  supports_vision: false,
+});
 
 describe("formatGatewayModelName", () => {
   it("keeps Claude models in friendly title case", () => {
@@ -141,4 +152,27 @@ describe("gateway model fetch timeout", () => {
       expect(init?.signal).toBeInstanceOf(AbortSignal);
     },
   );
+});
+
+describe("isCloudflareModel", () => {
+  it("matches by owned_by when present", () => {
+    expect(isCloudflareModel(model("@cf/zai-org/glm-5.2", "cloudflare"))).toBe(
+      true,
+    );
+    expect(isCloudflareModel(model("claude-opus-4-8", "anthropic"))).toBe(
+      false,
+    );
+  });
+
+  it("falls back to the @cf/ id prefix when owned_by is absent", () => {
+    expect(isCloudflareModel(model("@cf/zai-org/glm-5.2"))).toBe(true);
+    expect(isCloudflareModel(model("gpt-5.5"))).toBe(false);
+  });
+
+  it("does not classify Cloudflare models as Anthropic", () => {
+    // The Claude adapter accepts both, but they must stay distinguishable.
+    const glm = model("@cf/zai-org/glm-5.2", "cloudflare");
+    expect(isCloudflareModel(glm)).toBe(true);
+    expect(isAnthropicModel(glm)).toBe(false);
+  });
 });
