@@ -6,10 +6,13 @@ import { WatcherService } from "./service";
  * Records every `watch()` call so we can assert what each watched directory is
  * told to ignore, then drains the generator so the loops shut down cleanly.
  */
-async function collectWatchCalls(repoPath: string, gitDirs: {
-  gitDir: string | null;
-  commonDir: string | null;
-}): Promise<Array<{ dir: string; ignore?: string[] }>> {
+async function collectWatchCalls(
+  repoPath: string,
+  gitDirs: {
+    gitDir: string | null;
+    commonDir: string | null;
+  },
+): Promise<Array<{ dir: string; ignore?: string[] }>> {
   const service = new WatcherService();
   const calls: Array<{ dir: string; ignore?: string[] }> = [];
 
