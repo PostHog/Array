@@ -127,7 +127,10 @@ export function CommentAnnotation({
         : "Send to agent";
 
   return (
-    <div data-comment-annotation="" className="px-3 py-1.5 font-sans">
+    <div
+      data-comment-annotation=""
+      className="bg-(--diffs-bg) px-3 py-1.5 font-sans"
+    >
       <InputGroup>
         <InputGroupTextarea
           ref={setTextareaRef}
