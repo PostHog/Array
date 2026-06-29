@@ -50,8 +50,14 @@ export interface InboxCloudTaskCopy {
 export interface InboxCloudTaskInputContext {
   reportId?: string;
   reportTitle?: string | null;
-  cloudRepository: string;
-  githubUserIntegrationId: string;
+  /**
+   * Resolved repository, or null when the runner ran repo-less (only possible
+   * when the caller sets `allowMissingRepository`). Variants that require a repo
+   * never observe null here, since the runner bails before `buildInput`.
+   */
+  cloudRepository: string | null;
+  /** Null alongside a null `cloudRepository` (repo-less run). */
+  githubUserIntegrationId: string | null;
   adapter: "claude" | "codex";
   model: string;
   reasoningLevel?: string;
@@ -62,6 +68,14 @@ export interface UseInboxCloudTaskRunnerOptions {
   reportId?: string;
   reportTitle?: string | null;
   cloudRepository: string | null;
+  /**
+   * When true, a missing repository is not an error: the task is created
+   * repo-less (no clone, no GitHub identity). The backend provisions a bare
+   * sandbox in that case. Use for flows that only need the cloud sandbox plus
+   * PostHog MCP — e.g. scout chats — never for flows that author a PR. Defaults
+   * to false, preserving the repo + integration gate for Create-PR / Discuss.
+   */
+  allowMissingRepository?: boolean;
   copy: InboxCloudTaskCopy;
   /** Logger scope used for failure traces. */
   loggerScope: string;
@@ -94,6 +108,7 @@ export function useInboxCloudTaskRunner({
   reportId,
   reportTitle,
   cloudRepository,
+  allowMissingRepository = false,
   copy,
   loggerScope,
   buildInput,
@@ -118,14 +133,17 @@ export function useInboxCloudTaskRunner({
       return;
     }
 
-    if (!cloudRepository) {
+    if (!cloudRepository && !allowMissingRepository) {
       toast.error(copy.errorTitle, { description: copy.missingRepository });
       return;
     }
 
-    const githubUserIntegrationId =
-      getUserIntegrationIdForRepo(cloudRepository);
-    if (!githubUserIntegrationId) {
+    // A repo-less run has no GitHub identity; only resolve/require the user
+    // integration when a repository is actually in play.
+    const githubUserIntegrationId = cloudRepository
+      ? getUserIntegrationIdForRepo(cloudRepository)
+      : null;
+    if (cloudRepository && !githubUserIntegrationId) {
       toast.error(copy.errorTitle, { description: copy.missingIntegration });
       return;
     }
@@ -177,7 +195,9 @@ export function useInboxCloudTaskRunner({
       reportId,
       reportTitle,
       cloudRepository,
-      githubUserIntegrationId: String(githubUserIntegrationId),
+      githubUserIntegrationId: githubUserIntegrationId
+        ? String(githubUserIntegrationId)
+        : null,
       adapter,
       model,
       reasoningLevel,
@@ -212,7 +232,7 @@ export function useInboxCloudTaskRunner({
         track(ANALYTICS_EVENTS.TASK_CREATED, {
           auto_run: true,
           created_from: "command-menu",
-          repository_provider: "github",
+          ...(cloudRepository ? { repository_provider: "github" } : {}),
           workspace_mode: "cloud",
           ...(reportId
             ? {
@@ -254,6 +274,7 @@ export function useInboxCloudTaskRunner({
     isOnline,
     loggerScope,
     cloudRepository,
+    allowMissingRepository,
     cloudRegion,
     reportId,
     reportTitle,
