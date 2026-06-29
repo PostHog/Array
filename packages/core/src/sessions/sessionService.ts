@@ -40,7 +40,10 @@ import {
 } from "@posthog/shared/domain-types";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
 import { createAppendOnlyTracker } from "./appendOnlyTracker";
-import type { CloudArtifactClient } from "./cloudArtifactIdentifiers";
+import type {
+  CloudArtifactClient,
+  CloudSkillBundleRef,
+} from "./cloudArtifactIdentifiers";
 import { classifyCloudLogAppend } from "./cloudLogGap";
 import { CloudLogGapReconciler } from "./cloudLogGapReconciler";
 import { CloudRunIdleTracker } from "./cloudRunIdleTracker";
@@ -205,16 +208,19 @@ export interface SessionServiceHelpers {
   cloudPromptToBlocks: (...args: any[]) => any;
   combineQueuedCloudPrompts: (...args: any[]) => any;
   getCloudPromptTransport: (...args: any[]) => any;
+  resolveLocalSkillCommandPrompt?: (prompt: string) => Promise<string | null>;
   uploadRunAttachments: (
     client: CloudArtifactClient,
     taskId: string,
     runId: string,
     filePaths: string[],
+    skillBundles?: CloudSkillBundleRef[],
   ) => Promise<string[]>;
   uploadTaskStagedAttachments: (
     client: CloudArtifactClient,
     taskId: string,
     filePaths: string[],
+    skillBundles?: CloudSkillBundleRef[],
   ) => Promise<string[]>;
 }
 
@@ -2252,8 +2258,13 @@ export class SessionService {
     prompt: string | ContentBlock[],
     options?: { skipQueueGuard?: boolean },
   ): Promise<{ stopReason: string }> {
-    const transport = this.d.h.getCloudPromptTransport(prompt);
-    if (!transport.messageText && transport.filePaths.length === 0) {
+    const normalizedPrompt = await this.resolveCloudPrompt(prompt);
+    const transport = this.d.h.getCloudPromptTransport(normalizedPrompt);
+    if (
+      !transport.messageText &&
+      transport.filePaths.length === 0 &&
+      transport.skillBundles.length === 0
+    ) {
       return { stopReason: "empty" };
     }
 
@@ -2267,11 +2278,15 @@ export class SessionService {
             "Cloud run couldn't start. Check that GitHub is connected for this project, then try again.",
         );
       }
-      return this.resumeCloudRun(session, prompt);
+      return this.resumeCloudRun(session, normalizedPrompt);
     }
 
     if (session.cloudStatus !== "in_progress") {
-      this.d.store.enqueueMessage(session.taskId, transport.promptText);
+      this.d.store.enqueueMessage(
+        session.taskId,
+        transport.promptText,
+        normalizedPrompt,
+      );
       this.d.log.info("Cloud message queued (sandbox not ready)", {
         taskId: session.taskId,
         cloudStatus: session.cloudStatus,
@@ -2291,7 +2306,11 @@ export class SessionService {
       session.isCloud &&
       session.status !== "connected"
     ) {
-      this.d.store.enqueueMessage(session.taskId, transport.promptText, prompt);
+      this.d.store.enqueueMessage(
+        session.taskId,
+        transport.promptText,
+        normalizedPrompt,
+      );
       this.d.log.info("Cloud message queued (agent not ready)", {
         taskId: session.taskId,
         sessionStatus: session.status,
@@ -2317,7 +2336,11 @@ export class SessionService {
     }
 
     if (!options?.skipQueueGuard && session.isPromptPending) {
-      this.d.store.enqueueMessage(session.taskId, transport.promptText, prompt);
+      this.d.store.enqueueMessage(
+        session.taskId,
+        transport.promptText,
+        normalizedPrompt,
+      );
       this.d.log.info("Cloud message queued", {
         taskId: session.taskId,
         queueLength: session.messageQueue.length + 1,
@@ -2329,7 +2352,7 @@ export class SessionService {
     if (authStatus.kind === "restoring") {
       return this.queueRestoringCloudPrompt(
         session,
-        prompt,
+        normalizedPrompt,
         "Cloud message queued (auth restoring)",
       );
     }
@@ -2356,6 +2379,7 @@ export class SessionService {
       session.taskId,
       session.taskRunId,
       transport.filePaths,
+      transport.skillBundles,
     );
     const params: Record<string, unknown> = {};
     if (transport.messageText) {
@@ -2512,11 +2536,12 @@ export class SessionService {
     session: AgentSession,
     prompt: string | ContentBlock[],
   ): Promise<{ stopReason: string }> {
+    const normalizedPrompt = await this.resolveCloudPrompt(prompt);
     const authStatus = await this.getAuthCredentialsStatus();
     if (authStatus.kind === "restoring") {
       return this.queueRestoringCloudPrompt(
         session,
-        prompt,
+        normalizedPrompt,
         "Cloud resume queued (auth restoring)",
       );
     }
@@ -2530,14 +2555,19 @@ export class SessionService {
       throw new Error("Authentication required for cloud commands");
     }
 
-    const transport = this.d.h.getCloudPromptTransport(prompt);
-    if (!transport.messageText && transport.filePaths.length === 0) {
+    const transport = this.d.h.getCloudPromptTransport(normalizedPrompt);
+    if (
+      !transport.messageText &&
+      transport.filePaths.length === 0 &&
+      transport.skillBundles.length === 0
+    ) {
       return { stopReason: "empty" };
     }
     const artifactIds = await this.d.h.uploadTaskStagedAttachments(
       authCredentials.client,
       session.taskId,
       transport.filePaths,
+      transport.skillBundles,
     );
 
     const previousRun = await authCredentials.client.getTaskRun(
@@ -4433,6 +4463,28 @@ export class SessionService {
   }
 
   // --- Helper Methods ---
+
+  private async resolveCloudPrompt(
+    prompt: string | ContentBlock[],
+  ): Promise<string | ContentBlock[]> {
+    if (typeof prompt !== "string") {
+      return prompt;
+    }
+
+    const resolver = this.d.h.resolveLocalSkillCommandPrompt;
+    if (!resolver) {
+      return prompt;
+    }
+
+    try {
+      return (await resolver(prompt)) ?? prompt;
+    } catch (error) {
+      this.d.log.warn("Failed to resolve local skill command prompt", {
+        error: String(error),
+      });
+      return prompt;
+    }
+  }
 
   private async getAuthCredentialsStatus(): Promise<AuthCredentialsStatus> {
     const authState = await this.d.fetchAuthState();

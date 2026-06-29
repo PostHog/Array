@@ -113,6 +113,7 @@ describe("TaskCreationSaga", () => {
         filePaths: string[] = [],
       ): CloudPromptTransport => ({
         filePaths,
+        skillBundles: [],
         messageText: typeof prompt === "string" ? prompt : undefined,
         promptText: typeof prompt === "string" ? prompt : "",
       }),
@@ -339,6 +340,7 @@ describe("TaskCreationSaga", () => {
 
     mockHost.getCloudPromptTransport.mockReturnValue({
       filePaths: ["/tmp/test.txt"],
+      skillBundles: [],
       messageText: "read this file",
       promptText: "read this file\n\nAttached files: test.txt",
     });
@@ -394,6 +396,7 @@ describe("TaskCreationSaga", () => {
       "task-123",
       "run-123",
       ["/tmp/test.txt"],
+      [],
     );
     expect(startTaskRunMock).toHaveBeenCalledWith("task-123", "run-123", {
       pendingUserMessage: "read this file",
