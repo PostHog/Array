@@ -94,6 +94,7 @@ export const validationDiagnostic = z
       "duplicate_action_id",
       "action_empty_prompt",
       "action_empty_label",
+      "action_auto_not_bool",
     ]),
     message: z.string(),
     situationId: situationId.optional(),
