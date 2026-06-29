@@ -419,9 +419,9 @@ export const WithDescriptions: Story = {
                 </Combobox.Item>
               ))}
               {hasMore && (
-                <div className="combobox-label">
+                <Combobox.Label>
                   {moreCount} more; type to filter
-                </div>
+                </Combobox.Label>
               )}
             </>
           )}

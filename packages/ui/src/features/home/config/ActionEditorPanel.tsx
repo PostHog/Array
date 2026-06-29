@@ -119,7 +119,9 @@ export function ActionEditorPanel({
                 {({ filtered, hasMore, moreCount }) => (
                   <>
                     <Combobox.Input placeholder="Search skills..." />
-                    <Combobox.Empty>No matching skills</Combobox.Empty>
+                    <Combobox.Empty>
+                      {isLoading ? "Loading skills…" : "No matching skills"}
+                    </Combobox.Empty>
                     {filtered.map((s) => (
                       <Combobox.Item
                         key={s.name}
@@ -131,9 +133,9 @@ export function ActionEditorPanel({
                       </Combobox.Item>
                     ))}
                     {hasMore && (
-                      <div className="combobox-label">
+                      <Combobox.Label>
                         {moreCount} more; type to filter
-                      </div>
+                      </Combobox.Label>
                     )}
                   </>
                 )}
