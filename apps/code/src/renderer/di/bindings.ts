@@ -130,6 +130,10 @@ import {
   type IAuthSideEffects,
 } from "@posthog/ui/features/auth/identifiers";
 import {
+  BROWSER_TABS_CLIENT,
+  type BrowserTabsClient,
+} from "@posthog/ui/features/browser-tabs/browserTabsClient";
+import {
   REVIEW_HOST,
   type ReviewHost,
 } from "@posthog/ui/features/code-review/reviewHost";
@@ -230,6 +234,7 @@ export interface RendererBindings {
   [HOST_TRPC_CLIENT]: HostTrpcClient;
   [UPDATES_CLIENT]: UpdatesClient;
   [CONNECTIVITY_CLIENT]: ConnectivityClient;
+  [BROWSER_TABS_CLIENT]: BrowserTabsClient;
   [DISCORD_PRESENCE_CLIENT]: DiscordPresenceClient;
   [SHELL_CLIENT]: ShellClient;
   [FOCUS_CONTROLLER_DEPS]: FocusControllerDeps;

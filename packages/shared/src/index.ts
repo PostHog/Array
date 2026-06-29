@@ -15,6 +15,29 @@ export {
   FONT_EXTENSIONS,
   isBinaryFile,
 } from "./binary";
+export {
+  type CloseTabResult,
+  closeTab,
+  decideTabNavigation,
+  newBlankTab,
+  type OpenTabResult,
+  openOrFocusTab,
+  POSITION_GAP,
+  reorderTab,
+  setTabTarget,
+  type TabNavDecision,
+  type TabTarget,
+} from "./browser-tabs";
+export {
+  type BrowserTab,
+  type BrowserWindow,
+  browserTabSchema,
+  browserWindowSchema,
+  type TabsSnapshot,
+  tabsSnapshotSchema,
+  type WindowBounds,
+  windowBoundsSchema,
+} from "./browser-tabs-schemas";
 export type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 export {
   CLOUD_PROMPT_PREFIX,
