@@ -48,6 +48,7 @@ import { classifyCloudLogAppend } from "./cloudLogGap";
 import { CloudLogGapReconciler } from "./cloudLogGapReconciler";
 import { CloudRunIdleTracker } from "./cloudRunIdleTracker";
 import {
+  type CloudRuntimeOptions,
   getCloudPrAuthorshipMode,
   getCloudRunSource,
   getCloudRuntimeOptions,
@@ -2589,6 +2590,7 @@ export class SessionService {
     };
 
     let updatedTask: Task;
+    let runtimeOptions: CloudRuntimeOptions;
     try {
       const artifactIds = await this.d.h.uploadTaskStagedAttachments(
         authCredentials.client,
@@ -2625,7 +2627,7 @@ export class SessionService {
         previousStatus: session.cloudStatus,
       });
 
-      const runtimeOptions = getCloudRuntimeOptions(session, previousRun);
+      runtimeOptions = getCloudRuntimeOptions(session, previousRun);
 
       // Backend derives the snapshot from resumeFromRunId and restores the sandbox.
       updatedTask = await authCredentials.client.runTaskInCloud(
@@ -2694,13 +2696,8 @@ export class SessionService {
     )?.currentValue;
     const initialModel =
       newRun.model ?? (typeof priorModel === "string" ? priorModel : undefined);
-    const priorEffort = getConfigOptionByCategory(
-      session.configOptions,
-      "thought_level",
-    )?.currentValue;
     const initialReasoningEffort =
-      newRun.reasoning_effort ??
-      (typeof priorEffort === "string" ? priorEffort : undefined);
+      newRun.reasoning_effort ?? runtimeOptions.reasoningLevel;
     this.watchCloudTask(
       session.taskId,
       newRun.id,
@@ -4128,7 +4125,8 @@ export class SessionService {
     const adapter =
       task.latest_run?.runtime_adapter === "codex" ? "codex" : "claude";
     const initialModel = task.latest_run?.model ?? undefined;
-    const initialReasoningEffort = task.latest_run?.reasoning_effort ?? undefined;
+    const initialReasoningEffort =
+      task.latest_run?.reasoning_effort ?? undefined;
 
     return this.watchCloudTask(
       task.id,

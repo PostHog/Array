@@ -87,25 +87,31 @@ describe("getCloudRuntimeOptions", () => {
     expect(result.initialPermissionMode).toBeUndefined();
   });
 
-  it("prefers the session mode config option for permission mode", () => {
-    const result = getCloudRuntimeOptions(
-      session({
-        configOptions: [
-          { category: "mode", currentValue: "acceptEdits" },
-          // biome-ignore lint/suspicious/noExplicitAny: minimal config option shape
-        ] as any,
-      }),
-      {
+  it.each([
+    {
+      label: "prefers the session mode config option for permission mode",
+      configOptions: [
+        { category: "mode", currentValue: "acceptEdits" },
+        // biome-ignore lint/suspicious/noExplicitAny: minimal config option shape
+      ] as any,
+      previousRun: {
         state: { initial_permission_mode: "plan" },
       } as unknown as TaskRun,
+      expected: "acceptEdits",
+    },
+    {
+      label: "falls back to the previous run state for permission mode",
+      configOptions: [],
+      previousRun: {
+        state: { initial_permission_mode: "acceptEdits" },
+      } as unknown as TaskRun,
+      expected: "acceptEdits",
+    },
+  ])("$label", ({ configOptions, previousRun, expected }) => {
+    const result = getCloudRuntimeOptions(
+      session({ configOptions }),
+      previousRun,
     );
-    expect(result.initialPermissionMode).toBe("acceptEdits");
-  });
-
-  it("falls back to the previous run state for permission mode", () => {
-    const result = getCloudRuntimeOptions(session({ configOptions: [] }), {
-      state: { initial_permission_mode: "acceptEdits" },
-    } as unknown as TaskRun);
-    expect(result.initialPermissionMode).toBe("acceptEdits");
+    expect(result.initialPermissionMode).toBe(expected);
   });
 });
