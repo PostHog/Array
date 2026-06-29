@@ -374,7 +374,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
                     onInsertChip={insertChip}
                     onRemoveChip={removeChipById}
                   />
-                  {modeOption && onModeChange && (
+                  {onModeChange && (
                     <ModeSelector
                       modeOption={modeOption}
                       onChange={onModeChange}

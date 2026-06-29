@@ -21,6 +21,7 @@ import {
   MenuLabel,
 } from "@posthog/quill";
 import { flattenSelectOptions } from "@posthog/ui/features/sessions/sessionStore";
+import { useRetainedConfigOption } from "@posthog/ui/features/sessions/useRetainedConfigOption";
 import type { AgentAdapter } from "@posthog/ui/features/settings/settingsStore";
 import { Fragment, useMemo, useRef, useState } from "react";
 
@@ -57,7 +58,13 @@ export function UnifiedModelSelector({
 }: UnifiedModelSelectorProps) {
   const [open, setOpen] = useState(false);
   const pendingValueRef = useRef<string | null>(null);
-  const selectOption = modelOption?.type === "select" ? modelOption : undefined;
+  // Keep the last model on the trigger while the new harness's config loads, so
+  // the trigger doesn't shrink to the "Model" fallback and jostle the toolbar
+  // mid-switch. The radio group below still renders from the live option once
+  // loading finishes.
+  const displayOption = useRetainedConfigOption(modelOption);
+  const selectOption =
+    displayOption?.type === "select" ? displayOption : undefined;
   const options = selectOption
     ? flattenSelectOptions(selectOption.options)
     : [];
