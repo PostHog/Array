@@ -48,6 +48,7 @@ function makeBus(overrides?: {
     dockBounceNotifications: true,
     completionSound: "meep",
     completionVolume: 80,
+    customSounds: [],
     ...overrides?.settings,
   };
 

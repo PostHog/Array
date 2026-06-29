@@ -152,6 +152,66 @@ describe("feature settingsStore cloud selections", () => {
   });
 });
 
+describe("feature settingsStore custom sounds", () => {
+  beforeEach(() => {
+    getItem.mockReset();
+    setItem.mockReset();
+    removeItem.mockReset();
+    getItem.mockResolvedValue(null);
+    setItem.mockResolvedValue(undefined);
+    removeItem.mockResolvedValue(undefined);
+
+    useSettingsStore.setState({ customSounds: [], completionSound: "none" });
+  });
+
+  const sound = {
+    id: "abc",
+    name: "My ding",
+    dataUrl: "data:audio/webm;base64,AAAA",
+    durationMs: 1200,
+  };
+
+  it("adds a custom sound", () => {
+    useSettingsStore.getState().addCustomSound(sound);
+    expect(useSettingsStore.getState().customSounds).toEqual([sound]);
+  });
+
+  it("renames a custom sound without touching its clip", () => {
+    useSettingsStore.getState().addCustomSound(sound);
+    useSettingsStore.getState().renameCustomSound("abc", "Renamed");
+    const stored = useSettingsStore.getState().customSounds[0];
+    expect(stored.name).toBe("Renamed");
+    expect(stored.dataUrl).toBe(sound.dataUrl);
+  });
+
+  it("removing the active sound falls back to none", () => {
+    useSettingsStore.getState().addCustomSound(sound);
+    useSettingsStore.getState().setCompletionSound("custom:abc");
+    useSettingsStore.getState().removeCustomSound("abc");
+    expect(useSettingsStore.getState().customSounds).toEqual([]);
+    expect(useSettingsStore.getState().completionSound).toBe("none");
+  });
+
+  it("removing a non-active sound leaves the selection alone", () => {
+    useSettingsStore.getState().addCustomSound(sound);
+    useSettingsStore.getState().setCompletionSound("meep");
+    useSettingsStore.getState().removeCustomSound("abc");
+    expect(useSettingsStore.getState().completionSound).toBe("meep");
+  });
+
+  it("persists custom sounds", async () => {
+    useSettingsStore.getState().addCustomSound(sound);
+
+    await vi.waitFor(() => {
+      expect(setItem).toHaveBeenCalled();
+    });
+
+    const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
+    const persisted = JSON.parse(lastCall[1]);
+    expect(persisted.state.customSounds).toEqual([sound]);
+  });
+});
+
 describe("feature settingsStore terminal font", () => {
   beforeEach(() => {
     getItem.mockReset();

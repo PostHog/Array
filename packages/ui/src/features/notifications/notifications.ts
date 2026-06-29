@@ -63,7 +63,11 @@ export class NotificationBus {
     const settings = this.settings.get();
     // Sound fires on both delivered tiers (toast + native), not on suppress —
     // matching the pre-bus behavior where any non-suppressed notification rang.
-    playCompletionSound(settings.completionSound, settings.completionVolume);
+    playCompletionSound(
+      settings.completionSound,
+      settings.completionVolume,
+      settings.customSounds,
+    );
 
     if (channel === "toast") {
       this.showToast(descriptor);
