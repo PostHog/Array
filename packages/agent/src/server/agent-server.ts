@@ -834,7 +834,9 @@ export class AgentServer {
           result = await this.session.clientConnection.prompt({
             sessionId: this.session.acpSessionId,
             prompt,
-            ...(Object.keys(promptMeta).length > 0 ? { _meta: promptMeta } : {}),
+            ...(Object.keys(promptMeta).length > 0
+              ? { _meta: promptMeta }
+              : {}),
           });
         } catch (error) {
           await this.session.logWriter.flushAll();
