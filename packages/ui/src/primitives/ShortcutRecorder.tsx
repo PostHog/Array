@@ -198,24 +198,18 @@ function BindingChip({
         >
           Edit binding
         </ContextMenu.Item>
-        {canAddMore && (
+        {canAddMore ? (
           <ContextMenu.Item onClick={() => onStartRecording({ type: "add" })}>
             Add another binding
           </ContextMenu.Item>
-        )}
-        <ContextMenu.Separator />
-        {canRemove ? (
-          <ContextMenu.Item color="red" onClick={onRemove}>
-            Remove binding
-          </ContextMenu.Item>
         ) : (
           <Tooltip
-            content="Cannot remove the only binding for a shortcut"
+            content={`Maximum of ${MAX_CUSTOM_BINDINGS} bindings per shortcut`}
             side="left"
           >
             <span>
               <ContextMenu.Item disabled className="cursor-default!">
-                Remove binding
+                Add another binding
               </ContextMenu.Item>
             </span>
           </Tooltip>
@@ -232,6 +226,22 @@ function BindingChip({
           <ContextMenu.Item onClick={onReset}>
             Reset to default
           </ContextMenu.Item>
+        )}
+        {canRemove ? (
+          <ContextMenu.Item onClick={onRemove}>
+            Remove binding
+          </ContextMenu.Item>
+        ) : (
+          <Tooltip
+            content="Cannot remove the only binding for a shortcut"
+            side="left"
+          >
+            <span>
+              <ContextMenu.Item disabled className="cursor-default!">
+                Remove binding
+              </ContextMenu.Item>
+            </span>
+          </Tooltip>
         )}
       </ContextMenu.Content>
     </ContextMenu.Root>
