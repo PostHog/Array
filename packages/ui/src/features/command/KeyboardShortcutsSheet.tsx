@@ -218,7 +218,9 @@ export function KeyboardShortcutsContent() {
         onClear={clearSearch}
       />
       <KeyboardShortcutsList searchText={searchText} comboSearch={comboSearch} />
-      <ResetAllFooter />
+      <div className="sticky bottom-0 z-10 bg-(--color-background)">
+        <ResetAllFooter />
+      </div>
     </>
   );
 }
