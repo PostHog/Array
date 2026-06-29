@@ -21,6 +21,7 @@ interface BuildPatchReviewItemsArgs {
   toggleFile: (key: string) => void;
   openFile: (taskId: string, path: string, preview: boolean) => void;
   onDiscardFile?: (filePath: string) => void;
+  onStageFile?: (key: string) => void;
   prUrl: string | null;
   commentThreads?: Map<number, PrCommentThread>;
 }
@@ -36,6 +37,7 @@ export function buildPatchReviewItems({
   toggleFile,
   openFile,
   onDiscardFile,
+  onStageFile,
   prUrl,
   commentThreads,
 }: BuildPatchReviewItemsArgs): ReviewListItem[] {
@@ -65,6 +67,8 @@ export function buildPatchReviewItems({
           toggleFile={toggleFile}
           openFile={openFile}
           onDiscardFile={onDiscardFile}
+          onStageFile={onStageFile}
+          staged={staged}
           prUrl={prUrl}
           commentThreads={commentThreads}
         />
@@ -81,6 +85,7 @@ interface BuildUntrackedReviewItemsArgs {
   collapsedFiles: Set<string>;
   toggleFile: (key: string) => void;
   onDiscardFile?: (filePath: string) => void;
+  onStageFile?: (key: string) => void;
 }
 
 export function buildUntrackedReviewItems({
@@ -91,6 +96,7 @@ export function buildUntrackedReviewItems({
   collapsedFiles,
   toggleFile,
   onDiscardFile,
+  onStageFile,
 }: BuildUntrackedReviewItemsArgs): ReviewListItem[] {
   return files.map((file) => {
     const key = makeFileKey(file.staged, file.path);
@@ -109,6 +115,7 @@ export function buildUntrackedReviewItems({
           collapsed={isCollapsed}
           toggleFile={toggleFile}
           onDiscardFile={onDiscardFile}
+          onStageFile={onStageFile}
         />
       ),
     };

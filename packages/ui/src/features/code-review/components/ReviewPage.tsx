@@ -12,9 +12,11 @@ import {
   usePrChangedFiles,
 } from "../../git-interaction/useGitQueries";
 import { usePrDetails } from "../../git-interaction/usePrDetails";
+import { makeFileKey } from "../../git-interaction/utils/fileKey";
 import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { useCwd } from "../../sidebar/useCwd";
 import { useDiscardFile } from "../../task-detail/hooks/useDiscardFile";
+import { useStageToggle } from "../../task-detail/hooks/useStageToggle";
 import { REVIEW_FILE_CACHE_TIME_MS, REVIEW_MAX_FILE_LINES } from "../constants";
 import { useEffectiveDiffSource } from "../hooks/useEffectiveDiffSource";
 import { useReviewDiffs } from "../hooks/useReviewDiffs";
@@ -265,10 +267,18 @@ function LocalReviewContent({
   usePrefetchUntrackedFileContents(repoPath, untrackedFiles, true);
 
   const discardFile = useDiscardFile(repoPath);
+  const stageToggle = useStageToggle(repoPath);
   const filesByPath = useMemo(() => {
     const map = new Map<string, ChangedFile>();
     for (const file of changedFiles) {
       if (!map.has(file.path)) map.set(file.path, file);
+    }
+    return map;
+  }, [changedFiles]);
+  const filesByKey = useMemo(() => {
+    const map = new Map<string, ChangedFile>();
+    for (const file of changedFiles) {
+      map.set(makeFileKey(file.staged, file.path), file);
     }
     return map;
   }, [changedFiles]);
@@ -280,6 +290,14 @@ function LocalReviewContent({
       void discardFile(file, fileName);
     },
     [filesByPath, discardFile],
+  );
+  const onStageFile = useCallback(
+    (key: string) => {
+      const file = filesByKey.get(key);
+      if (!file) return;
+      void stageToggle(file);
+    },
+    [filesByKey, stageToggle],
   );
 
   const items = useMemo<ReviewListItem[]>(() => {
@@ -301,6 +319,7 @@ function LocalReviewContent({
           toggleFile,
           openFile,
           onDiscardFile,
+          onStageFile,
           prUrl,
           commentThreads,
         }),
@@ -328,6 +347,7 @@ function LocalReviewContent({
         toggleFile,
         openFile,
         onDiscardFile,
+        onStageFile,
         prUrl,
         commentThreads,
       }),
@@ -341,6 +361,7 @@ function LocalReviewContent({
         collapsedFiles,
         toggleFile,
         onDiscardFile,
+        onStageFile,
       }),
     );
 
@@ -351,6 +372,7 @@ function LocalReviewContent({
     diffOptions,
     hasStagedFiles,
     onDiscardFile,
+    onStageFile,
     openFile,
     prUrl,
     repoPath,

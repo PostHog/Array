@@ -2,6 +2,8 @@ import {
   ArrowCounterClockwise,
   ArrowSquareOut,
   CaretDown,
+  Minus,
+  Plus,
 } from "@phosphor-icons/react";
 import type { FileDiffMetadata } from "@pierre/diffs/react";
 import type { ResolvedDiffSource } from "@posthog/core/code-review/resolveDiffSource";
@@ -190,12 +192,16 @@ export function DiffFileHeader({
   onToggle,
   onOpenFile,
   onDiscard,
+  onStage,
+  staged,
 }: {
   fileDiff: FileDiffMetadata;
   collapsed: boolean;
   onToggle: () => void;
   onOpenFile?: () => void;
   onDiscard?: () => void;
+  onStage?: () => void;
+  staged?: boolean;
 }) {
   const fullPath =
     fileDiff.prevName && fileDiff.prevName !== fileDiff.name
@@ -213,8 +219,22 @@ export function DiffFileHeader({
       collapsed={collapsed}
       onToggle={onToggle}
       trailing={
-        (onDiscard || onOpenFile) && (
+        (onStage || onDiscard || onOpenFile) && (
           <span className="ml-auto inline-flex items-center gap-[2px]">
+            {onStage && (
+              <Tooltip content={staged ? "Unstage" : "Stage"}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStage();
+                  }}
+                  className="inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
+                >
+                  {staged ? <Minus size={14} /> : <Plus size={14} />}
+                </button>
+              </Tooltip>
+            )}
             {onDiscard && (
               <Tooltip content="Discard changes">
                 <button

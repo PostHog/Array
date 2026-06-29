@@ -28,6 +28,8 @@ interface PatchRowProps {
   toggleFile: (key: string) => void;
   openFile: (taskId: string, path: string, preview: boolean) => void;
   onDiscardFile?: (filePath: string) => void;
+  onStageFile?: (key: string) => void;
+  staged?: boolean;
   prUrl: string | null;
   commentThreads?: Map<number, PrCommentThread>;
 }
@@ -44,6 +46,8 @@ export const PatchRow = memo(function PatchRow({
   toggleFile,
   openFile,
   onDiscardFile,
+  onStageFile,
+  staged,
   prUrl,
   commentThreads,
 }: PatchRowProps) {
@@ -59,6 +63,10 @@ export const PatchRow = memo(function PatchRow({
     () => (onDiscardFile ? () => onDiscardFile(filePath) : undefined),
     [onDiscardFile, filePath],
   );
+  const onStage = useMemo(
+    () => (onStageFile ? () => onStageFile(itemKey) : undefined),
+    [onStageFile, itemKey],
+  );
   const options = useMemo(
     () => ({ ...diffOptions, collapsed }),
     [diffOptions, collapsed],
@@ -71,9 +79,11 @@ export const PatchRow = memo(function PatchRow({
         onToggle={onToggle}
         onOpenFile={onOpenFile}
         onDiscard={onDiscard}
+        onStage={onStage}
+        staged={staged}
       />
     ),
-    [collapsed, onToggle, onOpenFile, onDiscard],
+    [collapsed, onToggle, onOpenFile, onDiscard, onStage, staged],
   );
   return (
     <InteractiveFileDiff
@@ -98,6 +108,7 @@ interface UntrackedRowProps {
   collapsed: boolean;
   toggleFile: (key: string) => void;
   onDiscardFile?: (filePath: string) => void;
+  onStageFile?: (key: string) => void;
 }
 
 export const UntrackedRow = memo(function UntrackedRow({
@@ -109,6 +120,7 @@ export const UntrackedRow = memo(function UntrackedRow({
   collapsed,
   toggleFile,
   onDiscardFile,
+  onStageFile,
 }: UntrackedRowProps) {
   const onToggle = useCallback(
     () => toggleFile(itemKey),
@@ -118,6 +130,10 @@ export const UntrackedRow = memo(function UntrackedRow({
     () => (onDiscardFile ? () => onDiscardFile(file.path) : undefined),
     [onDiscardFile, file.path],
   );
+  const onStage = useMemo(
+    () => (onStageFile ? () => onStageFile(itemKey) : undefined),
+    [onStageFile, itemKey],
+  );
   return (
     <UntrackedFileDiff
       file={file}
@@ -126,6 +142,7 @@ export const UntrackedRow = memo(function UntrackedRow({
       collapsed={collapsed}
       onToggle={onToggle}
       onDiscard={onDiscard}
+      onStage={onStage}
       taskId={taskId}
     />
   );
@@ -178,6 +195,7 @@ function UntrackedFileDiff({
   collapsed,
   onToggle,
   onDiscard,
+  onStage,
 }: {
   file: ChangedFile;
   repoPath: string;
@@ -186,6 +204,7 @@ function UntrackedFileDiff({
   collapsed: boolean;
   onToggle: () => void;
   onDiscard?: () => void;
+  onStage?: () => void;
 }) {
   const [containerRef, inView] = useInView<HTMLDivElement>({
     rootMargin: REVIEW_PREFETCH_ROOT_MARGIN,
@@ -248,6 +267,8 @@ function UntrackedFileDiff({
               collapsed={collapsed}
               onToggle={onToggle}
               onDiscard={onDiscard}
+              onStage={onStage}
+              staged={false}
             />
           )}
         />
