@@ -444,6 +444,7 @@ describe("AgentServer HTTP Mode", () => {
     function stubSessionCleanup(testServer: unknown): {
       cleanupSession: (options?: {
         completeEventStream?: boolean;
+        cancelPendingPermissions?: boolean;
       }) => Promise<void>;
       eventStreamSender: {
         enqueue: ReturnType<typeof vi.fn>;
@@ -459,6 +460,7 @@ describe("AgentServer HTTP Mode", () => {
         captureCheckpointState: ReturnType<typeof vi.fn>;
         cleanupSession: (options?: {
           completeEventStream?: boolean;
+          cancelPendingPermissions?: boolean;
         }) => Promise<void>;
       };
       cleanupServer.captureCheckpointState = vi.fn(async () => {});
@@ -494,7 +496,22 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.stop).toHaveBeenCalledOnce();
     });
 
-    it("rejects pending permissions on shutdown cleanup", async () => {
+    // A pending choice box is drained when the session is torn down. On a real
+    // shutdown that's recorded as a deliberate reject; on a re-init (seamless
+    // resume) the user never answered, so it must be cancelled — not a reject
+    // the resumed turn would skip over.
+    it.each([
+      {
+        name: "rejects pending permissions on shutdown cleanup",
+        options: undefined,
+        expectedOutcome: { outcome: "selected", optionId: "reject" },
+      },
+      {
+        name: "cancels pending permissions on re-init cleanup",
+        options: { cancelPendingPermissions: true },
+        expectedOutcome: { outcome: "cancelled" },
+      },
+    ])("$name", async ({ options, expectedOutcome }) => {
       const testServer = stubSessionCleanup(createServer());
       const pending = (
         testServer as unknown as {
@@ -514,46 +531,10 @@ describe("AgentServer HTTP Mode", () => {
         pending.set("req-1", { resolve });
       });
 
-      await testServer.cleanupSession();
+      await testServer.cleanupSession(options);
 
-      // Shutdown: the unanswered choice box is recorded as a deliberate reject.
       await expect(resolved).resolves.toMatchObject({
-        outcome: { outcome: "selected", optionId: "reject" },
-      });
-    });
-
-    it("cancels (does not reject) pending permissions on re-init cleanup", async () => {
-      const testServer = stubSessionCleanup(createServer());
-      const pending = (
-        testServer as unknown as {
-          pendingPermissions: Map<
-            string,
-            {
-              resolve: (r: {
-                outcome: { outcome: string; optionId?: string };
-              }) => void;
-            }
-          >;
-        }
-      ).pendingPermissions;
-      const resolved = new Promise<{
-        outcome: { outcome: string; optionId?: string };
-      }>((resolve) => {
-        pending.set("req-1", { resolve });
-      });
-
-      await (
-        testServer as unknown as {
-          cleanupSession: (o: {
-            cancelPendingPermissions?: boolean;
-          }) => Promise<void>;
-        }
-      ).cleanupSession({ cancelPendingPermissions: true });
-
-      // Re-init (e.g. seamless resume): the user never answered, so the request
-      // must be cancelled — not recorded as a reject the resumed turn skips over.
-      await expect(resolved).resolves.toMatchObject({
-        outcome: { outcome: "cancelled" },
+        outcome: expectedOutcome,
       });
     });
 
@@ -600,6 +581,73 @@ describe("AgentServer HTTP Mode", () => {
       // Restore so afterEach teardown doesn't re-trigger the throwing mock.
       cleanupSpy.mockRestore();
       testServer.session = null;
+    });
+
+    it("returns a cancelled outcome to the blocked agent when a pending question is re-initialized", async () => {
+      // The closest we can get to the real bug in a unit test: drive the actual
+      // ACP requestPermission() entry point rather than poking the internal map.
+      // The agent raises an AskUserQuestion; with a desktop connected it relays
+      // and the agent's call *blocks* waiting for the user. A re-init (seamless
+      // resume) then tears the session down. The promise the agent is awaiting
+      // must resolve as "cancelled" — so the resumed turn re-asks — not a
+      // "reject" selection it would treat as the user's answer and skip.
+      //
+      // What this still can't cover: what the external agent process does with a
+      // "cancelled" outcome (re-ask vs. drop) lives in codex-acp, not here — that
+      // needs an e2e harness driving the real agent.
+      for (const key of [
+        "POSTHOG_CODE_INTERACTION_ORIGIN",
+        "CODE_INTERACTION_ORIGIN",
+        "TWIG_INTERACTION_ORIGIN",
+      ]) {
+        delete process.env[key];
+      }
+
+      const testServer = stubSessionCleanup(createServer());
+      const session = (
+        testServer as unknown as { session: Record<string, unknown> }
+      ).session;
+      // A connected desktop so the question relays and the call blocks.
+      session.sseController = { send: vi.fn(), close: vi.fn() };
+      session.hasDesktopConnected = true;
+      session.permissionMode = "default";
+      (session.logWriter as Record<string, unknown>).appendRawLine = vi.fn();
+
+      const payload: JwtPayload = {
+        task_id: "test-task-id",
+        run_id: "run-1",
+        team_id: 1,
+        user_id: 1,
+        distinct_id: "d",
+        mode: "interactive",
+      };
+      const client = (
+        testServer as unknown as {
+          createCloudClient: (p: JwtPayload) => {
+            requestPermission: (o: {
+              options: unknown[];
+              toolCall: unknown;
+            }) => Promise<{ outcome: { outcome: string; optionId?: string } }>;
+          };
+        }
+      ).createCloudClient(payload);
+
+      const permission = client.requestPermission({
+        options: [{ kind: "allow_once", optionId: "allow", name: "Allow" }],
+        toolCall: { _meta: { codeToolKind: "question" } },
+      });
+      // Relayed and awaiting the user, so the call must not have settled yet.
+      let settled = false;
+      void permission.then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      await testServer.cleanupSession({ cancelPendingPermissions: true });
+
+      const result = await permission;
+      expect(result.outcome.outcome).toBe("cancelled");
     });
 
     it("writes terminal failure status before completing event ingest", async () => {
