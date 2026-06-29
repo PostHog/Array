@@ -199,6 +199,30 @@ function ShortcutsSearchBar({
   );
 }
 
+export function KeyboardShortcutsContent() {
+  const [searchText, setSearchText] = useState("");
+  const [comboSearch, setComboSearch] = useState<ComboSearch | null>(null);
+
+  const clearSearch = useCallback(() => {
+    setSearchText("");
+    setComboSearch(null);
+  }, []);
+
+  return (
+    <>
+      <ShortcutsSearchBar
+        searchText={searchText}
+        comboSearch={comboSearch}
+        onTextChange={setSearchText}
+        onComboChange={setComboSearch}
+        onClear={clearSearch}
+      />
+      <KeyboardShortcutsList searchText={searchText} comboSearch={comboSearch} />
+      <ResetAllFooter />
+    </>
+  );
+}
+
 export function KeyboardShortcutsSheet({
   open,
   onOpenChange,
