@@ -1943,21 +1943,49 @@ export class PostHogAPIClient {
   }
 
   /**
+   * POST a run-id list to a scout batch endpoint and flatten the response. The
+   * API caps each call at SCOUT_BATCH_RUN_ID_LIMIT ids, so larger lists are
+   * split into parallel chunks and concatenated — the caller never has to know
+   * the cap exists. Run ids belonging to another team contribute no rows rather
+   * than erroring, so a single stale id can't blank the list.
+   */
+  private async scoutBatchByRunIds<T>(
+    projectId: number,
+    subPath: string,
+    runIds: string[],
+  ): Promise<T[]> {
+    if (runIds.length === 0) return [];
+    const SCOUT_BATCH_RUN_ID_LIMIT = 200;
+    const chunks: string[][] = [];
+    for (let i = 0; i < runIds.length; i += SCOUT_BATCH_RUN_ID_LIMIT) {
+      chunks.push(runIds.slice(i, i + SCOUT_BATCH_RUN_ID_LIMIT));
+    }
+    const pages = await Promise.all(
+      chunks.map((chunk) =>
+        this.scoutPost<{ results: T[] } | T[]>(projectId, subPath, {
+          run_ids: chunk,
+        }),
+      ),
+    );
+    return pages.flatMap((data) =>
+      Array.isArray(data) ? data : (data.results ?? []),
+    );
+  }
+
+  /**
    * Every supplied run's emitted findings in one request, flattened newest-first
    * (each row keeps its `run_id` so the caller can regroup). Replaces the old
-   * per-run fan-out — one Postgres query instead of one request per run. Run ids
-   * belonging to another team contribute no rows rather than erroring, so a
-   * single stale id can't blank the list. Capped at 200 ids per call by the API.
+   * per-run fan-out — one Postgres query instead of one request per run.
    */
   async batchScoutRunEmissions(
     projectId: number,
     runIds: string[],
   ): Promise<ScoutEmission[]> {
-    if (runIds.length === 0) return [];
-    const data = await this.scoutPost<
-      { results: ScoutEmission[] } | ScoutEmission[]
-    >(projectId, "runs/emissions/batch/", { run_ids: runIds });
-    return Array.isArray(data) ? data : (data.results ?? []);
+    return this.scoutBatchByRunIds<ScoutEmission>(
+      projectId,
+      "runs/emissions/batch/",
+      runIds,
+    );
   }
 
   /**
@@ -1970,11 +1998,11 @@ export class PostHogAPIClient {
     projectId: number,
     runIds: string[],
   ): Promise<ScoutEmissionReportLink[]> {
-    if (runIds.length === 0) return [];
-    const data = await this.scoutPost<
-      { results: ScoutEmissionReportLink[] } | ScoutEmissionReportLink[]
-    >(projectId, "runs/emissions/reports/batch/", { run_ids: runIds });
-    return Array.isArray(data) ? data : (data.results ?? []);
+    return this.scoutBatchByRunIds<ScoutEmissionReportLink>(
+      projectId,
+      "runs/emissions/reports/batch/",
+      runIds,
+    );
   }
 
   async searchScoutScratchpad(

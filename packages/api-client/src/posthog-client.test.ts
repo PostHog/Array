@@ -943,37 +943,56 @@ describe("PostHogAPIClient", () => {
       return client;
     }
 
-    it("short-circuits empty run ids without hitting the network", async () => {
-      const fetch = vi.fn();
-      const client = buildClient(fetch);
-      await expect(client.batchScoutRunEmissions(123, [])).resolves.toEqual([]);
-      await expect(client.batchScoutEmissionReports(123, [])).resolves.toEqual(
-        [],
-      );
-      expect(fetch).not.toHaveBeenCalled();
-    });
+    // Both batch methods share the same scoutBatchByRunIds helper, so their
+    // empty short-circuit, request shape, and error path are exercised together.
+    const methods = [
+      ["batchScoutRunEmissions", EMISSIONS_PATH],
+      ["batchScoutEmissionReports", REPORTS_PATH],
+    ] as const;
 
-    it("POSTs the run ids in one request and flattens the response", async () => {
-      const emissions = [
-        { id: "e1", run_id: "r1" },
-        { id: "e2", run_id: "r2" },
-      ];
-      const fetch = vi
-        .fn()
-        .mockResolvedValue({ ok: true, json: async () => emissions });
+    it.each(methods)(
+      "%s short-circuits empty run ids without hitting the network",
+      async (method) => {
+        const fetch = vi.fn();
+        const client = buildClient(fetch);
+        await expect(client[method](123, [])).resolves.toEqual([]);
+        expect(fetch).not.toHaveBeenCalled();
+      },
+    );
 
-      await expect(
-        buildClient(fetch).batchScoutRunEmissions(123, ["r1", "r2"]),
-      ).resolves.toEqual(emissions);
-      expect(fetch).toHaveBeenCalledTimes(1);
-      expect(fetch.mock.calls[0][0]).toMatchObject({
-        method: "post",
-        path: EMISSIONS_PATH,
-      });
-      expect(JSON.parse(fetch.mock.calls[0][0].overrides.body)).toEqual({
-        run_ids: ["r1", "r2"],
-      });
-    });
+    it.each(methods)(
+      "%s POSTs the run ids in one request and flattens the response",
+      async (method, path) => {
+        const rows = [
+          { id: "e1", run_id: "r1" },
+          { id: "e2", run_id: "r2" },
+        ];
+        const fetch = vi
+          .fn()
+          .mockResolvedValue({ ok: true, json: async () => rows });
+
+        await expect(
+          buildClient(fetch)[method](123, ["r1", "r2"]),
+        ).resolves.toEqual(rows);
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(fetch.mock.calls[0][0]).toMatchObject({ method: "post", path });
+        expect(JSON.parse(fetch.mock.calls[0][0].overrides.body)).toEqual({
+          run_ids: ["r1", "r2"],
+        });
+      },
+    );
+
+    it.each(methods)(
+      "%s throws when the server responds non-OK",
+      async (method) => {
+        const fetch = vi
+          .fn()
+          .mockResolvedValue({ ok: false, statusText: "Bad Request" });
+        await expect(buildClient(fetch)[method](123, ["r1"])).rejects.toThrow(
+          "Bad Request",
+        );
+      },
+    );
 
     it("unwraps a paginated reports payload", async () => {
       const links = [{ finding_id: "f1", source_id: "s1", report: null }];
@@ -991,13 +1010,26 @@ describe("PostHogAPIClient", () => {
       });
     });
 
-    it("throws when the server responds non-OK", async () => {
-      const fetch = vi
-        .fn()
-        .mockResolvedValue({ ok: false, statusText: "Bad Request" });
-      await expect(
-        buildClient(fetch).batchScoutRunEmissions(123, ["r1"]),
-      ).rejects.toThrow("Bad Request");
+    it("splits >200 run ids into parallel chunks and concatenates them", async () => {
+      const runIds = Array.from({ length: 450 }, (_, i) => `r${i}`);
+      const fetch = vi.fn(async (req) => {
+        const { run_ids } = JSON.parse(req.overrides.body) as {
+          run_ids: string[];
+        };
+        return {
+          ok: true,
+          json: async () => run_ids.map((run_id) => ({ id: run_id, run_id })),
+        };
+      });
+
+      const result = await buildClient(fetch).batchScoutRunEmissions(
+        123,
+        runIds,
+      );
+      // 450 ids → chunks of 200, 200, 50.
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(result).toHaveLength(450);
+      expect(result.map((row) => row.run_id)).toEqual(runIds);
     });
   });
 });

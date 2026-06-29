@@ -43,10 +43,14 @@ export function ScoutSignalsSection({
   highlightFindingId?: string;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const emittedRuns = runs.filter((run) => (run.emitted_count ?? 0) > 0);
-  const visibleRuns = showAll
-    ? emittedRuns
-    : emittedRuns.slice(0, INITIAL_EMITTED_RUNS);
+  const emittedRuns = useMemo(
+    () => runs.filter((run) => (run.emitted_count ?? 0) > 0),
+    [runs],
+  );
+  const visibleRuns = useMemo(
+    () => (showAll ? emittedRuns : emittedRuns.slice(0, INITIAL_EMITTED_RUNS)),
+    [emittedRuns, showAll],
+  );
   const hiddenCount = emittedRuns.length - visibleRuns.length;
   const visibleRunIds = useMemo(
     () => visibleRuns.map((run) => run.run_id),
