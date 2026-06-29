@@ -1,6 +1,8 @@
 import {
+  ArrowCounterClockwise,
   Microphone,
   Play,
+  Scissors,
   Stop,
   Trash,
   UploadSimple,
@@ -10,12 +12,19 @@ import { toast } from "@posthog/ui/primitives/toast";
 import {
   blobToDataUrl,
   dataUrlByteLength,
+  decodeAudioClip,
+  detectSilenceBounds,
   formatDurationSeconds,
   getAudioDurationMs,
+  isClipSilent,
   isRecordingSupported,
   MAX_CUSTOM_SOUND_BYTES,
   MAX_CUSTOM_SOUND_DURATION_MS,
   pickRecordingMimeType,
+  resolveSaveClip,
+  shouldOfferTrim,
+  type TrimBounds,
+  trimmedDurationMs,
 } from "@posthog/ui/utils/customSound";
 import {
   Button,
@@ -35,6 +44,12 @@ const DURATION_TOLERANCE_MS = 300;
 interface CapturedClip {
   dataUrl: string;
   durationMs: number;
+  // Decoded samples, present whenever the clip could be decoded. Absent for
+  // exotic containers, where we store the clip untrimmed.
+  buffer: AudioBuffer | null;
+  // The span left after stripping leading/trailing silence, when there's enough
+  // silence to bother offering. Null means nothing worth trimming.
+  silenceBounds: TrimBounds | null;
 }
 
 // All the dialog's transient state lives in one reducer so a single logical
@@ -46,6 +61,9 @@ interface DialogState {
   error: string | null;
   isRecording: boolean;
   elapsedMs: number;
+  // Whether the offered silence trim is applied. The trim region is always the
+  // clip's detected silence bounds, so this is just a toggle.
+  isTrimmed: boolean;
 }
 
 type DialogAction =
@@ -55,6 +73,7 @@ type DialogAction =
   | { type: "recordingStopped" }
   | { type: "tick"; elapsedMs: number }
   | { type: "clipReady"; clip: CapturedClip }
+  | { type: "setTrimmed"; isTrimmed: boolean }
   | { type: "clearClip" }
   | { type: "reset" };
 
@@ -64,6 +83,7 @@ const INITIAL_STATE: DialogState = {
   error: null,
   isRecording: false,
   elapsedMs: 0,
+  isTrimmed: false,
 };
 
 function reducer(state: DialogState, action: DialogAction): DialogState {
@@ -79,15 +99,19 @@ function reducer(state: DialogState, action: DialogAction): DialogState {
         clip: null,
         isRecording: true,
         elapsedMs: 0,
+        isTrimmed: false,
       };
     case "recordingStopped":
       return { ...state, isRecording: false };
     case "tick":
       return { ...state, elapsedMs: action.elapsedMs };
     case "clipReady":
-      return { ...state, clip: action.clip, error: null };
+      // A fresh clip is never pre-trimmed.
+      return { ...state, clip: action.clip, error: null, isTrimmed: false };
+    case "setTrimmed":
+      return { ...state, isTrimmed: action.isTrimmed };
     case "clearClip":
-      return { ...state, clip: null };
+      return { ...state, clip: null, isTrimmed: false };
     case "reset":
       return INITIAL_STATE;
     default:
@@ -106,7 +130,12 @@ export function AddCustomSoundDialog({
   const setCompletionSound = useSettingsStore((s) => s.setCompletionSound);
 
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
-  const { name, clip, error, isRecording, elapsedMs } = state;
+  const { name, clip, error, isRecording, elapsedMs, isTrimmed } = state;
+  // The trim region is always the detected silence bounds; isTrimmed just
+  // toggles whether it's applied.
+  const trim: TrimBounds | null = isTrimmed
+    ? (clip?.silenceBounds ?? null)
+    : null;
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -114,6 +143,8 @@ export function AddCustomSoundDialog({
   const timerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   const recordingSupported = isRecordingSupported();
 
@@ -131,6 +162,18 @@ export function AddCustomSoundDialog({
     }
   }, []);
 
+  const stopPreview = useCallback(() => {
+    if (sourceRef.current) {
+      try {
+        sourceRef.current.stop();
+      } catch {
+        // Already stopped — fine.
+      }
+      sourceRef.current = null;
+    }
+    previewRef.current?.pause();
+  }, []);
+
   // Tear down any in-flight recorder/stream/timer/preview. Detaches the
   // recorder's handlers first so a late onstop can't dispatch into a dialog
   // that's already closing.
@@ -144,9 +187,11 @@ export function AddCustomSoundDialog({
       recorderRef.current = null;
     }
     stopStream();
-    previewRef.current?.pause();
+    stopPreview();
     previewRef.current = null;
-  }, [stopStream, stopTimer]);
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+  }, [stopStream, stopTimer, stopPreview]);
 
   const stopRecording = useCallback(() => {
     stopTimer();
@@ -155,11 +200,16 @@ export function AddCustomSoundDialog({
     dispatch({ type: "recordingStopped" });
   }, [stopTimer]);
 
-  // Validate a captured/imported blob, then stash it as the pending clip.
+  // Validate a captured/imported blob, decode it (so we can detect silence and
+  // re-encode a trimmed copy), then stash it as the pending clip.
   // `fallbackDurationMs` is used when the container doesn't expose a duration
   // (common for freshly-recorded WebM), where the recorder's elapsed time wins.
   const acceptBlob = useCallback(
-    async (blob: Blob, fallbackDurationMs: number | null) => {
+    async (
+      blob: Blob,
+      fallbackDurationMs: number | null,
+      source: "recording" | "import",
+    ) => {
       let dataUrl: string;
       try {
         dataUrl = await blobToDataUrl(blob);
@@ -177,9 +227,12 @@ export function AddCustomSoundDialog({
         });
         return;
       }
-      const decoded = await getAudioDurationMs(dataUrl);
+      const buffer = await decodeAudioClip(blob);
+      const decoded = buffer
+        ? buffer.duration * 1000
+        : await getAudioDurationMs(dataUrl);
       // Live recordings pass the recorder's elapsed time (always ≤ MAX); file
-      // imports pass null, so if the browser also can't read the duration we
+      // imports pass null, so if we also can't decode/read the duration we
       // reject rather than defaulting to 0 and silently bypassing the cap.
       const durationMs = decoded ?? fallbackDurationMs;
       if (
@@ -195,7 +248,32 @@ export function AddCustomSoundDialog({
         });
         return;
       }
-      dispatch({ type: "clipReady", clip: { dataUrl, durationMs } });
+      // A recording that comes back silent means the mic delivered no audio
+      // (often the OS still blocks microphone access even though the browser
+      // reports it granted). Saving it would produce a sound that plays
+      // nothing, so reject it with a pointer at the likely cause.
+      if (source === "recording" && buffer && isClipSilent(buffer)) {
+        dispatch({
+          type: "error",
+          message:
+            "We didn't pick up any audio. Check that PostHog Code has microphone access, then try again.",
+        });
+        return;
+      }
+      // Only surface the trim offer when there's a meaningful amount of silence
+      // to strip from either end.
+      const bounds = buffer ? detectSilenceBounds(buffer) : null;
+      dispatch({
+        type: "clipReady",
+        clip: {
+          dataUrl,
+          durationMs,
+          buffer,
+          silenceBounds: shouldOfferTrim(bounds, durationMs / 1000)
+            ? bounds
+            : null,
+        },
+      });
     },
     [],
   );
@@ -223,7 +301,7 @@ export function AddCustomSoundDialog({
         const blob = new Blob(chunksRef.current, {
           type: recorder.mimeType || "audio/webm",
         });
-        void acceptBlob(blob, elapsed);
+        void acceptBlob(blob, elapsed, "recording");
       };
       recorder.start();
       recorderRef.current = recorder;
@@ -261,20 +339,40 @@ export function AddCustomSoundDialog({
         // Seed the name from the filename so the user has a sensible default.
         dispatch({ type: "setName", name: file.name.replace(/\.[^.]+$/, "") });
       }
-      await acceptBlob(file, null);
+      await acceptBlob(file, null, "import");
     },
     [acceptBlob, name],
   );
 
+  // Preview the current selection. Web Audio plays the exact [start, end] slice
+  // of the decoded buffer, which sidesteps the unreliable seeking of
+  // freshly-recorded WebM; the <audio> path is a fallback for undecodable clips.
   const playPreview = useCallback(() => {
     if (!clip) return;
-    previewRef.current?.pause();
+    stopPreview();
+    if (clip.buffer) {
+      try {
+        if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+        const ctx = audioCtxRef.current;
+        const startSec = trim?.startSec ?? 0;
+        const endSec = trim?.endSec ?? clip.buffer.duration;
+        const src = ctx.createBufferSource();
+        src.buffer = clip.buffer;
+        src.connect(ctx.destination);
+        src.start(0, startSec, Math.max(0, endSec - startSec));
+        sourceRef.current = src;
+        void ctx.resume();
+        return;
+      } catch {
+        // Fall through to the element-based preview.
+      }
+    }
     const audio = new Audio(clip.dataUrl);
     previewRef.current = audio;
     audio.play().catch(() => {
       // Ignore — preview is best-effort.
     });
-  }, [clip]);
+  }, [clip, trim, stopPreview]);
 
   // Reset on close in the close handler itself (not a useEffect watching
   // `open`) so there's no extra render showing stale state between commits.
@@ -295,19 +393,29 @@ export function AddCustomSoundDialog({
   const handleSave = useCallback(() => {
     const trimmed = name.trim();
     if (!trimmed || !clip) return;
+    const resolved = resolveSaveClip(clip, trim);
+    if ("error" in resolved) {
+      dispatch({ type: "error", message: resolved.error });
+      return;
+    }
     const id = crypto.randomUUID();
     addCustomSound({
       id,
       name: trimmed,
-      dataUrl: clip.dataUrl,
-      durationMs: clip.durationMs,
+      dataUrl: resolved.dataUrl,
+      durationMs: resolved.durationMs,
     });
     setCompletionSound(`custom:${id}`);
     toast.success(`Added "${trimmed}"`);
     handleOpenChange(false);
-  }, [addCustomSound, clip, handleOpenChange, name, setCompletionSound]);
+  }, [addCustomSound, clip, handleOpenChange, name, setCompletionSound, trim]);
 
   const canSave = name.trim().length > 0 && clip !== null && !isRecording;
+
+  // Duration shown next to the clip reflects the applied trim.
+  const shownDurationMs = trim
+    ? trimmedDurationMs(trim)
+    : (clip?.durationMs ?? 0);
 
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
@@ -385,22 +493,55 @@ export function AddCustomSoundDialog({
             </Flex>
 
             {clip && !isRecording && (
-              <Flex align="center" gap="2">
-                <IconButton variant="soft" size="1" onClick={playPreview}>
-                  <Play weight="fill" />
-                </IconButton>
-                <Text size="2" color="gray">
-                  Clip ready · {formatDurationSeconds(clip.durationMs)}
-                </Text>
-                <IconButton
-                  variant="ghost"
-                  color="gray"
-                  size="1"
-                  onClick={() => dispatch({ type: "clearClip" })}
-                  aria-label="Discard clip"
-                >
-                  <Trash />
-                </IconButton>
+              <Flex direction="column" gap="2">
+                <Flex align="center" gap="2">
+                  <IconButton
+                    variant="soft"
+                    size="1"
+                    onClick={playPreview}
+                    aria-label="Preview clip"
+                  >
+                    <Play weight="fill" />
+                  </IconButton>
+                  <Text size="2" color="gray">
+                    {trim ? "Trimmed" : "Clip ready"} ·{" "}
+                    {formatDurationSeconds(shownDurationMs)}
+                  </Text>
+                  <IconButton
+                    variant="ghost"
+                    color="gray"
+                    size="1"
+                    onClick={() => {
+                      stopPreview();
+                      dispatch({ type: "clearClip" });
+                    }}
+                    aria-label="Discard clip"
+                  >
+                    <Trash />
+                  </IconButton>
+                </Flex>
+
+                {clip.silenceBounds && (
+                  <Button
+                    variant={isTrimmed ? "ghost" : "soft"}
+                    size="1"
+                    className="self-start"
+                    onClick={() => {
+                      stopPreview();
+                      dispatch({ type: "setTrimmed", isTrimmed: !isTrimmed });
+                    }}
+                  >
+                    {isTrimmed ? (
+                      <>
+                        <ArrowCounterClockwise /> Keep full clip
+                      </>
+                    ) : (
+                      <>
+                        <Scissors /> Trim silence
+                      </>
+                    )}
+                  </Button>
+                )}
               </Flex>
             )}
 

@@ -40,8 +40,10 @@ const SOUND_URLS: Record<Exclude<BuiltInCompletionSound, "none">, string> = {
 let currentAudio: HTMLAudioElement | null = null;
 
 // Resolves the playable URL for a completion sound: a bundled asset URL for the
-// built-ins, or the inline data URL of a user-installed custom sound.
-function resolveSoundUrl(
+// built-ins, or the inline data URL of a user-installed custom sound. Returns
+// null for `none`, an unknown built-in, or a `custom:` id no longer installed
+// (e.g. the active sound was deleted) — callers then play nothing.
+export function resolveSoundUrl(
   sound: CompletionSound,
   customSounds: CustomSound[],
 ): string | null {
