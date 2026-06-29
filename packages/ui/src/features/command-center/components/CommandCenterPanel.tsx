@@ -16,8 +16,6 @@ import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { Flex, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
-import brainrotLandscape from "../../../assets/videos/brainrot-landscape.mp4";
-import brainrotPortrait from "../../../assets/videos/brainrot-portrait.mp4";
 import { useCloudPrUrl } from "../../git-interaction/useCloudPrUrl";
 import { useDraftStore } from "../../message-editor/draftStore";
 import { EmbeddedSessionView } from "../../sessions/components/EmbeddedSessionView";
@@ -205,11 +203,17 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
   );
 }
 
+const BRAINROT_LANDSCAPE_URL =
+  "https://res.cloudinary.com/dmukukwp6/video/upload/brainrot_landscape_051f419306.mp4";
+const BRAINROT_PORTRAIT_URL =
+  "https://res.cloudinary.com/dmukukwp6/video/upload/brainrot_portrait_0f14096e6a.mp4";
+
 function BrainrotCell({ cellIndex }: { cellIndex: number }) {
   const removeTask = useCommandCenterStore((s) => s.removeTask);
   const stageRef = useRef<HTMLDivElement>(null);
   const orientation = useElementOrientation(stageRef);
-  const src = orientation === "portrait" ? brainrotPortrait : brainrotLandscape;
+  const src =
+    orientation === "portrait" ? BRAINROT_PORTRAIT_URL : BRAINROT_LANDSCAPE_URL;
 
   return (
     <Flex direction="column" height="100%">
