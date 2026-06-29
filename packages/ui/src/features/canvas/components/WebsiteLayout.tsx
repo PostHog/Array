@@ -1,10 +1,18 @@
 import {
+  DotsThreeIcon,
   GitForkIcon,
   LinkIcon,
   PencilSimpleIcon,
+  PushPinIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Button } from "@posthog/quill";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
@@ -56,7 +64,38 @@ function FreeformEditControls({
   const editing = useIsDashboardEditing(dashboardId);
   const setEditing = useDashboardEditStore((s) => s.setEditing);
   const { dashboard } = useDashboard(dashboardId);
-  const { forkFreeform, isCreating } = useDashboardMutations();
+  const { forkFreeform, isCreating, setPinned } = useDashboardMutations();
+  const isPinned = dashboard?.pinnedAt != null;
+
+  const onTogglePin = () => {
+    void setPinned(dashboardId, !isPinned)
+      .then(() =>
+        track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+          action_type: isPinned ? "unpin" : "pin",
+          surface: "canvas",
+          channel_id: channelId,
+          dashboard_id: dashboardId,
+          kind: "freeform",
+          success: true,
+        }),
+      )
+      .catch((error: unknown) => {
+        track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+          action_type: isPinned ? "unpin" : "pin",
+          surface: "canvas",
+          channel_id: channelId,
+          dashboard_id: dashboardId,
+          kind: "freeform",
+          success: false,
+        });
+        toast.error(
+          isPinned ? "Couldn't unpin canvas" : "Couldn't pin canvas",
+          {
+            description: error instanceof Error ? error.message : String(error),
+          },
+        );
+      });
+  };
 
   const threadId = threadIdFor(dashboardId);
   const { code, versions, currentVersionId, isSaving } =
@@ -157,14 +196,29 @@ function FreeformEditControls({
           Save as fork
         </Button>
       )}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => void copyCanvasLink(channelId, dashboardId, "canvas")}
-      >
-        <LinkIcon size={14} />
-        Copy link
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button variant="outline" size="sm" aria-label="Canvas options">
+              <DotsThreeIcon size={16} weight="bold" />
+            </Button>
+          }
+        />
+        <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
+          <DropdownMenuItem
+            onClick={() =>
+              void copyCanvasLink(channelId, dashboardId, "canvas")
+            }
+          >
+            <LinkIcon size={14} />
+            Copy link
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onTogglePin}>
+            <PushPinIcon size={14} weight={isPinned ? "fill" : "regular"} />
+            {isPinned ? "Unpin from channel" : "Pin to channel"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Button
         variant="outline"
         size="sm"

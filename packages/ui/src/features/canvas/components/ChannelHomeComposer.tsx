@@ -1,6 +1,4 @@
-import { CaretDownIcon } from "@phosphor-icons/react";
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
-import { cn } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
 import {
   forwardRef,
@@ -38,29 +36,19 @@ interface ChannelHomeComposerProps {
   /** Channel CONTEXT.md, attached to the created task as background. */
   channelContext?: string;
   onTaskCreated: (task: Task) => void;
-  /** Whether the suggestion list (rendered by the parent) is open. */
-  suggestionsOpen: boolean;
-  onToggleSuggestions: () => void;
 }
 
 // The prompt box at the bottom of a channel's homepage. A trimmed-down sibling
 // of TaskInput: it reuses the same task-creation pipeline (model/mode/reasoning
 // preview config + useTaskCreation) but drops the repo/branch pickers — channel
 // tasks run repo-less and the agent attaches a repo lazily if it needs one. The
-// starter-prompt suggestions render in the parent's task list; this owns the
-// local/cloud selector and the "See suggestions" toggle above the box.
+// starter-prompt suggestions render in the parent above the box; this owns the
+// local/cloud selector.
 export const ChannelHomeComposer = forwardRef<
   ChannelHomeComposerHandle,
   ChannelHomeComposerProps
 >(function ChannelHomeComposer(
-  {
-    channelId,
-    channelName,
-    channelContext,
-    onTaskCreated,
-    suggestionsOpen,
-    onToggleSuggestions,
-  },
+  { channelId, channelName, channelContext, onTaskCreated },
   ref,
 ) {
   const sessionId = `channel-home:${channelId}`;
@@ -187,8 +175,8 @@ export const ChannelHomeComposer = forwardRef<
   const hints = ["@ to add files", "/ for skills"].join(", ");
 
   return (
-    <div className="mx-auto flex w-full max-w-[680px] flex-col px-4 pb-4">
-      <div className="mb-2 flex items-center justify-between gap-2">
+    <div className="flex w-full flex-col">
+      <div className="mb-2 flex items-center gap-2">
         <WorkspaceModeSelect
           value={workspaceMode}
           onChange={setWorkspaceMode}
@@ -198,20 +186,6 @@ export const ChannelHomeComposer = forwardRef<
           size="1"
           disabled={isCreatingTask}
         />
-        <button
-          type="button"
-          onClick={onToggleSuggestions}
-          className="inline-flex items-center gap-1 text-[12px] text-gray-10 transition-colors hover:text-gray-12"
-        >
-          {suggestionsOpen ? "Hide suggestions" : "See suggestions"}
-          <CaretDownIcon
-            size={12}
-            className={cn(
-              "transition-transform",
-              suggestionsOpen && "rotate-180",
-            )}
-          />
-        </button>
       </div>
 
       <PromptInput

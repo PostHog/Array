@@ -777,6 +777,9 @@ export type ChannelsSurface =
   | "command_menu"
   | "new_task"
   | "channel_home"
+  | "channel_history"
+  | "channel_artifacts"
+  | "pinned"
   | "dashboards_grid"
   | "canvas"
   | "context";
@@ -798,6 +801,9 @@ export type ChannelActionType =
   | "new_task_open"
   | "new_task_suggestion"
   | "view_context"
+  | "view_history"
+  | "view_artifacts"
+  | "open_artifact"
   | "file_task"
   | "unfile_task"
   | "archive_task"
@@ -832,7 +838,9 @@ export type DashboardActionType =
   | "refresh"
   | "poll_mode_change"
   | "date_range_apply"
-  | "link_copied";
+  | "link_copied"
+  | "pin"
+  | "unpin";
 
 export interface DashboardActionProperties {
   action_type: DashboardActionType;

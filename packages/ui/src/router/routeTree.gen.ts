@@ -32,8 +32,10 @@ import { Route as WebsiteChannelIdIndexRouteImport } from './routes/website/$cha
 import { Route as CodeInboxIndexRouteImport } from './routes/code/inbox/index'
 import { Route as CodeAgentsIndexRouteImport } from './routes/code/agents/index'
 import { Route as WebsiteChannelIdNewRouteImport } from './routes/website/$channelId/new'
+import { Route as WebsiteChannelIdHistoryRouteImport } from './routes/website/$channelId/history'
 import { Route as WebsiteChannelIdContextRouteImport } from './routes/website/$channelId/context'
 import { Route as WebsiteChannelIdCanvasesRouteImport } from './routes/website/$channelId/canvases'
+import { Route as WebsiteChannelIdArtifactsRouteImport } from './routes/website/$channelId/artifacts'
 import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId'
 import { Route as CodeInboxRunsRouteImport } from './routes/code/inbox/runs'
 import { Route as CodeInboxReportsRouteImport } from './routes/code/inbox/reports'
@@ -184,6 +186,11 @@ const WebsiteChannelIdNewRoute = WebsiteChannelIdNewRouteImport.update({
   path: '/$channelId/new',
   getParentRoute: () => WebsiteRoute,
 } as any)
+const WebsiteChannelIdHistoryRoute = WebsiteChannelIdHistoryRouteImport.update({
+  id: '/$channelId/history',
+  path: '/$channelId/history',
+  getParentRoute: () => WebsiteRoute,
+} as any)
 const WebsiteChannelIdContextRoute = WebsiteChannelIdContextRouteImport.update({
   id: '/$channelId/context',
   path: '/$channelId/context',
@@ -193,6 +200,12 @@ const WebsiteChannelIdCanvasesRoute =
   WebsiteChannelIdCanvasesRouteImport.update({
     id: '/$channelId/canvases',
     path: '/$channelId/canvases',
+    getParentRoute: () => WebsiteRoute,
+  } as any)
+const WebsiteChannelIdArtifactsRoute =
+  WebsiteChannelIdArtifactsRouteImport.update({
+    id: '/$channelId/artifacts',
+    path: '/$channelId/artifacts',
     getParentRoute: () => WebsiteRoute,
   } as any)
 const CodeTasksTaskIdRoute = CodeTasksTaskIdRouteImport.update({
@@ -412,8 +425,10 @@ export interface FileRoutesByFullPath {
   '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
   '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
+  '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
@@ -464,8 +479,10 @@ export interface FileRoutesByTo {
   '/website': typeof WebsiteIndexRoute
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
+  '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents': typeof CodeAgentsIndexRoute
   '/code/inbox': typeof CodeInboxIndexRoute
@@ -524,8 +541,10 @@ export interface FileRoutesById {
   '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
   '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
+  '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
@@ -587,8 +606,10 @@ export interface FileRouteTypes {
     | '/code/inbox/reports'
     | '/code/inbox/runs'
     | '/code/tasks/$taskId'
+    | '/website/$channelId/artifacts'
     | '/website/$channelId/canvases'
     | '/website/$channelId/context'
+    | '/website/$channelId/history'
     | '/website/$channelId/new'
     | '/code/agents/'
     | '/code/inbox/'
@@ -639,8 +660,10 @@ export interface FileRouteTypes {
     | '/website'
     | '/code/inbox/agents'
     | '/code/tasks/$taskId'
+    | '/website/$channelId/artifacts'
     | '/website/$channelId/canvases'
     | '/website/$channelId/context'
+    | '/website/$channelId/history'
     | '/website/$channelId/new'
     | '/code/agents'
     | '/code/inbox'
@@ -698,8 +721,10 @@ export interface FileRouteTypes {
     | '/code/inbox/reports'
     | '/code/inbox/runs'
     | '/code/tasks/$taskId'
+    | '/website/$channelId/artifacts'
     | '/website/$channelId/canvases'
     | '/website/$channelId/context'
+    | '/website/$channelId/history'
     | '/website/$channelId/new'
     | '/code/agents/'
     | '/code/inbox/'
@@ -913,6 +938,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebsiteChannelIdNewRouteImport
       parentRoute: typeof WebsiteRoute
     }
+    '/website/$channelId/history': {
+      id: '/website/$channelId/history'
+      path: '/$channelId/history'
+      fullPath: '/website/$channelId/history'
+      preLoaderRoute: typeof WebsiteChannelIdHistoryRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
     '/website/$channelId/context': {
       id: '/website/$channelId/context'
       path: '/$channelId/context'
@@ -925,6 +957,13 @@ declare module '@tanstack/react-router' {
       path: '/$channelId/canvases'
       fullPath: '/website/$channelId/canvases'
       preLoaderRoute: typeof WebsiteChannelIdCanvasesRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/$channelId/artifacts': {
+      id: '/website/$channelId/artifacts'
+      path: '/$channelId/artifacts'
+      fullPath: '/website/$channelId/artifacts'
+      preLoaderRoute: typeof WebsiteChannelIdArtifactsRouteImport
       parentRoute: typeof WebsiteRoute
     }
     '/code/tasks/$taskId': {
@@ -1175,8 +1214,10 @@ interface WebsiteRouteChildren {
   WebsiteNewRoute: typeof WebsiteNewRoute
   WebsiteSkillsRoute: typeof WebsiteSkillsRoute
   WebsiteIndexRoute: typeof WebsiteIndexRoute
+  WebsiteChannelIdArtifactsRoute: typeof WebsiteChannelIdArtifactsRoute
   WebsiteChannelIdCanvasesRoute: typeof WebsiteChannelIdCanvasesRoute
   WebsiteChannelIdContextRoute: typeof WebsiteChannelIdContextRoute
+  WebsiteChannelIdHistoryRoute: typeof WebsiteChannelIdHistoryRoute
   WebsiteChannelIdNewRoute: typeof WebsiteChannelIdNewRoute
   WebsiteChannelIdIndexRoute: typeof WebsiteChannelIdIndexRoute
   WebsiteChannelIdDashboardsDashboardIdRoute: typeof WebsiteChannelIdDashboardsDashboardIdRoute
@@ -1190,8 +1231,10 @@ const WebsiteRouteChildren: WebsiteRouteChildren = {
   WebsiteNewRoute: WebsiteNewRoute,
   WebsiteSkillsRoute: WebsiteSkillsRoute,
   WebsiteIndexRoute: WebsiteIndexRoute,
+  WebsiteChannelIdArtifactsRoute: WebsiteChannelIdArtifactsRoute,
   WebsiteChannelIdCanvasesRoute: WebsiteChannelIdCanvasesRoute,
   WebsiteChannelIdContextRoute: WebsiteChannelIdContextRoute,
+  WebsiteChannelIdHistoryRoute: WebsiteChannelIdHistoryRoute,
   WebsiteChannelIdNewRoute: WebsiteChannelIdNewRoute,
   WebsiteChannelIdIndexRoute: WebsiteChannelIdIndexRoute,
   WebsiteChannelIdDashboardsDashboardIdRoute:
