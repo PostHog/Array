@@ -111,7 +111,7 @@ overrides:
   #   cd .local-quill && cp posthog-quill-*.tgz posthog-quill-local-$(md5 -q posthog-quill-*.tgz | cut -c1-8).tgz
   # update the line below to the new name, then `pnpm install`.
   # Revert (back to catalog 0.3.0-beta.x) once the ChatX primitives are published to npm.
-  '@posthog/quill': file:./.local-quill/posthog-quill-local-d4357f58.tgz
+  '@posthog/quill': file:./.local-quill/posthog-quill-local-5d2e0b61.tgz
 
 onlyBuiltDependencies:
   - '@parcel/watcher'

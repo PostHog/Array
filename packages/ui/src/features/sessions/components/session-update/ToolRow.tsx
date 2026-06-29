@@ -91,9 +91,11 @@ export function ToolRow({
         defaultOpen={defaultOpen}
         open={open}
         onOpenChange={onOpenChange}
+        className="opacity-50 hover:opacity-100 data-panel-open:bg-fill-selected data-panel-open:opacity-100"
       >
         <ChatMarkerIcon>{iconNode}</ChatMarkerIcon>
-        <ChatMarkerContent className="flex min-w-0 flex-wrap items-center gap-1">
+        <ChatMarkerContent className="flex w-full min-w-0 flex-nowrap items-center gap-1">
+          {/* Example: posthog - insight-create(... */}
           {typeof children === "string" ? (
             <ToolTitle>{children}</ToolTitle>
           ) : (

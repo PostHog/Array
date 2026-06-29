@@ -14,6 +14,7 @@ import type { ToolViewProps } from "@posthog/ui/features/sessions/components/ses
 import type { ToolCall } from "@posthog/ui/features/sessions/types";
 import { Box } from "@radix-ui/themes";
 import type { ConversationItem, TurnContext } from "../buildConversationItems";
+import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
 import {
   MCP_TOOL_BLOCK_COMPONENT,
   type McpToolBlockComponent,
@@ -39,6 +40,7 @@ export function ToolCallBlock({
     | { claudeCode?: { toolName?: string } }
     | undefined;
   const toolName = meta?.claudeCode?.toolName;
+  const chatChrome = useChatThreadChrome();
 
   if (toolName === "EnterPlanMode") {
     return null;
@@ -70,7 +72,9 @@ export function ToolCallBlock({
 
   if (toolName?.startsWith("mcp__")) {
     return (
-      <Box className="pl-3">
+      // New thread pulls the MCP block left to align with the ChatMarker vertical rule; the legacy
+      // thread keeps its original left padding so ConversationView is unchanged when toggled off.
+      <Box className={chatChrome ? "-ml-1" : "pl-3"}>
         {McpToolBlock ? (
           <McpToolBlock {...props} mcpToolName={toolName} />
         ) : (

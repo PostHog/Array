@@ -1,4 +1,4 @@
-import { ChatCircle } from "@phosphor-icons/react";
+import { CaretDown, ChatCircle } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
 import {
@@ -13,12 +13,17 @@ import {
   ChatMessageScrollerItem,
   ChatMessageScrollerProvider,
   ChatMessageScrollerViewport,
+  cn,
   useChatMessageScroller,
   useChatMessageScrollerVisibility,
 } from "@posthog/quill";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ChatMarkdown } from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
+import {
+  ToolGroup,
+  type ToolGroupItem,
+} from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
@@ -43,7 +48,9 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -53,14 +60,140 @@ const DIFFS_HIGHLIGHTER_OPTIONS = {
   theme: { dark: "github-dark" as const, light: "github-light" as const },
 };
 
-/** Plain end-aligned user bubble. Full content — the pinned preview is the separate overlay. */
+/** A row is either a parsed conversation item or a synthesized group of tool calls. */
+type ThreadItem = ConversationItem | ToolGroupItem;
+
+type SessionUpdateItem = Extract<ConversationItem, { type: "session_update" }>;
+
+function isToolCallItem(item: ConversationItem): item is SessionUpdateItem {
+  return (
+    item.type === "session_update" && item.update.sessionUpdate === "tool_call"
+  );
+}
+
+/**
+ * Session-updates that `SessionUpdateView` always renders as `null`. They produce no row, so they
+ * must not break a contiguous tool run.
+ */
+const INVISIBLE_UPDATES = new Set([
+  "user_message_chunk",
+  "tool_call_update",
+  "plan",
+  "available_commands_update",
+  "config_option_update",
+]);
+
+/**
+ * True when an item renders nothing, so it should be transparent to tool grouping. Besides the
+ * always-null updates, this covers text chunks the stream emits with empty/whitespace or non-text
+ * content (a stray empty `agent_message_chunk` between two tool calls is hidden via `empty:hidden`
+ * but would otherwise split the run into two ungrouped markers).
+ */
+function isInvisibleItem(item: ConversationItem): boolean {
+  if (item.type !== "session_update") return false;
+  const update = item.update;
+  if (INVISIBLE_UPDATES.has(update.sessionUpdate)) return true;
+  if (
+    update.sessionUpdate === "agent_message_chunk" ||
+    update.sessionUpdate === "agent_thought_chunk"
+  ) {
+    return update.content.type !== "text" || update.content.text.trim() === "";
+  }
+  return false;
+}
+
+/**
+ * Collapse each contiguous run of ≥2 tool-call updates into a single `ToolGroupItem`. A run is
+ * broken by any *visible* non-tool item (prose, thought, status) so groups follow reading order;
+ * invisible updates (see {@link INVISIBLE_UPDATES}) are transparent and don't split a run. A lone
+ * tool call passes through untouched — it stays a single marker, matching the legacy thread.
+ */
+function groupToolRuns(items: ConversationItem[]): ThreadItem[] {
+  const out: ThreadItem[] = [];
+  // The buffer holds the active run: tool items plus any invisible items interleaved with them.
+  let buffer: ConversationItem[] = [];
+  let toolCount = 0;
+
+  const flush = () => {
+    if (toolCount >= 2) {
+      const tools = buffer.filter(isToolCallItem);
+      out.push({ type: "tool_group", id: `tool-group-${tools[0].id}`, tools });
+    } else {
+      out.push(...buffer);
+    }
+    buffer = [];
+    toolCount = 0;
+  };
+
+  for (const item of items) {
+    if (isToolCallItem(item)) {
+      buffer.push(item);
+      toolCount++;
+    } else if (isInvisibleItem(item)) {
+      // Don't break the run; carry it along (it renders nothing wherever it lands).
+      buffer.push(item);
+    } else {
+      flush();
+      out.push(item);
+    }
+  }
+  flush();
+  return out;
+}
+
+/**
+ * End-aligned user bubble. The text is clamped to two lines (`max-height: 2lh` + `overflow-hidden`,
+ * which — unlike `-webkit-line-clamp` — reliably clamps markdown's block `<p>` children); a "Show
+ * more" toggle appears only when the content actually exceeds the clamp. Overflow can't be known
+ * from character count (it depends on wrapping width), so we measure `scrollHeight` against the
+ * clamped `clientHeight` — which holds even while clamped — and re-measure on resize.
+ */
 function UserBubble({ content }: { content: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
+
+  // Only meaningful while collapsed: expanding removes the clamp so scrollHeight === clientHeight.
+  // We keep the prior result when expanded so the "Show less" trigger stays put.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measure when the message text changes.
+  useLayoutEffect(() => {
+    if (isExpanded) return;
+    const el = textRef.current;
+    if (!el) return;
+    const measure = () =>
+      setIsOverflowing(el.scrollHeight - el.clientHeight > 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [content, isExpanded]);
+
   return (
     <ChatMessage align="end">
       <ChatMessageContent>
         <ChatBubble align="end" variant="default">
           <ChatBubbleContent>
-            <ChatMarkdown content={content} />
+            <div
+              ref={textRef}
+              className={cn(
+                "[&_p]:my-0",
+                !isExpanded && "max-h-[2lh] overflow-hidden",
+              )}
+            >
+              <ChatMarkdown content={content} />
+            </div>
+            {isOverflowing && (
+              <button
+                type="button"
+                onClick={() => setIsExpanded((v) => !v)}
+                className="mt-1 flex items-center gap-0.5 text-muted-foreground text-sm hover:text-foreground"
+              >
+                Show {isExpanded ? "less" : "more"}
+                <CaretDown
+                  className={cn("size-3", isExpanded && "rotate-180")}
+                />
+              </button>
+            )}
           </ChatBubbleContent>
         </ChatBubble>
       </ChatMessageContent>
@@ -152,7 +285,7 @@ const ThreadRow = memo(function ThreadRow({
   item,
   renderItem,
 }: {
-  item: ConversationItem;
+  item: ThreadItem;
   renderItem: (item: ConversationItem) => ReactNode;
 }) {
   return (
@@ -162,7 +295,9 @@ const ThreadRow = memo(function ThreadRow({
       className="mx-auto w-full px-2 empty:hidden"
       style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
-      {item.type === "user_message" ? (
+      {item.type === "tool_group" ? (
+        <ToolGroup tools={item.tools} />
+      ) : item.type === "user_message" ? (
         <UserBubble content={item.content} />
       ) : (
         renderItem(item)
@@ -174,17 +309,19 @@ const ThreadRow = memo(function ThreadRow({
 /** The scroll body, under the Provider so the overlay + scroll-button hooks can read engine state. */
 function ThreadScrollBody({
   items,
+  rows,
   renderItem,
 }: {
   items: ConversationItem[];
+  rows: ThreadItem[];
   renderItem: (item: ConversationItem) => ReactNode;
 }) {
   return (
     <ChatMessageScroller>
       <StickyHeaderOverlay items={items} />
       <ChatMessageScrollerViewport>
-        <ChatMessageScrollerContent className="py-4">
-          {items.map((item) => (
+        <ChatMessageScrollerContent className="py-4" density="default">
+          {rows.map((item) => (
             <ThreadRow key={item.id} item={item} renderItem={renderItem} />
           ))}
         </ChatMessageScrollerContent>
@@ -237,6 +374,8 @@ export function ChatThread({
       mergeConversationItems({ conversationItems, optimisticItems, isCloud }),
     [conversationItems, optimisticItems, isCloud],
   );
+
+  const rows = useMemo<ThreadItem[]>(() => groupToolRuns(items), [items]);
 
   const renderItem = useCallback(
     (item: ConversationItem) => {
@@ -310,7 +449,11 @@ export function ChatThread({
             defaultScrollPosition="end"
             scrollPreviousItemPeek={64}
           >
-            <ThreadScrollBody items={items} renderItem={renderItem} />
+            <ThreadScrollBody
+              items={items}
+              rows={rows}
+              renderItem={renderItem}
+            />
           </ChatMessageScrollerProvider>
         </ChatThreadChromeProvider>
       </SessionTaskIdProvider>
