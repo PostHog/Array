@@ -1,13 +1,12 @@
-import { CaretRightIcon, HashIcon } from "@phosphor-icons/react";
+import { CaretRightIcon } from "@phosphor-icons/react";
 import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
-import { ChannelTabs } from "@posthog/ui/features/canvas/components/ChannelTabs";
+import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
-import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
@@ -32,8 +31,6 @@ type HistoryItem = {
 // just the composer, with this view holding the running list of work.
 export function WebsiteChannelHistory({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
-  const { channels } = useChannels();
-  const channelName = channels.find((c) => c.id === channelId)?.name;
 
   useEffect(() => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -44,26 +41,7 @@ export function WebsiteChannelHistory({ channelId }: { channelId: string }) {
   }, [channelId]);
 
   useSetHeaderContent(
-    useMemo(
-      () => (
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex min-w-0 items-center gap-1">
-            <HashIcon
-              size={12}
-              className="mt-px shrink-0 text-muted-foreground/80"
-            />
-            <Text
-              className="min-w-0 truncate font-medium text-[13px]"
-              title={channelName}
-            >
-              {channelName ?? "Channel"}
-            </Text>
-          </div>
-          <ChannelTabs channelId={channelId} />
-        </div>
-      ),
-      [channelId, channelName],
-    ),
+    useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
   );
 
   const { dashboards } = useDashboards(channelId);

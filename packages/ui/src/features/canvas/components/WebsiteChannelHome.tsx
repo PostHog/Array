@@ -1,12 +1,11 @@
-import { HashIcon } from "@phosphor-icons/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
+import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import {
   ChannelHomeComposer,
   type ChannelHomeComposerHandle,
 } from "@posthog/ui/features/canvas/components/ChannelHomeComposer";
-import { ChannelTabs } from "@posthog/ui/features/canvas/components/ChannelTabs";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
@@ -32,28 +31,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const { data: instructions } = useFolderInstructions(channelId);
   const channelContext = instructions?.content;
 
-  // "# channel" + the channel tabs (Artifacts / Recents / CONTEXT.md) + Pinned.
   useSetHeaderContent(
-    useMemo(
-      () => (
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex min-w-0 items-center gap-1">
-            <HashIcon
-              size={12}
-              className="mt-px shrink-0 text-muted-foreground/80"
-            />
-            <Text
-              className="min-w-0 truncate font-medium text-[13px]"
-              title={channelName}
-            >
-              {channelName ?? "Channel"}
-            </Text>
-          </div>
-          <ChannelTabs channelId={channelId} />
-        </div>
-      ),
-      [channelId, channelName],
-    ),
+    useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
   );
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
