@@ -250,10 +250,12 @@ function FreeformEditControls({
 // renamable and a tier icon (dashboard / web-analytics / freeform app).
 function CanvasBreadcrumb({
   channelName,
+  channelId,
   dashboardId,
   trailing,
 }: {
   channelName: string;
+  channelId: string;
   dashboardId: string;
   trailing?: ReactNode;
 }) {
@@ -264,6 +266,7 @@ function CanvasBreadcrumb({
   return (
     <ChannelBreadcrumb
       channelName={channelName}
+      channelId={channelId}
       leafIcon={iconForTemplate(dashboard?.templateId ?? "", {
         size: 12,
         // No color here: the breadcrumb's leaf <span> owns the icon color so it
@@ -337,6 +340,7 @@ export function WebsiteLayout() {
           {isDashboardDetail && dashboardId ? (
             <CanvasBreadcrumb
               channelName={channelName}
+              channelId={channelId}
               dashboardId={dashboardId}
               trailing={
                 <FreeformEditControls
@@ -348,6 +352,7 @@ export function WebsiteLayout() {
           ) : (
             <ChannelBreadcrumb
               channelName={channelName}
+              channelId={channelId}
               leafLabel="Canvases"
               trailing={<NewCanvasMenu channelId={channelId} />}
             />

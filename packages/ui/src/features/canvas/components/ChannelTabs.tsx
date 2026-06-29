@@ -3,6 +3,7 @@ import { ChannelPinnedMenu } from "@posthog/ui/features/canvas/components/Channe
 import { Link, useRouterState } from "@tanstack/react-router";
 
 const TABS = [
+  { label: "Inbox", to: "/website/$channelId/inbox" },
   { label: "Artifacts", to: "/website/$channelId/artifacts" },
   { label: "Recents", to: "/website/$channelId/history" },
   { label: "CONTEXT.md", to: "/website/$channelId/context" },

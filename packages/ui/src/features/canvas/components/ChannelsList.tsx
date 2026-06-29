@@ -154,23 +154,6 @@ function useChannelActions(channel: Channel): {
       },
     },
     {
-      key: "edit-context",
-      label: "Edit CONTEXT.md",
-      icon: <FileTextIcon size={14} />,
-      separatorBefore: true,
-      onSelect: () => {
-        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-          action_type: "edit_context_open",
-          surface: "sidebar",
-          channel_id: channel.id,
-        });
-        navigate({
-          to: "/website/$channelId/context",
-          params: { channelId: channel.id },
-        });
-      },
-    },
-    {
       key: "rename",
       label: "Rename channel…",
       icon: <PencilSimpleIcon size={14} />,
