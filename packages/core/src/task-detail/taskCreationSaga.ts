@@ -312,11 +312,15 @@ export class TaskCreationSaga extends Saga<
               pendingUserMessage,
             );
           }
+          // A cloud run always needs an explicit runtime adapter — the API rejects
+          // `initial_permission_mode` unless `runtime_adapter` is set. Callers that don't pick one
+          // (e.g. canvas generation) default to claude, matching the local-connect default below.
+          const cloudAdapter = input.adapter ?? "claude";
           const taskRun = await this.deps.posthogClient.createTaskRun(task.id, {
             environment: "cloud",
             mode: "interactive",
             branch,
-            adapter: input.adapter,
+            adapter: cloudAdapter,
             model: input.model,
             reasoningLevel: input.reasoningLevel,
             sandboxEnvironmentId: input.sandboxEnvironmentId,
@@ -324,10 +328,9 @@ export class TaskCreationSaga extends Saga<
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
             homeQuickAction: input.homeQuickActionLabel,
-            initialPermissionMode: input.adapter
-              ? (input.executionMode ??
-                (input.adapter === "codex" ? "auto" : "plan"))
-              : input.executionMode,
+            initialPermissionMode:
+              input.executionMode ??
+              (cloudAdapter === "codex" ? "auto" : "plan"),
           });
           if (!taskRun?.id) {
             throw new Error("Failed to create cloud run");
