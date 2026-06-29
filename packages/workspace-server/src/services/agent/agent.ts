@@ -262,6 +262,12 @@ interface SessionConfig {
   /** The agent's session ID (for resume - SDK session ID for Claude, Codex's session ID for Codex) */
   sessionId?: string;
   adapter?: "claude" | "codex";
+  /**
+   * Resolved `codex-app-server` flag for the current user. When true and the
+   * adapter is codex, the agent uses the native app-server sub-adapter; when
+   * false/undefined it uses codex-acp. Ignored by the Claude adapter.
+   */
+  useCodexAppServer?: boolean;
   /** Permission mode to use for the session */
   permissionMode?: string;
   /** Custom instructions injected into the system prompt */
@@ -675,6 +681,7 @@ If a repository IS genuinely required, attach one in this priority order:
       credentials,
       logUrl,
       adapter,
+      useCodexAppServer,
       permissionMode,
       customInstructions,
       systemPromptOverride,
@@ -787,6 +794,7 @@ If a repository IS genuinely required, attach one in this priority order:
 
       const acpConnection = await agent.run(taskId, taskRunId, {
         adapter,
+        useCodexAppServer,
         gatewayUrl: proxyUrl,
         codexBinaryPath:
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
@@ -1901,6 +1909,8 @@ For git operations while detached:
       logUrl: "logUrl" in params ? params.logUrl : undefined,
       sessionId: "sessionId" in params ? params.sessionId : undefined,
       adapter: "adapter" in params ? params.adapter : undefined,
+      useCodexAppServer:
+        "useCodexAppServer" in params ? params.useCodexAppServer : undefined,
       permissionMode:
         "permissionMode" in params ? params.permissionMode : undefined,
       customInstructions:

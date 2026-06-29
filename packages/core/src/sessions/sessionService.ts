@@ -252,6 +252,13 @@ export interface SessionServiceHelpers {
   ) => Promise<string[]>;
 }
 
+/**
+ * PostHog flag gating the native codex app-server sub-adapter. When enabled for
+ * the user, a codex session uses the app-server adapter instead of codex-acp.
+ * Resolved at session start and passed to the agent as `useCodexAppServer`.
+ */
+export const CODEX_APP_SERVER_FLAG = "codex-app-server";
+
 export interface SessionServiceDeps {
   trpc: SessionTrpc;
   store: ISessionStore;
@@ -267,6 +274,12 @@ export interface SessionServiceDeps {
     info: (msg: any, opts?: any) => unknown;
   };
   track: (event: string, props?: Record<string, unknown>) => void;
+  /**
+   * Evaluates a PostHog feature flag for the current user. Used to resolve
+   * {@link CODEX_APP_SERVER_FLAG} at session start. Optional so non-desktop
+   * hosts (stubbed web, tests) can omit it — absent is treated as "flag off".
+   */
+  featureFlags?: { isEnabled(flagKey: string): boolean };
   buildPermissionToolMetadata: (...args: any[]) => any;
   notifyPermissionRequest: (...args: any[]) => any;
   notifyPromptComplete: (...args: any[]) => any;
@@ -954,6 +967,7 @@ export class SessionService {
         logUrl,
         sessionId,
         adapter: resolvedAdapter,
+        useCodexAppServer: this.resolveUseCodexAppServer(resolvedAdapter),
         permissionMode: persistedMode,
         model: persistedModel,
         customInstructions: customInstructions || undefined,
@@ -1245,6 +1259,26 @@ export class SessionService {
     );
   }
 
+  /**
+   * Resolve the `codex-app-server` flag for a session. Only meaningful for the
+   * codex adapter (Claude ignores it), so returns undefined otherwise.
+   *
+   * One-way opt-in: when the flag is ON we force the app-server adapter (`true`).
+   * When off/unloaded (or no flags service on non-desktop hosts) we return
+   * `undefined` rather than `false`, so the agent falls through to its env
+   * override (`POSTHOG_CODEX_USE_APP_SERVER`) and then the codex-acp default —
+   * hard-passing `false` would shadow that env, since the host value has the
+   * highest precedence in resolveUseCodexAppServer.
+   */
+  private resolveUseCodexAppServer(
+    adapter: "claude" | "codex" | undefined,
+  ): boolean | undefined {
+    if (adapter !== "codex") return undefined;
+    return this.d.featureFlags?.isEnabled(CODEX_APP_SERVER_FLAG)
+      ? true
+      : undefined;
+  }
+
   private async createNewLocalSession(
     taskId: string,
     taskTitle: string,
@@ -1277,6 +1311,7 @@ export class SessionService {
       projectId: auth.projectId,
       permissionMode: executionMode,
       adapter,
+      useCodexAppServer: this.resolveUseCodexAppServer(adapter),
       customInstructions: startCustomInstructions || undefined,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)

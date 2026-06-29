@@ -28,11 +28,11 @@ export type AcpConnectionConfig = {
   codexOptions?: CodexProcessOptions;
   allowedModelIds?: Set<string>;
   /**
-   * Feature-flag lever for the codex sub-adapter, passed by the host from a
-   * PostHog flag (gradual rollout / kill-switch). `true` => native app-server,
-   * `false` => codex-acp. When undefined, falls back to env overrides then the
-   * bundled-binary default (app-server). Lets app-server run alongside codex-acp
-   * under controlled rollout without a code change.
+   * Feature-flag lever for the codex sub-adapter, passed by the host from the
+   * `codex-app-server` PostHog flag (gradual rollout / kill-switch). `true` =>
+   * native app-server, `false` => codex-acp. When undefined, falls back to env
+   * overrides then the default (codex-acp). Lets app-server roll out alongside
+   * codex-acp without a code change.
    */
   useCodexAppServer?: boolean;
   /** Callback invoked when the agent calls the create_output tool for structured output */
@@ -80,12 +80,12 @@ function resolveEnricherApiConfig(
 
 /**
  * Resolves which codex sub-adapter to use. Precedence: host flag
- * (`config.useCodexAppServer`, from a PostHog flag) > env overrides
- * (`POSTHOG_CODEX_USE_APP_SERVER=1` / `POSTHOG_CODEX_USE_ACP=1`) > bundled-binary
- * default (app-server). The host flag is the rollout / kill-switch lever that
- * lets app-server run alongside codex-acp without a code change. To run a gradual
- * opt-in instead (default codex-acp), the host passes `useCodexAppServer: false`
- * by default and `true` for the enabled cohort.
+ * (`config.useCodexAppServer`, from the `codex-app-server` PostHog flag) > env
+ * overrides (`POSTHOG_CODEX_USE_APP_SERVER=1` / `POSTHOG_CODEX_USE_ACP=1`) >
+ * default (codex-acp, the proven fallback). The native app-server is opt-in:
+ * the host turns it on per-user via the flag (cloud passes the resolved env;
+ * desktop passes `useCodexAppServer`), so it can roll out alongside codex-acp
+ * without a code change and be killed instantly by flipping the flag off.
  */
 export function resolveUseCodexAppServer(config: AcpConnectionConfig): boolean {
   if (typeof config.useCodexAppServer === "boolean") {
@@ -93,7 +93,7 @@ export function resolveUseCodexAppServer(config: AcpConnectionConfig): boolean {
   }
   if (process.env.POSTHOG_CODEX_USE_APP_SERVER === "1") return true;
   if (process.env.POSTHOG_CODEX_USE_ACP === "1") return false;
-  return true;
+  return false;
 }
 
 function createClaudeConnection(config: AcpConnectionConfig): AcpConnection {
@@ -238,7 +238,16 @@ function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
 
     // Use the native app-server when its binary is bundled AND the host (flag)
     // / env selects it. See resolveUseCodexAppServer for precedence.
-    if (nativeBinary && resolveUseCodexAppServer(config)) {
+    const useAppServer = !!nativeBinary && resolveUseCodexAppServer(config);
+    logger.info(
+      `Codex sub-adapter selected: ${useAppServer ? "app-server (native codex)" : "codex-acp"}`,
+      {
+        useAppServer,
+        nativeBinaryFound: !!nativeBinary,
+        hostFlag: config.useCodexAppServer,
+      },
+    );
+    if (useAppServer) {
       agent = new CodexAppServerAgent(client, {
         processOptions: {
           binaryPath: nativeBinary,

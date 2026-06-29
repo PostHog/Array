@@ -7,7 +7,8 @@ describe("resolveUseCodexAppServer", () => {
     acp: process.env.POSTHOG_CODEX_USE_ACP,
   };
   afterEach(() => {
-    if (saved.app === undefined) delete process.env.POSTHOG_CODEX_USE_APP_SERVER;
+    if (saved.app === undefined)
+      delete process.env.POSTHOG_CODEX_USE_APP_SERVER;
     else process.env.POSTHOG_CODEX_USE_APP_SERVER = saved.app;
     if (saved.acp === undefined) delete process.env.POSTHOG_CODEX_USE_ACP;
     else process.env.POSTHOG_CODEX_USE_ACP = saved.acp;
@@ -32,9 +33,15 @@ describe("resolveUseCodexAppServer", () => {
     expect(resolveUseCodexAppServer({})).toBe(false);
   });
 
-  it("defaults to app-server when nothing is set", () => {
+  it("defaults to codex-acp when nothing is set (app-server is opt-in)", () => {
     delete process.env.POSTHOG_CODEX_USE_APP_SERVER;
     delete process.env.POSTHOG_CODEX_USE_ACP;
-    expect(resolveUseCodexAppServer({})).toBe(true);
+    expect(resolveUseCodexAppServer({})).toBe(false);
+  });
+
+  it("host flag false beats POSTHOG_CODEX_USE_APP_SERVER=1", () => {
+    process.env.POSTHOG_CODEX_USE_APP_SERVER = "1";
+    delete process.env.POSTHOG_CODEX_USE_ACP;
+    expect(resolveUseCodexAppServer({ useCodexAppServer: false })).toBe(false);
   });
 });
