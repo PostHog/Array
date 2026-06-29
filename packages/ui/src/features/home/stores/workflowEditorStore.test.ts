@@ -117,6 +117,15 @@ describe("workflowEditorStore", () => {
       expect(store().draft?.bindings.working[0].label).toBe("Review");
       expect(store().dirty).toBe(false);
     });
+
+    it("toggles the auto flag and marks dirty", () => {
+      store().beginEdit(makeConfig({ ci_failing: [makeAction({ id: "a" })] }));
+      store().updateAction("ci_failing", "a", { auto: true });
+      expect(store().draft?.bindings.ci_failing[0].auto).toBe(true);
+      expect(store().dirty).toBe(true);
+      store().updateAction("ci_failing", "a", { auto: false });
+      expect(store().draft?.bindings.ci_failing[0].auto).toBe(false);
+    });
   });
 
   describe("removeAction", () => {

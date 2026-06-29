@@ -61,6 +61,10 @@ export const workflowAction = z
     prompt: z.string().min(1).max(8_000),
     adapter: z.enum(["claude", "codex"]).optional(),
     model: z.string().min(1).optional(),
+    // When true, the server-side classifier auto-runs this action as a cloud
+    // task whenever a workstream's primary situation matches the binding (gated
+    // so it never piles onto a workstream that already has a running task).
+    auto: z.boolean().optional(),
   })
   .strict();
 export type WorkflowAction = z.infer<typeof workflowAction>;
