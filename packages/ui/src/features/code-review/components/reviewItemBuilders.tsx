@@ -20,7 +20,7 @@ interface BuildPatchReviewItemsArgs {
   collapsedFiles: Set<string>;
   toggleFile: (key: string) => void;
   openFile: (taskId: string, path: string, preview: boolean) => void;
-  onDiscardFile?: (filePath: string) => void;
+  onDiscardFile?: (key: string) => void;
   onStageFile?: (key: string) => void;
   prUrl: string | null;
   commentThreads?: Map<number, PrCommentThread>;
@@ -84,7 +84,7 @@ interface BuildUntrackedReviewItemsArgs {
   diffOptions: DiffOptions;
   collapsedFiles: Set<string>;
   toggleFile: (key: string) => void;
-  onDiscardFile?: (filePath: string) => void;
+  onDiscardFile?: (key: string) => void;
   onStageFile?: (key: string) => void;
 }
 

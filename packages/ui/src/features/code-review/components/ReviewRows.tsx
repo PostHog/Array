@@ -27,7 +27,7 @@ interface PatchRowProps {
   skipExpansion: boolean;
   toggleFile: (key: string) => void;
   openFile: (taskId: string, path: string, preview: boolean) => void;
-  onDiscardFile?: (filePath: string) => void;
+  onDiscardFile?: (key: string) => void;
   onStageFile?: (key: string) => void;
   staged?: boolean;
   prUrl: string | null;
@@ -60,8 +60,8 @@ export const PatchRow = memo(function PatchRow({
     [openFile, taskId, repoPath, filePath],
   );
   const onDiscard = useMemo(
-    () => (onDiscardFile ? () => onDiscardFile(filePath) : undefined),
-    [onDiscardFile, filePath],
+    () => (onDiscardFile ? () => onDiscardFile(itemKey) : undefined),
+    [onDiscardFile, itemKey],
   );
   const onStage = useMemo(
     () => (onStageFile ? () => onStageFile(itemKey) : undefined),
@@ -107,7 +107,7 @@ interface UntrackedRowProps {
   diffOptions: DiffOptions;
   collapsed: boolean;
   toggleFile: (key: string) => void;
-  onDiscardFile?: (filePath: string) => void;
+  onDiscardFile?: (key: string) => void;
   onStageFile?: (key: string) => void;
 }
 
@@ -127,8 +127,8 @@ export const UntrackedRow = memo(function UntrackedRow({
     [toggleFile, itemKey],
   );
   const onDiscard = useMemo(
-    () => (onDiscardFile ? () => onDiscardFile(file.path) : undefined),
-    [onDiscardFile, file.path],
+    () => (onDiscardFile ? () => onDiscardFile(itemKey) : undefined),
+    [onDiscardFile, itemKey],
   );
   const onStage = useMemo(
     () => (onStageFile ? () => onStageFile(itemKey) : undefined),

@@ -268,13 +268,6 @@ function LocalReviewContent({
 
   const discardFile = useDiscardFile(repoPath);
   const stageToggle = useStageToggle(repoPath);
-  const filesByPath = useMemo(() => {
-    const map = new Map<string, ChangedFile>();
-    for (const file of changedFiles) {
-      if (!map.has(file.path)) map.set(file.path, file);
-    }
-    return map;
-  }, [changedFiles]);
   const filesByKey = useMemo(() => {
     const map = new Map<string, ChangedFile>();
     for (const file of changedFiles) {
@@ -283,13 +276,13 @@ function LocalReviewContent({
     return map;
   }, [changedFiles]);
   const onDiscardFile = useCallback(
-    (filePath: string) => {
-      const file = filesByPath.get(filePath);
+    (key: string) => {
+      const file = filesByKey.get(key);
       if (!file) return;
-      const fileName = filePath.split("/").pop() ?? filePath;
+      const fileName = file.path.split("/").pop() ?? file.path;
       void discardFile(file, fileName);
     },
-    [filesByPath, discardFile],
+    [filesByKey, discardFile],
   );
   const onStageFile = useCallback(
     (key: string) => {
