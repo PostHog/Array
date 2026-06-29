@@ -31,6 +31,7 @@ import { useScoutChatTask } from "../hooks/useScoutChatTask";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
+import { FleetMemoryCallout } from "./FleetMemoryCallout";
 import { ScoutAlphaBanner } from "./ScoutAlphaBanner";
 import { ScoutHelperSkillLinks } from "./ScoutHelperSkillLinks";
 import { ScoutRowCard } from "./ScoutRowCard";
@@ -226,6 +227,9 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
           icon={PlusIcon}
         />
       </Flex>
+
+      {/* Fleet memory: renders only once scouts have written scratchpad notes. */}
+      <FleetMemoryCallout />
 
       {/* Bounded to roughly 10 rows; larger fleets scroll within the section. */}
       <div className="max-h-[710px] overflow-y-auto">
