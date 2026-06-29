@@ -14,6 +14,7 @@ import {
 import type { ChangedFile, Task } from "@posthog/shared/domain-types";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { FileIcon } from "../../primitives/FileIcon";
+import { Tooltip } from "../../primitives/Tooltip";
 import { useThemeStore } from "../../shell/themeStore";
 import { useDiffViewerStore } from "../code-editor/diffViewerStore";
 import { computeDiffStats } from "../git-interaction/utils/diffStats";
@@ -215,29 +216,32 @@ export function DiffFileHeader({
         (onDiscard || onOpenFile) && (
           <span className="ml-auto inline-flex items-center gap-[2px]">
             {onDiscard && (
-              <button
-                type="button"
-                title="Discard changes"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDiscard();
-                }}
-                className="inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
-              >
-                <ArrowCounterClockwise size={14} />
-              </button>
+              <Tooltip content="Discard changes">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDiscard();
+                  }}
+                  className="inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
+                >
+                  <ArrowCounterClockwise size={14} />
+                </button>
+              </Tooltip>
             )}
             {onOpenFile && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenFile();
-                }}
-                className="inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
-              >
-                <ArrowSquareOut size={14} />
-              </button>
+              <Tooltip content="Open file">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenFile();
+                  }}
+                  className="inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
+                >
+                  <ArrowSquareOut size={14} />
+                </button>
+              </Tooltip>
             )}
           </span>
         )
