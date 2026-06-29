@@ -1,4 +1,4 @@
-import { KeyboardShortcutsList } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
+import { KeyboardShortcutsList } from "@posthog/ui/primitives/KeyboardShortcutsSheet";
 
 export function ShortcutsSettings() {
   return <KeyboardShortcutsList />;
