@@ -20,7 +20,7 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import claudeMark from "../../../assets/services/claude.svg";
 import { toast } from "../../../primitives/toast";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
@@ -267,6 +267,14 @@ interface NewTaskSuggestionsProps {
 }
 
 /**
+ * Repos whose "Claude Code sessions shown" event has already fired this app
+ * session. Module-level so it outlives NewTaskSuggestions remounts (navigating
+ * away and back), keeping the funnel top at one impression per repo per session
+ * rather than one per mount.
+ */
+const shownRepos = new Set<string>();
+
+/**
  * The new-task suggestions panel with the Claude Code resume card injected as
  * the first item, so CLI sessions live inside the single "Suggestions" list
  * rather than as a separate section. Clicking the card imports its transcript
@@ -284,7 +292,6 @@ export function NewTaskSuggestions({
   const taskService = useService<TaskService>(TASK_SERVICE);
   const { invalidateTasks } = useCreateTask();
   const [runningId, setRunningId] = useState<string | null>(null);
-  const shownForRepoRef = useRef<string | null>(null);
 
   // Hide sessions already imported and unchanged — they're a task now. One
   // reappears only when its CLI transcript changes again (status "updated").
@@ -298,10 +305,10 @@ export function NewTaskSuggestions({
   // The top of the import funnel: fire once per repo when resumable sessions
   // first surface, so we can measure how many of these lead-ins convert.
   useEffect(() => {
-    if (sessions.length === 0 || shownForRepoRef.current === repoPath) {
+    if (!repoPath || sessions.length === 0 || shownRepos.has(repoPath)) {
       return;
     }
-    shownForRepoRef.current = repoPath;
+    shownRepos.add(repoPath);
     track(ANALYTICS_EVENTS.CLAUDE_SESSIONS_SHOWN, {
       sessions_count: sessions.length,
     });

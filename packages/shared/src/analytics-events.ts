@@ -922,7 +922,7 @@ export type ClaudeSessionImportSource = "inline_card" | "picker_dialog";
  * the suggestions, so an import is only ever started from a "new" or "updated"
  * one; the wider union mirrors the domain status field.
  */
-type ClaudeSessionImportStatus = "new" | "imported" | "updated";
+export type ClaudeSessionImportStatus = "new" | "imported" | "updated";
 
 export interface ClaudeSessionsShownProperties {
   /** Resumable Claude Code CLI sessions surfaced for the repo. */
