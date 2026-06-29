@@ -438,14 +438,18 @@ const ComboboxItem = React.forwardRef<
         >
           <span className="combobox-item-content">
             {icon && <span className="combobox-item-icon">{icon}</span>}
-            <span className="combobox-item-text-group">
+            {description ? (
+              <span className="combobox-item-text-group">
+                <span ref={textRef} className="combobox-item-text">
+                  {children}
+                </span>
+                <span className="combobox-item-description">{description}</span>
+              </span>
+            ) : (
               <span ref={textRef} className="combobox-item-text">
                 {children}
               </span>
-              {description != null && (
-                <span className="combobox-item-description">{description}</span>
-              )}
-            </span>
+            )}
           </span>
           <span className="combobox-item-indicator">
             {isSelected && <Check weight="bold" size={14} />}

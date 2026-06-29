@@ -22,6 +22,10 @@ interface Props {
   indexInSituation: number;
 }
 
+// Search across both the skill name and its description.
+const skillSearchValue = (s: { name: string; description: string }) =>
+  `${s.name} ${s.description}`;
+
 export function ActionEditorPanel({
   situationId,
   action,
@@ -113,7 +117,7 @@ export function ActionEditorPanel({
               </Combobox.Trigger>
               <Combobox.Content
                 items={skills}
-                getValue={(s) => `${s.name} ${s.description}`}
+                getValue={skillSearchValue}
                 className="w-(--radix-popover-trigger-width)"
               >
                 {({ filtered, hasMore, moreCount }) => (
