@@ -7,7 +7,7 @@ import {
 import { AppServerClient } from "./app-server-client";
 
 interface RpcMessage {
-  id?: number;
+  id?: number | string;
   method?: string;
   params?: unknown;
   result?: unknown;
@@ -138,6 +138,30 @@ describe("AppServerClient", () => {
 
     const response = await server.readMessage();
     expect(response.id).toBe(99);
+    expect(response.result).toEqual({ decision: "approved" });
+    await client.close();
+  });
+
+  it("answers a server request with a STRING id (RequestId is string|number)", async () => {
+    const streams = createBidirectionalStreams();
+    const onRequest = vi.fn(async () => ({ decision: "approved" }));
+    const client = new AppServerClient(streams.client, {
+      logger: silentLogger,
+      onRequest,
+    });
+    const server = makeFakeServer(streams.agent);
+
+    await server.send({
+      id: "req-abc",
+      method: "item/commandExecution/requestApproval",
+      params: {},
+    });
+
+    const response = await server.readMessage();
+    // Routed to onRequest (not silently dropped as a notification) and the
+    // exact string id is echoed back, so the server can correlate the reply.
+    expect(onRequest).toHaveBeenCalledTimes(1);
+    expect(response.id).toBe("req-abc");
     expect(response.result).toEqual({ decision: "approved" });
     await client.close();
   });

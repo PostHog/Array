@@ -19,13 +19,17 @@ describe("buildAppServerArgs", () => {
     );
   });
 
-  it("passes guidance via developer_instructions, never the replacing key", () => {
+  it("does not set instructions at spawn (developer_instructions are per-thread)", () => {
     const args = buildAppServerArgs({
       binaryPath: "/bundle/codex",
       developerInstructions: "Follow PostHog rules.",
     });
 
-    expect(args).toContain('developer_instructions="Follow PostHog rules."');
+    // Guidance is injected per-thread in thread/start (combined with the host's
+    // task system prompt), so the spawn args carry no instructions of any kind.
+    expect(args.some((arg) => arg.startsWith("developer_instructions="))).toBe(
+      false,
+    );
     expect(args.some((arg) => arg.startsWith("instructions="))).toBe(false);
   });
 });

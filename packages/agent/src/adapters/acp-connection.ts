@@ -27,6 +27,14 @@ export type AcpConnectionConfig = {
   processCallbacks?: ProcessSpawnedCallback;
   codexOptions?: CodexProcessOptions;
   allowedModelIds?: Set<string>;
+  /**
+   * Feature-flag lever for the codex sub-adapter, passed by the host from a
+   * PostHog flag (gradual rollout / kill-switch). `true` => native app-server,
+   * `false` => codex-acp. When undefined, falls back to env overrides then the
+   * bundled-binary default (app-server). Lets app-server run alongside codex-acp
+   * under controlled rollout without a code change.
+   */
+  useCodexAppServer?: boolean;
   /** Callback invoked when the agent calls the create_output tool for structured output */
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
   /** PostHog API config; when set, enables file-read enrichment unless disabled. */
@@ -68,6 +76,24 @@ function resolveEnricherApiConfig(
 ): PostHogAPIConfig | undefined {
   const enabled = !!config.posthogApiConfig && config.enricherEnabled !== false;
   return enabled ? config.posthogApiConfig : undefined;
+}
+
+/**
+ * Resolves which codex sub-adapter to use. Precedence: host flag
+ * (`config.useCodexAppServer`, from a PostHog flag) > env overrides
+ * (`POSTHOG_CODEX_USE_APP_SERVER=1` / `POSTHOG_CODEX_USE_ACP=1`) > bundled-binary
+ * default (app-server). The host flag is the rollout / kill-switch lever that
+ * lets app-server run alongside codex-acp without a code change. To run a gradual
+ * opt-in instead (default codex-acp), the host passes `useCodexAppServer: false`
+ * by default and `true` for the enabled cohort.
+ */
+export function resolveUseCodexAppServer(config: AcpConnectionConfig): boolean {
+  if (typeof config.useCodexAppServer === "boolean") {
+    return config.useCodexAppServer;
+  }
+  if (process.env.POSTHOG_CODEX_USE_APP_SERVER === "1") return true;
+  if (process.env.POSTHOG_CODEX_USE_ACP === "1") return false;
+  return true;
 }
 
 function createClaudeConnection(config: AcpConnectionConfig): AcpConnection {
@@ -210,10 +236,9 @@ function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
     const codexOptions = config.codexOptions ?? {};
     const nativeBinary = nativeCodexBinaryPath(codexOptions.binaryPath);
 
-    // The native app-server is the default Codex harness. Fall back to the
-    // codex-acp (Zed) adapter only when the codex binary isn't bundled or when
-    // POSTHOG_CODEX_USE_ACP is set as an escape hatch.
-    if (nativeBinary && process.env.POSTHOG_CODEX_USE_ACP !== "1") {
+    // Use the native app-server when its binary is bundled AND the host (flag)
+    // / env selects it. See resolveUseCodexAppServer for precedence.
+    if (nativeBinary && resolveUseCodexAppServer(config)) {
       agent = new CodexAppServerAgent(client, {
         processOptions: {
           binaryPath: nativeBinary,
@@ -225,6 +250,7 @@ function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
         model: codexOptions.model,
         reasoningEffort: codexOptions.reasoningEffort,
         processCallbacks: config.processCallbacks,
+        onStructuredOutput: config.onStructuredOutput,
         logger: config.logger?.child("CodexAppServerAgent"),
       });
       return agent;

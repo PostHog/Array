@@ -4,6 +4,7 @@ import { delimiter, dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import type { ProcessSpawnedCallback } from "../../types";
 import { Logger } from "../../utils/logger";
+import { CodexSettingsManager } from "../codex/settings";
 
 export interface CodexAppServerProcessOptions {
   /** Path to the native `codex` CLI binary (the one that exposes `app-server`). */
@@ -31,6 +32,24 @@ export function buildAppServerArgs(
 
   args.push("-c", "features.remote_models=false");
 
+  // The agent already runs inside PostHog's isolated sandbox (docker/Modal with
+  // agentsh egress + filesystem controls), so Codex's own OS-level sandbox is
+  // redundant — and its `linux-sandbox` launcher is unavailable there, so the
+  // default mode panics ("sandbox launcher unavailable") and wedges the session.
+  // Run with no nested sandbox; the enclosing sandbox provides the isolation.
+  args.push("-c", `sandbox_mode="danger-full-access"`);
+
+  // Disable the user's ambient ~/.codex MCP servers (linear/figma/etc.) so the
+  // adapter only exposes MCP servers PostHog Code injects per-thread — matching
+  // the codex-acp adapter. Without this, codex tries (and fails) to connect to
+  // the user's local MCP servers, polluting the session. Only the first key
+  // segment is disabled (`mcp_servers.<name>.enabled=false`) — see settings.ts.
+  for (const name of new CodexSettingsManager(
+    options.cwd ?? process.cwd(),
+  ).getSettings().mcpServerNames) {
+    args.push("-c", `mcp_servers.${name}.enabled=false`);
+  }
+
   if (options.apiBaseUrl) {
     args.push("-c", `model_provider="posthog"`);
     args.push("-c", `model_providers.posthog.name="PostHog Gateway"`);
@@ -42,14 +61,9 @@ export function buildAppServerArgs(
     );
   }
 
-  if (options.developerInstructions) {
-    const escaped = options.developerInstructions
-      .replace(/\\/g, "\\\\")
-      .replace(/\n/g, "\\n")
-      .replace(/\r/g, "\\r")
-      .replace(/"/g, '\\"');
-    args.push("-c", `developer_instructions="${escaped}"`);
-  }
+  // developer_instructions are set per-thread in thread/start (combined with the
+  // host's task system prompt) rather than as a spawn-level global default, so
+  // the task prompt — only known at newSession — reaches the model too.
 
   return args;
 }

@@ -108,6 +108,7 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "typecheck": "pnpm exec tsc --noEmit",
     "prepublishOnly": "pnpm run build",
     "clean": "node ../../scripts/rimraf.mjs dist .turbo"

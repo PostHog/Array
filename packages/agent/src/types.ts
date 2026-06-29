@@ -65,6 +65,12 @@ export interface TaskExecutionOptions {
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
   /** Additional directories the agent process can access beyond cwd. */
   additionalDirectories?: string[];
+  /**
+   * Codex-only feature-flag lever: `true` selects the native app-server adapter,
+   * `false` codex-acp. The host evaluates a PostHog flag and passes the result;
+   * undefined falls back to env overrides then the bundled-binary default.
+   */
+  useCodexAppServer?: boolean;
 }
 
 export type LogLevel = "debug" | "info" | "warn" | "error";

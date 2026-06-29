@@ -1,6 +1,6 @@
 import { Logger } from "../../utils/logger";
 import type { StreamPair } from "../../utils/streams";
-import type { JsonRpcMessage, JsonRpcResponse } from "./protocol";
+import type { JsonRpcMessage, JsonRpcResponse, RequestId } from "./protocol";
 
 export interface AppServerClientHandlers {
   /** Server-pushed notification (no id), e.g. `item/agentMessage/delta`. */
@@ -38,7 +38,7 @@ export interface AppServerRpc {
 export class AppServerClient implements AppServerRpc {
   private readonly writer: WritableStreamDefaultWriter<Uint8Array>;
   private readonly encoder = new TextEncoder();
-  private readonly pending = new Map<number, PendingCall>();
+  private readonly pending = new Map<RequestId, PendingCall>();
   private readonly handlers: AppServerClientHandlers;
   private readonly logger: Logger;
   private reader?: ReadableStreamDefaultReader<Uint8Array>;
@@ -151,20 +151,25 @@ export class AppServerClient implements AppServerRpc {
     const id = (message as { id?: unknown }).id;
     const method = (message as { method?: unknown }).method;
     const params = (message as { params?: unknown }).params;
+    // JSON-RPC framing: a request has both method and id; a notification has a
+    // method and no id; a response has an id and no method. Discriminate on
+    // presence, not `typeof id === "number"` — the schema's RequestId is
+    // `string | number`, so a string-id server request must still be answered
+    // (keying on number alone silently misroutes it and hangs the turn).
+    const hasId = id !== undefined && id !== null;
 
-    if (typeof method !== "string") {
-      if (typeof id === "number") {
-        this.handleResponse(message as JsonRpcResponse);
+    if (typeof method === "string") {
+      if (hasId) {
+        void this.handleIncomingRequest(id as RequestId, method, params);
+      } else {
+        this.handlers.onNotification?.(method, params);
       }
       return;
     }
 
-    if (typeof id === "number") {
-      void this.handleIncomingRequest(id, method, params);
-      return;
+    if (hasId) {
+      this.handleResponse(message as JsonRpcResponse);
     }
-
-    this.handlers.onNotification?.(method, params);
   }
 
   private handleResponse(message: JsonRpcResponse): void {
@@ -182,7 +187,7 @@ export class AppServerClient implements AppServerRpc {
   }
 
   private async handleIncomingRequest(
-    id: number,
+    id: RequestId,
     method: string,
     params: unknown,
   ): Promise<void> {

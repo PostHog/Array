@@ -1156,6 +1156,11 @@ export class AgentServer {
               cwd: this.config.repositoryPath ?? "/tmp/workspace",
               apiBaseUrl: gatewayEnv.openaiBaseUrl,
               apiKey: this.config.apiKey,
+              // Path to the bundled codex-acp binary; the native app-server
+              // adapter derives `codex` from the same directory. Set in the
+              // sandbox image (POSTHOG_CODEX_BINARY_PATH); when unset the
+              // adapter falls back to npx codex-acp.
+              binaryPath: process.env.POSTHOG_CODEX_BINARY_PATH,
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
               developerInstructions: codexInstructions,
