@@ -34,7 +34,7 @@ if (ALLOW_BYPASS) {
     {
       id: "auto",
       name: "Auto Mode",
-      description: "Use a model classifier to approve/deny permission prompts",
+      description: "Auto-approve file edits and shell commands",
     },
   );
 }
