@@ -7,7 +7,6 @@ import {
 } from "@posthog/core/git-interaction/prStatus";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
@@ -80,24 +79,21 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
 
     const taskById = new Map(tasks?.map((t) => [t.id, t]) ?? []);
     type PrArtifact = Extract<ArtifactItem, { kind: "pr" }>;
-    const prItems = filedTasks
-      .filter(
-        (f: ChannelTaskRecord) =>
-          !archivedTaskIds.has(f.taskId) && taskById.has(f.taskId),
-      )
-      .map((f: ChannelTaskRecord): PrArtifact | null => {
-        const task = taskById.get(f.taskId) as Task;
-        const prUrl = task.latest_run?.output?.pr_url;
-        if (typeof prUrl !== "string" || !prUrl) return null;
-        return {
-          kind: "pr",
+    const prItems: PrArtifact[] = filedTasks.flatMap((f: ChannelTaskRecord) => {
+      const task = taskById.get(f.taskId);
+      const prUrl = task?.latest_run?.output?.pr_url;
+      if (archivedTaskIds.has(f.taskId) || !task) return [];
+      if (typeof prUrl !== "string" || !prUrl) return [];
+      return [
+        {
+          kind: "pr" as const,
           key: `pr:${f.id}`,
           title: task.title || "Pull request",
           ts: Date.parse(task.updated_at) || 0,
           prUrl,
-        };
-      })
-      .filter((item): item is PrArtifact => item !== null);
+        },
+      ];
+    });
 
     // Most recent first.
     return [...canvasItems, ...prItems].sort((a, b) => b.ts - a.ts);

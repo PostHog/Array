@@ -3,7 +3,6 @@ import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas"
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
@@ -70,27 +69,27 @@ export function WebsiteChannelHistory({ channelId }: { channelId: string }) {
     );
 
     const taskById = new Map(tasks?.map((t) => [t.id, t]) ?? []);
-    const taskItems: HistoryItem[] = filedTasks
-      .filter(
-        (f: ChannelTaskRecord) =>
-          !archivedTaskIds.has(f.taskId) && taskById.has(f.taskId),
-      )
-      .map((f: ChannelTaskRecord) => {
-        const task = taskById.get(f.taskId) as Task;
-        return {
-          key: `task:${f.id}`,
-          kind: "task" as const,
-          title: task.title || "Untitled task",
-          ts: Date.parse(task.updated_at) || 0,
-          icon: <TaskGlyph />,
-          accent: "blue",
-          onClick: () =>
-            navigate({
-              to: "/website/$channelId/tasks/$taskId",
-              params: { channelId, taskId: f.taskId },
-            }),
-        };
-      });
+    const taskItems: HistoryItem[] = filedTasks.flatMap(
+      (f: ChannelTaskRecord) => {
+        const task = taskById.get(f.taskId);
+        if (archivedTaskIds.has(f.taskId) || !task) return [];
+        return [
+          {
+            key: `task:${f.id}`,
+            kind: "task" as const,
+            title: task.title || "Untitled task",
+            ts: Date.parse(task.updated_at) || 0,
+            icon: <TaskGlyph />,
+            accent: "blue",
+            onClick: () =>
+              navigate({
+                to: "/website/$channelId/tasks/$taskId",
+                params: { channelId, taskId: f.taskId },
+              }),
+          },
+        ];
+      },
+    );
 
     // Most recent first.
     return [...canvasItems, ...taskItems].sort((a, b) => b.ts - a.ts);
