@@ -2,7 +2,6 @@ import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import { getIsOnline } from "@posthog/core/connectivity/connectivityStore";
 import { CloudArtifactService } from "@posthog/core/sessions/cloudArtifactService";
 import {
-  cloudPromptToBlocks,
   combineQueuedCloudPrompts,
   getCloudPromptTransport,
 } from "@posthog/core/sessions/cloudPrompt";
@@ -125,7 +124,6 @@ function buildSessionServiceDeps(): SessionServiceDeps {
     WORKSPACE_QUERY_KEY,
     h: {
       extractSkillButtonId,
-      cloudPromptToBlocks,
       combineQueuedCloudPrompts,
       getCloudPromptTransport,
       resolveLocalSkillCommandPrompt: (prompt) =>

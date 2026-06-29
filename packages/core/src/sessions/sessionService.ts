@@ -67,7 +67,6 @@ import {
 } from "./permissionResponse";
 import {
   convertStoredEntriesToEvents,
-  createUserPromptEvent,
   createUserShellExecuteEvent,
   extractPromptText,
   getUserShellExecutesSinceLastPrompt,
@@ -78,11 +77,7 @@ import {
   shellExecutesToContextBlocks,
 } from "./sessionEvents";
 import { createBaseSession } from "./sessionFactory";
-import {
-  type ParsedSessionLogs,
-  parseSessionLogContent,
-  planSkippedPromptFilter,
-} from "./sessionLogs";
+import { type ParsedSessionLogs, parseSessionLogContent } from "./sessionLogs";
 
 const LOCAL_SESSION_RECONNECT_ATTEMPTS = 3;
 const LOCAL_SESSION_RECONNECT_BACKOFF = {
@@ -97,6 +92,7 @@ const GITHUB_AUTHORIZATION_REQUIRED_CODE = "github_authorization_required";
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
 const AUTH_RESTORE_MAX_RETRY_WAITS = 6;
+const MAX_SUPERSEDED_RUN_IDS = 100;
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
   constructor(
@@ -205,7 +201,6 @@ export interface ISessionStore {
 
 export interface SessionServiceHelpers {
   extractSkillButtonId: (...args: any[]) => any;
-  cloudPromptToBlocks: (...args: any[]) => any;
   combineQueuedCloudPrompts: (...args: any[]) => any;
   getCloudPromptTransport: (...args: any[]) => any;
   resolveLocalSkillCommandPrompt?: (prompt: string) => Promise<string | null>;
@@ -492,6 +487,7 @@ export class SessionService {
   private scheduledCloudQueueFlushes = new Set<string>();
   private cloudRunIdleTracker: CloudRunIdleTracker;
   private nextCloudTaskWatchToken = 0;
+  private supersededRunIds = new Set<string>();
   private subscriptions = new Map<
     string,
     {
@@ -2563,74 +2559,103 @@ export class SessionService {
     ) {
       return { stopReason: "empty" };
     }
-    const artifactIds = await this.d.h.uploadTaskStagedAttachments(
-      authCredentials.client,
-      session.taskId,
-      transport.filePaths,
-      transport.skillBundles,
-    );
-
-    const previousRun = await authCredentials.client.getTaskRun(
-      session.taskId,
-      session.taskRunId,
-    );
-    const previousState = previousRun.state as Record<string, unknown>;
-    const previousOutput = (previousRun.output ?? {}) as Record<
-      string,
-      unknown
-    >;
-    // Prefer the actual working branch the agent last pushed to (synced by
-    // agent-server after each turn), then the run-level branch field, then
-    // the original base branch from state. This preserves unmerged work when
-    // the snapshot has expired and the sandbox is rebuilt from scratch.
-    const previousBaseBranch =
-      (typeof previousOutput.head_branch === "string"
-        ? previousOutput.head_branch
-        : null) ??
-      previousRun.branch ??
-      (typeof previousState.pr_base_branch === "string"
-        ? previousState.pr_base_branch
-        : null) ??
-      session.cloudBranch;
-    const prAuthorshipMode = getCloudPrAuthorshipMode(previousState);
-
-    this.d.log.info("Creating resume run for terminal cloud task", {
-      taskId: session.taskId,
-      previousRunId: session.taskRunId,
-      previousStatus: session.cloudStatus,
+    this.d.store.updateSession(session.taskRunId, {
+      isPromptPending: true,
+      promptStartedAt: Date.now(),
+      pausedDurationMs: 0,
+    });
+    this.d.store.appendOptimisticItem(session.taskRunId, {
+      type: "user_message",
+      content: transport.promptText,
+      timestamp: Date.now(),
+      pinToTop: false,
     });
 
-    const runtimeOptions = getCloudRuntimeOptions(session, previousRun);
+    const rollbackOptimisticPrompt = () => {
+      this.d.store.updateSession(session.taskRunId, {
+        isPromptPending: false,
+        promptStartedAt: null,
+      });
+      this.d.store.clearTailOptimisticItems(session.taskRunId);
+    };
 
-    // Create a new run WITH resume context — backend validates the previous run,
-    // derives snapshot_external_id server-side, and passes everything as extra_state.
-    // The agent will load conversation history and restore the sandbox snapshot.
-    const updatedTask = await authCredentials.client.runTaskInCloud(
-      session.taskId,
-      previousBaseBranch,
-      {
-        adapter: runtimeOptions.adapter,
-        model: runtimeOptions.model,
-        reasoningLevel: runtimeOptions.reasoningLevel,
-        resumeFromRunId: session.taskRunId,
-        pendingUserMessage: transport.messageText,
-        pendingUserArtifactIds:
-          artifactIds.length > 0 ? artifactIds : undefined,
-        prAuthorshipMode,
-        runSource: getCloudRunSource(previousState),
-        signalReportId:
-          typeof previousState.signal_report_id === "string"
-            ? previousState.signal_report_id
-            : undefined,
-      },
-    );
+    let updatedTask: Task;
+    try {
+      const artifactIds = await this.d.h.uploadTaskStagedAttachments(
+        authCredentials.client,
+        session.taskId,
+        transport.filePaths,
+        transport.skillBundles,
+      );
+
+      const previousRun = await authCredentials.client.getTaskRun(
+        session.taskId,
+        session.taskRunId,
+      );
+      const previousState = previousRun.state as Record<string, unknown>;
+      const previousOutput = (previousRun.output ?? {}) as Record<
+        string,
+        unknown
+      >;
+      // Prefer the branch the agent last pushed to, then the run branch, then
+      // the base branch — preserves unmerged work if the sandbox is rebuilt.
+      const previousBaseBranch =
+        (typeof previousOutput.head_branch === "string"
+          ? previousOutput.head_branch
+          : null) ??
+        previousRun.branch ??
+        (typeof previousState.pr_base_branch === "string"
+          ? previousState.pr_base_branch
+          : null) ??
+        session.cloudBranch;
+      const prAuthorshipMode = getCloudPrAuthorshipMode(previousState);
+
+      this.d.log.info("Creating resume run for terminal cloud task", {
+        taskId: session.taskId,
+        previousRunId: session.taskRunId,
+        previousStatus: session.cloudStatus,
+      });
+
+      const runtimeOptions = getCloudRuntimeOptions(session, previousRun);
+
+      // Backend derives the snapshot from resumeFromRunId and restores the sandbox.
+      updatedTask = await authCredentials.client.runTaskInCloud(
+        session.taskId,
+        previousBaseBranch,
+        {
+          adapter: runtimeOptions.adapter,
+          model: runtimeOptions.model,
+          reasoningLevel: runtimeOptions.reasoningLevel,
+          resumeFromRunId: session.taskRunId,
+          pendingUserMessage: transport.messageText,
+          pendingUserArtifactIds:
+            artifactIds.length > 0 ? artifactIds : undefined,
+          prAuthorshipMode,
+          runSource: getCloudRunSource(previousState),
+          signalReportId:
+            typeof previousState.signal_report_id === "string"
+              ? previousState.signal_report_id
+              : undefined,
+        },
+      );
+    } catch (error) {
+      rollbackOptimisticPrompt();
+      throw error;
+    }
     const newRun = updatedTask.latest_run;
     if (!newRun?.id) {
+      rollbackOptimisticPrompt();
       throw new Error("Failed to create resume run");
     }
 
-    // Replace session with one for the new run, preserving conversation history.
-    // setSession handles old session cleanup via taskIdIndex.
+    this.supersededRunIds.add(session.taskRunId);
+    while (this.supersededRunIds.size > MAX_SUPERSEDED_RUN_IDS) {
+      const oldest = this.supersededRunIds.values().next().value;
+      if (oldest === undefined) break;
+      this.supersededRunIds.delete(oldest);
+    }
+
+    // New-run session carrying the prior conversation; setSession drops the old one.
     const newSession = createBaseSession(
       newRun.id,
       session.taskId,
@@ -2638,25 +2663,15 @@ export class SessionService {
     );
     newSession.status = "disconnected";
     newSession.isCloud = true;
-    // Carry over existing events and add optimistic user bubble for the follow-up.
-    // Reset processedLineCount to 0 because the new run's log stream starts fresh.
-    newSession.events = [
-      ...session.events,
-      createUserPromptEvent(
-        transport.filePaths.length > 0
-          ? this.d.h.cloudPromptToBlocks(prompt)
-          : [{ type: "text", text: transport.promptText }],
-        Date.now(),
-      ),
-    ];
-    newSession.processedLineCount = 0;
-    // Skip the first session/prompt from polled logs — we already have the
-    // optimistic user event, so showing the polled one would duplicate it.
-    newSession.skipPolledPromptCount = 1;
+    newSession.isPromptPending = true;
+    newSession.promptStartedAt = Date.now();
+    newSession.events = [...session.events];
+    newSession.optimisticItems = (
+      this.getSessionByRunId(session.taskRunId)?.optimisticItems ?? []
+    ).filter((item) => item.type === "user_message" && item.pinToTop === false);
+    const resumeFromEntryCount = session.processedLineCount ?? 0;
+    newSession.processedLineCount = resumeFromEntryCount;
     this.d.store.setSession(newSession);
-
-    // No enqueueMessage / isPromptPending needed — the follow-up is passed
-    // in run state (pending_user_message), NOT via user_message command.
 
     // Start the watcher immediately so we don't miss status updates.
     const initialMode =
@@ -2679,9 +2694,10 @@ export class SessionService {
       initialMode,
       newRun.runtime_adapter ?? session.adapter ?? "claude",
       initialModel,
+      undefined,
+      resumeFromEntryCount,
     );
 
-    // Invalidate task queries so the UI picks up the new run metadata
     this.d.queryClient.invalidateQueries({ queryKey: ["tasks"] });
 
     this.d.track(ANALYTICS_EVENTS.PROMPT_SENT, {
@@ -3271,8 +3287,13 @@ export class SessionService {
     adapter: Adapter = "claude",
     initialModel?: string,
     taskDescription?: string,
+    resumeFromEntryCount?: number,
+    runStatus?: TaskRunStatus,
   ): () => void {
     const taskRunId = runId;
+
+    if (this.supersededRunIds.has(runId)) return () => {};
+
     const existingWatcher = this.cloudTaskWatchers.get(taskId);
 
     // Resuming same run — reuse the existing watcher.
@@ -3406,6 +3427,7 @@ export class SessionService {
         taskRunId,
         logUrl,
         taskDescription,
+        runStatus,
       );
     }
 
@@ -3452,6 +3474,7 @@ export class SessionService {
           runId,
           apiHost,
           teamId,
+          resumeFromEntryCount,
         });
 
         // If the local watcher was torn down while the watch request was in
@@ -3489,12 +3512,39 @@ export class SessionService {
     taskRunId: string,
     logUrl?: string,
     taskDescription?: string,
+    runStatus?: TaskRunStatus,
   ): void {
     void (async () => {
-      const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
-        logUrl,
-        taskRunId,
-      );
+      let rawEntries: StoredLogEntry[];
+      let totalLineCount: number;
+      if (isTerminalStatus(runStatus)) {
+        // Terminal runs: fetch the full resume chain (matches the snapshot) so a
+        // resumed run isn't under-counted. In-progress runs use the single-run
+        // log so hydrate can't race the live stream and double the active turn.
+        const authStatus = await this.getAuthCredentialsStatus();
+        if (authStatus.kind !== "ready") {
+          return;
+        }
+        try {
+          rawEntries = await authStatus.auth.client.getTaskRunSessionLogs(
+            taskId,
+            taskRunId,
+            { limit: 100000 },
+          );
+        } catch (err) {
+          this.d.log.warn("Failed to fetch session-log chain for hydrate", {
+            taskId,
+            taskRunId,
+            err,
+          });
+          return;
+        }
+        totalLineCount = rawEntries.length;
+      } else {
+        const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
+        rawEntries = parsed.rawEntries;
+        totalLineCount = parsed.totalLineCount;
+      }
 
       const session = this.d.store.getSessionByTaskId(taskId);
       if (!session || session.taskRunId !== taskRunId) {
@@ -4057,6 +4107,8 @@ export class SessionService {
       adapter,
       initialModel,
       task.description ?? undefined,
+      undefined,
+      task.latest_run?.status,
     );
   }
 
@@ -4367,12 +4419,7 @@ export class SessionService {
         // Already caught up — skip duplicate entries
       } else if (plan.kind === "append-tail") {
         const entriesToAppend = update.newEntries.slice(-plan.tailCount);
-        let newEvents = convertStoredEntriesToEvents(entriesToAppend);
-        newEvents = this.filterSkippedPromptEvents(
-          taskRunId,
-          session,
-          newEvents,
-        );
+        const newEvents = convertStoredEntriesToEvents(entriesToAppend);
         if (hasSessionPromptEvent(newEvents)) {
           this.d.store.clearTailOptimisticItems(taskRunId);
         }
@@ -4433,33 +4480,6 @@ export class SessionService {
         this.stopCloudTaskWatch(update.taskId);
       }
     }
-  }
-
-  /**
-   * Filter out session/prompt events that should be skipped during resume.
-   * When resuming a cloud run, the initial session/prompt from the new run's
-   * logs would duplicate the optimistic user bubble we already added.
-   */
-  // Note: `session` is a snapshot from the start of handleCloudTaskUpdate.
-  // The updateSession call below makes it stale, but this is safe because
-  // skipPolledPromptCount is only ever 1, so this method runs at most once.
-  private filterSkippedPromptEvents(
-    taskRunId: string,
-    session: AgentSession | undefined,
-    events: AcpMessage[],
-  ): AcpMessage[] {
-    const plan = planSkippedPromptFilter(
-      session?.skipPolledPromptCount,
-      events,
-    );
-    if (!plan) {
-      return events;
-    }
-
-    this.d.store.updateSession(taskRunId, {
-      skipPolledPromptCount: plan.remainingSkipCount,
-    });
-    return plan.events;
   }
 
   // --- Helper Methods ---

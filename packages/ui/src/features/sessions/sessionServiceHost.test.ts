@@ -126,6 +126,7 @@ const mockAuthenticatedClient = vi.hoisted(() => ({
   prepareTaskStagedArtifactUploads: vi.fn(),
   finalizeTaskStagedArtifactUploads: vi.fn(),
   startGithubUserIntegrationConnect: vi.fn(),
+  getTaskRunSessionLogs: vi.fn(),
 }));
 
 type MockAuthenticatedClient = typeof mockAuthenticatedClient;
@@ -394,6 +395,7 @@ describe("SessionService", () => {
     mockGetIsOnline.mockReturnValue(true);
     mockGetConfigOptionByCategory.mockReturnValue(undefined);
     mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
+    mockAuthenticatedClient.getTaskRunSessionLogs.mockResolvedValue([]);
     mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(undefined);
     mockSessionStoreSetters.getSessions.mockReturnValue({});
     mockAuth.fetchAuthState.mockResolvedValue({
@@ -4201,7 +4203,7 @@ describe("SessionService", () => {
       );
     });
 
-    it("preserves attachment blocks in the optimistic resume event", async () => {
+    it("shows an optimistic user bubble when resuming a terminal cloud run", async () => {
       const service = getSessionService();
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
         createMockSession({
@@ -4302,19 +4304,18 @@ describe("SessionService", () => {
       const result = await service.sendPrompt("task-123", prompt);
 
       expect(result.stopReason).toBe("queued");
+      expect(mockSessionStoreSetters.appendOptimisticItem).toHaveBeenCalledWith(
+        "run-123",
+        expect.objectContaining({
+          type: "user_message",
+          content: "what is this about?\n\nAttached files: test.txt",
+          pinToTop: false,
+        }),
+      );
       expect(mockSessionStoreSetters.setSession).toHaveBeenCalledWith(
         expect.objectContaining({
-          events: expect.arrayContaining([
-            expect.objectContaining({
-              message: expect.objectContaining({
-                method: "session/prompt",
-                params: {
-                  prompt,
-                },
-              }),
-            }),
-          ]),
-          skipPolledPromptCount: 1,
+          taskRunId: "run-456",
+          isPromptPending: true,
         }),
       );
     });

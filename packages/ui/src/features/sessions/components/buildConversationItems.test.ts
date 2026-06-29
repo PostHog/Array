@@ -289,6 +289,52 @@ describe("buildConversationItems", () => {
       expect(group.isActive).toBe(false);
     });
 
+    it("keeps the agent step in_progress until its run emits run_started", () => {
+      const runStarted = (ts: number, runId: string): AcpMessage => ({
+        type: "acp_message",
+        ts,
+        message: {
+          jsonrpc: "2.0",
+          method: "_posthog/run_started",
+          params: { runId },
+        },
+      });
+      const base: AcpMessage[] = [
+        progressMsg(
+          1,
+          "sandbox",
+          "completed",
+          "Restored sandbox",
+          undefined,
+          "setup:run-9",
+        ),
+        progressMsg(
+          2,
+          "agent",
+          "completed",
+          "Started agent",
+          undefined,
+          "setup:run-9",
+        ),
+      ];
+
+      const gated = findProgressGroups(
+        buildConversationItems(base, null).items,
+      )[0];
+      expect(gated.steps.find((s) => s.key === "agent")?.status).toBe(
+        "in_progress",
+      );
+      expect(gated.isActive).toBe(true);
+
+      const ready = findProgressGroups(
+        buildConversationItems([...base, runStarted(3, "run-9")], null).items,
+      )[0];
+      expect(ready.steps.find((s) => s.key === "agent")?.status).toBe(
+        "completed",
+      );
+      expect(ready.isActive).toBe(false);
+    });
+
     it("opens a separate progress_group per group id — distinct groups coexist inline", () => {
       const events: AcpMessage[] = [
         // Pre-prompt setup group.

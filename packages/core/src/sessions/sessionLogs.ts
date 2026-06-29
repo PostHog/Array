@@ -1,5 +1,4 @@
-import type { AcpMessage, Adapter, StoredLogEntry } from "@posthog/shared";
-import { isJsonRpcRequest } from "@posthog/shared";
+import type { Adapter, StoredLogEntry } from "@posthog/shared";
 
 export interface ParsedSessionLogs {
   rawEntries: StoredLogEntry[];
@@ -50,24 +49,4 @@ export function parseSessionLogContent(
     sessionId,
     adapter,
   };
-}
-
-export function planSkippedPromptFilter(
-  skipPolledPromptCount: number | undefined,
-  events: AcpMessage[],
-): { events: AcpMessage[]; remainingSkipCount: number } | null {
-  if (!skipPolledPromptCount || skipPolledPromptCount <= 0) {
-    return null;
-  }
-
-  const promptIdx = events.findIndex(
-    (e) => isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
-  );
-  if (promptIdx === -1) {
-    return null;
-  }
-
-  const filtered = [...events];
-  filtered.splice(promptIdx, 1);
-  return { events: filtered, remainingSkipCount: skipPolledPromptCount - 1 };
 }
