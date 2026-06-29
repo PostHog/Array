@@ -24,6 +24,7 @@ import {
   getClaudeModelRecency,
   isAnthropicModel,
   isCloudflareModel,
+  isCloudflareModelId,
 } from "../gateway-models";
 import { Logger } from "../utils/logger";
 /**
@@ -165,7 +166,7 @@ export abstract class BaseAcpAgent implements Agent {
     const isClaudeAdapterModelId = (modelId: string): boolean =>
       modelId.startsWith("claude-") ||
       modelId.startsWith("anthropic/") ||
-      modelId.startsWith("@cf/");
+      isCloudflareModelId(modelId);
 
     let currentModelId = currentModelOverride ?? DEFAULT_GATEWAY_MODEL;
 

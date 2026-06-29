@@ -30,9 +30,11 @@ import {
   DEFAULT_GATEWAY_MODEL,
   fetchGatewayModels,
   formatGatewayModelName,
+  type GatewayModel,
   getClaudeModelRecency,
   getProviderName,
   isAnthropicModel,
+  isCloudflareModel,
   isOpenAIModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
@@ -2132,7 +2134,14 @@ For git operations while detached:
     const gatewayUrl = getLlmGatewayUrl(apiHost);
     const gatewayModels = await fetchGatewayModels({ gatewayUrl });
 
-    const modelFilter = adapter === "codex" ? isOpenAIModel : isAnthropicModel;
+    // The Claude adapter can also drive Cloudflare `@cf/` models the gateway serves over its
+    // Anthropic-Messages surface, so the preview/default-model path must offer them too — otherwise an
+    // advertised `@cf/*` model is dropped here and the pre-session run falls back to Opus.
+    const modelFilter =
+      adapter === "codex"
+        ? isOpenAIModel
+        : (model: GatewayModel) =>
+            isAnthropicModel(model) || isCloudflareModel(model);
 
     const modelOptions = gatewayModels
       .filter((model) => modelFilter(model))

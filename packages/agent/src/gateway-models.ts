@@ -117,6 +117,13 @@ export function isOpenAIModel(model: GatewayModel): boolean {
   return model.id.startsWith("gpt-") || model.id.startsWith("openai/");
 }
 
+// Cloudflare Workers AI model ids carry the `@cf/` path prefix (e.g. `@cf/zai-org/glm-5.2`). Kept as
+// a standalone id-only check so callers that only have a model id (not a full GatewayModel) — like the
+// Claude adapter's desync guard — share one source of truth with `isCloudflareModel`.
+export function isCloudflareModelId(modelId: string): boolean {
+  return modelId.startsWith("@cf/");
+}
+
 // Cloudflare Workers AI models (e.g. `@cf/zai-org/glm-5.2`). The gateway serves these over both its
 // OpenAI and Anthropic-Messages surfaces (it translates the `@cf/` path), so the Claude adapter can
 // drive them just like an Anthropic model.
@@ -124,7 +131,7 @@ export function isCloudflareModel(model: GatewayModel): boolean {
   if (model.owned_by) {
     return model.owned_by === "cloudflare";
   }
-  return model.id.startsWith("@cf/");
+  return isCloudflareModelId(model.id);
 }
 
 export interface ModelInfo {

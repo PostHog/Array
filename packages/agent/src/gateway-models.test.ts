@@ -155,19 +155,17 @@ describe("gateway model fetch timeout", () => {
 });
 
 describe("isCloudflareModel", () => {
-  it("matches by owned_by when present", () => {
-    expect(isCloudflareModel(model("@cf/zai-org/glm-5.2", "cloudflare"))).toBe(
-      true,
-    );
-    expect(isCloudflareModel(model("claude-opus-4-8", "anthropic"))).toBe(
-      false,
-    );
-  });
-
-  it("falls back to the @cf/ id prefix when owned_by is absent", () => {
-    expect(isCloudflareModel(model("@cf/zai-org/glm-5.2"))).toBe(true);
-    expect(isCloudflareModel(model("gpt-5.5"))).toBe(false);
-  });
+  it.each([
+    { id: "@cf/zai-org/glm-5.2", owned_by: "cloudflare", expected: true },
+    { id: "claude-opus-4-8", owned_by: "anthropic", expected: false },
+    { id: "@cf/zai-org/glm-5.2", owned_by: "", expected: true },
+    { id: "gpt-5.5", owned_by: "", expected: false },
+  ])(
+    "isCloudflareModel($id, owned_by=$owned_by) → $expected",
+    ({ id, owned_by, expected }) => {
+      expect(isCloudflareModel(model(id, owned_by))).toBe(expected);
+    },
+  );
 
   it("does not classify Cloudflare models as Anthropic", () => {
     // The Claude adapter accepts both, but they must stay distinguishable.
