@@ -194,6 +194,15 @@ export {
 export { TypedEventEmitter } from "./typed-event-emitter";
 export { isSafeExternalUrl } from "./url";
 export { getCloudUrlFromRegion } from "./urls";
+export {
+  ALLOWED_VIDEO_MIME_TYPES,
+  buildVideoDataUrl,
+  getVideoMimeType,
+  isAllowedVideoMimeType,
+  isPlayableVideoFile,
+  MAX_VIDEO_BASE64_LENGTH,
+  VIDEO_MIME_TYPES,
+} from "./video";
 export type { WorkspaceMode } from "./workspace";
 export * from "./workspace-domain";
 export { escapeXmlAttr, unescapeXmlAttr } from "./xml";
