@@ -25,7 +25,7 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 
 const MAX_SECONDS = MAX_CUSTOM_SOUND_DURATION_MS / 1000;
 // Real durations can read a touch over the cap (encoder rounding); allow a small
@@ -35,6 +35,64 @@ const DURATION_TOLERANCE_MS = 300;
 interface CapturedClip {
   dataUrl: string;
   durationMs: number;
+}
+
+// All the dialog's transient state lives in one reducer so a single logical
+// step (e.g. "recording started") is one update rather than a fan-out of
+// separate useState setters.
+interface DialogState {
+  name: string;
+  clip: CapturedClip | null;
+  error: string | null;
+  isRecording: boolean;
+  elapsedMs: number;
+}
+
+type DialogAction =
+  | { type: "setName"; name: string }
+  | { type: "error"; message: string }
+  | { type: "recordingStarted" }
+  | { type: "recordingStopped" }
+  | { type: "tick"; elapsedMs: number }
+  | { type: "clipReady"; clip: CapturedClip }
+  | { type: "clearClip" }
+  | { type: "reset" };
+
+const INITIAL_STATE: DialogState = {
+  name: "",
+  clip: null,
+  error: null,
+  isRecording: false,
+  elapsedMs: 0,
+};
+
+function reducer(state: DialogState, action: DialogAction): DialogState {
+  switch (action.type) {
+    case "setName":
+      return { ...state, name: action.name };
+    case "error":
+      return { ...state, error: action.message, isRecording: false };
+    case "recordingStarted":
+      return {
+        ...state,
+        error: null,
+        clip: null,
+        isRecording: true,
+        elapsedMs: 0,
+      };
+    case "recordingStopped":
+      return { ...state, isRecording: false };
+    case "tick":
+      return { ...state, elapsedMs: action.elapsedMs };
+    case "clipReady":
+      return { ...state, clip: action.clip, error: null };
+    case "clearClip":
+      return { ...state, clip: null };
+    case "reset":
+      return INITIAL_STATE;
+    default:
+      return state;
+  }
 }
 
 export function AddCustomSoundDialog({
@@ -47,11 +105,8 @@ export function AddCustomSoundDialog({
   const addCustomSound = useSettingsStore((s) => s.addCustomSound);
   const setCompletionSound = useSettingsStore((s) => s.setCompletionSound);
 
-  const [name, setName] = useState("");
-  const [clip, setClip] = useState<CapturedClip | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [elapsedMs, setElapsedMs] = useState(0);
+  const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
+  const { name, clip, error, isRecording, elapsedMs } = state;
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -76,11 +131,28 @@ export function AddCustomSoundDialog({
     }
   }, []);
 
+  // Tear down any in-flight recorder/stream/timer/preview. Detaches the
+  // recorder's handlers first so a late onstop can't dispatch into a dialog
+  // that's already closing.
+  const releaseResources = useCallback(() => {
+    stopTimer();
+    const recorder = recorderRef.current;
+    if (recorder) {
+      recorder.onstop = null;
+      recorder.ondataavailable = null;
+      if (recorder.state !== "inactive") recorder.stop();
+      recorderRef.current = null;
+    }
+    stopStream();
+    previewRef.current?.pause();
+    previewRef.current = null;
+  }, [stopStream, stopTimer]);
+
   const stopRecording = useCallback(() => {
     stopTimer();
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== "inactive") recorder.stop();
-    setIsRecording(false);
+    dispatch({ type: "recordingStopped" });
   }, [stopTimer]);
 
   // Validate a captured/imported blob, then stash it as the pending clip.
@@ -90,24 +162,27 @@ export function AddCustomSoundDialog({
     async (blob: Blob, fallbackDurationMs: number | null) => {
       const dataUrl = await blobToDataUrl(blob);
       if (dataUrlByteLength(dataUrl) > MAX_CUSTOM_SOUND_BYTES) {
-        setError("That clip is too large. Keep it short (max ~1 MB).");
+        dispatch({
+          type: "error",
+          message: "That clip is too large. Keep it short (max ~1 MB).",
+        });
         return;
       }
       const decoded = await getAudioDurationMs(dataUrl);
       const durationMs = decoded ?? fallbackDurationMs ?? 0;
       if (durationMs > MAX_CUSTOM_SOUND_DURATION_MS + DURATION_TOLERANCE_MS) {
-        setError(`Clips must be ${MAX_SECONDS}s or shorter.`);
+        dispatch({
+          type: "error",
+          message: `Clips must be ${MAX_SECONDS}s or shorter.`,
+        });
         return;
       }
-      setError(null);
-      setClip({ dataUrl, durationMs });
+      dispatch({ type: "clipReady", clip: { dataUrl, durationMs } });
     },
     [],
   );
 
   const startRecording = useCallback(async () => {
-    setError(null);
-    setClip(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -134,18 +209,19 @@ export function AddCustomSoundDialog({
       };
       recorder.start();
       recorderRef.current = recorder;
-      setIsRecording(true);
-      setElapsedMs(0);
+      dispatch({ type: "recordingStarted" });
       timerRef.current = window.setInterval(() => {
         const elapsed = Date.now() - startedAt;
-        setElapsedMs(elapsed);
+        dispatch({ type: "tick", elapsedMs: elapsed });
         if (elapsed >= MAX_CUSTOM_SOUND_DURATION_MS) stopRecording();
       }, 100);
     } catch {
       stopStream();
-      setError(
-        "Microphone access was blocked. Allow it in your system settings.",
-      );
+      dispatch({
+        type: "error",
+        message:
+          "Microphone access was blocked. Allow it in your system settings.",
+      });
     }
   }, [acceptBlob, stopRecording, stopStream]);
 
@@ -153,16 +229,19 @@ export function AddCustomSoundDialog({
     async (file: File | undefined) => {
       if (!file) return;
       if (!file.type.startsWith("audio/")) {
-        setError("Choose an audio file.");
+        dispatch({ type: "error", message: "Choose an audio file." });
         return;
       }
       if (file.size > MAX_CUSTOM_SOUND_BYTES) {
-        setError("That file is too large. Keep it short (max ~1 MB).");
+        dispatch({
+          type: "error",
+          message: "That file is too large. Keep it short (max ~1 MB).",
+        });
         return;
       }
       if (!name.trim()) {
         // Seed the name from the filename so the user has a sensible default.
-        setName(file.name.replace(/\.[^.]+$/, ""));
+        dispatch({ type: "setName", name: file.name.replace(/\.[^.]+$/, "") });
       }
       await acceptBlob(file, null);
     },
@@ -179,23 +258,21 @@ export function AddCustomSoundDialog({
     });
   }, [clip]);
 
-  const reset = useCallback(() => {
-    stopRecording();
-    stopStream();
-    stopTimer();
-    previewRef.current?.pause();
-    previewRef.current = null;
-    setName("");
-    setClip(null);
-    setError(null);
-    setElapsedMs(0);
-  }, [stopRecording, stopStream, stopTimer]);
+  // Reset on close in the close handler itself (not a useEffect watching
+  // `open`) so there's no extra render showing stale state between commits.
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next) {
+        releaseResources();
+        dispatch({ type: "reset" });
+      }
+      onOpenChange(next);
+    },
+    [onOpenChange, releaseResources],
+  );
 
-  // Tidy up any in-flight recording when the dialog closes or unmounts.
-  useEffect(() => {
-    if (!open) reset();
-  }, [open, reset]);
-  useEffect(() => reset, [reset]);
+  // Release media resources if the dialog unmounts mid-recording.
+  useEffect(() => releaseResources, [releaseResources]);
 
   const handleSave = useCallback(() => {
     const trimmed = name.trim();
@@ -209,13 +286,13 @@ export function AddCustomSoundDialog({
     });
     setCompletionSound(`custom:${id}`);
     toast.success(`Added "${trimmed}"`);
-    onOpenChange(false);
-  }, [addCustomSound, clip, name, onOpenChange, setCompletionSound]);
+    handleOpenChange(false);
+  }, [addCustomSound, clip, handleOpenChange, name, setCompletionSound]);
 
   const canSave = name.trim().length > 0 && clip !== null && !isRecording;
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Content maxWidth="420px">
         <Dialog.Title>Add custom sound</Dialog.Title>
         <Dialog.Description size="2" color="gray" mb="4">
@@ -236,7 +313,9 @@ export function AddCustomSoundDialog({
             <TextField.Root
               id="custom-sound-name"
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) =>
+                dispatch({ type: "setName", name: event.target.value })
+              }
               placeholder="e.g. My ding"
               maxLength={60}
             />
@@ -278,6 +357,7 @@ export function AddCustomSoundDialog({
                 type="file"
                 accept="audio/*"
                 hidden
+                aria-label="Import audio file"
                 onChange={(event) => {
                   void handleFile(event.target.files?.[0]);
                   // Allow re-selecting the same file after a rejection.
@@ -298,7 +378,7 @@ export function AddCustomSoundDialog({
                   variant="ghost"
                   color="gray"
                   size="1"
-                  onClick={() => setClip(null)}
+                  onClick={() => dispatch({ type: "clearClip" })}
                   aria-label="Discard clip"
                 >
                   <Trash />

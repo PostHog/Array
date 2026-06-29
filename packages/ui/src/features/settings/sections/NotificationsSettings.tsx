@@ -310,14 +310,16 @@ function CustomSoundRow({
   onRename: (id: string, name: string) => void;
   onRemove: (id: string) => void;
 }) {
-  const [draftName, setDraftName] = useState(sound.name);
-
-  const commitName = () => {
-    const trimmed = draftName.trim();
+  // Uncontrolled so the committed name (a prop) is the single source of truth —
+  // no draft copy in state to drift out of sync. `key` remounts the field with
+  // the new default whenever the stored name changes. On an empty/unchanged
+  // blur we restore the displayed value rather than commit it.
+  const commitName = (input: HTMLInputElement) => {
+    const trimmed = input.value.trim();
     if (trimmed && trimmed !== sound.name) {
       onRename(sound.id, trimmed);
     } else {
-      setDraftName(sound.name);
+      input.value = sound.name;
     }
   };
 
@@ -334,12 +336,12 @@ function CustomSoundRow({
         <Play weight="fill" />
       </IconButton>
       <TextField.Root
+        key={sound.name}
         className="flex-1"
         size="1"
-        value={draftName}
+        defaultValue={sound.name}
         maxLength={60}
-        onChange={(event) => setDraftName(event.target.value)}
-        onBlur={commitName}
+        onBlur={(event) => commitName(event.currentTarget)}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
         }}
