@@ -132,14 +132,18 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
+  // The review panel lives in the task-detail view, so the command only makes
+  // sense when a task is open. Elsewhere (e.g. the new-task screen) it would be
+  // a no-op, so we omit it below rather than show a dead entry.
+  const reviewTaskId = view.type === "task-detail" ? view.taskId : undefined;
+
   const openReviewPanel = useCallback(() => {
-    const taskId = view.type === "task-detail" ? view.taskId : undefined;
-    if (!taskId) return;
-    const mode = getReviewMode(taskId);
+    if (!reviewTaskId) return;
+    const mode = getReviewMode(reviewTaskId);
     if (mode === "closed") {
-      setReviewMode(taskId, "split");
+      setReviewMode(reviewTaskId, "split");
     }
-  }, [view, getReviewMode, setReviewMode]);
+  }, [reviewTaskId, getReviewMode, setReviewMode]);
 
   useEffect(() => {
     if (open) {
@@ -217,13 +221,19 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         action: "toggle-left-sidebar",
         onRun: toggleLeftSidebar,
       },
-      {
-        id: "open-review-panel",
-        label: "Open review panel",
-        icon: <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />,
-        action: "open-review-panel",
-        onRun: openReviewPanel,
-      },
+      ...(reviewTaskId
+        ? [
+            {
+              id: "open-review-panel",
+              label: "Open review panel",
+              icon: (
+                <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />
+              ),
+              action: "open-review-panel" as CommandMenuAction,
+              onRun: openReviewPanel,
+            },
+          ]
+        : []),
       {
         id: "new-task",
         label: "New task",
@@ -267,6 +277,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     closeSettingsDialog,
     toggleLeftSidebar,
     openReviewPanel,
+    reviewTaskId,
   ]);
 
   const taskSections = useMemo<CommandSection[]>(() => {
