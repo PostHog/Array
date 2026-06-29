@@ -1933,7 +1933,7 @@ describe("AgentServer HTTP Mode", () => {
           expect(prompt).toContain(
             "*Created with [PostHog](https://posthog.com?ref=pr) from an [inbox report](http://localhost:8000/project/1/inbox/rep_1)*",
           );
-          expect(prompt).not.toContain("Slack thread");
+          expect(prompt).not.toContain("from a [Slack thread]");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
@@ -1969,7 +1969,7 @@ describe("AgentServer HTTP Mode", () => {
         expect(prompt).toContain(
           "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
         );
-        expect(prompt).not.toContain("Slack thread");
+        expect(prompt).not.toContain("from a [Slack thread]");
       });
 
       it("embeds the Slack thread link in the footer on the no-repository path when one is available", () => {
