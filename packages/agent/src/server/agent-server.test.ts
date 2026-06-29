@@ -494,6 +494,114 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.stop).toHaveBeenCalledOnce();
     });
 
+    it("rejects pending permissions on shutdown cleanup", async () => {
+      const testServer = stubSessionCleanup(createServer());
+      const pending = (
+        testServer as unknown as {
+          pendingPermissions: Map<
+            string,
+            {
+              resolve: (r: {
+                outcome: { outcome: string; optionId?: string };
+              }) => void;
+            }
+          >;
+        }
+      ).pendingPermissions;
+      const resolved = new Promise<{
+        outcome: { outcome: string; optionId?: string };
+      }>((resolve) => {
+        pending.set("req-1", { resolve });
+      });
+
+      await testServer.cleanupSession();
+
+      // Shutdown: the unanswered choice box is recorded as a deliberate reject.
+      await expect(resolved).resolves.toMatchObject({
+        outcome: { outcome: "selected", optionId: "reject" },
+      });
+    });
+
+    it("cancels (does not reject) pending permissions on re-init cleanup", async () => {
+      const testServer = stubSessionCleanup(createServer());
+      const pending = (
+        testServer as unknown as {
+          pendingPermissions: Map<
+            string,
+            {
+              resolve: (r: {
+                outcome: { outcome: string; optionId?: string };
+              }) => void;
+            }
+          >;
+        }
+      ).pendingPermissions;
+      const resolved = new Promise<{
+        outcome: { outcome: string; optionId?: string };
+      }>((resolve) => {
+        pending.set("req-1", { resolve });
+      });
+
+      await (
+        testServer as unknown as {
+          cleanupSession: (o: {
+            cancelPendingPermissions?: boolean;
+          }) => Promise<void>;
+        }
+      ).cleanupSession({ cancelPendingPermissions: true });
+
+      // Re-init (e.g. seamless resume): the user never answered, so the request
+      // must be cancelled — not recorded as a reject the resumed turn skips over.
+      await expect(resolved).resolves.toMatchObject({
+        outcome: { outcome: "cancelled" },
+      });
+    });
+
+    it("re-init cleans up an existing session with permissions cancelled, not rejected", async () => {
+      // This is the practical trigger: a session already exists (with a relayed,
+      // still-pending choice box) and the server re-initializes — e.g. a seamless
+      // resume or a reconnect that rebuilds the session. _doInitializeSession must
+      // route through cleanupSession with cancelPendingPermissions so the
+      // unanswered question is re-asked on resume rather than recorded as a reject
+      // and skipped. Stub cleanupSession to capture the call and short-circuit the
+      // (heavy, unrelated) rest of initialization.
+      const testServer = createServer() as unknown as {
+        session: unknown;
+        cleanupSession: (o?: {
+          cancelPendingPermissions?: boolean;
+        }) => Promise<void>;
+        _doInitializeSession: (payload: JwtPayload, sse: null) => Promise<void>;
+      };
+      testServer.session = { payload: { run_id: "old-run" } };
+      const cleanupSpy = vi
+        .spyOn(testServer, "cleanupSession")
+        .mockImplementation(async () => {
+          // Stop initialization right after the cleanup call we care about.
+          throw new Error("stop-after-cleanup");
+        });
+
+      const payload: JwtPayload = {
+        task_id: "test-task-id",
+        run_id: "new-run",
+        team_id: 1,
+        user_id: 1,
+        distinct_id: "d",
+        mode: "interactive",
+      };
+
+      await expect(
+        testServer._doInitializeSession(payload, null),
+      ).rejects.toThrow("stop-after-cleanup");
+
+      expect(cleanupSpy).toHaveBeenCalledWith({
+        cancelPendingPermissions: true,
+      });
+
+      // Restore so afterEach teardown doesn't re-trigger the throwing mock.
+      cleanupSpy.mockRestore();
+      testServer.session = null;
+    });
+
     it("writes terminal failure status before completing event ingest", async () => {
       const order: string[] = [];
       const testServer = new AgentServer({

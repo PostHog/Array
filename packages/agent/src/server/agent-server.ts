@@ -300,10 +300,7 @@ export class AgentServer {
   private pendingPermissions = new Map<
     string,
     {
-      resolve: (response: {
-        outcome: { outcome: "selected"; optionId: string };
-        _meta?: Record<string, unknown>;
-      }) => void;
+      resolve: (response: RequestPermissionResponse) => void;
       toolCallId?: string;
     }
   >();
@@ -1035,7 +1032,9 @@ export class AgentServer {
     sseController: SseController | null,
   ): Promise<void> {
     if (this.session) {
-      await this.cleanupSession();
+      // Re-init, not shutdown: cancel (don't reject) any pending choice box so
+      // the user's unanswered question is re-asked after resume, not skipped.
+      await this.cleanupSession({ cancelPendingPermissions: true });
     }
 
     this.resumeState = null;
@@ -3148,8 +3147,10 @@ ${signedCommitInstructions}
 
   private async cleanupSession({
     completeEventStream = false,
+    cancelPendingPermissions = false,
   }: {
     completeEventStream?: boolean;
+    cancelPendingPermissions?: boolean;
   } = {}): Promise<void> {
     if (!this.session) return;
 
@@ -3171,11 +3172,25 @@ ${signedCommitInstructions}
 
     // Drain pending permissions before ACP cleanup to avoid deadlocks —
     // cleanup may await operations that are blocked on a permission response.
+    //
+    // On re-init (cancelPendingPermissions) resolve them as "cancelled" rather
+    // than a "reject" selection. The user never answered — the session is just
+    // being rebuilt underneath them (e.g. a seamless resume). Resolving with a
+    // "reject" selection records it as the user's deliberate choice, which the
+    // agent persists and treats as answered on resume, silently skipping the
+    // choice box. "cancelled" leaves it unanswered so the resumed turn re-asks.
     for (const [, pending] of this.pendingPermissions) {
-      pending.resolve({
-        outcome: { outcome: "selected", optionId: "reject" },
-        _meta: { customInput: "Session is shutting down." },
-      });
+      pending.resolve(
+        cancelPendingPermissions
+          ? {
+              outcome: { outcome: "cancelled" },
+              _meta: { message: "Session is resuming." },
+            }
+          : {
+              outcome: { outcome: "selected", optionId: "reject" },
+              _meta: { customInput: "Session is shutting down." },
+            },
+      );
     }
     this.pendingPermissions.clear();
 
@@ -3320,10 +3335,7 @@ ${signedCommitInstructions}
   private relayPermissionToClient(params: {
     options: Array<{ kind: string; optionId: string; name?: string }>;
     toolCall?: Record<string, unknown> | null;
-  }): Promise<{
-    outcome: { outcome: "selected"; optionId: string };
-    _meta?: Record<string, unknown>;
-  }> {
+  }): Promise<RequestPermissionResponse> {
     const requestId = crypto.randomUUID();
     const toolCallId = params.toolCall?.toolCallId as string | undefined;
 
