@@ -112,7 +112,11 @@ export function SituationStation({ id, bindings }: Props) {
               }
             >
               {action.auto ? (
-                <Lightning size={9} weight="fill" className="text-(--amber-9)" />
+                <Lightning
+                  size={9}
+                  weight="fill"
+                  className="text-(--amber-9)"
+                />
               ) : (
                 <Sparkle size={9} />
               )}

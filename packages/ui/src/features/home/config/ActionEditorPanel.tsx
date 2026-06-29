@@ -12,7 +12,14 @@ import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { usePreviewConfig } from "@posthog/ui/features/task-detail/hooks/usePreviewConfig";
 import { Combobox } from "@posthog/ui/primitives/combobox/Combobox";
 import type { ComboboxSearchKeys } from "@posthog/ui/primitives/combobox/useComboboxFilter";
-import { Card, Flex, Switch, Text, TextArea, TextField } from "@radix-ui/themes";
+import {
+  Card,
+  Flex,
+  Switch,
+  Text,
+  TextArea,
+  TextField,
+} from "@radix-ui/themes";
 import { useMemo } from "react";
 import { SITUATION_TONE } from "./workflowMapLayout";
 
@@ -191,23 +198,18 @@ export function ActionEditorPanel({
           </Field>
 
           <Field label="Auto-run">
-            <Flex align="center" gap="2">
-              <Switch
-                size="1"
-                checked={action.auto ?? false}
-                onCheckedChange={(checked) => patch({ auto: checked })}
-                aria-label="Auto-run this action"
-              />
-              <Text className="text-[11px] text-gray-11">
-                Run automatically when a workstream enters this state
-              </Text>
-            </Flex>
-            {action.auto ? (
-              <Text className="mt-1 text-[10px] text-gray-10">
-                A cloud task starts on its own — skipped while the workstream
-                already has a running task.
-              </Text>
-            ) : null}
+            <Switch
+              className="self-start"
+              size="1"
+              checked={action.auto ?? false}
+              onCheckedChange={(checked) => patch({ auto: checked })}
+              aria-label="Auto-run this action"
+            />
+            <Text className="mt-1 text-[10px] text-gray-10">
+              {action.auto
+                ? "A cloud task starts on its own — skipped while the workstream already has a running task."
+                : "Run automatically when a workstream enters this state."}
+            </Text>
           </Field>
         </Card>
 
