@@ -141,9 +141,11 @@ interface SettingsStore {
   // Experimental / misc
   hedgehogMode: boolean;
   slotMachineMode: boolean;
+  brainrotMode: boolean;
   mcpAppsDisabledServers: string[];
   setHedgehogMode: (enabled: boolean) => void;
   setSlotMachineMode: (enabled: boolean) => void;
+  setBrainrotMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
 
   // Onboarding hints
@@ -271,9 +273,11 @@ export const useSettingsStore = create<SettingsStore>()(
       // Experimental / misc
       hedgehogMode: false,
       slotMachineMode: false,
+      brainrotMode: false,
       mcpAppsDisabledServers: [],
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
       setSlotMachineMode: (enabled) => set({ slotMachineMode: enabled }),
+      setBrainrotMode: (enabled) => set({ brainrotMode: enabled }),
       setMcpAppsDisabledServers: (servers) =>
         set({ mcpAppsDisabledServers: servers }),
 
@@ -359,6 +363,7 @@ export const useSettingsStore = create<SettingsStore>()(
         // Experimental / misc
         hedgehogMode: state.hedgehogMode,
         slotMachineMode: state.slotMachineMode,
+        brainrotMode: state.brainrotMode,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
 
         // Onboarding hints

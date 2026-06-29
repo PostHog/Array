@@ -11,6 +11,7 @@ import {
 import { isBrainrotCell } from "@posthog/core/command-center/grid";
 import { ANALYTICS_EVENTS, type WorkspaceMode } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { Flex, Text } from "@radix-ui/themes";
@@ -114,6 +115,7 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
   const stopCreating = useCommandCenterStore((s) => s.stopCreating);
   const layout = useCommandCenterStore((s) => s.layout);
   const cells = useCommandCenterStore((s) => s.cells);
+  const brainrotMode = useSettingsStore((s) => s.brainrotMode);
   const clearDraft = useDraftStore((s) => s.actions.setDraft);
 
   const sessionId = getCellSessionId(cellIndex);
@@ -184,7 +186,7 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
           open={selectorOpen}
           onOpenChange={setSelectorOpen}
           onNewTask={() => startCreating(cellIndex)}
-          onBrainrot={handleBrainrot}
+          onBrainrot={brainrotMode ? handleBrainrot : undefined}
         >
           <button
             type="button"

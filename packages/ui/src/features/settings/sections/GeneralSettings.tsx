@@ -74,6 +74,7 @@ export function GeneralSettings() {
     conversationCollapseMode,
     hedgehogMode,
     slotMachineMode,
+    brainrotMode,
     setAutoConvertLongText,
     setDefaultInitialTaskMode,
     setDefaultMessagingMode,
@@ -83,6 +84,7 @@ export function GeneralSettings() {
     setConversationCollapseMode,
     setHedgehogMode,
     setSlotMachineMode,
+    setBrainrotMode,
   } = useSettingsStore();
 
   // Appearance handlers
@@ -205,6 +207,18 @@ export function GeneralSettings() {
       setSlotMachineMode(checked);
     },
     [slotMachineMode, setSlotMachineMode],
+  );
+
+  const handleBrainrotModeChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "brainrot_mode",
+        new_value: checked,
+        old_value: brainrotMode,
+      });
+      setBrainrotMode(checked);
+    },
+    [brainrotMode, setBrainrotMode],
   );
 
   const accountUrl = buildPostHogUrl("/settings/user", cloudRegion);
@@ -446,11 +460,22 @@ export function GeneralSettings() {
       <SettingRow
         label="Slot machine mode 🎰"
         description="Show a pull-able slot machine lever while a task is running. Every run is a gamble. Pull the handle and watch the reels spin."
-        noBorder
       >
         <Switch
           checked={slotMachineMode}
           onCheckedChange={handleSlotMachineModeChange}
+          size="1"
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Brainrot mode ⚡"
+        description="Add a Brainrot option to empty command center cells that fills them with a looping background video."
+        noBorder
+      >
+        <Switch
+          checked={brainrotMode}
+          onCheckedChange={handleBrainrotModeChange}
           size="1"
         />
       </SettingRow>
