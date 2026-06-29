@@ -1861,6 +1861,7 @@ export class AgentServer {
     const REPO_READY_TIMEOUT_MS = 5 * 60_000;
     const POLL_MS = 100;
     const startedAt = Date.now();
+    let loggedUnexpectedError = false;
 
     for (;;) {
       try {
@@ -1870,7 +1871,17 @@ export class AgentServer {
           waitedMs: Date.now() - startedAt,
         });
         return;
-      } catch {}
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code !== "ENOENT" && !loggedUnexpectedError) {
+          loggedUnexpectedError = true;
+          this.logger.debug("Repo-ready barrier access error; still polling", {
+            readyFile,
+            code,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
       if (Date.now() - startedAt > REPO_READY_TIMEOUT_MS) {
         this.logger.warn("Repo-ready barrier timed out; proceeding", {
           readyFile,
