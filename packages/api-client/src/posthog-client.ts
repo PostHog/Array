@@ -1855,6 +1855,29 @@ export class PostHogAPIClient {
     return (await response.json()) as T;
   }
 
+  private async scoutPost<T>(
+    projectId: number,
+    subPath: string,
+    body: unknown,
+  ): Promise<T> {
+    const urlPath = `/api/projects/${projectId}/signals/scout/${subPath}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(body),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Scout request failed (${subPath}): ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as T;
+  }
+
   async listScoutConfigs(projectId: number): Promise<ScoutConfig[]> {
     const data = await this.scoutGet<
       { results: ScoutConfig[] } | ScoutConfig[]
@@ -1919,28 +1942,38 @@ export class PostHogAPIClient {
     return await this.scoutGet<ScoutRun>(projectId, `runs/${runId}/`);
   }
 
-  async listScoutRunEmissions(
+  /**
+   * Every supplied run's emitted findings in one request, flattened newest-first
+   * (each row keeps its `run_id` so the caller can regroup). Replaces the old
+   * per-run fan-out — one Postgres query instead of one request per run. Run ids
+   * belonging to another team contribute no rows rather than erroring, so a
+   * single stale id can't blank the list. Capped at 200 ids per call by the API.
+   */
+  async batchScoutRunEmissions(
     projectId: number,
-    runId: string,
+    runIds: string[],
   ): Promise<ScoutEmission[]> {
-    const data = await this.scoutGet<
+    if (runIds.length === 0) return [];
+    const data = await this.scoutPost<
       { results: ScoutEmission[] } | ScoutEmission[]
-    >(projectId, `runs/${runId}/emissions/`);
+    >(projectId, "runs/emissions/batch/", { run_ids: runIds });
     return Array.isArray(data) ? data : (data.results ?? []);
   }
 
   /**
-   * Best-effort reverse lookup: for each finding a run emitted, the inbox report
-   * (if any) its underlying signal grouped into. Pairs with the report's evidence
-   * list, which links the other direction.
+   * Best-effort reverse lookup: for each finding the supplied runs emitted, the
+   * inbox report (if any) its underlying signal grouped into. Resolves every
+   * run's findings in a single ClickHouse round-trip instead of one per run.
+   * Pairs with the report's evidence list, which links the other direction.
    */
-  async listScoutEmissionReports(
+  async batchScoutEmissionReports(
     projectId: number,
-    runId: string,
+    runIds: string[],
   ): Promise<ScoutEmissionReportLink[]> {
-    const data = await this.scoutGet<
+    if (runIds.length === 0) return [];
+    const data = await this.scoutPost<
       { results: ScoutEmissionReportLink[] } | ScoutEmissionReportLink[]
-    >(projectId, `runs/${runId}/emissions/reports/`);
+    >(projectId, "runs/emissions/reports/batch/", { run_ids: runIds });
     return Array.isArray(data) ? data : (data.results ?? []);
   }
 

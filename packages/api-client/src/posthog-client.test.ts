@@ -921,4 +921,83 @@ describe("PostHogAPIClient", () => {
       );
     });
   });
+
+  describe("batched scout emissions", () => {
+    const EMISSIONS_PATH =
+      "/api/projects/123/signals/scout/runs/emissions/batch/";
+    const REPORTS_PATH =
+      "/api/projects/123/signals/scout/runs/emissions/reports/batch/";
+
+    function buildClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    it("short-circuits empty run ids without hitting the network", async () => {
+      const fetch = vi.fn();
+      const client = buildClient(fetch);
+      await expect(client.batchScoutRunEmissions(123, [])).resolves.toEqual([]);
+      await expect(client.batchScoutEmissionReports(123, [])).resolves.toEqual(
+        [],
+      );
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("POSTs the run ids in one request and flattens the response", async () => {
+      const emissions = [
+        { id: "e1", run_id: "r1" },
+        { id: "e2", run_id: "r2" },
+      ];
+      const fetch = vi
+        .fn()
+        .mockResolvedValue({ ok: true, json: async () => emissions });
+
+      await expect(
+        buildClient(fetch).batchScoutRunEmissions(123, ["r1", "r2"]),
+      ).resolves.toEqual(emissions);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch.mock.calls[0][0]).toMatchObject({
+        method: "post",
+        path: EMISSIONS_PATH,
+      });
+      expect(JSON.parse(fetch.mock.calls[0][0].overrides.body)).toEqual({
+        run_ids: ["r1", "r2"],
+      });
+    });
+
+    it("unwraps a paginated reports payload", async () => {
+      const links = [{ finding_id: "f1", source_id: "s1", report: null }];
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ results: links }),
+      });
+
+      await expect(
+        buildClient(fetch).batchScoutEmissionReports(123, ["r1"]),
+      ).resolves.toEqual(links);
+      expect(fetch.mock.calls[0][0]).toMatchObject({
+        method: "post",
+        path: REPORTS_PATH,
+      });
+    });
+
+    it("throws when the server responds non-OK", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValue({ ok: false, statusText: "Bad Request" });
+      await expect(
+        buildClient(fetch).batchScoutRunEmissions(123, ["r1"]),
+      ).rejects.toThrow("Bad Request");
+    });
+  });
 });
