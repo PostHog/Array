@@ -292,8 +292,12 @@ function RootLayout() {
       <Flex direction="column" height="100vh" className="bg-chrome">
         {/* Full-width title bar: a window-drag region carrying the PostHog
             mark. The left padding clears the macOS stoplights. */}
-        <Flex align="center" gap="3" className="drag h-10 shrink-0 pl-[78px]">
-          <Box className="h-[14px] w-[26px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
+        <Flex
+          align="center"
+          gap="3"
+          className="drag relative h-10 shrink-0 pl-[78px]"
+        >
+          <Box className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 h-[14px] w-[26px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
             <LogosLandscape code={false} />
           </Box>
           <Flex align="center" gap="2" className="no-drag">
@@ -315,6 +319,8 @@ function RootLayout() {
             >
               <CaretRightIcon size={14} />
             </Button>
+          </Flex>
+          <Flex align="center" gap="2" className="no-drag ml-auto pr-3">
             <Button
               variant="outline"
               size="sm"
@@ -341,8 +347,6 @@ function RootLayout() {
             >
               Leave feedback
             </Button>
-          </Flex>
-          <Flex align="center" className="no-drag ml-auto pr-3">
             <Button
               variant="outline"
               size="sm"
