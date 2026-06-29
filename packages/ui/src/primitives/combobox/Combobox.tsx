@@ -14,7 +14,10 @@ import React, {
 } from "react";
 import { Tooltip } from "../Tooltip";
 import "./Combobox.css";
-import { useComboboxFilter } from "./useComboboxFilter";
+import {
+  type ComboboxSearchKeys,
+  useComboboxFilter,
+} from "./useComboboxFilter";
 
 type ComboboxSize = "1" | "2" | "3";
 type ComboboxContentVariant = "solid" | "soft";
@@ -212,6 +215,12 @@ interface ComboboxContentFilteredProps<T> extends ComboboxContentBaseProps {
   items: T[];
   /** Extract the searchable string from each item. Defaults to `String(item)`. */
   getValue?: (item: T) => string;
+  /**
+   * Opt-in weighted fuzzy search across multiple fields (fuse.js). Each key
+   * carries a weight (e.g. name above description) and prefix matches on
+   * `getValue` are promoted. Pass a stable reference (a module constant).
+   */
+  searchKeys?: ComboboxSearchKeys<T>;
   /** Maximum items to render. Defaults to 50. */
   limit?: number;
   /** Values pinned to the top regardless of score. */
@@ -238,6 +247,7 @@ function ComboboxContent<T>({
   const hasItems = "items" in rest && rest.items !== undefined;
   const filterItems = hasItems ? rest.items : ([] as T[]);
   const getValue = hasItems ? rest.getValue : undefined;
+  const searchKeys = hasItems ? rest.searchKeys : undefined;
   const limit = hasItems ? rest.limit : undefined;
   const pinned = hasItems ? rest.pinned : undefined;
   const shouldFilter = hasItems
@@ -248,7 +258,7 @@ function ComboboxContent<T>({
 
   const filter = useComboboxFilter(
     filterItems,
-    { limit, pinned, open },
+    { limit, pinned, open, keys: searchKeys },
     getValue,
   );
 

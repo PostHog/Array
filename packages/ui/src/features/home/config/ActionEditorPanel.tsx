@@ -11,6 +11,7 @@ import { UnifiedModelSelector } from "@posthog/ui/features/sessions/components/U
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { usePreviewConfig } from "@posthog/ui/features/task-detail/hooks/usePreviewConfig";
 import { Combobox } from "@posthog/ui/primitives/combobox/Combobox";
+import type { ComboboxSearchKeys } from "@posthog/ui/primitives/combobox/useComboboxFilter";
 import { Card, Flex, Text, TextArea, TextField } from "@radix-ui/themes";
 import { useMemo } from "react";
 import { SITUATION_TONE } from "./workflowMapLayout";
@@ -22,9 +23,16 @@ interface Props {
   indexInSituation: number;
 }
 
-// Search across both the skill name and its description.
-const skillSearchValue = (s: { name: string; description: string }) =>
-  `${s.name} ${s.description}`;
+type SkillOption = ReturnType<typeof useSkillsForPicker>["skills"][number];
+
+// Name-first so a prefix match on the name wins the exact-match promotion.
+const skillSearchValue = (s: SkillOption) => `${s.name} ${s.description}`;
+
+// Weight the skill name above its description so a name hit ranks first.
+const SKILL_SEARCH_KEYS: ComboboxSearchKeys<SkillOption> = [
+  { name: "name", weight: 0.7 },
+  { name: "description", weight: 0.3 },
+];
 
 export function ActionEditorPanel({
   situationId,
@@ -118,6 +126,7 @@ export function ActionEditorPanel({
               <Combobox.Content
                 items={skills}
                 getValue={skillSearchValue}
+                searchKeys={SKILL_SEARCH_KEYS}
                 className="w-(--radix-popover-trigger-width)"
               >
                 {({ filtered, hasMore, moreCount }) => (
