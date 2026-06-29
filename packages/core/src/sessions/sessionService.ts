@@ -1900,13 +1900,22 @@ export class SessionService {
     }
 
     // Steer: the user sent a message mid-turn and asked to fold it into the
-    // running turn rather than queue it. Native (Claude) injects at the next
-    // tool boundary; everything else interrupts the turn and resends below as a
-    // fresh prompt. Compaction always falls through to the queue.
-    if (options?.steer && session.isPromptPending && !session.isCompacting) {
-      const supportsNativeSteer =
-        !session.isCloud && session.adapter === "claude";
-      if (supportsNativeSteer) {
+    // running turn rather than queue it. Native (Claude, local) injects at the
+    // next tool boundary; local Codex interrupts the turn and resends below as
+    // a fresh prompt.
+    //
+    // Cloud has no real mid-turn steer: the backend only delivers user messages
+    // between turns, so a cloud "steer" would cancel the running turn for no
+    // gain (the message lands next turn either way) while surfacing a jarring
+    // interruption. Until the backend supports true steering, cloud steer falls
+    // through to the queue like a normal message. Compaction also falls through.
+    if (
+      options?.steer &&
+      !session.isCloud &&
+      session.isPromptPending &&
+      !session.isCompacting
+    ) {
+      if (session.adapter === "claude") {
         return this.sendSteerPrompt(session, prompt);
       }
       await this.cancelPrompt(taskId);

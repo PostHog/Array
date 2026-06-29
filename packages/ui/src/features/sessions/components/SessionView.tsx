@@ -650,11 +650,13 @@ export function SessionView({
                             ) : null
                           }
                           messagingModeToggle={
-                            taskId ? (
+                            taskId && !isCloudRun ? (
                               <SteerQueueToggle taskId={taskId} />
                             ) : undefined
                           }
-                          onToggleMessagingMode={toggleMessagingMode}
+                          onToggleMessagingMode={
+                            isCloudRun ? undefined : toggleMessagingMode
+                          }
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
                           onBashCommand={onBashCommand}

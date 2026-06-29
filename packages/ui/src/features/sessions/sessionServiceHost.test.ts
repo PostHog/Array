@@ -3632,6 +3632,35 @@ describe("SessionService", () => {
       expect(mockTrpcCloudTask.sendCommand.mutate).not.toHaveBeenCalled();
     });
 
+    it("queues a cloud steer instead of interrupting the running turn", async () => {
+      // Regression: cloud has no native mid-turn steer, so steering used to
+      // fall back to cancel-then-resend — which surfaced as a jarring user
+      // interruption. Cloud steer must now queue like a normal message and
+      // never cancel the running turn.
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "in_progress",
+          status: "connected",
+          isPromptPending: true,
+        }),
+      );
+
+      const prompt: ContentBlock[] = [{ type: "text", text: "steer me" }];
+      const result = await service.sendPrompt("task-123", prompt, {
+        steer: true,
+      });
+
+      expect(result.stopReason).toBe("queued");
+      expect(mockSessionStoreSetters.enqueueMessage).toHaveBeenCalledWith(
+        "task-123",
+        "steer me",
+        prompt,
+      );
+      expect(mockTrpcCloudTask.sendCommand.mutate).not.toHaveBeenCalled();
+    });
+
     it("kicks an SSE retry when queueing on a disconnected cloud session", async () => {
       const service = getSessionService();
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
