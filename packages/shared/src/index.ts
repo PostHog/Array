@@ -217,6 +217,15 @@ export {
   formatRelativeTimeShort,
   getRelativeDateGroup,
 } from "./time";
+export {
+  mcpToolKey,
+  type PosthogToolMeta,
+  parseMcpToolName,
+  posthogToolMeta,
+  readAgentToolName,
+  readMcpToolDescriptor,
+  readMcpToolName,
+} from "./tool-meta";
 export { TypedEventEmitter } from "./typed-event-emitter";
 export { isSafeExternalUrl } from "./url";
 export { getCloudUrlFromRegion } from "./urls";

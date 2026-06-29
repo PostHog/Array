@@ -1,4 +1,5 @@
 import type { Icon } from "@phosphor-icons/react";
+import { readAgentToolName } from "@posthog/shared";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import {
   buildDoneLabel,
@@ -66,10 +67,7 @@ export interface ThreadGrouping {
 }
 
 function getToolName(update: { _meta?: unknown }): string | undefined {
-  const meta = update._meta as
-    | { claudeCode?: { toolName?: string } }
-    | undefined;
-  return meta?.claudeCode?.toolName;
+  return readAgentToolName(update._meta);
 }
 
 function isMcpToolItem(item: ConversationItem): boolean {

@@ -1,3 +1,4 @@
+import { readMcpToolName } from "@posthog/shared";
 import { parseMcpToolKey } from "@posthog/ui/features/mcp-apps/utils/mcp-app-host-utils";
 import {
   formatPosthogExecBody,
@@ -16,9 +17,7 @@ export function McpPermission({
   onSelect,
   onCancel,
 }: BasePermissionProps) {
-  const mcpToolName = (
-    toolCall._meta as { claudeCode?: { toolName?: string } } | undefined
-  )?.claudeCode?.toolName;
+  const mcpToolName = readMcpToolName(toolCall._meta);
 
   if (!mcpToolName) {
     return (

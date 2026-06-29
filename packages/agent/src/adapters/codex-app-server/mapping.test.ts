@@ -127,7 +127,39 @@ describe("mapAppServerNotification", () => {
         kind: "other",
         status: "in_progress",
         rawInput: { query: "SELECT 1" },
+        _meta: {
+          posthog: {
+            toolName: "mcp__posthog__execute-sql",
+            mcp: { server: "posthog", tool: "execute-sql" },
+          },
+        },
       },
+    });
+  });
+
+  it("tags an mcp exec tool call with the structured posthog channel the renderer routes on", () => {
+    const result = mapAppServerNotification(
+      "s-1",
+      APP_SERVER_NOTIFICATIONS.ITEM_STARTED,
+      {
+        item: {
+          type: "mcpToolCall",
+          id: "m2",
+          server: "posthog",
+          tool: "exec",
+          arguments: { command: "call execute-sql {}" },
+        },
+      },
+    );
+
+    // The host renderer routes MCP rendering (and the PostHog `exec` unwrapping)
+    // off the structured `_meta.posthog` channel.
+    const meta = (result?.update as { _meta?: unknown })._meta as {
+      posthog?: { toolName?: string; mcp?: { server: string; tool: string } };
+    };
+    expect(meta.posthog).toEqual({
+      toolName: "mcp__posthog__exec",
+      mcp: { server: "posthog", tool: "exec" },
     });
   });
 

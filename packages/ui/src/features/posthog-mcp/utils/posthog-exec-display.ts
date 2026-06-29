@@ -18,7 +18,12 @@
  *   call [--json] <tool> <json_input>      — invoke a tool
  */
 
-const POSTHOG_EXEC_TOOL_RE = /^mcp__(?:plugin_)?posthog(?:_[^_]+)*__exec$/;
+import { parseMcpToolName } from "@posthog/shared";
+
+// A PostHog MCP server name: optional `plugin_` prefix, `posthog`, then any
+// number of `_<segment>` parts (e.g. `posthog`, `posthog_cloud`,
+// `plugin_posthog_posthog`). The `exec` dispatcher lives on these servers.
+const POSTHOG_SERVER_RE = /^(?:plugin_)?posthog(?:_[^_]+)*$/;
 
 const POSTHOG_VERB_RE =
   /^\s*(tools|search|info|schema|call)(?:\s+([\s\S]*))?\s*$/;
@@ -33,7 +38,8 @@ export interface PostHogExecDisplay {
 }
 
 export function isPostHogExecTool(toolName: string): boolean {
-  return POSTHOG_EXEC_TOOL_RE.test(toolName);
+  const mcp = parseMcpToolName(toolName);
+  return !!mcp && mcp.tool === "exec" && POSTHOG_SERVER_RE.test(mcp.server);
 }
 
 export function getPostHogExecDisplay(

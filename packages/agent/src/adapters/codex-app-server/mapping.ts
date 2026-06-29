@@ -3,6 +3,7 @@ import type {
   ToolCallContent,
   ToolCallLocation,
 } from "@agentclientprotocol/sdk";
+import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
 import { APP_SERVER_NOTIFICATIONS } from "./protocol";
 
 /**
@@ -307,6 +308,14 @@ export function mapHistoryItem(
             status: mapStatus(item.status),
             ...(tool.rawInput !== undefined ? { rawInput: tool.rawInput } : {}),
             ...(tool.locations?.length ? { locations: tool.locations } : {}),
+            ...(tool.mcp
+              ? {
+                  _meta: posthogToolMeta({
+                    toolName: mcpToolKey(tool.mcp),
+                    mcp: tool.mcp,
+                  }),
+                }
+              : {}),
             ...(content ? { content } : {}),
           },
         },
@@ -354,6 +363,12 @@ type ToolDescriptor = {
   rawInput?: unknown;
   output?: string | null;
   locations?: ToolCallLocation[];
+  /**
+   * Originating MCP server + tool for MCP tool calls. Surfaced on the canonical
+   * `_meta.posthog` channel so the host renderer routes MCP rendering (and the
+   * PostHog `exec` display) the same way it does for every adapter.
+   */
+  mcp?: { server: string; tool: string };
 };
 
 /**
@@ -396,6 +411,7 @@ function describeTool(item: AppServerItem): ToolDescriptor | null {
         kind: "other",
         rawInput: item.arguments,
         output: mcpResultText(item.result, item.error),
+        mcp: { server: item.server ?? "mcp", tool: item.tool ?? "tool" },
       };
     case "dynamicToolCall":
       return {
@@ -475,6 +491,14 @@ function mapItem(
         status: "in_progress",
         ...(tool.rawInput !== undefined ? { rawInput: tool.rawInput } : {}),
         ...(tool.locations?.length ? { locations: tool.locations } : {}),
+        ...(tool.mcp
+          ? {
+              _meta: posthogToolMeta({
+                toolName: mcpToolKey(tool.mcp),
+                mcp: tool.mcp,
+              }),
+            }
+          : {}),
       },
     };
   }
