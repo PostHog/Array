@@ -5,7 +5,7 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import type { ChangedFile, Task } from "@posthog/shared/domain-types";
 import { Flex, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useDiffViewerStore } from "../../code-editor/diffViewerStore";
 import {
   useLocalBranchChangedFiles,
@@ -14,6 +14,7 @@ import {
 import { usePrDetails } from "../../git-interaction/usePrDetails";
 import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { useCwd } from "../../sidebar/useCwd";
+import { useDiscardFile } from "../../task-detail/hooks/useDiscardFile";
 import { REVIEW_FILE_CACHE_TIME_MS, REVIEW_MAX_FILE_LINES } from "../constants";
 import { useEffectiveDiffSource } from "../hooks/useEffectiveDiffSource";
 import { useReviewDiffs } from "../hooks/useReviewDiffs";
@@ -174,6 +175,7 @@ export function ReviewPage({ task }: ReviewPageProps) {
       repoPath={repoPath}
       taskId={taskId}
       openFile={openFile}
+      changedFiles={changedFiles}
       prUrl={prUrl}
       totalFileCount={totalFileCount}
       linesAdded={linesAdded}
@@ -206,6 +208,7 @@ function LocalReviewContent({
   repoPath,
   taskId,
   openFile,
+  changedFiles,
   prUrl,
   totalFileCount,
   linesAdded,
@@ -234,6 +237,7 @@ function LocalReviewContent({
   repoPath: string;
   taskId: string;
   openFile: (taskId: string, path: string, preview: boolean) => void;
+  changedFiles: ChangedFile[];
   prUrl: string | null;
   totalFileCount: number;
   linesAdded: number;
@@ -260,6 +264,24 @@ function LocalReviewContent({
 }) {
   usePrefetchUntrackedFileContents(repoPath, untrackedFiles, true);
 
+  const discardFile = useDiscardFile(repoPath);
+  const filesByPath = useMemo(() => {
+    const map = new Map<string, ChangedFile>();
+    for (const file of changedFiles) {
+      if (!map.has(file.path)) map.set(file.path, file);
+    }
+    return map;
+  }, [changedFiles]);
+  const onDiscardFile = useCallback(
+    (filePath: string) => {
+      const file = filesByPath.get(filePath);
+      if (!file) return;
+      const fileName = filePath.split("/").pop() ?? filePath;
+      void discardFile(file, fileName);
+    },
+    [filesByPath, discardFile],
+  );
+
   const items = useMemo<ReviewListItem[]>(() => {
     const reviewItems: ReviewListItem[] = [];
 
@@ -278,6 +300,7 @@ function LocalReviewContent({
           collapsedFiles,
           toggleFile,
           openFile,
+          onDiscardFile,
           prUrl,
           commentThreads,
         }),
@@ -304,6 +327,7 @@ function LocalReviewContent({
         collapsedFiles,
         toggleFile,
         openFile,
+        onDiscardFile,
         prUrl,
         commentThreads,
       }),
@@ -316,6 +340,7 @@ function LocalReviewContent({
         diffOptions,
         collapsedFiles,
         toggleFile,
+        onDiscardFile,
       }),
     );
 
@@ -325,6 +350,7 @@ function LocalReviewContent({
     commentThreads,
     diffOptions,
     hasStagedFiles,
+    onDiscardFile,
     openFile,
     prUrl,
     repoPath,

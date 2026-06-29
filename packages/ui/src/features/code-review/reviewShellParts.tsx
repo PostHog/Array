@@ -1,4 +1,8 @@
-import { ArrowSquareOut, CaretDown } from "@phosphor-icons/react";
+import {
+  ArrowCounterClockwise,
+  ArrowSquareOut,
+  CaretDown,
+} from "@phosphor-icons/react";
 import type { FileDiffMetadata } from "@pierre/diffs/react";
 import type { ResolvedDiffSource } from "@posthog/core/code-review/resolveDiffSource";
 import {
@@ -184,11 +188,13 @@ export function DiffFileHeader({
   collapsed,
   onToggle,
   onOpenFile,
+  onDiscard,
 }: {
   fileDiff: FileDiffMetadata;
   collapsed: boolean;
   onToggle: () => void;
   onOpenFile?: () => void;
+  onDiscard?: () => void;
 }) {
   const fullPath =
     fileDiff.prevName && fileDiff.prevName !== fileDiff.name
@@ -206,17 +212,34 @@ export function DiffFileHeader({
       collapsed={collapsed}
       onToggle={onToggle}
       trailing={
-        onOpenFile && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenFile();
-            }}
-            className="ml-auto inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
-          >
-            <ArrowSquareOut size={14} />
-          </button>
+        (onDiscard || onOpenFile) && (
+          <span className="ml-auto inline-flex items-center gap-[2px]">
+            {onDiscard && (
+              <button
+                type="button"
+                title="Discard changes"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDiscard();
+                }}
+                className="inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
+              >
+                <ArrowCounterClockwise size={14} />
+              </button>
+            )}
+            {onOpenFile && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenFile();
+                }}
+                className="inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
+              >
+                <ArrowSquareOut size={14} />
+              </button>
+            )}
+          </span>
         )
       }
     />
