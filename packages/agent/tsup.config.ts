@@ -83,7 +83,12 @@ const sharedOptions = {
   splitting: false,
   outDir: "dist",
   target: "node20",
-  noExternal: ["@posthog/shared", "@posthog/git", "@posthog/enricher"],
+  noExternal: [
+    "@posthog/shared",
+    "@posthog/git",
+    "@posthog/enricher",
+    "fflate",
+  ],
   external: [
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),
