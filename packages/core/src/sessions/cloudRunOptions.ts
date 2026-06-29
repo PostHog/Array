@@ -60,10 +60,6 @@ export function getCloudRuntimeOptions(
       typeof thoughtLevelOption?.currentValue === "string"
         ? thoughtLevelOption.currentValue
         : (previousRun?.reasoning_effort ?? undefined),
-    // Preserve the prior run's approval preset on resume. The session's `mode`
-    // config option reflects the user's current selection (seeded from the
-    // previous run); fall back to the run state. Without this the resume
-    // request omits the mode and the backend reverts to its default ("plan").
     initialPermissionMode:
       typeof modeOption?.currentValue === "string"
         ? (modeOption.currentValue as ExecutionMode)

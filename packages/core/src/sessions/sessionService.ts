@@ -3271,9 +3271,6 @@ export class SessionService {
             return { ...opt, currentValue: initialModel };
           }
         }
-        // Seed the effort option from the prior run so resume preserves it.
-        // The preview defaults effort to "high"; without this seeding the
-        // resume request reuses that default instead of the run's real value.
         if (
           opt.category === "thought_level" &&
           opt.type === "select" &&
