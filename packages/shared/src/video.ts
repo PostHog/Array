@@ -16,12 +16,11 @@ const PLAYABLE_VIDEO_EXTENSIONS: ReadonlySet<string> = new Set(
   Object.keys(VIDEO_MIME_TYPES),
 );
 
-export const ALLOWED_VIDEO_MIME_TYPES: ReadonlySet<string> = new Set([
-  "video/mp4",
-  "video/quicktime",
-  "video/webm",
-  "video/ogg",
-]);
+// Derived from VIDEO_MIME_TYPES so the playable set and the allow-list cannot
+// drift apart when a new format is added.
+export const ALLOWED_VIDEO_MIME_TYPES: ReadonlySet<string> = new Set(
+  Object.values(VIDEO_MIME_TYPES),
+);
 
 // base64 inflates bytes by ~33%, so cap the inline preview to keep a large
 // committed video from ballooning into a multi-hundred-MB data URL in the

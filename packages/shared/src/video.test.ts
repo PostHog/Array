@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { isBinaryFile } from "./binary";
 import {
-  ALLOWED_VIDEO_MIME_TYPES,
   getVideoMimeType,
   isAllowedVideoMimeType,
   isPlayableVideoFile,
@@ -65,10 +65,12 @@ describe("isAllowedVideoMimeType", () => {
     expect(isAllowedVideoMimeType("video/x-msvideo")).toBe(false);
     expect(isAllowedVideoMimeType("application/octet-stream")).toBe(false);
   });
+});
 
-  it("keeps mapped mime types and the allow-list aligned", () => {
-    for (const mimeType of Object.values(VIDEO_MIME_TYPES)) {
-      expect(ALLOWED_VIDEO_MIME_TYPES.has(mimeType)).toBe(true);
+describe("playable video / binary invariant", () => {
+  it("treats every playable video extension as binary so it is intercepted before the text diff", () => {
+    for (const ext of Object.keys(VIDEO_MIME_TYPES)) {
+      expect(isBinaryFile(`clip.${ext}`)).toBe(true);
     }
   });
 });

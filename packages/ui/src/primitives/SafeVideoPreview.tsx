@@ -10,6 +10,8 @@ interface SafeVideoPreviewProps {
   /** Base64-encoded video data (no data URL prefix). */
   base64: string;
   mimeType: string;
+  /** Accessible label for the player. */
+  label?: string;
   className?: string;
   style?: React.CSSProperties;
   /** Rendered when the video fails to decode or has a disallowed mime type. */
@@ -31,6 +33,7 @@ function DefaultFallback() {
 export function SafeVideoPreview({
   base64,
   mimeType,
+  label,
   className,
   style,
   fallback,
@@ -59,6 +62,7 @@ export function SafeVideoPreview({
       controls
       muted
       preload="metadata"
+      aria-label={label ?? "video preview"}
       src={buildVideoDataUrl(mimeType, base64)}
       className={className ?? "max-h-full max-w-full"}
       style={style}

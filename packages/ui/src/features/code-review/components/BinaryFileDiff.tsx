@@ -85,6 +85,7 @@ function BinaryMediaBody({
         <SafeVideoPreview
           base64={data}
           mimeType={getVideoMimeType(filePath)}
+          label={filePath}
           className="max-h-[560px] max-w-full rounded"
           fallback={fallback}
         />
@@ -106,7 +107,7 @@ export function BinaryFileDiff({
     once: true,
   });
   const { dirPath, fileName } = splitFilePath(filePath);
-  const canPreview = !!absolutePath && (kind === "image" || kind === "video");
+  const previewKind = kind === "image" || kind === "video" ? kind : null;
 
   return (
     <div ref={containerRef}>
@@ -126,9 +127,9 @@ export function BinaryFileDiff({
         }
       />
       {!collapsed &&
-        (canPreview && absolutePath ? (
+        (previewKind && absolutePath ? (
           <BinaryMediaBody
-            kind={kind === "image" ? "image" : "video"}
+            kind={previewKind}
             absolutePath={absolutePath}
             filePath={filePath}
             enabled={inView}
