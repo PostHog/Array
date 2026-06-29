@@ -26,6 +26,7 @@ import {
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
+import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
 import { logger } from "@posthog/ui/shell/logger";
 import { clearApplicationStorage } from "@posthog/ui/utils/clearStorage";
 import { isMac } from "@posthog/ui/utils/platform";
@@ -46,6 +47,7 @@ export function GlobalEventHandlers({
   const trpcReact = useHostTRPC();
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const commandMenuOpen = useCommandMenuStore((s) => s.isOpen);
+  const shortcutsSheetOpen = useShortcutsSheetStore((s) => s.isOpen);
   const openSettingsDialog = openSettings;
   const view = useAppView();
   const goBack = goBackInHistory;
@@ -153,6 +155,7 @@ export function GlobalEventHandlers({
     enableOnFormTags: true,
     enableOnContentEditable: true,
     preventDefault: true,
+    enabled: !shortcutsSheetOpen,
   } as const;
 
   const commandMenuKey = useShortcut("command-menu");
@@ -170,7 +173,7 @@ export function GlobalEventHandlers({
 
   useHotkeys(commandMenuKey, onToggleCommandMenu, {
     ...globalOptions,
-    enabled: !commandMenuOpen,
+    enabled: !commandMenuOpen && !shortcutsSheetOpen,
   });
   useHotkeys(newTaskKey, handleFocusTaskMode, globalOptions);
   useHotkeys(settingsKey, handleOpenSettings, globalOptions);
@@ -185,7 +188,10 @@ export function GlobalEventHandlers({
 
   useHotkeys(toggleLeftSidebarKey, toggleLeftSidebar, globalOptions);
   useHotkeys(toggleReviewPanelKey, handleToggleReview, globalOptions);
-  useHotkeys(shortcutsSheetKey, onToggleShortcutsSheet, globalOptions);
+  useHotkeys(shortcutsSheetKey, onToggleShortcutsSheet, {
+    ...globalOptions,
+    enabled: true,
+  });
   useHotkeys(inboxKey, navigateToInbox, globalOptions);
   useHotkeys(prevTaskKey, handlePrevTask, globalOptions, [handlePrevTask]);
   useHotkeys(nextTaskKey, handleNextTask, globalOptions, [handleNextTask]);
@@ -195,7 +201,7 @@ export function GlobalEventHandlers({
     handleToggleFocus,
     {
       ...globalOptions,
-      enabled: !!currentTaskId && isWorktreeTask,
+      enabled: !!currentTaskId && isWorktreeTask && !shortcutsSheetOpen,
     },
     [handleToggleFocus],
   );
