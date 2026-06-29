@@ -14,7 +14,7 @@ import type { Task } from "@posthog/shared/domain-types";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
-import { Flex, Text } from "@radix-ui/themes";
+import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCloudPrUrl } from "../../git-interaction/useCloudPrUrl";
 import { useDraftStore } from "../../message-editor/draftStore";
@@ -214,6 +214,7 @@ function BrainrotCell({ cellIndex }: { cellIndex: number }) {
   const orientation = useElementOrientation(stageRef);
   const src =
     orientation === "portrait" ? BRAINROT_PORTRAIT_URL : BRAINROT_LANDSCAPE_URL;
+  const [loading, setLoading] = useState(true);
 
   return (
     <Flex direction="column" height="100%">
@@ -237,7 +238,10 @@ function BrainrotCell({ cellIndex }: { cellIndex: number }) {
           <X size={12} />
         </button>
       </Flex>
-      <div ref={stageRef} className="min-h-0 flex-1 overflow-hidden bg-black">
+      <div
+        ref={stageRef}
+        className="relative min-h-0 flex-1 overflow-hidden bg-black"
+      >
         <video
           key={orientation}
           src={src}
@@ -246,8 +250,15 @@ function BrainrotCell({ cellIndex }: { cellIndex: number }) {
           loop
           muted
           playsInline
+          onLoadStart={() => setLoading(true)}
+          onCanPlay={() => setLoading(false)}
           className="h-full w-full object-contain"
         />
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center text-gray-11">
+            <Spinner size="3" />
+          </div>
+        )}
       </div>
     </Flex>
   );
