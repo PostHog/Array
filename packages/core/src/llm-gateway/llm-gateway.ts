@@ -21,6 +21,32 @@ import {
 // the cheapest model rather than the gateway default.
 export const HELPER_GATEWAY_MODEL = "claude-haiku-4-5";
 
+/**
+ * Build `x-posthog-property-<name>` request headers from the caller's
+ * metadata map. The gateway lifts each header onto the `$ai_generation`
+ * event it emits — see `services/llm-gateway/src/llm_gateway/request_context.py`
+ * in posthog/posthog. Null/undefined values are dropped; values are
+ * sanitized to be HTTP-header safe (newlines collapsed, non-latin1 bytes
+ * stripped) so an HTTP client like undici doesn't reject the request
+ * before it's sent.
+ */
+function buildPosthogPropertyHeaders(
+  properties:
+    | Record<string, string | number | boolean | null | undefined>
+    | undefined,
+): Record<string, string> {
+  if (!properties) return {};
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(properties)) {
+    if (value === null || value === undefined) continue;
+    const sanitized = String(value)
+      .replace(/[\r\n]+/g, " ")
+      .replace(/[^\x20-\x7e\x80-\xff]/g, "");
+    headers[`x-posthog-property-${key}`] = sanitized;
+  }
+  return headers;
+}
+
 export class LlmGatewayError extends Error {
   constructor(
     message: string,
@@ -58,6 +84,16 @@ export class LlmGatewayService {
       model?: string;
       signal?: AbortSignal;
       timeoutMs?: number;
+      /**
+       * Free-form metadata forwarded as `x-posthog-property-<key>` headers.
+       * The gateway lifts each one onto the `$ai_generation` event it
+       * captures, so helper callers (commit messages, PR descriptions, etc.)
+       * can be told apart from the agent's main generations.
+       */
+      posthogProperties?: Record<
+        string,
+        string | number | boolean | null | undefined
+      >;
     } = {},
   ): Promise<PromptOutput> {
     const {
@@ -66,6 +102,7 @@ export class LlmGatewayService {
       model = this.endpoints.defaultModel,
       signal,
       timeoutMs = 60_000,
+      posthogProperties,
     } = options;
 
     const auth = await this.auth.getValidAccessToken();
@@ -101,13 +138,16 @@ export class LlmGatewayService {
       else signal.addEventListener("abort", onCallerAbort, { once: true });
     }
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...buildPosthogPropertyHeaders(posthogProperties),
+    };
+
     let response: Response;
     try {
       response = await this.auth.authenticatedFetch(messagesUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(requestBody),
         signal: timeoutController.signal,
       });
