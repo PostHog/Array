@@ -84,5 +84,28 @@ describe("getCloudRuntimeOptions", () => {
     expect(result.model).toBeUndefined();
     expect(result.reasoningLevel).toBeUndefined();
     expect(result.adapter).toBeUndefined();
+    expect(result.initialPermissionMode).toBeUndefined();
+  });
+
+  it("prefers the session mode config option for permission mode", () => {
+    const result = getCloudRuntimeOptions(
+      session({
+        configOptions: [
+          { category: "mode", currentValue: "acceptEdits" },
+          // biome-ignore lint/suspicious/noExplicitAny: minimal config option shape
+        ] as any,
+      }),
+      {
+        state: { initial_permission_mode: "plan" },
+      } as unknown as TaskRun,
+    );
+    expect(result.initialPermissionMode).toBe("acceptEdits");
+  });
+
+  it("falls back to the previous run state for permission mode", () => {
+    const result = getCloudRuntimeOptions(session({ configOptions: [] }), {
+      state: { initial_permission_mode: "acceptEdits" },
+    } as unknown as TaskRun);
+    expect(result.initialPermissionMode).toBe("acceptEdits");
   });
 });

@@ -2635,6 +2635,7 @@ export class SessionService {
           adapter: runtimeOptions.adapter,
           model: runtimeOptions.model,
           reasoningLevel: runtimeOptions.reasoningLevel,
+          initialPermissionMode: runtimeOptions.initialPermissionMode,
           resumeFromRunId: session.taskRunId,
           pendingUserMessage: transport.messageText,
           pendingUserArtifactIds:
@@ -2693,6 +2694,13 @@ export class SessionService {
     )?.currentValue;
     const initialModel =
       newRun.model ?? (typeof priorModel === "string" ? priorModel : undefined);
+    const priorEffort = getConfigOptionByCategory(
+      session.configOptions,
+      "thought_level",
+    )?.currentValue;
+    const initialReasoningEffort =
+      newRun.reasoning_effort ??
+      (typeof priorEffort === "string" ? priorEffort : undefined);
     this.watchCloudTask(
       session.taskId,
       newRun.id,
@@ -2705,6 +2713,8 @@ export class SessionService {
       initialModel,
       undefined,
       resumeFromEntryCount,
+      undefined,
+      initialReasoningEffort,
     );
 
     this.d.queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -3217,6 +3227,7 @@ export class SessionService {
     apiHost: string,
     adapter: Adapter,
     initialModel?: string,
+    initialReasoningEffort?: string,
   ): Promise<void> {
     const cacheKey = `${apiHost}::${adapter}`;
     let entry = this.previewConfigOptionsCache.get(cacheKey);
@@ -3260,6 +3271,19 @@ export class SessionService {
             return { ...opt, currentValue: initialModel };
           }
         }
+        // Seed the effort option from the prior run so resume preserves it.
+        // The preview defaults effort to "high"; without this seeding the
+        // resume request reuses that default instead of the run's real value.
+        if (
+          opt.category === "thought_level" &&
+          opt.type === "select" &&
+          typeof initialReasoningEffort === "string"
+        ) {
+          const flat = flattenSelectOptions(opt.options);
+          if (flat.some((o) => o.value === initialReasoningEffort)) {
+            return { ...opt, currentValue: initialReasoningEffort };
+          }
+        }
         return opt;
       });
 
@@ -3298,6 +3322,7 @@ export class SessionService {
     taskDescription?: string,
     resumeFromEntryCount?: number,
     runStatus?: TaskRunStatus,
+    initialReasoningEffort?: string,
   ): () => void {
     const taskRunId = runId;
 
@@ -3337,6 +3362,7 @@ export class SessionService {
           apiHost,
           adapter,
           initialModel,
+          initialReasoningEffort,
         );
       }
       return () => {};
@@ -3428,6 +3454,7 @@ export class SessionService {
       apiHost,
       adapter,
       initialModel,
+      initialReasoningEffort,
     );
 
     if (shouldHydrateSession) {
@@ -4104,6 +4131,7 @@ export class SessionService {
     const adapter =
       task.latest_run?.runtime_adapter === "codex" ? "codex" : "claude";
     const initialModel = task.latest_run?.model ?? undefined;
+    const initialReasoningEffort = task.latest_run?.reasoning_effort ?? undefined;
 
     return this.watchCloudTask(
       task.id,
@@ -4118,6 +4146,7 @@ export class SessionService {
       task.description ?? undefined,
       undefined,
       task.latest_run?.status,
+      initialReasoningEffort,
     );
   }
 
