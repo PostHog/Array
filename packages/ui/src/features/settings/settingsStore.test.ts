@@ -1,6 +1,6 @@
 import { registerRendererStateStorage } from "@posthog/ui/shell/rendererStorage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useSettingsStore } from "./settingsStore";
+import { type CompletionSound, useSettingsStore } from "./settingsStore";
 
 const getItem = vi.fn();
 const setItem = vi.fn();
@@ -184,20 +184,27 @@ describe("feature settingsStore custom sounds", () => {
     expect(stored.dataUrl).toBe(sound.dataUrl);
   });
 
-  it("removing the active sound falls back to none", () => {
-    useSettingsStore.getState().addCustomSound(sound);
-    useSettingsStore.getState().setCompletionSound("custom:abc");
-    useSettingsStore.getState().removeCustomSound("abc");
-    expect(useSettingsStore.getState().customSounds).toEqual([]);
-    expect(useSettingsStore.getState().completionSound).toBe("none");
-  });
-
-  it("removing a non-active sound leaves the selection alone", () => {
-    useSettingsStore.getState().addCustomSound(sound);
-    useSettingsStore.getState().setCompletionSound("meep");
-    useSettingsStore.getState().removeCustomSound("abc");
-    expect(useSettingsStore.getState().completionSound).toBe("meep");
-  });
+  it.each([
+    {
+      label: "active sound",
+      activeSound: "custom:abc" as CompletionSound,
+      expectedSound: "none" as CompletionSound,
+    },
+    {
+      label: "non-active sound",
+      activeSound: "meep" as CompletionSound,
+      expectedSound: "meep" as CompletionSound,
+    },
+  ])(
+    "removing the $label leaves completionSound as $expectedSound",
+    ({ activeSound, expectedSound }) => {
+      useSettingsStore.getState().addCustomSound(sound);
+      useSettingsStore.getState().setCompletionSound(activeSound);
+      useSettingsStore.getState().removeCustomSound("abc");
+      expect(useSettingsStore.getState().customSounds).toEqual([]);
+      expect(useSettingsStore.getState().completionSound).toBe(expectedSound);
+    },
+  );
 
   it("persists custom sounds", async () => {
     useSettingsStore.getState().addCustomSound(sound);

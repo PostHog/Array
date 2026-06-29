@@ -160,7 +160,16 @@ export function AddCustomSoundDialog({
   // (common for freshly-recorded WebM), where the recorder's elapsed time wins.
   const acceptBlob = useCallback(
     async (blob: Blob, fallbackDurationMs: number | null) => {
-      const dataUrl = await blobToDataUrl(blob);
+      let dataUrl: string;
+      try {
+        dataUrl = await blobToDataUrl(blob);
+      } catch {
+        dispatch({
+          type: "error",
+          message: "Could not read the audio data. Try a different file.",
+        });
+        return;
+      }
       if (dataUrlByteLength(dataUrl) > MAX_CUSTOM_SOUND_BYTES) {
         dispatch({
           type: "error",
@@ -169,11 +178,20 @@ export function AddCustomSoundDialog({
         return;
       }
       const decoded = await getAudioDurationMs(dataUrl);
-      const durationMs = decoded ?? fallbackDurationMs ?? 0;
-      if (durationMs > MAX_CUSTOM_SOUND_DURATION_MS + DURATION_TOLERANCE_MS) {
+      // Live recordings pass the recorder's elapsed time (always ≤ MAX); file
+      // imports pass null, so if the browser also can't read the duration we
+      // reject rather than defaulting to 0 and silently bypassing the cap.
+      const durationMs = decoded ?? fallbackDurationMs;
+      if (
+        durationMs === null ||
+        durationMs > MAX_CUSTOM_SOUND_DURATION_MS + DURATION_TOLERANCE_MS
+      ) {
         dispatch({
           type: "error",
-          message: `Clips must be ${MAX_SECONDS}s or shorter.`,
+          message:
+            durationMs === null
+              ? "Couldn't read the clip's duration. Try a different format (MP3 or WAV work reliably)."
+              : `Clips must be ${MAX_SECONDS}s or shorter.`,
         });
         return;
       }
