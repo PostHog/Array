@@ -489,13 +489,14 @@ export class SkillsService {
     return resolved;
   }
 
-  bundleLocalSkill(
+  async bundleLocalSkill(
     input: BundleLocalSkillInput,
   ): Promise<BundleLocalSkillOutput> {
+    const skillDir = await this.resolveKnownSkillDir(input.path);
     return bundleLocalSkill({
       name: input.name,
       source: input.source,
-      skillPath: input.path,
+      skillPath: skillDir,
     });
   }
 }
