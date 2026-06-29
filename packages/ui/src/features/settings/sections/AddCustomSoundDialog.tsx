@@ -7,6 +7,7 @@ import {
   Trash,
   UploadSimple,
 } from "@phosphor-icons/react";
+import { MAX_CUSTOM_SOUND_SECONDS } from "@posthog/ui/utils/customSound";
 import {
   Button,
   Card,
@@ -16,7 +17,8 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
-import { MAX_SECONDS, useCustomSoundCapture } from "./useCustomSoundCapture";
+import { useRef } from "react";
+import { useCustomSoundCapture } from "./useCustomSoundCapture";
 
 export function AddCustomSoundDialog({
   open,
@@ -26,6 +28,7 @@ export function AddCustomSoundDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const sound = useCustomSoundCapture(onOpenChange);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <Dialog.Root open={open} onOpenChange={sound.handleOpenChange}>
@@ -33,7 +36,7 @@ export function AddCustomSoundDialog({
         <Dialog.Title>Add custom sound</Dialog.Title>
         <Dialog.Description size="2" color="gray" mb="4">
           Record a clip or import an audio file, then give it a name. Clips must
-          be {MAX_SECONDS}s or shorter.
+          be {MAX_CUSTOM_SOUND_SECONDS}s or shorter.
         </Dialog.Description>
 
         <Flex direction="column" gap="4">
@@ -81,13 +84,13 @@ export function AddCustomSoundDialog({
               )}
               <Button
                 variant="soft"
-                onClick={() => sound.fileInputRef.current?.click()}
+                onClick={() => fileInputRef.current?.click()}
                 disabled={sound.isRecording}
               >
                 <UploadSimple /> Import file
               </Button>
               <input
-                ref={sound.fileInputRef}
+                ref={fileInputRef}
                 type="file"
                 accept="audio/*"
                 hidden
@@ -113,7 +116,7 @@ export function AddCustomSoundDialog({
                       <Play weight="fill" />
                     </IconButton>
                     <Text size="2" color="gray">
-                      {sound.trimmed ? "Trimmed" : "Clip ready"} ·{" "}
+                      {sound.isTrimmed ? "Trimmed" : "Clip ready"} ·{" "}
                       {sound.clipDurationLabel}
                     </Text>
                     <Flex flexGrow="1" />

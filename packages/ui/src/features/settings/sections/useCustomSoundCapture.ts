@@ -2,6 +2,7 @@ import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   blobToDataUrl,
+  DURATION_TOLERANCE_MS,
   dataUrlByteLength,
   decodeAudioClip,
   detectSilenceBounds,
@@ -11,18 +12,14 @@ import {
   isRecordingSupported,
   MAX_CUSTOM_SOUND_BYTES,
   MAX_CUSTOM_SOUND_DURATION_MS,
+  MAX_CUSTOM_SOUND_SECONDS,
   pickRecordingMimeType,
   resolveSaveClip,
   shouldOfferTrim,
   type TrimBounds,
   trimmedDurationMs,
 } from "@posthog/ui/utils/customSound";
-import { useCallback, useEffect, useReducer, useRef } from "react";
-
-export const MAX_SECONDS = MAX_CUSTOM_SOUND_DURATION_MS / 1000;
-// Real durations can read a touch over the cap (encoder rounding); allow a small
-// slack before rejecting an otherwise-fine clip.
-const DURATION_TOLERANCE_MS = 300;
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 
 interface CapturedClip {
   dataUrl: string;
@@ -121,7 +118,6 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -222,7 +218,7 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
           message:
             durationMs === null
               ? "Couldn't read the clip's duration. Try a different format (MP3 or WAV work reliably)."
-              : `Clips must be ${MAX_SECONDS}s or shorter.`,
+              : `Clips must be ${MAX_CUSTOM_SOUND_SECONDS}s or shorter.`,
         });
         return;
       }
@@ -398,6 +394,13 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
     handleOpenChange(false);
   }, [addCustomSound, clip, handleOpenChange, name, setCompletionSound, trim]);
 
+  const setName = useCallback(
+    (value: string) => dispatch({ type: "setName", name: value }),
+    [],
+  );
+  // Capability is fixed for the session; don't recompute it every render/tick.
+  const recordingSupported = useMemo(() => isRecordingSupported(), []);
+
   const shownDurationMs = trim
     ? trimmedDurationMs(trim)
     : (clip?.durationMs ?? 0);
@@ -405,20 +408,18 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
   return {
     // form / status
     name,
-    setName: (value: string) => dispatch({ type: "setName", name: value }),
+    setName,
     error,
     isRecording,
-    recordingSupported: isRecordingSupported(),
+    recordingSupported,
     elapsedLabel: formatDurationSeconds(elapsedMs),
     // captured clip
     hasClip: clip !== null && !isRecording,
-    isTrimmed,
-    trimmed: trim !== null,
+    isTrimmed: trim !== null,
     canOfferTrim: clip?.silenceBounds != null,
     clipDurationLabel: formatDurationSeconds(shownDurationMs),
     canSave: name.trim().length > 0 && clip !== null && !isRecording,
-    // refs / actions
-    fileInputRef,
+    // actions
     startRecording,
     stopRecording,
     importFile,

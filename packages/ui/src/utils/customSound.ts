@@ -12,6 +12,13 @@ export const MAX_CUSTOM_SOUND_DURATION_MS = 5_000;
 // store.
 export const MAX_CUSTOM_SOUND_BYTES = 1_000_000;
 
+// Seconds form of the duration cap, for display copy.
+export const MAX_CUSTOM_SOUND_SECONDS = MAX_CUSTOM_SOUND_DURATION_MS / 1000;
+
+// Decoded durations can read a touch over the cap (encoder rounding); allow a
+// small slack before rejecting an otherwise-fine clip.
+export const DURATION_TOLERANCE_MS = 300;
+
 // Preferred recorder containers, best first. Chromium (the Electron renderer)
 // records Opus-in-WebM; the fallbacks cover other hosts.
 const RECORDING_MIME_TYPES = [
