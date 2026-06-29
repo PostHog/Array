@@ -263,6 +263,12 @@ function shouldFailWatcherForFetchStatus(status: number): boolean {
   return status === 401 || status === 403 || status === 404;
 }
 
+// 5xx and 429 are momentary: the stream-token endpoint exists but is briefly unavailable, so the
+// target stays unresolved and the next reconnect retries instead of caching a Django fallback.
+function isTransientStreamTargetStatus(status: number): boolean {
+  return status >= 500 || status === 429;
+}
+
 @injectable()
 export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   private watchers = new Map<string, WatcherState>();
@@ -1573,9 +1579,19 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         method: "GET",
       });
       if (!response.ok) {
-        // Refused, or an old server without the endpoint: read from Django with status polling.
         watcher.streamBaseUrl = null;
         watcher.streamReadToken = null;
+        if (isTransientStreamTargetStatus(response.status)) {
+          // Transient: read from Django this round but leave the target unresolved so the next
+          // reconnect retries durable resolution instead of pinning the run to status polling.
+          this.log.warn("Cloud task stream target temporarily unavailable", {
+            taskId: watcher.taskId,
+            runId: watcher.runId,
+            status: response.status,
+          });
+          return;
+        }
+        // Refused, or an old server without the endpoint: read from Django with status polling.
         watcher.durableStreamEnabled = false;
         watcher.streamTargetResolved = true;
         this.log.info("Cloud task stream reading from API host", {

@@ -1017,6 +1017,78 @@ describe("CloudTaskService", () => {
     expect(mockStreamTokenFetch.mock.calls.length).toBe(1);
   });
 
+  it("a transient stream_token failure retries resolution instead of pinning to Django", async () => {
+    vi.useFakeTimers();
+
+    // The endpoint is momentarily down (503): unlike a 404, this must not cache a Django fallback.
+    // The next reconnect re-resolves and the watch upgrades to the durable proxy leg.
+    mockStreamTokenFetch
+      .mockImplementationOnce(() =>
+        Promise.resolve(createJsonResponse({ detail: "unavailable" }, 503)),
+      )
+      .mockImplementation(() =>
+        Promise.resolve(
+          createJsonResponse({
+            token: "fresh-token",
+            stream_base_url: "https://proxy.example",
+          }),
+        ),
+      );
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    // Django leg (transient round) just EOFs to force a reconnect; once the proxy resolves it
+    // emits stream-end so the watch completes, proving durable streaming engaged after the retry.
+    const usedProxyLeg = (input: string | Request): boolean => {
+      const url = typeof input === "string" ? input : input.url;
+      return url.includes("proxy.example");
+    };
+    mockStreamFetch.mockImplementation((input: string | Request) =>
+      Promise.resolve(
+        usedProxyLeg(input)
+          ? createSseResponse("event: stream-end\ndata: {}\n\n")
+          : createSseResponse(""),
+      ),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    const hasWatcher = (): boolean =>
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      );
+    await waitFor(() => !hasWatcher(), 10_000);
+
+    // The 503 was not cached: resolution retried and the stream switched to the durable proxy leg.
+    expect(mockStreamTokenFetch.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(
+      mockStreamFetch.mock.calls.some(([input]) => usedProxyLeg(input)),
+    ).toBe(true);
+  });
+
   it("proxy 401 re-resolves the read target and resumes with a fresh token", async () => {
     vi.useFakeTimers();
 
