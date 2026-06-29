@@ -283,16 +283,24 @@ function RootLayout() {
   });
   const isChannelsSpace = bluebirdEnabled && onWebsitePath;
 
-  // The active browser tab may be blank (no canvas) — render an empty
-  // placeholder in the content pane instead of the route Outlet.
+  // A blank browser tab (the "+" new-tab page) shows an empty placeholder — but
+  // ONLY on the channels index. Inside a channel (`/website/$channelId…`) the
+  // route owns the content (channel home, inbox, artifacts, a canvas, …), so the
+  // placeholder must never replace it, otherwise channel navigation looks dead.
+  const onChannelsIndex = useRouterState({
+    select: (s) => s.location.pathname === "/website",
+  });
   const tabsSnapshot = useTabsSnapshot();
-  const activeTabIsBlank = (() => {
-    const w =
-      tabsSnapshot.windows.find((x) => x.isPrimary) ?? tabsSnapshot.windows[0];
-    if (!w?.activeTabId) return false;
-    const t = tabsSnapshot.tabs.find((x) => x.id === w.activeTabId);
-    return !!t && t.dashboardId == null && t.taskId == null;
-  })();
+  const activeTabIsBlank =
+    onChannelsIndex &&
+    (() => {
+      const w =
+        tabsSnapshot.windows.find((x) => x.isPrimary) ??
+        tabsSnapshot.windows[0];
+      if (!w?.activeTabId) return false;
+      const t = tabsSnapshot.tabs.find((x) => x.id === w.activeTabId);
+      return !!t && t.dashboardId == null && t.taskId == null;
+    })();
 
   // The /website (Channels) routes stay registered regardless of the flag, so a
   // stale URL or restored session could strand a flag-off user there (rendering
