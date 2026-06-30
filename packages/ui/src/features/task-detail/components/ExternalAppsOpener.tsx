@@ -1,4 +1,3 @@
-import { useShortcut } from "../../../primitives/hooks/useShortcut";
 import { CodeIcon, CopyIcon } from "@phosphor-icons/react";
 import {
   Button,
@@ -13,6 +12,7 @@ import {
 import { ChevronDown } from "lucide-react";
 import { useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useShortcut } from "../../../primitives/hooks/useShortcut";
 import { formatHotkeyParts } from "../../command/keyboard-shortcuts";
 import { useExternalAppAction } from "../../external-apps/useExternalAppAction";
 import { useExternalApps } from "../../external-apps/useExternalApps";
