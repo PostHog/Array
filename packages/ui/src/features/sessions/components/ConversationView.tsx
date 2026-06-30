@@ -241,7 +241,7 @@ export function ConversationView({
   const messageJumpKey = useShortcut("message-jump");
   const previousMessageKey = useShortcut("message-prev");
   const nextMessageKey = useShortcut("message-next");
-  useHotkeys(messageJumpKey, () => setJumpPickerOpen(true), {
+  useHotkeys(messageJumpKey, () => setJumpPickerOpen((prev) => !prev), {
     enableOnFormTags: true,
     enableOnContentEditable: true,
     preventDefault: true,
