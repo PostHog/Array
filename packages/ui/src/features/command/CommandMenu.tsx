@@ -281,8 +281,8 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     ];
 
     const out: CommandSection[] = [
-      { label: "Navigation", items: navigation },
       { label: "Actions", items: actions },
+      { label: "Navigation", items: navigation },
     ];
 
     if (folders.length > 0) {
