@@ -32,6 +32,7 @@ import {
   useRepositoryIntegration,
   useUserRepositoryIntegration,
 } from "@posthog/ui/features/integrations/useIntegrations";
+import { FleetFindingsCallout } from "@posthog/ui/features/scouts/components/FleetFindingsCallout";
 import { ScoutsFleetSection } from "@posthog/ui/features/scouts/components/ScoutsFleetSection";
 import { GitHubIntegrationSection } from "@posthog/ui/features/settings/sections/GitHubIntegrationSection";
 import { SlackInboxNotificationsSettings } from "@posthog/ui/features/settings/sections/SlackInboxNotificationsSettings";
@@ -148,6 +149,7 @@ export function ConfigureAgentsSection() {
         }
       >
         <ScoutsFleetSection />
+        <FleetFindingsCallout />
       </Subsection>
 
       <Subsection

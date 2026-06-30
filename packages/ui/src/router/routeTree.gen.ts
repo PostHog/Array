@@ -59,6 +59,7 @@ import { Route as CodeInboxReportsReportIdRouteImport } from './routes/code/inbo
 import { Route as CodeInboxPullsReportIdRouteImport } from './routes/code/inbox/pulls.$reportId'
 import { Route as CodeInboxDismissedReportIdRouteImport } from './routes/code/inbox/dismissed.$reportId'
 import { Route as CodeAgentsScoutsScratchpadRouteImport } from './routes/code/agents/scouts.scratchpad'
+import { Route as CodeAgentsScoutsFindingsRouteImport } from './routes/code/agents/scouts.findings'
 import { Route as CodeAgentsScoutsSkillNameRouteImport } from './routes/code/agents/scouts.$skillName'
 import { Route as CodeAgentsApplicationsApprovalsRouteImport } from './routes/code/agents/applications/approvals'
 import { Route as CodeAgentsApplicationsIdOrSlugRouteImport } from './routes/code/agents/applications/$idOrSlug'
@@ -331,6 +332,12 @@ const CodeAgentsScoutsScratchpadRoute =
     path: '/scratchpad',
     getParentRoute: () => CodeAgentsScoutsRoute,
   } as any)
+const CodeAgentsScoutsFindingsRoute =
+  CodeAgentsScoutsFindingsRouteImport.update({
+    id: '/findings',
+    path: '/findings',
+    getParentRoute: () => CodeAgentsScoutsRoute,
+  } as any)
 const CodeAgentsScoutsSkillNameRoute =
   CodeAgentsScoutsSkillNameRouteImport.update({
     id: '/$skillName',
@@ -450,6 +457,7 @@ export interface FileRoutesByFullPath {
   '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
   '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
+  '/code/agents/scouts/findings': typeof CodeAgentsScoutsFindingsRoute
   '/code/agents/scouts/scratchpad': typeof CodeAgentsScoutsScratchpadRoute
   '/code/inbox/dismissed/$reportId': typeof CodeInboxDismissedReportIdRoute
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
@@ -504,6 +512,7 @@ export interface FileRoutesByTo {
   '/code/inbox': typeof CodeInboxIndexRoute
   '/website/$channelId': typeof WebsiteChannelIdIndexRoute
   '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
+  '/code/agents/scouts/findings': typeof CodeAgentsScoutsFindingsRoute
   '/code/agents/scouts/scratchpad': typeof CodeAgentsScoutsScratchpadRoute
   '/code/inbox/dismissed/$reportId': typeof CodeInboxDismissedReportIdRoute
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
@@ -570,6 +579,7 @@ export interface FileRoutesById {
   '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
   '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
+  '/code/agents/scouts/findings': typeof CodeAgentsScoutsFindingsRoute
   '/code/agents/scouts/scratchpad': typeof CodeAgentsScoutsScratchpadRoute
   '/code/inbox/dismissed/$reportId': typeof CodeInboxDismissedReportIdRoute
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
@@ -637,6 +647,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/$idOrSlug'
     | '/code/agents/applications/approvals'
     | '/code/agents/scouts/$skillName'
+    | '/code/agents/scouts/findings'
     | '/code/agents/scouts/scratchpad'
     | '/code/inbox/dismissed/$reportId'
     | '/code/inbox/pulls/$reportId'
@@ -691,6 +702,7 @@ export interface FileRouteTypes {
     | '/code/inbox'
     | '/website/$channelId'
     | '/code/agents/applications/approvals'
+    | '/code/agents/scouts/findings'
     | '/code/agents/scouts/scratchpad'
     | '/code/inbox/dismissed/$reportId'
     | '/code/inbox/pulls/$reportId'
@@ -756,6 +768,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/$idOrSlug'
     | '/code/agents/applications/approvals'
     | '/code/agents/scouts/$skillName'
+    | '/code/agents/scouts/findings'
     | '/code/agents/scouts/scratchpad'
     | '/code/inbox/dismissed/$reportId'
     | '/code/inbox/pulls/$reportId'
@@ -1152,6 +1165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsScoutsScratchpadRouteImport
       parentRoute: typeof CodeAgentsScoutsRoute
     }
+    '/code/agents/scouts/findings': {
+      id: '/code/agents/scouts/findings'
+      path: '/findings'
+      fullPath: '/code/agents/scouts/findings'
+      preLoaderRoute: typeof CodeAgentsScoutsFindingsRouteImport
+      parentRoute: typeof CodeAgentsScoutsRoute
+    }
     '/code/agents/scouts/$skillName': {
       id: '/code/agents/scouts/$skillName'
       path: '/$skillName'
@@ -1360,12 +1380,14 @@ const CodeAgentsScoutsSkillNameRouteWithChildren =
 
 interface CodeAgentsScoutsRouteChildren {
   CodeAgentsScoutsSkillNameRoute: typeof CodeAgentsScoutsSkillNameRouteWithChildren
+  CodeAgentsScoutsFindingsRoute: typeof CodeAgentsScoutsFindingsRoute
   CodeAgentsScoutsScratchpadRoute: typeof CodeAgentsScoutsScratchpadRoute
   CodeAgentsScoutsIndexRoute: typeof CodeAgentsScoutsIndexRoute
 }
 
 const CodeAgentsScoutsRouteChildren: CodeAgentsScoutsRouteChildren = {
   CodeAgentsScoutsSkillNameRoute: CodeAgentsScoutsSkillNameRouteWithChildren,
+  CodeAgentsScoutsFindingsRoute: CodeAgentsScoutsFindingsRoute,
   CodeAgentsScoutsScratchpadRoute: CodeAgentsScoutsScratchpadRoute,
   CodeAgentsScoutsIndexRoute: CodeAgentsScoutsIndexRoute,
 }

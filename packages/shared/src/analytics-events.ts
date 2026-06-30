@@ -662,7 +662,11 @@ export type ScoutChatType =
   | "finding_discuss"
   | "author_scout";
 
-export type ScoutSurface = "fleet_list" | "scout_detail" | "empty_state";
+export type ScoutSurface =
+  | "fleet_list"
+  | "scout_detail"
+  | "empty_state"
+  | "scout_findings";
 
 export type ScoutActionType =
   | "expand_run"
@@ -678,7 +682,10 @@ export type ScoutActionType =
   | "filter_runs"
   | "toggle_hide_disabled"
   | "open_settings"
-  | "close_settings";
+  | "close_settings"
+  | "open_findings"
+  | "filter_findings"
+  | "sort_findings";
 
 export interface ScoutFleetViewedProperties {
   scout_count: number;
