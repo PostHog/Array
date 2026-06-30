@@ -215,6 +215,14 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         },
       },
       {
+        id: "settings",
+        label: "Settings",
+        icon: <GearIcon className="h-3 w-3 text-gray-11" />,
+        action: "settings",
+        shortcut: SHORTCUTS.SETTINGS,
+        onRun: () => openSettingsDialog(),
+      },
+      {
         id: "go-back",
         label: "Go back",
         keywords: "navigate history previous",
@@ -231,14 +239,6 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         action: "go-forward",
         shortcut: SHORTCUTS.GO_FORWARD,
         onRun: goForwardInHistory,
-      },
-      {
-        id: "settings",
-        label: "Settings",
-        icon: <GearIcon className="h-3 w-3 text-gray-11" />,
-        action: "settings",
-        shortcut: SHORTCUTS.SETTINGS,
-        onRun: () => openSettingsDialog(),
       },
     ];
 
