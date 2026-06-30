@@ -178,6 +178,12 @@ function UserBubble({ content }: { content: string }) {
               className={cn(
                 "[&_p]:my-0",
                 !isExpanded && "max-h-[2lh] overflow-hidden",
+                // Fade the clamped text out at the bottom so it reads as "continues below". Only
+                // when actually overflowing — a short collapsed message shouldn't fade. The mask is
+                // paint-only, so it doesn't affect the overflow measurement above.
+                !isExpanded &&
+                  isOverflowing &&
+                  "[mask-image:linear-gradient(to_bottom,black_45%,transparent)]",
               )}
             >
               <ChatMarkdown content={content} />
@@ -211,17 +217,51 @@ function UserBubble({ content }: { content: string }) {
  * themselves never re-render on scroll.
  */
 function StickyHeaderOverlay({ items }: { items: ConversationItem[] }) {
-  const { currentAnchorId, visibleMessageIds } =
-    useChatMessageScrollerVisibility();
+  const { currentAnchorId } = useChatMessageScrollerVisibility();
   const { scrollToMessage } = useChatMessageScroller();
   const shouldReduceMotion = useReducedMotion();
   const [dismissedId, setDismissedId] = useState<string | null>(null);
+  const [offscreen, setOffscreen] = useState(false);
+  // Anchor element used only to locate the enclosing scroller/viewport in the DOM.
+  const probeRef = useRef<HTMLSpanElement>(null);
 
   const active = items.find(
     (i): i is Extract<ConversationItem, { type: "user_message" }> =>
       i.id === currentAnchorId && i.type === "user_message",
   );
-  const offscreen = active != null && !visibleMessageIds.includes(active.id);
+  const activeId = active?.id ?? null;
+
+  // The engine's `visibleMessageIds` can't be used here: its IntersectionObserver excludes a band of
+  // `scrollPreviousItemPeek` px at the viewport top, which is exactly where a freshly-anchored turn
+  // message lands — so it reads as "not visible" while plainly on screen. Measure real geometry
+  // instead: the message is off-screen only once its bottom scrolls above the viewport top.
+  useEffect(() => {
+    if (activeId == null) {
+      setOffscreen(false);
+      return;
+    }
+    const viewport = probeRef.current
+      ?.closest('[data-slot="chat-message-scroller"]')
+      ?.querySelector('[data-slot="chat-message-scroller-viewport"]');
+    if (!viewport) return;
+
+    const measure = () => {
+      const el = viewport.querySelector(
+        `[data-message-id="${CSS.escape(activeId)}"]`,
+      );
+      if (!el) {
+        setOffscreen(false);
+        return;
+      }
+      const messageBottom = el.getBoundingClientRect().bottom;
+      const viewportTop = viewport.getBoundingClientRect().top;
+      setOffscreen(messageBottom <= viewportTop + 4);
+    };
+
+    measure();
+    viewport.addEventListener("scroll", measure, { passive: true });
+    return () => viewport.removeEventListener("scroll", measure);
+  }, [activeId]);
 
   // Once the real message is back on screen, clear the dismissal so the header can return later.
   useEffect(() => {
@@ -236,44 +276,47 @@ function StickyHeaderOverlay({ items }: { items: ConversationItem[] }) {
   };
 
   return (
-    <AnimatePresence>
-      {active != null && offscreen && active.id !== dismissedId && (
-        <motion.div
-          key="chat-sticky-header"
-          // Slide in slightly from the top + fade (ease-out-cubic). Exit a touch faster.
-          initial={shouldReduceMotion ? false : { opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={
-            shouldReduceMotion
-              ? { opacity: 0 }
-              : { opacity: 0, y: -8, transition: { duration: 0.15 } }
-          }
-          transition={{ duration: 0.2, ease: [0.215, 0.61, 0.355, 1] }}
-          // pointer-events-none on the strip so only the button catches clicks — the rest stays
-          // transparent to the content scrolling underneath.
-          className="pointer-events-none absolute inset-x-0 top-2 z-10"
-        >
-          {/* Align to the content column's right edge (matches the message rows) rather than the
-              viewport edge, so the button reads in-context with the conversation. */}
-          <div
-            className="mx-auto flex w-full justify-end px-2"
-            style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+    <>
+      <span ref={probeRef} className="hidden" aria-hidden="true" />
+      <AnimatePresence>
+        {active != null && offscreen && active.id !== dismissedId && (
+          <motion.div
+            key="chat-sticky-header"
+            // Slide in slightly from the top + fade (ease-out-cubic). Exit a touch faster.
+            initial={shouldReduceMotion ? false : { opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={
+              shouldReduceMotion
+                ? { opacity: 0 }
+                : { opacity: 0, y: -8, transition: { duration: 0.15 } }
+            }
+            transition={{ duration: 0.2, ease: [0.215, 0.61, 0.355, 1] }}
+            // pointer-events-none on the strip so only the button catches clicks — the rest stays
+            // transparent to the content scrolling underneath.
+            className="pointer-events-none absolute inset-x-0 top-2 z-10"
           >
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              title="Jump to your message"
-              aria-label="Jump to your message"
-              onClick={() => dismiss(active.id)}
-              className="pointer-events-auto rounded-full bg-background shadow-md"
+            {/* Align to the content column's right edge (matches the message rows) rather than the
+                viewport edge, so the button reads in-context with the conversation. */}
+            <div
+              className="mx-auto flex w-full justify-end px-2"
+              style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
             >
-              <ChatCircle />
-            </Button>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                title="Jump to your message"
+                aria-label="Jump to your message"
+                onClick={() => dismiss(active.id)}
+                className="pointer-events-auto rounded-full bg-background shadow-md"
+              >
+                <ChatCircle />
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 
@@ -292,7 +335,7 @@ const ThreadRow = memo(function ThreadRow({
     <ChatMessageScrollerItem
       messageId={item.id}
       scrollAnchor={item.type === "user_message"}
-      className="mx-auto w-full px-2 empty:hidden"
+      className="mx-auto w-full px-2.5 empty:hidden"
       style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
       {item.type === "tool_group" ? (
