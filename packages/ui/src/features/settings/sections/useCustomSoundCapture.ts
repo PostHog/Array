@@ -1,5 +1,7 @@
+import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import {
   blobToDataUrl,
   DURATION_TOLERANCE_MS,
@@ -24,6 +26,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 interface CapturedClip {
   dataUrl: string;
   durationMs: number;
+  // How the clip was captured — reported in the "Custom sound added" event.
+  source: "recording" | "import";
   // Decoded samples, present whenever the clip could be decoded. Absent for
   // exotic containers, where we store the clip untrimmed.
   buffer: AudioBuffer | null;
@@ -243,6 +247,9 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
       // reports it granted). Saving it would produce a sound that plays
       // nothing, so reject it with a pointer at the likely cause.
       if (source === "recording" && buffer && isClipSilent(buffer)) {
+        // Quantifies the macOS "browser says mic granted but the OS delivers
+        // silence" case (e.g. unsigned dev builds).
+        track(ANALYTICS_EVENTS.CUSTOM_SOUND_RECORDING_SILENT);
         commit({
           type: "error",
           message:
@@ -258,6 +265,7 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
         clip: {
           dataUrl,
           durationMs,
+          source,
           buffer,
           silenceBounds: shouldOfferTrim(bounds, durationMs / 1000)
             ? bounds
@@ -410,6 +418,11 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
       durationMs: resolved.durationMs,
     });
     setCompletionSound(`custom:${id}`);
+    track(ANALYTICS_EVENTS.CUSTOM_SOUND_ADDED, {
+      source: clip.source,
+      trimmed: trim !== null,
+      duration_ms: resolved.durationMs,
+    });
     toast.success(`Added "${trimmed}"`);
     handleOpenChange(false);
   }, [addCustomSound, clip, handleOpenChange, name, setCompletionSound, trim]);

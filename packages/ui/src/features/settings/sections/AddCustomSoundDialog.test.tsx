@@ -3,13 +3,19 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { addCustomSound, setCompletionSound, decodeAudioClip, blobToDataUrl } =
-  vi.hoisted(() => ({
-    addCustomSound: vi.fn(),
-    setCompletionSound: vi.fn(),
-    decodeAudioClip: vi.fn(),
-    blobToDataUrl: vi.fn(),
-  }));
+const {
+  addCustomSound,
+  setCompletionSound,
+  decodeAudioClip,
+  blobToDataUrl,
+  track,
+} = vi.hoisted(() => ({
+  addCustomSound: vi.fn(),
+  setCompletionSound: vi.fn(),
+  decodeAudioClip: vi.fn(),
+  blobToDataUrl: vi.fn(),
+  track: vi.fn(),
+}));
 
 // Mock only the Web Audio seam; the pure trim logic (detectSilenceBounds,
 // shouldOfferTrim, resolveSaveClip, encodeWavDataUrl) stays real so this test
@@ -28,6 +34,8 @@ vi.mock("@posthog/ui/features/settings/settingsStore", () => ({
 vi.mock("@posthog/ui/primitives/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
+
+vi.mock("@posthog/ui/shell/analytics", () => ({ track }));
 
 import { AddCustomSoundDialog } from "./AddCustomSoundDialog";
 
@@ -54,6 +62,7 @@ describe("AddCustomSoundDialog", () => {
     setCompletionSound.mockReset();
     decodeAudioClip.mockReset().mockResolvedValue(fakeBuffer());
     blobToDataUrl.mockReset().mockResolvedValue("data:audio/wav;base64,AAAA");
+    track.mockReset();
   });
 
   it("imports a clip, offers + applies silence trim, and saves the trimmed result", async () => {
@@ -97,5 +106,11 @@ describe("AddCustomSoundDialog", () => {
     expect(saved.durationMs).toBe(700);
     // The new sound is selected as the active completion sound.
     expect(setCompletionSound).toHaveBeenCalledWith(`custom:${saved.id}`);
+    // Usage event fires with the capture source, trim state, and duration.
+    expect(track).toHaveBeenCalledWith("Custom sound added", {
+      source: "import",
+      trimmed: true,
+      duration_ms: 700,
+    });
   });
 });

@@ -228,6 +228,15 @@ export interface SettingChangedProperties {
   old_value?: string | boolean | number;
 }
 
+export interface CustomSoundAddedProperties {
+  // How the clip was captured.
+  source: "recording" | "import";
+  // Whether the user applied the offered leading/trailing-silence trim.
+  trimmed: boolean;
+  // Length of the saved clip in ms (no clip contents or name — no PII).
+  duration_ms: number;
+}
+
 // Error events
 export interface TaskCreationFailedProperties {
   error_type: string;
@@ -1019,6 +1028,8 @@ export const ANALYTICS_EVENTS = {
 
   // Settings events
   SETTING_CHANGED: "Setting changed",
+  CUSTOM_SOUND_ADDED: "Custom sound added",
+  CUSTOM_SOUND_RECORDING_SILENT: "Custom sound recording silent",
 
   // Feedback events
   TASK_FEEDBACK: "Task feedback",
@@ -1167,6 +1178,8 @@ export type EventPropertyMap = {
 
   // Settings events
   [ANALYTICS_EVENTS.SETTING_CHANGED]: SettingChangedProperties;
+  [ANALYTICS_EVENTS.CUSTOM_SOUND_ADDED]: CustomSoundAddedProperties;
+  [ANALYTICS_EVENTS.CUSTOM_SOUND_RECORDING_SILENT]: never;
 
   // Feedback events
   [ANALYTICS_EVENTS.TASK_FEEDBACK]: TaskFeedbackProperties;
