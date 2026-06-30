@@ -21,11 +21,19 @@ export interface IBrowserTabsService {
   getSnapshot(): TabsSnapshot;
   getPrimaryWindowId(): string;
   openOrFocus(
-    input: TabTarget & { windowId: string; channelId: string | null },
+    input: TabTarget & {
+      windowId: string;
+      channelId: string | null;
+      channelSection?: string | null;
+    },
   ): TabsSnapshot;
   newBlankTab(input: { windowId: string }): TabsSnapshot;
   setTabTarget(
-    input: TabTarget & { tabId: string; channelId: string | null },
+    input: TabTarget & {
+      tabId: string;
+      channelId: string | null;
+      channelSection?: string | null;
+    },
   ): TabsSnapshot;
   close(tabId: string): TabsSnapshot;
   reorder(input: { tabId: string; toIndex: number }): TabsSnapshot;
@@ -85,7 +93,11 @@ export class BrowserTabsService
   }
 
   openOrFocus(
-    input: TabTarget & { windowId: string; channelId: string | null },
+    input: TabTarget & {
+      windowId: string;
+      channelId: string | null;
+      channelSection?: string | null;
+    },
   ): TabsSnapshot {
     const { snapshot } = openOrFocusTab(this.snapshot, {
       ...input,
@@ -105,7 +117,11 @@ export class BrowserTabsService
   }
 
   setTabTarget(
-    input: TabTarget & { tabId: string; channelId: string | null },
+    input: TabTarget & {
+      tabId: string;
+      channelId: string | null;
+      channelSection?: string | null;
+    },
   ): TabsSnapshot {
     return this.commit(setTabTarget(this.snapshot, { ...input, now }));
   }

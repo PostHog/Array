@@ -14,7 +14,8 @@ export interface TabView {
   label: string;
   /** Optional leading icon (template-derived). */
   icon?: ReactNode;
-  /** Channel the tab belongs to; surfaced on hover. Null = no channel. */
+  /** Channel the tab belongs to; shown `#`-prefixed atop the hover. Null = no
+   * channel (a blank tab). */
   channelName?: string | null;
 }
 
@@ -94,9 +95,14 @@ export function TabStrip({
             <Tooltip key={tab.id}>
               <TooltipTrigger render={pill} />
               <TooltipContent side="bottom">
-                <div className="font-medium">{tab.label}</div>
+                {/* Channel context first (always `#`-prefixed), then the page
+                    name. The channel-home tab's label IS the channel name, so
+                    drop the duplicate second line there. */}
                 {tab.channelName ? (
                   <div className="text-muted">#{tab.channelName}</div>
+                ) : null}
+                {tab.label !== tab.channelName ? (
+                  <div className="font-medium">{tab.label}</div>
                 ) : null}
               </TooltipContent>
             </Tooltip>

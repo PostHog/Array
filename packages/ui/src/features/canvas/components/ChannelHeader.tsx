@@ -1,26 +1,33 @@
 import { HashIcon } from "@phosphor-icons/react";
+import { Button, cn } from "@posthog/quill";
 import { ChannelTabs } from "@posthog/ui/features/canvas/components/ChannelTabs";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { Text } from "@radix-ui/themes";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 
-// The shared channel header: a clickable "# channel" (→ channel home, like the
-// sidebar channel row) followed by the channel tab strip. Rendered into the
-// header bar by every channel view so the tabs stay in view across Home /
-// Recents / Artifacts / CONTEXT.md.
+// The shared channel header: a clickable "# channel" that doubles as the Home
+// item — it routes to the channel home (`/website/$channelId`, like the sidebar
+// channel row) and highlights `bg-fill-selected` while you're there, the same
+// pathname-driven active state the rest of the channel tab strip uses. Followed
+// by that strip (Inbox / Artifacts / Recents / CONTEXT.md), rendered into the
+// header bar by every channel view so the tabs stay in view.
 export function ChannelHeader({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
   const { channels } = useChannels();
   const channelName = channels.find((c) => c.id === channelId)?.name;
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isHome = pathname === `/website/${channelId}`;
 
   return (
-    <div className="flex min-w-0 items-center gap-3">
-      <button
+    <div className="flex min-w-0 items-center gap-2">
+      <Button
         type="button"
+        data-selected={isHome || undefined}
         onClick={() =>
           void navigate({ to: "/website/$channelId", params: { channelId } })
         }
-        className="flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-gray-3"
+        size="sm"
+        className={cn("min-w-0", isHome ? "bg-fill-selected" : "")}
       >
         <HashIcon
           size={12}
@@ -32,7 +39,7 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
         >
           {channelName ?? "Channel"}
         </Text>
-      </button>
+      </Button>
       <ChannelTabs channelId={channelId} />
     </div>
   );

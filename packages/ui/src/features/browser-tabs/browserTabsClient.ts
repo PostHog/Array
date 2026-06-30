@@ -19,6 +19,7 @@ export interface BrowserTabsClient {
     dashboardId: string | null;
     taskId: string | null;
     channelId: string | null;
+    channelSection?: string | null;
   }): Promise<TabsSnapshot>;
   newBlankTab(input: { windowId: string }): Promise<TabsSnapshot>;
   setTabTarget(input: {
@@ -26,6 +27,7 @@ export interface BrowserTabsClient {
     dashboardId: string | null;
     taskId: string | null;
     channelId: string | null;
+    channelSection?: string | null;
   }): Promise<TabsSnapshot>;
   close(tabId: string): Promise<TabsSnapshot>;
   reorder(input: { tabId: string; toIndex: number }): Promise<TabsSnapshot>;

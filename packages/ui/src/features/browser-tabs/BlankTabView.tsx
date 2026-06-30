@@ -1,4 +1,4 @@
-import { SquareIcon } from "@phosphor-icons/react";
+import { NewspaperClippingIcon } from "@phosphor-icons/react";
 import {
   Empty,
   EmptyDescription,
@@ -13,11 +13,11 @@ export function BlankTabView() {
     <Empty className="h-full">
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <SquareIcon size={28} />
+          <NewspaperClippingIcon size={28} />
         </EmptyMedia>
         <EmptyTitle>New tab</EmptyTitle>
         <EmptyDescription>
-          Pick a canvas from the sidebar to open it here.
+          Pick a channel from the sidebar to open it here.
         </EmptyDescription>
       </EmptyHeader>
     </Empty>

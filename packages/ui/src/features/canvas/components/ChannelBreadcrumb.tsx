@@ -1,5 +1,10 @@
 import { HashIcon } from "@phosphor-icons/react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@posthog/quill";
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@posthog/quill";
 import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
 import { Flex, Text } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
@@ -55,9 +60,9 @@ export function ChannelBreadcrumb({
 
   return (
     <Flex align="center" justify="between" gap="2" className="w-full min-w-0">
-      <Flex align="center" gap="2" className="min-w-0">
+      <Flex align="center" gap="1" className="min-w-0">
         {channelId ? (
-          <button
+          <Button
             type="button"
             onClick={() =>
               void navigate({
@@ -65,10 +70,11 @@ export function ChannelBreadcrumb({
                 params: { channelId },
               })
             }
-            className="no-drag flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-gray-3"
+            size="sm"
+            className="no-drag"
           >
             {channelSegment}
-          </button>
+          </Button>
         ) : (
           <div className="flex items-center gap-1">{channelSegment}</div>
         )}

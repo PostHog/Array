@@ -69,6 +69,40 @@ describe("openOrFocusTab", () => {
     expect(b.snapshot.tabs).toHaveLength(2);
   });
 
+  it("treats a channel's sections as distinct tabs but dedups the same one", () => {
+    const inbox = openOrFocusTab(snapshot(), {
+      windowId: "w1",
+      dashboardId: null,
+      taskId: null,
+      channelId: "c1",
+      channelSection: "inbox",
+      makeId,
+      now,
+    });
+    const artifacts = openOrFocusTab(inbox.snapshot, {
+      windowId: "w1",
+      dashboardId: null,
+      taskId: null,
+      channelId: "c1",
+      channelSection: "artifacts",
+      makeId,
+      now,
+    });
+    expect(artifacts.opened).toBe(true);
+    expect(artifacts.snapshot.tabs).toHaveLength(2);
+    const inboxAgain = openOrFocusTab(artifacts.snapshot, {
+      windowId: "w1",
+      dashboardId: null,
+      taskId: null,
+      channelId: "c1",
+      channelSection: "inbox",
+      makeId,
+      now,
+    });
+    expect(inboxAgain.opened).toBe(false);
+    expect(inboxAgain.tabId).toBe(inbox.tabId);
+  });
+
   it("appends new tabs after existing ones", () => {
     const a = open(snapshot(), "w1", "dash-a");
     const b = open(a.snapshot, "w1", "dash-b");
@@ -136,6 +170,7 @@ describe("reorderTab", () => {
         dashboardId: "da",
         taskId: null,
         channelId: null,
+        channelSection: null,
         position: 1,
         scrollState: null,
         createdAt: 0,
@@ -147,6 +182,7 @@ describe("reorderTab", () => {
         dashboardId: "db",
         taskId: null,
         channelId: null,
+        channelSection: null,
         position: 2,
         scrollState: null,
         createdAt: 0,
@@ -279,6 +315,7 @@ describe("decideTabNavigation", () => {
       dashboardId: "new",
       taskId: null,
       channelId: "c1",
+      channelSection: null,
       stampTabId: "tab-a",
     });
   });
@@ -301,6 +338,7 @@ describe("decideTabNavigation", () => {
       dashboardId: "new",
       taskId: null,
       channelId: "c1",
+      channelSection: null,
       stampTabId: "tab-a",
     });
   });
@@ -317,8 +355,71 @@ describe("decideTabNavigation", () => {
       dashboardId: "d1",
       taskId: null,
       channelId: "c1",
+      channelSection: null,
       stampTabId: null,
     });
+  });
+
+  it("replaces the active tab when navigating between channel sections", () => {
+    // In-tab nav from a channel's inbox to its artifacts: same tab, new section.
+    expect(
+      decideTabNavigation({
+        ...base,
+        serverActiveTabId: "tab-a",
+        activeTab: {
+          id: "tab-a",
+          dashboardId: null,
+          taskId: null,
+          channelId: "c1",
+          channelSection: "inbox",
+        },
+        routeChannelId: "c1",
+        routeChannelSection: "artifacts",
+      }),
+    ).toEqual({
+      type: "replace",
+      tabId: "tab-a",
+      dashboardId: null,
+      taskId: null,
+      channelId: "c1",
+      channelSection: "artifacts",
+      stampTabId: "tab-a",
+    });
+  });
+
+  it("opens a channel-section tab when there is no active tab", () => {
+    expect(
+      decideTabNavigation({
+        ...base,
+        routeChannelId: "c1",
+        routeChannelSection: "inbox",
+      }),
+    ).toEqual({
+      type: "open",
+      dashboardId: null,
+      taskId: null,
+      channelId: "c1",
+      channelSection: "inbox",
+      stampTabId: null,
+    });
+  });
+
+  it("only stamps when the active tab already shows the route channel section", () => {
+    expect(
+      decideTabNavigation({
+        ...base,
+        serverActiveTabId: "tab-a",
+        activeTab: {
+          id: "tab-a",
+          dashboardId: null,
+          taskId: null,
+          channelId: "c1",
+          channelSection: "inbox",
+        },
+        routeChannelId: "c1",
+        routeChannelSection: "inbox",
+      }),
+    ).toEqual({ type: "stamp", stampTabId: "tab-a" });
   });
 
   it("only stamps when the active tab already shows the route canvas", () => {

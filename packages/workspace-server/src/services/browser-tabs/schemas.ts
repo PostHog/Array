@@ -9,6 +9,7 @@ export const openOrFocusTabInput = z.object({
   dashboardId: z.string().nullable().default(null),
   taskId: z.string().nullable().default(null),
   channelId: z.string().nullable().default(null),
+  channelSection: z.string().nullable().default(null),
 });
 
 export const newBlankTabInput = z.object({ windowId: z.string() });
@@ -18,6 +19,7 @@ export const setTabTargetInput = z.object({
   dashboardId: z.string().nullable().default(null),
   taskId: z.string().nullable().default(null),
   channelId: z.string().nullable().default(null),
+  channelSection: z.string().nullable().default(null),
 });
 
 export const closeTabInput = z.object({ tabId: z.string() });

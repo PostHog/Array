@@ -19,6 +19,12 @@ export const browserTabSchema = z.object({
   /** Task this tab shows. Null for a canvas tab or a blank tab. */
   taskId: z.string().nullable().default(null),
   channelId: z.string().nullable().default(null),
+  /**
+   * Channel sub-section this tab fronts (`inbox` / `artifacts` / `history` /
+   * `context`). Null = the channel home, or a non-channel tab (canvas / task /
+   * blank). Pairs with `channelId`: the two together identify a channel tab.
+   */
+  channelSection: z.string().nullable().default(null),
   /** Gap-spaced ordering key within a window. Reindexed on collision. */
   position: z.number(),
   /**

@@ -46,8 +46,26 @@ export type TabTarget = {
   taskId: string | null;
 };
 
-function sameTarget(a: TabTarget, b: TabTarget): boolean {
-  return a.dashboardId === b.dashboardId && a.taskId === b.taskId;
+/**
+ * Everything that identifies a tab's contents: a canvas, a task, or a channel
+ * sub-section (channel + section). Two tabs with the same identity are the same
+ * page, so dedup and in-tab-nav comparisons key on all four — a channel's
+ * `inbox` and `artifacts`, or two channels' inboxes, are distinct pages.
+ */
+export type TabIdentity = {
+  dashboardId: string | null;
+  taskId: string | null;
+  channelId: string | null;
+  channelSection: string | null;
+};
+
+function sameIdentity(a: TabIdentity, b: TabIdentity): boolean {
+  return (
+    a.dashboardId === b.dashboardId &&
+    a.taskId === b.taskId &&
+    a.channelId === b.channelId &&
+    a.channelSection === b.channelSection
+  );
 }
 
 /**
@@ -60,13 +78,17 @@ export function openOrFocusTab(
   input: TabTarget & {
     windowId: string;
     channelId: string | null;
+    channelSection?: string | null;
     makeId: IdFactory;
     now: Clock;
   },
 ): OpenTabResult {
   const { windowId, dashboardId, taskId, channelId, makeId, now } = input;
+  const channelSection = input.channelSection ?? null;
   const existing = snapshot.tabs.find(
-    (t) => t.windowId === windowId && sameTarget(t, { dashboardId, taskId }),
+    (t) =>
+      t.windowId === windowId &&
+      sameIdentity(t, { dashboardId, taskId, channelId, channelSection }),
   );
   if (existing) {
     const ts = now();
@@ -88,6 +110,7 @@ export function openOrFocusTab(
     dashboardId,
     taskId,
     channelId,
+    channelSection,
     makeId,
     now,
   });
@@ -98,6 +121,7 @@ function appendTab(
   input: TabTarget & {
     windowId: string;
     channelId: string | null;
+    channelSection?: string | null;
     makeId: IdFactory;
     now: Clock;
   },
@@ -112,6 +136,7 @@ function appendTab(
     dashboardId,
     taskId,
     channelId,
+    channelSection: input.channelSection ?? null,
     position: lastPos + POSITION_GAP,
     scrollState: null,
     createdAt: ts,
@@ -154,6 +179,7 @@ export function setTabTarget(
   input: TabTarget & {
     tabId: string;
     channelId: string | null;
+    channelSection?: string | null;
     now: Clock;
   },
 ): TabsSnapshot {
@@ -169,6 +195,7 @@ export function setTabTarget(
             dashboardId: input.dashboardId,
             taskId: input.taskId,
             channelId: input.channelId,
+            channelSection: input.channelSection ?? null,
             lastActiveAt: ts,
           }
         : t,
@@ -288,6 +315,7 @@ export type TabNavDecision =
       dashboardId: string | null;
       taskId: string | null;
       channelId: string | null;
+      channelSection: string | null;
       stampTabId: string | null;
     }
   | {
@@ -295,6 +323,7 @@ export type TabNavDecision =
       dashboardId: string | null;
       taskId: string | null;
       channelId: string | null;
+      channelSection: string | null;
       stampTabId: string | null;
     }
   | { type: "stamp"; stampTabId: string }
@@ -310,12 +339,16 @@ export function decideTabNavigation(input: {
     id: string;
     dashboardId: string | null;
     taskId: string | null;
+    channelId?: string | null;
+    channelSection?: string | null;
   } | null;
   /** Canvas in the current route, if any. */
   routeDashboardId: string | null;
   /** Task in the current route, if any. */
   routeTaskId: string | null;
   routeChannelId: string | null;
+  /** Channel sub-section in the current route, if any. */
+  routeChannelSection?: string | null;
 }): TabNavDecision {
   const {
     historyTabId,
@@ -325,6 +358,7 @@ export function decideTabNavigation(input: {
     routeTaskId,
     routeChannelId,
   } = input;
+  const routeChannelSection = input.routeChannelSection ?? null;
 
   // Tagged entry for a DIFFERENT tab → a tab switch or a back/forward replay.
   // Focus it (this is how "back returns to the previous tab" resolves). When
@@ -335,21 +369,38 @@ export function decideTabNavigation(input: {
     return { type: "activate", tabId: historyTabId };
   }
 
-  // Navigation within the active tab. Only a real target (canvas or task)
-  // matters; the landing/blank route is a noop.
-  const routeTarget: TabTarget = {
+  // Navigation within the active tab. A real target is a canvas, a task, or a
+  // channel (home or sub-section); the landing/blank route (no channel) is a
+  // noop.
+  const routeIdentity: TabIdentity = {
     dashboardId: routeDashboardId,
     taskId: routeTaskId,
+    channelId: routeChannelId,
+    channelSection: routeChannelSection,
   };
-  if (!routeDashboardId && !routeTaskId) return { type: "noop" };
+  if (!routeDashboardId && !routeTaskId && !routeChannelId) {
+    return { type: "noop" };
+  }
 
-  if (activeTab && !sameTarget(activeTab, routeTarget)) {
+  if (
+    activeTab &&
+    !sameIdentity(
+      {
+        dashboardId: activeTab.dashboardId,
+        taskId: activeTab.taskId,
+        channelId: activeTab.channelId ?? null,
+        channelSection: activeTab.channelSection ?? null,
+      },
+      routeIdentity,
+    )
+  ) {
     return {
       type: "replace",
       tabId: activeTab.id,
       dashboardId: routeDashboardId,
       taskId: routeTaskId,
       channelId: routeChannelId,
+      channelSection: routeChannelSection,
       stampTabId: serverActiveTabId,
     };
   }
@@ -359,6 +410,7 @@ export function decideTabNavigation(input: {
       dashboardId: routeDashboardId,
       taskId: routeTaskId,
       channelId: routeChannelId,
+      channelSection: routeChannelSection,
       stampTabId: serverActiveTabId,
     };
   }

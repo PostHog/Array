@@ -1,5 +1,7 @@
+import { HashIcon } from "@phosphor-icons/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { decideTabNavigation, type TabsSnapshot } from "@posthog/shared";
+import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
@@ -58,6 +60,7 @@ type TabRef = {
   dashboardId: string | null;
   taskId: string | null;
   channelId: string | null;
+  channelSection: string | null;
 };
 
 export function BrowserTabStrip() {
@@ -73,8 +76,18 @@ export function BrowserTabStrip() {
   const historyTabId = useRouterState({
     select: (s) => s.location.state.tabId,
   });
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   const { channels } = useChannels();
+
+  // The active channel sub-section (inbox/artifacts/history/context) is the
+  // route segment after the channelId. Null when on the channel home or a
+  // non-section route (canvas/task), so a channel-home tab labels by name.
+  const routeChannelSection = useMemo(() => {
+    if (!params.channelId) return null;
+    const seg = pathname.split("/")[3] ?? null;
+    return channelSectionFor(seg)?.key ?? null;
+  }, [pathname, params.channelId]);
 
   const openOrFocus = useMutation(
     trpc.browserTabs.openOrFocus.mutationOptions(),
@@ -152,11 +165,14 @@ export function BrowserTabStrip() {
             id: activeTab.id,
             dashboardId: activeTab.dashboardId,
             taskId: activeTab.taskId,
+            channelId: activeTab.channelId,
+            channelSection: activeTab.channelSection,
           }
         : null,
       routeDashboardId: params.dashboardId ?? null,
       routeTaskId: params.taskId ?? null,
       routeChannelId: params.channelId ?? null,
+      routeChannelSection,
     });
     switch (decision.type) {
       case "activate":
@@ -168,6 +184,7 @@ export function BrowserTabStrip() {
           dashboardId: decision.dashboardId,
           taskId: decision.taskId,
           channelId: decision.channelId,
+          channelSection: decision.channelSection,
         });
         if (decision.stampTabId) stamp(decision.stampTabId);
         break;
@@ -177,6 +194,7 @@ export function BrowserTabStrip() {
           dashboardId: decision.dashboardId,
           taskId: decision.taskId,
           channelId: decision.channelId,
+          channelSection: decision.channelSection,
         });
         if (decision.stampTabId) stamp(decision.stampTabId);
         break;
@@ -191,6 +209,7 @@ export function BrowserTabStrip() {
     params.channelId,
     params.dashboardId,
     params.taskId,
+    routeChannelSection,
     activeTab,
     openOrFocus.mutate,
     setTabTarget.mutate,
@@ -231,7 +250,9 @@ export function BrowserTabStrip() {
         const isActive = t.id === activeTabId;
         const taskId = isActive ? (params.taskId ?? null) : t.taskId;
         const dashId = isActive ? (params.dashboardId ?? null) : t.dashboardId;
-        const channel = channelName(t.channelId);
+        const channelId = isActive ? (params.channelId ?? null) : t.channelId;
+        const section = isActive ? routeChannelSection : t.channelSection;
+        const channel = channelName(channelId);
         if (taskId) {
           const task = findTask(taskId);
           return {
@@ -250,6 +271,18 @@ export function BrowserTabStrip() {
             channelName: channel,
           };
         }
+        // A channel tab: a sub-section (Inbox/Artifacts/…) or the channel home.
+        // The section drives the label; the channel name carries the `#` hover
+        // context. Home has no section, so it labels by the channel name.
+        if (channelId) {
+          const meta = channelSectionFor(section);
+          return {
+            id: t.id,
+            label: meta?.label ?? channel ?? "Channel",
+            icon: <HashIcon size={14} />,
+            channelName: channel,
+          };
+        }
         return { id: t.id, label: "New tab", channelName: null };
       });
   }, [
@@ -261,8 +294,10 @@ export function BrowserTabStrip() {
     allTasks,
     activeTaskRecord,
     activeTabId,
+    params.channelId,
     params.dashboardId,
     params.taskId,
+    routeChannelSection,
   ]);
 
   // Navigate to a tab, tagging the history entry with its id so the switch is
@@ -282,6 +317,24 @@ export function BrowserTabStrip() {
         params: { channelId: tab.channelId, dashboardId: tab.dashboardId },
         state,
       });
+    } else if (tab.channelId) {
+      const params = { channelId: tab.channelId };
+      switch (tab.channelSection) {
+        case "inbox":
+          navigate({ to: "/website/$channelId/inbox", params, state });
+          break;
+        case "artifacts":
+          navigate({ to: "/website/$channelId/artifacts", params, state });
+          break;
+        case "history":
+          navigate({ to: "/website/$channelId/history", params, state });
+          break;
+        case "context":
+          navigate({ to: "/website/$channelId/context", params, state });
+          break;
+        default:
+          navigate({ to: "/website/$channelId", params, state });
+      }
     } else {
       navigate({ to: "/website", state });
     }
@@ -330,6 +383,7 @@ export function BrowserTabStrip() {
                   dashboardId: null,
                   taskId: null,
                   channelId: null,
+                  channelSection: null,
                 });
               }
             },
