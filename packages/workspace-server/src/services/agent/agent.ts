@@ -290,6 +290,16 @@ interface SessionConfig {
   importedSessionId?: string;
 }
 
+/** Pull the adapter's `agentCapabilities._meta.posthog.steering` from initialize. */
+function extractSteeringCapability(init: unknown): string | undefined {
+  const steering = (
+    init as {
+      agentCapabilities?: { _meta?: { posthog?: { steering?: unknown } } };
+    }
+  )?.agentCapabilities?._meta?.posthog?.steering;
+  return typeof steering === "string" ? steering : undefined;
+}
+
 interface ManagedSession {
   taskRunId: string;
   taskId: string;
@@ -304,6 +314,8 @@ interface ManagedSession {
   promptPending: boolean;
   pendingContext?: string;
   configOptions?: SessionConfigOption[];
+  /** Adapter's negotiated steering capability from initialize (`_meta.posthog.steering`). */
+  steering?: string;
   /** Tracks in-flight MCP tool calls (toolCallId → toolKey) for cancellation */
   inFlightMcpToolCalls: Map<string, string>;
   /** MCP tool approval states fetched at session start */
@@ -847,7 +859,7 @@ If a repository IS genuinely required, attach one in this priority order:
         clientStreams,
       );
 
-      await connection.initialize({
+      const initResult = await connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: {
           fs: {
@@ -857,6 +869,11 @@ If a repository IS genuinely required, attach one in this priority order:
           terminal: true,
         },
       });
+      // The adapter advertises whether mid-turn steering folds natively into the
+      // running turn (`steering: "native"`) vs needs cancel+resend. Surface it so
+      // the host gates steer-vs-resend on the negotiated capability, not on a
+      // hardcoded adapter name (codex-acp advertises "interrupt-resend").
+      const steering = extractSteeringCapability(initResult);
 
       const {
         servers: mcpServers,
@@ -1062,6 +1079,7 @@ If a repository IS genuinely required, attach one in this priority order:
         config,
         promptPending: false,
         configOptions,
+        steering,
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
@@ -1934,6 +1952,7 @@ For git operations while detached:
       sessionId: session.taskRunId,
       channel: session.channel,
       configOptions: session.configOptions,
+      steering: session.steering,
     };
   }
 

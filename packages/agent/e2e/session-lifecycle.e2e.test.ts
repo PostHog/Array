@@ -124,6 +124,12 @@ for (const adapter of ADAPTERS) {
       // codex additionally emits _posthog/turn_complete (claude signals turn
       // completion via the prompt response, not this ext-notification).
       if (adapter === "codex") {
+        // NOTE: reasoning (agent_thought_chunk) parity is covered by the unit
+        // test for both reasoning streams (mapping.test.ts). A live assertion is
+        // intentionally omitted: the cheap gpt-5-mini turn doesn't reliably emit
+        // a reasoning summary, so asserting > 0 here would be flaky. Confirming
+        // the live trigger (summary field vs show_raw_agent_reasoning config) is
+        // tracked in CODEX_APP_SERVER_TESTING.md.
         expect(turn.capture.extMethods()).toContain("_posthog/turn_complete");
         // turn_complete carries real, well-formed usage (totalTokens = sum).
         const tc = turn.capture.events.find(
@@ -219,6 +225,52 @@ for (const adapter of ADAPTERS) {
         await s.cleanup();
       }
     }, 60_000);
+
+    // The behavioral proof that the mode picker is NOT cosmetic: read-only maps
+    // to a per-turn sandboxPolicy:readOnly (codex app-server), which must block a
+    // write at the OS level even though the host auto-approves. If this fails the
+    // edit went through → the restriction is not actually applied.
+    itCodex(
+      "read-only mode actually blocks a file edit (sandbox restricts, not just approval)",
+      async () => {
+        if (adapter === "codex") killCodexStragglers();
+        const s = await openSession({
+          adapter,
+          cwd: repo,
+          codexOptions: codexOptions(),
+          meta: meta(),
+        });
+        try {
+          // Switch to read-only; the per-turn sandboxPolicy applies on the next turn.
+          await s.conn.setSessionConfigOption({
+            sessionId: s.sessionId,
+            configId: "mode",
+            value: "read-only",
+          });
+          const before = readTarget(repo);
+          const res = await s.conn.prompt({
+            sessionId: s.sessionId,
+            prompt: [
+              {
+                type: "text",
+                text:
+                  "Edit target.txt so its second line reads SENTINEL_RO_EDIT. " +
+                  "Then stop.",
+              },
+            ],
+          });
+          // The turn must complete (a read-only sandbox must not panic/hang)...
+          expect(res.stopReason).toBeTruthy();
+          // ...and the on-disk file is byte-for-byte unchanged: the readOnly
+          // sandbox blocked the write despite the host auto-approving.
+          expect(readTarget(repo)).toBe(before);
+          expect(readTarget(repo)).not.toContain("SENTINEL_RO_EDIT");
+        } finally {
+          await s.cleanup();
+        }
+      },
+      180_000,
+    );
 
     it("handles the host's refresh_session extMethod per adapter", async () => {
       if (adapter === "codex") killCodexStragglers();
@@ -403,10 +455,20 @@ for (const adapter of ADAPTERS) {
         await s.conn.cancel({ sessionId: s.sessionId });
         const res = await p;
         expect(res.stopReason).toBe("cancelled");
+
+        // Real-world impact: after a cancel the session must be usable again.
+        // With the old bug (turn/interrupt sent without the required turnId) the
+        // server-side turn kept running, so a follow-up turn could not start
+        // cleanly. A bounded follow-up must now complete normally.
+        const followUp = await s.conn.prompt({
+          sessionId: s.sessionId,
+          prompt: [{ type: "text", text: "Stop. Reply with just: OK" }],
+        });
+        expect(followUp.stopReason).toBe("end_turn");
       } finally {
         await s.cleanup();
       }
-    }, 90_000);
+    }, 120_000);
 
     it("resumeSession reconnects and returns config options", async () => {
       if (adapter === "codex") killCodexStragglers();

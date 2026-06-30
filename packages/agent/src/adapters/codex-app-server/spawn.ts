@@ -32,12 +32,24 @@ export function buildAppServerArgs(
 
   args.push("-c", "features.remote_models=false");
 
-  // The agent already runs inside PostHog's isolated sandbox (docker/Modal with
-  // agentsh egress + filesystem controls), so Codex's own OS-level sandbox is
-  // redundant — and its `linux-sandbox` launcher is unavailable there, so the
-  // default mode panics ("sandbox launcher unavailable") and wedges the session.
-  // Run with no nested sandbox; the enclosing sandbox provides the isolation.
-  args.push("-c", `sandbox_mode="danger-full-access"`);
+  // OS sandbox mode is gated on the platform, which mirrors sandbox AVAILABILITY:
+  //  - macOS (local desktop + e2e): Seatbelt is available, so spawn with the
+  //    `workspace-write` sandbox. This keeps the OS sandbox engaged so a per-turn
+  //    `sandboxPolicy:readOnly` (the Plan / Read-only presets) can actually
+  //    TIGHTEN it and block edits — a process spawned `danger-full-access` has
+  //    the sandbox fully disabled and can't re-engage it per-turn, which made the
+  //    mode picker cosmetic.
+  //  - cloud (linux containers): codex's `linux-sandbox` launcher is unavailable,
+  //    so the default mode panics ("sandbox launcher unavailable") and wedges the
+  //    session. Run `danger-full-access` (PostHog's enclosing docker/Modal
+  //    sandbox provides the real isolation there). Windows falls here too,
+  //    conservatively, until its sandbox is verified.
+  args.push(
+    "-c",
+    process.platform === "darwin"
+      ? `sandbox_mode="workspace-write"`
+      : `sandbox_mode="danger-full-access"`,
+  );
 
   // Disable the user's ambient ~/.codex MCP servers (linear/figma/etc.) so the
   // adapter only exposes MCP servers PostHog Code injects per-thread — matching
@@ -47,6 +59,11 @@ export function buildAppServerArgs(
   for (const name of new CodexSettingsManager(
     options.cwd ?? process.cwd(),
   ).getSettings().mcpServerNames) {
+    // codex's `-c` parser rejects quoted/special key segments; a dotted or
+    // spaced server name would emit an override that fails to load and wedges
+    // the whole session. Skip it (the server stays enabled, which is harmless)
+    // — mirrors the guard in codex/spawn.ts.
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) continue;
     args.push("-c", `mcp_servers.${name}.enabled=false`);
   }
 

@@ -82,16 +82,18 @@ function extractAggregate(
     const update = params?.update;
     if (
       update?.sessionUpdate === "usage_update" &&
-      typeof update.used === "number" &&
-      typeof update.size === "number"
+      typeof update.used === "number"
     ) {
+      // The model context window (`size`) may be unknown — e.g. codex omits it
+      // when the protocol doesn't report `modelContextWindow`. Still surface the
+      // raw token count (size 0 → the indicator shows used tokens, no
+      // percentage) rather than dropping the whole aggregate.
+      const size = typeof update.size === "number" ? update.size : 0;
       const percentage =
-        update.size > 0
-          ? Math.min(100, Math.round((update.used / update.size) * 100))
-          : 0;
+        size > 0 ? Math.min(100, Math.round((update.used / size) * 100)) : 0;
       return {
         used: update.used,
-        size: update.size,
+        size,
         percentage,
         cost: update.cost ?? null,
       };

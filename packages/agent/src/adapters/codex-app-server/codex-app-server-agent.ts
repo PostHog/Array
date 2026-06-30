@@ -19,6 +19,7 @@ import type {
   SetSessionConfigOptionResponse,
   StopReason,
 } from "@agentclientprotocol/sdk";
+import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
 import { POSTHOG_NOTIFICATIONS } from "../../acp-extensions";
 import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
 import type { ProcessSpawnedCallback } from "../../types";
@@ -48,7 +49,13 @@ import {
 } from "./ext-notifications";
 import { toCodexInput } from "./input";
 import { buildLocalToolsServer, type LocalToolsMeta } from "./local-tools-mcp";
-import { mapAppServerNotification, mapHistoryItem } from "./mapping";
+import {
+  type AppServerItem,
+  changePaths,
+  diffContent,
+  mapAppServerNotification,
+  mapHistoryItem,
+} from "./mapping";
 import { toCodexMcpServers } from "./mcp-config";
 import {
   APP_SERVER_METHODS,
@@ -60,6 +67,7 @@ import {
   DEFAULT_MODE,
   modeApprovalPolicy,
   resolveInitialMode,
+  sandboxPolicyFor,
 } from "./session-config";
 import {
   type CodexAppServerProcess,
@@ -172,8 +180,33 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   /** Maps the host's taskRunId to this session, replayed for cloud notifications. */
   private taskRunId?: string;
   private cwd?: string;
+  /**
+   * Deployment environment from the host `_meta`. Gates the per-turn
+   * `sandboxPolicy` mode override: on "cloud" a non-danger sandbox would
+   * re-engage the unavailable linux-sandbox and panic, so we leave the spawned
+   * danger-full-access in place there.
+   */
+  private environment?: "local" | "cloud";
+  /**
+   * In-flight MCP tool calls keyed by item id. Codex has no MCP-specific
+   * approval request — it reuses the command-execution approval — so we
+   * correlate the approval's `itemId` back to the originating mcpToolCall here
+   * to render the approval prompt with the real server/tool/args (see
+   * handleApproval). Session-scoped and small (one entry per MCP call).
+   */
+  private readonly mcpToolCallsByItemId = new Map<
+    string,
+    { server: string; tool: string; args: unknown }
+  >();
   /** Active turn id from turn/started — the steering precondition + interrupt target. */
   private turnId?: string;
+  /**
+   * Turn ids we've interrupted. After a real interrupt codex emits a late
+   * turn/completed(interrupted) for the cancelled turn; if a follow-up turn is
+   * already running, that stale completion would otherwise finalize it as
+   * cancelled. We drop the completion for any id in here (once).
+   */
+  private readonly cancelledTurnIds = new Set<string>();
   /**
    * Per-source context baseline (systemPrompt floor + skills/mcp estimates) the
    * usage breakdown is derived from; codex doesn't attribute input tokens.
@@ -262,7 +295,11 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         title: "PostHog Code",
         version: "0.1.0",
       },
-      capabilities: { experimentalApi: false, requestAttestation: false },
+      // Opt into codex's experimental API surface. Experimental fields are
+      // additive (unknown ones are ignored), so the adapter's known
+      // methods/notifications are unaffected; we keep it on so experimental
+      // turn/start fields are honored rather than silently dropped.
+      capabilities: { experimentalApi: true, requestAttestation: false },
     });
     this.rpc.notify(APP_SERVER_NOTIFICATIONS.INITIALIZED, {});
     return {
@@ -437,6 +474,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.jsonSchema = params.meta?.jsonSchema ?? undefined;
     this.cwd = params.cwd;
     this.taskRunId = params.meta?.taskRunId;
+    this.environment = params.meta?.environment;
     // Honor the host's initial approval mode (mirrors codex-acp). A non-codex
     // value falls back to the default; setSessionConfigOption can change it later.
     this.mode = resolveInitialMode(params.meta?.permissionMode);
@@ -596,6 +634,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   private rebuildConfigOptions(): void {
     this.configOptions = buildConfigOptions({
+      mode: this.mode,
       model: this.model,
       effort: this.reasoningEffort,
       models: this.availableModels,
@@ -627,7 +666,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       );
       commands = (res?.data ?? [])
         .flatMap((entry) => entry?.skills ?? [])
-        .filter((s) => s?.name)
+        // `enabled` is a required boolean in the schema; drop explicitly-disabled
+        // skills so the slash-command menu doesn't advertise unusable commands
+        // (lenient `!== false` so a malformed payload that omits it still shows).
+        .filter((s) => s?.name && s?.enabled !== false)
         .map((s: any) => ({ name: s.name, description: s.description ?? "" }));
     } catch (err) {
       this.logger.warn("skills/list failed", { error: String(err) });
@@ -691,13 +733,21 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       // behavior is to fold the message in), steer it via turn/steer with the
       // active turnId as the precondition. The existing pendingTurn keeps
       // resolving on the original turn/completed.
-      await this.rpc
-        .request(APP_SERVER_METHODS.TURN_STEER, {
+      // turn/steer returns the (possibly rotated) active turnId; refresh
+      // this.turnId so a later turn/steer's expectedTurnId precondition and a
+      // turn/interrupt still target the live turn (turn/started is not re-emitted
+      // for a steer).
+      const steerRes = await this.rpc
+        .request<{ turnId?: string }>(APP_SERVER_METHODS.TURN_STEER, {
           threadId: this.threadId,
           input,
           expectedTurnId: this.turnId,
         })
-        .catch((err) => this.logger.warn("turn/steer failed", err));
+        .catch((err) => {
+          this.logger.warn("turn/steer failed", err);
+          return undefined;
+        });
+      if (typeof steerRes?.turnId === "string") this.turnId = steerRes.turnId;
       return { stopReason: await this.pendingTurnCompletion() };
     }
     if (this.pendingTurn) {
@@ -719,9 +769,20 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         input,
         model: this.model,
         ...(this.reasoningEffort ? { effort: this.reasoningEffort } : {}),
-        // Synthesized mode → codex approval policy (applied per-turn since there
-        // is no app-server mode RPC). Sandbox stays as spawned.
+        // Always request a reasoning summary so the host surfaces thinking; the
+        // default "auto" can skip summaries on trivial turns (and raw reasoning
+        // is off, so without this the host sees no thought stream at all).
+        summary: "detailed",
+        // The picker's preset, applied per-turn (no app-server mode RPC):
+        // approvalPolicy plus a sandboxPolicy override that actually restricts
+        // edits (plan/read-only → readOnly). Skipped on cloud, where a
+        // non-danger sandbox re-engages the unavailable linux-sandbox and panics
+        // — there it stays at the spawned danger-full-access. Switching the
+        // preset takes effect on the next turn.
         ...(approvalPolicy ? { approvalPolicy } : {}),
+        ...(this.environment !== "cloud" && sandboxPolicyFor(this.mode)
+          ? { sandboxPolicy: sandboxPolicyFor(this.mode) }
+          : {}),
         // Constrain the final assistant message to the task's schema so it is
         // valid JSON we can parse for structured output (replaces the codex-acp
         // `create_output` MCP, which the native app-server has no need for).
@@ -773,9 +834,20 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     // the host treats as the idle/queue-dispatch signal — matching codex-acp.
     // finalizeTurn claims the turn idempotently, so the server's later
     // turn/completed(interrupted) is a no-op.
-    if (this.threadId) {
+    // TurnInterruptParams requires BOTH threadId and turnId (the native binary
+    // rejects a turnId-less request with -32600, leaving the turn running). The
+    // live turnId is captured from turn/started and is still set here —
+    // finalizeTurn clears it afterwards. When no turn/started was seen yet there
+    // is no server-side turn to abort, so skip the RPC and just finalize.
+    if (this.threadId && this.turnId) {
+      // Remember it so its late turn/completed(interrupted) is dropped rather
+      // than finalizing a follow-up turn.
+      this.cancelledTurnIds.add(this.turnId);
       await this.rpc
-        .request(APP_SERVER_METHODS.TURN_INTERRUPT, { threadId: this.threadId })
+        .request(APP_SERVER_METHODS.TURN_INTERRUPT, {
+          threadId: this.threadId,
+          turnId: this.turnId,
+        })
         .catch((err) => this.logger.warn("turn/interrupt failed", err));
     }
     await this.finalizeTurn("cancelled");
@@ -786,6 +858,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.turnId = undefined;
     this.pendingTurn?.resolve("cancelled");
     this.pendingTurn = undefined;
+    // Drain any interrupted-turn ids still awaiting their late completion so the
+    // set can't accumulate across a long-lived process (each entry is normally
+    // removed when that completion arrives, but a dropped one would linger).
+    this.cancelledTurnIds.clear();
     this.session.settingsManager.dispose();
     // Close the transport BEFORE killing the process: kill() destroys the
     // stdio streams, so awaiting writer.close()/reader.cancel() afterwards
@@ -821,6 +897,13 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       if (typeof id === "string") this.turnId = id;
     }
 
+    if (
+      method === APP_SERVER_NOTIFICATIONS.ITEM_STARTED ||
+      method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED
+    ) {
+      this.captureMcpToolCall(params);
+    }
+
     if (method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED) {
       this.captureAgentMessage(params);
     }
@@ -830,8 +913,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
 
     if (method === APP_SERVER_NOTIFICATIONS.TURN_COMPLETED) {
-      const status = (params as { turn?: { status?: string } })?.turn?.status;
-      void this.finalizeTurn(mapTurnStopReason(status));
+      const turn = (params as { turn?: { id?: string; status?: string } })
+        ?.turn;
+      // Drop the late completion of a turn we already interrupted so it can't
+      // finalize the current (follow-up) turn as cancelled.
+      if (turn?.id && this.cancelledTurnIds.delete(turn.id)) return;
+      void this.finalizeTurn(mapTurnStopReason(turn?.status));
     }
 
     if (method === APP_SERVER_NOTIFICATIONS.ERROR) {
@@ -844,6 +931,29 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         });
         void this.finalizeTurn("refusal");
       }
+    }
+  }
+
+  /** Remember an MCP tool call's server/tool/args so a later approval prompt for
+   * the same item can render the real tool instead of codex's generic text. */
+  private captureMcpToolCall(params: unknown): void {
+    const item = (
+      params as {
+        item?: {
+          type?: string;
+          id?: string;
+          server?: string;
+          tool?: string;
+          arguments?: unknown;
+        };
+      }
+    )?.item;
+    if (item?.type === "mcpToolCall" && item.id && item.server && item.tool) {
+      this.mcpToolCallsByItemId.set(item.id, {
+        server: item.server,
+        tool: item.tool,
+        args: item.arguments,
+      });
     }
   }
 
@@ -867,6 +977,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       inputTokens: total.inputTokens ?? 0,
       outputTokens: total.outputTokens ?? 0,
       cachedReadTokens: total.cachedInputTokens ?? 0,
+      // codex's app-server TokenUsage.total has no cache-write/creation field
+      // (unlike the codex-acp upstream stream), so there is nothing to report —
+      // 0 is authoritative here, not a dropped value.
       cachedWriteTokens: 0,
     };
     // Drives the per-source breakdown's "conversation" bucket on turn complete.
@@ -1020,16 +1133,61 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       this.logger.warn("Unrecognized server request; declining", { method });
       return { decision: "decline" };
     }
-    const detail = params as { itemId?: string; command?: string };
+    const isFileChange = method === APP_SERVER_REQUESTS.FILE_CHANGE_APPROVAL;
+    const detail = params as {
+      itemId?: string;
+      command?: string;
+      changes?: AppServerItem["changes"];
+    };
     const title =
-      detail.command ??
-      (method === APP_SERVER_REQUESTS.FILE_CHANGE_APPROVAL
-        ? "Apply file changes"
-        : "Run command");
+      detail.command ?? (isFileChange ? "Apply file changes" : "Run command");
+    const toolCallId = detail.itemId ?? "codex-approval";
+    // Codex has no MCP-specific approval; an MCP tool call surfaces as a
+    // command-execution approval. When the item is a known MCP call, surface the
+    // real server/tool/args so the host renders the proper MCP permission
+    // (incl. the PostHog `exec` unwrapping) instead of codex's generic text.
+    const mcp = detail.itemId
+      ? this.mcpToolCallsByItemId.get(detail.itemId)
+      : undefined;
+    // Set kind + content so the host routes plain command/file approvals to
+    // ExecutePermission / EditPermission (command styling, diff body) rather
+    // than the bare DefaultPermission fallback.
+    const toolCall = mcp
+      ? {
+          toolCallId,
+          title,
+          kind: "other" as const,
+          rawInput: mcp.args,
+          _meta: posthogToolMeta({
+            toolName: mcpToolKey({ server: mcp.server, tool: mcp.tool }),
+            mcp: { server: mcp.server, tool: mcp.tool },
+          }),
+        }
+      : isFileChange
+        ? {
+            toolCallId,
+            title,
+            kind: "edit" as const,
+            content: diffContent(detail.changes),
+            locations: changePaths(detail.changes).map((path) => ({ path })),
+          }
+        : {
+            toolCallId,
+            title,
+            kind: "execute" as const,
+            content: detail.command
+              ? [
+                  {
+                    type: "content" as const,
+                    content: { type: "text" as const, text: detail.command },
+                  },
+                ]
+              : undefined,
+          };
     try {
       const response = await this.client.requestPermission({
         sessionId: this.sessionId,
-        toolCall: { toolCallId: detail.itemId ?? "codex-approval", title },
+        toolCall,
         options: [
           { optionId: "allow", name: "Allow", kind: "allow_once" },
           { optionId: "reject", name: "Reject", kind: "reject_once" },

@@ -23,12 +23,17 @@ describe("mapAppServerNotification", () => {
     });
   });
 
-  it("maps a reasoning text delta to an ACP agent_thought_chunk", () => {
-    const result = mapAppServerNotification(
-      "s-1",
-      APP_SERVER_NOTIFICATIONS.REASONING_TEXT_DELTA,
-      { itemId: "item_1", delta: "thinking", contentIndex: 0 },
-    );
+  it.each([
+    ["raw textDelta", APP_SERVER_NOTIFICATIONS.REASONING_TEXT_DELTA],
+    // The DEFAULT stream for gpt-5-family models — must map identically, else
+    // the host sees no reasoning at all (raw reasoning is off by default).
+    ["summaryTextDelta", APP_SERVER_NOTIFICATIONS.REASONING_SUMMARY_TEXT_DELTA],
+  ])("maps a reasoning %s to an ACP agent_thought_chunk", (_label, method) => {
+    const result = mapAppServerNotification("s-1", method, {
+      itemId: "item_1",
+      delta: "thinking",
+      contentIndex: 0,
+    });
 
     expect(result).toEqual({
       sessionId: "s-1",

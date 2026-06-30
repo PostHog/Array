@@ -252,7 +252,25 @@ async function handleToolUserInput(
           toolCallId: `${params.itemId}:${question.id}`,
           title: question.question,
           kind: "other",
-          _meta: { codeToolKind: "question", header: question.header },
+          // The host's QuestionPermission renders from `_meta.questions`
+          // (QuestionMetaSchema) — a bare `header` left it empty ("Review your
+          // answers" with nothing). codex prompts one question per request, so
+          // carry exactly this question; selection still flows through `options`.
+          _meta: {
+            codeToolKind: "question",
+            questions: [
+              {
+                question: question.question,
+                header: question.header,
+                options: (question.options ?? []).map((opt) => ({
+                  label: opt.label,
+                  ...(opt.description?.trim()
+                    ? { description: opt.description }
+                    : {}),
+                })),
+              },
+            ],
+          },
         },
       });
     } catch (err) {

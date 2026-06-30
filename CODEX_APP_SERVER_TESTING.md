@@ -69,3 +69,141 @@ Triage tip: if something looks wrong, run the same action on **codex-acp** (flag
 - [ ] **Token usage + context breakdown**: confirm the usage counter updates and the breakdown popover populates (systemPrompt / tools / skills / mcp / conversation). Driven by `_posthog/usage_update`.
 - [ ] **Channel mode (repo-less task)**: start a task with no repo.
   - Expect: behaves as a general assistant; only attaches/clones a repo when actually needed.
+
+## Known issues / follow-ups
+
+- [ ] **MCP `exec` permission prompt shows raw codex text** — the approval prompt for the PostHog MCP `exec` tool renders `Allow the posthog MCP server to run tool "exec"?` instead of the unwrapped sub-command (e.g. `posthog - execute-sql {…}`). The transcript tool-call rendering is fixed; only the **permission prompt** is wrong.
+  - **Root cause:** codex has no MCP-specific approval — it reuses `item/commandExecution/requestApproval`, which carries no server/tool. The adapter now caches `mcpToolCall` items by id and enriches the approval `toolCall` with `_meta.posthog` when the approval's `itemId` matches (`codex-app-server-agent.ts` `captureMcpToolCall` + `handleApproval`). That enrichment is **not firing** in testing.
+  - **Likely cause (unconfirmed):** the approval references the item by a *different* id (the schema mentions a sub-callback `approvalId` for "zsh-exec-bridge subcommand approvals") → cache miss. Or it's arriving via a different request method. Or the rebuild didn't include the `packages/ui` renderer changes.
+  - **Next step:** from the ACP log, grab the `session/request_permission` message + the preceding `mcpToolCall` `tool_call`, and check (a) whether the permission `toolCall` carries `_meta.posthog`, and (b) whether its `toolCallId` matches the `mcpToolCall` id. That pins it to adapter-correlation vs renderer/build.
+  - **Touches:** `packages/agent/src/adapters/codex-app-server/codex-app-server-agent.ts` (`handleApproval`, `captureMcpToolCall`), `packages/ui/src/features/permissions/{PermissionSelector,McpPermission}.tsx`.
+
+- [x] **Mode picker on app-server (flattened, Claude-style) — IMPLEMENTED.** App-server now emits a `category:"mode"` config option (`session-config.ts buildConfigOptions`) with four presets — **Plan / Read only / Auto / Full access** — so the existing `ModeSelector` shows a switcher for app-server only (codex-acp/claude unchanged). Each preset maps to a `(collaborationMode, approvalPolicy)` tuple applied per-turn on `turn/start`. The adapter now negotiates `experimentalApi: true` (required for the experimental `collaborationMode` field). Verified against the real binary: `collaborationMode/list` → `[Plan, Default]`, `thread/start` accepts `collaborationMode:{mode,settings:{model}}`.
+  - **To verify live:** switch the picker to **Plan** → codex should propose a plan, make no edits, and `request_user_input` (AskUserQuestion) should fire; switching to Auto/Read-only/Full-access should behave per approval policy. Exit Plan = switch the picker to a coding preset (sets `collaborationMode=default` next turn).
+  - **Watch:** `experimentalApi: true` is a session-wide flip; confirm normal (non-plan) turns are unaffected.
+
+- [ ] **AskUserQuestion / `request_user_input`** — unblocked by the Plan preset above (codex only injects the tool in `plan` collaboration mode). Test it by selecting **Plan** and asking codex something under-specified; the structured card should render via `approvals.ts handleToolUserInput`. (Was "N/A for codex"; now reachable on app-server.)
+
+---
+
+## Parity audit + RED-GREEN session (against the live binary + gateway)
+
+A 15-feature parity audit (vs the Claude adapter, codex-acp, and the real codex protocol schema) found **42 confirmed items** (full list stashed at `scratchpad/audit-confirmed.json`; workflow `wf_f53857b7-a94`). The headline lesson: several existing tests were **false-greens** (they passed even with the feature broken). The live e2e runs here (gateway up at `localhost:3308`, token via `e2e/run-e2e.sh`).
+
+### Fixed this session (RED → GREEN, with regression tests)
+
+- [x] **Cancel/interrupt — the real bug.** Two layered defects, both fixed:
+  1. `turn/interrupt` was sent with only `{ threadId }`; the schema requires `{ threadId, turnId }` (native binary rejects `-32600`). The error was swallowed and a local `finalizeTurn("cancelled")` masked it → false-green. Fixed: send `turnId`; the stub now enforces the schema (`makeStubRpc` throws on a turnId-less interrupt).
+  2. Once interrupt actually fired, codex's **late `turn/completed(interrupted)`** for the cancelled turn finalized the *follow-up* turn as cancelled. Fixed with a `cancelledTurnIds` guard (drop the stale completion by `turn.id`). **Verified live** — the interrupt e2e now sends a follow-up prompt and asserts `end_turn`.
+- [x] **Steering** — `turn/steer` response `turnId` was discarded, so `this.turnId` went stale and a later steer/interrupt targeted the wrong turn. Fixed + unit test.
+- [x] **Skills** — disabled skills (`enabled:false`) were advertised in `available_commands_update`. Fixed (`!== false` filter) + unit test.
+- [x] **Reasoning (mapping)** — only the raw `item/reasoning/textDelta` was mapped; gpt-5-family streams the **default** `summaryTextDelta`, which was dropped → no thinking reached the host. Mapping + `summary:"detailed"` added + parameterized unit test. *Live trigger still unconfirmed* (see deferred).
+- [x] **MCP ambient-disable** — `mcp_servers.<name>.enabled=false` was emitted without name validation; a dotted/spaced server name wedges the whole session. Fixed (mirrors codex-acp's `/^[A-Za-z0-9_-]+$/` guard).
+
+### Remaining (prioritized — from `scratchpad/audit-confirmed.json`)
+
+Code bugs (unit-testable):
+- [ ] **structured-output (#25)** — final-message capture ignores codex `MessagePhase`; a trailing `commentary` agent message can clobber the `final_answer` used for structured output. Prefer `final_answer` text.
+- [ ] **usage `totalTokens` (#29)** — recomputed total drops `reasoningOutputTokens`; the e2e assertion is a tautology against the producer formula. Carry codex's authoritative total incl. reasoning.
+
+False-green e2e strengthenings (live):
+- [ ] **loadSession (#6)** — doesn't prove the tool transcript replays against a real persisted thread.
+- [ ] **steering echo (#8)** — asserts only echo count (fires before the fold).
+- [ ] **fileChange diff (#9)** — golden turn never asserts diff content (`parseUnifiedDiff`).
+- [ ] **instructions {append}→flatten (#2)** — the prod `[object Object]` fix has no real-binary coverage.
+- [ ] **structured-output (#24)** — passes even if `outputSchema` is never sent.
+- [ ] tool-kind classification (#27), MCP-injection/local-tools e2e (#16), image-input e2e (#13), plan-rendering e2e (#35), command/file approval round-trip via read-only mode (#12).
+
+### Deferred design issues (not quick fixes)
+
+- [ ] **Modes are neutralized by the sandbox — plan mode is currently cosmetic.** The audit DISPROVED the earlier "Mode picker IMPLEMENTED" claim: `collaborationMode` on `turn/start` is **silently dropped** (codex ignores unknown fields — a `totallyBogusField123` is accepted too; acceptance ≠ effect). It only lives in *server→client* `ThreadSettings`, not any client turn/thread param. And `approvalPolicy` is neutralized because spawn forces `sandbox_mode=danger-full-access` (codex auto-approves everything). So all four presets currently behave identically. Making plan/read-only actually restrict needs per-turn `sandboxPolicy` — but `sandboxPolicy:readOnly` risks re-engaging the OS sandbox that spawn deliberately disables (linux-sandbox panics on cloud). Needs design. **Action:** at minimum remove the dead `collaborationMode` field + `collaborationModeFor` and correct the misleading comments/tests.
+- [ ] **Reasoning live trigger (#11)** — `summary:"detailed"` did not surface `agent_thought_chunk` on the gpt-5-mini golden turn. Confirm the right lever (the `summary` turn field vs `-c show_raw_agent_reasoning=true` spawn config). The mapping fix + unit test stand regardless; the live e2e assertion is intentionally omitted until the trigger is confirmed.
+
+---
+
+## Ship-readiness RED-GREEN session (host/UI integration + CI guard)
+
+### The CI-coverage truth (important)
+The live e2e suite (`packages/agent/e2e`, `vitest.e2e.config.ts`) **does not run in CI** — it
+is opt-in (`pnpm test:e2e`) and needs a live gateway + real codex binary + a minted token. So
+the **unit suite (`src/**/*.test.ts`, the default `vitest run`) is the only automated regression
+guard**, and its power depends on **stub fidelity**. Every bug the e2e can find now also has a
+unit regression test. Practical rule going forward: when the e2e catches something, add the
+unit test too, or CI won't protect it.
+
+### Fixed (RED → GREEN, each with a unit regression test that runs in CI)
+- [x] **Modes are real, not cosmetic — PROVEN LIVE.** Removed the dead `collaborationMode`
+  turn/start field (silently dropped) and wired a per-turn `sandboxPolicy: {type:readOnly}` for
+  plan/read-only. The first live e2e exposed that this alone did NOTHING: the edit still went
+  through, because `spawn.ts` forced `sandbox_mode="danger-full-access"` on *every* platform, which
+  disables codex's OS sandbox at the process level so a per-turn `sandboxPolicy` can't re-engage it.
+  Fix: gate the spawn sandbox on `process.platform` (which mirrors sandbox availability) — macOS gets
+  `workspace-write` (Seatbelt present → per-turn read-only can tighten and block edits), cloud/linux
+  keeps `danger-full-access` (its linux-sandbox launcher is absent and would panic). A new live e2e
+  (`read-only mode actually blocks a file edit`) now passes — read-only blocks the write while auto
+  still edits — and a `spawn.test.ts` case locks the platform gating. This was the headline
+  "deferred design issue"; it is now closed for local/desktop (cloud stays permissive by necessity,
+  documented). `session-config.test.ts`, `spawn.test.ts`, and the live codex e2e arm (13/13).
+- [x] **Native steering reaches codex.** The host hardcoded `adapter === "claude"` in both the
+  `sendPrompt` gate and `useSupportsNativeSteer`, so codex's `turn/steer` was dead. Now
+  capability-driven: the adapter's advertised `agentCapabilities._meta.posthog.steering` ("native"
+  vs codex-acp's "interrupt-resend") flows host→session via the start/reconnect response, and
+  both gates use the shared `sessionSupportsNativeSteer` helper. Belt-and-suspenders: Claude
+  falls back to native if the capability is unset, so the rollout can't regress it.
+  `shared/sessions.test.ts`.
+- [x] **AskUserQuestion renders.** Codex `requestUserInput` emitted a bare `_meta:{header}` that
+  failed `QuestionMetaSchema`, leaving an empty "Review your answers" card. Now emits a valid
+  single-question `questions` array. `approvals.test.ts`.
+- [x] **Bypass-mode revert is adapter-safe.** `maybeRevertBypassMode` forced `"default"`, which is
+  not a codex mode (left an undefined approval state). New pure `resolveBypassRevertMode` picks a
+  valid mode from the session's own options. `shared/sessions.test.ts`.
+- [x] **Command/file approvals render richly.** Codex approvals lacked `kind`/`content` so they
+  fell back to `DefaultPermission`. Now set `kind:"execute"` + command text / `kind:"edit"` + diff
+  (reusing `mapping.diffContent`/`changePaths`) → ExecutePermission / EditPermission.
+- [x] **Reasoning-effort labels** humanized (`Low`/`Medium`/`High`) to match Claude/codex-acp.
+- [x] **Usage indicator survives an unknown context window.** `extractAggregate` no longer drops
+  the whole aggregate when `size` is absent; the indicator shows the token count without a
+  misleading "/0 · 0%". `contextUsage.test.ts` + `ContextUsageIndicator.test.tsx`.
+- [x] **Unit false-greens killed + stub hardened.** The cancel test at `817-844` passed without
+  ever sending `turn/interrupt`; it now emits `turn/started` and asserts the RPC fired, plus a new
+  test locks the turnId-undefined skip path. `makeStubRpc` now enforces the real required-field
+  contract for `turn/interrupt` ({threadId,turnId}) and `turn/steer` ({threadId,input,expectedTurnId}).
+
+### Verified non-issues (traced to the consumer, intentionally NOT changed)
+- `usage.reasoningTokens` / `usage.cachedWriteTokens` / `usage.totalTokens` rename concerns — the
+  host (`contextUsage.ts`) reads only `used`/`size`/`cost`; the `usage` sub-object is unread.
+- `cachedWriteTokens: 0` — codex's app-server `TokenUsage.total` has no cache-write field; 0 is
+  authoritative, not a dropped value (comment added).
+- usage `totalTokens` (#29) — the adapter forwards codex's authoritative `total.totalTokens`, not a
+  recompute, so reasoning isn't dropped.
+
+### Adversarial re-review of the above (2nd workflow pass)
+A second review workflow re-checked the working-tree diff across four dimensions. Three —
+**steer-plumbing, host/UI-fixes, test-quality** — came back 10/10 (the steer capability is complete
+end-to-end with no path that silently degrades a codex session and no claude regression; the new
+unit tests are genuine guards that fail if their fix is reverted). The **missed-gaps** pass surfaced
+five; the dispositions:
+- [x] **cancelledTurnIds could accumulate** across a long-lived process if an interrupted turn's late
+  completion never arrived — now cleared in `closeSession`.
+- [x] **Question option descriptions were dropped** by the requestUserInput fix — now carried
+  (non-empty only), with a test assertion.
+- **MCP capture "race" — not a bug.** Capture is registered on BOTH `item/started` and
+  `item/completed`, so whichever arrives first populates the cache; the proposed "only started" patch
+  would *narrow* the window. The only true gap (approval before either event) is inherent.
+- Two observability nits (debug-log a skill missing `enabled`; warn when a session has no non-bypass
+  mode to revert to) intentionally skipped — both are effectively-impossible states and the logs
+  would be noise.
+
+### Still open
+- [x] **Live e2e RAN against the real gateway + binary** — the codex arm is **13/13** (steering folds
+  mid-turn, interrupt halts in-flight, structured output delivers, and the new behavioral
+  `read-only mode actually blocks a file edit` passes). This is the strongest ship-readiness signal:
+  the steer/interrupt/modes fixes are confirmed end-to-end, not just unit-mocked.
+- [ ] **A few e2e assertions remain intentionally loose** for live-model variance (the working-turn
+  asserts `contains FOO`, not an exact diff; loadSession asserts replay count, not order). These are
+  defensible against a non-deterministic model; tighten only if a real regression motivates it. The
+  CI guard remains the unit layer (e2e does not run in CI).
+- [ ] **Reasoning live trigger (#11)** — unchanged from above.
+- [ ] **structured-output `MessagePhase` (#25)** / **mcp partial-fields** — deferred: no evidence
+  codex's `agentMessage` carries a phase discriminator, and the `server && tool` cache guard is
+  correct (caching partial entries would render "undefined"). Revisit only with a real repro.

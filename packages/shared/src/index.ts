@@ -184,7 +184,9 @@ export {
   type OptimisticItem,
   type PermissionRequest,
   type QueuedMessage,
+  resolveBypassRevertMode,
   type SessionStatus,
+  sessionSupportsNativeSteer,
 } from "./sessions";
 export type {
   SignalReportOrderingField,

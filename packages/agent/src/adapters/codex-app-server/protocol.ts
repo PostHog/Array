@@ -36,6 +36,11 @@ export const APP_SERVER_NOTIFICATIONS = {
   ITEM_COMPLETED: "item/completed",
   AGENT_MESSAGE_DELTA: "item/agentMessage/delta",
   REASONING_TEXT_DELTA: "item/reasoning/textDelta",
+  // The DEFAULT reasoning stream for gpt-5-family models (summaries via
+  // model_reasoning_summary="auto"). Raw textDelta only fires when
+  // show_raw_agent_reasoning=true, which we don't set — so without this the host
+  // sees no reasoning at all.
+  REASONING_SUMMARY_TEXT_DELTA: "item/reasoning/summaryTextDelta",
   TURN_PLAN_UPDATED: "turn/plan/updated",
   TURN_COMPLETED: "turn/completed",
   // Fatal turn error; `willRetry:false` means it won't recover on its own.

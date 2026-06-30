@@ -3,6 +3,7 @@ import type {
   RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
 import { describe, expect, it, vi } from "vitest";
+import { QuestionMetaSchema } from "../claude/questions/utils";
 import { handleServerRequest } from "./approvals";
 import { APP_SERVER_REQUESTS } from "./protocol";
 
@@ -69,6 +70,55 @@ describe("handleServerRequest", () => {
     expect(calls[0].options.map((o) => o.name)).toEqual([
       "staging",
       "production",
+    ]);
+  });
+
+  it("carries a QuestionMetaSchema-valid questions array so the host card renders", async () => {
+    const { client, calls } = fakeClient([
+      { outcome: "selected", optionId: "option_0" },
+    ]);
+
+    const params = {
+      threadId: "t",
+      turnId: "turn",
+      itemId: "item-1",
+      autoResolutionMs: null,
+      questions: [
+        {
+          id: "q1",
+          header: "Environment",
+          question: "Which environment?",
+          isOther: false,
+          isSecret: false,
+          options: [
+            { label: "staging", description: "" },
+            { label: "production", description: "danger" },
+          ],
+        },
+      ],
+    };
+
+    await handleServerRequest(
+      APP_SERVER_REQUESTS.TOOL_USER_INPUT,
+      params,
+      client,
+      opts,
+    );
+
+    // The bug: a bare `{ header }` _meta fails QuestionMetaSchema, so the host's
+    // QuestionPermission renders an empty "Review your answers" screen.
+    const parsed = QuestionMetaSchema.safeParse(calls[0].toolCall?._meta);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.questions).toEqual([
+      {
+        question: "Which environment?",
+        header: "Environment",
+        // The non-empty description rides along; the empty one is dropped.
+        options: [
+          { label: "staging" },
+          { label: "production", description: "danger" },
+        ],
+      },
     ]);
   });
 

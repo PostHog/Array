@@ -25,6 +25,8 @@ import {
   mergeConfigOptions,
   type OptimisticItem,
   type PermissionRequest,
+  resolveBypassRevertMode,
+  sessionSupportsNativeSteer,
   type QueuedMessage,
   type StoredLogEntry,
   type TaskRunStatus,
@@ -992,6 +994,7 @@ export class SessionService {
         this.d.store.updateSession(taskRunId, {
           status: "connected",
           configOptions,
+          steering: (result as { steering?: string }).steering,
         });
 
         // Persist the merged config options
@@ -1347,6 +1350,7 @@ export class SessionService {
       | SessionConfigOption[]
       | undefined;
     session.configOptions = configOptions;
+    session.steering = (result as { steering?: string }).steering;
 
     // Persist the config options
     if (configOptions) {
@@ -2191,22 +2195,18 @@ export class SessionService {
     }
 
     // Steer: the user sent a message mid-turn and asked to fold it into the
-    // running turn rather than queue it. Native (Claude, local) injects at the
-    // next tool boundary; local Codex interrupts the turn and resends below as
-    // a fresh prompt.
-    //
-    // Cloud has no real mid-turn steer: the backend only delivers user messages
-    // between turns, so a cloud "steer" would cancel the running turn for no
-    // gain (the message lands next turn either way) while surfacing a jarring
-    // interruption. Until the backend supports true steering, cloud steer falls
-    // through to the queue like a normal message. Compaction also falls through.
+    // running turn rather than queue it. Adapters that negotiated
+    // `steering: "native"` (Claude, codex app-server) inject at the next tool
+    // boundary; codex-acp ("interrupt-resend") and unknown adapters cancel and
+    // resend. Cloud has no real mid-turn steer (the backend only delivers
+    // messages between turns), so it falls through to the queue; compaction too.
     if (
       options?.steer &&
       !session.isCloud &&
       session.isPromptPending &&
       !session.isCompacting
     ) {
-      if (session.adapter === "claude") {
+      if (sessionSupportsNativeSteer(session)) {
         return this.sendSteerPrompt(session, prompt);
       }
       await this.cancelPrompt(taskId);
@@ -4582,6 +4582,7 @@ export class SessionService {
       isCloud: boolean;
       allowBypassPermissions: boolean;
       currentModeId: string | boolean | undefined;
+      modeOption: SessionConfigOption | undefined;
     },
   ): void {
     if (options.allowBypassPermissions) return;
@@ -4590,7 +4591,9 @@ export class SessionService {
       options.currentModeId === "bypassPermissions" ||
       options.currentModeId === "full-access";
     if (!isBypass || !taskId) return;
-    this.setSessionConfigOptionByCategory(taskId, "mode", "default");
+    const target = resolveBypassRevertMode(options.modeOption);
+    if (!target) return;
+    this.setSessionConfigOptionByCategory(taskId, "mode", target);
   }
 
   /**

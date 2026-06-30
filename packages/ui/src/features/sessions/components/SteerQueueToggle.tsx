@@ -16,6 +16,19 @@ interface SteerQueueToggleProps {
   taskId: string;
 }
 
+export function steerQueueTooltip(
+  isSteer: boolean,
+  supportsNativeSteer: boolean,
+  shortcut: string,
+): string {
+  if (!isSteer) {
+    return `Queue: holds messages until the current turn ends. ${shortcut} to switch to Steer.`;
+  }
+  return supportsNativeSteer
+    ? `Steer: injects your message mid-turn at the next tool boundary. ${shortcut} to switch to Queue.`
+    : `Steer: interrupts the current turn and resends with your message. ${shortcut} to switch to Queue.`;
+}
+
 export function SteerQueueToggle({ taskId }: SteerQueueToggleProps) {
   const mode = useMessagingMode(taskId);
   const supportsNativeSteer = useSupportsNativeSteer(taskId);
@@ -30,11 +43,7 @@ export function SteerQueueToggle({ taskId }: SteerQueueToggleProps) {
       ? `Queue (${queuedCount})`
       : "Queue";
 
-  const tooltip = isSteer
-    ? supportsNativeSteer
-      ? `Steer: injects your message mid-turn at the next tool boundary. ${shortcut} to switch to Queue.`
-      : `Steer: interrupts the current turn and resends with your message. ${shortcut} to switch to Queue.`
-    : `Queue: holds messages until the current turn ends. ${shortcut} to switch to Steer.`;
+  const tooltip = steerQueueTooltip(isSteer, supportsNativeSteer, shortcut);
 
   const colorClass = isSteer ? "text-purple-11" : "text-gray-11";
 

@@ -11,25 +11,55 @@ import type { SessionConfigOption } from "@agentclientprotocol/sdk";
  * `setSessionConfigOption`, not listed as a configOption).
  */
 
+/**
+ * Per-turn sandbox the mode maps to (a subset of codex's SandboxPolicy). The
+ * picker's restriction lives here, NOT in `collaborationMode` — that field is
+ * silently dropped by the app-server (it only exists in server→client
+ * ThreadSettings), and `approvalPolicy` alone is neutralized because the process
+ * spawns under `danger-full-access`. `readOnly` is the only honored way to make
+ * plan/read-only actually block edits.
+ */
+export type CodexSandboxPolicy =
+  | { type: "readOnly"; networkAccess: boolean }
+  | { type: "dangerFullAccess" };
+
 export interface CodexMode {
   id: string;
   name: string;
   description: string;
   /** codex AskForApproval the mode maps to, applied per-turn on turn/start. */
   approvalPolicy: string;
+  /**
+   * Per-turn sandbox override (turn/start `sandboxPolicy`). Undefined means keep
+   * the spawned `danger-full-access` (can edit). Applied only off the cloud
+   * sandbox, where a non-danger policy would re-engage the unavailable
+   * linux-sandbox and panic — see codex-app-server-agent.ts.
+   */
+  sandboxPolicy?: CodexSandboxPolicy;
 }
 
+// Flattened Claude-style presets. Restriction is driven by approvalPolicy +
+// sandboxPolicy (the only honored levers); plan/read-only block edits via a
+// read-only sandbox, auto/full-access keep the spawned full-access sandbox.
 export const CODEX_MODES: CodexMode[] = [
+  {
+    id: "plan",
+    name: "Plan",
+    description: "Plan first — inspect and propose; makes no changes",
+    approvalPolicy: "on-request",
+    sandboxPolicy: { type: "readOnly", networkAccess: true },
+  },
   {
     id: "read-only",
     name: "Read only",
-    description: "Asks before any change",
+    description: "Read-only — can inspect but not modify files",
     approvalPolicy: "untrusted",
+    sandboxPolicy: { type: "readOnly", networkAccess: true },
   },
   {
     id: "auto",
     name: "Auto",
-    description: "Asks before risky operations",
+    description: "Edits the workspace; asks before risky operations",
     approvalPolicy: "on-request",
   },
   {
@@ -48,6 +78,13 @@ export function modeApprovalPolicy(
   return CODEX_MODES.find((m) => m.id === modeId)?.approvalPolicy;
 }
 
+/** Per-turn sandbox for a mode id (undefined keeps the spawned full-access). */
+export function sandboxPolicyFor(
+  modeId: string | undefined,
+): CodexSandboxPolicy | undefined {
+  return CODEX_MODES.find((m) => m.id === modeId)?.sandboxPolicy;
+}
+
 /**
  * Resolve the host's initial `_meta.permissionMode` to a codex mode — mirroring
  * codex-acp's toCodexPermissionMode. A recognized codex mode is honored; any
@@ -63,7 +100,24 @@ export function resolveInitialMode(permissionMode: string | undefined): string {
 /** Codex's standard reasoning efforts; used when model/list doesn't expose them. */
 export const DEFAULT_EFFORTS = ["low", "medium", "high"];
 
+// Display labels for reasoning efforts. Mirrors codex/models.ts and
+// claude/session/models.ts so the live selector matches the preview path
+// (the host renders `name` verbatim — raw "low" would show lowercase).
+const EFFORT_LABELS: Record<string, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+};
+
+function humanizeEffort(effort: string): string {
+  return EFFORT_LABELS[effort] ?? effort;
+}
+
 export interface SessionConfigState {
+  /** Current permission/collaboration preset id (one of CODEX_MODES). */
+  mode: string;
   model: string;
   effort?: string;
   /** From model/list; falls back to the single current model when empty. */
@@ -72,7 +126,7 @@ export interface SessionConfigState {
   efforts: string[];
 }
 
-/** Builds the ACP configOptions (model + thought_level) the host renders. */
+/** Builds the ACP configOptions (mode + model + thought_level) the host renders. */
 export function buildConfigOptions(
   s: SessionConfigState,
 ): SessionConfigOption[] {
@@ -93,6 +147,18 @@ export function buildConfigOptions(
   return [
     {
       type: "select",
+      id: "mode",
+      name: "Mode",
+      category: "mode",
+      currentValue: s.mode,
+      options: CODEX_MODES.map((m) => ({
+        name: m.name,
+        value: m.id,
+        description: m.description,
+      })),
+    } as unknown as SessionConfigOption,
+    {
+      type: "select",
       id: "model",
       name: "Model",
       category: "model",
@@ -105,7 +171,7 @@ export function buildConfigOptions(
       name: "Reasoning effort",
       category: "thought_level",
       currentValue: currentEffort,
-      options: efforts.map((e) => ({ name: e, value: e })),
+      options: efforts.map((e) => ({ name: humanizeEffort(e), value: e })),
     } as unknown as SessionConfigOption,
   ];
 }

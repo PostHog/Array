@@ -11,6 +11,24 @@ import type {
 } from "./app-server-client";
 import { CodexAppServerAgent } from "./codex-app-server-agent";
 
+// The required-field invariants the native codex app-server enforces on each
+// client request (verified against the binary). turn/interrupt needs both ids;
+// turn/steer needs the precondition turnId plus the thread and the message.
+const REQUIRED_FIELDS: Record<string, string[]> = {
+  "turn/interrupt": ["threadId", "turnId"],
+  "turn/steer": ["threadId", "input", "expectedTurnId"],
+};
+
+function requiredFieldMissing(
+  method: string,
+  params: unknown,
+): string | undefined {
+  const p = (params ?? {}) as Record<string, unknown>;
+  return REQUIRED_FIELDS[method]?.find(
+    (f) => p[f] === undefined || p[f] === null || p[f] === "",
+  );
+}
+
 function makeStubRpc(responses: Record<string, unknown>) {
   let handlers: AppServerClientHandlers | undefined;
   const requests: Array<{ method: string; params?: unknown }> = [];
@@ -18,6 +36,14 @@ function makeStubRpc(responses: Record<string, unknown>) {
   const rpc: AppServerRpc = {
     async request<T = unknown>(method: string, params?: unknown): Promise<T> {
       requests.push({ method, params });
+      // Enforce the real app-server schema contract so a dropped required field
+      // fails loudly here, not silently in production. The native binary rejects
+      // these with -32600; a stub that accepted anything would let an adapter
+      // regression (a missing required field) sail through CI as a false-green.
+      const missing = requiredFieldMissing(method, params);
+      if (missing) {
+        throw { code: -32600, message: `Invalid request: missing field \`${missing}\`` };
+      }
       return (responses[method] ?? {}) as T;
     },
     notify() {},
@@ -107,6 +133,130 @@ describe("CodexAppServerAgent", () => {
       threadId: "thr_1",
       input: [{ type: "text", text: "hello" }],
     });
+  });
+
+  it("enriches an MCP tool-call approval with the structured posthog channel", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+    });
+    const permissionToolCalls: unknown[] = [];
+    const client = {
+      sessionUpdate: async () => {},
+      requestPermission: async (params: { toolCall: unknown }) => {
+        permissionToolCalls.push(params.toolCall);
+        return { outcome: { outcome: "selected", optionId: "allow" } };
+      },
+      extNotification: async () => {},
+    } as unknown as AgentSideConnection;
+
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    // The MCP tool call item arrives first, then codex asks to approve it via
+    // the command-execution approval (it has no MCP-specific approval request).
+    stub.emit("item/started", {
+      item: {
+        type: "mcpToolCall",
+        id: "m1",
+        server: "posthog",
+        tool: "exec",
+        arguments: { command: "call execute-sql {}" },
+      },
+    });
+    const decision = await stub.invokeRequest(
+      "item/commandExecution/requestApproval",
+      {
+        itemId: "m1",
+        command: 'Allow the posthog MCP server to run tool "exec"?',
+      },
+    );
+
+    expect(decision).toEqual({ decision: "accept" });
+    expect(permissionToolCalls).toHaveLength(1);
+    expect(permissionToolCalls[0]).toMatchObject({
+      toolCallId: "m1",
+      kind: "other",
+      rawInput: { command: "call execute-sql {}" },
+      _meta: {
+        posthog: {
+          toolName: "mcp__posthog__exec",
+          mcp: { server: "posthog", tool: "exec" },
+        },
+      },
+    });
+  });
+
+  function makeApprovalAgent() {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+    });
+    const permissionToolCalls: Array<Record<string, unknown>> = [];
+    const client = {
+      sessionUpdate: async () => {},
+      requestPermission: async (params: { toolCall: Record<string, unknown> }) => {
+        permissionToolCalls.push(params.toolCall);
+        return { outcome: { outcome: "selected", optionId: "allow" } };
+      },
+      extNotification: async () => {},
+    } as unknown as AgentSideConnection;
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    return { agent, stub, permissionToolCalls };
+  }
+
+  it("routes a non-MCP command approval to an execute permission (kind + command body)", async () => {
+    // The bug: a bare { toolCallId, title } routed to the DefaultPermission
+    // fallback, losing the command styling/monospace body. kind:"execute" plus
+    // the command as text content makes the host render ExecutePermission.
+    const { agent, stub, permissionToolCalls } = makeApprovalAgent();
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    await stub.invokeRequest("item/commandExecution/requestApproval", {
+      itemId: "c1",
+      command: "rm -rf build",
+    });
+
+    expect(permissionToolCalls).toHaveLength(1);
+    expect(permissionToolCalls[0]).toEqual({
+      toolCallId: "c1",
+      title: "rm -rf build",
+      kind: "execute",
+      content: [
+        { type: "content", content: { type: "text", text: "rm -rf build" } },
+      ],
+    });
+  });
+
+  it("routes a non-MCP file-change approval to an edit permission (kind + diff + locations)", async () => {
+    const { agent, stub, permissionToolCalls } = makeApprovalAgent();
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    await stub.invokeRequest("item/fileChange/requestApproval", {
+      itemId: "f1",
+      changes: [
+        { path: "src/a.ts", diff: "@@ -1 +1 @@\n-old\n+new\n" },
+      ],
+    });
+
+    expect(permissionToolCalls).toHaveLength(1);
+    const tc = permissionToolCalls[0];
+    expect(tc.kind).toBe("edit");
+    expect(tc.locations).toEqual([{ path: "src/a.ts" }]);
+    // A diff content block so the host's EditPermission renders the change.
+    expect(Array.isArray(tc.content)).toBe(true);
+    expect((tc.content as Array<{ type?: string }>)[0]?.type).toBe("diff");
   });
 
   it("passes outputSchema to turn/start and fires onStructuredOutput", async () => {
@@ -296,7 +446,73 @@ describe("CodexAppServerAgent", () => {
     ).toBe("on-request");
   });
 
-  it("returns model + thought_level configOptions and emits config_option_update", async () => {
+  it("applies a read-only sandboxPolicy + approvalPolicy when the picker is Plan", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    // Switch the flattened picker to Plan, then run a turn.
+    await agent.setSessionConfigOption({
+      configId: "mode",
+      value: "plan",
+      sessionId: "t",
+    } as never);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await done;
+
+    const turnStart = stub.requests.find((r) => r.method === "turn/start");
+    const params = turnStart?.params as {
+      sandboxPolicy?: unknown;
+      approvalPolicy?: string;
+    };
+    // Plan blocks edits via a read-only sandbox (collaborationMode is dropped by
+    // the binary, so this is the only honored lever).
+    expect(params.sandboxPolicy).toEqual({
+      type: "readOnly",
+      networkAccess: true,
+    });
+    expect(params.approvalPolicy).toBe("on-request");
+  });
+
+  it("omits sandboxPolicy for an editing preset (auto) so the spawned full-access stays", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    // Default mode is "auto" → editing allowed, no sandbox override.
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await done;
+
+    const turnStart = stub.requests.find((r) => r.method === "turn/start");
+    expect(
+      (turnStart?.params as { sandboxPolicy?: unknown }).sandboxPolicy,
+    ).toBeUndefined();
+  });
+
+
+  it("returns mode + model + thought_level configOptions and emits config_option_update", async () => {
     const stub = makeStubRpc({
       "thread/start": { thread: { id: "t" } },
       "model/list": {
@@ -324,7 +540,14 @@ describe("CodexAppServerAgent", () => {
       cwd: "/r",
     } as unknown as NewSessionRequest);
     const opts = (session.configOptions ?? []) as any[];
-    expect(opts.map((o) => o.category)).toEqual(["model", "thought_level"]);
+    expect(opts.map((o) => o.category)).toEqual([
+      "mode",
+      "model",
+      "thought_level",
+    ]);
+    expect(
+      opts.find((o) => o.category === "mode").options.map((x: any) => x.value),
+    ).toEqual(["plan", "read-only", "auto", "full-access"]);
     expect(
       opts
         .find((o) => o.category === "thought_level")
@@ -574,7 +797,7 @@ describe("CodexAppServerAgent", () => {
     await expect(done).rejects.toThrow(/exited before the turn completed/);
   });
 
-  it("interrupts by sending turn/interrupt before reporting cancelled", async () => {
+  it("interrupts by sending turn/interrupt with the live threadId + turnId", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client } = makeFakeClient();
     const agent = new CodexAppServerAgent(client, {
@@ -587,11 +810,54 @@ describe("CodexAppServerAgent", () => {
       sessionId: "t",
       prompt: [{ type: "text", text: "go" }],
     } as unknown as PromptRequest);
+    // turn/started carries the live turnId the real server REQUIRES on
+    // turn/interrupt — without it codex rejects the RPC (-32600) and the turn
+    // keeps running while the adapter falsely reports "cancelled".
+    stub.emit("turn/started", { turn: { id: "turn_1" } });
 
     await agent.cancel({ sessionId: "t" });
 
     expect((await done).stopReason).toBe("cancelled");
-    expect(stub.requests.some((r) => r.method === "turn/interrupt")).toBe(true);
+    const req = stub.requests.find((r) => r.method === "turn/interrupt");
+    expect(req?.params).toEqual({ threadId: "t", turnId: "turn_1" });
+  });
+
+  it("a cancelled turn's late completion does not cancel the follow-up turn", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+
+    // Turn 1, then cancel it (records turn_1 as interrupted).
+    const first = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { turn: { id: "turn_1" } });
+    await agent.cancel({ sessionId: "t" });
+    expect((await first).stopReason).toBe("cancelled");
+
+    // Follow-up turn 2.
+    const second = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "again" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { turn: { id: "turn_2" } });
+    // codex's late completion of the cancelled turn arrives during turn 2 — it
+    // must be ignored, not finalize turn 2 as cancelled.
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "interrupted" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_2", status: "completed" },
+    });
+    expect((await second).stopReason).toBe("end_turn");
   });
 
   it("emits _posthog/turn_complete with cancelled on interrupt (matches codex-acp)", async () => {
@@ -610,10 +876,18 @@ describe("CodexAppServerAgent", () => {
       sessionId: "t",
       prompt: [{ type: "text", text: "go" }],
     } as unknown as PromptRequest);
+    // Emit turn/started so the interrupt actually reaches the binary — without
+    // it turnId is undefined, turn/interrupt is skipped, and this test would
+    // pass on the local finalize alone (the false-green it used to be).
+    stub.emit("turn/started", { turn: { id: "turn_1" } });
     await agent.cancel({ sessionId: "t" });
 
     expect((await done).stopReason).toBe("cancelled");
-    // A cancelled turn still emits the cloud idle signal, exactly once.
+    // The interrupt RPC was genuinely sent (not just locally finalized)...
+    expect(
+      stub.requests.find((r) => r.method === "turn/interrupt")?.params,
+    ).toEqual({ threadId: "t", turnId: "turn_1" });
+    // ...and a cancelled turn still emits the cloud idle signal, exactly once.
     const tcs = extNotifications.filter(
       (n) => n.method === "_posthog/turn_complete",
     );
@@ -621,6 +895,30 @@ describe("CodexAppServerAgent", () => {
     expect((tcs[0].params as { stopReason?: string }).stopReason).toBe(
       "cancelled",
     );
+  });
+
+  it("skips turn/interrupt (but still finalizes cancelled) when no turn/started arrived", async () => {
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    // No turn/started → no live turnId. interrupt() must NOT send a turnId-less
+    // turn/interrupt (the binary would reject it -32600); it guards on turnId and
+    // falls back to the local finalize so cancel never hangs.
+    await agent.cancel({ sessionId: "t" });
+
+    expect((await done).stopReason).toBe("cancelled");
+    expect(
+      stub.requests.some((r) => r.method === "turn/interrupt"),
+    ).toBe(false);
   });
 
   it("rejects a concurrent prompt while a turn is in progress", async () => {
@@ -749,6 +1047,80 @@ describe("CodexAppServerAgent", () => {
     expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
       1,
     );
+  });
+
+  it("refreshes the live turnId from each turn/steer response", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+      "turn/steer": { turnId: "turn_2" }, // the server rotates the active turn id
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const first = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "one" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { turn: { id: "turn_1" } });
+
+    const second = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "two" }],
+    } as unknown as PromptRequest);
+    // Let the first steer's response (turnId: turn_2) be applied before the next
+    // steer reads this.turnId — turn/started is not re-emitted for a steer.
+    await new Promise((r) => setTimeout(r, 0));
+    const third = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "three" }],
+    } as unknown as PromptRequest);
+
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await Promise.all([first, second, third]);
+
+    const steers = stub.requests.filter((r) => r.method === "turn/steer");
+    expect(steers).toHaveLength(2);
+    expect(
+      (steers[0].params as { expectedTurnId?: string }).expectedTurnId,
+    ).toBe("turn_1");
+    // After the first steer rotated the id, the second steer must target turn_2.
+    expect(
+      (steers[1].params as { expectedTurnId?: string }).expectedTurnId,
+    ).toBe("turn_2");
+  });
+
+  it("omits disabled skills from available_commands_update", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "skills/list": {
+        data: [
+          {
+            skills: [
+              { name: "deploy", description: "Deploy", enabled: true },
+              { name: "danger", description: "Disabled", enabled: false },
+            ],
+          },
+        ],
+      },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+
+    const cmds = (
+      sessionUpdates.find(
+        (u: any) => u.update?.sessionUpdate === "available_commands_update",
+      ) as any
+    )?.update?.availableCommands;
+    expect(cmds.map((c: { name: string }) => c.name)).toEqual(["deploy"]);
   });
 
   it("emits _posthog/sdk_session when a taskRunId is present", async () => {

@@ -34,7 +34,10 @@ export function mapAppServerNotification(
         },
       };
     }
-    case APP_SERVER_NOTIFICATIONS.REASONING_TEXT_DELTA: {
+    // Both reasoning streams (raw textDelta + the default summaryTextDelta) carry
+    // a `delta: string` and map to the same ACP thought chunk.
+    case APP_SERVER_NOTIFICATIONS.REASONING_TEXT_DELTA:
+    case APP_SERVER_NOTIFICATIONS.REASONING_SUMMARY_TEXT_DELTA: {
       const delta = readStringField(params, "delta");
       if (!delta) return null;
       return {
@@ -203,7 +206,7 @@ export function parseUnifiedDiff(diff: string): {
   return { oldText: oldLines.join("\n"), newText: newLines.join("\n") };
 }
 
-type AppServerItem = {
+export type AppServerItem = {
   type?: string;
   id?: string;
   command?: string;
@@ -430,7 +433,7 @@ function describeTool(item: AppServerItem): ToolDescriptor | null {
 }
 
 /** Distinct, non-empty changed paths for a fileChange item, order-preserved. */
-function changePaths(changes: AppServerItem["changes"]): string[] {
+export function changePaths(changes: AppServerItem["changes"]): string[] {
   if (!changes?.length) return [];
   const seen = new Set<string>();
   const paths: string[] = [];
@@ -531,7 +534,7 @@ function completedContent(
 }
 
 /** Maps a fileChange's `changes[]` to ACP `diff` content blocks. */
-function diffContent(
+export function diffContent(
   changes: AppServerItem["changes"],
 ): ToolCallContent[] | undefined {
   if (!changes?.length) return undefined;
