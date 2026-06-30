@@ -272,6 +272,8 @@ function getTaskRunStateString(
 export class AgentServer {
   private config: AgentServerConfig;
   private sessionReadyBootMs?: number;
+  private sessionInitMs?: number;
+  private barrierReleasedAtMs?: number;
   private logger: Logger;
   private server: ServerType | null = null;
   private session: ActiveSession | null = null;
@@ -394,6 +396,7 @@ export class AgentServer {
         status: "ok",
         hasSession: !!this.session,
         bootMs: this.sessionReadyBootMs,
+        sessionInitMs: this.sessionInitMs,
       });
     });
 
@@ -1297,8 +1300,13 @@ export class AgentServer {
     });
 
     this.sessionReadyBootMs = Math.round(process.uptime() * 1000);
+    this.sessionInitMs =
+      this.barrierReleasedAtMs !== undefined
+        ? Math.max(0, Date.now() - this.barrierReleasedAtMs)
+        : this.sessionReadyBootMs;
     this.logger.debug("Session initialized successfully", {
       bootMs: this.sessionReadyBootMs,
+      sessionInitMs: this.sessionInitMs,
     });
     this.logger.debug(
       `Agent version: ${this.config.version ?? packageJson.version}`,
@@ -2222,7 +2230,10 @@ export class AgentServer {
 
   private async waitForRepoReady(): Promise<void> {
     const readyFile = this.config.repoReadyFile;
-    if (!readyFile) return;
+    if (!readyFile) {
+      this.barrierReleasedAtMs = Date.now();
+      return;
+    }
 
     const REPO_READY_TIMEOUT_MS = 5 * 60_000;
     const POLL_MS = 100;
@@ -2232,6 +2243,7 @@ export class AgentServer {
     for (;;) {
       try {
         await access(readyFile);
+        this.barrierReleasedAtMs = Date.now();
         this.logger.debug("Repo-ready barrier released", {
           readyFile,
           waitedMs: Date.now() - startedAt,
@@ -2249,6 +2261,7 @@ export class AgentServer {
         }
       }
       if (Date.now() - startedAt > REPO_READY_TIMEOUT_MS) {
+        this.barrierReleasedAtMs = Date.now();
         this.logger.warn("Repo-ready barrier timed out; proceeding", {
           readyFile,
           waitedMs: Date.now() - startedAt,
