@@ -29,16 +29,11 @@ Triage tip: if something looks wrong, run the same action on **codex-acp** (flag
 
 ## Tier 2 — App-server-specific protocol paths (new code, most likely to break)
 
-- [ ] **Steering** (`turn/steer`): send a follow-up message *while a turn is running*.
-  - Expect: injected into the live turn, not queued as a separate turn.
-- [ ] **Interrupt / cancel mid-turn**: stop a running turn.
-  - Expect: halts promptly **and** `_posthog/turn_complete` still fires (usage updates, UI returns to idle).
-- [ ] **Structured output** (native `outputSchema`): run a task that has a JSON schema.
-  - Expect: structured output emitted and the task run's `output` is populated.
-- [ ] **Mode → approval-policy synthesis**: switch mode mid-session (Read-only ↔ Auto ↔ Full access).
-  - Expect: subsequent tool calls respect the new policy (synthesized per-turn; no native mode RPC).
-- [ ] **loadSession / resume**: close the task and reopen it (or reconnect).
-  - Expect: prior history replays; you can continue prompting on the same thread.
+- [x] **Steering** (`turn/steer`) — ✅ live e2e (`folds a mid-turn prompt into the running turn via steering`) + capability now reaches the host (was hardcoded to claude).
+- [x] **Interrupt / cancel mid-turn** — ✅ live e2e (`interrupts an in-flight turn` + follow-up asserts `end_turn`); the false-green that hid the broken cancel is fixed.
+- [x] **Structured output** (native `outputSchema`) — ✅ live e2e (`structured-output.e2e`).
+- [x] **Mode → approval-policy synthesis** — ✅ live e2e: read-only **actually blocks an edit**, plan **engages codex's plan collaboration + reverts** on switch back. Modes are real, not cosmetic.
+- [~] **loadSession / resume** — basic resume + list/fork pass live; the audit still wants a test proving the **tool transcript replays** against a persisted thread (not just count).
 
 ## Tier 3 — Config controls (UI selectors → adapter)
 
@@ -58,8 +53,7 @@ Triage tip: if something looks wrong, run the same action on **codex-acp** (flag
 - [ ] **MCP (PostHog tools)**: ask it to query PostHog via MCP.
   - Expect: read-only tools auto-approve (if configured), writes prompt; tools actually execute.
 - [ ] **Skills / commands** (`available_commands_update`): confirm skill/slash commands appear and one runs.
-- [ ] **AskUserQuestion / elicitation**: get the agent to ask a question.
-  - Expect: UI renders the options and your answer flows back.
+- [x] **AskUserQuestion / elicitation** — ✅ live e2e (plan-mode round-trip): codex's `request_user_input` fires only in plan collaboration, and the `_meta.questions` shape now renders (was an empty "Review your answers" card).
 - [ ] **Image input**: paste/attach an image in a prompt.
   - Expect: image is sent and understood.
 - [ ] **Additional directories** (worktree): confirm it can read/edit files outside the primary cwd.
@@ -193,6 +187,23 @@ five; the dispositions:
 - Two observability nits (debug-log a skill missing `enabled`; warn when a session has no non-bypass
   mode to revert to) intentionally skipped — both are effectively-impossible states and the logs
   would be noise.
+
+### Plan mode is now a REAL mode (collaboration, not just sandbox) — PROVEN LIVE
+The earlier "collaborationMode is silently dropped" conclusion was **wrong** — it was confused by
+codex tolerating unknown fields. The truth, found by probing the binary's method registry + schema:
+- collaboration mode is a **per-turn `turn/start` field** (`collaborationMode`), NOT a thread setting
+  (`thread/settings/update` accepts it but doesn't honor it).
+- Its shape is `{ mode, settings: { model, reasoning_effort? } }` — the `settings.model` must be a
+  string (NOT the verbatim `collaborationMode/list` output, whose `model` is null). Sending a Default
+  struct breaks `turn/start` ("Internal error: missing field/expected string"), so only **Plan** is
+  sent; Default is codex's implicit mode (omitted).
+Now `plan` sends `collaborationMode:{mode:"plan", settings:{model}}` on every turn, which unlocks
+codex's plan proposals + `request_user_input` (AskUserQuestion). The behavioral e2e
+`plan mode engages codex's plan collaboration (request_user_input becomes available)` proves it: it
+instructs codex to call request_user_input and asserts the question reaches the host — which **only
+happens in plan collaboration mode** (in default codex replies "request_user_input is unavailable in
+this mode"). RED before the fix, GREEN after. Plan also keeps the read-only sandbox, so it both
+proposes and can't edit. (Creation now also offers Plan — `execution-mode.ts` + core `executionModes.ts`.)
 
 ### Still open
 - [x] **Live e2e RAN against the real gateway + binary** — the codex arm is **13/13** (steering folds

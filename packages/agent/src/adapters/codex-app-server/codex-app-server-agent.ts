@@ -21,8 +21,13 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
 import { POSTHOG_NOTIFICATIONS } from "../../acp-extensions";
-import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
+import {
+  DEFAULT_CODEX_MODEL,
+  type GatewayModel,
+  isOpenAIModel,
+} from "../../gateway-models";
 import type { ProcessSpawnedCallback } from "../../types";
+import { getReasoningEffortOptions as getCodexReasoningEfforts } from "../codex/models";
 import { Logger } from "../../utils/logger";
 import {
   nodeReadableToWebReadable,
@@ -64,6 +69,7 @@ import {
 } from "./protocol";
 import {
   buildConfigOptions,
+  collaborationModeFor,
   DEFAULT_MODE,
   modeApprovalPolicy,
   resolveInitialMode,
@@ -585,6 +591,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       else if (configId === "mode") {
         this.mode = value;
         this.emitCurrentMode(value);
+        // collaborationMode rides the next turn/start (see prompt()), so nothing
+        // to push here — the switch takes effect on the next turn.
       }
     }
     this.rebuildConfigOptions();
@@ -603,6 +611,23 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       .catch(() => undefined);
   }
 
+  /**
+   * codex's collaboration mode for this turn, sent as the `turn/start`
+   * `collaborationMode` field — `plan` unlocks plan proposals + request_user_input;
+   * `default` is the normal coding mode. Sent on EVERY turn (not just Plan):
+   * codex's collaboration mode is sticky, so switching Plan→Default must push
+   * `default` explicitly to revert — omitting it leaves the thread in Plan. The
+   * shape is `{ mode, settings: { model } }` (NOT the verbatim collaborationMode/list
+   * output, whose model is null) — model must be a string, so we pass the current
+   * model; the turn's own `effort` field handles reasoning.
+   */
+  private collaborationModeForTurn(): unknown {
+    return {
+      mode: collaborationModeFor(this.mode),
+      settings: { model: this.model },
+    };
+  }
+
   /** Populate the model/effort selectors from the app-server's model/list. */
   private async loadModelConfig(): Promise<void> {
     try {
@@ -613,6 +638,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       const models = res?.data ?? [];
       this.availableModels = models
         .filter((m) => !m?.hidden)
+        // model/list comes through the PostHog gateway, which also serves Claude
+        // models; a codex session must only offer codex (OpenAI) models, so drop
+        // the rest (mirrors the isOpenAIModel filter the creation picker uses).
+        .filter((m) => isOpenAIModel(m as unknown as GatewayModel))
         .map((m) => ({
           id: m.id ?? m.model,
           name: m.displayName ?? m.id ?? m.model,
@@ -620,9 +649,16 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       const current = models.find(
         (m) => m.id === this.model || m.model === this.model,
       );
-      this.availableEfforts = (current?.supportedReasoningEfforts ?? [])
+      const liveEfforts = (current?.supportedReasoningEfforts ?? [])
         .map((e: any) => e?.reasoningEffort ?? e)
         .filter((e: unknown): e is string => typeof e === "string");
+      // The gateway's model/list doesn't populate reasoning efforts, so fall
+      // back to the shared codex model→effort map (the same source the creation
+      // picker uses) — this surfaces "xhigh" for the gpt-5.5 family instead of
+      // capping at "high". If the gateway starts reporting efforts they win.
+      this.availableEfforts = liveEfforts.length
+        ? liveEfforts
+        : getCodexReasoningEfforts(this.model).map((o) => o.value);
     } catch (err) {
       this.logger.warn("model/list failed; using current model only", {
         error: String(err),
@@ -780,6 +816,11 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         // — there it stays at the spawned danger-full-access. Switching the
         // preset takes effect on the next turn.
         ...(approvalPolicy ? { approvalPolicy } : {}),
+        // codex's collaboration mode (per-turn field, verified against the
+        // binary). Sent every turn — plan unlocks plan proposals +
+        // request_user_input, default reverts; codex remembers the last mode, so
+        // it must be pushed explicitly to switch back.
+        collaborationMode: this.collaborationModeForTurn(),
         ...(this.environment !== "cloud" && sandboxPolicyFor(this.mode)
           ? { sandboxPolicy: sandboxPolicyFor(this.mode) }
           : {}),
@@ -1138,7 +1179,21 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       itemId?: string;
       command?: string;
       changes?: AppServerItem["changes"];
+      available_decisions?: unknown;
     };
+    // codex tells us which decisions are valid for THIS approval. The standard
+    // accept/decline/cancel always apply; when codex also offers an
+    // "approve and remember" decision — a command-prefix exec-policy allowlist
+    // ("don't ask again for commands beginning with X") or whole-session approval
+    // — surface it as an Allow-always option and echo that exact decision back.
+    const availableDecisions = Array.isArray(detail.available_decisions)
+      ? detail.available_decisions.filter(
+          (d): d is string => typeof d === "string",
+        )
+      : [];
+    const rememberDecision =
+      availableDecisions.find((d) => d === "approved_execpolicy_amendment") ??
+      availableDecisions.find((d) => d === "approved_for_session");
     const title =
       detail.command ?? (isFileChange ? "Apply file changes" : "Run command");
     const toolCallId = detail.itemId ?? "codex-approval";
@@ -1190,14 +1245,55 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         toolCall,
         options: [
           { optionId: "allow", name: "Allow", kind: "allow_once" },
+          ...(rememberDecision
+            ? [
+                {
+                  optionId: "allow_always",
+                  name: isFileChange
+                    ? "Allow for the rest of this session"
+                    : "Allow and don't ask again",
+                  kind: "allow_always" as const,
+                },
+              ]
+            : []),
           { optionId: "reject", name: "Reject", kind: "reject_once" },
+          {
+            optionId: "reject_with_feedback",
+            name: "No, and tell Codex what to do differently",
+            kind: "reject_once",
+            _meta: { customInput: true },
+          },
         ],
       });
-      if (
-        response.outcome.outcome === "selected" &&
-        response.outcome.optionId === "allow"
-      ) {
-        return { decision: "accept" };
+      if (response.outcome.outcome === "selected") {
+        if (response.outcome.optionId === "allow_always" && rememberDecision) {
+          // Echo codex's own "approve and remember" decision so it applies the
+          // exec-policy/session amendment it proposed in the request.
+          return { decision: rememberDecision };
+        }
+        if (response.outcome.optionId === "allow") {
+          return { decision: "accept" };
+        }
+        if (response.outcome.optionId === "reject_with_feedback") {
+          // codex's approval response carries no feedback field, so decline the
+          // action and inject the user's guidance into the still-running turn —
+          // exactly what codex's TUI does (Denied + a follow-up user message).
+          const feedback = (
+            response as { _meta?: { customInput?: unknown } }
+          )._meta?.customInput;
+          if (typeof feedback === "string" && feedback.trim() && this.turnId) {
+            void this.rpc
+              .request(APP_SERVER_METHODS.TURN_STEER, {
+                threadId: this.threadId,
+                input: toCodexInput([{ type: "text", text: feedback.trim() }]),
+                expectedTurnId: this.turnId,
+              })
+              .catch((err) =>
+                this.logger.warn("turn/steer (reject feedback) failed", err),
+              );
+          }
+          return { decision: "decline" };
+        }
       }
       if (response.outcome.outcome === "cancelled") {
         return { decision: "cancel" };

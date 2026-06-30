@@ -4,6 +4,7 @@ import {
   CODEX_MODES,
   DEFAULT_EFFORTS,
   modeApprovalPolicy,
+  collaborationModeFor,
   sandboxPolicyFor,
 } from "./session-config";
 
@@ -48,6 +49,16 @@ describe("sandboxPolicyFor", () => {
   it("returns undefined for unknown ids", () => {
     expect(sandboxPolicyFor("bypassPermissions")).toBeUndefined();
     expect(sandboxPolicyFor(undefined)).toBeUndefined();
+  });
+});
+
+describe("collaborationModeFor", () => {
+  it("maps only Plan to codex's plan collaboration; everything else is default", () => {
+    expect(collaborationModeFor("plan")).toBe("plan");
+    expect(collaborationModeFor("read-only")).toBe("default");
+    expect(collaborationModeFor("auto")).toBe("default");
+    expect(collaborationModeFor("full-access")).toBe("default");
+    expect(collaborationModeFor(undefined)).toBe("default");
   });
 });
 

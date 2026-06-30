@@ -12,12 +12,11 @@ import type { SessionConfigOption } from "@agentclientprotocol/sdk";
  */
 
 /**
- * Per-turn sandbox the mode maps to (a subset of codex's SandboxPolicy). The
- * picker's restriction lives here, NOT in `collaborationMode` — that field is
- * silently dropped by the app-server (it only exists in server→client
- * ThreadSettings), and `approvalPolicy` alone is neutralized because the process
- * spawns under `danger-full-access`. `readOnly` is the only honored way to make
- * plan/read-only actually block edits.
+ * Per-turn sandbox the mode maps to (a subset of codex's SandboxPolicy). This is
+ * what makes read-only/plan actually BLOCK edits — `approvalPolicy` alone is
+ * neutralized because the process spawns under `workspace-write`/`danger-full-access`.
+ * (Plan ALSO sets codex's `collaborationMode` on turn/start — a separate axis,
+ * see codex-app-server-agent.ts — which unlocks plan proposals + request_user_input.)
  */
 export type CodexSandboxPolicy =
   | { type: "readOnly"; networkAccess: boolean }
@@ -36,6 +35,13 @@ export interface CodexMode {
    * linux-sandbox and panic — see codex-app-server-agent.ts.
    */
   sandboxPolicy?: CodexSandboxPolicy;
+  /**
+   * codex's native collaboration mode, sent per-turn on `turn/start`. "plan"
+   * makes codex propose a plan and unlocks `request_user_input` (AskUserQuestion);
+   * everything else runs in "default". This is what makes Plan a real mode rather
+   * than a relabeled read-only sandbox.
+   */
+  collaborationMode?: "plan" | "default";
 }
 
 // Flattened Claude-style presets. Restriction is driven by approvalPolicy +
@@ -48,6 +54,7 @@ export const CODEX_MODES: CodexMode[] = [
     description: "Plan first — inspect and propose; makes no changes",
     approvalPolicy: "on-request",
     sandboxPolicy: { type: "readOnly", networkAccess: true },
+    collaborationMode: "plan",
   },
   {
     id: "read-only",
@@ -83,6 +90,15 @@ export function sandboxPolicyFor(
   modeId: string | undefined,
 ): CodexSandboxPolicy | undefined {
   return CODEX_MODES.find((m) => m.id === modeId)?.sandboxPolicy;
+}
+
+/**
+ * codex collaboration mode for a preset — "plan" only for the Plan preset, else
+ * "default". Switching away from Plan must reset to "default", so this never
+ * returns undefined.
+ */
+export function collaborationModeFor(modeId: string | undefined): "plan" | "default" {
+  return CODEX_MODES.find((m) => m.id === modeId)?.collaborationMode ?? "default";
 }
 
 /**

@@ -192,17 +192,23 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
-  function makeApprovalAgent() {
+  function makeApprovalAgent(chooseOptionId = "allow") {
     const stub = makeStubRpc({
       initialize: {},
       "thread/start": { thread: { id: "thr_1" } },
     });
     const permissionToolCalls: Array<Record<string, unknown>> = [];
+    const permissionOptions: Array<Array<{ optionId?: string; kind?: string }>> =
+      [];
     const client = {
       sessionUpdate: async () => {},
-      requestPermission: async (params: { toolCall: Record<string, unknown> }) => {
+      requestPermission: async (params: {
+        toolCall: Record<string, unknown>;
+        options: Array<{ optionId?: string; kind?: string }>;
+      }) => {
         permissionToolCalls.push(params.toolCall);
-        return { outcome: { outcome: "selected", optionId: "allow" } };
+        permissionOptions.push(params.options);
+        return { outcome: { outcome: "selected", optionId: chooseOptionId } };
       },
       extNotification: async () => {},
     } as unknown as AgentSideConnection;
@@ -211,7 +217,7 @@ describe("CodexAppServerAgent", () => {
       model: "gpt-5.5",
       rpcFactory: stub.factory,
     });
-    return { agent, stub, permissionToolCalls };
+    return { agent, stub, permissionToolCalls, permissionOptions };
   }
 
   it("routes a non-MCP command approval to an execute permission (kind + command body)", async () => {
@@ -236,6 +242,106 @@ describe("CodexAppServerAgent", () => {
         { type: "content", content: { type: "text", text: "rm -rf build" } },
       ],
     });
+  });
+
+  it("surfaces Allow-always and echoes codex's remember decision when offered", async () => {
+    const { agent, stub, permissionOptions } = makeApprovalAgent("allow_always");
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    // codex offers the command-prefix allowlist decision for this approval.
+    const decision = await stub.invokeRequest(
+      "item/commandExecution/requestApproval",
+      {
+        itemId: "c1",
+        command: "pnpm test",
+        available_decisions: ["approved_execpolicy_amendment", "denied"],
+      },
+    );
+
+    // The host gets an allow_always option (UI already renders this kind)...
+    expect(permissionOptions[0].map((o) => o.kind)).toContain("allow_always");
+    // ...and picking it echoes codex's own decision so it applies the amendment.
+    expect(decision).toEqual({ decision: "approved_execpolicy_amendment" });
+  });
+
+  it("omits Allow-always when codex offers no remember decision", async () => {
+    const { agent, stub, permissionOptions } = makeApprovalAgent("allow");
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    const decision = await stub.invokeRequest(
+      "item/commandExecution/requestApproval",
+      { itemId: "c1", command: "ls" },
+    );
+
+    expect(permissionOptions[0].map((o) => o.kind)).not.toContain(
+      "allow_always",
+    );
+    expect(permissionOptions[0].map((o) => o.optionId)).toEqual([
+      "allow",
+      "reject",
+      "reject_with_feedback",
+    ]);
+    expect(decision).toEqual({ decision: "accept" });
+  });
+
+  it("reject-with-feedback declines and steers the user's guidance into the running turn", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+      "turn/start": { turn: { id: "turn_1" } },
+    });
+    const offeredOptions: Array<Array<{ optionId?: string; kind?: string }>> =
+      [];
+    const client = {
+      sessionUpdate: async () => {},
+      requestPermission: async (params: {
+        options: Array<{ optionId?: string; kind?: string }>;
+      }) => {
+        offeredOptions.push(params.options);
+        return {
+          outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+          _meta: { customInput: "use the SDK instead of shelling out" },
+        };
+      },
+      extNotification: async () => {},
+    } as unknown as AgentSideConnection;
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    // Start a turn so there's a live turnId for the steer to target.
+    const done = agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { turn: { id: "turn_1" } });
+
+    // codex asks to run a command mid-turn; user rejects with guidance.
+    const decision = await stub.invokeRequest(
+      "item/commandExecution/requestApproval",
+      { itemId: "c1", command: "rm -rf build" },
+    );
+
+    expect(decision).toEqual({ decision: "decline" });
+    // The "tell Codex what to do differently" option was offered (free-text).
+    const feedbackOpt = offeredOptions[0].find(
+      (o) => o.optionId === "reject_with_feedback",
+    );
+    expect(feedbackOpt).toBeTruthy();
+    // The guidance was steered into the running turn (codex's response carries
+    // no feedback field, so it's injected as a follow-up user message).
+    const steer = stub.requests.find((r) => r.method === "turn/steer");
+    expect((steer?.params as { expectedTurnId?: string })?.expectedTurnId).toBe(
+      "turn_1",
+    );
+
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await done;
   });
 
   it("routes a non-MCP file-change approval to an edit permission (kind + diff + locations)", async () => {
@@ -475,9 +581,14 @@ describe("CodexAppServerAgent", () => {
     const params = turnStart?.params as {
       sandboxPolicy?: unknown;
       approvalPolicy?: string;
+      collaborationMode?: unknown;
     };
-    // Plan blocks edits via a read-only sandbox (collaborationMode is dropped by
-    // the binary, so this is the only honored lever).
+    // Plan engages codex's native plan collaboration (unlocks request_user_input
+    // + plan proposals) AND blocks edits via a read-only sandbox.
+    expect(params.collaborationMode).toEqual({
+      mode: "plan",
+      settings: { model: "gpt-5.5" },
+    });
     expect(params.sandboxPolicy).toEqual({
       type: "readOnly",
       networkAccess: true,
@@ -506,9 +617,17 @@ describe("CodexAppServerAgent", () => {
     await done;
 
     const turnStart = stub.requests.find((r) => r.method === "turn/start");
-    expect(
-      (turnStart?.params as { sandboxPolicy?: unknown }).sandboxPolicy,
-    ).toBeUndefined();
+    const params = turnStart?.params as {
+      sandboxPolicy?: unknown;
+      collaborationMode?: unknown;
+    };
+    expect(params.sandboxPolicy).toBeUndefined();
+    // Default collaboration is pushed explicitly every turn so that switching
+    // back from Plan reverts (codex remembers the last collaboration mode).
+    expect(params.collaborationMode).toEqual({
+      mode: "default",
+      settings: { model: "gpt-5.5" },
+    });
   });
 
 
@@ -558,6 +677,53 @@ describe("CodexAppServerAgent", () => {
         (u: any) => u.update?.sessionUpdate === "config_option_update",
       ),
     ).toBe(true);
+  });
+
+  it("drops Claude models from the picker and falls back to the codex effort map when model/list reports none", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "model/list": {
+        data: [
+          {
+            id: "gpt-5.5",
+            model: "gpt-5.5",
+            displayName: "GPT-5.5",
+            hidden: false,
+            // The PostHog gateway populates no efforts (defaultReasoningEffort:"none").
+            supportedReasoningEfforts: [],
+          },
+          {
+            // The gateway also serves Claude models — they must not leak into a
+            // codex session's model picker.
+            id: "claude-opus-4-8",
+            model: "claude-opus-4-8",
+            hidden: false,
+            supportedReasoningEfforts: [],
+          },
+        ],
+      },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    const session = await agent.newSession({
+      cwd: "/r",
+    } as unknown as NewSessionRequest);
+    const opts = (session.configOptions ?? []) as any[];
+
+    expect(
+      opts.find((o) => o.category === "model").options.map((x: any) => x.value),
+    ).toEqual(["gpt-5.5"]);
+    // No live efforts → shared codex map, which exposes xhigh for the gpt-5.5
+    // family (instead of the bare low/medium/high fallback).
+    expect(
+      opts
+        .find((o) => o.category === "thought_level")
+        .options.map((x: any) => x.value),
+    ).toContain("xhigh");
   });
 
   it("setSessionConfigOption switches the model and re-emits config", async () => {

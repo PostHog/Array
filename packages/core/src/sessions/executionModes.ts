@@ -32,7 +32,15 @@ const availableModes: ModeInfo[] = [
   },
 ];
 
+// Mirrors the codex app-server adapter's CODEX_MODES so the picker offers the
+// same presets as a live session. "plan" is a CodeExecutionMode codex-acp maps
+// to read-only and the app-server gives a read-only sandbox — safe on both.
 const codexModes: ModeInfo[] = [
+  {
+    id: "plan",
+    name: "Plan",
+    description: "Plan first — inspect and propose; makes no changes",
+  },
   {
     id: "read-only",
     name: "Read Only",

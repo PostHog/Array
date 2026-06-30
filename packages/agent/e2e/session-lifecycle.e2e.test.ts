@@ -272,6 +272,63 @@ for (const adapter of ADAPTERS) {
       180_000,
     );
 
+    // The proof that Plan is a REAL mode, not a relabeled read-only: codex only
+    // offers request_user_input (AskUserQuestion) in its "plan" collaboration
+    // mode (pushed via the turn/start `collaborationMode` field). This also
+    // covers the revert — codex's collaboration mode is sticky, so switching back
+    // to auto must push `default` explicitly or it stays stuck in Plan.
+    itCodex(
+      "plan mode engages codex's plan collaboration, and reverts when switched back to auto",
+      async () => {
+        if (adapter === "codex") killCodexStragglers();
+        const s = await openSession({
+          adapter,
+          cwd: repo,
+          codexOptions: codexOptions(),
+          meta: meta(),
+        });
+        const askToUseTool =
+          "Before doing anything else, you MUST call the request_user_input tool " +
+          "to ask the user a single question: whether to proceed with approach A " +
+          "or approach B. Ask exactly that one question via the tool, then stop.";
+        const questionCount = () =>
+          s.capture
+            .approvals()
+            .filter((e) => e.data?.codeToolKind === "question").length;
+        try {
+          // Plan: request_user_input is available → a question reaches the host.
+          await s.conn.setSessionConfigOption({
+            sessionId: s.sessionId,
+            configId: "mode",
+            value: "plan",
+          });
+          await s.conn.prompt({
+            sessionId: s.sessionId,
+            prompt: [{ type: "text", text: askToUseTool }],
+          });
+          const afterPlan = questionCount();
+          expect(afterPlan).toBeGreaterThan(0);
+
+          // Switch back to auto (default collaboration): request_user_input is no
+          // longer available, so the SAME prompt yields no new question. If the
+          // collaboration mode didn't revert, codex would ask again.
+          await s.conn.setSessionConfigOption({
+            sessionId: s.sessionId,
+            configId: "mode",
+            value: "auto",
+          });
+          await s.conn.prompt({
+            sessionId: s.sessionId,
+            prompt: [{ type: "text", text: askToUseTool }],
+          });
+          expect(questionCount()).toBe(afterPlan);
+        } finally {
+          await s.cleanup();
+        }
+      },
+      240_000,
+    );
+
     it("handles the host's refresh_session extMethod per adapter", async () => {
       if (adapter === "codex") killCodexStragglers();
       const s = await openSession({

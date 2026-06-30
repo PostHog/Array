@@ -73,7 +73,16 @@ export function isCodexNativeMode(mode: string): mode is CodexNativeMode {
   return (CODEX_NATIVE_MODES as readonly string[]).includes(mode);
 }
 
+// Mirrors the codex app-server adapter's CODEX_MODES (session-config.ts) so the
+// task-creation picker offers the same presets as a live session. "plan" is a
+// valid CodeExecutionMode that codex-acp maps to read-only, and the app-server
+// gives it a read-only sandbox — so it is safe on both sub-adapters.
 const codexModes: ModeInfo[] = [
+  {
+    id: "plan",
+    name: "Plan",
+    description: "Plan first — inspect and propose; makes no changes",
+  },
   {
     id: "read-only",
     name: "Read Only",

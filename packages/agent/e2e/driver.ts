@@ -116,7 +116,13 @@ export function openConnection(opts: {
     async requestPermission(p: any): Promise<unknown> {
       events.push({
         kind: "requestPermission",
-        data: { title: p?.toolCall?.title, kind: p?.toolCall?.kind },
+        data: {
+          title: p?.toolCall?.title,
+          kind: p?.toolCall?.kind,
+          // request_user_input (AskUserQuestion) surfaces as a permission with
+          // `_meta.codeToolKind: "question"`; codex only offers it in Plan mode.
+          codeToolKind: p?.toolCall?._meta?.codeToolKind,
+        },
       });
       const options = p?.options ?? [];
       const allow =
