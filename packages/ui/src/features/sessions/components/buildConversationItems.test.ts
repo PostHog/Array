@@ -106,6 +106,23 @@ function resourcesUsedMsg(
   };
 }
 
+function statusMsg(
+  ts: number,
+  status: string,
+  isComplete?: boolean,
+  error?: string,
+): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "_posthog/status",
+      params: { sessionId: "session-1", status, isComplete, error },
+    },
+  };
+}
+
 describe("buildConversationItems", () => {
   it("extracts cloud prompt attachments into user messages", () => {
     const uri = makeAttachmentUri("/tmp/hello world.txt");
@@ -151,6 +168,58 @@ describe("buildConversationItems", () => {
         ],
       },
     ]);
+  });
+
+  it("clears the compacting spinner on a successful completion status, without duplicating the row", () => {
+    // A successful compaction sends a terminal `status: compacting, isComplete:
+    // true`. It must flip the existing status row, not append a second one.
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "hi"),
+        statusMsg(2, "compacting"),
+        statusMsg(3, "compacting", true),
+      ],
+      null,
+    );
+
+    const statusItems = result.items.filter(
+      (i): i is Extract<ConversationItem, { type: "session_update" }> =>
+        i.type === "session_update" && i.update.sessionUpdate === "status",
+    );
+    expect(statusItems).toHaveLength(1);
+    expect((statusItems[0].update as { isComplete?: boolean }).isComplete).toBe(
+      true,
+    );
+    expect(result.isCompacting).toBe(false);
+  });
+
+  it("renders a failed compaction as a compacting_failed status row and clears the spinner", () => {
+    // A failed compaction emits no compact_boundary, so the agent sends a
+    // structured `compacting_failed` status: it clears the spinner (the original
+    // compacting row goes complete) and adds the outcome row with the error.
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "hi"),
+        statusMsg(2, "compacting"),
+        statusMsg(3, "compacting_failed", undefined, "Not enough messages."),
+      ],
+      null,
+    );
+
+    const statusItems = result.items.filter(
+      (i): i is Extract<ConversationItem, { type: "session_update" }> =>
+        i.type === "session_update" && i.update.sessionUpdate === "status",
+    );
+    // Spinner row (now complete) + the failure row.
+    expect(statusItems.map((i) => i.update)).toEqual([
+      { sessionUpdate: "status", status: "compacting", isComplete: true },
+      {
+        sessionUpdate: "status",
+        status: "compacting_failed",
+        error: "Not enough messages.",
+      },
+    ]);
+    expect(result.isCompacting).toBe(false);
   });
 
   it("marks cloud turns complete from structured turn completion notifications", () => {

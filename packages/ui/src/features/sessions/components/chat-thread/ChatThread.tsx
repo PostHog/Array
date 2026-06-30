@@ -5,6 +5,8 @@ import {
   Button,
   ChatBubble,
   ChatBubbleContent,
+  ChatMarker,
+  ChatMarkerContent,
   ChatMessage,
   ChatMessageContent,
   ChatMessageFooter,
@@ -24,6 +26,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ChatMarkdown } from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
+import { ChatThreadFooter } from "@posthog/ui/features/sessions/components/chat-thread/ChatThreadFooter";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
 import {
   ToolGroup,
@@ -495,19 +498,32 @@ function ThreadScrollBody({
   items,
   rows,
   renderItem,
+  footer,
 }: {
   items: ConversationItem[];
   rows: ThreadItem[];
   renderItem: (item: ConversationItem) => ReactNode;
+  /** Status row (duration / context usage) pinned as the last item in the thread. */
+  footer?: ReactNode;
 }) {
+  // `group/thread` so the footer's hover-reveal (opacity-50 → 100 on group-hover) tracks the thread,
+  // mirroring the legacy ConversationView container.
   return (
-    <ChatMessageScroller>
+    <ChatMessageScroller className="group/thread">
       <StickyHeaderOverlay items={items} />
       <ChatMessageScrollerViewport>
-        <ChatMessageScrollerContent className="py-4" density="default">
+        <ChatMessageScrollerContent className="py-4 pb-8" density="default">
           {rows.map((item) => (
             <ThreadRow key={item.id} item={item} renderItem={renderItem} />
           ))}
+          {footer && (
+            <div
+              className="mx-auto w-full px-2.5"
+              style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+            >
+              {footer}
+            </div>
+          )}
         </ChatMessageScrollerContent>
       </ChatMessageScrollerViewport>
       <ChatMessageScrollerButton />
@@ -531,7 +547,9 @@ function ThreadScrollBody({
 export function ChatThread({
   events,
   isPromptPending,
+  promptStartedAt,
   repoPath,
+  task,
   taskId,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
@@ -613,7 +631,15 @@ export function ChatThread({
             />
           ) : null;
         case "turn_cancelled":
-          return null;
+          return (
+            <ChatMarker variant="separator">
+              <ChatMarkerContent>
+                {item.interruptReason === "moving_to_worktree"
+                  ? "Paused while worktree is focused"
+                  : "Interrupted by user"}
+              </ChatMarkerContent>
+            </ChatMarker>
+          );
         case "user_shell_execute":
           return <UserShellExecuteView item={item} />;
       }
@@ -637,6 +663,15 @@ export function ChatThread({
               items={items}
               rows={rows}
               renderItem={renderItem}
+              footer={
+                <ChatThreadFooter
+                  events={events}
+                  isPromptPending={isPromptPending}
+                  promptStartedAt={promptStartedAt}
+                  task={task}
+                  taskId={taskId}
+                />
+              }
             />
           </ChatMessageScrollerProvider>
         </ChatThreadChromeProvider>

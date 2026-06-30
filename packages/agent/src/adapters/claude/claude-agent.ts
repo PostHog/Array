@@ -672,25 +672,35 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                     },
                   },
                 });
+                // Clear the "Compacting…" spinner. On success a `compact_boundary`
+                // usually also clears it, but a no-op success carries none, so
+                // signal completion explicitly.
+                await this.client.extNotification(
+                  POSTHOG_NOTIFICATIONS.STATUS,
+                  {
+                    sessionId: params.sessionId,
+                    status: "compacting",
+                    isComplete: true,
+                  },
+                );
                 break;
               } else if (
                 message.compact_result === "failed" &&
                 compactionInProgress
               ) {
                 compactionInProgress = false;
-                const reason = message.compact_error
-                  ? `: ${message.compact_error}`
-                  : ".";
-                await this.client.sessionUpdate({
-                  sessionId: params.sessionId,
-                  update: {
-                    sessionUpdate: "agent_message_chunk",
-                    content: {
-                      type: "text",
-                      text: `\n\nCompacting failed${reason}`,
-                    },
+                // A failed compaction never emits a `compact_boundary`, so emit a
+                // structured failure status: the renderer clears the "Compacting…"
+                // spinner and reports the outcome as its own status row (a separator
+                // marker in the new thread), not as assistant prose.
+                await this.client.extNotification(
+                  POSTHOG_NOTIFICATIONS.STATUS,
+                  {
+                    sessionId: params.sessionId,
+                    status: "compacting_failed",
+                    error: message.compact_error ?? undefined,
                   },
-                });
+                );
                 break;
               }
             }

@@ -18,6 +18,9 @@ catalogs:
     '@phosphor-icons/react':
       specifier: ^2.1.10
       version: 2.1.10
+    '@posthog/quill':
+      specifier: 0.3.0-beta.21
+      version: 0.3.0-beta.21
     '@radix-ui/themes':
       specifier: ^3.2.1
       version: 3.3.0
@@ -77,7 +80,6 @@ overrides:
   '@types/react-dom': ^19.2.3
   '@posthog/quill>@base-ui/react': ^1.3.0
   node-gyp>undici: 8.4.1
-  '@posthog/quill': file:./.local-quill/posthog-quill-local-5d2e0b61.tgz
 
 patchedDependencies:
   node-pty:
@@ -185,8 +187,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/platform
       '@posthog/quill':
-        specifier: file:../../.local-quill/posthog-quill-local-5d2e0b61.tgz
-        version: file:.local-quill/posthog-quill-local-5d2e0b61.tgz(@base-ui/react@1.3.0(@types/react@19.2.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(tailwindcss@4.3.1)
+        specifier: 'catalog:'
+        version: 0.3.0-beta.21(@base-ui/react@1.3.0(@types/react@19.2.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(tailwindcss@4.3.1)
       '@posthog/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -1177,9 +1179,6 @@ importers:
       '@posthog/platform':
         specifier: workspace:*
         version: link:../platform
-      '@posthog/quill':
-        specifier: file:../../.local-quill/posthog-quill-local-5d2e0b61.tgz
-        version: file:.local-quill/posthog-quill-local-5d2e0b61.tgz(@base-ui/react@1.3.0(@types/react@19.2.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(tailwindcss@4.2.2)
       '@posthog/quill-charts':
         specifier: 0.3.0-beta.19
         version: 0.3.0-beta.19(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1334,6 +1333,9 @@ importers:
       '@phosphor-icons/react':
         specifier: 'catalog:'
         version: 2.1.10(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@posthog/quill':
+        specifier: 'catalog:'
+        version: 0.3.0-beta.21(@base-ui/react@1.3.0(@types/react@19.2.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(tailwindcss@4.2.2)
       '@posthog/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/typescript
@@ -4857,9 +4859,8 @@ packages:
       react: 19.2.6
       react-dom: 19.2.6
 
-  '@posthog/quill@file:.local-quill/posthog-quill-local-5d2e0b61.tgz':
-    resolution: {integrity: sha512-Y/i8mxYWvw0/1GDRr9TQDKJ3AYqRmWnKY9YOAi/KfjY56IWnanpYFGjUH6isgrb4NGG21TVQoBe2OPMT4ikvQg==, tarball: file:.local-quill/posthog-quill-local-5d2e0b61.tgz}
-    version: 0.3.0-beta.16
+  '@posthog/quill@0.3.0-beta.21':
+    resolution: {integrity: sha512-cA+9aERFpplPXhDn/zMywKR/LXqqI/CnA/IK6MDUZDP/HvebIzzXUvd40TiQN4hCoLrEhXwT5HGzQzHGNWTMdg==}
     engines: {node: '>=20'}
     peerDependencies:
       '@base-ui/react': ^1.3.0
@@ -17078,7 +17079,7 @@ snapshots:
       react-dom: 19.2.6(react@19.2.6)
       simple-statistics: 7.8.9
 
-  '@posthog/quill@file:.local-quill/posthog-quill-local-5d2e0b61.tgz(@base-ui/react@1.3.0(@types/react@19.2.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(tailwindcss@4.2.2)':
+  '@posthog/quill@0.3.0-beta.21(@base-ui/react@1.3.0(@types/react@19.2.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(tailwindcss@4.2.2)':
     dependencies:
       '@base-ui/react': 1.3.0(@types/react@19.2.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       class-variance-authority: 0.7.1
@@ -17090,7 +17091,7 @@ snapshots:
       tailwind-merge: 2.6.1
       tailwindcss: 4.2.2
 
-  '@posthog/quill@file:.local-quill/posthog-quill-local-5d2e0b61.tgz(@base-ui/react@1.3.0(@types/react@19.2.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(tailwindcss@4.3.1)':
+  '@posthog/quill@0.3.0-beta.21(@base-ui/react@1.3.0(@types/react@19.2.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(tailwindcss@4.3.1)':
     dependencies:
       '@base-ui/react': 1.3.0(@types/react@19.2.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       class-variance-authority: 0.7.1
