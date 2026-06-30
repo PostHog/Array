@@ -485,6 +485,7 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
+          package-manager-cache: false
 
       - name: Install yaml dependency
         run: npm install --prefix apps/code yaml@^2
