@@ -31,6 +31,8 @@ export interface EditorHandle {
   getContent: () => EditorContent;
   getText: () => string;
   setContent: (text: string) => void;
+  /** Insert editor content (text + chips) at the cursor (end), without replacing. */
+  insertEditorContent: (content: EditorContent) => void;
   insertChip: (chip: MentionChip) => void;
   removeChipById: (chipId: string) => void;
   replaceChipAttrs: (

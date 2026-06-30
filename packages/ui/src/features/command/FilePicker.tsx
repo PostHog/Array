@@ -11,11 +11,11 @@ import {
   DialogContent,
 } from "@posthog/quill";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
-import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import {
+  buildRecentFileSections,
   type FileItem,
-  pathToFileItem,
-  searchFiles,
+  type FileSection,
+  rankFiles,
   useRepoFiles,
 } from "@posthog/ui/features/repo-files/useRepoFiles";
 import { FileIcon } from "@posthog/ui/primitives/FileIcon";
@@ -24,27 +24,21 @@ import { useCallback, useMemo, useState } from "react";
 interface FilePickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  taskId: string;
   repoPath: string | undefined;
+  recentFiles: string[];
+  onSelectFile: (path: string) => void;
 }
 
-type FileSection = { label?: string; items: FileItem[] };
-
-// Cap the empty-query list to keep render cost bounded without virtualization.
-// Typed queries are already capped upstream by fzf (MENTION_DISPLAY_LIMIT = 20).
 const EMPTY_QUERY_LIMIT = 200;
 
 export function FilePicker({
   open,
   onOpenChange,
-  taskId,
   repoPath,
+  recentFiles,
+  onSelectFile,
 }: FilePickerProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const openFileInSplit = usePanelLayoutStore((state) => state.openFileInSplit);
-  const recentFiles = usePanelLayoutStore(
-    (state) => state.taskLayouts[taskId]?.recentFiles ?? [],
-  );
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
@@ -54,33 +48,21 @@ export function FilePicker({
     [onOpenChange],
   );
 
-  const { files: fileItems, fzf } = useRepoFiles(repoPath, open);
+  const { files: fileItems } = useRepoFiles(repoPath, open);
 
   const sections = useMemo<FileSection[]>(() => {
     if (searchQuery.trim()) {
-      return [{ items: searchFiles(fzf, fileItems, searchQuery) }];
+      return [{ items: rankFiles(fileItems, searchQuery) }];
     }
-    if (recentFiles.length === 0) {
-      return [{ items: fileItems.slice(0, EMPTY_QUERY_LIMIT) }];
-    }
-    // recentFiles is string[] of paths from panelLayoutStore, ordered most-recent-first.
-    const recentPathSet = new Set(recentFiles);
-    const recentItems = recentFiles.map(pathToFileItem);
-    const rest = fileItems
-      .filter((f) => !recentPathSet.has(f.path))
-      .slice(0, Math.max(0, EMPTY_QUERY_LIMIT - recentItems.length));
-    return [
-      { label: "Recent", items: recentItems },
-      { label: "Other files", items: rest },
-    ];
-  }, [fzf, fileItems, searchQuery, recentFiles]);
+    return buildRecentFileSections(fileItems, recentFiles, EMPTY_QUERY_LIMIT);
+  }, [fileItems, searchQuery, recentFiles]);
 
   const handleSelect = useCallback(
     (path: string) => {
-      openFileInSplit(taskId, path, false);
+      onSelectFile(path);
       handleOpenChange(false);
     },
-    [openFileInSplit, taskId, handleOpenChange],
+    [onSelectFile, handleOpenChange],
   );
 
   return (

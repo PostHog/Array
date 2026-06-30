@@ -28,6 +28,7 @@ import {
 } from "@posthog/ui/features/canvas/components/FeedbackModal";
 import { useCanvasDeepLink } from "@posthog/ui/features/canvas/hooks/useCanvasDeepLink";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
+import { GlobalFilePicker } from "@posthog/ui/features/command/GlobalFilePicker";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
 import { ConnectivityBanner } from "@posthog/ui/features/connectivity/ConnectivityBanner";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
@@ -394,6 +395,7 @@ function RootLayout() {
           </Box>
         </Flex>
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+        <GlobalFilePicker />
         <KeyboardShortcutsSheet
           open={shortcutsSheetOpen}
           onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
@@ -426,6 +428,7 @@ function RootLayout() {
         <ConnectivityBanner />
         <Outlet />
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+        <GlobalFilePicker />
         <KeyboardShortcutsSheet
           open={shortcutsSheetOpen}
           onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
@@ -471,6 +474,7 @@ function RootLayout() {
           onNewTask={openTaskInput}
         />
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+        <GlobalFilePicker />
         <KeyboardShortcutsSheet
           open={shortcutsSheetOpen}
           onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
