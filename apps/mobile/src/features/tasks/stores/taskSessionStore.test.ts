@@ -23,9 +23,16 @@ vi.mock("../api", () => ({
   sendCloudCommand: vi.fn(),
 }));
 
-import type { CloudTaskUpdatePayload, StoredLogEntry } from "../types";
+import { getTask, runTaskInCloud } from "../api";
+import type {
+  CloudTaskUpdatePayload,
+  StoredLogEntry,
+  Task,
+  TaskRun,
+} from "../types";
 import { useMessageQueueStore } from "./messageQueueStore";
 import { type TaskSession, useTaskSessionStore } from "./taskSessionStore";
+import { useTaskStore } from "./taskStore";
 
 function seedSession(overrides: Partial<TaskSession> = {}): void {
   const session: TaskSession = {
@@ -130,6 +137,75 @@ describe("steerQueuedMessage", () => {
 
     expect(sendInterrupting).not.toHaveBeenCalled();
     expect(useMessageQueueStore.getState().getQueue("t1")).toHaveLength(1);
+  });
+});
+
+describe("_resumeCloudRun", () => {
+  const mockGetTask = vi.mocked(getTask);
+  const mockRunTaskInCloud = vi.mocked(runTaskInCloud);
+
+  function previousTask(latestRun: Partial<TaskRun>): Task {
+    return {
+      id: "t1",
+      latest_run: { id: "prev-run", ...latestRun } as TaskRun,
+    } as Task;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useTaskStore.setState({ composerConfigByTaskId: {} });
+    useTaskSessionStore.setState({ sessions: {} });
+    mockRunTaskInCloud.mockResolvedValue({
+      id: "t1",
+      latest_run: { id: "new-run" },
+    } as Task);
+  });
+
+  it("forwards the previous run's effort and permission mode", async () => {
+    mockGetTask.mockResolvedValue(
+      previousTask({
+        branch: "feature",
+        reasoning_effort: "low",
+        state: { initial_permission_mode: "acceptEdits" },
+      }),
+    );
+
+    await useTaskSessionStore
+      .getState()
+      ._resumeCloudRun("t1", "prev-run", "hi");
+
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith("t1", {
+      branch: "feature",
+      resumeFromRunId: "prev-run",
+      pendingUserMessage: "hi",
+      reasoningEffort: "low",
+      initialPermissionMode: "acceptEdits",
+    });
+  });
+
+  it("prefers the composer's current selection over the previous run", async () => {
+    useTaskStore.setState({
+      composerConfigByTaskId: { t1: { mode: "plan", reasoning: "max" } },
+    });
+    mockGetTask.mockResolvedValue(
+      previousTask({
+        branch: null,
+        reasoning_effort: "low",
+        state: { initial_permission_mode: "acceptEdits" },
+      }),
+    );
+
+    await useTaskSessionStore
+      .getState()
+      ._resumeCloudRun("t1", "prev-run", "hi");
+
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+      "t1",
+      expect.objectContaining({
+        reasoningEffort: "max",
+        initialPermissionMode: "plan",
+      }),
+    );
   });
 });
 
