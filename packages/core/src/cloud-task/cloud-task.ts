@@ -791,7 +791,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     // Info so every stream attempt is visible in the logs; Bearer token redacted.
-    this.log.info("Opening cloud task stream", {
+    this.log.info(`Opening cloud task stream via ${leg}: ${url.toString()}`, {
       key,
       leg,
       usingProxy,
@@ -831,13 +831,18 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
             signal: controller.signal,
           });
 
-      this.log.info("Cloud task stream response", {
-        key,
-        leg,
-        status: response.status,
-        ok: response.ok,
-        streamUrl: url.toString(),
-      });
+      this.log.info(
+        `Cloud task stream response ${response.status} ${
+          response.ok ? "ok" : "FAILED"
+        } via ${leg}`,
+        {
+          key,
+          leg,
+          status: response.status,
+          ok: response.ok,
+          streamUrl: url.toString(),
+        },
+      );
 
       if (!response.ok) {
         throw createStreamStatusError(response.status);
@@ -851,8 +856,10 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       streamWasEstablished = true;
       watcher.connStartedAt = connectedAt;
 
-      this.log.info("Cloud task SSE connected", {
+      this.log.info(`Cloud task SSE connected via ${leg}: ${url.toString()}`, {
         key,
+        leg,
+        streamUrl: url.toString(),
         sentLastEventId: watcher.connSentLastEventId,
         startLatest,
         status: response.status,
