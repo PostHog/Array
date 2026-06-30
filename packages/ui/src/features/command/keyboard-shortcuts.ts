@@ -329,19 +329,24 @@ export function getShortcutsByCategory(): Record<
   return grouped;
 }
 
-/**
- * Convert a DOM KeyboardEvent to the normalised combo string used by the
- * keybindings store (e.g. "mod+shift+v"). Returns null for bare modifier presses.
- */
+function buildModifierParts(e: KeyboardEvent): string[] {
+  const parts: string[] = [];
+  if (e.metaKey) parts.push("mod");
+  // On Mac, Ctrl is a distinct key (⌃), not the same as Cmd (mod). On Windows/Linux,
+  // Ctrl maps to mod since there is no meta key.
+  if (e.ctrlKey) parts.push(isMac ? "ctrl" : "mod");
+  if (e.shiftKey) parts.push("shift");
+  if (e.altKey) parts.push("alt");
+  // Deduplicate — on Windows, metaKey+ctrlKey would both produce "mod"
+  return [...new Set(parts)];
+}
+
 export function eventToCombo(e: KeyboardEvent): string | null {
   const bare = ["Meta", "Control", "Shift", "Alt"];
   if (bare.includes(e.key)) return null;
   if (!(e.metaKey || e.ctrlKey || e.altKey)) return null;
 
-  const parts: string[] = [];
-  if (e.metaKey || e.ctrlKey) parts.push("mod");
-  if (e.shiftKey) parts.push("shift");
-  if (e.altKey) parts.push("alt");
+  const parts = buildModifierParts(e);
   // Normalize "ArrowUp" → "up", "ArrowDown" → "down", etc. to match stored bindings.
   parts.push(e.key.toLowerCase().replace(/^arrow/, ""));
   return parts.join("+");
@@ -356,12 +361,38 @@ export function tiptapEventToCombo(e: KeyboardEvent): string | null {
   if (bare.includes(e.key)) return null;
   if (!(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)) return null;
 
-  const parts: string[] = [];
-  if (e.metaKey || e.ctrlKey) parts.push("mod");
-  if (e.shiftKey) parts.push("shift");
-  if (e.altKey) parts.push("alt");
+  const parts = buildModifierParts(e);
   parts.push(e.key.toLowerCase().replace(/^arrow/, ""));
   return parts.join("+");
+}
+
+/**
+ * Like eventToCombo but also returns partial combos for bare modifier presses.
+ * Used in the inline shortcut recorder to show live combo feedback.
+ */
+export function recordingEventToCombo(
+  e: KeyboardEvent,
+): { combo: string; isPartial: boolean } | null {
+  const bare = ["Meta", "Control", "Shift", "Alt"];
+
+  const parts = buildModifierParts(e);
+  if (parts.length === 0) return null;
+
+  if (bare.includes(e.key)) {
+    // Only a modifier was pressed — partial combo
+    return { combo: parts.join("+"), isPartial: true };
+  }
+
+  if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+    // Shift-only: allow non-printable keys (arrows, F-keys) since "shift+up" is a
+    // valid binding (prompt history default). Block printable keys — shift+letter
+    // would conflict with normal typing.
+    if (e.key.length === 1 || ["Enter", "Escape", "Tab"].includes(e.key))
+      return null;
+  }
+
+  parts.push(e.key.toLowerCase().replace(/^arrow/, ""));
+  return { combo: parts.join("+"), isPartial: false };
 }
 
 function formatKey(key: string): string {

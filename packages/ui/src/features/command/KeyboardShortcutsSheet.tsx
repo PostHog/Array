@@ -1,10 +1,3 @@
-import { Keycap } from "@posthog/ui/primitives/Keycap";
-import { ShortcutRecorder } from "@posthog/ui/primitives/ShortcutRecorder";
-import { Tooltip } from "@posthog/ui/primitives/Tooltip";
-import { useShortcut } from "@posthog/ui/primitives/hooks/useShortcut";
-import { Box, Button, Dialog, Flex, Text } from "@radix-ui/themes";
-import { useCallback, useMemo, useState } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import {
   CATEGORY_LABELS,
   type ConfigurableShortcutId,
@@ -13,11 +6,19 @@ import {
   type KeyboardShortcut,
   type ShortcutCategory,
 } from "@posthog/ui/features/command/keyboard-shortcuts";
+import { useShortcut } from "@posthog/ui/primitives/hooks/useShortcut";
+import { Keycap } from "@posthog/ui/primitives/Keycap";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import {
   resolveKey,
   splitBindings,
   useKeybindingsStore,
 } from "@posthog/ui/shell/keybindingsStore";
+import { isMac } from "@posthog/ui/utils/platform";
+import { Box, Button, Dialog, Flex, Text } from "@radix-ui/themes";
+import { useCallback, useMemo, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
+import { ShortcutRecorder } from "./ShortcutRecorder";
 
 interface KeyboardShortcutsSheetProps {
   open: boolean;
@@ -41,10 +42,12 @@ function eventToSearchCombo(e: KeyboardEvent): ComboSearch | null {
   const hasModifier = e.ctrlKey || e.metaKey || e.altKey || e.shiftKey;
   if (!hasModifier) return null;
 
-  const parts: string[] = [];
-  if (e.metaKey || e.ctrlKey) parts.push("mod");
-  if (e.shiftKey) parts.push("shift");
-  if (e.altKey) parts.push("alt");
+  const partSet = new Set<string>();
+  if (e.metaKey) partSet.add("mod");
+  if (e.ctrlKey) partSet.add(isMac ? "ctrl" : "mod");
+  if (e.shiftKey) partSet.add("shift");
+  if (e.altKey) partSet.add("alt");
+  const parts = [...partSet];
 
   if (!isModifierKey) {
     parts.push(e.key.toLowerCase().replace(/^arrow/, ""));
@@ -217,7 +220,10 @@ export function KeyboardShortcutsContent() {
         onComboChange={setComboSearch}
         onClear={clearSearch}
       />
-      <KeyboardShortcutsList searchText={searchText} comboSearch={comboSearch} />
+      <KeyboardShortcutsList
+        searchText={searchText}
+        comboSearch={comboSearch}
+      />
       <div className="sticky bottom-0 z-10 bg-(--color-background)">
         <ResetAllFooter />
       </div>

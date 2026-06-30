@@ -1,13 +1,4 @@
 ﻿import {
-  eventToCombo,
-  formatHotkey,
-  tiptapEventToCombo,
-} from "@posthog/ui/features/command/keyboard-shortcuts";
-import {
-  splitBindings,
-  useKeybindingsStore,
-} from "@posthog/ui/shell/keybindingsStore";
-import {
   contentToXml,
   type FileAttachment,
   isContentEmpty,
@@ -26,9 +17,18 @@ import {
   isUrlOnly,
   shouldAutoConvertLongText,
 } from "@posthog/core/message-editor/paste";
+import {
+  eventToCombo,
+  formatHotkey,
+  tiptapEventToCombo,
+} from "@posthog/ui/features/command/keyboard-shortcuts";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore as useFeatureSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { toast } from "@posthog/ui/primitives/toast";
+import {
+  splitBindings,
+  useKeybindingsStore,
+} from "@posthog/ui/shell/keybindingsStore";
 import { isSendMessageSubmitKey } from "@posthog/ui/utils/sendMessageKey";
 import type { EditorView } from "@tiptap/pm/view";
 import { useEditor } from "@tiptap/react";
@@ -613,7 +613,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
     if (enableBashMode && isBashModeText(text)) {
       // Bash mode requires immediate execution, can't be queued.
-      // Intentionally bypasses onBeforeSubmit â€” bash commands run inline and
+      // Intentionally bypasses onBeforeSubmit — bash commands run inline and
       // cannot be deferred the way normal prompts can.
       if (isLoading) {
         toast.error("Cannot run shell commands while agent is generating");
