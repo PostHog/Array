@@ -32,12 +32,19 @@ function createService() {
     getWorktreeLocation: vi.fn(() => "/tmp/worktrees"),
   };
 
+  const storagePaths = {
+    appDataPath: "/data",
+    logsPath: "/logs",
+    logFolderPath: "/logs",
+  };
+
   const service = new OsService(
     dialog as never,
     urlLauncher as never,
     appMeta as never,
     imageProcessor as never,
     workspaceSettings as never,
+    storagePaths as never,
   );
 
   return { service, dialog, urlLauncher, appMeta, workspaceSettings };
@@ -151,6 +158,14 @@ describe("OsService simple delegations", () => {
     const { service, urlLauncher } = createService();
     await service.openExternal("https://posthog.com");
     expect(urlLauncher.launch).toHaveBeenCalledWith("https://posthog.com");
+  });
+
+  it("opens the log folder as a file URL via the url launcher", async () => {
+    const { service, urlLauncher } = createService();
+    await service.showLogFolder();
+    expect(urlLauncher.launch).toHaveBeenCalledWith(
+      expect.stringMatching(/^file:\/\//),
+    );
   });
 });
 

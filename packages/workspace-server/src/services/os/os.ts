@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { APP_META_SERVICE, type IAppMeta } from "@posthog/platform/app-meta";
 import {
   DIALOG_SERVICE,
@@ -11,6 +12,10 @@ import {
   type IImageProcessor,
   IMAGE_PROCESSOR_SERVICE,
 } from "@posthog/platform/image-processor";
+import {
+  type IStoragePaths,
+  STORAGE_PATHS_SERVICE,
+} from "@posthog/platform/storage-paths";
 import {
   type IUrlLauncher,
   URL_LAUNCHER_SERVICE,
@@ -55,6 +60,8 @@ export class OsService {
     private readonly imageProcessor: IImageProcessor,
     @inject(WORKSPACE_SETTINGS_SERVICE)
     private readonly workspaceSettings: IWorkspaceSettings,
+    @inject(STORAGE_PATHS_SERVICE)
+    private readonly storagePaths: IStoragePaths,
   ) {}
 
   async getClaudePermissions(): Promise<ClaudePermissions> {
@@ -160,6 +167,12 @@ export class OsService {
 
   async openExternal(url: string): Promise<void> {
     await this.urlLauncher.launch(url);
+  }
+
+  async showLogFolder(): Promise<void> {
+    await this.urlLauncher.launch(
+      pathToFileURL(this.storagePaths.logFolderPath).href,
+    );
   }
 
   async searchDirectories(query: string): Promise<string[]> {
