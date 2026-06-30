@@ -151,6 +151,9 @@ describe("AuthService", () => {
         string,
         { name: string; projects: { id: number; name: string }[] }
       >;
+      // Overrides the /api/code/invites/check-access/ response (defaults to
+      // granting access). May throw to simulate a network error.
+      checkAccess?: () => Response;
     } = {},
   ) => {
     const accountKey = options.accountKey ?? "user-1";
@@ -186,6 +189,9 @@ describe("AuthService", () => {
           } as unknown as Response;
         }
 
+        if (options.checkAccess) {
+          return options.checkAccess();
+        }
         return {
           ok: true,
           json: vi.fn().mockResolvedValue({ has_access: true }),
@@ -305,7 +311,7 @@ describe("AuthService", () => {
     );
   });
 
-  it("completes bootstrap anonymously when the stored-session restore hangs", async () => {
+  it("completes bootstrap but stays restoring when the stored-session restore hangs", async () => {
     vi.useFakeTimers();
     try {
       seedStoredSession({ selectedProjectId: 42 });
@@ -317,8 +323,11 @@ describe("AuthService", () => {
       await vi.advanceTimersByTimeAsync(20_001);
       await initPromise;
 
+      // bootstrapComplete flips true at the deadline so the renderer leaves the
+      // boot gate; status stays restoring so a late success still upgrades and
+      // the stored session is not treated as a logout.
       expect(service.getState()).toMatchObject({
-        status: "anonymous",
+        status: "restoring",
         bootstrapComplete: true,
         cloudRegion: "us",
         currentProjectId: 42,
@@ -345,7 +354,7 @@ describe("AuthService", () => {
       await vi.advanceTimersByTimeAsync(20_001);
       await initPromise;
 
-      expect(service.getState().status).toBe("anonymous");
+      expect(service.getState().status).toBe("restoring");
 
       resolveRefresh(
         mockTokenResponse({
@@ -360,6 +369,44 @@ describe("AuthService", () => {
         bootstrapComplete: true,
         currentProjectId: 42,
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shares the in-flight bootstrap refresh with token callers after the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      seedStoredSession({ selectedProjectId: 42 });
+      stubAuthFetch();
+      let resolveRefresh!: (value: unknown) => void;
+      oauthFlow.refreshToken.mockReturnValue(
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      );
+
+      const initPromise = service.initialize();
+      await vi.advanceTimersByTimeAsync(20_001);
+      await initPromise;
+
+      expect(service.getState().status).toBe("restoring");
+
+      const tokenPromise = service.getValidAccessToken();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(1);
+
+      resolveRefresh(
+        mockTokenResponse({
+          accessToken: "late-access-token",
+          refreshToken: "late-refresh-token",
+        }),
+      );
+
+      await expect(tokenPromise).resolves.toMatchObject({
+        accessToken: "late-access-token",
+      });
+      expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
@@ -512,7 +559,7 @@ describe("AuthService", () => {
       seedStoredSession({ selectedProjectId: 42 });
       vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: false });
       await service.initialize();
-      expect(service.getState().status).toBe("anonymous");
+      expect(service.getState().status).toBe("restoring");
 
       vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: true });
       oauthFlow.refreshToken.mockResolvedValue(mockTokenResponse());
@@ -640,7 +687,7 @@ describe("AuthService", () => {
       expect(sessionPort.getCurrent()).toBeNull();
     });
 
-    it("does not retry on unknown_error", async () => {
+    it("keeps restoring after a non-retryable unknown_error", async () => {
       seedStoredSession();
       oauthFlow.refreshToken.mockResolvedValue({
         success: false,
@@ -650,7 +697,7 @@ describe("AuthService", () => {
 
       await service.initialize();
 
-      expect(service.getState().status).toBe("anonymous");
+      expect(service.getState().status).toBe("restoring");
       expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(1);
     });
 
@@ -664,7 +711,7 @@ describe("AuthService", () => {
 
       await service.initialize();
 
-      expect(service.getState().status).toBe("anonymous");
+      expect(service.getState().status).toBe("restoring");
       expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(3);
     });
   });
@@ -1299,6 +1346,108 @@ describe("AuthService", () => {
 
       expect(state.hasCodeAccess).toBe(true);
       expect(redeemCallCount).toBe(2);
+    });
+  });
+
+  describe("code access resilience", () => {
+    const okBody = (body: unknown): Response =>
+      ({
+        ok: true,
+        json: vi.fn().mockResolvedValue(body),
+      }) as unknown as Response;
+
+    beforeEach(() => {
+      seedStoredSession();
+      oauthFlow.refreshToken.mockResolvedValue(
+        mockTokenResponse({
+          accessToken: "access-token",
+          refreshToken: "rotated-refresh-token",
+        }),
+      );
+    });
+
+    it.each([
+      {
+        name: "grants access when the server reports has_access true",
+        checkAccess: () => okBody({ has_access: true }),
+        expected: true,
+      },
+      {
+        name: "denies access when the server explicitly reports no access",
+        checkAccess: () => okBody({ has_access: false }),
+        expected: false,
+      },
+      {
+        name: "stays indeterminate when the check throws",
+        checkAccess: () => {
+          throw new Error("network down");
+        },
+        expected: null,
+      },
+      {
+        name: "stays indeterminate on a 2xx response without a has_access flag",
+        checkAccess: () => okBody({}),
+        expected: null,
+      },
+    ])("$name", async ({ checkAccess, expected }) => {
+      stubAuthFetch({ checkAccess });
+
+      await service.initialize();
+
+      const state = service.getState();
+      expect(state.status).toBe("authenticated");
+      expect(state.hasCodeAccess).toBe(expected);
+    });
+
+    it.each([
+      {
+        name: "a network error",
+        fail: (): Response => {
+          throw new Error("network down");
+        },
+      },
+      {
+        name: "a 401",
+        fail: (): Response =>
+          ({
+            ok: false,
+            status: 401,
+            json: vi.fn().mockResolvedValue({}),
+          }) as unknown as Response,
+      },
+    ])(
+      "keeps a confirmed grant when a later check hits $name",
+      async ({ fail }) => {
+        let shouldFail = false;
+        stubAuthFetch({
+          checkAccess: () =>
+            shouldFail ? fail() : okBody({ has_access: true }),
+        });
+
+        await service.initialize();
+        expect(service.getState().hasCodeAccess).toBe(true);
+
+        shouldFail = true;
+        await service.refreshAccessToken();
+
+        expect(service.getState().hasCodeAccess).toBe(true);
+      },
+    );
+
+    it("recovers within the retry loop when a later attempt succeeds", async () => {
+      let attempts = 0;
+      stubAuthFetch({
+        checkAccess: () => {
+          attempts += 1;
+          if (attempts === 1) throw new Error("transient");
+          return okBody({ has_access: true });
+        },
+      });
+
+      await service.initialize();
+
+      expect(service.getState().hasCodeAccess).toBe(true);
+      expect(attempts).toBeGreaterThanOrEqual(2);
     });
   });
 });

@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { findSkillDirs } from "../skills/skill-discovery";
+import { findSkillDirs, isSafePathSegment } from "../skills/skill-discovery";
 
 const MIRROR_STATE_FILE = ".posthog-mirror.json";
 
@@ -11,6 +11,13 @@ export interface CodexMirrorState {
   mirrored: string[];
 }
 
+/**
+ * The shared, cross-agent skills directory that Codex (and other tools) read.
+ * PostHog Code never writes skills here — it only reads it to surface the
+ * user's own Codex skills in the Skills tab. Bundled and Claude skills reach
+ * Codex sessions through a private CODEX_HOME instead, so this directory stays
+ * the user's own.
+ */
 export function getCodexSkillsDir(): string {
   return path.join(os.homedir(), ".agents", "skills");
 }
@@ -29,91 +36,81 @@ export async function readCodexMirrorState(
     }
     return {
       version: 1,
-      mirrored: data.mirrored.filter((n) => typeof n === "string"),
+      mirrored: data.mirrored.filter(isSafePathSegment),
     };
   } catch {
     return { version: 1, mirrored: [] };
   }
 }
 
-export async function writeCodexMirrorState(
-  codexDir: string,
-  state: CodexMirrorState,
-): Promise<void> {
-  await fs.promises.mkdir(codexDir, { recursive: true });
-  await fs.promises.writeFile(
-    path.join(codexDir, MIRROR_STATE_FILE),
-    `${JSON.stringify(state, null, 2)}\n`,
-    "utf-8",
-  );
-}
-
-/** Marks a codex skill as ours, so future mirrors may overwrite it. */
-export async function addMirroredName(
-  codexDir: string,
-  name: string,
-): Promise<void> {
-  const state = await readCodexMirrorState(codexDir);
-  if (!state.mirrored.includes(name)) {
-    state.mirrored.push(name);
-    await writeCodexMirrorState(codexDir, state);
+async function readSkillManifest(skillDir: string): Promise<Buffer | null> {
+  try {
+    return await fs.promises.readFile(path.join(skillDir, "SKILL.md"));
+  } catch {
+    return null;
   }
 }
 
 /**
- * One-way mirror, ours out: copies every user skill into the Codex skills
- * dir so skills created, edited, or installed in PostHog Code work in Codex
- * sessions too.
+ * One-time cleanup of the skills earlier builds copied into the shared
+ * ~/.agents/skills directory (the bundled catalog via the old `syncCodexSkills`,
+ * and the user's own skills via the old mirror). Both are gone now; this
+ * removes their leftovers so the directory is the user's own again.
  *
- * Safety rule: never overwrite a skill in ~/.agents/skills we didn't put
- * there. Colliding names are skipped — the collision surfaces in the Skills
- * tab as a shadowing warning. Mirrors whose source skill is gone are
- * removed (it's a mirror, not an archive).
+ * Safety: only deletes skills we can prove we wrote.
+ * - Names recorded in `.posthog-mirror.json` were copies of the user's
+ *   `~/.claude/skills`; the originals still live there, so the copy is safe to drop.
+ * - A bundled-catalog leftover is identified by an exact name match against the
+ *   current bundled skills *and* a byte-identical `SKILL.md`. The content check
+ *   guarantees we never delete a user's own Codex skill that merely shares a name.
+ *
+ * Returns the directory names that were removed.
  */
-export async function mirrorUserSkillsToCodex(
-  userSkillsDir: string,
+export async function cleanupLegacyCodexMirror(
   codexDir: string,
-): Promise<void> {
-  const state = await readCodexMirrorState(codexDir);
-  const previouslyMirrored = new Set(state.mirrored);
-  const userNames = await findSkillDirs(userSkillsDir);
-  await fs.promises.mkdir(codexDir, { recursive: true });
+  bundledSkillsDir: string,
+): Promise<string[]> {
+  if (!fs.existsSync(codexDir)) {
+    return [];
+  }
 
-  const copied = await Promise.all(
-    userNames.map(async (name) => {
+  const removed = new Set<string>();
+
+  const remove = async (name: string): Promise<void> => {
+    await fs.promises.rm(path.join(codexDir, name), {
+      recursive: true,
+      force: true,
+    });
+    removed.add(name);
+  };
+
+  // 1. Tracked copies of the user's own skills.
+  const state = await readCodexMirrorState(codexDir);
+  for (const name of state.mirrored) {
+    if (fs.existsSync(path.join(codexDir, name))) {
+      await remove(name);
+    }
+  }
+
+  // 2. Bundled-catalog copies: same name and byte-identical SKILL.md.
+  const bundledNames = await findSkillDirs(bundledSkillsDir);
+  await Promise.all(
+    bundledNames.map(async (name) => {
+      if (removed.has(name)) return;
       const target = path.join(codexDir, name);
-      if (fs.existsSync(target) && !previouslyMirrored.has(name)) {
-        return null;
-      }
-      await fs.promises.rm(target, { recursive: true, force: true });
-      try {
-        // dereference: mirrored skills must be self-contained.
-        await fs.promises.cp(path.join(userSkillsDir, name), target, {
-          recursive: true,
-          dereference: true,
-        });
-        return name;
-      } catch {
-        // Skip unreadable skills (e.g. broken symlinks); drop the partial copy.
-        await fs.promises.rm(target, { recursive: true, force: true });
-        return null;
+      if (!fs.existsSync(target)) return;
+      const [bundled, present] = await Promise.all([
+        readSkillManifest(path.join(bundledSkillsDir, name)),
+        readSkillManifest(target),
+      ]);
+      if (bundled && present && bundled.equals(present)) {
+        await remove(name);
       }
     }),
   );
 
-  await Promise.all(
-    [...previouslyMirrored]
-      .filter((name) => !userNames.includes(name))
-      .map((name) =>
-        fs.promises.rm(path.join(codexDir, name), {
-          recursive: true,
-          force: true,
-        }),
-      ),
-  );
+  // 3. Drop the legacy mirror-state file.
+  await fs.promises.rm(path.join(codexDir, MIRROR_STATE_FILE), { force: true });
 
-  await writeCodexMirrorState(codexDir, {
-    version: 1,
-    mirrored: copied.filter((name): name is string => name !== null),
-  });
+  return [...removed];
 }

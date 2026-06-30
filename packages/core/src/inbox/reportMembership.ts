@@ -1,18 +1,38 @@
 import type { SignalReport } from "@posthog/shared/types";
 
 /**
- * Statuses that are out of the inbox entirely (user-suppressed or removed).
+ * Statuses that are out of the inbox entirely (user-suppressed, resolved, or
+ * removed). `resolved` is terminal — its implementation PR merged — so it drops
+ * out of the live inbox and is surfaced only in the Archive tab for reference.
  * `failed` is NOT in here: failed runs surface in the Runs tab's Recently
  * finished section so the user can see what went wrong. Other tabs filter
  * them out via their own predicates.
  */
 export const INBOX_EXCLUDED_STATUSES = new Set<SignalReport["status"]>([
   "suppressed",
+  "resolved",
   "deleted",
 ]);
 
 export function isExcludedFromInbox(report: SignalReport): boolean {
   return INBOX_EXCLUDED_STATUSES.has(report.status);
+}
+
+/**
+ * Archive tab membership — the two terminal, not-in-inbox states. `suppressed`
+ * is "the user archived this out of the inbox" (the archive action sets it; it
+ * is restorable). `resolved` is "the implementation PR merged" — terminal, set
+ * server-side, shown for reference only and not restorable. The other
+ * not-in-inbox states are deliberately excluded: `deleted` is permanent (gone,
+ * never restorable, stripped server-side), and snooze is not a status at all —
+ * it is a temporary `snoozed_until` timestamp on an otherwise-active report that
+ * auto-returns to the inbox when it elapses, so it doesn't belong in a manual
+ * restore list. Archived reports are fetched by a dedicated query (the main
+ * pipeline query excludes them), so this predicate is applied to that separate
+ * list.
+ */
+export function isDismissedReport(report: SignalReport): boolean {
+  return report.status === "suppressed" || report.status === "resolved";
 }
 
 export type InboxScope = "for-you" | "entire-project" | `teammate:${string}`;
@@ -62,14 +82,20 @@ export function countInboxScopeReports(
   return reports.filter((report) => matchesInboxScope(report, scope)).length;
 }
 
-export type InboxTabKey = "pulls" | "reports" | "runs";
+export type InboxTabKey = "pulls" | "reports" | "runs" | "dismissed";
 
-export const INBOX_TAB_KEYS: InboxTabKey[] = ["pulls", "reports", "runs"];
+export const INBOX_TAB_KEYS: InboxTabKey[] = [
+  "pulls",
+  "reports",
+  "runs",
+  "dismissed",
+];
 
 export const INBOX_TAB_LABEL: Record<InboxTabKey, string> = {
   pulls: "Pull requests",
   reports: "Reports",
   runs: "Runs",
+  dismissed: "Archive",
 };
 
 /**
@@ -87,6 +113,7 @@ export const INBOX_TAB_LIST_ROUTE: Record<
   pulls: "/code/inbox/pulls",
   reports: "/code/inbox/reports",
   runs: "/code/inbox/runs",
+  dismissed: "/code/inbox/dismissed",
 };
 
 const INBOX_DETAIL_PATH_RE = new RegExp(
@@ -97,9 +124,14 @@ export function isInboxDetailPath(pathname: string): boolean {
   return INBOX_DETAIL_PATH_RE.test(pathname);
 }
 
-/** PR tab membership: Responder shipped a draft PR and the report is still in-inbox. */
+/**
+ * PR tab membership: Responder shipped a draft PR and it is `ready` for review.
+ * PRs that have already been merged/closed (`resolved`) or are still running
+ * are excluded so the tab — and its count — only show actionable PRs, matching
+ * the PostHog Cloud inbox.
+ */
 export function isPullRequestReport(report: SignalReport): boolean {
-  return !!report.implementation_pr_url && !isExcludedFromInbox(report);
+  return report.status === "ready" && !!report.implementation_pr_url;
 }
 
 // ── Runs-tab partitioning ─────────────────────────────────────────────────
@@ -194,7 +226,10 @@ export function orderedRunsTabReports(reports: SignalReport[]): SignalReport[] {
 export function isReportTabReport(report: SignalReport): boolean {
   if (isExcludedFromInbox(report)) return false;
   if (report.status === "failed") return false; // failed runs live in the Runs tab only
-  if (isPullRequestReport(report)) return false;
+  // Any report carrying a PR belongs to the Pull requests tab, even once it has
+  // been merged/closed (`resolved`) — those just drop out of the inbox here
+  // rather than reappearing as a Report.
+  if (report.implementation_pr_url) return false;
   if (isAgentRunReport(report)) return false;
   return true;
 }

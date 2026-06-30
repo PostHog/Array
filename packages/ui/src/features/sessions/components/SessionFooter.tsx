@@ -8,6 +8,7 @@ import {
 import type { ContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { DiffStatsChip } from "./DiffStatsChip";
+import { SlotMachineLever } from "./SlotMachineLever";
 
 interface SessionFooterProps {
   task?: Task;
@@ -80,6 +81,7 @@ export function SessionFooter({
                 ({queuedCount} queued)
               </Text>
             )}
+            <SlotMachineLever spinning={Boolean(isPromptPending)} />
           </Flex>
           {rightSide}
         </Flex>

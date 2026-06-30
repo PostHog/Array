@@ -17,6 +17,10 @@ import {
   usageOutput,
 } from "./schemas";
 
+// Bounded helper workloads (titles, summaries, commit messages, PR copy) run on
+// the cheapest model rather than the gateway default.
+export const HELPER_GATEWAY_MODEL = "claude-haiku-4-5";
+
 export class LlmGatewayError extends Error {
   constructor(
     message: string,

@@ -34,9 +34,9 @@ jobs:
           APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           # Pre-create a single draft release so every parallel publish job uploads
-          # into the same release. Without this, electron-forge's GitHub publisher
-          # creates-if-missing from each job at once, producing multiple releases for
-          # one tag and scattering assets (the orphans get left as drafts).
+          # into the same release. Without this, parallel jobs each create-if-missing
+          # at once, producing multiple releases for one tag and scattering assets
+          # (the orphans get left as drafts).
           if gh release view "v$APP_VERSION" --repo PostHog/code >/dev/null 2>&1; then
             echo "Release v$APP_VERSION already exists — reusing it"
           else
@@ -68,13 +68,11 @@ jobs:
       POSTHOG_SOURCEMAP_API_KEY: ${{ secrets.POSTHOG_SOURCEMAP_API_KEY }}
       POSTHOG_ENV_ID: ${{ secrets.POSTHOG_ENV_ID }}
       POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-      APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      CSC_LINK: ${{ secrets.APPLE_CODESIGN_CERT_BASE64 }}
+      CSC_KEY_PASSWORD: ${{ secrets.APPLE_CODESIGN_CERT_PASSWORD }}
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_CODESIGN_CERT_BASE64: ${{ secrets.APPLE_CODESIGN_CERT_BASE64 }}
-      APPLE_CODESIGN_CERT_PASSWORD: ${{ secrets.APPLE_CODESIGN_CERT_PASSWORD }}
-      APPLE_CODESIGN_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_CODESIGN_KEYCHAIN_PASSWORD }}
     steps:
       - name: Get app token
         id: app-token
@@ -145,35 +143,58 @@ jobs:
       - name: Build agent package
         run: pnpm --filter @posthog/agent run build
 
-      - name: Import code signing certificate
-        if: env.APPLE_CODESIGN_IDENTITY != ''
-        env:
-          CERT_BASE64: ${{ env.APPLE_CODESIGN_CERT_BASE64 }}
-          CERT_PASSWORD: ${{ env.APPLE_CODESIGN_CERT_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ env.APPLE_CODESIGN_KEYCHAIN_PASSWORD }}
-        run: |
-          if [ -z "$CERT_BASE64" ] || [ -z "$CERT_PASSWORD" ] || [ -z "$KEYCHAIN_PASSWORD" ]; then
-            echo "Missing code signing certificate secrets"
-            exit 1
-          fi
-          KEYCHAIN="$RUNNER_TEMP/codesign.keychain-db"
-          echo "$CERT_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
-          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          rm "$RUNNER_TEMP/certificate.p12"
-
-      - name: Build native modules
-        run: pnpm --filter code run build-native
+      # build/Assets.car is gitignored; regenerate it on the runner so the packaged
+      # app ships the liquid-glass icon (the script falls back to .icns if actool fails).
+      - name: Compile macOS liquid-glass icon
+        working-directory: apps/code
+        run: bash scripts/compile-glass-icon.sh
 
       - name: Build release artifacts
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: pnpm --filter code exec electron-forge publish --dry-run --arch=${{ matrix.arch }} --platform=darwin
+          MATRIX_ARCH: ${{ matrix.arch }}
+        working-directory: apps/code
+        run: |
+          pnpm exec electron-vite build
+          if [[ "$MATRIX_ARCH" == "arm64" ]]; then
+            pnpm exec electron-builder build --mac --arm64 --publish never --config electron-builder.ts
+          else
+            pnpm exec electron-builder build --mac --x64 --publish never --config electron-builder.ts
+          fi
+
+      - name: Verify package
+        env:
+          MATRIX_ARCH: ${{ matrix.arch }}
+        run: |
+          if [[ "$MATRIX_ARCH" == "arm64" ]]; then
+            APP_BUNDLE="apps/code/out/mac-arm64/PostHog Code.app"
+          else
+            APP_BUNDLE="apps/code/out/mac/PostHog Code.app"
+          fi
+          RESOURCES="$APP_BUNDLE/Contents/Resources"
+          UNPACKED="$RESOURCES/app.asar.unpacked/node_modules"
+
+          if [[ ! -f "$RESOURCES/app-update.yml" ]]; then
+            echo "FAIL: app-update.yml missing at $RESOURCES/app-update.yml"
+            exit 1
+          fi
+          echo "OK: app-update.yml"
+
+          for mod in node-pty better-sqlite3 "@parcel/watcher"; do
+            if [[ ! -d "$UNPACKED/$mod" ]]; then
+              echo "FAIL: $mod missing in app.asar.unpacked/node_modules"
+              exit 1
+            fi
+            echo "OK: $mod"
+          done
+
+          for bin in claude-cli codex-acp; do
+            if [[ ! -d "$RESOURCES/app.asar.unpacked/.vite/build/$bin" ]]; then
+              echo "FAIL: $bin missing in bundled binaries"
+              exit 1
+            fi
+            echo "OK: $bin"
+          done
 
       - name: Install Playwright
         run: pnpm --filter code exec playwright install
@@ -192,11 +213,22 @@ jobs:
           path: apps/code/playwright-report/
           retention-days: 7
 
-      - name: Publish release artifacts
+      - name: Upload release artifacts
         env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           APP_VERSION: ${{ steps.version.outputs.version }}
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: pnpm --filter code exec electron-forge publish --from-dry-run
+        run: |
+          gh release upload "v$APP_VERSION" --repo PostHog/code --clobber \
+            apps/code/out/*.dmg \
+            apps/code/out/*-mac.zip \
+            apps/code/out/*.blockmap
+
+      - name: Upload mac manifest artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mac-manifest-${{ matrix.arch }}
+          path: apps/code/out/latest-mac.yml
+          retention-days: 1
 
   publish-windows:
     needs: [prepare-release]
@@ -209,6 +241,9 @@ jobs:
       NODE_ENV: production
       VITE_POSTHOG_API_KEY: ${{ secrets.VITE_POSTHOG_API_KEY }}
       VITE_POSTHOG_API_HOST: ${{ secrets.VITE_POSTHOG_API_HOST }}
+      POSTHOG_SOURCEMAP_API_KEY: ${{ secrets.POSTHOG_SOURCEMAP_API_KEY }}
+      POSTHOG_ENV_ID: ${{ secrets.POSTHOG_ENV_ID }}
+      POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
     steps:
       - name: Get app token
         id: app-token
@@ -274,18 +309,39 @@ jobs:
       - name: Build agent package
         run: pnpm --filter @posthog/agent run build
 
-      - name: Publish with Electron Forge
+      - name: Build release artifacts
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: pnpm --filter code run publish
+        working-directory: apps/code
+        run: |
+          pnpm exec electron-vite build
+          pnpm exec electron-builder build --win --x64 --publish never --config electron-builder.ts
+
+      - name: Upload release artifacts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $out = "apps/code/out"
+          $items = @()
+          # NSIS installer + electron-updater metadata live in the output root.
+          $items += Get-ChildItem $out -File -Filter "*.exe"
+          $items += Get-ChildItem $out -File -Filter "latest.yml"
+          $items += Get-ChildItem $out -File -Filter "*.blockmap"
+          $files = $items | Select-Object -ExpandProperty FullName
+          gh release upload "v$env:APP_VERSION" --repo PostHog/code --clobber @files
 
   publish-linux:
     needs: [prepare-release]
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
     runs-on: ${{ matrix.runner }}
     permissions:
       id-token: write
@@ -295,6 +351,9 @@ jobs:
       NODE_ENV: production
       VITE_POSTHOG_API_KEY: ${{ secrets.VITE_POSTHOG_API_KEY }}
       VITE_POSTHOG_API_HOST: ${{ secrets.VITE_POSTHOG_API_HOST }}
+      POSTHOG_SOURCEMAP_API_KEY: ${{ secrets.POSTHOG_SOURCEMAP_API_KEY }}
+      POSTHOG_ENV_ID: ${{ secrets.POSTHOG_ENV_ID }}
+      POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
     steps:
       - name: Get app token
         id: app-token
@@ -362,11 +421,28 @@ jobs:
       - name: Build agent package
         run: pnpm --filter @posthog/agent run build
 
-      - name: Publish with Electron Forge
+      - name: Build release artifacts
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: pnpm --filter code run publish
+          MATRIX_ARCH: ${{ matrix.arch }}
+        working-directory: apps/code
+        run: |
+          pnpm exec electron-vite build
+          if [[ "$MATRIX_ARCH" == "arm64" ]]; then
+            pnpm exec electron-builder build --linux --arm64 --publish never --config electron-builder.ts
+          else
+            pnpm exec electron-builder build --linux --x64 --publish never --config electron-builder.ts
+          fi
+
+      - name: Upload release artifacts
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release upload "v$APP_VERSION" --repo PostHog/code --clobber \
+            apps/code/out/*.AppImage \
+            apps/code/out/*.deb \
+            apps/code/out/*.rpm
 
   finalize-release:
     needs: [publish-macos, publish-windows, publish-linux]
@@ -390,6 +466,47 @@ jobs:
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
           echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout merge script
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: |
+            apps/code/scripts/merge-mac-manifests.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install yaml dependency
+        run: npm install --prefix apps/code yaml@^2
+
+      - name: Download arm64 mac manifest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: mac-manifest-arm64
+          path: /tmp/mac-manifests/arm64
+
+      - name: Download x64 mac manifest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: mac-manifest-x64
+          path: /tmp/mac-manifests/x64
+
+      - name: Merge mac manifests
+        run: |
+          node apps/code/scripts/merge-mac-manifests.mjs \
+            /tmp/mac-manifests/arm64/latest-mac.yml \
+            /tmp/mac-manifests/x64/latest-mac.yml \
+            /tmp/latest-mac.yml
+
+      - name: Upload merged mac manifest
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release upload "v$APP_VERSION" --repo PostHog/code --clobber /tmp/latest-mac.yml
 
       - name: Publish GitHub release
         env:

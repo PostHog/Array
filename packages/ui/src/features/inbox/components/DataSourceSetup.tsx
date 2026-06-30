@@ -11,10 +11,10 @@ import {
   useGithubRepositories,
   useRepositoryIntegration,
 } from "@posthog/ui/features/integrations/useIntegrations";
+import { toast } from "@posthog/ui/primitives/toast";
 import { Box, Flex, Text, TextField } from "@radix-ui/themes";
 import { useMutation } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 
 type DataSourceType = "github" | "linear" | "zendesk" | "pganalyze";
 

@@ -29,7 +29,10 @@ import {
 import { LLM_GATEWAY_SERVICE } from "@posthog/core/llm-gateway/identifiers";
 import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
 import type { LlmMessage } from "@posthog/core/llm-gateway/schemas";
-import { CLOUD_ARTIFACT_READ_FILE_AS_BASE64 } from "@posthog/core/sessions/cloudArtifactIdentifiers";
+import {
+  CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
+  CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
+} from "@posthog/core/sessions/cloudArtifactIdentifiers";
 import {
   LOCAL_HANDOFF_DIALOG,
   LOCAL_HANDOFF_HOST,
@@ -79,6 +82,10 @@ import { WorkspaceSetupService } from "@posthog/core/workspace/WorkspaceSetupSer
 import { setRootContainer } from "@posthog/di/container";
 import { HOST_TRPC_CLIENT } from "@posthog/host-router/client";
 import {
+  BROWSER_TABS_CLIENT,
+  type BrowserTabsClient,
+} from "@posthog/ui/features/browser-tabs/browserTabsClient";
+import {
   REVIEW_HOST,
   type ReviewHost,
 } from "@posthog/ui/features/code-review/reviewHost";
@@ -86,6 +93,10 @@ import {
   CONNECTIVITY_CLIENT,
   type ConnectivityClient,
 } from "@posthog/ui/features/connectivity/connectivityClient";
+import {
+  DISCORD_PRESENCE_CLIENT,
+  type DiscordPresenceClient,
+} from "@posthog/ui/features/discord-presence/identifiers";
 import { FocusStoreCoordinator } from "@posthog/ui/features/external-apps/focusCoordinator";
 import { focusDeps } from "@posthog/ui/features/focus/focusAdapter";
 import { FOCUS_CONTROLLER_DEPS } from "@posthog/ui/features/focus/focusClient";
@@ -156,10 +167,51 @@ container.bind(UPDATES_CLIENT).toConstantValue(updatesClient);
 // connectivity client — passthrough over the renderer host client
 const connectivityClient: ConnectivityClient = {
   getStatus: () => trpcClient.connectivity.getStatus.query(),
+  checkNow: () => trpcClient.connectivity.checkNow.mutate(),
   onStatusChange: (sub) =>
     trpcClient.connectivity.onStatusChange.subscribe(undefined, sub),
 };
 container.bind(CONNECTIVITY_CLIENT).toConstantValue(connectivityClient);
+
+// browser tabs client — passthrough over the renderer host client
+const browserTabsClient: BrowserTabsClient = {
+  getSnapshot: () => trpcClient.browserTabs.getSnapshot.query(),
+  getPrimaryWindowId: () => trpcClient.browserTabs.getPrimaryWindowId.query(),
+  openOrFocus: (input) => trpcClient.browserTabs.openOrFocus.mutate(input),
+  newBlankTab: (input) => trpcClient.browserTabs.newBlankTab.mutate(input),
+  setTabTarget: (input) => trpcClient.browserTabs.setTabTarget.mutate(input),
+  close: (tabId) => trpcClient.browserTabs.close.mutate({ tabId }),
+  reorder: (input) => trpcClient.browserTabs.reorder.mutate(input),
+  setActiveTab: (input) => trpcClient.browserTabs.setActiveTab.mutate(input),
+  onSnapshotChange: (sub) =>
+    trpcClient.browserTabs.onSnapshotChange.subscribe(undefined, sub),
+};
+container.bind(BROWSER_TABS_CLIENT).toConstantValue(browserTabsClient);
+
+// discord presence client — passthrough over the local main-process router
+const discordPresenceClient: DiscordPresenceClient = {
+  getState: () => trpcClient.discordPresence.getState.query(),
+  setEnabled: async (enabled) => {
+    await trpcClient.discordPresence.setEnabled.mutate({ enabled });
+  },
+  setShowTaskTitle: async (value) => {
+    await trpcClient.discordPresence.setShowTaskTitle.mutate({ value });
+  },
+  setShowRepoName: async (value) => {
+    await trpcClient.discordPresence.setShowRepoName.mutate({ value });
+  },
+  setActivity: async (intent) => {
+    await trpcClient.discordPresence.setActivity.mutate(intent);
+  },
+  onStatusChanged: (onData) => {
+    const sub = trpcClient.discordPresence.onStatusChanged.subscribe(
+      undefined,
+      { onData },
+    );
+    return () => sub.unsubscribe();
+  },
+};
+container.bind(DISCORD_PRESENCE_CLIENT).toConstantValue(discordPresenceClient);
 
 // terminal shell client
 const shellClient: ShellClient = {
@@ -335,6 +387,11 @@ container
   .bind(CLOUD_ARTIFACT_READ_FILE_AS_BASE64)
   .toConstantValue((filePath: string) =>
     trpcClient.fs.readFileAsBase64.query({ filePath }),
+  );
+container
+  .bind(CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL)
+  .toConstantValue((skillBundleRef) =>
+    hostTrpcClient.skills.bundleLocal.query(skillBundleRef),
   );
 container.bind(LLM_GATEWAY_SERVICE).toConstantValue({
   prompt: (

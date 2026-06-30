@@ -1,4 +1,5 @@
 import type { AcpMessage } from "@posthog/shared";
+import { createAppendOnlyTracker } from "./appendOnlyTracker";
 
 export interface ContextBreakdown {
   systemPrompt: number;
@@ -18,8 +19,10 @@ export interface ContextUsage {
   breakdown: ContextBreakdown | null;
 }
 
+type ContextUsageAggregate = Omit<ContextUsage, "breakdown">;
+
 export function extractContextUsage(events: AcpMessage[]): ContextUsage | null {
-  let aggregate: Omit<ContextUsage, "breakdown"> | null = null;
+  let aggregate: ContextUsageAggregate | null = null;
   let breakdown: ContextBreakdown | null = null;
 
   for (let i = events.length - 1; i >= 0; i--) {
@@ -37,9 +40,29 @@ export function extractContextUsage(events: AcpMessage[]): ContextUsage | null {
   return { ...aggregate, breakdown };
 }
 
+interface ContextUsageState {
+  aggregate: ContextUsageAggregate | null;
+  breakdown: ContextBreakdown | null;
+}
+
+export function createContextUsageTracker() {
+  return createAppendOnlyTracker<ContextUsageState, ContextUsage | null>({
+    init: () => ({ aggregate: null, breakdown: null }),
+    processEvent: (state, event) => {
+      const msg = event.message;
+      state.aggregate = extractAggregate(msg) ?? state.aggregate;
+      state.breakdown = extractBreakdown(msg) ?? state.breakdown;
+    },
+    getResult: (state) =>
+      state.aggregate
+        ? { ...state.aggregate, breakdown: state.breakdown }
+        : null,
+  });
+}
+
 function extractAggregate(
   msg: AcpMessage["message"],
-): Omit<ContextUsage, "breakdown"> | null {
+): ContextUsageAggregate | null {
   if (
     "method" in msg &&
     msg.method === "session/update" &&

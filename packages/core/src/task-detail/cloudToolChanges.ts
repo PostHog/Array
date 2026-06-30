@@ -2,7 +2,11 @@ import type {
   ToolCallContent,
   ToolCallLocation,
 } from "@agentclientprotocol/sdk";
-import { type AcpMessage, isJsonRpcNotification } from "@posthog/shared";
+import {
+  type AcpMessage,
+  isBinaryFile,
+  isJsonRpcNotification,
+} from "@posthog/shared";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 
 function getContentText(
@@ -138,6 +142,22 @@ function getDiffStats(
   return { added, removed };
 }
 
+const diffStatsCache = new WeakMap<
+  Extract<ToolCallContent, { type: "diff" }>,
+  { added?: number; removed?: number }
+>();
+
+export function cachedDiffStats(
+  diff: Extract<ToolCallContent, { type: "diff" }> | undefined,
+): { added?: number; removed?: number } {
+  if (!diff) return {};
+  const cached = diffStatsCache.get(diff);
+  if (cached) return cached;
+  const stats = getDiffStats(diff.oldText, diff.newText);
+  diffStatsCache.set(diff, stats);
+  return stats;
+}
+
 export interface CloudEventSummary {
   toolCalls: Map<string, ParsedToolCall>;
 }
@@ -266,7 +286,7 @@ export function extractCloudToolChangedFiles(
         status: "deleted",
       };
     } else {
-      const diffStats = getDiffStats(diff?.oldText, diff?.newText);
+      const diffStats = isBinaryFile(path) ? {} : cachedDiffStats(diff);
       file = {
         path,
         status: kind === "write" && !diff?.oldText ? "added" : "modified",

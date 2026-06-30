@@ -38,40 +38,9 @@ export async function overlayDownloadedSkills(
   }
 }
 
-/**
- * Syncs skills from the effective plugin dir to `codexSkillsDir` for Codex.
- */
-export async function syncCodexSkills(
-  pluginPath: string,
-  codexSkillsDir: string,
-): Promise<void> {
-  const effectiveSkillsDir = join(pluginPath, "skills");
-  if (!existsSync(effectiveSkillsDir)) {
-    return;
-  }
-
-  try {
-    await mkdir(codexSkillsDir, { recursive: true });
-
-    const entries = await readdir(effectiveSkillsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const src = join(effectiveSkillsDir, entry.name);
-        const dest = join(codexSkillsDir, entry.name);
-        await rm(dest, { recursive: true, force: true });
-        await cp(src, dest, { recursive: true });
-      }
-    }
-  } catch {
-    // Fire-and-forget — don't block startup or updates on Codex sync
-  }
-}
-
 export interface UpdateSkillsInput {
   runtimeSkillsDir: string;
   runtimePluginDir: string;
-  pluginPath: string;
-  codexSkillsDir: string;
   tempDir: string;
   skillsZipUrl: string;
   contextMillZipUrl: string;
@@ -184,17 +153,6 @@ export class UpdateSkillsSaga extends Saga<
         );
       } catch (err) {
         this.log.warn("Failed to overlay skills", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    });
-
-    // Step 6: sync codex skills (non-fatal)
-    await this.readOnlyStep("sync-codex-skills", async () => {
-      try {
-        await syncCodexSkills(input.pluginPath, input.codexSkillsDir);
-      } catch (err) {
-        this.log.warn("Failed to sync codex skills", {
           error: err instanceof Error ? err.message : String(err),
         });
       }

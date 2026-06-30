@@ -11,6 +11,7 @@ import {
 import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { ChangedFile } from "@posthog/shared/domain-types";
+import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef } from "react";
 import { WORKSPACE_QUERY_KEY } from "../workspace/identifiers";
@@ -94,6 +95,7 @@ export function useGitInteraction(
   const store = useGitInteractionStore();
   const { actions: modal } = store;
   const pushAbortRef = useRef<AbortController | null>(null);
+  const { isOnline } = useConnectivity();
 
   const git = useGitQueries(repoPath);
 
@@ -114,6 +116,7 @@ export function useGitInteraction(
         ghStatus: git.ghStatus ?? null,
         repoInfo: git.repoInfo ?? null,
         prStatus: git.prStatus ?? null,
+        isOnline,
       }),
     [
       repoPath,
@@ -130,6 +133,7 @@ export function useGitInteraction(
       git.ghStatus,
       git.repoInfo,
       git.prStatus,
+      isOnline,
     ],
   );
 

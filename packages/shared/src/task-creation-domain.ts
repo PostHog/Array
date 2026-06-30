@@ -23,6 +23,9 @@ export interface TaskCreationInput {
   // When the branch exists only on the remote, opt in to fetching and checking
   // it out locally into the worktree (set after the user confirms).
   allowRemoteBranchCheckout?: boolean;
+  // When a worktree is already checked out on the branch, opt in to reusing it
+  // for this task instead of creating a new one (set after the user confirms).
+  reuseExistingWorktree?: boolean;
   githubIntegrationId?: number;
   githubUserIntegrationId?: string;
   executionMode?: ExecutionMode;
@@ -43,6 +46,29 @@ export interface TaskCreationInput {
   channelContext?: string;
   /** Display name of that channel, embedded in the context block for the UI. */
   channelName?: string;
+  /**
+   * The user's saved personalization (Settings → Personalization custom
+   * instructions). Cloud-only: local tasks already receive these through the
+   * workspace-server system prompt, so the saga folds this into the cloud run's
+   * first message instead, to avoid double-injecting.
+   */
+  customInstructions?: string;
+  /**
+   * When true, the task may be created without a repo/branch. Used by the
+   * channels "generic chat box": the agent decides at runtime whether it needs
+   * a repo and attaches one lazily. A local session still starts, in a scratch
+   * working directory, so non-code tasks (analysis, email) can run repo-less.
+   */
+  allowNoRepo?: boolean;
+  // Label of the Home-tab quick action that started this run (e.g. "Fix CI"), so the
+  // workstream can show which quick actions have been run against it.
+  homeQuickActionLabel?: string;
+  /**
+   * Continue a Claude Code CLI session by importing its transcript and resuming
+   * with replay. Local mode only; forces the claude adapter. `branch` is what the
+   * session last worked on, linked so the branch-mismatch prompt can fire.
+   */
+  importedClaudeSession?: { sourceSessionId: string; branch?: string | null };
 }
 
 export interface TaskCreationOutput {

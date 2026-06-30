@@ -2,10 +2,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { SKILL_EXISTS_MARKER } from "@posthog/shared";
 import type { Unzipped } from "fflate";
-import { inject, injectable } from "inversify";
+import { injectable } from "inversify";
 import { unzipAsync } from "../posthog-plugin/extract-zip";
-import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
-import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import { getUserSkillsDir, isProbablyText } from "../skills/skill-discovery";
 import { validateSkillDirName } from "../skills/skills";
 import {
@@ -110,11 +108,6 @@ export function collectSkillFiles(
 export class SkillsMarketplaceService {
   private archives = new Map<string, CachedArchive>();
 
-  constructor(
-    @inject(POSTHOG_PLUGIN_SERVICE)
-    private readonly plugin: PosthogPluginService,
-  ) {}
-
   async search(query: string): Promise<MarketplaceSearchOutput> {
     const trimmed = query.trim();
     if (trimmed.length < 2) return { results: [] };
@@ -197,8 +190,6 @@ export class SkillsMarketplaceService {
     const state = await readInstalledState();
     state.installed[ref.skillId] = { repo: ref.source };
     await writeInstalledState(state);
-
-    void this.plugin.mirrorUserSkills().catch(() => {});
 
     return { path: target };
   }

@@ -2,13 +2,20 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ArchivedReportList } from "@/features/inbox/components/ArchivedReportList";
 import { FilterSheet } from "@/features/inbox/components/FilterSheet";
 import { FloatingInboxHeader } from "@/features/inbox/components/FloatingInboxHeader";
-import { InboxViewToggle } from "@/features/inbox/components/InboxViewToggle";
+import {
+  type InboxViewMode,
+  InboxViewToggle,
+} from "@/features/inbox/components/InboxViewToggle";
 import { ReportList } from "@/features/inbox/components/ReportList";
 import { ReviewerFilterSheet } from "@/features/inbox/components/ReviewerFilterSheet";
 import { TinderView } from "@/features/inbox/components/TinderView";
-import { useInboxReports } from "@/features/inbox/hooks/useInboxReports";
+import {
+  useArchivedReports,
+  useInboxReports,
+} from "@/features/inbox/hooks/useInboxReports";
 import {
   decidedIds,
   useDismissedReportsStore,
@@ -23,8 +30,6 @@ import { buildInboxViewedProperties } from "@/features/inbox/utils";
 import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
 import { ANALYTICS_EVENTS, useAnalytics } from "@/lib/analytics";
 
-type InboxViewMode = "list" | "tinder";
-
 export default function InboxScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -33,6 +38,7 @@ export default function InboxScreen() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [reviewerOpen, setReviewerOpen] = useState(false);
   const [viewMode, setViewMode] = useState<InboxViewMode>("list");
+  const archived = useArchivedReports({ enabled: viewMode === "archive" });
   const reviewerFilterCount = useInboxFilterStore(
     (s) => s.suggestedReviewerFilter.length,
   );
@@ -134,6 +140,11 @@ export default function InboxScreen() {
           onReportPress={handleReportPress}
           contentInsetTop={headerHeight}
         />
+      ) : viewMode === "archive" ? (
+        <ArchivedReportList
+          onReportPress={handleReportPress}
+          contentInsetTop={headerHeight}
+        />
       ) : (
         <View style={{ paddingTop: headerHeight }} className="flex-1">
           <TinderView
@@ -145,8 +156,8 @@ export default function InboxScreen() {
       )}
 
       <FloatingInboxHeader
-        isFetching={isFetching}
-        hasError={!!error}
+        isFetching={viewMode === "archive" ? archived.isFetching : isFetching}
+        hasError={viewMode === "archive" ? !!archived.error : !!error}
         reviewerFilterCount={reviewerFilterCount}
         showFilters={viewMode === "list"}
         onReviewerPress={() => setReviewerOpen(true)}

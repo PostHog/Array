@@ -34,14 +34,18 @@ import {
 import type { IRepositoryRepository } from "../../db/repositories/repository-repository";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
 import type { IWorktreeRepository } from "../../db/repositories/worktree-repository";
+import {
+  IMPORTED_SESSION_CLEANER,
+  type ImportedSessionCleaner,
+} from "../claude-cli-sessions/identifiers";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import { getBranchFromPath, hasAnyFiles } from "../repo-fs-query/repo-fs-query";
 import { SUSPENSION_SERVICE } from "../suspension/identifiers";
 import type { SuspensionService } from "../suspension/suspension";
-import { deriveWorktreePath as deriveWorktreePathFromBase } from "../worktree-path/worktree-path";
 import {
   deleteWorktree as deleteGitWorktree,
+  listLinkedWorktrees,
   listTwigWorktrees,
   resolveLocalWorktreePath,
 } from "../worktree-query/worktree-query";
@@ -72,6 +76,7 @@ import type {
   WorkspaceWarningPayload,
   WorktreeInfo,
 } from "./schemas";
+import { scratchBasePath } from "./scratch";
 
 type TaskAssociation =
   | { taskId: string; folderId: string; mode: "local" }
@@ -80,9 +85,21 @@ type TaskAssociation =
       taskId: string;
       folderId: string;
       mode: "worktree";
+      /** Cosmetic worktree name, surfaced as `worktreeName` in projections. */
       worktree: string;
+      /** Authoritative on-disk worktree path, read from the stored row. */
+      path: string;
       branchName: string | null;
     };
+
+/** True when `child` resolves to a path strictly inside `parent`. */
+function isPathUnder(child: string, parent: string): boolean {
+  const rel = path.relative(parent, child);
+  const up = `..${path.sep}`;
+  return (
+    rel !== "" && rel !== ".." && !rel.startsWith(up) && !path.isAbsolute(rel)
+  );
+}
 
 export const WorkspaceServiceEvent = {
   Error: "error",
@@ -129,6 +146,8 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     private readonly workspaceSettings: IWorkspaceSettings,
     @inject(ANALYTICS_SERVICE)
     private readonly analytics: IAnalytics,
+    @inject(IMPORTED_SESSION_CLEANER)
+    private readonly importedSessionCleaner: ImportedSessionCleaner,
     @inject(ROOT_LOGGER)
     logger: RootLogger,
   ) {
@@ -138,14 +157,6 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
   private creatingWorkspaces = new Map<string, Promise<WorkspaceInfo>>();
   private branchWatcherInitialized = false;
-
-  private deriveWorktreePath(folderPath: string, worktreeName: string): string {
-    return deriveWorktreePathFromBase(
-      this.workspaceSettings.getWorktreeLocation(),
-      folderPath,
-      worktreeName,
-    );
-  }
 
   private findTaskAssociation(taskId: string): TaskAssociation | null {
     const workspace = this.workspaceRepo.findByTaskId(taskId);
@@ -169,6 +180,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         folderId: workspace.repositoryId,
         mode: "worktree",
         worktree: worktree.name,
+        path: worktree.path,
         branchName: null,
       };
     }
@@ -209,6 +221,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
           folderId: workspace.repositoryId,
           mode: "worktree",
           worktree: worktree.name,
+          path: worktree.path,
           branchName: null,
         });
       } else {
@@ -250,10 +263,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     const associations = this.getAllTaskAssociations();
     for (const assoc of associations) {
       if (assoc.mode !== "worktree") continue;
-      const folderPath = this.getFolderPath(assoc.folderId);
-      if (!folderPath) continue;
-      const derivedPath = this.deriveWorktreePath(folderPath, assoc.worktree);
-      if (derivedPath === worktreePath && assoc.branchName !== newBranch) {
+      if (assoc.path === worktreePath && assoc.branchName !== newBranch) {
         this.updateAssociationBranchName(assoc.taskId, newBranch);
         this.emit(WorkspaceServiceEvent.BranchChanged, {
           taskId: assoc.taskId,
@@ -277,11 +287,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       if (!folderPath) continue;
 
       if (assoc.mode === "worktree") {
-        const worktreePath = this.deriveWorktreePath(
-          folderPath,
-          assoc.worktree,
-        );
-        if (worktreePath !== repoPath) continue;
+        if (assoc.path !== repoPath) continue;
 
         const currentBranch = await getBranchFromPath(repoPath);
         if (currentBranch !== null && currentBranch !== assoc.branchName) {
@@ -435,28 +441,94 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
   ): Promise<CheckWorktreeBranchOutput> {
     const { mainRepoPath, branch } = options;
 
-    const defaultBranch = await getDefaultBranch(mainRepoPath, {
-      abortSignal: signal,
-    }).catch(() =>
-      getCurrentBranch(mainRepoPath, { abortSignal: signal }).then(
-        (b) => b ?? "main",
+    const [existingWorktree, defaultBranch] = await Promise.all([
+      this.findExistingWorktreeForBranch(mainRepoPath, branch),
+      getDefaultBranch(mainRepoPath, { abortSignal: signal }).catch(() =>
+        getCurrentBranch(mainRepoPath, { abortSignal: signal }).then(
+          (b) => b ?? "main",
+        ),
       ),
-    );
+    ]);
+    // Trunk intentionally supports many coexisting detached worktrees, so never
+    // offer to reuse an existing worktree for it; a trunk task always gets its
+    // own.
     if (branch === defaultBranch) {
-      return { status: "trunk" };
+      return {
+        status: "trunk",
+        existingWorktreePath: null,
+        existingWorktreeTaskId: null,
+      };
+    }
+
+    // Reuse is only offered for an *unused* worktree. If a task already holds
+    // the worktree on this branch, report that task instead so the renderer can
+    // block the duplicate and point the user at it.
+    let reuseFields: {
+      existingWorktreePath: string | null;
+      existingWorktreeTaskId: string | null;
+    } = { existingWorktreePath: null, existingWorktreeTaskId: null };
+    if (existingWorktree) {
+      const [occupant] = this.getWorktreeTasks(existingWorktree.worktreePath);
+      reuseFields = occupant
+        ? {
+            existingWorktreePath: null,
+            existingWorktreeTaskId: occupant.taskId,
+          }
+        : {
+            existingWorktreePath: existingWorktree.worktreePath,
+            existingWorktreeTaskId: null,
+          };
     }
 
     if (await branchExists(mainRepoPath, branch, { abortSignal: signal })) {
-      return { status: "local" };
+      return { status: "local", ...reuseFields };
     }
 
     if (
       await remoteBranchExists(mainRepoPath, branch, { abortSignal: signal })
     ) {
-      return { status: "remote-only" };
+      return { status: "remote-only", ...reuseFields };
     }
 
-    return { status: "missing" };
+    return { status: "missing", ...reuseFields };
+  }
+
+  /**
+   * Finds a worktree already checked out on `branch` in any location, returning
+   * it as a `WorktreeInfo` ready to reuse, or null when none exists. Worktrees
+   * outside the managed base path qualify too: the stored `path` column is the
+   * source of truth for a task's worktree, so an externally-created worktree
+   * round-trips just like a managed one.
+   */
+  private async findExistingWorktreeForBranch(
+    mainRepoPath: string,
+    branch: string,
+  ): Promise<WorktreeInfo | null> {
+    const linkedWorktrees = await listLinkedWorktrees(mainRepoPath);
+    const match = linkedWorktrees.find((wt) => wt.branch === branch);
+    if (!match) return null;
+
+    // `worktreeName` is a cosmetic label only; `worktreePath` is authoritative.
+    // Recover the name layout-aware for managed worktrees: new layout is
+    // `<base>/<name>/<repo>` (name is the parent dir), legacy is
+    // `<base>/<repo>/<name>` (name is the final segment). For an external
+    // worktree neither layout holds, so the final segment is a sensible label.
+    const repoName = path.basename(mainRepoPath);
+    const finalSegment = path.basename(match.worktreePath);
+    const worktreeName =
+      finalSegment === repoName
+        ? path.basename(path.dirname(match.worktreePath))
+        : finalSegment;
+
+    // baseBranch/createdAt are unknown for an already-existing worktree; mirror
+    // WorktreeManager.listWorktrees() and leave them empty rather than fabricate.
+    return {
+      worktreePath: match.worktreePath,
+      worktreeName,
+      branchName: branch,
+      baseBranch: "",
+      createdAt: "",
+    };
   }
 
   async createWorkspace(options: CreateWorkspaceInput): Promise<WorkspaceInfo> {
@@ -490,6 +562,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       branch,
       useExistingBranch,
       allowRemoteBranchCheckout,
+      reuseExistingWorktree,
     } = options;
 
     const existingWorkspace = await this.getWorkspaceInfo(taskId);
@@ -587,7 +660,26 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         this.provisioning.emitOutput(taskId, data);
       };
 
-      if (isTrunkSelected) {
+      const existingWorktree = reuseExistingWorktree
+        ? await this.findExistingWorktreeForBranch(mainRepoPath, selectedBranch)
+        : null;
+
+      // Reuse only an unused worktree. The renderer already gates on this, but
+      // re-check here so a lost race (the worktree got claimed between preflight
+      // and now) fails the saga step rather than sharing one worktree across two
+      // tasks.
+      if (existingWorktree) {
+        const [occupant] = this.getWorktreeTasks(existingWorktree.worktreePath);
+        if (occupant) {
+          throw new Error(
+            `Worktree at ${existingWorktree.worktreePath} is already used by task ${occupant.taskId}`,
+          );
+        }
+        this.log.info(
+          `Reusing existing worktree for branch ${selectedBranch}: ${existingWorktree.worktreePath}`,
+        );
+        worktree = existingWorktree;
+      } else if (isTrunkSelected) {
         this.log.info(
           `Trunk branch selected (${defaultBranch}), creating detached worktree`,
         );
@@ -618,15 +710,13 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
               ? checkoutError.message
               : String(checkoutError);
           if (errorMessage.includes("is already used by worktree")) {
-            this.log.info(
-              `Branch ${selectedBranch} is occupied, falling back to detached worktree`,
-            );
-            worktree = await worktreeManager.createWorktree({
-              baseBranch: selectedBranch,
-              onOutput,
-            });
-            this.log.info(
-              `Created detached worktree from occupied branch: ${worktree.worktreeName} at ${worktree.worktreePath}`,
+            // The branch already has a worktree. Reuse is handled upfront
+            // (checkWorktreeBranch + reuseExistingWorktree); reaching here means
+            // that path was bypassed (e.g. the preflight check errored). Fail
+            // loudly instead of creating a detached duplicate that lands on a
+            // detached HEAD rather than the requested branch.
+            throw new Error(
+              `Branch ${selectedBranch} already has a worktree checked out`,
             );
           } else if (
             allowRemoteBranchCheckout &&
@@ -696,8 +786,25 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
   async deleteWorkspace(taskId: string, mainRepoPath: string): Promise<void> {
     this.log.info(`Deleting workspace for task ${taskId}`);
 
+    // Drop any imported CLI snapshot first, before the early returns below.
+    // Best-effort: a cleanup failure must not block deleting the task.
+    await this.importedSessionCleaner
+      .deleteImportForTask(taskId)
+      .catch((error) => {
+        this.log.warn("Failed to clean up imported session", { taskId, error });
+      });
+
     const association = this.findTaskAssociation(taskId);
     if (!association) {
+      // Repo-less channel task: no workspace row, just a scratch dir to remove.
+      const scratchPath = this.getScratchPath(taskId);
+      if (fs.existsSync(scratchPath)) {
+        await this.agent.cancelSessionsByTaskId(taskId);
+        this.processTracking.killByTaskId(taskId);
+        await fs.promises.rm(scratchPath, { recursive: true, force: true });
+        this.log.info(`Scratch workspace deleted for task ${taskId}`);
+        return;
+      }
       this.log.warn(`No workspace found for task ${taskId}`);
       return;
     }
@@ -721,7 +828,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     let worktreePath: string | null = null;
 
     if (association.mode === "worktree") {
-      worktreePath = this.deriveWorktreePath(folderPath, association.worktree);
+      worktreePath = association.path;
     }
 
     await this.agent.cancelSessionsByTaskId(taskId);
@@ -743,7 +850,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       );
 
       if (otherWorkspacesForFolder.length === 0) {
-        await this.cleanupRepoWorktreeFolder(folderPath);
+        await this.cleanupRepoWorktreeFolder(folderPath, worktreePath);
       }
     }
 
@@ -760,8 +867,25 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     this.workspaceRepo.deleteByTaskId(taskId);
   }
 
-  private async cleanupRepoWorktreeFolder(folderPath: string): Promise<void> {
+  /**
+   * Reclaims the managed `<base>/<repo>` parent folder once its last worktree is
+   * gone. The folder that gets removed is derived from `folderPath`, not from
+   * `worktreePath`; `worktreePath` is read only to confirm the deleted worktree
+   * was managed (lived under the base path) before reclaiming anything.
+   */
+  private async cleanupRepoWorktreeFolder(
+    folderPath: string,
+    worktreePath: string,
+  ): Promise<void> {
     const worktreeBasePath = this.workspaceSettings.getWorktreeLocation();
+
+    // Only reclaim the managed `<base>/<repo>` parent folder for worktrees that
+    // actually live under the managed base path. Externally located worktrees
+    // never created it, so its contents are unrelated.
+    if (!isPathUnder(worktreePath, worktreeBasePath)) {
+      return;
+    }
+
     const repoName = path.basename(folderPath);
     const repoWorktreeFolderPath = path.join(worktreeBasePath, repoName);
 
@@ -811,11 +935,84 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     }
   }
 
+  /**
+   * Base directory holding per-task scratch dirs for repo-less channel tasks.
+   * A sibling of the worktree location so it lives under the same managed
+   * storage root but never shows up in worktree enumeration.
+   */
+  private getScratchPath(taskId: string): string {
+    const base = path.resolve(
+      scratchBasePath(this.workspaceSettings.getWorktreeLocation()),
+    );
+    const scratchPath = path.resolve(base, taskId);
+    // A task's scratch dir is always a direct child of the base. Anything else
+    // (a ".." traversal, an empty id, a nested path) escapes it, so reject it:
+    // getScratchPath feeds mkdir and a recursive rm, and taskId can be
+    // attacker-influenced.
+    if (path.dirname(scratchPath) !== base) {
+      throw new Error(`Invalid scratch task id: ${taskId}`);
+    }
+    return scratchPath;
+  }
+
+  /**
+   * Ensure a per-task scratch working directory exists for a repo-less channel
+   * task ("generic chat box"). The agent starts here and clones a repo into a
+   * subdirectory only if it decides it needs one.
+   */
+  async ensureScratchDir(taskId: string): Promise<string> {
+    const scratchPath = this.getScratchPath(taskId);
+    await fs.promises.mkdir(scratchPath, { recursive: true });
+    return scratchPath;
+  }
+
+  /** Task IDs that have a scratch dir on disk (repo-less channel tasks). */
+  private listScratchTaskIds(): string[] {
+    const base = scratchBasePath(this.workspaceSettings.getWorktreeLocation());
+    try {
+      return fs
+        .readdirSync(base, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * A repo-less channel task has no workspace row — its working directory is a
+   * scratch dir. Synthesize a local-mode Workspace from it so the rest of the
+   * app (cwd resolution, session connect/reconnect, verify) treats it as a
+   * normal local workspace instead of prompting the user to pick a repo.
+   */
+  private buildScratchWorkspace(taskId: string): Workspace {
+    return {
+      taskId,
+      folderId: "",
+      folderPath: this.getScratchPath(taskId),
+      mode: "local",
+      worktreePath: null,
+      worktreeName: null,
+      branchName: null,
+      baseBranch: null,
+      linkedBranch: null,
+      createdAt: new Date().toISOString(),
+      isScratch: true,
+    };
+  }
+
   async verifyWorkspaceExists(
     taskId: string,
   ): Promise<{ exists: boolean; missingPath?: string }> {
     const association = this.findTaskAssociation(taskId);
     if (!association) {
+      // Repo-less channel tasks create no workspace association — they run in a
+      // scratch dir. Treat an existing scratch dir as a valid workspace so the
+      // session isn't flagged as "working directory no longer exists".
+      const scratchPath = this.getScratchPath(taskId);
+      if (fs.existsSync(scratchPath)) {
+        return { exists: true };
+      }
       return { exists: false };
     }
 
@@ -838,10 +1035,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     }
 
     if (association.mode === "worktree") {
-      const worktreePath = this.deriveWorktreePath(
-        folderPath,
-        association.worktree,
-      );
+      const worktreePath = association.path;
       const exists = fs.existsSync(worktreePath);
       if (!exists) {
         this.log.info(`Worktree for task ${taskId} no longer exists`);
@@ -855,7 +1049,13 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
   async getWorkspace(taskId: string): Promise<Workspace | null> {
     const assoc = this.findTaskAssociation(taskId);
-    if (!assoc) return null;
+    if (!assoc) {
+      // Repo-less channel task: working dir is a scratch dir, no workspace row.
+      if (fs.existsSync(this.getScratchPath(taskId))) {
+        return this.buildScratchWorkspace(taskId);
+      }
+      return null;
+    }
 
     const dbRow = this.workspaceRepo.findByTaskId(taskId);
     const linkedBranch = dbRow?.linkedBranch ?? null;
@@ -884,7 +1084,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
     if (assoc.mode === "worktree") {
       worktreeName = assoc.worktree;
-      worktreePath = this.deriveWorktreePath(folderPath, worktreeName);
+      worktreePath = assoc.path;
       const gitBranch = await getBranchFromPath(worktreePath);
       branchName = gitBranch ?? assoc.branchName;
     } else if (assoc.mode === "local") {
@@ -932,22 +1132,17 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     let worktreeInfo: WorktreeInfo | null = null;
     let branchName: string | null = null;
 
-    if (association.mode === "worktree") {
-      if (folderPath) {
-        const worktreePath = this.deriveWorktreePath(
-          folderPath,
-          association.worktree,
-        );
-        const gitBranch = await getBranchFromPath(worktreePath);
-        branchName = gitBranch ?? association.branchName;
-        worktreeInfo = {
-          worktreePath,
-          worktreeName: association.worktree,
-          branchName,
-          baseBranch: "main",
-          createdAt: new Date().toISOString(),
-        };
-      }
+    if (association.mode === "worktree" && folderPath) {
+      const worktreePath = association.path;
+      const gitBranch = await getBranchFromPath(worktreePath);
+      branchName = gitBranch ?? association.branchName;
+      worktreeInfo = {
+        worktreePath,
+        worktreeName: association.worktree,
+        branchName,
+        baseBranch: "main",
+        createdAt: new Date().toISOString(),
+      };
     } else if (association.mode === "local" && folderPath) {
       branchName = await getBranchFromPath(folderPath);
     }
@@ -994,7 +1189,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
       if (assoc.mode === "worktree") {
         worktreeName = assoc.worktree;
-        worktreePath = this.deriveWorktreePath(folderPath, worktreeName);
+        worktreePath = assoc.path;
       }
 
       let branchName: string | null = null;
@@ -1020,6 +1215,14 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         linkedBranch: linkedBranchByTaskId.get(assoc.taskId) ?? null,
         createdAt: new Date().toISOString(),
       };
+    }
+
+    // Repo-less channel tasks (scratch dirs) have no workspace row; surface
+    // them as local workspaces so they resolve a cwd and skip the repo prompt.
+    for (const taskId of this.listScratchTaskIds()) {
+      if (!workspaces[taskId]) {
+        workspaces[taskId] = this.buildScratchWorkspace(taskId);
+      }
     }
 
     return workspaces;
@@ -1112,16 +1315,17 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       .map((a) => ({ taskId: a.taskId }));
   }
 
+  // Paths are compared verbatim against the stored `path` column, which holds
+  // git's reported worktree path as-is (the same value `listLinkedWorktrees`
+  // returns). Don't normalize one side only (e.g. add `path.resolve` here but
+  // not where the path is stored) or occupancy matching silently breaks.
   getWorktreeTasks(worktreePath: string): Array<{ taskId: string }> {
     const associations = this.getAllTaskAssociations();
     const result: Array<{ taskId: string }> = [];
 
     for (const assoc of associations) {
       if (assoc.mode !== "worktree") continue;
-      const folderPath = this.getFolderPath(assoc.folderId);
-      if (!folderPath) continue;
-      const derivedPath = this.deriveWorktreePath(folderPath, assoc.worktree);
-      if (derivedPath === worktreePath) {
+      if (assoc.path === worktreePath) {
         result.push({ taskId: assoc.taskId });
       }
     }

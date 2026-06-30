@@ -4,7 +4,6 @@ import { AppLifecycleService } from "./service";
 
 const {
   mockAppLifecycle,
-  mockContainer,
   mockDatabaseService,
   mockSuspensionService,
   mockWatcherRegistry,
@@ -40,10 +39,6 @@ const {
       onQuit: vi.fn(() => () => {}),
       registerDeepLinkScheme: vi.fn(),
     },
-    mockContainer: {
-      unbindAll: vi.fn(() => Promise.resolve()),
-      get: vi.fn(() => mockDatabaseService),
-    },
     mockDatabaseService,
     mockTrackAppEvent: vi.fn(),
     mockShutdownPostHog: vi.fn(() => Promise.resolve()),
@@ -72,10 +67,6 @@ vi.mock("../../platform-adapters/posthog-analytics.js", () => ({
     track: mockTrackAppEvent,
     shutdown: mockShutdownPostHog,
   },
-}));
-
-vi.mock("../../di/container.js", () => ({
-  container: mockContainer,
 }));
 
 vi.mock("@posthog/shared/analytics-events", () => ({
@@ -137,13 +128,6 @@ describe("AppLifecycleService", () => {
   });
 
   describe("shutdown", () => {
-    it("unbinds all container services", async () => {
-      const promise = service.shutdown();
-      await vi.runAllTimersAsync();
-      await promise;
-      expect(mockContainer.unbindAll).toHaveBeenCalled();
-    });
-
     it("tracks app quit event", async () => {
       const promise = service.shutdown();
       await vi.runAllTimersAsync();
@@ -164,9 +148,6 @@ describe("AppLifecycleService", () => {
       mockDatabaseService.close.mockImplementation(() => {
         callOrder.push("dbClose");
       });
-      mockContainer.unbindAll.mockImplementation(async () => {
-        callOrder.push("unbindAll");
-      });
       mockTrackAppEvent.mockImplementation(() => {
         callOrder.push("trackAppEvent");
       });
@@ -183,7 +164,6 @@ describe("AppLifecycleService", () => {
 
       expect(callOrder).toEqual([
         "dbClose",
-        "unbindAll",
         "trackAppEvent",
         "shutdownOtelTransport",
         "shutdownPostHog",
@@ -195,17 +175,6 @@ describe("AppLifecycleService", () => {
       await vi.runAllTimersAsync();
       await promise;
       expect(mockDatabaseService.close).toHaveBeenCalled();
-    });
-
-    it("continues shutdown if container unbind fails", async () => {
-      mockContainer.unbindAll.mockRejectedValue(new Error("unbind failed"));
-
-      const promise = service.shutdown();
-      await vi.runAllTimersAsync();
-      await promise;
-
-      expect(mockTrackAppEvent).toHaveBeenCalled();
-      expect(mockShutdownPostHog).toHaveBeenCalled();
     });
 
     it("continues shutdown if PostHog shutdown fails", async () => {
@@ -225,7 +194,7 @@ describe("AppLifecycleService", () => {
     });
 
     it("force-exits when shutdown times out", async () => {
-      mockContainer.unbindAll.mockReturnValue(new Promise(() => {}));
+      mockShutdownOtelTransport.mockReturnValue(new Promise(() => {}));
 
       const promise = service.shutdown();
 
@@ -242,9 +211,6 @@ describe("AppLifecycleService", () => {
 
       mockDatabaseService.close.mockImplementation(() => {
         callOrder.push("dbClose");
-      });
-      mockContainer.unbindAll.mockImplementation(async () => {
-        callOrder.push("unbindAll");
       });
       mockAppLifecycle.exit.mockImplementation(() => {
         callOrder.push("exit");
@@ -263,6 +229,27 @@ describe("AppLifecycleService", () => {
       await vi.runAllTimersAsync();
       await promise;
       expect(mockAppLifecycle.exit).toHaveBeenCalledWith(0);
+    });
+
+    it("runs the beforeExit hook after shutdown and before exit", async () => {
+      const callOrder: string[] = [];
+
+      mockDatabaseService.close.mockImplementation(() => {
+        callOrder.push("dbClose");
+      });
+      mockAppLifecycle.exit.mockImplementation(() => {
+        callOrder.push("exit");
+      });
+      const beforeExit = vi.fn(async () => {
+        callOrder.push("beforeExit");
+      });
+
+      const promise = service.gracefulExit(beforeExit);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(beforeExit).toHaveBeenCalledTimes(1);
+      expect(callOrder).toEqual(["dbClose", "beforeExit", "exit"]);
     });
   });
 });

@@ -1,20 +1,20 @@
-import type { SignalReportTask, Task } from "@posthog/shared/domain-types";
+import type { Task } from "@posthog/shared/domain-types";
 
-export const REPOSITORY_SOURCE_RELATIONSHIPS: SignalReportTask["relationship"][] =
-  ["repo_selection", "research", "implementation"];
-
+/**
+ * Resolve the repository a report's work happened in. Association is derived
+ * from `task_run` artefacts — the repository is simply the first one any
+ * associated task carries, walking oldest-first (repo selection / research
+ * precede implementation).
+ */
 export async function resolveReportRepository(
-  reportTasks: SignalReportTask[],
+  associatedTasks: Array<{ taskId: string; startedAt: string }>,
   getTask: (taskId: string) => Promise<Task | null>,
 ): Promise<string | null> {
-  for (const relationship of REPOSITORY_SOURCE_RELATIONSHIPS) {
-    const reportTask = reportTasks.find(
-      (task) => task.relationship === relationship,
-    );
-    if (!reportTask) {
-      continue;
-    }
-    const task = await getTask(reportTask.task_id);
+  const ordered = [...associatedTasks].sort((a, b) =>
+    a.startedAt.localeCompare(b.startedAt),
+  );
+  for (const entry of ordered) {
+    const task = await getTask(entry.taskId);
     if (task?.repository) {
       return task.repository.toLowerCase();
     }

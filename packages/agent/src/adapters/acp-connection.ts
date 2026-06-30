@@ -8,6 +8,7 @@ import {
   type StreamPair,
 } from "../utils/streams";
 import { ClaudeAcpAgent } from "./claude/claude-agent";
+import type { GatewayEnv } from "./claude/session/options";
 import { CodexAcpAgent } from "./codex/codex-agent";
 import type { CodexProcessOptions } from "./codex/spawn";
 
@@ -30,6 +31,8 @@ export type AcpConnectionConfig = {
   posthogApiConfig?: PostHogAPIConfig;
   /** Defaults to true when posthogApiConfig is set. Set to false to disable enrichment. */
   enricherEnabled?: boolean;
+  /** Explicit gateway config for the Claude adapter — prevents global process.env mutation. */
+  claudeGatewayEnv?: GatewayEnv;
 };
 
 export type AcpConnection = {
@@ -114,6 +117,7 @@ function createClaudeConnection(config: AcpConnectionConfig): AcpConnection {
       ...config.processCallbacks,
       onStructuredOutput: config.onStructuredOutput,
       posthogApiConfig: resolveEnricherApiConfig(config),
+      gatewayEnv: config.claudeGatewayEnv,
     });
     return agent;
   }, agentStream);

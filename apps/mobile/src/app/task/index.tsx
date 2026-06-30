@@ -62,6 +62,7 @@ import { Pill } from "@/features/tasks/composer/Pill";
 import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPickerInline";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { useUserIntegrations } from "@/features/tasks/hooks/useUserIntegrations";
+import { useWarmTask } from "@/features/tasks/hooks/useWarmTask";
 import {
   generatePendingTaskKey,
   pendingTaskPromptStoreApi,
@@ -374,6 +375,18 @@ export default function NewTaskScreen() {
   const canSubmit =
     hasContent && isRepositorySelectionComplete(selection) && !creating;
   const showReasoningPill = modelSupportsReasoning(model);
+
+  // Best-effort prewarm; failures are swallowed. `selection.integrationId` is
+  // the GitHub installation id, not a PostHog integration id — the backend
+  // resolves the integration from the repository, so this only keys the warm.
+  useWarmTask({
+    repository: selection.repository,
+    githubIntegrationId: selection.integrationId,
+    composerIsEmpty: !hasContent,
+    runtimeAdapter: "claude",
+    model,
+    reasoningEffort: showReasoningPill ? reasoning : null,
+  });
 
   if (isLoading && hasGithubIntegration === null) {
     return (

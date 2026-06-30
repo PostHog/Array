@@ -155,3 +155,95 @@ export function isRepoInIntegration(
 ): boolean {
   return !repoKey || normalizeRepoKey(repoKey) in repositoryMap;
 }
+
+export function isEmptyRepositoryMap(map: Record<string, unknown>): boolean {
+  return Object.keys(map).length === 0;
+}
+
+export function sameUserRepositoryMap(
+  a: Record<string, UserRepositoryIntegrationRef>,
+  b: Record<string, UserRepositoryIntegrationRef>,
+): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => {
+    const left = a[key];
+    const right = b[key];
+    return (
+      !!right &&
+      left.userIntegrationId === right.userIntegrationId &&
+      left.installationId === right.installationId
+    );
+  });
+}
+
+export type RepositoryCacheAction = "write" | "clear" | "skip";
+
+export interface UserRepositoryCacheInputs {
+  integrationsPending: boolean;
+  reposPending: boolean;
+  reposErrored: boolean;
+  hasIntegrations: boolean;
+  liveRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
+  cachedRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
+}
+
+/**
+ * Decides how the persisted cold-start cache should track the live repository
+ * map: write fresh data, clear stale data, or leave the cache untouched.
+ */
+export function resolveUserRepositoryCacheAction({
+  integrationsPending,
+  reposPending,
+  reposErrored,
+  hasIntegrations,
+  liveRepositoryMap,
+  cachedRepositoryMap,
+}: UserRepositoryCacheInputs): RepositoryCacheAction {
+  if (integrationsPending) return "skip";
+  if (!hasIntegrations) {
+    return isEmptyRepositoryMap(cachedRepositoryMap) ? "skip" : "clear";
+  }
+  if (reposPending) return "skip";
+  if (isEmptyRepositoryMap(liveRepositoryMap)) {
+    // A failed fetch can return an empty map, so keep the last-known-good
+    // cache instead of clobbering it. A genuinely empty result clears the
+    // stale cache so a removed repo does not flash on the next cold start.
+    if (reposErrored) return "skip";
+    return isEmptyRepositoryMap(cachedRepositoryMap) ? "skip" : "clear";
+  }
+  if (sameUserRepositoryMap(liveRepositoryMap, cachedRepositoryMap)) {
+    return "skip";
+  }
+  return "write";
+}
+
+export interface EffectiveUserRepositoryMap {
+  effectiveRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
+  servingFromCache: boolean;
+}
+
+/**
+ * Picks the map the picker should render: the cached map stands in only while
+ * the live queries are loading and have produced nothing yet.
+ */
+export function resolveEffectiveUserRepositoryMap({
+  liveLoading,
+  liveRepositoryMap,
+  cachedRepositoryMap,
+}: {
+  liveLoading: boolean;
+  liveRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
+  cachedRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
+}): EffectiveUserRepositoryMap {
+  const servingFromCache =
+    liveLoading &&
+    isEmptyRepositoryMap(liveRepositoryMap) &&
+    !isEmptyRepositoryMap(cachedRepositoryMap);
+  return {
+    effectiveRepositoryMap: servingFromCache
+      ? cachedRepositoryMap
+      : liveRepositoryMap,
+    servingFromCache,
+  };
+}

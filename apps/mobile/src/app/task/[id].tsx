@@ -30,8 +30,18 @@ import {
   modelSupportsReasoning,
   type ReasoningEffort,
 } from "@/features/tasks/composer/options";
+import { QueuedMessagesDock } from "@/features/tasks/composer/QueuedMessagesDock";
 import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
+import {
+  useMessagingMode,
+  useQueuedCount,
+  useToggleMessagingMode,
+} from "@/features/tasks/hooks/useMessagingMode";
 import { taskKeys } from "@/features/tasks/hooks/useTasks";
+import {
+  type QueuedMessage,
+  useMessageQueueStore,
+} from "@/features/tasks/stores/messageQueueStore";
 import {
   pendingTaskPromptStoreApi,
   usePendingTaskPrompt,
@@ -41,7 +51,11 @@ import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type { Task } from "@/features/tasks/types";
 import { getSessionActivityPhase } from "@/features/tasks/utils/sessionActivity";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
-import { useActiveTaskAnalyticsContext } from "@/lib/analytics";
+import {
+  ANALYTICS_EVENTS,
+  useActiveTaskAnalyticsContext,
+  useAnalytics,
+} from "@/lib/analytics";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
@@ -81,10 +95,12 @@ export default function TaskDetailScreen() {
     disconnectFromTask,
     sendPrompt,
     cancelPrompt,
+    sendInterrupting,
     sendPermissionResponse,
     setConfigOption,
     getSessionForTask,
     setFocusedTaskId,
+    steerQueuedMessage,
   } = useTaskSessionStore();
 
   useEffect(() => {
@@ -146,6 +162,11 @@ export default function TaskDetailScreen() {
   const composerModel = composerConfig?.model ?? DEFAULT_MODEL;
   const composerReasoning: ReasoningEffort =
     composerConfig?.reasoning ?? DEFAULT_REASONING;
+
+  const messagingMode = useMessagingMode(taskId);
+  const queuedCount = useQueuedCount(taskId);
+  const toggleMessagingMode = useToggleMessagingMode(taskId);
+  const analytics = useAnalytics();
 
   const { height } = useReanimatedKeyboardAnimation();
 
@@ -309,6 +330,20 @@ export default function TaskDetailScreen() {
     ],
   );
 
+  const trackPromptSent = useCallback(
+    (text: string, isSteer: boolean) => {
+      if (!taskId) return;
+      analytics.track(ANALYTICS_EVENTS.PROMPT_SENT, {
+        task_id: taskId,
+        is_initial: false,
+        execution_type: "cloud",
+        prompt_length_chars: text.length,
+        is_steer: isSteer,
+      });
+    },
+    [taskId, analytics],
+  );
+
   const handleSendPrompt = useCallback(
     (text: string, attachments: PendingAttachment[]) => {
       if (!taskId) return;
@@ -319,15 +354,82 @@ export default function TaskDetailScreen() {
         return;
       }
 
-      sendPrompt(taskId, text, attachments).catch((err) => {
+      const onSendFailed = (err: unknown) => {
         log.error("Failed to send prompt", err);
         Alert.alert(
           "Failed to send",
           "Your message could not be delivered. Please try again.",
         );
+      };
+
+      // A turn is running. Queue holds the message locally until it ends;
+      // Steer interrupts the turn and resends right away.
+      if (session?.isPromptPending) {
+        if (messagingMode === "queue") {
+          useMessageQueueStore.getState().enqueue(taskId, text, attachments);
+          return;
+        }
+        sendInterrupting(taskId, text, attachments)
+          .then(() => trackPromptSent(text, true))
+          .catch(onSendFailed);
+        return;
+      }
+
+      sendPrompt(taskId, text, attachments)
+        .then(() => trackPromptSent(text, false))
+        .catch(onSendFailed);
+    },
+    [
+      taskId,
+      sendPrompt,
+      sendInterrupting,
+      session?.terminalStatus,
+      session?.isPromptPending,
+      messagingMode,
+      handleSendAfterTerminal,
+      trackPromptSent,
+    ],
+  );
+
+  const [restoredDraft, setRestoredDraft] = useState<{
+    text: string;
+    attachments: PendingAttachment[];
+  }>();
+
+  const handleSteerQueued = useCallback(
+    (message: QueuedMessage) => {
+      if (!taskId) return;
+      steerQueuedMessage(taskId, message.id)
+        .then(() => trackPromptSent(message.content, true))
+        .catch((err) => {
+          log.error("Failed to steer queued message", err);
+          Alert.alert(
+            "Couldn't steer",
+            "This message is still queued. Please try again.",
+          );
+        });
+    },
+    [taskId, steerQueuedMessage, trackPromptSent],
+  );
+
+  const handleReturnQueuedToComposer = useCallback(
+    (message: QueuedMessage) => {
+      if (!taskId) return;
+      useMessageQueueStore.getState().remove(taskId, message.id);
+      setRestoredDraft({
+        text: message.content,
+        attachments: message.attachments,
       });
     },
-    [taskId, sendPrompt, session?.terminalStatus, handleSendAfterTerminal],
+    [taskId],
+  );
+
+  const handleDiscardQueued = useCallback(
+    (message: QueuedMessage) => {
+      if (!taskId) return;
+      useMessageQueueStore.getState().remove(taskId, message.id);
+    },
+    [taskId],
   );
 
   const handleModeChange = useCallback(
@@ -563,8 +665,22 @@ export default function TaskDetailScreen() {
             last message can never sit behind the input. Stays visible on
             terminal runs so the user can send a follow-up that resumes. */}
         <Animated.View style={inputContainerStyle}>
+          {taskId ? (
+            <QueuedMessagesDock
+              taskId={taskId}
+              canSteer={
+                !!session?.isPromptPending &&
+                !session?.isCompacting &&
+                !session?.terminalStatus
+              }
+              onSteer={handleSteerQueued}
+              onReturnToComposer={handleReturnQueuedToComposer}
+              onDiscard={handleDiscardQueued}
+            />
+          ) : null}
           <TaskChatComposer
             onSend={handleSendPrompt}
+            restoredDraft={restoredDraft}
             onStop={handleStop}
             isUserTurn={!(session?.isPromptPending ?? true)}
             placeholder={
@@ -577,6 +693,9 @@ export default function TaskDetailScreen() {
             onModeChange={handleModeChange}
             onModelChange={handleModelChange}
             onReasoningChange={handleReasoningChange}
+            messagingMode={messagingMode}
+            queuedCount={queuedCount}
+            onToggleMessagingMode={toggleMessagingMode}
           />
         </Animated.View>
       </Animated.View>

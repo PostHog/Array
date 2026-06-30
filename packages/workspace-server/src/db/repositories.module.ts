@@ -3,18 +3,24 @@ import {
   ARCHIVE_REPOSITORY,
   AUTH_PREFERENCE_REPOSITORY,
   AUTH_SESSION_REPOSITORY,
+  BROWSER_TABS_REPOSITORY,
+  CLAUDE_SESSION_IMPORT_REPOSITORY,
   DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
   REPOSITORY_REPOSITORY,
   SUSPENSION_REPOSITORY,
+  TASK_METADATA_REPOSITORY,
   WORKSPACE_REPOSITORY,
   WORKTREE_REPOSITORY,
 } from "./identifiers";
 import { ArchiveRepository } from "./repositories/archive-repository";
 import { AuthPreferenceRepository } from "./repositories/auth-preference-repository";
 import { AuthSessionRepository } from "./repositories/auth-session-repository";
+import { BrowserTabsRepository } from "./repositories/browser-tabs-repository";
+import { ClaudeSessionImportRepository } from "./repositories/claude-session-import-repository";
 import { DefaultAdditionalDirectoryRepository } from "./repositories/default-additional-directory-repository";
 import { RepositoryRepository } from "./repositories/repository-repository";
 import { SuspensionRepositoryImpl } from "./repositories/suspension-repository";
+import { TaskMetadataRepository } from "./repositories/task-metadata-repository";
 import { WorkspaceRepository } from "./repositories/workspace-repository";
 import { WorktreeRepository } from "./repositories/worktree-repository";
 
@@ -31,4 +37,9 @@ export const repositoriesModule = new ContainerModule(({ bind }) => {
   bind(DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY)
     .to(DefaultAdditionalDirectoryRepository)
     .inSingletonScope();
+  bind(TASK_METADATA_REPOSITORY).to(TaskMetadataRepository).inSingletonScope();
+  bind(CLAUDE_SESSION_IMPORT_REPOSITORY)
+    .to(ClaudeSessionImportRepository)
+    .inSingletonScope();
+  bind(BROWSER_TABS_REPOSITORY).to(BrowserTabsRepository).inSingletonScope();
 });

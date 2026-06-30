@@ -4,9 +4,9 @@ import type {
   SignalUserAutonomyConfig,
 } from "@posthog/shared/types";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { toast } from "sonner";
 
 const USER_AUTONOMY_QUERY_KEY = signalsConfigKeys.userAutonomyConfig;
 
@@ -18,37 +18,11 @@ export interface SlackNotificationUpdates {
 
 /**
  * Mutations that write to the per-user Self-driving autonomy config:
- * autostart priority override and Slack notification preferences. Reads come
- * from `useSignalUserAutonomyConfig`.
+ * Slack notification preferences. Reads come from `useSignalUserAutonomyConfig`.
  */
 export function useSignalUserAutonomyMutations() {
   const client = useAuthenticatedClient();
   const queryClient = useQueryClient();
-
-  const handleUpdateUserAutonomyPriority = useCallback(
-    async (priority: string | null) => {
-      if (!client) return;
-      try {
-        if (priority === null) {
-          await client.deleteSignalUserAutonomyConfig();
-        } else {
-          await client.updateSignalUserAutonomyConfig({
-            autostart_priority: priority,
-          });
-        }
-        await queryClient.invalidateQueries({
-          queryKey: USER_AUTONOMY_QUERY_KEY,
-        });
-      } catch (error: unknown) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Failed to update autonomy setting";
-        toast.error(message);
-      }
-    },
-    [client, queryClient],
-  );
 
   const handleUpdateSlackNotifications = useCallback(
     async (updates: SlackNotificationUpdates) => {
@@ -120,7 +94,6 @@ export function useSignalUserAutonomyMutations() {
   );
 
   return {
-    handleUpdateUserAutonomyPriority,
     handleUpdateSlackNotifications,
   };
 }

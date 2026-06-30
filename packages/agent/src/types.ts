@@ -53,6 +53,7 @@ export interface TaskExecutionOptions {
   model?: string;
   gatewayUrl?: string;
   codexBinaryPath?: string;
+  codexHome?: string;
   reasoningEffort?: EffortLevel;
   /**
    * Codex-only. Appended on top of the model's base prompt via the Codex

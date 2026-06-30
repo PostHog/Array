@@ -5,6 +5,7 @@ import type {
 import type {
   SDKAssistantMessage,
   SDKPartialAssistantMessage,
+  SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
 import { Logger } from "../../../utils/logger";
@@ -255,6 +256,106 @@ describe("assembled assistant text fallback", () => {
     context.streamedAssistantBlocks = undefined;
     await handleUserAssistantMessage(
       assistantMessage("msg_1", [{ type: "text", text: "replayed" }]),
+      context,
+    );
+    expect(chunkTexts(updates, "agent_message_chunk")).toEqual([]);
+  });
+});
+
+function userMessage(
+  content: string | Array<Record<string, unknown>>,
+): SDKUserMessage {
+  return {
+    type: "user",
+    parent_tool_use_id: null,
+    uuid: "00000000-0000-0000-0000-000000000003",
+    session_id: "test-session",
+    message: { role: "user", content },
+  } as unknown as SDKUserMessage;
+}
+
+function userChunkTexts(updates: SessionNotification[]): string[] {
+  return updates
+    .filter((u) => u.update.sessionUpdate === "user_message_chunk")
+    .map((u) => (u.update as { content: { text: string } }).content.text);
+}
+
+describe("import replay (no client-side history)", () => {
+  function createImportReplayContext() {
+    const { context, updates } = createHandlerContext();
+    context.streamedAssistantBlocks = undefined;
+    context.isImportReplay = true;
+    return { context, updates };
+  }
+
+  it("forwards top-level assistant text during import replay", async () => {
+    const { context, updates } = createImportReplayContext();
+    await handleUserAssistantMessage(
+      assistantMessage("msg_1", [{ type: "text", text: "replayed answer" }]),
+      context,
+    );
+    expect(chunkTexts(updates, "agent_message_chunk")).toEqual([
+      "replayed answer",
+    ]);
+  });
+
+  it("emits and marks plain-text user prompts during import replay", async () => {
+    const { context, updates } = createImportReplayContext();
+    await handleUserAssistantMessage(userMessage("my earlier prompt"), context);
+    expect(userChunkTexts(updates)).toEqual(["my earlier prompt"]);
+    const chunk = updates.find(
+      (u) => u.update.sessionUpdate === "user_message_chunk",
+    );
+    expect(
+      (chunk?.update as { _meta?: { importedUserPrompt?: boolean } })._meta
+        ?.importedUserPrompt,
+    ).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "with args",
+      raw: "<command-message>review</command-message>\n<command-name>/review</command-name>\n<command-args>#2198 - findings first</command-args>",
+      expected: "/review #2198 - findings first",
+    },
+    {
+      name: "no args",
+      raw: "<command-message>compact</command-message>\n<command-name>/compact</command-name>\n<command-args></command-args>",
+      expected: "/compact",
+    },
+  ])(
+    "surfaces a typed slash command ($name), not its raw markers",
+    async ({ raw, expected }) => {
+      const { context, updates } = createImportReplayContext();
+      await handleUserAssistantMessage(userMessage(raw), context);
+      expect(userChunkTexts(updates)).toEqual([expected]);
+    },
+  );
+
+  it("strips stray markers from a non-command prompt instead of leaking them", async () => {
+    const { context, updates } = createImportReplayContext();
+    await handleUserAssistantMessage(
+      userMessage("note <command-args>stray</command-args>"),
+      context,
+    );
+    const [text] = userChunkTexts(updates);
+    expect(text).not.toContain("<command-args>");
+    expect(text).toContain("note");
+  });
+
+  it("skips a pure-marker user prompt instead of emitting a hollow chunk", async () => {
+    const { context, updates } = createImportReplayContext();
+    await handleUserAssistantMessage(
+      userMessage("<command-args>stray</command-args>"),
+      context,
+    );
+    expect(userChunkTexts(updates)).toEqual([]);
+  });
+
+  it("still drops subagent assistant text during import replay", async () => {
+    const { context, updates } = createImportReplayContext();
+    await handleUserAssistantMessage(
+      assistantMessage("msg_1", [{ type: "text", text: "subagent" }], "tool_1"),
       context,
     );
     expect(chunkTexts(updates, "agent_message_chunk")).toEqual([]);

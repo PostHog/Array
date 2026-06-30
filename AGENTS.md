@@ -210,6 +210,7 @@ await boot(container);
 - Use path aliases and package public exports. Avoid deep relative imports.
 - No barrel files (`index.ts`).
 - Use Tailwind first. Keep classes sorted. Use inline `style` only for runtime values, library configuration, or CSS variables.
+- Empty/placeholder/loading screens (canvas and elsewhere) are a `@posthog/quill` `<Empty>` (`EmptyHeader` → `EmptyMedia variant="icon"` → `EmptyTitle` → `EmptyDescription`, then `EmptyContent` for CTAs). Don't hand-roll the centered Flex + dashed icon box. CTAs are quill `Button`s: primary action `variant="primary"`, secondary `variant="outline"`, `size="default"`. For a link CTA use `render={<Link … />}` (Base UI), not `asChild`.
 - Abort controllers before awaiting cleanup that depends on them.
 
 See [docs/conventions.md](./docs/conventions.md).
@@ -226,7 +227,6 @@ See [docs/conventions.md](./docs/conventions.md).
 - TanStack Query, TanStack Router
 - Zustand, InversifyJS (with `@inversifyjs/strongly-typed`), Zod
 - xterm.js, CodeMirror, Tiptap
-- Sonner
 
 ## Testing
 

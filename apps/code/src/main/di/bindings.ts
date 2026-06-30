@@ -8,7 +8,6 @@ import type {
   AUTH_TOKEN_CIPHER,
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
-import type { CANVAS_GEN_SERVICE } from "@posthog/core/canvas/identifiers";
 import type {
   CLOUD_TASK_AUTH,
   ICloudTaskAuth,
@@ -45,14 +44,20 @@ import type {
   SLACK_INTEGRATION_SERVICE,
 } from "@posthog/core/integrations/identifiers";
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
+import type { ApprovalLinkService } from "@posthog/core/links/approval-link";
+import type { CanvasLinkService } from "@posthog/core/links/canvas-link";
 import type {
+  APPROVAL_LINK_SERVICE,
+  CANVAS_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
+  OPEN_TARGET_LINK_SERVICE,
   SCOUT_LINK_SERVICE,
   TASK_LINK_SERVICE,
 } from "@posthog/core/links/identifiers";
 import type { InboxLinkService } from "@posthog/core/links/inbox-link";
 import type { NewTaskLinkService } from "@posthog/core/links/new-task-link";
+import type { OpenTargetLinkService } from "@posthog/core/links/open-target-link";
 import type { ScoutLinkService } from "@posthog/core/links/scout-link";
 import type { TaskLinkService } from "@posthog/core/links/task-link";
 import type {
@@ -96,7 +101,6 @@ import type {
   GIT_PR_STATUS_PROVIDER,
   IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
-import type { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
 import type {
   ANALYTICS_SERVICE,
   IAnalytics,
@@ -227,6 +231,7 @@ import type {
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
 import type { DeepLinkService } from "../services/deep-link/service";
+import type { DiscordPresenceService } from "../services/discord-presence/service";
 import type { EncryptionService } from "../services/encryption/service";
 import type { SecureStoreService } from "../services/secure-store/service";
 import type { settingsStore } from "../services/settingsStore";
@@ -234,15 +239,18 @@ import type { WorkspaceServerService } from "../services/workspace-server/servic
 import type { rendererStore } from "../utils/store";
 import type {
   APP_LIFECYCLE_SERVICE as MAIN_APP_LIFECYCLE_SERVICE,
+  APPROVAL_LINK_SERVICE as MAIN_APPROVAL_LINK_SERVICE,
   ARCHIVE_REPOSITORY as MAIN_ARCHIVE_REPOSITORY,
   AUTH_PREFERENCE_REPOSITORY as MAIN_AUTH_PREFERENCE_REPOSITORY,
   AUTH_SERVICE as MAIN_AUTH_SERVICE,
   AUTH_SESSION_REPOSITORY as MAIN_AUTH_SESSION_REPOSITORY,
+  CANVAS_LINK_SERVICE as MAIN_CANVAS_LINK_SERVICE,
   CLOUD_TASK_SERVICE as MAIN_CLOUD_TASK_SERVICE,
   CONTEXT_MENU_SERVICE as MAIN_CONTEXT_MENU_SERVICE,
   DATABASE_SERVICE as MAIN_DATABASE_SERVICE,
   DEEP_LINK_SERVICE as MAIN_DEEP_LINK_SERVICE,
   DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY as MAIN_DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
+  DISCORD_PRESENCE_SERVICE as MAIN_DISCORD_PRESENCE_SERVICE,
   ENCRYPTION_SERVICE as MAIN_ENCRYPTION_SERVICE,
   EXTERNAL_APPS_SERVICE as MAIN_EXTERNAL_APPS_SERVICE,
   FILE_WATCHER_SERVICE as MAIN_FILE_WATCHER_SERVICE,
@@ -251,6 +259,7 @@ import type {
   LLM_GATEWAY_SERVICE as MAIN_LLM_GATEWAY_SERVICE,
   MCP_APPS_SERVICE as MAIN_MCP_APPS_SERVICE,
   NEW_TASK_LINK_SERVICE as MAIN_NEW_TASK_LINK_SERVICE,
+  OPEN_TARGET_LINK_SERVICE as MAIN_OPEN_TARGET_LINK_SERVICE,
   POSTHOG_PLUGIN_SERVICE as MAIN_POSTHOG_PLUGIN_SERVICE,
   PROCESS_TRACKING_SERVICE as MAIN_PROCESS_TRACKING_SERVICE,
   PROVISIONING_SERVICE as MAIN_PROVISIONING_SERVICE,
@@ -401,10 +410,16 @@ export interface MainBindings {
   [MAIN_INBOX_LINK_SERVICE]: InboxLinkService;
   [MAIN_SCOUT_LINK_SERVICE]: ScoutLinkService;
   [MAIN_NEW_TASK_LINK_SERVICE]: NewTaskLinkService;
+  [MAIN_APPROVAL_LINK_SERVICE]: ApprovalLinkService;
+  [MAIN_OPEN_TARGET_LINK_SERVICE]: OpenTargetLinkService;
+  [MAIN_CANVAS_LINK_SERVICE]: CanvasLinkService;
   [TASK_LINK_SERVICE]: TaskLinkService;
   [INBOX_LINK_SERVICE]: InboxLinkService;
   [SCOUT_LINK_SERVICE]: ScoutLinkService;
   [NEW_TASK_LINK_SERVICE]: NewTaskLinkService;
+  [APPROVAL_LINK_SERVICE]: ApprovalLinkService;
+  [OPEN_TARGET_LINK_SERVICE]: OpenTargetLinkService;
+  [CANVAS_LINK_SERVICE]: CanvasLinkService;
 
   // Watcher registry
   [MAIN_WATCHER_REGISTRY_SERVICE]: WatcherRegistryService;
@@ -424,7 +439,7 @@ export interface MainBindings {
   [SECURE_STORE_SERVICE]: ISecureStoreService;
   [LOGS_SERVICE]: ILogsService;
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
-  [CANVAS_GEN_SERVICE]: CanvasGenService;
+  [MAIN_DISCORD_PRESENCE_SERVICE]: DiscordPresenceService;
 
   // ws-server git service (bound to(GitService))
   [WS_GIT_SERVICE]: GitService;

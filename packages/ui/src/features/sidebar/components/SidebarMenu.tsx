@@ -333,9 +333,9 @@ function SidebarMenuComponent() {
       const clickedTask = allVisible.find((t) => t.id === taskId);
       if (!clickedTask) return;
 
-      const threshold = clickedTask.createdAt;
+      const threshold = clickedTask.lastActivityAt;
       const priorTaskIds = allVisible
-        .filter((t) => t.id !== taskId && t.createdAt < threshold)
+        .filter((t) => t.id !== taskId && t.lastActivityAt < threshold)
         .map((t) => t.id);
 
       if (priorTaskIds.length === 0) {

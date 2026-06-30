@@ -108,6 +108,24 @@ function isPlanItem(item: ConversationItem): boolean {
   );
 }
 
+/**
+ * Whether an item folds into a tool-call group rather than getting its own row.
+ * A group is a maximal run of these; anything else flushes the run. Grouping is
+ * keyed on item type alone, never on turn boundaries — a run can straddle the
+ * end of one turn and the start of the next.
+ */
+export function isGroupableItem(item: ConversationItem): boolean {
+  if (item.type !== "session_update") return false;
+  if (grouping.excludeMcpApps && isMcpToolItem(item)) return false;
+  if (
+    isAlwaysVisibleItem(item) ||
+    isDirectMessageItem(item) ||
+    isPlanItem(item)
+  )
+    return false;
+  return true;
+}
+
 function summarize(items: ConversationItem[]): GroupSummary {
   const counts: GroupCounts = {
     execute: 0,
@@ -301,21 +319,17 @@ export function buildThreadGroups(
         break;
       }
       case "session_update": {
-        if (grouping.excludeMcpApps && isMcpToolItem(item)) {
+        if (isGroupableItem(item)) {
+          buffer.push(item);
+        } else if (grouping.excludeMcpApps && isMcpToolItem(item)) {
           // Keep MCP-app tool calls standalone so their iframes stay mounted.
           flush();
           keepMounted.push(pushItemRow(item));
-        } else if (
-          isAlwaysVisibleItem(item) ||
-          isDirectMessageItem(item) ||
-          isPlanItem(item)
-        ) {
+        } else {
           // Setup/clone progress, the agent's direct messages, and plans never
           // collapse into a group — they surface as their own chat rows.
           flush();
           pushItemRow(item);
-        } else {
-          buffer.push(item);
         }
         break;
       }

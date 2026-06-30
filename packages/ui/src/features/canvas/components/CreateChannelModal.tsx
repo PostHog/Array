@@ -1,8 +1,10 @@
 import { HashIcon, XIcon } from "@phosphor-icons/react";
 import { validateChannelName } from "@posthog/core/canvas/channelName";
 import { Button } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { Dialog, Flex, IconButton, Text, TextField } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -38,18 +40,32 @@ export function CreateChannelModal({
 
   const submit = async () => {
     if (!trimmed || validationError || isCreating) return;
+    let channel: Awaited<ReturnType<typeof createChannel>>;
     try {
-      const channel = await createChannel(trimmed);
-      onOpenChange(false);
-      void navigate({
-        to: "/website/$channelId",
-        params: { channelId: channel.id },
+      channel = await createChannel(trimmed);
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "create",
+        surface: "sidebar",
+        channel_id: channel.id,
+        success: true,
       });
     } catch (error) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "create",
+        surface: "sidebar",
+        success: false,
+      });
       toast.error("Couldn't create channel", {
         description: error instanceof Error ? error.message : String(error),
       });
+      return;
     }
+    onOpenChange(false);
+    // Open the new channel's static homepage.
+    void navigate({
+      to: "/website/$channelId",
+      params: { channelId: channel.id },
+    });
   };
 
   return (

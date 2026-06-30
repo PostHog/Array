@@ -8,6 +8,7 @@ const log = logger.scope("inbox-api");
 import type {
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
+  CommitDiffResponse,
   ReportArtefact,
   SignalProcessingStateResponse,
   SignalReport,
@@ -15,7 +16,6 @@ import type {
   SignalReportSignalsResponse,
   SignalReportsQueryParams,
   SignalReportsResponse,
-  SignalReportTask,
   SuggestedReviewerWriteEntry,
 } from "./types";
 
@@ -152,28 +152,6 @@ export async function getAvailableSuggestedReviewers(
   return { results, count: results.length };
 }
 
-export async function getSignalReportTasks(
-  reportId: string,
-): Promise<SignalReportTask[]> {
-  const baseUrl = getBaseUrl();
-  const projectId = getProjectId();
-
-  const response = await authedFetch(
-    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/tasks/`,
-  );
-
-  if (!response.ok) {
-    throw new HttpError(
-      response.status,
-      response.statusText,
-      "Failed to fetch signal report tasks",
-    );
-  }
-
-  const data = await response.json();
-  return data.results ?? [];
-}
-
 export async function getSignalReportArtefacts(
   reportId: string,
 ): Promise<SignalReportArtefactsResponse> {
@@ -197,6 +175,33 @@ export async function getSignalReportArtefacts(
   const data = await response.json();
   const results: ReportArtefact[] = data.results ?? [];
   return { results, count: data.count ?? results.length };
+}
+
+/** Fetch a commit artefact's diff against its parent (lazily, on demand). */
+export async function getCommitDiff(
+  reportId: string,
+  artefactId: string,
+): Promise<CommitDiffResponse> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/artefacts/${artefactId}/diff/`,
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Couldn’t load the diff",
+    );
+  }
+
+  const data = await response.json();
+  return {
+    diff: typeof data.diff === "string" ? data.diff : "",
+    truncated: data.truncated === true,
+  };
 }
 
 /** Replace the content of a report artefact (full PUT, not a partial update). */
@@ -305,6 +310,33 @@ export async function dismissSignalReport(
       response.status,
       response.statusText,
       errorText || "Failed to dismiss signal report",
+    );
+  }
+
+  return await response.json();
+}
+
+/** Re-queue a dismissed report into the inbox via the `potential` transition. */
+export async function restoreSignalReport(
+  reportId: string,
+): Promise<SignalReport> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/state/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ state: "potential" }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      errorText || "Failed to restore signal report",
     );
   }
 

@@ -1,4 +1,6 @@
 import type { Task } from "@posthog/shared/domain-types";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { TaskDetail } from "@posthog/ui/features/task-detail/components/TaskDetail";
 import {
   getCachedTask,
@@ -9,6 +11,7 @@ import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { RoutePending } from "@posthog/ui/router/RoutePending";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 export const Route = createFileRoute("/website/$channelId/tasks/$taskId")({
   component: ChannelTaskDetailRoute,
@@ -19,10 +22,21 @@ export const Route = createFileRoute("/website/$channelId/tasks/$taskId")({
 });
 
 function ChannelTaskDetailRoute() {
-  const { taskId } = Route.useParams();
+  const { channelId, taskId } = Route.useParams();
   const loaderTask = Route.useLoaderData();
   const { data: tasks } = useTasks();
   const fromList = tasks?.find((t) => t.id === taskId);
+  const { channels } = useChannels();
+  const channelName = channels.find((c) => c.id === channelId)?.name;
+
+  // The channels space doesn't mount SidebarMenu (which marks code-space tasks
+  // viewed on open), so mark it viewed here. Clears the task's unread state and
+  // lets a canvas's generation task drop out of the nested sidebar row once the
+  // user has actually looked at it.
+  const { markAsViewed } = useTaskViewed();
+  useEffect(() => {
+    markAsViewed(taskId);
+  }, [taskId, markAsViewed]);
 
   const { data: fetched } = useQuery({
     ...taskDetailQuery(taskId),
@@ -35,5 +49,12 @@ function ChannelTaskDetailRoute() {
     return <RoutePending />;
   }
 
-  return <TaskDetail key={task.id} task={task} />;
+  return (
+    <TaskDetail
+      key={task.id}
+      task={task}
+      channelName={channelName ?? "Channel"}
+      channelId={channelId}
+    />
+  );
 }

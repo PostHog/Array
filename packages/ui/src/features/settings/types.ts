@@ -1,5 +1,6 @@
 export type SettingsCategory =
   | "general"
+  | "notifications"
   | "plan-usage"
   | "workspaces"
   | "worktrees"
@@ -13,10 +14,12 @@ export type SettingsCategory =
   | "slack"
   | "signals"
   | "updates"
-  | "advanced";
+  | "advanced"
+  | "discord";
 
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   "general",
+  "notifications",
   "plan-usage",
   "workspaces",
   "worktrees",
@@ -31,6 +34,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   "signals",
   "updates",
   "advanced",
+  "discord",
 ];
 
 export function isSettingsCategory(value: string): value is SettingsCategory {

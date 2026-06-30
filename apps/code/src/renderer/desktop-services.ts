@@ -39,6 +39,7 @@ import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
+  type NotificationTarget,
 } from "@posthog/platform/notifications";
 import type { CloudRegion } from "@posthog/shared";
 import {
@@ -72,7 +73,7 @@ import {
   type AgentPromptSender,
 } from "@posthog/ui/features/sessions/agentPromptSender";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
-import { getAppViewSnapshot } from "@posthog/ui/router/useAppView";
+import { getCurrentMatches } from "@posthog/ui/router/navigationBridge";
 import { HEDGEHOG_MODE_HOST } from "@posthog/ui/shell/hedgehogModeHost";
 import { posthogFeatureFlags } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { IMPERATIVE_QUERY_CLIENT } from "@posthog/ui/shell/queryClient";
@@ -108,13 +109,14 @@ container.bind<ReportModelResolver>(REPORT_MODEL_RESOLVER).toConstantValue({
   async resolveDefaultModel(
     apiHost: string,
     adapter: "claude" | "codex",
+    preferredModel?: string | null,
   ): Promise<string | undefined> {
     try {
       const options = await hostTrpcClient.agent.getPreviewConfigOptions.query({
         apiHost,
         adapter,
       });
-      return selectModelFromOptions(options);
+      return selectModelFromOptions(options, preferredModel);
     } catch (error) {
       reportModelResolverLog.warn("Failed to resolve default model", {
         error,
@@ -200,15 +202,37 @@ container
         dockBounceNotifications: s.dockBounceNotifications,
         completionSound: s.completionSound,
         completionVolume: s.completionVolume,
+        customSounds: s.customSounds,
       };
     },
   });
 
 container.bind<IActiveView>(ACTIVE_VIEW_PROVIDER).toConstantValue({
   hasFocus: () => document.hasFocus(),
-  getActiveTaskId: () => {
-    const view = getAppViewSnapshot();
-    return view.type === "task-detail" ? view.taskId : undefined;
+  // Read the active leaf route directly: AppView collapses the channel routes
+  // and drops channelId/dashboardId, which we need to identify a canvas target.
+  getActiveTarget: (): NotificationTarget | undefined => {
+    const matches = getCurrentMatches();
+    const last = matches[matches.length - 1];
+    if (!last) return undefined;
+    const params = last.params as Record<string, string | undefined>;
+    switch (last.routeId) {
+      case "/code/tasks/$taskId":
+      case "/website/$channelId/tasks/$taskId":
+        return params.taskId
+          ? { kind: "task", taskId: params.taskId }
+          : undefined;
+      case "/website/$channelId/dashboards/$dashboardId":
+        return params.channelId && params.dashboardId
+          ? {
+              kind: "canvas",
+              channelId: params.channelId,
+              dashboardId: params.dashboardId,
+            }
+          : undefined;
+      default:
+        return undefined;
+    }
   },
 });
 

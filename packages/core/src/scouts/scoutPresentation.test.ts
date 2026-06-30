@@ -14,6 +14,7 @@ import {
   prettifyScoutSkillName,
   runDurationSeconds,
   runMatchesFilter,
+  type ScoutOrigin,
   type ScoutRunFilter,
   scoutRunOutcomeLabel,
   scoutSkillNameFromSlug,
@@ -77,9 +78,15 @@ describe("naming", () => {
     );
   });
 
-  it("classifies canonical vs custom scouts", () => {
-    expect(getScoutOrigin("signals-scout-error-tracking")).toBe("canonical");
-    expect(getScoutOrigin("signals-scout-react-performance")).toBe("custom");
+  it.each<[Pick<ScoutConfig, "scout_origin"> | null | undefined, ScoutOrigin]>([
+    [{ scout_origin: "canonical" }, "canonical"],
+    [{ scout_origin: "custom" }, "custom"],
+    // A missing field (older backends) or no config falls back to custom.
+    [{}, "custom"],
+    [null, "custom"],
+    [undefined, "custom"],
+  ])("getScoutOrigin(%o) returns %s", (input, expected) => {
+    expect(getScoutOrigin(input)).toBe(expected);
   });
 });
 

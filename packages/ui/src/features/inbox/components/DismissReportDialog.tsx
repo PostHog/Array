@@ -116,8 +116,8 @@ function DismissReportDialogBody({
       <Dialog.Title>
         <Text className="text-balance font-bold text-lg">
           {selectedCount > 1
-            ? `Dismiss ${selectedCount} reports?`
-            : `Dismiss report "${report.title?.trim() ? report.title : "Untitled report"}"?`}
+            ? `Archive ${selectedCount} reports?`
+            : `Archive report "${report.title?.trim() ? report.title : "Untitled report"}"?`}
         </Text>
       </Dialog.Title>
       <Dialog.Description className="text-gray-10 text-sm">
@@ -184,7 +184,7 @@ function DismissReportDialogBody({
           onClick={handleConfirm}
           loading={isSubmitting}
         >
-          Dismiss & teach the agent
+          Archive & teach the agent
         </Button>
       </Flex>
     </>

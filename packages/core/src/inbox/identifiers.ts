@@ -18,9 +18,15 @@ export const LINEAR_OAUTH_FLOW = Symbol.for(
 );
 
 export interface ReportModelResolver {
+  /**
+   * Resolve the model id to use for a cloud task. `preferredModel` (e.g. the
+   * persisted last-used model) is honoured only if the gateway still offers it;
+   * otherwise the adapter's server default is returned.
+   */
   resolveDefaultModel(
     apiHost: string,
     adapter: "claude" | "codex",
+    preferredModel?: string | null,
   ): Promise<string | undefined>;
 }
 

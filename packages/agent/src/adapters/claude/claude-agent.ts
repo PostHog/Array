@@ -110,8 +110,10 @@ import {
   resolveInitialModelId,
 } from "./session/model-config";
 import {
+  DEFAULT_EFFORT,
   DEFAULT_MODEL,
   getEffortOptions,
+  resolveEffortForModel,
   resolveModelPreference,
   supports1MContext,
   supportsMcpInjection,
@@ -120,6 +122,7 @@ import {
 import {
   buildSessionOptions,
   buildSystemPrompt,
+  type GatewayEnv,
   type ProcessSpawnedInfo,
 } from "./session/options";
 import { SettingsManager } from "./session/settings";
@@ -234,6 +237,8 @@ export interface ClaudeAcpAgentOptions {
   onMcpServersReady?: (serverNames: string[]) => void;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
   posthogApiConfig?: PostHogAPIConfig;
+  /** Explicit gateway config — avoids global process.env mutation across concurrent sessions. */
+  gatewayEnv?: GatewayEnv;
 }
 
 export class ClaudeAcpAgent extends BaseAcpAgent {
@@ -452,6 +457,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     if (commandMatch && LOCAL_ONLY_COMMANDS.has(commandMatch[1])) {
       isLocalOnlyCommand = true;
       promptReplayed = true;
+    }
+
+    if (commandMatch && !isLocalOnlyCommand) {
+      await this.refreshSlashCommandsForPrompt(commandMatch[1]);
     }
 
     if (this.session.promptRunning) {
@@ -1491,6 +1500,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         : o,
     );
 
+    await this.client.sessionUpdate({
+      sessionId: this.sessionId,
+      update: {
+        sessionUpdate: "config_option_update",
+        configOptions: this.session.configOptions,
+      },
+    });
+
     return { configOptions: this.session.configOptions };
   }
 
@@ -1730,6 +1747,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       onEnsureLocalToolsConnected: () =>
         this.ensureLocalToolsConnected("guard-hook"),
       taskState,
+      gatewayEnv: this.options?.gatewayEnv,
       onTaskStateChange: async () => {
         await this.client.sessionUpdate({
           sessionId,
@@ -1834,6 +1852,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const [rawModelOptions] = await Promise.all([
       this.getModelConfigOptions(
         settingsManager.getSettings().model || meta?.model || undefined,
+        this.options?.gatewayEnv?.anthropicBaseUrl,
       ),
       ...(meta?.taskRunId
         ? [
@@ -1910,6 +1929,18 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       await this.session.query.setModel(resolvedSdkModel);
     }
 
+    // Keep thinking enabled by default for effort-capable models (see
+    // DEFAULT_EFFORT).
+    const resolvedEffort = resolveEffortForModel(resolvedModelId, effort);
+    if (resolvedEffort && resolvedEffort !== effort) {
+      this.session.effort = resolvedEffort;
+      this.session.queryOptions.effort = resolvedEffort;
+      await this.session.query.applyFlagSettings({
+        // @ts-expect-error SDK Settings.effortLevel omits "max" but runtime accepts it
+        effortLevel: resolvedEffort,
+      });
+    }
+
     if (supports1MContext(resolvedModelId)) {
       options.betas = ["context-1m-2025-08-07"];
     }
@@ -1927,7 +1958,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const configOptions = this.buildConfigOptions(
       permissionMode,
       modelOptions,
-      effort ?? "medium",
+      this.session.effort ?? DEFAULT_EFFORT,
     );
     session.configOptions = configOptions;
 
@@ -2033,7 +2064,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       currentModelId: string;
       options: SessionConfigSelectOption[];
     },
-    currentEffort: EffortLevel = "medium",
+    currentEffort: EffortLevel = DEFAULT_EFFORT,
   ): SessionConfigOption[] {
     const modeOptions = getAvailableModes().map((mode) => ({
       value: mode.id,
@@ -2101,11 +2132,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const rawCurrentValue = existingEffort?.currentValue;
     const currentValue =
-      typeof rawCurrentValue === "string" ? rawCurrentValue : "high";
+      typeof rawCurrentValue === "string" ? rawCurrentValue : DEFAULT_EFFORT;
     const isValidValue = effortOptions.some((o) => o.value === currentValue);
-    const resolvedValue = isValidValue ? currentValue : "high";
+    const resolvedValue = isValidValue ? currentValue : DEFAULT_EFFORT;
 
-    if (resolvedValue !== currentValue && this.session.effort) {
+    // Set the default when none is chosen yet (see DEFAULT_EFFORT), or re-apply
+    // when the prior level is invalid for the newly selected model.
+    if (!this.session.effort || resolvedValue !== currentValue) {
       this.session.effort = resolvedValue as EffortLevel;
       this.session.queryOptions.effort = resolvedValue as EffortLevel;
       void this.session.query.applyFlagSettings({
@@ -2135,6 +2168,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
   private async sendAvailableCommandsUpdate(): Promise<void> {
     const commands = await this.session.query.supportedCommands();
+    this.session.knownSlashCommands = collectKnownSlashCommands(commands);
     const available = getAvailableSlashCommands(commands);
     await this.client.sessionUpdate({
       sessionId: this.sessionId,
@@ -2144,6 +2178,27 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       },
     });
     this.updateBreakdownCategory("skills", estimateSkillsTokens(available));
+  }
+
+  private async refreshSlashCommandsForPrompt(command: string): Promise<void> {
+    const commandName = command.slice(1);
+    if (this.session.knownSlashCommands?.has(commandName)) {
+      return;
+    }
+    if (commandName.includes(":") || commandName.includes("__")) {
+      return;
+    }
+
+    try {
+      await this.session.query.reloadSkills();
+      await this.sendAvailableCommandsUpdate();
+    } catch (error) {
+      this.logger.warn("Failed to refresh slash commands before prompt", {
+        sessionId: this.sessionId,
+        command,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /** Update one category of the context-breakdown baseline so the next
@@ -2206,6 +2261,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         enrichedReadCache: this.enrichedReadCache,
         logger: this.logger,
         registerHooks: false,
+        isImportReplay: true,
       };
 
       for (const msg of messages) {

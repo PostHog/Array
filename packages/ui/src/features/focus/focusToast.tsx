@@ -1,4 +1,3 @@
-import { Text } from "@radix-ui/themes";
 import { toast } from "../../primitives/toast";
 import type { FocusSagaResult } from "./focusStore";
 
@@ -7,14 +6,9 @@ export function showFocusSuccessToast(
   result: FocusSagaResult,
 ): void {
   const showStashMessage = !!result.session?.mainStashRef && !result.wasSwap;
-  toast.success(
-    <>
-      Now editing <Text className="text-(--accent-11)">{branchName}</Text>
-    </>,
-    {
-      description: showStashMessage
-        ? "Your local changes were stashed and will be restored when you return."
-        : undefined,
-    },
-  );
+  toast.success(`Now editing ${branchName}`, {
+    description: showStashMessage
+      ? "Your local changes were stashed and will be restored when you return."
+      : undefined,
+  });
 }

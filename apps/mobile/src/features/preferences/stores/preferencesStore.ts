@@ -35,7 +35,8 @@ export type CompletionSound =
   | "ring"
   | "shoot"
   | "slide"
-  | "drop";
+  | "drop"
+  | "icq";
 
 export type InitialTaskMode = "plan" | "last_used";
 

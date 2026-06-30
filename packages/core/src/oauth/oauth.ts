@@ -61,6 +61,15 @@ interface PendingOAuthFlow {
   abortController?: AbortController;
 }
 
+async function parseOAuthErrorCode(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.json()) as { error?: unknown };
+    return typeof body.error === "string" ? body.error : null;
+  } catch {
+    return null;
+  }
+}
+
 @injectable()
 export class OAuthService {
   private pendingFlow: PendingOAuthFlow | null = null;
@@ -216,8 +225,18 @@ export class OAuthService {
       });
 
       if (!response.ok) {
-        // 401/403 are auth errors - the token is invalid
-        const isAuthError = response.status === 401 || response.status === 403;
+        // 401/403 are always auth failures. A 400 is only a dead refresh token
+        // when the OAuth error is invalid_grant/invalid_token; other 400s like
+        // invalid_client or invalid_request are config bugs and must not log the
+        // user out, or they would be unable to log back in with the same broken
+        // config.
+        const oauthErrorCode =
+          response.status === 400 ? await parseOAuthErrorCode(response) : null;
+        const isAuthError =
+          response.status === 401 ||
+          response.status === 403 ||
+          oauthErrorCode === "invalid_grant" ||
+          oauthErrorCode === "invalid_token";
         // 5xx are server errors - should be retried
         const isServerError = response.status >= 500;
         this.log.warn(

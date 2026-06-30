@@ -1,140 +1,62 @@
 import { describe, expect, it } from "vitest";
-import {
-  type ExtractCreatedPrUrlInput,
-  extractCreatedPrUrl,
-} from "./pr-url-detector";
+import { findPrUrl, wasCreatedRecently } from "./pr-url-detector";
 
-const PR_URL = "https://github.com/PostHog/posthog/pull/12345";
+const PR_URL = "https://github.com/PostHog/posthog.com/pull/17764";
 
-interface Case {
-  name: string;
-  input: ExtractCreatedPrUrlInput;
-  expected: string | null;
-}
+describe("findPrUrl", () => {
+  it("finds a PR URL in serialized terminal output (the cloud-sandbox framing)", () => {
+    const update = JSON.stringify({
+      sessionUpdate: "tool_call_update",
+      _meta: { terminal_output: `Creating draft pull request...\n${PR_URL}\n` },
+    });
+    expect(findPrUrl(update)).toBe(PR_URL);
+  });
 
-const cases: Case[] = [
-  {
-    name: "returns the URL when gh pr create produced it (string toolResponse)",
-    input: {
-      toolName: "Bash",
-      bashCommand: 'gh pr create --title "x" --body "y"',
-      toolResponse: `${PR_URL}\n`,
-    },
-    expected: PR_URL,
-  },
-  {
-    name: "returns the URL when gh pr create produced it (object toolResponse)",
-    input: {
-      toolName: "Bash",
-      bashCommand: "gh pr create --fill",
-      toolResponse: { stdout: `${PR_URL}\n`, stderr: "" },
-    },
-    expected: PR_URL,
-  },
-  {
-    name: "ignores PR URLs from gh pr view",
-    input: {
-      toolName: "Bash",
-      bashCommand: `gh pr view ${PR_URL}`,
-      toolResponse: { stdout: PR_URL },
-    },
-    expected: null,
-  },
-  {
-    name: "ignores PR URLs from gh search prs",
-    input: {
-      toolName: "Bash",
-      bashCommand: 'gh search prs "fix login"',
-      toolResponse: PR_URL,
-    },
-    expected: null,
-  },
-  {
-    name: "ignores PR URLs from gh pr list",
-    input: {
-      toolName: "Bash",
-      bashCommand: "gh pr list --json url",
-      toolResponse: PR_URL,
-    },
-    expected: null,
-  },
-  {
-    name: "returns null when bashCommand is missing",
-    input: {
-      toolName: "Bash",
-      bashCommand: undefined,
-      toolResponse: PR_URL,
-    },
-    expected: null,
-  },
-  {
-    name: "returns null for non-Bash tools",
-    input: {
-      toolName: "Edit",
-      bashCommand: "gh pr create",
-      toolResponse: PR_URL,
-    },
-    expected: null,
-  },
-  {
-    name: "accepts the lowercase 'bash' tool variant",
-    input: {
-      toolName: "bash",
-      bashCommand: "gh pr create",
-      toolResponse: PR_URL,
-    },
-    expected: PR_URL,
-  },
-  {
-    name: "returns null when output has no PR URL",
-    input: {
-      toolName: "Bash",
-      bashCommand: "gh pr create",
-      toolResponse: "no pr was created",
-    },
-    expected: null,
-  },
-  {
-    name: "finds the URL in the content array when toolResponse is empty",
-    input: {
-      toolName: "Bash",
-      bashCommand: "gh pr create --fill",
-      toolResponse: undefined,
-      content: [{ type: "text", text: `Created: ${PR_URL}` }],
-    },
-    expected: PR_URL,
-  },
-  {
-    name: "handles output field on object toolResponse",
-    input: {
-      toolName: "Bash",
-      bashCommand: "gh pr create",
-      toolResponse: { output: PR_URL },
-    },
-    expected: PR_URL,
-  },
-  {
-    name: "matches gh pr create even with a chained command",
-    input: {
-      toolName: "Bash",
-      bashCommand: "git push -u origin feat/x && gh pr create --fill",
-      toolResponse: { stdout: PR_URL },
-    },
-    expected: PR_URL,
-  },
-  {
-    name: "does not match a fake command containing 'pr create' as text",
-    input: {
-      toolName: "Bash",
-      bashCommand: "echo 'i should pr create later'",
-      toolResponse: PR_URL,
-    },
-    expected: null,
-  },
-];
+  it("finds a PR URL in an agent message", () => {
+    expect(findPrUrl(`Draft PR opened: ${PR_URL} — please review`)).toBe(
+      PR_URL,
+    );
+  });
 
-describe("extractCreatedPrUrl", () => {
-  it.each(cases)("$name", ({ input, expected }) => {
-    expect(extractCreatedPrUrl(input)).toBe(expected);
+  it("finds a PR URL when the repo name contains a dot", () => {
+    expect(findPrUrl(`{"text":"opened ${PR_URL}"}`)).toBe(PR_URL);
+  });
+
+  it("returns null when there is no PR URL", () => {
+    expect(findPrUrl('{"sessionUpdate":"agent_thought_chunk"}')).toBeNull();
+  });
+
+  it("ignores non-pull github URLs (issues, etc.)", () => {
+    expect(
+      findPrUrl("see https://github.com/PostHog/posthog/issues/42"),
+    ).toBeNull();
+  });
+});
+
+describe("wasCreatedRecently", () => {
+  const now = new Date("2026-06-18T17:00:00Z").getTime();
+  const maxAge = 15 * 60 * 1000;
+
+  it("attributes a PR created moments ago (just created by this run)", () => {
+    expect(wasCreatedRecently("2026-06-18T16:58:00Z", now, maxAge)).toBe(true);
+  });
+
+  it("does NOT attribute an older PR even within a long run (viewed, not created)", () => {
+    // Created 3h ago — would pass a 'since run start' check on a long run, but
+    // the recency cap correctly excludes it.
+    expect(wasCreatedRecently("2026-06-18T14:00:00Z", now, maxAge)).toBe(false);
+  });
+
+  it("tolerates small clock skew (createdAt slightly in the future)", () => {
+    expect(wasCreatedRecently("2026-06-18T17:00:30Z", now, maxAge)).toBe(true);
+  });
+
+  it("fails closed on missing createdAt", () => {
+    expect(wasCreatedRecently(null, now, maxAge)).toBe(false);
+    expect(wasCreatedRecently(undefined, now, maxAge)).toBe(false);
+  });
+
+  it("fails closed on an unparseable createdAt", () => {
+    expect(wasCreatedRecently("not-a-date", now, maxAge)).toBe(false);
   });
 });

@@ -6,6 +6,7 @@ import {
   DiscordLogo,
   FolderSimple,
   Gear,
+  Gift,
   Info,
   Keyboard,
   Plus,
@@ -50,6 +51,7 @@ import {
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { useProjects } from "@posthog/ui/features/projects/useProjects";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { useWhatsNewStore } from "@posthog/ui/features/updates/whatsNewStore";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { isMac } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
@@ -163,6 +165,11 @@ export function ProjectSwitcher({
     setPopoverOpen(false);
   };
 
+  const handleViewChangelog = () => {
+    useWhatsNewStore.getState().open();
+    setPopoverOpen(false);
+  };
+
   const handleLogout = () => {
     setPopoverOpen(false);
     logoutMutation.mutate();
@@ -171,6 +178,7 @@ export function ProjectSwitcher({
   return (
     <DropdownMenu open={popoverOpen} onOpenChange={setPopoverOpen}>
       <DropdownMenuTrigger
+        nativeButton={triggerVariant === "button"}
         render={
           triggerVariant === "button" ? (
             <Button
@@ -300,6 +308,11 @@ export function ProjectSwitcher({
               <DiscordLogo size={14} className="text-gray-11" />
               Join our Discord
               <ArrowSquareOut size={14} className="ml-auto text-gray-11" />
+            </DropdownMenuItem>
+
+            <DropdownMenuItem onClick={handleViewChangelog}>
+              <Gift size={14} className="text-gray-11" />
+              View changelog
             </DropdownMenuItem>
 
             <DropdownMenuSub>

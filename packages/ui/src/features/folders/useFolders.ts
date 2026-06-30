@@ -56,7 +56,7 @@ export function useFolders() {
   );
 
   const getRecentFolders = useCallback(
-    (limit = 5) =>
+    (limit = 10) =>
       [...existingFolders]
         .sort(
           (a, b) =>

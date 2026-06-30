@@ -7,10 +7,10 @@ import { shouldAutoRefreshTools } from "@posthog/core/mcp-servers/toolRefresh";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useCallback, useEffect, useRef } from "react";
-import { toast } from "sonner";
 import { mcpKeys } from "./useMcpServers";
 
 interface UseMcpInstallationToolsOptions {

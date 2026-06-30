@@ -1,6 +1,9 @@
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
-import type { SessionService } from "@posthog/core/sessions/sessionService";
-import { SESSION_SERVICE } from "@posthog/core/sessions/sessionService";
+import {
+  createLatestPlanTracker,
+  SESSION_SERVICE,
+  type SessionService,
+} from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
@@ -15,10 +18,15 @@ import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-edito
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
 import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
 import { ConversationView } from "@posthog/ui/features/sessions/components/ConversationView";
+import {
+  copyFromContextMenu,
+  getGithubRefUrlFromEventTarget,
+} from "@posthog/ui/features/sessions/components/copyContextTarget";
 import { DropZoneOverlay } from "@posthog/ui/features/sessions/components/DropZoneOverlay";
 import { ModelSelector } from "@posthog/ui/features/sessions/components/ModelSelector";
 import { PendingChatView } from "@posthog/ui/features/sessions/components/PendingChatView";
 import { PlanStatusBar } from "@posthog/ui/features/sessions/components/PlanStatusBar";
+import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/QueuedMessagesDock";
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
@@ -225,9 +233,14 @@ export function SessionView({
 
   const isCloudRun = useIsWorkspaceCloudRun(taskId);
 
+  const latestPlanTrackerRef = useRef<ReturnType<
+    typeof createLatestPlanTracker
+  > | null>(null);
+  latestPlanTrackerRef.current ??= createLatestPlanTracker();
+  const latestPlanTracker = latestPlanTrackerRef.current;
   const latestPlan = useMemo(
-    (): Plan | null => sessionService.selectLatestPlan(events) as Plan | null,
-    [events, sessionService],
+    (): Plan | null => latestPlanTracker.update(events) as Plan | null,
+    [events, latestPlanTracker],
   );
 
   const handleSubmit = useCallback(
@@ -253,6 +266,9 @@ export function SessionView({
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
   const dragCounterRef = useRef(0);
+  // URL of the GitHub chip the context menu was opened on, captured on
+  // right-click so the "Copy" item can copy the link (selections can't reach it).
+  const copyTargetUrlRef = useRef<string | null>(null);
 
   const firstPendingPermission = useMemo(() => {
     const entries = Array.from(pendingPermissions.entries());
@@ -371,7 +387,9 @@ export function SessionView({
       target.closest('input, textarea, [contenteditable="true"], .ProseMirror')
     ) {
       e.stopPropagation();
+      return;
     }
+    copyTargetUrlRef.current = getGithubRefUrlFromEventTarget(e.target);
   }, []);
 
   return (
@@ -411,6 +429,7 @@ export function SessionView({
                   taskId={taskId}
                   task={task}
                   slackThreadUrl={slackThreadUrl}
+                  scrollX={false}
                 />
                 <Box className="border-gray-4 border-t">
                   <Box
@@ -495,6 +514,7 @@ export function SessionView({
                   task={task}
                   slackThreadUrl={slackThreadUrl}
                   compact={compact}
+                  scrollX={false}
                 />
 
                 <SessionResourcesBar events={events} />
@@ -591,6 +611,7 @@ export function SessionView({
                             : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
                         }
                       >
+                        {taskId && <QueuedMessagesDock taskId={taskId} />}
                         <PromptInput
                           ref={editorRef}
                           sessionId={sessionId}
@@ -629,11 +650,13 @@ export function SessionView({
                             ) : null
                           }
                           messagingModeToggle={
-                            taskId ? (
+                            taskId && !isCloudRun ? (
                               <SteerQueueToggle taskId={taskId} />
                             ) : undefined
                           }
-                          onToggleMessagingMode={toggleMessagingMode}
+                          onToggleMessagingMode={
+                            isCloudRun ? undefined : toggleMessagingMode
+                          }
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
                           onBashCommand={onBashCommand}
@@ -651,10 +674,15 @@ export function SessionView({
       <ContextMenu.Content size="1">
         <ContextMenu.Item
           onSelect={() => {
-            const text = window.getSelection()?.toString();
-            if (text) {
-              navigator.clipboard.writeText(text);
+            const url = copyTargetUrlRef.current;
+            const text = url ?? window.getSelection()?.toString();
+            if (!text) {
+              return;
             }
+            copyFromContextMenu(text, {
+              onSuccess: () => toast.success(url ? "Link copied" : "Copied"),
+              onError: () => toast.error("Couldn't copy"),
+            });
           }}
         >
           Copy

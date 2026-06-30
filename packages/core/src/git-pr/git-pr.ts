@@ -1,7 +1,10 @@
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import { inject, injectable } from "inversify";
 import { LLM_GATEWAY_SERVICE } from "../llm-gateway/identifiers";
-import type { LlmGatewayService } from "../llm-gateway/llm-gateway";
+import {
+  HELPER_GATEWAY_MODEL,
+  type LlmGatewayService,
+} from "../llm-gateway/llm-gateway";
 import { CreatePrSaga, type CreatePrStep } from "./create-pr-saga";
 import {
   type CreatePrHost,
@@ -97,7 +100,7 @@ ${truncatedDiff}${contextSection}`;
 
     const response = await this.llm.prompt(
       [{ role: "user", content: userMessage }],
-      { system },
+      { system, model: HELPER_GATEWAY_MODEL },
     );
 
     return { message: response.content.trim() };
@@ -179,6 +182,7 @@ Rules for the body:
 - Be thorough but concise
 - Use markdown formatting
 - Only describe changes that are actually in the diff — do not invent or assume changes
+- Treat the target repository as public-readable. Do not include private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, or the contents of Slack threads (do not quote or paraphrase what was said) — describe findings qualitatively instead. Linking to the originating Slack thread is fine and encouraged, as are channel references like "raised in #team-foo" — Slack links are auth-gated and useful as context.
 ${templateHint}
 
 Do not include any explanation outside the TITLE and BODY sections.`;
@@ -207,7 +211,7 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
 
     const response = await this.llm.prompt(
       [{ role: "user", content: userMessage }],
-      { system, maxTokens: 2000 },
+      { system, maxTokens: 2000, model: HELPER_GATEWAY_MODEL },
     );
 
     const content = response.content.trim();

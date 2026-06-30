@@ -1,4 +1,4 @@
-import { ThumbsDownIcon } from "@phosphor-icons/react";
+import { ArchiveIcon } from "@phosphor-icons/react";
 import { extractRepoSelectionRepository } from "@posthog/core/inbox/artefacts";
 import {
   deriveHeadline,
@@ -144,8 +144,8 @@ export function PullRequestCard({
             variant="soft"
             color="gray"
             size="1"
-            aria-label="Dismiss this report"
-            tooltipContent="Dismiss this report"
+            aria-label="Archive this report"
+            tooltipContent="Archive this report"
             disabled={dismissDisabledReason !== null || isDismissPending}
             disabledReason={dismissDisabledReason}
             loading={isDismissPending}
@@ -154,7 +154,7 @@ export function PullRequestCard({
               onDismiss();
             }}
           >
-            <ThumbsDownIcon size={14} />
+            <ArchiveIcon size={14} />
           </UiButton>
           <Button
             type="button"

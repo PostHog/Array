@@ -31,6 +31,13 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 vi.mock("../lib/oauth", () => ({
   performOAuthFlow: mockPerformOAuthFlow,
   refreshAccessToken: mockRefreshAccessTokenRequest,
+  TokenRefreshError: class TokenRefreshError extends Error {
+    readonly errorCode: string;
+    constructor(errorCode: string, message: string) {
+      super(message);
+      this.errorCode = errorCode;
+    }
+  },
 }));
 
 vi.mock("../lib/secureStorage", () => ({
@@ -63,7 +70,19 @@ vi.mock("@/lib/queryClient", () => ({
 }));
 
 import { OAUTH_SCOPE_VERSION } from "../lib/constants";
+import { TokenRefreshError } from "../lib/oauth";
 import { useAuthStore } from "./authStore";
+
+function expiredStoredTokens() {
+  return {
+    accessToken: "old-token",
+    refreshToken: "old-refresh",
+    expiresAt: Date.now() - 1_000,
+    cloudRegion: "us" as const,
+    scopedTeams: [42],
+    scopeVersion: OAUTH_SCOPE_VERSION,
+  };
+}
 
 describe("authStore", () => {
   beforeEach(() => {
@@ -135,4 +154,51 @@ describe("authStore", () => {
       isLoading: false,
     });
   });
+
+  it("signs out when refreshing an expired token is rejected as auth_error", async () => {
+    mockGetTokens.mockResolvedValueOnce(expiredStoredTokens());
+    mockRefreshAccessTokenRequest.mockRejectedValueOnce(
+      new TokenRefreshError("auth_error", "invalid_grant"),
+    );
+
+    const initialized = await useAuthStore.getState().initializeAuth();
+
+    expect(initialized).toBe(false);
+    expect(mockDeleteTokens).toHaveBeenCalledOnce();
+    expect(useAuthStore.getState()).toMatchObject({
+      isAuthenticated: false,
+      isLoading: false,
+    });
+  });
+
+  it.each([
+    {
+      name: "server_error",
+      error: new TokenRefreshError("server_error", "5xx"),
+    },
+    {
+      name: "network_error",
+      error: new TokenRefreshError("network_error", "offline"),
+    },
+    {
+      name: "unknown_error (config 400)",
+      error: new TokenRefreshError("unknown_error", "invalid_client"),
+    },
+  ])(
+    "keeps the session when an expired-token refresh fails with $name",
+    async ({ error }) => {
+      mockGetTokens.mockResolvedValueOnce(expiredStoredTokens());
+      mockRefreshAccessTokenRequest.mockRejectedValueOnce(error);
+
+      const initialized = await useAuthStore.getState().initializeAuth();
+
+      expect(initialized).toBe(true);
+      expect(mockDeleteTokens).not.toHaveBeenCalled();
+      expect(useAuthStore.getState()).toMatchObject({
+        oauthAccessToken: "old-token",
+        isAuthenticated: true,
+        isLoading: false,
+      });
+    },
+  );
 });

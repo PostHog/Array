@@ -1,4 +1,3 @@
-import type { QueuedMessage } from "@posthog/ui/features/sessions/sessionStore";
 import { describe, expect, it } from "vitest";
 import type { ConversationItem } from "./buildConversationItems";
 import { mergeConversationItems } from "./mergeConversationItems";
@@ -11,45 +10,20 @@ function userMessage(
   return { type: "user_message", id, content, timestamp: 0, pinToTop };
 }
 
-function queuedItem(
-  id: string,
-  content: string,
-): Extract<ConversationItem, { type: "queued" }> {
-  const message: QueuedMessage = {
-    id,
-    content,
-    rawPrompt: [{ type: "text", text: content }],
-    queuedAt: 0,
-  };
-  return { type: "queued", id, message };
-}
-
 describe("mergeConversationItems", () => {
   it("local: appends optimistic at the chronological end", () => {
     const result = mergeConversationItems({
       conversationItems: [userMessage("a", "first")],
       optimisticItems: [userMessage("opt", "draft")],
-      queuedItems: [],
       isCloud: false,
     });
     expect(result.map((i) => i.id)).toEqual(["a", "opt"]);
-  });
-
-  it("local: queued items always come last", () => {
-    const result = mergeConversationItems({
-      conversationItems: [userMessage("a", "first")],
-      optimisticItems: [userMessage("opt", "draft")],
-      queuedItems: [queuedItem("q1", "later")],
-      isCloud: false,
-    });
-    expect(result.map((i) => i.id)).toEqual(["a", "opt", "q1"]);
   });
 
   it("local: does NOT dedupe — duplicate echoes are intentionally retained", () => {
     const result = mergeConversationItems({
       conversationItems: [userMessage("echo", "hello")],
       optimisticItems: [userMessage("opt", "hello")],
-      queuedItems: [],
       isCloud: false,
     });
     expect(result.map((i) => i.id)).toEqual(["echo", "opt"]);
@@ -59,7 +33,6 @@ describe("mergeConversationItems", () => {
     const result = mergeConversationItems({
       conversationItems: [userMessage("setup", "setup info")],
       optimisticItems: [userMessage("opt", "draft")],
-      queuedItems: [],
       isCloud: true,
     });
     expect(result.map((i) => i.id)).toEqual(["opt", "setup"]);
@@ -72,40 +45,65 @@ describe("mergeConversationItems", () => {
         userMessage("other", "different"),
       ],
       optimisticItems: [userMessage("opt", "hello")],
-      queuedItems: [],
       isCloud: true,
     });
     expect(result.map((i) => i.id)).toEqual(["opt", "other"]);
   });
 
-  it("cloud: dedupe is no-op when there are no optimistic items", () => {
+  it("cloud: dedupes the echoed prompt even when it carries an appended channel CONTEXT.md", () => {
+    const echoedWithContext =
+      'hello\n\n<channel_context channel="bluebird">background</channel_context>';
     const result = mergeConversationItems({
       conversationItems: [
-        userMessage("a", "first"),
-        userMessage("b", "second"),
+        userMessage("echo", echoedWithContext),
+        userMessage("other", "different"),
       ],
+      optimisticItems: [userMessage("opt", "hello")],
+      isCloud: true,
+    });
+    // No duplicate: the echo is dropped...
+    expect(result.map((i) => i.id)).toEqual(["opt", "other"]);
+    // ...and the pinned bubble is upgraded to the context-bearing copy so the
+    // CONTEXT.md chip renders in place instead of as a second message.
+    const pinned = result.find((i) => i.id === "opt");
+    expect(pinned?.type).toBe("user_message");
+    if (pinned?.type !== "user_message")
+      throw new Error("expected user_message");
+    expect(pinned.content).toBe(echoedWithContext);
+  });
+
+  it("cloud: dedupe is no-op when there are no optimistic items", () => {
+    const conversationItems = [
+      userMessage("a", "first"),
+      userMessage("b", "second"),
+    ];
+    const result = mergeConversationItems({
+      conversationItems,
       optimisticItems: [],
-      queuedItems: [],
       isCloud: true,
     });
     expect(result.map((i) => i.id)).toEqual(["a", "b"]);
+    expect(result).toBe(conversationItems);
   });
 
-  it("cloud: queued items always come last", () => {
+  it("local: merge is no-op when there are no optimistic items", () => {
+    const conversationItems = [
+      userMessage("a", "first"),
+      userMessage("b", "second"),
+    ];
     const result = mergeConversationItems({
-      conversationItems: [userMessage("setup", "setup")],
-      optimisticItems: [userMessage("opt", "draft")],
-      queuedItems: [queuedItem("q1", "later")],
-      isCloud: true,
+      conversationItems,
+      optimisticItems: [],
+      isCloud: false,
     });
-    expect(result.map((i) => i.id)).toEqual(["opt", "setup", "q1"]);
+    expect(result.map((i) => i.id)).toEqual(["a", "b"]);
+    expect(result).toBe(conversationItems);
   });
 
   it("cloud: renders follow-up optimistic messages at the tail", () => {
     const result = mergeConversationItems({
       conversationItems: [userMessage("setup", "setup")],
       optimisticItems: [userMessage("opt", "follow up", false)],
-      queuedItems: [],
       isCloud: true,
     });
     expect(result.map((i) => i.id)).toEqual(["setup", "opt"]);
@@ -118,7 +116,6 @@ describe("mergeConversationItems", () => {
         userMessage("setup", "setup"),
       ],
       optimisticItems: [userMessage("opt", "repeat", false)],
-      queuedItems: [],
       isCloud: true,
     });
     expect(result.map((i) => i.id)).toEqual(["old", "setup", "opt"]);

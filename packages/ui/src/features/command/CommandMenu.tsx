@@ -31,10 +31,7 @@ import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import {
-  navigateToChannel,
-  navigateToChannelTask,
-} from "@posthog/ui/router/navigationBridge";
+import { navigateToChannel } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
@@ -63,6 +60,8 @@ type Command = {
   keywords?: string;
   icon: React.ReactNode;
   action: CommandMenuAction;
+  /** Channel in scope for the bluebird open-channel / open-task actions. */
+  channelId?: string;
   onRun: () => void;
 };
 
@@ -133,14 +132,18 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
+  // The review panel lives in the task-detail view, so the command only makes
+  // sense when a task is open. Elsewhere (e.g. the new-task screen) it would be
+  // a no-op, so we omit it below rather than show a dead entry.
+  const reviewTaskId = view.type === "task-detail" ? view.taskId : undefined;
+
   const openReviewPanel = useCallback(() => {
-    const taskId = view.type === "task-detail" ? view.taskId : undefined;
-    if (!taskId) return;
-    const mode = getReviewMode(taskId);
+    if (!reviewTaskId) return;
+    const mode = getReviewMode(reviewTaskId);
     if (mode === "closed") {
-      setReviewMode(taskId, "split");
+      setReviewMode(reviewTaskId, "split");
     }
-  }, [view, getReviewMode, setReviewMode]);
+  }, [reviewTaskId, getReviewMode, setReviewMode]);
 
   useEffect(() => {
     if (open) {
@@ -218,13 +221,19 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         action: "toggle-left-sidebar",
         onRun: toggleLeftSidebar,
       },
-      {
-        id: "open-review-panel",
-        label: "Open review panel",
-        icon: <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />,
-        action: "open-review-panel",
-        onRun: openReviewPanel,
-      },
+      ...(reviewTaskId
+        ? [
+            {
+              id: "open-review-panel",
+              label: "Open review panel",
+              icon: (
+                <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />
+              ),
+              action: "open-review-panel" as CommandMenuAction,
+              onRun: openReviewPanel,
+            },
+          ]
+        : []),
       {
         id: "new-task",
         label: "New task",
@@ -268,6 +277,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     closeSettingsDialog,
     toggleLeftSidebar,
     openReviewPanel,
+    reviewTaskId,
   ]);
 
   const taskSections = useMemo<CommandSection[]>(() => {
@@ -285,16 +295,17 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
             keywords: channel?.name,
             icon: <TaskCommandIcon task={task} />,
             action: "open-task" as CommandMenuAction,
+            channelId: bluebirdEnabled ? channel?.id : undefined,
             onRun: () => {
               closeSettingsDialog();
               // Bluebird: a task filed to a channel opens in the channel-
               // organized view under /website, keeping the channels chrome.
               // Otherwise fall back to the /code task detail.
-              if (bluebirdEnabled && channel) {
-                navigateToChannelTask(channel.id, task.id);
-              } else {
-                void openTask(task);
-              }
+              const channelTarget =
+                bluebirdEnabled && channel
+                  ? { channelId: channel.id }
+                  : undefined;
+              void openTask(task, channelTarget);
             },
           };
         }),
@@ -313,6 +324,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           keywords: "channel",
           icon: <HashIcon size={12} className="text-gray-11" />,
           action: "open-channel" as CommandMenuAction,
+          channelId: channel.id,
           onRun: () => {
             closeSettingsDialog();
             navigateToChannel(channel.id);
@@ -337,7 +349,10 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     if (id === null) return;
     const cmd = allCommands.find((c) => c.id === id);
     if (!cmd) return;
-    track(ANALYTICS_EVENTS.COMMAND_MENU_ACTION, { action_type: cmd.action });
+    track(ANALYTICS_EVENTS.COMMAND_MENU_ACTION, {
+      action_type: cmd.action,
+      channel_id: cmd.channelId,
+    });
     cmd.onRun();
     onOpenChange(false);
     setQuery("");

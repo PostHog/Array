@@ -76,6 +76,7 @@ container.bind(ANALYTICS_TRACKER).toConstantValue({
   identifyUser: () => {},
   setUserGroups: () => {},
   resetUser: () => {},
+  captureSurveyResponse: () => {},
 });
 container.bind(IMPERATIVE_QUERY_CLIENT).toConstantValue(queryClient);
 

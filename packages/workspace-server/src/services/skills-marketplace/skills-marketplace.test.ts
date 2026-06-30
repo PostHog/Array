@@ -12,7 +12,6 @@ vi.mock("node:os", async (importOriginal) => {
 });
 
 import { existsSync } from "node:fs";
-import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import {
   collectSkillFiles,
   findSkillDirPrefix,
@@ -21,10 +20,7 @@ import {
 } from "./skills-marketplace";
 
 function makeService(): SkillsMarketplaceService {
-  const plugin = {
-    mirrorUserSkills: async () => {},
-  } as unknown as PosthogPluginService;
-  return new SkillsMarketplaceService(plugin);
+  return new SkillsMarketplaceService();
 }
 
 let root: string;

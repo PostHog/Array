@@ -33,6 +33,7 @@ export function usePrDetails(
     ...trpc.git.getPrDetailsByUrl.queryOptions({ prUrl: prUrl as string }),
     enabled: !!prUrl,
     staleTime: 60_000,
+    placeholderData: (prev) => prev,
     retry: 1,
   });
 
@@ -55,6 +56,7 @@ export function usePrDetails(
       state: metaQuery.data?.state ?? null,
       merged: metaQuery.data?.merged ?? false,
       draft: metaQuery.data?.draft ?? false,
+      headRefName: metaQuery.data?.headRefName ?? null,
       isLoading: metaQuery.isLoading,
     },
     commentThreads,

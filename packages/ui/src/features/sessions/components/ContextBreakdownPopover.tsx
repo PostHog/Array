@@ -32,7 +32,7 @@ export function ContextBreakdownPopover({
       </Text>
 
       {breakdown ? (
-        <SegmentedBar breakdown={breakdown} total={used} fallback={fillColor} />
+        <SegmentedBar breakdown={breakdown} size={size} fallback={fillColor} />
       ) : (
         <SinglePercentBar percentage={percentage} color={fillColor} />
       )}
@@ -70,22 +70,19 @@ export function ContextBreakdownPopover({
 
 function SegmentedBar({
   breakdown,
-  total,
+  size,
   fallback,
 }: {
   breakdown: NonNullable<ContextUsage["breakdown"]>;
-  total: number;
+  size: number;
   fallback: string;
 }) {
-  if (total <= 0) {
+  if (size <= 0) {
     return <div className="h-1.5 w-full rounded-full bg-(--gray-4)" />;
   }
 
-  const segmentSum = CONTEXT_CATEGORIES.reduce(
-    (acc, cat) => acc + Math.max(0, breakdown[cat.key]),
-    0,
-  );
-  const denominator = Math.max(total, segmentSum);
+  // Scale each segment to the full context window so the filled portion
+  // matches the "% full" figure and the empty track reads as remaining context.
   return (
     <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-(--gray-4)">
       {CONTEXT_CATEGORIES.map((cat) => {
@@ -95,7 +92,7 @@ function SegmentedBar({
           <div
             key={cat.key}
             style={{
-              width: `${(value / denominator) * 100}%`,
+              width: `${(value / size) * 100}%`,
               backgroundColor: cat.color || fallback,
             }}
           />

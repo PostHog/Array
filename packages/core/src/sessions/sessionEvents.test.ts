@@ -1,9 +1,10 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import type { AcpMessage } from "@posthog/shared";
+import type { AcpMessage, StoredLogEntry } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 
 import { makeAttachmentUri } from "./promptContent";
 import {
+  convertStoredEntriesToEvents,
   extractUserPromptsFromEvents,
   hasSessionPromptEvent,
   isAbsoluteFolderPath,
@@ -193,6 +194,48 @@ describe("hasSessionPromptEvent", () => {
   it("is false when no session/prompt request is present", () => {
     expect(hasSessionPromptEvent([notification])).toBe(false);
     expect(hasSessionPromptEvent([])).toBe(false);
+  });
+});
+
+describe("convertStoredEntriesToEvents — imported user prompts", () => {
+  const userChunkEntry = (
+    text: string,
+    meta?: Record<string, unknown>,
+  ): StoredLogEntry =>
+    ({
+      timestamp: "2026-06-22T00:00:00.000Z",
+      notification: {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "user_message_chunk",
+            content: { type: "text", text },
+            ...(meta ? { _meta: meta } : {}),
+          },
+        },
+      },
+    }) as unknown as StoredLogEntry;
+
+  it("promotes a marked imported user prompt into a session/prompt event", () => {
+    const events = convertStoredEntriesToEvents([
+      userChunkEntry("my earlier prompt", { importedUserPrompt: true }),
+    ]);
+    const msg = events[0].message;
+    expect("method" in msg && msg.method).toBe("session/prompt");
+    const params = (msg as { params?: { prompt?: ContentBlock[] } }).params;
+    expect(params?.prompt?.[0]).toEqual({
+      type: "text",
+      text: "my earlier prompt",
+    });
+  });
+
+  it("leaves an unmarked user_message_chunk as a raw notification", () => {
+    const events = convertStoredEntriesToEvents([
+      userChunkEntry("internal user content"),
+    ]);
+    const msg = events[0].message;
+    expect("method" in msg && msg.method).toBe("session/update");
   });
 });
 

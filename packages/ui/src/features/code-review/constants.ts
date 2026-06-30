@@ -9,5 +9,5 @@ export const DIFF_METRICS = {
   lineHeight: 20,
   diffHeaderHeight: 31,
   hunkSeparatorHeight: 32,
-  fileGap: 8,
+  spacing: 8,
 } as const;

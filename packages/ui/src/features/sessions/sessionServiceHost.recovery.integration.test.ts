@@ -186,10 +186,7 @@ vi.mock("@posthog/di/container", () => ({
         setQueriesData: vi.fn(),
       };
     }
-    if (
-      typeof token === "function" &&
-      token.name === "TaskNotificationService"
-    ) {
+    if (typeof token === "function" && token.name === "NotificationBus") {
       return mockNotificationService;
     }
     throw new Error(`resolveService: unmocked token ${String(token)}`);

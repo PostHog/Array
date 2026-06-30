@@ -2,8 +2,8 @@ import type { ScoutConfig } from "@posthog/api-client/posthog-client";
 import { getScoutOrigin } from "@posthog/core/scouts/scoutPresentation";
 import { Badge, Tooltip } from "@radix-ui/themes";
 
-export function ScoutOriginBadge({ skillName }: { skillName: string }) {
-  const origin = getScoutOrigin(skillName);
+export function ScoutOriginBadge({ config }: { config: ScoutConfig }) {
+  const origin = getScoutOrigin(config);
   return (
     <Tooltip
       content={

@@ -61,7 +61,12 @@ export class TaskService {
       hasRepo: !!input.repository,
     });
 
-    if (!input.content?.trim()) {
+    // Imported Claude Code sessions carry a transcript, not a typed prompt, so
+    // they supply a taskDescription instead of content.
+    const hasDescription =
+      !!input.content?.trim() ||
+      (!!input.importedClaudeSession && !!input.taskDescription?.trim());
+    if (!hasDescription) {
       return {
         success: false,
         error: "Task description cannot be empty",

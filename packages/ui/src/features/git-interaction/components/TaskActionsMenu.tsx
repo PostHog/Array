@@ -1,6 +1,7 @@
 import {
   ArrowsClockwise,
   CloudArrowUp,
+  Copy,
   Eye,
   GitBranch,
   GitCommit,
@@ -21,6 +22,7 @@ import { ChevronDownIcon } from "@radix-ui/react-icons";
 import { Button, DropdownMenu, Flex, Spinner, Text } from "@radix-ui/themes";
 import { ChevronDown } from "lucide-react";
 import { Tooltip } from "../../../primitives/Tooltip";
+import { toast } from "../../../primitives/toast";
 import { useLocalRepoPath } from "../../workspace/useLocalRepoPath";
 import { getPrActionIcon } from "../prIcon";
 import {
@@ -78,7 +80,7 @@ export function TaskActionsMenu({ taskId, isCloud }: TaskActionsMenuProps) {
   const prUrl = useTaskPrUrl(taskId, isCloud);
 
   const {
-    meta: { state: prState, merged, draft },
+    meta: { state: prState, merged, draft, headRefName },
   } = usePrDetails(prUrl);
   const { execute: executePrAction, isPending: isPrActionPending } =
     usePrActions(prUrl);
@@ -107,6 +109,7 @@ export function TaskActionsMenu({ taskId, isCloud }: TaskActionsMenuProps) {
             prState={pr.state}
             merged={merged}
             draft={draft}
+            branchName={headRefName}
             isPrPending={isPrActionPending}
             gitItems={gitItems}
             onGitSelect={gitActions.openAction}
@@ -208,6 +211,7 @@ interface PrBadgeControlProps {
   prState: string;
   merged: boolean;
   draft: boolean;
+  branchName: string | null;
   isPrPending: boolean;
   gitItems: GitMenuAction[];
   onGitSelect: (id: GitMenuActionId) => void;
@@ -219,6 +223,7 @@ function PrBadgeControl({
   prState,
   merged,
   draft,
+  branchName,
   isPrPending,
   gitItems,
   onGitSelect,
@@ -226,7 +231,18 @@ function PrBadgeControl({
 }: PrBadgeControlProps) {
   const config = getPrVisualConfig(prState, merged, draft);
   const lifecycleItems = config.actions;
-  const hasDropdown = gitItems.length + lifecycleItems.length > 0;
+  const hasMenuItems = gitItems.length + lifecycleItems.length > 0;
+  const hasDropdown = hasMenuItems || !!branchName;
+
+  const copyBranchName = async () => {
+    if (!branchName) return;
+    try {
+      await navigator.clipboard.writeText(branchName);
+      toast.success("Branch name copied");
+    } catch {
+      toast.error("Couldn't copy branch name");
+    }
+  };
 
   return (
     <Flex align="center" gap="0">
@@ -280,6 +296,17 @@ function PrBadgeControl({
                 </Flex>
               </DropdownMenu.Item>
             ))}
+            {branchName && (
+              <>
+                {hasMenuItems && <DropdownMenu.Separator />}
+                <DropdownMenu.Item onSelect={copyBranchName}>
+                  <Flex align="center" gap="2">
+                    <Copy size={12} weight="bold" />
+                    <Text size="1">Copy branch name</Text>
+                  </Flex>
+                </DropdownMenu.Item>
+              </>
+            )}
           </DropdownMenu.Content>
         </DropdownMenu.Root>
       )}

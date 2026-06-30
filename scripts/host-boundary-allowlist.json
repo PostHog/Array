@@ -10,6 +10,9 @@
     "apps/code/src/main/services/deep-link/service.ts": [
       "injectable-outside-host"
     ],
+    "apps/code/src/main/services/discord-presence/service.ts": [
+      "injectable-outside-host"
+    ],
     "apps/code/src/main/services/encryption/service.ts": [
       "injectable-outside-host"
     ],

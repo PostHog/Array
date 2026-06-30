@@ -59,6 +59,7 @@ export function PersonalizationSettings() {
         placeholder="e.g. Always write tests for new code. Prefer functional patterns."
         rows={6}
         size="1"
+        resize="vertical"
         className="w-full"
       />
       <Text color="gray" align="right" className="text-[13px]">

@@ -24,7 +24,7 @@ A "skill name" is its directory name. If remote and shipped both have `query-dat
 
 ## Build Time
 
-`copyPosthogPlugin()` in `vite.main.config.mts` assembles the plugin during `writeBundle`:
+`copyPosthogPlugin()` in `vite-main-plugins.mts` assembles the plugin during `writeBundle`:
 
 1. Copies allowed plugin entries into `.vite/build/plugins/posthog/`
 2. Downloads `skills.zip` via `curl`, extracts with `unzip`, overlays into the build output
@@ -40,7 +40,7 @@ Vite watches `plugins/posthog/` (and `local-skills/` in dev) for hot-reload.
 **On startup:**
 1. Creates `{userData}/plugins/posthog/` (the runtime plugin dir)
 2. Assembles it: copies `plugin.json` from bundled, merges bundled skills + any previously-downloaded remote skills
-3. Syncs skills to `$HOME/.agents/skills/` for Codex
+3. One-time: cleans up skills earlier builds copied into `$HOME/.agents/skills/` (see below)
 4. Starts a 30-minute interval timer
 5. Kicks off the first async download
 
@@ -49,17 +49,21 @@ Vite watches `plugins/posthog/` (and `local-skills/` in dev) for hot-reload.
 2. Extracts to a temp dir via `unzip`
 3. Atomically swaps into `{userData}/skills/`
 4. Re-assembles the runtime plugin dir
-5. Re-syncs to Codex
-6. On failure: logs a warning, keeps existing skills, retries next interval
+5. On failure: logs a warning, keeps existing skills, retries next interval
 
 **`getPluginPath()`** — called by `AgentService` when starting sessions:
 - Dev mode → bundled path (Vite already merged everything)
 - Prod → `{userData}/plugins/posthog/` (with downloaded updates)
 - Fallback → bundled path
 
-### Codex Sync
+### Cross-harness skills (no global writes)
 
-After every assembly, skills are copied to `$HOME/.agents/skills/` so that Codex sessions also pick them up.
+`$HOME/.agents/skills/` is a shared, cross-agent skills directory that other tools (e.g. standalone Codex) also read. PostHog Code **never writes skills there.** It only reads it, to surface the user's own Codex skills in the Skills tab. The "use your skills in any harness" merge happens per-session, scoped to the process PostHog Code spawns:
+
+- **Claude sessions** load the user's Codex skills (`$HOME/.agents/skills`) as an extra synthetic plugin — see `discover-plugins.ts` (`discoverCodexSkills`), deduped against the bundled catalog and `$HOME/.claude/skills`.
+- **Codex sessions** get a private `CODEX_HOME` (`{userData}/codex-home`) whose `skills/` holds the bundled catalog + the user's `$HOME/.claude/skills` — see `codex-home.ts` (`prepareCodexHome`). codex-acp scans `$CODEX_HOME/skills` plus `$HOME/.agents/skills`, so the user's own Codex skills still load while ours stay app-private.
+
+**One-time cleanup.** Earlier builds copied skills into the shared `$HOME/.agents/skills/` (the bundled catalog via `syncCodexSkills`, and the user's skills via an automatic mirror). `cleanupLegacyCodexMirror` (in `codex-mirror.ts`) removes those leftovers once per install so the directory becomes the user's own again. It only deletes skills it can prove we wrote: names tracked in `.posthog-mirror.json`, and bundled-catalog copies whose `SKILL.md` is byte-identical to ours (so a user's own same-named skill is never deleted).
 
 ## Dev Workflow
 

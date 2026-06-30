@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { inject, injectable } from "inversify";
 import { WORKSPACE_REPOSITORY } from "../../db/identifiers";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
-import { TOKENS } from "../../di/tokens";
+import { GIT_SERVICE } from "../../di/tokens";
 import { WORKSPACE_SERVICE } from "../workspace/identifiers";
 import type {
   CachedPrUrlOutput,
@@ -17,7 +17,7 @@ export class TaskPrStatusService {
   private readonly taskPrRevalidations = new Map<string, Promise<void>>();
 
   constructor(
-    @inject(TOKENS.GitService)
+    @inject(GIT_SERVICE)
     private readonly gitService: GitService,
     @inject(WORKSPACE_REPOSITORY)
     private readonly workspaceRepo: IWorkspaceRepository,
@@ -156,8 +156,8 @@ export class TaskPrStatusService {
       return { prUrl: null, prState: null, hasDiff: false };
     }
 
-    if (worktreePath) {
-      const prStatus = await this.gitService.getPrStatus(worktreePath);
+    if (repoPath) {
+      const prStatus = await this.gitService.getPrStatus(repoPath);
       if (prStatus.prExists && prStatus.prState) {
         return {
           prUrl: prStatus.prUrl,
@@ -170,16 +170,19 @@ export class TaskPrStatusService {
         };
       }
 
-      const [diffStats, syncStatus] = await Promise.all([
-        this.gitService.getDiffStats(worktreePath),
-        this.gitService.getGitSyncStatus(worktreePath),
-      ]);
+      // Only worktree tasks track local diff/ahead state as a PR-less signal.
+      if (worktreePath) {
+        const [diffStats, syncStatus] = await Promise.all([
+          this.gitService.getDiffStats(worktreePath),
+          this.gitService.getGitSyncStatus(worktreePath),
+        ]);
 
-      const hasDiff =
-        (diffStats?.filesChanged ?? 0) > 0 ||
-        (syncStatus?.aheadOfDefault ?? 0) > 0;
+        const hasDiff =
+          (diffStats?.filesChanged ?? 0) > 0 ||
+          (syncStatus?.aheadOfDefault ?? 0) > 0;
 
-      return { prUrl: null, prState: null, hasDiff };
+        return { prUrl: null, prState: null, hasDiff };
+      }
     }
 
     return { prUrl: null, prState: null, hasDiff: false };

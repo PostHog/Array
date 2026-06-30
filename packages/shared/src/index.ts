@@ -15,6 +15,32 @@ export {
   FONT_EXTENSIONS,
   isBinaryFile,
 } from "./binary";
+export {
+  activeTabIsBlank,
+  type CloseTabResult,
+  closeTab,
+  decideTabNavigation,
+  newBlankTab,
+  type OpenTabResult,
+  openOrFocusTab,
+  POSITION_GAP,
+  primaryWindow,
+  primaryWindowHasNoTabs,
+  reorderTab,
+  setTabTarget,
+  type TabNavDecision,
+  type TabTarget,
+} from "./browser-tabs";
+export {
+  type BrowserTab,
+  type BrowserWindow,
+  browserTabSchema,
+  browserWindowSchema,
+  type TabsSnapshot,
+  tabsSnapshotSchema,
+  type WindowBounds,
+  windowBoundsSchema,
+} from "./browser-tabs-schemas";
 export type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 export {
   CLOUD_PROMPT_PREFIX,
@@ -134,6 +160,7 @@ export {
 } from "./seat";
 export {
   type AcpMessage,
+  IMPORTED_USER_PROMPT_META_KEY,
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcResponse,
@@ -169,6 +196,7 @@ export type {
   SkillFileEntry,
   SkillInfo,
   SkillSource,
+  UploadableSkillSource,
 } from "./skills";
 export { SKILL_EXISTS_MARKER, stripFrontmatter } from "./skills";
 export type {
@@ -176,6 +204,7 @@ export type {
   PostHogAPIConfig,
   TaskRun,
   TaskRunArtifact,
+  TaskRunArtifactMetadata,
   TaskRunEnvironment,
   TaskRunStatus,
 } from "./task";

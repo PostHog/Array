@@ -1,4 +1,4 @@
-import { ThumbsDownIcon } from "@phosphor-icons/react";
+import { ArchiveIcon } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { isDismissalReasonSnooze } from "@posthog/shared/dismissalReasons";
 import type { SignalReport } from "@posthog/shared/types";
@@ -12,7 +12,7 @@ import { type ReactElement, useCallback, useMemo, useState } from "react";
 
 const EMPTY_REPORTS: SignalReport[] = [];
 
-/** Dismiss flow used by every inbox detail screen – one report, one button + dialog. */
+/** Archive flow used by every inbox detail screen – one report, one button + dialog. */
 export function useInboxReportDismissAction(report: SignalReport): {
   actionButton: ReactElement;
   dialog: ReactElement | null;
@@ -45,16 +45,16 @@ export function useInboxReportDismissAction(report: SignalReport): {
   );
 
   const actionButton = (
-    <Tooltip content="Dismiss this report">
+    <Tooltip content="Archive this report">
       <Button
         type="button"
         variant="outline"
         size="sm"
-        aria-label="Dismiss this report"
+        aria-label="Archive this report"
         disabled={isPending}
         onClick={() => setOpen(true)}
       >
-        {isPending ? <Spinner size="1" /> : <ThumbsDownIcon size={12} />}
+        {isPending ? <Spinner size="1" /> : <ArchiveIcon size={12} />}
       </Button>
     </Tooltip>
   );

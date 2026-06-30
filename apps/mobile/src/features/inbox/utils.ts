@@ -1,4 +1,6 @@
+import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import type { InboxViewedProperties } from "@/lib/analytics";
+import { DISMISSAL_REASON_OPTIONS } from "./constants";
 import type {
   AvailableSuggestedReviewer,
   SignalReport,
@@ -35,10 +37,36 @@ export function formatSignalReportSummaryMarkdown(content: string): string {
   return result;
 }
 
+/** Relative time for the last day, absolute "MMM d" beyond it. */
+export function formatReportTimestamp(date: Date): string {
+  return differenceInHours(new Date(), date) < 24
+    ? formatDistanceToNow(date, { addSuffix: true })
+    : format(date, "MMM d");
+}
+
+/**
+ * Archive membership: `suppressed` (user-archived) and `resolved` (PR merged).
+ * Only `suppressed` is restorable; `resolved` is terminal, shown for reference.
+ */
+export function isRestorableReport(
+  report: Pick<SignalReport, "status">,
+): boolean {
+  return report.status === "suppressed";
+}
+
+/** Human label for a persisted dismissal reason, falling back to the raw code. */
+export function dismissalReasonLabel(value: string): string {
+  return (
+    DISMISSAL_REASON_OPTIONS.find((o) => o.value === value)?.label ?? value
+  );
+}
+
 export function inboxStatusLabel(status: SignalReportStatus): string {
   switch (status) {
     case "ready":
       return "Ready";
+    case "resolved":
+      return "Resolved";
     case "pending_input":
       return "Needs input";
     case "in_progress":
@@ -63,13 +91,29 @@ export function inboxStatusLabel(status: SignalReportStatus): string {
  * 1. Status rank (ready first)
  * 2. Suggested reviewer (current user first)
  * 3. User-selected field
+ *
+ * Priority is a coarse 5-bucket rank, so ties are broken by newest first.
  */
 export function buildSignalReportListOrdering(
   field: SignalReportOrderingField,
   direction: "asc" | "desc",
 ): string {
   const fieldKey = direction === "desc" ? `-${field}` : field;
-  return `status,-is_suggested_reviewer,${fieldKey}`;
+  const tiebreak = field === "priority" ? ",-created_at" : "";
+  return `status,-is_suggested_reviewer,${fieldKey}${tiebreak}`;
+}
+
+/**
+ * Ordering for the Archive view, which lists two terminal statuses
+ * (`suppressed` + `resolved`). Unlike the pipeline ordering, it must not prefix
+ * with `status`: that would group one terminal state ahead of the other before
+ * the time sort, burying recent items behind older ones from the sibling status.
+ */
+export function buildArchiveListOrdering(
+  field: SignalReportOrderingField,
+  direction: "asc" | "desc",
+): string {
+  return direction === "desc" ? `-${field}` : field;
 }
 
 /**

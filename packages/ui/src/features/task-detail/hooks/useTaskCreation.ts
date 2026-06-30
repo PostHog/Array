@@ -19,13 +19,14 @@ import type { ExecutionMode, Task } from "@posthog/shared/domain-types";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToTaskPending } from "@posthog/ui/router/navigationBridge";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
 import { toast } from "../../../primitives/toast";
 import { track } from "../../../shell/analytics";
 import { logger } from "../../../shell/logger";
 import { pendingTaskPromptStoreApi } from "../../../shell/pendingTaskPromptStore";
+import { titleAttachmentStoreApi } from "../../../shell/titleAttachmentStore";
 import { useAuthStateValue } from "../../auth/store";
 import { assertCloudUsageAvailable } from "../../billing/preflightCloudUsage";
 import { useUsageLimitStore } from "../../billing/usageLimitStore";
@@ -35,18 +36,23 @@ import {
   type EditorContent,
   extractFilePaths,
 } from "../../message-editor/content";
+import { useDraftStore } from "../../message-editor/draftStore";
 import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryStore";
 import type { EditorHandle } from "../../message-editor/types";
 import { useSettingsStore } from "../../settings/settingsStore";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
+import { useTasks } from "../../tasks/useTasks";
 import { useTourStore } from "../../tour/tourStore";
 import { createFirstTaskTour } from "../../tour/tours/createFirstTaskTour";
+import { useExistingWorktreeConfirmStore } from "../stores/existingWorktreeConfirmStore";
 import { useRemoteBranchConfirmStore } from "../stores/remoteBranchConfirmStore";
 
 const log = logger.scope("task-creation");
 
 interface UseTaskCreationOptions {
   editorRef: React.RefObject<EditorHandle | null>;
+  /** Draft-store session id for the editor; cleared on successful creation. */
+  sessionId: string;
   selectedDirectory: string;
   selectedRepository?: string | null;
   githubIntegrationId?: number;
@@ -63,6 +69,12 @@ interface UseTaskCreationOptions {
   signalReportId?: string;
   channelContext?: string;
   channelName?: string;
+  /**
+   * Channels "generic chat box" mode: drop the repo/branch requirement so a
+   * task can be submitted without picking a repo. The agent decides at runtime
+   * whether it needs one and attaches it lazily.
+   */
+  allowNoRepo?: boolean;
   onTaskCreated?: (task: Task) => void;
 }
 
@@ -126,6 +138,7 @@ async function trackTaskCreated(
 
 export function useTaskCreation({
   editorRef,
+  sessionId,
   selectedDirectory,
   selectedRepository,
   githubIntegrationId,
@@ -142,11 +155,13 @@ export function useTaskCreation({
   signalReportId,
   channelContext,
   channelName,
+  allowNoRepo,
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const hostClient = useHostTRPCClient();
   const trpc = useHostTRPC();
+  const queryClient = useQueryClient();
   const defaultAdditionalDirectoriesQuery = useQuery(
     trpc.additionalDirectories.listDefaults.queryOptions(),
   );
@@ -165,9 +180,14 @@ export function useTaskCreation({
   );
   const { invalidateTasks } = useCreateTask();
   const { isOnline } = useConnectivity();
+  // Used to name the task occupying a branch's worktree when reuse is blocked.
+  const { data: tasks } = useTasks();
 
-  const hasRequiredPath =
-    workspaceMode === "cloud" ? !!selectedRepository : !!selectedDirectory;
+  const hasRequiredPath = allowNoRepo
+    ? true
+    : workspaceMode === "cloud"
+      ? !!selectedRepository
+      : !!selectedDirectory;
   const canSubmitBase =
     isAuthenticated && isOnline && hasRequiredPath && !isCreatingTask;
   const canSubmit = !!editorRef.current && canSubmitBase && !editorIsEmpty;
@@ -184,18 +204,41 @@ export function useTaskCreation({
         return false;
       }
 
-      // If the chosen worktree branch only exists on the remote, confirm before
-      // fetching and checking it out locally. Done before the pending view so
-      // the dialog (and a cancel) don't leave a half-started task on screen.
+      // Confirm a couple of worktree branch situations before starting the
+      // task. Done before the pending view so a dialog (and a cancel) don't
+      // leave a half-started task on screen. Reusing an existing worktree takes
+      // priority over checking out a remote branch.
       let allowRemoteBranchCheckout = false;
+      let reuseExistingWorktree = false;
       if (workspaceMode === "worktree" && branch && selectedDirectory) {
         try {
-          const { status } =
+          const { status, existingWorktreePath, existingWorktreeTaskId } =
             await hostClient.workspace.checkWorktreeBranch.query({
               mainRepoPath: selectedDirectory,
               branch,
             });
-          if (status === "remote-only") {
+          if (existingWorktreeTaskId) {
+            // The branch's worktree already belongs to another task. Don't
+            // create a duplicate; point the user at the task using it.
+            const occupant = tasks?.find(
+              (t) => t.id === existingWorktreeTaskId,
+            );
+            toast.error("Worktree already in use", {
+              description: occupant
+                ? `${branch} already has a worktree used by "${occupant.title}". Open that task to keep working there.`
+                : `${branch} already has a worktree used by another task.`,
+            });
+            return false;
+          }
+          if (existingWorktreePath) {
+            const confirmed = await useExistingWorktreeConfirmStore
+              .getState()
+              .confirm(branch, existingWorktreePath);
+            if (!confirmed) {
+              return false;
+            }
+            reuseExistingWorktree = true;
+          } else if (status === "remote-only") {
             const confirmed = await useRemoteBranchConfirmStore
               .getState()
               .confirm(branch);
@@ -213,6 +256,9 @@ export function useTaskCreation({
 
       const content = contentOverride ?? editor.getContent();
       const plainPromptText = contentToPlainText(content).trim();
+      const serializedContent = contentToXml(content).trim();
+      const filePaths = extractFilePaths(content);
+
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
       const pendingTaskKey = shouldShowPendingView
         ? (globalThis.crypto?.randomUUID?.() ?? `pending-${Date.now()}`)
@@ -240,16 +286,17 @@ export function useTaskCreation({
           }
         }
 
-        const serializedContent = contentToXml(content).trim();
-        const filePaths = extractFilePaths(content);
         const input = prepareTaskInput(serializedContent, filePaths, {
-          selectedDirectory,
-          selectedRepository,
+          // In channels chat-box mode no repo is attached up front, even if a
+          // directory/repo is lingering in the persisted picker state.
+          selectedDirectory: allowNoRepo ? undefined : selectedDirectory,
+          selectedRepository: allowNoRepo ? null : selectedRepository,
           githubIntegrationId,
           githubUserIntegrationId,
           workspaceMode,
           branch,
           allowRemoteBranchCheckout,
+          reuseExistingWorktree,
           executionMode,
           adapter,
           model,
@@ -260,6 +307,8 @@ export function useTaskCreation({
           additionalDirectories,
           channelContext,
           channelName,
+          customInstructions: useSettingsStore.getState().customInstructions,
+          allowNoRepo,
         });
 
         if (executionMode) {
@@ -270,11 +319,36 @@ export function useTaskCreation({
           input,
           (output) => {
             invalidateTasks(output.task);
+            // Stash the prompt's local attachment paths so the chat-title
+            // generator can read their contents when naming the task — needed
+            // for pasted-text prompts whose only signal is the file body, and
+            // especially for cloud tasks where the local path is otherwise lost
+            // once the file is uploaded as an artifact.
+            // Exclude folder chips — only file paths are readable by the title
+            // generator's readAbsoluteFile call.
+            const folderIds = new Set(
+              content.segments.flatMap((seg) =>
+                seg.type === "chip" && seg.chip.type === "folder"
+                  ? [seg.chip.id]
+                  : [],
+              ),
+            );
+            const fileOnlyPaths = filePaths.filter((p) => !folderIds.has(p));
+            if (fileOnlyPaths.length > 0) {
+              titleAttachmentStoreApi.set(output.task.id, fileOnlyPaths);
+            }
             if (signalReportId) {
               clearTaskInputReportAssociation();
             }
             if (pendingTaskKey) {
               pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
+            }
+            // Clear the draft BEFORE navigating away. When onTaskCreated
+            // navigates (e.g. channels), it can synchronously unmount/destroy
+            // the editor; clearing afterwards would throw in clearContent()
+            // before the persisted draft is wiped, leaving stale text behind.
+            if (!pendingTaskKey && !contentOverride) {
+              editor.clear();
             }
             if (onTaskCreated) {
               onTaskCreated(output.task);
@@ -282,9 +356,6 @@ export function useTaskCreation({
               void openTask(output.task);
             }
             useTourStore.getState().completeTour(createFirstTaskTour.id);
-            if (!pendingTaskKey && !contentOverride) {
-              editor.clear();
-            }
             // Pre-flight already ran above for cloud; skip the service's duplicate check.
           },
           { skipCloudUsagePreflight: true },
@@ -292,7 +363,24 @@ export function useTaskCreation({
 
         if (result.success) {
           setAdditionalDirectoriesOverride(null);
+          // Guarantee the editor draft is wiped on success. editor.clear()
+          // above only runs inside the onTaskReady callback (and after it
+          // navigates the editor may be torn down); clearing the persisted
+          // draft directly here always runs and survives the unmount, so a
+          // submitted prompt never reappears on the next new task.
+          if (!contentOverride) {
+            useDraftStore.getState().actions.setDraft(sessionId, null);
+          }
           void trackTaskCreated(input, selectedDirectory, hostClient);
+          // Repo-less channel tasks create no workspace row (the agent runs in
+          // a scratch dir surfaced as a synthetic workspace), so the normal
+          // workspace.create invalidation never fires. Refresh the workspace
+          // cache so the task view resolves its cwd and skips the repo prompt.
+          if (allowNoRepo) {
+            void queryClient.invalidateQueries({
+              queryKey: trpc.workspace.getAll.queryKey(),
+            });
+          }
         }
 
         if (!result.success) {
@@ -332,6 +420,7 @@ export function useTaskCreation({
       canSubmit,
       canSubmitBase,
       editorRef,
+      sessionId,
       selectedDirectory,
       selectedRepository,
       githubIntegrationId,
@@ -348,11 +437,15 @@ export function useTaskCreation({
       additionalDirectories,
       channelContext,
       channelName,
+      allowNoRepo,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
       hostClient,
+      trpc,
+      queryClient,
       taskService,
+      tasks,
     ],
   );
 

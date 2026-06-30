@@ -61,5 +61,6 @@ export function buildCommentMergedOptions(
     enableLineSelection: !hasOpenComment,
     enableGutterUtility: !hasOpenComment,
     onLineSelectionEnd: handleLineSelectionEnd,
+    onGutterUtilityClick: handleLineSelectionEnd,
   };
 }

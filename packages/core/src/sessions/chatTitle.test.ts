@@ -74,6 +74,16 @@ describe("decideTitleGeneration", () => {
     expect(decision.shouldGenerateFromPrompts).toBe(true);
   });
 
+  it("does not regenerate from the first prompt when the description was handled", () => {
+    const decision = decideTitleGeneration({
+      promptCount: 1,
+      lastGeneratedAtCount: 0,
+      initialDescriptionHandled: true,
+      task: { title: "Custom", description: "d" },
+    });
+    expect(decision.shouldGenerateFromPrompts).toBe(false);
+  });
+
   it("regenerates every REGENERATE_INTERVAL prompts", () => {
     const decision = decideTitleGeneration({
       promptCount: 1 + REGENERATE_INTERVAL,

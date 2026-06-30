@@ -11,9 +11,9 @@ import { reportKeys } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useInboxReportSelectionStore } from "@posthog/ui/features/inbox/stores/inboxReportSelectionStore";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { track } from "@posthog/ui/shell/analytics";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
-import { toast } from "sonner";
 
 type BulkActionName = "suppress" | "snooze" | "delete" | "reingest";
 
@@ -79,7 +79,7 @@ function formatBulkActionSummary(
   const pluralized = successCount === 1 ? "report" : "reports";
   const formulated =
     action === "suppress"
-      ? `${pluralized} dismissed`
+      ? `${pluralized} archived`
       : action === "snooze"
         ? `${pluralized} snoozed`
         : action === "delete"
@@ -300,7 +300,7 @@ export function useInboxBulkActions(
         toast.success(formatBulkActionSummary("suppress", result));
       },
       onError: (error) => {
-        toast.error(error.message || "Failed to dismiss reports");
+        toast.error(error.message || "Failed to archive reports");
       },
     },
   );
