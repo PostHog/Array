@@ -113,12 +113,14 @@ interface SettingsStore {
   dockBounceNotifications: boolean;
   completionSound: CompletionSound;
   completionVolume: number;
+  scaleSoundWithTaskLength: boolean;
   customSounds: CustomSound[];
   setDesktopNotifications: (enabled: boolean) => void;
   setDockBadgeNotifications: (enabled: boolean) => void;
   setDockBounceNotifications: (enabled: boolean) => void;
   setCompletionSound: (sound: CompletionSound) => void;
   setCompletionVolume: (volume: number) => void;
+  setScaleSoundWithTaskLength: (enabled: boolean) => void;
   addCustomSound: (sound: CustomSound) => void;
   removeCustomSound: (id: string) => void;
   renameCustomSound: (id: string, name: string) => void;
@@ -187,6 +189,7 @@ export const NOTIFICATION_DEFAULTS = {
   dockBounceNotifications: false,
   completionSound: "none" as CompletionSound,
   completionVolume: 80,
+  scaleSoundWithTaskLength: false,
 };
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -253,6 +256,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ dockBounceNotifications: enabled }),
       setCompletionSound: (sound) => set({ completionSound: sound }),
       setCompletionVolume: (volume) => set({ completionVolume: volume }),
+      setScaleSoundWithTaskLength: (enabled) =>
+        set({ scaleSoundWithTaskLength: enabled }),
       addCustomSound: (sound) =>
         set((state) => ({ customSounds: [...state.customSounds, sound] })),
       removeCustomSound: (id) =>
@@ -381,6 +386,7 @@ export const useSettingsStore = create<SettingsStore>()(
         dockBounceNotifications: state.dockBounceNotifications,
         completionSound: state.completionSound,
         completionVolume: state.completionVolume,
+        scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,
         customSounds: state.customSounds,
 
         // Composer / chat

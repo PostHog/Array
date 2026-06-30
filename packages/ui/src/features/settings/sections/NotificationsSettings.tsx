@@ -40,12 +40,14 @@ export function NotificationsSettings() {
     dockBounceNotifications,
     completionSound,
     completionVolume,
+    scaleSoundWithTaskLength,
     customSounds,
     setDesktopNotifications,
     setDockBadgeNotifications,
     setDockBounceNotifications,
     setCompletionSound,
     setCompletionVolume,
+    setScaleSoundWithTaskLength,
     removeCustomSound,
     renameCustomSound,
   } = useSettingsStore();
@@ -117,12 +119,25 @@ export function NotificationsSettings() {
     [completionSound, setCompletionSound],
   );
 
+  const handleScaleSoundChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "scale_sound_with_task_length",
+        new_value: checked,
+        old_value: scaleSoundWithTaskLength,
+      });
+      setScaleSoundWithTaskLength(checked);
+    },
+    [scaleSoundWithTaskLength, setScaleSoundWithTaskLength],
+  );
+
   const resetToDefaults = useCallback(() => {
     setDesktopNotifications(NOTIFICATION_DEFAULTS.desktopNotifications);
     setDockBadgeNotifications(NOTIFICATION_DEFAULTS.dockBadgeNotifications);
     setDockBounceNotifications(NOTIFICATION_DEFAULTS.dockBounceNotifications);
     setCompletionSound(NOTIFICATION_DEFAULTS.completionSound);
     setCompletionVolume(NOTIFICATION_DEFAULTS.completionVolume);
+    setScaleSoundWithTaskLength(NOTIFICATION_DEFAULTS.scaleSoundWithTaskLength);
     toast.success("Notification settings reset to defaults");
   }, [
     setDesktopNotifications,
@@ -130,6 +145,7 @@ export function NotificationsSettings() {
     setDockBounceNotifications,
     setCompletionSound,
     setCompletionVolume,
+    setScaleSoundWithTaskLength,
   ]);
 
   return (
@@ -270,7 +286,7 @@ export function NotificationsSettings() {
       />
 
       {completionSound !== "none" && (
-        <SettingRow label="Sound volume" noBorder>
+        <SettingRow label="Sound volume">
           <Flex align="center" gap="3">
             <Slider
               value={[completionVolume]}
@@ -285,6 +301,20 @@ export function NotificationsSettings() {
               {completionVolume}%
             </Text>
           </Flex>
+        </SettingRow>
+      )}
+
+      {completionSound !== "none" && (
+        <SettingRow
+          label="Scale sound speed with task length"
+          description="Play the sound faster for quick tasks and slower for long ones"
+          noBorder
+        >
+          <Switch
+            checked={scaleSoundWithTaskLength}
+            onCheckedChange={handleScaleSoundChange}
+            size="1"
+          />
         </SettingRow>
       )}
 

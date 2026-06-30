@@ -84,11 +84,12 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         taskTitle,
         taskId,
       ),
-    notifyPromptComplete: (taskTitle, stopReason, taskId) =>
+    notifyPromptComplete: (taskTitle, stopReason, taskId, durationMs) =>
       resolveService(NotificationBus).notifyPromptComplete(
         taskTitle,
         stopReason,
         taskId,
+        durationMs,
       ),
     getIsOnline,
     fetchAuthState,

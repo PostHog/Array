@@ -1550,6 +1550,9 @@ export class SessionService {
                 session.taskTitle,
                 "end_turn",
                 session.taskId,
+                session.promptStartedAt
+                  ? acpMsg.ts - session.promptStartedAt
+                  : undefined,
               );
             }
             this.d.taskViewedApi.markActivity(session.taskId);
@@ -1671,6 +1674,9 @@ export class SessionService {
           session.taskTitle,
           stopReason,
           session.taskId,
+          session.promptStartedAt
+            ? acpMsg.ts - session.promptStartedAt
+            : undefined,
         );
       }
 
