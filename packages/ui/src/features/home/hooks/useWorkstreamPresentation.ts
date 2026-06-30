@@ -15,9 +15,13 @@ import {
   situationCss,
 } from "@posthog/ui/features/home/utils/situationDisplay";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { toast } from "@posthog/ui/primitives/toast";
 import { openTask } from "@posthog/ui/router/useOpenTask";
+import { logger } from "@posthog/ui/shell/logger";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { useQueryClient } from "@tanstack/react-query";
+
+const log = logger.scope("workstream-archive");
 
 export interface WorkstreamPresentation {
   pr: PrSnapshot | null;
@@ -129,27 +133,32 @@ export function useWorkstreamPresentation(
     archive: () => {
       if (!headTask) return;
       const taskId = headTask.id;
-      void archiveTask({ taskId }).then(() => {
-        // The Home snapshot is server-computed and only refreshes on its poll
-        // (and, for workstreams, after the code-workstreams worker re-runs), so
-        // drop the row optimistically here for immediate feedback.
-        queryClient.setQueryData<HomeSnapshot>(homeKeys.snapshot, (old) =>
-          old
-            ? {
-                ...old,
-                activeAgents: old.activeAgents.filter(
-                  (a) => a.taskId !== taskId,
-                ),
-                needsAttention: old.needsAttention.filter(
-                  (w) => w.id !== workstream.id,
-                ),
-                inProgress: old.inProgress.filter(
-                  (w) => w.id !== workstream.id,
-                ),
-              }
-            : old,
-        );
-      });
+      archiveTask({ taskId })
+        .then(() => {
+          // The Home snapshot is server-computed and only refreshes on its poll
+          // (and, for workstreams, after the code-workstreams worker re-runs),
+          // so drop the row optimistically here for immediate feedback.
+          queryClient.setQueryData<HomeSnapshot>(homeKeys.snapshot, (old) =>
+            old
+              ? {
+                  ...old,
+                  activeAgents: old.activeAgents.filter(
+                    (a) => a.taskId !== taskId,
+                  ),
+                  needsAttention: old.needsAttention.filter(
+                    (w) => w.id !== workstream.id,
+                  ),
+                  inProgress: old.inProgress.filter(
+                    (w) => w.id !== workstream.id,
+                  ),
+                }
+              : old,
+          );
+        })
+        .catch((error) => {
+          log.error("Failed to archive workstream task", { taskId, error });
+          toast.error("Failed to archive task");
+        });
     },
   };
 }

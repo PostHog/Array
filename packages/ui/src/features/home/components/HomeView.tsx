@@ -41,7 +41,8 @@ const HEADER_CONTENT = (
 
 export function HomeView() {
   const { snapshot, isLoading } = useHomeSnapshot();
-  const { items: archivedItems } = useHomeArchivedTasks();
+  const { items: archivedItems, isLoading: archivedLoading } =
+    useHomeArchivedTasks();
   const viewMode = useHomeUiStore((s) => s.viewMode);
   const setViewMode = useHomeUiStore((s) => s.setViewMode);
   const selectedWorkstreamId = useHomeUiStore((s) => s.selectedWorkstreamId);
@@ -198,7 +199,9 @@ export function HomeView() {
 
                   <HomeArchivedSection items={archivedItems} />
 
-                  {!activeHasContent && archivedItems.length === 0 ? (
+                  {!activeHasContent &&
+                  archivedItems.length === 0 &&
+                  !archivedLoading ? (
                     <HomeEmptyState hasRunningAgents={false} />
                   ) : null}
                 </ScrollArea>
