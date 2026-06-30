@@ -238,11 +238,12 @@ export function createWindow(): void {
   mainWindow.once("ready-to-show", showWindow);
   const showFallback = setTimeout(showWindow, 3000);
 
-  // Restore the saved zoom level once the renderer has loaded. Using
-  // did-finish-load (rather than ready-to-show) also re-applies it after
-  // in-app reloads, which reset Chromium's per-webContents zoom.
+  // Restore the zoom level once the renderer has loaded. Read the latest
+  // persisted value from the store (not the create-time snapshot) so zooming
+  // done during the session survives in-app reloads, which otherwise reset
+  // Chromium's per-webContents zoom.
   mainWindow.webContents.on("did-finish-load", () => {
-    mainWindow?.webContents.setZoomLevel(savedState.zoomLevel);
+    mainWindow?.webContents.setZoomLevel(windowStateStore.get("zoomLevel", 0));
   });
 
   // Persist mouse-wheel/pinch zoom. Menu-driven zoom is persisted by the

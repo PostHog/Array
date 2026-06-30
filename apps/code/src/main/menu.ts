@@ -22,13 +22,21 @@ import { isDevBuild } from "./utils/env";
 import { getLogFilePath } from "./utils/logger";
 import { saveZoomLevel } from "./window";
 
+// Zoom is measured in Electron "levels" (factor = 1.2 ** level; 0 = 100%).
+// ZOOM_STEP is one Zoom In/Out notch; the bounds clamp the level so a runaway
+// accelerator can't persist an unusable zoom across restarts.
+const ZOOM_STEP = 0.5;
+const ZOOM_MIN = -3;
+const ZOOM_MAX = 3;
+
 // Apply a zoom change to the focused window and persist the new level so it
 // survives restarts. `delta` adjusts relative to the current level; "reset"
 // returns to 100%.
 function applyZoom(delta: number | "reset"): void {
   const webContents = BrowserWindow.getFocusedWindow()?.webContents;
   if (!webContents) return;
-  const level = delta === "reset" ? 0 : webContents.getZoomLevel() + delta;
+  const next = delta === "reset" ? 0 : webContents.getZoomLevel() + delta;
+  const level = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
   webContents.setZoomLevel(level);
   saveZoomLevel(level);
 }
@@ -328,7 +336,7 @@ function buildViewMenu(): MenuItemConstructorOptions {
       {
         label: "Zoom In",
         accelerator: "CmdOrCtrl+Plus",
-        click: () => applyZoom(0.5),
+        click: () => applyZoom(ZOOM_STEP),
       },
       // Hidden duplicate so Cmd+= (i.e. Cmd++ without Shift) also zooms in,
       // matching the built-in zoomIn role's dual accelerator.
@@ -336,12 +344,12 @@ function buildViewMenu(): MenuItemConstructorOptions {
         label: "Zoom In",
         accelerator: "CmdOrCtrl+=",
         visible: false,
-        click: () => applyZoom(0.5),
+        click: () => applyZoom(ZOOM_STEP),
       },
       {
         label: "Zoom Out",
         accelerator: "CmdOrCtrl+-",
-        click: () => applyZoom(-0.5),
+        click: () => applyZoom(-ZOOM_STEP),
       },
       { type: "separator" },
       { role: "togglefullscreen" },
