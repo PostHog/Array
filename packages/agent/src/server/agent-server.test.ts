@@ -436,6 +436,7 @@ describe("AgentServer HTTP Mode", () => {
         status: "ok",
         hasSession: true,
         bootMs: expect.any(Number),
+        sessionInitMs: expect.any(Number),
       });
     }, 30000);
   });

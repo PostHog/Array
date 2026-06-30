@@ -1300,10 +1300,7 @@ export class AgentServer {
     });
 
     this.sessionReadyBootMs = Math.round(process.uptime() * 1000);
-    this.sessionInitMs =
-      this.barrierReleasedAtMs !== undefined
-        ? Math.max(0, Date.now() - this.barrierReleasedAtMs)
-        : this.sessionReadyBootMs;
+    this.sessionInitMs = Math.max(0, Date.now() - this.barrierReleasedAtMs!);
     this.logger.debug("Session initialized successfully", {
       bootMs: this.sessionReadyBootMs,
       sessionInitMs: this.sessionInitMs,
