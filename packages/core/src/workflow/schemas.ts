@@ -61,9 +61,6 @@ export const workflowAction = z
     prompt: z.string().min(1).max(8_000),
     adapter: z.enum(["claude", "codex"]).optional(),
     model: z.string().min(1).optional(),
-    // When true, the server-side classifier auto-runs this action as a cloud
-    // task whenever a workstream's primary situation matches the binding (gated
-    // so it never piles onto a workstream that already has a running task).
     auto: z.boolean().optional(),
   })
   .strict();
@@ -94,8 +91,6 @@ export const validationDiagnostic = z
       "duplicate_action_id",
       "action_empty_prompt",
       "action_empty_label",
-      // Emitted only by server-side save validation (not the client validator);
-      // listed here so server-returned diagnostics still parse via saveResult.
       "action_auto_not_bool",
     ]),
     message: z.string(),
