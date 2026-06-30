@@ -4,7 +4,8 @@ export type SkillIssueType =
   | "missing-description"
   | "name-mismatch"
   | "oversized-manifest"
-  | "shadowed";
+  | "shadowed"
+  | "ambiguous-trigger";
 
 export interface SkillIssue {
   type: SkillIssueType;
@@ -16,6 +17,34 @@ export type SkillAnalysis = Record<string, SkillIssue[]>;
 
 /** SKILL.md is injected into agent context; warn when it gets expensive. */
 export const OVERSIZED_SKILL_MD_BYTES = 32 * 1024;
+
+/**
+ * Verbs that appear in both PostHog-analytics descriptions and everyday coding
+ * requests. A bundled skill whose description contains one of these without an
+ * explicit TRIGGER guard risks being invoked when the user is doing unrelated
+ * coding work — the model picks the closest-matching skill even when none is
+ * appropriate.
+ */
+export const AMBIGUOUS_TRIGGER_VERBS = [
+  "investigate",
+  "diagnose",
+  "debug",
+  "explore",
+  "analyze",
+  "audit",
+  "instrument",
+  "set up",
+] as const;
+
+export function hasAmbiguousTrigger(skill: SkillInfo): boolean {
+  if (skill.source !== "bundled") return false;
+  const desc = skill.description.toLowerCase();
+  const hasVerb = AMBIGUOUS_TRIGGER_VERBS.some((v) => desc.includes(v));
+  // Accepted guard patterns (any is sufficient):
+  // "TRIGGER when" / "trigger when", "Use when", "Read when", "DO NOT TRIGGER"
+  const hasGuard = /\b(trigger|use|read) when\b/i.test(skill.description);
+  return hasVerb && !hasGuard;
+}
 
 /**
  * Precedence when two skills share a name: the most specific source wins.
@@ -61,6 +90,16 @@ export function analyzeSkills(skills: SkillInfo[]): SkillAnalysis {
         type: "missing-description",
         message:
           "No description — agents rely on it to decide when to use this skill",
+      });
+    }
+
+    if (hasAmbiguousTrigger(skill)) {
+      const matched = AMBIGUOUS_TRIGGER_VERBS.filter((v) =>
+        skill.description.toLowerCase().includes(v),
+      );
+      push(skill, {
+        type: "ambiguous-trigger",
+        message: `Description uses generic verb(s) [${matched.join(", ")}] without a TRIGGER guard — add "TRIGGER when: …\\nDO NOT TRIGGER when: …" to prevent false invocations on coding tasks`,
       });
     }
 

@@ -1,6 +1,11 @@
 import type { SkillInfo } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
-import { analyzeSkills, OVERSIZED_SKILL_MD_BYTES } from "./analyzeSkills";
+import {
+  AMBIGUOUS_TRIGGER_VERBS,
+  analyzeSkills,
+  hasAmbiguousTrigger,
+  OVERSIZED_SKILL_MD_BYTES,
+} from "./analyzeSkills";
 
 function makeSkill(overrides: Partial<SkillInfo>): SkillInfo {
   return {
@@ -130,6 +135,107 @@ describe("analyzeSkills", () => {
       expect(analysis[repo.path]).toBeUndefined();
       expect(analysis[user.path]?.[0]?.message).toContain("repository");
       expect(analysis[bundled.path]?.[0]?.message).toContain("repository");
+    });
+  });
+
+  describe("ambiguous-trigger", () => {
+    it("flags a bundled skill with an ambiguous verb and no TRIGGER guard", () => {
+      const skill = makeSkill({
+        source: "bundled",
+        description: "Investigate why a metric dropped using PostHog data.",
+      });
+
+      const analysis = analyzeSkills([skill]);
+
+      expect(analysis[skill.path]).toEqual([
+        expect.objectContaining({ type: "ambiguous-trigger" }),
+      ]);
+    });
+
+    it.each(["user", "repo", "marketplace", "codex"] as const)(
+      "does not flag a %s skill — guard requirement is bundled-only",
+      (source) => {
+        const skill = makeSkill({
+          source,
+          description: "Investigate why a metric dropped.",
+        });
+
+        expect(analyzeSkills([skill])).toEqual({});
+      },
+    );
+
+    it("does not flag a bundled skill whose description has a TRIGGER guard", () => {
+      const skill = makeSkill({
+        source: "bundled",
+        description:
+          "Investigate the experiment results.\nTRIGGER when: user provides an experiment ID.\nDO NOT TRIGGER when: user is editing code.",
+      });
+
+      expect(analyzeSkills([skill])).toEqual({});
+    });
+
+    it.each([
+      [
+        "Use when",
+        "Investigates a PostHog error. Use when the user pastes an issue URL.",
+      ],
+      [
+        "Read when",
+        "Audit PostHog flags. Read when the user asks to health-check flags.",
+      ],
+      [
+        "TRIGGER when",
+        "Investigate traces.\nTRIGGER when: user pastes a trace URL.",
+      ],
+      [
+        "trigger when (lowercase)",
+        "Investigate traces. ONLY trigger when the user pastes a trace URL.",
+      ],
+    ])(
+      "does not flag a bundled skill with a %s guard",
+      (_label, description) => {
+        const skill = makeSkill({ source: "bundled", description });
+        expect(analyzeSkills([skill])).toEqual({});
+      },
+    );
+
+    it("does not flag a bundled skill with no ambiguous verbs", () => {
+      const skill = makeSkill({
+        source: "bundled",
+        description: "Run an A/B test experiment in PostHog.",
+      });
+
+      expect(analyzeSkills([skill])).toEqual({});
+    });
+
+    it("reports the matched verbs in the message", () => {
+      const skill = makeSkill({
+        source: "bundled",
+        description: "Debug and diagnose why the dashboard is slow.",
+      });
+
+      const [issue] = analyzeSkills([skill])[skill.path] ?? [];
+
+      expect(issue?.message).toContain("debug");
+      expect(issue?.message).toContain("diagnose");
+    });
+
+    it("hasAmbiguousTrigger returns false for a skill that is already guarded", () => {
+      const skill = makeSkill({
+        source: "bundled",
+        description:
+          "Investigate the issue.\nTRIGGER when: user says investigate.",
+      });
+
+      expect(hasAmbiguousTrigger(skill)).toBe(false);
+    });
+
+    it("AMBIGUOUS_TRIGGER_VERBS covers the core coding-overlap verbs", () => {
+      // Sentinel: ensures the verb list is not accidentally emptied.
+      expect(AMBIGUOUS_TRIGGER_VERBS.length).toBeGreaterThanOrEqual(5);
+      expect(AMBIGUOUS_TRIGGER_VERBS).toContain("investigate");
+      expect(AMBIGUOUS_TRIGGER_VERBS).toContain("debug");
+      expect(AMBIGUOUS_TRIGGER_VERBS).toContain("diagnose");
     });
   });
 

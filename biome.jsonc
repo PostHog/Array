@@ -210,6 +210,18 @@
       }
     },
     {
+      // Core test files run in Node.js — relax the node:* restriction for tests only.
+      // Production code in packages/core must never import node:* (enforced above).
+      "includes": ["packages/core/src/**/*.test.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": [
         "packages/api-client/src/**/*.ts",
         "packages/api-client/src/**/*.tsx"
