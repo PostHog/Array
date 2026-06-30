@@ -68,6 +68,22 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
+      - name: Cache Electron binary
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            electron-${{ runner.os }}-
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -114,11 +130,33 @@ jobs:
             }
           '
 
-      # Forge -> electron-builder leg. Built after the baseline leg so a flake in
-      # the (riskier) old-build step can never mask the baseline result.
-      - name: Build old Forge app (v0.55.132)
+      # Forge -> electron-builder leg. The old Forge app is a fixed pinned build
+      # (cb0ca68db), byte-identical on every run, so cache it and skip the ~11 min
+      # rebuild that dominates this job. The key tracks the build script, which
+      # pins the ref; bump the script to force a rebuild. Built after the baseline
+      # leg so a flake in the (riskier) old-build step can never mask the baseline.
+      - name: Cache old Forge app (v0.55.132)
+        id: forge-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: apps/code/out/old-forge
+          key: forge-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/code/scripts/dev-update/build-old-forge.sh') }}
+
+      # Reuse the cached app only if its signature still verifies, otherwise rebuild.
+      # This makes a missing or tar-corrupted restore degrade to today's behaviour
+      # (a full build) instead of a confusing swap failure in the Forge leg.
+      - name: Build old Forge app if not cached
         working-directory: apps/code
-        run: bash scripts/dev-update/build-old-forge.sh
+        run: |
+          APP="out/old-forge/PostHog Code.app"
+          if [ "${{ steps.forge-cache.outputs.cache-hit }}" = "true" ] && codesign --verify --strict "$APP" 2>/dev/null; then
+            echo "Reusing cached Forge app with a valid signature"
+            codesign --verify --strict --verbose=2 "$APP"
+          else
+            echo "No usable cached Forge app; building from the pinned ref"
+            rm -rf out/old-forge
+            bash scripts/dev-update/build-old-forge.sh
+          fi
 
       - name: Run macOS Forge to builder update E2E
         working-directory: apps/code
