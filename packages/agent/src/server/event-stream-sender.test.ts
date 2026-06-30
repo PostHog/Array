@@ -205,6 +205,7 @@ describe("TaskRunEventStreamSender", () => {
     expect(fetchMock).toHaveBeenCalled();
     const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
     expect(lastCall[0]).toBe("http://agent-proxy:8003/v1/runs/run-1/ingest");
+    expect(lastCall[0]).not.toContain("/api/projects/");
   });
 
   it("keeps the active ingest request open across scheduled flushes", async () => {

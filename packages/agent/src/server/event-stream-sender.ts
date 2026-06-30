@@ -682,7 +682,7 @@ export class TaskRunEventStreamSender {
     }
 
     if (this.droppedBeforeSequenceCount > 0) {
-      this.config.logger.warn("Task run event ingest recovered after drops", {
+      this.config.logger.info("Task run event ingest recovered after drops", {
         dropped: this.droppedBeforeSequenceCount,
       });
       this.droppedBeforeSequenceCount = 0;
