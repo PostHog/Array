@@ -169,7 +169,7 @@ export function useDraftSync(
     if (!editor || !pendingContent) return;
 
     editor.commands.setContent(editorContentToTiptapJson(pendingContent));
-    editor.commands.focus("end");
+    editor.commands.focus("end", { scrollIntoView: false });
     draftActions.clearPendingContent(sessionId);
   }, [editor, pendingContent, sessionId, draftActions]);
 

@@ -615,7 +615,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
   const focus = useCallback(() => {
     if (editor?.view) {
-      editor.commands.focus("end");
+      // scrollIntoView:false keeps a focus request from yanking the viewport
+      // when the composer is off-screen (e.g. embedded in a command-center cell).
+      editor.commands.focus("end", { scrollIntoView: false });
     }
   }, [editor]);
   const blur = useCallback(() => editor?.commands.blur(), [editor]);
@@ -630,7 +632,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     (text: string) => {
       if (!editor) return;
       editor.commands.setContent(text);
-      editor.commands.focus("end");
+      editor.commands.focus("end", { scrollIntoView: false });
       draft.saveDraft(editor, attachments);
     },
     [editor, draft, attachments],
