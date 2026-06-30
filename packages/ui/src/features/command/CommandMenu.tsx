@@ -439,7 +439,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                       )}
                       {cmd.shortcut && (
                         <span className="ml-auto shrink-0 pl-2">
-                          <KbdGroup>
+                          <KbdGroup className="gap-1">
                             {formatHotkeyParts(cmd.shortcut).map((part) => (
                               <Kbd key={part}>{part}</Kbd>
                             ))}
