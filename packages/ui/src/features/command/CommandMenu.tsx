@@ -1,4 +1,8 @@
-import { HashIcon } from "@phosphor-icons/react";
+import {
+  CaretLeftIcon,
+  CaretRightIcon,
+  HashIcon,
+} from "@phosphor-icons/react";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -36,7 +40,11 @@ import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import { navigateToChannel } from "@posthog/ui/router/navigationBridge";
+import {
+  goBackInHistory,
+  goForwardInHistory,
+  navigateToChannel,
+} from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
@@ -209,6 +217,24 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           closeSettingsDialog();
           openTaskInput();
         },
+      },
+      {
+        id: "go-back",
+        label: "Go back",
+        keywords: "navigate history previous",
+        icon: <CaretLeftIcon size={12} className="text-gray-11" />,
+        action: "go-back",
+        shortcut: SHORTCUTS.GO_BACK,
+        onRun: goBackInHistory,
+      },
+      {
+        id: "go-forward",
+        label: "Go forward",
+        keywords: "navigate history next",
+        icon: <CaretRightIcon size={12} className="text-gray-11" />,
+        action: "go-forward",
+        shortcut: SHORTCUTS.GO_FORWARD,
+        onRun: goForwardInHistory,
       },
       {
         id: "settings",

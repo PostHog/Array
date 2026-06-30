@@ -47,6 +47,8 @@ export type CommandMenuAction =
   | "toggle-theme"
   | "toggle-left-sidebar"
   | "open-review-panel"
+  | "go-back"
+  | "go-forward"
   | "open-task"
   | "open-channel";
 
