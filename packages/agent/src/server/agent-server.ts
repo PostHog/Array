@@ -1534,7 +1534,7 @@ export class AgentServer {
     if (!this.session || !this.resumeState) return;
     const resumeState = this.resumeState;
 
-    await this.runResumeTurn(payload, "Resume message", async () => {
+    await this.runResumeTurn(payload, taskRun, "Resume message", async () => {
       const conversationSummary = formatConversationForResume(
         resumeState.conversation,
       );
@@ -1603,7 +1603,7 @@ export class AgentServer {
   ): Promise<void> {
     if (!this.session) return;
 
-    await this.runResumeTurn(payload, "Resume continuation", async () => {
+    await this.runResumeTurn(payload, taskRun, "Resume continuation", async () => {
       const checkpointApplied = this.nativeResume?.warm
         ? false
         : await this.applyResumeGitCheckpoint(payload);
@@ -1637,6 +1637,7 @@ export class AgentServer {
 
   private async runResumeTurn(
     payload: JwtPayload,
+    taskRun: TaskRun | null,
     logLabel: string,
     buildPrompt: () => Promise<BuiltPrompt>,
   ): Promise<void> {
@@ -1656,6 +1657,8 @@ export class AgentServer {
       this.logger.debug(`${logLabel} completed`, {
         stopReason: result.stopReason,
       });
+
+      await this.clearPendingInitialPromptState(payload, taskRun);
 
       if (result.stopReason === "end_turn") {
         void this.syncCloudBranchMetadata(payload);
