@@ -2619,7 +2619,10 @@ describe("CloudTaskService", () => {
     expect(
       mockStreamFetch.mock.calls.every(([input]) => {
         const url = typeof input === "string" ? input : (input as Request).url;
-        return url.includes("https://app.example.com/api/");
+        const { origin, pathname } = new URL(url);
+        return (
+          origin === "https://app.example.com" && pathname.startsWith("/api/")
+        );
       }),
     ).toBe(true);
     expect(updates).toContainEqual(
