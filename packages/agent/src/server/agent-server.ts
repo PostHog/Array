@@ -1603,36 +1603,41 @@ export class AgentServer {
   ): Promise<void> {
     if (!this.session) return;
 
-    await this.runResumeTurn(payload, taskRun, "Resume continuation", async () => {
-      const checkpointApplied = this.nativeResume?.warm
-        ? false
-        : await this.applyResumeGitCheckpoint(payload);
+    await this.runResumeTurn(
+      payload,
+      taskRun,
+      "Resume continuation",
+      async () => {
+        const checkpointApplied = this.nativeResume?.warm
+          ? false
+          : await this.applyResumeGitCheckpoint(payload);
 
-      const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
-      const prompt: ContentBlock[] = pendingUserPrompt?.prompt.length
-        ? pendingUserPrompt.prompt
-        : [
-            {
-              type: "text",
-              text: "Continue from where you left off. The user is waiting for your response.",
-            },
-          ];
+        const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
+        const prompt: ContentBlock[] = pendingUserPrompt?.prompt.length
+          ? pendingUserPrompt.prompt
+          : [
+              {
+                type: "text",
+                text: "Continue from where you left off. The user is waiting for your response.",
+              },
+            ];
 
-      this.logger.debug("Sending resume continuation", {
-        taskId: payload.task_id,
-        sessionId: this.nativeResume?.sessionId,
-        warm: this.nativeResume?.warm,
-        checkpointApplied,
-        hasPendingUserMessage: !!pendingUserPrompt?.prompt.length,
-      });
+        this.logger.debug("Sending resume continuation", {
+          taskId: payload.task_id,
+          sessionId: this.nativeResume?.sessionId,
+          warm: this.nativeResume?.warm,
+          checkpointApplied,
+          hasPendingUserMessage: !!pendingUserPrompt?.prompt.length,
+        });
 
-      this.resumeState = null;
-      this.nativeResume = null;
-      return {
-        prompt,
-        ...(pendingUserPrompt?.meta ? { meta: pendingUserPrompt.meta } : {}),
-      };
-    });
+        this.resumeState = null;
+        this.nativeResume = null;
+        return {
+          prompt,
+          ...(pendingUserPrompt?.meta ? { meta: pendingUserPrompt.meta } : {}),
+        };
+      },
+    );
   }
 
   private async runResumeTurn(
