@@ -182,7 +182,7 @@ Rules for the body:
 - Be thorough but concise
 - Use markdown formatting
 - Only describe changes that are actually in the diff — do not invent or assume changes
-- Treat the target repository as public-readable. Do not include private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, or references to internal tickets / Slack threads / incidents — describe findings qualitatively instead
+- Treat the target repository as public-readable. Do not include private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, or the contents of Slack threads (do not quote or paraphrase what was said) — describe findings qualitatively instead. Linking to the originating Slack thread is fine and encouraged, as are channel references like "raised in #team-foo" — Slack links are auth-gated and useful as context.
 ${templateHint}
 
 Do not include any explanation outside the TITLE and BODY sections.`;
