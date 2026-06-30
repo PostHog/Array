@@ -10,8 +10,8 @@ import type { DismissReportDialogResult } from "@posthog/ui/features/inbox/compo
 import { reportKeys } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useInboxReportSelectionStore } from "@posthog/ui/features/inbox/stores/inboxReportSelectionStore";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
-import { track } from "@posthog/ui/shell/analytics";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
