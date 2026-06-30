@@ -324,18 +324,11 @@ jobs:
           APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           $out = "apps/code/out"
-          $sq = Join-Path $out "squirrel-windows"
           $items = @()
           # NSIS installer + electron-updater metadata live in the output root.
           $items += Get-ChildItem $out -File -Filter "*.exe"
           $items += Get-ChildItem $out -File -Filter "latest.yml"
           $items += Get-ChildItem $out -File -Filter "*.blockmap"
-          # Squirrel.Windows artifacts (nupkg + RELEASES + Setup) land in out/squirrel-windows.
-          if (Test-Path $sq) {
-            $items += Get-ChildItem $sq -File -Filter "*.nupkg"
-            $items += Get-ChildItem $sq -File -Filter "RELEASES"
-            $items += Get-ChildItem $sq -File -Filter "*.exe"
-          }
           $files = $items | Select-Object -ExpandProperty FullName
           gh release upload "v$env:APP_VERSION" --repo PostHog/code --clobber @files
 

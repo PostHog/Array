@@ -19,7 +19,7 @@ electron-builder generates and uploads a `latest-mac.yml` (macOS) or `latest.yml
 
 **macOS**: DMG + zip artifacts are uploaded; the merged `latest-mac.yml` covers both arm64 and x64 so the correct build is selected per architecture.
 
-**Windows**: Both NSIS and Squirrel.Windows installers are shipped during the transition period. Existing Squirrel users continue receiving updates via the legacy feed; once they reinstall via the NSIS installer they move to the electron-updater flow permanently.
+**Windows**: A single NSIS installer is shipped and updated through electron-updater via `latest.yml`. The legacy Squirrel.Windows installer is no longer built; anyone still on an old Squirrel install must reinstall once via the NSIS installer to keep receiving updates.
 
 **Linux**: No auto-update. AppImage, deb and rpm packages are manual downloads from the GitHub Release.
 

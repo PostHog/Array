@@ -94,7 +94,7 @@ const config: Configuration = {
   },
 
   win: {
-    target: ["nsis", "squirrel"],
+    target: ["nsis"],
     // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder interpolation tokens, not JS template literals
     artifactName: "PostHog-Code-${version}-${arch}-win.${ext}",
     // electron-builder generates the multi-size .ico from this 1024px PNG; a real
@@ -105,13 +105,6 @@ const config: Configuration = {
   nsis: {
     oneClick: false,
     deleteAppDataOnUninstall: false,
-  },
-
-  squirrelWindows: {
-    name: "PostHogCode",
-    // Squirrel.Windows requires a URL for the install/shortcut icon.
-    iconUrl:
-      "https://raw.githubusercontent.com/PostHog/code/main/apps/code/build/app-icon.ico",
   },
 
   linux: {
