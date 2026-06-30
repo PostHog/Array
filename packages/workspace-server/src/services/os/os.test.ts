@@ -159,6 +159,14 @@ describe("OsService simple delegations", () => {
     await service.openExternal("https://posthog.com");
     expect(urlLauncher.launch).toHaveBeenCalledWith("https://posthog.com");
   });
+
+  it("opens the log folder as a file URL via the url launcher", async () => {
+    const { service, urlLauncher } = createService();
+    await service.showLogFolder();
+    expect(urlLauncher.launch).toHaveBeenCalledWith(
+      expect.stringMatching(/^file:\/\//),
+    );
+  });
 });
 
 describe("OsService.getClaudePermissions", () => {

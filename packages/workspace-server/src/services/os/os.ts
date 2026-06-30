@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { APP_META_SERVICE, type IAppMeta } from "@posthog/platform/app-meta";
 import {
   DIALOG_SERVICE,
@@ -169,7 +170,9 @@ export class OsService {
   }
 
   async showLogFolder(): Promise<void> {
-    await this.urlLauncher.launch(`file://${this.storagePaths.logFolderPath}`);
+    await this.urlLauncher.launch(
+      pathToFileURL(this.storagePaths.logFolderPath).href,
+    );
   }
 
   async searchDirectories(query: string): Promise<string[]> {
