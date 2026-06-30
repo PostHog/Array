@@ -15,7 +15,10 @@ import {
 } from "@agentclientprotocol/sdk";
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
-import { commitExistsLocally, getCurrentBranch } from "@posthog/git/queries";
+import {
+  commitReachableFromHead,
+  getCurrentBranch,
+} from "@posthog/git/queries";
 import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -3120,11 +3123,13 @@ ${signedCommitInstructions}
     // before we touch the local git database.
     if (!wasCreatedRecently(pr.createdAt, Date.now())) return;
 
-    // Ownership: the PR's head commit must exist in this sandbox's local git
-    // object database. A run that didn't produce (or fetch) that commit cannot
-    // have created the PR. Unlike a regex match on tool output, a SHA can't be
-    // spoofed by the agent merely seeing the URL in some response — e.g. an
-    // inbox listing that references a sibling task's PR.
+    // Ownership: the PR's head commit must be reachable from this sandbox's
+    // HEAD. Mere object-DB existence isn't enough — a full clone (default for
+    // signal_report runs) has `refs/remotes/origin/*` populated for every
+    // branch, so every open PR's head commit sits in the object database
+    // whether this run pushed it or not. Ancestor-of-HEAD restricts that to
+    // commits this clone produced (or rebased on top of) and rejects sibling
+    // PRs whose branches the agent never touched.
     if (!this.config.repositoryPath || !pr.headSha) {
       this.logger.debug("PR attribution rejected: no repo path or head SHA", {
         runId: payload.run_id,
@@ -3134,16 +3139,19 @@ ${signedCommitInstructions}
       });
       return;
     }
-    const ownsCommit = await commitExistsLocally(
+    const ownsCommit = await commitReachableFromHead(
       this.config.repositoryPath,
       pr.headSha,
     );
     if (!ownsCommit) {
-      this.logger.debug("PR attribution rejected: head SHA not in local repo", {
-        runId: payload.run_id,
-        prUrl,
-        headSha: pr.headSha,
-      });
+      this.logger.debug(
+        "PR attribution rejected: head SHA not reachable from local HEAD",
+        {
+          runId: payload.run_id,
+          prUrl,
+          headSha: pr.headSha,
+        },
+      );
       return;
     }
 

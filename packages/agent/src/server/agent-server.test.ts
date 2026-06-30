@@ -208,11 +208,11 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => ({
 }));
 
 const mockedGitQueries = vi.hoisted(() => ({
-  commitExistsLocally: vi.fn(async () => true),
+  commitReachableFromHead: vi.fn(async () => true),
 }));
 vi.mock("@posthog/git/queries", async (importOriginal) => ({
   ...(await importOriginal()),
-  commitExistsLocally: mockedGitQueries.commitExistsLocally,
+  commitReachableFromHead: mockedGitQueries.commitReachableFromHead,
 }));
 
 interface TestableServer {
@@ -1603,14 +1603,14 @@ describe("AgentServer HTTP Mode", () => {
       const s = createServer() as unknown as PrTestServer;
       s.fetchPrAttributionMetadata = vi.fn(async () => pr);
       s.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
-      mockedGitQueries.commitExistsLocally.mockReset();
-      mockedGitQueries.commitExistsLocally.mockResolvedValue(true);
+      mockedGitQueries.commitReachableFromHead.mockReset();
+      mockedGitQueries.commitReachableFromHead.mockResolvedValue(true);
       return s;
     };
 
     const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-    it("attributes a recent PR whose head SHA is in the local repo", async () => {
+    it("attributes a recent PR whose head SHA is reachable from local HEAD", async () => {
       const s = setup(metadata());
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
@@ -1625,16 +1625,18 @@ describe("AgentServer HTTP Mode", () => {
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
       expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
-      expect(mockedGitQueries.commitExistsLocally).not.toHaveBeenCalled();
+      expect(mockedGitQueries.commitReachableFromHead).not.toHaveBeenCalled();
       expect(s.detectedPrUrl).toBeNull();
     });
 
-    it("does not attribute when the PR's head SHA is not in the local repo", async () => {
-      // The case Cleo's incident exhibited: agent merely reads a PR URL from an
-      // MCP/tool response for a PR opened by a sibling run; the recency window
-      // passes, but the SHA was never produced by this sandbox.
+    it("does not attribute when the PR's head SHA is not reachable from local HEAD", async () => {
+      // The case the incident exhibited: agent merely reads a PR URL from an
+      // MCP/tool response for a PR opened by a sibling run. The recency window
+      // passes, but the SHA isn't reachable from this clone's HEAD — either
+      // because the object isn't in the DB at all (shallow clone) or because
+      // it sits on a sibling branch the agent never touched (full clone).
       const s = setup(metadata());
-      mockedGitQueries.commitExistsLocally.mockResolvedValue(false);
+      mockedGitQueries.commitReachableFromHead.mockResolvedValue(false);
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
       expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
@@ -1648,7 +1650,7 @@ describe("AgentServer HTTP Mode", () => {
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
       expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
-      expect(mockedGitQueries.commitExistsLocally).not.toHaveBeenCalled();
+      expect(mockedGitQueries.commitReachableFromHead).not.toHaveBeenCalled();
       expect(s.detectedPrUrl).toBeNull();
     });
 

@@ -107,18 +107,24 @@ export async function getCurrentBranch(
 }
 
 /**
- * Whether `sha` resolves to a commit object in the local git database.
+ * Whether `sha` is reachable from this clone's current HEAD — i.e. HEAD
+ * descends from (or equals) the commit.
  *
- * Backed by `git cat-file -e <sha>^{commit}`: exit 0 if the object exists and
- * is a commit, non-zero otherwise. Used as a cheap ownership signal — a commit
- * that was never produced (or fetched) by this clone cannot be one this run
- * pushed, regardless of what URLs the agent has seen in tool output.
+ * Backed by `git merge-base --is-ancestor <sha> HEAD`: exit 0 if reachable,
+ * exit 1 if not, non-zero otherwise. A stronger ownership signal than mere
+ * object-DB existence: a clone with `refs/remotes/origin/*` populated for
+ * every branch (full clone) will have *every* open PR's head commit sitting
+ * in its object database, but only the commits this clone actually produced
+ * (or rebased on top of) will be ancestors of HEAD.
  *
- * Fails closed: any error (missing repo, invalid SHA, git unavailable) returns
- * `false`, so callers that use this to gate destructive or attributive writes
- * default to "no, don't proceed" on uncertainty.
+ * Fails closed: any error (missing repo, invalid SHA, git unavailable,
+ * detached HEAD with no commit history) returns `false`, so callers that use
+ * this to gate attributive writes default to "no, don't claim it" on
+ * uncertainty. The cost of dropping a real attribution is much lower than
+ * the cost of taking a wrong one — a wrong one keeps the babysitting loop
+ * firing into the wrong run for hours.
  */
-export async function commitExistsLocally(
+export async function commitReachableFromHead(
   baseDir: string,
   sha: string,
   options?: CreateGitClientOptions,
@@ -132,7 +138,7 @@ export async function commitExistsLocally(
       baseDir,
       async (git) => {
         try {
-          await git.raw(["cat-file", "-e", `${sha}^{commit}`]);
+          await git.raw(["merge-base", "--is-ancestor", sha, "HEAD"]);
           return true;
         } catch {
           return false;
