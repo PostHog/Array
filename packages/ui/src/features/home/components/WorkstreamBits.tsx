@@ -1,4 +1,5 @@
 import {
+  Archive,
   ArrowSquareOut,
   CheckCircle,
   CircleNotch,
@@ -132,18 +133,23 @@ export function WorkstreamOverflowMenu({
   restBound,
   showPrInMenu,
   showTaskInMenu,
+  showArchive = false,
   onRun,
   onOpenPr,
   onOpenTask,
+  onArchive,
   size = "sm",
   runDisabled = false,
 }: {
   restBound: BoundAction[];
   showPrInMenu: boolean;
   showTaskInMenu: boolean;
+  /** Whether to offer "Archive" in the menu. */
+  showArchive?: boolean;
   onRun: (action: BoundAction) => void;
   onOpenPr: () => void;
   onOpenTask: () => void;
+  onArchive?: () => void;
   size?: "sm" | "xs";
   /** Disables the task-starting actions while one is already in flight. */
   runDisabled?: boolean;
@@ -183,6 +189,17 @@ export function WorkstreamOverflowMenu({
         ) : null}
         {showTaskInMenu ? (
           <DropdownMenu.Item onSelect={onOpenTask}>Open task</DropdownMenu.Item>
+        ) : null}
+        {showArchive && onArchive ? (
+          <>
+            {restBound.length > 0 || showPrInMenu || showTaskInMenu ? (
+              <DropdownMenu.Separator />
+            ) : null}
+            <DropdownMenu.Item onSelect={onArchive}>
+              <Archive size={12} />
+              Archive
+            </DropdownMenu.Item>
+          </>
         ) : null}
       </DropdownMenu.Content>
     </DropdownMenu.Root>
