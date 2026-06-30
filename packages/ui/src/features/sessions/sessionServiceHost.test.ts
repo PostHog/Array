@@ -4635,12 +4635,21 @@ describe("SessionService", () => {
       return onData as (payload: unknown) => void;
     }
 
-    it("appends a steer echo without clearing pending optimistic placeholders", async () => {
+    it.each([
+      {
+        name: "appends a steer echo without clearing pending optimistic placeholders",
+        steer: true,
+      },
+      {
+        name: "replaces the optimistic placeholder for a normal prompt echo",
+        steer: false,
+      },
+    ])("$name", async ({ steer }) => {
       const onData = await connectAndCaptureOnData();
       mockSessionStoreSetters.appendEvents.mockClear();
       mockSessionStoreSetters.replaceOptimisticWithEvent.mockClear();
 
-      const steerEcho = {
+      const echo = {
         type: "acp_message",
         ts: 1700000001,
         message: {
@@ -4648,42 +4657,27 @@ describe("SessionService", () => {
           id: 101,
           method: "session/prompt",
           params: {
-            prompt: [{ type: "text", text: "steer me" }],
-            _meta: { steer: true },
+            prompt: [{ type: "text", text: "hello" }],
+            ...(steer ? { _meta: { steer: true } } : {}),
           },
         },
       };
-      onData(steerEcho);
+      onData(echo);
 
-      expect(mockSessionStoreSetters.appendEvents).toHaveBeenCalledWith(
-        "run-123",
-        [steerEcho],
-      );
-      expect(
-        mockSessionStoreSetters.replaceOptimisticWithEvent,
-      ).not.toHaveBeenCalled();
-    });
-
-    it("replaces the optimistic placeholder for a normal prompt echo", async () => {
-      const onData = await connectAndCaptureOnData();
-      mockSessionStoreSetters.appendEvents.mockClear();
-      mockSessionStoreSetters.replaceOptimisticWithEvent.mockClear();
-
-      const normalEcho = {
-        type: "acp_message",
-        ts: 1700000002,
-        message: {
-          jsonrpc: "2.0",
-          id: 102,
-          method: "session/prompt",
-          params: { prompt: [{ type: "text", text: "normal msg" }] },
-        },
-      };
-      onData(normalEcho);
-
-      expect(
-        mockSessionStoreSetters.replaceOptimisticWithEvent,
-      ).toHaveBeenCalledWith("run-123", normalEcho);
+      if (steer) {
+        expect(mockSessionStoreSetters.appendEvents).toHaveBeenCalledWith(
+          "run-123",
+          [echo],
+        );
+        expect(
+          mockSessionStoreSetters.replaceOptimisticWithEvent,
+        ).not.toHaveBeenCalled();
+      } else {
+        expect(
+          mockSessionStoreSetters.replaceOptimisticWithEvent,
+        ).toHaveBeenCalledWith("run-123", echo);
+        expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
+      }
     });
   });
 
