@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { zipSync } from "fflate";
@@ -2146,5 +2147,141 @@ describe("AgentServer HTTP Mode", () => {
       expect(context).not.toContain("gh pr checkout");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
+  });
+});
+
+// Exercises getPendingUserPrompt directly (no HTTP server / git repo) so we can
+// assert how the initial cloud prompt degrades when an attached file can't be
+// hydrated — the case behind a pasted-text task reaching the agent as a bare
+// "Attached files: …" description with no readable file.
+describe("AgentServer pending user attachments", () => {
+  interface PendingPromptInternals {
+    posthogAPI: {
+      getTaskRun: (taskId: string, runId: string) => Promise<TaskRun>;
+      downloadArtifact: (
+        taskId: string,
+        runId: string,
+        storagePath: string,
+      ) => Promise<ArrayBuffer | null>;
+    };
+    getPendingUserPrompt(
+      taskRun: TaskRun | null,
+    ): Promise<{ prompt: ContentBlock[] } | null>;
+  }
+
+  let tempDir: string;
+  let server: AgentServer | undefined;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-pending-"));
+  });
+
+  afterEach(async () => {
+    await server?.stop();
+    server = undefined;
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  const buildInternals = (): PendingPromptInternals => {
+    server = new AgentServer({
+      port: getNextTestPort(),
+      jwtPublicKey: TEST_PUBLIC_KEY,
+      repositoryPath: tempDir,
+      apiUrl: "http://localhost:8000",
+      apiKey: "test-api-key",
+      projectId: 1,
+      mode: "interactive",
+      taskId: "test-task-id",
+      runId: "test-run-id",
+    });
+    return server as unknown as PendingPromptInternals;
+  };
+
+  it("appends an explicit notice when a pending attachment never reaches the manifest", async () => {
+    const internals = buildInternals();
+    // Refetch still can't see the attachment (truly absent, not just lagging).
+    const getTaskRun = vi.fn(async () =>
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: [],
+      }),
+    );
+    internals.posthogAPI.getTaskRun = getTaskRun;
+
+    const result = await internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: [],
+      }),
+    );
+
+    // Refetched once to recover a lagging manifest, then — still missing —
+    // surfaced an explicit notice instead of returning null (which would let the
+    // caller fall back to the misleading "Attached files: …" description).
+    expect(getTaskRun).toHaveBeenCalledTimes(1);
+    expect(result).not.toBeNull();
+    expect(result?.prompt).toHaveLength(1);
+    const [block] = result?.prompt ?? [];
+    expect(block?.type).toBe("text");
+    expect((block as { text: string }).text).toContain("could not be loaded");
+  });
+
+  it("recovers a pending attachment from a refetched run manifest", async () => {
+    const internals = buildInternals();
+    internals.posthogAPI.getTaskRun = vi.fn(async () =>
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["att-1"] },
+        artifacts: [
+          {
+            id: "att-1",
+            name: "pasted-text.txt",
+            type: "user_attachment",
+            storage_path: "tasks/artifacts/pasted-text.txt",
+            content_type: "text/plain",
+          },
+        ],
+      }),
+    );
+    const downloadArtifact = vi.fn(async () =>
+      exactArrayBuffer(new TextEncoder().encode("pasted body")),
+    );
+    internals.posthogAPI.downloadArtifact = downloadArtifact;
+
+    const result = await internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["att-1"] },
+        artifacts: [],
+      }),
+    );
+
+    expect(downloadArtifact).toHaveBeenCalledWith(
+      "task-1",
+      "run-1",
+      "tasks/artifacts/pasted-text.txt",
+    );
+    const resourceLinks = result?.prompt.filter(
+      (block) => block.type === "resource_link",
+    );
+    expect(resourceLinks).toHaveLength(1);
+    // No "couldn't load" notice once the attachment is recovered.
+    const hasNotice = result?.prompt.some(
+      (block) =>
+        block.type === "text" &&
+        (block as { text: string }).text.includes("could not be loaded"),
+    );
+    expect(hasNotice).toBe(false);
+  });
+
+  it("returns null without refetching when no pending artifacts were declared", async () => {
+    const internals = buildInternals();
+    const getTaskRun = vi.fn();
+    internals.posthogAPI.getTaskRun = getTaskRun;
+
+    const result = await internals.getPendingUserPrompt(
+      createTaskRun({ state: {}, artifacts: [] }),
+    );
+
+    expect(result).toBeNull();
+    expect(getTaskRun).not.toHaveBeenCalled();
   });
 });

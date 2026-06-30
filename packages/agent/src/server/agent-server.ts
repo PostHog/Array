@@ -269,6 +269,22 @@ function getTaskRunStateString(
   return typeof value === "string" ? value : null;
 }
 
+// Prompt block we hand the agent when the user attached files but we could not
+// load any of them into the session (missing from the run manifest, no storage
+// path, etc.). Without this the caller falls back to the bare task description —
+// e.g. "Attached files: pasted-text.txt" — which points the agent at files it
+// was never given and makes it hunt the filesystem in vain. Be explicit instead.
+function buildMissingAttachmentNotice(count: number): string {
+  const subject = count === 1 ? "A file" : `${count} files`;
+  const pronoun = count === 1 ? "it" : "they";
+  const noun = count === 1 ? "attachment" : "attachments";
+  return (
+    `${subject} the user attached to this message could not be loaded into the session, ` +
+    `so ${pronoun} are unavailable here. Do not guess at the contents. Tell the user the ` +
+    `${noun} didn't come through, and ask them to paste the text directly or send ${pronoun} again.`
+  );
+}
+
 export class AgentServer {
   private config: AgentServerConfig;
   private sessionReadyBootMs?: number;
@@ -1749,18 +1765,91 @@ export class AgentServer {
             typeof artifactId === "string" && artifactId.trim().length > 0,
         )
       : [];
+
+    // The run's artifact manifest can momentarily lag the pending-artifact ids
+    // when a run starts right after the attachments were uploaded. If we were
+    // asked for artifacts the manifest doesn't list yet, refetch the run once so
+    // a transient gap doesn't drop the attachment and send the agent the bare
+    // "Attached files: …" description instead of the file it was promised.
+    let manifest = taskRun.artifacts ?? [];
+    let resolvedArtifacts = this.getArtifactsById(manifest, artifactIds);
+    if (
+      artifactIds.length > 0 &&
+      resolvedArtifacts.length < artifactIds.length
+    ) {
+      const refreshed = await this.refetchRunArtifacts(taskRun);
+      if (refreshed) {
+        manifest = refreshed;
+        resolvedArtifacts = this.getArtifactsById(manifest, artifactIds);
+      }
+    }
+
     const prompt = await this.buildPromptFromContentAndArtifacts({
       content: typeof message === "string" ? message : undefined,
-      artifacts: this.getArtifactsById(taskRun.artifacts, artifactIds),
+      artifacts: resolvedArtifacts,
       taskId: taskRun.task,
       runId: taskRun.id,
     });
+
+    // Skill bundles are installed silently, so only non-skill attachments are
+    // expected to surface as content (hydrated into resource_link blocks). Ids
+    // the manifest still can't account for are treated as attachments, not
+    // skills — better to over-warn than to silently mislead. `message` here is
+    // plain text, so every resource_link block is a hydrated attachment.
+    const expectedAttachmentCount = artifactIds.filter((artifactId) => {
+      const known = manifest.find((artifact) => artifact.id === artifactId);
+      return known ? known.type !== "skill_bundle" : true;
+    }).length;
+    const hydratedAttachmentCount = prompt.prompt.filter(
+      (block) => block.type === "resource_link",
+    ).length;
+    const lostAttachmentCount =
+      expectedAttachmentCount - hydratedAttachmentCount;
+
+    if (lostAttachmentCount > 0) {
+      this.logger.warn("Pending user attachments could not be loaded", {
+        taskId: taskRun.task,
+        runId: taskRun.id,
+        requestedArtifactCount: artifactIds.length,
+        expectedAttachmentCount,
+        hydratedAttachmentCount,
+        lostAttachmentCount,
+      });
+      prompt.prompt.push({
+        type: "text",
+        text: buildMissingAttachmentNotice(lostAttachmentCount),
+      });
+    }
+
     this.logger.debug("Built pending user prompt", {
       hasMessage: typeof message === "string" && message.trim().length > 0,
       requestedArtifactCount: artifactIds.length,
+      hydratedAttachmentCount,
+      lostAttachmentCount,
       blockTypes: prompt.prompt.map((block) => block.type),
     });
     return prompt.prompt.length > 0 ? prompt : null;
+  }
+
+  // Best-effort refetch of a run's artifact manifest. Returns null on any error
+  // so the caller can fall back to the manifest it already has.
+  private async refetchRunArtifacts(
+    taskRun: TaskRun,
+  ): Promise<TaskRunArtifact[] | null> {
+    try {
+      const refreshed = await this.posthogAPI.getTaskRun(
+        taskRun.task,
+        taskRun.id,
+      );
+      return refreshed.artifacts ?? null;
+    } catch (error) {
+      this.logger.debug("Failed to refetch run artifacts for pending prompt", {
+        taskId: taskRun.task,
+        runId: taskRun.id,
+        error,
+      });
+      return null;
+    }
   }
 
   private getClearedPendingUserState(taskRun: TaskRun | null): string[] | null {
