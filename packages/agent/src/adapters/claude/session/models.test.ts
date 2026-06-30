@@ -38,43 +38,72 @@ describe("toSdkModelId", () => {
 });
 
 describe("model capability flags", () => {
-  it("flags 1M context support", () => {
-    expect(supports1MContext("claude-opus-4-6")).toBe(false);
-    expect(supports1MContext("claude-opus-4-7")).toBe(true);
-    expect(supports1MContext("claude-sonnet-4-6")).toBe(true);
-    expect(supports1MContext("claude-haiku-4-5")).toBe(false);
-  });
-
-  it("flags effort support and xhigh-effort support", () => {
-    expect(supportsEffort("claude-opus-4-5")).toBe(false);
-    expect(supportsEffort("claude-opus-4-6")).toBe(false);
-    expect(supportsXhighEffort("claude-opus-4-7")).toBe(true);
-    expect(supportsXhighEffort("claude-opus-4-6")).toBe(false);
-    expect(supportsEffort("claude-haiku-4-5")).toBe(false);
-  });
-
-  it("flags claude-fable-5 as a flagship model", () => {
-    expect(supports1MContext("claude-fable-5")).toBe(true);
-    expect(supportsEffort("claude-fable-5")).toBe(true);
-    expect(supportsXhighEffort("claude-fable-5")).toBe(true);
-    expect(supportsMcpInjection("claude-fable-5")).toBe(true);
-  });
-
-  it("flags claude-sonnet-5 like Sonnet 4.6 (1M context, effort, no xhigh)", () => {
-    expect(supports1MContext("claude-sonnet-5")).toBe(true);
-    expect(supportsEffort("claude-sonnet-5")).toBe(true);
-    expect(supportsXhighEffort("claude-sonnet-5")).toBe(false);
-    expect(supportsMcpInjection("claude-sonnet-5")).toBe(true);
-  });
-
-  it("allows MCP injection for supported Claude models", () => {
-    expect(supportsMcpInjection("claude-opus-4-7")).toBe(true);
-    expect(supportsMcpInjection("claude-sonnet-4-6")).toBe(true);
-  });
-
-  it("keeps deprecated Haiku sessions excluded from MCP injection", () => {
-    expect(supportsMcpInjection("claude-haiku-4-5")).toBe(false);
-  });
+  it.each([
+    {
+      modelId: "claude-opus-4-5",
+      oneMContext: false,
+      effort: false,
+      xhighEffort: false,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-opus-4-6",
+      oneMContext: false,
+      effort: false,
+      xhighEffort: false,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-opus-4-7",
+      oneMContext: true,
+      effort: true,
+      xhighEffort: true,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-opus-4-8",
+      oneMContext: true,
+      effort: true,
+      xhighEffort: true,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-sonnet-4-6",
+      oneMContext: true,
+      effort: true,
+      xhighEffort: false,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-sonnet-5",
+      oneMContext: true,
+      effort: true,
+      xhighEffort: true,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-fable-5",
+      oneMContext: true,
+      effort: true,
+      xhighEffort: true,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-haiku-4-5",
+      oneMContext: false,
+      effort: false,
+      xhighEffort: false,
+      mcpInjection: false,
+    },
+  ])(
+    "$modelId capability flags",
+    ({ modelId, oneMContext, effort, xhighEffort, mcpInjection }) => {
+      expect(supports1MContext(modelId)).toBe(oneMContext);
+      expect(supportsEffort(modelId)).toBe(effort);
+      expect(supportsXhighEffort(modelId)).toBe(xhighEffort);
+      expect(supportsMcpInjection(modelId)).toBe(mcpInjection);
+    },
+  );
 });
 
 describe("resolveEffortForModel", () => {
