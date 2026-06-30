@@ -50,7 +50,9 @@ export type CommandMenuAction =
   | "go-back"
   | "go-forward"
   | "open-task"
-  | "open-channel";
+  | "open-channel"
+  | "reload-window"
+  | "show-log-folder";
 
 // Event property interfaces
 export interface TaskListViewProperties {

@@ -12,6 +12,10 @@ import {
   IMAGE_PROCESSOR_SERVICE,
 } from "@posthog/platform/image-processor";
 import {
+  type IStoragePaths,
+  STORAGE_PATHS_SERVICE,
+} from "@posthog/platform/storage-paths";
+import {
   type IUrlLauncher,
   URL_LAUNCHER_SERVICE,
 } from "@posthog/platform/url-launcher";
@@ -55,6 +59,8 @@ export class OsService {
     private readonly imageProcessor: IImageProcessor,
     @inject(WORKSPACE_SETTINGS_SERVICE)
     private readonly workspaceSettings: IWorkspaceSettings,
+    @inject(STORAGE_PATHS_SERVICE)
+    private readonly storagePaths: IStoragePaths,
   ) {}
 
   async getClaudePermissions(): Promise<ClaudePermissions> {
@@ -160,6 +166,10 @@ export class OsService {
 
   async openExternal(url: string): Promise<void> {
     await this.urlLauncher.launch(url);
+  }
+
+  async showLogFolder(): Promise<void> {
+    await this.urlLauncher.launch(`file://${this.storagePaths.logFolderPath}`);
   }
 
   async searchDirectories(query: string): Promise<string[]> {

@@ -44,6 +44,7 @@ import {
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
+import { showLogFolder } from "@posthog/ui/shell/openExternal";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import {
   DesktopIcon,
@@ -51,6 +52,7 @@ import {
   GearIcon,
   HomeIcon,
   MoonIcon,
+  ReloadIcon,
   SunIcon,
   ViewVerticalIcon,
 } from "@radix-ui/react-icons";
@@ -280,9 +282,30 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       },
     ];
 
+    const developer: Command[] = [
+      {
+        id: "show-log-folder",
+        label: "Show log folder",
+        keywords: "logs debug files finder",
+        icon: <FileTextIcon className="h-3 w-3 text-gray-11" />,
+        action: "show-log-folder",
+        onRun: showLogFolder,
+      },
+      {
+        id: "reload-window",
+        label: "Reload window",
+        keywords: "refresh restart",
+        icon: <ReloadIcon className="h-3 w-3 text-gray-11" />,
+        action: "reload-window",
+        shortcut: SHORTCUTS.RELOAD_WINDOW,
+        onRun: () => window.location.reload(),
+      },
+    ];
+
     const out: CommandSection[] = [
       { label: "Actions", items: actions },
       { label: "Navigation", items: navigation },
+      { label: "Developer", items: developer },
     ];
 
     if (folders.length > 0) {

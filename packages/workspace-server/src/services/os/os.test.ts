@@ -32,12 +32,19 @@ function createService() {
     getWorktreeLocation: vi.fn(() => "/tmp/worktrees"),
   };
 
+  const storagePaths = {
+    appDataPath: "/data",
+    logsPath: "/logs",
+    logFolderPath: "/logs",
+  };
+
   const service = new OsService(
     dialog as never,
     urlLauncher as never,
     appMeta as never,
     imageProcessor as never,
     workspaceSettings as never,
+    storagePaths as never,
   );
 
   return { service, dialog, urlLauncher, appMeta, workspaceSettings };
