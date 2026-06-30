@@ -790,10 +790,19 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       headers.Authorization = `Bearer ${watcher.streamReadToken}`;
     }
 
-    // Debug level: fires on every reconnect and would otherwise dominate the log file.
-    this.log.debug("Opening cloud task stream", {
+    // Info so every stream attempt is visible in the logs; Bearer token redacted.
+    this.log.info("Opening cloud task stream", {
+      key,
+      leg,
       usingProxy,
+      durableStream: watcher.durableStreamEnabled,
+      method: "GET",
       streamUrl: url.toString(),
+      lastEventId: watcher.lastEventId,
+      startLatest,
+      headers: usingProxy
+        ? { ...headers, Authorization: "Bearer <redacted>" }
+        : headers,
     });
 
     const parser = new SseEventParser((message, data) =>
@@ -821,6 +830,14 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
             headers,
             signal: controller.signal,
           });
+
+      this.log.info("Cloud task stream response", {
+        key,
+        leg,
+        status: response.status,
+        ok: response.ok,
+        streamUrl: url.toString(),
+      });
 
       if (!response.ok) {
         throw createStreamStatusError(response.status);
@@ -971,6 +988,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
       this.log.warn("Cloud task stream error", {
         key,
+        leg,
+        streamUrl: url.toString(),
         error: errorMessage,
         errorDetail: serializeError(error),
         wasHealthyStream,
