@@ -91,7 +91,6 @@ function severityRank(severity: string | null): number {
 export function mostRecentEmittedRuns(runs: ScoutRun[]): ScoutRun[] {
   return runs
     .filter((run) => (run.emitted_count ?? 0) > 0)
-    .slice()
     .sort((a, b) =>
       (b.completed_at ?? b.started_at ?? "").localeCompare(
         a.completed_at ?? a.started_at ?? "",
@@ -195,7 +194,7 @@ export function filterAndSortScoutFindings(
     }
     return true;
   });
-  return filtered.slice().sort((a, b) => {
+  return filtered.sort((a, b) => {
     if (filter.sort === "oldest") return -byNewest(a, b);
     if (filter.sort === "severity") {
       const diff =

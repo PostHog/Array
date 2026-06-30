@@ -249,7 +249,7 @@ export function ScoutFindingsView() {
             </Flex>
 
             {hasLoadedOnce &&
-            emissionsError &&
+            (emissionsError || runsError) &&
             emissionsFetching === false &&
             rows.length > 0 ? (
               // A later poll/retry failed while a prior set is still on screen.

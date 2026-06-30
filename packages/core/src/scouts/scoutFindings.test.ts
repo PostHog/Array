@@ -13,6 +13,7 @@ import {
   SCOUT_FINDINGS_SCOUT_FILTER_ALL,
   SCOUT_FINDINGS_SEVERITY_FILTER_ALL,
   type ScoutFindingsFilter,
+  type ScoutFindingsSortKey,
   summarizeEmittedRuns,
   summarizeScoutFindingRows,
 } from "./scoutFindings";
@@ -163,27 +164,29 @@ describe("filterAndSortScoutFindings", () => {
     [],
   );
 
-  it("sorts newest first by default", () => {
+  it.each<{
+    name: string;
+    sort: ScoutFindingsSortKey;
+    expected: string[];
+  }>([
+    { name: "newest first (default)", sort: "newest", expected: ["b", "a"] },
+    { name: "oldest first", sort: "oldest", expected: ["a", "b"] },
+    {
+      name: "severity (most severe first)",
+      sort: "severity",
+      expected: ["a", "b"],
+    },
+    {
+      name: "confidence (highest first)",
+      sort: "confidence",
+      expected: ["b", "a"],
+    },
+  ])("sorts by $name", ({ sort, expected }) => {
     expect(
-      filterAndSortScoutFindings(rows, ALL_FILTER).map((r) => r.emission.id),
-    ).toEqual(["b", "a"]);
-  });
-
-  it("sorts by severity (most severe first)", () => {
-    expect(
-      filterAndSortScoutFindings(rows, { ...ALL_FILTER, sort: "severity" }).map(
+      filterAndSortScoutFindings(rows, { ...ALL_FILTER, sort }).map(
         (r) => r.emission.id,
       ),
-    ).toEqual(["a", "b"]);
-  });
-
-  it("sorts by confidence (highest first)", () => {
-    expect(
-      filterAndSortScoutFindings(rows, {
-        ...ALL_FILTER,
-        sort: "confidence",
-      }).map((r) => r.emission.id),
-    ).toEqual(["b", "a"]);
+    ).toEqual(expected);
   });
 
   it("filters by scout", () => {
