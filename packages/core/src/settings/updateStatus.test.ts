@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { deriveUpdateStatus, resolveCheckResultAction } from "./updateStatus";
+import {
+  type CheckForUpdatesResult,
+  type CheckResultAction,
+  deriveUpdateStatus,
+  resolveCheckResultAction,
+} from "./updateStatus";
 
 describe("deriveUpdateStatus", () => {
   it("reports downloading", () => {
@@ -52,38 +57,45 @@ describe("deriveUpdateStatus", () => {
 });
 
 describe("resolveCheckResultAction", () => {
-  it("returns null on success so the subscription owns the status", () => {
-    expect(resolveCheckResultAction({ success: true })).toBeNull();
-  });
-
-  it("returns null while a check is already in progress", () => {
-    expect(
-      resolveCheckResultAction({
-        success: false,
-        errorCode: "already_checking",
-      }),
-    ).toBeNull();
-  });
-
-  it("flags updates disabled and surfaces the reason", () => {
-    expect(
-      resolveCheckResultAction({
+  it.each<[string, CheckForUpdatesResult, CheckResultAction | null]>([
+    ["success lets the subscription own the status", { success: true }, null],
+    [
+      "a check already in progress",
+      { success: false, errorCode: "already_checking" },
+      null,
+    ],
+    [
+      "disabled with a reason",
+      {
         success: false,
         errorCode: "disabled",
         errorMessage: "Updates only available in packaged builds",
-      }),
-    ).toEqual({
-      updatesDisabled: true,
-      message: "Updates only available in packaged builds",
-      type: "error",
-    });
-  });
-
-  it("surfaces a generic failure when no message is provided", () => {
-    expect(resolveCheckResultAction({ success: false })).toEqual({
-      updatesDisabled: false,
-      message: "Failed to check for updates",
-      type: "error",
-    });
+      },
+      {
+        updatesDisabled: true,
+        message: "Updates only available in packaged builds",
+        type: "error",
+      },
+    ],
+    [
+      "disabled without a reason falls back",
+      { success: false, errorCode: "disabled" },
+      {
+        updatesDisabled: true,
+        message: "Failed to check for updates",
+        type: "error",
+      },
+    ],
+    [
+      "a generic failure without a message",
+      { success: false },
+      {
+        updatesDisabled: false,
+        message: "Failed to check for updates",
+        type: "error",
+      },
+    ],
+  ])("resolves %s", (_label, result, expected) => {
+    expect(resolveCheckResultAction(result)).toEqual(expected);
   });
 });

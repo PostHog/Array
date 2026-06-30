@@ -47,11 +47,6 @@ export function UpdatesSettings() {
     try {
       const result = await checkUpdatesMutation.mutateAsync();
 
-      // success and already_checking are non-terminal: the real outcome (up to
-      // date, available, downloading, ready, error) arrives over the onStatus
-      // subscription, which owns the message. Re-asserting "Checking..." here
-      // would clobber a terminal status the subscription already delivered,
-      // e.g. an update that is already staged and ready to install.
       const action = resolveCheckResultAction(result);
       if (!action) {
         return;
