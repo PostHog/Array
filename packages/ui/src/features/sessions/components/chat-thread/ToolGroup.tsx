@@ -27,9 +27,16 @@ function resolveTool(item: ToolGroupItem["tools"][number]): {
     ConversationItem,
     { type: "session_update" }
   >["update"] & { toolCallId?: string };
-  const fromMap =
-    (update.toolCallId && item.turnContext.toolCalls.get(update.toolCallId)) ||
-    (update as unknown as ToolCall);
+  const mapped = update.toolCallId
+    ? item.turnContext.toolCalls.get(update.toolCallId)
+    : undefined;
+  // A missing map entry means the tool is still in-flight (the resolved ToolCall is written when it
+  // settles), so default its status to "in_progress" — otherwise the cast yields a status-less
+  // ToolCall, `isToolActive` reads false, and the group label shows "Used …" mid-stream.
+  const fromMap: ToolCall = mapped ?? {
+    ...(update as unknown as ToolCall),
+    status: (update as unknown as ToolCall).status ?? "in_progress",
+  };
   const meta = fromMap._meta as
     | { claudeCode?: { toolName?: string } }
     | undefined;
@@ -42,10 +49,12 @@ function toolKey(item: ToolGroupItem["tools"][number]): string {
   return toolName ?? toolCall.kind ?? "tool";
 }
 
-/** Human label for a uniform group, e.g. `ToolSearch` → "Toolsearch", `mcp__x__run` → "Run". */
+/** Human label for a uniform group, e.g. `ToolSearch` → "Tool search", `mcp__x__run` → "Run". */
 function friendlyName(key: string): string {
   const last = key.includes("__") ? (key.split("__").pop() ?? key) : key;
-  return last.charAt(0).toUpperCase() + last.slice(1).toLowerCase();
+  // Split PascalCase/camelCase into words so `ToolSearch` reads "Tool search" rather than "Toolsearch".
+  const spaced = last.replace(/([a-z\d])([A-Z])/g, "$1 $2");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
 }
 
 function isToolActive(item: ToolGroupItem["tools"][number]): boolean {

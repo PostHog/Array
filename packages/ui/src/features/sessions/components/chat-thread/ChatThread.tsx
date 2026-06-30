@@ -376,10 +376,10 @@ function StickyHeaderOverlay({ items }: { items: ConversationItem[] }) {
   // message lands — so it reads as "not visible" while plainly on screen. Measure real geometry
   // instead: the message is off-screen only once its bottom scrolls above the viewport top.
   useEffect(() => {
-    if (activeId == null) {
-      setOffscreen(false);
-      return;
-    }
+    // No reset when there's no anchor: the overlay render already guards on `active != null`, so a
+    // stale `offscreen` is never shown, and a fresh anchor re-measures synchronously below. (Avoids
+    // the prop-sync-in-effect pattern react-doctor flags.)
+    if (activeId == null) return;
     const viewport = probeRef.current
       ?.closest('[data-slot="chat-message-scroller"]')
       ?.querySelector('[data-slot="chat-message-scroller-viewport"]');
