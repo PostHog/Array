@@ -2,7 +2,10 @@ import "reflect-metadata";
 import type { NotificationTarget } from "@posthog/platform/notifications";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@posthog/ui/utils/sounds", () => ({
+// Keep resolveSoundUrl real (the bus uses it to decide the native silent flag);
+// only stub the side-effecting player.
+vi.mock("@posthog/ui/utils/sounds", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@posthog/ui/utils/sounds")>()),
   playCompletionSound: vi.fn(),
 }));
 
@@ -48,6 +51,7 @@ function makeBus(overrides?: {
     dockBounceNotifications: true,
     completionSound: "meep",
     completionVolume: 80,
+    customSounds: [],
     ...overrides?.settings,
   };
 
@@ -143,6 +147,19 @@ describe("native tier settings gating (app unfocused)", () => {
       settings: { completionSound: "none" },
     });
     bus.notifyPromptComplete("My task", "end_turn", TASK_ID);
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({ silent: false }),
+    );
+  });
+
+  it("is not silent when the selected custom sound no longer exists", () => {
+    // A deleted custom sound resolves to nothing, so the native chime must
+    // still ring rather than the notification being silent-and-soundless.
+    const { bus, notify } = makeBus({
+      hasFocus: false,
+      settings: { completionSound: "custom:gone", customSounds: [] },
+    });
+    bus.notifyPermissionRequest("My task", TASK_ID);
     expect(notify).toHaveBeenCalledWith(
       expect.objectContaining({ silent: false }),
     );

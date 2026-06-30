@@ -381,6 +381,19 @@ app.whenReady().then(async () => {
   container.bind(FS_SERVICE).toService(MAIN_FS_SERVICE);
   await initializeServices();
   initializeDeepLinks();
+
+  if (process.env.POSTHOG_E2E_UPDATE_FEED) {
+    const updates = container.get<UpdatesService>(UPDATES_SERVICE);
+    Object.assign(globalThis, {
+      __e2eUpdates: {
+        check: () => updates.checkForUpdates(),
+        download: () => updates.requestDownload(),
+        install: () => updates.installUpdate(),
+        status: () => updates.getStatus(),
+      },
+    });
+    log.info("E2E update hook installed on globalThis.__e2eUpdates");
+  }
 });
 
 app.on("window-all-closed", () => {

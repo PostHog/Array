@@ -55,7 +55,11 @@ import {
   GITHUB_CONNECT_CLIENT,
   type GithubConnectClient,
 } from "@posthog/core/onboarding/identifiers";
-import { CLOUD_ARTIFACT_READ_FILE_AS_BASE64 } from "@posthog/core/sessions/cloudArtifactIdentifiers";
+import {
+  type BundleLocalSkill,
+  CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
+  CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
+} from "@posthog/core/sessions/cloudArtifactIdentifiers";
 import {
   LOCAL_HANDOFF_DIALOG,
   LOCAL_HANDOFF_HOST,
@@ -125,6 +129,10 @@ import {
   AUTH_SIDE_EFFECTS,
   type IAuthSideEffects,
 } from "@posthog/ui/features/auth/identifiers";
+import {
+  BROWSER_TABS_CLIENT,
+  type BrowserTabsClient,
+} from "@posthog/ui/features/browser-tabs/browserTabsClient";
 import {
   REVIEW_HOST,
   type ReviewHost,
@@ -226,6 +234,7 @@ export interface RendererBindings {
   [HOST_TRPC_CLIENT]: HostTrpcClient;
   [UPDATES_CLIENT]: UpdatesClient;
   [CONNECTIVITY_CLIENT]: ConnectivityClient;
+  [BROWSER_TABS_CLIENT]: BrowserTabsClient;
   [DISCORD_PRESENCE_CLIENT]: DiscordPresenceClient;
   [SHELL_CLIENT]: ShellClient;
   [FOCUS_CONTROLLER_DEPS]: FocusControllerDeps;
@@ -262,6 +271,7 @@ export interface RendererBindings {
   [CODE_REVIEW_WORKSPACE_CLIENT]: CodeReviewWorkspaceClient;
   [REVERT_HUNK_SERVICE]: RevertHunkService;
   [SKILLS_WORKSPACE_CLIENT]: SkillsWorkspaceClient;
+  [CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL]: BundleLocalSkill;
   [CLOUD_ARTIFACT_READ_FILE_AS_BASE64]: ReadFileAsBase64;
   [LLM_GATEWAY_SERVICE]: LlmGatewayService;
   [TITLE_GENERATOR_FILE_READ_CLIENT]: FileReadClient;

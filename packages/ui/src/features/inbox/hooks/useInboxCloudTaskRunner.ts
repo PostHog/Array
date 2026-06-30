@@ -1,3 +1,4 @@
+import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import {
   REPORT_MODEL_RESOLVER,
   type ReportModelResolver,
@@ -184,11 +185,20 @@ export function useInboxCloudTaskRunner({
 
     // The persisted effort belongs to `lastUsedModel`; if the resolver swapped in
     // a fallback default, that tier may be unsupported for the new model and the
-    // cloud runtime rejects the pair (see agent `bin.ts`). Only carry the effort
-    // when the model is unchanged; otherwise let the runtime pick its default.
+    // cloud runtime rejects the pair (see agent `bin.ts`). Carry the effort only
+    // when the model is unchanged AND the tier is actually supported for it —
+    // an effort-less model (e.g. a Cloudflare `@cf/*` model) carrying a stale
+    // tier would otherwise hard-fail the run at startup. Otherwise let the
+    // runtime pick its default.
     const reasoningLevel =
-      model === settings.lastUsedModel
-        ? (settings.lastUsedReasoningEffort ?? undefined)
+      model === settings.lastUsedModel &&
+      settings.lastUsedReasoningEffort &&
+      isSupportedReasoningEffort(
+        adapter,
+        model,
+        settings.lastUsedReasoningEffort,
+      )
+        ? settings.lastUsedReasoningEffort
         : undefined;
 
     const input = buildInput({

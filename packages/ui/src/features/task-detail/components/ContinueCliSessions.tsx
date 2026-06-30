@@ -4,8 +4,14 @@ import {
   type TaskService,
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
-import { formatRelativeTimeShort, type WorkspaceMode } from "@posthog/shared";
+import {
+  ANALYTICS_EVENTS,
+  type ClaudeSessionImportSource,
+  formatRelativeTimeShort,
+  type WorkspaceMode,
+} from "@posthog/shared";
 import { openTask } from "@posthog/ui/router/useOpenTask";
+import { track } from "@posthog/ui/shell/analytics";
 import {
   Dialog,
   Flex,
@@ -14,7 +20,7 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import claudeMark from "../../../assets/services/claude.svg";
 import { toast } from "../../../primitives/toast";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
@@ -196,7 +202,7 @@ interface ContinueCliSessionsInlineProps {
   sessions: CliSession[];
   runningId: string | null;
   disabled?: boolean;
-  onContinue: (session: CliSession) => void;
+  onContinue: (session: CliSession, source: ClaudeSessionImportSource) => void;
 }
 
 /**
@@ -226,7 +232,7 @@ export function ContinueCliSessionsInline({
             running={runningId === latest.sourceSessionId}
             disabled={disabled || !!runningId}
             showHelpText
-            onClick={() => onContinue(latest)}
+            onClick={() => onContinue(latest, "inline_card")}
           />
         </div>
         {sessions.length > 1 && (
@@ -247,7 +253,7 @@ export function ContinueCliSessionsInline({
         disabled={disabled}
         onContinue={(session) => {
           setPickerOpen(false);
-          onContinue(session);
+          onContinue(session, "picker_dialog");
         }}
       />
     </>
@@ -259,6 +265,14 @@ interface NewTaskSuggestionsProps {
   workspaceMode: WorkspaceMode;
   disabled?: boolean;
 }
+
+/**
+ * Repos whose "Claude Code sessions shown" event has already fired this app
+ * session. Module-level so it outlives NewTaskSuggestions remounts (navigating
+ * away and back), keeping the funnel top at one impression per repo per session
+ * rather than one per mount.
+ */
+const shownRepos = new Set<string>();
 
 /**
  * The new-task suggestions panel with the Claude Code resume card injected as
@@ -288,7 +302,22 @@ export function NewTaskSuggestions({
         )
       : [];
 
-  const handleContinue = async (session: CliSession) => {
+  // The top of the import funnel: fire once per repo when resumable sessions
+  // first surface, so we can measure how many of these lead-ins convert.
+  useEffect(() => {
+    if (!repoPath || sessions.length === 0 || shownRepos.has(repoPath)) {
+      return;
+    }
+    shownRepos.add(repoPath);
+    track(ANALYTICS_EVENTS.CLAUDE_SESSIONS_SHOWN, {
+      sessions_count: sessions.length,
+    });
+  }, [repoPath, sessions.length]);
+
+  const handleContinue = async (
+    session: CliSession,
+    source: ClaudeSessionImportSource,
+  ) => {
     if (runningId || !repoPath) return;
     setRunningId(session.sourceSessionId);
     try {
@@ -307,7 +336,19 @@ export function NewTaskSuggestions({
           void openTask(output.task);
         },
       );
-      if (!result.success) {
+      if (result.success) {
+        track(ANALYTICS_EVENTS.CLAUDE_SESSION_IMPORTED, {
+          source,
+          session_status: session.status,
+          has_git_branch: !!session.gitBranch,
+          sessions_available_count: sessions.length,
+        });
+      } else {
+        track(ANALYTICS_EVENTS.CLAUDE_SESSION_IMPORT_FAILED, {
+          source,
+          session_status: session.status,
+          failed_step: result.failedStep,
+        });
         toast.error("Couldn't continue Claude Code session", {
           description: result.error,
         });

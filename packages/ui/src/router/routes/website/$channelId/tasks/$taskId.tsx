@@ -54,6 +54,7 @@ function ChannelTaskDetailRoute() {
       key={task.id}
       task={task}
       channelName={channelName ?? "Channel"}
+      channelId={channelId}
     />
   );
 }

@@ -1,3 +1,4 @@
+import type { UploadableSkillSource } from "@posthog/shared";
 import { mergeAttributes, Node } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { MentionChipView } from "./MentionChipView";
@@ -20,6 +21,9 @@ export interface MentionChipAttrs {
   pastedText: boolean;
   /** Optional unique handle so callers can later replace or remove this chip. */
   chipId?: string | null;
+  skillPath?: string;
+  skillSource?: UploadableSkillSource;
+  skillName?: string;
 }
 
 declare module "@tiptap/core" {
@@ -49,6 +53,9 @@ export const MentionChipNode = Node.create({
       label: { default: "" },
       pastedText: { default: false },
       chipId: { default: null as string | null },
+      skillPath: { default: undefined },
+      skillSource: { default: undefined },
+      skillName: { default: undefined },
     };
   },
 

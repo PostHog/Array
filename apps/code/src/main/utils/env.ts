@@ -12,7 +12,7 @@ function requireEnv(name: string): string {
 }
 
 /**
- * Whether this is a development build (running via electron-forge start).
+ * Whether this is a development build (running via electron-vite dev).
  * Use this for dev/prod feature gates. Use `isPackaged` from @posthog/platform/app-meta
  * via DI only when you need ASAR-related behavior (e.g. .unpacked paths).
  */

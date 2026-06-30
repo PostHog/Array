@@ -16,10 +16,17 @@ export const checkForUpdatesOutput = z.object({
 export const updatesStatusOutput = z.object({
   checking: z.boolean(),
   downloading: z.boolean().optional(),
+  available: z.boolean().optional(),
   upToDate: z.boolean().optional(),
   updateReady: z.boolean().optional(),
   installing: z.boolean().optional(),
   version: z.string().optional(),
+  availableVersion: z.string().optional(),
+  releaseNotes: z.string().nullable().optional(),
+  releaseDate: z.string().optional(),
+  downloadPercent: z.number().optional(),
+  bytesPerSecond: z.number().optional(),
+  downloadSizeBytes: z.number().nullable().optional(),
   error: z.string().optional(),
 });
 

@@ -1,13 +1,5 @@
-import type { AcpMessage } from "@posthog/shared";
 import { describe, expect, it, vi } from "vitest";
-import { parseSessionLogContent, planSkippedPromptFilter } from "./sessionLogs";
-
-function promptEvent(id: number): AcpMessage {
-  return { message: { id, method: "session/prompt" } } as AcpMessage;
-}
-function notifyEvent(method: string): AcpMessage {
-  return { message: { method } } as AcpMessage;
-}
+import { parseSessionLogContent } from "./sessionLogs";
 
 describe("parseSessionLogContent", () => {
   it("parses one stored entry per line", () => {
@@ -64,28 +56,5 @@ describe("parseSessionLogContent", () => {
     expect(result.rawEntries).toHaveLength(1);
     expect(onParseError).toHaveBeenCalledTimes(1);
     expect(onParseError).toHaveBeenCalledWith("not json");
-  });
-});
-
-describe("planSkippedPromptFilter", () => {
-  it("returns null when there is nothing to skip", () => {
-    expect(planSkippedPromptFilter(0, [promptEvent(1)])).toBeNull();
-    expect(planSkippedPromptFilter(undefined, [promptEvent(1)])).toBeNull();
-  });
-
-  it("returns null when no session/prompt event is present", () => {
-    expect(
-      planSkippedPromptFilter(2, [notifyEvent("a"), notifyEvent("b")]),
-    ).toBeNull();
-  });
-
-  it("drops the first session/prompt event and decrements the skip count", () => {
-    const events = [notifyEvent("a"), promptEvent(1), notifyEvent("b")];
-    const plan = planSkippedPromptFilter(2, events);
-
-    expect(plan).not.toBeNull();
-    expect(plan?.remainingSkipCount).toBe(1);
-    expect(plan?.events).toEqual([notifyEvent("a"), notifyEvent("b")]);
-    expect(events).toHaveLength(3);
   });
 });

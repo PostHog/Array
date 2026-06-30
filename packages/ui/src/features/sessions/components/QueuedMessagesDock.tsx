@@ -28,8 +28,12 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const supportsNativeSteer = useSupportsNativeSteer(taskId);
   const returnToEditor = useReturnQueuedMessageToEditor(taskId);
+  const session = useSessionForTask(taskId);
   // Steer can't inject mid-compaction, so it would be a silent no-op; hide it.
-  const isCompacting = useSessionForTask(taskId)?.isCompacting ?? false;
+  // Cloud has no real mid-turn steer either (it would just interrupt the turn),
+  // so hide it there too — the message stays queued and lands next turn.
+  const canSteer =
+    !(session?.isCompacting ?? false) && !(session?.isCloud ?? false);
 
   if (queued.length === 0) return null;
 
@@ -41,9 +45,8 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
           message={message}
           supportsNativeSteer={supportsNativeSteer}
           onSteer={
-            isCompacting
-              ? undefined
-              : () => {
+            canSteer
+              ? () => {
                   void sessionService
                     .steerQueuedMessage(taskId, message.id)
                     .catch(() => {
@@ -52,6 +55,7 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
                       );
                     });
                 }
+              : undefined
           }
           onReturnToEditor={() => returnToEditor(message)}
           onRemove={() =>

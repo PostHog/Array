@@ -35,10 +35,11 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
       () => (
         <ChannelBreadcrumb
           channelName={channelName ?? "Channel"}
+          channelId={channelId}
           leafLabel="New task"
         />
       ),
-      [channelName],
+      [channelName, channelId],
     ),
   );
   // The channel's CONTEXT.md, passed to the agent as optional background so

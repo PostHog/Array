@@ -5,7 +5,7 @@ import {
 } from "@posthog/platform/notifications";
 import { toast } from "@posthog/ui/primitives/toast";
 import { openNotificationTarget } from "@posthog/ui/router/navigationBridge";
-import { playCompletionSound } from "@posthog/ui/utils/sounds";
+import { playCompletionSound, resolveSoundUrl } from "@posthog/ui/utils/sounds";
 import { inject, injectable } from "inversify";
 import {
   ACTIVE_VIEW_PROVIDER,
@@ -63,7 +63,11 @@ export class NotificationBus {
     const settings = this.settings.get();
     // Sound fires on both delivered tiers (toast + native), not on suppress —
     // matching the pre-bus behavior where any non-suppressed notification rang.
-    playCompletionSound(settings.completionSound, settings.completionVolume);
+    playCompletionSound(
+      settings.completionSound,
+      settings.completionVolume,
+      settings.customSounds,
+    );
 
     if (channel === "toast") {
       this.showToast(descriptor);
@@ -71,12 +75,17 @@ export class NotificationBus {
     }
 
     // native
-    const willPlayCustomSound = settings.completionSound !== "none";
+    // Silence the OS notification's own chime only when we'll actually play a
+    // completion sound. A `custom:` id whose sound was deleted resolves to
+    // nothing, so the native chime should still ring rather than leaving the
+    // notification silent-and-soundless.
+    const willPlaySound =
+      resolveSoundUrl(settings.completionSound, settings.customSounds) !== null;
     if (settings.desktopNotifications) {
       this.notifications.notify({
         title: descriptor.title ?? "PostHog Code",
         body: descriptor.body,
-        silent: descriptor.silent ?? willPlayCustomSound,
+        silent: descriptor.silent ?? willPlaySound,
         target: descriptor.target,
       });
     }

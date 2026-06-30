@@ -1,4 +1,8 @@
-import type { CompletionSound } from "@posthog/ui/features/settings/settingsStore";
+import type {
+  BuiltInCompletionSound,
+  CompletionSound,
+  CustomSound,
+} from "@posthog/ui/features/settings/settingsStore";
 import bubblesUrl from "../assets/sounds/bubbles.mp3";
 import daniloUrl from "../assets/sounds/danilo.mp3";
 import dropUrl from "../assets/sounds/drop.mp3";
@@ -14,7 +18,9 @@ import slideUrl from "../assets/sounds/slide.mp3";
 import switchUrl from "../assets/sounds/switch.mp3";
 import wilhelmUrl from "../assets/sounds/wilhelm.mp3";
 
-const SOUND_URLS: Record<Exclude<CompletionSound, "none">, string> = {
+const CUSTOM_SOUND_PREFIX = "custom:";
+
+const SOUND_URLS: Record<Exclude<BuiltInCompletionSound, "none">, string> = {
   guitar: guitarUrl,
   danilo: daniloUrl,
   revi: reviUrl,
@@ -33,10 +39,28 @@ const SOUND_URLS: Record<Exclude<CompletionSound, "none">, string> = {
 
 let currentAudio: HTMLAudioElement | null = null;
 
-export function playCompletionSound(sound: CompletionSound, volume = 80): void {
-  if (sound === "none") return;
+// Resolves the playable URL for a completion sound: a bundled asset URL for the
+// built-ins, or the inline data URL of a user-installed custom sound. Returns
+// null for `none`, an unknown built-in, or a `custom:` id no longer installed
+// (e.g. the active sound was deleted) — callers then play nothing.
+export function resolveSoundUrl(
+  sound: CompletionSound,
+  customSounds: CustomSound[],
+): string | null {
+  if (sound === "none") return null;
+  if (sound.startsWith(CUSTOM_SOUND_PREFIX)) {
+    const id = sound.slice(CUSTOM_SOUND_PREFIX.length);
+    return customSounds.find((s) => s.id === id)?.dataUrl ?? null;
+  }
+  return SOUND_URLS[sound as Exclude<BuiltInCompletionSound, "none">] ?? null;
+}
 
-  const url = SOUND_URLS[sound];
+export function playCompletionSound(
+  sound: CompletionSound,
+  volume = 80,
+  customSounds: CustomSound[] = [],
+): void {
+  const url = resolveSoundUrl(sound, customSounds);
   if (!url) return;
 
   if (currentAudio) {

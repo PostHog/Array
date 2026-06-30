@@ -126,9 +126,6 @@ jobs:
           pnpm --filter agent build &
           wait
 
-      - name: Build native modules
-        run: pnpm --filter code run build-native
-
       - name: Package Electron app
         run: pnpm --filter code run package
         env:
