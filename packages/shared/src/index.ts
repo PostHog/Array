@@ -16,6 +16,7 @@ export {
   isBinaryFile,
 } from "./binary";
 export {
+  activeTabIsBlank,
   type CloseTabResult,
   closeTab,
   decideTabNavigation,
@@ -23,6 +24,8 @@ export {
   type OpenTabResult,
   openOrFocusTab,
   POSITION_GAP,
+  primaryWindow,
+  primaryWindowHasNoTabs,
   reorderTab,
   setTabTarget,
   type TabNavDecision,

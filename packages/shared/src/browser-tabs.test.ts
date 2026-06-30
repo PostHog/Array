@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeTabIsBlank,
   closeTab,
   decideTabNavigation,
   newBlankTab,
   openOrFocusTab,
   POSITION_GAP,
+  primaryWindow,
+  primaryWindowHasNoTabs,
   reorderTab,
   setTabTarget,
 } from "./browser-tabs";
@@ -442,5 +445,73 @@ describe("decideTabNavigation", () => {
         routeDashboardId: null,
       }),
     ).toEqual({ type: "noop" });
+  });
+});
+
+function openChannel(s: TabsSnapshot, windowId: string, channelId: string) {
+  return openOrFocusTab(s, {
+    windowId,
+    dashboardId: null,
+    taskId: null,
+    channelId,
+    makeId,
+    now,
+  });
+}
+
+describe("activeTabIsBlank", () => {
+  it("is true when the active tab has no canvas, task, or channel", () => {
+    const t = newBlankTab(snapshot(), { windowId: "w1", makeId, now });
+    expect(activeTabIsBlank(t.snapshot)).toBe(true);
+  });
+
+  it("is false when the active tab points at a canvas", () => {
+    const t = open(snapshot(), "w1", "dash-a");
+    expect(activeTabIsBlank(t.snapshot)).toBe(false);
+  });
+
+  it("is false when the active tab is a channel tab (channel home)", () => {
+    const t = openChannel(snapshot(), "w1", "c1");
+    expect(activeTabIsBlank(t.snapshot)).toBe(false);
+  });
+
+  it("is false when there is no active tab", () => {
+    expect(activeTabIsBlank(snapshot())).toBe(false);
+  });
+});
+
+describe("primaryWindowHasNoTabs", () => {
+  it("is true when the primary window's last tab was closed", () => {
+    const opened = open(snapshot(), "w1", "dash-a");
+    const closed = closeTab(opened.snapshot, opened.tabId);
+    expect(primaryWindowHasNoTabs(closed.snapshot)).toBe(true);
+  });
+
+  it("is false while the primary window still has a tab", () => {
+    const t = open(snapshot(), "w1", "dash-a");
+    expect(primaryWindowHasNoTabs(t.snapshot)).toBe(false);
+  });
+
+  it("ignores tabs that belong to other windows", () => {
+    const s = snapshot({
+      windows: [
+        { id: "w1", isPrimary: true, bounds: null, activeTabId: null },
+        { id: "w2", isPrimary: false, bounds: null, activeTabId: null },
+      ],
+    });
+    const onlyInSecondary = open(s, "w2", "dash-a");
+    expect(primaryWindowHasNoTabs(onlyInSecondary.snapshot)).toBe(true);
+  });
+});
+
+describe("primaryWindow", () => {
+  it("prefers the primary window, falling back to the first", () => {
+    const s = snapshot({
+      windows: [
+        { id: "w2", isPrimary: false, bounds: null, activeTabId: null },
+        { id: "w1", isPrimary: true, bounds: null, activeTabId: null },
+      ],
+    });
+    expect(primaryWindow(s)?.id).toBe("w1");
   });
 });

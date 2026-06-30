@@ -1,4 +1,5 @@
 import { HashIcon } from "@phosphor-icons/react";
+import { browserTabsStore } from "@posthog/core/browser-tabs/browserTabsStore";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { decideTabNavigation, type TabsSnapshot } from "@posthog/shared";
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
@@ -353,6 +354,12 @@ export function BrowserTabStrip() {
       { tabId },
       {
         onSuccess: (next) => {
+          // Apply the post-close snapshot to the store synchronously before
+          // navigating. The store otherwise lags a subscription round-trip, so
+          // the /website index would render against the still-has-tabs snapshot
+          // and redirect to the first channel (re-opening a tab) before the
+          // empty strip arrives.
+          browserTabsStore.getState().setSnapshot(next);
           const w = primaryWindow(next);
           const active = w?.activeTabId
             ? next.tabs.find((t) => t.id === w.activeTabId)

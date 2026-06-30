@@ -27,6 +27,38 @@ function tabsInWindow(snapshot: TabsSnapshot, windowId: string): BrowserTab[] {
     .sort((a, b) => a.position - b.position);
 }
 
+/** The primary window, falling back to the first one (web has a single window). */
+export function primaryWindow(snapshot: TabsSnapshot) {
+  return snapshot.windows.find((w) => w.isPrimary) ?? snapshot.windows[0];
+}
+
+/**
+ * True when the primary window's active tab is a blank "+" tab: no canvas,
+ * task, or channel. The blank tab parks at the channels index (`/website`),
+ * whose route would otherwise redirect to the first channel — callers use this
+ * to suppress that redirect so the blank tab (and the in-flight navigation
+ * leaving it) isn't hijacked to `channels[0]`.
+ */
+export function activeTabIsBlank(snapshot: TabsSnapshot): boolean {
+  const w = primaryWindow(snapshot);
+  if (!w?.activeTabId) return false;
+  const t = snapshot.tabs.find((x) => x.id === w.activeTabId);
+  return (
+    !!t && t.dashboardId == null && t.taskId == null && t.channelId == null
+  );
+}
+
+/**
+ * True when the primary window has no tabs at all — the user closed every tab.
+ * The channels index renders the new-tab screen for this state rather than
+ * redirecting to the first channel, which would silently re-open a tab.
+ */
+export function primaryWindowHasNoTabs(snapshot: TabsSnapshot): boolean {
+  const w = primaryWindow(snapshot);
+  if (!w) return false;
+  return !snapshot.tabs.some((t) => t.windowId === w.id);
+}
+
 function setActiveTab(
   snapshot: TabsSnapshot,
   windowId: string,

@@ -31,10 +31,12 @@ The feature is deliberately split so the rules are portable and testable:
 - **`@posthog/shared` (`browser-tabs.ts`, `browser-tabs-schemas.ts`)** — pure,
   host-neutral logic: the domain shapes (`BrowserTab` / `BrowserWindow` /
   `TabsSnapshot` / `TabTarget`), the transforms (`openOrFocusTab`, `newBlankTab`,
-  `setTabTarget`, `closeTab`, `reorderTab`), and `decideTabNavigation` (what a
-  location change means for the strip). No React, no I/O. This is where behaviour
-  is unit-tested. Back/forward is driven by router history + `decideTabNavigation`,
-  not a separate action stack.
+  `setTabTarget`, `closeTab`, `reorderTab`), `decideTabNavigation` (what a
+  location change means for the strip), and the snapshot predicates
+  (`primaryWindow`, `activeTabIsBlank`, `primaryWindowHasNoTabs`) the `/website`
+  index uses to choose the new-tab screen over a first-channel redirect. No
+  React, no I/O. This is where behaviour is unit-tested. Back/forward is driven by
+  router history + `decideTabNavigation`, not a separate action stack.
 - **`@posthog/workspace-server` (`services/browser-tabs/`, `db/`)** — the
   authoritative single-instance `BrowserTabsService` in the main process. Owns
   the durable snapshot in sqlite (`browser_tabs` / `browser_windows`), applies
@@ -89,7 +91,9 @@ differ. Desktop ships first.
 ### Closing
 - Closing the active tab focuses its neighbour.
 - Closing the last tab of a **secondary** window closes the window; closing the
-  last tab of the **primary** window returns to the channels landing.
+  last tab of the **primary** window empties the strip and lands on the
+  **new-tab screen** at `/website` — it does *not* jump to the first channel
+  (see Gotchas).
 
 ### Back / forward (the action timeline)
 - Every router history entry is **tagged with the tab it belongs to** (`tabId` in
@@ -136,6 +140,22 @@ differ. Desktop ships first.
   cannot nest inside the Button (button-in-button is invalid + fails a11y lint);
   it's an absolutely-positioned sibling. The wrapper is `flex` so it hugs the
   button height (a block wrapper adds an inline line-box ~2px taller).
+- **The `/website` index must not redirect to `channels[0]` while a blank tab is
+  active or the strip is empty.** The blank `+` tab and the closed-all-tabs state
+  both park at `/website`, whose `WebsiteChannelsIndex` otherwise `<Navigate>`s to
+  the first channel. That puts a channel in the route, so `decideTabNavigation`
+  opens a tab for it — hijacking the blank tab to `channels[0]`, or silently
+  re-filling a strip the user just emptied. It's guarded with `activeTabIsBlank`
+  (blank `+` tab) and `primaryWindowHasNoTabs` (closed-all → render
+  `BlankTabView`), plus an `onIndexPath` check: TanStack renders this *stale*
+  index for a couple of frames **after** the URL has already left `/website`
+  (the `__root` Outlet un-suppresses on the way to `/website/$channelId` before
+  the matched leaf settles), and that stale render must not redirect.
+- **Closing the last tab writes the snapshot synchronously.** `handleClose`
+  calls `browserTabsStore.setSnapshot(next)` before navigating to `/website`.
+  The store otherwise lags a subscription round-trip, so the index would render
+  against the still-has-tabs snapshot and redirect (re-opening a tab) before the
+  empty strip arrives.
 
 ## Testing
 
@@ -144,7 +164,9 @@ differ. Desktop ships first.
   `newBlankTab`, `setTabTarget` (canvas + task), and
   **`decideTabNavigation`** — which encodes the activate / replace / open /
   stamp / noop decision the strip makes on every navigation (including "back
-  returns to the previous tab" and the inherited-tag in-tab case).
+  returns to the previous tab" and the inherited-tag in-tab case) — plus the
+  snapshot predicates (`activeTabIsBlank`, `primaryWindowHasNoTabs`,
+  `primaryWindow`) that gate the index's new-tab-screen-vs-redirect choice.
   `BrowserTabStrip`'s effect dispatches that decision, so the tested function is
   the one that runs.
 - **Presentational** rendering is tested in `TabStrip.test.tsx` (active styling,
