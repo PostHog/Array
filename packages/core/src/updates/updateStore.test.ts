@@ -38,6 +38,40 @@ describe("deriveUpdateUiStatus", () => {
     });
   });
 
+  it("hydrates an available update", () => {
+    expect(
+      deriveUpdateUiStatus(
+        {
+          checking: false,
+          available: true,
+          availableVersion: "v2",
+          releaseNotes: "notes",
+          releaseDate: "2026-01-01",
+          downloadSizeBytes: 1234,
+        },
+        "idle",
+      ),
+    ).toEqual({
+      status: "available",
+      availableVersion: "v2",
+      releaseNotes: "notes",
+      releaseDate: "2026-01-01",
+      downloadSizeBytes: 1234,
+    });
+  });
+
+  it("defaults available fields to null when absent", () => {
+    expect(
+      deriveUpdateUiStatus({ checking: false, available: true }, "idle"),
+    ).toEqual({
+      status: "available",
+      availableVersion: null,
+      releaseNotes: null,
+      releaseDate: null,
+      downloadSizeBytes: null,
+    });
+  });
+
   it("maps checking to checking", () => {
     expect(deriveUpdateUiStatus({ checking: true }, "idle")).toEqual({
       status: "checking",

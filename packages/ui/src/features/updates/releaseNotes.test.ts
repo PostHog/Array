@@ -67,4 +67,33 @@ describe("groupReleases", () => {
     expect(groups[2].key.startsWith("week-")).toBe(true);
     expect(groups[2].releases).toHaveLength(2);
   });
+
+  it("marks the newest stable release as latest, skipping a prerelease", () => {
+    const groups = groupReleases(
+      [
+        { ...mk("v0.56.0-beta.1", "2026-06-20T12:00:00Z"), isPrerelease: true },
+        mk("v0.55.14", "2026-06-19T12:00:00Z"),
+      ],
+      now,
+      3,
+    );
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0].releases[0].name).toBe("v0.56.0-beta.1");
+    expect(groups[0].isLatest).toBe(false);
+    expect(groups[1].isLatest).toBe(true);
+  });
+
+  it("falls back to the newest group when every release is a prerelease", () => {
+    const groups = groupReleases(
+      [
+        { ...mk("v0.56.0-beta.2", "2026-06-20T12:00:00Z"), isPrerelease: true },
+        { ...mk("v0.56.0-beta.1", "2026-06-19T12:00:00Z"), isPrerelease: true },
+      ],
+      now,
+      3,
+    );
+
+    expect(groups[0].isLatest).toBe(true);
+  });
 });

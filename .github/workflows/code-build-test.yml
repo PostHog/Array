@@ -90,6 +90,12 @@ jobs:
           pnpm --filter @posthog/enricher run build
           pnpm --filter @posthog/agent run build
 
+      # build/Assets.car is gitignored; regenerate it so the packaged app ships
+      # the liquid-glass icon (the script falls back to .icns if actool fails).
+      - name: Compile macOS liquid-glass icon
+        working-directory: apps/code
+        run: bash scripts/compile-glass-icon.sh
+
       - name: Build app
         env:
           MATRIX_ARCH: ${{ matrix.arch }}

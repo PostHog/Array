@@ -8,6 +8,7 @@ export interface ReleaseLike {
   version: string;
   notes: string;
   date: string | null;
+  isPrerelease?: boolean;
 }
 
 export interface ReleaseGroup {
@@ -98,6 +99,9 @@ export function groupReleases(
 ): ReleaseGroup[] {
   const recentCutoff = now - recentDays * DAY_MS;
   const map = new Map<string, ReleaseGroup>();
+  // The "Latest" badge should mark the newest stable release, not a prerelease
+  // that sorts first; UpdateAvailableModal applies the same skip-prerelease rule.
+  let latestStableGroup: ReleaseGroup | undefined;
 
   for (const release of releases) {
     const time = release.date ? Date.parse(release.date) : Number.NaN;
@@ -123,11 +127,15 @@ export function groupReleases(
       map.set(key, group);
     }
     group.releases.push(release);
+    if (!latestStableGroup && !release.isPrerelease) {
+      latestStableGroup = group;
+    }
   }
 
   const groups = Array.from(map.values());
-  if (groups.length > 0) {
-    groups[0].isLatest = true;
+  const latestGroup = latestStableGroup ?? groups[0];
+  if (latestGroup) {
+    latestGroup.isLatest = true;
   }
   return groups;
 }
