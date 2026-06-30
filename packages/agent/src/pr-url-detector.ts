@@ -2,7 +2,7 @@ const PR_URL_REGEX = /https:\/\/github\.com\/[^/\s"]+\/[^/\s"]+\/pull\/\d+/;
 
 // A fixed window (not "since run start") so a PR the agent merely views on a
 // long run is too old to be mistaken for one it just created.
-export const PR_CREATION_RECENCY_MS = 15 * 60 * 1000;
+export const PR_CREATION_RECENCY_MS = 5 * 60 * 1000;
 
 export function findPrUrl(text: string): string | null {
   return text.match(PR_URL_REGEX)?.[0] ?? null;
