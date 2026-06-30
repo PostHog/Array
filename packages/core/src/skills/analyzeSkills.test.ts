@@ -180,6 +180,10 @@ describe("analyzeSkills", () => {
         "Investigates a PostHog error. Use when the user pastes an issue URL.",
       ],
       [
+        "Use whenever",
+        "Debug PostHog Surveys. Use whenever a support ticket is pasted.",
+      ],
+      [
         "Read when",
         "Audit PostHog flags. Read when the user asks to health-check flags.",
       ],
@@ -230,13 +234,16 @@ describe("analyzeSkills", () => {
       expect(hasAmbiguousTrigger(skill)).toBe(false);
     });
 
-    it("AMBIGUOUS_TRIGGER_VERBS covers the core coding-overlap verbs", () => {
-      // Sentinel: ensures the verb list is not accidentally emptied.
+    it("AMBIGUOUS_TRIGGER_VERBS contains at least 5 verbs (sentinel)", () => {
       expect(AMBIGUOUS_TRIGGER_VERBS.length).toBeGreaterThanOrEqual(5);
-      expect(AMBIGUOUS_TRIGGER_VERBS).toContain("investigate");
-      expect(AMBIGUOUS_TRIGGER_VERBS).toContain("debug");
-      expect(AMBIGUOUS_TRIGGER_VERBS).toContain("diagnose");
     });
+
+    it.each(["investigate", "debug", "diagnose"] as const)(
+      "AMBIGUOUS_TRIGGER_VERBS includes the core coding-overlap verb %s",
+      (verb) => {
+        expect(AMBIGUOUS_TRIGGER_VERBS).toContain(verb);
+      },
+    );
   });
 
   it("accumulates multiple issues on one skill", () => {

@@ -41,8 +41,10 @@ export function hasAmbiguousTrigger(skill: SkillInfo): boolean {
   const desc = skill.description.toLowerCase();
   const hasVerb = AMBIGUOUS_TRIGGER_VERBS.some((v) => desc.includes(v));
   // Accepted guard patterns (any is sufficient):
-  // "TRIGGER when" / "trigger when", "Use when", "Read when", "DO NOT TRIGGER"
-  const hasGuard = /\b(trigger|use|read) when\b/i.test(skill.description);
+  // "TRIGGER when(ever)", "Use when(ever)", "Read when(ever)", "DO NOT TRIGGER when"
+  const hasGuard = /\b(trigger|use|read) when(ever)?\b/i.test(
+    skill.description,
+  );
   return hasVerb && !hasGuard;
 }
 
