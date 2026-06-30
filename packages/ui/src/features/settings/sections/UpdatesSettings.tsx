@@ -1,5 +1,8 @@
 import { CheckCircle, XCircle } from "@phosphor-icons/react";
-import { deriveUpdateStatus } from "@posthog/core/settings/updateStatus";
+import {
+  deriveUpdateStatus,
+  resolveCheckResultAction,
+} from "@posthog/core/settings/updateStatus";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
@@ -44,24 +47,21 @@ export function UpdatesSettings() {
     try {
       const result = await checkUpdatesMutation.mutateAsync();
 
-      if (result.success) {
-        setUpdateStatus({
-          message: "Checking for updates...",
-          type: "info",
-        });
-      } else if (result.errorCode === "already_checking") {
-        // A check is already in progress (e.g. boot check) — show spinner and wait
-        setUpdateStatus({ message: "Checking for updates...", type: "info" });
-      } else {
-        if (result.errorCode === "disabled") {
-          setUpdatesDisabled(true);
-        }
-        setUpdateStatus({
-          message: result.errorMessage || "Failed to check for updates",
-          type: "error",
-        });
-        setCheckingForUpdates(false);
+      // success and already_checking are non-terminal: the real outcome (up to
+      // date, available, downloading, ready, error) arrives over the onStatus
+      // subscription, which owns the message. Re-asserting "Checking..." here
+      // would clobber a terminal status the subscription already delivered,
+      // e.g. an update that is already staged and ready to install.
+      const action = resolveCheckResultAction(result);
+      if (!action) {
+        return;
       }
+
+      if (action.updatesDisabled) {
+        setUpdatesDisabled(true);
+      }
+      setUpdateStatus({ message: action.message, type: action.type });
+      setCheckingForUpdates(false);
     } catch (error) {
       log.error("Failed to check for updates:", error);
       setUpdateStatus({
