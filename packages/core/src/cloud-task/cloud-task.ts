@@ -36,7 +36,8 @@ const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
 
-// Authoritative end-of-stream sentinel. The client stops on it without consulting run status.
+// Authoritative end-of-stream sentinel, matched on the SSE event name (event.event, not data.type).
+// The client stops on it without consulting run status.
 const STREAM_END_EVENT_NAME = "stream-end";
 
 interface SessionLogsPage {
@@ -128,6 +129,9 @@ interface WatcherState {
   isBootstrapping: boolean;
   hasEmittedSnapshot: boolean;
   bufferedLogBatches: StoredLogEntry[][];
+  // Live entries emitted since the last snapshot, retained so a re-subscribe snapshot can reconcile
+  // entries the server has not persisted yet. emitCurrentSnapshot trims this to the still-missing
+  // set; with no re-subscribe it holds the run's emitted entries until the watch ends.
   emittedLogEntries: StoredLogEntry[];
   failed: boolean;
   needsPostBootstrapReconnect: boolean;
@@ -135,7 +139,7 @@ interface WatcherState {
   streamEnded: boolean;
   // Consumes one automatic re-bootstrap recovery; re-armed by a data event or healthy connection.
   selfHealAttempted: boolean;
-  // streamBaseUrl set => read via the agent-proxy with streamReadToken; null => read from Django.
+  // Both streamBaseUrl and streamReadToken non-null => read via the agent-proxy; either null => Django.
   streamTargetResolved: boolean;
   streamBaseUrl: string | null;
   streamReadToken: string | null;
@@ -267,6 +271,36 @@ function shouldFailWatcherForFetchStatus(status: number): boolean {
 // target stays unresolved and the next reconnect retries instead of caching a Django fallback.
 function isTransientStreamTargetStatus(status: number): boolean {
   return status >= 500 || status === 429;
+}
+
+// Content-based frequency map keyed by the serialized entry. SSE ids are absent from persisted
+// (historical) entries, so the payload itself is the identity used to dedup live against historical.
+function buildEntryFrequencyMap(
+  entries: StoredLogEntry[],
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    const serialized = JSON.stringify(entry);
+    counts.set(serialized, (counts.get(serialized) ?? 0) + 1);
+  }
+  return counts;
+}
+
+// Keeps only entries absent from counts, consuming one occurrence per match so a payload present N
+// times in the reference set is suppressed at most N times. Mutates counts.
+function filterEntriesNotInFrequencyMap(
+  entries: StoredLogEntry[],
+  counts: Map<string, number>,
+): StoredLogEntry[] {
+  return entries.filter((entry) => {
+    const serialized = JSON.stringify(entry);
+    const remaining = counts.get(serialized) ?? 0;
+    if (remaining <= 0) {
+      return true;
+    }
+    counts.set(serialized, remaining - 1);
+    return false;
+  });
 }
 
 @injectable()
@@ -831,13 +865,19 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         const events = parser.parse(chunk);
         for (const event of events) {
           eventsReceived += 1;
-          this.handleSseEvent(key, event);
+          const backendError = this.handleSseEvent(key, event);
+          if (backendError) {
+            throw backendError;
+          }
         }
       }
 
       const trailingEvents = parser.parse(decoder.decode());
       for (const event of trailingEvents) {
-        this.handleSseEvent(key, event);
+        const backendError = this.handleSseEvent(key, event);
+        if (backendError) {
+          throw backendError;
+        }
       }
 
       this.flushLogBatch(key);
@@ -883,10 +923,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         error.status === 401 &&
         unauthorizedWatcher?.streamBaseUrl
       ) {
+        // Keep durableStreamEnabled set: clearing it would route this disconnect through legacy
+        // status polling, which can stop the watch on a terminal status before stream-end arrives.
+        // The next connectSse re-resolves the target and resolveStreamTarget re-derives durability.
         unauthorizedWatcher.streamTargetResolved = false;
         unauthorizedWatcher.streamBaseUrl = null;
         unauthorizedWatcher.streamReadToken = null;
-        unauthorizedWatcher.durableStreamEnabled = false;
         this.log.info("Cloud task stream proxy token rejected, re-resolving", {
           key,
         });
@@ -915,15 +957,15 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         streamWasEstablished &&
         Date.now() - connectedAt >= SSE_HEALTHY_CONNECTION_MS;
 
-      const watcher = this.watchers.get(key);
-      if (watcher) {
+      const errorWatcher = this.watchers.get(key);
+      if (errorWatcher) {
         if (isBackendError) {
-          watcher.streamErrorAttempts += 1;
+          errorWatcher.streamErrorAttempts += 1;
         } else if (wasHealthyStream) {
-          watcher.streamErrorAttempts = 0;
+          errorWatcher.streamErrorAttempts = 0;
           // A healthy-length connection proves timeout cycling, not a loop.
-          watcher.cumulativeReconnectAttempts = 0;
-          watcher.selfHealAttempted = false;
+          errorWatcher.cumulativeReconnectAttempts = 0;
+          errorWatcher.selfHealAttempted = false;
         }
       }
 
@@ -939,11 +981,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           : 0,
         bytesReceived,
         eventsReceived,
-        dataEventsReceived: watcher?.connDataEventsReceived ?? 0,
-        lastEventId: watcher?.lastEventId ?? null,
-        reconnectAttempts: watcher?.reconnectAttempts ?? 0,
-        streamErrorAttempts: watcher?.streamErrorAttempts ?? 0,
-        cumulativeReconnectAttempts: watcher?.cumulativeReconnectAttempts ?? 0,
+        dataEventsReceived: errorWatcher?.connDataEventsReceived ?? 0,
+        lastEventId: errorWatcher?.lastEventId ?? null,
+        reconnectAttempts: errorWatcher?.reconnectAttempts ?? 0,
+        streamErrorAttempts: errorWatcher?.streamErrorAttempts ?? 0,
+        cumulativeReconnectAttempts:
+          errorWatcher?.cumulativeReconnectAttempts ?? 0,
       });
       await this.handleStreamCompletion(key, {
         reconnectOnDisconnect: true,
@@ -958,9 +1001,15 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
   }
 
-  private handleSseEvent(key: string, event: SseEvent): void {
+  // Returns a BackendStreamError when the stream carries an error event so the caller can throw at
+  // the read site; returns null otherwise. It does not throw, so a single event cannot unwind the
+  // reader loop unexpectedly.
+  private handleSseEvent(
+    key: string,
+    event: SseEvent,
+  ): BackendStreamError | null {
     const watcher = this.watchers.get(key);
-    if (!watcher || watcher.failed) return;
+    if (!watcher || watcher.failed) return null;
 
     if (event.id) {
       watcher.lastEventId = event.id;
@@ -971,7 +1020,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       const message = isSseErrorEvent(event.data)
         ? event.data.error
         : "Unknown stream error";
-      throw new BackendStreamError(message);
+      return new BackendStreamError(message);
     }
 
     if (event.event === STREAM_END_EVENT_NAME) {
@@ -979,7 +1028,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       // of reconnecting, independent of run status. The connection will close
       // naturally (clean EOF) right after this sentinel.
       watcher.streamEnded = true;
-      return;
+      return null;
     }
 
     // A keepalive or real event proves the transport recovered. A keepalive does not clear the
@@ -987,7 +1036,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.reconnectAttempts = 0;
 
     if (isKeepaliveEvent(event)) {
-      return;
+      return null;
     }
 
     // A real data event proves the stream materialized; clear the remaining budgets and re-arm self-heal.
@@ -1019,7 +1068,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           });
         }
       }
-      return;
+      return null;
     }
 
     if (isPermissionRequestEvent(event.data)) {
@@ -1031,13 +1080,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         toolCall: event.data.toolCall,
         options: event.data.options,
       });
-      return;
+      return null;
     }
 
     watcher.pendingLogEntries.push(event.data as StoredLogEntry);
     if (watcher.pendingLogEntries.length >= EVENT_BATCH_MAX_SIZE) {
       this.flushLogBatch(key);
-      return;
+      return null;
     }
 
     if (!watcher.batchFlushTimeoutId) {
@@ -1046,6 +1095,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         this.flushLogBatch(key);
       }, EVENT_BATCH_FLUSH_MS);
     }
+
+    return null;
   }
 
   private flushLogBatch(key: string): void {
@@ -1084,27 +1135,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const watcher = this.watchers.get(key);
     if (!watcher || watcher.bufferedLogBatches.length === 0) return;
 
-    // Content-based dedup: SSE ids don't exist in the historical entries, so the payload is the key.
-    const historicalCounts = new Map<string, number>();
-    for (const entry of historicalEntries) {
-      const serialized = JSON.stringify(entry);
-      historicalCounts.set(
-        serialized,
-        (historicalCounts.get(serialized) ?? 0) + 1,
-      );
-    }
+    const historicalCounts = buildEntryFrequencyMap(historicalEntries);
 
     for (const entries of watcher.bufferedLogBatches) {
-      const dedupedEntries = entries.filter((entry) => {
-        const serialized = JSON.stringify(entry);
-        const remaining = historicalCounts.get(serialized) ?? 0;
-        if (remaining <= 0) {
-          return true;
-        }
-
-        historicalCounts.set(serialized, remaining - 1);
-        return false;
-      });
+      const dedupedEntries = filterEntriesNotInFrequencyMap(
+        entries,
+        historicalCounts,
+      );
 
       if (dedupedEntries.length === 0) {
         continue;
@@ -1142,25 +1179,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return { snapshotEntries: historicalEntries, missingEmittedEntries: [] };
     }
 
-    const historicalCounts = new Map<string, number>();
-    for (const entry of historicalEntries) {
-      const serialized = JSON.stringify(entry);
-      historicalCounts.set(
-        serialized,
-        (historicalCounts.get(serialized) ?? 0) + 1,
-      );
-    }
-
-    const missingEmittedEntries = emittedEntries.filter((entry) => {
-      const serialized = JSON.stringify(entry);
-      const remaining = historicalCounts.get(serialized) ?? 0;
-      if (remaining <= 0) {
-        return true;
-      }
-
-      historicalCounts.set(serialized, remaining - 1);
-      return false;
-    });
+    const historicalCounts = buildEntryFrequencyMap(historicalEntries);
+    const missingEmittedEntries = filterEntriesNotInFrequencyMap(
+      emittedEntries,
+      historicalCounts,
+    );
 
     return {
       snapshotEntries: [...historicalEntries, ...missingEmittedEntries],
@@ -1300,6 +1323,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           { key },
         );
         this.resetWatcherForRebootstrap(watcher);
+        // Set after the reset (which clears it): consumes the single allowed self-heal so a
+        // straight-back loop fails next time instead of re-bootstrapping forever.
         watcher.selfHealAttempted = true;
         void this.bootstrapWatcher(key);
         return;
@@ -1410,26 +1435,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return;
     }
 
+    // All callers pass reconnectOnDisconnect, and durable watches only stop via the stream-end
+    // sentinel or a terminal legacy poll (both handled above); any other disconnect reconnects.
     if (reconnectOnDisconnect) {
       this.scheduleReconnect(key, options.reconnectError, {
         countAttempt: options.countReconnectAttempt ?? false,
       });
-      return;
     }
-
-    this.log.info("Cloud task terminal stop", {
-      key,
-      status: watcher.lastStatus,
-      reachedViaError: options.reconnectError !== undefined,
-      lastEventId: watcher.lastEventId,
-      sentLastEventId: watcher.connSentLastEventId,
-      totalEntryCount: watcher.totalEntryCount,
-      connDataEventsReceived: watcher.connDataEventsReceived,
-      connDurationMs:
-        watcher.connStartedAt !== 0 ? Date.now() - watcher.connStartedAt : 0,
-    });
-
-    await this.finalizeWatcherStop(key);
   }
 
   // Stops a watcher whose stream is durably complete. Repairs the displayed status if the stream
@@ -1561,9 +1573,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         return null;
       }
 
-      for (const entry of page.entries) {
-        entries.push(entry);
-      }
+      entries.push(...page.entries);
       if (!page.hasMore || page.entries.length === 0) {
         return entries;
       }

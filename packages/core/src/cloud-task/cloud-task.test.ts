@@ -2419,4 +2419,352 @@ describe("CloudTaskService", () => {
     ]);
     expect(mockNetFetch).toHaveBeenCalledTimes(3);
   });
+
+  it("fails a Django-leg watcher on a stream 401 without re-resolving the read target", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    // Default stream_token resolves with stream_base_url: null, so the read leg is Django.
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    // A Django-leg 401 is fatal (autoRetry: false). The proxy re-resolve path is guarded on a
+    // non-null streamBaseUrl, so a Django leg must fail rather than re-mint a stream_token.
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(createJsonResponse({ detail: "expired" }, 401)),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(
+      () =>
+        updates.some(
+          (u) =>
+            typeof u === "object" &&
+            u !== null &&
+            (u as { kind?: string }).kind === "error",
+        ),
+      10_000,
+    );
+
+    expect(updates).toContainEqual({
+      taskId: "task-1",
+      runId: "run-1",
+      kind: "error",
+      errorTitle: "Cloud authentication expired",
+      errorMessage: "Please reauthenticate and retry the cloud run stream.",
+      retryable: true,
+    });
+
+    // The Django leg did not re-resolve, and the fatal failure schedules no reconnect.
+    expect(mockStreamTokenFetch.mock.calls.length).toBe(1);
+    const streamCallsAtFailure = mockStreamFetch.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(mockStreamFetch.mock.calls.length).toBe(streamCallsAtFailure);
+    expect(mockStreamTokenFetch.mock.calls.length).toBe(1);
+  });
+
+  it("treats a 429 from stream_token as transient and retries the read-target resolution", async () => {
+    vi.useFakeTimers();
+
+    // 429 is momentary like a 503: it must not cache a Django fallback. The next reconnect
+    // re-resolves and the watch upgrades to the durable proxy leg.
+    mockStreamTokenFetch
+      .mockImplementationOnce(() =>
+        Promise.resolve(createJsonResponse({ detail: "slow down" }, 429)),
+      )
+      .mockImplementation(() =>
+        Promise.resolve(
+          createJsonResponse({
+            token: "fresh-token",
+            stream_base_url: "https://proxy.example",
+          }),
+        ),
+      );
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    const usedProxyLeg = (input: string | Request): boolean => {
+      const url = typeof input === "string" ? input : input.url;
+      return url.includes("proxy.example");
+    };
+    mockStreamFetch.mockImplementation((input: string | Request) =>
+      Promise.resolve(
+        usedProxyLeg(input)
+          ? createSseResponse("event: stream-end\ndata: {}\n\n")
+          : createSseResponse(""),
+      ),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    const hasWatcher = (): boolean =>
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      );
+    await waitFor(() => !hasWatcher(), 10_000);
+
+    // The 429 was not cached: resolution retried and the stream switched to the durable proxy leg.
+    expect(mockStreamTokenFetch.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(
+      mockStreamFetch.mock.calls.some(([input]) => usedProxyLeg(input)),
+    ).toBe(true);
+  });
+
+  it("caches a 403 from stream_token and falls back to Django legacy polling", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    // 403 is not transient: like a 404 it pins the watch to the Django leg with status polling.
+    mockStreamTokenFetch.mockImplementation(() =>
+      Promise.resolve(createJsonResponse({ detail: "forbidden" }, 403)),
+    );
+
+    let runFetchCount = 0;
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      runFetchCount += 1;
+      // Calls 1-3 (bootstrap, post-bootstrap verify, first legacy poll) report an active run; the
+      // second legacy poll reports terminal.
+      const terminal = runFetchCount >= 4;
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: terminal ? "completed" : "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: terminal
+            ? "2026-01-01T00:00:05Z"
+            : "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    // Legacy mode: no stream-end ever arrives, so each clean EOF triggers a status poll.
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(createSseResponse("")),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    const hasWatcher = (): boolean =>
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      );
+    await waitFor(() => !hasWatcher(), 10_000);
+
+    // Every stream read used the Django leg (no proxy URL), the watcher stopped on the terminal
+    // poll, and the refused resolution was cached: one stream_token call for the whole watch.
+    expect(
+      mockStreamFetch.mock.calls.every(([input]) => {
+        const url = typeof input === "string" ? input : (input as Request).url;
+        return url.includes("https://app.example.com/api/");
+      }),
+    ).toBe(true);
+    expect(updates).toContainEqual(
+      expect.objectContaining({ kind: "status", status: "completed" }),
+    );
+    expect(mockStreamTokenFetch.mock.calls.length).toBe(1);
+  });
+
+  it("stops on the last-known status when the post-stream-end repair fetch fails", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    let runFetchCount = 0;
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      runFetchCount += 1;
+      // Bootstrap (call 1) reports an active run so the stream opens; the stream-end stop path's
+      // status-repair fetch (call 2) fails the network instead of returning a terminal run.
+      if (runFetchCount >= 2) {
+        return Promise.reject(new Error("network down"));
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: "build",
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(createSseResponse("event: stream-end\ndata: {}\n\n")),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    const hasWatcher = (): boolean =>
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      );
+    await waitFor(() => !hasWatcher(), 10_000);
+
+    // The failed repair fetch must not strand the watcher; it stops on the last-known status.
+    expect(updates).toContainEqual(
+      expect.objectContaining({ kind: "status", status: "in_progress" }),
+    );
+    // Exactly one stream connection (the bootstrap stream-end); no reconnect after the clean stop.
+    expect(mockStreamFetch.mock.calls.length).toBe(1);
+  });
+
+  it("re-arms self-heal after a data event and re-bootstraps a second time before failing", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    // Clean-EOF loop by default. Each re-bootstrap re-resolves the read target, so a second
+    // stream_token call marks the first self-heal. Deliver exactly one real data event on that
+    // re-bootstrap's connection to re-arm self-heal, then resume clean-EOF looping.
+    let dataEventDelivered = false;
+    mockStreamFetch.mockImplementation(() => {
+      if (mockStreamTokenFetch.mock.calls.length >= 2 && !dataEventDelivered) {
+        dataEventDelivered = true;
+        return Promise.resolve(
+          createSseResponse(
+            'id: 1\ndata: {"type":"notification","timestamp":"2026-01-01T00:00:02Z","notification":{"jsonrpc":"2.0","method":"_posthog/console","params":{"sessionId":"run-1","level":"info","message":"alive"}}}\n\n',
+          ),
+        );
+      }
+      return Promise.resolve(createSseResponse(""));
+    });
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60_000);
+
+    await waitFor(
+      () =>
+        updates.some(
+          (u) =>
+            typeof u === "object" &&
+            u !== null &&
+            (u as { kind?: string }).kind === "error",
+        ),
+      10_000,
+    );
+
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        kind: "error",
+        errorTitle: "Cloud run unreachable",
+      }),
+    );
+
+    // Initial bootstrap snapshot plus two self-heal re-bootstraps: the data event between the first
+    // and second budget exhaustion re-armed self-heal, so a third snapshot precedes the failure.
+    expect(
+      updates.filter(
+        (u) =>
+          typeof u === "object" &&
+          u !== null &&
+          (u as { kind?: string }).kind === "snapshot",
+      ),
+    ).toHaveLength(3);
+  });
 });
