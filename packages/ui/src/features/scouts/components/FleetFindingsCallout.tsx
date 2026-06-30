@@ -54,13 +54,16 @@ export function FleetFindingsCallout() {
           {summary.latestEmittedAt ? (
             <>
               {" · latest "}
-              <RelativeTimestamp timestamp={summary.latestEmittedAt} />
+              <RelativeTimestamp
+                timestamp={summary.latestEmittedAt}
+                className="inline text-[12px] text-gray-11"
+              />
             </>
           ) : null}
         </Text>
       </Flex>
       <span className="flex-1" />
-      <ArrowRightIcon size={16} className="shrink-0 text-gray-10" />
+      <ArrowRightIcon size={14} className="shrink-0 text-gray-10" />
     </button>
   );
 }
