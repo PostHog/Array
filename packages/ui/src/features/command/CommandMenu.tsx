@@ -11,7 +11,6 @@ import {
   Dialog,
   DialogContent,
   Kbd,
-  KbdGroup,
 } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import {
@@ -438,12 +437,10 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                         </span>
                       )}
                       {cmd.shortcut && (
-                        <span className="ml-auto shrink-0 pl-2">
-                          <KbdGroup className="gap-1">
-                            {formatHotkeyParts(cmd.shortcut).map((part) => (
-                              <Kbd key={part}>{part}</Kbd>
-                            ))}
-                          </KbdGroup>
+                        <span className="ml-auto flex shrink-0 items-center gap-1 pl-2">
+                          {formatHotkeyParts(cmd.shortcut).map((part) => (
+                            <Kbd key={part}>{part}</Kbd>
+                          ))}
                         </span>
                       )}
                     </AutocompleteItem>
