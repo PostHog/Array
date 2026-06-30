@@ -24,6 +24,7 @@ on:
       - "docs/**"
       - "**/*.md"
       - "apps/code/scripts/dev-update/run-from-ci.sh"
+      - "apps/code/scripts/dev-update/run-from-ci-forge.sh"
   schedule:
     - cron: "0 7 * * *"
   workflow_dispatch:
@@ -247,11 +248,34 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      # upload-artifact follows symlinks and repacks them as real files, which
+      # breaks the framework layout and the code signature. ditto -c -k preserves
+      # both, so the pulled zip extracts to a bundle Squirrel still accepts (the
+      # same way the baseline old app travels). run-from-ci-forge.sh consumes this.
+      - name: Package old Forge app for upload
+        if: always()
+        working-directory: apps/code
+        run: |
+          APP="out/old-forge/PostHog Code.app"
+          ZIP="out/PostHog-Code-forge-1.0.0-arm64-mac.zip"
+          if [ ! -d "$APP" ]; then
+            echo "no Forge app to package (an earlier step likely failed); skipping"
+            exit 0
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+          # Prove the zip round-trips to a still-valid signature, so the artifact
+          # run-from-ci-forge.sh pulls is usable and not silently corrupt.
+          VERIFY_DIR="$(mktemp -d)"
+          ditto -x -k "$ZIP" "$VERIFY_DIR"
+          codesign --verify --strict "$VERIFY_DIR/PostHog Code.app"
+          rm -rf "$VERIFY_DIR"
+          echo "OK: packaged Forge app zip verifies"
+
       - name: Upload old Forge build (v0.55.132)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: update-old-forge-build-1.0.0
-          path: apps/code/out/old-forge/
+          path: apps/code/out/PostHog-Code-forge-1.0.0-arm64-mac.zip
           if-no-files-found: warn
           retention-days: 7

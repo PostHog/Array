@@ -143,6 +143,18 @@ pnpm --filter code exec playwright test \
 
 The old Forge app lands at `apps/code/out/old-forge/PostHog Code.app`. The spec copies it to a disposable run dir, so a rerun starts from `1.0.0` again without rebuilding.
 
+### Or: against the CI-signed Forge build (no local signing, no 9-minute build)
+
+The Forge counterpart to `run-from-ci.sh`. It pulls the CI-signed Forge `1.0.0` app and the `2.0.0` feed from the latest green run, verifies the signature survived transport, serves the feed, and launches the Forge app so its built-in Squirrel.Mac client drives the real update:
+
+```bash
+bash apps/code/scripts/dev-update/run-from-ci-forge.sh
+# a specific run:         bash apps/code/scripts/dev-update/run-from-ci-forge.sh <run-id>
+# automated spec instead: AUTOMATED=1 bash apps/code/scripts/dev-update/run-from-ci-forge.sh
+```
+
+Needs `gh` authenticated and your normal PostHog Code quit. The CI job uploads the Forge app as a `ditto` zip (`update-old-forge-build-1.0.0`) so its symlinks and code signature survive the artifact round-trip; a plain directory upload would break both and the swap would fail.
+
 ## CI
 
 `code-update-e2e.yml` runs both specs nightly on `macos-15` with the real signing secrets, and on demand:
