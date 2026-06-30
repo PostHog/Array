@@ -77,7 +77,9 @@ console.log(`better-sqlite3 built for Electron ${electronVersion}.`);
 // workspace-server's Node-ABI binary, which the DB unit tests load directly.
 const builtBinary = path.join(moduleDir, "build/Release/better_sqlite3.node");
 if (!existsSync(builtBinary)) {
-  throw new Error(`Expected built binary at ${builtBinary} but none was found.`);
+  throw new Error(
+    `Expected built binary at ${builtBinary} but none was found.`,
+  );
 }
 
 const rootVersion = JSON.parse(
