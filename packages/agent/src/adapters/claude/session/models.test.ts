@@ -56,6 +56,13 @@ describe("model capability flags", () => {
     expect(supportsMcpInjection("claude-fable-5")).toBe(true);
   });
 
+  it("flags claude-sonnet-5 like Sonnet 4.6 (1M context, effort, no xhigh)", () => {
+    expect(supports1MContext("claude-sonnet-5")).toBe(true);
+    expect(supportsEffort("claude-sonnet-5")).toBe(true);
+    expect(supportsXhighEffort("claude-sonnet-5")).toBe(false);
+    expect(supportsMcpInjection("claude-sonnet-5")).toBe(true);
+  });
+
   it("allows MCP injection for supported Claude models", () => {
     expect(supportsMcpInjection("claude-opus-4-7")).toBe(true);
     expect(supportsMcpInjection("claude-sonnet-4-6")).toBe(true);
