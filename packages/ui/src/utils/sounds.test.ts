@@ -55,11 +55,8 @@ describe("playbackRateForTaskDuration", () => {
     ],
     ["at the slow ceiling (30min)", 30 * 60 * 1000, 1 / 3],
     ["beyond the slow ceiling (2h)", 2 * 60 * 60 * 1000, 1 / 3],
+    ["NaN (non-finite) → fast rate", Number.NaN, 3],
   ])("%s → %f", (_label, durationMs, expected) => {
     expect(playbackRateForTaskDuration(durationMs)).toBeCloseTo(expected, 5);
-  });
-
-  it("falls back to the fast rate for non-finite input", () => {
-    expect(playbackRateForTaskDuration(Number.NaN)).toBe(3);
   });
 });

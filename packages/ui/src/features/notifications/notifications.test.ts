@@ -185,31 +185,19 @@ describe("sound", () => {
     expect(play).toHaveBeenCalledTimes(1);
   });
 
-  it("plays at normal speed when scaling is off", () => {
-    const { bus, play } = makeBus({
-      hasFocus: false,
-      settings: { scaleSoundWithTaskLength: false },
-    });
-    bus.notifyPromptComplete("My task", "end_turn", TASK_ID, 10 * 60 * 1000);
-    expect(play).toHaveBeenCalledWith("meep", 80, [], 1);
-  });
-
-  it("scales playback rate by duration when scaling is on", () => {
-    const { bus, play } = makeBus({
-      hasFocus: false,
-      settings: { scaleSoundWithTaskLength: true },
-    });
-    // A quick (<30s) task plays at the max 3x rate.
-    bus.notifyPromptComplete("My task", "end_turn", TASK_ID, 10 * 1000);
-    expect(play).toHaveBeenCalledWith("meep", 80, [], 3);
-  });
-
-  it("plays at normal speed when scaling is on but no duration is given", () => {
-    const { bus, play } = makeBus({
-      hasFocus: false,
-      settings: { scaleSoundWithTaskLength: true },
-    });
-    bus.notifyPromptComplete("My task", "end_turn", TASK_ID);
-    expect(play).toHaveBeenCalledWith("meep", 80, [], 1);
-  });
+  it.each([
+    ["scaling off, with duration", false, 10 * 60 * 1000 as number | undefined, 1],
+    ["scaling on, quick task (<30s) → 3×", true, 10 * 1000, 3],
+    ["scaling on, no duration → 1×", true, undefined, 1],
+  ])(
+    "%s",
+    (_label, scaleSoundWithTaskLength, durationMs, expectedRate) => {
+      const { bus, play } = makeBus({
+        hasFocus: false,
+        settings: { scaleSoundWithTaskLength },
+      });
+      bus.notifyPromptComplete("My task", "end_turn", TASK_ID, durationMs);
+      expect(play).toHaveBeenCalledWith("meep", 80, [], expectedRate);
+    },
+  );
 });
