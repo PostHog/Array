@@ -72,9 +72,7 @@ export function ToolCallBlock({
 
   if (toolName?.startsWith("mcp__")) {
     return (
-      // New thread pulls the MCP block left to align with the ChatMarker vertical rule; the legacy
-      // thread keeps its original left padding so ConversationView is unchanged when toggled off.
-      <Box className={chatChrome ? "-ml-1" : "pl-3"}>
+      <Box className={chatChrome ? "" : "pl-3"}>
         {McpToolBlock ? (
           <McpToolBlock {...props} mcpToolName={toolName} />
         ) : (

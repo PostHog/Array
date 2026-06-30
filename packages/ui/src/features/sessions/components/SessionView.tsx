@@ -173,6 +173,7 @@ export function SessionView({
   const adapter = useAdapterForTask(taskId);
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();
+  const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
   const { isOnline } = useConnectivity();
   const currentModeId = modeOption?.currentValue;
   const handoffInProgress =
@@ -517,7 +518,7 @@ export function SessionView({
                   scrollX={false}
                 />
 
-                <SessionResourcesBar events={events} />
+                {!useNewChatThread && <SessionResourcesBar events={events} />}
 
                 <PlanStatusBar plan={latestPlan} />
 

@@ -60,6 +60,24 @@
 @source "../../../../node_modules/@posthog/quill/dist/**/*.js";
 
 /*
+ * Keep the chat scroller's scrollbar visible while it auto-scrolls.
+ *
+ * Quill hides the scrollbar (`scrollbar-width: none` / `::-webkit-scrollbar
+ * display: none`) whenever the viewport carries `data-autoscrolling`, to stop
+ * the thumb jittering during programmatic scroll. But the autoscroll engine
+ * also fires `scrollToEnd` on any content-height change while pinned to the
+ * bottom — so toggling a tool collapsible flips `data-autoscrolling` on for the
+ * settle timeout and the scrollbar flickers away on every toggle. We'd rather
+ * keep a stable scrollbar; pinned-to-bottom streaming doesn't visibly jitter.
+ */
+.quill-chat-message-scroller__viewport[data-autoscrolling] {
+  scrollbar-width: auto;
+}
+.quill-chat-message-scroller__viewport[data-autoscrolling]::-webkit-scrollbar {
+  display: revert;
+}
+
+/*
  * Indeterminate "section loading" bar — a thin accent bar that swoops across the
  * top of a container while work is in flight (e.g. a canvas agent turn). Mirrors
  * PostHog Cloud's LemonTableLoader. Put it as an absolutely-positioned child of a

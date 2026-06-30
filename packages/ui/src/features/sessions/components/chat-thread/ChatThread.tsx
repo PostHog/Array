@@ -1,4 +1,4 @@
-import { CaretDown, ChatCircle } from "@phosphor-icons/react";
+import { CaretDown, ChatCircle, FileText, Scroll } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
 import {
@@ -7,6 +7,8 @@ import {
   ChatBubbleContent,
   ChatMessage,
   ChatMessageContent,
+  ChatMessageFooter,
+  ChatMessageHeader,
   ChatMessageScroller,
   ChatMessageScrollerButton,
   ChatMessageScrollerContent,
@@ -17,6 +19,9 @@ import {
   useChatMessageScroller,
   useChatMessageScrollerVisibility,
 } from "@posthog/quill";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ChatMarkdown } from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
@@ -27,6 +32,14 @@ import {
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
+import { extractCanvasInstructions } from "@posthog/ui/features/sessions/components/session-update/canvasInstructions";
+import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
+import { extractCustomInstructions } from "@posthog/ui/features/sessions/components/session-update/customInstructions";
+import {
+  hasFileMentions,
+  MentionChip,
+  parseFileMentions,
+} from "@posthog/ui/features/sessions/components/session-update/parseFileMentions";
 import { SessionUpdateView } from "@posthog/ui/features/sessions/components/session-update/SessionUpdateView";
 import { UserShellExecuteView } from "@posthog/ui/features/sessions/components/session-update/UserShellExecuteView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
@@ -35,7 +48,11 @@ import {
   useOptimisticItemsForTask,
   useSessionForTask,
 } from "@posthog/ui/features/sessions/sessionStore";
-import { SessionTaskIdProvider } from "@posthog/ui/features/sessions/useSessionTaskId";
+import type { UserMessageAttachment } from "@posthog/ui/features/sessions/userMessageTypes";
+import {
+  SessionTaskIdProvider,
+  useSessionTaskId,
+} from "@posthog/ui/features/sessions/useSessionTaskId";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
 import {
@@ -141,14 +158,77 @@ function groupToolRuns(items: ConversationItem[]): ThreadItem[] {
   return out;
 }
 
+function formatTimestamp(ts: number): string {
+  return new Date(ts).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 /**
  * End-aligned user bubble. The text is clamped to two lines (`max-height: 2lh` + `overflow-hidden`,
  * which — unlike `-webkit-line-clamp` — reliably clamps markdown's block `<p>` children); a "Show
  * more" toggle appears only when the content actually exceeds the clamp. Overflow can't be known
  * from character count (it depends on wrapping width), so we measure `scrollHeight` against the
  * clamped `clientHeight` — which holds even while clamped — and re-measure on resize.
+ *
+ * A channel's CONTEXT.md and the canvas generation instructions, if injected into this prompt, are
+ * collapsed into a clickable `ChatMessageHeader` chip above the bubble (opening the snapshot as a
+ * split tab) rather than rendered inline — a project-bluebird feature. The blocks are always stripped
+ * (along with the always-on personalization block) so the raw XML never leaks for flag-off viewers.
+ * The send timestamp sits in a `ChatMessageFooter` revealed on hover.
  */
-function UserBubble({ content }: { content: string }) {
+function UserBubble({
+  content,
+  timestamp,
+  attachments = [],
+}: {
+  content: string;
+  timestamp?: number;
+  attachments?: UserMessageAttachment[];
+}) {
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelContext = useMemo(
+    () => extractChannelContext(content),
+    [content],
+  );
+  const afterChannelContext = channelContext
+    ? channelContext.stripped
+    : content;
+  const canvasInstructions = useMemo(
+    () => extractCanvasInstructions(afterChannelContext),
+    [afterChannelContext],
+  );
+  const afterCanvasInstructions = canvasInstructions
+    ? canvasInstructions.stripped
+    : afterChannelContext;
+  const customInstructions = useMemo(
+    () => extractCustomInstructions(afterCanvasInstructions),
+    [afterCanvasInstructions],
+  );
+  const displayContent = customInstructions
+    ? customInstructions.stripped
+    : afterCanvasInstructions;
+  const showChannelContextTag = !!channelContext && bluebirdEnabled;
+  const showCanvasInstructionsTag = !!canvasInstructions && bluebirdEnabled;
+  const showHeaderChips = showChannelContextTag || showCanvasInstructionsTag;
+  const taskId = useSessionTaskId();
+  const openChannelContextInSplit = usePanelLayoutStore(
+    (s) => s.openChannelContextInSplit,
+  );
+  const openCanvasInstructionsInSplit = usePanelLayoutStore(
+    (s) => s.openCanvasInstructionsInSplit,
+  );
+
+  const containsFileMentions = hasFileMentions(displayContent);
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
@@ -166,11 +246,48 @@ function UserBubble({ content }: { content: string }) {
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [content, isExpanded]);
+  }, [displayContent, isExpanded]);
 
   return (
-    <ChatMessage align="end">
+    <ChatMessage align="end" className="group">
       <ChatMessageContent>
+        {showHeaderChips && (
+          <ChatMessageHeader className="flex-wrap gap-1">
+            {showChannelContextTag && channelContext && (
+              <MentionChip
+                icon={<FileText size={12} />}
+                label={`${
+                  channelContext.mention.name
+                    ? `#${channelContext.mention.name} `
+                    : ""
+                }CONTEXT.md`}
+                onClick={
+                  taskId
+                    ? () =>
+                        openChannelContextInSplit(taskId, {
+                          channelName: channelContext.mention.name,
+                          body: channelContext.mention.body,
+                        })
+                    : undefined
+                }
+              />
+            )}
+            {showCanvasInstructionsTag && canvasInstructions && (
+              <MentionChip
+                icon={<Scroll size={12} />}
+                label="Canvas instructions"
+                onClick={
+                  taskId
+                    ? () =>
+                        openCanvasInstructionsInSplit(taskId, {
+                          body: canvasInstructions.body,
+                        })
+                    : undefined
+                }
+              />
+            )}
+          </ChatMessageHeader>
+        )}
         <ChatBubble align="end" variant="default">
           <ChatBubbleContent>
             <div
@@ -186,8 +303,23 @@ function UserBubble({ content }: { content: string }) {
                   "[mask-image:linear-gradient(to_bottom,black_45%,transparent)]",
               )}
             >
-              <ChatMarkdown content={content} />
+              {containsFileMentions ? (
+                parseFileMentions(displayContent)
+              ) : (
+                <ChatMarkdown content={displayContent} />
+              )}
             </div>
+            {attachments.length > 0 && !containsFileMentions && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {attachments.map((attachment) => (
+                  <MentionChip
+                    key={attachment.id}
+                    icon={<FileText size={12} />}
+                    label={attachment.label}
+                  />
+                ))}
+              </div>
+            )}
             {isOverflowing && (
               <button
                 type="button"
@@ -202,6 +334,11 @@ function UserBubble({ content }: { content: string }) {
             )}
           </ChatBubbleContent>
         </ChatBubble>
+        {timestamp != null && (
+          <ChatMessageFooter className="opacity-0 transition-opacity group-hover:opacity-100">
+            {formatTimestamp(timestamp)}
+          </ChatMessageFooter>
+        )}
       </ChatMessageContent>
     </ChatMessage>
   );
@@ -341,7 +478,11 @@ const ThreadRow = memo(function ThreadRow({
       {item.type === "tool_group" ? (
         <ToolGroup tools={item.tools} />
       ) : item.type === "user_message" ? (
-        <UserBubble content={item.content} />
+        <UserBubble
+          content={item.content}
+          timestamp={item.timestamp}
+          attachments={item.attachments}
+        />
       ) : (
         renderItem(item)
       )}
@@ -381,8 +522,9 @@ function ThreadScrollBody({
  * `ChatMessageScroller` (`content-visibility: auto`). User + assistant turns render through
  * `ChatMessage`/`ChatBubble` (end-aligned filled / start-aligned ghost) with our own `ChatMarkdown`.
  * Tool calls render as `ChatMarker` — `ChatThreadChromeProvider` flips the shared `ToolRow` chrome
- * to the ChatX primitive, so every tool view is mapped without forking. Still TODO: per-turn tool
- * grouping, and mention chips / attachments / timestamps on user messages.
+ * to the ChatX primitive, so every tool view is mapped without forking. User messages carry their
+ * context chips (`ChatMessageHeader`), file/attachment mentions, and a hover timestamp
+ * (`ChatMessageFooter`) — see `UserBubble`.
  *
  * Swapped in behind `settingsStore.useNewChatThread` via `ThreadView`.
  */
@@ -423,9 +565,8 @@ export function ChatThread({
   const renderItem = useCallback(
     (item: ConversationItem) => {
       switch (item.type) {
-        // user_message is rendered by ThreadScrollBody (it needs the active-anchor state for sticky).
-        // NOTE: mention chips / attachments / timestamp are dropped in this slice — just the bubble
-        // surface + markdown. Re-add via ChatAttachment + ChatMessageFooter later.
+        // user_message is rendered by ThreadRow via UserBubble (it needs the active-anchor state for
+        // the sticky header overlay), so the switch skips it here.
         case "user_message":
           return null;
         case "git_action":

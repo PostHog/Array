@@ -115,7 +115,15 @@ export function ToolCallView({
       {displayText && <ToolTitle>{displayText}</ToolTitle>}
       {inputPreview && (
         <ToolTitle>
-          <span className="font-mono text-accent-11">{inputPreview}</span>
+          <span
+            className={
+              chatChrome
+                ? "font-mono text-primary text-sm"
+                : "font-mono text-accent-11"
+            }
+          >
+            {inputPreview}
+          </span>
         </ToolTitle>
       )}
       {specialDisplay && <ToolTitle>{specialDisplay.suffix}</ToolTitle>}
