@@ -207,6 +207,14 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => ({
   query: mockedClaudeSdk.query,
 }));
 
+const mockedGitQueries = vi.hoisted(() => ({
+  commitExistsLocally: vi.fn(async () => true),
+}));
+vi.mock("@posthog/git/queries", async (importOriginal) => ({
+  ...(await importOriginal()),
+  commitExistsLocally: mockedGitQueries.commitExistsLocally,
+}));
+
 interface TestableServer {
   getInitialPromptOverride(run: TaskRun): string | null;
   getClearedPendingUserState(run: TaskRun | null): string[] | null;
@@ -1557,74 +1565,125 @@ describe("AgentServer HTTP Mode", () => {
       _meta: { terminal_output: `Creating draft pull request...\n${url}\n` },
     });
 
+    type PrAttributionMetadata = {
+      createdAt: string | null;
+      headRef: string | null;
+      headSha: string | null;
+      authorLogin: string | null;
+    };
+
     type PrTestServer = {
       maybeAttachCreatedPr(
         p: JwtPayload,
         u: Record<string, unknown> | undefined,
       ): void;
-      fetchPrCreatedAt(url: string): Promise<string | null>;
+      fetchPrAttributionMetadata(
+        url: string,
+      ): Promise<PrAttributionMetadata | null>;
       detectedPrUrl: string | null;
       posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
     };
 
     const justNow = () => new Date().toISOString();
     const longAgo = "2020-01-01T00:00:00Z";
+    const SHA = "abc1234def5678";
+    const HEAD_REF = "posthog-code/my-feature";
 
-    const setup = (prCreatedAt: string | null): PrTestServer => {
+    const metadata = (
+      overrides: Partial<PrAttributionMetadata> = {},
+    ): PrAttributionMetadata => ({
+      createdAt: justNow(),
+      headRef: HEAD_REF,
+      headSha: SHA,
+      authorLogin: "posthog[bot]",
+      ...overrides,
+    });
+
+    const setup = (pr: PrAttributionMetadata | null): PrTestServer => {
       const s = createServer() as unknown as PrTestServer;
-      s.fetchPrCreatedAt = vi.fn(async () => prCreatedAt);
+      s.fetchPrAttributionMetadata = vi.fn(async () => pr);
       s.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      mockedGitQueries.commitExistsLocally.mockReset();
+      mockedGitQueries.commitExistsLocally.mockResolvedValue(true);
       return s;
     };
 
     const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-    it("attributes a PR created just now from terminal output alone", async () => {
-      const s = setup(justNow());
+    it("attributes a recent PR whose head SHA is in the local repo", async () => {
+      const s = setup(metadata());
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
-        output: { pr_url: PR_URL },
+        output: { pr_url: PR_URL, head_branch: HEAD_REF },
       });
       expect(s.detectedPrUrl).toBe(PR_URL);
     });
 
     it("does not attribute an older PR the run only viewed (e.g. on a long run)", async () => {
-      const s = setup(longAgo);
+      const s = setup(metadata({ createdAt: longAgo }));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+      expect(mockedGitQueries.commitExistsLocally).not.toHaveBeenCalled();
+      expect(s.detectedPrUrl).toBeNull();
+    });
+
+    it("does not attribute when the PR's head SHA is not in the local repo", async () => {
+      // The case Cleo's incident exhibited: agent merely reads a PR URL from an
+      // MCP/tool response for a PR opened by a sibling run; the recency window
+      // passes, but the SHA was never produced by this sandbox.
+      const s = setup(metadata());
+      mockedGitQueries.commitExistsLocally.mockResolvedValue(false);
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
       expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
       expect(s.detectedPrUrl).toBeNull();
     });
 
+    it("does not attribute when the PR has no head SHA", async () => {
+      // Defensive: a malformed `gh pr view` response shouldn't fall through to
+      // the ownership-skipped path and stamp anyway.
+      const s = setup(metadata({ headSha: null }));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+      expect(mockedGitQueries.commitExistsLocally).not.toHaveBeenCalled();
+      expect(s.detectedPrUrl).toBeNull();
+    });
+
     it("ignores updates with no PR URL", async () => {
-      const s = setup(justNow());
+      const s = setup(metadata());
       s.maybeAttachCreatedPr(payload, { sessionUpdate: "agent_thought_chunk" });
       await flush();
-      expect(s.fetchPrCreatedAt).not.toHaveBeenCalled();
+      expect(s.fetchPrAttributionMetadata).not.toHaveBeenCalled();
       expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
 
     it("attributes once and looks up GitHub once across repeated updates", async () => {
-      const s = setup(justNow());
+      const s = setup(metadata());
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
-      expect(s.fetchPrCreatedAt).toHaveBeenCalledTimes(1);
+      expect(s.fetchPrAttributionMetadata).toHaveBeenCalledTimes(1);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
 
     it("attributes the most recent PR when a run opens several, in detection order", async () => {
       // output.pr_url holds one value; the latest PR the run created is the useful one.
-      const s = setup(justNow());
+      const s = setup(metadata());
       const second = "https://github.com/PostHog/posthog.com/pull/17765";
+      const secondSha = "f00dcafef00dcafe";
+      s.fetchPrAttributionMetadata = vi.fn(async (url: string) =>
+        url === PR_URL ? metadata() : metadata({ headSha: secondSha }),
+      );
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(second));
       await flush();
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith("t", "r", {
-        output: { pr_url: second },
+        output: { pr_url: second, head_branch: HEAD_REF },
       });
       expect(s.detectedPrUrl).toBe(second);
     });
@@ -1632,9 +1691,9 @@ describe("AgentServer HTTP Mode", () => {
     it("does not let an older PR the run only viewed overwrite the one it created", async () => {
       const viewed = "https://github.com/PostHog/posthog.com/pull/1";
       // The created PR reads as recent; the later, merely-viewed PR reads as old.
-      const s = setup(justNow());
-      s.fetchPrCreatedAt = vi.fn(async (url: string) =>
-        url === PR_URL ? justNow() : longAgo,
+      const s = setup(metadata());
+      s.fetchPrAttributionMetadata = vi.fn(async (url: string) =>
+        url === PR_URL ? metadata() : metadata({ createdAt: longAgo }),
       );
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(viewed));

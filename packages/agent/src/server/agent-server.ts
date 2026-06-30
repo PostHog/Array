@@ -15,7 +15,7 @@ import {
 } from "@agentclientprotocol/sdk";
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
-import { getCurrentBranch } from "@posthog/git/queries";
+import { commitExistsLocally, getCurrentBranch } from "@posthog/git/queries";
 import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -253,6 +253,13 @@ interface BuiltPrompt {
 interface LocalSkillPromptContext {
   skillName: string;
   context: string;
+}
+
+interface PrAttributionMetadata {
+  createdAt: string | null;
+  headRef: string | null;
+  headSha: string | null;
+  authorLogin: string | null;
 }
 
 function getTaskRunStateString(
@@ -3095,9 +3102,9 @@ ${signedCommitInstructions}
     // Already the attributed PR (e.g. seeded from a Slack notification, or re-detected).
     if (prUrl === this.detectedPrUrl) return;
 
-    let createdAt: string | null;
+    let pr: PrAttributionMetadata | null;
     try {
-      createdAt = await this.fetchPrCreatedAt(prUrl);
+      pr = await this.fetchPrAttributionMetadata(prUrl);
     } catch (err) {
       this.logger.debug("PR attribution lookup failed", {
         runId: payload.run_id,
@@ -3106,20 +3113,52 @@ ${signedCommitInstructions}
       });
       return;
     }
+    if (!pr) return;
 
-    // Only attribute PRs created during this run, not ones the agent merely viewed.
-    if (!wasCreatedRecently(createdAt, Date.now())) return;
+    // Cheap pre-filter: a PR created long before this update couldn't have
+    // been opened by the agent's current activity. Stops most false positives
+    // before we touch the local git database.
+    if (!wasCreatedRecently(pr.createdAt, Date.now())) return;
+
+    // Ownership: the PR's head commit must exist in this sandbox's local git
+    // object database. A run that didn't produce (or fetch) that commit cannot
+    // have created the PR. Unlike a regex match on tool output, a SHA can't be
+    // spoofed by the agent merely seeing the URL in some response — e.g. an
+    // inbox listing that references a sibling task's PR.
+    if (!this.config.repositoryPath || !pr.headSha) {
+      this.logger.debug("PR attribution rejected: no repo path or head SHA", {
+        runId: payload.run_id,
+        prUrl,
+        hasRepoPath: !!this.config.repositoryPath,
+        hasHeadSha: !!pr.headSha,
+      });
+      return;
+    }
+    const ownsCommit = await commitExistsLocally(
+      this.config.repositoryPath,
+      pr.headSha,
+    );
+    if (!ownsCommit) {
+      this.logger.debug("PR attribution rejected: head SHA not in local repo", {
+        runId: payload.run_id,
+        prUrl,
+        headSha: pr.headSha,
+      });
+      return;
+    }
 
     this.detectedPrUrl = prUrl;
 
     try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
-        output: { pr_url: prUrl },
+        output: { pr_url: prUrl, head_branch: pr.headRef },
       });
       this.logger.debug("Attributed created PR to task run", {
         taskId: payload.task_id,
         runId: payload.run_id,
         prUrl,
+        headRef: pr.headRef,
+        headSha: pr.headSha,
       });
     } catch (err) {
       this.logger.error("Failed to attach PR URL to task run", {
@@ -3131,16 +3170,36 @@ ${signedCommitInstructions}
     }
   }
 
-  private async fetchPrCreatedAt(prUrl: string): Promise<string | null> {
-    const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
-      cwd: this.config.repositoryPath,
-      timeoutMs: 10_000,
-    });
+  private async fetchPrAttributionMetadata(
+    prUrl: string,
+  ): Promise<PrAttributionMetadata | null> {
+    const res = await execGh(
+      [
+        "pr",
+        "view",
+        prUrl,
+        "--json",
+        "createdAt,headRefName,headRefOid,author",
+      ],
+      {
+        cwd: this.config.repositoryPath,
+        timeoutMs: 10_000,
+      },
+    );
     if (res.exitCode !== 0) return null;
     try {
-      return (
-        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
-      );
+      const data = JSON.parse(res.stdout) as {
+        createdAt?: string;
+        headRefName?: string;
+        headRefOid?: string;
+        author?: { login?: string };
+      };
+      return {
+        createdAt: data.createdAt ?? null,
+        headRef: data.headRefName ?? null,
+        headSha: data.headRefOid ?? null,
+        authorLogin: data.author?.login ?? null,
+      };
     } catch {
       return null;
     }

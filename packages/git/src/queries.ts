@@ -106,6 +106,45 @@ export async function getCurrentBranch(
   );
 }
 
+/**
+ * Whether `sha` resolves to a commit object in the local git database.
+ *
+ * Backed by `git cat-file -e <sha>^{commit}`: exit 0 if the object exists and
+ * is a commit, non-zero otherwise. Used as a cheap ownership signal — a commit
+ * that was never produced (or fetched) by this clone cannot be one this run
+ * pushed, regardless of what URLs the agent has seen in tool output.
+ *
+ * Fails closed: any error (missing repo, invalid SHA, git unavailable) returns
+ * `false`, so callers that use this to gate destructive or attributive writes
+ * default to "no, don't proceed" on uncertainty.
+ */
+export async function commitExistsLocally(
+  baseDir: string,
+  sha: string,
+  options?: CreateGitClientOptions,
+): Promise<boolean> {
+  if (!sha || !/^[0-9a-f]{4,64}$/i.test(sha)) {
+    return false;
+  }
+  const manager = getGitOperationManager();
+  try {
+    return await manager.executeRead(
+      baseDir,
+      async (git) => {
+        try {
+          await git.raw(["cat-file", "-e", `${sha}^{commit}`]);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { signal: options?.abortSignal },
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function getDefaultBranch(
   baseDir: string,
   options?: CreateGitClientOptions,
