@@ -20,6 +20,18 @@ import { container } from "./di/container";
 import { AUTH_SERVICE, UPDATES_SERVICE } from "./di/tokens";
 import { isDevBuild } from "./utils/env";
 import { getLogFilePath } from "./utils/logger";
+import { saveZoomLevel } from "./window";
+
+// Apply a zoom change to the focused window and persist the new level so it
+// survives restarts. `delta` adjusts relative to the current level; "reset"
+// returns to 100%.
+function applyZoom(delta: number | "reset"): void {
+  const webContents = BrowserWindow.getFocusedWindow()?.webContents;
+  if (!webContents) return;
+  const level = delta === "reset" ? 0 : webContents.getZoomLevel() + delta;
+  webContents.setZoomLevel(level);
+  saveZoomLevel(level);
+}
 
 function findLatestCrashDump(): string | null {
   const pendingDir = path.join(app.getPath("crashDumps"), "pending");
@@ -308,9 +320,29 @@ function buildViewMenu(): MenuItemConstructorOptions {
       },
       { role: "toggleDevTools" },
       { type: "separator" },
-      { role: "resetZoom" },
-      { role: "zoomIn" },
-      { role: "zoomOut" },
+      {
+        label: "Actual Size",
+        accelerator: "CmdOrCtrl+0",
+        click: () => applyZoom("reset"),
+      },
+      {
+        label: "Zoom In",
+        accelerator: "CmdOrCtrl+Plus",
+        click: () => applyZoom(0.5),
+      },
+      // Hidden duplicate so Cmd+= (i.e. Cmd++ without Shift) also zooms in,
+      // matching the built-in zoomIn role's dual accelerator.
+      {
+        label: "Zoom In",
+        accelerator: "CmdOrCtrl+=",
+        visible: false,
+        click: () => applyZoom(0.5),
+      },
+      {
+        label: "Zoom Out",
+        accelerator: "CmdOrCtrl+-",
+        click: () => applyZoom(-0.5),
+      },
       { type: "separator" },
       { role: "togglefullscreen" },
       { type: "separator" },

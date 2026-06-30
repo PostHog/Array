@@ -44,6 +44,7 @@ function getSavedWindowState(): WindowStateSchema {
     width: windowStateStore.get("width", 1200),
     height: windowStateStore.get("height", 600),
     isMaximized: windowStateStore.get("isMaximized", true),
+    zoomLevel: windowStateStore.get("zoomLevel", 0),
   };
 
   // Validate position is still on a connected display
@@ -70,6 +71,10 @@ export function saveWindowState(window: BrowserWindow): void {
     windowStateStore.set("width", bounds.width);
     windowStateStore.set("height", bounds.height);
   }
+}
+
+export function saveZoomLevel(level: number): void {
+  windowStateStore.set("zoomLevel", level);
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -232,6 +237,21 @@ export function createWindow(): void {
 
   mainWindow.once("ready-to-show", showWindow);
   const showFallback = setTimeout(showWindow, 3000);
+
+  // Restore the saved zoom level once the renderer has loaded. Using
+  // did-finish-load (rather than ready-to-show) also re-applies it after
+  // in-app reloads, which reset Chromium's per-webContents zoom.
+  mainWindow.webContents.on("did-finish-load", () => {
+    mainWindow?.webContents.setZoomLevel(savedState.zoomLevel);
+  });
+
+  // Persist mouse-wheel/pinch zoom. Menu-driven zoom is persisted by the
+  // menu items themselves (see buildViewMenu in menu.ts).
+  mainWindow.webContents.on("zoom-changed", () => {
+    if (mainWindow) {
+      saveZoomLevel(mainWindow.webContents.getZoomLevel());
+    }
+  });
 
   // Persist window state on changes
   mainWindow.on(
