@@ -58,9 +58,9 @@ describe("buildPosthogPropertyHeaderRecord", () => {
   });
 
   it("keeps latin1 characters such as accents", () => {
-    expect(
-      buildPosthogPropertyHeaderRecord({ task_title: "café" }),
-    ).toEqual({ "x-posthog-property-task_title": "café" });
+    expect(buildPosthogPropertyHeaderRecord({ task_title: "café" })).toEqual({
+      "x-posthog-property-task_title": "café",
+    });
   });
 });
 

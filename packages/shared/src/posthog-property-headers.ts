@@ -1,9 +1,4 @@
-export type PosthogPropertyValue =
-  | string
-  | number
-  | boolean
-  | null
-  | undefined;
+export type PosthogPropertyValue = string | number | boolean | null | undefined;
 
 export type PosthogProperties = Record<string, PosthogPropertyValue>;
 
@@ -18,9 +13,7 @@ function sanitizeHeaderValue(value: string): string {
   return value.replace(/[\r\n]+/g, " ").replace(/[^\x20-\x7e\x80-\xff]/g, "");
 }
 
-function buildEntries(
-  properties: PosthogProperties,
-): Array<[string, string]> {
+function buildEntries(properties: PosthogProperties): Array<[string, string]> {
   const entries: Array<[string, string]> = [];
   for (const [key, value] of Object.entries(properties)) {
     if (value === null || value === undefined) continue;
