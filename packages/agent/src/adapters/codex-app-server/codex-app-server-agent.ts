@@ -195,15 +195,23 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private environment?: "local" | "cloud";
   /**
    * In-flight MCP tool calls keyed by item id. Codex has no MCP-specific
-   * approval request — it reuses the command-execution approval — so we
-   * correlate the approval's `itemId` back to the originating mcpToolCall here
-   * to render the approval prompt with the real server/tool/args (see
-   * handleApproval). Session-scoped and small (one entry per MCP call).
+   * approval; depending on the tool it surfaces either a command-execution
+   * approval (correlated by `itemId`) or — for the PostHog server's `exec` —
+   * a generic `mcpServer/elicitation/request` that carries no tool/args. Both
+   * paths recover the real server/tool/args from here (see handleApproval).
+   * Session-scoped and small (one entry per MCP call).
    */
   private readonly mcpToolCallsByItemId = new Map<
     string,
     { server: string; tool: string; args: unknown }
   >();
+  /**
+   * The most recently seen MCP tool call. An elicitation approval carries only
+   * `serverName` (no itemId), so it correlates to this rather than the map. MCP
+   * calls are sequential and an elicitation fires while its call is in flight,
+   * so the latest call for the matching server is the right one.
+   */
+  private lastMcpToolCall?: { server: string; tool: string; args: unknown };
   /** Active turn id from turn/started — the steering precondition + interrupt target. */
   private turnId?: string;
   /**
@@ -218,7 +226,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
    * usage breakdown is derived from; codex doesn't attribute input tokens.
    */
   private contextBreakdownBaseline: ContextBreakdownBaseline = emptyBaseline();
-  /** Latest live input-token count from thread/tokenUsage; feeds the breakdown. */
+  /**
+   * Latest live context occupancy — the most recent turn's input tokens
+   * (`tokenUsage.last`, not the cumulative `total`); feeds the breakdown.
+   */
   private contextUsed?: number;
   /**
    * Latest CUMULATIVE thread token totals from thread/tokenUsage (overwritten
@@ -990,11 +1001,13 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       }
     )?.item;
     if (item?.type === "mcpToolCall" && item.id && item.server && item.tool) {
-      this.mcpToolCallsByItemId.set(item.id, {
+      const call = {
         server: item.server,
         tool: item.tool,
         args: item.arguments,
-      });
+      };
+      this.mcpToolCallsByItemId.set(item.id, call);
+      this.lastMcpToolCall = call;
     }
   }
 
@@ -1023,19 +1036,27 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       // 0 is authoritative here, not a dropped value.
       cachedWriteTokens: 0,
     };
+    // Context-window occupancy is the MOST RECENT turn's usage, not the
+    // cumulative `total`. codex's ThreadTokenUsage is `{ total, last,
+    // modelContextWindow }`; `total` grows every turn, so using it over-reports
+    // the window as "filling up" purely from accumulation (e.g. a 189k context
+    // shown as 433k). `last` is this turn's breakdown — what actually occupies
+    // the window — matching codex's own context-left math. Fall back to `total`
+    // only if a build predates `last` (turn one, where last≈total anyway).
+    const context = tu.last ?? total;
     // Drives the per-source breakdown's "conversation" bucket on turn complete.
-    this.contextUsed = total.inputTokens ?? total.totalTokens;
+    this.contextUsed = context.inputTokens ?? context.totalTokens;
     void this.client
       .extNotification(POSTHOG_NOTIFICATIONS.USAGE_UPDATE, {
         sessionId: this.sessionId,
-        used: total.totalTokens,
+        used: context.totalTokens,
         size: tu.modelContextWindow ?? null,
         usage: {
-          inputTokens: total.inputTokens,
-          outputTokens: total.outputTokens,
-          cachedReadTokens: total.cachedInputTokens,
-          reasoningTokens: total.reasoningOutputTokens,
-          totalTokens: total.totalTokens,
+          inputTokens: context.inputTokens,
+          outputTokens: context.outputTokens,
+          cachedReadTokens: context.cachedInputTokens,
+          reasoningTokens: context.reasoningOutputTokens,
+          totalTokens: context.totalTokens,
         },
       })
       .catch((err) => this.logger.warn("usage extNotification failed", err));
@@ -1163,6 +1184,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     const richer = await handleServerRequest(method, params, this.client, {
       sessionId: this.sessionId,
       logger: this.logger,
+      resolveMcpToolCall: (serverName) =>
+        this.lastMcpToolCall?.server === serverName
+          ? this.lastMcpToolCall
+          : undefined,
     });
     if (richer.handled) {
       return richer.response;

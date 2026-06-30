@@ -27,6 +27,7 @@ import type {
   PermissionOption,
   RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
+import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
 import type { Logger } from "../../utils/logger";
 // Shared with the Claude adapter so synthesized permission option ids round-trip
 // the same way across adapters.
@@ -131,6 +132,18 @@ export interface HandleServerRequestResult {
 export interface HandleServerRequestOptions {
   sessionId: string;
   logger?: Logger;
+  /**
+   * Resolve the in-flight MCP tool call for an elicitation's `serverName`. codex
+   * gates an MCP tool behind a generic `mcpServer/elicitation/request` ("Allow
+   * the posthog MCP server to run tool X?") that carries no tool/args — but the
+   * originating `mcpToolCall` (real tool + arguments) is in flight at the same
+   * time. Supplying it lets the prompt render the actual operation (e.g. the
+   * PostHog `exec` command) with `_meta.posthog`, matching the command-approval
+   * path. Undefined → fall back to codex's generic text.
+   */
+  resolveMcpToolCall?: (
+    serverName: string,
+  ) => { server: string; tool: string; args: unknown } | undefined;
 }
 
 /**
@@ -363,6 +376,27 @@ async function handleMcpElicitation(
     _meta: null,
   };
 
+  // When the elicitation gates a known in-flight MCP tool call, carry its real
+  // tool + args + `_meta.posthog` so the host renders the proper MCP permission
+  // (incl. PostHog `exec` unwrapping) instead of codex's generic server text.
+  const mcp = opts.resolveMcpToolCall?.(params.serverName);
+  const toolCall = mcp
+    ? {
+        toolCallId: `${params.serverName}:elicitation`,
+        title: params.message || `${params.serverName} requests input`,
+        kind: "other" as const,
+        rawInput: mcp.args,
+        _meta: posthogToolMeta({
+          toolName: mcpToolKey({ server: mcp.server, tool: mcp.tool }),
+          mcp: { server: mcp.server, tool: mcp.tool },
+        }),
+      }
+    : {
+        toolCallId: `${params.serverName}:elicitation`,
+        title: params.message || `${params.serverName} requests input`,
+        kind: "other" as const,
+      };
+
   let response: RequestPermissionResponse;
   try {
     response = await client.requestPermission({
@@ -371,11 +405,7 @@ async function handleMcpElicitation(
         { kind: "allow_once", name: "Accept", optionId: "accept" },
         { kind: "reject_once", name: "Decline", optionId: "decline" },
       ],
-      toolCall: {
-        toolCallId: `${params.serverName}:elicitation`,
-        title: params.message || `${params.serverName} requests input`,
-        kind: "other",
-      },
+      toolCall,
     });
   } catch (err) {
     opts.logger?.warn("elicitation prompt failed; declining", {

@@ -278,6 +278,75 @@ describe("handleServerRequest", () => {
     });
   });
 
+  it("enriches an elicitation with the in-flight MCP tool call so the host renders the real tool", async () => {
+    const { client, calls } = fakeClient([
+      { outcome: "selected", optionId: "accept" },
+    ]);
+
+    await handleServerRequest(
+      APP_SERVER_REQUESTS.MCP_ELICITATION,
+      {
+        threadId: "t",
+        turnId: "turn",
+        serverName: "posthog",
+        mode: "form",
+        message: 'Allow the posthog MCP server to run tool "exec"?',
+      },
+      client,
+      {
+        ...opts,
+        resolveMcpToolCall: (serverName) =>
+          serverName === "posthog"
+            ? {
+                server: "posthog",
+                tool: "exec",
+                args: { command: "search project|insight" },
+              }
+            : undefined,
+      },
+    );
+
+    // The prompt now carries the real MCP tool + args + _meta.posthog (not
+    // codex's bare "run tool exec" text), so the host renders the proper MCP
+    // permission card with the unwrapped command.
+    expect(calls[0].toolCall).toMatchObject({
+      toolCallId: "posthog:elicitation",
+      rawInput: { command: "search project|insight" },
+      _meta: {
+        posthog: {
+          toolName: "mcp__posthog__exec",
+          mcp: { server: "posthog", tool: "exec" },
+        },
+      },
+    });
+  });
+
+  it("falls back to codex's generic elicitation text when no MCP call correlates", async () => {
+    const { client, calls } = fakeClient([
+      { outcome: "selected", optionId: "decline" },
+    ]);
+
+    await handleServerRequest(
+      APP_SERVER_REQUESTS.MCP_ELICITATION,
+      {
+        threadId: "t",
+        turnId: "t",
+        serverName: "posthog",
+        mode: "form",
+        message: "Confirm",
+      },
+      client,
+      // resolveMcpToolCall absent (e.g. server mismatch) → no enrichment.
+      opts,
+    );
+
+    expect(calls[0].toolCall).not.toHaveProperty("_meta");
+    expect(calls[0].toolCall).toMatchObject({
+      toolCallId: "posthog:elicitation",
+      title: "Confirm",
+    });
+  });
+
   it("returns handled:false for the simple command approval (caller owns it)", async () => {
     const { client, calls } = fakeClient([]);
 

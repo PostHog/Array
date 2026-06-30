@@ -48,8 +48,8 @@ Triage tip: if something looks wrong, run the same action on **codex-acp** (flag
   - Expect: diff / file-change rendering looks correct in the UI.
 - [ ] **Command execution**: run a bash command.
   - Expect: command-approval prompt (per mode) + output renders.
-- [ ] **Permission prompts**: exercise Allow once / Allow always / Reject.
-  - Expect: "Allow always" sticks for the rest of the session.
+- [x] **Permission prompts** — ✅ verified manually: Allow once / Allow always / Reject / reject-with-feedback
+  all work; "Allow always" sticks for the rest of the session.
 - [ ] **MCP (PostHog tools)**: ask it to query PostHog via MCP.
   - Expect: read-only tools auto-approve (if configured), writes prompt; tools actually execute.
 - [ ] **Skills / commands** (`available_commands_update`): confirm skill/slash commands appear and one runs.
@@ -66,11 +66,12 @@ Triage tip: if something looks wrong, run the same action on **codex-acp** (flag
 
 ## Known issues / follow-ups
 
-- [ ] **MCP `exec` permission prompt shows raw codex text** — the approval prompt for the PostHog MCP `exec` tool renders `Allow the posthog MCP server to run tool "exec"?` instead of the unwrapped sub-command (e.g. `posthog - execute-sql {…}`). The transcript tool-call rendering is fixed; only the **permission prompt** is wrong.
-  - **Root cause:** codex has no MCP-specific approval — it reuses `item/commandExecution/requestApproval`, which carries no server/tool. The adapter now caches `mcpToolCall` items by id and enriches the approval `toolCall` with `_meta.posthog` when the approval's `itemId` matches (`codex-app-server-agent.ts` `captureMcpToolCall` + `handleApproval`). That enrichment is **not firing** in testing.
-  - **Likely cause (unconfirmed):** the approval references the item by a *different* id (the schema mentions a sub-callback `approvalId` for "zsh-exec-bridge subcommand approvals") → cache miss. Or it's arriving via a different request method. Or the rebuild didn't include the `packages/ui` renderer changes.
-  - **Next step:** from the ACP log, grab the `session/request_permission` message + the preceding `mcpToolCall` `tool_call`, and check (a) whether the permission `toolCall` carries `_meta.posthog`, and (b) whether its `toolCallId` matches the `mcpToolCall` id. That pins it to adapter-correlation vs renderer/build.
-  - **Touches:** `packages/agent/src/adapters/codex-app-server/codex-app-server-agent.ts` (`handleApproval`, `captureMcpToolCall`), `packages/ui/src/features/permissions/{PermissionSelector,McpPermission}.tsx`.
+- [x] **MCP `exec` permission prompt shows raw codex text — FIXED.** The approval prompt for the PostHog MCP `exec` tool rendered `Allow the posthog MCP server to run tool "exec"?` instead of the real tool + command. Diagnosed from the session ACP logs (`~/.posthog-code/sessions/*/logs.ndjson`).
+  - **Real root cause (the earlier hypothesis was wrong):** the exec approval does **not** come through `item/commandExecution/requestApproval` (the `mcpToolCallsByItemId` path). It comes through **`mcpServer/elicitation/request`** — confirmed by the prompt's `toolCallId: "posthog:elicitation"` (built in `approvals.ts handleMcpElicitation`) and the Accept/Decline options. The logs show two back-to-back messages: a `tool_call` with the real data (`title:"posthog/exec"`, `rawInput:{command,context}`) and a **separate** `session/request_permission` carrying only codex's generic `params.message` — no `_meta.posthog`, no rawInput. The elicitation handler never correlated to the in-flight `mcpToolCall`.
+  - **Fix:** `handleMcpElicitation` now takes a `resolveMcpToolCall(serverName)` from `HandleServerRequestOptions`; the agent tracks `lastMcpToolCall` (set in `captureMcpToolCall`) and resolves it by matching `serverName`. When matched, the prompt carries `rawInput` + `_meta.posthog` (`mcp__posthog__exec`), mirroring the command-approval enrichment, so the host renders the proper MCP permission card. Falls back to codex's generic text when nothing correlates.
+  - **Tests:** `approvals.test.ts` (enriches vs falls-back) + `codex-app-server-agent.test.ts` (end-to-end: `item/started` mcpToolCall → `mcpServer/elicitation/request` → enriched prompt). 64/64 green.
+  - **Touched:** `approvals.ts` (`handleMcpElicitation`, `HandleServerRequestOptions`), `codex-app-server-agent.ts` (`captureMcpToolCall`, `handleApproval`, `lastMcpToolCall`).
+  - **To verify live:** ask codex (on app-server) to run a PostHog MCP query; the approval prompt should now show the real tool + command, not the generic "run tool exec?".
 
 - [x] **Mode picker on app-server (flattened, Claude-style) — IMPLEMENTED.** App-server now emits a `category:"mode"` config option (`session-config.ts buildConfigOptions`) with four presets — **Plan / Read only / Auto / Full access** — so the existing `ModeSelector` shows a switcher for app-server only (codex-acp/claude unchanged). Each preset maps to a `(collaborationMode, approvalPolicy)` tuple applied per-turn on `turn/start`. The adapter now negotiates `experimentalApi: true` (required for the experimental `collaborationMode` field). Verified against the real binary: `collaborationMode/list` → `[Plan, Default]`, `thread/start` accepts `collaborationMode:{mode,settings:{model}}`.
   - **To verify live:** switch the picker to **Plan** → codex should propose a plan, make no edits, and `request_user_input` (AskUserQuestion) should fire; switching to Auto/Read-only/Full-access should behave per approval policy. Exit Plan = switch the picker to a coding preset (sets `collaborationMode=default` next turn).
@@ -158,6 +159,14 @@ unit test too, or CI won't protect it.
 - [x] **Usage indicator survives an unknown context window.** `extractAggregate` no longer drops
   the whole aggregate when `size` is absent; the indicator shows the token count without a
   misleading "/0 · 0%". `contextUsage.test.ts` + `ContextUsageIndicator.test.tsx`.
+- [x] **Context indicator tracks the current turn, not the cumulative thread total.** `emitUsageExtNotification`
+  emitted `used` from `tokenUsage.total.totalTokens` (cumulative — grows every turn), so a real ~189k
+  context displayed as ~433k (43% of a 997k window) and crept toward 100% from accumulation alone. codex's
+  `ThreadTokenUsage` is `{ total, last, modelContextWindow }` (confirmed from the binary); `last` is this
+  turn's breakdown = the actual occupancy (matches codex's own context-left math). Now `used`/`contextUsed`/`usage`
+  read `tu.last` (fall back to `total` for turn-one/old builds); the cumulative `total` still feeds the per-turn
+  delta in `turn_complete`. Regression test seeded with the real session numbers (total 433289 vs last 189075 →
+  indicator asserts 189075). `codex-app-server-agent.test.ts`.
 - [x] **Unit false-greens killed + stub hardened.** The cancel test at `817-844` passed without
   ever sending `turn/interrupt`; it now emits `turn/started` and asserts the RPC fired, plus a new
   test locks the turnId-undefined skip path. `makeStubRpc` now enforces the real required-field

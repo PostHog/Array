@@ -192,6 +192,63 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
+  it("enriches the MCP elicitation approval (posthog exec) from the in-flight tool call", async () => {
+    // The real production path: codex gates the PostHog `exec` tool behind a
+    // generic mcpServer/elicitation/request (serverName only, no tool/args) —
+    // NOT the command approval. Without correlation the host showed a bare
+    // 'Allow the posthog MCP server to run tool "exec"?'. The adapter now
+    // resolves it to the in-flight mcpToolCall so the real tool + command render.
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+    });
+    const permissionToolCalls: Array<Record<string, unknown>> = [];
+    const client = {
+      sessionUpdate: async () => {},
+      requestPermission: async (params: { toolCall: Record<string, unknown> }) => {
+        permissionToolCalls.push(params.toolCall);
+        return { outcome: { outcome: "selected", optionId: "accept" } };
+      },
+      extNotification: async () => {},
+    } as unknown as AgentSideConnection;
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    stub.emit("item/started", {
+      item: {
+        type: "mcpToolCall",
+        id: "m1",
+        server: "posthog",
+        tool: "exec",
+        arguments: { command: "call execute-sql {}" },
+      },
+    });
+    const decision = await stub.invokeRequest("mcpServer/elicitation/request", {
+      threadId: "thr_1",
+      turnId: "turn_1",
+      serverName: "posthog",
+      mode: "form",
+      message: 'Allow the posthog MCP server to run tool "exec"?',
+    });
+
+    expect(decision).toMatchObject({ action: "accept" });
+    expect(permissionToolCalls[0]).toMatchObject({
+      toolCallId: "posthog:elicitation",
+      rawInput: { command: "call execute-sql {}" },
+      _meta: {
+        posthog: {
+          toolName: "mcp__posthog__exec",
+          mcp: { server: "posthog", tool: "exec" },
+        },
+      },
+    });
+  });
+
   function makeApprovalAgent(chooseOptionId = "allow") {
     const stub = makeStubRpc({
       initialize: {},
@@ -1380,6 +1437,59 @@ describe("CodexAppServerAgent", () => {
         (n.params as { breakdown?: unknown }).breakdown,
     );
     expect(breakdown).toBeDefined();
+  });
+
+  it("context-usage indicator reports the latest turn, not the cumulative thread total", async () => {
+    // codex's ThreadTokenUsage is { total (cumulative, grows every turn), last
+    // (this turn's usage), modelContextWindow }. The window-occupancy indicator
+    // must track `last` — using `total` over-reports the window as filling up
+    // from accumulation alone (here a real 189k context shown as 433k = 43%).
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client, extNotifications } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({
+      cwd: "/r",
+      _meta: { taskRunId: "run_ctx" },
+    } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "hi" }],
+    } as unknown as PromptRequest);
+
+    stub.emit("thread/tokenUsage/updated", {
+      tokenUsage: {
+        total: {
+          totalTokens: 433289,
+          inputTokens: 432636,
+          cachedInputTokens: 76928,
+          outputTokens: 595,
+        },
+        last: {
+          totalTokens: 189075,
+          inputTokens: 111552,
+          cachedInputTokens: 76928,
+          outputTokens: 595,
+        },
+        modelContextWindow: 997500,
+      },
+    });
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await done;
+
+    const usageUpdate = extNotifications.find(
+      (n) =>
+        n.method === "_posthog/usage_update" &&
+        typeof (n.params as { used?: unknown }).used === "number",
+    );
+    // `used` is last.totalTokens (189075), NOT total.totalTokens (433289).
+    expect(usageUpdate?.params).toMatchObject({
+      used: 189075,
+      size: 997500,
+      usage: { inputTokens: 111552, totalTokens: 189075 },
+    });
   });
 
   it("reports per-turn (not cumulative) usage in turn_complete across turns", async () => {
