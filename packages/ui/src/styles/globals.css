@@ -475,13 +475,13 @@ body {
     "Berkeley Mono", "JetBrains Mono", "Monaco", "Menlo", "Ubuntu Mono",
     "Courier New", monospace;
   font-size: 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--blue-a5);
   padding: 0 4px;
   border-radius: 4px;
 }
 
 .plan-markdown pre {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--blue-a3);
   padding: 8px 10px;
   border-radius: 6px;
   overflow-x: auto;
@@ -504,7 +504,7 @@ body {
 
 .plan-markdown th,
 .plan-markdown td {
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--blue-a6);
   padding: 4px 6px;
   text-align: left;
   vertical-align: top;
@@ -513,7 +513,7 @@ body {
 .plan-markdown blockquote {
   margin: 8px 0 12px;
   padding-left: 10px;
-  border-left: 2px solid rgba(255, 255, 255, 0.3);
+  border-left: 2px solid var(--blue-a6);
 }
 
 ::-webkit-scrollbar {

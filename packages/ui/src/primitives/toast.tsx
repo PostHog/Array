@@ -3,7 +3,7 @@ import { toast as quillToast } from "@posthog/quill";
 // Thin wrapper over quill's toast so the whole app shares one import and a
 // stable `(title, options)` signature. Quill (base-ui under the hood) owns
 // rendering, stacking, auto-dismiss, hover-to-pause, and the close button —
-// which is why this exists instead of a hand-rolled sonner custom toast.
+// which is why this exists instead of a hand-rolled custom toast.
 
 export interface ToastAction {
   label: string;
@@ -13,7 +13,7 @@ export interface ToastAction {
 export interface ToastOptions {
   description?: string;
   // A caller-chosen stable id: upserts (creates or replaces) the toast with
-  // that id so it never stacks — matching sonner's `{ id }`. quill itself can't
+  // that id so it never stacks. quill itself can't
   // pick an id at create time, so the wrapper maps it (see idRegistry).
   id?: string;
   action?: ToastAction;
@@ -22,8 +22,8 @@ export interface ToastOptions {
   duration?: number;
 }
 
-// The second argument may be a bare description string (sonner-style shorthand)
-// or the full options object.
+// The second argument may be a bare description string (shorthand) or the full
+// options object.
 type Detail = string | ToastOptions;
 
 type Level = "success" | "error" | "info" | "warning" | "loading";

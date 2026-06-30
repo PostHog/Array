@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
+import { zipSync } from "fflate";
 import jwt from "jsonwebtoken";
 import { type SetupServerApi, setupServer } from "msw/node";
 import {
@@ -250,6 +253,12 @@ function getNextTestPort(): number {
   return port;
 }
 
+function exactArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 // The Claude Agent SDK has an internal readMessages() loop that rejects with
 // "Query closed before response received" during cleanup. The SDK starts this
 // promise in the constructor without a .catch() handler, so the rejection is
@@ -427,6 +436,7 @@ describe("AgentServer HTTP Mode", () => {
         status: "ok",
         hasSession: true,
         bootMs: expect.any(Number),
+        sessionInitMs: expect.any(Number),
       });
     }, 30000);
   });
@@ -1079,6 +1089,100 @@ describe("AgentServer HTTP Mode", () => {
       expect(response.status).toBe(400);
       const body = await response.json();
       expect(body.error).toBe("No active session for this run");
+    }, 20000);
+
+    it("rewrites a bundled local skill slash command before sending the prompt", async () => {
+      const skillDefinition = [
+        "---",
+        "name: local-test-skill",
+        "description: Test skill",
+        "---",
+        "",
+        "Reply with LOCAL_SKILL_MARKER from the bundled skill.",
+      ].join("\n");
+      const bundle = zipSync({
+        "SKILL.md": new TextEncoder().encode(skillDefinition),
+      });
+      const checksum = createHash("sha256")
+        .update(Buffer.from(bundle))
+        .digest("hex");
+
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(
+        async (_params: {
+          prompt: ContentBlock[];
+          _meta?: Record<string, unknown>;
+        }) => ({ stopReason: "cancelled" }) as { stopReason: string },
+      );
+      const downloadArtifact = vi.fn(async () => exactArrayBuffer(bundle));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+        posthogAPI: { downloadArtifact: typeof downloadArtifact };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.posthogAPI.downloadArtifact = downloadArtifact;
+
+      const token = createToken();
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "skill-command",
+          method: "user_message",
+          params: {
+            content: "/local-test-skill with context",
+            artifacts: [
+              {
+                id: "skill-artifact-1",
+                name: "local-test-skill.zip",
+                type: "skill_bundle",
+                source: "posthog_code_skill",
+                storage_path: "tasks/artifacts/local-test-skill.zip",
+                content_type: "application/zip",
+                metadata: {
+                  skill_name: "local-test-skill",
+                  skill_source: "user",
+                  content_sha256: checksum,
+                  bundle_format: "zip",
+                  schema_version: 1,
+                },
+              },
+            ],
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        result?: { stopReason?: string };
+      };
+      expect(body.result?.stopReason).toBe("cancelled");
+      expect(downloadArtifact).toHaveBeenCalledWith(
+        "test-task-id",
+        "test-run-id",
+        "tasks/artifacts/local-test-skill.zip",
+      );
+      expect(prompt).toHaveBeenCalledOnce();
+
+      const sentPrompt = prompt.mock.calls[0]?.[0].prompt;
+      const sentMeta = prompt.mock.calls[0]?.[0]._meta;
+      const sentText = sentPrompt?.find(
+        (block): block is Extract<ContentBlock, { type: "text" }> =>
+          block.type === "text",
+      )?.text;
+
+      expect(sentText).toBe("/local-test-skill with context");
+      expect(sentMeta?.localSkillContext).toContain(
+        'local skill "/local-test-skill"',
+      );
+      expect(sentMeta?.localSkillContext).toContain("LOCAL_SKILL_MARKER");
+      expect(sentMeta?.localSkillContext).toContain("with context");
+      expect(sentMeta?.localSkillName).toBe("local-test-skill");
     }, 20000);
   });
 
@@ -1933,7 +2037,7 @@ describe("AgentServer HTTP Mode", () => {
           expect(prompt).toContain(
             "*Created with [PostHog](https://posthog.com?ref=pr) from an [inbox report](http://localhost:8000/project/1/inbox/rep_1)*",
           );
-          expect(prompt).not.toContain("Slack thread");
+          expect(prompt).not.toContain("from a [Slack thread]");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
@@ -1969,7 +2073,7 @@ describe("AgentServer HTTP Mode", () => {
         expect(prompt).toContain(
           "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
         );
-        expect(prompt).not.toContain("Slack thread");
+        expect(prompt).not.toContain("from a [Slack thread]");
       });
 
       it("embeds the Slack thread link in the footer on the no-repository path when one is available", () => {

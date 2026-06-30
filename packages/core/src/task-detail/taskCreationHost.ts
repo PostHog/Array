@@ -1,9 +1,11 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type { CloudSkillBundleRef } from "@posthog/core/sessions/cloudArtifactIdentifiers";
 import type { Workspace, WorkspaceMode } from "@posthog/shared";
 import type { TaskCreationApiClient } from "./taskCreationApiClient";
 
 export interface CloudPromptTransport {
   filePaths: string[];
+  skillBundles: CloudSkillBundleRef[];
   messageText?: string;
   promptText: string;
 }
@@ -107,6 +109,7 @@ export interface ITaskCreationHost {
     taskId: string,
     runId: string,
     filePaths: string[],
+    skillBundles?: CloudSkillBundleRef[],
   ): Promise<string[]>;
   setProvisioningActive(taskId: string): void;
   clearProvisioning(taskId: string): void;

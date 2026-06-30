@@ -80,6 +80,18 @@ function transformMcpCommand(text: string): string {
   return text;
 }
 
+function isLocalSkillCommandChunk(
+  chunk: PromptRequest["prompt"][number],
+  skillName: string,
+): boolean {
+  if (chunk.type !== "text") {
+    return false;
+  }
+
+  const match = chunk.text.trim().match(/^\/([^\s]+)(?:\s+[\s\S]*)?$/);
+  return match?.[1] === skillName;
+}
+
 function processPromptChunk(
   chunk: PromptRequest["prompt"][number],
   content: ContentBlockParam[],
@@ -168,8 +180,24 @@ export function promptToClaude(prompt: PromptRequest): SDKUserMessage {
   if (typeof prContext === "string") {
     content.push(sdkText(prContext));
   }
+  const localSkillContext = meta?.localSkillContext;
+  if (typeof localSkillContext === "string") {
+    content.push(sdkText(localSkillContext));
+  }
+  const localSkillName =
+    typeof meta?.localSkillName === "string" ? meta.localSkillName : null;
+  let skippedLocalSkillCommand = false;
 
   for (const chunk of prompt.prompt) {
+    if (
+      localSkillContext &&
+      localSkillName &&
+      !skippedLocalSkillCommand &&
+      isLocalSkillCommandChunk(chunk, localSkillName)
+    ) {
+      skippedLocalSkillCommand = true;
+      continue;
+    }
     processPromptChunk(chunk, content, context);
   }
 

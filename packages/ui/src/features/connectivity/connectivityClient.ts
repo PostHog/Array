@@ -9,6 +9,7 @@ export interface ConnectivityStatusPayload {
 
 export interface ConnectivityClient {
   getStatus(): Promise<ConnectivityStatusPayload>;
+  checkNow(): Promise<ConnectivityStatusPayload>;
   onStatusChange(sub: Subscriber<ConnectivityStatusPayload>): {
     unsubscribe: () => void;
   };

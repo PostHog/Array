@@ -15,6 +15,32 @@ export {
   FONT_EXTENSIONS,
   isBinaryFile,
 } from "./binary";
+export {
+  activeTabIsBlank,
+  type CloseTabResult,
+  closeTab,
+  decideTabNavigation,
+  newBlankTab,
+  type OpenTabResult,
+  openOrFocusTab,
+  POSITION_GAP,
+  primaryWindow,
+  primaryWindowHasNoTabs,
+  reorderTab,
+  setTabTarget,
+  type TabNavDecision,
+  type TabTarget,
+} from "./browser-tabs";
+export {
+  type BrowserTab,
+  type BrowserWindow,
+  browserTabSchema,
+  browserWindowSchema,
+  type TabsSnapshot,
+  tabsSnapshotSchema,
+  type WindowBounds,
+  windowBoundsSchema,
+} from "./browser-tabs-schemas";
 export type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 export {
   CLOUD_PROMPT_PREFIX,
@@ -170,6 +196,7 @@ export type {
   SkillFileEntry,
   SkillInfo,
   SkillSource,
+  UploadableSkillSource,
 } from "./skills";
 export { SKILL_EXISTS_MARKER, stripFrontmatter } from "./skills";
 export type {
@@ -177,6 +204,7 @@ export type {
   PostHogAPIConfig,
   TaskRun,
   TaskRunArtifact,
+  TaskRunArtifactMetadata,
   TaskRunEnvironment,
   TaskRunStatus,
 } from "./task";
@@ -192,6 +220,15 @@ export {
 export { TypedEventEmitter } from "./typed-event-emitter";
 export { isSafeExternalUrl } from "./url";
 export { getCloudUrlFromRegion } from "./urls";
+export {
+  ALLOWED_VIDEO_MIME_TYPES,
+  buildVideoDataUrl,
+  getVideoMimeType,
+  isAllowedVideoMimeType,
+  isPlayableVideoFile,
+  MAX_VIDEO_BASE64_LENGTH,
+  VIDEO_MIME_TYPES,
+} from "./video";
 export type { WorkspaceMode } from "./workspace";
 export * from "./workspace-domain";
 export { escapeXmlAttr, unescapeXmlAttr } from "./xml";

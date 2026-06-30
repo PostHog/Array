@@ -27,7 +27,7 @@ export type SendMessagesWith = "enter" | "cmd+enter";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
 export type DiffOpenMode = "auto" | "split" | "same-pane" | "last-active-pane";
 
-export type CompletionSound =
+export type BuiltInCompletionSound =
   | "none"
   | "guitar"
   | "danilo"
@@ -43,6 +43,19 @@ export type CompletionSound =
   | "switch"
   | "wilhelm"
   | "icq";
+
+// A user-installed sound is selected by referencing its id as `custom:<id>`.
+export type CompletionSound = BuiltInCompletionSound | `custom:${string}`;
+
+// A notification sound the user recorded or imported. The clip is stored inline
+// as a base64 data URL so it persists with the rest of the settings (no host
+// filesystem dependency); a length cap on capture keeps that payload small.
+export interface CustomSound {
+  id: string;
+  name: string;
+  dataUrl: string;
+  durationMs: number;
+}
 
 export type TerminalFont =
   | "berkeley-mono"
@@ -100,11 +113,17 @@ interface SettingsStore {
   dockBounceNotifications: boolean;
   completionSound: CompletionSound;
   completionVolume: number;
+  scaleSoundWithTaskLength: boolean;
+  customSounds: CustomSound[];
   setDesktopNotifications: (enabled: boolean) => void;
   setDockBadgeNotifications: (enabled: boolean) => void;
   setDockBounceNotifications: (enabled: boolean) => void;
   setCompletionSound: (sound: CompletionSound) => void;
   setCompletionVolume: (volume: number) => void;
+  setScaleSoundWithTaskLength: (enabled: boolean) => void;
+  addCustomSound: (sound: CustomSound) => void;
+  removeCustomSound: (id: string) => void;
+  renameCustomSound: (id: string, name: string) => void;
 
   // Composer / chat
   autoConvertLongText: AutoConvertLongText;
@@ -142,9 +161,13 @@ interface SettingsStore {
   hedgehogMode: boolean;
   slotMachineMode: boolean;
   mcpAppsDisabledServers: string[];
+  downloadUpdatesAutomatically: boolean;
+  lastSeenChangelogVersion: string | null;
   setHedgehogMode: (enabled: boolean) => void;
   setSlotMachineMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
+  setDownloadUpdatesAutomatically: (enabled: boolean) => void;
+  setLastSeenChangelogVersion: (version: string | null) => void;
 
   // Onboarding hints
   hints: Record<string, HintState>;
@@ -166,6 +189,7 @@ export const NOTIFICATION_DEFAULTS = {
   dockBounceNotifications: false,
   completionSound: "none" as CompletionSound,
   completionVolume: 80,
+  scaleSoundWithTaskLength: false,
 };
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -221,6 +245,9 @@ export const useSettingsStore = create<SettingsStore>()(
 
       // Notifications
       ...NOTIFICATION_DEFAULTS,
+      // Kept out of NOTIFICATION_DEFAULTS so "Reset to defaults" never discards
+      // sounds the user installed.
+      customSounds: [],
       setDesktopNotifications: (enabled) =>
         set({ desktopNotifications: enabled }),
       setDockBadgeNotifications: (enabled) =>
@@ -229,6 +256,25 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ dockBounceNotifications: enabled }),
       setCompletionSound: (sound) => set({ completionSound: sound }),
       setCompletionVolume: (volume) => set({ completionVolume: volume }),
+      setScaleSoundWithTaskLength: (enabled) =>
+        set({ scaleSoundWithTaskLength: enabled }),
+      addCustomSound: (sound) =>
+        set((state) => ({ customSounds: [...state.customSounds, sound] })),
+      removeCustomSound: (id) =>
+        set((state) => ({
+          customSounds: state.customSounds.filter((s) => s.id !== id),
+          // If the deleted sound was the active one, fall back to silence.
+          completionSound:
+            state.completionSound === `custom:${id}`
+              ? "none"
+              : state.completionSound,
+        })),
+      renameCustomSound: (id, name) =>
+        set((state) => ({
+          customSounds: state.customSounds.map((s) =>
+            s.id === id ? { ...s, name } : s,
+          ),
+        })),
 
       // Composer / chat
       autoConvertLongText: "2500",
@@ -272,8 +318,14 @@ export const useSettingsStore = create<SettingsStore>()(
       hedgehogMode: false,
       slotMachineMode: false,
       mcpAppsDisabledServers: [],
+      downloadUpdatesAutomatically: true,
+      lastSeenChangelogVersion: null,
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
       setSlotMachineMode: (enabled) => set({ slotMachineMode: enabled }),
+      setDownloadUpdatesAutomatically: (enabled) =>
+        set({ downloadUpdatesAutomatically: enabled }),
+      setLastSeenChangelogVersion: (version) =>
+        set({ lastSeenChangelogVersion: version }),
       setMcpAppsDisabledServers: (servers) =>
         set({ mcpAppsDisabledServers: servers }),
 
@@ -334,6 +386,8 @@ export const useSettingsStore = create<SettingsStore>()(
         dockBounceNotifications: state.dockBounceNotifications,
         completionSound: state.completionSound,
         completionVolume: state.completionVolume,
+        scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,
+        customSounds: state.customSounds,
 
         // Composer / chat
         autoConvertLongText: state.autoConvertLongText,
@@ -360,6 +414,8 @@ export const useSettingsStore = create<SettingsStore>()(
         hedgehogMode: state.hedgehogMode,
         slotMachineMode: state.slotMachineMode,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
+        downloadUpdatesAutomatically: state.downloadUpdatesAutomatically,
+        lastSeenChangelogVersion: state.lastSeenChangelogVersion,
 
         // Onboarding hints
         hints: state.hints,

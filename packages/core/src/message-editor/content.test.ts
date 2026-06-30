@@ -180,6 +180,31 @@ describe("xmlToContent", () => {
     );
   });
 
+  it("round-trips a local skill command chip", () => {
+    const content: EditorContent = {
+      segments: [
+        {
+          type: "chip",
+          chip: {
+            type: "command",
+            id: "/Users/alessandro/.claude/skills/local-skill",
+            label: "local-skill",
+            skillName: "local-skill",
+            skillSource: "user",
+            skillPath: "/Users/alessandro/.claude/skills/local-skill",
+          },
+        },
+      ],
+    };
+
+    expect(contentToXml(content)).toBe(
+      '<skill name="local-skill" source="user" path="/Users/alessandro/.claude/skills/local-skill" />',
+    );
+    expect(xmlToContent(contentToXml(content)).segments).toEqual(
+      content.segments,
+    );
+  });
+
   it("extractFilePaths includes folder chips alongside file chips", () => {
     const content: EditorContent = {
       segments: [

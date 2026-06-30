@@ -19,6 +19,7 @@ import {
   MenuLabel,
 } from "@posthog/quill";
 import { flattenSelectOptions } from "@posthog/ui/features/sessions/sessionStore";
+import { useRetainedConfigOption } from "@posthog/ui/features/sessions/useRetainedConfigOption";
 import { useRef, useState } from "react";
 
 interface ModeStyle {
@@ -81,10 +82,17 @@ export function ModeSelector({
 }: ModeSelectorProps) {
   const [open, setOpen] = useState(false);
   const pendingValueRef = useRef<string | null>(null);
+  const displayOption = useRetainedConfigOption(modeOption);
 
-  if (!modeOption || modeOption.type !== "select") return null;
+  if (!displayOption || displayOption.type !== "select") return null;
 
-  const allOptions = flattenSelectOptions(modeOption.options);
+  // `modeOption` blanks out while the preview config reloads (e.g. a harness
+  // switch). Keep showing the last mode, disabled, so the toolbar stays put
+  // instead of collapsing and snapping the open model menu sideways.
+  const isReloading = !modeOption;
+  const isDisabled = disabled || isReloading;
+
+  const allOptions = flattenSelectOptions(displayOption.options);
   const options = allowBypassPermissions
     ? allOptions
     : allOptions.filter(
@@ -93,7 +101,7 @@ export function ModeSelector({
       );
   if (options.length === 0) return null;
 
-  const currentValue = modeOption.currentValue;
+  const currentValue = displayOption.currentValue;
   const currentStyle = getStyle(currentValue);
   const currentLabel =
     allOptions.find((opt) => opt.value === currentValue)?.name ?? currentValue;
@@ -115,7 +123,7 @@ export function ModeSelector({
             type="button"
             variant="default"
             size="sm"
-            disabled={disabled}
+            disabled={isDisabled}
             aria-label="Mode"
           >
             <span className={currentStyle.className}>{currentStyle.icon}</span>

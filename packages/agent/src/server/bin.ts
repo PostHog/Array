@@ -89,6 +89,10 @@ program
     "interactive",
   )
   .option("--repositoryPath <path>", "Path to the repository")
+  .option(
+    "--repoReadyFile <path>",
+    "Sentinel file; session creation blocks until it exists (set while cloning concurrently)",
+  )
   .requiredOption("--taskId <id>", "Task ID")
   .requiredOption("--runId <id>", "Task run ID")
   .option(
@@ -161,6 +165,7 @@ program
       eventIngestStreamWindowMs:
         env.POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS,
       repositoryPath: options.repositoryPath,
+      repoReadyFile: options.repoReadyFile,
       apiUrl: env.POSTHOG_API_URL,
       apiKey: env.POSTHOG_PERSONAL_API_KEY,
       projectId: env.POSTHOG_PROJECT_ID,

@@ -1,5 +1,6 @@
-import { access, mkdir, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { createHash } from "node:crypto";
+import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
   ContentBlock,
@@ -15,6 +16,7 @@ import {
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
+import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { z } from "zod";
 import packageJson from "../../package.json" with { type: "json" };
@@ -38,7 +40,7 @@ import {
   SIGNED_REWRITE_QUALIFIED_TOOL_NAME,
 } from "../adapters/signed-commit-shared";
 import type { PermissionMode } from "../execution-mode";
-import { DEFAULT_CODEX_MODEL } from "../gateway-models";
+import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { PostHogAPIClient } from "../posthog-api";
 import { findPrUrl, wasCreatedRecently } from "../pr-url-detector";
@@ -236,6 +238,23 @@ interface ActiveSession {
   pendingHandoffGitState?: HandoffLocalGitState;
 }
 
+interface InstalledSkillBundle {
+  skillName: string;
+  skillDefinition: string;
+  contentSha256: string;
+  skillRoot: string;
+}
+
+interface BuiltPrompt {
+  prompt: ContentBlock[];
+  meta?: Record<string, unknown>;
+}
+
+interface LocalSkillPromptContext {
+  skillName: string;
+  context: string;
+}
+
 function getTaskRunStateString(
   taskRun: TaskRun | null,
   key: string,
@@ -253,6 +272,8 @@ function getTaskRunStateString(
 export class AgentServer {
   private config: AgentServerConfig;
   private sessionReadyBootMs?: number;
+  private sessionInitMs?: number;
+  private barrierReleasedAtMs?: number;
   private logger: Logger;
   private server: ServerType | null = null;
   private session: ActiveSession | null = null;
@@ -269,6 +290,9 @@ export class AgentServer {
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
   private nativeResume: { sessionId: string; warm: boolean } | null = null;
+  private installedSkillBundles = new Set<string>();
+  private installedSkillBundleInfo = new Map<string, InstalledSkillBundle>();
+  private installingSkillBundles = new Map<string, Promise<void>>();
   // Guards against concurrent session initialization. autoInitializeSession() and
   // the GET /events SSE handler can both call initializeSession() — the SSE connection
   // often arrives while newSession() is still awaited (this.session is still null),
@@ -372,6 +396,7 @@ export class AgentServer {
         status: "ok",
         hasSession: !!this.session,
         bootMs: this.sessionReadyBootMs,
+        sessionInitMs: this.sessionInitMs,
       });
     });
 
@@ -775,7 +800,7 @@ export class AgentServer {
             ? params.artifacts.length
             : 0,
         });
-        const prompt = await this.buildPromptFromContentAndArtifacts({
+        const builtPrompt = await this.buildPromptFromContentAndArtifacts({
           content: params.content as string | ContentBlock[] | undefined,
           artifacts: Array.isArray(params.artifacts)
             ? (params.artifacts as TaskRunArtifact[])
@@ -783,6 +808,7 @@ export class AgentServer {
           taskId: this.session.payload.task_id,
           runId: this.session.payload.run_id,
         });
+        const prompt = builtPrompt.prompt;
         if (prompt.length === 0) {
           throw new Error("User message cannot be empty");
         }
@@ -797,18 +823,23 @@ export class AgentServer {
 
         this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
 
+        const promptMeta: Record<string, unknown> = {
+          ...(builtPrompt.meta ?? {}),
+          ...(this.detectedPrUrl
+            ? {
+                prContext: this.buildDetectedPrContext(this.detectedPrUrl),
+              }
+            : {}),
+        };
+
         let result: PromptResponse;
         try {
           result = await this.session.clientConnection.prompt({
             sessionId: this.session.acpSessionId,
             prompt,
-            ...(this.detectedPrUrl && {
-              _meta: {
-                // Keep the live-session PR override aligned with the startup
-                // prompt policy so non-Slack runs remain review-first.
-                prContext: this.buildDetectedPrContext(this.detectedPrUrl),
-              },
-            }),
+            ...(Object.keys(promptMeta).length > 0
+              ? { _meta: promptMeta }
+              : {}),
           });
         } catch (error) {
           await this.session.logWriter.flushAll();
@@ -1054,6 +1085,12 @@ export class AgentServer {
       taskTitle: preTask?.title,
     });
 
+    if (this.config.repoReadyFile && gatewayEnv.anthropicBaseUrl) {
+      void fetchGatewayModels({
+        gatewayUrl: gatewayEnv.anthropicBaseUrl,
+      }).catch(() => {});
+    }
+
     const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
 
     // Unconditional so a re-init on the same instance drops a stale PR URL.
@@ -1172,6 +1209,13 @@ export class AgentServer {
         : runtimeAdapter === "codex"
           ? "auto"
           : "bypassPermissions";
+    const pendingUserArtifactIds = Array.isArray(
+      runState?.pending_user_artifact_ids,
+    )
+      ? runState.pending_user_artifact_ids.filter(
+          (artifactId): artifactId is string => typeof artifactId === "string",
+        )
+      : [];
     const sessionCwd = this.config.repositoryPath ?? "/tmp/workspace";
     const sessionMeta = {
       sessionId: payload.run_id,
@@ -1186,6 +1230,13 @@ export class AgentServer {
       ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
       ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
     };
+
+    await this.waitForRepoReady();
+    await this.installSkillBundleArtifacts(
+      payload.task_id,
+      payload.run_id,
+      this.getArtifactsById(preTaskRun?.artifacts, pendingUserArtifactIds),
+    );
 
     const nativeResume = await this.prepareNativeResume(
       payload,
@@ -1249,8 +1300,10 @@ export class AgentServer {
     });
 
     this.sessionReadyBootMs = Math.round(process.uptime() * 1000);
+    this.sessionInitMs = Math.max(0, Date.now() - this.barrierReleasedAtMs!);
     this.logger.debug("Session initialized successfully", {
       bootMs: this.sessionReadyBootMs,
+      sessionInitMs: this.sessionInitMs,
     });
     this.logger.debug(
       `Agent version: ${this.config.version ?? packageJson.version}`,
@@ -1425,8 +1478,10 @@ export class AgentServer {
         : null;
       const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
       let initialPrompt: ContentBlock[] = [];
-      if (pendingUserPrompt?.length) {
-        initialPrompt = pendingUserPrompt;
+      let initialPromptMeta: Record<string, unknown> | undefined;
+      if (pendingUserPrompt?.prompt.length) {
+        initialPrompt = pendingUserPrompt.prompt;
+        initialPromptMeta = pendingUserPrompt.meta;
       } else if (initialPromptOverride) {
         initialPrompt = [{ type: "text", text: initialPromptOverride }];
       } else if (task.description) {
@@ -1442,7 +1497,7 @@ export class AgentServer {
         taskId: payload.task_id,
         descriptionLength: promptBlocksToText(initialPrompt).length,
         usedInitialPromptOverride: !!initialPromptOverride,
-        usedPendingUserMessage: !!pendingUserPrompt?.length,
+        usedPendingUserMessage: !!pendingUserPrompt?.prompt.length,
       });
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
@@ -1450,6 +1505,7 @@ export class AgentServer {
       const result = await this.session.clientConnection.prompt({
         sessionId: this.session.acpSessionId,
         prompt: initialPrompt,
+        ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
       });
 
       this.logger.debug("Initial task message completed", {
@@ -1483,7 +1539,7 @@ export class AgentServer {
     if (!this.session || !this.resumeState) return;
     const resumeState = this.resumeState;
 
-    await this.runResumeTurn(payload, "Resume message", async () => {
+    await this.runResumeTurn(payload, taskRun, "Resume message", async () => {
       const conversationSummary = formatConversationForResume(
         resumeState.conversation,
       );
@@ -1497,7 +1553,9 @@ export class AgentServer {
         : `The workspace from the previous session was not restored from a checkpoint, so you are starting with a fresh environment. Your conversation history is fully preserved below.`;
 
       let resumePromptBlocks: ContentBlock[];
-      if (pendingUserPrompt?.length) {
+      let resumePromptMeta: Record<string, unknown> | undefined;
+      if (pendingUserPrompt?.prompt.length) {
+        resumePromptMeta = pendingUserPrompt.meta;
         resumePromptBlocks = [
           {
             type: "text",
@@ -1507,7 +1565,7 @@ export class AgentServer {
               `${conversationSummary}\n\n` +
               `The user has sent a new message:\n\n`,
           },
-          ...pendingUserPrompt,
+          ...pendingUserPrompt.prompt,
           {
             type: "text",
             text: "\n\nRespond to the user's new message above. You have full context from the previous session.",
@@ -1530,14 +1588,17 @@ export class AgentServer {
         taskId: payload.task_id,
         conversationTurns: resumeState.conversation.length,
         promptLength: promptBlocksToText(resumePromptBlocks).length,
-        hasPendingUserMessage: !!pendingUserPrompt?.length,
+        hasPendingUserMessage: !!pendingUserPrompt?.prompt.length,
         checkpointApplied,
         hasGitCheckpoint: !!resumeState.latestGitCheckpoint,
         gitCheckpointBranch: resumeState.latestGitCheckpoint?.branch ?? null,
       });
 
       this.resumeState = null;
-      return resumePromptBlocks;
+      return {
+        prompt: resumePromptBlocks,
+        ...(resumePromptMeta ? { meta: resumePromptMeta } : {}),
+      };
     });
   }
 
@@ -1547,55 +1608,67 @@ export class AgentServer {
   ): Promise<void> {
     if (!this.session) return;
 
-    await this.runResumeTurn(payload, "Resume continuation", async () => {
-      const checkpointApplied = this.nativeResume?.warm
-        ? false
-        : await this.applyResumeGitCheckpoint(payload);
+    await this.runResumeTurn(
+      payload,
+      taskRun,
+      "Resume continuation",
+      async () => {
+        const checkpointApplied = this.nativeResume?.warm
+          ? false
+          : await this.applyResumeGitCheckpoint(payload);
 
-      const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
-      const prompt: ContentBlock[] = pendingUserPrompt?.length
-        ? pendingUserPrompt
-        : [
-            {
-              type: "text",
-              text: "Continue from where you left off. The user is waiting for your response.",
-            },
-          ];
+        const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
+        const prompt: ContentBlock[] = pendingUserPrompt?.prompt.length
+          ? pendingUserPrompt.prompt
+          : [
+              {
+                type: "text",
+                text: "Continue from where you left off. The user is waiting for your response.",
+              },
+            ];
 
-      this.logger.debug("Sending resume continuation", {
-        taskId: payload.task_id,
-        sessionId: this.nativeResume?.sessionId,
-        warm: this.nativeResume?.warm,
-        checkpointApplied,
-        hasPendingUserMessage: !!pendingUserPrompt?.length,
-      });
+        this.logger.debug("Sending resume continuation", {
+          taskId: payload.task_id,
+          sessionId: this.nativeResume?.sessionId,
+          warm: this.nativeResume?.warm,
+          checkpointApplied,
+          hasPendingUserMessage: !!pendingUserPrompt?.prompt.length,
+        });
 
-      this.resumeState = null;
-      this.nativeResume = null;
-      return prompt;
-    });
+        this.resumeState = null;
+        this.nativeResume = null;
+        return {
+          prompt,
+          ...(pendingUserPrompt?.meta ? { meta: pendingUserPrompt.meta } : {}),
+        };
+      },
+    );
   }
 
   private async runResumeTurn(
     payload: JwtPayload,
+    taskRun: TaskRun | null,
     logLabel: string,
-    buildPrompt: () => Promise<ContentBlock[]>,
+    buildPrompt: () => Promise<BuiltPrompt>,
   ): Promise<void> {
     if (!this.session) return;
 
     try {
-      const prompt = await buildPrompt();
+      const builtPrompt = await buildPrompt();
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
 
       const result = await this.session.clientConnection.prompt({
         sessionId: this.session.acpSessionId,
-        prompt,
+        prompt: builtPrompt.prompt,
+        ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
       });
 
       this.logger.debug(`${logLabel} completed`, {
         stopReason: result.stopReason,
       });
+
+      await this.clearPendingInitialPromptState(payload, taskRun);
 
       if (result.stopReason === "end_turn") {
         void this.syncCloudBranchMetadata(payload);
@@ -1666,7 +1739,7 @@ export class AgentServer {
 
   private async getPendingUserPrompt(
     taskRun: TaskRun | null,
-  ): Promise<ContentBlock[] | null> {
+  ): Promise<BuiltPrompt | null> {
     if (!taskRun) return null;
     const state = taskRun.state as Record<string, unknown> | undefined;
     const message = state?.pending_user_message;
@@ -1685,9 +1758,9 @@ export class AgentServer {
     this.logger.debug("Built pending user prompt", {
       hasMessage: typeof message === "string" && message.trim().length > 0,
       requestedArtifactCount: artifactIds.length,
-      blockTypes: prompt.map((block) => block.type),
+      blockTypes: prompt.prompt.map((block) => block.type),
     });
-    return prompt.length > 0 ? prompt : null;
+    return prompt.prompt.length > 0 ? prompt : null;
   }
 
   private getClearedPendingUserState(taskRun: TaskRun | null): string[] | null {
@@ -1732,15 +1805,31 @@ export class AgentServer {
     artifacts?: TaskRunArtifact[];
     taskId: string;
     runId: string;
-  }): Promise<ContentBlock[]> {
+  }): Promise<BuiltPrompt> {
     const contentBlocks = content ? normalizeCloudPromptContent(content) : [];
-    const artifactBlocks = await this.hydrateArtifactsToPrompt(
-      taskId,
+    await this.installSkillBundleArtifacts(taskId, runId, artifacts ?? []);
+    const localSkillContext = this.buildInstalledSkillPromptContext(
+      contentBlocks,
       runId,
       artifacts ?? [],
     );
+    const artifactBlocks = await this.hydrateArtifactsToPrompt(
+      taskId,
+      runId,
+      (artifacts ?? []).filter((artifact) => artifact.type !== "skill_bundle"),
+    );
 
-    return [...contentBlocks, ...artifactBlocks];
+    return {
+      prompt: [...contentBlocks, ...artifactBlocks],
+      ...(localSkillContext
+        ? {
+            meta: {
+              localSkillContext: localSkillContext.context,
+              localSkillName: localSkillContext.skillName,
+            } satisfies Record<string, unknown>,
+          }
+        : {}),
+    };
   }
 
   private getArtifactsById(
@@ -1798,6 +1887,293 @@ export class AgentServer {
     ).flatMap((artifactBlock) => (artifactBlock ? [artifactBlock] : []));
   }
 
+  private async installSkillBundleArtifacts(
+    taskId: string,
+    runId: string,
+    artifacts: TaskRunArtifact[],
+  ): Promise<void> {
+    const skillBundleArtifacts = artifacts.filter(
+      (artifact) => artifact.type === "skill_bundle",
+    );
+    if (skillBundleArtifacts.length === 0) {
+      return;
+    }
+
+    this.logger.debug("Installing skill bundle artifacts", {
+      taskId,
+      runId,
+      artifactCount: skillBundleArtifacts.length,
+      artifactNames: skillBundleArtifacts.map((artifact) => artifact.name),
+    });
+
+    for (const artifact of skillBundleArtifacts) {
+      await this.installSkillBundleArtifact(taskId, runId, artifact);
+    }
+  }
+
+  private buildInstalledSkillPromptContext(
+    contentBlocks: ContentBlock[],
+    runId: string,
+    artifacts: TaskRunArtifact[],
+  ): LocalSkillPromptContext | null {
+    if (contentBlocks.length === 0) {
+      return null;
+    }
+
+    const textBlockIndex = contentBlocks.findIndex(
+      (block): block is Extract<ContentBlock, { type: "text" }> =>
+        block.type === "text" && block.text.trim().length > 0,
+    );
+    if (textBlockIndex === -1) {
+      return null;
+    }
+
+    const textBlock = contentBlocks[textBlockIndex];
+    if (textBlock.type !== "text") {
+      return null;
+    }
+
+    const invocation = this.parseLocalSkillInvocation(textBlock.text);
+    if (!invocation) {
+      return null;
+    }
+
+    const hasMatchingArtifact = artifacts.some(
+      (artifact) =>
+        artifact.type === "skill_bundle" &&
+        artifact.metadata?.skill_name === invocation.skillName,
+    );
+    if (!hasMatchingArtifact) {
+      return null;
+    }
+
+    const installedSkill = this.installedSkillBundleInfo.get(
+      this.getInstalledSkillBundleInfoKey(runId, invocation.skillName),
+    );
+    if (!installedSkill) {
+      return null;
+    }
+
+    return {
+      skillName: invocation.skillName,
+      context: this.buildInstalledSkillPrompt(installedSkill, invocation.args),
+    };
+  }
+
+  private parseLocalSkillInvocation(
+    textValue: string,
+  ): { skillName: string; args?: string } | null {
+    const trimmed = textValue.trim();
+    const match = trimmed.match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
+    if (!match?.[1]) {
+      return null;
+    }
+
+    return {
+      skillName: match[1],
+      ...(match[2]?.trim() ? { args: match[2].trim() } : {}),
+    };
+  }
+
+  private buildInstalledSkillPrompt(
+    skill: InstalledSkillBundle,
+    args: string | undefined,
+  ): string {
+    return [
+      `The user invoked the local skill "/${skill.skillName}". Apply these skill instructions for this turn.`,
+      "",
+      `--- BEGIN LOCAL SKILL ${skill.skillName} ---`,
+      skill.skillDefinition.trim(),
+      `--- END LOCAL SKILL ${skill.skillName} ---`,
+      "",
+      `Installed skill path: ${skill.skillRoot}`,
+      "",
+      "User request:",
+      args?.trim() || `Run /${skill.skillName}.`,
+    ].join("\n");
+  }
+
+  private getInstalledSkillBundleInfoKey(
+    runId: string,
+    skillName: string,
+  ): string {
+    return `${runId}:${skillName}`;
+  }
+
+  private async installSkillBundleArtifact(
+    taskId: string,
+    runId: string,
+    artifact: TaskRunArtifact,
+  ): Promise<void> {
+    const metadata = artifact.metadata;
+    const skillName = metadata?.skill_name;
+    const expectedSha256 = metadata?.content_sha256;
+
+    if (!artifact.storage_path || !skillName || !expectedSha256) {
+      throw new Error(
+        `Skill bundle artifact ${artifact.name} is missing metadata`,
+      );
+    }
+
+    const installKey = `${runId}:${expectedSha256}:${skillName}`;
+    if (
+      this.installedSkillBundles.has(installKey) &&
+      this.installedSkillBundleInfo.has(
+        this.getInstalledSkillBundleInfoKey(runId, skillName),
+      )
+    ) {
+      return;
+    }
+
+    const inFlight = this.installingSkillBundles.get(installKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const installPromise = this.performSkillBundleInstall(
+      taskId,
+      runId,
+      artifact,
+      artifact.storage_path,
+      installKey,
+      skillName,
+      expectedSha256,
+    );
+    this.installingSkillBundles.set(installKey, installPromise);
+    try {
+      await installPromise;
+    } finally {
+      this.installingSkillBundles.delete(installKey);
+    }
+  }
+
+  private async performSkillBundleInstall(
+    taskId: string,
+    runId: string,
+    artifact: TaskRunArtifact,
+    storagePath: string,
+    installKey: string,
+    skillName: string,
+    expectedSha256: string,
+  ): Promise<void> {
+    const data = await this.posthogAPI.downloadArtifact(
+      taskId,
+      runId,
+      storagePath,
+    );
+    if (!data) {
+      throw new Error(`Failed to download skill bundle ${artifact.name}`);
+    }
+
+    const buffer = Buffer.from(data);
+    const actualSha256 = createHash("sha256").update(buffer).digest("hex");
+    if (actualSha256 !== expectedSha256) {
+      throw new Error(`Skill bundle ${skillName} failed checksum validation`);
+    }
+
+    const safeSkillName = this.getSafeArtifactName(skillName);
+    const skillRoot = join(
+      this.config.repositoryPath ?? "/tmp/workspace",
+      ".posthog",
+      "skills",
+      runId,
+      actualSha256,
+      safeSkillName,
+    );
+
+    await rm(skillRoot, { recursive: true, force: true });
+    await mkdir(skillRoot, { recursive: true });
+    await this.extractSkillBundle(buffer, skillRoot);
+
+    const skillDefinition = await readFile(
+      join(skillRoot, "SKILL.md"),
+      "utf-8",
+    ).catch(() => null);
+    if (!skillDefinition?.trim()) {
+      throw new Error(`Skill bundle ${skillName} does not contain SKILL.md`);
+    }
+
+    const copyFailures: Array<{ destination: string; error: unknown }> = [];
+    await Promise.all(
+      this.getSkillInstallDirectories(safeSkillName).map(
+        async (destination) => {
+          try {
+            await rm(destination, { recursive: true, force: true });
+            await mkdir(dirname(destination), { recursive: true });
+            await cp(skillRoot, destination, { recursive: true });
+          } catch (error) {
+            copyFailures.push({ destination, error });
+          }
+        },
+      ),
+    );
+    if (copyFailures.length > 0) {
+      this.logger.warn("Failed to copy skill bundle to some skill roots", {
+        taskId,
+        runId,
+        skillName,
+        failedDestinations: copyFailures.map((failure) => failure.destination),
+      });
+    }
+
+    this.installedSkillBundles.add(installKey);
+    this.installedSkillBundleInfo.set(
+      this.getInstalledSkillBundleInfoKey(runId, skillName),
+      {
+        skillName,
+        skillDefinition,
+        contentSha256: actualSha256,
+        skillRoot,
+      },
+    );
+    this.logger.debug("Installed skill bundle artifact", {
+      taskId,
+      runId,
+      skillName,
+      contentSha256: actualSha256,
+    });
+  }
+
+  private async extractSkillBundle(
+    archive: Uint8Array,
+    destinationRoot: string,
+  ): Promise<void> {
+    const entries = unzipSync(archive);
+    for (const [entryName, content] of Object.entries(entries)) {
+      const normalizedEntryName = entryName.replaceAll("\\", "/");
+      if (
+        !normalizedEntryName ||
+        normalizedEntryName.endsWith("/") ||
+        normalizedEntryName.startsWith("/") ||
+        normalizedEntryName.split("/").includes("..")
+      ) {
+        continue;
+      }
+
+      const destinationPath = join(destinationRoot, normalizedEntryName);
+      const relativeDestination = relative(destinationRoot, destinationPath);
+      if (
+        !relativeDestination ||
+        relativeDestination.startsWith("..") ||
+        isAbsolute(relativeDestination)
+      ) {
+        continue;
+      }
+
+      await mkdir(dirname(destinationPath), { recursive: true });
+      await writeFile(destinationPath, Buffer.from(content));
+    }
+  }
+
+  private getSkillInstallDirectories(skillName: string): string[] {
+    const home = process.env.HOME ?? "/tmp";
+    return [
+      join("/scripts", "plugins", "posthog", "skills", skillName),
+      join(home, ".agents", "skills", skillName),
+      join(home, ".claude", "skills", skillName),
+    ];
+  }
+
   private async hydrateArtifactToPromptBlock(
     taskId: string,
     runId: string,
@@ -1843,7 +2219,54 @@ export class AgentServer {
   private getSafeArtifactName(name: string): string {
     const baseName = basename(name).trim();
     const normalizedName = baseName.replace(/[^\w.-]/g, "_");
-    return normalizedName.length > 0 ? normalizedName : "attachment";
+    if (normalizedName.length === 0 || /^\.+$/.test(normalizedName)) {
+      return "attachment";
+    }
+    return normalizedName;
+  }
+
+  private async waitForRepoReady(): Promise<void> {
+    const readyFile = this.config.repoReadyFile;
+    if (!readyFile) {
+      this.barrierReleasedAtMs = Date.now();
+      return;
+    }
+
+    const REPO_READY_TIMEOUT_MS = 5 * 60_000;
+    const POLL_MS = 100;
+    const startedAt = Date.now();
+    let loggedUnexpectedError = false;
+
+    for (;;) {
+      try {
+        await access(readyFile);
+        this.barrierReleasedAtMs = Date.now();
+        this.logger.debug("Repo-ready barrier released", {
+          readyFile,
+          waitedMs: Date.now() - startedAt,
+        });
+        return;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code !== "ENOENT" && !loggedUnexpectedError) {
+          loggedUnexpectedError = true;
+          this.logger.debug("Repo-ready barrier access error; still polling", {
+            readyFile,
+            code,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      if (Date.now() - startedAt > REPO_READY_TIMEOUT_MS) {
+        this.barrierReleasedAtMs = Date.now();
+        this.logger.warn("Repo-ready barrier timed out; proceeding", {
+          readyFile,
+          waitedMs: Date.now() - startedAt,
+        });
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    }
   }
 
   private async autoInitializeSession(): Promise<void> {
@@ -2067,6 +2490,7 @@ we want:
   Task-Id: ${taskId}`;
 
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
+    const publicRepoSafetyInstruction = `   - **Public-repo safety.** Treat the target repository as public-readable unless you have verified otherwise. The PR title, description, and commit messages must not contain private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, the contents of Slack threads (do not quote or paraphrase what was said), or unreleased roadmap details. Linking to the originating Slack thread is fine and encouraged — Slack links are auth-gated and useful as context — as are channel references like "raised in #team-foo". Describe findings qualitatively ("present on nearly all X events, absent from Y") rather than with quantitative figures pulled from analytics queries — the reasoning that uses those numbers can stay in the thread; the PR copy cannot.`;
     // Slack- and inbox-originated PRs are attributed to PostHog, not the
     // PostHog Code desktop app — they come from the Slack app / Self-driving
     // inbox, which users know as "PostHog".
@@ -2130,6 +2554,7 @@ When the user explicitly asks to clone or work in a GitHub repository:
 - If the user explicitly asks you to open or update a pull request, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
 - Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
 ${whyContextInstruction.trimStart()}
+${publicRepoSafetyInstruction.trimStart()}
 - End the PR description with a horizontal rule followed by this footer line: ${prFooter}
 - Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
 
@@ -2177,6 +2602,7 @@ Otherwise, after completing the requested changes:
 3. Before opening the PR, prepare the body:
    - Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
 ${whyContextInstruction}
+${publicRepoSafetyInstruction}
    - Check the repo for a PR template at \`.github/pull_request_template.md\` (also try \`.github/PULL_REQUEST_TEMPLATE.md\`, \`docs/pull_request_template.md\`, and root variants). If one exists, use its exact section headings as the PR body — do NOT fall back to a generic Summary/Test plan format.
    - If no repo-level template exists, check the org's \`.github\` repo via \`gh api /repos/<owner>/.github/contents/.github/pull_request_template.md\` (and other common paths) and use that as a fallback.
    - Search for matching open issues with \`gh issue list --state open --search '<keywords>'\` (derive keywords from the branch name, commits, and changed files; \`gh issue view <n>\` to confirm relevance). For every issue this PR would resolve, include a \`Closes #<n>\` line in the body so GitHub auto-links and auto-closes it on merge. For issues that are related but not fully resolved, use \`Refs #<n>\` instead.

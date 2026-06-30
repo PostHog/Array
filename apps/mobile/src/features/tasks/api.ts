@@ -306,6 +306,9 @@ export async function warmTask(options: {
   repository: string;
   github_integration: number;
   branch?: string | null;
+  runtime_adapter?: string | null;
+  model?: string | null;
+  reasoning_effort?: string | null;
 }): Promise<{ task_id: string; run_id: string } | null> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
@@ -318,6 +321,9 @@ export async function warmTask(options: {
         repository: options.repository,
         github_integration: options.github_integration,
         branch: options.branch ?? null,
+        runtime_adapter: options.runtime_adapter ?? null,
+        model: options.model ?? null,
+        reasoning_effort: options.reasoning_effort ?? null,
       }),
     },
   );

@@ -228,6 +228,15 @@ export interface SettingChangedProperties {
   old_value?: string | boolean | number;
 }
 
+export interface CustomSoundAddedProperties {
+  // How the clip was captured.
+  source: "recording" | "import";
+  // Whether the user applied the offered leading/trailing-silence trim.
+  trimmed: boolean;
+  // Length of the saved clip in ms (no clip contents or name — no PII).
+  duration_ms: number;
+}
+
 // Error events
 export interface TaskCreationFailedProperties {
   error_type: string;
@@ -776,6 +785,11 @@ export type ChannelsSurface =
   | "sidebar"
   | "command_menu"
   | "new_task"
+  | "channel_home"
+  | "channel_history"
+  | "channel_artifacts"
+  | "channel_inbox"
+  | "pinned"
   | "dashboards_grid"
   | "canvas"
   | "context";
@@ -797,6 +811,10 @@ export type ChannelActionType =
   | "new_task_open"
   | "new_task_suggestion"
   | "view_context"
+  | "view_history"
+  | "view_artifacts"
+  | "view_inbox"
+  | "open_artifact"
   | "file_task"
   | "unfile_task"
   | "archive_task"
@@ -831,7 +849,9 @@ export type DashboardActionType =
   | "refresh"
   | "poll_mode_change"
   | "date_range_apply"
-  | "link_copied";
+  | "link_copied"
+  | "pin"
+  | "unpin";
 
 export interface DashboardActionProperties {
   action_type: DashboardActionType;
@@ -914,6 +934,36 @@ export interface SubscriptionCancelledProperties {
   plan_key: string;
 }
 
+// Claude Code session import events
+/** Where in the new-task suggestions the import was launched from. */
+export type ClaudeSessionImportSource = "inline_card" | "picker_dialog";
+/**
+ * Import status of a listed CLI session. "imported" sessions are hidden from
+ * the suggestions, so an import is only ever started from a "new" or "updated"
+ * one; the wider union mirrors the domain status field.
+ */
+export type ClaudeSessionImportStatus = "new" | "imported" | "updated";
+
+export interface ClaudeSessionsShownProperties {
+  /** Resumable Claude Code CLI sessions surfaced for the repo. */
+  sessions_count: number;
+}
+
+export interface ClaudeSessionImportedProperties {
+  source: ClaudeSessionImportSource;
+  session_status: ClaudeSessionImportStatus;
+  has_git_branch: boolean;
+  /** Resumable sessions available when this one was imported. */
+  sessions_available_count: number;
+}
+
+export interface ClaudeSessionImportFailedProperties {
+  source: ClaudeSessionImportSource;
+  session_status: ClaudeSessionImportStatus;
+  /** Saga step that failed, e.g. "import_claude_session" or "task_creation". */
+  failed_step?: string;
+}
+
 // Event names as constants
 export const ANALYTICS_EVENTS = {
   // App lifecycle
@@ -933,6 +983,11 @@ export const ANALYTICS_EVENTS = {
   TASK_RUN_COMPLETED: "Task run completed",
   TASK_RUN_CANCELLED: "Task run cancelled",
   PROMPT_SENT: "Prompt sent",
+
+  // Claude Code session import
+  CLAUDE_SESSIONS_SHOWN: "Claude Code sessions shown",
+  CLAUDE_SESSION_IMPORTED: "Claude Code session imported",
+  CLAUDE_SESSION_IMPORT_FAILED: "Claude Code session import failed",
 
   // Repository
   REPOSITORY_SELECTED: "Repository selected",
@@ -973,6 +1028,8 @@ export const ANALYTICS_EVENTS = {
 
   // Settings events
   SETTING_CHANGED: "Setting changed",
+  CUSTOM_SOUND_ADDED: "Custom sound added",
+  CUSTOM_SOUND_RECORDING_SILENT: "Custom sound recording silent",
 
   // Feedback events
   TASK_FEEDBACK: "Task feedback",
@@ -1080,6 +1137,11 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.TASK_RUN_CANCELLED]: TaskRunCancelledProperties;
   [ANALYTICS_EVENTS.PROMPT_SENT]: PromptSentProperties;
 
+  // Claude Code session import
+  [ANALYTICS_EVENTS.CLAUDE_SESSIONS_SHOWN]: ClaudeSessionsShownProperties;
+  [ANALYTICS_EVENTS.CLAUDE_SESSION_IMPORTED]: ClaudeSessionImportedProperties;
+  [ANALYTICS_EVENTS.CLAUDE_SESSION_IMPORT_FAILED]: ClaudeSessionImportFailedProperties;
+
   // Git operations
   [ANALYTICS_EVENTS.GIT_ACTION_EXECUTED]: GitActionExecutedProperties;
   [ANALYTICS_EVENTS.PR_CREATED]: PrCreatedProperties;
@@ -1116,6 +1178,8 @@ export type EventPropertyMap = {
 
   // Settings events
   [ANALYTICS_EVENTS.SETTING_CHANGED]: SettingChangedProperties;
+  [ANALYTICS_EVENTS.CUSTOM_SOUND_ADDED]: CustomSoundAddedProperties;
+  [ANALYTICS_EVENTS.CUSTOM_SOUND_RECORDING_SILENT]: never;
 
   // Feedback events
   [ANALYTICS_EVENTS.TASK_FEEDBACK]: TaskFeedbackProperties;

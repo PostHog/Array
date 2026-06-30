@@ -3,9 +3,20 @@ import {
   fetchGatewayModels,
   fetchModelsList,
   formatGatewayModelName,
+  type GatewayModel,
   getClaudeModelRecency,
+  isAnthropicModel,
   isBlockedModelId,
+  isCloudflareModel,
 } from "./gateway-models";
+
+const model = (id: string, owned_by = ""): GatewayModel => ({
+  id,
+  owned_by,
+  context_window: 128000,
+  supports_streaming: true,
+  supports_vision: false,
+});
 
 describe("formatGatewayModelName", () => {
   it("keeps Claude models in friendly title case", () => {
@@ -141,4 +152,27 @@ describe("gateway model fetch timeout", () => {
       expect(init?.signal).toBeInstanceOf(AbortSignal);
     },
   );
+});
+
+describe("isCloudflareModel", () => {
+  it.each([
+    { id: "@cf/zai-org/glm-5.2", owned_by: "cloudflare", expected: true },
+    { id: "claude-opus-4-8", owned_by: "anthropic", expected: false },
+    { id: "@cf/zai-org/glm-5.2", owned_by: "", expected: true },
+    { id: "gpt-5.5", owned_by: "", expected: false },
+    // A Cloudflare-served model can report an upstream owner; the `@cf/` prefix still wins.
+    { id: "@cf/openai/gpt-oss", owned_by: "openai", expected: true },
+  ])(
+    "isCloudflareModel($id, owned_by=$owned_by) → $expected",
+    ({ id, owned_by, expected }) => {
+      expect(isCloudflareModel(model(id, owned_by))).toBe(expected);
+    },
+  );
+
+  it("does not classify Cloudflare models as Anthropic", () => {
+    // The Claude adapter accepts both, but they must stay distinguishable.
+    const glm = model("@cf/zai-org/glm-5.2", "cloudflare");
+    expect(isCloudflareModel(glm)).toBe(true);
+    expect(isAnthropicModel(glm)).toBe(false);
+  });
 });

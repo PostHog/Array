@@ -4,7 +4,21 @@ import type {
   FileAttachment,
   MentionChip,
 } from "@posthog/core/message-editor/content";
-import type { GithubRefKind, GithubRefState } from "@posthog/shared";
+import type {
+  GithubRefKind,
+  GithubRefState,
+  UploadableSkillSource,
+} from "@posthog/shared";
+
+export interface LocalSkillCommand {
+  name: string;
+  source: UploadableSkillSource;
+  path: string;
+}
+
+export type EditorAvailableCommand = AvailableCommand & {
+  localSkill?: LocalSkillCommand;
+};
 
 export type GithubIssueState = GithubRefState;
 export type { GithubRefKind, GithubRefState };
@@ -33,6 +47,9 @@ export interface SuggestionItem {
   description?: string;
   filename?: string;
   chipType?: MentionChip["type"];
+  skillPath?: string;
+  skillSource?: UploadableSkillSource;
+  skillName?: string;
 }
 
 export interface FileSuggestionItem extends SuggestionItem {
@@ -41,7 +58,7 @@ export interface FileSuggestionItem extends SuggestionItem {
 }
 
 export interface CommandSuggestionItem extends SuggestionItem {
-  command: AvailableCommand;
+  command: EditorAvailableCommand;
 }
 
 export interface IssueSuggestionItem extends SuggestionItem {
