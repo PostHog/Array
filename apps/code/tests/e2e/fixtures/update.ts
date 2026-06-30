@@ -17,6 +17,20 @@ export const RUN_DIR = path.join(OUT_DIR, "e2e-update-run");
 export const RUN_APP = path.join(RUN_DIR, "PostHog Code.app");
 export const RUN_APP_BIN = path.join(RUN_APP, "Contents/MacOS/PostHog Code");
 
+// The "old" side of the Forge -> electron-builder test: a real Electron Forge
+// build (v0.55.132) produced by scripts/dev-update/build-old-forge.sh. It runs
+// the genuine built-in Squirrel.Mac client, against the same 2.0.0 feed.
+export const FORGE_PRISTINE_APP = path.join(
+  OUT_DIR,
+  "old-forge/PostHog Code.app",
+);
+export const FORGE_RUN_DIR = path.join(OUT_DIR, "e2e-update-forge-run");
+export const FORGE_RUN_APP = path.join(FORGE_RUN_DIR, "PostHog Code.app");
+export const FORGE_RUN_APP_BIN = path.join(
+  FORGE_RUN_APP,
+  "Contents/MacOS/PostHog Code",
+);
+
 export const MAIN_LOG = path.join(homedir(), ".posthog-code/logs/main.log");
 export const SHIPIT_DIR = path.join(
   homedir(),
@@ -25,6 +39,9 @@ export const SHIPIT_DIR = path.join(
 
 export const PROOF_DIR = path.join(OUT_DIR, "update-proof");
 const PROOF_FILE = path.join(PROOF_DIR, "proof.json");
+
+export const FORGE_PROOF_DIR = path.join(OUT_DIR, "update-proof-forge");
+const FORGE_PROOF_FILE = path.join(FORGE_PROOF_DIR, "proof.json");
 
 const SERVE_SCRIPT = path.join(
   __dirname,
@@ -55,6 +72,11 @@ export function writeProof(proof: UpdateProof): void {
   writeFileSync(PROOF_FILE, `${JSON.stringify(proof, null, 2)}\n`);
 }
 
+export function writeForgeProof(proof: UpdateProof): void {
+  mkdirSync(FORGE_PROOF_DIR, { recursive: true });
+  writeFileSync(FORGE_PROOF_FILE, `${JSON.stringify(proof, null, 2)}\n`);
+}
+
 // Copy the pristine built app into a disposable run dir so the in-place update
 // swap never mutates the build output, which lets a retry start from 1.0.0
 // again. ditto preserves the code signature that Squirrel.Mac verifies.
@@ -62,6 +84,12 @@ export function prepareRunApp(): void {
   rmSync(RUN_DIR, { recursive: true, force: true });
   mkdirSync(RUN_DIR, { recursive: true });
   execFileSync("ditto", [PRISTINE_APP, RUN_APP]);
+}
+
+export function prepareForgeRunApp(): void {
+  rmSync(FORGE_RUN_DIR, { recursive: true, force: true });
+  mkdirSync(FORGE_RUN_DIR, { recursive: true });
+  execFileSync("ditto", [FORGE_PRISTINE_APP, FORGE_RUN_APP]);
 }
 
 export function startFeedServer(port: number): ChildProcess {
@@ -89,6 +117,13 @@ export function readMainLog(): string {
   } catch {
     return "";
   }
+}
+
+// Both legs swap the same bundle id, so they share one ShipIt cache dir. Clear it
+// before a run that asserts on it, so its presence afterward is attributable to
+// that run's swap and not a leftover from the other leg.
+export function resetShipItCache(): void {
+  rmSync(SHIPIT_DIR, { recursive: true, force: true });
 }
 
 // Squirrel.Mac's ShipIt helper performs the in-place swap and leaves its cache

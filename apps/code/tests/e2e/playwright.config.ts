@@ -5,9 +5,9 @@ const isCI = !!process.env.CI;
 export default defineConfig({
   testDir: "./tests",
   testMatch: "**/*.spec.ts",
-  // The update spec needs a signed feed; it runs only via
-  // playwright.update.config.ts, never in the general suite.
-  testIgnore: "**/update.spec.ts",
+  // The update specs need a signed feed; they run only via their dedicated
+  // configs (playwright.update*.config.ts), never in the general suite.
+  testIgnore: "**/update*.spec.ts",
   timeout: 60000,
   retries: isCI ? 2 : 0,
   // Must run serially - Electron app has single instance lock
@@ -22,7 +22,7 @@ export default defineConfig({
     {
       name: "electron",
       testMatch: "**/*.spec.ts",
-      testIgnore: "**/update.spec.ts",
+      testIgnore: "**/update*.spec.ts",
     },
   ],
 });

@@ -10,6 +10,11 @@ Auto-update is macOS and Windows only (`isSupported` in `apps/code/src/main/plat
 
 The flow under test: a packaged old build checks a local feed, downloads a newer build, and Squirrel.Mac swaps the app bundle in place and relaunches into the new version.
 
+Two legs run against the same `2.0.0` feed:
+
+- **electron-builder to electron-builder**: the forward-compatibility baseline. A `1.0.0` electron-builder build updates to the `2.0.0` electron-builder build using `electron-updater`.
+- **Forge to electron-builder**: a real Electron Forge build (the last Forge release, `v0.55.132`) updates to the `2.0.0` electron-builder build using the genuine built-in Squirrel.Mac client. This is the case real users are in: their app was made by Forge, and we need it to pick up the electron-builder builds we ship now. See [The Forge to electron-builder leg](#the-forge-to-electron-builder-leg).
+
 ## What you need
 
 - A packaged build (not `pnpm dev`). Auto-update only runs when `app.isPackaged` is true.
@@ -21,12 +26,15 @@ The flow under test: a packaged old build checks a local feed, downloads a newer
 
 | Piece | Role |
 | --- | --- |
-| `apps/code/scripts/dev-update/build-pair.sh` | Builds a signed `2.0.0` feed plus a runnable signed `1.0.0` app |
-| `apps/code/scripts/dev-update/serve.mjs` | Dependency-free, range-capable static server for the feed |
-| `apps/code/tests/e2e/tests/update.spec.ts` | Two-phase Playwright test: drive download and install, then assert the swap and relaunch |
-| `POSTHOG_E2E_UPDATE_FEED` env | When set, the updater points at this URL instead of GitHub (gated, inert in production) |
-| `apps/code/tests/e2e/playwright.update.config.ts` | Dedicated Playwright config; the only place the update spec runs |
-| `globalThis.__e2eUpdates` | Set in the main process when `POSTHOG_E2E_UPDATE_FEED` is present; lets the test drive `check` / `download` / `install` / `status` |
+| `apps/code/scripts/dev-update/build-pair.sh` | Builds a signed `2.0.0` feed plus a runnable signed `1.0.0` app (the baseline leg) |
+| `apps/code/scripts/dev-update/build-old-forge.sh` | Builds the last Forge release (`v0.55.132`) as the signed `1.0.0` old app for the Forge leg |
+| `apps/code/scripts/dev-update/serve.mjs` | Dependency-free, range-capable static server. Serves the `electron-updater` manifest AND the Squirrel.Mac JSON feed the built-in updater expects |
+| `apps/code/tests/e2e/tests/update.spec.ts` | Baseline leg: drive `electron-updater` download and install, then assert the swap and relaunch |
+| `apps/code/tests/e2e/tests/update-forge.spec.ts` | Forge leg: let the old build's built-in Squirrel.Mac client download, drive install, then assert the swap and relaunch |
+| `POSTHOG_E2E_UPDATE_FEED` env | Baseline leg: when set, `electron-updater` points at this URL instead of GitHub (gated, inert in production) |
+| `POSTHOG_E2E_UPDATE_HOST` env | Forge leg: the one-line env seam baked into the old build so its built-in updater asks this host instead of `update.electronjs.org` |
+| `apps/code/tests/e2e/playwright.update.config.ts`, `playwright.update-forge.config.ts` | Dedicated Playwright configs; the only place each update spec runs |
+| `globalThis.__e2eUpdates` | Baseline leg only: set in the main process when `POSTHOG_E2E_UPDATE_FEED` is present; lets the test drive `check` / `download` / `install` / `status` |
 
 ## Build the pair locally
 
@@ -101,15 +109,51 @@ A manual run swaps `out/mac-arm64` in place, so rerun `build-pair.sh` (or just t
   tail -f ~/.posthog-code/logs/main.log
   ```
 
+## The Forge to electron-builder leg
+
+The baseline leg proves an electron-builder build updates to a newer electron-builder build. That is the future. It does not prove what every current user needs: their app was made by Electron Forge and runs the genuine built-in Squirrel.Mac client, not `electron-updater`. This leg covers that.
+
+### What it proves
+
+A real Forge build picks up an electron-builder build through its own updater, end to end: boot on the Forge `1.0.0`, the built-in client checks the local feed, downloads the `2.0.0` electron-builder zip, Squirrel.Mac swaps the bundle in place, relaunches, and the fresh launch is `2.0.0`. The swap only happens if the new bundle's code signature satisfies the running app's designated requirement, so signing parity is part of what is verified.
+
+### How the old build is produced
+
+`build-old-forge.sh` checks the last Forge release out into an isolated git worktree and builds it there, so the current branch checkout is untouched. The pinned commit is `cb0ca68db` (`v0.55.132`), the last release before the electron-builder migration. Override with `OLD_FORGE_REF` if needed.
+
+It is a genuine `electron-forge package` build, not a rebuild with electron-builder, because the whole point is the built-in Squirrel.Mac client that shipped to users. It is signed with the same identity the new build uses (Forge resolves the identity by name from a keychain, so the script imports `CSC_LINK` into a temp keychain and derives `APPLE_CODESIGN_IDENTITY`). Both Forge and electron-builder use bundle id `com.posthog.array`, so the designated requirements match and the swap is allowed.
+
+### Two seams the old build needs
+
+- **Feed host (`POSTHOG_E2E_UPDATE_HOST`)**: a one-line change applied in the worktree so the built-in updater's feed host honours the env var instead of being hardcoded to `update.electronjs.org`. Nothing in the download, verify or swap path changes. At test time the app's own boot check then drives the real download against the local feed, exactly as it would against `update.electronjs.org` in production.
+- **Local networking (ATS)**: the built-in updater uses `NSURLSession`, which enforces App Transport Security, so plain http to loopback is blocked by default. The script adds `NSAppTransportSecurity.NSAllowsLocalNetworking` to the packaged `Info.plist` and re-signs the bundle with the same identity and entitlements, so the designated requirement is unchanged. `electron-updater` (the baseline leg) uses its own Node HTTP client and is not subject to ATS, which is why only this leg needs it.
+
+`serve.mjs` answers the Squirrel.Mac feed shape (`GET /<owner>/<repo>/darwin-<arch>/<version>` returns `204` when current, or `200` + `{ url }` pointing at the new zip) in addition to the static `electron-updater` manifest. It self-configures from the feed's `latest-mac.yml`, so the same feed dir drives both legs.
+
+### Run it locally
+
+You need the same Developer ID signing setup as the baseline leg (`CSC_LINK` / `CSC_KEY_PASSWORD`, or an identity in a keychain), full git history, and the `2.0.0` feed from `build-pair.sh`:
+
+```bash
+bash apps/code/scripts/dev-update/build-pair.sh        # the 2.0.0 feed
+bash apps/code/scripts/dev-update/build-old-forge.sh   # the old Forge 1.0.0 app
+pnpm --filter code exec playwright test \
+  --config=tests/e2e/playwright.update-forge.config.ts
+```
+
+The old Forge app lands at `apps/code/out/old-forge/PostHog Code.app`. The spec copies it to a disposable run dir, so a rerun starts from `1.0.0` again without rebuilding.
+
 ## CI
 
-`code-update-e2e.yml` runs the same spec nightly on `macos-15` with the real signing secrets, and on demand:
+`code-update-e2e.yml` runs both specs nightly on `macos-15` with the real signing secrets, and on demand:
 
 ```bash
 gh workflow run "Code Update E2E (macOS)"
 ```
 
-It builds the pair, runs the spec via `playwright.update.config.ts`, and asserts exactly one test actually ran, so a missing feed or a silent skip fails the job. Every run renders a proof summary on the run page and uploads, on pass or fail: the proof manifest, main log and Squirrel ShipIt cache (artifact `update-e2e-macos`), plus the two signed builds as their own artifacts (`update-old-build-1.0.0`, `update-new-build-2.0.0`) you can pull as shown above.
+It builds the `2.0.0` feed and the baseline `1.0.0` app, runs the baseline spec via `playwright.update.config.ts`, then builds the old Forge `1.0.0` app and runs the Forge spec via `playwright.update-forge.config.ts`. Each leg asserts exactly one test actually ran, so a missing feed or a silent skip fails the job. The Forge leg runs after the baseline so a flake in the (riskier) old-build step can never mask the baseline result.
+
+Every run renders a proof summary per leg on the run page and uploads, on pass or fail: both proof manifests, main log and Squirrel ShipIt cache (artifact `update-e2e-macos`), plus the signed builds as their own artifacts (`update-old-build-1.0.0`, `update-new-build-2.0.0`, `update-old-forge-build-1.0.0`) you can pull as shown above.
 
 ## Cleanup
 
