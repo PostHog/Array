@@ -40,7 +40,7 @@ export function useDiscussReport({
         content: prompt,
         taskDescription: prompt,
         repository: ctx.cloudRepository,
-        githubUserIntegrationId: ctx.githubUserIntegrationId,
+        githubUserIntegrationId: ctx.githubUserIntegrationId ?? undefined,
         workspaceMode: "cloud",
         executionMode: "auto",
         adapter: ctx.adapter,

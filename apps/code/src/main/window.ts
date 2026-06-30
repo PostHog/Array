@@ -23,8 +23,8 @@ import { type WindowStateSchema, windowStateStore } from "./utils/store";
 
 const log = logger.scope("window");
 
-declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
-declare const MAIN_WINDOW_VITE_NAME: string;
+const MAIN_WINDOW_VITE_DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
+const MAIN_WINDOW_VITE_NAME = "main_window";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -167,7 +167,10 @@ export function createWindow(): void {
     process.platform === "darwin"
       ? {
           titleBarStyle: "hiddenInset" as const,
-          trafficLightPosition: { x: 12, y: 9 },
+          // Centre the traffic lights vertically with the title bar's back/forward
+          // buttons (40px bar, 24px buttons → centre at y=20; 12px dots → top at 14).
+          // x mirrors y so the inset from the top and the left match.
+          trafficLightPosition: { x: 14, y: 14 },
         }
       : process.platform === "win32"
         ? {

@@ -96,6 +96,10 @@ interface WatcherState {
   batchFlushTimeoutId: ReturnType<typeof setTimeout> | null;
   pendingLogEntries: StoredLogEntry[];
   totalEntryCount: number;
+  /** On resume the renderer already holds the prior conversation; start live-
+   *  only (no bootstrap fetch/snapshot) seeded at this count so the in-flight
+   *  turn can't collide with a re-fetched snapshot. Null on non-resume watches. */
+  resumeFromEntryCount: number | null;
   reconnectAttempts: number;
   streamErrorAttempts: number;
   cumulativeReconnectAttempts: number;
@@ -435,6 +439,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       batchFlushTimeoutId: null,
       pendingLogEntries: [],
       totalEntryCount: 0,
+      resumeFromEntryCount: input.resumeFromEntryCount ?? null,
       reconnectAttempts: 0,
       streamErrorAttempts: 0,
       cumulativeReconnectAttempts: 0,
@@ -506,6 +511,17 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     this.applyTaskRunState(watcher, run);
+
+    if (
+      !isTerminalStatus(run.status) &&
+      watcher.resumeFromEntryCount !== null
+    ) {
+      watcher.totalEntryCount = watcher.resumeFromEntryCount;
+      watcher.hasEmittedSnapshot = true;
+      watcher.isBootstrapping = false;
+      void this.connectSse(key, { startLatest: true });
+      return;
+    }
 
     if (isTerminalStatus(run.status)) {
       const historicalEntries = await this.fetchAllSessionLogs(watcher);

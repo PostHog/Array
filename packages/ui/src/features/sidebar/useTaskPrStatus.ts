@@ -25,6 +25,7 @@ export function useTaskPrStatus(task: {
       { taskId: task.id, cloudPrUrl: task.cloudPrUrl ?? null },
       {
         staleTime: SIDEBAR_STALE_TIME,
+        placeholderData: (prev) => prev,
         enabled: !skipQuery,
       },
     ),

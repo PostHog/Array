@@ -29,7 +29,10 @@ import {
 import { LLM_GATEWAY_SERVICE } from "@posthog/core/llm-gateway/identifiers";
 import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
 import type { LlmMessage } from "@posthog/core/llm-gateway/schemas";
-import { CLOUD_ARTIFACT_READ_FILE_AS_BASE64 } from "@posthog/core/sessions/cloudArtifactIdentifiers";
+import {
+  CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
+  CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
+} from "@posthog/core/sessions/cloudArtifactIdentifiers";
 import {
   LOCAL_HANDOFF_DIALOG,
   LOCAL_HANDOFF_HOST,
@@ -365,6 +368,11 @@ container
   .bind(CLOUD_ARTIFACT_READ_FILE_AS_BASE64)
   .toConstantValue((filePath: string) =>
     trpcClient.fs.readFileAsBase64.query({ filePath }),
+  );
+container
+  .bind(CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL)
+  .toConstantValue((skillBundleRef) =>
+    hostTrpcClient.skills.bundleLocal.query(skillBundleRef),
   );
 container.bind(LLM_GATEWAY_SERVICE).toConstantValue({
   prompt: (

@@ -170,6 +170,7 @@ export type {
   SkillFileEntry,
   SkillInfo,
   SkillSource,
+  UploadableSkillSource,
 } from "./skills";
 export { SKILL_EXISTS_MARKER, stripFrontmatter } from "./skills";
 export type {
@@ -177,6 +178,7 @@ export type {
   PostHogAPIConfig,
   TaskRun,
   TaskRunArtifact,
+  TaskRunArtifactMetadata,
   TaskRunEnvironment,
   TaskRunStatus,
 } from "./task";

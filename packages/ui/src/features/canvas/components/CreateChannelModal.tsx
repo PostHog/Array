@@ -3,10 +3,10 @@ import { validateChannelName } from "@posthog/core/canvas/channelName";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { useOpenHomeCanvas } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Dialog, Flex, IconButton, Text, TextField } from "@radix-ui/themes";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 // Matches Slack's "Create a channel" naming constraint.
@@ -22,7 +22,7 @@ export function CreateChannelModal({
   onOpenChange,
 }: CreateChannelModalProps) {
   const { createChannel, isCreating } = useChannelMutations();
-  const openHomeCanvas = useOpenHomeCanvas();
+  const navigate = useNavigate();
   const [name, setName] = useState("");
 
   // Reset the field each time the modal opens so a previous draft never lingers.
@@ -61,9 +61,11 @@ export function CreateChannelModal({
       return;
     }
     onOpenChange(false);
-    // Create + seed the channel's home canvas and open it in the main pane. A
-    // freshly created channel has no homeCanvasId yet, so this creates one.
-    await openHomeCanvas(channel);
+    // Open the new channel's static homepage.
+    void navigate({
+      to: "/website/$channelId",
+      params: { channelId: channel.id },
+    });
   };
 
   return (

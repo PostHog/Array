@@ -88,11 +88,26 @@ export function groupByRepository<T extends GroupableTask>(
     }
   }
 
+  // The "other" group (tasks without a resolvable repository) always sorts to
+  // the bottom, regardless of the alphabetical or persisted folder order.
+  const pinOtherLast = (a: TaskGroup<T>, b: TaskGroup<T>): number | null => {
+    const aOther = a.id === "other";
+    const bOther = b.id === "other";
+    if (aOther && bOther) return 0;
+    if (aOther) return 1;
+    if (bOther) return -1;
+    return null;
+  };
+
   if (folderOrder.length === 0) {
-    return groups.sort((a, b) => a.name.localeCompare(b.name));
+    return groups.sort(
+      (a, b) => pinOtherLast(a, b) ?? a.name.localeCompare(b.name),
+    );
   }
 
   return groups.sort((a, b) => {
+    const pinned = pinOtherLast(a, b);
+    if (pinned !== null) return pinned;
     const aIndex = folderOrder.indexOf(a.id);
     const bIndex = folderOrder.indexOf(b.id);
     if (aIndex === -1 && bIndex === -1) {

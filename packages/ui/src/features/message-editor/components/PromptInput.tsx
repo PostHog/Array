@@ -12,6 +12,7 @@ import clsx from "clsx";
 import { forwardRef, useCallback, useEffect, useImperativeHandle } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useSkills } from "../../skills/useSkills";
+import { skillToEditorCommand } from "../commands";
 import { ModeSelector } from "../components/ModeSelector";
 import { useDraftStore } from "../draftStore";
 import { useTiptapEditor } from "../tiptap/useTiptapEditor";
@@ -203,10 +204,9 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
     // only the built-in /good /bad /feedback commands.
     useEffect(() => {
       if (!enableCommands || !skills) return;
-      useDraftStore.getState().actions.setCommands(
-        sessionId,
-        skills.map((s) => ({ name: s.name, description: s.description })),
-      );
+      useDraftStore
+        .getState()
+        .actions.setCommands(sessionId, skills.map(skillToEditorCommand));
       return () => {
         useDraftStore.getState().actions.clearCommands(sessionId);
       };

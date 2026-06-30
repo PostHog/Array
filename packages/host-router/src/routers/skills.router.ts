@@ -1,6 +1,8 @@
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import { SKILLS_SERVICE } from "@posthog/workspace-server/services/skills/identifiers";
 import {
+  bundleLocalSkillInput,
+  bundleLocalSkillOutput,
   createSkillInput,
   deleteSkillFileInput,
   deleteSkillInput,
@@ -35,6 +37,12 @@ export const skillsRouter = router({
     .output(listSkillsOutput)
     .query(({ ctx }) =>
       ctx.container.get<SkillsService>(SKILLS_SERVICE).listSkills(),
+    ),
+  bundleLocal: publicProcedure
+    .input(bundleLocalSkillInput)
+    .output(bundleLocalSkillOutput)
+    .query(({ ctx, input }) =>
+      ctx.container.get<SkillsService>(SKILLS_SERVICE).bundleLocalSkill(input),
     ),
   contents: publicProcedure
     .input(skillContentsInput)

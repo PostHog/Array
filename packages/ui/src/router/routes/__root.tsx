@@ -18,6 +18,7 @@ import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hoo
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
+import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import {
   FeedbackModal,
   type FeedbackModalMode,
@@ -41,6 +42,8 @@ import { ExistingWorktreeDialog } from "@posthog/ui/features/task-detail/compone
 import { RemoteBranchCheckoutDialog } from "@posthog/ui/features/task-detail/components/RemoteBranchCheckoutDialog";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { TourOverlay } from "@posthog/ui/features/tour/components/TourOverlay";
+import { UpdateAvailableModal } from "@posthog/ui/features/updates/UpdateAvailableModal";
+import { WhatsNewModal } from "@posthog/ui/features/updates/WhatsNewModal";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import LogosLandscape from "@posthog/ui/primitives/Logo";
 import { useAppView } from "@posthog/ui/router/useAppView";
@@ -115,6 +118,9 @@ function RootLayout() {
   const navigate = useNavigate();
   const router = useRouter();
   const canGoBack = useCanGoBack();
+  // Width of the Channels sidebar below — used to right-align the back/forward
+  // buttons in the title bar with the sidebar's (and project switcher's) right edge.
+  const channelsSidebarWidth = useChannelsSidebarStore((state) => state.width);
   // Forward availability isn't exposed by the router (and history.length counts
   // pre-app entries, so it can't be compared to __TSR_index). Track the newest
   // index we've reached: only a PUSH wipes the forward stack, so it resets the
@@ -292,29 +298,43 @@ function RootLayout() {
       <Flex direction="column" height="100vh" className="bg-chrome">
         {/* Full-width title bar: a window-drag region carrying the PostHog
             mark. The left padding clears the macOS stoplights. */}
-        <Flex align="center" gap="3" className="drag h-10 shrink-0 pl-[78px]">
-          <Box className="h-[14px] w-[26px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
+        <Flex
+          align="center"
+          gap="3"
+          className="drag relative h-10 shrink-0 pl-[78px]"
+        >
+          <Box className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 h-[14px] w-[26px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
             <LogosLandscape code={false} />
           </Box>
-          <Flex align="center" gap="2" className="no-drag">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Back"
-              disabled={!canGoBack}
-              onClick={() => router.history.back()}
-            >
-              <CaretLeftIcon size={14} />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Forward"
-              disabled={!canGoForward}
-              onClick={() => router.history.forward()}
-            >
-              <CaretRightIcon size={14} />
-            </Button>
+          {/* Spans the sidebar width from the window's left edge so the buttons
+              right-align with the sidebar / project switcher's right edge. pr-2
+              matches the switcher's px-2. */}
+          <Box
+            className="drag absolute top-0 bottom-0 left-0 flex items-center justify-end pr-2"
+            style={{ width: channelsSidebarWidth }}
+          >
+            <Flex align="center" gap="2" className="no-drag">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Back"
+                disabled={!canGoBack}
+                onClick={() => router.history.back()}
+              >
+                <CaretLeftIcon size={14} />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Forward"
+                disabled={!canGoForward}
+                onClick={() => router.history.forward()}
+              >
+                <CaretRightIcon size={14} />
+              </Button>
+            </Flex>
+          </Box>
+          <Flex align="center" gap="2" className="no-drag ml-auto pr-3">
             <Button
               variant="outline"
               size="sm"
@@ -341,8 +361,6 @@ function RootLayout() {
             >
               Leave feedback
             </Button>
-          </Flex>
-          <Flex align="center" className="no-drag ml-auto pr-3">
             <Button
               variant="outline"
               size="sm"
@@ -375,6 +393,8 @@ function RootLayout() {
           onToggleShortcutsSheet={toggleShortcutsSheet}
         />
         {billingEnabled && <UsageLimitModal />}
+        <UpdateAvailableModal />
+        <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
         <FeedbackModal
           mode={feedbackMode}
@@ -405,6 +425,8 @@ function RootLayout() {
           onToggleShortcutsSheet={toggleShortcutsSheet}
         />
         {billingEnabled && <UsageLimitModal />}
+        <UpdateAvailableModal />
+        <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
         <ExistingWorktreeDialog />
         {import.meta.env.DEV && (
@@ -449,6 +471,8 @@ function RootLayout() {
         />
         <TourOverlay />
         {billingEnabled && <UsageLimitModal />}
+        <UpdateAvailableModal />
+        <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
         {approvalDeepLink.pending ? (
           <DeepLinkApprovalModal

@@ -8,7 +8,12 @@ import {
   type IMainWindow,
   MAIN_WINDOW_SERVICE,
 } from "@posthog/platform/main-window";
-import { type IUpdater, UPDATER_SERVICE } from "@posthog/platform/updater";
+import {
+  type IUpdater,
+  UPDATER_SERVICE,
+  type UpdateAvailableInfo,
+  type UpdateDownloadProgress,
+} from "@posthog/platform/updater";
 import {
   type SagaLogger,
   TypedEventEmitter,
@@ -28,6 +33,7 @@ type CheckSource = "user" | "periodic";
 type UpdateState =
   | "idle"
   | "checking"
+  | "available"
   | "downloading"
   | "ready"
   | "installing"
@@ -42,9 +48,6 @@ type TransitionContext = {
 
 @injectable()
 export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
-  private static readonly SERVER_HOST = "https://update.electronjs.org";
-  private static readonly REPO_OWNER = "PostHog";
-  private static readonly REPO_NAME = "code";
   private static readonly CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
   private static readonly CHECK_TIMEOUT_MS = 60 * 1000; // 1 minute timeout for checks
   private static readonly INSTALL_SHUTDOWN_TIMEOUT_MS = 3000;
@@ -85,6 +88,10 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   private lastError: string | null = null;
   private initialized = false;
   private unsubscribes: Array<() => void> = [];
+  private availableInfo: UpdateAvailableInfo | null = null;
+  private downloadProgress: UpdateDownloadProgress | null = null;
+  private autoDownloadEnabled = false;
+  private lastProgressEmit = 0;
 
   get hasUpdateReady(): boolean {
     return this.isUpdateStaged();
@@ -96,11 +103,6 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
 
   get isEnabled(): boolean {
     return this.updater.isSupported();
-  }
-
-  private get feedUrl(): string {
-    const ctor = this.constructor as typeof UpdatesService;
-    return `${ctor.SERVER_HOST}/${ctor.REPO_OWNER}/${ctor.REPO_NAME}/${this.appMeta.platform}-${this.appMeta.arch}/${this.appMeta.version}`;
   }
 
   @postConstruct()
@@ -120,13 +122,47 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     this.emit(UpdatesEvent.CheckFromMenu, true);
   }
 
+  setAutoDownloadEnabled(enabled: boolean): void {
+    this.autoDownloadEnabled = enabled;
+    if (this.isEnabled) {
+      this.updater.setAutoDownload(enabled);
+    }
+    this.log.info("Auto-download preference updated", { enabled });
+
+    if (enabled && this.state === "available") {
+      this.requestDownload();
+    }
+  }
+
+  requestDownload(): void {
+    if (this.state !== "available") {
+      this.log.warn("requestDownload called but no update is available", {
+        state: this.state,
+      });
+      return;
+    }
+    this.transitionTo("downloading", {
+      reason: "user requested download",
+      incomingVersion: this.availableInfo?.version ?? null,
+    });
+    this.log.info("Downloading update...", {
+      version: this.availableInfo?.version,
+    });
+    this.updater.download();
+    this.emitStatus(this.downloadingStatusPayload());
+  }
+
   getStatus(): UpdatesStatusPayload {
     if (this.state === "checking") {
       return { checking: true };
     }
 
+    if (this.state === "available") {
+      return this.availableStatusPayload();
+    }
+
     if (this.state === "downloading") {
-      return { checking: true, downloading: true };
+      return this.downloadingStatusPayload();
     }
 
     if (this.isUpdateStaged()) {
@@ -164,6 +200,14 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
         this.emitStatus(this.stagedStatusPayload());
       }
 
+      return { success: true };
+    }
+
+    if (source === "periodic" && this.state === "available") {
+      this.logStateTransition(this.state, {
+        source,
+        reason: "periodic check skipped because an update is already available",
+      });
       return { success: true };
     }
 
@@ -237,25 +281,21 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     }
 
     this.initialized = true;
-    const feedUrl = this.feedUrl;
     this.log.info("Setting up auto updater", {
-      feedUrl,
       currentVersion: this.appMeta.version,
       platform: this.appMeta.platform,
       arch: this.appMeta.arch,
     });
 
-    try {
-      this.updater.setFeedUrl(feedUrl);
-    } catch (error) {
-      this.log.error("Failed to set feed URL", { error });
-      return;
-    }
-
     this.unsubscribes.push(
       this.updater.onError((error) => this.handleError(error)),
       this.updater.onCheckStart(() => this.log.info("Checking for updates...")),
-      this.updater.onUpdateAvailable(() => this.handleUpdateAvailable()),
+      this.updater.onUpdateAvailable((info) =>
+        this.handleUpdateAvailable(info),
+      ),
+      this.updater.onDownloadProgress((progress) =>
+        this.handleDownloadProgress(progress),
+      ),
       this.updater.onNoUpdate(() => this.handleNoUpdate()),
       this.updater.onUpdateDownloaded((releaseName) =>
         this.handleUpdateDownloaded(releaseName),
@@ -279,12 +319,35 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     };
   }
 
+  private availableStatusPayload(): UpdatesStatusPayload {
+    return {
+      checking: false,
+      available: true,
+      availableVersion: this.availableInfo?.version,
+      releaseNotes: this.availableInfo?.releaseNotes ?? undefined,
+      releaseDate: this.availableInfo?.releaseDate,
+      downloadSizeBytes: this.availableInfo?.sizeBytes ?? undefined,
+    };
+  }
+
+  private downloadingStatusPayload(): UpdatesStatusPayload {
+    return {
+      checking: true,
+      downloading: true,
+      availableVersion: this.availableInfo?.version,
+      releaseNotes: this.availableInfo?.releaseNotes ?? undefined,
+      releaseDate: this.availableInfo?.releaseDate,
+      downloadPercent: this.downloadProgress?.percent,
+      bytesPerSecond: this.downloadProgress?.bytesPerSecond,
+      downloadSizeBytes: this.availableInfo?.sizeBytes ?? undefined,
+    };
+  }
+
   private handleError(error: Error): void {
     this.clearCheckTimeout();
     this.log.error("Auto update error", {
       message: error.message,
       stack: error.stack,
-      feedUrl: this.feedUrl,
       state: this.state,
     });
 
@@ -307,7 +370,7 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     }
   }
 
-  private handleUpdateAvailable(): void {
+  private handleUpdateAvailable(info: UpdateAvailableInfo): void {
     if (this.isUpdateStaged()) {
       this.log.info(
         "Ignoring update-available because an update is already staged",
@@ -319,9 +382,42 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     }
 
     this.clearCheckTimeout();
-    this.transitionTo("downloading", { reason: "update available" });
-    this.log.info("Update available, downloading...");
-    this.emitStatus({ checking: true, downloading: true });
+    this.availableInfo = info;
+    this.downloadProgress = null;
+
+    if (this.autoDownloadEnabled) {
+      this.transitionTo("downloading", {
+        reason: "update available (auto-download)",
+        incomingVersion: info.version,
+      });
+      this.log.info("Update available, auto-downloading...", {
+        version: info.version,
+      });
+      this.updater.download();
+      this.emitStatus(this.downloadingStatusPayload());
+      return;
+    }
+
+    this.transitionTo("available", {
+      reason: "update available",
+      incomingVersion: info.version,
+    });
+    this.log.info("Update available, awaiting user download", {
+      version: info.version,
+    });
+    this.emitStatus(this.availableStatusPayload());
+  }
+
+  private handleDownloadProgress(progress: UpdateDownloadProgress): void {
+    if (this.state !== "downloading") {
+      return;
+    }
+    this.downloadProgress = progress;
+    const now = Date.now();
+    if (now - this.lastProgressEmit >= 400 || progress.percent >= 100) {
+      this.lastProgressEmit = now;
+      this.emitStatus(this.downloadingStatusPayload());
+    }
   }
 
   private handleNoUpdate(): void {
@@ -347,21 +443,21 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     }
   }
 
-  private handleUpdateDownloaded(releaseName?: string): void {
+  private handleUpdateDownloaded(version?: string): void {
     this.clearCheckTimeout();
 
     if (this.isUpdateStaged()) {
       this.log.info("Ignoring duplicate update-downloaded event", {
         existingVersion: this.downloadedVersion,
-        incomingVersion: releaseName,
+        incomingVersion: version,
       });
       return;
     }
 
-    this.downloadedVersion = releaseName ?? null;
+    this.downloadedVersion = version ?? null;
     this.transitionTo("ready", {
       reason: "update downloaded",
-      incomingVersion: releaseName ?? null,
+      incomingVersion: version ?? null,
     });
     this.clearCheckInterval();
     this.emitStatus(this.stagedStatusPayload());

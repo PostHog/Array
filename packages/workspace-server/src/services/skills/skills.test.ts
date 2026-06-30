@@ -480,6 +480,28 @@ describe("createSkill", () => {
 });
 
 describe("write-path guard", () => {
+  it("only bundles skills from discovery roots", async () => {
+    const skillPath = await createSkill(repoSkillsDir, "alpha");
+    const rogue = path.join(root, "rogue");
+    await createSkill(root, "rogue");
+    const service = makeService();
+
+    const bundled = await service.bundleLocalSkill({
+      name: "alpha",
+      source: "repo",
+      path: skillPath,
+    });
+    expect(bundled.fileName).toBe("alpha.zip");
+
+    await expect(
+      service.bundleLocalSkill({
+        name: "rogue",
+        source: "user",
+        path: rogue,
+      }),
+    ).rejects.toThrow("not a known skill directory");
+  });
+
   it.each([
     ["bundled skill", () => path.join(pluginPath, "skills", "bundled-skill")],
     ["arbitrary directory", () => path.join(root, "rogue")],

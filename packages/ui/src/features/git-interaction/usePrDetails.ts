@@ -33,6 +33,7 @@ export function usePrDetails(
     ...trpc.git.getPrDetailsByUrl.queryOptions({ prUrl: prUrl as string }),
     enabled: !!prUrl,
     staleTime: 60_000,
+    placeholderData: (prev) => prev,
     retry: 1,
   });
 
