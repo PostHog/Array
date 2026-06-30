@@ -2284,4 +2284,44 @@ describe("AgentServer pending user attachments", () => {
     expect(result).toBeNull();
     expect(getTaskRun).not.toHaveBeenCalled();
   });
+
+  it("warns once (not twice) about a missing artifact across the speculative and post-refetch resolves", async () => {
+    const internals = buildInternals();
+    // A non-empty manifest that never lists the requested id — so getArtifactsById
+    // reaches its per-id "missing" warning on both the pre- and post-refetch calls
+    // (an empty manifest would short-circuit before warning at all).
+    const decoyManifest = [
+      {
+        id: "unrelated-artifact",
+        name: "other.txt",
+        type: "user_attachment" as const,
+      },
+    ];
+    internals.posthogAPI.getTaskRun = vi.fn(async () =>
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: decoyManifest,
+      }),
+    );
+    const loggerHost = internals as unknown as {
+      logger: { warn: (...args: unknown[]) => void };
+    };
+    const warnSpy = vi
+      .spyOn(loggerHost.logger, "warn")
+      .mockImplementation(() => {});
+
+    await internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: decoyManifest,
+      }),
+    );
+
+    // The speculative pre-refetch resolve stays quiet (a miss there is expected);
+    // only the post-refetch resolve emits the per-id "missing" warning.
+    const manifestWarnings = warnSpy.mock.calls.filter(
+      ([message]) => message === "Pending artifact missing from run manifest",
+    );
+    expect(manifestWarnings).toHaveLength(1);
+  });
 });

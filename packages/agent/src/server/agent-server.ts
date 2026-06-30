@@ -1772,7 +1772,9 @@ export class AgentServer {
     // a transient gap doesn't drop the attachment and send the agent the bare
     // "Attached files: …" description instead of the file it was promised.
     let manifest = taskRun.artifacts ?? [];
-    let resolvedArtifacts = this.getArtifactsById(manifest, artifactIds);
+    let resolvedArtifacts = this.getArtifactsById(manifest, artifactIds, {
+      warnOnMissing: false,
+    });
     if (
       artifactIds.length > 0 &&
       resolvedArtifacts.length < artifactIds.length
@@ -1924,6 +1926,10 @@ export class AgentServer {
   private getArtifactsById(
     artifacts: TaskRunArtifact[] | undefined,
     artifactIds: string[],
+    // The speculative pre-refetch resolve passes false: a miss there is expected
+    // (it's what triggers the refetch), so warning would be premature and would
+    // double up with the post-refetch warning for a genuinely missing artifact.
+    { warnOnMissing = true }: { warnOnMissing?: boolean } = {},
   ): TaskRunArtifact[] {
     if (!artifacts?.length || artifactIds.length === 0) {
       return [];
@@ -1941,9 +1947,11 @@ export class AgentServer {
     return artifactIds.flatMap((artifactId) => {
       const artifact = artifactsById.get(artifactId);
       if (!artifact) {
-        this.logger.warn("Pending artifact missing from run manifest", {
-          artifactId,
-        });
+        if (warnOnMissing) {
+          this.logger.warn("Pending artifact missing from run manifest", {
+            artifactId,
+          });
+        }
         return [];
       }
 
