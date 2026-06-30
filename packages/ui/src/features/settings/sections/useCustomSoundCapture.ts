@@ -121,6 +121,11 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
   const previewRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  // Monotonic capture id. An in-flight acceptBlob (awaiting decode/duration
+  // read) checks this before dispatching and bails if a newer capture started
+  // or the dialog reset/closed — so a stale result can't repopulate a reopened
+  // dialog or let an older import overwrite a newer selection.
+  const captureSeqRef = useRef(0);
 
   const stopStream = useCallback(() => {
     for (const track of streamRef.current?.getTracks() ?? []) {
@@ -152,6 +157,8 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
   // recorder's handlers first so a late onstop can't dispatch into a dialog
   // that's already closing.
   const releaseResources = useCallback(() => {
+    // Supersede any in-flight capture so its decode can't dispatch post-close.
+    captureSeqRef.current++;
     stopTimer();
     const recorder = recorderRef.current;
     if (recorder) {
@@ -184,18 +191,27 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
       fallbackDurationMs: number | null,
       source: "recording" | "import",
     ) => {
+      // Tag this capture. If a newer capture starts, or the dialog resets /
+      // closes, while we're awaiting decode/duration-read, the commits below
+      // no-op — so a stale result can't repopulate a reopened dialog or
+      // overwrite a newer clip.
+      const myCapture = ++captureSeqRef.current;
+      const commit = (action: DialogAction) => {
+        if (captureSeqRef.current === myCapture) dispatch(action);
+      };
+
       let dataUrl: string;
       try {
         dataUrl = await blobToDataUrl(blob);
       } catch {
-        dispatch({
+        commit({
           type: "error",
           message: "Could not read the audio data. Try a different file.",
         });
         return;
       }
       if (dataUrlByteLength(dataUrl) > MAX_CUSTOM_SOUND_BYTES) {
-        dispatch({
+        commit({
           type: "error",
           message: "That clip is too large. Keep it short (max ~1 MB).",
         });
@@ -213,7 +229,7 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
         durationMs === null ||
         durationMs > MAX_CUSTOM_SOUND_DURATION_MS + DURATION_TOLERANCE_MS
       ) {
-        dispatch({
+        commit({
           type: "error",
           message:
             durationMs === null
@@ -227,7 +243,7 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
       // reports it granted). Saving it would produce a sound that plays
       // nothing, so reject it with a pointer at the likely cause.
       if (source === "recording" && buffer && isClipSilent(buffer)) {
-        dispatch({
+        commit({
           type: "error",
           message:
             "We didn't pick up any audio. Check that PostHog Code has microphone access, then try again.",
@@ -237,7 +253,7 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
       // Only surface the trim offer when there's a meaningful amount of silence
       // to strip from either end.
       const bounds = buffer ? detectSilenceBounds(buffer) : null;
-      dispatch({
+      commit({
         type: "clipReady",
         clip: {
           dataUrl,
@@ -253,6 +269,8 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
   );
 
   const startRecording = useCallback(async () => {
+    // A new recording supersedes any in-flight import decode.
+    captureSeqRef.current++;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -354,6 +372,8 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
   }, [isTrimmed, stopPreview]);
 
   const discardClip = useCallback(() => {
+    // Supersede any in-flight capture so it can't repopulate after discard.
+    captureSeqRef.current++;
     stopPreview();
     dispatch({ type: "clearClip" });
   }, [stopPreview]);
