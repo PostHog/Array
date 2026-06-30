@@ -1634,7 +1634,12 @@ export class SessionService {
       });
     }
 
-    if (isUserPromptEcho) {
+    // A steer rides on `session/prompt` but has no optimistic placeholder of its
+    // own (sendSteerPrompt skips applyOptimisticPrompt). Replacing here would
+    // wipe *other* in-flight messages' placeholders (e.g. a follow-up sent
+    // moments later), making them vanish until their own echo lands. Append it
+    // instead so it renders without disturbing pending placeholders.
+    if (isUserPromptEcho && !this.isSteerMessage(acpMsg.message)) {
       this.d.store.replaceOptimisticWithEvent(taskRunId, acpMsg);
     } else {
       this.d.store.appendEvents(taskRunId, [acpMsg]);
