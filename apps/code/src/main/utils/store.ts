@@ -54,3 +54,7 @@ export const windowStateStore = new Store<WindowStateSchema>({
     zoomLevel: 0,
   },
 });
+
+export function saveZoomLevel(level: number): void {
+  windowStateStore.set("zoomLevel", level);
+}

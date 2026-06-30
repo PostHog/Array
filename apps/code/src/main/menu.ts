@@ -20,7 +20,7 @@ import { container } from "./di/container";
 import { AUTH_SERVICE, UPDATES_SERVICE } from "./di/tokens";
 import { isDevBuild } from "./utils/env";
 import { getLogFilePath } from "./utils/logger";
-import { saveZoomLevel } from "./window";
+import { saveZoomLevel } from "./utils/store";
 
 // Zoom is measured in Electron "levels" (factor = 1.2 ** level; 0 = 100%).
 // ZOOM_STEP is one Zoom In/Out notch; the bounds clamp the level so a runaway

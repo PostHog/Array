@@ -19,7 +19,11 @@ import { trpcRouter } from "./trpc/router";
 import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
-import { type WindowStateSchema, windowStateStore } from "./utils/store";
+import {
+  saveZoomLevel,
+  type WindowStateSchema,
+  windowStateStore,
+} from "./utils/store";
 
 const log = logger.scope("window");
 
@@ -71,10 +75,6 @@ export function saveWindowState(window: BrowserWindow): void {
     windowStateStore.set("width", bounds.width);
     windowStateStore.set("height", bounds.height);
   }
-}
-
-export function saveZoomLevel(level: number): void {
-  windowStateStore.set("zoomLevel", level);
 }
 
 let mainWindow: BrowserWindow | null = null;
