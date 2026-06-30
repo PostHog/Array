@@ -40,6 +40,7 @@ const MODELS_WITH_EFFORT = new Set([
 const MODELS_WITH_XHIGH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
+  "claude-sonnet-5",
   "claude-fable-5",
 ]);
 

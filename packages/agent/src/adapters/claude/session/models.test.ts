@@ -26,6 +26,10 @@ describe("toSdkModelId", () => {
     expect(toSdkModelId("claude-fable-5")).toBe("claude-fable-5");
   });
 
+  it("passes claude-sonnet-5 through unchanged (no SDK alias)", () => {
+    expect(toSdkModelId("claude-sonnet-5")).toBe("claude-sonnet-5");
+  });
+
   it("passes deprecated gateway IDs through unchanged", () => {
     expect(toSdkModelId("claude-opus-4-6")).toBe("claude-opus-4-6");
     expect(toSdkModelId("claude-sonnet-4-5")).toBe("claude-sonnet-4-5");
@@ -84,12 +88,14 @@ describe("resolveEffortForModel", () => {
     ["claude-opus-4-8", undefined, "high"],
     ["claude-opus-4-7", undefined, "high"],
     ["claude-sonnet-4-6", undefined, "high"],
+    ["claude-sonnet-5", undefined, "high"],
     // Models without effort support stay unset (SDK disables thinking).
     ["claude-haiku-4-5", undefined, undefined],
     ["claude-opus-4-6", undefined, undefined],
     // An explicit choice is always honored, including on adaptive-only models.
     ["claude-opus-4-8", "low", "low"],
     ["claude-fable-5", "max", "max"],
+    ["claude-sonnet-5", "max", "max"],
   ] as const)(
     "resolveEffortForModel(%s, %s) === %s",
     (modelId, effort, expected) => {
