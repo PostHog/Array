@@ -110,7 +110,7 @@ ${truncatedDiff}${contextSection}`;
     directoryPath: string,
     conversationContext?: string,
   ): Promise<{ title: string; body: string }> {
-    await this.gitDiff.fetchIfStale(directoryPath);
+    await this.gitDiff.fetchFromRemote(directoryPath);
 
     const [defaultBranch, currentBranch, prTemplate] = await Promise.all([
       this.gitDiff.getDefaultBranch(directoryPath),

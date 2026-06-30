@@ -26,7 +26,7 @@ function makeDiffSource(over: Partial<GitDiffSource> = {}): GitDiffSource {
     getDiffAgainstRemote: vi.fn().mockResolvedValue(""),
     getCommitsBetweenBranches: vi.fn().mockResolvedValue([]),
     getPrTemplate: vi.fn().mockResolvedValue({ template: null }),
-    fetchIfStale: vi.fn().mockResolvedValue(undefined),
+    fetchFromRemote: vi.fn().mockResolvedValue(undefined),
     ...over,
   };
 }
@@ -97,7 +97,7 @@ describe("GitPrService.generatePrTitleAndBody", () => {
 
     expect(result.title).toBe("feat: add widget");
     expect(result.body).toBe("TL;DR: adds a widget.");
-    expect(diffSource.fetchIfStale).toHaveBeenCalledWith("/repo");
+    expect(diffSource.fetchFromRemote).toHaveBeenCalledWith("/repo");
   });
 });
 

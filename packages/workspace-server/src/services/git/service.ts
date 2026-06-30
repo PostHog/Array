@@ -443,7 +443,12 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
     try {
       await gitFetch(directoryPath);
       this.lastFetchTime.set(directoryPath, Date.now());
-    } catch {}
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(
+        `[git-service] fetch failed for ${directoryPath}; using local refs: ${message}\n`,
+      );
+    }
   }
 
   private async fetchIfStale(directoryPath: string): Promise<void> {

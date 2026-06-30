@@ -503,7 +503,7 @@ container.bind(GIT_DIFF_SOURCE).toDynamicValue((ctx) => {
       }),
     getPrTemplate: (directoryPath: string) =>
       git().getPrTemplate.query({ directoryPath }),
-    fetchIfStale: async (directoryPath: string) => {
+    fetchFromRemote: async (directoryPath: string) => {
       await git().getGitSyncStatus.query({
         directoryPath,
         fetchFromRemote: true,
