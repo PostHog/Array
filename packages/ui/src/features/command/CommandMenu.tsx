@@ -10,6 +10,8 @@ import {
   AutocompleteStatus,
   Dialog,
   DialogContent,
+  Kbd,
+  KbdGroup,
 } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import {
@@ -21,6 +23,10 @@ import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
+import {
+  formatHotkeyParts,
+  SHORTCUTS,
+} from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import {
@@ -62,6 +68,8 @@ type Command = {
   action: CommandMenuAction;
   /** Channel in scope for the bluebird open-channel / open-task actions. */
   channelId?: string;
+  /** Hotkey string (e.g. "mod+b") shown right-aligned when present. */
+  shortcut?: string;
   onRun: () => void;
 };
 
@@ -208,6 +216,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         label: "Settings",
         icon: <GearIcon className="h-3 w-3 text-gray-11" />,
         action: "settings",
+        shortcut: SHORTCUTS.SETTINGS,
         onRun: () => openSettingsDialog(),
       },
     ];
@@ -219,6 +228,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         label: "Toggle left sidebar",
         icon: <ViewVerticalIcon className="h-3 w-3 text-gray-11" />,
         action: "toggle-left-sidebar",
+        shortcut: SHORTCUTS.TOGGLE_LEFT_SIDEBAR,
         onRun: toggleLeftSidebar,
       },
       ...(reviewTaskId
@@ -230,6 +240,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                 <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />
               ),
               action: "open-review-panel" as CommandMenuAction,
+              shortcut: SHORTCUTS.TOGGLE_REVIEW_PANEL,
               onRun: openReviewPanel,
             },
           ]
@@ -240,6 +251,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         keywords: "create",
         icon: <FileTextIcon className="h-3 w-3 text-gray-11" />,
         action: "new-task",
+        shortcut: SHORTCUTS.NEW_TASK,
         onRun: () => {
           closeSettingsDialog();
           openTaskInput();
@@ -419,6 +431,15 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                       {cmd.detail && (
                         <span className="shrink-0 text-gray-9">
                           · #{cmd.detail}
+                        </span>
+                      )}
+                      {cmd.shortcut && (
+                        <span className="ml-auto shrink-0 pl-2">
+                          <KbdGroup>
+                            {formatHotkeyParts(cmd.shortcut).map((part) => (
+                              <Kbd key={part}>{part}</Kbd>
+                            ))}
+                          </KbdGroup>
                         </span>
                       )}
                     </AutocompleteItem>
