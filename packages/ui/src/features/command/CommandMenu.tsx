@@ -1,8 +1,4 @@
-import {
-  CaretLeftIcon,
-  CaretRightIcon,
-  HashIcon,
-} from "@phosphor-icons/react";
+import { CaretLeftIcon, CaretRightIcon, HashIcon } from "@phosphor-icons/react";
 import {
   Autocomplete,
   AutocompleteCollection,
