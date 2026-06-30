@@ -453,10 +453,9 @@ jobs:
 
   finalize-release:
     needs: [publish-macos, publish-windows, publish-linux]
-    # macOS is the primary platform: publish the release as long as macOS built
-    # successfully, even if Windows or Linux failed. always() is required so this
-    # job isn't skipped when a non-macOS publish job fails.
-    if: always() && needs.publish-macos.result == 'success'
+    # Publish only when every platform built successfully. Without an `if:` override
+    # the default `needs` gate skips this job (leaving the GitHub release a draft) if
+    # any of the macOS, Windows or Linux publish jobs fails.
     runs-on: ubuntu-latest
     permissions:
       contents: write
