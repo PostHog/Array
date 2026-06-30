@@ -1,5 +1,6 @@
 import { Terminal } from "@phosphor-icons/react";
 import { compactHomePath } from "@posthog/shared";
+import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
 import { ToolRow } from "./ToolRow";
 import {
   ContentPre,
@@ -37,6 +38,10 @@ export function ExecuteToolView({
   const description =
     executeInput?.description ?? (command ? undefined : title);
 
+  // New thread hides the inline command chip (the ChatMarker title carries it); the legacy thread
+  // keeps showing it so ConversationView is unchanged when the chat thread is toggled off.
+  const chatChrome = useChatThreadChrome();
+
   const output = stripCodeFences(getContentText(content) ?? "").replace(
     ANSI_REGEX,
     "",
@@ -53,7 +58,7 @@ export function ExecuteToolView({
       content={hasOutput ? <ContentPre>{output}</ContentPre> : undefined}
     >
       {description && <ToolTitle>{description}</ToolTitle>}
-      {command && (
+      {!chatChrome && command && (
         <ToolTitle className="min-w-0 truncate">
           <span
             className="block truncate border border-border bg-gray-5 font-mono"

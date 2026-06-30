@@ -1,4 +1,8 @@
-import type { CompletionSound } from "@posthog/ui/features/settings/settingsStore";
+import type {
+  BuiltInCompletionSound,
+  CompletionSound,
+  CustomSound,
+} from "@posthog/ui/features/settings/settingsStore";
 import bubblesUrl from "../assets/sounds/bubbles.mp3";
 import daniloUrl from "../assets/sounds/danilo.mp3";
 import dropUrl from "../assets/sounds/drop.mp3";
@@ -14,7 +18,9 @@ import slideUrl from "../assets/sounds/slide.mp3";
 import switchUrl from "../assets/sounds/switch.mp3";
 import wilhelmUrl from "../assets/sounds/wilhelm.mp3";
 
-const SOUND_URLS: Record<Exclude<CompletionSound, "none">, string> = {
+const CUSTOM_SOUND_PREFIX = "custom:";
+
+const SOUND_URLS: Record<Exclude<BuiltInCompletionSound, "none">, string> = {
   guitar: guitarUrl,
   danilo: daniloUrl,
   revi: reviUrl,
@@ -31,12 +37,60 @@ const SOUND_URLS: Record<Exclude<CompletionSound, "none">, string> = {
   icq: icqUrl,
 };
 
+const MIN_RATE = 1 / 3;
+const MAX_RATE = 3;
+const FAST_MS = 30 * 1000;
+const NORMAL_START_MS = 2 * 60 * 1000;
+const NORMAL_END_MS = 4 * 60 * 1000;
+const SLOW_MS = 30 * 60 * 1000;
+
+// Maps a task's duration to an audio playback rate so a quick task rings fast
+// (and high-pitched) while a long one drags slow (and low). Anchored at: <=30s
+// -> 3x, the 2-4min "normal" band -> 1x, >=30min -> 1/3x, with smooth
+// log-interpolation across the two ramps so the rate doesn't jump at the edges.
+export function playbackRateForTaskDuration(durationMs: number): number {
+  if (!Number.isFinite(durationMs) || durationMs <= FAST_MS) return MAX_RATE;
+  if (durationMs >= SLOW_MS) return MIN_RATE;
+  if (durationMs >= NORMAL_START_MS && durationMs <= NORMAL_END_MS) return 1;
+
+  if (durationMs < NORMAL_START_MS) {
+    const frac =
+      (Math.log(durationMs) - Math.log(FAST_MS)) /
+      (Math.log(NORMAL_START_MS) - Math.log(FAST_MS));
+    return MAX_RATE ** (1 - frac);
+  }
+
+  const frac =
+    (Math.log(durationMs) - Math.log(NORMAL_END_MS)) /
+    (Math.log(SLOW_MS) - Math.log(NORMAL_END_MS));
+  return MIN_RATE ** frac;
+}
+
 let currentAudio: HTMLAudioElement | null = null;
 
-export function playCompletionSound(sound: CompletionSound, volume = 80): void {
-  if (sound === "none") return;
+// Resolves the playable URL for a completion sound: a bundled asset URL for the
+// built-ins, or the inline data URL of a user-installed custom sound. Returns
+// null for `none`, an unknown built-in, or a `custom:` id no longer installed
+// (e.g. the active sound was deleted) — callers then play nothing.
+export function resolveSoundUrl(
+  sound: CompletionSound,
+  customSounds: CustomSound[],
+): string | null {
+  if (sound === "none") return null;
+  if (sound.startsWith(CUSTOM_SOUND_PREFIX)) {
+    const id = sound.slice(CUSTOM_SOUND_PREFIX.length);
+    return customSounds.find((s) => s.id === id)?.dataUrl ?? null;
+  }
+  return SOUND_URLS[sound as Exclude<BuiltInCompletionSound, "none">] ?? null;
+}
 
-  const url = SOUND_URLS[sound];
+export function playCompletionSound(
+  sound: CompletionSound,
+  volume = 80,
+  customSounds: CustomSound[] = [],
+  playbackRate = 1,
+): void {
+  const url = resolveSoundUrl(sound, customSounds);
   if (!url) return;
 
   if (currentAudio) {
@@ -46,6 +100,7 @@ export function playCompletionSound(sound: CompletionSound, volume = 80): void {
 
   const audio = new Audio(url);
   audio.volume = Math.max(0, Math.min(100, volume)) / 100;
+  audio.playbackRate = playbackRate;
   currentAudio = audio;
   audio.play().catch(() => {
     // Audio play can fail if user hasn't interacted with the page yet

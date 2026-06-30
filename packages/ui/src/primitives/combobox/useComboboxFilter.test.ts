@@ -72,4 +72,59 @@ describe("useComboboxFilter", () => {
     );
     expect(result.current.filtered[0]).toBe("gamma");
   });
+
+  describe("weighted multi-key search (keys option)", () => {
+    interface Skill {
+      name: string;
+      description: string;
+    }
+    const skills: Skill[] = [
+      { name: "deploy-app", description: "Ship code to production" },
+      { name: "run-tests", description: "Deploy a test runner and report" },
+      { name: "lint", description: "Check formatting" },
+    ];
+    const keys = [
+      { name: "name" as const, weight: 0.7 },
+      { name: "description" as const, weight: 0.3 },
+    ];
+    const getValue = (s: Skill) => `${s.name} ${s.description}`;
+
+    const runSearch = (query: string) => {
+      const { result } = renderHook(() =>
+        useComboboxFilter(skills, { open: true, keys }, getValue),
+      );
+      act(() => {
+        result.current.onSearchChange(query);
+      });
+      act(() => {
+        vi.advanceTimersByTime(150);
+      });
+      return result.current.filtered;
+    };
+
+    it("ranks a name match above a description-only match", () => {
+      // "deploy" hits deploy-app's name (weight 0.7) and run-tests' description
+      // (weight 0.3); the name match must win.
+      const filtered = runSearch("deploy");
+      expect(filtered.map((s) => s.name)).toEqual(["deploy-app", "run-tests"]);
+    });
+
+    it("promotes prefix matches for exact-match priority", () => {
+      const prefixFirst: Skill[] = [
+        { name: "unit-test", description: "Runs the unit suite" },
+        { name: "test-runner", description: "Generic harness" },
+      ];
+      const { result } = renderHook(() =>
+        useComboboxFilter(prefixFirst, { open: true, keys }, getValue),
+      );
+      act(() => {
+        result.current.onSearchChange("test");
+      });
+      act(() => {
+        vi.advanceTimersByTime(150);
+      });
+      // Both names contain "test", but only "test-runner" starts with it.
+      expect(result.current.filtered[0]?.name).toBe("test-runner");
+    });
+  });
 });

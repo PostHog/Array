@@ -121,6 +121,28 @@ export const defaultAdditionalDirectories = sqliteTable(
   },
 );
 
+export const claudeSessionImports = sqliteTable(
+  "claude_session_imports",
+  {
+    id: id(),
+    /** Session id of the original Claude Code CLI session in ~/.claude. */
+    sourceSessionId: text().notNull(),
+    /** Fresh session id the imported snapshot lives under in CLAUDE_CONFIG_DIR. */
+    importedSessionId: text().notNull().unique(),
+    taskId: text().notNull(),
+    repoPath: text().notNull(),
+    /** Fingerprint of the source file at import time, for divergence detection. */
+    sourceMtimeMs: integer().notNull(),
+    sourceSizeBytes: integer().notNull(),
+    sourceLastEntryUuid: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("claude_session_imports_source_idx").on(t.sourceSessionId),
+    index("claude_session_imports_task_idx").on(t.taskId),
+  ],
+);
+
 export const authPreferences = sqliteTable(
   "auth_preferences",
   {
@@ -156,4 +178,59 @@ export const authOrgProjectPreferences = sqliteTable(
       t.orgId,
     ),
   ],
+);
+
+/**
+ * Windows holding browser-tab strips in the Channels canvas surface. One row
+ * per OS window (or web window). The primary window is never torn down by
+ * closing its last tab; secondaries are.
+ */
+export const browserWindows = sqliteTable("browser_windows", {
+  id: id(),
+  isPrimary: integer({ mode: "boolean" }).notNull().default(false),
+  /** Saved geometry for session restore, JSON {x,y,width,height}. Null on web. */
+  bounds: text({ mode: "json" }).$type<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(),
+  /** Focused tab in this window; null = channels landing. */
+  activeTabId: text(),
+  /** Ordering across windows for deterministic restore. */
+  position: integer().notNull().default(0),
+  /** Epoch ms. */
+  createdAt: integer().notNull(),
+  updatedAt: integer().notNull(),
+});
+
+/**
+ * Open tabs in the Channels canvas surface. A tab references a canvas
+ * (dashboard) and the channel it belongs to; display is resolved at render.
+ * `scrollState` is reserved/unwired for later per-tab state (scroll restore).
+ */
+export const browserTabs = sqliteTable(
+  "browser_tabs",
+  {
+    id: id(),
+    windowId: text()
+      .notNull()
+      .references(() => browserWindows.id, { onDelete: "cascade" }),
+    /** Canvas this tab shows. Null for a task tab or a blank tab. */
+    dashboardId: text(),
+    /** Task this tab shows. Null for a canvas tab or a blank tab. */
+    taskId: text(),
+    channelId: text(),
+    /** Channel sub-section (inbox/artifacts/history/context). Null = channel
+     * home, or a non-channel tab. */
+    channelSection: text(),
+    /** Gap-spaced ordering key within a window. */
+    position: integer().notNull(),
+    /** Reserved/unwired. Opaque JSON for future per-tab state. */
+    scrollState: text({ mode: "json" }).$type<unknown>(),
+    /** Epoch ms. */
+    createdAt: integer().notNull(),
+    lastActiveAt: integer().notNull(),
+  },
+  (t) => [index("browser_tabs_window_idx").on(t.windowId)],
 );

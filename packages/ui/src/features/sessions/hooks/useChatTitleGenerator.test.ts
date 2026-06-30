@@ -14,6 +14,8 @@ const mockSetQueryData = vi.hoisted(() => vi.fn());
 const mockUpdateSessionTaskTitle = vi.hoisted(() => vi.fn());
 const mockPrompts = vi.hoisted(() => ({ value: [] as string[] }));
 const mockSessionStoreSetters = vi.hoisted(() => ({ updateSession: vi.fn() }));
+const mockTitleAttachmentPaths = vi.hoisted(() => ({ value: [] as string[] }));
+const mockTitleAttachmentClear = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({
@@ -64,6 +66,14 @@ vi.mock("@posthog/ui/shell/logger", () => ({
   },
 }));
 
+vi.mock("@posthog/ui/shell/titleAttachmentStore", () => ({
+  titleAttachmentStoreApi: {
+    get: () => mockTitleAttachmentPaths.value,
+    set: vi.fn(),
+    clear: mockTitleAttachmentClear,
+  },
+}));
+
 vi.mock("@posthog/ui/features/sessions/sessionStore", () => {
   const state = {
     taskIdIndex: { "task-1": "run-1" },
@@ -108,6 +118,7 @@ describe("useChatTitleGenerator", () => {
     vi.clearAllMocks();
     mockIsAuthenticated.value = true;
     mockPrompts.value = [];
+    mockTitleAttachmentPaths.value = [];
     mockEnrichDescription.mockImplementation((desc: string) =>
       Promise.resolve(desc),
     );
@@ -130,7 +141,10 @@ describe("useChatTitleGenerator", () => {
     renderHook(() => useChatTitleGenerator(createTask()));
 
     await waitFor(() => {
-      expect(mockEnrichDescription).toHaveBeenCalledWith("Fix the login bug");
+      expect(mockEnrichDescription).toHaveBeenCalledWith(
+        "Fix the login bug",
+        [],
+      );
     });
     await waitFor(() => {
       expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
@@ -266,9 +280,62 @@ describe("useChatTitleGenerator", () => {
     await waitFor(() => {
       expect(mockEnrichDescription).toHaveBeenCalledWith(
         '1. <file path="/tmp/code.ts" />',
+        [],
       );
       expect(mockGenerateTitle).toHaveBeenCalledWith("enriched content");
     });
+  });
+
+  it("passes stashed local attachment paths and clears them after naming", async () => {
+    mockTitleAttachmentPaths.value = ["/tmp/clip/pasted-text.txt"];
+    mockEnrichDescription.mockResolvedValue("Refactor the auth flow");
+    mockGenerateTitle.mockResolvedValue({
+      title: "Refactor auth flow",
+      summary: "",
+    });
+    mockPrompts.value = ["[Attached files: pasted-text.txt]"];
+
+    renderHook(() =>
+      useChatTitleGenerator(
+        createTask({
+          title: "",
+          description: "Attached files: pasted-text.txt",
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(mockEnrichDescription).toHaveBeenCalledWith(
+        "1. [Attached files: pasted-text.txt]",
+        ["/tmp/clip/pasted-text.txt"],
+      );
+    });
+    await waitFor(() => {
+      expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
+        title: "Refactor auth flow",
+      });
+    });
+    expect(mockTitleAttachmentClear).toHaveBeenCalledWith(TASK_ID);
+  });
+
+  it("does not clear stashed paths when generation returns null (keeps them for prompt-path retry)", async () => {
+    mockTitleAttachmentPaths.value = ["/tmp/clip/pasted-text.txt"];
+    mockGenerateTitle.mockResolvedValue(null);
+    mockPrompts.value = ["[Attached files: pasted-text.txt]"];
+
+    renderHook(() =>
+      useChatTitleGenerator(
+        createTask({
+          title: "",
+          description: "Attached files: pasted-text.txt",
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(mockGenerateTitle).toHaveBeenCalled();
+    });
+    expect(mockTitleAttachmentClear).not.toHaveBeenCalled();
   });
 
   it("updates conversation summary when returned", async () => {

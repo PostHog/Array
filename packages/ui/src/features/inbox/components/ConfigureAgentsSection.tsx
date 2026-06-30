@@ -49,7 +49,6 @@ import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
-import { toast as sonnerToast } from "sonner";
 
 const AUTONOMY_SETUP_PROMPT = `Set up PostHog Self-driving for this product.
 
@@ -315,7 +314,7 @@ function SetupTaskSection() {
       const model = resolvedModel ?? settings.lastUsedModel;
 
       if (!model) {
-        sonnerToast.dismiss(toastId);
+        toast.dismiss(toastId);
         trackSetupFailure();
         toast.error("Failed to start Self-driving setup", {
           description:
@@ -350,7 +349,7 @@ function SetupTaskSection() {
         void openTask(output.task);
       });
 
-      sonnerToast.dismiss(toastId);
+      toast.dismiss(toastId);
       track(ANALYTICS_EVENTS.AGENTS_ACTION, {
         action_type: "run_setup_agent",
         success: result.success,
@@ -376,7 +375,7 @@ function SetupTaskSection() {
         });
       }
     } catch (error) {
-      sonnerToast.dismiss(toastId);
+      toast.dismiss(toastId);
       track(ANALYTICS_EVENTS.AGENTS_ACTION, {
         action_type: "run_setup_agent",
         success: false,

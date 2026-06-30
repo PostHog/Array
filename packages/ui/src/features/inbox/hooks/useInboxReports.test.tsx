@@ -17,7 +17,9 @@ vi.mock("@posthog/ui/features/auth/authClient", () => ({
   useOptionalAuthenticatedClient: () => mockClient,
 }));
 
-vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
+vi.mock("@posthog/ui/primitives/toast", () => ({
+  toast: { error: vi.fn() },
+}));
 
 import { reportKeys, useUpdateSuggestedReviewers } from "./useInboxReports";
 

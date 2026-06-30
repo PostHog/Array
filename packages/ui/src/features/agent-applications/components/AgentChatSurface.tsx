@@ -6,13 +6,13 @@ import {
   InputGroupTextarea,
 } from "@posthog/quill";
 import type { AcpMessage } from "@posthog/shared";
-import { ConversationView } from "@posthog/ui/features/sessions/components/ConversationView";
+import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { type KeyboardEvent, type ReactNode, useState } from "react";
 
 /**
  * The conversation + composer half of a deployed-agent chat, shared by the
- * per-agent preview pane and the agent builder dock. Renders the live ACP messages
+ * per-agent chat pane and the agent builder dock. Renders the live ACP messages
  * through the native `ConversationView` (collapse disabled so the agent's prose
  * shows inline) and an auto-growing composer with Enter-to-send / Cancel that
  * mirrors the main task chat's input shell.
@@ -65,7 +65,7 @@ export function AgentChatSurface({
             </div>
           ))
         ) : (
-          <ConversationView
+          <ThreadView
             events={messages}
             isPromptPending={isStreaming}
             collapseMode="none"

@@ -51,6 +51,40 @@ describe("warmTask", () => {
           repository: "posthog/posthog",
           github_integration: 7,
           branch: "main",
+          runtime_adapter: null,
+          model: null,
+          reasoning_effort: null,
+        }),
+      }),
+    );
+  });
+
+  it("forwards the selected runtime, model, and reasoning effort", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ task_id: "task-1", run_id: "run-1" }), {
+        status: 200,
+      }),
+    );
+
+    await warmTask({
+      repository: "posthog/posthog",
+      github_integration: 7,
+      branch: "main",
+      runtime_adapter: "claude",
+      model: "claude-opus-4-8",
+      reasoning_effort: "high",
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://app.posthog.test/api/projects/42/tasks/warm/",
+      expect.objectContaining({
+        body: JSON.stringify({
+          repository: "posthog/posthog",
+          github_integration: 7,
+          branch: "main",
+          runtime_adapter: "claude",
+          model: "claude-opus-4-8",
+          reasoning_effort: "high",
         }),
       }),
     );
@@ -72,6 +106,9 @@ describe("warmTask", () => {
           repository: "posthog/posthog",
           github_integration: 7,
           branch: null,
+          runtime_adapter: null,
+          model: null,
+          reasoning_effort: null,
         }),
       }),
     );

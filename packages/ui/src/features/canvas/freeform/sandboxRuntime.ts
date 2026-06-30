@@ -21,6 +21,112 @@ import {
 //     and forbids third-party egress entirely.
 export type SandboxMode = "edit" | "view";
 
+// Which in-browser Tailwind engine the EDIT-mode sandbox runs. "v4" matches the
+// Quill version we ship (Quill is authored for Tailwind v4) and lets us drop the
+// v3 Play CDN's preflight-off hack, the `not-disabled` variant shim, the manual
+// `@layer base` reset, and the hand-mirrored color map — v4's layered preflight
+// and `@theme inline` token mapping cover all of it. "v3" keeps the legacy Play
+// CDN path as a one-line fallback while v4 is validated against real canvases.
+const TAILWIND_ENGINE: "v3" | "v4" = "v4";
+
+// Tailwind v4 browser JIT. `@import "tailwindcss"` brings in v4's layered theme/
+// base(preflight)/components/utilities — so preflight sits in `@layer base`,
+// BELOW Quill's `@layer components` (primitives.css), and can't clobber Quill
+// the way v3's unlayered preflight did. `@theme inline` maps Quill's CSS-variable
+// tokens to v4 color keys so `bg-card`, `text-muted-foreground`, `bg-fill-hover`
+// etc. generate, referencing the vars tokens.css defines on :root/.dark. Only
+// DEFINED tokens are mapped (no secondary/accent/popover — those have no vars).
+// The version is PINNED (frozen, like freeformWhitelist) so every canvas renders
+// against a known Tailwind build and can't drift onto a new release silently.
+const TAILWIND_V4 = `<script type="module" src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1"></script>
+<style type="text/tailwindcss">
+@import "tailwindcss";
+/* Drive \`dark:\` off the \`.dark\` class the host toggles (not prefers-color-scheme),
+   so the canvas follows the user's PostHog theme even when it differs from the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+@theme inline {
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chrome: var(--chrome);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-fill-hover: var(--fill-hover);
+  --color-fill-selected: var(--fill-selected);
+  --color-fill-expanded: var(--fill-expanded);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+</style>`;
+
+// A LAYERED element reset for the LEGACY v3 path only. v3's Play CDN preflight is
+// unlayered (it clobbers Quill's `@layer components`), so we run it with preflight
+// off and ship this minimal reset in `@layer base` — pinned below `components` so
+// Quill keeps winning and bare HTML elements still get tamed. v4 doesn't need it
+// (its own preflight is correctly layered).
+const LEGACY_RESET = `<style>
+@layer base, components, utilities;
+@layer base {
+  h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd { margin: 0; }
+  h1, h2, h3, h4, h5, h6 { font-size: inherit; font-weight: inherit; }
+  ul, ol { margin: 0; padding: 0; list-style: none; }
+  a { color: inherit; text-decoration: inherit; }
+  img, svg, video, canvas { display: block; max-width: 100%; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { padding: 0; background: none; border: 0; cursor: pointer; }
+  table { border-collapse: collapse; }
+}
+</style>`;
+
+// Legacy Tailwind v3 Play CDN path (preflight off + hand-mirrored token map).
+// Retained as a fallback behind TAILWIND_ENGINE while v4 is validated.
+const TAILWIND_V3 = `<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+  corePlugins: { preflight: false },
+  darkMode: "class",
+  plugins: [
+    tailwind.plugin(({ addVariant }) => {
+      addVariant("not-disabled", "&:not(:disabled)");
+    }),
+  ],
+  theme: { extend: {
+    colors: {
+      border: "var(--border)", input: "var(--input)", ring: "var(--ring)",
+      background: "var(--background)", foreground: "var(--foreground)",
+      chrome: "var(--chrome)",
+      primary: { DEFAULT: "var(--primary)", foreground: "var(--primary-foreground)" },
+      destructive: { DEFAULT: "var(--destructive)", foreground: "var(--destructive-foreground)" },
+      muted: { DEFAULT: "var(--muted)", foreground: "var(--muted-foreground)" },
+      card: { DEFAULT: "var(--card)", foreground: "var(--card-foreground)" },
+      success: { DEFAULT: "var(--success)", foreground: "var(--success-foreground)" },
+      warning: { DEFAULT: "var(--warning)", foreground: "var(--warning-foreground)" },
+      info: { DEFAULT: "var(--info)", foreground: "var(--info-foreground)" },
+      fill: {
+        hover: "var(--fill-hover)",
+        selected: "var(--fill-selected)",
+        expanded: "var(--fill-expanded)",
+      },
+    },
+    borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)" },
+  } } };
+</script>`;
+
 export function buildSandboxDocument(
   mode: SandboxMode,
   // The PostHog host, when in-iframe analytics/replay is enabled. Opens CSP for
@@ -33,67 +139,24 @@ export function buildSandboxDocument(
   // Quill components emit Tailwind utility classes (layout — `inline-flex`,
   // `items-center` — AND token colors like `bg-card`, `text-muted-foreground`)
   // ALONGSIDE their `.quill-*` BEM classes. The linked Quill stylesheets style
-  // the BEM half; the utilities are dead without Tailwind, so components mislay
-  // out. The sandbox has no build step, so in EDIT mode we load the Tailwind Play
-  // CDN (JIT-in-browser; a MutationObserver picks up classes as the app mounts)
-  // and map Quill's semantic color tokens to the CSS variables tokens.css defines.
-  // View/published mode forbids the CDN (locked egress) — that tier must self-host
-  // a compiled stylesheet (Phase 2).
+  // the BEM half; the utilities are dead without Tailwind, so the sandbox runs a
+  // JIT-in-browser Tailwind in EDIT mode (View/published mode forbids the CDN —
+  // that tier self-hosts a compiled stylesheet, Phase 2). Quill is authored for
+  // Tailwind v4, so we run the v4 browser engine: its preflight is properly
+  // `@layer base` (sorts BELOW Quill's `@layer components`, so it can't clobber
+  // them — no preflight-off hack, no hand-rolled reset), it has native `not-*`
+  // variants (no `not-disabled` shim), and `@theme inline` maps Quill's tokens
+  // straight to v4 color keys. The whole hand-mirrored color map + reset the v3
+  // Play CDN forced us into collapses to the token block below.
   const tailwind =
     mode === "edit"
-      ? `<script src="https://cdn.tailwindcss.com"></script>
-<script>
-  tailwind.config = {
-  // Preflight OFF: its UNLAYERED form reset (e.g. \`button{background-color:transparent}\`)
-  // beats Quill's component styles, which live in \`@layer components\` — unlayered always
-  // wins over layered. That stripped Quill buttons (e.g. the Select trigger) of their
-  // border/background while box-shadow-bordered Cards survived. Quill self-styles and we
-  // ship our own minimal reset, so Preflight isn't needed; utilities still generate.
-  // The FULL Quill color/fill token map (mirrors the @theme inline block in
-  // quill/tokens.css). Pure-utility components like DateTimePicker have NO BEM
-  // fallback in primitives.css — they rely entirely on these utilities (e.g. the
-  // calendar's \`bg-fill-hover\`, \`bg-fill-selected\`), so every token Quill maps
-  // must be here or the component renders half-styled.
-  corePlugins: { preflight: false },
-  // Drive \`dark:\` utilities off the \`.dark\` class (which the host toggles via
-  // the init theme), NOT prefers-color-scheme — so the canvas follows the user's
-  // PostHog theme, matching the main app, even when it differs from the OS.
-  darkMode: "class",
-  plugins: [
-    // Quill authors for Tailwind v4; \`not-disabled:\` is a v4 variant the Play
-    // CDN (v3) lacks. The calendar uses \`not-disabled:hover:bg-fill-hover\`, so
-    // register it (composes with \`hover:\`) or those day-cell styles never generate.
-    tailwind.plugin(({ addVariant }) => {
-      addVariant("not-disabled", "&:not(:disabled)");
-    }),
-  ],
-  theme: { extend: {
-    colors: {
-      border: "var(--border)", input: "var(--input)", ring: "var(--ring)",
-      background: "var(--background)", foreground: "var(--foreground)",
-      chrome: "var(--chrome)",
-      primary: { DEFAULT: "var(--primary)", foreground: "var(--primary-foreground)" },
-      secondary: { DEFAULT: "var(--secondary)", foreground: "var(--secondary-foreground)" },
-      destructive: { DEFAULT: "var(--destructive)", foreground: "var(--destructive-foreground)" },
-      muted: { DEFAULT: "var(--muted)", foreground: "var(--muted-foreground)" },
-      accent: { DEFAULT: "var(--accent)", foreground: "var(--accent-foreground)" },
-      popover: { DEFAULT: "var(--popover)", foreground: "var(--popover-foreground)" },
-      card: { DEFAULT: "var(--card)", foreground: "var(--card-foreground)" },
-      success: { DEFAULT: "var(--success)", foreground: "var(--success-foreground)" },
-      warning: { DEFAULT: "var(--warning)", foreground: "var(--warning-foreground)" },
-      info: { DEFAULT: "var(--info)", foreground: "var(--info-foreground)" },
-      // Surface fills the calendar (and other stateful primitives) use for
-      // hover / selected / expanded backgrounds.
-      fill: {
-        hover: "var(--fill-hover)",
-        selected: "var(--fill-selected)",
-        expanded: "var(--fill-expanded)",
-      },
-    },
-    borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)" },
-  } } };
-</script>`
+      ? TAILWIND_ENGINE === "v4"
+        ? TAILWIND_V4
+        : TAILWIND_V3
       : "";
+  // v4 preflight is the layered reset; only the legacy v3 path needs the manual
+  // `@layer base` reset (v3's Play CDN preflight is unlayered, so it's off).
+  const reset = mode === "edit" && TAILWIND_ENGINE === "v3" ? LEGACY_RESET : "";
 
   // The bootstrap module. It is static (no user input) so it can be inlined
   // safely. It waits for `init`, transpiles the canvas with Babel, runs it from
@@ -298,6 +361,7 @@ export function buildSandboxDocument(
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
 <script type="importmap">${importMap}</script>
 ${tailwind}
+${reset}
 ${FREEFORM_QUILL_CSS_URLS.map(
   (href) => `<link rel="stylesheet" href="${href}" />`,
 ).join("\n")}
@@ -337,20 +401,29 @@ function contentSecurityPolicy(
     : "";
 
   if (mode === "edit") {
+    // Only the ACTIVE Tailwind engine's CDN is trusted (not both), and the v4
+    // build is path-scoped to the @tailwindcss namespace on jsdelivr rather than
+    // the whole origin — both narrow the code-execution sandbox's egress to
+    // exactly what it fetches. v3's Play CDN loads from arbitrary sub-paths, so
+    // it stays origin-scoped (it's only the fallback, off by default).
+    const twCdn =
+      TAILWIND_ENGINE === "v4"
+        ? "https://cdn.jsdelivr.net/npm/@tailwindcss/"
+        : "https://cdn.tailwindcss.com";
     return [
       "default-src 'none'",
       // Inline bootstrap + esm.sh modules + the transpiled Blob module + the
-      // posthog-js recorder script + the Tailwind Play CDN (which JIT-compiles
-      // in-browser, so it needs 'unsafe-eval'). The CDN is edit-mode ONLY — view
-      // mode keeps egress locked and self-hosts styles instead.
-      `script-src 'unsafe-inline' 'unsafe-eval' blob: https://cdn.tailwindcss.com ${esm} ${ph}`,
+      // posthog-js recorder script + the in-browser Tailwind engine (JIT-compiles,
+      // so 'unsafe-eval' is required). Edit-mode ONLY — view mode keeps egress
+      // locked and self-hosts styles instead.
+      `script-src 'unsafe-inline' 'unsafe-eval' blob: ${twCdn} ${esm} ${ph}`,
       `style-src 'unsafe-inline' ${esm}`,
       `font-src data: ${esm}`,
       "img-src data: blob: https:",
       `worker-src blob:`,
-      // esm.sh sub-fetches; canvas DATA goes over postMessage (not connect), but
-      // posthog-js events/replay DO use connect to the PostHog hosts.
-      `connect-src ${esm} ${ph}`,
+      // esm.sh + Tailwind CDN sub-fetches; canvas DATA goes over postMessage (not
+      // connect), but posthog-js events/replay DO use connect to the PostHog hosts.
+      `connect-src ${esm} ${twCdn} ${ph}`,
     ].join("; ");
   }
   // view / published: self-hosted, frozen. Only egress is PostHog analytics.

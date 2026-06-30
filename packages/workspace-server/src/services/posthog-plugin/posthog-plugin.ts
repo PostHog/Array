@@ -183,7 +183,11 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
       });
 
       if (result.success) {
-        this.emit("skillsUpdated", true);
+        // Only signal listeners when the cache actually changed; an empty
+        // download cycle succeeds as a no-op (result.data.updated === false).
+        if (result.data.updated) {
+          this.emit("skillsUpdated", true);
+        }
       } else {
         this.log.warn("Skills update failed", {
           error: result.error,

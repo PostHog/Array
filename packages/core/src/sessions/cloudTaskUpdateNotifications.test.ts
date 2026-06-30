@@ -178,6 +178,7 @@ describe("cloud task update notifications", () => {
       "Cloud Task",
       "end_turn",
       TASK_ID,
+      undefined,
     );
     expect(harness.markActivity).toHaveBeenCalledTimes(1);
   });

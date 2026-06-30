@@ -52,9 +52,12 @@ vi.mock("@posthog/ui/shell/logger", () => ({
   logger: { scope: () => ({ info: vi.fn(), error: vi.fn(), warn: vi.fn() }) },
 }));
 vi.mock("@posthog/ui/primitives/toast", () => ({
-  toast: { error: toastError, loading: vi.fn(() => "toast-1") },
+  toast: {
+    error: toastError,
+    loading: vi.fn(() => "toast-1"),
+    dismiss: vi.fn(),
+  },
 }));
-vi.mock("sonner", () => ({ toast: { dismiss: vi.fn() } }));
 
 import { useDiscussReport } from "./useDiscussReport";
 

@@ -13,10 +13,13 @@ import {
   EmptyMedia,
   EmptyTitle,
   Button as QuillButton,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
-import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
+import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useFolderGenerationTask,
@@ -30,6 +33,10 @@ import {
 import { useGenerateContext } from "@posthog/ui/features/canvas/hooks/useGenerateContext";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import {
+  type WorkspaceMode,
+  WorkspaceModeSelect,
+} from "@posthog/ui/features/task-detail/components/WorkspaceModeSelect";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { track } from "@posthog/ui/shell/analytics";
@@ -60,13 +67,10 @@ interface WebsiteContextProps {
 }
 
 export function WebsiteContext({ channelId }: WebsiteContextProps) {
-  // Resolve the channel name from the cached channels list, so we don't make
-  // a second network call just for the header label.
+  // Channel name for the empty-state copy (the header reads its own).
   const { channels } = useChannels();
-  const channel = useMemo(
-    () => channels.find((c) => c.id === channelId) ?? null,
-    [channels, channelId],
-  );
+  const channelName =
+    channels.find((c) => c.id === channelId)?.name ?? "Channel";
 
   const {
     data: latest,
@@ -156,16 +160,9 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
     setDraft(latest?.content ?? "");
   }, [latest?.content, hasDraft]);
 
-  const channelName = channel?.name ?? "Channel";
   const headerContent = useMemo(
-    () => (
-      <ChannelBreadcrumb
-        channelName={channelName}
-        leafIcon={<FileTextIcon size={12} />}
-        leafLabel="CONTEXT.md"
-      />
-    ),
-    [channelName],
+    () => <ChannelHeader channelId={channelId} />,
+    [channelId],
   );
   useSetHeaderContent(headerContent);
 
@@ -469,24 +466,47 @@ function GenerateWithAgent({
 }) {
   const { generate, isStarting } = useGenerateContext(channelId, channelName);
 
+  // Generation always runs in the cloud, except the dev-only picker below lets a
+  // local build of these features be tested before it's merged to the cloud env.
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("cloud");
+
   const onGenerate = () => {
     track(ANALYTICS_EVENTS.CONTEXT_ACTION, {
       action_type: "generate_started",
       channel_id: channelId,
     });
-    void generate();
+    void generate(workspaceMode);
   };
 
   return (
-    <QuillButton
-      variant="outline"
-      size="default"
-      disabled={isStarting}
-      onClick={onGenerate}
-    >
-      {isStarting ? <Spinner size="1" /> : <SparkleIcon size={14} />}
-      {regenerate ? "Generate again" : "Generate with agent"}
-    </QuillButton>
+    <Flex align="center" gap="2">
+      <QuillButton
+        variant="outline"
+        size="default"
+        disabled={isStarting}
+        onClick={onGenerate}
+      >
+        {isStarting ? <Spinner size="1" /> : <SparkleIcon size={14} />}
+        {regenerate ? "Generate again" : "Generate with agent"}
+      </QuillButton>
+      {/* Dev-only: pick local vs cloud so a local build can be tested pre-merge. */}
+      {import.meta.env.DEV && (
+        <Tooltip>
+          <TooltipTrigger render={<div />}>
+            <WorkspaceModeSelect
+              value={workspaceMode}
+              onChange={setWorkspaceMode}
+              overrideModes={["local", "cloud"]}
+              disabled={isStarting}
+              size="1"
+            />
+          </TooltipTrigger>
+          <TooltipContent>
+            Dev mode only — generation always runs in the cloud in production.
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </Flex>
   );
 }
 

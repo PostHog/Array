@@ -3,9 +3,9 @@ import { getCloudUrlFromRegion } from "@posthog/shared";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useEvaluations } from "@posthog/ui/features/inbox/hooks/useEvaluations";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
-import { toast } from "sonner";
 
 /**
  * Read-and-toggle hook for LLM-Analytics evaluations exposed in the Inbox

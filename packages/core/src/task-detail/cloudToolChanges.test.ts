@@ -110,6 +110,21 @@ describe("extractCloudToolChangedFiles", () => {
     expect(file.linesRemoved).toBe(removed);
   });
 
+  it("leaves line counts undefined for image/video files", () => {
+    const calls = makeToolCalls(
+      toolCall({
+        toolCallId: "tc-img",
+        kind: "write",
+        locations: [{ path: "assets/logo.png" }],
+        content: diffContent("assets/logo.png", "a\nb\nc\nd\ne"),
+      }),
+    );
+    const [file] = extractCloudToolChangedFiles(calls);
+    expect(file.path).toBe("assets/logo.png");
+    expect(file.linesAdded).toBeUndefined();
+    expect(file.linesRemoved).toBeUndefined();
+  });
+
   it("memoizes diff stats by diff-object identity", () => {
     const diff = diffObj("a\nB\nc", "a\nb\nc");
     const first = cachedDiffStats(diff);

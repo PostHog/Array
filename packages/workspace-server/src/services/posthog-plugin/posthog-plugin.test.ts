@@ -433,8 +433,9 @@ describe("PosthogPluginService", () => {
       await expect(service.updateSkills()).resolves.toBeUndefined();
     });
 
-    it("handles missing skills dir in archive", async () => {
-      // Extraction creates no skills directory
+    it("reports a clear, actionable error when nothing downloads and no cache exists", async () => {
+      // Extraction creates no skills directory and there is no pre-existing
+      // skills cache to fall back on — the genuine failure case.
       mockExtractZip.mockImplementation(
         async (_zipPath: string, extractDir: string) => {
           vol.mkdirSync(`${extractDir}/random-dir`, { recursive: true });
@@ -447,6 +448,42 @@ describe("PosthogPluginService", () => {
       await service.updateSkills();
 
       expect(handler).not.toHaveBeenCalled();
+      // The reported error must be the clear, user-useful message, not the
+      // opaque "No skills found from any source".
+      expect(mockAnalytics.captureException).toHaveBeenCalledTimes(1);
+      const reportedError = mockAnalytics.captureException.mock
+        .calls[0][0] as Error;
+      expect(reportedError.message).not.toContain("No skills found");
+      expect(reportedError.message).toContain("Couldn't download skills");
+      expect(reportedError.message).toContain("retry automatically");
+    });
+
+    it("keeps existing skills and stays silent when a download cycle is empty", async () => {
+      // Simulate a previously-downloaded skills cache from an earlier run.
+      vol.mkdirSync(`${RUNTIME_SKILLS_DIR}/cached-skill`, { recursive: true });
+      vol.writeFileSync(
+        `${RUNTIME_SKILLS_DIR}/cached-skill/SKILL.md`,
+        "# Cached",
+      );
+
+      // Both downloads fail this cycle (e.g. transient network failure).
+      mockFetch.mockRejectedValue(new Error("Network error"));
+
+      const handler = vi.fn();
+      service.on("skillsUpdated", handler);
+      await service.updateSkills();
+
+      // Existing cache is preserved, no false-alarm exception, no update event,
+      // and the staging dir is cleaned up.
+      expect(
+        vol.readFileSync(
+          `${RUNTIME_SKILLS_DIR}/cached-skill/SKILL.md`,
+          "utf-8",
+        ),
+      ).toBe("# Cached");
+      expect(mockAnalytics.captureException).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+      expect(vol.existsSync(`${RUNTIME_SKILLS_DIR}.new`)).toBe(false);
     });
 
     it("cleans up temp dir even on error", async () => {

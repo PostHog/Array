@@ -101,7 +101,6 @@
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "semver": "^7.6.0",
-    "sonner": "^2.0.7",
     "tailwindcss": "^4.2.2",
     "tailwindcss-scroll-mask": "^0.0.3",
     "tippy.js": "^6.3.7",
@@ -109,6 +108,7 @@
     "unified": "^11.0.5",
     "virtua": "^0.48.6",
     "vscode-icons-js": "^11.6.1",
+    "zod": "^4.4.3",
     "zustand": "^4.5.0"
   },
   "peerDependencies": {

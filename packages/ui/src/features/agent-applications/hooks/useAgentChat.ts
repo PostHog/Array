@@ -35,12 +35,13 @@ export interface UseAgentChatOptions {
   agentSlug: string;
   ingressBaseUrl: string | null;
   /**
-   * When set, this chat targets a specific non-live revision. The service mints
-   * a short-lived preview token and attaches it on every ingress call. Leave
-   * null/unset to use the agent's currently live revision.
+   * When set, this chat routes to a specific non-live revision. The service
+   * mints a short-lived ingress JWT scoped to that revision and attaches it on
+   * every call; side effects still run for real. Leave null/unset to use the
+   * agent's currently live revision.
    */
   revisionId?: string | null;
-  /** Index started sessions in the local recent-chats rail (preview only). */
+  /** Index started sessions in the local chat-history rail. */
   recordHistory?: boolean;
   /**
    * Supplies the "what am I looking at" object. When set, it's prepended as a
@@ -50,6 +51,11 @@ export interface UseAgentChatOptions {
   contextProvider?: () => unknown;
   /** AgentBuilder UI-driving tools (focus_*, set_secret); null → built-in handling. */
   clientTools?: ClientToolHandler;
+  /**
+   * `kind:'client'` tool ids this client can fulfil; sent to the runner at /run.
+   * Pass a stable (module-level) array — it keys the session-config memo.
+   */
+  supportedClientTools?: readonly string[];
 }
 
 /**
@@ -68,6 +74,7 @@ export function useAgentChat({
   recordHistory = false,
   contextProvider,
   clientTools,
+  supportedClientTools,
 }: UseAgentChatOptions) {
   const client = useAuthenticatedClient();
   const service = useService<AgentChatService>(AGENT_CHAT_SERVICE);
@@ -88,6 +95,7 @@ export function useAgentChat({
       agentSlug,
       ingressBaseUrl: ingressBaseUrl ?? "",
       revisionId,
+      supportedClientTools,
       createMapper: createAgentChatMapper,
       resolveClientTool: (data) =>
         resolveClientTool(
@@ -113,7 +121,15 @@ export function useAgentChat({
             })
         : undefined,
     }),
-    [chatId, agentSlug, ingressBaseUrl, revisionId, recordHistory, recordChat],
+    [
+      chatId,
+      agentSlug,
+      ingressBaseUrl,
+      revisionId,
+      supportedClientTools,
+      recordHistory,
+      recordChat,
+    ],
   );
 
   const send = useCallback(

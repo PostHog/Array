@@ -11,6 +11,7 @@ import {
   serializeCloudPrompt,
   unescapeXmlAttr,
 } from "@posthog/shared";
+import { skillTagsToSlashCommands } from "../message-editor/skillTags";
 
 export type ReadFileAsBase64 = (filePath: string) => Promise<string | null>;
 
@@ -111,7 +112,11 @@ function normalizePromptText(prompt: string): string {
   return prompt.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-export function stripAbsoluteFileTags(prompt: string): string {
+export function stripSkillTags(prompt: string): string {
+  return skillTagsToSlashCommands(prompt);
+}
+
+export function stripAttachmentTags(prompt: string): string {
   return normalizePromptText(
     prompt
       .replaceAll(ABSOLUTE_FILE_TAG_REGEX, (match, rawPath: string) => {
@@ -120,6 +125,10 @@ export function stripAbsoluteFileTags(prompt: string): string {
       })
       .replaceAll(FOLDER_TAG_REGEX, ""),
   );
+}
+
+export function stripAbsoluteFileTags(prompt: string): string {
+  return stripSkillTags(stripAttachmentTags(prompt));
 }
 
 export function getAbsoluteAttachmentPaths(

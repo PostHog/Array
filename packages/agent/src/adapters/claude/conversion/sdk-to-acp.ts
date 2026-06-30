@@ -21,6 +21,7 @@ import type {
   BetaContentBlock,
   BetaRawContentBlockDelta,
 } from "@anthropic-ai/sdk/resources/beta.mjs";
+import { IMPORTED_USER_PROMPT_META_KEY } from "@posthog/shared";
 import { POSTHOG_NOTIFICATIONS } from "@/acp-extensions";
 import { image, text } from "../../../utils/acp-content";
 import { unreachable } from "../../../utils/common";
@@ -109,6 +110,8 @@ export interface MessageHandlerContext {
   supportsTerminalOutput?: boolean;
   /** Absent on replay, where the legacy drop-all text/thinking filter applies. */
   streamedAssistantBlocks?: StreamedAssistantBlocks;
+  /** Replaying an imported transcript: client has no history, so emit user/assistant text instead of dropping it. */
+  isImportReplay?: boolean;
 }
 
 function messageUpdateType(role: Role) {
@@ -1062,6 +1065,19 @@ function stripLocalCommandMetadata(content: string): string | null {
   return stripped.trim() === "" ? null : stripped;
 }
 
+/** `<command-name>/review</command-name><command-args>#2198</command-args>` → `/review #2198`; null if no command-name. */
+function extractSlashCommandInvocation(content: string): string | null {
+  if (!content.includes("<command-name>")) return null;
+  const name = content
+    .match(/<command-name>([\s\S]*?)<\/command-name>/)?.[1]
+    ?.trim();
+  if (!name) return null;
+  const args = content
+    .match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1]
+    ?.trim();
+  return args ? `${name} ${args}` : name;
+}
+
 function isLoginRequiredMessage(message: AnthropicMessageWithContent): boolean {
   return (
     message.type === "assistant" &&
@@ -1117,11 +1133,20 @@ function logSpecialMessages(
 function filterAssistantContent(
   message: SDKAssistantMessage,
   streamed: StreamedAssistantBlocks | undefined,
+  isImportReplay?: boolean,
 ): SDKAssistantMessage["message"]["content"] {
   const content = message.message.content;
   const isTopLevel =
     "parent_tool_use_id" in message && message.parent_tool_use_id === null;
   if (!streamed || !isTopLevel) {
+    // No client history to dedupe against: keep top-level text/thinking.
+    if (isImportReplay && isTopLevel) {
+      return content.filter((block) => {
+        if (block.type !== "text" && block.type !== "thinking") return true;
+        const blockText = block.type === "text" ? block.text : block.thinking;
+        return blockText.length > 0;
+      });
+    }
     return content.filter(
       (block) => block.type !== "text" && block.type !== "thinking",
     );
@@ -1197,16 +1222,30 @@ export async function handleUserAssistantMessage(
     return {};
   }
 
-  // Skip plain text user messages (already displayed by the ACP client)
-  if (isPlainTextUserMessage(message)) {
+  // Skip plain-text user messages (already shown by the client) — except on import replay, which has no history.
+  if (!context.isImportReplay && isPlainTextUserMessage(message)) {
     return {};
   }
 
   const content = message.message.content;
-  const contentToProcess =
-    message.type === "assistant"
-      ? filterAssistantContent(message, context.streamedAssistantBlocks)
-      : content;
+  let contentToProcess: typeof content;
+  if (message.type === "assistant") {
+    contentToProcess = filterAssistantContent(
+      message,
+      context.streamedAssistantBlocks,
+      context.isImportReplay,
+    );
+  } else if (context.isImportReplay && typeof content === "string") {
+    // Surface the typed slash command from its persisted markers; else strip stray markers.
+    const surfaced =
+      extractSlashCommandInvocation(content) ??
+      stripLocalCommandMetadata(content);
+    // Nothing renderable (pure-marker payload): skip rather than emit a hollow chunk.
+    if (surfaced === null) return {};
+    contentToProcess = surfaced;
+  } else {
+    contentToProcess = content;
+  }
   const parentToolCallId =
     "parent_tool_use_id" in message
       ? (message.parent_tool_use_id ?? undefined)
@@ -1235,6 +1274,17 @@ export async function handleUserAssistantMessage(
     context.enrichedReadCache,
     session.taskState,
   )) {
+    // The renderer ignores raw user chunks; mark imported ones so the load path can promote them.
+    if (
+      context.isImportReplay &&
+      message.type === "user" &&
+      notification.update.sessionUpdate === "user_message_chunk"
+    ) {
+      (notification.update as { _meta?: Record<string, unknown> })._meta = {
+        ...(notification.update as { _meta?: Record<string, unknown> })._meta,
+        [IMPORTED_USER_PROMPT_META_KEY]: true,
+      };
+    }
     await client.sessionUpdate(notification);
     session.notificationHistory.push(notification);
   }

@@ -21,9 +21,9 @@ import { useInboxAvailableSuggestedReviewersStore } from "@posthog/ui/features/i
 import { useAuthenticatedInfiniteQuery } from "@posthog/ui/hooks/useAuthenticatedInfiniteQuery";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
-import { toast } from "sonner";
 
 const REPORTS_PAGE_SIZE = 100;
 

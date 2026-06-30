@@ -187,6 +187,27 @@ describe("TaskRunEventStreamSender", () => {
     ]);
   });
 
+  it("routes the ingest POST to the agent-proxy run-scoped path when eventIngestBaseUrl is set", async () => {
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = await readRequestBody(init);
+        return responseForBody(body);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sender = createSender({
+      eventIngestBaseUrl: "http://agent-proxy:8003/",
+    });
+    sender.enqueue({ type: "notification", notification: { method: "first" } });
+    await sender.stop();
+
+    expect(fetchMock).toHaveBeenCalled();
+    const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    expect(lastCall[0]).toBe("http://agent-proxy:8003/v1/runs/run-1/ingest");
+    expect(lastCall[0]).not.toContain("/api/projects/");
+  });
+
   it("keeps the active ingest request open across scheduled flushes", async () => {
     const requestBodies: string[] = [];
     let activeStreamClosed = false;

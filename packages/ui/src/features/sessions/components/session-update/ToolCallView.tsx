@@ -1,20 +1,5 @@
-import {
-  ArrowsClockwise,
-  ArrowsLeftRight,
-  Brain,
-  ChatCircle,
-  Command,
-  FileText,
-  Globe,
-  type Icon,
-  MagnifyingGlass,
-  PencilSimple,
-  Terminal,
-  Trash,
-  Wrench,
-} from "@phosphor-icons/react";
 import { compactHomePath } from "@posthog/shared";
-import type { CodeToolKind } from "@posthog/ui/features/sessions/types";
+import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
 import { ToolRow } from "./ToolRow";
 import {
   ContentPre,
@@ -22,37 +7,29 @@ import {
   formatInput,
   getContentText,
   getFilename,
+  iconForToolCall,
   stripCodeFences,
   ToolTitle,
   type ToolViewProps,
   useToolCallStatus,
 } from "./toolCallUtils";
 
-const kindIcons: Record<CodeToolKind, Icon> = {
-  read: FileText,
-  edit: PencilSimple,
-  delete: Trash,
-  move: ArrowsLeftRight,
-  search: MagnifyingGlass,
-  execute: Terminal,
-  think: Brain,
-  fetch: Globe,
-  switch_mode: ArrowsClockwise,
-  question: ChatCircle,
-  other: Wrench,
-};
-
-const toolNameIcons: Record<string, Icon> = {
-  ToolSearch: MagnifyingGlass,
-  Skill: Command,
-};
-
 const toolNameDisplays: Record<
   string,
-  { prefix: string; suffix: string; inputKey: string }
+  { prefix: string; pastPrefix: string; suffix: string; inputKey: string }
 > = {
-  Skill: { prefix: "Reading", suffix: "skill", inputKey: "skill" },
-  ToolSearch: { prefix: "Searching", suffix: "tools", inputKey: "query" },
+  Skill: {
+    prefix: "Reading",
+    pastPrefix: "Read",
+    suffix: "skill",
+    inputKey: "skill",
+  },
+  ToolSearch: {
+    prefix: "Searching",
+    pastPrefix: "Searched",
+    suffix: "tools",
+    inputKey: "query",
+  },
 };
 
 interface ToolCallViewProps extends ToolViewProps {
@@ -72,10 +49,10 @@ export function ToolCallView({
     turnCancelled,
     turnComplete,
   );
-  const KindIcon =
-    (agentToolName && toolNameIcons[agentToolName]) ||
-    (kind && kindIcons[kind]) ||
-    Wrench;
+  const KindIcon = iconForToolCall(toolCall, agentToolName);
+  // New thread drops the input/output divider (ContentPre carries its own border); the legacy thread
+  // keeps it so ConversationView is unchanged when the chat thread is toggled off.
+  const chatChrome = useChatThreadChrome();
 
   const filePath = kind === "read" && locations?.[0]?.path;
   const toolDisplay = agentToolName
@@ -90,8 +67,12 @@ export function ToolCallView({
       ? { ...toolDisplay, value: highlightValue }
       : undefined;
 
+  // New thread reads back in past tense once the tool has finished ("Reading" → "Read"); the legacy
+  // thread keeps the original present-tense prefix so ConversationView is unchanged when toggled off.
   const displayText = specialDisplay
-    ? specialDisplay.prefix
+    ? chatChrome && !isLoading
+      ? specialDisplay.pastPrefix
+      : specialDisplay.prefix
     : filePath
       ? `Read ${getFilename(filePath)}`
       : title
@@ -111,11 +92,14 @@ export function ToolCallView({
     fullInput || showOutput ? (
       <>
         {fullInput && <ContentPre>{fullInput}</ContentPre>}
-        {showOutput && (
-          <div className={fullInput ? "border-gray-6 border-t" : undefined}>
+        {showOutput &&
+          (chatChrome ? (
             <ContentPre>{output}</ContentPre>
-          </div>
-        )}
+          ) : (
+            <div className={fullInput ? "border-gray-6 border-t" : undefined}>
+              <ContentPre>{output}</ContentPre>
+            </div>
+          ))}
       </>
     ) : undefined;
 
@@ -131,7 +115,15 @@ export function ToolCallView({
       {displayText && <ToolTitle>{displayText}</ToolTitle>}
       {inputPreview && (
         <ToolTitle>
-          <span className="font-mono text-accent-11">{inputPreview}</span>
+          <span
+            className={
+              chatChrome
+                ? "font-mono text-primary text-sm"
+                : "font-mono text-accent-11"
+            }
+          >
+            {inputPreview}
+          </span>
         </ToolTitle>
       )}
       {specialDisplay && <ToolTitle>{specialDisplay.suffix}</ToolTitle>}

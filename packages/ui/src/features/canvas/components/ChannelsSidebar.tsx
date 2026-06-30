@@ -157,7 +157,7 @@ export function ChannelsSidebar() {
       <Flex direction="column" className="h-full bg-chrome">
         {/* Workspace switcher — a compact bordered button. The title bar above
             provides the window-drag region and stoplight clearance. */}
-        <Box className="shrink-0 p-2 pb-0">
+        <Box className="shrink-0 px-2 pb-0">
           <ProjectSwitcher triggerVariant="button" />
         </Box>
 

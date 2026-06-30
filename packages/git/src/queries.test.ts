@@ -4,6 +4,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createGitClient } from "./client";
 import {
+  type ChangedFileInfo,
+  computeDiffStatsFromFiles,
   detectDefaultBranch,
   getAllBranches,
   getBranchDiffPatchesByPath,
@@ -312,6 +314,59 @@ describe("getChangedFilesDetailed > untracked line counts", () => {
     expect(huge).toMatchObject({
       status: "untracked",
       linesAdded: LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK,
+    });
+  });
+
+  // Regression for #2983 follow-up: an untracked binary file (png, mp4, …)
+  // must not have its newline bytes counted as added lines. Pre-fix this
+  // surfaced as an inflated diff badge (e.g. +8147) after dropping in a
+  // screenshot or screen recording.
+  it.each([["shot.png"], ["clip.mp4"]])(
+    "reports no line count for untracked binary file %s",
+    async (name) => {
+      repoDir = await setupRepo();
+      // Content packed with newline bytes — what the line counter would have
+      // tallied if it didn't skip binary files.
+      await writeFile(path.join(repoDir, name), "\n".repeat(8147));
+
+      const files = await getChangedFilesDetailed(repoDir);
+      const binary = files.find((f) => f.path === name);
+
+      expect(binary).toMatchObject({ status: "untracked" });
+      expect(binary?.linesAdded).toBeUndefined();
+      expect(binary?.linesRemoved).toBeUndefined();
+    },
+  );
+});
+
+describe("computeDiffStatsFromFiles", () => {
+  it("excludes binary files from line totals but still counts them as changed", () => {
+    const files: ChangedFileInfo[] = [
+      {
+        path: "src/app.ts",
+        status: "modified",
+        linesAdded: 10,
+        linesRemoved: 4,
+      },
+      // Binary line counts are meaningless newline-byte tallies — exclude them.
+      {
+        path: "assets/shot.png",
+        status: "untracked",
+        linesAdded: 8147,
+        linesRemoved: 0,
+      },
+      {
+        path: "assets/clip.mp4",
+        status: "untracked",
+        linesAdded: 5000,
+        linesRemoved: 0,
+      },
+    ];
+
+    expect(computeDiffStatsFromFiles(files)).toEqual({
+      filesChanged: 3,
+      linesAdded: 10,
+      linesRemoved: 4,
     });
   });
 });

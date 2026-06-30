@@ -7,6 +7,7 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
+import { useHomeArchivedTasks } from "@posthog/ui/features/home/hooks/useHomeArchivedTasks";
 import { useHomeSnapshot } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
 import {
   type HomeViewMode,
@@ -18,6 +19,7 @@ import { Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { useEffect, useMemo } from "react";
 import { ConfigMap } from "../config/ConfigMap";
 import { HomeActiveAgentsStrip } from "./HomeActiveAgentsStrip";
+import { HomeArchivedSection } from "./HomeArchivedSection";
 import { HomeBoardView } from "./HomeBoardView";
 import { HomeEmptyState } from "./HomeEmptyState";
 import { HomeWorkstreamDetailPanel } from "./HomeWorkstreamDetailPanel";
@@ -39,6 +41,8 @@ const HEADER_CONTENT = (
 
 export function HomeView() {
   const { snapshot, isLoading } = useHomeSnapshot();
+  const { items: archivedItems, isLoading: archivedLoading } =
+    useHomeArchivedTasks();
   const viewMode = useHomeUiStore((s) => s.viewMode);
   const setViewMode = useHomeUiStore((s) => s.setViewMode);
   const selectedWorkstreamId = useHomeUiStore((s) => s.selectedWorkstreamId);
@@ -88,7 +92,7 @@ export function HomeView() {
   }
 
   const totalRows = needsAttention.length + inProgress.length;
-  const hasContent = activeAgents.length > 0 || totalRows > 0;
+  const activeHasContent = activeAgents.length > 0 || totalRows > 0;
 
   return (
     <Flex direction="column" className="h-full">
@@ -100,7 +104,7 @@ export function HomeView() {
                 Home
               </Text>
             </Flex>
-            {hasContent ? (
+            {activeHasContent ? (
               <Flex align="center" gap="5" className="text-[12px]">
                 {needsAttention.length > 0 ? (
                   <Stat
@@ -143,12 +147,14 @@ export function HomeView() {
           <HomeActiveAgentsStrip agents={activeAgents} />
           <Flex className="min-h-0 flex-1">
             <Box className="min-w-0 flex-1">
-              {!hasContent ? (
-                <HomeEmptyState hasRunningAgents={activeAgents.length > 0} />
-              ) : viewMode === "board" ? (
-                <Box className="h-full min-h-0">
-                  <HomeBoardView snapshot={snapshot} />
-                </Box>
+              {viewMode === "board" ? (
+                activeHasContent ? (
+                  <Box className="h-full min-h-0">
+                    <HomeBoardView snapshot={snapshot} />
+                  </Box>
+                ) : (
+                  <HomeEmptyState hasRunningAgents={activeAgents.length > 0} />
+                )
               ) : (
                 <ScrollArea scrollbars="vertical">
                   {needsAttention.length > 0 ? (
@@ -189,6 +195,14 @@ export function HomeView() {
 
                   {totalRows === 0 && activeAgents.length > 0 ? (
                     <HomeEmptyState hasRunningAgents />
+                  ) : null}
+
+                  <HomeArchivedSection items={archivedItems} />
+
+                  {!activeHasContent &&
+                  archivedItems.length === 0 &&
+                  !archivedLoading ? (
+                    <HomeEmptyState hasRunningAgents={false} />
                   ) : null}
                 </ScrollArea>
               )}

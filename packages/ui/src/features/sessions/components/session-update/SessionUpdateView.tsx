@@ -33,6 +33,8 @@ export type RenderItem =
       sessionUpdate: "status";
       status: string;
       isComplete?: boolean;
+      /** Set when a status ends in failure (e.g. a failed compaction) so the row renders the error. */
+      error?: string;
     }
   | {
       sessionUpdate: "error";
@@ -122,6 +124,7 @@ export const SessionUpdateView = memo(function SessionUpdateView({
         <StatusNotificationView
           status={item.status}
           isComplete={item.isComplete}
+          error={item.error}
         />
       );
     case "error":

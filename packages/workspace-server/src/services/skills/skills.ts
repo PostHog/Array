@@ -14,6 +14,8 @@ import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import type { WatcherService } from "../watcher/service";
 import { parseSkillFrontmatter } from "./parse-skill-frontmatter";
 import type {
+  BundleLocalSkillInput,
+  BundleLocalSkillOutput,
   CreateSkillInput,
   ExportedSkill,
   InstallTeamSkillInput,
@@ -21,6 +23,7 @@ import type {
   SkillInfo,
   SkillSource,
 } from "./schemas";
+import { bundleLocalSkill } from "./skill-bundler";
 import {
   getMarketplaceInstallPaths,
   getUserSkillsDir,
@@ -484,6 +487,17 @@ export class SkillsService {
       throw new Error("Access denied: not a known skill directory");
     }
     return resolved;
+  }
+
+  async bundleLocalSkill(
+    input: BundleLocalSkillInput,
+  ): Promise<BundleLocalSkillOutput> {
+    const skillDir = await this.resolveKnownSkillDir(input.path);
+    return bundleLocalSkill({
+      name: input.name,
+      source: input.source,
+      skillPath: skillDir,
+    });
   }
 }
 

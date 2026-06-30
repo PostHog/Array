@@ -63,6 +63,12 @@ export interface TaskCreationInput {
   // Label of the Home-tab quick action that started this run (e.g. "Fix CI"), so the
   // workstream can show which quick actions have been run against it.
   homeQuickActionLabel?: string;
+  /**
+   * Continue a Claude Code CLI session by importing its transcript and resuming
+   * with replay. Local mode only; forces the claude adapter. `branch` is what the
+   * session last worked on, linked so the branch-mismatch prompt can fire.
+   */
+  importedClaudeSession?: { sourceSessionId: string; branch?: string | null };
 }
 
 export interface TaskCreationOutput {

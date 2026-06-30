@@ -21,8 +21,8 @@ import type { PrActionType } from "@posthog/shared";
 import { ChevronDownIcon } from "@radix-ui/react-icons";
 import { Button, DropdownMenu, Flex, Spinner, Text } from "@radix-ui/themes";
 import { ChevronDown } from "lucide-react";
-import { toast } from "sonner";
 import { Tooltip } from "../../../primitives/Tooltip";
+import { toast } from "../../../primitives/toast";
 import { useLocalRepoPath } from "../../workspace/useLocalRepoPath";
 import { getPrActionIcon } from "../prIcon";
 import {

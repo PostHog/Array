@@ -3,7 +3,6 @@ import {
   canFocusWorkspace,
   focusTerminalKey,
 } from "@posthog/core/workspace/focusWorkspace";
-import { Text } from "@radix-ui/themes";
 import { useCallback, useMemo } from "react";
 import { toast } from "../../primitives/toast";
 import {
@@ -49,19 +48,11 @@ export function useFocusWorkspace(taskId: string) {
     const result = await disableFocus();
     if (result.success) {
       useTerminalStore.getState().clearTerminalState(terminalKey);
-      toast.success(
-        <>
-          Returned to{" "}
-          <Text className="text-(--accent-11)">
-            {focusSession.originalBranch}
-          </Text>
-        </>,
-        {
-          description:
-            result.stashPopWarning ??
-            (hadStash ? "Your stashed changes were restored." : undefined),
-        },
-      );
+      toast.success(`Returned to ${focusSession.originalBranch}`, {
+        description:
+          result.stashPopWarning ??
+          (hadStash ? "Your stashed changes were restored." : undefined),
+      });
     } else {
       toast.error(`Could not return to ${focusSession.originalBranch}`, {
         description: result.error,

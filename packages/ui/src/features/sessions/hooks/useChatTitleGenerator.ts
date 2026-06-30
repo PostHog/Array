@@ -20,6 +20,7 @@ import {
 } from "@posthog/ui/features/sessions/sessionStore";
 import { taskKeys } from "@posthog/ui/features/tasks/taskKeys";
 import { logger } from "@posthog/ui/shell/logger";
+import { titleAttachmentStoreApi } from "@posthog/ui/shell/titleAttachmentStore";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
@@ -95,10 +96,18 @@ export function useChatTitleGenerator(task: Task): void {
 
     const run = async () => {
       try {
-        const content =
-          await titleGenerator.enrichDescriptionWithFileContent(rawContent);
+        const attachmentPaths = titleAttachmentStoreApi.get(taskId) ?? [];
+        const content = await titleGenerator.enrichDescriptionWithFileContent(
+          rawContent,
+          attachmentPaths,
+        );
         const result = await titleGenerator.generateTitleAndSummary(content);
         if (result) {
+          // Drop the stash once a title has been successfully produced so the
+          // map doesn't grow across a long-lived session. Keeping it on failure
+          // lets the prompt-based regeneration at REGENERATE_INTERVAL pick it
+          // up and try again with the file contents.
+          titleAttachmentStoreApi.clear(taskId);
           const { title, summary } = result;
           const titleLocked = isAutoTitleLocked(
             getCachedTask(queryClient, taskId) ?? task,

@@ -12,7 +12,7 @@ import { useState } from "react";
  * editor (when allowed), reason note, error surface, and the two action
  * buttons. Owns its own UI state but takes the decision callback from the
  * caller, so both the full `AgentApprovalDetail` (Approvals tab + Fleet route)
- * and the inline `AgentChatPendingApprovalCard` (live chat preview) can wrap
+ * and the inline `AgentChatPendingApprovalCard` (chat pane) can wrap
  * it with their own `useDecideAgentApproval` glue.
  */
 export function AgentApprovalDecisionForm({

@@ -1,21 +1,29 @@
 import { connectivityStore } from "@posthog/core/connectivity/connectivityStore";
-import { toast as sonnerToast } from "sonner";
 import { toast } from "../../primitives/toast";
 
-const TOAST_ID = "connectivity-offline";
 const OFFLINE_DEBOUNCE_MS = 5_000;
 
+// The live offline toast's id, tracked so re-entry never stacks a second one and
+// reconnect dismisses exactly this toast.
+let offlineToastId: string | null = null;
+
 export function showOfflineToast() {
-  toast.error("No internet connection", {
-    id: TOAST_ID,
+  if (offlineToastId) return;
+  offlineToastId = toast.error("No internet connection", {
     duration: Number.POSITIVE_INFINITY,
     description:
       "PostHog Code features that need the network are paused until you reconnect.",
   });
 }
 
+function dismissOfflineToast() {
+  if (!offlineToastId) return;
+  toast.dismiss(offlineToastId);
+  offlineToastId = null;
+}
+
 // Debounces flaky transitions: only surfaces a toast when continuously offline
-// for OFFLINE_DEBOUNCE_MS. The stable id guarantees the toast never stacks.
+// for OFFLINE_DEBOUNCE_MS. A single tracked toast id guarantees it never stacks.
 export function initializeConnectivityToast() {
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
   let wasOnline = connectivityStore.getState().isOnline;
@@ -39,7 +47,7 @@ export function initializeConnectivityToast() {
       }, OFFLINE_DEBOUNCE_MS);
     } else {
       clearPending();
-      sonnerToast.dismiss(TOAST_ID);
+      dismissOfflineToast();
     }
   });
 

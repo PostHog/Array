@@ -836,4 +836,200 @@ describe("PostHogAPIClient", () => {
       ).rejects.toThrow("Unexpected response");
     });
   });
+
+  describe("agent model policy + catalog", () => {
+    function makeClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    it("createAgentDraftRevisionFrom unwraps the { revision } envelope", async () => {
+      // Regression: new_draft returns `{ revision, source_revision_id }`, not a
+      // flat revision — returning the wrapper left `.id` undefined and broke the
+      // follow-up PATCH (404 on /revisions/undefined/).
+      const fetch = vi.fn().mockResolvedValue({
+        json: async () => ({
+          revision: { id: "draft-1", state: "draft" },
+          source_revision_id: "rev-0",
+        }),
+      });
+      const client = makeClient(fetch);
+
+      const rev = await client.createAgentDraftRevisionFrom("app-1", "rev-0");
+
+      expect(rev.id).toBe("draft-1");
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "post",
+          path: "/api/projects/123/agent_applications/app-1/revisions/new_draft/",
+          overrides: {
+            body: JSON.stringify({
+              application_id: "app-1",
+              source_revision_id: "rev-0",
+            }),
+          },
+        }),
+      );
+    });
+
+    it("updateAgentRevisionSpec PATCHes the revision with the full spec", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        json: async () => ({ id: "draft-1", state: "draft" }),
+      });
+      const client = makeClient(fetch);
+      const spec = { models: { mode: "auto", level: "high" } };
+
+      await client.updateAgentRevisionSpec(
+        "agent-slug",
+        "draft-1",
+        spec as never,
+      );
+
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "patch",
+          path: "/api/projects/123/agent_applications/agent-slug/revisions/draft-1/",
+          overrides: { body: JSON.stringify({ spec }) },
+        }),
+      );
+    });
+
+    it("getAgentModelCatalog GETs the project-level models endpoint", async () => {
+      const catalog = {
+        models: [{ model: "anthropic/claude-haiku-4.5" }],
+        levels: { low: ["anthropic/claude-haiku-4.5"] },
+      };
+      const fetch = vi.fn().mockResolvedValue({ json: async () => catalog });
+      const client = makeClient(fetch);
+
+      await expect(client.getAgentModelCatalog()).resolves.toEqual(catalog);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "get",
+          path: "/api/projects/123/agent_applications/models/",
+        }),
+      );
+    });
+  });
+
+  describe("batched scout emissions", () => {
+    const EMISSIONS_PATH =
+      "/api/projects/123/signals/scout/runs/emissions/batch/";
+    const REPORTS_PATH =
+      "/api/projects/123/signals/scout/runs/emissions/reports/batch/";
+
+    function buildClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    // Both batch methods share the same scoutBatchByRunIds helper, so their
+    // empty short-circuit, request shape, and error path are exercised together.
+    const methods = [
+      ["batchScoutRunEmissions", EMISSIONS_PATH],
+      ["batchScoutEmissionReports", REPORTS_PATH],
+    ] as const;
+
+    it.each(methods)(
+      "%s short-circuits empty run ids without hitting the network",
+      async (method) => {
+        const fetch = vi.fn();
+        const client = buildClient(fetch);
+        await expect(client[method](123, [])).resolves.toEqual([]);
+        expect(fetch).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(methods)(
+      "%s POSTs the run ids in one request and flattens the response",
+      async (method, path) => {
+        const rows = [
+          { id: "e1", run_id: "r1" },
+          { id: "e2", run_id: "r2" },
+        ];
+        const fetch = vi
+          .fn()
+          .mockResolvedValue({ ok: true, json: async () => rows });
+
+        await expect(
+          buildClient(fetch)[method](123, ["r1", "r2"]),
+        ).resolves.toEqual(rows);
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(fetch.mock.calls[0][0]).toMatchObject({ method: "post", path });
+        expect(JSON.parse(fetch.mock.calls[0][0].overrides.body)).toEqual({
+          run_ids: ["r1", "r2"],
+        });
+      },
+    );
+
+    it.each(methods)(
+      "%s throws when the server responds non-OK",
+      async (method) => {
+        const fetch = vi
+          .fn()
+          .mockResolvedValue({ ok: false, statusText: "Bad Request" });
+        await expect(buildClient(fetch)[method](123, ["r1"])).rejects.toThrow(
+          "Bad Request",
+        );
+      },
+    );
+
+    it("unwraps a paginated reports payload", async () => {
+      const links = [{ finding_id: "f1", source_id: "s1", report: null }];
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ results: links }),
+      });
+
+      await expect(
+        buildClient(fetch).batchScoutEmissionReports(123, ["r1"]),
+      ).resolves.toEqual(links);
+      expect(fetch.mock.calls[0][0]).toMatchObject({
+        method: "post",
+        path: REPORTS_PATH,
+      });
+    });
+
+    it("splits >200 run ids into parallel chunks and concatenates them", async () => {
+      const runIds = Array.from({ length: 450 }, (_, i) => `r${i}`);
+      const fetch = vi.fn(async (req) => {
+        const { run_ids } = JSON.parse(req.overrides.body) as {
+          run_ids: string[];
+        };
+        return {
+          ok: true,
+          json: async () => run_ids.map((run_id) => ({ id: run_id, run_id })),
+        };
+      });
+
+      const result = await buildClient(fetch).batchScoutRunEmissions(
+        123,
+        runIds,
+      );
+      // 450 ids → chunks of 200, 200, 50.
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(result).toHaveLength(450);
+      expect(result.map((row) => row.run_id)).toEqual(runIds);
+    });
+  });
 });

@@ -34,6 +34,7 @@ import {
   combineQueuedMessages,
   useMessageQueueStore,
 } from "./messageQueueStore";
+import { useTaskStore } from "./taskStore";
 
 const log = logger.scope("task-session-store");
 
@@ -1118,12 +1119,26 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     prompt: string,
   ) => {
     const freshTask = await getTask(taskId);
-    const previousBranch = freshTask.latest_run?.branch ?? null;
+    const previousRun = freshTask.latest_run;
+    const previousBranch = previousRun?.branch ?? null;
+
+    const composerConfig =
+      useTaskStore.getState().composerConfigByTaskId[taskId];
+    const previousPermissionMode = previousRun?.state?.initial_permission_mode;
+    const reasoningEffort =
+      composerConfig?.reasoning ?? previousRun?.reasoning_effort ?? undefined;
+    const initialPermissionMode =
+      composerConfig?.mode ??
+      (typeof previousPermissionMode === "string"
+        ? previousPermissionMode
+        : undefined);
 
     const updatedTask = await runTaskInCloud(taskId, {
       branch: previousBranch,
       resumeFromRunId: previousRunId,
       pendingUserMessage: prompt,
+      reasoningEffort,
+      initialPermissionMode,
     });
 
     const newRun = updatedTask.latest_run;

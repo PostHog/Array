@@ -38,6 +38,7 @@ import {
   useUserGithubRepositories,
   useUserRepositoryIntegration,
 } from "../../integrations/useIntegrations";
+import { skillToEditorCommand } from "../../message-editor/commands";
 import { PromptHistoryDialog } from "../../message-editor/components/PromptHistoryDialog";
 import { PromptInput } from "../../message-editor/components/PromptInput";
 import { useDraftStore } from "../../message-editor/draftStore";
@@ -53,6 +54,7 @@ import {
   type AgentAdapter,
   useSettingsStore,
 } from "../../settings/settingsStore";
+import { useSkills } from "../../skills/useSkills";
 import {
   areReposReady,
   useInitialRepoSelectionFromFolderId,
@@ -61,11 +63,11 @@ import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { useWarmTask } from "../hooks/useWarmTask";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
+import { NewTaskSuggestions } from "./ContinueCliSessions";
 import {
   type SuggestedPrompt,
   SuggestedPromptCard,
 } from "./SuggestedPromptCard";
-import { SuggestedTasksPanel } from "./SuggestedTasksPanel";
 import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
 
 interface TaskInputProps {
@@ -165,6 +167,7 @@ export function TaskInput({
     setLastUsedModel,
     _hasHydrated: settingsHydrated,
   } = useSettingsStore();
+  const { data: skills } = useSkills();
 
   const editorRef = useRef<EditorHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -529,6 +532,7 @@ export function TaskInput({
     }),
     currentMode: workspaceMode,
     lastUsedLocalMode: lastUsedLocalWorkspaceMode,
+    mostRecentEnvironment: view.folderRunEnvironment,
     setSelectedDirectory,
     setSelectedRepository,
     switchWorkspaceMode: switchWorkspaceModeForFolder,
@@ -569,8 +573,10 @@ export function TaskInput({
     modelOption?.type === "select" ? modelOption.currentValue : undefined;
   const adapterDefault = adapter === "codex" ? "auto" : "plan";
   const modeFallback =
-    defaultInitialTaskMode === "last_used"
-      ? (lastUsedInitialTaskMode ?? adapterDefault)
+    defaultInitialTaskMode === "last_used" &&
+    lastUsedInitialTaskMode &&
+    isValidConfigValue(modeOption, lastUsedInitialTaskMode)
+      ? lastUsedInitialTaskMode
       : adapterDefault;
   const currentExecutionMode =
     getCurrentModeFromConfigOptions(modeOption ? [modeOption] : undefined) ??
@@ -657,6 +663,15 @@ export function TaskInput({
   const { isOnline } = useConnectivity();
   const promptSessionId = sessionId;
 
+  useEffect(() => {
+    if (!skills) return;
+    useDraftStore
+      .getState()
+      .actions.setCommands(promptSessionId, skills.map(skillToEditorCommand));
+    return () => {
+      useDraftStore.getState().actions.clearCommands(promptSessionId);
+    };
+  }, [promptSessionId, skills]);
   const hasHistory = useTaskInputHistoryStore((s) => s.entries.length > 0);
   const getPromptHistory = useCallback(
     () => useTaskInputHistoryStore.getState().entries.map((e) => e.text),
@@ -926,14 +941,13 @@ export function TaskInput({
                 />
               }
               reasoningSelector={
-                !isPreviewLoading && (
-                  <ReasoningLevelSelector
-                    thoughtOption={thoughtOption}
-                    adapter={adapter}
-                    onChange={handleThoughtChange}
-                    disabled={isCreatingTask}
-                  />
-                )
+                <ReasoningLevelSelector
+                  thoughtOption={thoughtOption}
+                  adapter={adapter}
+                  onChange={handleThoughtChange}
+                  disabled={isCreatingTask}
+                  isLoading={isPreviewLoading}
+                />
               }
               getPromptHistory={getPromptHistory}
               onEmptyChange={handleEditorEmptyChange}
@@ -1067,7 +1081,11 @@ export function TaskInput({
                 )}
               </AnimatePresence>
             ) : (
-              <SuggestedTasksPanel />
+              <NewTaskSuggestions
+                repoPath={selectedDirectory || null}
+                workspaceMode={effectiveWorkspaceMode}
+                disabled={isCreatingTask}
+              />
             )}
           </div>
         </div>

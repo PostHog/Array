@@ -1,4 +1,5 @@
-import { escapeXmlAttr, unescapeXmlAttr } from "@posthog/shared";
+import { escapeXmlAttr, type UploadableSkillSource } from "@posthog/shared";
+import { isUploadableSkillSource, parseXmlAttrs } from "./skillTags";
 
 export interface MentionChip {
   type:
@@ -15,6 +16,9 @@ export interface MentionChip {
   label: string;
   pastedText?: boolean;
   chipId?: string;
+  skillPath?: string;
+  skillSource?: UploadableSkillSource;
+  skillName?: string;
 }
 
 export interface FileAttachment {
@@ -60,6 +64,9 @@ export function contentToXml(content: EditorContent): string {
         inlineFilePaths.add(chip.id);
         return `<folder path="${escapedId}" />`;
       case "command":
+        if (chip.skillPath && chip.skillSource) {
+          return `<skill name="${escapeXmlAttr(chip.skillName ?? chip.label)}" source="${escapeXmlAttr(chip.skillSource)}" path="${escapeXmlAttr(chip.skillPath)}" />`;
+        }
         if (chip.id && chip.id !== chip.label && isAbsolutePathLike(chip.id)) {
           return `<folder path="${escapedId}" />`;
         }
@@ -97,8 +104,7 @@ export function contentToXml(content: EditorContent): string {
 }
 
 const CHIP_TAG_REGEX =
-  /<(file|folder|error|experiment|insight|feature_flag|github_issue|github_pr)\b([^>]*?)\s*\/>/g;
-const ATTR_REGEX = /(\w+)="([^"]*)"/g;
+  /<(file|folder|skill|error|experiment|insight|feature_flag|github_issue|github_pr)\b([^>]*?)\s*\/>/g;
 
 export function deriveFileLabel(filePath: string): string {
   const segments = filePath.split("/").filter(Boolean);
@@ -107,16 +113,8 @@ export function deriveFileLabel(filePath: string): string {
   return parentDir ? `${parentDir}/${fileName}` : fileName;
 }
 
-function parseAttrs(raw: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  for (const match of raw.matchAll(ATTR_REGEX)) {
-    attrs[match[1]] = unescapeXmlAttr(match[2]);
-  }
-  return attrs;
-}
-
 function chipFromTag(tag: string, rawAttrs: string): MentionChip | null {
-  const attrs = parseAttrs(rawAttrs);
+  const attrs = parseXmlAttrs(rawAttrs);
   switch (tag) {
     case "file": {
       const path = attrs.path;
@@ -127,6 +125,22 @@ function chipFromTag(tag: string, rawAttrs: string): MentionChip | null {
       const path = attrs.path;
       if (!path) return null;
       return { type: "folder", id: path, label: deriveFileLabel(path) };
+    }
+    case "skill": {
+      const path = attrs.path;
+      const name = attrs.name;
+      const source = attrs.source;
+      if (!path || !name || !isUploadableSkillSource(source)) {
+        return null;
+      }
+      return {
+        type: "command",
+        id: path,
+        label: name,
+        skillPath: path,
+        skillSource: source,
+        skillName: name,
+      };
     }
     case "error":
     case "experiment":

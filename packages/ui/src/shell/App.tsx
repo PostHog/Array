@@ -1,3 +1,4 @@
+import { ToastProvider } from "@posthog/quill";
 import { EXTERNAL_LINKS, isNotAuthenticatedError } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { AiApprovalScreen } from "@posthog/ui/features/ai-approval/AiApprovalScreen";
@@ -11,6 +12,7 @@ import { InviteCodeScreen } from "@posthog/ui/features/auth/components/InviteCod
 import { ScopeReauthPrompt } from "@posthog/ui/features/auth/components/ScopeReauthPrompt";
 import { useAuthSession } from "@posthog/ui/features/auth/useAuthSession";
 import { useIsOrgAdmin } from "@posthog/ui/features/auth/useOrgRole";
+import { CanvasGenerationToaster } from "@posthog/ui/features/canvas/freeform/useCanvasGenerationToasts";
 import { AddDirectoryDialog } from "@posthog/ui/features/folder-picker/AddDirectoryDialog";
 import { OnboardingFlow } from "@posthog/ui/features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
@@ -27,7 +29,6 @@ import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { RouterProvider } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { Toaster } from "sonner";
 
 function App() {
   const { isBootstrapped } = useAuthSession();
@@ -160,6 +161,10 @@ function App() {
         transition={{ duration: 0.5, delay: showTransition ? 0.5 : 0 }}
       >
         <RouterProvider router={router} />
+        {/* Surfaces a toast when a backgrounded canvas generation finishes,
+            from anywhere in the app. Sibling of the router so it stays mounted
+            across every route (not just the canvas space). Renders null. */}
+        <CanvasGenerationToaster />
       </motion.div>
     );
   };
@@ -167,25 +172,26 @@ function App() {
   const content = renderContent();
 
   return (
-    <ErrorBoundary
-      name="App"
-      resetKey={authState.status}
-      shouldSuppress={isNotAuthenticatedError}
-    >
-      {isAuthenticated ? (
-        <AnimatePresence mode="wait">{content}</AnimatePresence>
-      ) : (
-        content
-      )}
-      <LoginTransition
-        isAnimating={showTransition}
-        isDarkMode={isDarkMode}
-        onComplete={handleTransitionComplete}
-      />
-      <ScopeReauthPrompt />
-      <AddDirectoryDialog />
-      <Toaster position="bottom-right" />
-    </ErrorBoundary>
+    <ToastProvider>
+      <ErrorBoundary
+        name="App"
+        resetKey={authState.status}
+        shouldSuppress={isNotAuthenticatedError}
+      >
+        {isAuthenticated ? (
+          <AnimatePresence mode="wait">{content}</AnimatePresence>
+        ) : (
+          content
+        )}
+        <LoginTransition
+          isAnimating={showTransition}
+          isDarkMode={isDarkMode}
+          onComplete={handleTransitionComplete}
+        />
+        <ScopeReauthPrompt />
+        <AddDirectoryDialog />
+      </ErrorBoundary>
+    </ToastProvider>
   );
 }
 

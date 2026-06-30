@@ -4,9 +4,9 @@ import type {
   SignalUserAutonomyConfig,
 } from "@posthog/shared/types";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { toast } from "sonner";
 
 const USER_AUTONOMY_QUERY_KEY = signalsConfigKeys.userAutonomyConfig;
 

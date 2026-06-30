@@ -5,10 +5,10 @@ import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import type { SignalSourceValues } from "@posthog/ui/features/inbox/components/SignalSourceToggles";
 import { useExternalDataSources } from "@posthog/ui/features/inbox/hooks/useExternalDataSources";
 import { useSignalSourceConfigs } from "@posthog/ui/features/inbox/hooks/useSignalSourceConfigs";
+import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 
 type SourceProduct = SignalSourceConfig["source_product"];
 type SourceType = SignalSourceConfig["source_type"];

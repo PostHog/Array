@@ -57,25 +57,91 @@ export interface AgentApplication {
   ingress_base_url: string | null;
 }
 
+export type AgentReasoningEffort =
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
+
+export type AgentModelLevel = "low" | "medium" | "high";
+
+/**
+ * Session model stability vs. resilience. `cost` (default): pin the first served
+ * model for the whole session — warm prompt cache, no cross-model failover.
+ * `availability`: lead with the last-served model but fail over on failure.
+ * Mirrors `spec.models.optimize_for` in the backend.
+ */
+export type AgentModelOptimizeFor = "cost" | "availability";
+
+/** One model in a manual policy: a canonical model id (e.g.
+ *  `anthropic/claude-sonnet-4-6`) plus an optional per-model reasoning override. */
+export interface AgentModelEntry {
+  model: string;
+  reasoning?: AgentReasoningEffort;
+}
+
+/**
+ * How a revision picks its model. `auto` resolves a maintained, priority-ordered,
+ * cross-provider list from `level` at runtime; `manual` pins an author-ordered
+ * fallback list (primary first). Mirrors `spec.models` in the backend.
+ */
+export type AgentModelPolicy =
+  | {
+      mode: "auto";
+      level?: AgentModelLevel;
+      reasoning?: AgentReasoningEffort;
+      optimize_for?: AgentModelOptimizeFor;
+    }
+  | {
+      mode: "manual";
+      models: AgentModelEntry[];
+      optimize_for?: AgentModelOptimizeFor;
+    };
+
+/**
+ * A served model + its cost profile, as the model browser shows it. Mirrors the
+ * ai-gateway catalog (`@posthog/agent-applications-models`). Pricing is USD per
+ * million tokens.
+ */
+export interface ModelCatalogEntry {
+  /** Canonical id, e.g. `anthropic/claude-sonnet-4.6`. */
+  model: string;
+  provider: string;
+  context_window: number;
+  input: number;
+  output: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
+/** The full served catalog plus the curated `auto` level → model mapping. */
+export interface ModelCatalog {
+  models: ModelCatalogEntry[];
+  /** Canonical ids each auto level resolves to, in priority order. */
+  levels: Record<AgentModelLevel, string[]>;
+}
+
 /**
  * The agent spec carried on a revision. Known top-level fields are surfaced and
  * the rest passes through pending fully-typed elaboration.
  */
 export interface AgentSpec {
-  model: string;
+  /** Model selection. `model` is the legacy single-string form; current specs
+   *  carry `models`. One or the other is present. */
+  models?: AgentModelPolicy;
+  model?: string;
   triggers?: unknown[];
   tools?: unknown[];
   mcps?: unknown[];
   skills?: unknown[];
-  integrations?: string[];
   secrets?: string[];
   limits?: {
     max_turns?: number;
     max_tool_calls?: number;
     max_wall_seconds?: number;
   };
-  entrypoint?: string;
-  reasoning?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  reasoning?: AgentReasoningEffort;
   [key: string]: unknown;
 }
 

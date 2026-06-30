@@ -121,6 +121,22 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
     },
     {
       label:
+        "newly installed skill command is refreshed before unsupported check",
+      sessionId: "s-new-skill",
+      prompt: "/local-test-skill",
+      knownCommands: undefined,
+      supportedCommandsAfterReload: [
+        {
+          name: "local-test-skill",
+          description: "Local test skill",
+          argumentHint: "",
+        },
+      ],
+      expectsUnsupportedChunk: false,
+      commandInMessage: null,
+    },
+    {
+      label:
         "known plugin/skill command with early idle is not flagged as unsupported",
       sessionId: "s-skill",
       prompt: "/skills-store use my address pr review skill",
@@ -137,6 +153,11 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
       tc.sessionId,
       tc.knownCommands as Set<string> | undefined,
     );
+    if ("supportedCommandsAfterReload" in tc) {
+      vi.mocked(query.supportedCommands).mockResolvedValue([
+        ...tc.supportedCommandsAfterReload,
+      ]);
+    }
 
     const promptPromise = agent.prompt({
       sessionId: tc.sessionId,
@@ -171,6 +192,10 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
       expect(
         findUnsupportedChunkText(client.sessionUpdate.mock.calls),
       ).toBeUndefined();
+      if ("supportedCommandsAfterReload" in tc) {
+        expect(query.reloadSkills).toHaveBeenCalled();
+        expect(query.supportedCommands).toHaveBeenCalled();
+      }
     }
   });
 });

@@ -16,8 +16,8 @@ import { AgentApprovalDecisionForm } from "./AgentApprovalDecisionForm";
 import { ArgsSection } from "./AgentApprovalDetail";
 
 /**
- * Inline pending-approval card surfaced in the live chat preview / agent
- * builder dock. Renders between the conversation and the composer when the
+ * Inline pending-approval card surfaced in the chat pane / agent builder
+ * dock. Renders between the conversation and the composer when the
  * agent has paused on an approval-gated tool call.
  *
  * Decision routing follows the approval `type`:
