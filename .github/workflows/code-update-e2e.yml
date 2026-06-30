@@ -148,9 +148,11 @@ jobs:
       # (a full build) instead of a confusing swap failure in the Forge leg.
       - name: Build old Forge app if not cached
         working-directory: apps/code
+        env:
+          CACHE_HIT: ${{ steps.forge-cache.outputs.cache-hit }}
         run: |
           APP="out/old-forge/PostHog Code.app"
-          if [ "${{ steps.forge-cache.outputs.cache-hit }}" = "true" ] && codesign --verify --strict "$APP" 2>/dev/null; then
+          if [ "$CACHE_HIT" = "true" ] && codesign --verify --strict "$APP" 2>/dev/null; then
             echo "Reusing cached Forge app with a valid signature"
             codesign --verify --strict --verbose=2 "$APP"
           else
