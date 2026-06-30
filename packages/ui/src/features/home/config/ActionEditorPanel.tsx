@@ -202,7 +202,9 @@ export function ActionEditorPanel({
               className="self-start"
               size="1"
               checked={action.auto ?? false}
-              onCheckedChange={(checked) => patch({ auto: checked })}
+              onCheckedChange={(checked) =>
+                patch({ auto: checked || undefined })
+              }
               aria-label="Auto-run this action"
             />
             <Text className="mt-1 text-[10px] text-gray-10">
