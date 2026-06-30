@@ -421,10 +421,12 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                       value={cmd.id}
                       onClick={() => handleSelect(cmd.id)}
                       // Long task names wrap instead of truncating, so the
-                      // item must grow: min-height, not a fixed height. Full-
-                      // width flex so a trailing shortcut can `ml-auto` to the
-                      // end of the row.
-                      className="flex h-auto! min-h-7 w-full items-center gap-2 py-1.5 text-left"
+                      // item must grow: min-height, not a fixed height. Quill
+                      // wraps our children in an inner content span; force it to
+                      // fill the row (so a trailing shortcut can `ml-auto` to the
+                      // end) and let it overflow visibly so the shortcut Kbd
+                      // boxes aren't clipped by the wrapper's `truncate`.
+                      className="flex h-auto! min-h-7 w-full items-center gap-2 py-1.5 pr-2 text-left [&>span]:w-full [&>span]:overflow-visible"
                     >
                       {cmd.icon}
                       <span className="wrap-break-word min-w-0 whitespace-normal">
@@ -438,8 +440,8 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                       {cmd.shortcut && (
                         <span className="ml-auto shrink-0 pl-2">
                           <KbdGroup>
-                            {formatHotkeyParts(cmd.shortcut).map((part, i) => (
-                              <Kbd key={i}>{part}</Kbd>
+                            {formatHotkeyParts(cmd.shortcut).map((part) => (
+                              <Kbd key={part}>{part}</Kbd>
                             ))}
                           </KbdGroup>
                         </span>
