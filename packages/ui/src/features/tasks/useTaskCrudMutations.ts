@@ -1,4 +1,8 @@
 import {
+  SESSION_SERVICE,
+  type SessionService,
+} from "@posthog/core/sessions/sessionService";
+import {
   insertTaskDedup,
   removeTaskFromList,
 } from "@posthog/core/tasks/taskDelete";
@@ -6,12 +10,30 @@ import {
   TASK_DELETION_SERVICE,
   type TaskDeletionService,
 } from "@posthog/core/tasks/taskDeletionService";
+import { resolveService } from "@posthog/di/container";
 import { useService } from "@posthog/di/react";
 import type { Task } from "@posthog/shared/domain-types";
+import { terminalManager } from "@posthog/ui/features/terminal/TerminalManager";
+import { useTerminalStore } from "@posthog/ui/features/terminal/terminalStore";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
+import { logger } from "@posthog/ui/shell/logger";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { taskKeys } from "./taskKeys";
+
+const log = logger.scope("tasks");
+
+async function releaseDeletedTaskResources(taskId: string): Promise<void> {
+  try {
+    await resolveService<SessionService>(SESSION_SERVICE).disconnectFromTask(
+      taskId,
+    );
+  } catch (error) {
+    log.error("Failed to disconnect session for deleted task", error);
+  }
+  terminalManager.destroyForTask(taskId);
+  useTerminalStore.getState().clearTerminalStatesForTask(taskId);
+}
 
 export function useCreateTask() {
   const queryClient = useQueryClient();
@@ -77,7 +99,11 @@ export function useDeleteTask() {
   );
 
   const mutation = useAuthenticatedMutation(
-    (client, taskId: string) => deletionService.deleteTask(client, taskId),
+    async (client, taskId: string) => {
+      const result = await deletionService.deleteTask(client, taskId);
+      await releaseDeletedTaskResources(taskId);
+      return result;
+    },
     {
       onMutate: async (taskId) => {
         await queryClient.cancelQueries({ queryKey: taskKeys.lists() });
