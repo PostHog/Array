@@ -221,6 +221,10 @@ export function getClaudeModelRecency(modelId: string): number {
 const PROVIDER_PREFIXES = ["anthropic/", "openai/", "google-vertex/"];
 
 export function formatGatewayModelName(model: GatewayModel): string {
+  if (isCloudflareModel(model)) {
+    return (model.id.split("/").pop() ?? model.id).toLowerCase();
+  }
+
   if (isOpenAIModel(model)) {
     return stripProviderPrefix(model.id).toLowerCase();
   }
