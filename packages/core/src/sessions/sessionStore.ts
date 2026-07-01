@@ -7,8 +7,17 @@ import type {
   QueuedMessage,
   TaskRunStatus,
 } from "@posthog/shared";
+import { setAutoFreeze } from "immer";
 import { immer } from "zustand/middleware/immer";
 import { createStore } from "zustand/vanilla";
+
+// immer autofreeze deep-walks produced state on every commit. For the
+// append-only `events` array that means re-walking the whole (growing) array on
+// every streamed event — O(n) per append, O(n²) per turn (~2.2s to append 10k
+// events; ~57ms with this off). Autofreeze is a dev-time mutation guard with no
+// runtime value, so disable it; events are still frozen individually at the
+// append/creation seam, which is O(1) each.
+setAutoFreeze(false);
 
 export interface SessionState {
   /** Sessions indexed by taskRunId */
@@ -64,8 +73,8 @@ export const sessionStoreSetters = {
     sessionStore.setState((state) => {
       const session = state.sessions[taskRunId];
       if (session) {
-        // Freeze each event so immer skips deep-freezing the whole (unbounded)
-        // events array on every append — it stops at the first frozen node.
+        // Keep each event immutable once stored (O(1) each). The store disables
+        // immer autofreeze, so this is the only freeze.
         for (const event of events) Object.freeze(event);
         session.events.push(...events);
         if (newLineCount !== undefined) {
