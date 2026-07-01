@@ -241,9 +241,10 @@ export function NotificationsSettings() {
             </Select.Content>
           </Select.Root>
           {completionSound !== "none" && (
-            <Button
+            <IconButton
               variant="soft"
               size="1"
+              aria-label="Test sound"
               onClick={() =>
                 playCompletionSound(
                   completionSound,
@@ -252,33 +253,36 @@ export function NotificationsSettings() {
                 )
               }
             >
-              Test
-            </Button>
+              <Play weight="fill" />
+            </IconButton>
           )}
-          <Button variant="soft" size="1" onClick={() => setAddSoundOpen(true)}>
+        </Flex>
+      </SettingRow>
+
+      <SettingRow
+        label="Custom sounds"
+        description="Sounds you recorded or imported. Rename or remove them here."
+      >
+        <Flex direction="column" gap="2" className="w-full max-w-[260px]">
+          {customSounds.map((sound) => (
+            <CustomSoundRow
+              key={sound.id}
+              sound={sound}
+              volume={completionVolume}
+              onRename={renameCustomSound}
+              onRemove={removeCustomSound}
+            />
+          ))}
+          <Button
+            variant="soft"
+            size="1"
+            className="self-start"
+            onClick={() => setAddSoundOpen(true)}
+          >
             <Plus /> Add
           </Button>
         </Flex>
       </SettingRow>
-
-      {customSounds.length > 0 && (
-        <SettingRow
-          label="Custom sounds"
-          description="Sounds you recorded or imported. Rename or remove them here."
-        >
-          <Flex direction="column" gap="2" className="w-full max-w-[260px]">
-            {customSounds.map((sound) => (
-              <CustomSoundRow
-                key={sound.id}
-                sound={sound}
-                volume={completionVolume}
-                onRename={renameCustomSound}
-                onRemove={removeCustomSound}
-              />
-            ))}
-          </Flex>
-        </SettingRow>
-      )}
 
       <AddCustomSoundDialog
         open={addSoundOpen}
@@ -355,16 +359,6 @@ function CustomSoundRow({
 
   return (
     <Flex align="center" gap="2">
-      <IconButton
-        variant="soft"
-        size="1"
-        aria-label={`Play ${sound.name}`}
-        onClick={() =>
-          playCompletionSound(`custom:${sound.id}`, volume, [sound])
-        }
-      >
-        <Play weight="fill" />
-      </IconButton>
       <TextField.Root
         key={sound.name}
         className="flex-1"
@@ -379,6 +373,16 @@ function CustomSoundRow({
       <Text color="gray" className="text-[12px] tabular-nums">
         {formatDurationSeconds(sound.durationMs)}
       </Text>
+      <IconButton
+        variant="soft"
+        size="1"
+        aria-label={`Play ${sound.name}`}
+        onClick={() =>
+          playCompletionSound(`custom:${sound.id}`, volume, [sound])
+        }
+      >
+        <Play weight="fill" />
+      </IconButton>
       <IconButton
         variant="ghost"
         color="gray"
