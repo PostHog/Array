@@ -1090,7 +1090,7 @@ export class AgentServer {
       aiStage: getTaskRunStateString(preTaskRun, "ai_stage"),
       taskId: payload.task_id,
       taskRunId: payload.run_id,
-      taskUserId: payload.user_id,
+      taskUserId: payload.user_id || preTask?.created_by?.id || null,
       taskTitle: preTask?.title,
     });
 
