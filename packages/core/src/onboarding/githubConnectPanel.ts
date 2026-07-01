@@ -1,3 +1,5 @@
+import { POSTHOG_GITHUB_APP_URL } from "../integrations/githubApp";
+
 export interface GithubPanelMessageOptions {
   hasConnectError: boolean;
   connectErrorMessage: string;
@@ -53,16 +55,11 @@ export function isAnyIntegrationStale(
   );
 }
 
-// GitHub's per-installation settings page for an org install is owner-only and
-// 404s for members, so org installs point at the app page, which loads for
-// anyone (owners get Configure, members get request access).
-const POSTHOG_GITHUB_APP_URL = "https://github.com/apps/posthog";
-
 export function buildInstallationSettingsUrl(
   account: GithubInstallationAccount | null | undefined,
   installationId: string,
 ): string {
-  if (account?.type === "Organization") {
+  if (account?.type?.toLowerCase() === "organization") {
     return POSTHOG_GITHUB_APP_URL;
   }
   return `https://github.com/settings/installations/${installationId}`;

@@ -1,3 +1,5 @@
+import { POSTHOG_GITHUB_APP_URL } from "../integrations/githubApp";
+
 export function summarizeReposByOwner(
   repositories: readonly string[],
 ): { owner: string; count: number }[] {
@@ -20,11 +22,6 @@ export interface GithubInstallationLike {
   installation_id: string | number;
   account?: GithubInstallationAccount | null;
 }
-
-// GitHub's per-installation settings page for an org install is owner-only and
-// 404s for members, so org installs point at the app page, which loads for
-// anyone (owners get Configure, members get request access).
-const POSTHOG_GITHUB_APP_URL = "https://github.com/apps/posthog";
 
 export function githubInstallationSettingsUrl(
   integration: GithubInstallationLike,

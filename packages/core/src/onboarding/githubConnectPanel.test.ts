@@ -85,6 +85,15 @@ describe("buildInstallationSettingsUrl", () => {
     ).toBe("https://github.com/apps/posthog");
   });
 
+  it("matches the organization account type case-insensitively", () => {
+    expect(
+      buildInstallationSettingsUrl(
+        { type: "organization", name: "acme" },
+        "42",
+      ),
+    ).toBe("https://github.com/apps/posthog");
+  });
+
   it("builds a personal settings url otherwise", () => {
     expect(buildInstallationSettingsUrl({ type: "User" }, "42")).toBe(
       "https://github.com/settings/installations/42",
