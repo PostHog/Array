@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGitClient } from "./client";
-import { armProcessTimeout, WorktreeManager } from "./worktree";
+import { armProcessTimeout, KILL_GRACE_MS, WorktreeManager } from "./worktree";
 
 async function initBareRemote(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "posthog-code-remote-"));

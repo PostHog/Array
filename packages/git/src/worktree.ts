@@ -32,7 +32,7 @@ const WORKTREE_FOLDER_NAME = ".posthog-code";
 
 const WORKTREE_ADD_TIMEOUT_MS = 120_000;
 const POST_CHECKOUT_HOOK_TIMEOUT_MS = 300_000;
-const KILL_GRACE_MS = 5_000;
+export const KILL_GRACE_MS = 5_000;
 
 export function armProcessTimeout(
   proc: ChildProcess,
