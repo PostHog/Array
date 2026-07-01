@@ -84,6 +84,8 @@ interface SettingsStore {
   lastUsedEnvironments: Record<string, string>;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
+  // Mode last chosen when approving a plan; pre-selected on the next approval.
+  lastPlanApprovalMode: ExecutionMode | null;
   defaultReasoningEffort: DefaultReasoningEffort;
   defaultMessagingMode: DefaultMessagingMode;
   setDefaultMessagingMode: (mode: DefaultMessagingMode) => void;
@@ -105,6 +107,7 @@ interface SettingsStore {
   getLastUsedEnvironment: (repoPath: string) => string | null;
   setDefaultInitialTaskMode: (mode: DefaultInitialTaskMode) => void;
   setLastUsedInitialTaskMode: (mode: ExecutionMode) => void;
+  setLastPlanApprovalMode: (mode: ExecutionMode) => void;
   setDefaultReasoningEffort: (effort: DefaultReasoningEffort) => void;
 
   // Notifications
@@ -214,6 +217,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedEnvironments: {},
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
+      lastPlanApprovalMode: null,
       defaultReasoningEffort: "last_used",
       defaultMessagingMode: "queue",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
@@ -245,6 +249,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ defaultInitialTaskMode: mode }),
       setLastUsedInitialTaskMode: (mode) =>
         set({ lastUsedInitialTaskMode: mode }),
+      setLastPlanApprovalMode: (mode) => set({ lastPlanApprovalMode: mode }),
       setDefaultReasoningEffort: (effort) =>
         set({ defaultReasoningEffort: effort }),
       setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
@@ -387,6 +392,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedEnvironments: state.lastUsedEnvironments,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
+        lastPlanApprovalMode: state.lastPlanApprovalMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
         defaultMessagingMode: state.defaultMessagingMode,
 
