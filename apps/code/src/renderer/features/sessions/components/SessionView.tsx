@@ -35,7 +35,6 @@ import {
 } from "@stores/pendingTaskPromptStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSessionService } from "../service/service";
-import { flattenSelectOptions } from "../stores/sessionStore";
 import {
   useSessionViewActions,
   useShowRawLogs,
@@ -44,6 +43,10 @@ import { CloudInitializingView } from "./CloudInitializingView";
 import { ConversationView } from "./ConversationView";
 import { DropZoneOverlay } from "./DropZoneOverlay";
 import { ModelSelector } from "./ModelSelector";
+import {
+  resolveAllowAlwaysUpgradeMode,
+  resolveBypassRevertMode,
+} from "./modeResolvers";
 import { PendingChatView } from "./PendingChatView";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
@@ -82,25 +85,6 @@ interface SessionViewProps {
 
 const DEFAULT_ERROR_MESSAGE =
   "Failed to resume this session. The working directory may have been deleted. Please start a new session.";
-
-/**
- * When an allow_always permission is granted outside a mode-switch prompt,
- * ratchet the session to the closest "auto-accept edits" preset offered by
- * this adapter's mode catalog. Claude exposes `acceptEdits`; Codex has no
- * exact equivalent, so fall back to `auto`. Returns undefined if neither is
- * available (in which case leave the current mode untouched).
- */
-function resolveAllowAlwaysUpgradeMode(
-  modeOption: ReturnType<typeof useModeConfigOptionForTask>,
-): string | undefined {
-  if (modeOption?.type !== "select") return undefined;
-  const availableIds = new Set(
-    flattenSelectOptions(modeOption.options).map((opt) => opt.value),
-  );
-  if (availableIds.has("acceptEdits")) return "acceptEdits";
-  if (availableIds.has("auto")) return "auto";
-  return undefined;
-}
 
 export function SessionView({
   events,
@@ -161,13 +145,20 @@ export function SessionView({
     const isBypass =
       currentModeId === "bypassPermissions" || currentModeId === "full-access";
     if (isBypass && taskId) {
-      getSessionService().setSessionConfigOptionByCategory(
-        taskId,
-        "mode",
-        "default",
-      );
+      // Revert to the adapter's standard mode (Claude: default, Codex: auto).
+      // Hardcoding "default" breaks codex sessions (cloud full-access → local
+      // codex after a handoff): codex rejects it, the rollback re-arms this
+      // effect, and it loops.
+      const revertMode = resolveBypassRevertMode(modeOption);
+      if (revertMode && revertMode !== currentModeId) {
+        getSessionService().setSessionConfigOptionByCategory(
+          taskId,
+          "mode",
+          revertMode,
+        );
+      }
     }
-  }, [allowBypassPermissions, currentModeId, taskId, isCloud]);
+  }, [allowBypassPermissions, currentModeId, taskId, isCloud, modeOption]);
 
   const handleModeChange = useCallback(
     (nextMode: string) => {
@@ -650,7 +641,9 @@ export function SessionView({
                           sessionId={sessionId}
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
-                          submitDisabledExternal={handoffInProgress || !isOnline}
+                          submitDisabledExternal={
+                            handoffInProgress || !isOnline
+                          }
                           submitTooltipOverride={
                             !isOnline
                               ? "No internet connection"

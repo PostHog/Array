@@ -1,6 +1,5 @@
 import { POSTHOG_NOTIFICATIONS } from "@posthog/agent";
 import { getSessionJsonlPath } from "@posthog/agent/adapters/claude/session/jsonl-hydration";
-import { truncateCodexRollout } from "@posthog/agent/adapters/codex/rollout";
 import { createGitClient } from "@posthog/git/client";
 import {
   deleteCheckpoint,
@@ -349,7 +348,8 @@ async function runRestore(input: {
                         checkpointId: input.checkpointId,
                         bytes: trimmedLog.length,
                         s3Bytes: truncatedLog.length,
-                        timestampTrimmed: trimmedLog.length < truncatedLog.length,
+                        timestampTrimmed:
+                          trimmedLog.length < truncatedLog.length,
                       },
                     );
                     // Every GIT_CHECKPOINT marker still present in the truncated
@@ -379,10 +379,13 @@ async function runRestore(input: {
                     }
                   }
                 } else {
-                  log.warn("Failed to fetch truncated run log for local re-seed", {
-                    taskRunId: input.taskRunId,
-                    status: logsResponse.status,
-                  });
+                  log.warn(
+                    "Failed to fetch truncated run log for local re-seed",
+                    {
+                      taskRunId: input.taskRunId,
+                      status: logsResponse.status,
+                    },
+                  );
                 }
               } catch (err) {
                 log.warn(
@@ -428,54 +431,33 @@ async function runRestore(input: {
           log.info("Deleted orphaned checkpoint refs", {
             requested: orphanedCheckpointIds.length,
             deleted: idsToDelete.length,
-            skippedSurvivors:
-              orphanedCheckpointIds.length - idsToDelete.length,
+            skippedSurvivors: orphanedCheckpointIds.length - idsToDelete.length,
           });
         }
 
         // Trim in-memory checkpoints so replayCheckpoints only re-emits
         // survivors — must happen before cancelSession triggers reconnect.
-        // Returns the number of surviving turns (used as keepTurns for Codex).
-        const survivingTurns = agentService.truncateCheckpoints(
-          input.taskRunId,
-          input.checkpointId,
-        );
+        agentService.truncateCheckpoints(input.taskRunId, input.checkpointId);
 
-        // Mark this taskRunId so hydrateSessionJsonl force-refetches from
-        // the truncated S3 on reconnect, bypassing any stale existing JSONL.
-        // Must be set before cancelSession triggers the reconnect.
+        // Mark this taskRunId so the reconnect rebuilds agent memory bounded to
+        // the checkpoint: Claude force-refetches the truncated S3 into its JSONL;
+        // Codex (no JSONL hydration) starts a FRESH session seeded with a context
+        // summary of the truncated conversation (see getOrCreateSession's reconnect
+        // path). Must be set before cancelSession triggers the reconnect.
         agentService.markCheckpointRestore(input.taskRunId);
 
-        // Cancel the session — renderer reconnects, hydrateSessionJsonl
-        // fetches the truncated S3 log and overwrites the stale JSONL.
+        // Cancel the session — the renderer reconnects and rebuilds bounded memory.
         await agentService.cancelSession(input.taskRunId);
         log.info("Agent session cancelled for checkpoint restore", {
           taskRunId: input.taskRunId,
           checkpointId: input.checkpointId,
         });
 
-        // For Codex: truncate the on-disk rollout AFTER the subprocess is
-        // killed (file is now closed) so the resumed session has memory only
-        // up to the checkpoint. Must happen after cancelSession.
-        // survivingTurns=0 means the checkpoint wasn't found — skip truncation.
-        log.info("Checkpoint restore rollout decision", {
-          taskRunId: input.taskRunId,
-          adapter: info.adapter,
-          sessionId: info.sessionId,
-          survivingTurns,
-        });
-        if (info.adapter === "codex" && survivingTurns > 0) {
-          await truncateCodexRollout(info.sessionId, survivingTurns, log).catch(
-            (err: unknown) => {
-              truncationFailed = true;
-              log.warn("Failed to truncate codex rollout (non-fatal)", {
-                taskRunId: input.taskRunId,
-                sessionId: info.sessionId,
-                error: err instanceof Error ? err.message : String(err),
-              });
-            },
-          );
-        } else if (info.adapter === "claude") {
+        // Codex needs no on-disk rollout truncation here: the reconnect abandons
+        // the stale rollout (fresh session) and injects a bounded summary. A
+        // turn-count truncation couldn't strip history embedded inside the handoff
+        // summary turn anyway, so it's both unnecessary and insufficient.
+        if (info.adapter === "claude") {
           // Delete the stale local Claude JSONL so the SDK doesn't read full
           // conversation history before hydrateSessionJsonl re-fetches the
           // truncated version from S3. This fixes a race where an immediate

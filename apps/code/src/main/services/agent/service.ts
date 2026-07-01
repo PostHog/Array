@@ -39,6 +39,10 @@ import {
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import { extractCreatedPrUrl } from "@posthog/agent/pr-url-detector";
+import {
+  formatConversationForResume,
+  resumeFromLog,
+} from "@posthog/agent/resume";
 import type * as AgentTypes from "@posthog/agent/types";
 import { getCurrentBranch } from "@posthog/git/queries";
 import { CaptureCheckpointSaga } from "@posthog/git/sagas/checkpoint";
@@ -759,6 +763,9 @@ When creating pull requests, add the following footer at the end of the PR descr
 
       let configOptions: SessionConfigOption[] | undefined;
       let agentSessionId: string;
+      // Bounded context summary injected on a codex checkpoint-restore reconnect
+      // (see the codex branch below). Applied to the fresh session's pendingContext.
+      let codexRestorePendingContext: string | undefined;
 
       // Claude-specific: hydrate session JSONL from PostHog before resuming.
       // If hydration finds no conversation to restore, skip the resume and
@@ -793,6 +800,51 @@ When creating pull requests, add the following footer at the end of the PR descr
               config.sessionId = undefined;
             }
           }
+        } else if (this.checkpointRestoreTaskRunIds.has(taskRunId)) {
+          // Codex checkpoint restore. Codex has no JSONL hydration, so resuming the
+          // existing rollout would keep two things the agent must forget: the handoff
+          // context-summary turn (the entire pre-restore conversation embedded as
+          // text) and any post-checkpoint turns. Turn-level rollout truncation can't
+          // strip history baked into a surviving summary turn. So mirror what handoff
+          // (and Claude hydration) do: start a FRESH session and inject a context
+          // summary of the conversation UP TO the checkpoint, rebuilt from the
+          // already-truncated S3 log (runRestore truncates S3 before cancelSession
+          // triggers this reconnect).
+          this.checkpointRestoreTaskRunIds.delete(taskRunId);
+          const posthogAPI = agent.getPosthogAPI();
+          if (posthogAPI) {
+            try {
+              const { conversation } = await resumeFromLog({
+                taskId,
+                runId: taskRunId,
+                apiClient: posthogAPI,
+              });
+              const summary = formatConversationForResume(conversation);
+              if (summary.trim()) {
+                // Phrasing includes resume-context markers so a later handoff/restore
+                // rebuild recognises and strips this turn (formatConversationForResume
+                // → isResumeContextTurn), preventing nested summaries.
+                codexRestorePendingContext =
+                  `You are resuming a previous conversation after the workspace was ` +
+                  `restored to an earlier checkpoint. The files have been reverted to ` +
+                  `that checkpoint. Here is the conversation history from the session ` +
+                  `up to that point:\n\n${summary}\n\n` +
+                  `Continue from where the conversation left off.`;
+              }
+            } catch (err) {
+              log.warn(
+                "Failed to rebuild codex context after checkpoint restore",
+                {
+                  taskId,
+                  taskRunId,
+                  error: err instanceof Error ? err.message : String(err),
+                },
+              );
+            }
+          }
+          // Abandon the stale rollout regardless: a fresh session with the bounded
+          // summary above is the only way to drop the embedded pre-checkpoint history.
+          config.sessionId = undefined;
         }
       }
 
@@ -874,6 +926,10 @@ When creating pull requests, add the following footer at the end of the PR descr
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
+        // Set on a codex checkpoint-restore reconnect: bounded conversation summary
+        // prepended to the next prompt so the fresh session's memory ends at the
+        // restored checkpoint (undefined for every other reconnect/create path).
+        pendingContext: codexRestorePendingContext,
       };
 
       this.sessions.set(taskRunId, session);
@@ -1094,6 +1150,22 @@ When creating pull requests, add the following footer at the end of the PR descr
     const checkpoints = this.sessionCheckpoints.get(taskRunId) ?? [];
     const cp = checkpoints.find((c) => c.checkpointId === checkpointId);
     return cp?.promptId;
+  }
+
+  /**
+   * Read-only: the checkpoint IDs that SURVIVE a restore to keepUpToCheckpointId
+   * (everything up to and including the target). Used as a deletion whitelist so
+   * orphan-ref cleanup never removes a surviving checkpoint's git ref. Returns []
+   * when the target isn't in the in-memory map (e.g. after an app restart) — the
+   * caller unions this with the truncated-log markers, which survive restart.
+   */
+  getSurvivingCheckpointIds(
+    taskRunId: string,
+    keepUpToCheckpointId: string,
+  ): string[] {
+    const cps = this.sessionCheckpoints.get(taskRunId) ?? [];
+    const idx = cps.findIndex((c) => c.checkpointId === keepUpToCheckpointId);
+    return idx === -1 ? [] : cps.slice(0, idx + 1).map((c) => c.checkpointId);
   }
 
   /**

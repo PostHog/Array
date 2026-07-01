@@ -81,7 +81,10 @@ globalThis.ResizeObserver = class ResizeObserver {
   disconnect = vi.fn();
 };
 
-if (typeof globalThis.PointerEvent === "undefined") {
+if (
+  typeof globalThis.PointerEvent === "undefined" &&
+  typeof MouseEvent !== "undefined"
+) {
   class JsdomPointerEvent extends MouseEvent {
     pointerId: number;
     pointerType: string;
@@ -111,23 +114,33 @@ if (typeof globalThis.PointerEvent === "undefined") {
   globalThis.PointerEvent = JsdomPointerEvent as unknown as typeof PointerEvent;
 }
 
-HTMLCanvasElement.prototype.getContext = vi.fn();
-Element.prototype.scrollIntoView = vi.fn();
+// DOM-only shims — skipped under the node test environment (main-process tests).
+if (typeof HTMLCanvasElement !== "undefined") {
+  HTMLCanvasElement.prototype.getContext = vi.fn();
+}
+if (typeof Element !== "undefined") {
+  Element.prototype.scrollIntoView = vi.fn();
+}
 
-Object.defineProperty(window, "matchMedia", {
-  writable: true,
-  value: vi.fn().mockImplementation((query) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })),
-});
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
 
 afterEach(() => {
-  cleanup();
+  // cleanup() touches document; no-op it under the node environment.
+  if (typeof document !== "undefined") {
+    cleanup();
+  }
 });

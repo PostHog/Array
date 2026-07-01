@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // --- Hoisted mocks ---
@@ -101,6 +102,11 @@ vi.mock("@posthog/agent/adapters/claude/session/jsonl-hydration", () => ({
   hydrateSessionJsonl: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@posthog/agent/resume", () => ({
+  resumeFromLog: vi.fn().mockResolvedValue({ conversation: [] }),
+  formatConversationForResume: vi.fn(() => ""),
+}));
+
 vi.mock("@shared/errors.js", () => ({
   isAuthError: vi.fn(() => false),
 }));
@@ -122,7 +128,15 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 // --- Import after mocks ---
+import {
+  formatConversationForResume,
+  resumeFromLog,
+} from "@posthog/agent/resume";
+
 import { AgentService, buildAutoApproveOutcome } from "./service";
+
+const mockResumeFromLog = vi.mocked(resumeFromLog);
+const mockFormatConversationForResume = vi.mocked(formatConversationForResume);
 
 // --- Test helpers ---
 
@@ -518,5 +532,182 @@ describe("buildAutoApproveOutcome", () => {
 
   it("returns a cancelled outcome when options is empty", () => {
     expect(buildAutoApproveOutcome([])).toEqual({ outcome: "cancelled" });
+  });
+});
+
+describe("getSurvivingCheckpointIds", () => {
+  let service: AgentService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const deps = createMockDependencies();
+    service = new AgentService(
+      deps.processTracking as never,
+      deps.sleepService as never,
+      deps.fsService as never,
+      deps.posthogPluginService as never,
+      deps.agentAuthAdapter as never,
+      deps.mcpAppsService as never,
+      deps.powerManager as never,
+      deps.bundledResources as never,
+      deps.appMeta as never,
+      deps.storagePaths as never,
+      deps.defaultAdditionalDirectoryRepository as never,
+      deps.workspaceRepository as never,
+    );
+  });
+
+  function seedCheckpoints(taskRunId: string, ids: string[]) {
+    const map = (
+      service as unknown as {
+        sessionCheckpoints: Map<
+          string,
+          Array<{
+            checkpointId: string;
+            ts: number;
+            promptId: number | undefined;
+          }>
+        >;
+      }
+    ).sessionCheckpoints;
+    map.set(
+      taskRunId,
+      ids.map((checkpointId, i) => ({ checkpointId, ts: i, promptId: i })),
+    );
+  }
+
+  it("returns the target and everything before it (the survivors)", () => {
+    seedCheckpoints("run-1", ["cp1", "cp2", "cp3", "cp4"]);
+    expect(service.getSurvivingCheckpointIds("run-1", "cp2")).toEqual([
+      "cp1",
+      "cp2",
+    ]);
+  });
+
+  it("includes all checkpoints when the target is the last one", () => {
+    seedCheckpoints("run-1", ["cp1", "cp2", "cp3"]);
+    expect(service.getSurvivingCheckpointIds("run-1", "cp3")).toEqual([
+      "cp1",
+      "cp2",
+      "cp3",
+    ]);
+  });
+
+  it("returns [] when the target isn't in the map (e.g. after app restart)", () => {
+    seedCheckpoints("run-1", ["cp1", "cp2"]);
+    expect(service.getSurvivingCheckpointIds("run-1", "missing")).toEqual([]);
+  });
+
+  it("returns [] for an unknown taskRunId", () => {
+    expect(service.getSurvivingCheckpointIds("nope", "cp1")).toEqual([]);
+  });
+});
+
+describe("codex checkpoint-restore reconnect", () => {
+  let service: AgentService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default agent stub exposes a PostHog API so the restore branch can rebuild
+    // a summary; individual tests override resume mocks as needed.
+    mockAgentConstructor.mockImplementation(function (
+      this: Record<string, unknown>,
+    ) {
+      this.run = mockAgentRun;
+      this.cleanup = vi.fn().mockResolvedValue(undefined);
+      this.getPosthogAPI = vi.fn(() => ({}) as never);
+      this.flushAllLogs = vi.fn().mockResolvedValue(undefined);
+    });
+
+    const deps = createMockDependencies();
+    service = new AgentService(
+      deps.processTracking as never,
+      deps.sleepService as never,
+      deps.fsService as never,
+      deps.posthogPluginService as never,
+      deps.agentAuthAdapter as never,
+      deps.mcpAppsService as never,
+      deps.powerManager as never,
+      deps.bundledResources as never,
+      deps.appMeta as never,
+      deps.storagePaths as never,
+      deps.defaultAdditionalDirectoryRepository as never,
+      deps.workspaceRepository as never,
+    );
+  });
+
+  function reconnect(taskRunId: string) {
+    const config = {
+      taskId: "task-1",
+      taskRunId,
+      repoPath: "/mock/repo",
+      credentials: { apiHost: "https://app.posthog.com", projectId: 1 },
+      adapter: "codex" as const,
+      sessionId: "stale-rollout-session",
+    };
+    return (
+      service as unknown as {
+        getOrCreateSession: (
+          c: typeof config,
+          isReconnect: boolean,
+        ) => Promise<unknown>;
+      }
+    ).getOrCreateSession(config, true);
+  }
+
+  function getSession(taskRunId: string) {
+    return (
+      service as unknown as {
+        sessions: Map<string, { pendingContext?: string }>;
+      }
+    ).sessions.get(taskRunId);
+  }
+
+  it("abandons the stale rollout and starts a FRESH session (newSession, not resumeSession)", async () => {
+    service.markCheckpointRestore("run-restore");
+    await reconnect("run-restore");
+
+    // Fresh session — the stale rollout sessionId is never resumed.
+    expect(mockNewSession).toHaveBeenCalledTimes(1);
+    const conn = mockClientSideConnection.mock.results[0]?.value as {
+      resumeSession: ReturnType<typeof vi.fn>;
+    };
+    expect(conn.resumeSession).not.toHaveBeenCalled();
+
+    // Flag is consumed so a later ordinary reconnect resumes normally.
+    expect(
+      (
+        service as unknown as { checkpointRestoreTaskRunIds: Set<string> }
+      ).checkpointRestoreTaskRunIds.has("run-restore"),
+    ).toBe(false);
+  });
+
+  it("injects a bounded context summary rebuilt from the truncated log", async () => {
+    mockResumeFromLog.mockResolvedValueOnce({
+      conversation: [{ role: "user", content: "hi" }],
+    } as never);
+    mockFormatConversationForResume.mockReturnValueOnce(
+      "USER: alpha\nUSER: beta",
+    );
+
+    service.markCheckpointRestore("run-restore");
+    await reconnect("run-restore");
+
+    expect(mockResumeFromLog).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "run-restore" }),
+    );
+    const pendingContext = getSession("run-restore")?.pendingContext;
+    expect(pendingContext).toContain("restored to an earlier checkpoint");
+    expect(pendingContext).toContain("USER: alpha\nUSER: beta");
+  });
+
+  it("still starts fresh (no pendingContext) when the rebuilt summary is empty", async () => {
+    mockFormatConversationForResume.mockReturnValueOnce("");
+
+    service.markCheckpointRestore("run-restore");
+    await reconnect("run-restore");
+
+    expect(mockNewSession).toHaveBeenCalledTimes(1);
+    expect(getSession("run-restore")?.pendingContext).toBeUndefined();
   });
 });

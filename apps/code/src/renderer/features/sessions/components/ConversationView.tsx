@@ -128,6 +128,11 @@ export function ConversationView({
 
   const isCloud = session?.isCloud ?? false;
   const isReconnecting = session?.isReconnecting ?? false;
+  const isHandingOff = session?.handoffInProgress ?? false;
+  // Restore is unavailable while the runtime is in flux — during a handoff
+  // (the agent is being moved between local/cloud) or while the post-restore
+  // reconnect is still respawning the agent.
+  const restoreBusy = isReconnecting || isHandingOff;
 
   const restore = useRestoreCheckpoint({
     repoPath: repoPath ?? undefined,
@@ -207,7 +212,7 @@ export function ConversationView({
                   : undefined
               }
               onRestoreCheckpoint={
-                !isReconnecting && item.turnContext?.lastCheckpointId
+                !restoreBusy && item.turnContext?.lastCheckpointId
                   ? () =>
                       restore.requestRestore(
                         item.turnContext?.lastCheckpointId as string,
@@ -215,8 +220,12 @@ export function ConversationView({
                   : undefined
               }
               restoreDisabledReason={
-                isReconnecting && item.turnContext?.lastCheckpointId
-                  ? "Reconnecting to the agent after your last restore, you can restore again in a moment."
+                item.turnContext?.lastCheckpointId
+                  ? isHandingOff
+                    ? "Handing off the session — you can restore once the agent reconnects."
+                    : isReconnecting
+                      ? "Reconnecting to the agent after your last restore, you can restore again in a moment."
+                      : undefined
                   : "No checkpoint was captured for this turn"
               }
             />
@@ -269,6 +278,8 @@ export function ConversationView({
       firstUserMessageId,
       initialItemIds,
       restore.requestRestore,
+      restoreBusy,
+      isHandingOff,
       isReconnecting,
     ],
   );
