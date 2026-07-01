@@ -286,6 +286,8 @@ describe("panelLayoutStore", () => {
       usePanelLayoutStore.getState().initializeTask("task-1");
       usePanelLayoutStore.getState().openFile("task-1", "src/App.tsx");
 
+      // Persistence is debounced; pagehide flushes pending writes.
+      window.dispatchEvent(new Event("pagehide"));
       const storedData = localStorage.getItem("panel-layout-store");
       expect(storedData).not.toBeNull();
 
@@ -300,6 +302,8 @@ describe("panelLayoutStore", () => {
       usePanelLayoutStore.getState().initializeTask("task-1");
       usePanelLayoutStore.getState().openFile("task-1", "src/App.tsx");
 
+      // Persistence is debounced; pagehide flushes pending writes.
+      window.dispatchEvent(new Event("pagehide"));
       const storedData = localStorage.getItem("panel-layout-store");
 
       usePanelLayoutStore.getState().clearAllLayouts();
