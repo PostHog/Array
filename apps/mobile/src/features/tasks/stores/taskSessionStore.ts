@@ -28,7 +28,8 @@ import {
   type Task,
 } from "../types";
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
-import { playMeepSound } from "../utils/sounds";
+import { playbackRateForTaskDuration } from "../utils/playbackRate";
+import { playCompletionSound } from "../utils/sounds";
 import { useAttachmentEchoStore } from "./attachmentEchoStore";
 import {
   combineQueuedMessages,
@@ -37,6 +38,16 @@ import {
 import { useTaskStore } from "./taskStore";
 
 const log = logger.scope("task-session-store");
+
+function completionPlaybackRate(promptStartedAt?: number): number {
+  if (
+    !usePreferencesStore.getState().scaleSoundWithTaskLength ||
+    promptStartedAt == null
+  ) {
+    return 1;
+  }
+  return playbackRateForTaskDuration(Date.now() - promptStartedAt);
+}
 
 // Match historical `user_message_chunk` events (text-only, as the cloud
 // stores them) against locally-cached attachment echoes by position+text.
@@ -289,6 +300,9 @@ export interface TaskSession {
   // we should play a sound when control returns. False when reconnecting
   // to an already-running task to avoid spurious pings.
   awaitingPing?: boolean;
+  // Timestamp when the current prompt started on this device. Used to scale
+  // the completion sound's playback rate by how long the turn ran.
+  promptStartedAt?: number;
   // True after a user prompt is sent, cleared when the first piece of
   // agent output (tool call, message, etc.) arrives.
   awaitingAgentOutput?: boolean;
@@ -425,6 +439,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             // us otherwise — the SSE watcher will refine these fields.
             isPromptPending: true,
             awaitingPing,
+            promptStartedAt: awaitingPing ? Date.now() : undefined,
             awaitingAgentOutput: true,
           },
         },
@@ -513,6 +528,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             localUserEchoes: nextLocalEchoes,
             isPromptPending: true,
             awaitingPing: true,
+            promptStartedAt: ts,
             awaitingAgentOutput: true,
           },
         },
@@ -624,6 +640,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             localUserEchoes: nextLocalEchoes,
             isPromptPending: true,
             awaitingPing: true,
+            promptStartedAt: ts,
             awaitingAgentOutput: true,
           },
         },
@@ -775,6 +792,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             ...state.sessions[session.taskRunId],
             isPromptPending: false,
             awaitingPing: false,
+            promptStartedAt: undefined,
             awaitingAgentOutput: false,
           },
         },
@@ -1037,7 +1055,11 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         shouldPingForTurnComplete ||
         shouldPingForTurnFailed;
       if (shouldPingNow && usePreferencesStore.getState().pingsEnabled) {
-        playMeepSound().catch(() => {});
+        playCompletionSound(
+          undefined,
+          undefined,
+          completionPlaybackRate(existing?.promptStartedAt),
+        ).catch(() => {});
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       if (shouldPingForAwaitingInput) {
@@ -1100,7 +1122,11 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           };
         });
         if (shouldPing && usePreferencesStore.getState().pingsEnabled) {
-          playMeepSound().catch(() => {});
+          playCompletionSound(
+            undefined,
+            undefined,
+            completionPlaybackRate(preState?.promptStartedAt),
+          ).catch(() => {});
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
         if (shouldPing) {
@@ -1161,6 +1187,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             status: "connecting",
             isPromptPending: true,
             awaitingPing: true,
+            promptStartedAt: Date.now(),
             awaitingAgentOutput: true,
           },
         },
