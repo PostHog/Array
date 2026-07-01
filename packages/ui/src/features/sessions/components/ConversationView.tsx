@@ -62,6 +62,9 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const DIFFS_HIGHLIGHTER_OPTIONS = {
   theme: { dark: "github-dark" as const, light: "github-light" as const },
+  // Cap tokenization on pathological lines (minified/single-giant-line files)
+  // so one huge line can't stall diff highlighting.
+  tokenizeMaxLineLength: 1000,
 };
 
 export interface ConversationViewProps {

@@ -78,6 +78,9 @@ import type { ConversationViewProps } from "../ConversationView";
 
 const DIFFS_HIGHLIGHTER_OPTIONS = {
   theme: { dark: "github-dark" as const, light: "github-light" as const },
+  // Cap tokenization on pathological lines (minified/single-giant-line files)
+  // so one huge line can't stall diff highlighting.
+  tokenizeMaxLineLength: 1000,
 };
 
 /** A row is either a parsed conversation item or a synthesized group of tool calls. */
