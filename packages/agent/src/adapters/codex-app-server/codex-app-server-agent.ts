@@ -167,6 +167,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private jsonSchema?: Record<string, unknown>;
   /** Final assistant message text for the in-flight turn (structured output). */
   private lastAgentMessage = "";
+  /** True between a contextCompaction item's start and its boundary (dedupes the boundary). */
+  private compactionActive = false;
   /** Maps the host's taskRunId to this session, replayed for cloud notifications. */
   private taskRunId?: string;
   private cwd?: string;
@@ -809,6 +811,33 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       this.mcp.capture(params);
     }
 
+    // codex auto-compaction surfaces as a contextCompaction item bracketing the
+    // work: item/started marks it in progress (gates steering/queue host-side),
+    // and item/completed is the boundary (empirically codex does NOT emit a
+    // separate thread/compacted — the item lifecycle is the signal). A
+    // thread/compacted, if one ever arrives, is a guarded fallback. The
+    // `compactionActive` flag dedupes so only one boundary fires per compaction.
+    const isCompactionItem =
+      (params as { item?: { type?: string } })?.item?.type ===
+      "contextCompaction";
+    if (
+      method === APP_SERVER_NOTIFICATIONS.ITEM_STARTED &&
+      isCompactionItem &&
+      !this.compactionActive
+    ) {
+      this.compactionActive = true;
+      this.emitCompactionStarted();
+    }
+    if (
+      this.compactionActive &&
+      ((method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED &&
+        isCompactionItem) ||
+        method === APP_SERVER_NOTIFICATIONS.CONTEXT_COMPACTED)
+    ) {
+      this.compactionActive = false;
+      this.emitCompactionBoundary();
+    }
+
     if (method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED) {
       this.captureAgentMessage(params);
     }
@@ -845,6 +874,45 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     if (item?.type === "agentMessage" && typeof item.text === "string") {
       this.lastAgentMessage = item.text;
     }
+  }
+
+  /**
+   * Compaction started: mirror the Claude adapter's `_posthog/status` so the
+   * host sets `isCompacting` (which gates steering + queue dispatch). The host
+   * reads `isCompacting = !isComplete`, so omitting it means "in progress".
+   */
+  private emitCompactionStarted(): void {
+    if (!this.sessionId) return;
+    void this.client
+      .extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
+        sessionId: this.sessionId,
+        status: "compacting",
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * Compaction finished: mirror the Claude adapter's `_posthog/compact_boundary`
+   * (the host clears `isCompacting` + drains the queued messages) plus a
+   * user-visible transcript marker. The context indicator updates on its own —
+   * the next `thread/tokenUsage/updated` carries the reduced `tokenUsage.last`.
+   */
+  private emitCompactionBoundary(): void {
+    if (!this.sessionId) return;
+    void this.client
+      .extNotification(POSTHOG_NOTIFICATIONS.COMPACT_BOUNDARY, {
+        sessionId: this.sessionId,
+      })
+      .catch(() => undefined);
+    void this.client
+      .sessionUpdate({
+        sessionId: this.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "\n\nContext compacted." },
+        },
+      })
+      .catch(() => undefined);
   }
 
   /** Mirror codex-acp's `_posthog/usage_update` so the host's token/cost UI fills. */

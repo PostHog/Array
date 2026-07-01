@@ -61,8 +61,14 @@ Triage tip: if something looks wrong, run the same action on **codex-acp** (flag
 ## Tier 5 — Usage display & special modes
 
 - [ ] **Token usage + context breakdown**: confirm the usage counter updates and the breakdown popover populates (systemPrompt / tools / skills / mcp / conversation). Driven by `_posthog/usage_update`.
+- [ ] **Usage indicator tracks the CURRENT turn (win #1, fresh)**: over a multi-turn session the context % should track the real context and NOT ratchet up every turn (it now reads codex's `tokenUsage.last`, not the cumulative `total`). It should visibly **drop after a compaction**.
+- [ ] **Context compaction (fresh — both adapters)**: force a compaction and confirm the UI shows it (a "Context compacted." / "Compacting completed." marker) and the usage indicator drops. Covered by `compaction.e2e.test.ts` (claude via `/compact`, codex via a low `auto_compact_token_limit`) — the e2e thresholds may need one tune on the first real run.
 - [ ] **Channel mode (repo-less task)**: start a task with no repo.
   - Expect: behaves as a general assistant; only attaches/clones a repo when actually needed.
+
+## Tier 6 — Post-refactor regression (god-class split + native win #1)
+
+- [ ] **Refactor smoke**: after extracting `TurnController` / `UsageTracker` / `SessionConfigState` / `McpManager` and switching per-turn usage to codex's `last`, do a normal end-to-end session (turn → tool → edit → interrupt → resume). Unit-guarded (959 tests) + the live e2e is the real regression proof — run the e2e suite once to confirm the split didn't regress a path the unit tests miss.
 
 ## Known issues / follow-ups
 

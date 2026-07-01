@@ -255,6 +255,7 @@ function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
           apiBaseUrl: codexOptions.apiBaseUrl,
           apiKey: codexOptions.apiKey,
           developerInstructions: codexOptions.developerInstructions,
+          configOverrides: codexOptions.configOverrides,
         },
         model: codexOptions.model,
         reasoningEffort: codexOptions.reasoningEffort,

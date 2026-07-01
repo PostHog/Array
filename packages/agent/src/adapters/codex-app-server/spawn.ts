@@ -14,6 +14,8 @@ export interface CodexAppServerProcessOptions {
   apiKey?: string;
   /** Guidance appended to Codex's base prompt via `developer_instructions`. */
   developerInstructions?: string;
+  /** Extra codex `-c key=value` config overrides (e.g. auto_compact_token_limit). */
+  configOverrides?: Record<string, string | number>;
   logger?: Logger;
   processCallbacks?: ProcessSpawnedCallback;
 }
@@ -81,6 +83,15 @@ export function buildAppServerArgs(
   // developer_instructions are set per-thread in thread/start (combined with the
   // host's task system prompt) rather than as a spawn-level global default, so
   // the task prompt — only known at newSession — reaches the model too.
+
+  // Caller-supplied config overrides (e.g. the e2e's low auto_compact_token_limit).
+  // Numbers/bools go bare; strings are quoted, matching codex's `-c` parser.
+  for (const [key, value] of Object.entries(options.configOverrides ?? {})) {
+    args.push(
+      "-c",
+      `${key}=${typeof value === "number" ? value : `"${value}"`}`,
+    );
+  }
 
   return args;
 }

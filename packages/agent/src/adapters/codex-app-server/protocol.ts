@@ -46,6 +46,10 @@ export const APP_SERVER_NOTIFICATIONS = {
   // Fatal turn error; `willRetry:false` means it won't recover on its own.
   ERROR: "error",
   TOKEN_USAGE_UPDATED: "thread/tokenUsage/updated",
+  // codex auto-compacted the thread's context (it hit auto_compact_token_limit).
+  // Mirrors the Claude adapter's compact_boundary: we surface it to the host so
+  // the context indicator, isCompacting state, and queue drain all fire.
+  CONTEXT_COMPACTED: "thread/compacted",
   // Streamed stdout/stderr chunks for an in-progress commandExecution item.
   COMMAND_OUTPUT_DELTA: "item/commandExecution/outputDelta",
   // PTY-level stdin echoed back for an interactive terminal command.

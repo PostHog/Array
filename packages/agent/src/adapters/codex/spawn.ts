@@ -25,6 +25,12 @@ export interface CodexProcessOptions {
   settings?: CodexSettings;
   /** Additional writable roots passed to Codex's workspace-write sandbox. */
   additionalDirectories?: string[];
+  /**
+   * Extra codex `-c key=value` config overrides (app-server sub-adapter only).
+   * An escape hatch for config the adapter doesn't model — e.g. the e2e sets
+   * `auto_compact_token_limit` low to force a compaction.
+   */
+  configOverrides?: Record<string, string | number>;
 }
 
 export interface CodexProcess {

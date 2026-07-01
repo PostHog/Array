@@ -6,14 +6,19 @@ export type Adapter = "claude" | "codex";
 /**
  * Live e2e configuration, resolved entirely from the environment so no secret is
  * ever committed. A run needs a local llm-gateway (`./bin/start` in the posthog
- * repo) and an OAuth token it accepts in `E2E_GATEWAY_TOKEN` — see `run-e2e.sh`,
- * which mints one. Without the token every arm self-skips, so `pnpm test` and CI
- * spend nothing.
+ * repo) and a token in `E2E_GATEWAY_TOKEN`. We target the gateway's `llm_gateway`
+ * product, which accepts a **personal API key** (`allow_api_keys=True`) and all
+ * models — so a plain key works, no OAuth mint (unlike prod's `posthog_code`
+ * product, which is OAuth-only). `run-e2e.sh` supplies the local dev key. Without
+ * the token every arm self-skips, so `pnpm test` and CI spend nothing.
+ *
+ * The adapter code is product-agnostic (it just posts to `apiBaseUrl`), so
+ * `llm_gateway` exercises the exact same paths `posthog_code` would.
  */
 // `||` not `??`: CI sets unset `vars.*` to an empty string, which should fall
 // back to the default rather than override it with "".
 const GATEWAY_URL =
-  process.env.E2E_GATEWAY_URL || "http://localhost:3308/posthog_code";
+  process.env.E2E_GATEWAY_URL || "http://localhost:3308/llm_gateway";
 const TOKEN = process.env.E2E_GATEWAY_TOKEN ?? "";
 
 // apps/code/resources/codex-acp/codex (the native app-server binary), relative
@@ -85,12 +90,16 @@ export const E2E = {
   },
 
   /** The codexOptions the codex arm passes through `createAcpConnection`. */
-  codexOptions(cwd: string): {
+  codexOptions(
+    cwd: string,
+    configOverrides?: Record<string, string | number>,
+  ): {
     cwd: string;
     binaryPath: string;
     apiBaseUrl: string;
     apiKey: string;
     model: string;
+    configOverrides?: Record<string, string | number>;
   } {
     return {
       cwd,
@@ -98,6 +107,7 @@ export const E2E = {
       apiBaseUrl: openAiBase(),
       apiKey: TOKEN,
       model: this.model("codex"),
+      ...(configOverrides ? { configOverrides } : {}),
     };
   },
 };

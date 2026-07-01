@@ -42,7 +42,10 @@ function makeStubRpc(responses: Record<string, unknown>) {
       // regression (a missing required field) sail through CI as a false-green.
       const missing = requiredFieldMissing(method, params);
       if (missing) {
-        throw { code: -32600, message: `Invalid request: missing field \`${missing}\`` };
+        throw {
+          code: -32600,
+          message: `Invalid request: missing field \`${missing}\``,
+        };
       }
       return (responses[method] ?? {}) as T;
     },
@@ -205,7 +208,9 @@ describe("CodexAppServerAgent", () => {
     const permissionToolCalls: Array<Record<string, unknown>> = [];
     const client = {
       sessionUpdate: async () => {},
-      requestPermission: async (params: { toolCall: Record<string, unknown> }) => {
+      requestPermission: async (params: {
+        toolCall: Record<string, unknown>;
+      }) => {
         permissionToolCalls.push(params.toolCall);
         return { outcome: { outcome: "selected", optionId: "accept" } };
       },
@@ -255,8 +260,9 @@ describe("CodexAppServerAgent", () => {
       "thread/start": { thread: { id: "thr_1" } },
     });
     const permissionToolCalls: Array<Record<string, unknown>> = [];
-    const permissionOptions: Array<Array<{ optionId?: string; kind?: string }>> =
-      [];
+    const permissionOptions: Array<
+      Array<{ optionId?: string; kind?: string }>
+    > = [];
     const client = {
       sessionUpdate: async () => {},
       requestPermission: async (params: {
@@ -302,7 +308,8 @@ describe("CodexAppServerAgent", () => {
   });
 
   it("surfaces Allow-always and echoes codex's remember decision when offered", async () => {
-    const { agent, stub, permissionOptions } = makeApprovalAgent("allow_always");
+    const { agent, stub, permissionOptions } =
+      makeApprovalAgent("allow_always");
     await agent.initialize(init);
     await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
 
@@ -408,9 +415,7 @@ describe("CodexAppServerAgent", () => {
 
     await stub.invokeRequest("item/fileChange/requestApproval", {
       itemId: "f1",
-      changes: [
-        { path: "src/a.ts", diff: "@@ -1 +1 @@\n-old\n+new\n" },
-      ],
+      changes: [{ path: "src/a.ts", diff: "@@ -1 +1 @@\n-old\n+new\n" }],
     });
 
     expect(permissionToolCalls).toHaveLength(1);
@@ -686,7 +691,6 @@ describe("CodexAppServerAgent", () => {
       settings: { model: "gpt-5.5" },
     });
   });
-
 
   it("returns mode + model + thought_level configOptions and emits config_option_update", async () => {
     const stub = makeStubRpc({
@@ -1139,9 +1143,9 @@ describe("CodexAppServerAgent", () => {
     await agent.cancel({ sessionId: "t" });
 
     expect((await done).stopReason).toBe("cancelled");
-    expect(
-      stub.requests.some((r) => r.method === "turn/interrupt"),
-    ).toBe(false);
+    expect(stub.requests.some((r) => r.method === "turn/interrupt")).toBe(
+      false,
+    );
   });
 
   it("rejects a concurrent prompt while a turn is in progress", async () => {
@@ -1549,6 +1553,70 @@ describe("CodexAppServerAgent", () => {
       inputTokens: 150,
       outputTokens: 70,
     });
+  });
+
+  it("signals compaction start (_posthog/status) when a contextCompaction item begins", async () => {
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client, extNotifications } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({
+      cwd: "/r",
+      _meta: {},
+    } as unknown as NewSessionRequest);
+
+    stub.emit("item/started", {
+      item: { type: "contextCompaction", id: "c1" },
+    });
+
+    // Mirrors the Claude adapter — the host sets isCompacting (gates steer/queue).
+    const status = extNotifications.find((n) => n.method === "_posthog/status");
+    expect(status?.params).toMatchObject({
+      sessionId: "t",
+      status: "compacting",
+    });
+  });
+
+  it("emits compact_boundary + a transcript marker when the compaction item completes", async () => {
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client, extNotifications, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({
+      cwd: "/r",
+      _meta: {},
+    } as unknown as NewSessionRequest);
+
+    // The compaction item brackets the compaction: started → in progress, then
+    // completed → boundary (codex emits no separate thread/compacted).
+    stub.emit("item/started", {
+      item: { type: "contextCompaction", id: "c1" },
+    });
+    stub.emit("item/completed", {
+      item: { type: "contextCompaction", id: "c1", summary: "…" },
+    });
+
+    // compact_boundary clears isCompacting + drains the host queue.
+    expect(
+      extNotifications.find((n) => n.method === "_posthog/compact_boundary")
+        ?.params,
+    ).toMatchObject({ sessionId: "t" });
+    // ...and a user-visible marker lands in the transcript.
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "t",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "\n\nContext compacted." },
+      },
+    });
+    // Exactly one boundary — the dedupe flag prevents a double-emit.
+    expect(
+      extNotifications.filter((n) => n.method === "_posthog/compact_boundary"),
+    ).toHaveLength(1);
   });
 
   it("loadSession resumes the thread and returns configOptions", async () => {
