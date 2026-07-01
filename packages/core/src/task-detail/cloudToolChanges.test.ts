@@ -22,6 +22,7 @@ function toolCall(overrides: Partial<ParsedToolCall>): ParsedToolCall {
     status: overrides.status ?? "completed",
     locations: overrides.locations,
     content: overrides.content,
+    rawOutput: overrides.rawOutput,
   };
 }
 
@@ -189,6 +190,41 @@ describe("extractCloudFileContent", () => {
     );
     const result = extractCloudFileContent(calls, "src/app.ts");
     expect(result).toEqual({ content: "edited content", touched: true });
+  });
+
+  it("ignores a file_unchanged read so its dedup sentinel is not shown as content", () => {
+    const calls = makeToolCalls(
+      toolCall({
+        kind: "read",
+        locations: [{ path: "src/app.ts" }],
+        rawOutput: { type: "file_unchanged" },
+        content: textContent(
+          "```\nWasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.\n```",
+        ),
+      }),
+    );
+    const result = extractCloudFileContent(calls, "src/app.ts");
+    expect(result).toEqual({ content: null, touched: false });
+  });
+
+  it("keeps real content when a later read of the same file is file_unchanged", () => {
+    const calls = makeToolCalls(
+      toolCall({
+        toolCallId: "tc-read",
+        kind: "read",
+        locations: [{ path: "src/app.ts" }],
+        content: textContent("real content"),
+      }),
+      toolCall({
+        toolCallId: "tc-reread",
+        kind: "read",
+        locations: [{ path: "src/app.ts" }],
+        rawOutput: { type: "file_unchanged" },
+        content: textContent("Wasted call — file unchanged since your last Read."),
+      }),
+    );
+    const result = extractCloudFileContent(calls, "src/app.ts");
+    expect(result).toEqual({ content: "real content", touched: true });
   });
 
   it("marks deleted files as touched with null content", () => {
