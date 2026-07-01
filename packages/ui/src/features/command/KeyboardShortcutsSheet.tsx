@@ -365,6 +365,9 @@ export function KeyboardShortcutsList({
   comboSearch = null,
 }: KeyboardShortcutsListProps = {}) {
   const customKeybindings = useKeybindingsStore((s) => s.customKeybindings);
+  const [recordingId, setRecordingId] = useState<ConfigurableShortcutId | null>(
+    null,
+  );
 
   const filteredByCategory = useMemo(() => {
     const base = getShortcutsByCategory();
@@ -425,37 +428,53 @@ export function KeyboardShortcutsList({
               {CATEGORY_LABELS[category]}
             </Text>
             <Box className="overflow-hidden rounded-(--radius-2) border border-(--gray-5)">
-              {uniqueShortcuts.map((shortcut) => (
-                <Flex
-                  key={shortcut.id}
-                  align="center"
-                  justify="between"
-                  gap="3"
-                  px="3"
-                  className="group border-b border-b-(--gray-4) pt-[6px] pb-[6px] last:border-b-0 odd:bg-(--gray-2) even:bg-(--gray-1)"
-                >
-                  <Flex direction="column" gap="0" className="min-w-0 flex-1">
-                    <Text className="text-sm">{shortcut.description}</Text>
-                    {shortcut.context && (
-                      <Text color="gray" className="text-[11px]">
-                        {shortcut.context}
-                      </Text>
-                    )}
+              {uniqueShortcuts.map((shortcut) => {
+                const isRecording =
+                  shortcut.configurable &&
+                  recordingId === (shortcut.id as ConfigurableShortcutId);
+                return (
+                  <Flex
+                    key={shortcut.id}
+                    align="center"
+                    justify="between"
+                    gap="3"
+                    px="3"
+                    className="group border-b border-b-(--gray-4) pt-[6px] pb-[6px] last:border-b-0 odd:bg-(--gray-2) even:bg-(--gray-1)"
+                  >
+                    <Flex
+                      direction="column"
+                      gap="0"
+                      className={`min-w-0 flex-1 ${isRecording ? "hidden" : ""}`}
+                    >
+                      <Text className="text-sm">{shortcut.description}</Text>
+                      {shortcut.context && (
+                        <Text color="gray" className="text-[11px]">
+                          {shortcut.context}
+                        </Text>
+                      )}
+                    </Flex>
+                    <div className={isRecording ? "w-full" : "shrink-0"}>
+                      {shortcut.configurable ? (
+                        <ShortcutRecorder
+                          id={shortcut.id as ConfigurableShortcutId}
+                          onRecordingChange={(r) =>
+                            setRecordingId(
+                              r
+                                ? (shortcut.id as ConfigurableShortcutId)
+                                : null,
+                            )
+                          }
+                        />
+                      ) : (
+                        <ShortcutKeys
+                          keys={shortcut.keys}
+                          alternateKeys={shortcut.alternateKeys}
+                        />
+                      )}
+                    </div>
                   </Flex>
-                  <div className="shrink-0">
-                    {shortcut.configurable ? (
-                      <ShortcutRecorder
-                        id={shortcut.id as ConfigurableShortcutId}
-                      />
-                    ) : (
-                      <ShortcutKeys
-                        keys={shortcut.keys}
-                        alternateKeys={shortcut.alternateKeys}
-                      />
-                    )}
-                  </div>
-                </Flex>
-              ))}
+                );
+              })}
             </Box>
           </Flex>
         );
@@ -505,7 +524,7 @@ function ShortcutKeys({
        * pencil icon (2px gap + 12px icon + 2px button right-padding = 16px),
        * keeping all shortcut keys right-aligned in the same column.
        */}
-      <div className="cursor-default rounded-(--radius-1) p-[2px] pr-[16px] transition-colors hover:bg-(--gray-4)">
+      <div className="cursor-default rounded-(--radius-1) p-[2px] pr-[16px]">
         {inner}
       </div>
     </Tooltip>
