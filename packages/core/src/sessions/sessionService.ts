@@ -2494,7 +2494,10 @@ export class SessionService {
    * Skipping early lets the next trigger retry instead of re-queueing the
    * already-dequeued prompt back into the same queue.
    */
-  private async sendQueuedCloudMessages(taskId: string): Promise<void> {
+  private async sendQueuedCloudMessages(
+    taskId: string,
+    options?: { force?: boolean },
+  ): Promise<void> {
     if (this.dispatchingCloudQueues.has(taskId)) return;
 
     this.dispatchingCloudQueues.add(taskId);
@@ -2509,7 +2512,7 @@ export class SessionService {
       const canSendNow =
         isTerminal ||
         (session.cloudStatus === "in_progress" &&
-          session.status === "connected");
+          (session.status === "connected" || options?.force === true));
       if (!canSendNow || session.isPromptPending) return;
 
       // Draining while auth is still restoring would route through the restoring
@@ -4302,7 +4305,11 @@ export class SessionService {
    * state; `sendQueuedCloudMessages` is reentrancy-guarded so stacked
    * schedules from multiple triggers collapse to one.
    */
-  private scheduleCloudQueueFlush(taskId: string, reason: string): void {
+  private scheduleCloudQueueFlush(
+    taskId: string,
+    reason: string,
+    options?: { force?: boolean },
+  ): void {
     if (
       this.scheduledCloudQueueFlushes.has(taskId) ||
       this.dispatchingCloudQueues.has(taskId)
@@ -4313,7 +4320,7 @@ export class SessionService {
     this.scheduledCloudQueueFlushes.add(taskId);
     setTimeout(() => {
       this.scheduledCloudQueueFlushes.delete(taskId);
-      this.sendQueuedCloudMessages(taskId).catch((err) =>
+      this.sendQueuedCloudMessages(taskId, options).catch((err) =>
         this.d.log.error("cloud queue flush failed", {
           taskId,
           reason,
@@ -4339,7 +4346,10 @@ export class SessionService {
    * alive (`cloudStatus === "in_progress"`) and the agent provably idle
    * for THIS run (`isAgentIdleForRun`), recover readiness and drain.
    */
-  private tryRecoverIdleCloudQueue(taskRunId: string): void {
+  private tryRecoverIdleCloudQueue(
+    taskRunId: string,
+    options?: { serverSandboxAlive?: boolean | null },
+  ): void {
     const session = this.d.store.getSessions()[taskRunId];
     if (!session?.isCloud || session.messageQueue.length === 0) {
       return;
@@ -4357,6 +4367,8 @@ export class SessionService {
     const recoverableAfterTransportDrop =
       (session.status === "disconnected" || session.status === "error") &&
       !session.isPromptPending;
+    const serverReportsSandboxStopped =
+      options?.serverSandboxAlive === false && recoverableAfterTransportDrop;
 
     if (session.status !== "connected" && !recoverableAfterTransportDrop) {
       return;
@@ -4365,6 +4377,17 @@ export class SessionService {
     // A local prompt in flight means a queued follow-up would double-send.
     // The idle scan below is still the real safety check after reconnect.
     if (session.isPromptPending) {
+      return;
+    }
+
+    if (serverReportsSandboxStopped) {
+      this.d.log.info("Recovering cloud queue after sandbox stopped", {
+        taskId: session.taskId,
+        previousStatus: session.status,
+      });
+      this.scheduleCloudQueueFlush(session.taskId, "sandbox-stopped-recovery", {
+        force: true,
+      });
       return;
     }
 
@@ -4501,7 +4524,9 @@ export class SessionService {
       });
 
       if (update.status === "in_progress") {
-        this.tryRecoverIdleCloudQueue(taskRunId);
+        this.tryRecoverIdleCloudQueue(taskRunId, {
+          serverSandboxAlive: update.sandboxAlive,
+        });
       }
 
       if (isTerminalStatus(update.status)) {
