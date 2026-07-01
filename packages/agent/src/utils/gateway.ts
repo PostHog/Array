@@ -28,14 +28,14 @@ export function resolveGatewayProduct({
 }
 
 /**
- * Make a value safe to embed in an HTTP header value. Collapses newlines to
- * spaces (the header block is newline-delimited) and drops characters outside
- * the valid header-byte range — control chars and code points above latin1
- * (emoji, smart quotes) — which an HTTP client (e.g. undici) would otherwise
- * reject before sending. ASCII is preserved.
+ *  Make a value safe to embed in an HTTP header value. Collapses newlines to
+ * spaces and percent-encodes non-ASCII characters so header values remain
+ * ASCII-safe. ASCII is preserved.
  */
 function sanitizeHeaderValue(value: string): string {
-  return value.replace(/[\r\n]+/g, " ").replace(/[^\x20-\x7e\x80-\xff]/g, "");
+  return value
+    .replace(/[\r\n]+/g, " ")
+    .replace(/[^\x20-\x7e]/gu, (char) => encodeURIComponent(char));
 }
 
 /**

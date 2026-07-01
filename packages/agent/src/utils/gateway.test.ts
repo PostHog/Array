@@ -124,15 +124,21 @@ describe("buildGatewayPropertyHeaders", () => {
     },
   );
 
-  it("strips characters an HTTP header value cannot carry", () => {
-    expect(buildGatewayPropertyHeaders({ task_title: "don’t🚀ship" })).toBe(
-      "x-posthog-property-task_title: dontship",
-    );
-  });
-
-  it("keeps latin1 characters such as accents", () => {
-    expect(buildGatewayPropertyHeaders({ task_title: "café" })).toBe(
-      "x-posthog-property-task_title: café",
+  it.each([
+    {
+      description: "smart quote and emoji",
+      title: "don’t🚀ship",
+      expected: "don%E2%80%99t%F0%9F%9A%80ship",
+    },
+    {
+      description: "Danish accented, CJK, and emoji characters",
+      title: "har vi nogle logs på café 東京 🚀",
+      expected:
+        "har vi nogle logs p%C3%A5 caf%C3%A9 %E6%9D%B1%E4%BA%AC %F0%9F%9A%80",
+    },
+  ])("encodes non-ASCII characters in $description", ({ title, expected }) => {
+    expect(buildGatewayPropertyHeaders({ task_title: title })).toBe(
+      `x-posthog-property-task_title: ${expected}`,
     );
   });
 });
