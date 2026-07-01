@@ -152,12 +152,17 @@ export interface HighlightSegment {
 }
 
 /**
- * Parsed output cache keyed by (theme, language, content). The per-component
- * useMemo only survives that instance, so virtualized scroll re-parses a code
- * block every time it remounts. This bounded LRU makes remounts free.
+ * Parsed output cache keyed by (theme, language, length, content hash). The
+ * per-component useMemo only survives that instance, so virtualized scroll
+ * re-parses a code block every time it remounts. This bounded LRU makes
+ * remounts free. The code is stored alongside the segments so a hash collision
+ * is detected on lookup rather than returning another snippet's output.
  */
 const MAX_HIGHLIGHT_CACHE_ENTRIES = 256;
-const highlightCache = new Map<string, HighlightSegment[]>();
+const highlightCache = new Map<
+  string,
+  { code: string; segments: HighlightSegment[] }
+>();
 
 function hashCode(text: string): number {
   let hash = 0x811c9dc5;
@@ -178,10 +183,10 @@ export function highlightSyntax(
 
   const cacheKey = `${isDark ? "d" : "l"}:${language}:${code.length}:${hashCode(code).toString(36)}`;
   const cached = highlightCache.get(cacheKey);
-  if (cached) {
+  if (cached && cached.code === code) {
     highlightCache.delete(cacheKey);
     highlightCache.set(cacheKey, cached);
-    return cached;
+    return cached.segments;
   }
 
   const tree = parser.parse(code);
@@ -202,7 +207,7 @@ export function highlightSyntax(
     },
   );
 
-  highlightCache.set(cacheKey, segments);
+  highlightCache.set(cacheKey, { code, segments });
   if (highlightCache.size > MAX_HIGHLIGHT_CACHE_ENTRIES) {
     const oldest = highlightCache.keys().next().value;
     if (oldest !== undefined) highlightCache.delete(oldest);

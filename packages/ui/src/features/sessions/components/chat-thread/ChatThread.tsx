@@ -46,6 +46,7 @@ import {
 import { SessionUpdateView } from "@posthog/ui/features/sessions/components/session-update/SessionUpdateView";
 import { UserShellExecuteView } from "@posthog/ui/features/sessions/components/session-update/UserShellExecuteView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
 import {
   useOptimisticItemsForTask,
@@ -73,15 +74,7 @@ import {
   useRef,
   useState,
 } from "react";
-
 import type { ConversationViewProps } from "../ConversationView";
-
-const DIFFS_HIGHLIGHTER_OPTIONS = {
-  theme: { dark: "github-dark" as const, light: "github-light" as const },
-  // Cap tokenization on pathological lines (minified/single-giant-line files)
-  // so one huge line can't stall diff highlighting.
-  tokenizeMaxLineLength: 1000,
-};
 
 /** A row is either a parsed conversation item or a synthesized group of tool calls. */
 type ThreadItem = ConversationItem | ToolGroupItem;

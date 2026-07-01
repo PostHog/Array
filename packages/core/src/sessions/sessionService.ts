@@ -1406,27 +1406,35 @@ export class SessionService {
     const { taskRunId } = session;
     this.cancelEventEviction(taskRunId);
     if (!this.evictedRunIds.has(taskRunId)) return;
-    this.evictedRunIds.delete(taskRunId);
-    if (session.events.length > 0) return;
 
     try {
-      const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
-        session.logUrl,
-        taskRunId,
-      );
-      // A reconnect may have refilled events while we awaited the log read;
-      // only restore if the transcript is still empty for the same run.
-      const fresh = this.d.store.getSessionByTaskId(taskId);
-      if (
-        fresh?.taskRunId === taskRunId &&
-        fresh.events.length === 0 &&
-        rawEntries.length > 0
-      ) {
-        this.d.store.restoreEvents(
+      if (session.events.length === 0) {
+        const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
+          session.logUrl,
           taskRunId,
-          convertStoredEntriesToEvents(rawEntries),
-          totalLineCount,
         );
+        // A reconnect may have refilled events while we awaited the log read;
+        // only restore if the transcript is still empty for the same run.
+        const fresh = this.d.store.getSessionByTaskId(taskId);
+        if (
+          fresh?.taskRunId === taskRunId &&
+          fresh.events.length === 0 &&
+          rawEntries.length > 0
+        ) {
+          this.d.store.restoreEvents(
+            taskRunId,
+            convertStoredEntriesToEvents(rawEntries),
+            totalLineCount,
+          );
+        }
+      }
+      // Clear the evicted flag only once the transcript is populated — restored
+      // here, or refilled by a reconnect. An empty read leaves the run evicted so
+      // a later visit retries: fetchSessionLogs swallows read errors and returns
+      // empty rather than throwing, so a transient failure would otherwise strand
+      // the transcript empty permanently.
+      if ((this.d.store.getSessionByTaskId(taskId)?.events.length ?? 0) > 0) {
+        this.evictedRunIds.delete(taskRunId);
       }
     } catch (error) {
       this.d.log.warn("Failed to rehydrate evicted session transcript", {

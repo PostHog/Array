@@ -115,4 +115,27 @@ describe("session transcript residency", () => {
     expect(readLocalLogs).toHaveBeenCalledWith({ taskRunId: RUN });
     expect(events()).toHaveLength(1);
   });
+
+  it("retries rehydration after a failed log read instead of stranding it", async () => {
+    const readLocalLogs = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("transient"))
+      .mockResolvedValueOnce(LOG_LINE);
+    const service = makeService(readLocalLogs);
+    seed("disconnected");
+
+    service.scheduleEventEviction(TASK);
+    vi.advanceTimersByTime(GRACE_MS);
+    expect(events()).toHaveLength(0);
+
+    // First visit: the log read throws — the transcript stays empty but the
+    // run is re-marked evicted so a later visit can retry.
+    await service.ensureEventsLoaded(TASK);
+    expect(events()).toHaveLength(0);
+
+    // Second visit: the read succeeds and the transcript is restored.
+    await service.ensureEventsLoaded(TASK);
+    expect(events()).toHaveLength(1);
+    expect(readLocalLogs).toHaveBeenCalledTimes(2);
+  });
 });
