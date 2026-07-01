@@ -64,6 +64,9 @@ export const sessionStoreSetters = {
     sessionStore.setState((state) => {
       const session = state.sessions[taskRunId];
       if (session) {
+        // Freeze each event so immer skips deep-freezing the whole (unbounded)
+        // events array on every append — it stops at the first frozen node.
+        for (const event of events) Object.freeze(event);
         session.events.push(...events);
         if (newLineCount !== undefined) {
           session.processedLineCount = newLineCount;
