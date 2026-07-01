@@ -21,18 +21,20 @@ export interface GithubInstallationLike {
   account?: GithubInstallationAccount | null;
 }
 
+// GitHub's per-installation settings page for an org install is owner-only and
+// 404s for members, so org installs point at the app page, which loads for
+// anyone (owners get Configure, members get request access).
+const POSTHOG_GITHUB_APP_URL = "https://github.com/apps/posthog";
+
 export function githubInstallationSettingsUrl(
   integration: GithubInstallationLike,
 ): string {
   const accountType = integration.account?.type;
-  const accountName = integration.account?.name;
   if (
     typeof accountType === "string" &&
-    accountType.toLowerCase() === "organization" &&
-    typeof accountName === "string" &&
-    accountName
+    accountType.toLowerCase() === "organization"
   ) {
-    return `https://github.com/organizations/${accountName}/settings/installations/${integration.installation_id}`;
+    return POSTHOG_GITHUB_APP_URL;
   }
   return `https://github.com/settings/installations/${integration.installation_id}`;
 }
