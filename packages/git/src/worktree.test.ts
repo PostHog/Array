@@ -347,7 +347,7 @@ describe("armProcessTimeout", () => {
     expect(timeout.timedOut()).toBe(true);
     expect(proc.kill).toHaveBeenCalledWith("SIGTERM");
 
-    vi.advanceTimersByTime(5000);
+    vi.advanceTimersByTime(KILL_GRACE_MS);
     expect(proc.kill).toHaveBeenCalledWith("SIGKILL");
   });
 
