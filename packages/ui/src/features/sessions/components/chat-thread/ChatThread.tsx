@@ -49,7 +49,7 @@ import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants"
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
 import {
   useOptimisticItemsForTask,
-  useSessionForTask,
+  useSessionIsCloud,
 } from "@posthog/ui/features/sessions/sessionStore";
 import type { UserMessageAttachment } from "@posthog/ui/features/sessions/userMessageTypes";
 import {
@@ -573,7 +573,7 @@ export function ChatThread({
   );
 
   const optimisticItems = useOptimisticItemsForTask(taskId);
-  const isCloud = useSessionForTask(taskId)?.isCloud ?? false;
+  const isCloud = useSessionIsCloud(taskId);
 
   const items = useMemo<ConversationItem[]>(
     () =>

@@ -45,7 +45,7 @@ import {
   useShowRawLogs,
 } from "@posthog/ui/features/sessions/sessionViewStore";
 import type { Plan } from "@posthog/ui/features/sessions/types";
-import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import { useSessionHandoffInProgress } from "@posthog/ui/features/sessions/useSession";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
@@ -178,8 +178,7 @@ export function SessionView({
   const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
   const { isOnline } = useConnectivity();
   const currentModeId = modeOption?.currentValue;
-  const handoffInProgress =
-    useSessionForTask(taskId)?.handoffInProgress ?? false;
+  const handoffInProgress = useSessionHandoffInProgress(taskId);
   const showInlineBanner = hasError && errorRetryable && events.length > 0;
 
   useEffect(() => {
