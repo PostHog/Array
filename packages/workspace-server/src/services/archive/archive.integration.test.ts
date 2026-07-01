@@ -395,6 +395,41 @@ describe("ArchiveService integration", () => {
         expect(archived.branchName).toBeNull();
         expect(ctx.archiveRepo.findAll()).toHaveLength(1);
       }));
+
+    it("archive succeeds when worktree has an in-progress merge conflict", () =>
+      withTestContext({}, async (ctx) => {
+        const { worktreePath } = await ctx.setupWorktree("detached");
+
+        const wt = (cmd: string) =>
+          execSync(`git ${cmd}`, {
+            cwd: worktreePath,
+            encoding: "utf8",
+            stdio: "pipe",
+          });
+
+        await fs.writeFile(path.join(worktreePath, "c.txt"), "base\n");
+        wt("add c.txt");
+        wt("commit -m base");
+        wt("tag base_commit");
+
+        await fs.writeFile(path.join(worktreePath, "c.txt"), "AAA\n");
+        wt("add c.txt");
+        wt("commit -m a");
+        wt("tag commit_a");
+
+        wt("reset --hard base_commit");
+        await fs.writeFile(path.join(worktreePath, "c.txt"), "BBB\n");
+        wt("add c.txt");
+        wt("commit -m b");
+
+        wt("merge commit_a || true");
+
+        const archived = await ctx.service.archiveTask(ctx.archiveInput());
+
+        expect(archived.checkpointId).toBeNull();
+        expect(await pathExists(worktreePath)).toBe(false);
+        expect(ctx.archiveRepo.findAll()).toHaveLength(1);
+      }));
   });
 
   describe("local/cloud mode", () => {
