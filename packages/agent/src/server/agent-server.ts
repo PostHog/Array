@@ -250,6 +250,14 @@ interface BuiltPrompt {
   meta?: Record<string, unknown>;
 }
 
+function hiddenTextBlock(text: string): ContentBlock {
+  return {
+    type: "text",
+    text,
+    _meta: { ui: { hidden: true } },
+  } as ContentBlock;
+}
+
 interface LocalSkillPromptContext {
   skillName: string;
   context: string;
@@ -1571,39 +1579,34 @@ export class AgentServer {
 
       const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
 
-      const sandboxContext = checkpointApplied
+      const checkpointContext = checkpointApplied
         ? `The workspace environment (all files, packages, and code changes) has been fully restored from the latest checkpoint.`
-        : `The workspace from the previous session was not restored from a checkpoint, so you are starting with a fresh environment. Your conversation history is fully preserved below.`;
+        : `No additional git checkpoint was applied before resuming. Use the current workspace contents together with the preserved conversation history below.`;
 
       let resumePromptBlocks: ContentBlock[];
       let resumePromptMeta: Record<string, unknown> | undefined;
       if (pendingUserPrompt?.prompt.length) {
         resumePromptMeta = pendingUserPrompt.meta;
         resumePromptBlocks = [
-          {
-            type: "text",
-            text:
-              `You are resuming a previous conversation. ${sandboxContext}\n\n` +
+          hiddenTextBlock(
+            `You are resuming a previous conversation. ${checkpointContext}\n\n` +
               `Here is the conversation history from the previous session:\n\n` +
               `${conversationSummary}\n\n` +
               `The user has sent a new message:\n\n`,
-          },
+          ),
           ...pendingUserPrompt.prompt,
-          {
-            type: "text",
-            text: "\n\nRespond to the user's new message above. You have full context from the previous session.",
-          },
+          hiddenTextBlock(
+            "\n\nRespond to the user's new message above. You have full context from the previous session.",
+          ),
         ];
       } else {
         resumePromptBlocks = [
-          {
-            type: "text",
-            text:
-              `You are resuming a previous conversation. ${sandboxContext}\n\n` +
+          hiddenTextBlock(
+            `You are resuming a previous conversation. ${checkpointContext}\n\n` +
               `Here is the conversation history from the previous session:\n\n` +
               `${conversationSummary}\n\n` +
               `Continue from where you left off. The user is waiting for your response.`,
-          },
+          ),
         ];
       }
 
