@@ -82,6 +82,10 @@ import { WorkspaceSetupService } from "@posthog/core/workspace/WorkspaceSetupSer
 import { setRootContainer } from "@posthog/di/container";
 import { HOST_TRPC_CLIENT } from "@posthog/host-router/client";
 import {
+  BROWSER_TABS_CLIENT,
+  type BrowserTabsClient,
+} from "@posthog/ui/features/browser-tabs/browserTabsClient";
+import {
   REVIEW_HOST,
   type ReviewHost,
 } from "@posthog/ui/features/code-review/reviewHost";
@@ -168,6 +172,21 @@ const connectivityClient: ConnectivityClient = {
     trpcClient.connectivity.onStatusChange.subscribe(undefined, sub),
 };
 container.bind(CONNECTIVITY_CLIENT).toConstantValue(connectivityClient);
+
+// browser tabs client — passthrough over the renderer host client
+const browserTabsClient: BrowserTabsClient = {
+  getSnapshot: () => trpcClient.browserTabs.getSnapshot.query(),
+  getPrimaryWindowId: () => trpcClient.browserTabs.getPrimaryWindowId.query(),
+  openOrFocus: (input) => trpcClient.browserTabs.openOrFocus.mutate(input),
+  newBlankTab: (input) => trpcClient.browserTabs.newBlankTab.mutate(input),
+  setTabTarget: (input) => trpcClient.browserTabs.setTabTarget.mutate(input),
+  close: (tabId) => trpcClient.browserTabs.close.mutate({ tabId }),
+  reorder: (input) => trpcClient.browserTabs.reorder.mutate(input),
+  setActiveTab: (input) => trpcClient.browserTabs.setActiveTab.mutate(input),
+  onSnapshotChange: (sub) =>
+    trpcClient.browserTabs.onSnapshotChange.subscribe(undefined, sub),
+};
+container.bind(BROWSER_TABS_CLIENT).toConstantValue(browserTabsClient);
 
 // discord presence client — passthrough over the local main-process router
 const discordPresenceClient: DiscordPresenceClient = {

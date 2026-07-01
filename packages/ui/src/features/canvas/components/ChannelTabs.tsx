@@ -1,4 +1,4 @@
-import { cn } from "@posthog/quill";
+import { Button, cn } from "@posthog/quill";
 import { ChannelPinnedMenu } from "@posthog/ui/features/canvas/components/ChannelPinnedMenu";
 import { Link, useRouterState } from "@tanstack/react-router";
 
@@ -16,24 +16,21 @@ export function ChannelTabs({ channelId }: { channelId: string }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return (
-    <nav className="flex items-center gap-0.5">
+    <nav className="flex items-center gap-px">
       {TABS.map((tab) => {
         const href = tab.to.replace("$channelId", channelId);
         const active = pathname === href;
         return (
-          <Link
+          <Button
             key={tab.label}
-            to={tab.to}
-            params={{ channelId }}
-            className={cn(
-              "rounded-md px-2 py-1 font-medium text-[13px] no-underline transition-colors",
-              active
-                ? "bg-gray-3 text-gray-12"
-                : "text-gray-10 hover:bg-gray-2 hover:text-gray-12",
-            )}
+            variant="default"
+            size="sm"
+            data-selected={active || undefined}
+            className={cn(active && "bg-fill-selected")}
+            render={<Link to={tab.to} params={{ channelId }} />}
           >
             {tab.label}
-          </Link>
+          </Button>
         );
       })}
       <ChannelPinnedMenu channelId={channelId} />

@@ -17,6 +17,9 @@ import { DeepLinkApprovalModal } from "@posthog/ui/features/agent-applications/c
 import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
+import { BlankTabView } from "@posthog/ui/features/browser-tabs/BlankTabView";
+import { BrowserTabStrip } from "@posthog/ui/features/browser-tabs/BrowserTabStrip";
+import { useTabsSnapshot } from "@posthog/ui/features/browser-tabs/useBrowserTabs";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import {
@@ -141,10 +144,9 @@ function RootLayout() {
   }, [router]);
   const canGoForward = historyIndex < newestIndex;
 
-  // Feedback modal shown in the Channels title bar. Opened directly by "Leave
-  // feedback" (mode "feedback"), or as an intercept before navigating away —
-  // "Go back to Code" (mode "leaving") and "PostHog Web" (mode "posthog-web"),
-  // each of which routes once the modal is submitted or skipped.
+  // Feedback modal shown in the Channels title bar as an intercept before
+  // navigating away — "Exit" (mode "leaving") and "PostHog Web" (mode
+  // "posthog-web"), each of which routes once the modal is submitted or skipped.
   const [feedbackMode, setFeedbackMode] = useState<FeedbackModalMode | null>(
     null,
   );
@@ -283,6 +285,25 @@ function RootLayout() {
   });
   const isChannelsSpace = bluebirdEnabled && onWebsitePath;
 
+  // A blank browser tab (the "+" new-tab page) shows an empty placeholder — but
+  // ONLY on the channels index. Inside a channel (`/website/$channelId…`) the
+  // route owns the content (channel home, inbox, artifacts, a canvas, …), so the
+  // placeholder must never replace it, otherwise channel navigation looks dead.
+  const onChannelsIndex = useRouterState({
+    select: (s) => s.location.pathname === "/website",
+  });
+  const tabsSnapshot = useTabsSnapshot();
+  const activeTabIsBlank =
+    onChannelsIndex &&
+    (() => {
+      const w =
+        tabsSnapshot.windows.find((x) => x.isPrimary) ??
+        tabsSnapshot.windows[0];
+      if (!w?.activeTabId) return false;
+      const t = tabsSnapshot.tabs.find((x) => x.id === w.activeTabId);
+      return !!t && t.dashboardId == null && t.taskId == null;
+    })();
+
   // The /website (Channels) routes stay registered regardless of the flag, so a
   // stale URL or restored session could strand a flag-off user there (rendering
   // the channel layout inside the Code chrome). Once flags resolve, redirect
@@ -297,22 +318,36 @@ function RootLayout() {
     return (
       <Flex direction="column" height="100vh" className="bg-chrome">
         {/* Full-width title bar: a window-drag region carrying the PostHog
-            mark. The left padding clears the macOS stoplights. */}
-        <Flex
-          align="center"
-          gap="3"
-          className="drag relative h-10 shrink-0 pl-[78px]"
-        >
-          <Box className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 h-[14px] w-[26px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
-            <LogosLandscape code={false} />
-          </Box>
-          {/* Spans the sidebar width from the window's left edge so the buttons
-              right-align with the sidebar / project switcher's right edge. pr-2
-              matches the switcher's px-2. */}
-          <Box
-            className="drag absolute top-0 bottom-0 left-0 flex items-center justify-end pr-2"
+            mark. The left section matches the sidebar width so the tab strip
+            starts flush with the content pane; its padding clears the macOS
+            stoplights. */}
+        <Flex align="center" className="drag h-10 shrink-0">
+          <Flex
+            id="title-bar-left"
+            align="center"
+            justify="between"
+            gap="3"
+            className="shrink-0 pr-2 pl-[78px]"
             style={{ width: channelsSidebarWidth }}
           >
+            <Flex align="center" gap="2" className="no-drag">
+              <Box className="h-[14px] w-[30px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
+                <LogosLandscape code={false} />
+              </Box>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                    action_type: "leave_space",
+                    surface: "title_bar",
+                  });
+                  setFeedbackMode("leaving");
+                }}
+              >
+                Exit
+              </Button>
+            </Flex>
             <Flex align="center" gap="2" className="no-drag">
               <Button
                 variant="outline"
@@ -333,34 +368,9 @@ function RootLayout() {
                 <CaretRightIcon size={14} />
               </Button>
             </Flex>
-          </Box>
-          <Flex align="center" gap="2" className="no-drag ml-auto pr-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                  action_type: "leave_space",
-                  surface: "title_bar",
-                });
-                setFeedbackMode("leaving");
-              }}
-            >
-              Go back to Code
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                  action_type: "leave_feedback",
-                  surface: "title_bar",
-                });
-                setFeedbackMode("feedback");
-              }}
-            >
-              Leave feedback
-            </Button>
+          </Flex>
+          <BrowserTabStrip />
+          <Flex align="center" className="no-drag ml-auto pr-3">
             <Button
               variant="outline"
               size="sm"
@@ -379,7 +389,7 @@ function RootLayout() {
               edges — the framed pane from the design. */}
           <Box flexGrow="1" className="overflow-hidden">
             <Box className="h-full overflow-hidden rounded-tl-sm border-border border-t border-l bg-background">
-              <Outlet />
+              {activeTabIsBlank ? <BlankTabView /> : <Outlet />}
             </Box>
           </Box>
         </Flex>

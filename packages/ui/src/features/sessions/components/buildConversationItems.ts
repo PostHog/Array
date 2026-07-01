@@ -531,9 +531,29 @@ function handleNotification(
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.STATUS)) {
     if (!b.currentTurn) ensureImplicitTurn(b, ts);
-    const params = msg.params as { status: string; isComplete?: boolean };
-    if (params.status === "compacting" && !params.isComplete) {
+    const params = msg.params as {
+      status: string;
+      isComplete?: boolean;
+      error?: string;
+    };
+    if (params.status === "compacting") {
+      if (params.isComplete) {
+        // Successful compaction — flip the existing "Compacting…" status to
+        // complete instead of pushing a second item, so the spinner stops.
+        markCompactingStatusComplete(b);
+        return;
+      }
       b.isCompacting = true;
+    } else if (params.status === "compacting_failed") {
+      // A failed compaction emits no `compact_boundary`, so clear the spinner
+      // and render the outcome as its own status row.
+      markCompactingStatusComplete(b);
+      pushItem(b, {
+        sessionUpdate: "status",
+        status: "compacting_failed",
+        error: params.error,
+      });
+      return;
     }
     pushItem(b, {
       sessionUpdate: "status",

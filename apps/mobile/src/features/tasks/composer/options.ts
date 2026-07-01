@@ -49,6 +49,12 @@ export const MODELS: ModelOption[] = [
     supportsReasoning: true,
   },
   {
+    value: "claude-sonnet-5",
+    label: "Claude Sonnet 5",
+    description: "Balanced, fast",
+    supportsReasoning: true,
+  },
+  {
     value: "claude-sonnet-4-6",
     label: "Claude Sonnet 4.6",
     description: "Balanced",

@@ -38,7 +38,6 @@ import {
   ItemContent,
   ItemDescription,
   ItemTitle,
-  Kbd,
 } from "@posthog/quill";
 import { EXTERNAL_LINKS } from "@posthog/shared";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
@@ -339,7 +338,7 @@ export function ProjectSwitcher({
                   <Keyboard size={14} className="text-gray-11" />
                   Keyboard Shortcuts
                   <DropdownMenuShortcut>
-                    <Kbd>{isMac ? "⌘/" : "Ctrl+/"}</Kbd>
+                    {isMac ? "⌘/" : "Ctrl+/"}
                   </DropdownMenuShortcut>
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
@@ -349,7 +348,7 @@ export function ProjectSwitcher({
               <Gear size={14} className="text-gray-11" />
               Settings
               <DropdownMenuShortcut>
-                <Kbd>{isMac ? "⌘," : "Ctrl+,"}</Kbd>
+                {isMac ? "⌘," : "Ctrl+,"}
               </DropdownMenuShortcut>
             </DropdownMenuItem>
 

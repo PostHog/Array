@@ -1,6 +1,7 @@
 import type { SignalReport } from "@posthog/shared/types";
 import { describe, expect, it } from "vitest";
 import {
+  buildBulkActionEvents,
   buildInboxViewedProperties,
   type InboxDetailTab,
   inboxDetailTabReports,
@@ -32,6 +33,59 @@ const NO_FILTERS = {
   searchQuery: "",
   isDefaultScope: true,
 };
+
+describe("buildBulkActionEvents", () => {
+  it("marks single-report actions as non-bulk", () => {
+    const [event, ...rest] = buildBulkActionEvents({
+      reports: [fakeReport({ id: "a", priority: "P1" })],
+      actionType: "snooze",
+      surface: "detail_pane",
+    });
+
+    expect(rest).toHaveLength(0);
+    expect(event).toMatchObject({
+      report_id: "a",
+      action_type: "snooze",
+      surface: "detail_pane",
+      is_bulk: false,
+      bulk_size: 1,
+      priority: "P1",
+    });
+  });
+
+  it("emits one bulk-flagged event per report", () => {
+    const events = buildBulkActionEvents({
+      reports: [fakeReport({ id: "a" }), fakeReport({ id: "b" })],
+      actionType: "delete",
+      surface: "toolbar",
+    });
+
+    expect(events.map((e) => e.report_id)).toEqual(["a", "b"]);
+    expect(events.every((e) => e.is_bulk && e.bulk_size === 2)).toBe(true);
+    expect(events.every((e) => e.action_type === "delete")).toBe(true);
+  });
+
+  it("attaches dismissal reason/note only for dismiss, truncating the note", () => {
+    const longNote = "x".repeat(600);
+    const [dismissed] = buildBulkActionEvents({
+      reports: [fakeReport({ id: "a" })],
+      actionType: "dismiss",
+      surface: "toolbar",
+      dismissal: { reason: "not_relevant", note: longNote },
+    });
+    expect(dismissed.dismissal_reason).toBe("not_relevant");
+    expect(dismissed.dismissal_note).toHaveLength(500);
+
+    const [snoozed] = buildBulkActionEvents({
+      reports: [fakeReport({ id: "a" })],
+      actionType: "snooze",
+      surface: "toolbar",
+      dismissal: { reason: "not_relevant", note: longNote },
+    });
+    expect(snoozed.dismissal_reason).toBeUndefined();
+    expect(snoozed.dismissal_note).toBeUndefined();
+  });
+});
 
 describe("buildInboxViewedProperties", () => {
   it("counts visible reports, tab badges, and total", () => {

@@ -21,6 +21,7 @@ import {
   MenuLabel,
 } from "@posthog/quill";
 import { flattenSelectOptions } from "@posthog/ui/features/sessions/sessionStore";
+import { useRetainedConfigOption } from "@posthog/ui/features/sessions/useRetainedConfigOption";
 import type { AgentAdapter } from "@posthog/ui/features/settings/settingsStore";
 import { Fragment, useMemo, useRef, useState } from "react";
 
@@ -57,7 +58,13 @@ export function UnifiedModelSelector({
 }: UnifiedModelSelectorProps) {
   const [open, setOpen] = useState(false);
   const pendingValueRef = useRef<string | null>(null);
-  const selectOption = modelOption?.type === "select" ? modelOption : undefined;
+  // Keep the last model on the trigger while the new harness's config loads, so
+  // the trigger doesn't shrink to the "Model" fallback and jostle the toolbar
+  // mid-switch. The radio group below still renders from the live option once
+  // loading finishes.
+  const displayOption = useRetainedConfigOption(modelOption);
+  const selectOption =
+    displayOption?.type === "select" ? displayOption : undefined;
   const options = selectOption
     ? flattenSelectOptions(selectOption.options)
     : [];
@@ -75,7 +82,12 @@ export function UnifiedModelSelector({
 
   const otherAdapter = getOtherAdapter(adapter);
 
-  if (isConnecting) {
+  // Collapse to a bare loading button only while the menu is closed (initial
+  // load). When the menu is open we keep it mounted and surface the loading
+  // state inside the content instead — switching harness refetches the new
+  // adapter's config, and unmounting here would dismiss the picker mid-switch
+  // and force the user to reopen it just to choose a model.
+  if (isConnecting && !open) {
     return (
       <Button type="button" variant="default" size="sm" disabled>
         <Spinner size={12} className="animate-spin" />
@@ -123,38 +135,48 @@ export function UnifiedModelSelector({
         className="min-w-[220px]"
       >
         <MenuLabel>{ADAPTER_LABELS[adapter]}</MenuLabel>
-        <DropdownMenuRadioGroup
-          value={currentValue ?? ""}
-          onValueChange={(value) => {
-            pendingValueRef.current = value;
-            setOpen(false);
-          }}
-        >
-          {groupedOptions.length > 0
-            ? groupedOptions.map((group, index) => (
-                <Fragment key={group.group}>
-                  {index > 0 && <DropdownMenuSeparator />}
-                  <MenuLabel>{group.name}</MenuLabel>
-                  {group.options.map((model) => (
-                    <DropdownMenuRadioItem
-                      key={model.value}
-                      value={model.value}
-                    >
-                      <span className="whitespace-nowrap">{model.name}</span>
-                    </DropdownMenuRadioItem>
-                  ))}
-                </Fragment>
-              ))
-            : options.map((model) => (
-                <DropdownMenuRadioItem key={model.value} value={model.value}>
-                  <span className="whitespace-nowrap">{model.name}</span>
-                </DropdownMenuRadioItem>
-              ))}
-        </DropdownMenuRadioGroup>
+        {isConnecting ? (
+          <div className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground">
+            <Spinner size={12} className="animate-spin" />
+            Loading...
+          </div>
+        ) : (
+          <DropdownMenuRadioGroup
+            value={currentValue ?? ""}
+            onValueChange={(value) => {
+              pendingValueRef.current = value;
+              setOpen(false);
+            }}
+          >
+            {groupedOptions.length > 0
+              ? groupedOptions.map((group, index) => (
+                  <Fragment key={group.group}>
+                    {index > 0 && <DropdownMenuSeparator />}
+                    <MenuLabel>{group.name}</MenuLabel>
+                    {group.options.map((model) => (
+                      <DropdownMenuRadioItem
+                        key={model.value}
+                        value={model.value}
+                      >
+                        <span className="whitespace-nowrap">{model.name}</span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </Fragment>
+                ))
+              : options.map((model) => (
+                  <DropdownMenuRadioItem key={model.value} value={model.value}>
+                    <span className="whitespace-nowrap">{model.name}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+          </DropdownMenuRadioGroup>
+        )}
 
         <DropdownMenuSeparator />
 
-        <DropdownMenuItem onClick={() => onAdapterChange(otherAdapter)}>
+        <DropdownMenuItem
+          closeOnClick={false}
+          onClick={() => onAdapterChange(otherAdapter)}
+        >
           <ArrowsClockwise size={12} weight="bold" />
           Switch to {ADAPTER_LABELS[otherAdapter]}
         </DropdownMenuItem>

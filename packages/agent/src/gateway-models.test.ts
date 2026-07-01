@@ -79,6 +79,7 @@ describe("getClaudeModelRecency", () => {
     ["claude-sonnet-4-6", 4006],
     ["claude-opus-4-7", 4007],
     ["claude-opus-4-8", 4008],
+    ["claude-sonnet-5", 5000],
     ["claude-fable-5", 5000],
   ])("ranks %s by its embedded version (%i)", (modelId, rank) => {
     expect(getClaudeModelRecency(modelId)).toBe(rank);

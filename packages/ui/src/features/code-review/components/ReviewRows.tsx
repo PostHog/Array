@@ -1,6 +1,7 @@
 import type { parsePatchFiles } from "@pierre/diffs";
 import { contentHash } from "@posthog/core/code-review/contentHash";
 import type { PrCommentThread } from "@posthog/core/code-review/types";
+import { isBinaryFile } from "@posthog/shared";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 import { memo, useCallback, useMemo } from "react";
 import { useInView } from "../../../primitives/hooks/useInView";
@@ -13,6 +14,7 @@ import {
   splitFilePath,
 } from "../reviewShellParts";
 import type { DiffOptions } from "../types";
+import { BinaryFileDiff } from "./BinaryFileDiff";
 import { InteractiveFileDiff } from "./InteractiveFileDiff";
 import { PatchedFileDiff } from "./PatchedFileDiff";
 
@@ -85,6 +87,22 @@ export const PatchRow = memo(function PatchRow({
     ),
     [collapsed, onToggle, onOpenFile, onDiscard, onStage, staged],
   );
+
+  // Binary files (images, video, archives, …) have no meaningful textual diff;
+  // preview the working-tree file or show a clean placeholder instead of the
+  // "Binary files differ" sentinel the diff renderer would otherwise display.
+  if (isBinaryFile(filePath)) {
+    return (
+      <BinaryFileDiff
+        filePath={filePath}
+        absolutePath={`${repoPath}/${filePath}`}
+        collapsed={collapsed}
+        onToggle={onToggle}
+        onOpenFile={onOpenFile}
+      />
+    );
+  }
+
   return (
     <InteractiveFileDiff
       fileDiff={fileDiff}
@@ -134,6 +152,20 @@ export const UntrackedRow = memo(function UntrackedRow({
     () => (onStageFile ? () => onStageFile(itemKey) : undefined),
     [onStageFile, itemKey],
   );
+
+  // A new binary file would otherwise be read as text and fed to the diff
+  // renderer; preview it (image/video) or show a clean placeholder instead.
+  if (isBinaryFile(file.path)) {
+    return (
+      <BinaryFileDiff
+        filePath={file.path}
+        absolutePath={`${repoPath}/${file.path}`}
+        collapsed={collapsed}
+        onToggle={onToggle}
+      />
+    );
+  }
+
   return (
     <UntrackedFileDiff
       file={file}

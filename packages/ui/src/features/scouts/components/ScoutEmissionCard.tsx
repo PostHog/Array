@@ -15,6 +15,7 @@ import { ScoutLinkedReportChip } from "./ScoutLinkedReportChip";
 export function ScoutEmissionCard({
   emission,
   skillName,
+  scoutLabel,
   actions,
   footerEnd,
   linkedReport,
@@ -24,6 +25,12 @@ export function ScoutEmissionCard({
   emission: ScoutEmission;
   /** The emitting scout, attached to analytics events when known. */
   skillName?: string;
+  /**
+   * Prettified emitting-scout name, shown in the header. Set on cross-fleet
+   * surfaces (the findings page) where cards from different scouts are mixed;
+   * omit on a single-scout surface where the scout is already obvious.
+   */
+  scoutLabel?: string;
   /** Interactive controls shown after the finding id at the footer's left. */
   actions?: ReactNode;
   /** Content pinned to the footer's right edge, e.g. the task-run link. */
@@ -81,6 +88,17 @@ export function ScoutEmissionCard({
         <Text className="text-[11px] text-gray-10">
           confidence {Math.round(emission.confidence * 100)}%
         </Text>
+        {scoutLabel ? (
+          <Flex align="center" gap="1" className="min-w-0">
+            <CompassIcon size={11} className="shrink-0 text-gray-9" />
+            <Text
+              className="truncate text-[11px] text-gray-9"
+              title={scoutLabel}
+            >
+              {scoutLabel}
+            </Text>
+          </Flex>
+        ) : null}
         <span className="flex-1" />
         <RelativeTimestamp timestamp={emission.emitted_at} />
       </button>

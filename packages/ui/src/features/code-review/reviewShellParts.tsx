@@ -186,6 +186,21 @@ export function FileHeaderRow({
   );
 }
 
+export function OpenFileButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="ml-auto inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
+    >
+      <ArrowSquareOut size={14} />
+    </button>
+  );
+}
+
 export function DiffFileHeader({
   fileDiff,
   collapsed,

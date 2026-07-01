@@ -4581,6 +4581,106 @@ describe("SessionService", () => {
     });
   });
 
+  describe("steer echo routing", () => {
+    async function connectAndCaptureOnData(): Promise<
+      (payload: unknown) => void
+    > {
+      const service = getSessionService();
+
+      let session: AgentSession | undefined;
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => session,
+      );
+      mockSessionStoreSetters.getSessions.mockImplementation(() =>
+        session ? { "run-123": session } : {},
+      );
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_taskRunId, updates) => {
+          if (session) session = { ...session, ...updates };
+        },
+      );
+      mockSessionStoreSetters.setSession.mockImplementation((next) => {
+        session = next as AgentSession;
+      });
+
+      mockBuildAuthenticatedClient.mockReturnValue({
+        ...mockAuthenticatedClient,
+        createTaskRun: vi.fn().mockResolvedValue({ id: "run-123" }),
+        appendTaskRunLog: vi.fn(),
+      });
+      mockTrpcAgent.start.mutate.mockResolvedValue({
+        channel: "agent-event:run-123",
+        configOptions: [],
+      });
+
+      await service.connectToTask({
+        task: createMockTask(),
+        repoPath: "/repo",
+      });
+
+      session = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: false,
+        adapter: "claude",
+        currentPromptId: 42,
+        isPromptPending: true,
+      });
+
+      const onData = mockTrpcAgent.onSessionEvent.subscribe.mock.calls.at(
+        -1,
+      )?.[1]?.onData as ((payload: unknown) => void) | undefined;
+      expect(onData).toBeDefined();
+      return onData as (payload: unknown) => void;
+    }
+
+    it.each([
+      {
+        name: "appends a steer echo without clearing pending optimistic placeholders",
+        steer: true,
+      },
+      {
+        name: "replaces the optimistic placeholder for a normal prompt echo",
+        steer: false,
+      },
+    ])("$name", async ({ steer }) => {
+      const onData = await connectAndCaptureOnData();
+      mockSessionStoreSetters.appendEvents.mockClear();
+      mockSessionStoreSetters.replaceOptimisticWithEvent.mockClear();
+
+      const echo = {
+        type: "acp_message",
+        ts: 1700000001,
+        message: {
+          jsonrpc: "2.0",
+          id: 101,
+          method: "session/prompt",
+          params: {
+            prompt: [{ type: "text", text: "hello" }],
+            ...(steer ? { _meta: { steer: true } } : {}),
+          },
+        },
+      };
+      onData(echo);
+
+      if (steer) {
+        expect(mockSessionStoreSetters.appendEvents).toHaveBeenCalledWith(
+          "run-123",
+          [echo],
+        );
+        expect(
+          mockSessionStoreSetters.replaceOptimisticWithEvent,
+        ).not.toHaveBeenCalled();
+      } else {
+        expect(
+          mockSessionStoreSetters.replaceOptimisticWithEvent,
+        ).toHaveBeenCalledWith("run-123", echo);
+        expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
+      }
+    });
+  });
+
   describe("steerQueuedMessage", () => {
     const queuedMessage = {
       id: "q-1",

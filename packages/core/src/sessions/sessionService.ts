@@ -1550,6 +1550,9 @@ export class SessionService {
                 session.taskTitle,
                 "end_turn",
                 session.taskId,
+                session.promptStartedAt
+                  ? acpMsg.ts - session.promptStartedAt
+                  : undefined,
               );
             }
             this.d.taskViewedApi.markActivity(session.taskId);
@@ -1635,7 +1638,7 @@ export class SessionService {
       });
     }
 
-    if (isUserPromptEcho) {
+    if (isUserPromptEcho && !this.isSteerMessage(acpMsg.message)) {
       this.d.store.replaceOptimisticWithEvent(taskRunId, acpMsg);
     } else {
       this.d.store.appendEvents(taskRunId, [acpMsg]);
@@ -1671,6 +1674,9 @@ export class SessionService {
           session.taskTitle,
           stopReason,
           session.taskId,
+          session.promptStartedAt
+            ? acpMsg.ts - session.promptStartedAt
+            : undefined,
         );
       }
 

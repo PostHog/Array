@@ -532,6 +532,7 @@ export function TaskInput({
     }),
     currentMode: workspaceMode,
     lastUsedLocalMode: lastUsedLocalWorkspaceMode,
+    mostRecentEnvironment: view.folderRunEnvironment,
     setSelectedDirectory,
     setSelectedRepository,
     switchWorkspaceMode: switchWorkspaceModeForFolder,
@@ -940,14 +941,13 @@ export function TaskInput({
                 />
               }
               reasoningSelector={
-                !isPreviewLoading && (
-                  <ReasoningLevelSelector
-                    thoughtOption={thoughtOption}
-                    adapter={adapter}
-                    onChange={handleThoughtChange}
-                    disabled={isCreatingTask}
-                  />
-                )
+                <ReasoningLevelSelector
+                  thoughtOption={thoughtOption}
+                  adapter={adapter}
+                  onChange={handleThoughtChange}
+                  disabled={isCreatingTask}
+                  isLoading={isPreviewLoading}
+                />
               }
               getPromptHistory={getPromptHistory}
               onEmptyChange={handleEditorEmptyChange}

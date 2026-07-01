@@ -136,7 +136,11 @@ export function InboxReportListTab({
   );
 
   const dismissTargetId = dismissReport?.id ?? null;
-  const dismissBulkActions = useInboxBulkActions(allReports, dismissTargetId);
+  const dismissBulkActions = useInboxBulkActions(
+    allReports,
+    dismissTargetId,
+    "list_row",
+  );
 
   const handleDismissDialogOpenChange = useCallback((open: boolean) => {
     if (!open) setDismissReport(null);

@@ -9,6 +9,7 @@ import { CONTRIBUTION } from "@posthog/di/contribution";
 import { agentUiModule } from "@posthog/ui/features/agent/agent.module";
 import { authUiModule } from "@posthog/ui/features/auth/auth.module";
 import { billingUiModule } from "@posthog/ui/features/billing/billing.module";
+import { browserTabsUiModule } from "@posthog/ui/features/browser-tabs/browser-tabs.module";
 import { cloneUiModule } from "@posthog/ui/features/clone/clone.module";
 import { connectivityUiModule } from "@posthog/ui/features/connectivity/connectivity.module";
 import { discordPresenceUiModule } from "@posthog/ui/features/discord-presence/discordPresence.module";
@@ -31,6 +32,7 @@ export function registerDesktopContributions(): void {
     authUiModule,
     billingUiModule,
     billingCoreModule,
+    browserTabsUiModule,
     cloneUiModule,
     connectivityUiModule,
     discordPresenceUiModule,

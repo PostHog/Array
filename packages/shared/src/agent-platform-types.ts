@@ -135,7 +135,6 @@ export interface AgentSpec {
   tools?: unknown[];
   mcps?: unknown[];
   skills?: unknown[];
-  integrations?: string[];
   secrets?: string[];
   limits?: {
     max_turns?: number;

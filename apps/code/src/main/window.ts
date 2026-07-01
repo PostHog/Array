@@ -19,7 +19,11 @@ import { trpcRouter } from "./trpc/router";
 import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
-import { type WindowStateSchema, windowStateStore } from "./utils/store";
+import {
+  saveZoomLevel,
+  type WindowStateSchema,
+  windowStateStore,
+} from "./utils/store";
 
 const log = logger.scope("window");
 
@@ -44,6 +48,7 @@ function getSavedWindowState(): WindowStateSchema {
     width: windowStateStore.get("width", 1200),
     height: windowStateStore.get("height", 600),
     isMaximized: windowStateStore.get("isMaximized", true),
+    zoomLevel: windowStateStore.get("zoomLevel", 0),
   };
 
   // Validate position is still on a connected display
@@ -232,6 +237,22 @@ export function createWindow(): void {
 
   mainWindow.once("ready-to-show", showWindow);
   const showFallback = setTimeout(showWindow, 3000);
+
+  // Restore the zoom level once the renderer has loaded. Read the latest
+  // persisted value from the store (not the create-time snapshot) so zooming
+  // done during the session survives in-app reloads, which otherwise reset
+  // Chromium's per-webContents zoom.
+  mainWindow.webContents.on("did-finish-load", () => {
+    mainWindow?.webContents.setZoomLevel(windowStateStore.get("zoomLevel", 0));
+  });
+
+  // Persist mouse-wheel/pinch zoom. Menu-driven zoom is persisted by the
+  // menu items themselves (see buildViewMenu in menu.ts).
+  mainWindow.webContents.on("zoom-changed", () => {
+    if (mainWindow) {
+      saveZoomLevel(mainWindow.webContents.getZoomLevel());
+    }
+  });
 
   // Persist window state on changes
   mainWindow.on(

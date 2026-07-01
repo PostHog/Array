@@ -113,12 +113,14 @@ interface SettingsStore {
   dockBounceNotifications: boolean;
   completionSound: CompletionSound;
   completionVolume: number;
+  scaleSoundWithTaskLength: boolean;
   customSounds: CustomSound[];
   setDesktopNotifications: (enabled: boolean) => void;
   setDockBadgeNotifications: (enabled: boolean) => void;
   setDockBounceNotifications: (enabled: boolean) => void;
   setCompletionSound: (sound: CompletionSound) => void;
   setCompletionVolume: (volume: number) => void;
+  setScaleSoundWithTaskLength: (enabled: boolean) => void;
   addCustomSound: (sound: CustomSound) => void;
   removeCustomSound: (id: string) => void;
   renameCustomSound: (id: string, name: string) => void;
@@ -161,6 +163,10 @@ interface SettingsStore {
   mcpAppsDisabledServers: string[];
   downloadUpdatesAutomatically: boolean;
   lastSeenChangelogVersion: string | null;
+  // Renders the conversation with the new ChatX (quill) primitives instead of
+  // the virtualized ConversationView. Local A/B toggle while the rebuild bakes.
+  useNewChatThread: boolean;
+  setUseNewChatThread: (enabled: boolean) => void;
   setHedgehogMode: (enabled: boolean) => void;
   setSlotMachineMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
@@ -187,6 +193,7 @@ export const NOTIFICATION_DEFAULTS = {
   dockBounceNotifications: false,
   completionSound: "none" as CompletionSound,
   completionVolume: 80,
+  scaleSoundWithTaskLength: false,
 };
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -253,6 +260,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ dockBounceNotifications: enabled }),
       setCompletionSound: (sound) => set({ completionSound: sound }),
       setCompletionVolume: (volume) => set({ completionVolume: volume }),
+      setScaleSoundWithTaskLength: (enabled) =>
+        set({ scaleSoundWithTaskLength: enabled }),
       addCustomSound: (sound) =>
         set((state) => ({ customSounds: [...state.customSounds, sound] })),
       removeCustomSound: (id) =>
@@ -315,6 +324,8 @@ export const useSettingsStore = create<SettingsStore>()(
       mcpAppsDisabledServers: [],
       downloadUpdatesAutomatically: true,
       lastSeenChangelogVersion: null,
+      useNewChatThread: false,
+      setUseNewChatThread: (enabled) => set({ useNewChatThread: enabled }),
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
       setSlotMachineMode: (enabled) => set({ slotMachineMode: enabled }),
       setDownloadUpdatesAutomatically: (enabled) =>
@@ -381,6 +392,7 @@ export const useSettingsStore = create<SettingsStore>()(
         dockBounceNotifications: state.dockBounceNotifications,
         completionSound: state.completionSound,
         completionVolume: state.completionVolume,
+        scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,
         customSounds: state.customSounds,
 
         // Composer / chat
@@ -410,6 +422,7 @@ export const useSettingsStore = create<SettingsStore>()(
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
         downloadUpdatesAutomatically: state.downloadUpdatesAutomatically,
         lastSeenChangelogVersion: state.lastSeenChangelogVersion,
+        useNewChatThread: state.useNewChatThread,
 
         // Onboarding hints
         hints: state.hints,

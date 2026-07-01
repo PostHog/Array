@@ -199,7 +199,11 @@ function FreeformEditControls({
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button variant="outline" size="sm" aria-label="Canvas options">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Canvas options"
+            >
               <DotsThreeIcon size={16} weight="bold" />
             </Button>
           }

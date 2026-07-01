@@ -149,6 +149,7 @@ import {
 } from "@posthog/workspace-server/services/archive/identifiers";
 import { authProxyModule } from "@posthog/workspace-server/services/auth-proxy/auth-proxy.module";
 import { AUTH_PROXY_AUTH } from "@posthog/workspace-server/services/auth-proxy/identifiers";
+import { browserTabsModule } from "@posthog/workspace-server/services/browser-tabs/browser-tabs.module";
 import { claudeCliSessionsModule } from "@posthog/workspace-server/services/claude-cli-sessions/claude-cli-sessions.module";
 import { enrichmentModule } from "@posthog/workspace-server/services/enrichment/enrichment.module";
 import {
@@ -502,10 +503,10 @@ container.bind(GIT_DIFF_SOURCE).toDynamicValue((ctx) => {
       }),
     getPrTemplate: (directoryPath: string) =>
       git().getPrTemplate.query({ directoryPath }),
-    fetchIfStale: async (directoryPath: string) => {
+    fetchFromRemote: async (directoryPath: string) => {
       await git().getGitSyncStatus.query({
         directoryPath,
-        forceRefresh: true,
+        fetchFromRemote: true,
       });
     },
   };
@@ -721,3 +722,7 @@ container.bind(MAIN_DISCORD_PRESENCE_SERVICE).to(DiscordPresenceService);
 // live in @posthog/core (bound via canvasCoreModule) and resolve through
 // ctx.container in the host-router routers.
 container.load(canvasCoreModule);
+
+// Browser tabs for the Channels canvas surface. Authoritative sqlite-backed
+// service in the main process; resolved by the host-router browserTabs router.
+container.load(browserTabsModule);
