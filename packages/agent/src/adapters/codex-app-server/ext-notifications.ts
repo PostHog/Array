@@ -1,11 +1,7 @@
 /**
- * Pure builders for the PostHog `_posthog/*` ext-notification params the
- * app-server adapter emits, mirroring the codex-acp adapter so the host's log
- * consumers (parse_sandbox_log.py) and the renderer see the same shapes.
- *
- * These are param-only builders (no I/O, no client) so each can be unit-tested
- * in isolation and the hub agent just forwards the result to
- * `client.extNotification(method, params)`.
+ * Pure builders for the PostHog `_posthog/*` ext-notification params the app-server
+ * adapter emits, mirroring the codex-acp adapter so log consumers and the renderer
+ * see the same shapes. Param-only (no I/O) so each is unit-testable in isolation.
  */
 
 import type { StopReason } from "@agentclientprotocol/sdk";
@@ -16,10 +12,8 @@ import {
 } from "../claude/context-breakdown";
 
 /**
- * Adapter tag carried on `_posthog/sdk_session`. Kept as `"codex"` (not
- * `"codex-app-server"`) so the host's resume/keying logic treats both Codex
- * transports as the same agent family — the codex-acp adapter emits the same
- * value.
+ * Adapter tag on `_posthog/sdk_session`. Kept `"codex"` (not `"codex-app-server"`)
+ * so resume/keying treats both Codex transports as the same agent family.
  */
 const CODEX_ADAPTER = "codex" as const;
 
@@ -29,10 +23,7 @@ export interface SdkSessionParams {
   adapter: typeof CODEX_ADAPTER;
 }
 
-/**
- * `_posthog/sdk_session` — maps a taskRunId to the agent's sessionId so the
- * host can resume the session later. Emitted once per session creation/load.
- */
+/** `_posthog/sdk_session` — maps a taskRunId to the sessionId so the host can resume later. */
 export function buildSdkSessionParams(
   sessionId: string,
   taskRunId: string,
@@ -68,11 +59,8 @@ export interface AccumulatedUsage {
 }
 
 /**
- * `_posthog/turn_complete` — fired when a prompt turn finishes. `parse_sandbox_log.py`
- * reads `usage.{inputTokens,outputTokens,cachedReadTokens,totalTokens}`; the
- * renderer reads `stopReason`. `totalTokens` is the sum of all four component
- * counts, matching the codex-acp adapter so totals don't diverge between
- * transports.
+ * `_posthog/turn_complete` — fired when a prompt turn finishes. `totalTokens` is the
+ * sum of all four component counts, matching the codex-acp adapter.
  */
 export function buildTurnCompleteParams(
   sessionId: string,
@@ -102,10 +90,9 @@ export interface UsageBreakdownParams {
 }
 
 /**
- * `_posthog/usage_update` (breakdown variant) — per-source context attribution
- * the renderer's ContextBreakdownPopover consumes. Codex's app-server doesn't
- * attribute input tokens by source, so we fold the resident-baseline estimate
- * with the live `contextUsed` count via the shared `buildBreakdown` helper.
+ * `_posthog/usage_update` (breakdown variant) — per-source context attribution.
+ * Codex doesn't attribute tokens by source, so we fold the baseline estimate with
+ * the live `contextUsed` via `buildBreakdown`.
  */
 export function buildUsageBreakdownParams(
   sessionId: string,

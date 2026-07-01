@@ -3,22 +3,15 @@ import { type GatewayModel, isOpenAIModel } from "../../gateway-models";
 import { getReasoningEffortOptions } from "../codex/models";
 
 /**
- * Session config + mode synthesis for the codex app-server adapter.
- *
- * PostHog Code expects ACP `configOptions` (model + reasoning-effort selectors)
- * and a `mode` switcher. The native app-server has no "mode" RPC — a thread is
- * configured by `approvalPolicy` + `sandbox` — so the modes are synthesized here
- * and applied per-turn. We mirror the codex-acp adapter, which surfaces only
- * `model` + `thought_level` configOptions (mode is driven via
- * `setSessionConfigOption`, not listed as a configOption).
+ * Session config + mode synthesis for the codex app-server adapter. The native
+ * app-server has no "mode" RPC (a thread is configured by `approvalPolicy` +
+ * `sandbox`), so modes are synthesized here and applied per-turn.
  */
 
 /**
- * Per-turn sandbox the mode maps to (a subset of codex's SandboxPolicy). This is
- * what makes read-only/plan actually BLOCK edits — `approvalPolicy` alone is
- * neutralized because the process spawns under `workspace-write`/`danger-full-access`.
- * (Plan ALSO sets codex's `collaborationMode` on turn/start — a separate axis,
- * see codex-app-server-agent.ts — which unlocks plan proposals + request_user_input.)
+ * Per-turn sandbox the mode maps to (subset of codex's SandboxPolicy). This is
+ * what makes read-only/plan actually block edits — `approvalPolicy` alone is
+ * neutralized because the process spawns editable.
  */
 export type CodexSandboxPolicy =
   | { type: "readOnly"; networkAccess: boolean }
@@ -31,33 +24,27 @@ export interface CodexMode {
   /** codex AskForApproval the mode maps to, applied per-turn on turn/start. */
   approvalPolicy: string;
   /**
-   * Per-turn sandbox override (turn/start `sandboxPolicy`). Undefined means keep
-   * the spawned `danger-full-access` (can edit). Applied only off the cloud
-   * sandbox, where a non-danger policy would re-engage the unavailable
-   * linux-sandbox and panic — see codex-app-server-agent.ts.
+   * Per-turn sandbox override; undefined keeps the spawned editable sandbox.
+   * Only applied off the cloud sandbox, where a non-danger policy would re-engage
+   * the unavailable linux-sandbox and panic.
    */
   sandboxPolicy?: CodexSandboxPolicy;
   /**
-   * codex's native collaboration mode, sent per-turn on `turn/start`. "plan"
-   * makes codex propose a plan and unlocks `request_user_input` (AskUserQuestion);
-   * everything else runs in "default". This is what makes Plan a real mode rather
-   * than a relabeled read-only sandbox.
+   * codex's native collaboration mode (per-turn on `turn/start`). "plan" unlocks
+   * plan proposals + `request_user_input`; everything else runs "default".
    */
   collaborationMode?: "plan" | "default";
   /**
-   * codex's named permission profile, sent per-turn on `turn/start` as
-   * `activePermissionProfile: { extends }`. codex 0.140.0 enforces the sandbox
-   * through these built-in profiles (`:read-only` / `:workspace` /
-   * `:danger-full-access`); the raw per-turn `sandboxPolicy` we also send is no
-   * longer honored on its own. Undefined means keep the spawned default (editable).
+   * codex's named permission profile (per-turn `activePermissionProfile.extends`).
+   * codex 0.140.0 enforces the sandbox through these built-in profiles; the raw
+   * `sandboxPolicy` is no longer honored alone. Undefined keeps the spawned default.
    */
   permissionProfile?: string;
 }
 
-// Flattened Claude-style presets. Restriction is driven by approvalPolicy +
-// the named permissionProfile (codex 0.140.0's enforced sandbox lever — the raw
-// sandboxPolicy is sent too but no longer honored alone); plan/read-only block
-// edits via `:read-only`, auto/full-access keep the spawned editable sandbox.
+// Flattened Claude-style presets. Restriction is driven by approvalPolicy + the
+// named permissionProfile (codex 0.140.0's enforced sandbox lever); plan/read-only
+// block edits, auto/full-access keep the spawned editable sandbox.
 export const CODEX_MODES: CodexMode[] = [
   {
     id: "plan",
@@ -112,11 +99,7 @@ export function permissionProfileFor(
   return CODEX_MODES.find((m) => m.id === modeId)?.permissionProfile;
 }
 
-/**
- * codex collaboration mode for a preset — "plan" only for the Plan preset, else
- * "default". Switching away from Plan must reset to "default", so this never
- * returns undefined.
- */
+/** codex collaboration mode for a preset — "plan" only for Plan, else "default". */
 export function collaborationModeFor(
   modeId: string | undefined,
 ): "plan" | "default" {
@@ -126,10 +109,8 @@ export function collaborationModeFor(
 }
 
 /**
- * Resolve the host's initial `_meta.permissionMode` to a codex mode — mirroring
- * codex-acp's toCodexPermissionMode. A recognized codex mode is honored; any
- * other value (e.g. a Claude-style "bypassPermissions") falls back to the
- * default so the session starts in a sane approval policy.
+ * Resolve the host's initial `_meta.permissionMode` to a codex mode. A recognized
+ * mode is honored; anything else (e.g. "bypassPermissions") falls back to default.
  */
 export function resolveInitialMode(permissionMode: string | undefined): string {
   return permissionMode && CODEX_MODES.some((m) => m.id === permissionMode)
@@ -140,9 +121,7 @@ export function resolveInitialMode(permissionMode: string | undefined): string {
 /** Codex's standard reasoning efforts; used when model/list doesn't expose them. */
 export const DEFAULT_EFFORTS = ["low", "medium", "high"];
 
-// Display labels for reasoning efforts. Mirrors codex/models.ts and
-// claude/session/models.ts so the live selector matches the preview path
-// (the host renders `name` verbatim — raw "low" would show lowercase).
+// Display labels for reasoning efforts; the host renders `name` verbatim.
 const EFFORT_LABELS: Record<string, string> = {
   low: "Low",
   medium: "Medium",
@@ -163,7 +142,6 @@ export interface ConfigSelectors {
   effort?: string;
   /** From model/list; falls back to the single current model when empty. */
   models: Array<{ id: string; name: string }>;
-  /** Reasoning efforts supported by the current model. */
   efforts: string[];
 }
 
@@ -172,9 +150,7 @@ export function buildConfigOptions(s: ConfigSelectors): SessionConfigOption[] {
   const baseModels = s.models.length
     ? s.models
     : [{ id: s.model, name: s.model }];
-  // Ensure the active model/effort is always a selectable option, even if
-  // model/list omitted it or a mid-session switch moved off the listed set —
-  // otherwise the selector's currentValue points at nothing.
+  // Ensure the active model stays selectable, else currentValue points at nothing.
   const models = baseModels.some((m) => m.id === s.model)
     ? baseModels
     : [...baseModels, { id: s.model, name: s.model }];
@@ -225,14 +201,9 @@ interface RawModel {
 }
 
 /**
- * Stateful holder for a codex session's model / reasoning-effort / mode
- * selectors and the ACP `configOptions` derived from them.
- *
- * The native app-server has no `configOptions` or `mode` concept — it's
- * configured by `model` + per-turn `approvalPolicy`/`sandbox`/`collaborationMode`
- * — so this synthesizes the Claude-style picker the host renders, and rebuilds
- * the options on every change. The agent owns the transport; this owns the state
- * and its projection through the pure builders above.
+ * Stateful holder for a codex session's model / effort / mode selectors and the
+ * ACP `configOptions` derived from them — synthesizing the Claude-style picker
+ * the app-server has no native concept of, rebuilt on every change.
  */
 export class SessionConfigState {
   private _model: string;
@@ -267,10 +238,7 @@ export class SessionConfigState {
     this.rebuild();
   }
 
-  /**
-   * Apply a `setSessionConfigOption` change. Returns whether the mode changed,
-   * so the caller can emit `current_mode_update`.
-   */
+  /** Apply a `setSessionConfigOption` change; returns whether the mode changed. */
   setOption(
     configId: string | undefined,
     value: unknown,
@@ -289,12 +257,9 @@ export class SessionConfigState {
   }
 
   /**
-   * Populate the model + reasoning-effort selectors from a `model/list` `data`
-   * array. model/list comes through the PostHog gateway, which also serves
-   * Claude models, so drop non-OpenAI ones. The gateway doesn't populate
-   * reasoning efforts, so fall back to the shared codex model→effort map (which
-   * surfaces "xhigh" for the gpt-5.5 family); if the gateway starts reporting
-   * efforts they win.
+   * Populate the model + effort selectors from a `model/list` `data` array. The
+   * gateway also serves Claude models, so drop non-OpenAI ones; it doesn't
+   * populate efforts, so fall back to the shared codex model→effort map.
    */
   loadModels(rawModels: RawModel[]): void {
     this.models = rawModels
@@ -324,8 +289,7 @@ export class SessionConfigState {
   }
 
   /**
-   * codex's per-turn `collaborationMode` field: `{ mode, settings: { model } }`.
-   * `plan` unlocks plan proposals + request_user_input; `default` reverts. The
+   * codex's per-turn `collaborationMode`: `{ mode, settings: { model } }`. The
    * model must be a string (not the null in collaborationMode/list output).
    */
   collaborationModeForTurn(): unknown {
@@ -335,20 +299,15 @@ export class SessionConfigState {
     };
   }
 
-  /** The AskForApproval policy for the current mode (turn/start `approvalPolicy`). */
   approvalPolicy(): string | undefined {
     return modeApprovalPolicy(this._mode);
   }
 
-  /** The per-turn sandbox override for the current mode, if any. */
   sandboxPolicy(): CodexSandboxPolicy | undefined {
     return sandboxPolicyFor(this._mode);
   }
 
-  /**
-   * The per-turn `activePermissionProfile` for the current mode (codex 0.140.0's
-   * enforced sandbox mechanism), or undefined to keep the spawned default.
-   */
+  /** Per-turn `activePermissionProfile` (codex 0.140.0's enforced sandbox), or undefined. */
   permissionProfile(): { extends: string } | undefined {
     const profile = permissionProfileFor(this._mode);
     return profile ? { extends: profile } : undefined;

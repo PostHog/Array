@@ -6,14 +6,9 @@ interface PendingTurn {
 }
 
 /**
- * The turn state machine for one codex thread.
- *
- * A codex turn is asynchronous: `prompt()` starts it and awaits a completion
- * promise that `turn/completed` (or an interrupt/error) resolves. This owns the
- * pieces that dance across those events — the in-flight `turnId` (the precondition
- * `turn/steer` requires and the target `turn/interrupt` aborts), the pending
- * completion, and the ids of interrupted turns whose late `turn/completed` must be
- * dropped so it can't finalize a follow-up turn as cancelled.
+ * The turn state machine for one codex thread. A turn is async: `prompt()` starts it and
+ * awaits a completion promise `turn/completed` (or interrupt/error) resolves. Owns the
+ * in-flight `turnId`, the pending completion, and the ids of interrupted turns to drop.
  */
 export class TurnController {
   private turnId?: string;
@@ -21,7 +16,6 @@ export class TurnController {
   private completion?: Promise<StopReason>;
   private readonly cancelled = new Set<string>();
 
-  /** Start a fresh turn; returns the promise that resolves when it completes. */
   begin(): Promise<StopReason> {
     this.completion = new Promise<StopReason>((resolve, reject) => {
       this.pending = { resolve, reject };
@@ -34,7 +28,6 @@ export class TurnController {
     return this.turnId;
   }
 
-  /** A turn is awaiting completion. */
   get isPending(): boolean {
     return this.pending !== undefined;
   }
@@ -49,7 +42,6 @@ export class TurnController {
     if (this.pending && typeof id === "string") this.turnId = id;
   }
 
-  /** Update the turn id after a turn/steer rotates it. */
   onSteered(id: string | undefined): void {
     if (typeof id === "string") this.turnId = id;
   }
@@ -59,11 +51,7 @@ export class TurnController {
     return this.completion ?? Promise.resolve("end_turn");
   }
 
-  /**
-   * Atomically claim the pending turn for finalization: clears the pending slot
-   * and turnId (synchronously, before any await, so a racing steer/finalize sees
-   * no live turn) and returns its resolver — or undefined if already claimed.
-   */
+  /** Atomically claim the pending turn (clears the slot + turnId synchronously), or undefined if already claimed. */
   claim(): PendingTurn | undefined {
     const pending = this.pending;
     if (!pending) return undefined;
@@ -72,10 +60,7 @@ export class TurnController {
     return pending;
   }
 
-  /**
-   * Mark the live turn interrupted (so its late turn/completed is dropped) and
-   * return its id for the turn/interrupt RPC, or undefined if no turn started.
-   */
+  /** Mark the live turn interrupted (so its late completion is dropped) and return its id, or undefined. */
   markInterrupted(): string | undefined {
     if (!this.turnId) return undefined;
     this.cancelled.add(this.turnId);

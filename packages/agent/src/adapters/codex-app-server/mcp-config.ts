@@ -1,20 +1,17 @@
 import type { McpServer } from "@agentclientprotocol/sdk";
 
 /**
- * Codex's per-thread `mcp_servers` config entry. Stdio servers carry a
- * command/args/env; HTTP servers carry a url + headers. The native app-server
- * accepts this map under `thread/start`'s `config.mcp_servers`.
+ * Codex's per-thread `mcp_servers` config entry (stdio: command/args/env; http:
+ * url + headers), accepted under `thread/start`'s `config.mcp_servers`.
  */
 export type CodexMcpServerConfig =
   | { command: string; args: string[]; env?: Record<string, string> }
   | { url: string; http_headers?: Record<string, string> };
 
 /**
- * Translates the ACP `McpServer[]` the host passes in `newSession` into the
- * shape Codex's app-server expects under `config.mcp_servers`. ACP encodes env
- * and headers as `{ name, value }[]`; Codex wants plain string maps.
- *
- * Returns undefined when there is nothing to inject so callers can omit the key.
+ * Translates the ACP `McpServer[]` into the shape Codex's app-server expects under
+ * `config.mcp_servers` — ACP encodes env/headers as `{ name, value }[]`, Codex
+ * wants plain string maps. Returns undefined when there's nothing to inject.
  */
 export function toCodexMcpServers(
   servers: McpServer[] | undefined,

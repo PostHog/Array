@@ -28,8 +28,6 @@ describe("nativeCodexBinaryPath", () => {
   });
 
   it("falls back to the @openai/codex vendored binary when no sibling is bundled", () => {
-    // No sibling next to codex-acp; the @openai/codex platform sub-package
-    // resolves and its vendored binary exists.
     resolveMock.mockReturnValue("/nm/@openai/codex-plat/package.json");
     existsSyncMock.mockImplementation((p: string) => p.includes("/vendor/"));
     const got = nativeCodexBinaryPath(undefined);

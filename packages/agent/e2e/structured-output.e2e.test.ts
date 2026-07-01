@@ -8,12 +8,10 @@ import {
 } from "./driver";
 
 /**
- * Live structured-output e2e: both adapters constrain the final assistant message
- * to a JSON schema (`_meta.jsonSchema`) and deliver the parsed object via the
- * `onStructuredOutput` callback — the contract the signals pipeline relies on
- * (codex: native `outputSchema`; claude: SDK `outputFormat: json_schema`). The
- * answer is deterministic (capital of France) so a cheap model passes reliably.
- * Opt-in (same gating as the lifecycle suite); run via `pnpm test:e2e`.
+ * Live structured-output e2e: both adapters constrain the final message to a JSON
+ * schema (`_meta.jsonSchema`) and deliver the parsed object via `onStructuredOutput`
+ * — the contract the signals pipeline relies on. Deterministic answer so a cheap
+ * model passes reliably. Opt-in (same gating as the lifecycle suite).
  */
 const ADAPTERS: Adapter[] = ["claude", "codex"];
 
@@ -60,8 +58,7 @@ for (const adapter of ADAPTERS) {
           model,
           permissionMode: "bypassPermissions",
           jsonSchema: SCHEMA,
-          // Prod always sets taskRunId — exercise structured output and the
-          // session ext-notification together, the way the host actually drives it.
+          // Prod always sets taskRunId — exercise structured output + the session ext-notification together.
           taskRunId: "e2e-structured",
         },
       });
@@ -79,7 +76,6 @@ for (const adapter of ADAPTERS) {
         expect(captured, "onStructuredOutput should fire").toBeTruthy();
         expect(typeof captured?.capital).toBe("string");
         expect((captured?.capital as string).toLowerCase()).toContain("paris");
-        // With taskRunId set, the session is mapped for the host too.
         expect(s.capture.extMethods()).toContain("_posthog/sdk_session");
       } finally {
         await s.cleanup();

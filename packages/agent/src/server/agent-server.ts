@@ -395,9 +395,8 @@ export class AgentServer {
   }
 
   private shouldRelayPermissionToClient(mode: PermissionMode): boolean {
-    // "plan" relays like "read-only": both are look-don't-touch modes, so an
-    // edit/command escalation must reach a connected desktop for a human veto
-    // rather than being silently auto-approved.
+    // "plan" relays like "read-only" (look-don't-touch): escalations need a human
+    // veto, not silent auto-approval.
     return (
       mode === "default" ||
       mode === "auto" ||
@@ -2928,12 +2927,9 @@ ${signedCommitInstructions}
             isQuestion ||
             this.shouldRelayPermissionToClient(sessionPermissionMode);
 
-          // A "background" (autonomous) run has no interactive human to answer a
-          // relayed approval — and hasDesktopConnected can still be true because
-          // the event-relay SSE reader counts as a connected client. Relaying to
-          // it would hang the run forever (e.g. a posthog/exec elicitation during
-          // signals repo-selection/research). Auto-approve instead (the intended
-          // autonomous behavior), still honoring the publish block below.
+          // A background run has no human to answer a relayed approval
+          // (hasDesktopConnected is true from the event-relay reader), so
+          // auto-approve rather than hang on it.
           if (
             mode !== "background" &&
             (isPlanApproval ||

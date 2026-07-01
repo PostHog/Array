@@ -5,24 +5,16 @@ export type Adapter = "claude" | "codex";
 
 /**
  * Live e2e configuration, resolved entirely from the environment so no secret is
- * ever committed. A run needs a local llm-gateway (`./bin/start` in the posthog
- * repo) and a token in `E2E_GATEWAY_TOKEN`. We target the gateway's `llm_gateway`
- * product, which accepts a **personal API key** (`allow_api_keys=True`) and all
- * models — so a plain key works, no OAuth mint (unlike prod's `posthog_code`
- * product, which is OAuth-only). `run-e2e.sh` supplies the local dev key. Without
- * the token every arm self-skips, so `pnpm test` and CI spend nothing.
- *
- * The adapter code is product-agnostic (it just posts to `apiBaseUrl`), so
- * `llm_gateway` exercises the exact same paths `posthog_code` would.
+ * committed. Needs a local llm-gateway and a token in `E2E_GATEWAY_TOKEN`; targets
+ * the `llm_gateway` product, which accepts a personal API key (no OAuth mint,
+ * unlike prod's `posthog_code`). Without the token every arm self-skips.
  */
-// `||` not `??`: CI sets unset `vars.*` to an empty string, which should fall
-// back to the default rather than override it with "".
+// `||` not `??`: CI sets unset vars to "" which should fall back to the default.
 const GATEWAY_URL =
   process.env.E2E_GATEWAY_URL || "http://localhost:3308/llm_gateway";
 const TOKEN = process.env.E2E_GATEWAY_TOKEN ?? "";
 
-// apps/code/resources/codex-acp/codex (the native app-server binary), relative
-// to packages/agent/e2e.
+// The native app-server binary, relative to packages/agent/e2e.
 const NATIVE_CODEX_BIN = join(
   __dirname,
   "..",
@@ -45,28 +37,18 @@ export const E2E = {
   hasToken: !!TOKEN,
   gatewayUrl: GATEWAY_URL,
   codexBin: NATIVE_CODEX_BIN,
-  /**
-   * Deployment environment the session runs as. `E2E_ENVIRONMENT=cloud` exercises
-   * the cloud code path (sandbox/permission-profile gating, cloud notifications) —
-   * the driver injects it into every session's `_meta`. Undefined = local.
-   */
+  /** Deployment environment. `E2E_ENVIRONMENT=cloud` exercises the cloud code path; undefined = local. */
   environment: (process.env.E2E_ENVIRONMENT as "local" | "cloud" | undefined) ||
     undefined,
 
-  /**
-   * Cheap model per adapter (overridable). Defaults to a small/cheap model so a
-   * full run is a couple of short turns. If the gateway doesn't serve the
-   * default, override via `E2E_CLAUDE_MODEL` / `E2E_CODEX_MODEL` — the turn will
-   * fail loudly (never a false green) rather than silently skip.
-   */
+  /** Cheap model per adapter, overridable via `E2E_CLAUDE_MODEL` / `E2E_CODEX_MODEL`. */
   model(adapter: Adapter): string {
     // `||` so an empty CI variable falls back to the default.
     if (adapter === "claude") {
       return process.env.E2E_CLAUDE_MODEL || "claude-haiku-4-5";
     }
-    // gpt-5-mini is the cheapest codex model the gateway serves. It's on the
-    // product block list, but that gate is only enforced in Agent.run — the
-    // e2e drives createAcpConnection directly, so the model is accepted.
+    // gpt-5-mini is on the product block list, but that gate is only enforced in
+    // Agent.run — the e2e drives createAcpConnection directly, so it's accepted.
     return process.env.E2E_CODEX_MODEL || "gpt-5-mini";
   },
 
@@ -79,12 +61,7 @@ export const E2E = {
     return null;
   },
 
-  /**
-   * Point the adapter at the gateway exactly as the host's `configureEnvironment`
-   * does: Claude reads `ANTHROPIC_*` from env; codex takes the gateway via
-   * `codexOptions` but we set `OPENAI_*` too for parity, and force the native
-   * app-server sub-adapter.
-   */
+  /** Point the adapter at the gateway as the host's `configureEnvironment` does. */
   configureEnv(adapter: Adapter): void {
     if (adapter === "claude") {
       process.env.ANTHROPIC_BASE_URL = GATEWAY_URL;
@@ -119,11 +96,7 @@ export const E2E = {
     };
   },
 
-  /**
-   * A stronger model for the occasional test the cheapest models can't handle —
-   * e.g. gpt-5-mini / claude-haiku hang on schema-constrained (structured-output)
-   * decodes. Opts up to a capable model; still env-overridable.
-   */
+  /** A stronger model for tests the cheapest models can't handle (e.g. structured-output decodes). */
   strongModel(adapter: Adapter): string {
     if (adapter === "claude") {
       return process.env.E2E_CLAUDE_MODEL || "claude-sonnet-4-5";

@@ -34,7 +34,6 @@ describe("buildAppServerArgs", () => {
       try {
         const args = buildAppServerArgs({ binaryPath: "/bundle/codex" });
         expect(args).toContain(expected);
-        // Exactly one sandbox_mode override is emitted.
         expect(
           args.filter((a) => a.startsWith("sandbox_mode=")),
         ).toHaveLength(1);
@@ -53,8 +52,6 @@ describe("buildAppServerArgs", () => {
       developerInstructions: "Follow PostHog rules.",
     });
 
-    // Guidance is injected per-thread in thread/start (combined with the host's
-    // task system prompt), so the spawn args carry no instructions of any kind.
     expect(args.some((arg) => arg.startsWith("developer_instructions="))).toBe(
       false,
     );

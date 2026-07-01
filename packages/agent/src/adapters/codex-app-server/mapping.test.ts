@@ -25,8 +25,6 @@ describe("mapAppServerNotification", () => {
 
   it.each([
     ["raw textDelta", APP_SERVER_NOTIFICATIONS.REASONING_TEXT_DELTA],
-    // The DEFAULT stream for gpt-5-family models — must map identically, else
-    // the host sees no reasoning at all (raw reasoning is off by default).
     ["summaryTextDelta", APP_SERVER_NOTIFICATIONS.REASONING_SUMMARY_TEXT_DELTA],
   ])("maps a reasoning %s to an ACP agent_thought_chunk", (_label, method) => {
     const result = mapAppServerNotification("s-1", method, {
@@ -157,8 +155,6 @@ describe("mapAppServerNotification", () => {
       },
     );
 
-    // The host renderer routes MCP rendering (and the PostHog `exec` unwrapping)
-    // off the structured `_meta.posthog` channel.
     const meta = (result?.update as { _meta?: unknown })._meta as {
       posthog?: { toolName?: string; mcp?: { server: string; tool: string } };
     };
@@ -184,9 +180,7 @@ describe("mapAppServerNotification", () => {
         threadId: "t",
         turnId: "u",
         tokenUsage: {
-          // `total` is cumulative across the thread; the gauge must NOT use it.
           total: { totalTokens: 1500, inputTokens: 1000, outputTokens: 500 },
-          // `last` is the current turn's occupancy — the value that must win.
           last: {
             totalTokens: 600,
             inputTokens: 500,
@@ -549,8 +543,6 @@ describe("mapHistoryItem", () => {
 
 describe("parseUnifiedDiff", () => {
   it("keeps added/removed content lines whose payload starts with ++ or --", () => {
-    // "---count;" is a removed line of content "--count;"; "+++count;" is an
-    // added line of content "++count;" — neither is a file header.
     expect(parseUnifiedDiff("@@ -1 +1 @@\n---count;\n+++count;")).toEqual({
       oldText: "--count;",
       newText: "++count;",

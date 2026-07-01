@@ -1,17 +1,8 @@
 /**
  * Builds the stdio local-tools MCP server config to inject into a Codex
- * app-server thread's `config.mcp_servers`. Ported from the codex-acp adapter
- * (`adapters/codex/codex-agent.ts` buildLocalToolsMcpServer + applyLocalTools +
- * enabledLocalTools gating).
- *
- * The two adapters share the SAME bundled stdio server script
- * (`adapters/codex/local-tools-mcp-server.js`), the SAME registry
- * (`adapters/local-tools`), and the SAME `LocalToolCtx`. Only the injection
- * boundary differs: codex-acp pushes an `McpServerStdio` into `newSession`'s
- * `mcpServers`, whereas the app-server adapter passes the result through
- * `toCodexMcpServers` into the thread config. We return the ACP `McpServerStdio`
- * shape so the existing translation layer stays the single owner of the
- * ACP -> Codex map.
+ * app-server thread's `config.mcp_servers`, ported from the codex-acp adapter.
+ * Returns the ACP `McpServerStdio` shape so the existing translation layer stays
+ * the single owner of the ACP→Codex map.
  */
 
 import { existsSync } from "node:fs";
@@ -28,10 +19,9 @@ import {
 import { resolveTaskId } from "../session-meta";
 
 /**
- * Gate inputs the local-tools server needs beyond what `LocalToolGateMeta`
- * carries: the task id (top-level or nested under `persistence`) and the base
- * branch the signed-git tools default to. Kept self-contained so this module
- * does not depend on the hub agent's session-meta type.
+ * Gate inputs the local-tools server needs beyond `LocalToolGateMeta`: the task id
+ * and the base branch the signed-git tools default to. Self-contained so this
+ * module doesn't depend on the hub agent's session-meta type.
  */
 export interface LocalToolsMeta extends LocalToolGateMeta {
   taskId?: string;
@@ -40,10 +30,8 @@ export interface LocalToolsMeta extends LocalToolGateMeta {
 }
 
 /**
- * Path resolves relative to the compiled adapter location. When bundled into
- * different entry points (dist/agent.js, dist/server/bin.cjs, etc), the
- * adapter sits at different depths, so walk up until we find the shared dist
- * asset. Mirrors `resolveBundledMcpScript` in the codex-acp adapter.
+ * Resolve a shared dist asset by walking up from the compiled adapter location —
+ * its depth varies across bundle entry points. Mirrors the codex-acp adapter.
  */
 function resolveBundledMcpScript(rel: string): string {
   let dir = import.meta.dirname ?? __dirname;
@@ -70,8 +58,7 @@ function toMcpServerStdio(
     { name: "POSTHOG_LOCAL_TOOLS_ENABLED", value: enabledNames.join(",") },
   ];
   if (ctx.token) {
-    // Token also on the child env so its own git remote ops (fetch/ls-remote)
-    // authenticate; the var names come from the single shared source.
+    // Token also on the child env so its own git remote ops authenticate.
     env.push(
       ...Object.entries(ghTokenEnv(ctx.token)).map(([name, value]) => ({
         name,
@@ -89,10 +76,8 @@ function toMcpServerStdio(
 
 /**
  * Returns the local-tools stdio server config to inject, or null when no tool's
- * gate passes (e.g. local/desktop run with no GH token — signed-git tools are
- * cloud-only). Tools self-gate via the registry; the server is only injected
- * when at least one passes. Their instructions already live in the shared cloud
- * system prompt, so only the server config needs returning here.
+ * gate passes (e.g. local/desktop run with no GH token). Tools self-gate via the
+ * registry; the server is only injected when at least one passes.
  */
 export function buildLocalToolsServer(
   ctx: { cwd?: string },

@@ -16,16 +16,10 @@ import {
 } from "./driver";
 
 /**
- * Live session-lifecycle e2e: drives a representative session per adapter end to
- * end against the real gateway + binary on a cheap model. One shared golden turn
- * (in `beforeAll`) backs the turn / config / reattach assertions; the other
- * scenarios use their own short sessions. Codex-specific capabilities (the
- * `{decision}` approval round-trip, steering, mode synthesis, list/fork) run only
- * on the codex arm. Assertions are structural lifecycle invariants + the on-disk
- * side effect — never model prose (except the deterministic file edit) — so the
- * suite holds across adapters and cheap models. Opt-in: each arm self-skips
- * unless `E2E_GATEWAY_TOKEN` is set (and, for codex, the native binary exists).
- * Run via `pnpm test:e2e`; filter one adapter with `-t "(codex)"`.
+ * Live session-lifecycle e2e per adapter: drives a real session end to end against
+ * the real gateway + binary on a cheap model. Assertions are structural lifecycle
+ * invariants + the on-disk edit, never model prose. Opt-in: each arm self-skips
+ * unless `E2E_GATEWAY_TOKEN` is set (codex also needs the native binary).
  */
 const ADAPTERS: Adapter[] = ["claude", "codex"];
 
@@ -38,19 +32,10 @@ const EDIT_PROMPT =
 for (const adapter of ADAPTERS) {
   const skip = E2E.skipReason(adapter);
   const title = `session lifecycle (${adapter})${skip ? ` — SKIPPED (${skip})` : ""}`;
-  // Codex-only capabilities; registered as skipped on the claude arm so the gap
-  // is visible rather than silent.
+  // Codex-only; skipped on the claude arm so the gap is visible.
   const itCodex = adapter === "codex" ? it : it.skip;
-  // OS-sandbox enforcement only TIGHTENS per-turn on macOS in a LOCAL session:
-  // spawn.ts spawns `workspace-write` there (Seatbelt available), so a per-turn
-  // `:read-only` profile can narrow it and block a write. On Linux the process
-  // spawns `danger-full-access` (the linux-sandbox launcher is unavailable), so
-  // the per-turn profile can't re-engage the sandbox. And in the cloud environment
-  // the adapter deliberately sends NO sandboxPolicy/permissionProfile at all (it
-  // would panic the absent launcher) — so on macOS + E2E_ENVIRONMENT=cloud the
-  // workspace-write spawn permits the edit. Gate to macOS AND non-cloud so the
-  // test only runs where the read-only profile is actually applied; otherwise it
-  // reds spuriously.
+  // Read-only profile only tightens per-turn on macOS + non-cloud (elsewhere the
+  // spawn is danger-full-access / no profile), so gate to where it actually applies.
   const itCodexSandbox =
     adapter === "codex" &&
     process.platform === "darwin" &&
@@ -102,9 +87,7 @@ for (const adapter of ADAPTERS) {
         };
       } catch (err) {
         // Don't fail the whole describe on a flaky golden turn — record it so only
-        // the one test that consumes `turn` fails. sessionId/newSessionResponse are
-        // already captured above, so the independent scenarios (each opens its own
-        // session) and the reattach/list/fork/resume tests still run.
+        // the test that consumes `turn` fails.
         goldenError = err;
       } finally {
         await s.cleanup();
@@ -135,31 +118,21 @@ for (const adapter of ADAPTERS) {
       ].some((e) => e.data?.status === "completed");
       expect(anyToolCompleted).toBe(true);
 
-      // A concrete usage signal — the exact method, not a loose substring.
       const hasUsage =
         turn.capture.updates("usage_update").length > 0 ||
         turn.capture.extMethods().includes("_posthog/usage_update");
       expect(hasUsage).toBe(true);
 
-      // Both adapters map the session to the host's taskRunId via sdk_session
-      // (the golden meta sets taskRunId, the cloud host always does).
       expect(turn.capture.extMethods()).toContain("_posthog/sdk_session");
 
-      // The real on-disk side effect.
       expect(turn.target).not.toBe(ORIGINAL_TARGET);
       expect(turn.target).toContain("FOO");
 
-      // codex additionally emits _posthog/turn_complete (claude signals turn
-      // completion via the prompt response, not this ext-notification).
+      // codex additionally emits turn_complete; claude signals completion via the prompt response.
       if (adapter === "codex") {
-        // NOTE: reasoning (agent_thought_chunk) parity is covered by the unit
-        // test for both reasoning streams (mapping.test.ts). A live assertion is
-        // intentionally omitted: the cheap gpt-5-mini turn doesn't reliably emit
-        // a reasoning summary, so asserting > 0 here would be flaky. Confirming
-        // the live trigger (summary field vs show_raw_agent_reasoning config) is
-        // tracked in CODEX_APP_SERVER_TESTING.md.
+        // Reasoning parity is unit-covered (mapping.test.ts); a live assertion
+        // would be flaky on the cheap model.
         expect(turn.capture.extMethods()).toContain("_posthog/turn_complete");
-        // turn_complete carries real, well-formed usage (totalTokens = sum).
         const tc = turn.capture.events.find(
           (e) =>
             e.kind === "extNotification" &&
@@ -207,9 +180,8 @@ for (const adapter of ADAPTERS) {
             s.capture.updates("config_option_update").length,
           ).toBeGreaterThan(0);
         } else {
-          // claude returns the updated configOptions — assert the switch actually
-          // took (the option's currentValue is now the value we set), not merely
-          // that an ack event/array was produced (which is unconditionally true).
+          // claude returns updated configOptions — assert the switch actually took,
+          // not merely that an ack array was produced (unconditionally true).
           const updated = ((res?.configOptions ?? []) as ConfigOption[]).find(
             (o) => o.id === opt?.id,
           );
@@ -220,8 +192,7 @@ for (const adapter of ADAPTERS) {
       }
     }, 90_000);
 
-    // The cloud host switches mode ONLY via setSessionConfigOption(configId:"mode")
-    // (never ACP setSessionMode) on BOTH adapters, so exercise both arms.
+    // Cloud host switches mode only via setSessionConfigOption(configId:"mode"), so exercise both arms.
     it("emits current_mode_update when the mode is switched via setSessionConfigOption", async () => {
       if (adapter === "codex") killCodexStragglers();
       const s = await openSession({
@@ -231,8 +202,7 @@ for (const adapter of ADAPTERS) {
         meta: meta(),
       });
       try {
-        // codex synthesizes modes (read-only); claude exposes a "mode"
-        // configOption — pick an alternate value from it.
+        // codex synthesizes modes; claude exposes a "mode" configOption — pick an alternate value.
         let value = "read-only";
         if (adapter === "claude") {
           const modeOpt = (s.newSession.configOptions ?? []).find(
@@ -255,11 +225,9 @@ for (const adapter of ADAPTERS) {
       }
     }, 60_000);
 
-    // The behavioral proof that the mode picker is NOT cosmetic: read-only maps
-    // to a per-turn `:read-only` permission profile (codex app-server), which must
-    // block a write at the OS level even though the host auto-approves. macOS-only
-    // (see itCodexSandbox): on Linux the process spawns danger-full-access, so the
-    // per-turn profile can't tighten it and this would spuriously red.
+    // Proves the mode picker isn't cosmetic: read-only maps to an OS-level
+    // :read-only profile that blocks the write even though the host auto-approves.
+    // macOS-only (see itCodexSandbox).
     itCodexSandbox(
       "read-only mode actually blocks a file edit (sandbox restricts, not just approval)",
       async () => {
@@ -271,7 +239,6 @@ for (const adapter of ADAPTERS) {
           meta: meta(),
         });
         try {
-          // Switch to read-only; the per-turn profile applies on the next turn.
           await s.conn.setSessionConfigOption({
             sessionId: s.sessionId,
             configId: "mode",
@@ -290,16 +257,10 @@ for (const adapter of ADAPTERS) {
               },
             ],
           });
-          // The turn must complete (a read-only sandbox must not panic/hang)...
           expect(res.stopReason).toBeTruthy();
-          // ...the model actually DID something (>=1 tool call), so a pure prose
-          // no-op can't masquerade as enforcement. (This only rules out the
-          // zero-activity false-green; the insistent prompt above pushes toward an
-          // edit, but a read-then-refuse could still satisfy this without a write
-          // attempt — an accepted residual on a nondeterministic cheap model.)
+          // >=1 tool call, so a pure prose no-op can't masquerade as enforcement.
           expect(s.capture.updates("tool_call").length).toBeGreaterThan(0);
-          // ...and the on-disk file is byte-for-byte unchanged: the read-only
-          // sandbox blocked the write despite the host auto-approving.
+          // File unchanged: the read-only sandbox blocked the write despite host auto-approval.
           expect(readTarget(repo)).toBe(before);
           expect(readTarget(repo)).not.toContain("SENTINEL_RO_EDIT");
         } finally {
@@ -309,11 +270,9 @@ for (const adapter of ADAPTERS) {
       180_000,
     );
 
-    // The proof that Plan is a REAL mode, not a relabeled read-only: codex only
-    // offers request_user_input (AskUserQuestion) in its "plan" collaboration
-    // mode (pushed via the turn/start `collaborationMode` field). This also
-    // covers the revert — codex's collaboration mode is sticky, so switching back
-    // to auto must push `default` explicitly or it stays stuck in Plan.
+    // Proves Plan is a real mode: codex only offers request_user_input in its plan
+    // collaboration mode. Also covers the revert — the collaboration mode is sticky,
+    // so switching back to auto must push default explicitly.
     itCodex(
       "plan mode engages codex's plan collaboration, and reverts when switched back to auto",
       async () => {
@@ -333,7 +292,6 @@ for (const adapter of ADAPTERS) {
             .approvals()
             .filter((e) => e.data?.codeToolKind === "question").length;
         try {
-          // Plan: request_user_input is available → a question reaches the host.
           await s.conn.setSessionConfigOption({
             sessionId: s.sessionId,
             configId: "mode",
@@ -346,9 +304,7 @@ for (const adapter of ADAPTERS) {
           const afterPlan = questionCount();
           expect(afterPlan).toBeGreaterThan(0);
 
-          // Switch back to auto (default collaboration): request_user_input is no
-          // longer available, so the SAME prompt yields no new question. If the
-          // collaboration mode didn't revert, codex would ask again.
+          // Switch back to auto: request_user_input is gone, so the same prompt yields no new question.
           await s.conn.setSessionConfigOption({
             sessionId: s.sessionId,
             configId: "mode",
@@ -379,14 +335,12 @@ for (const adapter of ADAPTERS) {
           mcpServers: [],
         });
         if (adapter === "claude") {
-          // claude IMPLEMENTS refresh_session; the cheap model (haiku) is on
-          // the MCP-injection exclude list, so it RECOGNIZES the method and
-          // rejects on the model gate — not method-not-found — proving the
-          // host's call reaches the handler.
+          // claude implements refresh_session; haiku is on the MCP-injection exclude
+          // list, so it rejects on the model gate (not method-not-found), proving the
+          // call reaches the handler.
           await expect(call).rejects.toThrow(/MCP injection/i);
         } else {
-          // codex doesn't implement extMethod — the host's refresh_session
-          // call rejects cleanly (the known adapter divergence).
+          // codex doesn't implement extMethod — the call rejects cleanly (known adapter divergence).
           await expect(call).rejects.toThrow();
         }
       } finally {
@@ -394,15 +348,9 @@ for (const adapter of ADAPTERS) {
       }
     }, 60_000);
 
-    // NOTE: the command/file approval `{decision}` round-trip is NOT exercised
-    // here. codex spawns under a danger-full-access sandbox (spawn.ts), so it
-    // auto-approves and never sends item/*requestApproval — even in read-only
-    // mode — so an e2e approval assertion can't fire without changing production
-    // sandbox behavior. That envelope is covered by unit tests instead
-    // (codex-app-server-agent.test.ts: "maps allow to a decision envelope" et al).
-    // Likewise the server->client requestPermission policy (publish-blocking,
-    // Slack relay, plan approval, deny-on-shutdown) can't be triggered from a
-    // cheap model in this harness — it's covered by approvals.test.ts.
+    // Known gap: the approval {decision} round-trip and requestPermission policy
+    // aren't exercised here (codex auto-approves under danger-full-access) —
+    // unit-covered in codex-app-server-agent.test.ts / approvals.test.ts.
 
     it("incorporates a prompt's _meta.prContext without error", async () => {
       if (adapter === "codex") killCodexStragglers();
@@ -413,8 +361,7 @@ for (const adapter of ADAPTERS) {
         meta: meta(),
       });
       try {
-        // The host attaches prContext on PR-follow-up runs; both adapters
-        // prepend it to the forwarded prompt.
+        // The host attaches prContext on PR-follow-up runs; both adapters prepend it.
         const res = await s.conn.prompt({
           sessionId: s.sessionId,
           prompt: [
@@ -464,22 +411,17 @@ for (const adapter of ADAPTERS) {
                 : undefined,
             20_000,
           );
-          // A second prompt while the turn is in flight folds in via turn/steer.
           const p2 = s.conn.prompt({
             sessionId: s.sessionId,
             prompt: [{ type: "text", text: "Now stop and say DONE." }],
           });
           const [r1] = await Promise.all([p1, p2]);
           expect(r1.stopReason).toBe("end_turn");
-          // Both the original and the steered message echoed as user turns...
           expect(
             s.capture.updates("user_message_chunk").length,
           ).toBeGreaterThanOrEqual(2);
-          // ...and — the steer-specific proof — they folded into a SINGLE turn:
-          // exactly one _posthog/turn_complete. A swallowed/failed turn/steer, or
-          // p1 finishing before p2 lands (so p2 runs as its own turn), would yield
-          // 2. The bare user_message_chunk count above only proves prompt() ran
-          // twice; this proves the second prompt actually steered the first turn.
+          // The steer proof: folded into a SINGLE turn (one turn_complete). Two would
+          // mean the steer didn't take and p2 ran as its own turn.
           const turnCompletes = s.capture.events.filter(
             (e) =>
               e.kind === "extNotification" &&
@@ -526,12 +468,9 @@ for (const adapter of ADAPTERS) {
       60_000,
     );
 
-    // NOTE: the permission DENY path isn't exercised here. Neither arm reliably
-    // surfaces a deny-able approval to a cheap model: codex auto-approves under
-    // its danger-full-access sandbox, and claude routes file edits through ACP
-    // writeTextFile rather than a requestPermission round-trip. The deny/cancel
-    // paths are unit-covered instead (approvals.test.ts safe-default-on-reject;
-    // codex-app-server-agent.test.ts command-approval cancel/decline envelope).
+    // Known gap: the permission DENY path isn't exercised (neither arm reliably
+    // surfaces a deny-able approval to a cheap model) — unit-covered in
+    // approvals.test.ts / codex-app-server-agent.test.ts.
 
     it("interrupts an in-flight turn", async () => {
       if (adapter === "codex") killCodexStragglers();
@@ -551,8 +490,7 @@ for (const adapter of ADAPTERS) {
             },
           ],
         });
-        // Cancel as soon as the turn is in flight (unbounded work, so no race
-        // with a fast finish).
+        // Cancel as soon as the turn is in flight (unbounded work, so no race).
         await waitFor(
           () =>
             s.capture.updates("agent_message_chunk").length > 0 ||
@@ -565,10 +503,7 @@ for (const adapter of ADAPTERS) {
         const res = await p;
         expect(res.stopReason).toBe("cancelled");
 
-        // Real-world impact: after a cancel the session must be usable again.
-        // With the old bug (turn/interrupt sent without the required turnId) the
-        // server-side turn kept running, so a follow-up turn could not start
-        // cleanly. A bounded follow-up must now complete normally.
+        // After a cancel the session must be usable again — a bounded follow-up must complete.
         const followUp = await s.conn.prompt({
           sessionId: s.sessionId,
           prompt: [{ type: "text", text: "Stop. Reply with just: OK" }],
@@ -617,11 +552,8 @@ for (const adapter of ADAPTERS) {
           _meta: { model: E2E.model(adapter) },
         });
         expect(loaded).toBeTruthy();
-        // loadSession runs no turn, so any transcript update here is replayed
-        // history. The replayed shape differs by adapter, so assert each arm's
-        // real replay path: codex replays user/agent message chunks (from
-        // thread.turns via mapHistoryItem); claude replays tool calls (from its
-        // SDK transcript via replaySessionHistory).
+        // loadSession runs no turn, so any update here is replayed history. The
+        // shape differs by adapter: codex replays message chunks, claude tool calls.
         const replayed = await waitFor(() => {
           const n =
             adapter === "codex"

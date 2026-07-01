@@ -6,18 +6,9 @@ export interface McpCall {
 }
 
 /**
- * Manages the session's MCP tool-call state.
- *
- * Its main job today is correlating codex approval prompts back to the tool that
- * triggered them. Codex has no MCP-specific approval: a tool surfaces either a
- * command-execution approval (which carries the item id) or — for the PostHog
- * `exec` tool — a generic `mcpServer/elicitation/request` carrying only the
- * server name. Neither carries the real tool/args, so we remember each in-flight
- * call from its `mcpToolCall` item and recover it at approval time: by item id
- * for a command approval, or by server name for an elicitation (which has no id,
- * so it correlates to the latest in-flight call for that server — MCP calls are
- * sequential and an elicitation fires while its call is live). Session-scoped and
- * small (one entry per MCP call).
+ * Correlates codex approval prompts back to the MCP tool that triggered them: by
+ * item id for a command approval, or by server name for an elicitation (which
+ * carries no id, so it maps to the latest in-flight call — MCP calls are sequential).
  */
 export class McpManager {
   private readonly byId = new Map<string, McpCall>();

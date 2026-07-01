@@ -5,10 +5,7 @@ import type { JsonRpcMessage, JsonRpcResponse, RequestId } from "./protocol";
 export interface AppServerClientHandlers {
   /** Server-pushed notification (no id), e.g. `item/agentMessage/delta`. */
   onNotification?: (method: string, params: unknown) => void;
-  /**
-   * Server-initiated request (has an id), e.g. an approval. The resolved value
-   * is returned to the server as the JSON-RPC result.
-   */
+  /** Server-initiated request (has an id), e.g. an approval; the resolved value is returned as the JSON-RPC result. */
   onRequest?: (method: string, params: unknown) => Promise<unknown>;
   /** Fired once when the stream ends without an explicit close() (process exit). */
   onClose?: () => void;
@@ -28,12 +25,8 @@ export interface AppServerRpc {
 }
 
 /**
- * Bidirectional newline-delimited JSON-RPC client for the native Codex
- * `app-server` subprocess. Unlike the codex-acp adapter this speaks Codex's
- * own protocol rather than ACP, so it cannot reuse the ACP SDK connection.
- *
- * Transport-agnostic: it is given a {@link StreamPair} so tests can drive it
- * over in-memory streams without spawning a process.
+ * Bidirectional newline-delimited JSON-RPC client for the native Codex `app-server` subprocess.
+ * Transport-agnostic via a {@link StreamPair} so tests can drive it over in-memory streams.
  */
 export class AppServerClient implements AppServerRpc {
   private readonly writer: WritableStreamDefaultWriter<Uint8Array>;
@@ -126,9 +119,7 @@ export class AppServerClient implements AppServerRpc {
         // lock already released by cancel()
       }
       if (!this.closed) {
-        // The stream ended without an explicit close() (the process exited).
-        // Fail in-flight calls and notify the owner so a pending turn does not
-        // hang forever.
+        // Stream ended without close() (process exited): fail in-flight calls so the turn doesn't hang.
         this.closed = true;
         for (const call of this.pending.values()) {
           call.reject(new Error("codex app-server stream closed"));
@@ -151,11 +142,8 @@ export class AppServerClient implements AppServerRpc {
     const id = (message as { id?: unknown }).id;
     const method = (message as { method?: unknown }).method;
     const params = (message as { params?: unknown }).params;
-    // JSON-RPC framing: a request has both method and id; a notification has a
-    // method and no id; a response has an id and no method. Discriminate on
-    // presence, not `typeof id === "number"` — the schema's RequestId is
-    // `string | number`, so a string-id server request must still be answered
-    // (keying on number alone silently misroutes it and hangs the turn).
+    // Discriminate on id presence, not `typeof id === "number"` — RequestId is
+    // string|number, so a string-id server request must still be answered.
     const hasId = id !== undefined && id !== null;
 
     if (typeof method === "string") {

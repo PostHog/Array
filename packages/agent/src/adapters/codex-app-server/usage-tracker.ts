@@ -18,14 +18,9 @@ export interface UsageUpdate {
 }
 
 /**
- * Tracks token usage for one codex thread.
- *
- * codex's `thread/tokenUsage/updated` carries `{ total (cumulative), last (this
- * turn's breakdown), modelContextWindow }`. We let codex own the per-turn number
- * rather than reconstructing it: `last` is both the context-window occupancy (as
- * input tokens) and the per-turn usage reported on `_posthog/turn_complete` — so
- * there's no cumulative snapshot to diff. `total` is only a fallback for a build
- * that predates `last` (turn one, where `last` ≈ `total`).
+ * Tracks token usage for one codex thread. codex's `thread/tokenUsage/updated` carries
+ * `{ total, last, modelContextWindow }`; `last` drives both context occupancy and per-turn
+ * usage rather than diffing `total` (a fallback for builds predating `last`).
  */
 export class UsageTracker {
   private baseline: ContextBreakdownBaseline = emptyBaseline();
@@ -46,10 +41,7 @@ export class UsageTracker {
     this.contextUsed = undefined;
   }
 
-  /**
-   * Ingest a `thread/tokenUsage/updated` payload; returns the live usage_update
-   * to emit, or null if the payload has no usable totals.
-   */
+  /** Ingest a `thread/tokenUsage/updated` payload; returns the live usage_update, or null if unusable. */
   ingest(params: unknown): UsageUpdate | null {
     const tu = (params as { tokenUsage?: any })?.tokenUsage;
     const total = tu?.total;

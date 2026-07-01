@@ -1,25 +1,9 @@
 /**
- * Handlers for the richer Codex app-server server-requests that carry distinct
- * response shapes rather than a yes/no approval decision string.
- *
- * The hub agent's `handleApproval` already covers the two simple approvals
- * (`item/commandExecution/requestApproval`, `item/fileChange/requestApproval`)
- * by returning "accept"/"decline"/"cancel". The three requests below each
- * expect a *typed response object*, so they live here:
- *
- *  - `item/tool/requestUserInput`  — AskUserQuestion-style multi-question prompt;
- *    response is `{ answers: { [questionId]: { answers: string[] } } }`.
- *  - `item/permissions/requestApproval` — grant a permission profile for a
- *    turn/session; response is `{ permissions, scope }`.
- *  - `mcpServer/elicitation/request` — an MCP server asking the user for
- *    structured input; response is `{ action, content }`.
- *
- * We surface each to the ACP client through `requestPermission` (the only
- * user-prompt primitive ACP gives an agent), mirroring how the Claude adapter
- * maps AskUserQuestion options to permission options and the selected optionId
- * back to an answer. On cancel/error we always default to the safe outcome
- * (empty answers / no permissions granted / decline) so a dropped prompt never
- * silently grants access.
+ * Handlers for the richer Codex app-server server-requests that carry a typed
+ * response object rather than a yes/no decision string (requestUserInput,
+ * permissions/requestApproval, mcpServer/elicitation). Each is surfaced through
+ * ACP `requestPermission`; on cancel/error we default to the safe outcome so a
+ * dropped prompt never silently grants access.
  */
 
 import type {
@@ -29,14 +13,11 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
 import type { Logger } from "../../utils/logger";
-// Shared with the Claude adapter so synthesized permission option ids round-trip
-// the same way across adapters.
 import { OPTION_PREFIX } from "../claude/questions/utils";
 import { APP_SERVER_REQUESTS } from "./protocol";
 
-// Native app-server param/response shapes (subset of /tmp/codex-schema/v2).
-// Re-declared locally so this module stays self-contained and does not depend
-// on the generated schema package being present at build time.
+// Native app-server shapes, re-declared locally so this module doesn't depend on
+// the generated schema at build time.
 
 interface ToolRequestUserInputOption {
   label: string;
@@ -111,8 +92,7 @@ interface McpServerElicitationRequestParams {
   serverName: string;
   mode: "form" | "url";
   message: string;
-  // form mode carries requestedSchema; url mode carries url/elicitationId.
-  // We only need `message` to render the prompt, so the rest is untyped here.
+  // Only `message` is needed to render the prompt; the rest stays untyped.
   [key: string]: unknown;
 }
 
@@ -123,8 +103,7 @@ interface McpServerElicitationRequestResponse {
 }
 
 export interface HandleServerRequestResult {
-  // false → not one of the richer requests; the caller should fall through to
-  // its own handling (e.g. the simple command/file approvals).
+  // false → not a richer request; the caller handles it (simple approvals).
   handled: boolean;
   response: unknown;
 }
@@ -133,13 +112,9 @@ export interface HandleServerRequestOptions {
   sessionId: string;
   logger?: Logger;
   /**
-   * Resolve the in-flight MCP tool call for an elicitation's `serverName`. codex
-   * gates an MCP tool behind a generic `mcpServer/elicitation/request` ("Allow
-   * the posthog MCP server to run tool X?") that carries no tool/args — but the
-   * originating `mcpToolCall` (real tool + arguments) is in flight at the same
-   * time. Supplying it lets the prompt render the actual operation (e.g. the
-   * PostHog `exec` command) with `_meta.posthog`, matching the command-approval
-   * path. Undefined → fall back to codex's generic text.
+   * Resolve the in-flight MCP tool call for an elicitation's `serverName`. codex's
+   * elicitation carries no tool/args, so supplying the originating `mcpToolCall`
+   * lets the prompt render the real operation. Undefined → codex's generic text.
    */
   resolveMcpToolCall?: (
     serverName: string,
@@ -148,8 +123,7 @@ export interface HandleServerRequestOptions {
 
 /**
  * Routes a server-initiated request to the matching richer-response handler.
- * Returns `{ handled: false }` for anything this module does not own (including
- * the two simple approvals and unknown methods) so the caller keeps control.
+ * Returns `{ handled: false }` for anything this module doesn't own.
  */
 export async function handleServerRequest(
   method: string,
@@ -190,9 +164,7 @@ export async function handleServerRequest(
         return { handled: false, response: undefined };
     }
   } catch (err) {
-    // A malformed payload must fail CLOSED to the method's safe default — never
-    // throw (the hub would surface a JSON-RPC error the server may treat
-    // ambiguously) and never grant.
+    // Malformed payload fails closed to the safe default — never throw, never grant.
     opts.logger?.warn("server-request handler threw; failing closed", {
       method,
       error: String(err),
@@ -201,7 +173,6 @@ export async function handleServerRequest(
   }
 }
 
-/** Fail-closed default response per richer-approval method. */
 function safeDefaultFor(method: string): unknown {
   if (method === APP_SERVER_REQUESTS.PERMISSIONS_APPROVAL) {
     return { permissions: {}, scope: "turn" };
@@ -223,8 +194,7 @@ function buildQuestionOptions(
   }));
 }
 
-// Maps a selected permission optionId back to the chosen option's label. The id
-// is `option_<idx>`, so we index back into the question's options.
+// Maps a selected optionId (`option_<idx>`) back to the chosen option's label.
 function answerFromSelection(
   question: ToolRequestUserInputQuestion,
   optionId: string | undefined,
@@ -245,13 +215,11 @@ async function handleToolUserInput(
   const answers: ToolRequestUserInputResponse["answers"] = {};
 
   for (const question of params.questions ?? []) {
-    // Default each question to "no answer" so a cancel or failure leaves a
-    // well-formed, empty response rather than a missing key.
+    // Default to "no answer" so cancel/failure leaves a well-formed empty response.
     answers[question.id] = { answers: [] };
 
     const options = buildQuestionOptions(question);
-    // Free-text ("other"/secret) questions have no selectable options; we can't
-    // collect typed input over requestPermission, so leave them empty.
+    // Free-text questions have no options; requestPermission can't collect them.
     if (options.length === 0) {
       continue;
     }
@@ -265,10 +233,8 @@ async function handleToolUserInput(
           toolCallId: `${params.itemId}:${question.id}`,
           title: question.question,
           kind: "other",
-          // The host's QuestionPermission renders from `_meta.questions`
-          // (QuestionMetaSchema) — a bare `header` left it empty ("Review your
-          // answers" with nothing). codex prompts one question per request, so
-          // carry exactly this question; selection still flows through `options`.
+          // The host's QuestionPermission renders from `_meta.questions`; a bare
+          // `header` renders empty. codex prompts one question per request.
           _meta: {
             codeToolKind: "question",
             questions: [
@@ -295,7 +261,6 @@ async function handleToolUserInput(
     }
 
     if (response.outcome.outcome !== "selected") {
-      // Cancelled → keep the safe empty default.
       continue;
     }
     answers[question.id] = {
@@ -342,8 +307,7 @@ async function handlePermissionsApproval(
     response.outcome.outcome === "selected" &&
     response.outcome.optionId === "allow"
   ) {
-    // Grant exactly what was requested, scoped to this turn — the option is
-    // "allow_once", so a single click must not grant session-wide access.
+    // Grant only what was requested, scoped to this turn (option is "allow_once").
     return {
       permissions: grantedFromRequested(params.permissions),
       scope: "turn",
@@ -376,9 +340,8 @@ async function handleMcpElicitation(
     _meta: null,
   };
 
-  // When the elicitation gates a known in-flight MCP tool call, carry its real
-  // tool + args + `_meta.posthog` so the host renders the proper MCP permission
-  // (incl. PostHog `exec` unwrapping) instead of codex's generic server text.
+  // If the elicitation gates a known in-flight MCP call, carry its real tool +
+  // args + `_meta.posthog` so the host renders the proper MCP permission.
   const mcp = opts.resolveMcpToolCall?.(params.serverName);
   const toolCall = mcp
     ? {
@@ -422,8 +385,7 @@ async function handleMcpElicitation(
     response.outcome.outcome === "selected" &&
     response.outcome.optionId === "accept"
   ) {
-    // We have no structured form UI over requestPermission, so accept with no
-    // content. The MCP server treats this as an empty-but-accepted result.
+    // No structured form UI over requestPermission; accept with empty content.
     return { action: "accept", content: {}, _meta: null };
   }
   return declined;

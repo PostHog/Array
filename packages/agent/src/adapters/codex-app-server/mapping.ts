@@ -7,15 +7,9 @@ import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
 import { APP_SERVER_NOTIFICATIONS } from "./protocol";
 
 /**
- * Translates a native app-server notification into an ACP SessionNotification
- * so the rest of PostHog Code, which speaks ACP, stays unchanged.
- *
- * Streamed text (agent message + reasoning) maps to chunks; item lifecycle
- * notifications for tool-like items (command execution, file changes, MCP tool
- * calls, web search) map to `tool_call` / `tool_call_update`. Agent-message and
- * reasoning *items* are intentionally dropped here because their deltas already
- * streamed the content — re-emitting the completed item would double-render.
- * Structured-output capture is handled in the agent, not here.
+ * Translates a native app-server notification into an ACP SessionNotification.
+ * Streamed text maps to chunks; tool-like items map to `tool_call`/`tool_call_update`.
+ * Agent-message and reasoning items are dropped — their deltas already streamed.
  */
 export function mapAppServerNotification(
   sessionId: string,
@@ -34,8 +28,6 @@ export function mapAppServerNotification(
         },
       };
     }
-    // Both reasoning streams (raw textDelta + the default summaryTextDelta) carry
-    // a `delta: string` and map to the same ACP thought chunk.
     case APP_SERVER_NOTIFICATIONS.REASONING_TEXT_DELTA:
     case APP_SERVER_NOTIFICATIONS.REASONING_SUMMARY_TEXT_DELTA: {
       const delta = readStringField(params, "delta");
@@ -49,15 +41,10 @@ export function mapAppServerNotification(
       };
     }
     case APP_SERVER_NOTIFICATIONS.TOKEN_USAGE_UPDATED: {
-      // Context/token indicator: the renderer reads `used`/`size` off the
-      // update (same shape codex-acp forwards). Detailed token breakdown is
-      // additionally emitted as a `_posthog/usage_update` ext-notification by
-      // the agent.
+      // Context indicator: renderer reads `used`/`size`; detailed breakdown comes via `_posthog/usage_update`.
       const tu = (params as { tokenUsage?: any })?.tokenUsage;
-      // Occupancy is THIS turn's `last` (mirroring usage-tracker.ts), not codex's
-      // cumulative `total` — `total` grows across the whole thread, so feeding it
-      // to the gauge over-reports and pegs it at 100% after enough turns. `total`
-      // is only the fallback for a build that predates `last` (≈ total on turn 1).
+      // Use this turn's `last`, not cumulative `total` (which over-reports and pegs the
+      // gauge); `total` is the fallback for pre-`last` builds.
       const context = tu?.last ?? tu?.total;
       const used = context?.totalTokens ?? context?.inputTokens;
       if (used == null) return null;
@@ -100,27 +87,18 @@ export function mapAppServerNotification(
       );
     }
     case APP_SERVER_NOTIFICATIONS.COMMAND_OUTPUT_DELTA: {
-      // Live stdout/stderr for an in-progress command: surface as streamed text
-      // on the tool call so output appears before the item completes. The host
-      // renderer accumulates these chunks the same way the Claude adapter does
-      // for its terminal output.
       const itemId = readStringField(params, "itemId");
       const delta = readStringField(params, "delta");
       if (!itemId || !delta) return null;
       return toolOutputChunk(sessionId, itemId, delta);
     }
     case APP_SERVER_NOTIFICATIONS.TERMINAL_INTERACTION: {
-      // PTY stdin echoed back for an interactive command. Echo it into the same
-      // tool call so the transcript shows what was typed, mirroring how a real
-      // terminal renders local echo.
       const itemId = readStringField(params, "itemId");
       const stdin = readStringField(params, "stdin");
       if (!itemId || !stdin) return null;
       return toolOutputChunk(sessionId, itemId, stdin);
     }
     case APP_SERVER_NOTIFICATIONS.FILE_CHANGE_PATCH_UPDATED: {
-      // Incremental diff for an in-progress fileChange: push the latest diff so
-      // the edit renders before the patch is applied.
       const itemId = readStringField(params, "itemId");
       if (!itemId) return null;
       const changes = (params as { changes?: AppServerItem["changes"] })
@@ -142,12 +120,7 @@ export function mapAppServerNotification(
   }
 }
 
-/**
- * A streamed text chunk attached to an in-progress tool call. ACP's
- * `tool_call_update.content` semantically replaces the collection; the host
- * renderer treats successive single-chunk updates as appended output, which is
- * how live command output streams without owning an ACP terminal lifecycle.
- */
+/** A streamed text chunk on an in-progress tool call; the renderer appends successive single-chunk updates. */
 function toolOutputChunk(
   sessionId: string,
   toolCallId: string,
@@ -173,11 +146,8 @@ function mapPlanStatus(
 }
 
 /**
- * Extracts {oldText,newText} from a unified diff so a codex `fileChange` renders
- * as an ACP diff. Hunk-level (context + ± lines), which is what the renderer
- * needs to show the change. Known cosmetic limit: a content line whose payload
- * begins with "-- " / "++ " (diff line "--- " / "+++ ") is misread as a file
- * header and dropped from the rendered diff — it never affects the actual edit.
+ * Extracts {oldText,newText} from a unified diff so a codex `fileChange` renders as an ACP diff.
+ * Cosmetic limit: a content line whose payload begins with "-- "/"++ " is misread as a header and dropped.
  */
 export function parseUnifiedDiff(diff: string): {
   oldText: string;
@@ -186,10 +156,7 @@ export function parseUnifiedDiff(diff: string): {
   const oldLines: string[] = [];
   const newLines: string[] = [];
   for (const line of diff.split("\n")) {
-    // Skip diff/hunk metadata. The file headers are "--- a/..." / "+++ b/..."
-    // and the no-newline marker is "\ No newline...". Match the trailing space
-    // on --- / +++ so a real added/removed CONTENT line like "++i;" (diff line
-    // "+++i;") or "--count" isn't mistaken for a header and dropped.
+    // Skip diff/hunk metadata; match trailing space on ---/+++ so content lines like "++i;" aren't dropped.
     if (
       line.startsWith("@@") ||
       line.startsWith("diff ") ||
@@ -226,7 +193,6 @@ export type AppServerItem = {
   arguments?: unknown;
   aggregatedOutput?: string | null;
   changes?: Array<{ path?: string; diff?: string; kind?: unknown }>;
-  // mcpToolCall result / error (McpToolCallResult / McpToolCallError).
   result?: { content?: unknown } | null;
   error?: { message?: string } | null;
   // Present on message/reasoning items replayed from thread history.
@@ -234,8 +200,6 @@ export type AppServerItem = {
   content?: unknown;
 };
 
-/** Text rendering of a completed mcpToolCall: the error message, else the
- * result's text content blocks joined. */
 function mcpResultText(
   result: AppServerItem["result"],
   error: AppServerItem["error"],
@@ -254,7 +218,6 @@ function mcpResultText(
   return text || null;
 }
 
-/** Text rendering of a dynamicToolCall's output (its `inputText` content items). */
 function dynamicToolText(items: unknown): string | null {
   if (!Array.isArray(items)) return null;
   const text = items
@@ -271,13 +234,9 @@ function dynamicToolText(items: unknown): string | null {
 }
 
 /**
- * Re-renders a persisted `ThreadItem` (from `thread/resume`'s `thread.turns`) as
- * the ACP updates a live stream would have produced, so a reattaching host shows
- * the full transcript. A tool item collapses to a single completed `tool_call`
- * (there is no prior start to update); messages map to their chunk. Reuses the
- * live `describeTool`/`completedContent`/`mapStatus` so there is no second
- * rendering surface to drift. Ephemeral items (reasoning, plan, hookPrompt) are
- * not replayed.
+ * Re-renders a persisted `ThreadItem` as the ACP updates a live stream would have produced,
+ * so a reattaching host shows the full transcript. Tool items collapse to one completed
+ * `tool_call`; ephemeral items (reasoning, plan) are not replayed.
  */
 export function mapHistoryItem(
   sessionId: string,
@@ -332,12 +291,7 @@ export function mapHistoryItem(
   }
 }
 
-/**
- * A persisted `userMessage`'s `content` is codex `UserInput[]`. Replay the text
- * inputs as `user_message_chunk`s; historical image attachments aren't
- * re-rendered (the live echo handles new ones), keeping the replay lossless for
- * the text transcript without reconstructing data URLs here.
- */
+/** Replays a persisted `userMessage`'s text inputs; historical image attachments aren't re-rendered. */
 function userMessageChunks(
   sessionId: string,
   content: unknown,
@@ -371,19 +325,11 @@ type ToolDescriptor = {
   rawInput?: unknown;
   output?: string | null;
   locations?: ToolCallLocation[];
-  /**
-   * Originating MCP server + tool for MCP tool calls. Surfaced on the canonical
-   * `_meta.posthog` channel so the host renderer routes MCP rendering (and the
-   * PostHog `exec` display) the same way it does for every adapter.
-   */
+  /** Originating MCP server + tool, surfaced on `_meta.posthog` so the renderer routes MCP rendering. */
   mcp?: { server: string; tool: string };
 };
 
-/**
- * Classify a shell command by its parsed actions so read-only commands (`cat`,
- * `ls`, `grep`) render as read/search rather than execute — matching how the
- * codex-acp adapter surfaces them.
- */
+/** Classify a shell command by its actions so read-only commands render as read/search, not execute. */
 function commandKind(
   actions: AppServerItem["commandActions"],
 ): "read" | "search" | "execute" {
@@ -406,8 +352,6 @@ function describeTool(item: AppServerItem): ToolDescriptor | null {
     case "fileChange": {
       const paths = changePaths(item.changes);
       return {
-        // Title with the changed path(s) instead of a generic label so the
-        // tool call reads like Claude's edit summary.
         title: fileChangeTitle(paths),
         kind: "edit",
         locations: paths.map((path) => ({ path })),
@@ -458,11 +402,7 @@ function fileChangeTitle(paths: string[]): string {
   return `${paths[0]} (+${paths.length - 1} more)`;
 }
 
-/**
- * Clickable locations for a commandExecution: the read/search/listFiles command
- * actions carry concrete paths, otherwise fall back to the working directory so
- * the UI can still anchor "follow-along" navigation somewhere.
- */
+/** Clickable locations for a commandExecution: action paths, else the cwd as a fallback. */
 function commandLocations(item: AppServerItem): ToolCallLocation[] | undefined {
   const paths: string[] = [];
   const seen = new Set<string>();
@@ -523,7 +463,6 @@ function mapItem(
   };
 }
 
-/** Content for a completed tool call: file diffs for fileChange, else output text. */
 function completedContent(
   item: AppServerItem,
   tool: ToolDescriptor,

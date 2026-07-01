@@ -1,14 +1,7 @@
 /**
- * Minimal typings for the native Codex `app-server` JSON-RPC protocol.
- *
- * Method names and message shapes follow the documented protocol
- * (https://developers.openai.com/codex/app-server). The wire framing is
- * newline-delimited JSON that follows JSON-RPC 2.0 structure but omits the
- * `"jsonrpc": "2.0"` header on the wire.
- *
- * Spike scope: param/result shapes are still partial. Generate the exact,
- * version-pinned schema with `codex app-server generate-ts` once the codex
- * binary is bundled, then tighten these.
+ * Minimal typings for the native Codex `app-server` JSON-RPC protocol
+ * (https://developers.openai.com/codex/app-server). Wire framing is
+ * newline-delimited JSON that omits the `"jsonrpc": "2.0"` header.
  */
 
 export const APP_SERVER_METHODS = {
@@ -17,8 +10,7 @@ export const APP_SERVER_METHODS = {
   THREAD_RESUME: "thread/resume",
   THREAD_FORK: "thread/fork",
   TURN_START: "turn/start",
-  // Inject input into the active turn instead of starting a new one — used to
-  // mirror Claude's mid-turn steering. Fails unless `expectedTurnId` matches.
+  // Inject input into the active turn (mirrors Claude's mid-turn steering); fails unless `expectedTurnId` matches.
   TURN_STEER: "turn/steer",
   TURN_INTERRUPT: "turn/interrupt",
   MODEL_LIST: "model/list",
@@ -29,42 +21,31 @@ export const APP_SERVER_METHODS = {
 export const APP_SERVER_NOTIFICATIONS = {
   INITIALIZED: "initialized",
   THREAD_STARTED: "thread/started",
-  // Carries the active turn id (`turn.id`) — captured as the turn/steer +
-  // turn/interrupt precondition.
+  // Carries the active turn id — precondition for turn/steer + turn/interrupt.
   TURN_STARTED: "turn/started",
   ITEM_STARTED: "item/started",
   ITEM_COMPLETED: "item/completed",
   AGENT_MESSAGE_DELTA: "item/agentMessage/delta",
   REASONING_TEXT_DELTA: "item/reasoning/textDelta",
-  // The DEFAULT reasoning stream for gpt-5-family models (summaries via
-  // model_reasoning_summary="auto"). Raw textDelta only fires when
-  // show_raw_agent_reasoning=true, which we don't set — so without this the host
-  // sees no reasoning at all.
+  // Default reasoning stream for gpt-5 models; raw textDelta is off by default, so without this the host sees no reasoning.
   REASONING_SUMMARY_TEXT_DELTA: "item/reasoning/summaryTextDelta",
   TURN_PLAN_UPDATED: "turn/plan/updated",
   TURN_COMPLETED: "turn/completed",
   // Fatal turn error; `willRetry:false` means it won't recover on its own.
   ERROR: "error",
   TOKEN_USAGE_UPDATED: "thread/tokenUsage/updated",
-  // codex auto-compacted the thread's context (it hit auto_compact_token_limit).
-  // Mirrors the Claude adapter's compact_boundary: we surface it to the host so
-  // the context indicator, isCompacting state, and queue drain all fire.
+  // codex auto-compacted the thread; mirrors Claude's compact_boundary so the host's context indicator + queue drain fire.
   CONTEXT_COMPACTED: "thread/compacted",
-  // Streamed stdout/stderr chunks for an in-progress commandExecution item.
   COMMAND_OUTPUT_DELTA: "item/commandExecution/outputDelta",
   // PTY-level stdin echoed back for an interactive terminal command.
   TERMINAL_INTERACTION: "item/commandExecution/terminalInteraction",
-  // Incremental patch/diff updates for an in-progress fileChange item.
   FILE_CHANGE_PATCH_UPDATED: "item/fileChange/patchUpdated",
 } as const;
 
 /**
- * Server-initiated requests the client must answer. The two approvals are
- * handled in handleApproval (yes/no decision). The richer requests carry
- * distinct response shapes, not the approval decision:
- *  - TOOL_USER_INPUT  — AskUserQuestion-style multi-question prompt.
- *  - PERMISSIONS_APPROVAL — grant a permission profile for a turn/session.
- *  - MCP_ELICITATION  — an MCP server asking the user for structured input.
+ * Server-initiated requests the client must answer. The two approvals are yes/no
+ * decisions; the richer requests carry distinct response shapes (multi-question
+ * prompt, permission-profile grant, MCP elicitation).
  */
 export const APP_SERVER_REQUESTS = {
   COMMAND_APPROVAL: "item/commandExecution/requestApproval",

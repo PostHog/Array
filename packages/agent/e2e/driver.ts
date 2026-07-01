@@ -1,12 +1,8 @@
 /**
- * Adapter-agnostic ACP driver for the live e2e suite.
- *
- * Stands up the same in-process ACP transport the real host uses
- * (`createAcpConnection` → `ClientSideConnection` over `ndJsonStream`) and drives
- * a real adapter + real binary + real gateway. The ONLY thing mocked is the
- * host/UI client: a recording `sessionUpdate`, an auto-allow `requestPermission`,
- * and real `readTextFile`/`writeTextFile` against the on-disk test repo. Nothing
- * in the agent/model/tool path is stubbed.
+ * Adapter-agnostic ACP driver for the live e2e suite. Stands up the same in-process
+ * ACP transport the real host uses and drives a real adapter + binary + gateway.
+ * The only thing mocked is the host/UI client (recording sessionUpdate, auto-allow
+ * requestPermission, real fs read/write against the test repo).
  */
 import { execFileSync } from "node:child_process";
 import {
@@ -36,11 +32,8 @@ export interface CapturedEvent {
 
 export interface Capture {
   events: CapturedEvent[];
-  /** sessionUpdate events of a given type (e.g. "agent_message_chunk"). */
   updates(type: string): CapturedEvent[];
-  /** server→client permission requests we auto-allowed. */
   approvals(): CapturedEvent[];
-  /** distinct PostHog ext-notification methods seen (e.g. "_posthog/usage_update"). */
   extMethods(): string[];
 }
 
@@ -69,7 +62,7 @@ export interface AcpConn {
   prompt: (p: unknown) => Promise<{ stopReason?: string; usage?: unknown }>;
   setSessionConfigOption: (p: unknown) => Promise<any>;
   cancel: (p: unknown) => Promise<void>;
-  /** Client→agent ext-method (the host drives _posthog/refresh_session). */
+  // Client→agent ext-method (the host drives _posthog/refresh_session).
   extMethod: (method: string, params: unknown) => Promise<unknown>;
 }
 
@@ -80,18 +73,15 @@ export interface E2EConnection {
 }
 
 /**
- * The ACP `initialize` params our host client sends. Matches the cloud host,
- * which advertises NO clientCapabilities — so the adapter runs file/terminal
- * tools in-process (codex via shell, claude via its own Read/Write) rather than
- * proxying through the host's fs callbacks. The driver still implements
- * readTextFile/writeTextFile as harmless insurance.
+ * The ACP `initialize` params our host client sends. Matches the cloud host, which
+ * advertises no clientCapabilities — so the adapter runs file/terminal tools
+ * in-process rather than proxying through the host's fs callbacks.
  */
 export const INIT_PARAMS = {
   protocolVersion: 1,
   clientCapabilities: {},
 };
 
-/** Open a live ACP connection to one adapter and start recording its stream. */
 export function openConnection(opts: {
   adapter: Adapter;
   cwd: string;
@@ -101,10 +91,8 @@ export function openConnection(opts: {
   const { adapter, cwd } = opts;
   const events: CapturedEvent[] = [];
 
-  // Mirror the real cloud host's client surface (sessionUpdate, requestPermission,
-  // fs read/write, extNotification). Deliberately NO extMethod: the real host
-  // doesn't implement it, so an adapter that ever calls it should fail e2e the
-  // same way it would fail in production.
+  // Mirror the cloud host's client surface. Deliberately no extMethod: the real
+  // host doesn't implement it, so an adapter calling it should fail e2e as in prod.
   const client = {
     async sessionUpdate(p: any): Promise<void> {
       events.push({
@@ -119,8 +107,7 @@ export function openConnection(opts: {
         data: {
           title: p?.toolCall?.title,
           kind: p?.toolCall?.kind,
-          // request_user_input (AskUserQuestion) surfaces as a permission with
-          // `_meta.codeToolKind: "question"`; codex only offers it in Plan mode.
+          // request_user_input surfaces as a permission with codeToolKind: "question"; codex only offers it in Plan mode.
           codeToolKind: p?.toolCall?._meta?.codeToolKind,
         },
       });
@@ -201,11 +188,7 @@ export interface OpenSession {
   cleanup: () => Promise<void>;
 }
 
-/**
- * openConnection + initialize + newSession — the common scenario setup. Returns
- * the live connection, the recording capture, the session id, and the full
- * newSession response (for configOptions assertions).
- */
+/** openConnection + initialize + newSession — the common scenario setup. */
 export async function openSession(opts: {
   adapter: Adapter;
   cwd: string;
@@ -218,8 +201,7 @@ export async function openSession(opts: {
   const newSession = await c.conn.newSession({
     cwd: opts.cwd,
     mcpServers: [],
-    // Inject the deployment environment (E2E_ENVIRONMENT) so the whole suite can
-    // run as a cloud session without threading it through every test's meta.
+    // Inject E2E_ENVIRONMENT so the suite can run as a cloud session without threading it through every test's meta.
     _meta: {
       ...opts.meta,
       ...(E2E.environment ? { environment: E2E.environment } : {}),
@@ -236,18 +218,15 @@ export async function openSession(opts: {
 
 export const ORIGINAL_TARGET = "line1\nline2\nline3\n";
 
-/** A throwaway git repo with a single editable file — the scenario's workspace. */
 export function setupRepo(): string {
-  // realpath so the cwd is canonical: on macOS os.tmpdir() is /var/... (a symlink
-  // to /private/var/...). The Claude SDK records the resolved path in its session
-  // store; a fresh connection must use the same path or loadSession's transcript
-  // replay (keyed by cwd) finds nothing.
+  // realpath so cwd is canonical: on macOS os.tmpdir() is a symlink. The Claude
+  // SDK keys its session store by the resolved path, so loadSession's replay finds
+  // nothing if a fresh connection uses a different path.
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "agent-e2e-")));
   writeFileSync(join(repo, "target.txt"), ORIGINAL_TARGET);
   execFileSync("git", ["init", "-q"], { cwd: repo });
   execFileSync("git", ["add", "-A"], { cwd: repo });
-  // -c commit.gpgsign=false: ignore the user's global signing config (e.g. a
-  // 1Password SSH signer), which fails in this non-interactive context.
+  // -c commit.gpgsign=false: ignore the user's global signing config, which fails in this non-interactive context.
   execFileSync(
     "git",
     [
@@ -278,11 +257,7 @@ export function cleanupRepo(repo: string): void {
   }
 }
 
-/**
- * Poll `fn` until it returns a non-undefined value or the timeout elapses.
- * Absorbs the small in-process transport / on-disk flush delay between an agent
- * emitting a sessionUpdate and the recording client observing it.
- */
+/** Poll `fn` until it returns a non-undefined value or the timeout elapses. */
 export async function waitFor<T>(
   fn: () => T | undefined,
   timeoutMs = 5000,
@@ -298,9 +273,8 @@ export async function waitFor<T>(
 }
 
 /**
- * codex spawns detached (own process group); a killed run can orphan it holding
- * a flock under ~/.codex/tmp, wedging the next run. Kill stragglers first —
- * process death releases the flock.
+ * codex spawns detached; a killed run can orphan it holding a flock under
+ * ~/.codex/tmp, wedging the next run. Kill stragglers first to release the flock.
  */
 export function killCodexStragglers(): void {
   try {

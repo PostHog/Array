@@ -7,8 +7,7 @@ import { QuestionMetaSchema } from "../claude/questions/utils";
 import { handleServerRequest } from "./approvals";
 import { APP_SERVER_REQUESTS } from "./protocol";
 
-// A fake ACP client whose requestPermission returns whatever the test queues,
-// matched positionally to the order requestPermission is called.
+// A fake ACP client whose requestPermission returns queued outcomes positionally.
 function fakeClient(outcomes: RequestPermissionResponse["outcome"][]) {
   const calls: RequestPermissionRequest[] = [];
   let next = 0;
@@ -64,7 +63,6 @@ describe("handleServerRequest", () => {
       answers: { q1: { answers: ["production"] } },
     });
 
-    // Prompt carried the question's options and the session id.
     expect(calls).toHaveLength(1);
     expect(calls[0].sessionId).toBe("sess-1");
     expect(calls[0].options.map((o) => o.name)).toEqual([
@@ -105,8 +103,7 @@ describe("handleServerRequest", () => {
       opts,
     );
 
-    // The bug: a bare `{ header }` _meta fails QuestionMetaSchema, so the host's
-    // QuestionPermission renders an empty "Review your answers" screen.
+    // A bare `{ header }` _meta fails QuestionMetaSchema, rendering an empty card.
     const parsed = QuestionMetaSchema.safeParse(calls[0].toolCall?._meta);
     expect(parsed.success).toBe(true);
     expect(parsed.data?.questions).toEqual([
@@ -185,7 +182,6 @@ describe("handleServerRequest", () => {
   });
 
   it("fails closed to the safe default when a payload is malformed", async () => {
-    // null params makes the handler throw on param access; it must deny, not raise.
     const { client } = fakeClient([{ outcome: "selected", optionId: "allow" }]);
     const result = await handleServerRequest(
       APP_SERVER_REQUESTS.PERMISSIONS_APPROVAL,
@@ -306,9 +302,6 @@ describe("handleServerRequest", () => {
       },
     );
 
-    // The prompt now carries the real MCP tool + args + _meta.posthog (not
-    // codex's bare "run tool exec" text), so the host renders the proper MCP
-    // permission card with the unwrapped command.
     expect(calls[0].toolCall).toMatchObject({
       toolCallId: "posthog:elicitation",
       rawInput: { command: "search project|insight" },

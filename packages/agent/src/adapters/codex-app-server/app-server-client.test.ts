@@ -14,10 +14,7 @@ interface RpcMessage {
   error?: { code: number; message: string };
 }
 
-/**
- * Drives the "server" end of a {@link StreamPair}: reads newline-delimited
- * JSON-RPC the client sent and writes framed responses/notifications back.
- */
+/** Drives the "server" end of a {@link StreamPair}: reads client JSON-RPC and writes framed replies back. */
 function makeFakeServer(transport: StreamPair) {
   const writer = transport.writable.getWriter();
   const reader = transport.readable.getReader();
@@ -158,8 +155,6 @@ describe("AppServerClient", () => {
     });
 
     const response = await server.readMessage();
-    // Routed to onRequest (not silently dropped as a notification) and the
-    // exact string id is echoed back, so the server can correlate the reply.
     expect(onRequest).toHaveBeenCalledTimes(1);
     expect(response.id).toBe("req-abc");
     expect(response.result).toEqual({ decision: "approved" });

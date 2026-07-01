@@ -2,9 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
 import { buildLocalToolsServer } from "./local-tools-mcp";
 
-// The resolver walks up looking for the compiled MCP script via existsSync; the
-// dist asset isn't on the walk-up path in unit tests, so make the first
-// candidate succeed. Nothing here spawns the script — we only inspect the path.
+// The dist asset isn't on the walk-up path in unit tests, so make existsSync
+// succeed; nothing spawns the script — we only inspect the path.
 vi.mock("node:fs", async (importActual) => {
   const actual = await importActual<typeof import("node:fs")>();
   return { ...actual, existsSync: vi.fn().mockReturnValue(true) };
@@ -18,9 +17,8 @@ describe("buildLocalToolsServer", () => {
   };
 
   beforeEach(() => {
-    // The signed-git gate keys off isCloudRun, which also reads IS_SANDBOX —
-    // clear it so meta.environment is the only cloud signal under test, and
-    // clear the token vars so each case controls them explicitly.
+    // The signed-git gate reads IS_SANDBOX and the token vars; clear them so each
+    // case controls the cloud signal (meta.environment) and token explicitly.
     delete process.env.IS_SANDBOX;
     delete process.env.GH_TOKEN;
     delete process.env.GITHUB_TOKEN;

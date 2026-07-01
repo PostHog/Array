@@ -34,18 +34,10 @@ export function buildAppServerArgs(
 
   args.push("-c", "features.remote_models=false");
 
-  // OS sandbox mode is gated on the platform, which mirrors sandbox AVAILABILITY:
-  //  - macOS (local desktop + e2e): Seatbelt is available, so spawn with the
-  //    `workspace-write` sandbox. This keeps the OS sandbox engaged so a per-turn
-  //    `sandboxPolicy:readOnly` (the Plan / Read-only presets) can actually
-  //    TIGHTEN it and block edits — a process spawned `danger-full-access` has
-  //    the sandbox fully disabled and can't re-engage it per-turn, which made the
-  //    mode picker cosmetic.
-  //  - cloud (linux containers): codex's `linux-sandbox` launcher is unavailable,
-  //    so the default mode panics ("sandbox launcher unavailable") and wedges the
-  //    session. Run `danger-full-access` (PostHog's enclosing docker/Modal
-  //    sandbox provides the real isolation there). Windows falls here too,
-  //    conservatively, until its sandbox is verified.
+  // OS sandbox gated on platform (= availability): macOS Seatbelt → workspace-write
+  // (keeps the sandbox engaged so a per-turn readOnly can tighten it and block
+  // edits); linux/windows have no sandbox launcher and would panic, so
+  // danger-full-access (the enclosing docker/Modal sandbox isolates instead).
   args.push(
     "-c",
     process.platform === "darwin"
@@ -53,18 +45,12 @@ export function buildAppServerArgs(
       : `sandbox_mode="danger-full-access"`,
   );
 
-  // Disable the user's ambient ~/.codex MCP servers (linear/figma/etc.) so the
-  // adapter only exposes MCP servers PostHog Code injects per-thread — matching
-  // the codex-acp adapter. Without this, codex tries (and fails) to connect to
-  // the user's local MCP servers, polluting the session. Only the first key
-  // segment is disabled (`mcp_servers.<name>.enabled=false`) — see settings.ts.
+  // Disable the user's ambient ~/.codex MCP servers so the adapter only exposes
+  // MCP servers PostHog injects per-thread; otherwise codex fails connecting to them.
   for (const name of new CodexSettingsManager(
     options.cwd ?? process.cwd(),
   ).getSettings().mcpServerNames) {
-    // codex's `-c` parser rejects quoted/special key segments; a dotted or
-    // spaced server name would emit an override that fails to load and wedges
-    // the whole session. Skip it (the server stays enabled, which is harmless)
-    // — mirrors the guard in codex/spawn.ts.
+    // codex's `-c` parser rejects quoted/special key segments; skip such names.
     if (!/^[A-Za-z0-9_-]+$/.test(name)) continue;
     args.push("-c", `mcp_servers.${name}.enabled=false`);
   }
@@ -80,11 +66,9 @@ export function buildAppServerArgs(
     );
   }
 
-  // developer_instructions are set per-thread in thread/start (combined with the
-  // host's task system prompt) rather than as a spawn-level global default, so
-  // the task prompt — only known at newSession — reaches the model too.
+  // developer_instructions are set per-thread in thread/start (with the host's
+  // task system prompt), not as a spawn-level global default.
 
-  // Caller-supplied config overrides (e.g. the e2e's low auto_compact_token_limit).
   // Numbers/bools go bare; strings are quoted, matching codex's `-c` parser.
   for (const [key, value] of Object.entries(options.configOverrides ?? {})) {
     args.push(
