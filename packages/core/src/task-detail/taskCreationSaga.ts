@@ -96,51 +96,68 @@ export class TaskCreationSaga extends Saga<
             this.resolveFolder(repoPath),
           );
 
-      const workspaceInfo = await this.step({
-        name: "workspace_creation",
-        execute: async () => {
-          return this.deps.host.createWorkspace({
-            taskId: task.id,
-            mainRepoPath: repoPath,
-            folderId: folder.id,
-            folderPath: repoPath,
-            mode: workspaceMode,
-            branch: branch ?? undefined,
-            allowRemoteBranchCheckout: input.allowRemoteBranchCheckout,
-            reuseExistingWorktree: input.reuseExistingWorktree,
-          });
-        },
-        rollback: async () => {
-          this.log.info("Rolling back: deleting workspace", {
-            taskId: task.id,
-          });
-          await this.deps.host.deleteWorkspace({
-            taskId: task.id,
-            mainRepoPath: repoPath,
-          });
-        },
-      });
+      try {
+        const workspaceInfo = await this.step({
+          name: "workspace_creation",
+          execute: async () => {
+            return this.deps.host.createWorkspace({
+              taskId: task.id,
+              mainRepoPath: repoPath,
+              folderId: folder.id,
+              folderPath: repoPath,
+              mode: workspaceMode,
+              branch: branch ?? undefined,
+              allowRemoteBranchCheckout: input.allowRemoteBranchCheckout,
+              reuseExistingWorktree: input.reuseExistingWorktree,
+            });
+          },
+          rollback: async () => {
+            this.log.info("Rolling back: deleting workspace", {
+              taskId: task.id,
+            });
+            await this.deps.host.deleteWorkspace({
+              taskId: task.id,
+              mainRepoPath: repoPath,
+            });
+          },
+        });
 
-      workspace = {
-        taskId: task.id,
-        folderId: folder.id,
-        folderPath: repoPath,
-        mode: workspaceMode,
-        worktreePath: workspaceInfo.worktree?.worktreePath ?? null,
-        worktreeName: workspaceInfo.worktree?.worktreeName ?? null,
-        branchName: workspaceInfo.worktree?.branchName ?? null,
-        baseBranch: workspaceInfo.worktree?.baseBranch ?? null,
-        linkedBranch: workspaceInfo.linkedBranch ?? null,
-        createdAt:
-          workspaceInfo.worktree?.createdAt ?? new Date().toISOString(),
-      };
+        workspace = {
+          taskId: task.id,
+          folderId: folder.id,
+          folderPath: repoPath,
+          mode: workspaceMode,
+          worktreePath: workspaceInfo.worktree?.worktreePath ?? null,
+          worktreeName: workspaceInfo.worktree?.worktreeName ?? null,
+          branchName: workspaceInfo.worktree?.branchName ?? null,
+          baseBranch: workspaceInfo.worktree?.baseBranch ?? null,
+          linkedBranch: workspaceInfo.linkedBranch ?? null,
+          createdAt:
+            workspaceInfo.worktree?.createdAt ?? new Date().toISOString(),
+        };
 
-      // Link after the workspace row exists, so the branch-mismatch prompt can
-      // compare the session's branch against the live checkout.
-      if (importedClaude) {
-        this.linkImportedSessionBranch(input, task.id);
-        workspace.linkedBranch =
-          input.importedClaudeSession?.branch ?? workspace.linkedBranch;
+        // Link after the workspace row exists, so the branch-mismatch prompt can
+        // compare the session's branch against the live checkout.
+        if (importedClaude) {
+          this.linkImportedSessionBranch(input, task.id);
+          workspace.linkedBranch =
+            input.importedClaudeSession?.branch ?? workspace.linkedBranch;
+        }
+      } catch (error) {
+        // For a fresh worktree task the prompt is already persisted as the task
+        // description and the UI has navigated onto the task. Rolling the saga
+        // back here would run task_creation's deleteTask and destroy that task,
+        // losing the prompt. Instead keep the task with no workspace (the shape
+        // openTask re-provisions from) so the user can retry setup on it.
+        if (!hasProvisioning) throw error;
+        const provisioningError =
+          error instanceof Error ? error.message : String(error);
+        this.log.error("Worktree provisioning failed; keeping task for retry", {
+          taskId: task.id,
+          error,
+        });
+        this.deps.host.clearProvisioning(task.id);
+        return { task, workspace: null, provisioningError };
       }
     } else if (workspaceMode === "cloud") {
       await this.step({
@@ -264,11 +281,21 @@ export class TaskCreationSaga extends Saga<
         execute: async () => {
           const prAuthorshipMode = input.cloudPrAuthorshipMode ?? "user";
 
+          // Resolve a typed local-skill slash command (`/my-skill …`) into a
+          // `<skill .../>` tag before building the transport, so the skill
+          // bundle is collected and uploaded with the very first cloud message.
+          // Without this a first-message `/my-skill` reaches the sandbox with no
+          // bundle and is rejected as an unknown command (only a follow-up,
+          // which already resolves, would work).
+          const resolvedContent = input.content
+            ? await this.deps.host.resolveLocalSkillCommandPrompt(input.content)
+            : input.content;
+
           const transport =
             (input.content || input.filePaths?.length) &&
             workspaceMode === "cloud"
               ? this.deps.host.getCloudPromptTransport(
-                  input.content ?? "",
+                  resolvedContent ?? "",
                   input.filePaths,
                 )
               : null;

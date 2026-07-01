@@ -17,6 +17,7 @@ import {
   useSettingsStore,
 } from "@posthog/ui/features/settings/settingsStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { formatDurationSeconds } from "@posthog/ui/utils/customSound";
@@ -241,44 +242,54 @@ export function NotificationsSettings() {
             </Select.Content>
           </Select.Root>
           {completionSound !== "none" && (
-            <Button
-              variant="soft"
-              size="1"
-              onClick={() =>
-                playCompletionSound(
-                  completionSound,
-                  completionVolume,
-                  customSounds,
-                )
-              }
-            >
-              Test
-            </Button>
+            <Tooltip content="Test sound">
+              <IconButton
+                variant="soft"
+                size="1"
+                aria-label="Test sound"
+                onClick={() =>
+                  playCompletionSound(
+                    completionSound,
+                    completionVolume,
+                    customSounds,
+                  )
+                }
+              >
+                <Play weight="fill" />
+              </IconButton>
+            </Tooltip>
           )}
-          <Button variant="soft" size="1" onClick={() => setAddSoundOpen(true)}>
+        </Flex>
+      </SettingRow>
+
+      <SettingRow
+        label="Custom sounds"
+        description={
+          customSounds.length > 0
+            ? "Sounds you recorded or imported. Rename or remove them here."
+            : "Record or import your own sound to play when an agent finishes a task or needs your input."
+        }
+      >
+        <Flex direction="column" gap="2" className="w-full max-w-[260px]">
+          {customSounds.map((sound) => (
+            <CustomSoundRow
+              key={sound.id}
+              sound={sound}
+              volume={completionVolume}
+              onRename={renameCustomSound}
+              onRemove={removeCustomSound}
+            />
+          ))}
+          <Button
+            variant="soft"
+            size="1"
+            className="self-start"
+            onClick={() => setAddSoundOpen(true)}
+          >
             <Plus /> Add
           </Button>
         </Flex>
       </SettingRow>
-
-      {customSounds.length > 0 && (
-        <SettingRow
-          label="Custom sounds"
-          description="Sounds you recorded or imported. Rename or remove them here."
-        >
-          <Flex direction="column" gap="2" className="w-full max-w-[260px]">
-            {customSounds.map((sound) => (
-              <CustomSoundRow
-                key={sound.id}
-                sound={sound}
-                volume={completionVolume}
-                onRename={renameCustomSound}
-                onRemove={removeCustomSound}
-              />
-            ))}
-          </Flex>
-        </SettingRow>
-      )}
 
       <AddCustomSoundDialog
         open={addSoundOpen}
@@ -355,16 +366,6 @@ function CustomSoundRow({
 
   return (
     <Flex align="center" gap="2">
-      <IconButton
-        variant="soft"
-        size="1"
-        aria-label={`Play ${sound.name}`}
-        onClick={() =>
-          playCompletionSound(`custom:${sound.id}`, volume, [sound])
-        }
-      >
-        <Play weight="fill" />
-      </IconButton>
       <TextField.Root
         key={sound.name}
         className="flex-1"
@@ -379,6 +380,18 @@ function CustomSoundRow({
       <Text color="gray" className="text-[12px] tabular-nums">
         {formatDurationSeconds(sound.durationMs)}
       </Text>
+      <Tooltip content={`Play ${sound.name}`}>
+        <IconButton
+          variant="soft"
+          size="1"
+          aria-label={`Play ${sound.name}`}
+          onClick={() =>
+            playCompletionSound(`custom:${sound.id}`, volume, [sound])
+          }
+        >
+          <Play weight="fill" />
+        </IconButton>
+      </Tooltip>
       <IconButton
         variant="ghost"
         color="gray"

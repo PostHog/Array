@@ -27,16 +27,25 @@ describe("summarizeReposByOwner", () => {
 });
 
 describe("githubInstallationSettingsUrl", () => {
-  it("builds an org URL for organization accounts", () => {
+  it("links organization installs to the app page (org settings are owner-only)", () => {
     expect(
       githubInstallationSettingsUrl({
         installation_id: 42,
         account: { type: "Organization", name: "acme" },
       }),
-    ).toBe("https://github.com/organizations/acme/settings/installations/42");
+    ).toBe("https://github.com/apps/posthog");
   });
 
-  it("builds a user URL otherwise", () => {
+  it("matches the organization account type case-insensitively", () => {
+    expect(
+      githubInstallationSettingsUrl({
+        installation_id: 42,
+        account: { type: "organization", name: "acme" },
+      }),
+    ).toBe("https://github.com/apps/posthog");
+  });
+
+  it("builds a user installation URL otherwise", () => {
     expect(
       githubInstallationSettingsUrl({
         installation_id: 7,

@@ -160,6 +160,7 @@ interface SettingsStore {
   // Experimental / misc
   hedgehogMode: boolean;
   slotMachineMode: boolean;
+  brainrotMode: boolean;
   mcpAppsDisabledServers: string[];
   downloadUpdatesAutomatically: boolean;
   lastSeenChangelogVersion: string | null;
@@ -169,6 +170,7 @@ interface SettingsStore {
   setUseNewChatThread: (enabled: boolean) => void;
   setHedgehogMode: (enabled: boolean) => void;
   setSlotMachineMode: (enabled: boolean) => void;
+  setBrainrotMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
   setDownloadUpdatesAutomatically: (enabled: boolean) => void;
   setLastSeenChangelogVersion: (version: string | null) => void;
@@ -321,6 +323,7 @@ export const useSettingsStore = create<SettingsStore>()(
       // Experimental / misc
       hedgehogMode: false,
       slotMachineMode: false,
+      brainrotMode: false,
       mcpAppsDisabledServers: [],
       downloadUpdatesAutomatically: true,
       lastSeenChangelogVersion: null,
@@ -328,6 +331,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setUseNewChatThread: (enabled) => set({ useNewChatThread: enabled }),
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
       setSlotMachineMode: (enabled) => set({ slotMachineMode: enabled }),
+      setBrainrotMode: (enabled) => set({ brainrotMode: enabled }),
       setDownloadUpdatesAutomatically: (enabled) =>
         set({ downloadUpdatesAutomatically: enabled }),
       setLastSeenChangelogVersion: (version) =>
@@ -419,6 +423,7 @@ export const useSettingsStore = create<SettingsStore>()(
         // Experimental / misc
         hedgehogMode: state.hedgehogMode,
         slotMachineMode: state.slotMachineMode,
+        brainrotMode: state.brainrotMode,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
         downloadUpdatesAutomatically: state.downloadUpdatesAutomatically,
         lastSeenChangelogVersion: state.lastSeenChangelogVersion,

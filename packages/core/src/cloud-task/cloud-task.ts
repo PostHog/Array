@@ -75,6 +75,7 @@ interface TaskRunResponse {
   status: TaskRunStatus;
   stage?: string | null;
   output?: Record<string, unknown> | null;
+  state?: Record<string, unknown> | null;
   error_message?: string | null;
   branch?: string | null;
   updated_at?: string;
@@ -86,6 +87,7 @@ interface TaskRunStateEvent {
   status?: TaskRunStatus;
   stage?: string | null;
   output?: Record<string, unknown> | null;
+  state?: Record<string, unknown> | null;
   error_message?: string | null;
   branch?: string | null;
   updated_at?: string | null;
@@ -122,6 +124,7 @@ interface WatcherState {
   lastOutput: Record<string, unknown> | null;
   lastErrorMessage: string | null;
   lastBranch: string | null;
+  lastSandboxAlive: boolean | null;
   lastStatusUpdatedAt: string | null;
   connStartedAt: number;
   connSentLastEventId: string | null;
@@ -303,6 +306,25 @@ function filterEntriesNotInFrequencyMap(
   });
 }
 
+function extractSandboxAlive(
+  state: Record<string, unknown> | null | undefined,
+): boolean | null | undefined {
+  if (!state || !Object.hasOwn(state, "sandbox_alive")) {
+    return undefined;
+  }
+
+  const sandboxAlive = state.sandbox_alive;
+  return typeof sandboxAlive === "boolean" ? sandboxAlive : null;
+}
+
+function sandboxAlivePayload(watcher: { lastSandboxAlive: boolean | null }): {
+  sandboxAlive?: boolean | null;
+} {
+  return watcher.lastSandboxAlive === null
+    ? {}
+    : { sandboxAlive: watcher.lastSandboxAlive };
+}
+
 @injectable()
 export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   private watchers = new Map<string, WatcherState>();
@@ -355,7 +377,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
   }
 
-  retry(taskId: string, runId: string): void {
+  async retry(taskId: string, runId: string): Promise<void> {
     const key = watcherKey(taskId, runId);
     const watcher = this.watchers.get(key);
     if (!watcher) return;
@@ -521,6 +543,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       lastOutput: null,
       lastErrorMessage: null,
       lastBranch: null,
+      lastSandboxAlive: null,
       lastStatusUpdatedAt: null,
       connStartedAt: 0,
       connSentLastEventId: null,
@@ -629,6 +652,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         output: watcher.lastOutput,
         errorMessage: watcher.lastErrorMessage,
         branch: watcher.lastBranch,
+        ...sandboxAlivePayload(watcher),
       });
       this.stopWatcher(key);
       return;
@@ -669,6 +693,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       output: watcher.lastOutput,
       errorMessage: watcher.lastErrorMessage,
       branch: watcher.lastBranch,
+      ...sandboxAlivePayload(watcher),
     });
 
     watcher.isBootstrapping = false;
@@ -718,6 +743,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       output: watcher.lastOutput,
       errorMessage: watcher.lastErrorMessage,
       branch: watcher.lastBranch,
+      ...sandboxAlivePayload(watcher),
     });
   }
 
@@ -1091,6 +1117,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
             output: watcher.lastOutput,
             errorMessage: watcher.lastErrorMessage,
             branch: watcher.lastBranch,
+            ...sandboxAlivePayload(watcher),
           });
         }
       }
@@ -1256,6 +1283,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       output: watcher.lastOutput,
       errorMessage: watcher.lastErrorMessage,
       branch: watcher.lastBranch,
+      ...sandboxAlivePayload(watcher),
     });
   }
 
@@ -1497,6 +1525,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           | "status"
           | "stage"
           | "output"
+          | "state"
           | "error_message"
           | "branch"
           | "updated_at"
@@ -1517,19 +1546,24 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const nextOutput = run.output ?? null;
     const nextErrorMessage = run.error_message ?? null;
     const nextBranch = run.branch ?? null;
+    const sandboxAlive = extractSandboxAlive(run.state);
+    const nextSandboxAlive =
+      sandboxAlive === undefined ? watcher.lastSandboxAlive : sandboxAlive;
 
     const changed =
       nextStatus !== watcher.lastStatus ||
       nextStage !== watcher.lastStage ||
       JSON.stringify(nextOutput) !== JSON.stringify(watcher.lastOutput) ||
       nextErrorMessage !== watcher.lastErrorMessage ||
-      nextBranch !== watcher.lastBranch;
+      nextBranch !== watcher.lastBranch ||
+      nextSandboxAlive !== watcher.lastSandboxAlive;
 
     watcher.lastStatus = nextStatus ?? null;
     watcher.lastStage = nextStage;
     watcher.lastOutput = nextOutput;
     watcher.lastErrorMessage = nextErrorMessage;
     watcher.lastBranch = nextBranch;
+    watcher.lastSandboxAlive = nextSandboxAlive;
     if (updatedAt) {
       watcher.lastStatusUpdatedAt = updatedAt;
     }

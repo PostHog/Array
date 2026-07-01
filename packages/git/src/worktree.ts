@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getCleanEnv, getGitOperationManager } from "./operation-manager";
@@ -29,6 +29,34 @@ export interface WorktreeConfig {
 }
 
 const WORKTREE_FOLDER_NAME = ".posthog-code";
+
+const WORKTREE_ADD_TIMEOUT_MS = 120_000;
+const POST_CHECKOUT_HOOK_TIMEOUT_MS = 300_000;
+export const KILL_GRACE_MS = 5_000;
+
+export function armProcessTimeout(
+  proc: ChildProcess,
+  timeoutMs: number,
+): { timedOut: () => boolean; clear: () => void } {
+  let timedOut = false;
+  let hardKillTimer: NodeJS.Timeout | undefined;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    proc.kill("SIGTERM");
+    hardKillTimer = setTimeout(() => proc.kill("SIGKILL"), KILL_GRACE_MS);
+    hardKillTimer.unref();
+  }, timeoutMs);
+  timer.unref();
+  return {
+    timedOut: () => timedOut,
+    clear: () => {
+      clearTimeout(timer);
+      if (hardKillTimer) {
+        clearTimeout(hardKillTimer);
+      }
+    },
+  };
+}
 
 export class WorktreeManager {
   private mainRepoPath: string;
@@ -435,8 +463,22 @@ export class WorktreeManager {
       proc.stdout.on("data", handleData);
       proc.stderr.on("data", handleData);
 
-      proc.on("error", (err) => reject(err));
+      const timeout = armProcessTimeout(proc, WORKTREE_ADD_TIMEOUT_MS);
+
+      proc.on("error", (err) => {
+        timeout.clear();
+        reject(err);
+      });
       proc.on("close", (code) => {
+        timeout.clear();
+        if (timeout.timedOut()) {
+          reject(
+            new Error(
+              `git worktree add timed out after ${WORKTREE_ADD_TIMEOUT_MS}ms`,
+            ),
+          );
+          return;
+        }
         if (code !== 0) {
           reject(
             new Error(
@@ -775,8 +817,22 @@ export async function runPostCheckoutHook(
 
     proc.stdout.on("data", handleData);
     proc.stderr.on("data", handleData);
-    proc.on("error", (err) => resolve({ path: hookPath, error: err.message }));
+
+    const timeout = armProcessTimeout(proc, POST_CHECKOUT_HOOK_TIMEOUT_MS);
+
+    proc.on("error", (err) => {
+      timeout.clear();
+      resolve({ path: hookPath, error: err.message });
+    });
     proc.on("close", (code) => {
+      timeout.clear();
+      if (timeout.timedOut()) {
+        resolve({
+          path: hookPath,
+          error: `post-checkout hook timed out after ${POST_CHECKOUT_HOOK_TIMEOUT_MS}ms`,
+        });
+        return;
+      }
       if (code !== 0) {
         resolve({
           path: hookPath,

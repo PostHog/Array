@@ -2494,7 +2494,10 @@ export class SessionService {
    * Skipping early lets the next trigger retry instead of re-queueing the
    * already-dequeued prompt back into the same queue.
    */
-  private async sendQueuedCloudMessages(taskId: string): Promise<void> {
+  private async sendQueuedCloudMessages(
+    taskId: string,
+    options?: { force?: boolean },
+  ): Promise<void> {
     if (this.dispatchingCloudQueues.has(taskId)) return;
 
     this.dispatchingCloudQueues.add(taskId);
@@ -2509,7 +2512,7 @@ export class SessionService {
       const canSendNow =
         isTerminal ||
         (session.cloudStatus === "in_progress" &&
-          session.status === "connected");
+          (session.status === "connected" || options?.force === true));
       if (!canSendNow || session.isPromptPending) return;
 
       // Draining while auth is still restoring would route through the restoring
@@ -2718,6 +2721,7 @@ export class SessionService {
       resumeFromEntryCount,
       undefined,
       initialReasoningEffort,
+      newRun.state,
     );
 
     this.d.queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -3323,6 +3327,7 @@ export class SessionService {
     resumeFromEntryCount?: number,
     runStatus?: TaskRunStatus,
     initialReasoningEffort?: string,
+    runState?: Record<string, unknown>,
   ): () => void {
     const taskRunId = runId;
 
@@ -3464,6 +3469,7 @@ export class SessionService {
         logUrl,
         taskDescription,
         runStatus,
+        runState,
       );
     }
 
@@ -3549,14 +3555,17 @@ export class SessionService {
     logUrl?: string,
     taskDescription?: string,
     runStatus?: TaskRunStatus,
+    runState?: Record<string, unknown>,
   ): void {
     void (async () => {
       let rawEntries: StoredLogEntry[];
       let totalLineCount: number;
-      if (isTerminalStatus(runStatus)) {
-        // Terminal runs: fetch the full resume chain (matches the snapshot) so a
-        // resumed run isn't under-counted. In-progress runs use the single-run
-        // log so hydrate can't race the live stream and double the active turn.
+      const isResumeRun = Boolean(runState?.resume_from_run_id);
+      if (isTerminalStatus(runStatus) || isResumeRun) {
+        // Resume chains need the full history even while the leaf run is still
+        // active; otherwise a renderer restart hydrates only the final run.
+        // Non-resume in-progress runs keep using the single-run log so hydrate
+        // cannot race the live stream and double the active turn.
         const authStatus = await this.getAuthCredentialsStatus();
         if (authStatus.kind !== "ready") {
           return;
@@ -3611,6 +3620,7 @@ export class SessionService {
       if (hasUserPrompt) {
         // The real prompt has landed; the stash is no longer needed.
         this.initialCloudOptimisticPrompt.delete(taskId);
+        this.d.store.clearTailOptimisticItems(taskRunId);
       }
 
       if (rawEntries.length === 0) {
@@ -4148,6 +4158,7 @@ export class SessionService {
       undefined,
       task.latest_run?.status,
       initialReasoningEffort,
+      task.latest_run?.state,
     );
   }
 
@@ -4302,7 +4313,11 @@ export class SessionService {
    * state; `sendQueuedCloudMessages` is reentrancy-guarded so stacked
    * schedules from multiple triggers collapse to one.
    */
-  private scheduleCloudQueueFlush(taskId: string, reason: string): void {
+  private scheduleCloudQueueFlush(
+    taskId: string,
+    reason: string,
+    options?: { force?: boolean },
+  ): void {
     if (
       this.scheduledCloudQueueFlushes.has(taskId) ||
       this.dispatchingCloudQueues.has(taskId)
@@ -4313,7 +4328,7 @@ export class SessionService {
     this.scheduledCloudQueueFlushes.add(taskId);
     setTimeout(() => {
       this.scheduledCloudQueueFlushes.delete(taskId);
-      this.sendQueuedCloudMessages(taskId).catch((err) =>
+      this.sendQueuedCloudMessages(taskId, options).catch((err) =>
         this.d.log.error("cloud queue flush failed", {
           taskId,
           reason,
@@ -4339,7 +4354,10 @@ export class SessionService {
    * alive (`cloudStatus === "in_progress"`) and the agent provably idle
    * for THIS run (`isAgentIdleForRun`), recover readiness and drain.
    */
-  private tryRecoverIdleCloudQueue(taskRunId: string): void {
+  private tryRecoverIdleCloudQueue(
+    taskRunId: string,
+    options?: { serverSandboxAlive?: boolean | null },
+  ): void {
     const session = this.d.store.getSessions()[taskRunId];
     if (!session?.isCloud || session.messageQueue.length === 0) {
       return;
@@ -4357,6 +4375,8 @@ export class SessionService {
     const recoverableAfterTransportDrop =
       (session.status === "disconnected" || session.status === "error") &&
       !session.isPromptPending;
+    const serverReportsSandboxStopped =
+      options?.serverSandboxAlive === false && recoverableAfterTransportDrop;
 
     if (session.status !== "connected" && !recoverableAfterTransportDrop) {
       return;
@@ -4365,6 +4385,17 @@ export class SessionService {
     // A local prompt in flight means a queued follow-up would double-send.
     // The idle scan below is still the real safety check after reconnect.
     if (session.isPromptPending) {
+      return;
+    }
+
+    if (serverReportsSandboxStopped) {
+      this.d.log.info("Recovering cloud queue after sandbox stopped", {
+        taskId: session.taskId,
+        previousStatus: session.status,
+      });
+      this.scheduleCloudQueueFlush(session.taskId, "sandbox-stopped-recovery", {
+        force: true,
+      });
       return;
     }
 
@@ -4501,7 +4532,9 @@ export class SessionService {
       });
 
       if (update.status === "in_progress") {
-        this.tryRecoverIdleCloudQueue(taskRunId);
+        this.tryRecoverIdleCloudQueue(taskRunId, {
+          serverSandboxAlive: update.sandboxAlive,
+        });
       }
 
       if (isTerminalStatus(update.status)) {

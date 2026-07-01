@@ -215,6 +215,13 @@ export interface CommandMenuActionProperties {
   channel_id?: string;
 }
 
+export interface BrainrotActivatedProperties {
+  /** Grid layout preset, e.g. "2x2". */
+  layout: string;
+  /** Cells already holding a task when Brainrot was chosen. */
+  filled_cells: number;
+}
+
 export interface SkillButtonTriggeredProperties {
   task_id: string;
   button_id: SkillButtonId;
@@ -1023,6 +1030,7 @@ export const ANALYTICS_EVENTS = {
   COMMAND_MENU_OPENED: "Command menu opened",
   COMMAND_MENU_ACTION: "Command menu action",
   COMMAND_CENTER_VIEWED: "Command center viewed",
+  BRAINROT_ACTIVATED: "Brainrot activated",
   SKILL_BUTTON_TRIGGERED: "Skill button triggered",
   POSTHOG_WEB_OPENED: "PostHog web opened",
 
@@ -1173,6 +1181,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.COMMAND_MENU_OPENED]: never;
   [ANALYTICS_EVENTS.COMMAND_MENU_ACTION]: CommandMenuActionProperties;
   [ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED]: never;
+  [ANALYTICS_EVENTS.BRAINROT_ACTIVATED]: BrainrotActivatedProperties;
   [ANALYTICS_EVENTS.SKILL_BUTTON_TRIGGERED]: SkillButtonTriggeredProperties;
   [ANALYTICS_EVENTS.POSTHOG_WEB_OPENED]: never;
 
@@ -1277,3 +1286,25 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.CANVAS_PROMPT_SENT]: CanvasPromptSentProperties;
   [ANALYTICS_EVENTS.CONTEXT_ACTION]: ContextActionProperties;
 };
+
+/**
+ * The inbox event family. Every host stamps an `inbox_client` property (e.g.
+ * "code" on desktop, "mobile" on the mobile app, "cloud" on the PostHog web
+ * frontend) on exactly these events so the shared PostHog project can be sliced
+ * by surface. Mirrors posthog's `frontend/src/scenes/inbox/inboxAnalytics.ts`.
+ *
+ * Keep this in sync with the inbox entries in `EventPropertyMap` above.
+ */
+export const INBOX_ANALYTICS_EVENT_NAMES: ReadonlySet<string> = new Set([
+  ANALYTICS_EVENTS.INBOX_VIEWED,
+  ANALYTICS_EVENTS.INBOX_REPORT_OPENED,
+  ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,
+  ANALYTICS_EVENTS.INBOX_REPORT_ACTION,
+  ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED,
+  ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED,
+]);
+
+/** True when `eventName` is an inbox event that should carry `inbox_client`. */
+export function isInboxAnalyticsEvent(eventName: string): boolean {
+  return INBOX_ANALYTICS_EVENT_NAMES.has(eventName);
+}

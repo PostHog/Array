@@ -76,13 +76,22 @@ describe("isAnyIntegrationStale", () => {
 });
 
 describe("buildInstallationSettingsUrl", () => {
-  it("builds an org settings url", () => {
+  it("links an org install to the app page (org settings are owner-only)", () => {
     expect(
       buildInstallationSettingsUrl(
         { type: "Organization", name: "acme" },
         "42",
       ),
-    ).toBe("https://github.com/organizations/acme/settings/installations/42");
+    ).toBe("https://github.com/apps/posthog");
+  });
+
+  it("matches the organization account type case-insensitively", () => {
+    expect(
+      buildInstallationSettingsUrl(
+        { type: "organization", name: "acme" },
+        "42",
+      ),
+    ).toBe("https://github.com/apps/posthog");
   });
 
   it("builds a personal settings url otherwise", () => {

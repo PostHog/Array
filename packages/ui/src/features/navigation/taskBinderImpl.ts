@@ -9,6 +9,7 @@ import type {
   EnsureWorkspaceResult,
   NavigationTaskBinder,
 } from "@posthog/ui/features/navigation/taskBinder";
+import { useProvisioningStore } from "@posthog/ui/features/provisioning/store";
 import { logger } from "@posthog/ui/shell/logger";
 
 const log = logger.scope("navigation-store");
@@ -44,6 +45,14 @@ export const navigationTaskBinder: NavigationTaskBinder = {
     task: Task,
   ): Promise<EnsureWorkspaceResult | undefined> {
     const repoKey = getTaskRepository(task) ?? undefined;
+
+    // A worktree task whose provisioning failed is kept with no workspace so
+    // the user can retry. Don't auto-create a workspace here — that path only
+    // makes a plain "local" checkout (below), silently downgrading the worktree.
+    // The task view's retry prompt re-runs setup in worktree mode instead.
+    if (useProvisioningStore.getState().errors[task.id]) {
+      return undefined;
+    }
 
     const workspaces = await hostClient().workspace.getAll.query();
     const existingWorkspace = workspaces?.[task.id] ?? null;

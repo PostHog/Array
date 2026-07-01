@@ -18,6 +18,7 @@ export interface CloudTaskStatusUpdate extends CloudTaskUpdateBase {
   output?: Record<string, unknown> | null;
   errorMessage?: string | null;
   branch?: string | null;
+  sandboxAlive?: boolean | null;
 }
 
 export interface CloudTaskSnapshotUpdate extends CloudTaskUpdateBase {
@@ -29,6 +30,7 @@ export interface CloudTaskSnapshotUpdate extends CloudTaskUpdateBase {
   output?: Record<string, unknown> | null;
   errorMessage?: string | null;
   branch?: string | null;
+  sandboxAlive?: boolean | null;
 }
 
 export interface CloudTaskErrorUpdate extends CloudTaskUpdateBase {

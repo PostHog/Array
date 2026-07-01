@@ -20,6 +20,7 @@ export interface AgentServerConfig {
   // Base URL for the event-ingest POST only; falls back to apiUrl when unset.
   eventIngestBaseUrl?: string;
   eventIngestStreamWindowMs?: number;
+  eventIngestKeepStreamOpen?: boolean;
   mode: AgentMode;
   taskId: string;
   runId: string;

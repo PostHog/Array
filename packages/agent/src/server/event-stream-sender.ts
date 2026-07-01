@@ -10,6 +10,7 @@ interface TaskRunEventStreamSenderConfig {
   apiUrl: string;
   // Base URL for the event-ingest POST only; falls back to apiUrl (Django path) when unset.
   eventIngestBaseUrl?: string;
+  keepProxyStreamOpen?: boolean;
   projectId: number;
   taskId: string;
   runId: string;
@@ -69,6 +70,8 @@ export class TaskRunEventStreamSender {
   private readonly requestTimeoutMs: number;
   private readonly stopTimeoutMs: number;
   private readonly streamWindowMs: number;
+  private readonly usingProxy: boolean;
+  private readonly keepProxyStreamOpen: boolean;
   private readonly createStreamingUpload: StreamingUploadFactory;
   private readonly encoder = new TextEncoder();
   private sequence = 0;
@@ -112,6 +115,8 @@ export class TaskRunEventStreamSender {
       config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.stopTimeoutMs = config.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
     this.streamWindowMs = config.streamWindowMs ?? DEFAULT_STREAM_WINDOW_MS;
+    this.usingProxy = usingProxy;
+    this.keepProxyStreamOpen = config.keepProxyStreamOpen ?? false;
     this.createStreamingUpload =
       config.createStreamingUpload ?? createNodeStreamingUpload;
   }
@@ -208,6 +213,11 @@ export class TaskRunEventStreamSender {
 
     try {
       await flushPromise;
+      // The ingress ahead of the agent-proxy only forwards the request body once the
+      // upload closes, so close per drained batch to avoid stranding buffered events.
+      if (!this.stopped && this.usingProxy && !this.keepProxyStreamOpen) {
+        await this.closeActiveStream();
+      }
       return this.bufferedEvents.length < previousBufferLength;
     } catch (error) {
       this.config.logger.warn(

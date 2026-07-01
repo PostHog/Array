@@ -9,6 +9,14 @@ export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 1.5;
 export const ZOOM_STEP = 0.1;
 
+// Reserved cell value for the Brainrot video slot instead of a task. Real task
+// ids are uuids, so this never collides with one.
+export const BRAINROT_CELL = "__brainrot__";
+
+export function isBrainrotCell(value: string | null): boolean {
+  return value === BRAINROT_CELL;
+}
+
 export function getGridDimensions(preset: LayoutPreset): GridDimensions {
   const [cols, rows] = preset.split("x").map(Number);
   return { cols, rows };
