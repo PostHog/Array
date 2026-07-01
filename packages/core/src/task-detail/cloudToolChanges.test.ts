@@ -192,39 +192,57 @@ describe("extractCloudFileContent", () => {
     expect(result).toEqual({ content: "edited content", touched: true });
   });
 
-  it("ignores a file_unchanged read so its dedup sentinel is not shown as content", () => {
-    const calls = makeToolCalls(
-      toolCall({
-        kind: "read",
-        locations: [{ path: "src/app.ts" }],
-        rawOutput: { type: "file_unchanged" },
-        content: textContent(
-          "```\nWasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.\n```",
-        ),
-      }),
-    );
-    const result = extractCloudFileContent(calls, "src/app.ts");
-    expect(result).toEqual({ content: null, touched: false });
-  });
+  // A file_unchanged read carries Claude Code's "Wasted call ..." dedup
+  // sentinel instead of the file body, so it must never be treated as content.
+  const fileUnchangedRead = (id: string): ParsedToolCall =>
+    toolCall({
+      toolCallId: id,
+      kind: "read",
+      locations: [{ path: "src/app.ts" }],
+      rawOutput: { type: "file_unchanged" },
+      content: textContent(
+        "```\nWasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.\n```",
+      ),
+    });
 
-  it("keeps real content when a later read of the same file is file_unchanged", () => {
-    const calls = makeToolCalls(
-      toolCall({
-        toolCallId: "tc-read",
-        kind: "read",
-        locations: [{ path: "src/app.ts" }],
-        content: textContent("real content"),
-      }),
-      toolCall({
-        toolCallId: "tc-reread",
-        kind: "read",
-        locations: [{ path: "src/app.ts" }],
-        rawOutput: { type: "file_unchanged" },
-        content: textContent("Wasted call — file unchanged since your last Read."),
-      }),
+  it.each([
+    {
+      name: "read alone yields no content (dedup sentinel not shown)",
+      calls: [fileUnchangedRead("tc-unchanged")],
+      expected: { content: null, touched: false },
+    },
+    {
+      name: "read after a real read keeps the real content",
+      calls: [
+        toolCall({
+          toolCallId: "tc-read",
+          kind: "read",
+          locations: [{ path: "src/app.ts" }],
+          content: textContent("real content"),
+        }),
+        fileUnchangedRead("tc-unchanged"),
+      ],
+      expected: { content: "real content", touched: true },
+    },
+    {
+      name: "read after a write keeps the written content",
+      calls: [
+        toolCall({
+          toolCallId: "tc-write",
+          kind: "write",
+          locations: [{ path: "src/app.ts" }],
+          content: diffContent("src/app.ts", "written content"),
+        }),
+        fileUnchangedRead("tc-unchanged"),
+      ],
+      expected: { content: "written content", touched: true },
+    },
+  ])("file_unchanged $name", ({ calls, expected }) => {
+    const result = extractCloudFileContent(
+      makeToolCalls(...calls),
+      "src/app.ts",
     );
-    const result = extractCloudFileContent(calls, "src/app.ts");
-    expect(result).toEqual({ content: "real content", touched: true });
+    expect(result).toEqual(expected);
   });
 
   it("marks deleted files as touched with null content", () => {
