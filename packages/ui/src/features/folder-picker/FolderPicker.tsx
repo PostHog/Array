@@ -4,11 +4,19 @@ import {
   Folder as FolderIcon,
   FolderOpen,
   GitBranch,
+  X,
 } from "@phosphor-icons/react";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import { useService } from "@posthog/di/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +26,7 @@ import {
   MenuLabel,
 } from "@posthog/quill";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
+import { toast } from "@posthog/ui/primitives/toast";
 import { FIELD_TRIGGER_CLASS } from "@posthog/ui/styles/fieldTrigger";
 import { Flex, Text } from "@radix-ui/themes";
 import { type RefObject, useState } from "react";
@@ -43,6 +52,7 @@ export function FolderPicker({
     getRecentFolders,
     getFolderDisplayName,
     addFolder,
+    removeFolder,
     updateLastAccessed,
     getFolderByPath,
   } = useFolders();
@@ -52,11 +62,35 @@ export function FolderPicker({
   const isField = variant === "field";
 
   const [isOpening, setIsOpening] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<{
+    id: string;
+    name: string;
+    path: string;
+  } | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   const handleSelect = (path: string) => {
     onChange(path);
     const folder = getFolderByPath(path);
     if (folder) updateLastAccessed(folder.id);
+  };
+
+  const handleConfirmRemoval = async () => {
+    if (!pendingRemoval) return;
+    setIsRemoving(true);
+    try {
+      await removeFolder(pendingRemoval.id);
+      if (pendingRemoval.path === value) onChange("");
+      setPendingRemoval(null);
+    } catch (error) {
+      log.error("Failed to remove folder", { error });
+      toast.error("Couldn't remove folder", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setIsRemoving(false);
+    }
   };
 
   const handleOpenFilePicker = async () => {
@@ -136,7 +170,7 @@ export function FolderPicker({
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger
         render={
           isField ? (
@@ -166,6 +200,7 @@ export function FolderPicker({
           <DropdownMenuItem
             key={folder.id}
             onClick={() => handleSelect(folder.path)}
+            className="group"
           >
             <GitBranch size={12} className="shrink-0" />
             <span
@@ -174,6 +209,24 @@ export function FolderPicker({
             >
               {folder.name}
             </span>
+            <button
+              type="button"
+              aria-label={`Remove ${folder.name} from recents`}
+              className="-mr-1 ml-1 shrink-0 rounded p-0.5 text-(--gray-9) opacity-0 hover:bg-(--gray-4) hover:text-(--gray-12) focus-visible:opacity-100 group-hover:opacity-100"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setMenuOpen(false);
+                setPendingRemoval({
+                  id: folder.id,
+                  name: folder.name,
+                  path: folder.path,
+                });
+              }}
+            >
+              <X size={12} />
+            </button>
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
@@ -182,6 +235,36 @@ export function FolderPicker({
           <span className="whitespace-nowrap">Open folder...</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
+
+      <AlertDialog
+        open={pendingRemoval !== null}
+        onOpenChange={(open) => {
+          if (!open && !isRemoving) setPendingRemoval(null);
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove folder</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{pendingRemoval?.name}" will be removed from PostHog Code,
+              including all of its tasks and their workspaces. This can't be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose
+              render={<Button variant="outline">Cancel</Button>}
+            />
+            <Button
+              variant="destructive"
+              loading={isRemoving}
+              onClick={() => void handleConfirmRemoval()}
+            >
+              Remove
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DropdownMenu>
   );
 }

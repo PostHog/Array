@@ -1,5 +1,8 @@
 import type { NotificationTarget } from "@posthog/platform/notifications";
-import type { CompletionSound } from "@posthog/ui/features/settings/settingsStore";
+import type {
+  CompletionSound,
+  CustomSound,
+} from "@posthog/ui/features/settings/settingsStore";
 
 export interface NotificationSettings {
   desktopNotifications: boolean;
@@ -7,6 +10,8 @@ export interface NotificationSettings {
   dockBounceNotifications: boolean;
   completionSound: CompletionSound;
   completionVolume: number;
+  scaleSoundWithTaskLength: boolean;
+  customSounds: CustomSound[];
 }
 
 export interface INotificationSettings {

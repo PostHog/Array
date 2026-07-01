@@ -1,7 +1,57 @@
-import { type Icon, Minus, Plus } from "@phosphor-icons/react";
+import {
+  ArrowsClockwise,
+  ArrowsLeftRight,
+  Brain,
+  ChatCircle,
+  Command,
+  FileText,
+  Globe,
+  type Icon,
+  MagnifyingGlass,
+  Minus,
+  PencilSimple,
+  Plus,
+  Terminal,
+  Trash,
+  Wrench,
+} from "@phosphor-icons/react";
 import { DotsCircleSpinner } from "@posthog/ui/primitives/DotsCircleSpinner";
 import { Box, Text } from "@radix-ui/themes";
-import type { ToolCall, ToolCallContent } from "../../types";
+import type { CodeToolKind, ToolCall, ToolCallContent } from "../../types";
+import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
+
+/** Tool icon by `ToolCall.kind`. Shared by the per-tool views and the tool-group icon strip. */
+export const kindIcons: Record<CodeToolKind, Icon> = {
+  read: FileText,
+  edit: PencilSimple,
+  delete: Trash,
+  move: ArrowsLeftRight,
+  search: MagnifyingGlass,
+  execute: Terminal,
+  think: Brain,
+  fetch: Globe,
+  switch_mode: ArrowsClockwise,
+  question: ChatCircle,
+  other: Wrench,
+};
+
+/** Tool icon by agent tool name, for tools without a generic `kind`. */
+export const toolNameIcons: Record<string, Icon> = {
+  ToolSearch: MagnifyingGlass,
+  Skill: Command,
+};
+
+/** Resolve the leading icon for a tool call: name override → kind → Wrench fallback. */
+export function iconForToolCall(
+  toolCall: ToolCall,
+  agentToolName?: string,
+): Icon {
+  return (
+    (agentToolName && toolNameIcons[agentToolName]) ||
+    (toolCall.kind && kindIcons[toolCall.kind]) ||
+    Wrench
+  );
+}
 
 export function ToolTitle({
   children,
@@ -10,10 +60,14 @@ export function ToolTitle({
   children: React.ReactNode;
   className?: string;
 }) {
+  // New thread (ChatX marker chrome) uses the muted, truncating title; the legacy thread keeps its
+  // original styling so toggling the chat thread off leaves ConversationView pixel-identical.
+  const chatChrome = useChatThreadChrome();
+  const base = chatChrome
+    ? "text-sm text-muted-foreground truncate shrink-0 max-w-[calc(100%-1.5rem)]"
+    : "text-[13px] text-gray-11";
   return (
-    <Text
-      className={`text-[13px] text-gray-11${className ? ` ${className}` : ""}`}
-    >
+    <Text className={`${base}${className ? ` ${className}` : ""}`}>
       {children}
     </Text>
   );
@@ -244,6 +298,20 @@ export function ExpandableIcon({
 }
 
 export function ContentPre({ children }: { children: React.ReactNode }) {
+  // New thread wraps output in a bordered, muted box (it sits inside a ChatMarker panel); the legacy
+  // thread keeps the original borderless scroll box so ConversationView is unchanged when toggled off.
+  const chatChrome = useChatThreadChrome();
+  if (chatChrome) {
+    return (
+      <Box className="max-h-64 rounded-sm border border-border">
+        <Box className="scroll-mask-2 max-h-64 overflow-auto bg-muted/50 p-3">
+          <pre className="m-0 whitespace-pre-wrap break-all font-mono text-xs">
+            {children}
+          </pre>
+        </Box>
+      </Box>
+    );
+  }
   return (
     <Box className="scroll-mask-2 max-h-64 overflow-auto px-3 py-2">
       <Text asChild className="text-[13px] text-gray-11">

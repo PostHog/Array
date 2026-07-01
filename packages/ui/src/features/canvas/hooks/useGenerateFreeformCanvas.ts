@@ -1,3 +1,7 @@
+import {
+  REPORT_MODEL_RESOLVER,
+  type ReportModelResolver,
+} from "@posthog/core/inbox/identifiers";
 import { TITLE_GENERATOR_SERVICE } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import type { TitleGeneratorService } from "@posthog/core/sessions/titleGeneratorService";
 import {
@@ -6,7 +10,8 @@ import {
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
-import type { WorkspaceMode } from "@posthog/shared";
+import { getCloudUrlFromRegion, type WorkspaceMode } from "@posthog/shared";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { buildFreeformGenerationPrompt } from "@posthog/ui/features/canvas/freeformPrompt";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
@@ -37,6 +42,8 @@ export function useGenerateFreeformCanvas(args: {
 }) {
   const { dashboardId, channelId, name, channelName, templateId } = args;
   const taskService = useService<TaskService>(TASK_SERVICE);
+  const modelResolver = useService<ReportModelResolver>(REPORT_MODEL_RESOLVER);
+  const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const titleGenerator = useService<TitleGeneratorService>(
     TITLE_GENERATOR_SERVICE,
   );
@@ -64,6 +71,33 @@ export function useGenerateFreeformCanvas(args: {
     }): Promise<string | null> => {
       setIsStarting(true);
       try {
+        // Defaults to a cloud run — canvas generation should never tie up (or
+        // depend on) the local machine, and it's never the sticky last-used
+        // workspace mode. The dev-only picker can override to "local" to test a
+        // local build of these features before merging.
+        const workspaceMode = opts.workspaceMode ?? "cloud";
+
+        // A cloud run requires an explicit adapter + model (the API rejects a
+        // cloud runtime without a model). Canvas has no model picker, so resolve
+        // the adapter's server default the same way the inbox one-click flows do
+        // — the resolver validates against the gateway, so a stale id can't slip
+        // through and 403 the run.
+        let model: string | undefined;
+        if (workspaceMode === "cloud") {
+          model = cloudRegion
+            ? await modelResolver.resolveDefaultModel(
+                getCloudUrlFromRegion(cloudRegion),
+                "claude",
+              )
+            : undefined;
+          if (!model) {
+            toast.error("Couldn't start canvas generation", {
+              description: "No model is configured for cloud runs.",
+            });
+            return null;
+          }
+        }
+
         const result = await taskService.createTask(
           {
             content: buildFreeformGenerationPrompt({
@@ -78,11 +112,9 @@ export function useGenerateFreeformCanvas(args: {
             taskDescription: `Generate canvas "${name}"`,
             // Unattended generation: run in auto mode so it doesn't stall on edit-approval prompts.
             executionMode: "auto" as const,
-            // Defaults to a cloud run — canvas generation should never tie up
-            // (or depend on) the local machine, and it's never the sticky
-            // last-used workspace mode. The dev-only picker can override to
-            // "local" to test a local build of these features before merging.
-            workspaceMode: opts.workspaceMode ?? "cloud",
+            workspaceMode,
+            adapter: "claude",
+            model,
             allowNoRepo: true,
             channelContext,
             channelName,
@@ -138,6 +170,8 @@ export function useGenerateFreeformCanvas(args: {
     },
     [
       taskService,
+      modelResolver,
+      cloudRegion,
       titleGenerator,
       trpc,
       queryClient,

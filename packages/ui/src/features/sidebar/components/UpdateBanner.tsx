@@ -1,4 +1,5 @@
 import { ArrowsClockwise, Gift, Spinner } from "@phosphor-icons/react";
+import { useUpdateModalStore } from "@posthog/ui/features/updates/updateModalStore";
 import {
   useInstallUpdate,
   useUpdateView,
@@ -11,12 +12,19 @@ interface UpdateBannerProps {
 }
 
 export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
-  const { status, version, isEnabled } = useUpdateView();
+  const { status, version, availableVersion, downloadPercent, isEnabled } =
+    useUpdateView();
   const installUpdate = useInstallUpdate();
+  const openModal = useUpdateModalStore((state) => state.open);
 
   const isVisible =
     isEnabled &&
-    (status === "downloading" || status === "ready" || status === "installing");
+    (status === "available" ||
+      status === "downloading" ||
+      status === "ready" ||
+      status === "installing");
+
+  const percent = Math.round(downloadPercent ?? 0);
 
   if (variant === "compact") {
     return (
@@ -28,11 +36,26 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
             exit={{ opacity: 0, x: -8 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
           >
+            {status === "available" && (
+              <button
+                type="button"
+                className="flex items-center gap-1.5 rounded-2 border border-(--green-a5) bg-(--green-a3) px-2.5 py-1 font-medium text-(--green-11) text-[13px] transition-colors hover:bg-(--green-a4)"
+                onClick={openModal}
+              >
+                <Gift size={14} weight="duotone" />
+                <span>Update available</span>
+              </button>
+            )}
+
             {status === "downloading" && (
-              <div className="flex items-center gap-1.5 text-(--green-11) text-[13px] opacity-70">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-(--green-11) text-[13px] opacity-70"
+                onClick={openModal}
+              >
                 <Spinner size={14} className="animate-spin" />
-                <span>Downloading update...</span>
-              </div>
+                <span>Downloading update... {percent}%</span>
+              </button>
             )}
 
             {status === "ready" && (
@@ -43,8 +66,7 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
               >
                 <Gift size={14} weight="duotone" />
                 <span>
-                  {version ? `${version} available` : "Update available"} —
-                  Restart
+                  {version ? `${version} ready` : "Update ready"} — Restart
                 </span>
               </button>
             )}
@@ -72,62 +94,106 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
           className="shrink-0 overflow-hidden"
         >
           <AnimatePresence mode="wait">
+            {status === "available" && (
+              <BannerCard key="available">
+                <div className="flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
+                  <Gift size={20} weight="duotone" className="shrink-0" />
+                  <button
+                    type="button"
+                    onClick={openModal}
+                    className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
+                  >
+                    <span className="truncate font-medium">
+                      Update available
+                    </span>
+                    <span className="truncate text-[11px] text-[var(--green-a11)]">
+                      {availableVersion
+                        ? `Version ${availableVersion}`
+                        : "View details"}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openModal}
+                    className="shrink-0 rounded-2 bg-[var(--green-a4)] px-2.5 py-1 font-medium text-[12px] text-[var(--green-11)] transition-colors hover:bg-[var(--green-a5)]"
+                  >
+                    View
+                  </button>
+                </div>
+              </BannerCard>
+            )}
+
             {status === "downloading" && (
-              <BannerContent key="downloading">
-                <Spinner size={16} className="animate-spin" />
-                <span>Downloading update...</span>
-              </BannerContent>
+              <BannerCard key="downloading">
+                <button
+                  type="button"
+                  onClick={openModal}
+                  className="flex w-full flex-col gap-1.5 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]"
+                >
+                  <div className="flex w-full items-center justify-between">
+                    <span className="font-medium">Downloading update...</span>
+                    <span className="text-[11px] text-[var(--green-a11)]">
+                      {percent}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--green-a4)]">
+                    <div
+                      className="h-full rounded-full bg-[var(--green-9)] transition-all"
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                </button>
+              </BannerCard>
             )}
 
             {status === "ready" && (
-              <motion.div
-                key="ready"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-              >
-                <Box className="p-2">
-                  <div className="flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
-                    <motion.div
-                      className="shrink-0"
-                      animate={{
-                        rotate: [0, -12, 12, -8, 8, -4, 0],
-                      }}
-                      transition={{
-                        duration: 0.6,
-                        repeat: Infinity,
-                        repeatDelay: 4,
-                        ease: "easeInOut",
-                      }}
-                    >
-                      <Gift size={20} weight="duotone" />
-                    </motion.div>
-                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="font-medium">
-                        {version ? `${version} ready` : "Update ready"}
-                      </span>
-                      <span className="text-[11px] text-[var(--green-a11)]">
-                        Restart to apply
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded-2 bg-[var(--green-a4)] px-2 py-1 font-medium text-[12px] text-[var(--green-11)] transition-colors hover:bg-[var(--green-a5)]"
-                      onClick={() => void installUpdate()}
-                    >
-                      Restart
-                    </button>
-                  </div>
-                </Box>
-              </motion.div>
+              <BannerCard key="ready">
+                <div className="flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
+                  <motion.div
+                    className="shrink-0"
+                    animate={{ rotate: [0, -12, 12, -8, 8, -4, 0] }}
+                    transition={{
+                      duration: 0.6,
+                      repeat: Infinity,
+                      repeatDelay: 4,
+                      ease: "easeInOut",
+                    }}
+                  >
+                    <Gift size={20} weight="duotone" />
+                  </motion.div>
+                  <button
+                    type="button"
+                    onClick={openModal}
+                    className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
+                  >
+                    <span className="font-medium">
+                      {version ? `${version} ready` : "Update ready"}
+                    </span>
+                    <span className="text-[11px] text-[var(--green-a11)]">
+                      Restart to apply
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-2 bg-[var(--green-a4)] px-2 py-1 font-medium text-[12px] text-[var(--green-11)] transition-colors hover:bg-[var(--green-a5)]"
+                    onClick={() => void installUpdate()}
+                  >
+                    Restart
+                  </button>
+                </div>
+              </BannerCard>
             )}
 
             {status === "installing" && (
-              <BannerContent key="installing">
-                <ArrowsClockwise size={16} className="shrink-0 animate-spin" />
-                <span className="font-medium">Restarting...</span>
-              </BannerContent>
+              <BannerCard key="installing">
+                <div className="flex w-full items-center gap-2 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
+                  <ArrowsClockwise
+                    size={16}
+                    className="shrink-0 animate-spin"
+                  />
+                  <span className="font-medium">Restarting...</span>
+                </div>
+              </BannerCard>
             )}
           </AnimatePresence>
         </motion.div>
@@ -136,22 +202,15 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
   );
 }
 
-function BannerContent({
-  children,
-  ...props
-}: { children: React.ReactNode } & React.ComponentProps<typeof motion.div>) {
+function BannerCard({ children }: { children: React.ReactNode }) {
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
-      className="p-2"
-      {...props}
     >
-      <div className="flex items-center gap-2 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
-        {children}
-      </div>
+      <Box className="p-2">{children}</Box>
     </motion.div>
   );
 }

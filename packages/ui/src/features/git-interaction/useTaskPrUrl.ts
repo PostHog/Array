@@ -35,12 +35,14 @@ export function useTaskPrUrl(taskId: string, isCloud: boolean): string | null {
     }),
     enabled: !isCloud && !!localRepoPath,
     staleTime: 30_000,
+    placeholderData: (prev) => prev,
   });
 
   const { data: cached } = useQuery({
     ...trpc.workspace.getCachedPrUrl.queryOptions({ taskId }),
     enabled: !isCloud,
     staleTime: 60_000,
+    placeholderData: (prev) => prev,
   });
 
   if (isCloud) return cloudPrUrl;

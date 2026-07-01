@@ -369,6 +369,68 @@ export const FilteredContent: Story = {
   },
 };
 
+const skills = [
+  {
+    value: "investigate-metric",
+    label: "investigate-metric",
+    description: "Diagnose why a metric moved and surface the drivers.",
+  },
+  {
+    value: "querying-posthog-data",
+    label: "querying-posthog-data",
+    description: "Write and run HogQL against the project's event data.",
+  },
+  {
+    value: "creating-experiments",
+    label: "creating-experiments",
+    description:
+      "Define a hypothesis, configure rollout, and set up analytics for an A/B test.",
+  },
+  {
+    value: "investigating-replay",
+    label: "investigating-replay",
+    description: "Find and watch session replays relevant to an issue.",
+  },
+];
+
+export const WithDescriptions: Story = {
+  render: () => {
+    const [value, setValue] = useState("");
+
+    return (
+      <Combobox.Root value={value} onValueChange={setValue} size="2">
+        <Combobox.Trigger placeholder="Pick a skill..." className="w-[280px]" />
+        <Combobox.Content
+          items={skills}
+          getValue={(s) => `${s.label} ${s.description}`}
+        >
+          {({ filtered, hasMore, moreCount }) => (
+            <>
+              <Combobox.Input placeholder="Search skills..." />
+              <Combobox.Empty>No matching skills</Combobox.Empty>
+              {filtered.map((skill) => (
+                <Combobox.Item
+                  key={skill.value}
+                  value={skill.value}
+                  textValue={skill.label}
+                  description={skill.description}
+                >
+                  {skill.label}
+                </Combobox.Item>
+              ))}
+              {hasMore && (
+                <Combobox.Label>
+                  {moreCount} more; type to filter
+                </Combobox.Label>
+              )}
+            </>
+          )}
+        </Combobox.Content>
+      </Combobox.Root>
+    );
+  },
+};
+
 export const ControlledSearch: Story = {
   render: () => {
     const [value, setValue] = useState("");

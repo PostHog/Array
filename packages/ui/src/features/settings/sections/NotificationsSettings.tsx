@@ -1,3 +1,4 @@
+import { Play, Plus, Trash } from "@phosphor-icons/react";
 import { useServiceOptional } from "@posthog/di/react";
 import {
   type INotifications,
@@ -8,17 +9,29 @@ import type { Task } from "@posthog/shared/domain-types";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
+import { AddCustomSoundDialog } from "@posthog/ui/features/settings/sections/AddCustomSoundDialog";
 import {
   type CompletionSound,
+  type CustomSound,
   NOTIFICATION_DEFAULTS,
   useSettingsStore,
 } from "@posthog/ui/features/settings/settingsStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
+import { formatDurationSeconds } from "@posthog/ui/utils/customSound";
 import { playCompletionSound } from "@posthog/ui/utils/sounds";
-import { Button, Flex, Select, Slider, Switch, Text } from "@radix-ui/themes";
-import { useCallback, useEffect } from "react";
+import {
+  Button,
+  Flex,
+  IconButton,
+  Select,
+  Slider,
+  Switch,
+  Text,
+  TextField,
+} from "@radix-ui/themes";
+import { useCallback, useEffect, useState } from "react";
 
 export function NotificationsSettings() {
   const {
@@ -27,12 +40,19 @@ export function NotificationsSettings() {
     dockBounceNotifications,
     completionSound,
     completionVolume,
+    scaleSoundWithTaskLength,
+    customSounds,
     setDesktopNotifications,
     setDockBadgeNotifications,
     setDockBounceNotifications,
     setCompletionSound,
     setCompletionVolume,
+    setScaleSoundWithTaskLength,
+    removeCustomSound,
+    renameCustomSound,
   } = useSettingsStore();
+
+  const [addSoundOpen, setAddSoundOpen] = useState(false);
 
   // Optional so non-desktop hosts (web) that don't bind these simply disable the
   // native test buttons instead of throwing.
@@ -85,14 +105,30 @@ export function NotificationsSettings() {
 
   const handleCompletionSoundChange = useCallback(
     (value: CompletionSound) => {
+      // Don't leak generated custom-sound ids into analytics.
+      const analyticsValue = value.startsWith("custom:") ? "custom" : value;
       track(ANALYTICS_EVENTS.SETTING_CHANGED, {
         setting_name: "completion_sound",
-        new_value: value,
-        old_value: completionSound,
+        new_value: analyticsValue,
+        old_value: completionSound.startsWith("custom:")
+          ? "custom"
+          : completionSound,
       });
       setCompletionSound(value);
     },
     [completionSound, setCompletionSound],
+  );
+
+  const handleScaleSoundChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "scale_sound_with_task_length",
+        new_value: checked,
+        old_value: scaleSoundWithTaskLength,
+      });
+      setScaleSoundWithTaskLength(checked);
+    },
+    [scaleSoundWithTaskLength, setScaleSoundWithTaskLength],
   );
 
   const resetToDefaults = useCallback(() => {
@@ -101,6 +137,7 @@ export function NotificationsSettings() {
     setDockBounceNotifications(NOTIFICATION_DEFAULTS.dockBounceNotifications);
     setCompletionSound(NOTIFICATION_DEFAULTS.completionSound);
     setCompletionVolume(NOTIFICATION_DEFAULTS.completionVolume);
+    setScaleSoundWithTaskLength(NOTIFICATION_DEFAULTS.scaleSoundWithTaskLength);
     toast.success("Notification settings reset to defaults");
   }, [
     setDesktopNotifications,
@@ -108,6 +145,7 @@ export function NotificationsSettings() {
     setDockBounceNotifications,
     setCompletionSound,
     setCompletionVolume,
+    setScaleSoundWithTaskLength,
   ]);
 
   return (
@@ -190,6 +228,16 @@ export function NotificationsSettings() {
               <Select.Item value="switch">Switch</Select.Item>
               <Select.Item value="wilhelm">Wilhelm scream</Select.Item>
               <Select.Item value="icq">ICQ</Select.Item>
+              {customSounds.length > 0 && (
+                <Select.Group>
+                  <Select.Label>Custom</Select.Label>
+                  {customSounds.map((sound) => (
+                    <Select.Item key={sound.id} value={`custom:${sound.id}`}>
+                      {sound.name}
+                    </Select.Item>
+                  ))}
+                </Select.Group>
+              )}
             </Select.Content>
           </Select.Root>
           {completionSound !== "none" && (
@@ -197,17 +245,48 @@ export function NotificationsSettings() {
               variant="soft"
               size="1"
               onClick={() =>
-                playCompletionSound(completionSound, completionVolume)
+                playCompletionSound(
+                  completionSound,
+                  completionVolume,
+                  customSounds,
+                )
               }
             >
               Test
             </Button>
           )}
+          <Button variant="soft" size="1" onClick={() => setAddSoundOpen(true)}>
+            <Plus /> Add
+          </Button>
         </Flex>
       </SettingRow>
 
+      {customSounds.length > 0 && (
+        <SettingRow
+          label="Custom sounds"
+          description="Sounds you recorded or imported. Rename or remove them here."
+        >
+          <Flex direction="column" gap="2" className="w-full max-w-[260px]">
+            {customSounds.map((sound) => (
+              <CustomSoundRow
+                key={sound.id}
+                sound={sound}
+                volume={completionVolume}
+                onRename={renameCustomSound}
+                onRemove={removeCustomSound}
+              />
+            ))}
+          </Flex>
+        </SettingRow>
+      )}
+
+      <AddCustomSoundDialog
+        open={addSoundOpen}
+        onOpenChange={setAddSoundOpen}
+      />
+
       {completionSound !== "none" && (
-        <SettingRow label="Sound volume" noBorder>
+        <SettingRow label="Sound volume">
           <Flex align="center" gap="3">
             <Slider
               value={[completionVolume]}
@@ -225,12 +304,90 @@ export function NotificationsSettings() {
         </SettingRow>
       )}
 
+      {completionSound !== "none" && (
+        <SettingRow
+          label="Scale sound speed with task length"
+          description="Play the sound faster for quick tasks and slower for long ones"
+          noBorder
+        >
+          <Switch
+            checked={scaleSoundWithTaskLength}
+            onCheckedChange={handleScaleSoundChange}
+            size="1"
+          />
+        </SettingRow>
+      )}
+
       <NotificationTestHarness
         bus={bus}
         notifications={notifications}
         deepLinkTask={deepLinkTask}
         canvasEnabled={canvasEnabled}
       />
+    </Flex>
+  );
+}
+
+// A single installed custom sound: inline-rename field, preview, and delete.
+function CustomSoundRow({
+  sound,
+  volume,
+  onRename,
+  onRemove,
+}: {
+  sound: CustomSound;
+  volume: number;
+  onRename: (id: string, name: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  // Uncontrolled so the committed name (a prop) is the single source of truth —
+  // no draft copy in state to drift out of sync. `key` remounts the field with
+  // the new default whenever the stored name changes. On an empty/unchanged
+  // blur we restore the displayed value rather than commit it.
+  const commitName = (input: HTMLInputElement) => {
+    const trimmed = input.value.trim();
+    if (trimmed && trimmed !== sound.name) {
+      onRename(sound.id, trimmed);
+    } else {
+      input.value = sound.name;
+    }
+  };
+
+  return (
+    <Flex align="center" gap="2">
+      <IconButton
+        variant="soft"
+        size="1"
+        aria-label={`Play ${sound.name}`}
+        onClick={() =>
+          playCompletionSound(`custom:${sound.id}`, volume, [sound])
+        }
+      >
+        <Play weight="fill" />
+      </IconButton>
+      <TextField.Root
+        key={sound.name}
+        className="flex-1"
+        size="1"
+        defaultValue={sound.name}
+        maxLength={60}
+        onBlur={(event) => commitName(event.currentTarget)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+      />
+      <Text color="gray" className="text-[12px] tabular-nums">
+        {formatDurationSeconds(sound.durationMs)}
+      </Text>
+      <IconButton
+        variant="ghost"
+        color="gray"
+        size="1"
+        aria-label={`Remove ${sound.name}`}
+        onClick={() => onRemove(sound.id)}
+      >
+        <Trash />
+      </IconButton>
     </Flex>
   );
 }

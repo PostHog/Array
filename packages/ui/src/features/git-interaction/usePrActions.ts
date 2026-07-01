@@ -4,12 +4,15 @@ import {
 } from "@posthog/core/git-interaction/prStatus";
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { PrActionType } from "@posthog/shared";
+import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
+import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "../../primitives/toast";
 
 export function usePrActions(prUrl: string | null) {
   const trpc = useHostTRPC();
   const queryClient = useQueryClient();
+  const { isOnline } = useConnectivity();
 
   const mutation = useMutation({
     ...trpc.git.updatePrByUrl.mutationOptions(),
@@ -44,6 +47,10 @@ export function usePrActions(prUrl: string | null) {
   return {
     execute: (action: PrActionType) => {
       if (!prUrl) return;
+      if (!isOnline) {
+        showOfflineToast();
+        return;
+      }
       mutation.mutate({ prUrl, action });
     },
     isPending: mutation.isPending,

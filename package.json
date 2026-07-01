@@ -29,6 +29,7 @@
     "rebuild:sqlite-electron": "node scripts/rebuild-better-sqlite3-electron.mjs",
     "typecheck": "turbo typecheck",
     "boundaries": "node scripts/check-host-boundaries.mjs",
+    "optimize:onboarding-videos": "node scripts/optimize-onboarding-videos.mjs",
     "lint": "biome check --write --unsafe",
     "format": "biome format --write",
     "clean": "pnpm -r clean",
@@ -53,7 +54,7 @@
     "knip": "^5.66.3",
     "lint-staged": "^15.5.2",
     "mprocs": "^0.7.1",
-    "turbo": "^2.6.2"
+    "turbo": "^2.9.16"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [

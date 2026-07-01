@@ -2,7 +2,6 @@ import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import { getIsOnline } from "@posthog/core/connectivity/connectivityStore";
 import { CloudArtifactService } from "@posthog/core/sessions/cloudArtifactService";
 import {
-  cloudPromptToBlocks,
   combineQueuedCloudPrompts,
   getCloudPromptTransport,
 } from "@posthog/core/sessions/cloudPrompt";
@@ -45,6 +44,7 @@ import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
 } from "../../shell/queryClient";
+import { resolveLocalSkillPrompt } from "../message-editor/commands";
 
 export { SessionService };
 
@@ -59,8 +59,9 @@ function buildSessionServiceDeps(): SessionServiceDeps {
   const queryClient = resolveService<ImperativeQueryClient>(
     IMPERATIVE_QUERY_CLIENT,
   );
-  const cloudArtifactService = new CloudArtifactService((filePath) =>
-    trpc.fs.readFileAsBase64.query({ filePath }),
+  const cloudArtifactService = new CloudArtifactService(
+    (filePath) => trpc.fs.readFileAsBase64.query({ filePath }),
+    (skillBundleRef) => trpc.skills.bundleLocal.query(skillBundleRef),
   );
 
   return {
@@ -83,11 +84,12 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         taskTitle,
         taskId,
       ),
-    notifyPromptComplete: (taskTitle, stopReason, taskId) =>
+    notifyPromptComplete: (taskTitle, stopReason, taskId, durationMs) =>
       resolveService(NotificationBus).notifyPromptComplete(
         taskTitle,
         stopReason,
         taskId,
+        durationMs,
       ),
     getIsOnline,
     fetchAuthState,
@@ -123,21 +125,24 @@ function buildSessionServiceDeps(): SessionServiceDeps {
     WORKSPACE_QUERY_KEY,
     h: {
       extractSkillButtonId,
-      cloudPromptToBlocks,
       combineQueuedCloudPrompts,
       getCloudPromptTransport,
-      uploadRunAttachments: (client, taskId, runId, filePaths) =>
+      resolveLocalSkillCommandPrompt: (prompt) =>
+        resolveLocalSkillPrompt(prompt, () => trpc.skills.list.query()),
+      uploadRunAttachments: (client, taskId, runId, filePaths, skillBundles) =>
         cloudArtifactService.uploadRunAttachments(
           client,
           taskId,
           runId,
           filePaths,
+          skillBundles,
         ),
-      uploadTaskStagedAttachments: (client, taskId, filePaths) =>
+      uploadTaskStagedAttachments: (client, taskId, filePaths, skillBundles) =>
         cloudArtifactService.uploadTaskStagedAttachments(
           client,
           taskId,
           filePaths,
+          skillBundles,
         ),
     },
   };

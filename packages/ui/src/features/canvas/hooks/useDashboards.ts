@@ -100,6 +100,9 @@ export function useDashboardMutations() {
   const rename = useMutation(
     trpc.dashboards.rename.mutationOptions({ onSuccess: invalidate }),
   );
+  const setPinned = useMutation(
+    trpc.dashboards.setPinned.mutationOptions({ onSuccess: invalidate }),
+  );
   const ensureHome = useMutation(
     trpc.dashboards.ensureHomeCanvas.mutationOptions({
       onSuccess: () => {
@@ -123,6 +126,10 @@ export function useDashboardMutations() {
     // created canvas from its generation prompt.
     renameDashboard: (id: string, name: string) =>
       rename.mutateAsync({ id, name }),
+    // Pin (or unpin) a canvas to its channel. Shared via the row's meta so the
+    // pin shows in the channel's Pinned menu for every member.
+    setPinned: (id: string, pinned: boolean) =>
+      setPinned.mutateAsync({ id, pinned }),
     // Ensure a channel has its home canvas (creating + seeding it if absent).
     // Idempotent server-side; returns the home canvas record.
     ensureHomeCanvas: (channelId: string) =>

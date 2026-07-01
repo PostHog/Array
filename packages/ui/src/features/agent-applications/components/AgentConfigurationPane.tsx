@@ -10,32 +10,42 @@ import {
   InfoIcon,
   KeyIcon,
   LightningIcon,
-  LinkIcon,
   LockKeyIcon,
   PuzzlePieceIcon,
   ScrollIcon,
   SparkleIcon,
+  TrashIcon,
   UserIcon,
   WarningIcon,
   WebhooksLogoIcon,
   WrenchIcon,
 } from "@phosphor-icons/react";
 import type {
+  McpApprovalState,
+  McpInstallationTool,
+} from "@posthog/api-client/posthog-client";
+import type {
   AgentRevisionState,
   AgentSpec,
   BundleFile,
 } from "@posthog/shared/agent-platform-types";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import { AddCustomServerDialog } from "@posthog/ui/features/mcp-server-manager/AddCustomServerDialog";
+import { useMcpConnect } from "@posthog/ui/features/mcp-server-manager/useMcpConnect";
+import { ToolPermissionList } from "@posthog/ui/features/mcp-servers/components/parts/ToolPermissionList";
+import { useMcpInstallationTools } from "@posthog/ui/features/mcp-servers/hooks/useMcpInstallationTools";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
-import { Flex, Text } from "@radix-ui/themes";
-import { type ReactNode, useMemo, useState } from "react";
+import { toast } from "@posthog/ui/primitives/toast";
+import { Flex, Select, Switch, Text } from "@radix-ui/themes";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentEnvKeys } from "../hooks/useAgentEnvKeys";
 import { useAgentRevision } from "../hooks/useAgentRevision";
 import { useAgentRevisionBundle } from "../hooks/useAgentRevisionBundle";
 import { useAgentRevisions } from "../hooks/useAgentRevisions";
+import { useApplyAgentSpec } from "../hooks/useApplyAgentSpec";
 import { triggerRequiredSecretsFor } from "../utils/triggerSecrets";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 import { AgentModelConfig } from "./AgentModelConfig";
@@ -155,6 +165,40 @@ function toolRequiresIdentity(t: unknown): string | undefined {
 function mcpProvider(m: unknown): string | undefined {
   return str(rec(rec(m).auth).provider);
 }
+
+// --- Per-agent MCP tool permissions (agent-level shared connection) ---
+// The spec carries allow/approve/deny; the shared ToolPermissionList speaks the
+// mcp_store vocabulary (approved/needs_approval/do_not_use). Map at the boundary
+// so that component is reused verbatim.
+type ToolApprovalLevel = "allow" | "approve" | "deny";
+// New connections start safe-by-default: every tool parks for approval until the
+// owner relaxes specific tools. Mirrors the runner's fallback.
+const DEFAULT_TOOL_APPROVAL: ToolApprovalLevel = "approve";
+const LEVEL_TO_APPROVAL: Record<ToolApprovalLevel, McpApprovalState> = {
+  allow: "approved",
+  approve: "needs_approval",
+  deny: "do_not_use",
+};
+const APPROVAL_TO_LEVEL: Record<McpApprovalState, ToolApprovalLevel> = {
+  approved: "allow",
+  needs_approval: "approve",
+  do_not_use: "deny",
+};
+function toToolApprovalLevel(v: unknown): ToolApprovalLevel | undefined {
+  return v === "allow" || v === "approve" || v === "deny" ? v : undefined;
+}
+/** The per-tool override `level` declared in `mcps[].tools[]`, keyed by name. */
+function toolLevelOverrides(mcpEntry: unknown): Map<string, ToolApprovalLevel> {
+  const out = new Map<string, ToolApprovalLevel>();
+  for (const t of arr(rec(mcpEntry).tools)) {
+    if (typeof t === "object" && t) {
+      const name = str(rec(t).name);
+      const level = toToolApprovalLevel(rec(t).level);
+      if (name && level) out.set(name, level);
+    }
+  }
+  return out;
+}
 interface IdentityConsumers {
   tools: string[];
   mcps: string[];
@@ -200,158 +244,130 @@ function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
   ];
 
   const triggers = arr(spec.triggers);
-  if (triggers.length > 0) {
-    children.push({
-      type: "folder",
-      name: "triggers",
-      path: "cfg:triggers",
-      icon: <LightningIcon {...ICON} />,
-      children: triggers.map((t, i) => {
-        const type = triggerType(t);
-        const missing = missingSecretsFor(t, setKeys);
-        return {
-          type: "file" as const,
-          name: type,
-          path: `cfg:trigger/${i}`,
-          icon: triggerIcon(type),
-          trailing:
-            missing.length > 0 ? (
-              <WarnBadge title={`Needs secret(s): ${missing.join(", ")}`} />
-            ) : isPublic(t) ? (
-              <Badge color="amber">public</Badge>
-            ) : undefined,
-        };
-      }),
-    });
-  }
+  children.push({
+    type: "folder",
+    name: "triggers",
+    path: "cfg:triggers",
+    icon: <LightningIcon {...ICON} />,
+    children: triggers.map((t, i) => {
+      const type = triggerType(t);
+      const missing = missingSecretsFor(t, setKeys);
+      return {
+        type: "file" as const,
+        name: type,
+        path: `cfg:trigger/${i}`,
+        icon: triggerIcon(type),
+        trailing:
+          missing.length > 0 ? (
+            <WarnBadge title={`Needs secret(s): ${missing.join(", ")}`} />
+          ) : isPublic(t) ? (
+            <Badge color="amber">public</Badge>
+          ) : undefined,
+      };
+    }),
+  });
 
   const secretKeys = allSecretKeys(spec, setKeys);
-  if (secretKeys.length > 0) {
-    children.push({
-      type: "folder",
-      name: "secrets",
-      path: "cfg:secrets",
+  children.push({
+    type: "folder",
+    name: "secrets",
+    path: "cfg:secrets",
+    icon: <KeyIcon {...ICON} />,
+    children: secretKeys.map((key) => ({
+      type: "file" as const,
+      name: key,
+      path: `cfg:secret/${key}`,
       icon: <KeyIcon {...ICON} />,
-      children: secretKeys.map((key) => ({
-        type: "file" as const,
-        name: key,
-        path: `cfg:secret/${key}`,
-        icon: <KeyIcon {...ICON} />,
-        trailing: setKeys.includes(key) ? undefined : (
-          <Badge color="amber">not set</Badge>
-        ),
-      })),
-    });
-  }
+      trailing: setKeys.includes(key) ? undefined : (
+        <Badge color="amber">not set</Badge>
+      ),
+    })),
+  });
 
   const skills = arr(spec.skills);
-  if (skills.length > 0) {
-    children.push({
-      type: "folder",
-      name: "skills",
-      path: "cfg:skills",
-      icon: <PuzzlePieceIcon {...ICON} />,
-      children: skills.map((s) => {
-        const r = rec(s);
-        const id = str(r.id) ?? str(r.path) ?? "skill";
-        return {
-          type: "file" as const,
-          name: id,
-          path: `cfg:skill/${id}`,
-          description: str(r.description),
-          icon: <PuzzlePieceIcon {...ICON} />,
-        };
-      }),
-    });
-  }
+  children.push({
+    type: "folder",
+    name: "skills",
+    path: "cfg:skills",
+    icon: <PuzzlePieceIcon {...ICON} />,
+    children: skills.map((s) => {
+      const r = rec(s);
+      const id = str(r.id) ?? str(r.path) ?? "skill";
+      return {
+        type: "file" as const,
+        name: id,
+        path: `cfg:skill/${id}`,
+        description: str(r.description),
+        icon: <PuzzlePieceIcon {...ICON} />,
+      };
+    }),
+  });
 
   const tools = arr(spec.tools);
-  if (tools.length > 0) {
-    children.push({
-      type: "folder",
-      name: "tools",
-      path: "cfg:tools",
-      icon: <WrenchIcon {...ICON} />,
-      children: tools.map((t) => {
-        const r = rec(t);
-        const id = toolId(t);
-        return {
-          type: "file" as const,
-          name: shortName(id),
-          path: `cfg:tool/${id}`,
-          icon: toolIcon(str(r.kind)),
-          trailing:
-            r.requires_approval === true ? (
-              <LockKeyIcon size={11} className="text-amber-10" />
-            ) : undefined,
-        };
-      }),
-    });
-  }
+  children.push({
+    type: "folder",
+    name: "tools",
+    path: "cfg:tools",
+    icon: <WrenchIcon {...ICON} />,
+    children: tools.map((t) => {
+      const r = rec(t);
+      const id = toolId(t);
+      return {
+        type: "file" as const,
+        name: shortName(id),
+        path: `cfg:tool/${id}`,
+        icon: toolIcon(str(r.kind)),
+        trailing:
+          r.requires_approval === true ? (
+            <LockKeyIcon size={11} className="text-amber-10" />
+          ) : undefined,
+      };
+    }),
+  });
 
+  // Top-level authorable sections always render — even with no entries — so the
+  // add/connect affordance is reachable on a fresh agent (you add MCP servers,
+  // tools, skills, triggers, secrets and identities from the empty section).
   const mcps = arr(spec.mcps);
-  if (mcps.length > 0) {
-    children.push({
-      type: "folder",
-      name: "mcps",
-      path: "cfg:mcps",
-      icon: <HardDrivesIcon {...ICON} />,
-      children: mcps.map((m) => {
-        const id = str(rec(m).id) ?? "mcp";
-        const missing = mcpMissingSecrets(m, setKeys);
-        return {
-          type: "file" as const,
-          name: id,
-          path: `cfg:mcp/${id}`,
-          icon: <HardDrivesIcon {...ICON} />,
-          trailing:
-            missing.length > 0 ? (
-              <WarnBadge title={`Needs secret(s): ${missing.join(", ")}`} />
-            ) : undefined,
-        };
-      }),
-    });
-  }
+  children.push({
+    type: "folder",
+    name: "mcps",
+    path: "cfg:mcps",
+    icon: <HardDrivesIcon {...ICON} />,
+    children: mcps.map((m) => {
+      const id = str(rec(m).id) ?? "mcp";
+      const missing = mcpMissingSecrets(m, setKeys);
+      return {
+        type: "file" as const,
+        name: id,
+        path: `cfg:mcp/${id}`,
+        icon: <HardDrivesIcon {...ICON} />,
+        trailing:
+          missing.length > 0 ? (
+            <WarnBadge title={`Needs secret(s): ${missing.join(", ")}`} />
+          ) : undefined,
+      };
+    }),
+  });
 
   const identities = identityProviders(spec);
-  if (identities.length > 0) {
-    children.push({
-      type: "folder",
-      name: "identities",
-      path: "cfg:identities",
-      icon: <FingerprintIcon {...ICON} />,
-      children: identities.map((p) => {
-        const id = providerId(p);
-        const used = consumerCount(identityConsumers(spec, id));
-        return {
-          type: "file" as const,
-          name: id,
-          path: `cfg:identity/${id}`,
-          icon: <FingerprintIcon {...ICON} />,
-          trailing:
-            used === 0 ? <Badge color="amber">unused</Badge> : undefined,
-        };
-      }),
-    });
-  }
-
-  const integrations = arr(spec.integrations).filter(
-    (s): s is string => typeof s === "string",
-  );
-  if (integrations.length > 0) {
-    children.push({
-      type: "folder",
-      name: "integrations",
-      path: "cfg:integrations",
-      icon: <LinkIcon {...ICON} />,
-      children: integrations.map((name) => ({
+  children.push({
+    type: "folder",
+    name: "identities",
+    path: "cfg:identities",
+    icon: <FingerprintIcon {...ICON} />,
+    children: identities.map((p) => {
+      const id = providerId(p);
+      const used = consumerCount(identityConsumers(spec, id));
+      return {
         type: "file" as const,
-        name,
-        path: `cfg:integration/${name}`,
-        icon: <LinkIcon {...ICON} />,
-      })),
-    });
-  }
+        name: id,
+        path: `cfg:identity/${id}`,
+        icon: <FingerprintIcon {...ICON} />,
+        trailing: used === 0 ? <Badge color="amber">unused</Badge> : undefined,
+      };
+    }),
+  });
 
   children.push({
     type: "file",
@@ -481,8 +497,6 @@ const SECTION_INFO: Record<string, string> = {
   "cfg:mcps": "Remote MCP servers the agent connects to at session start.",
   "cfg:identities":
     "Identity providers an asker links against, so the agent can act AS them when a tool or MCP call needs it. Per-asker (binding: principal) by default.",
-  "cfg:integrations":
-    "Team-level integrations the agent reuses (configured once at the project level).",
   "cfg:secrets": "Env keys this agent reads. Values are never shown.",
   "cfg:limits": "Hard caps on a single run.",
 };
@@ -555,10 +569,6 @@ function nodeHeader(
       return { icon: <FingerprintIcon {...ICON} />, title: "Identities" };
     case "identity":
       return { icon: <FingerprintIcon {...ICON} />, title: id };
-    case "integrations":
-      return { icon: <LinkIcon {...ICON} />, title: "Integrations" };
-    case "integration":
-      return { icon: <LinkIcon {...ICON} />, title: id };
     case "secrets":
       return { icon: <KeyIcon {...ICON} />, title: "Secrets" };
     case "secret":
@@ -675,10 +685,6 @@ function DetailBody({
           ctx={ctx}
         />
       );
-    case "integrations":
-      return <IntegrationsOverview spec={spec} ctx={ctx} />;
-    case "integration":
-      return <IntegrationBody name={id} />;
     case "secrets":
       return <SecretsOverview spec={spec} ctx={ctx} />;
     case "secret":
@@ -1354,28 +1360,118 @@ function SkillBody({
 
 function McpsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   const mcps = arr(spec.mcps);
-  if (mcps.length === 0) return <Muted>No MCP servers declared.</Muted>;
+  const { installations, connectCustom, connectCustomPending } =
+    useMcpConnect();
+  const applySpec = useApplyAgentSpec(ctx.idOrSlug, ctx.applicationId);
+  const [showAdd, setShowAdd] = useState(false);
+  const canEdit = !!ctx.revisionState;
+
+  // Append a new mcps[] entry referencing the chosen connection (id derived
+  // from its name, url filled from the installation), then select it.
+  const addFromConnection = (installId: string) => {
+    const install = (installations ?? []).find((i) => i.id === installId);
+    if (!install || !ctx.revisionState) return;
+    const base =
+      (install.display_name || install.url || "mcp")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 32) || "mcp";
+    const taken = new Set(mcps.map((m) => str(rec(m).id)));
+    let newId = base;
+    for (let n = 2; taken.has(newId); n++) newId = `${base}-${n}`;
+    const entry = {
+      id: newId,
+      url: install.url ?? "",
+      connection: install.id,
+      secrets: [] as string[],
+      // Safe-by-default: every tool parks for approval until the owner relaxes
+      // specific ones. Activates the per-agent permission model (vs the legacy
+      // allowlist) so the runtime + the detail UI agree from the first save.
+      default_tool_approval: "approve" as const,
+    };
+    applySpec.mutate(
+      {
+        revision: { id: ctx.revisionId, state: ctx.revisionState },
+        spec: { ...spec, mcps: [...mcps, entry] },
+      },
+      {
+        onSuccess: (rev) => {
+          if (rev.id !== ctx.revisionId) ctx.onSelectRevision?.(rev.id);
+          ctx.onSelect(`cfg:mcp/${newId}`);
+        },
+        onError: (e) => toast.error(e.message || "Failed to add MCP server"),
+      },
+    );
+  };
+
   return (
     <Flex direction="column" gap="2">
-      {mcps.map((m) => {
-        const r = rec(m);
-        const id = str(r.id) ?? "mcp";
-        const missing = mcpMissingSecrets(m, ctx.setKeys);
-        return (
-          <JumpRow
-            key={id}
-            icon={<HardDrivesIcon {...ICON} />}
-            title={id}
-            subtitle={str(r.url)}
-            trailing={
-              missing.length > 0 ? (
-                <WarnBadge title={`Needs: ${missing.join(", ")}`} />
-              ) : undefined
-            }
-            onClick={() => ctx.onSelect(`cfg:mcp/${id}`)}
-          />
-        );
-      })}
+      {mcps.length === 0 ? (
+        <Muted>No MCP servers declared.</Muted>
+      ) : (
+        mcps.map((m) => {
+          const r = rec(m);
+          const id = str(r.id) ?? "mcp";
+          const missing = mcpMissingSecrets(m, ctx.setKeys);
+          return (
+            <JumpRow
+              key={id}
+              icon={<HardDrivesIcon {...ICON} />}
+              title={id}
+              subtitle={str(r.connection) ? "shared connection" : str(r.url)}
+              trailing={
+                missing.length > 0 ? (
+                  <WarnBadge title={`Needs: ${missing.join(", ")}`} />
+                ) : undefined
+              }
+              onClick={() => ctx.onSelect(`cfg:mcp/${id}`)}
+            />
+          );
+        })
+      )}
+      {canEdit ? (
+        <Flex align="center" gap="2" className="mt-1" wrap="wrap">
+          {(installations ?? []).length > 0 ? (
+            <Select.Root
+              value=""
+              onValueChange={addFromConnection}
+              disabled={applySpec.isPending}
+            >
+              <Select.Trigger
+                placeholder="+ Add from a connection"
+                className="min-w-[220px]"
+              />
+              <Select.Content>
+                {(installations ?? []).map((i) => (
+                  <Select.Item key={i.id} value={i.id}>
+                    {i.display_name || i.url || i.id}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          ) : (
+            <Muted>No connected MCP servers yet.</Muted>
+          )}
+          <Button
+            size="1"
+            variant="soft"
+            onClick={() => setShowAdd(true)}
+            disabled={connectCustomPending}
+          >
+            Connect new
+          </Button>
+        </Flex>
+      ) : null}
+      <AddCustomServerDialog
+        open={showAdd}
+        pending={connectCustomPending}
+        onOpenChange={setShowAdd}
+        onSubmit={(values) => {
+          connectCustom(values);
+          setShowAdd(false);
+        }}
+      />
     </Flex>
   );
 }
@@ -1390,20 +1486,371 @@ function McpBody({
   ctx: Ctx;
 }) {
   const r = rec(mcp);
+  const id = str(r.id) ?? "mcp";
   const tools = arr(r.tools);
   const missing = mcpMissingSecrets(mcp, ctx.setKeys);
   const provider = mcpProvider(mcp);
-  const integration = str(rec(r.auth).integration);
+  const connection = str(r.connection);
+  const providers = identityProviders(spec);
+  // `spec.mcps[].kind` is the authoritative, explicit credential model.
+  // Fall back to inferring from the credential fields for any legacy entry
+  // written before `kind` was required.
+  const declaredKind = str(r.kind);
+  const authMode: "agent" | "principal" =
+    declaredKind === "agent" || declaredKind === "principal"
+      ? declaredKind
+      : connection
+        ? "agent"
+        : "principal";
+  // Whether the chosen `auth.provider` is actually declared in
+  // `spec.identity_providers[]` — drives the preview card's status/badge.
+  const identityDeclared =
+    !!provider && providers.some((p) => providerId(p) === provider);
+
+  const {
+    installations,
+    installationsLoading,
+    connectCustom,
+    connectCustomPending,
+  } = useMcpConnect();
+  const applySpec = useApplyAgentSpec(ctx.idOrSlug, ctx.applicationId);
+  const [showAdd, setShowAdd] = useState(false);
+  const canEdit = !!ctx.revisionState;
+  const saving = applySpec.isPending;
+
+  // Live tool catalog for an agent-level shared connection — the connection id
+  // IS the mcp_store installation id, so we can list its tools and show a
+  // per-tool permission against each. A principal-level (auth.provider) MCP has
+  // no installation here, so `connection` is null and this stays empty.
+  const { tools: catalogTools, isLoading: catalogLoading } =
+    useMcpInstallationTools(connection ?? null, { autoRefreshIfEmpty: true });
+  // Per-agent override level keyed by remote tool name, plus the connection-wide
+  // default. Effective level per tool = override ?? default.
+  const overrides = toolLevelOverrides(r);
+  const defaultLevel = toToolApprovalLevel(r.default_tool_approval);
+  const effectiveDefault = defaultLevel ?? DEFAULT_TOOL_APPROVAL;
+  // Project the live catalog into the shared list's vocabulary: each tool's
+  // displayed state is its override (if any) resolved against the default. The
+  // panel is permission-agnostic, so the override/default math stays here.
+  const displayTools: McpInstallationTool[] = catalogTools.map((t) => ({
+    ...t,
+    approval_state:
+      LEVEL_TO_APPROVAL[overrides.get(t.tool_name) ?? effectiveDefault],
+  }));
+
+  // Rebuild the full spec with this mcps[] entry transformed, then draft-branch
+  // (if needed) + PATCH. Lands on (and selects) a new draft off a non-draft.
+  // Destructure the ctx fields the callback reads so the dep array is stable —
+  // `ctx` is a fresh object literal on every parent render, which would
+  // otherwise change identity each time and defeat the useCallback memoization.
+  const { revisionId, revisionState, onSelectRevision } = ctx;
+  const apply = useCallback(
+    (mutate: (entry: Record<string, unknown>) => Record<string, unknown>) => {
+      if (!revisionState) return;
+      const nextMcps = arr(spec.mcps).map((m) =>
+        (str(rec(m).id) ?? "mcp") === id ? mutate(rec(m)) : m,
+      );
+      applySpec.mutate(
+        {
+          revision: { id: revisionId, state: revisionState },
+          spec: { ...spec, mcps: nextMcps },
+        },
+        {
+          onSuccess: (rev) => {
+            if (rev.id !== revisionId) onSelectRevision?.(rev.id);
+          },
+          onError: (e) => toast.error(e.message || "Failed to save"),
+        },
+      );
+    },
+    [applySpec, revisionId, revisionState, onSelectRevision, id, spec],
+  );
+
+  const setConnection = (value: string) => {
+    if (value === "none") {
+      apply((entry) => {
+        const next: Record<string, unknown> = { ...entry, kind: "agent" };
+        delete next.connection;
+        return next;
+      });
+      return;
+    }
+    const install = (installations ?? []).find((i) => i.id === value);
+    apply((entry) => ({
+      ...entry,
+      kind: "agent",
+      connection: value,
+      url: install?.url ?? entry.url,
+    }));
+  };
+
+  // Switch the credential model. The two are mutually exclusive (enforced by
+  // the spec schema), so flipping clears the other side: → agent drops the
+  // per-asker identity (pick a connection next); → principal drops the shared
+  // connection and wires an identity provider (defaults to the current one,
+  // else the first declared).
+  const setAuthMode = (next: "agent" | "principal") => {
+    if (next === "agent") {
+      apply((entry) => {
+        const n: Record<string, unknown> = { ...entry, kind: "agent" };
+        delete n.auth;
+        return n;
+      });
+      return;
+    }
+    const fallback =
+      provider ?? (providers[0] ? providerId(providers[0]) : undefined);
+    apply((entry) => {
+      const n: Record<string, unknown> = { ...entry, kind: "principal" };
+      delete n.connection;
+      if (fallback) n.auth = { ...rec(entry.auth), provider: fallback };
+      return n;
+    });
+  };
+
+  const setIdentityProvider = (value: string) => {
+    apply((entry) => ({
+      ...entry,
+      kind: "principal",
+      auth: { ...rec(entry.auth), provider: value },
+    }));
+  };
+
+  const setToolApproval = (toolName: string, requiresApproval: boolean) => {
+    apply((entry) => ({
+      ...entry,
+      tools: arr(entry.tools).map((t) => {
+        const name = typeof t === "string" ? t : (str(rec(t).name) ?? "");
+        if (name !== toolName) return t;
+        const base = typeof t === "object" ? rec(t) : {};
+        return { ...base, name, requires_approval: requiresApproval };
+      }),
+    }));
+  };
+
+  // Set the connection-wide default permission (allow / approve / deny). Setting
+  // it activates the per-agent model on this entry (the runner stops treating
+  // tools[] as a legacy allowlist).
+  const setDefaultLevel = (level: ToolApprovalLevel) => {
+    apply((entry) => ({ ...entry, default_tool_approval: level }));
+  };
+
+  // Override one tool's permission. Dropping it back to the connection default
+  // removes the override so the spec stays minimal (no entry ⇒ inherits default).
+  const setToolLevel = (toolName: string, level: ToolApprovalLevel) => {
+    apply((entry) => {
+      const others = arr(entry.tools).filter(
+        (t) => (typeof t === "string" ? t : str(rec(t).name)) !== toolName,
+      );
+      const tools =
+        level === effectiveDefault
+          ? others
+          : [...others, { name: toolName, level }];
+      return {
+        ...entry,
+        default_tool_approval: entry.default_tool_approval ?? effectiveDefault,
+        tools,
+      };
+    });
+  };
+
+  // Drop this whole mcps[] entry from the spec and return to the list. The
+  // shared connection (the mcp_store installation) is untouched — only the
+  // agent's reference to it goes away.
+  const removeMcp = () => {
+    if (!revisionState) return;
+    const nextMcps = arr(spec.mcps).filter(
+      (m) => (str(rec(m).id) ?? "mcp") !== id,
+    );
+    applySpec.mutate(
+      {
+        revision: { id: revisionId, state: revisionState },
+        spec: { ...spec, mcps: nextMcps },
+      },
+      {
+        onSuccess: (rev) => {
+          if (rev.id !== revisionId) onSelectRevision?.(rev.id);
+          ctx.onSelect("cfg:mcps");
+        },
+        onError: (e) => toast.error(e.message || "Failed to remove MCP server"),
+      },
+    );
+  };
+
+  const connectionMissing =
+    !!connection && !(installations ?? []).some((i) => i.id === connection);
+
   return (
     <Flex direction="column" gap="3">
+      <Flex align="center" justify="between" gap="2">
+        <Select.Root
+          value={authMode}
+          onValueChange={(v) => setAuthMode(v as "agent" | "principal")}
+          disabled={!canEdit || saving}
+        >
+          <Select.Trigger className="min-w-60" />
+          <Select.Content>
+            <Select.Item value="agent">
+              Agent-level — shared credential
+            </Select.Item>
+            <Select.Item value="principal">
+              Principal-level — per-asker identity
+            </Select.Item>
+          </Select.Content>
+        </Select.Root>
+        {canEdit ? (
+          <Button
+            size="1"
+            variant="soft"
+            color="red"
+            onClick={removeMcp}
+            disabled={saving}
+          >
+            <TrashIcon size={12} />
+            Remove server
+          </Button>
+        ) : null}
+      </Flex>
+      <Muted>
+        {authMode === "agent"
+          ? "One shared credential every asker reuses — an OAuth/API-key connection, or a bring-your-own token."
+          : "Each asker acts as themselves through a linked identity provider."}
+      </Muted>
+
+      {authMode === "agent" ? (
+        <div>
+          <Subhead>Connection</Subhead>
+          <Muted>
+            One shared credential an owner connects once (OAuth or API key) and
+            every asker reuses — askers never sign in. Leave unset to bring your
+            own token via secrets + headers.
+          </Muted>
+          <Flex align="center" gap="2" className="mt-1.5">
+            <Select.Root
+              value={connection ?? "none"}
+              onValueChange={setConnection}
+              disabled={!canEdit || saving || installationsLoading}
+            >
+              <Select.Trigger
+                placeholder="No connection"
+                className="min-w-[220px]"
+              />
+              <Select.Content>
+                <Select.Item value="none">No connection</Select.Item>
+                {(installations ?? []).map((i) => (
+                  <Select.Item key={i.id} value={i.id}>
+                    {i.display_name || i.url || i.id}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+            <Button
+              size="1"
+              variant="soft"
+              onClick={() => setShowAdd(true)}
+              disabled={connectCustomPending}
+            >
+              Connect new
+            </Button>
+          </Flex>
+          {connectionMissing ? (
+            <Text className="mt-1 block text-[12px] text-amber-11">
+              Referenced connection isn't in this project — reconnect it or pick
+              another.
+            </Text>
+          ) : null}
+        </div>
+      ) : (
+        <div>
+          <Subhead>Acts as identity</Subhead>
+          <Muted>
+            Each asker connects as themselves through this identity provider —
+            required for principal-level. Manage providers in the identities
+            section.
+          </Muted>
+          {providers.length > 0 ? (
+            <Flex direction="column" gap="2" className="mt-1.5">
+              <Select.Root
+                value={provider}
+                onValueChange={setIdentityProvider}
+                disabled={!canEdit || saving}
+              >
+                <Select.Trigger
+                  placeholder="Choose an identity"
+                  className="min-w-60"
+                />
+                <Select.Content>
+                  {providers.map((p) => {
+                    const pid = providerId(p);
+                    return (
+                      <Select.Item key={pid} value={pid}>
+                        <Flex align="center" gap="2">
+                          <FingerprintIcon {...ICON} />
+                          {pid}
+                        </Flex>
+                      </Select.Item>
+                    );
+                  })}
+                </Select.Content>
+              </Select.Root>
+              {provider ? (
+                <JumpRow
+                  icon={<FingerprintIcon {...ICON} />}
+                  title={provider}
+                  mono
+                  subtitle={
+                    identityDeclared
+                      ? "per-asker linked identity — each asker connects as themselves"
+                      : "not declared in identities"
+                  }
+                  trailing={
+                    identityDeclared ? undefined : (
+                      <Badge color="amber">undeclared</Badge>
+                    )
+                  }
+                  onClick={() => ctx.onSelect(`cfg:identity/${provider}`)}
+                />
+              ) : (
+                <Text className="block text-[12px] text-amber-11">
+                  Principal-level needs a linked identity — choose one above.
+                </Text>
+              )}
+            </Flex>
+          ) : (
+            <Attention>
+              <Text className="text-[12px] text-gray-12">
+                No identity providers declared. Add one in the identities
+                section to use principal-level auth.
+              </Text>
+              <Flex className="mt-1.5">
+                <Button
+                  size="1"
+                  variant="soft"
+                  color="amber"
+                  onClick={() => ctx.onSelect("cfg:identities")}
+                >
+                  Manage identities
+                </Button>
+              </Flex>
+            </Attention>
+          )}
+        </div>
+      )}
+
+      <AddCustomServerDialog
+        open={showAdd}
+        pending={connectCustomPending}
+        onOpenChange={setShowAdd}
+        onSubmit={(values) => {
+          connectCustom(values);
+          setShowAdd(false);
+        }}
+      />
+
       {str(r.url) ? (
         <Row label="url" value={str(r.url) as string} mono />
       ) : null}
-      {integration ? <Row label="integration" value={integration} /> : null}
-      {provider ? (
-        <IdentityLink provider={provider} spec={spec} ctx={ctx} />
-      ) : null}
-      {missing.length > 0 ? (
+      {!connection && missing.length > 0 ? (
         <Attention>
           <Text className="text-[12px] text-gray-12">
             Missing secret{missing.length > 1 ? "s" : ""}:
@@ -1423,36 +1870,76 @@ function McpBody({
           </Flex>
         </Attention>
       ) : null}
-      <div>
-        <Subhead>Tools · {tools.length}</Subhead>
-        {tools.length === 0 ? (
-          <Muted>No tools selected from this server.</Muted>
-        ) : (
-          <div className="mt-1 grid grid-cols-1 gap-1.5 md:grid-cols-2">
-            {tools.map((t) => {
-              const name =
-                typeof t === "string" ? t : (str(rec(t).name) ?? "tool");
-              const approval =
-                typeof t === "object" && rec(t).requires_approval === true;
-              return (
-                <Flex
-                  key={name}
-                  align="center"
-                  gap="2"
-                  className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-3 py-2"
-                >
-                  <Text className="min-w-0 flex-1 truncate text-[12px] text-gray-12 [font-family:var(--font-mono)]">
-                    {name}
-                  </Text>
-                  {approval ? (
-                    <LockKeyIcon size={12} className="text-amber-10" />
-                  ) : null}
-                </Flex>
-              );
-            })}
+
+      {connection ? (
+        <div>
+          <Subhead>Tool permissions</Subhead>
+          <Muted>
+            The default applies to every tool this server exposes; override
+            individual tools below. Allow = runs automatically · Approve = asks
+            the approver each call · Deny = hidden from the agent.
+          </Muted>
+          <Attention>
+            <Text className="text-[12px] text-gray-12">
+              These settings govern this agent. The connection owner's approval
+              marks are informational — they aren't enforced for this agent.
+            </Text>
+          </Attention>
+          <div className="mt-2">
+            <ToolPermissionList
+              tools={displayTools}
+              isLoading={catalogLoading}
+              disabled={!canEdit || saving}
+              defaultControl={{
+                value: LEVEL_TO_APPROVAL[effectiveDefault],
+                onChange: (v) => setDefaultLevel(APPROVAL_TO_LEVEL[v]),
+              }}
+              onSetTool={(name, state) =>
+                setToolLevel(name, APPROVAL_TO_LEVEL[state])
+              }
+              emptyTitle="No tools discovered yet."
+              emptyHint="They appear once the connection is verified."
+            />
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div>
+          <Subhead>Tools · {tools.length}</Subhead>
+          {tools.length === 0 ? (
+            <Muted>No tools selected from this server.</Muted>
+          ) : (
+            <Flex direction="column" gap="1.5" className="mt-1">
+              {tools.map((t) => {
+                const name =
+                  typeof t === "string" ? t : (str(rec(t).name) ?? "tool");
+                const requiresApproval =
+                  typeof t === "object" && rec(t).requires_approval === true;
+                return (
+                  <Flex
+                    key={name}
+                    align="center"
+                    gap="2"
+                    className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-3 py-2"
+                  >
+                    <Text className="min-w-0 flex-1 truncate text-[12px] text-gray-12 [font-family:var(--font-mono)]">
+                      {name}
+                    </Text>
+                    <Text className="text-[11px] text-gray-10">
+                      Requires approval
+                    </Text>
+                    <Switch
+                      size="1"
+                      checked={requiresApproval}
+                      onCheckedChange={(v) => setToolApproval(name, v === true)}
+                      disabled={!canEdit || saving}
+                    />
+                  </Flex>
+                );
+              })}
+            </Flex>
+          )}
+        </div>
+      )}
     </Flex>
   );
 }
@@ -1600,38 +2087,6 @@ function IdentityBody({
           tools declare their provider intrinsically and aren't listed here.
         </Text>
       </div>
-    </Flex>
-  );
-}
-
-function IntegrationsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
-  const integrations = arr(spec.integrations).filter(
-    (s): s is string => typeof s === "string",
-  );
-  if (integrations.length === 0)
-    return <Muted>No integrations declared.</Muted>;
-  return (
-    <Flex direction="column" gap="2">
-      {integrations.map((name) => (
-        <JumpRow
-          key={name}
-          icon={<LinkIcon {...ICON} />}
-          title={name}
-          onClick={() => ctx.onSelect(`cfg:integration/${name}`)}
-        />
-      ))}
-    </Flex>
-  );
-}
-
-function IntegrationBody({ name }: { name: string }) {
-  return (
-    <Flex direction="column" gap="2">
-      <Row label="integration" value={name} />
-      <Muted>
-        The agent reuses the team's {name} connection. It's configured once at
-        the project level — there's no per-agent credential here.
-      </Muted>
     </Flex>
   );
 }

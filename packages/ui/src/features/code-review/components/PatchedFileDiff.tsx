@@ -1,5 +1,6 @@
 import { type FileDiffMetadata, processFile } from "@pierre/diffs";
 import type { PrCommentThread } from "@posthog/core/code-review/types";
+import { isBinaryFile } from "@posthog/shared";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 import { useMemo } from "react";
 import { DeferredDiffPlaceholder, DiffFileHeader } from "../reviewShellParts";
@@ -45,6 +46,23 @@ export function PatchedFileDiff({
     }
     return null;
   }, [fileDiff, fallback, file.path]);
+
+  // Branch/PR diffs have no reliable local working-tree file to preview (the
+  // checkout may be on a different ref, and GitHub omits binary patches), so
+  // show a clean placeholder instead of letting the binary sentinel render.
+  if (isBinaryFile(file.path)) {
+    return (
+      <DeferredDiffPlaceholder
+        filePath={file.path}
+        linesAdded={file.linesAdded ?? 0}
+        linesRemoved={file.linesRemoved ?? 0}
+        reason="binary"
+        collapsed={collapsed}
+        onToggle={onToggle}
+        externalUrl={externalUrl}
+      />
+    );
+  }
 
   if (!diffSourceProps) {
     return (

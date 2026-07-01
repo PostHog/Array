@@ -1,10 +1,17 @@
+import {
+  buildBulkActionEvents,
+  type InboxBulkActionType,
+} from "@posthog/core/inbox/engagement";
 import { inboxStatusLabel } from "@posthog/core/inbox/reportPresentation";
+import type { InboxReportActionSurface } from "@posthog/shared/analytics-events";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { SignalReport } from "@posthog/shared/types";
 import type { DismissReportDialogResult } from "@posthog/ui/features/inbox/components/DismissReportDialog";
 import { reportKeys } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useInboxReportSelectionStore } from "@posthog/ui/features/inbox/stores/inboxReportSelectionStore";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
@@ -187,6 +194,7 @@ export function buildSuppressDisabledReasonMap(
 export function useInboxBulkActions(
   reports: SignalReport[],
   selection: InboxBulkSelection,
+  surface: InboxReportActionSurface = "toolbar",
 ) {
   const queryClient = useQueryClient();
   const clearSelection = useInboxReportSelectionStore(
@@ -194,6 +202,38 @@ export function useInboxBulkActions(
   );
   const removeFromSelection = useInboxReportSelectionStore(
     (state) => state.removeFromSelection,
+  );
+
+  /**
+   * Emit one `INBOX_REPORT_ACTION` per report the action succeeded for. Resolves
+   * report metadata from the pre-mutation list (the query is invalidated right
+   * after, dropping the affected reports), and skips firing when nothing landed.
+   */
+  const trackBulkAction = useCallback(
+    (
+      actionType: InboxBulkActionType,
+      result: BulkActionResult,
+      dismissal?: DismissReportDialogResult,
+    ) => {
+      if (result.successCount === 0) return;
+      const byId = new Map(reports.map((report) => [report.id, report]));
+      const succeeded = result.succeededIds
+        .map((id) => byId.get(id))
+        .filter((report): report is SignalReport => report !== undefined);
+      if (succeeded.length === 0) return;
+      const events = buildBulkActionEvents({
+        reports: succeeded,
+        actionType,
+        surface,
+        dismissal: dismissal
+          ? { reason: dismissal.reason, note: dismissal.note }
+          : undefined,
+      });
+      for (const event of events) {
+        track(ANALYTICS_EVENTS.INBOX_REPORT_ACTION, event);
+      }
+    },
+    [reports, surface],
   );
 
   /**
@@ -247,7 +287,8 @@ export function useInboxBulkActions(
       );
     },
     {
-      onSuccess: async (result) => {
+      onSuccess: async (result, variables) => {
+        trackBulkAction("dismiss", result, variables.dismissal);
         await invalidateInboxQueries();
         applyBulkResultToSelection(result);
 
@@ -274,6 +315,7 @@ export function useInboxBulkActions(
       ),
     {
       onSuccess: async (result) => {
+        trackBulkAction("snooze", result);
         await invalidateInboxQueries();
         applyBulkResultToSelection(result);
 
@@ -297,6 +339,7 @@ export function useInboxBulkActions(
       ),
     {
       onSuccess: async (result) => {
+        trackBulkAction("delete", result);
         await invalidateInboxQueries();
         applyBulkResultToSelection(result);
 
@@ -320,6 +363,7 @@ export function useInboxBulkActions(
       ),
     {
       onSuccess: async (result) => {
+        trackBulkAction("reingest", result);
         await invalidateInboxQueries();
         applyBulkResultToSelection(result);
 

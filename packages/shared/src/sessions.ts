@@ -76,7 +76,6 @@ export interface AgentSession {
   initialPrompt?: ContentBlock[];
   cloudBranch?: string | null;
   handoffInProgress?: boolean;
-  skipPolledPromptCount?: number;
   optimisticItems: OptimisticItem[];
   contextUsed?: number;
   contextSize?: number;

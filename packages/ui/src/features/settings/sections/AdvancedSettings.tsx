@@ -15,6 +15,8 @@ export function AdvancedSettings() {
   const setDebugLogsCloudRuns = useSettingsStore(
     (s) => s.setDebugLogsCloudRuns,
   );
+  const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
+  const setUseNewChatThread = useSettingsStore((s) => s.setUseNewChatThread);
 
   return (
     <Flex direction="column">
@@ -53,7 +55,6 @@ export function AdvancedSettings() {
         <SettingRow
           label="Debug logs for cloud runs"
           description="Show debug-level console output in the conversation view for cloud-executed runs"
-          noBorder
         >
           <Switch
             checked={debugLogsCloudRuns}
@@ -62,6 +63,17 @@ export function AdvancedSettings() {
           />
         </SettingRow>
       )}
+      <SettingRow
+        label="Use new chat thread (experimental)"
+        description="Render conversations with the new ChatX (quill) primitives instead of the virtualized thread"
+        noBorder
+      >
+        <Switch
+          checked={useNewChatThread}
+          onCheckedChange={setUseNewChatThread}
+          size="1"
+        />
+      </SettingRow>
     </Flex>
   );
 }

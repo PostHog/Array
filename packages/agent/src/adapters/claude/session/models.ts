@@ -21,6 +21,7 @@ const MODELS_WITH_1M_CONTEXT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
+  "claude-sonnet-5",
   "claude-fable-5",
 ]);
 
@@ -32,12 +33,14 @@ const MODELS_WITH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
+  "claude-sonnet-5",
   "claude-fable-5",
 ]);
 
 const MODELS_WITH_XHIGH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
+  "claude-sonnet-5",
   "claude-fable-5",
 ]);
 

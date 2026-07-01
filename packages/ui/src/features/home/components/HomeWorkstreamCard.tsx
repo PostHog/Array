@@ -40,11 +40,13 @@ export function HomeWorkstreamCard({ workstream }: HomeWorkstreamCardProps) {
     primaryIsTask,
     showPrInMenu,
     showTaskInMenu,
+    canArchive,
     hasMenu,
     runAction,
     isRunningAction,
     openTask,
     openPr,
+    archive,
   } = useWorkstreamPresentation(workstream);
   const setSelectedWorkstreamId = useHomeUiStore(
     (s) => s.setSelectedWorkstreamId,
@@ -196,9 +198,11 @@ export function HomeWorkstreamCard({ workstream }: HomeWorkstreamCardProps) {
               restBound={restBound}
               showPrInMenu={showPrInMenu}
               showTaskInMenu={showTaskInMenu}
+              showArchive={canArchive}
               onRun={runAction}
               onOpenPr={openPr}
               onOpenTask={openTask}
+              onArchive={archive}
               size="xs"
               runDisabled={isRunningAction}
             />

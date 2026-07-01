@@ -383,6 +383,9 @@ export default function NewTaskScreen() {
     repository: selection.repository,
     githubIntegrationId: selection.integrationId,
     composerIsEmpty: !hasContent,
+    runtimeAdapter: "claude",
+    model,
+    reasoningEffort: showReasoningPill ? reasoning : null,
   });
 
   if (isLoading && hasGithubIntegration === null) {

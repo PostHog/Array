@@ -2,15 +2,20 @@ import type { ReadFileAsBase64 } from "@posthog/core/editor/cloud-prompt";
 import { getFileName } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
+  type BundleLocalSkill,
+  CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
   CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
   type CloudArtifactClient,
   type CloudArtifactUploadRequest,
+  type CloudSkillBundleRef,
   type FinalizedCloudArtifact,
   type PreparedCloudArtifact,
 } from "./cloudArtifactIdentifiers";
 
 const ATTACHMENT_SOURCE = "posthog_code";
+const SKILL_BUNDLE_SOURCE = "posthog_code_skill";
 const DEFAULT_CONTENT_TYPE = "application/octet-stream";
+const SKILL_BUNDLE_CONTENT_TYPE = "application/zip";
 export const CLOUD_ATTACHMENT_MAX_SIZE_BYTES = 30 * 1024 * 1024;
 export const CLOUD_PDF_ATTACHMENT_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -116,18 +121,24 @@ export class CloudArtifactService {
   constructor(
     @inject(CLOUD_ARTIFACT_READ_FILE_AS_BASE64)
     private readonly readFileAsBase64: ReadFileAsBase64,
+    @inject(CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL)
+    private readonly bundleLocalSkill: BundleLocalSkill,
   ) {}
 
   async uploadTaskStagedAttachments(
     client: CloudArtifactClient,
     taskId: string,
     filePaths: string[],
+    skillBundles: CloudSkillBundleRef[] = [],
   ): Promise<string[]> {
-    if (!filePaths.length) {
+    if (!filePaths.length && !skillBundles.length) {
       return [];
     }
 
-    const attachments = await this.loadCloudAttachments(filePaths);
+    const attachments = [
+      ...(await this.loadCloudAttachments(filePaths)),
+      ...(await this.loadCloudSkillBundles(skillBundles)),
+    ];
     const preparedArtifacts = await client.prepareTaskStagedArtifactUploads(
       taskId,
       attachments.map((attachment) => attachment.upload),
@@ -148,12 +159,16 @@ export class CloudArtifactService {
     taskId: string,
     runId: string,
     filePaths: string[],
+    skillBundles: CloudSkillBundleRef[] = [],
   ): Promise<string[]> {
-    if (!filePaths.length) {
+    if (!filePaths.length && !skillBundles.length) {
       return [];
     }
 
-    const attachments = await this.loadCloudAttachments(filePaths);
+    const attachments = [
+      ...(await this.loadCloudAttachments(filePaths)),
+      ...(await this.loadCloudSkillBundles(skillBundles)),
+    ];
     const preparedArtifacts = await client.prepareTaskRunArtifactUploads(
       taskId,
       runId,
@@ -201,6 +216,46 @@ export class CloudArtifactService {
             source: ATTACHMENT_SOURCE,
             size: bytes.byteLength,
             content_type: contentType,
+          },
+        };
+      }),
+    );
+  }
+
+  private async loadCloudSkillBundles(
+    skillBundleRefs: CloudSkillBundleRef[],
+  ): Promise<LoadedCloudAttachment[]> {
+    return Promise.all(
+      skillBundleRefs.map(async (skillBundleRef) => {
+        const bundle = await this.bundleLocalSkill(skillBundleRef);
+        const bytes = base64ToUint8Array(bundle.contentBase64);
+        if (bytes.byteLength !== bundle.size) {
+          throw new Error(
+            `Unable to prepare local skill ${skillBundleRef.name}`,
+          );
+        }
+        if (bytes.byteLength > CLOUD_ATTACHMENT_MAX_SIZE_BYTES) {
+          throw new Error(
+            `${bundle.fileName} exceeds the 30MB attachment limit`,
+          );
+        }
+
+        return {
+          filePath: skillBundleRef.path,
+          bytes,
+          upload: {
+            name: bundle.fileName,
+            type: "skill_bundle",
+            source: SKILL_BUNDLE_SOURCE,
+            size: bytes.byteLength,
+            content_type: SKILL_BUNDLE_CONTENT_TYPE,
+            metadata: {
+              skill_name: bundle.name,
+              skill_source: bundle.source,
+              content_sha256: bundle.contentSha256,
+              bundle_format: "zip",
+              schema_version: 1,
+            },
           },
         };
       }),

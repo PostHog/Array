@@ -1,4 +1,6 @@
 // PostHog Task model (matches PostHog Code's OpenAPI schema)
+import type { UploadableSkillSource } from "./skills";
+
 export interface Task {
   id: string;
   task_number?: number;
@@ -37,7 +39,16 @@ export type ArtifactType =
   | "reference"
   | "output"
   | "artifact"
-  | "user_attachment";
+  | "user_attachment"
+  | "skill_bundle";
+
+export interface TaskRunArtifactMetadata {
+  skill_name: string;
+  skill_source: UploadableSkillSource;
+  content_sha256: string;
+  bundle_format: "zip";
+  schema_version: number;
+}
 
 export interface TaskRunArtifact {
   id?: string;
@@ -46,6 +57,7 @@ export interface TaskRunArtifact {
   source?: string;
   size?: number;
   content_type?: string;
+  metadata?: TaskRunArtifactMetadata;
   storage_path?: string;
   uploaded_at?: string;
 }

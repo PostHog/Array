@@ -2,7 +2,11 @@ import type {
   ToolCallContent,
   ToolCallLocation,
 } from "@agentclientprotocol/sdk";
-import { type AcpMessage, isJsonRpcNotification } from "@posthog/shared";
+import {
+  type AcpMessage,
+  isBinaryFile,
+  isJsonRpcNotification,
+} from "@posthog/shared";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 
 function getContentText(
@@ -282,7 +286,7 @@ export function extractCloudToolChangedFiles(
         status: "deleted",
       };
     } else {
-      const diffStats = cachedDiffStats(diff);
+      const diffStats = isBinaryFile(path) ? {} : cachedDiffStats(diff);
       file = {
         path,
         status: kind === "write" && !diff?.oldText ? "added" : "modified",

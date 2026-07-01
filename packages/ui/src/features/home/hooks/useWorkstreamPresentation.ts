@@ -1,10 +1,12 @@
 import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
-import type { HomeWorkstream } from "@posthog/core/home/schemas";
+import type { HomeSnapshot, HomeWorkstream } from "@posthog/core/home/schemas";
 import type { SituationId } from "@posthog/core/workflow/schemas";
+import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import {
   type BoundAction,
   useBoundActions,
 } from "@posthog/ui/features/home/hooks/useBoundActions";
+import { homeKeys } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
 import { useRunWorkstreamAction } from "@posthog/ui/features/home/hooks/useRunWorkstreamAction";
 import { useQuickActionStore } from "@posthog/ui/features/home/stores/quickActionStore";
 import {
@@ -13,8 +15,13 @@ import {
   situationCss,
 } from "@posthog/ui/features/home/utils/situationDisplay";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { toast } from "@posthog/ui/primitives/toast";
 import { openTask } from "@posthog/ui/router/useOpenTask";
+import { logger } from "@posthog/ui/shell/logger";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
+import { useQueryClient } from "@tanstack/react-query";
+
+const log = logger.scope("workstream-archive");
 
 export interface WorkstreamPresentation {
   pr: PrSnapshot | null;
@@ -36,12 +43,16 @@ export interface WorkstreamPresentation {
   primaryIsTask: boolean;
   showPrInMenu: boolean;
   showTaskInMenu: boolean;
+  /** Whether the workstream has a task that can be archived from the overflow menu. */
+  canArchive: boolean;
   hasMenu: boolean;
   runAction: (action: BoundAction) => void;
   /** True while a quick action is starting a task; disable the row's action controls. */
   isRunningAction: boolean;
   openTask: () => void;
   openPr: () => void;
+  /** Archive the workstream's head task and drop it from the Home snapshot. */
+  archive: () => void;
 }
 
 /**
@@ -54,6 +65,8 @@ export function useWorkstreamPresentation(
   const { data: tasks = [] } = useTasks();
   const boundActions = useBoundActions(workstream);
   const { run } = useRunWorkstreamAction();
+  const { archiveTask } = useArchiveTask();
+  const queryClient = useQueryClient();
   const isRunningAction = useQuickActionStore(
     (s) => !!s.inFlight[workstream.id],
   );
@@ -85,7 +98,9 @@ export function useWorkstreamPresentation(
   const primaryIsTask = !primaryBound && !workstream.prUrl && !!headTask;
   const showPrInMenu = !!workstream.prUrl && !primaryIsPr;
   const showTaskInMenu = !!headTask && !primaryIsTask;
-  const hasMenu = restBound.length > 0 || showPrInMenu || showTaskInMenu;
+  const canArchive = !!headTask;
+  const hasMenu =
+    restBound.length > 0 || showPrInMenu || showTaskInMenu || canArchive;
 
   return {
     pr,
@@ -103,6 +118,7 @@ export function useWorkstreamPresentation(
     primaryIsTask,
     showPrInMenu,
     showTaskInMenu,
+    canArchive,
     hasMenu,
     runAction: (action) => run(action, workstream),
     isRunningAction,
@@ -113,6 +129,36 @@ export function useWorkstreamPresentation(
     },
     openPr: () => {
       if (workstream.prUrl) void openUrlInBrowser(workstream.prUrl);
+    },
+    archive: () => {
+      if (!headTask) return;
+      const taskId = headTask.id;
+      archiveTask({ taskId })
+        .then(() => {
+          // The Home snapshot is server-computed and only refreshes on its poll
+          // (and, for workstreams, after the code-workstreams worker re-runs),
+          // so drop the row optimistically here for immediate feedback.
+          queryClient.setQueryData<HomeSnapshot>(homeKeys.snapshot, (old) =>
+            old
+              ? {
+                  ...old,
+                  activeAgents: old.activeAgents.filter(
+                    (a) => a.taskId !== taskId,
+                  ),
+                  needsAttention: old.needsAttention.filter(
+                    (w) => w.id !== workstream.id,
+                  ),
+                  inProgress: old.inProgress.filter(
+                    (w) => w.id !== workstream.id,
+                  ),
+                }
+              : old,
+          );
+        })
+        .catch((error) => {
+          log.error("Failed to archive workstream task", { taskId, error });
+          toast.error("Failed to archive task");
+        });
     },
   };
 }
