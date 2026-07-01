@@ -1492,7 +1492,7 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
-  it("reports per-turn (not cumulative) usage in turn_complete across turns", async () => {
+  it("reports codex's per-turn `last` (not the cumulative total) in turn_complete", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client, extNotifications } = makeFakeClient();
     const agent = new CodexAppServerAgent(client, {
@@ -1504,13 +1504,17 @@ describe("CodexAppServerAgent", () => {
       _meta: { taskRunId: "run_u" },
     } as unknown as NewSessionRequest);
 
-    // codex reports CUMULATIVE thread totals on each update.
+    // codex carries both the cumulative `total` and this turn's `last`; we let
+    // `last` drive the per-turn number rather than diffing the cumulative.
     const t1 = agent.prompt({
       sessionId: "t",
       prompt: [{ type: "text", text: "a" }],
     } as unknown as PromptRequest);
     stub.emit("thread/tokenUsage/updated", {
-      tokenUsage: { total: { inputTokens: 100, outputTokens: 50 } },
+      tokenUsage: {
+        total: { inputTokens: 100, outputTokens: 50 },
+        last: { inputTokens: 100, outputTokens: 50 },
+      },
     });
     stub.emit("turn/completed", { turn: { status: "completed" } });
     await t1;
@@ -1520,7 +1524,10 @@ describe("CodexAppServerAgent", () => {
       prompt: [{ type: "text", text: "b" }],
     } as unknown as PromptRequest);
     stub.emit("thread/tokenUsage/updated", {
-      tokenUsage: { total: { inputTokens: 250, outputTokens: 120 } },
+      tokenUsage: {
+        total: { inputTokens: 250, outputTokens: 120 },
+        last: { inputTokens: 150, outputTokens: 70 },
+      },
     });
     stub.emit("turn/completed", { turn: { status: "completed" } });
     await t2;
@@ -1535,7 +1542,7 @@ describe("CodexAppServerAgent", () => {
       inputTokens: 100,
       outputTokens: 50,
     });
-    // Turn 2 is the DELTA (150/70), not the cumulative 250/120.
+    // Turn 2 is codex's `last` (150/70) — NOT the cumulative total (250/120).
     expect(
       (tcs[1].params as { usage: Record<string, number> }).usage,
     ).toMatchObject({

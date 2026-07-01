@@ -1,0 +1,111 @@
+import type { StopReason } from "@agentclientprotocol/sdk";
+
+interface PendingTurn {
+  resolve: (reason: StopReason) => void;
+  reject: (err: Error) => void;
+}
+
+/**
+ * The turn state machine for one codex thread.
+ *
+ * A codex turn is asynchronous: `prompt()` starts it and awaits a completion
+ * promise that `turn/completed` (or an interrupt/error) resolves. This owns the
+ * pieces that dance across those events — the in-flight `turnId` (the precondition
+ * `turn/steer` requires and the target `turn/interrupt` aborts), the pending
+ * completion, and the ids of interrupted turns whose late `turn/completed` must be
+ * dropped so it can't finalize a follow-up turn as cancelled.
+ */
+export class TurnController {
+  private turnId?: string;
+  private pending?: PendingTurn;
+  private completion?: Promise<StopReason>;
+  private readonly cancelled = new Set<string>();
+
+  /** Start a fresh turn; returns the promise that resolves when it completes. */
+  begin(): Promise<StopReason> {
+    this.completion = new Promise<StopReason>((resolve, reject) => {
+      this.pending = { resolve, reject };
+    });
+    return this.completion;
+  }
+
+  /** The live turn id (steer precondition / interrupt target), if a turn started. */
+  get activeTurnId(): string | undefined {
+    return this.turnId;
+  }
+
+  /** A turn is awaiting completion. */
+  get isPending(): boolean {
+    return this.pending !== undefined;
+  }
+
+  /** A turn is running AND has a turnId — i.e. it can be steered. */
+  get isRunning(): boolean {
+    return this.pending !== undefined && this.turnId !== undefined;
+  }
+
+  /** Capture the turn id from turn/started (only while a turn is pending). */
+  onStarted(id: string | undefined): void {
+    if (this.pending && typeof id === "string") this.turnId = id;
+  }
+
+  /** Update the turn id after a turn/steer rotates it. */
+  onSteered(id: string | undefined): void {
+    if (typeof id === "string") this.turnId = id;
+  }
+
+  /** Await the in-flight turn's completion (the steer path reuses the original). */
+  awaitCompletion(): Promise<StopReason> {
+    return this.completion ?? Promise.resolve("end_turn");
+  }
+
+  /**
+   * Atomically claim the pending turn for finalization: clears the pending slot
+   * and turnId (synchronously, before any await, so a racing steer/finalize sees
+   * no live turn) and returns its resolver — or undefined if already claimed.
+   */
+  claim(): PendingTurn | undefined {
+    const pending = this.pending;
+    if (!pending) return undefined;
+    this.pending = undefined;
+    this.turnId = undefined;
+    return pending;
+  }
+
+  /**
+   * Mark the live turn interrupted (so its late turn/completed is dropped) and
+   * return its id for the turn/interrupt RPC, or undefined if no turn started.
+   */
+  markInterrupted(): string | undefined {
+    if (!this.turnId) return undefined;
+    this.cancelled.add(this.turnId);
+    return this.turnId;
+  }
+
+  /** True (once) if this completion is for an interrupted turn we should drop. */
+  shouldDropCompletion(id: string | undefined): boolean {
+    return id ? this.cancelled.delete(id) : false;
+  }
+
+  /** Clear the pending slot after prompt() returns (covers a turn/start throw). */
+  finishPrompt(): void {
+    this.pending = undefined;
+    this.completion = undefined;
+  }
+
+  /** Reject the in-flight turn (e.g. the server exited before it completed). */
+  fail(err: Error): void {
+    this.pending?.reject(err);
+    this.pending = undefined;
+    this.completion = undefined;
+  }
+
+  /** Resolve and clear everything on session close. */
+  close(reason: StopReason): void {
+    this.turnId = undefined;
+    this.pending?.resolve(reason);
+    this.pending = undefined;
+    this.completion = undefined;
+    this.cancelled.clear();
+  }
+}

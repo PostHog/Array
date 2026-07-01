@@ -1,4 +1,6 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import { type GatewayModel, isOpenAIModel } from "../../gateway-models";
+import { getReasoningEffortOptions } from "../codex/models";
 
 /**
  * Session config + mode synthesis for the codex app-server adapter.
@@ -131,7 +133,8 @@ function humanizeEffort(effort: string): string {
   return EFFORT_LABELS[effort] ?? effort;
 }
 
-export interface SessionConfigState {
+/** The current selector values `buildConfigOptions` projects into ACP options. */
+export interface ConfigSelectors {
   /** Current permission/collaboration preset id (one of CODEX_MODES). */
   mode: string;
   model: string;
@@ -144,7 +147,7 @@ export interface SessionConfigState {
 
 /** Builds the ACP configOptions (mode + model + thought_level) the host renders. */
 export function buildConfigOptions(
-  s: SessionConfigState,
+  s: ConfigSelectors,
 ): SessionConfigOption[] {
   const baseModels = s.models.length
     ? s.models
@@ -190,4 +193,145 @@ export function buildConfigOptions(
       options: efforts.map((e) => ({ name: humanizeEffort(e), value: e })),
     } as unknown as SessionConfigOption,
   ];
+}
+
+/** A model entry from the app-server's `model/list` (loosely typed). */
+interface RawModel {
+  id?: string;
+  model?: string;
+  displayName?: string;
+  hidden?: boolean;
+  supportedReasoningEfforts?: Array<{ reasoningEffort?: string } | string>;
+}
+
+/**
+ * Stateful holder for a codex session's model / reasoning-effort / mode
+ * selectors and the ACP `configOptions` derived from them.
+ *
+ * The native app-server has no `configOptions` or `mode` concept — it's
+ * configured by `model` + per-turn `approvalPolicy`/`sandbox`/`collaborationMode`
+ * — so this synthesizes the Claude-style picker the host renders, and rebuilds
+ * the options on every change. The agent owns the transport; this owns the state
+ * and its projection through the pure builders above.
+ */
+export class SessionConfigState {
+  private _model: string;
+  private _effort?: string;
+  private _mode = DEFAULT_MODE;
+  private models: Array<{ id: string; name: string }> = [];
+  private efforts: string[] = [];
+  private _options: SessionConfigOption[] = [];
+
+  constructor(model: string, effort?: string) {
+    this._model = model;
+    this._effort = effort;
+    this.rebuild();
+  }
+
+  get model(): string {
+    return this._model;
+  }
+  get effort(): string | undefined {
+    return this._effort;
+  }
+  get mode(): string {
+    return this._mode;
+  }
+  get options(): SessionConfigOption[] {
+    return this._options;
+  }
+
+  /** Apply the host's initial approval mode (from `_meta.permissionMode`). */
+  setInitialMode(permissionMode: string | undefined): void {
+    this._mode = resolveInitialMode(permissionMode);
+    this.rebuild();
+  }
+
+  /**
+   * Apply a `setSessionConfigOption` change. Returns whether the mode changed,
+   * so the caller can emit `current_mode_update`.
+   */
+  setOption(
+    configId: string | undefined,
+    value: unknown,
+  ): { modeChanged: boolean } {
+    let modeChanged = false;
+    if (typeof value === "string") {
+      if (configId === "model") this._model = value;
+      else if (configId === "effort") this._effort = value;
+      else if (configId === "mode") {
+        this._mode = value;
+        modeChanged = true;
+      }
+    }
+    this.rebuild();
+    return { modeChanged };
+  }
+
+  /**
+   * Populate the model + reasoning-effort selectors from a `model/list` `data`
+   * array. model/list comes through the PostHog gateway, which also serves
+   * Claude models, so drop non-OpenAI ones. The gateway doesn't populate
+   * reasoning efforts, so fall back to the shared codex model→effort map (which
+   * surfaces "xhigh" for the gpt-5.5 family); if the gateway starts reporting
+   * efforts they win.
+   */
+  loadModels(rawModels: RawModel[]): void {
+    this.models = rawModels
+      .filter((m) => !m?.hidden)
+      .filter((m) => isOpenAIModel(m as unknown as GatewayModel))
+      .map((m) => ({
+        id: (m.id ?? m.model) as string,
+        name: (m.displayName ?? m.id ?? m.model) as string,
+      }));
+    const current = rawModels.find(
+      (m) => m.id === this._model || m.model === this._model,
+    );
+    const liveEfforts = (current?.supportedReasoningEfforts ?? [])
+      .map((e) => (typeof e === "string" ? e : e?.reasoningEffort))
+      .filter((e): e is string => typeof e === "string");
+    this.efforts = liveEfforts.length
+      ? liveEfforts
+      : getReasoningEffortOptions(this._model).map((o) => o.value);
+    this.rebuild();
+  }
+
+  /** Reset the model/effort lists (model/list failed); keeps the current model. */
+  clearModels(): void {
+    this.models = [];
+    this.efforts = [];
+    this.rebuild();
+  }
+
+  /**
+   * codex's per-turn `collaborationMode` field: `{ mode, settings: { model } }`.
+   * `plan` unlocks plan proposals + request_user_input; `default` reverts. The
+   * model must be a string (not the null in collaborationMode/list output).
+   */
+  collaborationModeForTurn(): unknown {
+    return {
+      mode: collaborationModeFor(this._mode),
+      settings: { model: this._model },
+    };
+  }
+
+  /** The AskForApproval policy for the current mode (turn/start `approvalPolicy`). */
+  approvalPolicy(): string | undefined {
+    return modeApprovalPolicy(this._mode);
+  }
+
+  /** The per-turn sandbox override for the current mode, if any. */
+  sandboxPolicy(): CodexSandboxPolicy | undefined {
+    return sandboxPolicyFor(this._mode);
+  }
+
+  private rebuild(): void {
+    this._options = buildConfigOptions({
+      mode: this._mode,
+      model: this._model,
+      effort: this._effort,
+      models: this.models,
+      efforts: this.efforts,
+    });
+  }
 }

@@ -14,20 +14,14 @@ import type {
   PromptResponse,
   ResumeSessionRequest,
   ResumeSessionResponse,
-  SessionConfigOption,
   SetSessionConfigOptionRequest,
   SetSessionConfigOptionResponse,
   StopReason,
 } from "@agentclientprotocol/sdk";
 import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
 import { POSTHOG_NOTIFICATIONS } from "../../acp-extensions";
-import {
-  DEFAULT_CODEX_MODEL,
-  type GatewayModel,
-  isOpenAIModel,
-} from "../../gateway-models";
+import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
 import type { ProcessSpawnedCallback } from "../../types";
-import { getReasoningEffortOptions as getCodexReasoningEfforts } from "../codex/models";
 import { Logger } from "../../utils/logger";
 import {
   nodeReadableToWebReadable,
@@ -35,7 +29,6 @@ import {
 } from "../../utils/streams";
 import { BaseAcpAgent, type BaseSettingsManager } from "../base-acp-agent";
 import {
-  buildBreakdown,
   type ContextBreakdownBaseline,
   emptyBaseline,
   estimateTokens,
@@ -62,24 +55,20 @@ import {
   mapHistoryItem,
 } from "./mapping";
 import { toCodexMcpServers } from "./mcp-config";
+import { McpManager } from "./mcp-manager";
 import {
   APP_SERVER_METHODS,
   APP_SERVER_NOTIFICATIONS,
   APP_SERVER_REQUESTS,
 } from "./protocol";
-import {
-  buildConfigOptions,
-  collaborationModeFor,
-  DEFAULT_MODE,
-  modeApprovalPolicy,
-  resolveInitialMode,
-  sandboxPolicyFor,
-} from "./session-config";
+import { SessionConfigState } from "./session-config";
 import {
   type CodexAppServerProcess,
   type CodexAppServerProcessOptions,
   spawnCodexAppServerProcess,
 } from "./spawn";
+import { TurnController } from "./turn-controller";
+import { UsageTracker } from "./usage-tracker";
 
 /**
  * Subset of the host-supplied `_meta` the app-server adapter consumes. The host
@@ -166,13 +155,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   readonly adapterName = "codex";
   private readonly rpc: AppServerRpc;
   private readonly proc?: CodexAppServerProcess;
-  // Mutable: switchable mid-session via setSessionConfigOption, applied per-turn.
-  private model: string;
-  private reasoningEffort?: string;
-  private mode = DEFAULT_MODE;
-  private availableModels: Array<{ id: string; name: string }> = [];
-  private availableEfforts: string[] = [];
-  private configOptions: SessionConfigOption[] = [];
+  /** Model / reasoning-effort / mode selectors + the derived configOptions. */
+  private readonly config: SessionConfigState;
   private readonly onStructuredOutput?: (
     output: Record<string, unknown>,
   ) => Promise<void>;
@@ -193,69 +177,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
    * danger-full-access in place there.
    */
   private environment?: "local" | "cloud";
-  /**
-   * In-flight MCP tool calls keyed by item id. Codex has no MCP-specific
-   * approval; depending on the tool it surfaces either a command-execution
-   * approval (correlated by `itemId`) or — for the PostHog server's `exec` —
-   * a generic `mcpServer/elicitation/request` that carries no tool/args. Both
-   * paths recover the real server/tool/args from here (see handleApproval).
-   * Session-scoped and small (one entry per MCP call).
-   */
-  private readonly mcpToolCallsByItemId = new Map<
-    string,
-    { server: string; tool: string; args: unknown }
-  >();
-  /**
-   * The most recently seen MCP tool call. An elicitation approval carries only
-   * `serverName` (no itemId), so it correlates to this rather than the map. MCP
-   * calls are sequential and an elicitation fires while its call is in flight,
-   * so the latest call for the matching server is the right one.
-   */
-  private lastMcpToolCall?: { server: string; tool: string; args: unknown };
-  /** Active turn id from turn/started — the steering precondition + interrupt target. */
-  private turnId?: string;
-  /**
-   * Turn ids we've interrupted. After a real interrupt codex emits a late
-   * turn/completed(interrupted) for the cancelled turn; if a follow-up turn is
-   * already running, that stale completion would otherwise finalize it as
-   * cancelled. We drop the completion for any id in here (once).
-   */
-  private readonly cancelledTurnIds = new Set<string>();
-  /**
-   * Per-source context baseline (systemPrompt floor + skills/mcp estimates) the
-   * usage breakdown is derived from; codex doesn't attribute input tokens.
-   */
-  private contextBreakdownBaseline: ContextBreakdownBaseline = emptyBaseline();
-  /**
-   * Latest live context occupancy — the most recent turn's input tokens
-   * (`tokenUsage.last`, not the cumulative `total`); feeds the breakdown.
-   */
-  private contextUsed?: number;
-  /**
-   * Latest CUMULATIVE thread token totals from thread/tokenUsage (overwritten
-   * latest-wins, since codex reports cumulative `total`). The per-turn usage for
-   * `_posthog/turn_complete` is this minus `turnStartUsage` — matching codex-acp,
-   * which reports per-turn (not cumulative) totals.
-   */
-  private threadUsageTotal = {
-    inputTokens: 0,
-    outputTokens: 0,
-    cachedReadTokens: 0,
-    cachedWriteTokens: 0,
-  };
-  /** Cumulative thread totals snapshotted at the start of the in-flight turn. */
-  private turnStartUsage = {
-    inputTokens: 0,
-    outputTokens: 0,
-    cachedReadTokens: 0,
-    cachedWriteTokens: 0,
-  };
-  private pendingTurn?: {
-    resolve: (reason: StopReason) => void;
-    reject: (err: Error) => void;
-  };
-  /** The in-flight turn's completion promise, so steering can await the original. */
-  private pendingCompletion?: Promise<StopReason>;
+  /** Session MCP tool-call state; correlates approval prompts to the real tool. */
+  private readonly mcp = new McpManager();
+  /** The turn state machine: turnId, pending completion, steer/interrupt races. */
+  private readonly turns = new TurnController();
+  /** Token usage + context-breakdown state, driven by codex's tokenUsage.last. */
+  private readonly usage = new UsageTracker();
 
   constructor(
     client: AgentSideConnection,
@@ -265,8 +192,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.logger =
       options.logger ??
       new Logger({ debug: true, prefix: "[CodexAppServerAgent]" });
-    this.model = options.model ?? DEFAULT_CODEX_MODEL;
-    this.reasoningEffort = options.reasoningEffort;
+    this.config = new SessionConfigState(
+      options.model ?? DEFAULT_CODEX_MODEL,
+      options.reasoningEffort,
+    );
     this.onStructuredOutput = options.onStructuredOutput;
     this.developerInstructions = options.processOptions.developerInstructions;
 
@@ -370,7 +299,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         additionalDirectories: params.additionalDirectories ?? undefined,
       },
     );
-    return { sessionId: threadId, configOptions: this.configOptions };
+    return { sessionId: threadId, configOptions: this.config.options };
   }
 
   /** thread/resume — the host calls this on every reconnect to restore a session. */
@@ -384,7 +313,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       threadId: params.sessionId,
       additionalDirectories: params.additionalDirectories ?? undefined,
     });
-    return { configOptions: this.configOptions };
+    return { configOptions: this.config.options };
   }
 
   /**
@@ -407,7 +336,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       },
     );
     this.replayHistory(thread);
-    return { configOptions: this.configOptions };
+    return { configOptions: this.config.options };
   }
 
   /** thread/fork — branch a new thread from an existing one. */
@@ -424,7 +353,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         additionalDirectories: params.additionalDirectories ?? undefined,
       },
     );
-    return { sessionId: threadId, configOptions: this.configOptions };
+    return { sessionId: threadId, configOptions: this.config.options };
   }
 
   /**
@@ -494,11 +423,11 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.environment = params.meta?.environment;
     // Honor the host's initial approval mode (mirrors codex-acp). A non-codex
     // value falls back to the default; setSessionConfigOption can change it later.
-    this.mode = resolveInitialMode(params.meta?.permissionMode);
+    this.config.setInitialMode(params.meta?.permissionMode);
     // Codex doesn't attribute input tokens by source, so seed the breakdown with
     // the always-resident floor + the host's system prompt (mirrors codex-acp's
     // buildCodexBaseline) and let the live contextUsed count fill conversation.
-    this.contextBreakdownBaseline = buildBaseline(params.meta);
+    this.usage.setBaseline(buildBaseline(params.meta));
     // Codex's own guidance (set at spawn) plus the host's task system prompt.
     // The host sends systemPrompt as `string | { append }` and, for codex, ALSO
     // pre-flattens it into developerInstructions — so flatten the {append} form
@@ -529,7 +458,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     const result = await this.rpc.request<{ thread?: AppServerThread }>(
       method,
       {
-        model: this.model,
+        model: this.config.model,
         cwd: params.cwd,
         ...(params.threadId ? { threadId: params.threadId } : {}),
         ...(developerInstructions ? { developerInstructions } : {}),
@@ -544,7 +473,6 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.threadId = threadId;
     this.sessionId = threadId;
     await this.loadModelConfig();
-    this.rebuildConfigOptions();
     this.emitConfigOptions();
     await this.emitAvailableCommands();
     // Map the host's taskRunId to this session so it can resume later. Mirrors
@@ -596,19 +524,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   ): Promise<SetSessionConfigOptionResponse> {
     const { configId } = params as { configId?: string };
     const value = (params as { value?: unknown }).value;
-    if (typeof value === "string") {
-      if (configId === "model") this.model = value;
-      else if (configId === "effort") this.reasoningEffort = value;
-      else if (configId === "mode") {
-        this.mode = value;
-        this.emitCurrentMode(value);
-        // collaborationMode rides the next turn/start (see prompt()), so nothing
-        // to push here — the switch takes effect on the next turn.
-      }
-    }
-    this.rebuildConfigOptions();
+    const { modeChanged } = this.config.setOption(configId, value);
+    // collaborationMode rides the next turn/start (see prompt()), so a mode
+    // switch only needs current_mode_update here — it takes effect next turn.
+    if (modeChanged) this.emitCurrentMode(this.config.mode);
     this.emitConfigOptions();
-    return { configOptions: this.configOptions };
+    return { configOptions: this.config.options };
   }
 
   /** codex-acp emits current_mode_update on mode change; mirror it for the host's mode cache. */
@@ -622,23 +543,6 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       .catch(() => undefined);
   }
 
-  /**
-   * codex's collaboration mode for this turn, sent as the `turn/start`
-   * `collaborationMode` field — `plan` unlocks plan proposals + request_user_input;
-   * `default` is the normal coding mode. Sent on EVERY turn (not just Plan):
-   * codex's collaboration mode is sticky, so switching Plan→Default must push
-   * `default` explicitly to revert — omitting it leaves the thread in Plan. The
-   * shape is `{ mode, settings: { model } }` (NOT the verbatim collaborationMode/list
-   * output, whose model is null) — model must be a string, so we pass the current
-   * model; the turn's own `effort` field handles reasoning.
-   */
-  private collaborationModeForTurn(): unknown {
-    return {
-      mode: collaborationModeFor(this.mode),
-      settings: { model: this.model },
-    };
-  }
-
   /** Populate the model/effort selectors from the app-server's model/list. */
   private async loadModelConfig(): Promise<void> {
     try {
@@ -646,47 +550,13 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         APP_SERVER_METHODS.MODEL_LIST,
         {},
       );
-      const models = res?.data ?? [];
-      this.availableModels = models
-        .filter((m) => !m?.hidden)
-        // model/list comes through the PostHog gateway, which also serves Claude
-        // models; a codex session must only offer codex (OpenAI) models, so drop
-        // the rest (mirrors the isOpenAIModel filter the creation picker uses).
-        .filter((m) => isOpenAIModel(m as unknown as GatewayModel))
-        .map((m) => ({
-          id: m.id ?? m.model,
-          name: m.displayName ?? m.id ?? m.model,
-        }));
-      const current = models.find(
-        (m) => m.id === this.model || m.model === this.model,
-      );
-      const liveEfforts = (current?.supportedReasoningEfforts ?? [])
-        .map((e: any) => e?.reasoningEffort ?? e)
-        .filter((e: unknown): e is string => typeof e === "string");
-      // The gateway's model/list doesn't populate reasoning efforts, so fall
-      // back to the shared codex model→effort map (the same source the creation
-      // picker uses) — this surfaces "xhigh" for the gpt-5.5 family instead of
-      // capping at "high". If the gateway starts reporting efforts they win.
-      this.availableEfforts = liveEfforts.length
-        ? liveEfforts
-        : getCodexReasoningEfforts(this.model).map((o) => o.value);
+      this.config.loadModels(res?.data ?? []);
     } catch (err) {
       this.logger.warn("model/list failed; using current model only", {
         error: String(err),
       });
-      this.availableModels = [];
-      this.availableEfforts = [];
+      this.config.clearModels();
     }
-  }
-
-  private rebuildConfigOptions(): void {
-    this.configOptions = buildConfigOptions({
-      mode: this.mode,
-      model: this.model,
-      effort: this.reasoningEffort,
-      models: this.availableModels,
-      efforts: this.availableEfforts,
-    });
   }
 
   private emitConfigOptions(): void {
@@ -696,7 +566,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         sessionId: this.sessionId,
         update: {
           sessionUpdate: "config_option_update",
-          configOptions: this.configOptions,
+          configOptions: this.config.options,
         },
       } as unknown as Parameters<AgentSideConnection["sessionUpdate"]>[0])
       .catch((err) => this.logger.warn("config_option_update failed", err));
@@ -775,47 +645,44 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     // for both fresh turns and steering so the folded message still renders.
     this.broadcastUserInput(params.prompt);
 
-    if (this.pendingTurn && this.turnId) {
+    if (this.turns.isRunning) {
       // A turn is already running: rather than fail (the codex-acp/Claude
       // behavior is to fold the message in), steer it via turn/steer with the
-      // active turnId as the precondition. The existing pendingTurn keeps
-      // resolving on the original turn/completed.
-      // turn/steer returns the (possibly rotated) active turnId; refresh
-      // this.turnId so a later turn/steer's expectedTurnId precondition and a
-      // turn/interrupt still target the live turn (turn/started is not re-emitted
-      // for a steer).
+      // active turnId as the precondition. The existing turn keeps resolving on
+      // its original turn/completed.
+      // turn/steer returns the (possibly rotated) active turnId; refresh it so a
+      // later turn/steer's expectedTurnId precondition and a turn/interrupt still
+      // target the live turn (turn/started is not re-emitted for a steer).
       const steerRes = await this.rpc
         .request<{ turnId?: string }>(APP_SERVER_METHODS.TURN_STEER, {
           threadId: this.threadId,
           input,
-          expectedTurnId: this.turnId,
+          expectedTurnId: this.turns.activeTurnId,
         })
         .catch((err) => {
           this.logger.warn("turn/steer failed", err);
           return undefined;
         });
-      if (typeof steerRes?.turnId === "string") this.turnId = steerRes.turnId;
-      return { stopReason: await this.pendingTurnCompletion() };
+      this.turns.onSteered(steerRes?.turnId);
+      return { stopReason: await this.turns.awaitCompletion() };
     }
-    if (this.pendingTurn) {
+    if (this.turns.isPending) {
       // A turn is pending but we never saw turn/started (no turnId yet), so we
-      // can't steer. Fail fast rather than clobber the single pendingTurn slot.
+      // can't steer. Fail fast rather than clobber the single pending slot.
       throw new Error("prompt() called while a turn is already in progress");
     }
 
     this.lastAgentMessage = "";
     this.resetUsage();
-    const completion = new Promise<StopReason>((resolve, reject) => {
-      this.pendingTurn = { resolve, reject };
-    });
-    this.pendingCompletion = completion;
+    const completion = this.turns.begin();
     try {
-      const approvalPolicy = modeApprovalPolicy(this.mode);
+      const approvalPolicy = this.config.approvalPolicy();
+      const sandboxPolicy = this.config.sandboxPolicy();
       await this.rpc.request(APP_SERVER_METHODS.TURN_START, {
         threadId: this.threadId,
         input,
-        model: this.model,
-        ...(this.reasoningEffort ? { effort: this.reasoningEffort } : {}),
+        model: this.config.model,
+        ...(this.config.effort ? { effort: this.config.effort } : {}),
         // Always request a reasoning summary so the host surfaces thinking; the
         // default "auto" can skip summaries on trivial turns (and raw reasoning
         // is off, so without this the host sees no thought stream at all).
@@ -831,9 +698,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         // binary). Sent every turn — plan unlocks plan proposals +
         // request_user_input, default reverts; codex remembers the last mode, so
         // it must be pushed explicitly to switch back.
-        collaborationMode: this.collaborationModeForTurn(),
-        ...(this.environment !== "cloud" && sandboxPolicyFor(this.mode)
-          ? { sandboxPolicy: sandboxPolicyFor(this.mode) }
+        collaborationMode: this.config.collaborationModeForTurn(),
+        ...(this.environment !== "cloud" && sandboxPolicy
+          ? { sandboxPolicy }
           : {}),
         // Constrain the final assistant message to the task's schema so it is
         // valid JSON we can parse for structured output (replaces the codex-acp
@@ -842,8 +709,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       });
       return { stopReason: await completion };
     } finally {
-      this.pendingTurn = undefined;
-      this.pendingCompletion = undefined;
+      this.turns.finishPrompt();
     }
   }
 
@@ -868,16 +734,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
   }
 
-  private pendingTurnCompletion(): Promise<StopReason> {
-    return this.pendingCompletion ?? Promise.resolve("end_turn");
-  }
-
   private resetUsage(): void {
-    // Snapshot the cumulative thread total at turn start; finalizeTurn reports
-    // the delta as the per-turn usage. (Cumulative only grows, so the delta is
-    // always >= 0, including 0 for a turn that consumes no tokens.)
-    this.turnStartUsage = { ...this.threadUsageTotal };
-    this.contextUsed = undefined;
+    this.usage.resetForTurn();
   }
 
   protected async interrupt(): Promise<void> {
@@ -887,18 +745,17 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     // finalizeTurn claims the turn idempotently, so the server's later
     // turn/completed(interrupted) is a no-op.
     // TurnInterruptParams requires BOTH threadId and turnId (the native binary
-    // rejects a turnId-less request with -32600, leaving the turn running). The
-    // live turnId is captured from turn/started and is still set here —
-    // finalizeTurn clears it afterwards. When no turn/started was seen yet there
-    // is no server-side turn to abort, so skip the RPC and just finalize.
-    if (this.threadId && this.turnId) {
-      // Remember it so its late turn/completed(interrupted) is dropped rather
-      // than finalizing a follow-up turn.
-      this.cancelledTurnIds.add(this.turnId);
+    // rejects a turnId-less request with -32600, leaving the turn running).
+    // markInterrupted returns the live turnId (and remembers it so its late
+    // turn/completed(interrupted) is dropped rather than finalizing a follow-up
+    // turn). When no turn/started was seen yet there is no server-side turn to
+    // abort, so skip the RPC and just finalize.
+    const turnId = this.turns.markInterrupted();
+    if (this.threadId && turnId) {
       await this.rpc
         .request(APP_SERVER_METHODS.TURN_INTERRUPT, {
           threadId: this.threadId,
-          turnId: this.turnId,
+          turnId,
         })
         .catch((err) => this.logger.warn("turn/interrupt failed", err));
     }
@@ -907,13 +764,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   async closeSession(): Promise<void> {
     this.session.abortController.abort();
-    this.turnId = undefined;
-    this.pendingTurn?.resolve("cancelled");
-    this.pendingTurn = undefined;
-    // Drain any interrupted-turn ids still awaiting their late completion so the
-    // set can't accumulate across a long-lived process (each entry is normally
-    // removed when that completion arrives, but a dropped one would linger).
-    this.cancelledTurnIds.clear();
+    // Resolve any in-flight turn and drain interrupted-turn ids so the set can't
+    // accumulate across a long-lived process (each is normally removed when its
+    // late completion arrives, but a dropped one would linger).
+    this.turns.close("cancelled");
     this.session.settingsManager.dispose();
     // Close the transport BEFORE killing the process: kill() destroys the
     // stdio streams, so awaiting writer.close()/reader.cancel() afterwards
@@ -941,19 +795,18 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       }
     }
 
-    if (method === APP_SERVER_NOTIFICATIONS.TURN_STARTED && this.pendingTurn) {
+    if (method === APP_SERVER_NOTIFICATIONS.TURN_STARTED) {
       // Capture the active turn id; it's the precondition turn/steer requires
-      // and the target turn/interrupt aborts. Gated on an active turn so a
-      // stale/duplicate turn/started can't install a turnId with no turn.
-      const id = (params as { turn?: { id?: string } })?.turn?.id;
-      if (typeof id === "string") this.turnId = id;
+      // and the target turn/interrupt aborts. onStarted ignores it unless a turn
+      // is pending, so a stale/duplicate turn/started can't install a stray id.
+      this.turns.onStarted((params as { turn?: { id?: string } })?.turn?.id);
     }
 
     if (
       method === APP_SERVER_NOTIFICATIONS.ITEM_STARTED ||
       method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED
     ) {
-      this.captureMcpToolCall(params);
+      this.mcp.capture(params);
     }
 
     if (method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED) {
@@ -969,7 +822,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         ?.turn;
       // Drop the late completion of a turn we already interrupted so it can't
       // finalize the current (follow-up) turn as cancelled.
-      if (turn?.id && this.cancelledTurnIds.delete(turn.id)) return;
+      if (this.turns.shouldDropCompletion(turn?.id)) return;
       void this.finalizeTurn(mapTurnStopReason(turn?.status));
     }
 
@@ -986,31 +839,6 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
   }
 
-  /** Remember an MCP tool call's server/tool/args so a later approval prompt for
-   * the same item can render the real tool instead of codex's generic text. */
-  private captureMcpToolCall(params: unknown): void {
-    const item = (
-      params as {
-        item?: {
-          type?: string;
-          id?: string;
-          server?: string;
-          tool?: string;
-          arguments?: unknown;
-        };
-      }
-    )?.item;
-    if (item?.type === "mcpToolCall" && item.id && item.server && item.tool) {
-      const call = {
-        server: item.server,
-        tool: item.tool,
-        args: item.arguments,
-      };
-      this.mcpToolCallsByItemId.set(item.id, call);
-      this.lastMcpToolCall = call;
-    }
-  }
-
   /** Track the latest assistant message so the final one feeds structured output. */
   private captureAgentMessage(params: unknown): void {
     const item = (params as { item?: { type?: string; text?: string } })?.item;
@@ -1022,42 +850,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   /** Mirror codex-acp's `_posthog/usage_update` so the host's token/cost UI fills. */
   private emitUsageExtNotification(params: unknown): void {
     if (!this.sessionId) return;
-    const tu = (params as { tokenUsage?: any })?.tokenUsage;
-    const total = tu?.total;
-    if (!total) return;
-    // `total` is the cumulative thread total, so overwrite (latest wins). The
-    // per-turn delta is computed against turnStartUsage in finalizeTurn.
-    this.threadUsageTotal = {
-      inputTokens: total.inputTokens ?? 0,
-      outputTokens: total.outputTokens ?? 0,
-      cachedReadTokens: total.cachedInputTokens ?? 0,
-      // codex's app-server TokenUsage.total has no cache-write/creation field
-      // (unlike the codex-acp upstream stream), so there is nothing to report —
-      // 0 is authoritative here, not a dropped value.
-      cachedWriteTokens: 0,
-    };
-    // Context-window occupancy is the MOST RECENT turn's usage, not the
-    // cumulative `total`. codex's ThreadTokenUsage is `{ total, last,
-    // modelContextWindow }`; `total` grows every turn, so using it over-reports
-    // the window as "filling up" purely from accumulation (e.g. a 189k context
-    // shown as 433k). `last` is this turn's breakdown — what actually occupies
-    // the window — matching codex's own context-left math. Fall back to `total`
-    // only if a build predates `last` (turn one, where last≈total anyway).
-    const context = tu.last ?? total;
-    // Drives the per-source breakdown's "conversation" bucket on turn complete.
-    this.contextUsed = context.inputTokens ?? context.totalTokens;
+    const update = this.usage.ingest(params);
+    if (!update) return;
     void this.client
       .extNotification(POSTHOG_NOTIFICATIONS.USAGE_UPDATE, {
         sessionId: this.sessionId,
-        used: context.totalTokens,
-        size: tu.modelContextWindow ?? null,
-        usage: {
-          inputTokens: context.inputTokens,
-          outputTokens: context.outputTokens,
-          cachedReadTokens: context.cachedInputTokens,
-          reasoningTokens: context.reasoningOutputTokens,
-          totalTokens: context.totalTokens,
-        },
+        ...update,
       })
       .catch((err) => this.logger.warn("usage extNotification failed", err));
   }
@@ -1071,32 +869,15 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     // Idempotent: claim the pending turn synchronously (before any await) so a
     // second finalize for the same turn — e.g. an `error` notification racing
     // turn/completed — is a no-op and the structured-output callback + cloud
-    // notifications don't double-fire.
-    const pending = this.pendingTurn;
+    // notifications don't double-fire. claim() clears both the pending slot and
+    // the turnId in one step, so a steer/fresh prompt racing into the await
+    // window below sees no live turn.
+    const pending = this.turns.claim();
     if (!pending) return;
-    // Claim the whole turn synchronously (before any await): clear pendingTurn
-    // AND turnId, and snapshot the turn-scoped telemetry. Otherwise a steer
-    // prompt() or a fresh turn racing into the await window below would see a
-    // live turnId with no pendingTurn (misrouting a steer into a new turn) or
-    // zero this turn's usage via the next turn's resetUsage().
-    this.pendingTurn = undefined;
-    this.turnId = undefined;
     const message = this.lastAgentMessage;
-    // Per-turn usage = cumulative thread total now − the snapshot at turn start
-    // (matches codex-acp's per-turn turn_complete, not a thread-cumulative total).
-    const usage = {
-      inputTokens:
-        this.threadUsageTotal.inputTokens - this.turnStartUsage.inputTokens,
-      outputTokens:
-        this.threadUsageTotal.outputTokens - this.turnStartUsage.outputTokens,
-      cachedReadTokens:
-        this.threadUsageTotal.cachedReadTokens -
-        this.turnStartUsage.cachedReadTokens,
-      cachedWriteTokens:
-        this.threadUsageTotal.cachedWriteTokens -
-        this.turnStartUsage.cachedWriteTokens,
-    };
-    const contextUsed = this.contextUsed;
+    // Per-turn usage is codex's own `tokenUsage.last` (not a reconstructed delta).
+    const usage = this.usage.perTurnUsage();
+    const contextUsed = this.usage.contextTokens();
 
     if (this.jsonSchema && this.onStructuredOutput && message) {
       const parsed = parseStructuredOutput(message);
@@ -1151,7 +932,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
           POSTHOG_NOTIFICATIONS.USAGE_UPDATE,
           buildUsageBreakdownParams(
             this.sessionId,
-            this.contextBreakdownBaseline,
+            this.usage.baselineBreakdown,
             contextUsed,
           ) as unknown as Record<string, unknown>,
         )
@@ -1162,10 +943,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   private handleServerClosed(): void {
-    this.pendingTurn?.reject(
+    this.turns.fail(
       new Error("codex app-server exited before the turn completed"),
     );
-    this.pendingTurn = undefined;
   }
 
   /**
@@ -1184,10 +964,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     const richer = await handleServerRequest(method, params, this.client, {
       sessionId: this.sessionId,
       logger: this.logger,
-      resolveMcpToolCall: (serverName) =>
-        this.lastMcpToolCall?.server === serverName
-          ? this.lastMcpToolCall
-          : undefined,
+      resolveMcpToolCall: (serverName) => this.mcp.byServer(serverName),
     });
     if (richer.handled) {
       return richer.response;
@@ -1226,9 +1003,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     // command-execution approval. When the item is a known MCP call, surface the
     // real server/tool/args so the host renders the proper MCP permission
     // (incl. the PostHog `exec` unwrapping) instead of codex's generic text.
-    const mcp = detail.itemId
-      ? this.mcpToolCallsByItemId.get(detail.itemId)
-      : undefined;
+    const mcp = this.mcp.byItemId(detail.itemId);
     // Set kind + content so the host routes plain command/file approvals to
     // ExecutePermission / EditPermission (command styling, diff body) rather
     // than the bare DefaultPermission fallback.
@@ -1303,15 +1078,15 @@ export class CodexAppServerAgent extends BaseAcpAgent {
           // codex's approval response carries no feedback field, so decline the
           // action and inject the user's guidance into the still-running turn —
           // exactly what codex's TUI does (Denied + a follow-up user message).
-          const feedback = (
-            response as { _meta?: { customInput?: unknown } }
-          )._meta?.customInput;
-          if (typeof feedback === "string" && feedback.trim() && this.turnId) {
+          const feedback = (response as { _meta?: { customInput?: unknown } })
+            ._meta?.customInput;
+          const activeTurnId = this.turns.activeTurnId;
+          if (typeof feedback === "string" && feedback.trim() && activeTurnId) {
             void this.rpc
               .request(APP_SERVER_METHODS.TURN_STEER, {
                 threadId: this.threadId,
                 input: toCodexInput([{ type: "text", text: feedback.trim() }]),
-                expectedTurnId: this.turnId,
+                expectedTurnId: activeTurnId,
               })
               .catch((err) =>
                 this.logger.warn("turn/steer (reject feedback) failed", err),

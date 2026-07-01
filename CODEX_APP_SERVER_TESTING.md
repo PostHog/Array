@@ -224,6 +224,29 @@ proposes and can't edit. (Creation now also offers Plan — `execution-mode.ts` 
   defensible against a non-deterministic model; tighten only if a real regression motivates it. The
   CI guard remains the unit layer (e2e does not run in CI).
 - [ ] **Reasoning live trigger (#11)** — unchanged from above.
-- [ ] **structured-output `MessagePhase` (#25)** / **mcp partial-fields** — deferred: no evidence
-  codex's `agentMessage` carries a phase discriminator, and the `server && tool` cache guard is
-  correct (caching partial entries would render "undefined"). Revisit only with a real repro.
+- [ ] **structured-output `MessagePhase` (#25)** — deferred pending a live probe. The binary DOES
+  define a `MessagePhase` enum (`"final_answer"` / `"commentary"`) that "classifies an assistant
+  message", and `AgentMessageItem` has 4 elements — so the concept exists. But the ACP session logs
+  are post-translation (they carry `agent_message_chunk`, not the raw codex item), so I could not
+  confirm the **wire field name** (`phase`?) on the `item/completed` `agentMessage` we receive.
+  Rather than add speculative code, capture a real `agentMessage` item during the e2e round; if it
+  carries the phase, wire `captureAgentMessage` to keep the `final_answer` message (so a trailing
+  `commentary` can't clobber the structured-output source) with a last-wins fallback.
+- [ ] **mcp partial-fields** — the `server && tool` cache guard is correct (caching partial entries
+  would render "undefined"). Revisit only with a real repro.
+
+## God-class refactor (agent file 1424 → 1201 lines, 47 → 31 fields)
+`codex-app-server-agent.ts` was split into four focused collaborators, each behavior-preserving and
+guarded by the existing 142 unit tests (all green + typecheck + lint clean at every step):
+- **`TurnController`** (`turn-controller.ts`) — the turn state machine: `turnId`, pending completion,
+  the atomic `claim()`, steer folding, and the interrupted-turn drop set.
+- **`UsageTracker`** (`usage-tracker.ts`) — token usage + context breakdown. Folds in **native
+  delegation win #1**: per-turn usage now comes from codex's `tokenUsage.last` directly, deleting the
+  cumulative-snapshot delta machinery (`threadUsageTotal`/`turnStartUsage`). Needs a live e2e sanity
+  check that per-turn numbers look right across turns.
+- **`SessionConfigState`** (in `session-config.ts`) — model / effort / mode selectors + the derived
+  `configOptions` (the old input interface was renamed `ConfigSelectors`).
+- **`McpManager`** (`mcp-manager.ts`) — session MCP tool-call state; correlates approval prompts to
+  the real tool.
+The 140-line `handleApproval` was **deliberately left inline** — it's coupled orchestration (needs
+rpc/client/turnId/mcp), so extracting it would just relocate the coupling.
