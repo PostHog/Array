@@ -1,3 +1,4 @@
+import { isTaskActivelyRunning } from "@posthog/core/sidebar/taskRunning";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { Separator } from "@posthog/quill";
 import type { Task } from "@posthog/shared/types";
@@ -11,10 +12,7 @@ import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTa
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
-import {
-  type TaskData,
-  useSidebarData,
-} from "@posthog/ui/features/sidebar/useSidebarData";
+import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
@@ -39,10 +37,6 @@ import { TaskListView } from "./TaskListView";
 import { TasksHeader } from "./TasksHeader";
 
 const log = logger.scope("sidebar-menu");
-
-function isTaskActivelyRunning(task: TaskData): boolean {
-  return task.taskRunStatus === "in_progress" || task.isGenerating;
-}
 
 function SidebarMenuComponent() {
   const hostClient = useHostTRPCClient();
