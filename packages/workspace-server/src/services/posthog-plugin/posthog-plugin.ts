@@ -211,10 +211,10 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
       });
 
       if (result.success) {
+        await this.persistLastCheck(now);
         // Only signal listeners when the cache actually changed; an empty
         // download cycle succeeds as a no-op (result.data.updated === false).
         if (result.data.updated) {
-          await this.persistLastCheck(now);
           this.emit("skillsUpdated", true);
         }
       } else {

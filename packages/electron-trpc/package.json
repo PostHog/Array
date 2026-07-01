@@ -32,12 +32,12 @@
     "@trpc/client": "^11.8.0",
     "@trpc/server": "^11.8.0",
     "@types/node": "^24.0.0",
-    "@vitest/coverage-v8": "^2.1.8",
+    "@vitest/coverage-v8": "^4.1.8",
     "electron": "^42.3.0",
     "superjson": "^2.2.2",
     "typescript": "^5.8.3",
     "vite": "^7.0.0",
-    "vitest": "^2.1.8",
+    "vitest": "^4.1.8",
     "zod": "^4.2.0"
   },
   "peerDependencies": {
