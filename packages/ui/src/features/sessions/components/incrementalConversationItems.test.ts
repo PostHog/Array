@@ -277,6 +277,42 @@ describe("createIncrementalConversationBuilder", () => {
     },
   );
 
+  // Stream every event (populating the persistent builder), then flip to idle
+  // so the turn end takes the finalize-in-place path rather than a full rebuild.
+  it.each(Object.entries(SCENARIOS))(
+    "finalizes in place equivalently after streaming — %s",
+    (_name, events) => {
+      const inc = createIncrementalConversationBuilder();
+      for (let k = 1; k <= events.length; k++) {
+        inc.update(events.slice(0, k), true);
+      }
+      expect(normalize(inc.update(events, false))).toEqual(
+        normalize(buildConversationItems(events, false)),
+      );
+    },
+  );
+
+  it("stays equivalent when streaming resumes after an in-place finalize", () => {
+    const events = SCENARIOS["multi-turn with tools"];
+    const inc = createIncrementalConversationBuilder();
+    const firstTurnEnd = 7; // through promptResponseMsg(7, 1)
+
+    for (let k = 1; k <= firstTurnEnd; k++)
+      inc.update(events.slice(0, k), true);
+    // Idle after turn 1 → finalize-in-place, which resets the builder.
+    expect(normalize(inc.update(events.slice(0, firstTurnEnd), false))).toEqual(
+      normalize(buildConversationItems(events.slice(0, firstTurnEnd), false)),
+    );
+
+    // Resume streaming turn 2 on the reset builder, then idle again.
+    for (let k = firstTurnEnd + 1; k <= events.length; k++) {
+      inc.update(events.slice(0, k), true);
+    }
+    expect(normalize(inc.update(events, false))).toEqual(
+      normalize(buildConversationItems(events, false)),
+    );
+  });
+
   it("keeps completed-turn item references stable while the active turn streams", () => {
     const inc = createIncrementalConversationBuilder();
     const base = [
