@@ -2721,6 +2721,7 @@ export class SessionService {
       resumeFromEntryCount,
       undefined,
       initialReasoningEffort,
+      newRun.state,
     );
 
     this.d.queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -3326,6 +3327,7 @@ export class SessionService {
     resumeFromEntryCount?: number,
     runStatus?: TaskRunStatus,
     initialReasoningEffort?: string,
+    runState?: Record<string, unknown>,
   ): () => void {
     const taskRunId = runId;
 
@@ -3467,6 +3469,7 @@ export class SessionService {
         logUrl,
         taskDescription,
         runStatus,
+        runState,
       );
     }
 
@@ -3552,14 +3555,17 @@ export class SessionService {
     logUrl?: string,
     taskDescription?: string,
     runStatus?: TaskRunStatus,
+    runState?: Record<string, unknown>,
   ): void {
     void (async () => {
       let rawEntries: StoredLogEntry[];
       let totalLineCount: number;
-      if (isTerminalStatus(runStatus)) {
-        // Terminal runs: fetch the full resume chain (matches the snapshot) so a
-        // resumed run isn't under-counted. In-progress runs use the single-run
-        // log so hydrate can't race the live stream and double the active turn.
+      const isResumeRun = Boolean(runState?.resume_from_run_id);
+      if (isTerminalStatus(runStatus) || isResumeRun) {
+        // Resume chains need the full history even while the leaf run is still
+        // active; otherwise a renderer restart hydrates only the final run.
+        // Non-resume in-progress runs keep using the single-run log so hydrate
+        // cannot race the live stream and double the active turn.
         const authStatus = await this.getAuthCredentialsStatus();
         if (authStatus.kind !== "ready") {
           return;
@@ -3614,6 +3620,7 @@ export class SessionService {
       if (hasUserPrompt) {
         // The real prompt has landed; the stash is no longer needed.
         this.initialCloudOptimisticPrompt.delete(taskId);
+        this.d.store.clearTailOptimisticItems(taskRunId);
       }
 
       if (rawEntries.length === 0) {
@@ -4151,6 +4158,7 @@ export class SessionService {
       undefined,
       task.latest_run?.status,
       initialReasoningEffort,
+      task.latest_run?.state,
     );
   }
 
