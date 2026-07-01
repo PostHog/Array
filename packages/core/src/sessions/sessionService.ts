@@ -109,6 +109,13 @@ const SESSION_EVENT_FLUSH_MS = 16;
  * evicted transcript.
  */
 const SESSION_EVENT_EVICT_GRACE_MS = 20_000;
+/**
+ * On open, paint the last this-many bytes of the log immediately so a big
+ * transcript shows its latest turns in tens of ms, while the authoritative
+ * full read + connect completes behind it. ~1.5MB is a few hundred entries —
+ * plenty for the initial (scrolled-to-bottom) view.
+ */
+const OPEN_TAIL_BYTES = 1_500_000;
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
   constructor(
@@ -695,6 +702,11 @@ export class SessionService {
           this.d.store.setSession(session);
           return;
         }
+
+        // Paint the log tail immediately so a big transcript is visible in tens
+        // of ms; the full read + reconnect below replaces it with the
+        // authoritative session.
+        await this.paintTailFirst(existingRunId, taskId, taskTitle, logUrl);
 
         const [workspaceResult, logResult] = await Promise.all([
           this.d.trpc.workspace.verify.query({ taskId }),
@@ -4793,6 +4805,43 @@ export class SessionService {
       onParseError: (line) =>
         this.d.log.warn("Failed to parse log entry", { line }),
     });
+  }
+
+  /**
+   * Paint the tail of a task's local log immediately so a big transcript shows
+   * its latest turns in tens of ms, instead of blocking on the full-log read +
+   * IPC transfer. This is a throwaway fast-paint: the authoritative full read +
+   * connect (`reconnectToLocalSession`) replaces this session shortly after with
+   * correct processed-line tracking. No-op when a session already exists, the
+   * host doesn't expose the tail read, or there's no local log.
+   */
+  private async paintTailFirst(
+    taskRunId: string,
+    taskId: string,
+    taskTitle: string,
+    logUrl: string,
+  ): Promise<void> {
+    const tailQuery = this.d.trpc.logs.readLocalLogsTail;
+    if (!tailQuery) return;
+    if (this.d.store.getSessionByTaskId(taskId)) return;
+    try {
+      const res = (await tailQuery.query({
+        taskRunId,
+        maxBytes: OPEN_TAIL_BYTES,
+      })) as { content: string; truncated: boolean } | null;
+      if (!res?.content?.trim()) return;
+      // The full read may have set the session while we awaited the tail.
+      if (this.d.store.getSessionByTaskId(taskId)) return;
+      const { rawEntries } = this.parseLogContent(res.content);
+      if (rawEntries.length === 0) return;
+      const session = createBaseSession(taskRunId, taskId, taskTitle);
+      session.events = convertStoredEntriesToEvents(rawEntries);
+      session.logUrl = logUrl;
+      session.status = "connecting";
+      this.d.store.setSession(session);
+    } catch (error) {
+      this.d.log.debug("Tail-first paint skipped", { taskId, error });
+    }
   }
 
   private async fetchSessionLogs(
