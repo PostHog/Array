@@ -1234,6 +1234,38 @@ describe("AgentServer HTTP Mode", () => {
         { timeout: 15000, interval: 100 },
       );
     }, 30000);
+
+    it("emits a completed _posthog/progress for the agent step after session initialization", async () => {
+      await createServer().start();
+
+      // Resolves the setup card's "agent" step on the agent-proxy read leg,
+      // where the orchestrator's Django-only progress event never arrives.
+      await vi.waitFor(
+        () => {
+          const allEntries = appendLogCalls.flat() as Array<{
+            notification?: {
+              method?: string;
+              params?: Record<string, unknown>;
+            };
+          }>;
+          const agentProgress = allEntries.find(
+            (e) =>
+              e?.notification?.method === "_posthog/progress" &&
+              e?.notification?.params?.step === "agent",
+          );
+          expect(agentProgress).toBeDefined();
+          expect(agentProgress?.notification?.params).toMatchObject({
+            group: "setup:test-run-id",
+            step: "agent",
+            status: "completed",
+          });
+          expect(typeof agentProgress?.notification?.params?.label).toBe(
+            "string",
+          );
+        },
+        { timeout: 15000, interval: 100 },
+      );
+    }, 30000);
   });
 
   describe("getInitialPromptOverride", () => {

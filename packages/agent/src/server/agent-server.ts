@@ -1336,6 +1336,28 @@ export class AgentServer {
       JSON.stringify(runStartedNotification),
     );
 
+    // Mirror the "agent" setup step onto the ingest leg the client is reading;
+    // the orchestrator's completed progress only lands in Django.
+    const agentStartedProgress = {
+      jsonrpc: "2.0" as const,
+      method: POSTHOG_NOTIFICATIONS.PROGRESS,
+      params: {
+        group: `setup:${payload.run_id}`,
+        step: "agent",
+        status: "completed",
+        label: "Started agent",
+      },
+    };
+    this.broadcastEvent({
+      type: "notification",
+      timestamp: new Date().toISOString(),
+      notification: agentStartedProgress,
+    });
+    this.session.logWriter.appendRawLine(
+      payload.run_id,
+      JSON.stringify(agentStartedProgress),
+    );
+
     // Signal in_progress so the UI can start polling for updates
     this.posthogAPI
       .updateTaskRun(payload.task_id, payload.run_id, {
