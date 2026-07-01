@@ -279,6 +279,8 @@ export function useTaskCreation({
         }
       }
 
+      let createdTaskId: string | undefined;
+
       try {
         if (!contentOverride) {
           const plainText = editor.getText()?.trim() ?? plainPromptText;
@@ -341,6 +343,7 @@ export function useTaskCreation({
             if (signalReportId) {
               clearTaskInputReportAssociation();
             }
+            createdTaskId = output.task.id;
             if (pendingTaskKey) {
               pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
             }
@@ -376,6 +379,17 @@ export function useTaskCreation({
         }
 
         if (result.success) {
+          const provisioningFailed =
+            "provisioningError" in result &&
+            !!(result as { provisioningError?: unknown }).provisioningError;
+          if (!provisioningFailed) {
+            if (pendingTaskKey) {
+              pendingTaskPromptStoreApi.clear(pendingTaskKey);
+            }
+            if (createdTaskId) {
+              pendingTaskPromptStoreApi.clear(createdTaskId);
+            }
+          }
           setAdditionalDirectoriesOverride(null);
           // Guarantee the editor draft is wiped on success. editor.clear()
           // above only runs inside the onTaskReady callback (and after it
@@ -412,6 +426,9 @@ export function useTaskCreation({
           }
           if (pendingTaskKey) {
             pendingTaskPromptStoreApi.clear(pendingTaskKey);
+            if (createdTaskId) {
+              pendingTaskPromptStoreApi.clear(createdTaskId);
+            }
             openTaskInput({ initialPrompt: plainPromptText });
           }
         }
@@ -423,6 +440,9 @@ export function useTaskCreation({
         log.error("Unexpected error during task creation", { error });
         if (pendingTaskKey) {
           pendingTaskPromptStoreApi.clear(pendingTaskKey);
+          if (createdTaskId) {
+            pendingTaskPromptStoreApi.clear(createdTaskId);
+          }
           openTaskInput({ initialPrompt: plainPromptText });
         }
         return false;

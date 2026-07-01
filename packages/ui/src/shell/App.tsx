@@ -18,6 +18,7 @@ import { OnboardingFlow } from "@posthog/ui/features/onboarding/components/Onboa
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import { SettingsDialog } from "@posthog/ui/features/settings/SettingsDialog";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
+import { PendingPromptRecovery } from "@posthog/ui/features/task-detail/components/PendingPromptRecovery";
 import { LoginTransition } from "@posthog/ui/primitives/LoginTransition";
 import { router } from "@posthog/ui/router/router";
 import { track } from "@posthog/ui/shell/analytics";
@@ -165,6 +166,7 @@ function App() {
             from anywhere in the app. Sibling of the router so it stays mounted
             across every route (not just the canvas space). Renders null. */}
         <CanvasGenerationToaster />
+        <PendingPromptRecovery />
       </motion.div>
     );
   };
