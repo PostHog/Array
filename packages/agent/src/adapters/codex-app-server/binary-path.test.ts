@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const existsSyncMock = vi.hoisted(() => vi.fn());
 vi.mock("node:fs", async (importOriginal) => ({
@@ -6,24 +6,46 @@ vi.mock("node:fs", async (importOriginal) => ({
   existsSync: existsSyncMock,
 }));
 
+const resolveMock = vi.hoisted(() => vi.fn());
+vi.mock("node:module", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:module")>()),
+  createRequire: () => ({ resolve: resolveMock }),
+}));
+
 const { nativeCodexBinaryPath } = await import("./binary-path");
 
 describe("nativeCodexBinaryPath", () => {
-  it("returns undefined without a codex-acp path", () => {
-    expect(nativeCodexBinaryPath(undefined)).toBeUndefined();
+  beforeEach(() => {
+    existsSyncMock.mockReset();
+    resolveMock.mockReset();
   });
 
-  it("returns undefined when the sibling codex binary is absent", () => {
-    existsSyncMock.mockReturnValue(false);
-    expect(
-      nativeCodexBinaryPath("/bundle/codex-acp/codex-acp"),
-    ).toBeUndefined();
-  });
-
-  it("returns the sibling codex binary when present", () => {
+  it("returns the sibling codex binary bundled next to codex-acp when present", () => {
     existsSyncMock.mockReturnValue(true);
     expect(nativeCodexBinaryPath("/bundle/codex-acp/codex-acp")).toBe(
       "/bundle/codex-acp/codex",
     );
+  });
+
+  it("falls back to the @openai/codex vendored binary when no sibling is bundled", () => {
+    // No sibling next to codex-acp; the @openai/codex platform sub-package
+    // resolves and its vendored binary exists.
+    resolveMock.mockReturnValue("/nm/@openai/codex-plat/package.json");
+    existsSyncMock.mockImplementation((p: string) => p.includes("/vendor/"));
+    const got = nativeCodexBinaryPath(undefined);
+    expect(got).toContain("@openai/codex-plat");
+    expect(got).toContain("/vendor/");
+    expect(got?.endsWith("/bin/codex")).toBe(true);
+  });
+
+  it("returns undefined when neither the sibling nor the @openai/codex dep is present", () => {
+    existsSyncMock.mockReturnValue(false);
+    resolveMock.mockImplementation(() => {
+      throw new Error("Cannot find module '@openai/codex-plat/package.json'");
+    });
+    expect(
+      nativeCodexBinaryPath("/bundle/codex-acp/codex-acp"),
+    ).toBeUndefined();
+    expect(nativeCodexBinaryPath(undefined)).toBeUndefined();
   });
 });
