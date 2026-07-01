@@ -261,7 +261,11 @@ export function NotificationsSettings() {
 
       <SettingRow
         label="Custom sounds"
-        description="Sounds you recorded or imported. Rename or remove them here."
+        description={
+          customSounds.length > 0
+            ? "Sounds you recorded or imported. Rename or remove them here."
+            : "Record or import your own sound to play when an agent finishes a task or needs your input."
+        }
       >
         <Flex direction="column" gap="2" className="w-full max-w-[260px]">
           {customSounds.map((sound) => (
