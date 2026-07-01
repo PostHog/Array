@@ -42,9 +42,12 @@ export function useInboxAllReports(options?: {
   ignoreScope?: boolean;
   ignoreFilters?: boolean;
   pullRequestsOnly?: boolean;
+  refetchIntervalMs?: number;
 }) {
   const ignoreScope = options?.ignoreScope ?? false;
   const ignoreFilters = options?.ignoreFilters ?? false;
+  const refetchIntervalMs =
+    options?.refetchIntervalMs ?? INBOX_REFETCH_INTERVAL_MS;
   // The Pull requests tab fetches a server-filtered list (reports that have a
   // shipped PR) so its list body comes from the same source as its count — a PR
   // sitting past the broad list's first page no longer renders an empty tab
@@ -101,7 +104,7 @@ export function useInboxAllReports(options?: {
       // throwaway project-wide fetch first. Other scopes don't depend on the
       // user and run immediately.
       enabled: !isForYou || reviewerUuid != null,
-      refetchInterval: INBOX_REFETCH_INTERVAL_MS,
+      refetchInterval: refetchIntervalMs,
       refetchIntervalInBackground: false,
     },
   );
@@ -130,7 +133,7 @@ export function useInboxAllReports(options?: {
     },
     {
       enabled: !isForYou || reviewerUuid != null,
-      refetchInterval: INBOX_REFETCH_INTERVAL_MS,
+      refetchInterval: refetchIntervalMs,
       refetchIntervalInBackground: false,
     },
   );
