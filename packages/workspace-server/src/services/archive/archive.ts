@@ -296,6 +296,25 @@ export class ArchiveService {
                 `Failed to remove worktree at ${worktreePath}; archiving anyway (on-disk worktree may need manual cleanup)`,
                 { error },
               );
+              // The worktree is still registered under its original name, so a
+              // later unarchive can't re-add it from the checkpoint (git rejects
+              // the duplicate name/path), leaving the task un-restorable. Drop
+              // the restore point — and its now-orphaned checkpoint ref — so the
+              // archive record stays internally consistent, matching how a
+              // failed capture above already sets checkpointId to null.
+              const orphanedCheckpointId = archivedTask.checkpointId;
+              if (orphanedCheckpointId) {
+                archivedTask.checkpointId = null;
+                try {
+                  const git = createGitClient(folderPath);
+                  await deleteCheckpoint(git, orphanedCheckpointId);
+                } catch (cleanupError) {
+                  this.log.warn(
+                    `Failed to delete orphaned checkpoint ${orphanedCheckpointId}`,
+                    { error: cleanupError },
+                  );
+                }
+              }
             }
           },
           async () => {},

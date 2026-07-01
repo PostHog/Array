@@ -430,6 +430,32 @@ describe("ArchiveService integration", () => {
         expect(await pathExists(worktreePath)).toBe(false);
         expect(ctx.archiveRepo.findAll()).toHaveLength(1);
       }));
+
+    it("archive succeeds and drops the checkpoint when worktree removal fails", () =>
+      withTestContext({}, async (ctx) => {
+        await ctx.setupWorktree("detached");
+
+        // Simulate git refusing to remove the worktree (e.g. a stale lock).
+        // Capture succeeded, so the checkpoint ref exists — but since the
+        // worktree stays registered, keeping the restore point would make a
+        // later unarchive fail to re-add it. The archive must still be recorded
+        // and its checkpoint dropped.
+        const deleteSpy = vi
+          .spyOn(WorktreeManager.prototype, "deleteWorktree")
+          .mockRejectedValue(new Error("worktree is locked"));
+
+        try {
+          const archived = await ctx.service.archiveTask(ctx.archiveInput());
+
+          expect(deleteSpy).toHaveBeenCalled();
+          expect(archived.checkpointId).toBeNull();
+          const records = ctx.archiveRepo.findAll();
+          expect(records).toHaveLength(1);
+          expect(records[0].checkpointId).toBeNull();
+        } finally {
+          deleteSpy.mockRestore();
+        }
+      }));
   });
 
   describe("local/cloud mode", () => {
