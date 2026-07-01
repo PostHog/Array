@@ -32,6 +32,7 @@ const WORKTREE_FOLDER_NAME = ".posthog-code";
 
 const WORKTREE_ADD_TIMEOUT_MS = 120_000;
 const POST_CHECKOUT_HOOK_TIMEOUT_MS = 300_000;
+const GIT_FETCH_TIMEOUT_MS = 120_000;
 export const KILL_GRACE_MS = 5_000;
 
 export function armProcessTimeout(
@@ -259,9 +260,7 @@ export class WorktreeManager {
     const remoteRef = `${remote}/${branch}`;
 
     options?.onOutput?.(`Fetching ${remoteRef}...\n`);
-    const fetched = await manager.executeWrite(this.mainRepoPath, (git) =>
-      fetchRef(git, remote, branch),
-    );
+    const fetched = await this.fetchRefWithTimeout(remote, branch);
     if (!fetched) {
       throw new Error(`Failed to fetch branch '${branch}' from ${remote}`);
     }
@@ -413,9 +412,7 @@ export class WorktreeManager {
     const remoteRef = `${remote}/${baseBranch}`;
 
     onOutput?.(`Fetching ${remoteRef}...\n`);
-    const fetched = await manager.executeWrite(this.mainRepoPath, (git) =>
-      fetchRef(git, remote, baseBranch),
-    );
+    const fetched = await this.fetchRefWithTimeout(remote, baseBranch);
 
     if (!fetched) {
       onOutput?.(
@@ -436,6 +433,34 @@ export class WorktreeManager {
     }
 
     return remoteRef;
+  }
+
+  /**
+   * Runs `git fetch <remote> <ref>` under the write lock with a hard timeout.
+   * The fetch (unlike `git worktree add`) runs through simple-git, so it can't
+   * use `armProcessTimeout`; instead we abort via the AbortSignal that
+   * `executeWrite` forwards to its scoped git client, which kills the fetch
+   * subprocess and releases the write lock. A blocked fetch (network stall,
+   * unreachable remote) would otherwise hold the lock forever and strand every
+   * later worktree creation for the repo. Returns false on failure or timeout
+   * so callers degrade gracefully rather than hang.
+   */
+  private async fetchRefWithTimeout(
+    remote: string,
+    ref: string,
+  ): Promise<boolean> {
+    const manager = getGitOperationManager();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), GIT_FETCH_TIMEOUT_MS);
+    try {
+      return await manager.executeWrite(
+        this.mainRepoPath,
+        (git) => fetchRef(git, remote, ref),
+        { signal: controller.signal },
+      );
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private spawnWorktreeAdd(
