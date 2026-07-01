@@ -34,6 +34,7 @@ describe("AuthProxyService", () => {
   afterEach(async () => {
     await service.stop();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("forwards requests and returns the upstream body and status", async () => {
@@ -99,6 +100,68 @@ describe("AuthProxyService", () => {
     await vi.waitFor(() => {
       expect(upstreamSignal?.aborted).toBe(true);
     });
+  });
+
+  it("compresses the request body when POSTHOG_COMPRESS_CONTEXT is set", async () => {
+    vi.stubEnv("POSTHOG_COMPRESS_CONTEXT", "1");
+    authMock.authenticatedFetch.mockResolvedValue(new Response("ok"));
+
+    const body = JSON.stringify({
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "t1",
+              content: Array.from({ length: 20 }, () => "dup").join("\n"),
+            },
+          ],
+        },
+      ],
+    });
+
+    const proxyUrl = await service.start("https://gateway.example");
+    await fetch(`${proxyUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+
+    const [, options] = authMock.authenticatedFetch.mock.calls[0];
+    const forwarded = JSON.parse(Buffer.from(options.body).toString());
+    expect(forwarded.messages[0].content[0].content).toBe(
+      "dup\n… [19 identical lines omitted] …",
+    );
+  });
+
+  it("forwards the body verbatim when compression is disabled", async () => {
+    authMock.authenticatedFetch.mockResolvedValue(new Response("ok"));
+
+    const body = JSON.stringify({
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "t1",
+              content: Array.from({ length: 20 }, () => "dup").join("\n"),
+            },
+          ],
+        },
+      ],
+    });
+
+    const proxyUrl = await service.start("https://gateway.example");
+    await fetch(`${proxyUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+
+    const [, options] = authMock.authenticatedFetch.mock.calls[0];
+    expect(Buffer.from(options.body).toString()).toBe(body);
   });
 
   it("streams the upstream body through to the client", async () => {

@@ -1,0 +1,137 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import type { HookCallback, HookInput } from "@anthropic-ai/claude-agent-sdk";
+import type { Logger } from "../../../utils/logger";
+import { gitSubcommand } from "../git-command";
+
+/**
+ * RTK (https://github.com/rtk-ai/rtk) is a CLI proxy that compresses the output
+ * of common dev commands by 60-90% before it reaches the model. When RTK is
+ * available we rewrite eligible `Bash` calls to run through it, so the savings
+ * happen at the source — the verbose output is never generated into context.
+ *
+ * Opt-in and dormant by default: nothing changes unless `POSTHOG_RTK` is set.
+ */
+
+// Commands RTK compresses faithfully and that have no side effects, so wrapping
+// them changes only how much output reaches the model, never what runs.
+const RTK_PLAIN_COMMANDS = new Set(["grep", "find", "ls"]);
+
+// Read-only git subcommands. Excludes commit/push: they have side effects with
+// negligible output to compress, and the cloud signed-commit guard keys on a
+// leading `git` token that `rtk git …` would hide from it.
+const GIT_READONLY_SUBCOMMANDS = new Set([
+  "status",
+  "diff",
+  "log",
+  "show",
+  "branch",
+  "blame",
+  "shortlog",
+  "ls-files",
+  "describe",
+  "tag",
+  "remote",
+  "reflog",
+  "whatchanged",
+  "grep",
+]);
+
+// Any shell control operator means the line is more than one simple invocation;
+// wrapping only its head would change the meaning of the rest.
+const SHELL_OPERATORS = /[|&;<>`\n]|\$\(/;
+
+function shQuote(value: string): string {
+  if (/^[\w./-]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Returns `command` rewritten to run through the RTK binary at `rtkPrefix`, or
+ * null when it isn't safe or worthwhile to rewrite. Pure and side-effect free.
+ */
+export function rewriteBashForRtk(
+  command: string,
+  rtkPrefix: string,
+): string | null {
+  const trimmed = command.trim();
+  if (!trimmed || SHELL_OPERATORS.test(trimmed)) return null;
+
+  const head = trimmed.split(/\s+/, 1)[0];
+  // Already routed through rtk — keep the rewrite idempotent.
+  if (head === "rtk" || head === rtkPrefix) return null;
+
+  if (head === "git") {
+    const sub = gitSubcommand(trimmed);
+    if (!sub || !GIT_READONLY_SUBCOMMANDS.has(sub)) return null;
+  } else if (!RTK_PLAIN_COMMANDS.has(head)) {
+    return null;
+  }
+
+  return `${shQuote(rtkPrefix)} ${trimmed}`;
+}
+
+function findOnPath(bin: string, env: NodeJS.ProcessEnv): string | undefined {
+  const pathVar = env.PATH ?? env.Path ?? "";
+  const exts =
+    process.platform === "win32" ? [".exe", ".cmd", ".bat", ""] : [""];
+  for (const dir of pathVar.split(path.delimiter)) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const full = path.join(dir, bin + ext);
+      try {
+        if (fs.statSync(full).isFile()) return full;
+      } catch {
+        // Not in this dir; keep looking.
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Resolves the RTK binary to route shell output through, from `POSTHOG_RTK`:
+ *   unset / "" / "0" / "false" → disabled (undefined)
+ *   "1" / "true"               → auto-detect `rtk` on PATH
+ *   any other value            → an explicit path to the binary
+ *
+ * Opt-in by design: a user who merely has `rtk` installed sees no behavior
+ * change until they ask for it, since rewriting alters how their commands run.
+ */
+export function resolveRtkPrefix(env: NodeJS.ProcessEnv): string | undefined {
+  const raw = env.POSTHOG_RTK?.trim();
+  if (!raw || raw === "0" || raw.toLowerCase() === "false") return undefined;
+  if (raw === "1" || raw.toLowerCase() === "true") {
+    return findOnPath("rtk", env);
+  }
+  try {
+    if (fs.statSync(raw).isFile()) return raw;
+  } catch {
+    // Explicit path doesn't exist — treat as disabled rather than emit a
+    // command that would fail with "rtk: not found".
+  }
+  return undefined;
+}
+
+export const createRtkRewriteHook =
+  (rtkPrefix: string, logger: Logger): HookCallback =>
+  async (input: HookInput, _toolUseID: string | undefined) => {
+    if (input.hook_event_name !== "PreToolUse") return { continue: true };
+    if (input.tool_name !== "Bash") return { continue: true };
+
+    const toolInput = input.tool_input as { command?: string } | undefined;
+    const command = toolInput?.command;
+    if (typeof command !== "string") return { continue: true };
+
+    const rewritten = rewriteBashForRtk(command, rtkPrefix);
+    if (!rewritten) return { continue: true };
+
+    logger.info(`[RtkRewriteHook] Rewriting: ${command} → ${rewritten}`);
+    return {
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse" as const,
+        updatedInput: { ...toolInput, command: rewritten },
+      },
+    };
+  };

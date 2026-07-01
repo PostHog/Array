@@ -1,0 +1,165 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import type { HookInput } from "@anthropic-ai/claude-agent-sdk";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import type { Logger } from "../../../utils/logger";
+import {
+  createRtkRewriteHook,
+  resolveRtkPrefix,
+  rewriteBashForRtk,
+} from "./rtk";
+
+describe("rewriteBashForRtk", () => {
+  test.each([
+    // Read-only git subcommands are wrapped.
+    ["git status", "rtk git status"],
+    ["git diff --stat", "rtk git diff --stat"],
+    ["git log --oneline -10", "rtk git log --oneline -10"],
+    ["git show HEAD", "rtk git show HEAD"],
+    // Plain read-only commands are wrapped.
+    ["grep -rn foo src", "rtk grep -rn foo src"],
+    ["find . -name '*.ts'", "rtk find . -name '*.ts'"],
+    ["ls -la", "rtk ls -la"],
+  ])("wraps %j", (input, expected) => {
+    expect(rewriteBashForRtk(input, "rtk")).toBe(expected);
+  });
+
+  test.each([
+    // Side-effecting git subcommands are left alone (also protects the
+    // cloud signed-commit guard, which keys on a leading `git`).
+    ["git commit -m wip"],
+    ["git push origin main"],
+    ["git checkout -b feature"],
+    // Commands RTK isn't wrapping in this cut.
+    ["npm test"],
+    ["cat file.ts"],
+    ["echo hello"],
+    // Shell operators mean more than one invocation — never rewrite.
+    ["git status | grep foo"],
+    ["git status && ls"],
+    ["grep foo src > out.txt"],
+    ["ls; pwd"],
+    ["echo $(git status)"],
+    // A leading env assignment or explicit path is not a bare allowlisted head.
+    ["FOO=bar git status"],
+    ["/usr/bin/git status"],
+    // Empty / whitespace.
+    [""],
+    ["   "],
+  ])("leaves %j unchanged", (input) => {
+    expect(rewriteBashForRtk(input, "rtk")).toBeNull();
+  });
+
+  test("is idempotent — does not double-wrap", () => {
+    expect(rewriteBashForRtk("rtk git status", "rtk")).toBeNull();
+  });
+
+  test("shell-quotes a binary path containing spaces", () => {
+    expect(rewriteBashForRtk("git status", "/Apps/PostHog Code/rtk")).toBe(
+      "'/Apps/PostHog Code/rtk' git status",
+    );
+  });
+});
+
+describe("resolveRtkPrefix", () => {
+  let dir: string;
+  let binary: string;
+
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "rtk-test-"));
+    binary = path.join(dir, "rtk");
+    fs.writeFileSync(binary, "#!/bin/sh\n");
+  });
+
+  afterAll(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test.each([
+    ["undefined", undefined],
+    ["empty", ""],
+    ["zero", "0"],
+    ["false", "false"],
+    ["FALSE", "FALSE"],
+  ])("is disabled when POSTHOG_RTK is %s", (_label, value) => {
+    expect(resolveRtkPrefix({ POSTHOG_RTK: value })).toBeUndefined();
+  });
+
+  test("auto-detects rtk on PATH when enabled", () => {
+    expect(resolveRtkPrefix({ POSTHOG_RTK: "1", PATH: dir })).toBe(binary);
+  });
+
+  test("returns undefined when enabled but rtk is not on PATH", () => {
+    expect(
+      resolveRtkPrefix({ POSTHOG_RTK: "true", PATH: "/nonexistent" }),
+    ).toBeUndefined();
+  });
+
+  test("uses an explicit path that exists", () => {
+    expect(resolveRtkPrefix({ POSTHOG_RTK: binary })).toBe(binary);
+  });
+
+  test("is disabled for an explicit path that does not exist", () => {
+    expect(
+      resolveRtkPrefix({ POSTHOG_RTK: path.join(dir, "missing") }),
+    ).toBeUndefined();
+  });
+});
+
+describe("createRtkRewriteHook", () => {
+  const logger = {
+    info() {},
+    warn() {},
+    error() {},
+    debug() {},
+  } as unknown as Logger;
+
+  const bashInput = (command: string): HookInput =>
+    ({
+      session_id: "s",
+      transcript_path: "/tmp/t",
+      cwd: "/tmp",
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command },
+    }) as unknown as HookInput;
+
+  test("rewrites an eligible Bash command to updatedInput", async () => {
+    const hook = createRtkRewriteHook("rtk", logger);
+    const result = await hook(bashInput("git status"), "tool-1", {
+      signal: new AbortController().signal,
+    });
+    expect(result).toMatchObject({
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        updatedInput: { command: "rtk git status" },
+      },
+    });
+  });
+
+  test("passes ineligible commands through untouched", async () => {
+    const hook = createRtkRewriteHook("rtk", logger);
+    const result = await hook(bashInput("npm test"), "tool-1", {
+      signal: new AbortController().signal,
+    });
+    expect(result).toEqual({ continue: true });
+  });
+
+  test("ignores non-Bash tools", async () => {
+    const hook = createRtkRewriteHook("rtk", logger);
+    const input = {
+      session_id: "s",
+      transcript_path: "/tmp/t",
+      cwd: "/tmp",
+      hook_event_name: "PreToolUse",
+      tool_name: "Read",
+      tool_input: { file_path: "/x" },
+    } as unknown as HookInput;
+    const result = await hook(input, "tool-1", {
+      signal: new AbortController().signal,
+    });
+    expect(result).toEqual({ continue: true });
+  });
+});
