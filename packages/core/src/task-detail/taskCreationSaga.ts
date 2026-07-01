@@ -281,11 +281,21 @@ export class TaskCreationSaga extends Saga<
         execute: async () => {
           const prAuthorshipMode = input.cloudPrAuthorshipMode ?? "user";
 
+          // Resolve a typed local-skill slash command (`/my-skill …`) into a
+          // `<skill .../>` tag before building the transport, so the skill
+          // bundle is collected and uploaded with the very first cloud message.
+          // Without this a first-message `/my-skill` reaches the sandbox with no
+          // bundle and is rejected as an unknown command (only a follow-up,
+          // which already resolves, would work).
+          const resolvedContent = input.content
+            ? await this.deps.host.resolveLocalSkillCommandPrompt(input.content)
+            : input.content;
+
           const transport =
             (input.content || input.filePaths?.length) &&
             workspaceMode === "cloud"
               ? this.deps.host.getCloudPromptTransport(
-                  input.content ?? "",
+                  resolvedContent ?? "",
                   input.filePaths,
                 )
               : null;

@@ -20,6 +20,7 @@ const mockHost = vi.hoisted(() => ({
   getEnvironment: vi.fn(),
   detectRepo: vi.fn(),
   getCloudPromptTransport: vi.fn(),
+  resolveLocalSkillCommandPrompt: vi.fn(async (prompt: string) => prompt),
   uploadRunAttachments: vi.fn(),
   setProvisioningActive: vi.fn(),
   clearProvisioning: vi.fn(),
@@ -413,6 +414,106 @@ describe("TaskCreationSaga", () => {
       onTaskReady.mock.invocationCallOrder[0],
     );
   });
+
+  it("resolves a typed local-skill slash command before building the cloud transport", async () => {
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+
+    const skillTag =
+      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it';
+    mockHost.resolveLocalSkillCommandPrompt.mockResolvedValue(skillTag);
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: [],
+      skillBundles: [
+        { name: "my-skill", source: "user", path: "/skills/my-skill" },
+      ],
+      messageText: "/my-skill do it",
+      promptText: "/my-skill do it",
+    });
+    mockHost.uploadRunAttachments.mockResolvedValue(["skill-artifact-1"]);
+
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "/my-skill do it",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockHost.resolveLocalSkillCommandPrompt).toHaveBeenCalledWith(
+      "/my-skill do it",
+    );
+    // The resolved tag (not the raw slash command) must reach the transport so
+    // the bundle is collected and uploaded on the first message.
+    expect(mockHost.getCloudPromptTransport).toHaveBeenCalledWith(
+      skillTag,
+      undefined,
+    );
+    expect(startTaskRunMock).toHaveBeenCalledWith("task-123", "run-123", {
+      pendingUserMessage: "/my-skill do it",
+      pendingUserArtifactIds: ["skill-artifact-1"],
+    });
+  });
+
+  it.each([
+    ["a plain-text prompt that isn't a slash command", "just do the thing"],
+    ["a slash command that isn't a local skill", "/good keep going"],
+  ])(
+    "passes %s through to the transport unchanged",
+    async (_label, content) => {
+      const createdTask = createTask();
+      const startedTask = createTask({ latest_run: createRun() });
+      const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+      const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+
+      // The host resolver is a no-op for non-local-skill prompts — it returns the
+      // original string unchanged (mirrors `resolveLocalSkillPrompt` yielding null
+      // and the host falling back to the prompt).
+      mockHost.resolveLocalSkillCommandPrompt.mockImplementation(
+        async (prompt: string) => prompt,
+      );
+      mockHost.getCloudPromptTransport.mockReturnValue({
+        filePaths: [],
+        skillBundles: [],
+        messageText: content,
+        promptText: content,
+      });
+      mockHost.uploadRunAttachments.mockResolvedValue([]);
+
+      const saga = makeSaga({
+        createTask: vi.fn().mockResolvedValue(createdTask),
+        createTaskRun: createTaskRunMock,
+        startTaskRun: startTaskRunMock,
+      });
+
+      const result = await saga.run({
+        content,
+        repository: "posthog/posthog",
+        workspaceMode: "cloud",
+        branch: "main",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockHost.resolveLocalSkillCommandPrompt).toHaveBeenCalledWith(
+        content,
+      );
+      // Resolution is a no-op, so the original content (not a rewritten skill tag)
+      // reaches the transport and no bundle is collected.
+      expect(mockHost.getCloudPromptTransport).toHaveBeenCalledWith(
+        content,
+        undefined,
+      );
+    },
+  );
 
   it("uses the selected user GitHub integration for cloud task creation", async () => {
     const createdTask = createTask({
