@@ -208,6 +208,49 @@ describe("TaskRunEventStreamSender", () => {
     expect(lastCall[0]).not.toContain("/api/projects/");
   });
 
+  it("uses a short stream window for agent-proxy ingest so buffered uploads commit live events", async () => {
+    vi.useFakeTimers();
+    try {
+      const requestBodies: string[] = [];
+      let activeStreamClosed = false;
+      const fetchMock = vi.fn(
+        async (_url: string | URL | Request, init?: RequestInit) => {
+          if (!init?.body || typeof init.body === "string") {
+            return responseForBody(await readRequestBody(init));
+          }
+
+          const body = await readRequestBody(init);
+          activeStreamClosed = true;
+          requestBodies.push(body);
+          return responseForBody(body);
+        },
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sender = createSender({
+        eventIngestBaseUrl: "http://agent-proxy:8003/",
+      });
+
+      sender.enqueue({
+        type: "notification",
+        notification: { method: "first" },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(activeStreamClosed).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(activeStreamClosed).toBe(true);
+      expect(eventSequences(requestBodies[0])).toEqual([1]);
+
+      await sender.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps the active ingest request open across scheduled flushes", async () => {
     const requestBodies: string[] = [];
     let activeStreamClosed = false;
