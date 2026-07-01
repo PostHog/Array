@@ -47,6 +47,7 @@ const mockTrpcFs = vi.hoisted(() => ({
 const mockTrpcSkills = vi.hoisted(() => ({
   list: { query: vi.fn() },
   bundleLocal: { query: vi.fn() },
+  resolveDependencies: { query: vi.fn() },
 }));
 
 const mockTrpcHandoff = vi.hoisted(() => ({
@@ -426,6 +427,10 @@ describe("SessionService", () => {
     mockTrpcSkills.list.query.mockResolvedValue([]);
     mockTrpcSkills.bundleLocal.query.mockRejectedValue(
       new Error("Unexpected skill bundle upload"),
+    );
+    // Dependency resolution is a no-op passthrough by default (no declared deps).
+    mockTrpcSkills.resolveDependencies.query.mockImplementation(
+      async (refs: unknown) => refs,
     );
     mockTrpcHandoff.preflightToCloud.query.mockResolvedValue({
       canHandoff: true,

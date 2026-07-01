@@ -62,6 +62,7 @@ function buildSessionServiceDeps(): SessionServiceDeps {
   const cloudArtifactService = new CloudArtifactService(
     (filePath) => trpc.fs.readFileAsBase64.query({ filePath }),
     (skillBundleRef) => trpc.skills.bundleLocal.query(skillBundleRef),
+    (skillBundleRefs) => trpc.skills.resolveDependencies.query(skillBundleRefs),
   );
 
   return {
