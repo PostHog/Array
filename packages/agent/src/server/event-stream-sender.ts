@@ -56,7 +56,6 @@ const DEFAULT_RETRY_DELAY_MS = 1_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_STOP_TIMEOUT_MS = 30_000;
 const DEFAULT_STREAM_WINDOW_MS = 5 * 60 * 1_000;
-const DEFAULT_PROXY_STREAM_WINDOW_MS = 1_000;
 const STREAM_COMPLETE_CONTROL_TYPE = "_posthog/stream_complete";
 
 export class TaskRunEventStreamSender {
@@ -70,6 +69,7 @@ export class TaskRunEventStreamSender {
   private readonly requestTimeoutMs: number;
   private readonly stopTimeoutMs: number;
   private readonly streamWindowMs: number;
+  private readonly usingProxy: boolean;
   private readonly createStreamingUpload: StreamingUploadFactory;
   private readonly encoder = new TextEncoder();
   private sequence = 0;
@@ -112,9 +112,8 @@ export class TaskRunEventStreamSender {
     this.requestTimeoutMs =
       config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.stopTimeoutMs = config.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
-    this.streamWindowMs =
-      config.streamWindowMs ??
-      (usingProxy ? DEFAULT_PROXY_STREAM_WINDOW_MS : DEFAULT_STREAM_WINDOW_MS);
+    this.streamWindowMs = config.streamWindowMs ?? DEFAULT_STREAM_WINDOW_MS;
+    this.usingProxy = usingProxy;
     this.createStreamingUpload =
       config.createStreamingUpload ?? createNodeStreamingUpload;
   }
@@ -211,6 +210,16 @@ export class TaskRunEventStreamSender {
 
     try {
       await flushPromise;
+      // On the proxy path, deliver the drained batch now instead of holding one
+      // long-lived upload. The ingress in front of the proxy buffers the ingest
+      // request body and only forwards it once the request closes, so a
+      // long-lived upload strands events; closing per batch forwards each within
+      // a round-trip. Gated to the proxy write leg so the Django path keeps its
+      // existing long-lived upload. The stop path leaves closing to drainForStop
+      // so the completion line rides the final upload.
+      if (!this.stopped && this.usingProxy) {
+        await this.closeActiveStream();
+      }
       return this.bufferedEvents.length < previousBufferLength;
     } catch (error) {
       this.config.logger.warn(
