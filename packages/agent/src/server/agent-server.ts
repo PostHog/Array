@@ -2928,9 +2928,16 @@ ${signedCommitInstructions}
             isQuestion ||
             this.shouldRelayPermissionToClient(sessionPermissionMode);
 
+          // A "background" (autonomous) run has no interactive human to answer a
+          // relayed approval — and hasDesktopConnected can still be true because
+          // the event-relay SSE reader counts as a connected client. Relaying to
+          // it would hang the run forever (e.g. a posthog/exec elicitation during
+          // signals repo-selection/research). Auto-approve instead (the intended
+          // autonomous behavior), still honoring the publish block below.
           if (
-            isPlanApproval ||
-            (needsDesktopApproval && this.session?.hasDesktopConnected)
+            mode !== "background" &&
+            (isPlanApproval ||
+              (needsDesktopApproval && this.session?.hasDesktopConnected))
           ) {
             this.logger.debug("Relaying permission request", {
               kind: params.toolCall?.kind,
