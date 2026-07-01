@@ -12,11 +12,10 @@ import { immer } from "zustand/middleware/immer";
 import { createStore } from "zustand/vanilla";
 
 // immer autofreeze deep-walks produced state on every commit. For the
-// append-only `events` array that means re-walking the whole (growing) array on
-// every streamed event — O(n) per append, O(n²) per turn (~2.2s to append 10k
-// events; ~57ms with this off). Autofreeze is a dev-time mutation guard with no
-// runtime value, so disable it; events are still frozen individually at the
-// append/creation seam, which is O(1) each.
+// append-only `events` array that re-walks the whole (growing) array on every
+// streamed event — O(n) per append, O(n²) per turn. Autofreeze is a dev-time
+// mutation guard with no runtime value, so disable it; events are frozen
+// individually at the append/creation seam instead, which is O(1) each.
 setAutoFreeze(false);
 
 export interface SessionState {
