@@ -151,6 +151,7 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
     taskId: string,
     runId: string,
     filePaths: string[],
+    skillBundles?: CloudPromptTransport["skillBundles"],
   ): Promise<string[]> {
     return resolveService<CloudArtifactService>(
       CLOUD_ARTIFACT_SERVICE,
@@ -159,6 +160,7 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
       taskId,
       runId,
       filePaths,
+      skillBundles,
     );
   }
 

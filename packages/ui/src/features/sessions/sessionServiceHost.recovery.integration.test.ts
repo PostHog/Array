@@ -513,6 +513,53 @@ describe("SessionService cloud queue recovery (real store, e2e)", () => {
     expect(drained?.messageQueue).toHaveLength(0);
   });
 
+  it.each<AgentSession["status"]>(["disconnected", "error"])(
+    "drains a stranded queue when the server reports the sandbox stopped and the session is %s",
+    async (status) => {
+      const service = getSessionService();
+      service.watchCloudTask(
+        TASK_ID,
+        RUN_ID,
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://logs.example.com/run",
+      );
+      const onData = latestOnData();
+
+      const rawPrompt: ContentBlock = { type: "text", text: "lol" };
+      sessionStoreSetters.setSession(
+        makeBaseSession({
+          status,
+          messageQueue: [
+            { id: "q-1", content: "lol", rawPrompt: [rawPrompt], queuedAt: 1 },
+          ],
+        }),
+      );
+
+      onData({
+        kind: "status",
+        taskId: TASK_ID,
+        runId: RUN_ID,
+        status: "in_progress",
+        sandboxAlive: false,
+      });
+
+      await vi.waitFor(() => {
+        expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            taskId: TASK_ID,
+            runId: RUN_ID,
+            method: "user_message",
+            params: expect.objectContaining({ content: "lol" }),
+          }),
+        );
+      });
+      const drained = useSessionStore.getState().sessions[RUN_ID];
+      expect(drained?.messageQueue).toHaveLength(0);
+    },
+  );
+
   it("does not drain while the agent is still booting (boot race protected)", async () => {
     const service = getSessionService();
     service.watchCloudTask(

@@ -426,7 +426,7 @@ export function createAppRouter({
         .query(({ input }) =>
           gitService().getGitSyncStatus(
             input.directoryPath,
-            input.forceRefresh,
+            input.fetchFromRemote,
           ),
         ),
 

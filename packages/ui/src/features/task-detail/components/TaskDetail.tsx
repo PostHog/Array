@@ -36,11 +36,14 @@ interface TaskDetailProps {
    * plain Code task view.
    */
   channelName?: string;
+  /** The channel's id, so the breadcrumb's "# channel" links to its home. */
+  channelId?: string;
 }
 
 export function TaskDetail({
   task: initialTask,
   channelName,
+  channelId,
 }: TaskDetailProps) {
   const taskId = initialTask.id;
 
@@ -128,6 +131,7 @@ export function TaskDetail({
       channelName ? (
         <ChannelBreadcrumb
           channelName={channelName}
+          channelId={channelId}
           leafIcon={
             workspaceMode ? (
               <WorkspaceModeBadge mode={workspaceMode} />
@@ -164,6 +168,7 @@ export function TaskDetail({
       ),
     [
       channelName,
+      channelId,
       task.title,
       trailing,
       isEditingTitle,

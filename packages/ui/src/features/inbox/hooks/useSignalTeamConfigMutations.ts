@@ -67,12 +67,13 @@ export function useSignalTeamConfigMutations() {
       );
 
       if (previous) {
+        const optimistic: SignalTeamConfig = {
+          ...previous,
+          autostart_base_branches: branches,
+        };
         queryClient.setQueryData<SignalTeamConfig | null>(
           TEAM_CONFIG_QUERY_KEY,
-          {
-            ...previous,
-            autostart_base_branches: branches,
-          },
+          optimistic,
         );
       }
 

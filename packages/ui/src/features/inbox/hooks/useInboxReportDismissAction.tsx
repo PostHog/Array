@@ -28,6 +28,7 @@ export function useInboxReportDismissAction(report: SignalReport): {
   const bulkActions = useInboxBulkActions(
     reportsForActions,
     open ? report.id : null,
+    "detail_pane",
   );
 
   const isPending = bulkActions.isSuppressing || bulkActions.isSnoozing;

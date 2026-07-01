@@ -1,21 +1,13 @@
 import {
-  ArchiveIcon,
-  ArrowElbowDownRightIcon,
-  CaretDownIcon,
   ChartBarIcon,
-  CodeIcon,
   DotsThreeIcon,
   FileTextIcon,
-  FolderIcon,
   HashIcon,
   PencilSimpleIcon,
   PlusIcon,
   StarIcon,
   TrashIcon,
-  XIcon,
 } from "@phosphor-icons/react";
-import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
-import type { TaskData } from "@posthog/core/sidebar/sidebarData.types";
 import {
   AlertDialogClose,
   AlertDialogContent,
@@ -25,18 +17,11 @@ import {
   AlertDialogTitle,
   Button,
   ButtonGroup,
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleHeader,
-  CollapsibleTrigger,
   AlertDialog as ConfirmDialog,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
   ContextMenuTrigger,
   cn,
   DropdownMenu,
@@ -51,13 +36,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@posthog/quill";
-import type { WorkspaceMode } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import type { Task } from "@posthog/shared/domain-types";
-import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
-import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
-import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
 import {
@@ -69,52 +49,13 @@ import {
   useChannelMutations,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
-import {
-  useChannelTaskMutations,
-  useChannelTasks,
-  usePrefetchChannelTasks,
-} from "@posthog/ui/features/canvas/hooks/useChannelTasks";
-import {
-  useCreateAndOpenDashboard,
-  useDashboardMutations,
-  useDashboards,
-  useOpenHomeCanvas,
-  usePrefetchDashboards,
-} from "@posthog/ui/features/canvas/hooks/useDashboards";
-import { useNestedGenerationTaskIds } from "@posthog/ui/features/canvas/hooks/useNestedGenerationTaskIds";
-import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
-import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
-import {
-  type SidebarPrState,
-  useTaskPrStatus,
-} from "@posthog/ui/features/sidebar/useTaskPrStatus";
-import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
-import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
+import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
-
-// Cap how many tasks each channel shows by default; the rest hide behind a
-// "View more" button so a busy channel doesn't dominate the sidebar.
-const MAX_VISIBLE_TASKS_PER_CHANNEL = 5;
-
-// Short "x ago" stamp for an item's subtitle. Coarse on purpose — the sidebar
-// just needs recency at a glance, not a precise duration.
-function relativeTime(ms: number): string {
-  const diff = Math.max(0, Date.now() - ms);
-  const min = 60_000;
-  const hr = 60 * min;
-  const day = 24 * hr;
-  if (diff < hr) return `${Math.max(1, Math.round(diff / min))}m ago`;
-  if (diff < day) return `${Math.round(diff / hr)}h ago`;
-  const days = Math.round(diff / day);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
-}
 
 // One actionable entry in a channel's menu, rendered the same whether it
 // surfaces in the hover "..." dropdown or the right-click context menu.
@@ -210,23 +151,6 @@ function useChannelActions(channel: Channel): {
           channel_id: channel.id,
         });
         toggleStar();
-      },
-    },
-    {
-      key: "edit-context",
-      label: "Edit CONTEXT.md",
-      icon: <FileTextIcon size={14} />,
-      separatorBefore: true,
-      onSelect: () => {
-        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-          action_type: "edit_context_open",
-          surface: "sidebar",
-          channel_id: channel.id,
-        });
-        navigate({
-          to: "/website/$channelId/context",
-          params: { channelId: channel.id },
-        });
       },
     },
     {
@@ -347,629 +271,14 @@ function ChannelMenu({
   );
 }
 
-// A two-line child row (title + muted subtitle). Height is auto so the subtitle
-// never collides with the next row — the icon top-aligns with the title.
-function ChildRow({
-  icon,
-  title,
-  subtitle,
-  active,
-  onClick,
-}: {
-  icon: ReactNode;
-  title: string;
-  subtitle?: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      variant="default"
-      size="default"
-      data-selected={active || undefined}
-      onClick={onClick}
-      className="h-auto w-full items-start justify-start gap-2 px-2 py-1 text-left data-selected:bg-fill-selected data-selected:text-gray-12"
-    >
-      <span className="mt-px shrink-0">{icon}</span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate font-medium text-[13px] text-gray-12 leading-tight">
-          {title}
-        </span>
-        {subtitle ? (
-          <span className="truncate text-[10px] text-muted-foreground/80 leading-tight">
-            {subtitle}
-          </span>
-        ) : null}
-      </span>
-    </Button>
-  );
-}
-
-// Shared right-click menu + hover tooltip for a task row inside a channel:
-// File to… / Archive / Remove from channel. Used by both the regular filed
-// TaskRow and the generation task nested under a canvas so they offer the same
-// actions. "Remove from channel" only appears when the task is actually filed
-// (has a channel task row) — `channelTaskId` is what `unfileTask` removes.
-function TaskRowContextMenu({
-  channelId,
-  taskId,
-  channelTaskId,
-  title,
-  channels,
-  children,
-}: {
-  channelId: string;
-  taskId: string;
-  channelTaskId?: string;
-  title: string;
-  channels: Channel[];
-  children: ReactNode;
-}) {
+// One channel in the list: a "# name" row that navigates to the channel home.
+// No expansion — the channel's surfaces live in the in-channel top nav.
+function ChannelSection({ channel }: { channel: Channel }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { fileTask, unfileTask } = useChannelTaskMutations();
-  // Archiving from the bluebird/channels nav should return to the website
-  // new-task screen, not the Code one.
-  const { archiveTask } = useArchiveTask({ navigateSpace: "website" });
-
-  const onFileTo = async (targetChannelId: string) => {
-    try {
-      await fileTask(targetChannelId, taskId, title);
-      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "file_task",
-        surface: "sidebar",
-        channel_id: channelId,
-        target_channel_id: targetChannelId,
-        task_id: taskId,
-        success: true,
-      });
-    } catch (error) {
-      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "file_task",
-        surface: "sidebar",
-        channel_id: channelId,
-        target_channel_id: targetChannelId,
-        task_id: taskId,
-        success: false,
-      });
-      toast.error("Couldn't file task", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-
-  const onArchive = async () => {
-    try {
-      await archiveTask({ taskId });
-      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "archive_task",
-        surface: "sidebar",
-        channel_id: channelId,
-        task_id: taskId,
-        success: true,
-      });
-    } catch (error) {
-      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "archive_task",
-        surface: "sidebar",
-        channel_id: channelId,
-        task_id: taskId,
-        success: false,
-      });
-      toast.error("Couldn't archive task", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-
-  const onRemove = async () => {
-    if (!channelTaskId) return;
-    try {
-      await unfileTask(channelTaskId);
-      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "unfile_task",
-        surface: "sidebar",
-        channel_id: channelId,
-        task_id: taskId,
-        success: true,
-      });
-      if (pathname === `/website/${channelId}/tasks/${taskId}`) {
-        void navigate({
-          to: "/website/$channelId",
-          params: { channelId },
-        });
-      }
-    } catch (error) {
-      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "unfile_task",
-        surface: "sidebar",
-        channel_id: channelId,
-        task_id: taskId,
-        success: false,
-      });
-      toast.error("Couldn't remove task from channel", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-
-  return (
-    <ContextMenu>
-      <Tooltip>
-        <ContextMenuTrigger
-          render={<TooltipTrigger>{children}</TooltipTrigger>}
-        />
-        <TooltipContent side="right">{title}</TooltipContent>
-      </Tooltip>
-      <ContextMenuContent>
-        <ContextMenuSub>
-          <ContextMenuSubTrigger>
-            <FolderIcon size={14} />
-            File to…
-          </ContextMenuSubTrigger>
-          <ContextMenuSubContent>
-            {channels.filter((c) => c.id !== channelId).length === 0 ? (
-              <ContextMenuItem disabled>No other channels</ContextMenuItem>
-            ) : (
-              channels
-                .filter((c) => c.id !== channelId)
-                .map((c) => (
-                  <ContextMenuItem
-                    key={c.id}
-                    onClick={() => void onFileTo(c.id)}
-                  >
-                    {c.name}
-                  </ContextMenuItem>
-                ))
-            )}
-          </ContextMenuSubContent>
-        </ContextMenuSub>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => void onArchive()}>
-          <ArchiveIcon size={14} />
-          Archive
-        </ContextMenuItem>
-        {channelTaskId ? (
-          <ContextMenuItem
-            variant="destructive"
-            onClick={() => void onRemove()}
-          >
-            <XIcon size={14} />
-            Remove from channel
-          </ContextMenuItem>
-        ) : null}
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
-
-// The status icon shared by both channel task rows. Maps a row's derived
-// `TaskData` onto the sidebar `<TaskIcon>` (cloud run status, PR state,
-// generating / unread / pinned, etc.), falling back to a neutral code icon
-// until the data loads. Defined once so `TaskRow` and `CanvasGenerationTaskRow`
-// can't drift apart on icon fidelity.
-function TaskStatusIcon({
-  taskData,
-  prState,
-  hasDiff,
-  workspaceMode,
-  size,
-}: {
-  taskData: TaskData | undefined;
-  prState: SidebarPrState;
-  hasDiff: boolean;
-  workspaceMode: WorkspaceMode | undefined;
-  size: number;
-}) {
-  if (!taskData) {
-    return <CodeIcon size={size} className="text-gray-9" />;
-  }
-  return (
-    <TaskIcon
-      workspaceMode={workspaceMode}
-      isGenerating={taskData.isGenerating}
-      isUnread={taskData.isUnread}
-      isPinned={taskData.isPinned}
-      isSuspended={taskData.isSuspended}
-      needsPermission={taskData.needsPermission}
-      taskRunStatus={taskData.taskRunStatus}
-      originProduct={taskData.originProduct}
-      slackThreadUrl={taskData.slackThreadUrl}
-      prState={prState}
-      hasDiff={hasDiff}
-      size={size}
-    />
-  );
-}
-
-// The generation task tied to a canvas, shown nested beneath the canvas name
-// while it's generating and afterwards until the user has seen the result (see
-// useNestedGenerationTaskIds — the parent only renders this row when it should
-// nest). Unlike a filed TaskRow this is a compact, single-line row — just the
-// task icon and title (no status subtitle) — with a down-then-right elbow
-// marking it as belonging to the canvas above it. Clicking opens the task;
-// right-click offers the same actions as a regular task row.
-function CanvasGenerationTaskRow({
-  channelId,
-  taskId,
-  task,
-  channelTaskId,
-  channels,
-}: {
-  channelId: string;
-  taskId: string;
-  task: Task | undefined;
-  channelTaskId?: string;
-  channels: Channel[];
-}) {
-  const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const taskData = useChannelTaskData(task);
-  const workspace = useWorkspace(taskId);
-  const workspaceMode =
-    workspace?.mode ??
-    (taskData?.taskRunEnvironment === "cloud" ? "cloud" : undefined);
-  const { prState, hasDiff } = useTaskPrStatus({
-    id: taskId,
-    cloudPrUrl: taskData?.cloudPrUrl ?? null,
-    taskRunEnvironment: taskData?.taskRunEnvironment ?? null,
-  });
-
-  // Tasks are private to their creator; if the generation task isn't in this
-  // user's list there's nothing to link to, so render nothing.
-  if (!task) return null;
-
-  const title = task.title || "Untitled task";
-  const active = pathname === `/website/${channelId}/tasks/${taskId}`;
-  const icon = (
-    <TaskStatusIcon
-      taskData={taskData}
-      prState={prState}
-      hasDiff={hasDiff}
-      workspaceMode={workspaceMode}
-      size={12}
-    />
-  );
-
-  return (
-    <TaskRowContextMenu
-      channelId={channelId}
-      taskId={taskId}
-      channelTaskId={channelTaskId}
-      title={title}
-      channels={channels}
-    >
-      <Button
-        variant="default"
-        size="default"
-        data-selected={active || undefined}
-        onClick={() =>
-          navigate({
-            to: "/website/$channelId/tasks/$taskId",
-            params: { channelId, taskId },
-          })
-        }
-        className="h-auto w-full items-center justify-start gap-1 py-0.5 pr-2 pl-5 text-left data-selected:bg-fill-selected data-selected:text-gray-12"
-      >
-        <ArrowElbowDownRightIcon
-          size={12}
-          className="shrink-0 text-muted-foreground/70"
-        />
-        <span className="shrink-0">{icon}</span>
-        <span className="truncate text-[11px] text-gray-11 leading-tight">
-          {title}
-        </span>
-      </Button>
-    </TaskRowContextMenu>
-  );
-}
-
-// A single saved canvas under a channel — navigates to its detail view, with a
-// right-click menu to rename (inline) or delete it.
-function DashboardRow({
-  channelId,
-  dashboard,
-  active,
-  generationTask,
-  generationChannelTaskId,
-  channels,
-}: {
-  channelId: string;
-  dashboard: DashboardSummary;
-  active: boolean;
-  // The canvas's generation task, when it should be shown nested below the
-  // canvas name (decided by the channel via useNestedGenerationTaskIds).
-  // Undefined when there's nothing to nest.
-  generationTask?: Task;
-  generationChannelTaskId?: string;
-  channels: Channel[];
-}) {
-  const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { deleteDashboard, isDeleting, renameDashboard } =
-    useDashboardMutations();
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  // The name typed on a failed rename, kept so the retry keeps the user's text.
-  const [renameDraft, setRenameDraft] = useState<string | null>(null);
-  // Bumped on failure to remount the editor, resetting its one-shot submit guard.
-  const [renameAttempt, setRenameAttempt] = useState(0);
-
-  const closeRename = () => {
-    setRenaming(false);
-    setRenameDraft(null);
-  };
-
-  const onRename = async (next: string) => {
-    try {
-      await renameDashboard(dashboard.id, next);
-      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-        action_type: "rename",
-        surface: "sidebar",
-        channel_id: channelId,
-        dashboard_id: dashboard.id,
-        success: true,
-      });
-      closeRename();
-    } catch (error) {
-      // Keep the editor open with the typed text so the rename can be retried.
-      setRenameDraft(next);
-      setRenameAttempt((n) => n + 1);
-      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-        action_type: "rename",
-        surface: "sidebar",
-        channel_id: channelId,
-        dashboard_id: dashboard.id,
-        success: false,
-      });
-      toast.error("Couldn't rename canvas", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-
-  const onDelete = async () => {
-    try {
-      await deleteDashboard(dashboard.id);
-      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-        action_type: "delete",
-        surface: "sidebar",
-        channel_id: channelId,
-        dashboard_id: dashboard.id,
-        success: true,
-      });
-      // Deleting destroys the canvas, including any child routes under it, so
-      // match the whole subtree (mirrors ChannelMenu.onDelete).
-      if (
-        pathname.startsWith(`/website/${channelId}/dashboards/${dashboard.id}`)
-      ) {
-        void navigate({
-          to: "/website/$channelId",
-          params: { channelId },
-        });
-      }
-    } catch (error) {
-      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-        action_type: "delete",
-        surface: "sidebar",
-        channel_id: channelId,
-        dashboard_id: dashboard.id,
-        success: false,
-      });
-      toast.error("Couldn't delete canvas", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-
-  // While renaming, swap the row for an inline editor that saves on Enter/blur.
-  if (renaming) {
-    return (
-      <div className="flex w-full items-start gap-2 px-2 py-1">
-        <span className="mt-px shrink-0">
-          {iconForTemplate(dashboard.templateId)}
-        </span>
-        <HeaderTitleEditor
-          key={renameAttempt}
-          initialTitle={renameDraft ?? dashboard.name}
-          onSubmit={onRename}
-          onCancel={closeRename}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <ContextMenu>
-        <Tooltip>
-          <ContextMenuTrigger
-            render={
-              <TooltipTrigger>
-                <ChildRow
-                  icon={iconForTemplate(dashboard.templateId)}
-                  title={dashboard.name}
-                  subtitle={`${relativeTime(dashboard.updatedAt)}`}
-                  active={active}
-                  onClick={() => {
-                    track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-                      action_type: "open",
-                      surface: "sidebar",
-                      channel_id: channelId,
-                      dashboard_id: dashboard.id,
-                      template_id: dashboard.templateId,
-                    });
-                    navigate({
-                      to: "/website/$channelId/dashboards/$dashboardId",
-                      params: { channelId, dashboardId: dashboard.id },
-                    });
-                  }}
-                />
-              </TooltipTrigger>
-            }
-          />
-          <TooltipContent side="right">{dashboard.name}</TooltipContent>
-        </Tooltip>
-        <ContextMenuContent>
-          <ContextMenuItem
-            disabled={isDeleting}
-            onClick={() => setRenaming(true)}
-          >
-            <PencilSimpleIcon size={14} />
-            Rename…
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            variant="destructive"
-            disabled={isDeleting}
-            onClick={() => setConfirmOpen(true)}
-          >
-            <TrashIcon size={14} />
-            Delete…
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-
-      {generationTask ? (
-        <CanvasGenerationTaskRow
-          channelId={channelId}
-          taskId={generationTask.id}
-          task={generationTask}
-          channelTaskId={generationChannelTaskId}
-          channels={channels}
-        />
-      ) : null}
-
-      <ConfirmDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete canvas</AlertDialogTitle>
-            <AlertDialogDescription>
-              "{dashboard.name}" will be permanently deleted. This can't be
-              undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogClose
-              render={<Button variant="outline">Cancel</Button>}
-            />
-            <Button
-              variant="primary"
-              loading={isDeleting}
-              onClick={() => void onDelete().then(() => setConfirmOpen(false))}
-            >
-              Delete
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </ConfirmDialog>
-    </>
-  );
-}
-
-// A filed task under a channel: the live status icon + title, with the shared
-// right-click menu (File to… / Archive / Remove from channel).
-function TaskRow({
-  channelTaskId,
-  channelId,
-  taskId,
-  task,
-  title,
-  active,
-  onClick,
-  channels,
-}: {
-  channelTaskId: string;
-  channelId: string;
-  taskId: string;
-  task: Task | undefined;
-  title: string;
-  active: boolean;
-  onClick: () => void;
-  channels: Channel[];
-}) {
-  const taskData = useChannelTaskData(task);
-  const session = useSessionForTask(taskId);
-  const workspace = useWorkspace(taskId);
-  const workspaceMode =
-    workspace?.mode ??
-    (taskData?.taskRunEnvironment === "cloud" ? "cloud" : undefined);
-  const { prState, hasDiff } = useTaskPrStatus({
-    id: taskId,
-    cloudPrUrl: taskData?.cloudPrUrl ?? null,
-    taskRunEnvironment: taskData?.taskRunEnvironment ?? null,
-  });
-  const icon = (
-    <TaskStatusIcon
-      taskData={taskData}
-      prState={prState}
-      hasDiff={hasDiff}
-      workspaceMode={workspaceMode}
-      size={16}
-    />
-  );
-
-  // A short status word under the title (running / merged / …), mirroring the
-  // task's live state. Repo-less local tasks (e.g. canvas generation) have no
-  // backend run record, so `taskRunStatus` is undefined once the turn ends —
-  // fall back to the live session so the row still shows a status line. A
-  // session still mid-handshake ("connecting") is on its way to generating, so
-  // treat it as running rather than letting it flash "completed".
-  const status =
-    taskData?.isGenerating === true
-      ? "running"
-      : (prState ??
-        taskData?.taskRunStatus ??
-        (session
-          ? session.status === "error"
-            ? "failed"
-            : session.status === "connecting"
-              ? "running"
-              : "completed"
-          : undefined));
-
-  return (
-    <TaskRowContextMenu
-      channelId={channelId}
-      taskId={taskId}
-      channelTaskId={channelTaskId}
-      title={title}
-      channels={channels}
-    >
-      <ChildRow
-        icon={icon}
-        title={title}
-        subtitle={status}
-        active={active}
-        onClick={onClick}
-      />
-    </TaskRowContextMenu>
-  );
-}
-
-// One channel in the tree: a "# name" header that expands to its canvases and
-// filed tasks. Children only load once the channel is open.
-function ChannelSection({
-  channel,
-  channels,
-}: {
-  channel: Channel;
-  channels: Channel[];
-}) {
-  const navigate = useNavigate();
-  const openHomeCanvas = useOpenHomeCanvas();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { data: tasks } = useTasks();
-  const archivedTaskIds = useArchivedTaskIds();
   const base = `/website/${channel.id}`;
+  // Highlight the row whenever any of the channel's routes is open.
   const isActive = pathname === base || pathname.startsWith(`${base}/`);
-  // The header surface navigates to the channel index, so only highlight it
-  // when that exact route is open (children carry their own active state).
-  const isIndexActive = pathname === base;
-  // Expansion is owned by the left icon trigger only. A deep link / fresh load
-  // into a channel opens it once (initial state), but navigating the main row
-  // afterward just selects the channel — it does not expand it.
-  const [open, setOpen] = useState(isActive);
   // Lifted so the hover button group stays visible while the menu is open.
   const [menuOpen, setMenuOpen] = useState(false);
   // The "+" dropdown (New task / New canvas). Keeps the hover actions pinned
@@ -987,296 +296,124 @@ function ChannelSection({
     confirmDelete,
     isDeleting,
   } = useChannelActions(channel);
-  // Only the first few tasks per channel show by default; "View more" reveals
-  // another batch each click so a busy channel doesn't flood the sidebar.
-  const [taskLimit, setTaskLimit] = useState(MAX_VISIBLE_TASKS_PER_CHANNEL);
-  // Expansion is driven by the Collapsible's icon trigger; collapsing also
-  // resets back to the first batch of tasks.
-  const onOpenChange = (next: boolean) => {
-    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-      action_type: next ? "open_channel" : "collapse_channel",
-      surface: "sidebar",
-      channel_id: channel.id,
-    });
-    setOpen(next);
-    if (!next) setTaskLimit(MAX_VISIBLE_TASKS_PER_CHANNEL);
-  };
-
-  // Lazy: a channel's canvases and filed tasks are only fetched once it's
-  // expanded, so the tree doesn't fire one query per channel on mount.
-  const { dashboards } = useDashboards(open ? channel.id : undefined);
-  const { tasks: filedTasks } = useChannelTasks(open ? channel.id : undefined);
-  // Warm both caches on hover/focus so the first expand is instant instead of
-  // popping in after a cold fetch. No-ops once the data is fresh or loaded.
-  const prefetchDashboards = usePrefetchDashboards();
-  const prefetchChannelTasks = usePrefetchChannelTasks();
-  const prefetchContents = () => {
-    if (open) return;
-    prefetchDashboards(channel.id);
-    prefetchChannelTasks(channel.id);
-  };
-  // Tasks are private to each user. A task filed by someone else won't be in
-  // `tasks` (it isn't shared with me), so hide it rather than rendering an
-  // "Untitled task" placeholder. Also drop archived tasks.
-  // Order by each task's own last-updated time (most recent first) so a
-  // channel surfaces what's actively moving, rather than the order tasks were
-  // filed. `filedTasks` arrives sorted by filing time; this re-sorts by the
-  // task's `updated_at`. A single id→ms map keeps both the membership filter
-  // and the sort O(1) per item; `|| 0` guards against a malformed date
-  // (`Date.parse` → NaN) and a task that isn't loaded.
-  const taskUpdatedAtMs = new Map(
-    tasks?.map((t) => [t.id, Date.parse(t.updated_at) || 0]) ?? [],
-  );
-  // A canvas's generation task is shown nested under the canvas while it's
-  // generating (and until the user has seen the result); don't also list it
-  // flat below. Once it drops out of this set it reappears in the regular list
-  // (if filed there). The currently-open task stays nested so it doesn't jump
-  // out from under the canvas while still being viewed.
-  const openTaskPrefix = `${base}/tasks/`;
-  const openTaskId = pathname.startsWith(openTaskPrefix)
-    ? pathname.slice(openTaskPrefix.length).split("/")[0]
-    : undefined;
-  const nestedGenerationTaskIds = useNestedGenerationTaskIds(
-    dashboards,
-    tasks,
-    openTaskId,
-  );
-  const visibleFiledTasks = filedTasks
-    .filter(
-      ({ taskId }) =>
-        !archivedTaskIds.has(taskId) &&
-        taskUpdatedAtMs.has(taskId) &&
-        !nestedGenerationTaskIds.has(taskId),
-    )
-    .sort(
-      (a, b) =>
-        (taskUpdatedAtMs.get(b.taskId) ?? 0) -
-        (taskUpdatedAtMs.get(a.taskId) ?? 0),
-    );
-  const displayedFiledTasks = visibleFiledTasks.slice(0, taskLimit);
-  const hiddenTaskCount = visibleFiledTasks.length - displayedFiledTasks.length;
-  // Reveal one more batch, capped at the remaining count.
-  const nextBatchCount = Math.min(
-    hiddenTaskCount,
-    MAX_VISIBLE_TASKS_PER_CHANNEL,
-  );
-  const hasChildren =
-    dashboards.length > 0 ||
-    displayedFiledTasks.length > 0 ||
-    hiddenTaskCount > 0;
 
   return (
-    <Box
-      className="group/chan relative"
-      onMouseEnter={prefetchContents}
-      onFocus={prefetchContents}
-    >
-      <Collapsible variant="folder" open={open} onOpenChange={onOpenChange}>
-        {/* Header row: the leading icon is the expand/collapse trigger (`#`
-            swaps to a chevron on hover), and the rest of the row is a button
-            that navigates into the channel index. */}
-        <CollapsibleHeader>
-          {/* Icon-only trigger — overlaid at the row's start edge. */}
-          <CollapsibleTrigger
-            iconOnly
-            icon={<HashIcon size={14} />}
-            aria-label={`Toggle ${channel.name}`}
-          >
-            Toggle {channel.name}
-          </CollapsibleTrigger>
-          {/* Full-row surface under the overlaid icon — ps-8 clears it so the
-              name lines up with the "New" button above, and the whole row opens
-              the channel index. Right-clicking it opens the same actions as the
-              "..." menu. */}
-          <ContextMenu>
-            <ContextMenuTrigger
-              render={
-                <Button
-                  variant="default"
-                  size="default"
-                  left
-                  data-selected={isIndexActive || undefined}
-                  onClick={() => {
-                    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                      action_type: "nav_click",
-                      surface: "sidebar",
-                      channel_id: channel.id,
-                    });
-                    void openHomeCanvas(channel);
-                  }}
-                  className="w-full min-w-0 justify-start ps-8 data-selected:bg-fill-selected data-selected:text-gray-12"
-                >
-                  <span
-                    className={cn(
-                      "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
-                      menuOpen && "pr-8",
-                    )}
-                  >
-                    {channel.name}
-                  </span>
-                </Button>
-              }
-            />
-            <ContextMenuContent>
-              <ChannelActionItems actions={actions} kind="context" />
-            </ContextMenuContent>
-          </ContextMenu>
-        </CollapsibleHeader>
-        {/* Hover actions: the "+" dropdown (New task / New canvas) and the
-            options menu. Stay visible while either is open. */}
-        <div className="absolute top-1 right-1">
-          <ButtonGroup>
-            <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          variant="outline"
-                          size="icon-xs"
-                          aria-label={`New in ${channel.name}`}
-                          className={cn(
-                            "gap-1 transition-opacity group-hover:border-border",
-                            menuOpen || newMenuOpen
-                              ? "opacity-100"
-                              : "opacity-0 group-hover/chan:opacity-100",
-                          )}
-                        >
-                          <PlusIcon size={12} weight="bold" />
-                        </Button>
-                      }
-                    />
-                  }
-                />
-                <TooltipContent side="top">New…</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent
-                align="start"
-                side="bottom"
-                sideOffset={4}
-                className="w-auto min-w-fit"
-              >
-                <DropdownMenuItem
-                  onClick={() => {
-                    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                      action_type: "new_task_open",
-                      surface: "sidebar",
-                      channel_id: channel.id,
-                    });
-                    navigate({
-                      to: "/website/$channelId/new",
-                      params: { channelId: channel.id },
-                    });
-                  }}
-                >
-                  <FileTextIcon size={14} />
-                  New task
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => {
-                    // Create + open a canvas with the default template directly;
-                    // the canvas's own composer drives what gets built.
-                    trackAndCreateCanvas(
-                      channel.id,
-                      undefined,
-                      "sidebar",
-                      () => void createAndOpenCanvas(),
-                    );
-                  }}
-                >
-                  <ChartBarIcon size={14} />
-                  New canvas
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <ChannelMenu
-              channelName={channel.name}
-              actions={actions}
-              open={menuOpen}
-              onOpenChange={setMenuOpen}
-            />
-          </ButtonGroup>
-        </div>
-        {/* Children hang off a vertical guide line, like a tree. The folder
-            variant's own inset is removed so the guide line controls indent. */}
-        {hasChildren && (
-          <CollapsibleContent className="px-0">
-            <Flex
-              direction="column"
-              gap="px"
-              className="mt-px ml-[11px] border-gray-6 border-l pl-2 empty:hidden"
+    <Box className="group/chan relative">
+      {/* A single, non-expandable row: the "# name" navigates straight to the
+          channel home. Right-clicking opens the same actions as the "..." menu. */}
+      <ContextMenu>
+        <ContextMenuTrigger
+          render={
+            <Button
+              variant="default"
+              size="default"
+              left
+              data-selected={isActive || undefined}
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "nav_click",
+                  surface: "sidebar",
+                  channel_id: channel.id,
+                });
+                void navigate({
+                  to: "/website/$channelId",
+                  params: { channelId: channel.id },
+                });
+              }}
+              className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
             >
-              {dashboards.map((d) => {
-                const genTaskId = d.generationTaskId;
-                const showGen =
-                  !!genTaskId && nestedGenerationTaskIds.has(genTaskId);
-                return (
-                  <DashboardRow
-                    key={d.id}
-                    channelId={channel.id}
-                    dashboard={d}
-                    active={pathname === `${base}/dashboards/${d.id}`}
-                    channels={channels}
-                    generationTask={
-                      showGen
-                        ? tasks?.find((t) => t.id === genTaskId)
-                        : undefined
-                    }
-                    generationChannelTaskId={
-                      showGen
-                        ? filedTasks.find((f) => f.taskId === genTaskId)?.id
-                        : undefined
+              <HashIcon size={14} className="shrink-0 text-gray-9" />
+              <span
+                className={cn(
+                  "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
+                  menuOpen && "pr-8",
+                )}
+              >
+                {channel.name}
+              </span>
+            </Button>
+          }
+        />
+        <ContextMenuContent>
+          <ChannelActionItems actions={actions} kind="context" />
+        </ContextMenuContent>
+      </ContextMenu>
+      {/* Hover actions: the "+" dropdown (New task / New canvas) and the
+            options menu. Stay visible while either is open. */}
+      <div className="absolute top-1 right-1">
+        <ButtonGroup>
+          <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        size="icon-xs"
+                        aria-label={`New in ${channel.name}`}
+                        className={cn(
+                          "gap-1 transition-opacity group-hover:border-border",
+                          menuOpen || newMenuOpen
+                            ? "opacity-100"
+                            : "opacity-0 group-hover/chan:opacity-100",
+                        )}
+                      >
+                        <PlusIcon size={12} weight="bold" />
+                      </Button>
                     }
                   />
-                );
-              })}
-              {displayedFiledTasks.map(({ id: channelTaskId, taskId }) => {
-                const task = tasks?.find((t) => t.id === taskId);
-                const title = task?.title || "Untitled task";
-                return (
-                  <TaskRow
-                    key={channelTaskId}
-                    channelTaskId={channelTaskId}
-                    channelId={channel.id}
-                    taskId={taskId}
-                    task={task}
-                    title={title}
-                    active={pathname === `${base}/tasks/${taskId}`}
-                    onClick={() =>
-                      navigate({
-                        to: "/website/$channelId/tasks/$taskId",
-                        params: { channelId: channel.id, taskId },
-                      })
-                    }
-                    channels={channels}
-                  />
-                );
-              })}
-              {hiddenTaskCount > 0 && (
-                <Button
-                  variant="default"
-                  size="default"
-                  onClick={() => {
-                    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                      action_type: "view_more_tasks",
-                      surface: "sidebar",
-                      channel_id: channel.id,
-                    });
-                    setTaskLimit((n) => n + MAX_VISIBLE_TASKS_PER_CHANNEL);
-                  }}
-                  className="w-full min-w-0 justify-start gap-2 text-[13px] text-gray-10"
-                >
-                  <span className="inline-flex size-[14px] shrink-0 items-center justify-center">
-                    <CaretDownIcon size={12} />
-                  </span>
-                  View {nextBatchCount} more
-                </Button>
-              )}
-            </Flex>
-          </CollapsibleContent>
-        )}
-      </Collapsible>
+                }
+              />
+              <TooltipContent side="top">New…</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent
+              align="start"
+              side="bottom"
+              sideOffset={4}
+              className="w-auto min-w-fit"
+            >
+              <DropdownMenuItem
+                onClick={() => {
+                  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                    action_type: "new_task_open",
+                    surface: "sidebar",
+                    channel_id: channel.id,
+                  });
+                  navigate({
+                    to: "/website/$channelId/new",
+                    params: { channelId: channel.id },
+                  });
+                }}
+              >
+                <FileTextIcon size={14} />
+                New task
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  // Create + open a canvas with the default template directly;
+                  // the canvas's own composer drives what gets built.
+                  trackAndCreateCanvas(
+                    channel.id,
+                    undefined,
+                    "sidebar",
+                    () => void createAndOpenCanvas(),
+                  );
+                }}
+              >
+                <ChartBarIcon size={14} />
+                New canvas
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <ChannelMenu
+            channelName={channel.name}
+            actions={actions}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+          />
+        </ButtonGroup>
+      </div>
       {/* One modal for both the dropdown and context-menu "Rename" actions. */}
       <RenameChannelModal
         channel={channel}
@@ -1373,11 +510,7 @@ export function ChannelsList() {
             </Box>
             <div className="pl-2">
               {starred.map((channel) => (
-                <ChannelSection
-                  key={channel.id}
-                  channel={channel}
-                  channels={channels}
-                />
+                <ChannelSection key={channel.id} channel={channel} />
               ))}
             </div>
           </>
@@ -1408,11 +541,7 @@ export function ChannelsList() {
 
         <div className="pl-2">
           {others.map((channel) => (
-            <ChannelSection
-              key={channel.id}
-              channel={channel}
-              channels={channels}
-            />
+            <ChannelSection key={channel.id} channel={channel} />
           ))}
         </div>
       </Flex>

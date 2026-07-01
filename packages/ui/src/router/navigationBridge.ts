@@ -140,6 +140,10 @@ export function navigateToScoutDetail(
   });
 }
 
+export function navigateToScoutFindings(): void {
+  void getRouterOrNull()?.navigate({ to: "/code/agents/scouts/findings" });
+}
+
 export function navigateToAgents(): void {
   void getRouterOrNull()?.navigate({ to: "/code/agents" });
 }

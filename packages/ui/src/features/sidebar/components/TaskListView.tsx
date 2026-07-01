@@ -3,6 +3,7 @@ import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { GitBranch } from "@phosphor-icons/react";
 import { groupTasksByRelativeDate } from "@posthog/core/sidebar/groupTasks";
+import { mostRecentRunEnvironment } from "@posthog/core/sidebar/runEnvironment";
 import type {
   TaskData,
   TaskGroup,
@@ -292,7 +293,12 @@ export function TaskListView({
                     tooltipContent={folder?.path ?? group.id}
                     onNewTask={() => {
                       if (groupFolderId) {
-                        openTaskInput(groupFolderId);
+                        openTaskInput({
+                          folderId: groupFolderId,
+                          folderRunEnvironment: mostRecentRunEnvironment(
+                            group.tasks,
+                          ),
+                        });
                       } else {
                         openTaskInput();
                       }

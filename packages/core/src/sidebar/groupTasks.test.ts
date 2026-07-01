@@ -299,4 +299,55 @@ describe("groupByRepository", () => {
       "acme/zeta",
     ]);
   });
+
+  it("sorts the 'other' group last in the alphabetical path", () => {
+    const tasks: TestTask[] = [
+      task("t1"),
+      task("t2", {
+        fullPath: "posthog/zeta",
+        name: "zeta",
+        organization: "PostHog",
+      }),
+      task("t3", {
+        fullPath: "posthog/alpha",
+        name: "alpha",
+        organization: "PostHog",
+      }),
+    ];
+
+    const groups = groupByRepository(tasks, []);
+
+    expect(groups.map((g) => g.id)).toEqual([
+      "posthog/alpha",
+      "posthog/zeta",
+      "other",
+    ]);
+  });
+
+  it("sorts the 'other' group last in the folder-order path", () => {
+    const tasks: TestTask[] = [
+      task("t1"),
+      task("t2", {
+        fullPath: "posthog/code",
+        name: "code",
+        organization: "PostHog",
+      }),
+      task("t3", {
+        fullPath: "posthog/posthog",
+        name: "posthog",
+        organization: "PostHog",
+      }),
+    ];
+
+    const groups = groupByRepository(tasks, [
+      "posthog/posthog",
+      "posthog/code",
+    ]);
+
+    expect(groups.map((g) => g.id)).toEqual([
+      "posthog/posthog",
+      "posthog/code",
+      "other",
+    ]);
+  });
 });

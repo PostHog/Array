@@ -459,6 +459,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       promptReplayed = true;
     }
 
+    if (commandMatch && !isLocalOnlyCommand) {
+      await this.refreshSlashCommandsForPrompt(commandMatch[1]);
+    }
+
     if (this.session.promptRunning) {
       const isSteer = isSteerMeta(params._meta);
       if (isSteer) {
@@ -668,25 +672,35 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                     },
                   },
                 });
+                // Clear the "Compacting…" spinner. On success a `compact_boundary`
+                // usually also clears it, but a no-op success carries none, so
+                // signal completion explicitly.
+                await this.client.extNotification(
+                  POSTHOG_NOTIFICATIONS.STATUS,
+                  {
+                    sessionId: params.sessionId,
+                    status: "compacting",
+                    isComplete: true,
+                  },
+                );
                 break;
               } else if (
                 message.compact_result === "failed" &&
                 compactionInProgress
               ) {
                 compactionInProgress = false;
-                const reason = message.compact_error
-                  ? `: ${message.compact_error}`
-                  : ".";
-                await this.client.sessionUpdate({
-                  sessionId: params.sessionId,
-                  update: {
-                    sessionUpdate: "agent_message_chunk",
-                    content: {
-                      type: "text",
-                      text: `\n\nCompacting failed${reason}`,
-                    },
+                // A failed compaction never emits a `compact_boundary`, so emit a
+                // structured failure status: the renderer clears the "Compacting…"
+                // spinner and reports the outcome as its own status row (a separator
+                // marker in the new thread), not as assistant prose.
+                await this.client.extNotification(
+                  POSTHOG_NOTIFICATIONS.STATUS,
+                  {
+                    sessionId: params.sessionId,
+                    status: "compacting_failed",
+                    error: message.compact_error ?? undefined,
                   },
-                });
+                );
                 break;
               }
             }
@@ -2164,6 +2178,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
   private async sendAvailableCommandsUpdate(): Promise<void> {
     const commands = await this.session.query.supportedCommands();
+    this.session.knownSlashCommands = collectKnownSlashCommands(commands);
     const available = getAvailableSlashCommands(commands);
     await this.client.sessionUpdate({
       sessionId: this.sessionId,
@@ -2173,6 +2188,27 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       },
     });
     this.updateBreakdownCategory("skills", estimateSkillsTokens(available));
+  }
+
+  private async refreshSlashCommandsForPrompt(command: string): Promise<void> {
+    const commandName = command.slice(1);
+    if (this.session.knownSlashCommands?.has(commandName)) {
+      return;
+    }
+    if (commandName.includes(":") || commandName.includes("__")) {
+      return;
+    }
+
+    try {
+      await this.session.query.reloadSkills();
+      await this.sendAvailableCommandsUpdate();
+    } catch (error) {
+      this.logger.warn("Failed to refresh slash commands before prompt", {
+        sessionId: this.sessionId,
+        command,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /** Update one category of the context-breakdown baseline so the next

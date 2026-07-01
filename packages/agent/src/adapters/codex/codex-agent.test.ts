@@ -23,7 +23,11 @@ vi.mock("@agentclientprotocol/sdk", async () => {
 
   return {
     ...actual,
-    ClientSideConnection: vi.fn(() => mockCodexConnection),
+    ClientSideConnection: class {
+      constructor() {
+        Object.assign(this, mockCodexConnection);
+      }
+    },
     ndJsonStream: vi.fn(() => ({}) as object),
   };
 });
@@ -44,13 +48,14 @@ vi.mock("./spawn", () => ({
 }));
 
 vi.mock("./settings", () => ({
-  CodexSettingsManager: vi.fn().mockImplementation((cwd: string) => ({
-    initialize: vi.fn(),
-    dispose: vi.fn(),
-    getCwd: () => cwd,
-    setCwd: vi.fn(),
-    getSettings: () => ({}),
-  })),
+  CodexSettingsManager: class {
+    constructor(private readonly cwd: string) {}
+    initialize = vi.fn();
+    dispose = vi.fn();
+    getCwd = () => this.cwd;
+    setCwd = vi.fn();
+    getSettings = () => ({});
+  },
 }));
 
 vi.mock("node:fs", async (importActual) => {

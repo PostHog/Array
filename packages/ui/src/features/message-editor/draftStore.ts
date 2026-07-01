@@ -1,9 +1,9 @@
-import type { AvailableCommand } from "@agentclientprotocol/sdk";
 import type { EditorContent } from "@posthog/core/message-editor/content";
 import { electronStorage } from "@posthog/ui/shell/rendererStorage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
+import type { EditorAvailableCommand } from "./types";
 
 type SessionId = string;
 
@@ -19,7 +19,7 @@ export interface EditorContext {
 interface DraftState {
   drafts: Record<SessionId, EditorContent | string>;
   contexts: Record<SessionId, EditorContext>;
-  commands: Record<SessionId, AvailableCommand[]>;
+  commands: Record<SessionId, EditorAvailableCommand[]>;
   focusRequested: Record<SessionId, number>;
   pendingContent: Record<SessionId, EditorContent>;
   _hasHydrated: boolean;
@@ -35,8 +35,11 @@ export interface DraftActions {
   ) => void;
   getContext: (sessionId: SessionId) => EditorContext | null;
   removeContext: (sessionId: SessionId) => void;
-  setCommands: (sessionId: SessionId, commands: AvailableCommand[]) => void;
-  getCommands: (sessionId: SessionId) => AvailableCommand[];
+  setCommands: (
+    sessionId: SessionId,
+    commands: EditorAvailableCommand[],
+  ) => void;
+  getCommands: (sessionId: SessionId) => EditorAvailableCommand[];
   clearCommands: (sessionId: SessionId) => void;
   requestFocus: (sessionId: SessionId) => void;
   clearFocusRequest: (sessionId: SessionId) => void;

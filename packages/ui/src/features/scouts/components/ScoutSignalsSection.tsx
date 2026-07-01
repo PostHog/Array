@@ -1,5 +1,6 @@
 import type {
   LinkedSignalReport,
+  ScoutEmission,
   ScoutRun,
 } from "@posthog/api-client/posthog-client";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
@@ -17,14 +18,15 @@ import { ScoutTaskRunLink } from "./ScoutTaskRunLink";
 /**
  * Cadence bounds a scout to ~48 runs per window (30-minute minimum interval),
  * but a backend-configured cadence below the UI presets could push past that;
- * capping the initially mounted runs caps the emissions-query fan-out too.
+ * capping the initially shown runs keeps the batched emissions request small.
  */
 const INITIAL_EMITTED_RUNS = 10;
 
 /**
- * The signals this scout emitted in the runs window, newest first. Emissions
- * are only fetchable per run, so each emitted run gets its own child query –
- * runs beyond the cap stay unmounted (and unfetched) until "Show more".
+ * The signals this scout emitted in the runs window, newest first. The visible
+ * runs' emissions and report links are fetched in two batched requests (one each)
+ * rather than one request per run; "Show more" widens the window and refetches,
+ * keeping the already-rendered cards in place while the larger batch loads.
  */
 export function ScoutSignalsSection({
   runs,
@@ -41,11 +43,46 @@ export function ScoutSignalsSection({
   highlightFindingId?: string;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const emittedRuns = runs.filter((run) => (run.emitted_count ?? 0) > 0);
-  const visibleRuns = showAll
-    ? emittedRuns
-    : emittedRuns.slice(0, INITIAL_EMITTED_RUNS);
+  const emittedRuns = useMemo(
+    () => runs.filter((run) => (run.emitted_count ?? 0) > 0),
+    [runs],
+  );
+  const visibleRuns = useMemo(
+    () => (showAll ? emittedRuns : emittedRuns.slice(0, INITIAL_EMITTED_RUNS)),
+    [emittedRuns, showAll],
+  );
   const hiddenCount = emittedRuns.length - visibleRuns.length;
+  const visibleRunIds = useMemo(
+    () => visibleRuns.map((run) => run.run_id),
+    [visibleRuns],
+  );
+
+  const {
+    data: emissions,
+    isLoading: emissionsLoading,
+    isError: emissionsError,
+  } = useScoutRunEmissions(visibleRunIds);
+  // Best-effort reverse lookup of which inbox report each finding grouped into.
+  // A failure here is non-fatal: the cards still render, just without the chip.
+  const { data: emissionReports } = useScoutEmissionReports(visibleRunIds);
+
+  const emissionsByRunId = useMemo(() => {
+    const map = new Map<string, ScoutEmission[]>();
+    for (const emission of emissions ?? []) {
+      const list = map.get(emission.run_id);
+      if (list) list.push(emission);
+      else map.set(emission.run_id, [emission]);
+    }
+    return map;
+  }, [emissions]);
+
+  const reportBySourceId = useMemo(() => {
+    const map = new Map<string, LinkedSignalReport>();
+    for (const link of emissionReports ?? []) {
+      if (link.report) map.set(link.source_id, link.report);
+    }
+    return map;
+  }, [emissionReports]);
 
   return (
     <Flex direction="column" gap="3">
@@ -67,6 +104,10 @@ export function ScoutSignalsSection({
             <RunEmissions
               key={run.run_id}
               run={run}
+              emissions={emissionsByRunId.get(run.run_id)}
+              reportBySourceId={reportBySourceId}
+              loading={emissionsLoading}
+              error={emissionsError}
               highlightFindingId={highlightFindingId}
             />
           ))}
@@ -95,29 +136,22 @@ export function ScoutSignalsSection({
 
 function RunEmissions({
   run,
+  emissions,
+  reportBySourceId,
+  loading,
+  error,
   highlightFindingId,
 }: {
   run: ScoutRun;
+  emissions: ScoutEmission[] | undefined;
+  reportBySourceId: Map<string, LinkedSignalReport>;
+  loading: boolean;
+  error: boolean;
   highlightFindingId?: string;
 }) {
-  const {
-    data: emissions,
-    isLoading,
-    isError,
-  } = useScoutRunEmissions(run.run_id);
-  // Best-effort reverse lookup of which inbox report each finding grouped into.
-  // A failure here is non-fatal: the cards still render, just without the chip.
-  const { data: emissionReports } = useScoutEmissionReports(run.run_id);
-  const reportBySourceId = useMemo(() => {
-    const map = new Map<string, LinkedSignalReport>();
-    for (const link of emissionReports ?? []) {
-      if (link.report) map.set(link.source_id, link.report);
-    }
-    return map;
-  }, [emissionReports]);
   const taskRunUrl = run.task_url ? getPostHogUrl(run.task_url) : null;
 
-  if (isLoading) {
+  if (loading) {
     return (
       <Box className="h-24 w-full animate-pulse rounded-(--radius-2) bg-(--gray-3)" />
     );
@@ -125,7 +159,7 @@ function RunEmissions({
 
   // The run-level emitted_count promised signals; an errored or empty
   // emissions response must say so rather than render nothing.
-  if (isError || !emissions || emissions.length === 0) {
+  if (error || !emissions || emissions.length === 0) {
     return (
       <Flex
         align="center"
@@ -133,7 +167,7 @@ function RunEmissions({
         className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3"
       >
         <Text className="flex-1 text-[12.5px] text-gray-10">
-          {isError
+          {error
             ? "Couldn't load this run's signals."
             : "No signal details available for this run."}
         </Text>

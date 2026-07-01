@@ -19,7 +19,7 @@ import {
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
-import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
+import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useFolderGenerationTask,
@@ -67,13 +67,10 @@ interface WebsiteContextProps {
 }
 
 export function WebsiteContext({ channelId }: WebsiteContextProps) {
-  // Resolve the channel name from the cached channels list, so we don't make
-  // a second network call just for the header label.
+  // Channel name for the empty-state copy (the header reads its own).
   const { channels } = useChannels();
-  const channel = useMemo(
-    () => channels.find((c) => c.id === channelId) ?? null,
-    [channels, channelId],
-  );
+  const channelName =
+    channels.find((c) => c.id === channelId)?.name ?? "Channel";
 
   const {
     data: latest,
@@ -163,16 +160,9 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
     setDraft(latest?.content ?? "");
   }, [latest?.content, hasDraft]);
 
-  const channelName = channel?.name ?? "Channel";
   const headerContent = useMemo(
-    () => (
-      <ChannelBreadcrumb
-        channelName={channelName}
-        leafIcon={<FileTextIcon size={12} />}
-        leafLabel="CONTEXT.md"
-      />
-    ),
-    [channelName],
+    () => <ChannelHeader channelId={channelId} />,
+    [channelId],
   );
   useSetHeaderContent(headerContent);
 

@@ -5,7 +5,12 @@ import {
   SidebarSimpleIcon,
   SparkleIcon,
 } from "@phosphor-icons/react";
+import type { AgentSpec } from "@posthog/shared/agent-platform-types";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import {
+  type CustomServerInput,
+  useMcpConnect,
+} from "@posthog/ui/features/mcp-server-manager/useMcpConnect";
 import { Button } from "@posthog/ui/primitives/Button";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
@@ -16,6 +21,7 @@ import { AgentDetailEmptyState } from "../components/AgentDetailLayout";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { useAgentChatPendingApproval } from "../hooks/useAgentChatPendingApproval";
 import { agentIngressBaseUrl } from "../utils/ingress";
+import { AgentBuilderMcpConnectDialog } from "./AgentBuilderMcpConnectDialog";
 import { AgentBuilderSecretForm } from "./AgentBuilderSecretForm";
 import { AgentBuilderSeedDialog } from "./AgentBuilderSeedDialog";
 import {
@@ -67,6 +73,27 @@ function buildAgentBuilderContext(
   };
 }
 
+/** Derive a unique, stable `mcps[].id` (tool-name prefix) from a label, avoiding
+ *  collisions with existing entries. Mirrors the config pane's add-from-connection. */
+function uniqueMcpId(label: string, mcps: unknown[]): string {
+  const base =
+    (label || "mcp")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32) || "mcp";
+  const taken = new Set(
+    mcps.map((m) =>
+      m && typeof m === "object"
+        ? (m as Record<string, unknown>).id
+        : undefined,
+    ),
+  );
+  let id = base;
+  for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+  return id;
+}
+
 /**
  * The Agent Builder chat — an always-on dock talking to the deployed meta-agent
  * (backend slug `agent-builder`). Streams through the shared
@@ -99,9 +126,15 @@ export function AgentBuilderDock() {
   const consumeSeed = useAgentBuilderStore((s) => s.consumeSeed);
   const pendingSecret = useAgentBuilderStore((s) => s.pendingSecret);
   const setPendingSecret = useAgentBuilderStore((s) => s.setPendingSecret);
+  const pendingMcpConnect = useAgentBuilderStore((s) => s.pendingMcpConnect);
+  const setPendingMcpConnect = useAgentBuilderStore(
+    (s) => s.setPendingMcpConnect,
+  );
   const lastSession = useAgentBuilderStore((s) => s.lastSession);
   const setLastSession = useAgentBuilderStore((s) => s.setLastSession);
+  const { connectCustomAsync, refetchInstallations } = useMcpConnect();
   const [secretBusy, setSecretBusy] = useState(false);
+  const [mcpConnectBusy, setMcpConnectBusy] = useState(false);
   const [placeholder] = useState(
     () =>
       BUILDER_PLACEHOLDERS[
@@ -213,6 +246,78 @@ export function AgentBuilderDock() {
     setPendingSecret(null);
   }
 
+  // Resolve a pending connect_mcp: run the native connect (OAuth/api-key handoff
+  // — tokens never reach the agent), then attach the resulting connection to the
+  // target agent's draft spec and wake the parked session with the outcome.
+  async function submitMcpConnect(values: CustomServerInput) {
+    const pending = pendingMcpConnect;
+    if (!pending) return;
+    setMcpConnectBusy(true);
+    try {
+      const result = await connectCustomAsync(values);
+      if (result && "error" in result && result.error) {
+        throw new Error(result.error);
+      }
+      // The new install is keyed by url server-side ((team, user, url)); refetch
+      // and match to recover its id (the OAuth callback doesn't return it).
+      const installs = await refetchInstallations();
+      const install = installs.find((i) => i.url === values.url);
+      if (!install) {
+        throw new Error("connection_not_found_after_connect");
+      }
+      // Attach to the target agent's spec: load → append an mcps[] entry that
+      // references the connection → PATCH the (draft) revision.
+      const rev = await client.getAgentRevision(
+        pending.agentSlug,
+        pending.revisionId,
+      );
+      if (!rev) {
+        throw new Error("revision_not_found");
+      }
+      const spec = (rev.spec ?? {}) as AgentSpec;
+      const mcps = Array.isArray(spec.mcps) ? [...spec.mcps] : [];
+      const mcpId = uniqueMcpId(values.name || values.url, mcps);
+      mcps.push({
+        id: mcpId,
+        url: values.url,
+        connection: install.id,
+        secrets: [],
+      });
+      await client.updateAgentRevisionSpec(
+        pending.agentSlug,
+        pending.revisionId,
+        {
+          ...spec,
+          mcps,
+        },
+      );
+      await chat.resolveInteractiveTool(pending.callId, {
+        result: {
+          connected: true,
+          connection_id: install.id,
+          mcp_id: mcpId,
+          url: values.url,
+        },
+      });
+      setPendingMcpConnect(null);
+    } catch (err) {
+      await chat.resolveInteractiveTool(pending.callId, {
+        error: err instanceof Error ? err.message : "connect_mcp_failed",
+      });
+      setPendingMcpConnect(null);
+    } finally {
+      setMcpConnectBusy(false);
+    }
+  }
+
+  function cancelMcpConnect() {
+    if (!pendingMcpConnect) return;
+    void chat.resolveInteractiveTool(pendingMcpConnect.callId, {
+      error: "user_cancelled",
+    });
+    setPendingMcpConnect(null);
+  }
+
   // Edit-with-AI hand-offs: send the seeded prompt once when a new seed lands.
   // An empty dock starts immediately; if a chat is already in progress, confirm
   // whether to start fresh or continue (so a deliberate "New agent" / "Edit with
@@ -233,6 +338,7 @@ export function AgentBuilderDock() {
   function seedStartFresh() {
     if (!seedConfirm) return;
     setPendingSecret(null);
+    setPendingMcpConnect(null);
     chat.newChat();
     setLastSession(null);
     chat.send(seedConfirm);
@@ -285,6 +391,7 @@ export function AgentBuilderDock() {
               size="1"
               onClick={() => {
                 setPendingSecret(null);
+                setPendingMcpConnect(null);
                 chat.newChat();
                 setLastSession(null);
               }}
@@ -354,6 +461,13 @@ export function AgentBuilderDock() {
         onStartFresh={seedStartFresh}
         onContinue={seedContinue}
         onCancel={() => setSeedConfirm(null)}
+      />
+
+      <AgentBuilderMcpConnectDialog
+        pending={pendingMcpConnect}
+        busy={mcpConnectBusy}
+        onSubmit={submitMcpConnect}
+        onCancel={cancelMcpConnect}
       />
     </Flex>
   );

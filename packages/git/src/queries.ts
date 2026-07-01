@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { isBinaryFile } from "@posthog/shared";
 import type { CreateGitClientOptions } from "./client";
 import { mapWithConcurrency } from "./concurrency";
 import { getGitOperationManager } from "./operation-manager";
@@ -655,6 +656,10 @@ export async function getChangedFilesDetailed(
           if (excludePatterns && matchesExcludePattern(file, excludePatterns)) {
             continue;
           }
+          if (isBinaryFile(file)) {
+            files.push({ path: file, status: "untracked" });
+            continue;
+          }
           untrackedToCount.push(file);
         }
 
@@ -826,9 +831,10 @@ export function computeDiffStatsFromFiles(files: ChangedFileInfo[]): DiffStats {
   const uniquePaths = new Set<string>();
 
   for (const file of files) {
+    uniquePaths.add(file.path);
+    if (isBinaryFile(file.path)) continue;
     linesAdded += file.linesAdded ?? 0;
     linesRemoved += file.linesRemoved ?? 0;
-    uniquePaths.add(file.path);
   }
 
   return {

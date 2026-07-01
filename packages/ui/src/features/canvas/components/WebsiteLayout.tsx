@@ -1,10 +1,18 @@
 import {
+  DotsThreeIcon,
   GitForkIcon,
   LinkIcon,
   PencilSimpleIcon,
+  PushPinIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Button } from "@posthog/quill";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
@@ -56,7 +64,38 @@ function FreeformEditControls({
   const editing = useIsDashboardEditing(dashboardId);
   const setEditing = useDashboardEditStore((s) => s.setEditing);
   const { dashboard } = useDashboard(dashboardId);
-  const { forkFreeform, isCreating } = useDashboardMutations();
+  const { forkFreeform, isCreating, setPinned } = useDashboardMutations();
+  const isPinned = dashboard?.pinnedAt != null;
+
+  const onTogglePin = () => {
+    void setPinned(dashboardId, !isPinned)
+      .then(() =>
+        track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+          action_type: isPinned ? "unpin" : "pin",
+          surface: "canvas",
+          channel_id: channelId,
+          dashboard_id: dashboardId,
+          kind: "freeform",
+          success: true,
+        }),
+      )
+      .catch((error: unknown) => {
+        track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+          action_type: isPinned ? "unpin" : "pin",
+          surface: "canvas",
+          channel_id: channelId,
+          dashboard_id: dashboardId,
+          kind: "freeform",
+          success: false,
+        });
+        toast.error(
+          isPinned ? "Couldn't unpin canvas" : "Couldn't pin canvas",
+          {
+            description: error instanceof Error ? error.message : String(error),
+          },
+        );
+      });
+  };
 
   const threadId = threadIdFor(dashboardId);
   const { code, versions, currentVersionId, isSaving } =
@@ -157,14 +196,33 @@ function FreeformEditControls({
           Save as fork
         </Button>
       )}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => void copyCanvasLink(channelId, dashboardId, "canvas")}
-      >
-        <LinkIcon size={14} />
-        Copy link
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Canvas options"
+            >
+              <DotsThreeIcon size={16} weight="bold" />
+            </Button>
+          }
+        />
+        <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
+          <DropdownMenuItem
+            onClick={() =>
+              void copyCanvasLink(channelId, dashboardId, "canvas")
+            }
+          >
+            <LinkIcon size={14} />
+            Copy link
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onTogglePin}>
+            <PushPinIcon size={14} weight={isPinned ? "fill" : "regular"} />
+            {isPinned ? "Unpin from channel" : "Pin to channel"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Button
         variant="outline"
         size="sm"
@@ -196,10 +254,12 @@ function FreeformEditControls({
 // renamable and a tier icon (dashboard / web-analytics / freeform app).
 function CanvasBreadcrumb({
   channelName,
+  channelId,
   dashboardId,
   trailing,
 }: {
   channelName: string;
+  channelId: string;
   dashboardId: string;
   trailing?: ReactNode;
 }) {
@@ -210,6 +270,7 @@ function CanvasBreadcrumb({
   return (
     <ChannelBreadcrumb
       channelName={channelName}
+      channelId={channelId}
       leafIcon={iconForTemplate(dashboard?.templateId ?? "", {
         size: 12,
         // No color here: the breadcrumb's leaf <span> owns the icon color so it
@@ -246,8 +307,10 @@ export function WebsiteLayout() {
     : "Channel";
 
   const isDashboardDetail = Boolean(channelId && dashboardId);
-  // The dashboards grid (a channel with no sub-view selected).
-  const isDashboardsGrid = Boolean(channelId) && pathname === base;
+  // The canvases grid (its own sub-route now that the channel index is the
+  // static homepage, which carries its own header content).
+  const isDashboardsGrid =
+    Boolean(channelId) && pathname === `${base}/canvases`;
 
   // Whether the single toolbar should render: the canvases grid, or any single
   // canvas (so Edit lives here too).
@@ -281,6 +344,7 @@ export function WebsiteLayout() {
           {isDashboardDetail && dashboardId ? (
             <CanvasBreadcrumb
               channelName={channelName}
+              channelId={channelId}
               dashboardId={dashboardId}
               trailing={
                 <FreeformEditControls
@@ -292,6 +356,7 @@ export function WebsiteLayout() {
           ) : (
             <ChannelBreadcrumb
               channelName={channelName}
+              channelId={channelId}
               leafLabel="Canvases"
               trailing={<NewCanvasMenu channelId={channelId} />}
             />

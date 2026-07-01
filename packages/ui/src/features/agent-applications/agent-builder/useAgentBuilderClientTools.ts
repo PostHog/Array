@@ -6,10 +6,12 @@ import { useAgentBuilderStore } from "./agentBuilderStore";
 /**
  * The `kind:'client'` tool ids the agent-builder dock can fulfil — sent to the
  * runner as `supported_client_tools` at /run so it exposes only these to the
- * model. Keep in sync with the handler below plus the built-in toast/get_context.
+ * model. Keep in sync with the handlers below (plus the built-in
+ * toast/get_context). `set_secret`/`connect_mcp` are interactive punch-outs.
  */
 export const AGENT_BUILDER_CLIENT_TOOLS = [
   "set_secret",
+  "connect_mcp",
   "focus_tab",
   "focus_file",
   "focus_spec_section",
@@ -33,6 +35,9 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
   const navigate = useNavigate();
   const followMode = useAgentBuilderStore((s) => s.followMode);
   const setPendingSecret = useAgentBuilderStore((s) => s.setPendingSecret);
+  const setPendingMcpConnect = useAgentBuilderStore(
+    (s) => s.setPendingMcpConnect,
+  );
   const page = useAgentBuilderStore((s) => s.page);
   const followRef = useRef(followMode);
   followRef.current = followMode;
@@ -67,6 +72,29 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
           revisionId,
           secret,
           mode,
+          purpose: str(args.purpose),
+        });
+        return { defer: true };
+      }
+
+      // connect_mcp — interactive punch-out. Park the call and render a prefilled
+      // connect form; the dock runs the native OAuth/api-key connect (auth never
+      // touches the agent), writes the resulting mcps[].connection onto the
+      // target agent's spec, and wakes the session. Like set_secret, the target
+      // revision comes from the args or the current agent-config page.
+      if (data.tool_id === "connect_mcp") {
+        const agentSlug = str(args.agent_slug);
+        if (!agentSlug) return { error: "missing_arg: agent_slug" };
+        const p = pageRef.current;
+        const pageRevision = p.kind === "agent-config" ? p.revision : undefined;
+        const revisionId = str(args.revision_id) ?? pageRevision;
+        if (!revisionId) return { error: "missing_arg: revision_id" };
+        setPendingMcpConnect({
+          callId: data.call_id,
+          agentSlug,
+          revisionId,
+          name: str(args.name),
+          url: str(args.url),
           purpose: str(args.purpose),
         });
         return { defer: true };
@@ -166,6 +194,6 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
           return { result: { focused: false, reason: "unknown_focus_target" } };
       }
     },
-    [navigate, setPendingSecret],
+    [navigate, setPendingSecret, setPendingMcpConnect],
   );
 }

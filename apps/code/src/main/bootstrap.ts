@@ -58,6 +58,13 @@ app.commandLine.appendSwitch("enable-logging", "file");
 app.commandLine.appendSwitch("log-file", chromiumLogPath);
 app.commandLine.appendSwitch("log-level", "0");
 
+// In dev, expose the renderer over CDP (:9222) for the test-electron-app skill.
+// electron-vite launches Electron itself, so this is set in-process rather than
+// via a CLI flag.
+if (isDev) {
+  app.commandLine.appendSwitch("remote-debugging-port", "9222");
+}
+
 crashReporter.start({ uploadToServer: false });
 
 // Force IPv4 resolution when "localhost" is used so the agent hits 127.0.0.1

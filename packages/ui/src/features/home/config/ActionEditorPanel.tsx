@@ -10,6 +10,8 @@ import { useWorkflowEditorStore } from "@posthog/ui/features/home/stores/workflo
 import { UnifiedModelSelector } from "@posthog/ui/features/sessions/components/UnifiedModelSelector";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { usePreviewConfig } from "@posthog/ui/features/task-detail/hooks/usePreviewConfig";
+import { Combobox } from "@posthog/ui/primitives/combobox/Combobox";
+import type { ComboboxSearchKeys } from "@posthog/ui/primitives/combobox/useComboboxFilter";
 import { Card, Flex, Text, TextArea, TextField } from "@radix-ui/themes";
 import { useMemo } from "react";
 import { SITUATION_TONE } from "./workflowMapLayout";
@@ -20,6 +22,17 @@ interface Props {
   totalInSituation: number;
   indexInSituation: number;
 }
+
+type SkillOption = ReturnType<typeof useSkillsForPicker>["skills"][number];
+
+// Name-first so a prefix match on the name wins the exact-match promotion.
+const skillSearchValue = (s: SkillOption) => `${s.name} ${s.description}`;
+
+// Weight the skill name above its description so a name hit ranks first.
+const SKILL_SEARCH_KEYS: ComboboxSearchKeys<SkillOption> = [
+  { name: "name", weight: 0.7 },
+  { name: "description", weight: 0.3 },
+];
 
 export function ActionEditorPanel({
   situationId,
@@ -99,20 +112,48 @@ export function ActionEditorPanel({
           </Field>
 
           <Field label="Skill">
-            <select
+            <Combobox.Root
               value={action.skillId}
-              onChange={(e) => patch({ skillId: e.target.value })}
-              className="rounded-md border border-(--gray-6) bg-(--gray-1) px-2 py-1.5 text-[12px] text-gray-12"
+              onValueChange={(v) => patch({ skillId: v })}
+              size="2"
             >
-              <option value="">
-                {isLoading ? "Loading…" : "Pick a skill"}
-              </option>
-              {skills.map((s) => (
-                <option key={s.name} value={s.name}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+              <Combobox.Trigger
+                className="w-full"
+                placeholder={isLoading ? "Loading…" : "Pick a skill"}
+              >
+                {selectedSkill?.name}
+              </Combobox.Trigger>
+              <Combobox.Content
+                items={skills}
+                getValue={skillSearchValue}
+                searchKeys={SKILL_SEARCH_KEYS}
+                className="w-(--radix-popover-trigger-width)"
+              >
+                {({ filtered, hasMore, moreCount }) => (
+                  <>
+                    <Combobox.Input placeholder="Search skills..." />
+                    <Combobox.Empty>
+                      {isLoading ? "Loading skills…" : "No matching skills"}
+                    </Combobox.Empty>
+                    {filtered.map((s) => (
+                      <Combobox.Item
+                        key={s.name}
+                        value={s.name}
+                        textValue={s.name}
+                        description={s.description}
+                      >
+                        {s.name}
+                      </Combobox.Item>
+                    ))}
+                    {hasMore && (
+                      <Combobox.Label>
+                        {moreCount} more; type to filter
+                      </Combobox.Label>
+                    )}
+                  </>
+                )}
+              </Combobox.Content>
+            </Combobox.Root>
             {selectedSkill ? (
               <Text className="mt-1 text-[10px] text-gray-10">
                 {selectedSkill.description}
