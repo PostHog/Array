@@ -102,6 +102,13 @@ const MAX_SUPERSEDED_RUN_IDS = 100;
  * imperceptible for streamed text.
  */
 const SESSION_EVENT_FLUSH_MS = 16;
+/**
+ * A backgrounded session's transcript is freed this long after it stops being
+ * viewed, and reloaded from disk on return. Only disconnected (idle, no live
+ * subscription) sessions are eligible, so no streamed event can append to an
+ * evicted transcript.
+ */
+const SESSION_EVENT_EVICT_GRACE_MS = 20_000;
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
   constructor(
@@ -168,6 +175,12 @@ export interface ISessionStore {
     taskRunId: string,
     events: AcpMessage[],
     newLineCount?: number,
+  ): void;
+  evictEvents(taskRunId: string): void;
+  restoreEvents(
+    taskRunId: string,
+    events: AcpMessage[],
+    lineCount: number,
   ): void;
   updateCloudStatus(
     taskRunId: string,
@@ -1373,6 +1386,92 @@ export class SessionService {
     }
   }
 
+  // --- Transcript residency (memory eviction) ---
+
+  /** taskRunIds whose transcript was freed and must be reloaded on next view. */
+  private evictedRunIds = new Set<string>();
+  private eventEvictionTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+
+  /**
+   * Called when a task's transcript becomes visible. Cancels any pending
+   * eviction and, if the transcript was freed while backgrounded, reloads it
+   * from disk — but only if a reconnect hasn't already refilled it.
+   */
+  async ensureEventsLoaded(taskId: string): Promise<void> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return;
+    const { taskRunId } = session;
+    this.cancelEventEviction(taskRunId);
+    if (!this.evictedRunIds.has(taskRunId)) return;
+    this.evictedRunIds.delete(taskRunId);
+    if (session.events.length > 0) return;
+
+    try {
+      const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
+        session.logUrl,
+        taskRunId,
+      );
+      // A reconnect may have refilled events while we awaited the log read;
+      // only restore if the transcript is still empty for the same run.
+      const fresh = this.d.store.getSessionByTaskId(taskId);
+      if (
+        fresh?.taskRunId === taskRunId &&
+        fresh.events.length === 0 &&
+        rawEntries.length > 0
+      ) {
+        this.d.store.restoreEvents(
+          taskRunId,
+          convertStoredEntriesToEvents(rawEntries),
+          totalLineCount,
+        );
+      }
+    } catch (error) {
+      this.d.log.warn("Failed to rehydrate evicted session transcript", {
+        taskId,
+        error,
+      });
+    }
+  }
+
+  /**
+   * Called when a task's transcript stops being visible. Schedules its
+   * transcript to be freed after a grace period, if it's still a settled,
+   * disconnected background session by then.
+   */
+  scheduleEventEviction(taskId: string): void {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return;
+    const { taskRunId } = session;
+    if (this.eventEvictionTimers.has(taskRunId)) return;
+
+    const timer = setTimeout(() => {
+      this.eventEvictionTimers.delete(taskRunId);
+      const current = this.d.store.getSessions()[taskRunId];
+      if (
+        !current ||
+        current.status !== "disconnected" ||
+        current.isPromptPending ||
+        current.events.length === 0
+      ) {
+        return;
+      }
+      this.evictedRunIds.add(taskRunId);
+      this.d.store.evictEvents(taskRunId);
+    }, SESSION_EVENT_EVICT_GRACE_MS);
+    this.eventEvictionTimers.set(taskRunId, timer);
+  }
+
+  private cancelEventEviction(taskRunId: string): void {
+    const timer = this.eventEvictionTimers.get(taskRunId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.eventEvictionTimers.delete(taskRunId);
+    }
+  }
+
   private subscribeToChannel(taskRunId: string): void {
     if (this.subscriptions.has(taskRunId)) {
       return;
@@ -1469,6 +1568,9 @@ export class SessionService {
       this.sessionEventFlushHandle = null;
     }
     this.pendingSessionEvents.clear();
+    for (const timer of this.eventEvictionTimers.values()) clearTimeout(timer);
+    this.eventEvictionTimers.clear();
+    this.evictedRunIds.clear();
     this.connectingTasks.clear();
     this.localRepoPaths.clear();
     this.localRecoveryAttempts.clear();

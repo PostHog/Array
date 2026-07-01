@@ -32,6 +32,7 @@ import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/Se
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/useSessionEventsResidency";
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
   useAdapterForTask,
@@ -164,6 +165,7 @@ export function SessionView({
   hideInput = false,
 }: SessionViewProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  useSessionEventsResidency(taskId);
   const showRawLogs = useShowRawLogs();
   const { setShowRawLogs } = useSessionViewActions();
   const pendingTaskPrompt = usePendingTaskPrompt(taskId);

@@ -75,6 +75,40 @@ export const sessionStoreSetters = {
     });
   },
 
+  /**
+   * Free a backgrounded session's transcript to reclaim memory. The events are
+   * reloaded from disk the next time the session is viewed (see
+   * `SessionService.ensureEventsLoaded`). No-op if the session is gone.
+   */
+  evictEvents: (taskRunId: string) => {
+    sessionStore.setState((state) => {
+      const session = state.sessions[taskRunId];
+      if (session && session.events.length > 0) {
+        session.events = [];
+        session.processedLineCount = 0;
+      }
+    });
+  },
+
+  /**
+   * Replace a session's transcript in place (rehydration after eviction),
+   * preserving its live status/config. No-op if the session is gone.
+   */
+  restoreEvents: (
+    taskRunId: string,
+    events: AcpMessage[],
+    lineCount: number,
+  ) => {
+    sessionStore.setState((state) => {
+      const session = state.sessions[taskRunId];
+      if (session) {
+        for (const event of events) Object.freeze(event);
+        session.events = events;
+        session.processedLineCount = lineCount;
+      }
+    });
+  },
+
   updateCloudStatus: (
     taskRunId: string,
     fields: {
