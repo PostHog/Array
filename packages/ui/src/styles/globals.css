@@ -361,6 +361,26 @@ body:has(.rt-DialogOverlay[data-state="open"]) [data-quill-portal] {
   animation: zen-float 3.5s ease-in-out infinite;
 }
 
+/* Braille-dots spinner: 10 stacked frames, each held for 10% of the cycle.
+   step-end holds each keyframe value so frames swap hard instead of fading.
+   Pure CSS so spinners cost no JS timers, React renders or DOM mutations
+   (DOM mutations would otherwise be serialized by session replay). */
+@keyframes ph-dots-frame {
+  0% {
+    opacity: 1;
+  }
+  10%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.ph-dots-frame {
+  grid-area: 1 / 1;
+  opacity: 0;
+  animation: ph-dots-frame 800ms step-end infinite;
+}
+
 /* Pulse animation for generating indicator */
 @keyframes ph-pulse {
   0%,
