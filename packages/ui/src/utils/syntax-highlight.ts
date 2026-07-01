@@ -151,6 +151,23 @@ export interface HighlightSegment {
   color?: string;
 }
 
+/**
+ * Parsed output cache keyed by (theme, language, content). The per-component
+ * useMemo only survives that instance, so virtualized scroll re-parses a code
+ * block every time it remounts. This bounded LRU makes remounts free.
+ */
+const MAX_HIGHLIGHT_CACHE_ENTRIES = 256;
+const highlightCache = new Map<string, HighlightSegment[]>();
+
+function hashCode(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
 export function highlightSyntax(
   code: string,
   language: string,
@@ -158,6 +175,14 @@ export function highlightSyntax(
 ): HighlightSegment[] | null {
   const parser = getParser(language);
   if (!parser) return null;
+
+  const cacheKey = `${isDark ? "d" : "l"}:${language}:${code.length}:${hashCode(code).toString(36)}`;
+  const cached = highlightCache.get(cacheKey);
+  if (cached) {
+    highlightCache.delete(cacheKey);
+    highlightCache.set(cacheKey, cached);
+    return cached;
+  }
 
   const tree = parser.parse(code);
   const palette = isDark ? darkPalette : lightPalette;
@@ -176,6 +201,12 @@ export function highlightSyntax(
       segments.push({ text: "\n" });
     },
   );
+
+  highlightCache.set(cacheKey, segments);
+  if (highlightCache.size > MAX_HIGHLIGHT_CACHE_ENTRIES) {
+    const oldest = highlightCache.keys().next().value;
+    if (oldest !== undefined) highlightCache.delete(oldest);
+  }
 
   return segments;
 }
