@@ -313,6 +313,79 @@ describe("CodexAcpAgent", () => {
     });
   });
 
+  it("applies a local-skill invocation: drops the /command chunk, injects the skill context, strips the meta", async () => {
+    const { agent, client } = createAgent();
+    mockCodexConnection.newSession.mockResolvedValue({
+      sessionId: "session-1",
+      modes: { currentModeId: "auto", availableModes: [] },
+      configOptions: [],
+    } satisfies Partial<NewSessionResponse>);
+    await agent.newSession({
+      cwd: process.cwd(),
+    } as never);
+
+    mockCodexConnection.prompt.mockResolvedValue({ stopReason: "end_turn" });
+
+    await agent.prompt({
+      sessionId: "session-1",
+      prompt: [{ type: "text", text: "/depparent run the readiness check" }],
+      _meta: {
+        localSkillContext: "SKILL INSTRUCTIONS: run the readiness check",
+        localSkillName: "depparent",
+      },
+    } as never);
+
+    // codex-acp must receive the resolved skill instructions as plain text —
+    // NOT the bare `/depparent` slash command it would reject — and the
+    // local-skill meta must not be forwarded.
+    expect(mockCodexConnection.prompt).toHaveBeenCalledTimes(1);
+    const forwarded = mockCodexConnection.prompt.mock.calls[0][0];
+    expect(forwarded.prompt).toEqual([
+      { type: "text", text: "SKILL INSTRUCTIONS: run the readiness check" },
+    ]);
+    expect(forwarded._meta?.localSkillContext).toBeUndefined();
+    expect(forwarded._meta?.localSkillName).toBeUndefined();
+    // The broadcast still shows the real user turn (the typed command).
+    expect(client.sessionUpdate).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "/depparent run the readiness check" },
+      },
+    });
+  });
+
+  it.each([
+    [
+      "localSkillContext is set but localSkillName is missing",
+      { localSkillContext: "SKILL INSTRUCTIONS" },
+    ],
+    ["there is no localSkillContext", {}],
+  ])("forwards the prompt unchanged when %s", async (_label, meta) => {
+    const { agent } = createAgent();
+    mockCodexConnection.newSession.mockResolvedValue({
+      sessionId: "session-1",
+      modes: { currentModeId: "auto", availableModes: [] },
+      configOptions: [],
+    } satisfies Partial<NewSessionResponse>);
+    await agent.newSession({ cwd: process.cwd() } as never);
+    mockCodexConnection.prompt.mockResolvedValue({ stopReason: "end_turn" });
+
+    await agent.prompt({
+      sessionId: "session-1",
+      prompt: [{ type: "text", text: "/depparent run the readiness check" }],
+      _meta: meta,
+    } as never);
+
+    // Without both fields we never inject context nor drop the chunk — the
+    // prompt must reach codex-acp exactly as given (no context + stray-command
+    // mix), so the original chunk is preserved verbatim.
+    const forwarded = mockCodexConnection.prompt.mock.calls[0][0];
+    expect(forwarded.prompt).toEqual([
+      { type: "text", text: "/depparent run the readiness check" },
+    ]);
+  });
+
   it("serializes concurrent prompts so usage accumulators are not wiped mid-turn", async () => {
     const { agent } = createAgent();
     mockCodexConnection.newSession.mockResolvedValue({
