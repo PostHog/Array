@@ -369,26 +369,19 @@ export function tiptapEventToCombo(e: KeyboardEvent): string | null {
 /**
  * Like eventToCombo but also returns partial combos for bare modifier presses.
  * Used in the inline shortcut recorder to show live combo feedback.
+ * Requires at least one of Cmd/Ctrl/Alt — shift alone is not a valid leading modifier.
  */
 export function recordingEventToCombo(
   e: KeyboardEvent,
 ): { combo: string; isPartial: boolean } | null {
-  const bare = ["Meta", "Control", "Shift", "Alt"];
+  if (!e.metaKey && !e.ctrlKey && !e.altKey) return null;
 
+  const bare = ["Meta", "Control", "Shift", "Alt"];
   const parts = buildModifierParts(e);
-  if (parts.length === 0) return null;
 
   if (bare.includes(e.key)) {
-    // Only a modifier was pressed — partial combo
+    // Only modifier keys pressed so far — partial combo
     return { combo: parts.join("+"), isPartial: true };
-  }
-
-  if (!e.metaKey && !e.ctrlKey && !e.altKey) {
-    // Shift-only: allow non-printable keys (arrows, F-keys) since "shift+up" is a
-    // valid binding (prompt history default). Block printable keys — shift+letter
-    // would conflict with normal typing.
-    if (e.key.length === 1 || ["Enter", "Escape", "Tab"].includes(e.key))
-      return null;
   }
 
   parts.push(e.key.toLowerCase().replace(/^arrow/, ""));

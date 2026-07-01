@@ -90,7 +90,6 @@ function InlineRecorder({ shortcutId, onSave, onCancel }: InlineRecorderProps) {
     };
   }, [captured, conflict, shortcutId, onSave, onCancel]);
 
-  // Click outside to cancel
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (
@@ -108,37 +107,42 @@ function InlineRecorder({ shortcutId, onSave, onCancel }: InlineRecorderProps) {
   const displayParts = displayCombo ? formatHotkeyParts(displayCombo) : null;
 
   return (
-    <div ref={containerRef} className="flex flex-col items-end gap-1">
+    <div ref={containerRef} className="flex w-[220px] flex-col gap-[3px]">
       <div
-        className={`flex min-w-[90px] items-center justify-center gap-[3px] rounded-(--radius-2) border px-2 py-[3px] ${
+        className={`flex h-[28px] items-center gap-[4px] rounded-(--radius-2) border px-2 ${
           conflict
             ? "border-(--amber-7) bg-(--amber-2) ring-(--amber-6) ring-1"
             : "border-(--accent-7) bg-(--accent-2) ring-(--accent-6) ring-1"
         }`}
       >
         {displayParts ? (
-          <Flex gap="1" align="center">
-            {displayParts.map((part) => (
-              <Keycap key={part} label={part} size="sm" />
-            ))}
-            {partial && (
-              <span className="animate-pulse text-(--gray-9) text-[10px]">
-                …
+          <>
+            <Flex gap="1" align="center">
+              {displayParts.map((part) => (
+                <Keycap key={part} label={part} size="sm" />
+              ))}
+              {partial && (
+                <span className="animate-pulse text-(--gray-9) text-[10px]">
+                  …
+                </span>
+              )}
+            </Flex>
+            {!partial && (
+              <span className="ml-auto shrink-0 text-(--gray-9) text-[10px]">
+                {conflict ? "⎋ cancel" : "↵ save · ⎋ cancel"}
               </span>
             )}
-          </Flex>
+          </>
         ) : (
-          <span className="text-(--gray-9) text-[11px]">Press keys…</span>
+          <span className="text-(--gray-9) text-[11px]">
+            Press keys… · ⎋ cancel
+          </span>
         )}
       </div>
-      {conflict ? (
-        <Text className="max-w-[160px] text-right text-(--amber-11) text-[10px] leading-tight">
+      {conflict && (
+        <Text className="max-w-[220px] text-right text-(--amber-11) text-[10px] leading-tight">
           Conflicts with &quot;{conflict}&quot;
         </Text>
-      ) : captured ? (
-        <Text className="text-(--gray-9) text-[10px]">↵ save · ⎋ cancel</Text>
-      ) : (
-        <Text className="text-(--gray-9) text-[10px]">⎋ cancel</Text>
       )}
     </div>
   );
@@ -147,59 +151,47 @@ function InlineRecorder({ shortcutId, onSave, onCancel }: InlineRecorderProps) {
 type RecordingMode = { type: "add" } | { type: "edit"; key: string } | null;
 
 interface BindingChipProps {
-  shortcutId: ConfigurableShortcutId;
   combo: string;
   commandLabel: string;
   canRemove: boolean;
   canAddMore: boolean;
   isAtDefault: boolean;
-  isRecording: boolean;
   onStartRecording: (mode: RecordingMode) => void;
   onRemove: () => void;
   onReset: () => void;
-  onSave: (combo: string) => void;
-  onCancelRecording: () => void;
 }
 
 function BindingChip({
-  shortcutId,
   combo,
   commandLabel,
   canRemove,
   canAddMore,
   isAtDefault,
-  isRecording,
   onStartRecording,
   onRemove,
   onReset,
-  onSave,
-  onCancelRecording,
 }: BindingChipProps) {
   const parts = formatHotkeyParts(combo);
-
-  if (isRecording) {
-    return (
-      <InlineRecorder
-        shortcutId={shortcutId}
-        onSave={onSave}
-        onCancel={onCancelRecording}
-      />
-    );
-  }
 
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger>
+        {/*
+         * Pencil icon is absolutely positioned so it has zero layout impact —
+         * keeping the chip width equal to its Keycap labels only. This ensures
+         * the "or" separator between two bindings stays evenly spaced, and
+         * non-configurable shortcuts align flush with configurable ones.
+         */}
         <button
           type="button"
           title={`Click to edit binding for "${commandLabel}"`}
           onClick={() => onStartRecording({ type: "edit", key: combo })}
-          className="group/chip flex cursor-pointer items-center gap-[3px] rounded-(--radius-1) p-[2px]"
+          className="group/chip relative flex cursor-pointer items-center gap-[3px] rounded-(--radius-1) p-[2px]"
         >
           {parts.map((part) => (
             <Keycap key={part} label={part} />
           ))}
-          <span className="ml-[2px] text-(--gray-8) opacity-0 transition-opacity group-hover/chip:opacity-100">
+          <span className="pointer-events-none absolute inset-y-0 right-[2px] flex items-center text-(--gray-8) opacity-0 transition-opacity group-hover/chip:opacity-100">
             <PencilIcon />
           </span>
         </button>
@@ -317,58 +309,44 @@ export function ShortcutRecorder({
 
   const commandLabel = shortcutEntry.description;
   const isAtDefault = !hasCustom;
-  const isAddingNew = recordingMode !== null && recordingMode.type === "add";
+
+  // While recording (edit or add), show only the recorder — hide all binding chips
+  if (recordingMode !== null) {
+    return (
+      <InlineRecorder
+        shortcutId={id}
+        onSave={handleSave}
+        onCancel={stopRecording}
+      />
+    );
+  }
 
   return (
     <div className="flex min-w-0 shrink-0 items-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <Flex gap="1" align="center" className="shrink-0">
-        {effectiveBindings.map((key, i) => {
-          const isEditingThis =
-            recordingMode?.type === "edit" && recordingMode.key === key;
-          return (
-            <Flex key={key} gap="1" align="center" className="shrink-0">
-              {i > 0 && (
-                <Text color="gray" className="shrink-0 text-[11px]">
-                  or
-                </Text>
-              )}
-              <BindingChip
-                shortcutId={id}
-                combo={key}
-                commandLabel={commandLabel}
-                canRemove={effectiveBindings.length > 1}
-                canAddMore={canAddMore}
-                isAtDefault={isAtDefault}
-                isRecording={isEditingThis}
-                onStartRecording={startRecording}
-                onRemove={
-                  hasCustom
-                    ? () => removeKeybinding(id, key)
-                    : () => handleRemoveDefault(key)
-                }
-                onReset={() => resetShortcut(id)}
-                onSave={handleSave}
-                onCancelRecording={stopRecording}
-              />
-            </Flex>
-          );
-        })}
-
-        {/* Inline recorder for adding a new binding */}
-        {isAddingNew && (
-          <Flex gap="1" align="center" className="shrink-0">
-            {effectiveBindings.length > 0 && (
+        {effectiveBindings.map((key, i) => (
+          <Flex key={key} gap="1" align="center" className="shrink-0">
+            {i > 0 && (
               <Text color="gray" className="shrink-0 text-[11px]">
                 or
               </Text>
             )}
-            <InlineRecorder
-              shortcutId={id}
-              onSave={handleSave}
-              onCancel={stopRecording}
+            <BindingChip
+              combo={key}
+              commandLabel={commandLabel}
+              canRemove={effectiveBindings.length > 1}
+              canAddMore={canAddMore}
+              isAtDefault={isAtDefault}
+              onStartRecording={startRecording}
+              onRemove={
+                hasCustom
+                  ? () => removeKeybinding(id, key)
+                  : () => handleRemoveDefault(key)
+              }
+              onReset={() => resetShortcut(id)}
             />
           </Flex>
-        )}
+        ))}
       </Flex>
     </div>
   );
