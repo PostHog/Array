@@ -17,6 +17,7 @@ import {
   useSettingsStore,
 } from "@posthog/ui/features/settings/settingsStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { formatDurationSeconds } from "@posthog/ui/utils/customSound";
@@ -241,20 +242,22 @@ export function NotificationsSettings() {
             </Select.Content>
           </Select.Root>
           {completionSound !== "none" && (
-            <IconButton
-              variant="soft"
-              size="1"
-              aria-label="Test sound"
-              onClick={() =>
-                playCompletionSound(
-                  completionSound,
-                  completionVolume,
-                  customSounds,
-                )
-              }
-            >
-              <Play weight="fill" />
-            </IconButton>
+            <Tooltip content="Test sound">
+              <IconButton
+                variant="soft"
+                size="1"
+                aria-label="Test sound"
+                onClick={() =>
+                  playCompletionSound(
+                    completionSound,
+                    completionVolume,
+                    customSounds,
+                  )
+                }
+              >
+                <Play weight="fill" />
+              </IconButton>
+            </Tooltip>
           )}
         </Flex>
       </SettingRow>
@@ -377,16 +380,18 @@ function CustomSoundRow({
       <Text color="gray" className="text-[12px] tabular-nums">
         {formatDurationSeconds(sound.durationMs)}
       </Text>
-      <IconButton
-        variant="soft"
-        size="1"
-        aria-label={`Play ${sound.name}`}
-        onClick={() =>
-          playCompletionSound(`custom:${sound.id}`, volume, [sound])
-        }
-      >
-        <Play weight="fill" />
-      </IconButton>
+      <Tooltip content={`Play ${sound.name}`}>
+        <IconButton
+          variant="soft"
+          size="1"
+          aria-label={`Play ${sound.name}`}
+          onClick={() =>
+            playCompletionSound(`custom:${sound.id}`, volume, [sound])
+          }
+        >
+          <Play weight="fill" />
+        </IconButton>
+      </Tooltip>
       <IconButton
         variant="ghost"
         color="gray"
