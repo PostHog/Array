@@ -68,6 +68,22 @@ describe("pendingTaskPromptStore", () => {
     expect(recovered.map((r) => r.key)).toEqual(["new", "mid", "old"]);
   });
 
+  it("caps stored prompts to the newest, dropping the oldest", () => {
+    for (let i = 0; i < 22; i++) {
+      pendingTaskPromptStoreApi.set(`k${i}`, {
+        promptText: `p${i}`,
+        attachments: [],
+      });
+    }
+
+    const recovered = pendingTaskPromptStoreApi.getAllNewestFirst();
+
+    expect(recovered).toHaveLength(20);
+    expect(pendingTaskPromptStoreApi.get("k0")).toBeUndefined();
+    expect(pendingTaskPromptStoreApi.get("k1")).toBeUndefined();
+    expect(pendingTaskPromptStoreApi.get("k21")).toBeDefined();
+  });
+
   it("whenHydrated resolves immediately once the store has hydrated", async () => {
     usePendingTaskPromptStore.getState().setHasHydrated(true);
     await expect(

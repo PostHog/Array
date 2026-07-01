@@ -379,10 +379,7 @@ export function useTaskCreation({
         }
 
         if (result.success) {
-          const provisioningFailed =
-            "provisioningError" in result &&
-            !!(result as { provisioningError?: unknown }).provisioningError;
-          if (!provisioningFailed) {
+          if (!result.data.provisioningError) {
             if (pendingTaskKey) {
               pendingTaskPromptStoreApi.clear(pendingTaskKey);
             }
