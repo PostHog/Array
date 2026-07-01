@@ -107,41 +107,42 @@ function InlineRecorder({ shortcutId, onSave, onCancel }: InlineRecorderProps) {
   const displayParts = displayCombo ? formatHotkeyParts(displayCombo) : null;
 
   return (
-    <div ref={containerRef} className="flex w-[220px] flex-col gap-[3px]">
+    <div ref={containerRef} className="flex w-[220px] flex-col">
       <div
-        className={`flex h-[28px] items-center gap-[4px] rounded-(--radius-2) border px-2 ${
+        className={`flex min-h-[28px] items-center gap-[3px] rounded-(--radius-2) border px-2 py-[3px] ${
           conflict
             ? "border-(--amber-7) bg-(--amber-2) ring-(--amber-6) ring-1"
             : "border-(--accent-7) bg-(--accent-2) ring-(--accent-6) ring-1"
         }`}
       >
         {displayParts ? (
-          <>
-            <Flex gap="1" align="center">
-              {displayParts.map((part) => (
-                <Keycap key={part} label={part} size="sm" />
-              ))}
-              {partial && (
-                <span className="animate-pulse text-(--gray-9) text-[10px]">
-                  …
-                </span>
-              )}
-            </Flex>
-            {!partial && (
-              <span className="ml-auto shrink-0 text-(--gray-9) text-[10px]">
-                {conflict ? "⎋ cancel" : "↵ save · ⎋ cancel"}
+          <Flex gap="1" align="center">
+            {displayParts.map((part) => (
+              <Keycap key={part} label={part} size="sm" />
+            ))}
+            {partial && (
+              <span className="animate-pulse text-(--gray-9) text-[10px]">
+                …
               </span>
             )}
-          </>
+          </Flex>
         ) : (
           <span className="text-(--gray-9) text-[11px]">
-            Press keys… · ⎋ cancel
+            Press a key combination...
           </span>
         )}
       </div>
-      {conflict && (
-        <Text className="max-w-[220px] text-right text-(--amber-11) text-[10px] leading-tight">
-          Conflicts with &quot;{conflict}&quot;
+      {conflict ? (
+        <Text className="mt-1 block text-center text-(--amber-11) text-[10px]">
+          Conflicts with &quot;{conflict}&quot; — press a different combination
+        </Text>
+      ) : captured ? (
+        <Text className="mt-1 block text-center text-(--gray-10) text-[10px]">
+          Press Enter to confirm, Escape to cancel
+        </Text>
+      ) : (
+        <Text className="mt-1 block text-center text-(--gray-9) text-[10px]">
+          Press Escape to cancel
         </Text>
       )}
     </div>
@@ -176,25 +177,21 @@ function BindingChip({
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger>
-        {/*
-         * Pencil icon is absolutely positioned so it has zero layout impact —
-         * keeping the chip width equal to its Keycap labels only. This ensures
-         * the "or" separator between two bindings stays evenly spaced, and
-         * non-configurable shortcuts align flush with configurable ones.
-         */}
-        <button
-          type="button"
-          title={`Click to edit binding for "${commandLabel}"`}
-          onClick={() => onStartRecording({ type: "edit", key: combo })}
-          className="group/chip relative flex cursor-pointer items-center gap-[3px] rounded-(--radius-1) p-[2px]"
-        >
-          {parts.map((part) => (
-            <Keycap key={part} label={part} />
-          ))}
-          <span className="pointer-events-none absolute inset-y-0 right-[2px] flex items-center text-(--gray-8) opacity-0 transition-opacity group-hover/chip:opacity-100">
+        <div className="group/chip flex items-center gap-[2px]">
+          <button
+            type="button"
+            title={`Click to edit binding for "${commandLabel}"`}
+            onClick={() => onStartRecording({ type: "edit", key: combo })}
+            className="flex cursor-pointer items-center gap-[3px] rounded-(--radius-1) p-[2px]"
+          >
+            {parts.map((part) => (
+              <Keycap key={part} label={part} />
+            ))}
+          </button>
+          <span className="text-(--gray-8) opacity-0 transition-opacity group-hover/chip:opacity-100">
             <PencilIcon />
           </span>
-        </button>
+        </div>
       </ContextMenu.Trigger>
 
       <ContextMenu.Content size="1">

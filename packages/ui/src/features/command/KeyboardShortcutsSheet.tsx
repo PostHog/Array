@@ -500,7 +500,12 @@ function ShortcutKeys({
       side="left"
       delayDuration={400}
     >
-      <div className="cursor-default rounded-(--radius-1) p-[2px] transition-colors hover:bg-(--gray-4)">
+      {/*
+       * pr-[16px] matches the space a configurable BindingChip reserves for its
+       * pencil icon (2px gap + 12px icon + 2px button right-padding = 16px),
+       * keeping all shortcut keys right-aligned in the same column.
+       */}
+      <div className="cursor-default rounded-(--radius-1) p-[2px] pr-[16px] transition-colors hover:bg-(--gray-4)">
         {inner}
       </div>
     </Tooltip>

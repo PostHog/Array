@@ -375,6 +375,10 @@ export function recordingEventToCombo(
   e: KeyboardEvent,
 ): { combo: string; isPartial: boolean } | null {
   if (!e.metaKey && !e.ctrlKey && !e.altKey) return null;
+  // On Windows, the Windows key fires e.metaKey without e.ctrlKey. It maps to the
+  // same "mod" token as Ctrl (both display as "Ctrl"), which is confusing. OS also
+  // intercepts most Win+letter combos before they reach the app, so block it here.
+  if (!isMac && e.metaKey && !e.ctrlKey) return null;
 
   const bare = ["Meta", "Control", "Shift", "Alt"];
   const parts = buildModifierParts(e);
