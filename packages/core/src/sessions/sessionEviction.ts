@@ -1,0 +1,33 @@
+import type { AgentSession } from "@posthog/shared";
+import { isTerminalStatus } from "@posthog/shared/domain-types";
+
+export const MAX_CONNECTED_SESSIONS = 8;
+
+export function isSessionIdle(session: AgentSession): boolean {
+  if (session.status === "connecting") return false;
+  if (session.isPromptPending) return false;
+  if (session.pendingPermissions.size > 0) return false;
+  if (session.messageQueue.length > 0) return false;
+  if (session.isCloud) return isTerminalStatus(session.cloudStatus);
+  return true;
+}
+
+export function selectSessionsToEvict(params: {
+  sessions: AgentSession[];
+  activeTaskId: string;
+  lastUsedAt: (session: AgentSession) => number;
+  maxSessions?: number;
+}): AgentSession[] {
+  const { sessions, activeTaskId, lastUsedAt } = params;
+  const maxSessions = params.maxSessions ?? MAX_CONNECTED_SESSIONS;
+
+  const excess = sessions.length - (maxSessions - 1);
+  if (excess <= 0) return [];
+
+  return sessions
+    .filter(
+      (session) => session.taskId !== activeTaskId && isSessionIdle(session),
+    )
+    .sort((a, b) => lastUsedAt(a) - lastUsedAt(b))
+    .slice(0, excess);
+}
