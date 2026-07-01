@@ -60,12 +60,10 @@ afterEach(() => sessionStoreSetters.removeSession(RUN));
 
 describe("paintTailFirst", () => {
   it("paints a session from the tail content", async () => {
-    const readTail = vi
-      .fn()
-      .mockResolvedValue({
-        content: `${line("a")}\n${line("b")}\n`,
-        truncated: true,
-      });
+    const readTail = vi.fn().mockResolvedValue({
+      content: `${line("a")}\n${line("b")}\n`,
+      truncated: true,
+    });
     await paint(makeService(readTail));
 
     expect(readTail).toHaveBeenCalledWith({
