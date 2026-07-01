@@ -74,4 +74,11 @@ export interface TaskCreationInput {
 export interface TaskCreationOutput {
   task: Task;
   workspace: Workspace | null;
+  /**
+   * Set when worktree provisioning failed but the task was kept (not rolled
+   * back) so the user can retry setup on the existing task. The saga returns a
+   * partial success in this case; consumers surface the error and keep the user
+   * on the task rather than reopening the composer.
+   */
+  provisioningError?: string;
 }
