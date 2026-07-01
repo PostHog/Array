@@ -11,6 +11,10 @@ import {
   type ArchiveClient,
 } from "@posthog/core/archive/identifiers";
 import {
+  AUTORESEARCH_PROMPT_CLIENT,
+  type AutoresearchPromptClient,
+} from "@posthog/core/autoresearch/identifiers";
+import {
   LINEAR_OAUTH_FLOW,
   type LinearOAuthFlow,
   REPORT_MODEL_RESOLVER,
@@ -159,6 +163,16 @@ container
       taskId,
       prompt,
     );
+  });
+container
+  .bind<AutoresearchPromptClient>(AUTORESEARCH_PROMPT_CLIENT)
+  .toConstantValue({
+    sendPrompt: async (taskId, prompt) => {
+      await resolveService<SessionService>(SESSION_SERVICE).sendPrompt(
+        taskId,
+        prompt,
+      );
+    },
   });
 container.bind<FilePathResolver>(FILE_PATH_RESOLVER).toConstantValue({
   resolve: (file) => window.electronUtils?.getPathForFile?.(file),

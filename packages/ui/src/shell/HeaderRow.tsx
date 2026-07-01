@@ -4,6 +4,7 @@ import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { AutoresearchHeaderButton } from "@posthog/ui/features/autoresearch/AutoresearchHeaderButton";
 import { useDiffStatsToggle } from "@posthog/ui/features/code-review/hooks/useDiffStatsToggle";
 import {
   formatHotkey,
@@ -260,6 +261,9 @@ export function HeaderRow() {
         >
           <div className="no-drag">
             <SkillButtonsMenu taskId={activeTask.id} />
+          </div>
+          <div className="no-drag">
+            <AutoresearchHeaderButton taskId={activeTask.id} />
           </div>
           {activeWorkspace &&
             (activeWorkspace.branchName || activeWorkspace.baseBranch) && (

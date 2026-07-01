@@ -59,6 +59,7 @@ export interface PanelLayoutStore {
     taskId: string,
     instructions: { body: string },
   ) => void;
+  openAutoresearchTab: (taskId: string) => void;
   keepTab: (taskId: string, panelId: string, tabId: string) => void;
   closeTab: (taskId: string, panelId: string, tabId: string) => void;
   closeOtherTabs: (taskId: string, panelId: string, tabId: string) => void;
@@ -197,6 +198,24 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
                 "canvas-instructions",
                 "Canvas instructions",
                 { type: "canvas-instructions", body: instructions.body },
+              ) as Partial<TaskLayout>,
+          ),
+        );
+      },
+
+      openAutoresearchTab: (taskId) => {
+        set((state) =>
+          updateTaskLayout(
+            state,
+            taskId,
+            (layout) =>
+              coreOpenReadonlyTabInSplit(
+                layout,
+                "autoresearch",
+                "Autoresearch",
+                {
+                  type: "autoresearch",
+                },
               ) as Partial<TaskLayout>,
           ),
         );
