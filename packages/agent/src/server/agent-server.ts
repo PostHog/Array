@@ -3026,11 +3026,20 @@ ${signedCommitInstructions}
       return;
     }
 
+    // Ordered assistant text blocks (one per message between tool calls).
+    // The backend picks the last entry — the post-last-tool-use answer — so
+    // Slack no longer sees the "Let me check…" narration. `message` stays as
+    // the joined fallback for backends that don't understand `text_parts`.
+    const messageParts = this.session.logWriter.getAgentResponseParts(
+      payload.run_id,
+    );
+
     try {
       await this.posthogAPI.relayMessage(
         payload.task_id,
         payload.run_id,
         message,
+        messageParts,
       );
     } catch (error) {
       this.logger.debug("Failed to relay initial agent response to Slack", {

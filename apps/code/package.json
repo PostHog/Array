@@ -57,7 +57,7 @@
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "@types/semver": "^7.7.1",
-    "@vitejs/plugin-react": "^4.7.0",
+    "@vitejs/plugin-react": "^5.2.0",
     "@vitest/ui": "^4.1.8",
     "adm-zip": "^0.5.17",
     "electron": "^42.3.0",

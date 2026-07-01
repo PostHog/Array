@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,43 @@ const nodeExternals = [
 // Native .node modules can't be bundled — they stay external and resolve from
 // the staged node_modules at runtime (see scripts/before-pack.ts).
 const nativeModules = buildExternals;
+
+const nearestPackageType = (fromFile: string): string | undefined => {
+  let dir = path.dirname(fromFile);
+  while (true) {
+    const manifest = path.join(dir, "package.json");
+    if (existsSync(manifest)) {
+      try {
+        return JSON.parse(readFileSync(manifest, "utf-8")).type;
+      } catch {
+        return undefined;
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+};
+
+const resolvesToCommonJs = (name: string): boolean => {
+  let resolved: string;
+  try {
+    resolved = require.resolve(name);
+  } catch {
+    return false;
+  }
+  if (resolved.endsWith(".cjs")) return true;
+  if (resolved.endsWith(".mjs")) return false;
+  return nearestPackageType(resolved) !== "module";
+};
+
+const computeDevThirdPartyExternals = (): RegExp[] =>
+  Object.keys(pkg.dependencies ?? {})
+    .filter((name) => !name.startsWith("@posthog/") && resolvesToCommonJs(name))
+    .map(
+      (name) =>
+        new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(/.+)?$`),
+    );
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(__dirname, "../.."), "");
@@ -115,6 +152,7 @@ export default defineConfig(({ mode }) => {
             "electron/main",
             ...nodeExternals,
             ...nativeModules,
+            ...(isDev ? computeDevThirdPartyExternals() : []),
           ],
           onwarn(warning, warn) {
             if (warning.code === "UNUSED_EXTERNAL_IMPORT") return;

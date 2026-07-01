@@ -215,6 +215,13 @@ export interface CommandMenuActionProperties {
   channel_id?: string;
 }
 
+export interface BrainrotActivatedProperties {
+  /** Grid layout preset, e.g. "2x2". */
+  layout: string;
+  /** Cells already holding a task when Brainrot was chosen. */
+  filled_cells: number;
+}
+
 export interface SkillButtonTriggeredProperties {
   task_id: string;
   button_id: SkillButtonId;
@@ -1023,6 +1030,7 @@ export const ANALYTICS_EVENTS = {
   COMMAND_MENU_OPENED: "Command menu opened",
   COMMAND_MENU_ACTION: "Command menu action",
   COMMAND_CENTER_VIEWED: "Command center viewed",
+  BRAINROT_ACTIVATED: "Brainrot activated",
   SKILL_BUTTON_TRIGGERED: "Skill button triggered",
   POSTHOG_WEB_OPENED: "PostHog web opened",
 
@@ -1173,6 +1181,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.COMMAND_MENU_OPENED]: never;
   [ANALYTICS_EVENTS.COMMAND_MENU_ACTION]: CommandMenuActionProperties;
   [ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED]: never;
+  [ANALYTICS_EVENTS.BRAINROT_ACTIVATED]: BrainrotActivatedProperties;
   [ANALYTICS_EVENTS.SKILL_BUTTON_TRIGGERED]: SkillButtonTriggeredProperties;
   [ANALYTICS_EVENTS.POSTHOG_WEB_OPENED]: never;
 

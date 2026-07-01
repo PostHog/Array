@@ -680,6 +680,9 @@ describe("TaskCreationSaga", () => {
     });
 
     expect(result.success).toBe(false);
+    // Local (non-worktree) mode is not the kept-on-failure path, so the task
+    // is rolled back as before.
+    expect(deleteTaskMock).toHaveBeenCalledWith("task-123");
     // Record step rollback drops the tracking row...
     expect(mockHost.deleteClaudeCliImportRecord).toHaveBeenCalledWith({
       importedSessionId: "imported-session-id",
@@ -689,6 +692,71 @@ describe("TaskCreationSaga", () => {
       repoPath: "/repo",
       importedSessionId: "imported-session-id",
     });
+  });
+
+  it("keeps the worktree task (and its prompt) when provisioning fails", async () => {
+    const createdTask = createTask();
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const deleteTaskMock = vi.fn().mockResolvedValue(undefined);
+    const onTaskReady = vi.fn();
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+    mockHost.createWorkspace.mockRejectedValue(new Error("worktree boom"));
+
+    const saga = makeSaga(
+      { createTask: createTaskMock, deleteTask: deleteTaskMock },
+      { onTaskReady },
+    );
+
+    const result = await saga.run({
+      content: "Fix the login flow",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      throw new Error("Expected worktree provisioning failure to be kept");
+    }
+    expect(result.data.task.id).toBe("task-123");
+    expect(result.data.workspace).toBeNull();
+    expect(result.data.provisioningError).toContain("worktree boom");
+    // The task (and its persisted prompt) survives for retry.
+    expect(deleteTaskMock).not.toHaveBeenCalled();
+    // Spinner is dismissed and no agent session starts without a worktree.
+    expect(mockHost.clearProvisioning).toHaveBeenCalledWith("task-123");
+    expect(sessionService.connectToTask).not.toHaveBeenCalled();
+    // The early onTaskReady already navigated onto the task.
+    expect(onTaskReady).toHaveBeenCalledTimes(1);
+    expect(onTaskReady.mock.calls[0][0].workspace).toBeNull();
+  });
+
+  it("still rolls back a worktree task when a later (non-provisioning) step fails", async () => {
+    const createdTask = createTask();
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const deleteTaskMock = vi.fn().mockResolvedValue(undefined);
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+    mockHost.createWorkspace.mockResolvedValue({});
+    vi.mocked(sessionService.connectToTask).mockImplementationOnce(() => {
+      throw new Error("agent boom");
+    });
+
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      deleteTask: deleteTaskMock,
+    });
+
+    const result = await saga.run({
+      content: "Fix the login flow",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+    });
+
+    expect(result.success).toBe(false);
+    // Only workspace_creation is protected; an agent_session failure rolls back.
+    expect(deleteTaskMock).toHaveBeenCalledWith("task-123");
+    expect(mockHost.deleteWorkspace).toHaveBeenCalled();
   });
 
   it("does not import a Claude CLI session for non-local workspace modes", async () => {
