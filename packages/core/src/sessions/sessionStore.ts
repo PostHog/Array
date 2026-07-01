@@ -32,6 +32,16 @@ export const sessionStore = createStore<SessionState>()(
   })),
 );
 
+export const MAX_SESSION_EVENTS = 5000;
+
+function trimSessionEvents(session: AgentSession) {
+  const excess = session.events.length - MAX_SESSION_EVENTS;
+  if (excess > 0) {
+    session.events.splice(0, excess);
+    session.trimmedEventCount = (session.trimmedEventCount ?? 0) + excess;
+  }
+}
+
 export const sessionStoreSetters = {
   setSession: (session: AgentSession) => {
     sessionStore.setState((state) => {
@@ -76,6 +86,7 @@ export const sessionStoreSetters = {
         // immer autofreeze, so this is the only freeze.
         for (const event of events) Object.freeze(event);
         session.events.push(...events);
+        trimSessionEvents(session);
         if (newLineCount !== undefined) {
           session.processedLineCount = newLineCount;
         }
@@ -301,6 +312,7 @@ export const sessionStoreSetters = {
       const session = state.sessions[taskRunId];
       if (session) {
         session.events.push(Object.freeze(event));
+        trimSessionEvents(session);
         session.optimisticItems = [];
       }
     });

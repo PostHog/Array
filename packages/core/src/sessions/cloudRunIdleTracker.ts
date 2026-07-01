@@ -24,6 +24,14 @@ export interface CloudRunIdleScanResult {
   shouldCacheToStore: boolean;
 }
 
+function streamLength(session: AgentSession): number {
+  return (session.trimmedEventCount ?? 0) + session.events.length;
+}
+
+function toArrayIndex(streamOffset: number, session: AgentSession): number {
+  return Math.max(0, streamOffset - (session.trimmedEventCount ?? 0));
+}
+
 /**
  * Tracks idleness for cloud runs incrementally so repeated `in_progress`
  * updates don't re-scan the full event list each time.
@@ -46,7 +54,7 @@ export class CloudRunIdleTracker {
    */
   markBusy(session: AgentSession): void {
     this.scanStates.set(session.taskRunId, {
-      nextEventIndex: session.events.length,
+      nextEventIndex: streamLength(session),
       seenCurrentRunStart: true,
       idle: false,
     });
@@ -54,7 +62,7 @@ export class CloudRunIdleTracker {
 
   markIdle(session: AgentSession): void {
     this.scanStates.set(session.taskRunId, {
-      nextEventIndex: session.events.length,
+      nextEventIndex: streamLength(session),
       seenCurrentRunStart: true,
       idle: true,
     });
@@ -64,7 +72,7 @@ export class CloudRunIdleTracker {
     const scanState = this.scanStates.get(session.taskRunId);
     return {
       taskRunId: session.taskRunId,
-      eventCount: session.events.length,
+      eventCount: streamLength(session),
       agentIdleForRunId: session.agentIdleForRunId,
       scanState: scanState ? { ...scanState } : undefined,
     };
@@ -74,7 +82,11 @@ export class CloudRunIdleTracker {
     snapshot: CloudRunIdleEvidenceSnapshot,
     session: AgentSession,
   ): CloudRunIdleRestoreResult | undefined {
-    for (let i = snapshot.eventCount; i < session.events.length; i += 1) {
+    for (
+      let i = toArrayIndex(snapshot.eventCount, session);
+      i < session.events.length;
+      i += 1
+    ) {
       const acpMsg = session.events[i];
       if (
         acpMsg &&
@@ -114,7 +126,7 @@ export class CloudRunIdleTracker {
     }
 
     let scanState = this.scanStates.get(session.taskRunId);
-    if (!scanState || scanState.nextEventIndex > session.events.length) {
+    if (!scanState || scanState.nextEventIndex > streamLength(session)) {
       scanState = {
         nextEventIndex: 0,
         seenCurrentRunStart: false,
@@ -122,7 +134,11 @@ export class CloudRunIdleTracker {
       };
     }
 
-    for (let i = scanState.nextEventIndex; i < session.events.length; i += 1) {
+    for (
+      let i = toArrayIndex(scanState.nextEventIndex, session);
+      i < session.events.length;
+      i += 1
+    ) {
       const acpMsg = session.events[i];
       if (!acpMsg) continue;
       const msg = acpMsg.message;
@@ -152,7 +168,7 @@ export class CloudRunIdleTracker {
       }
     }
 
-    scanState.nextEventIndex = session.events.length;
+    scanState.nextEventIndex = streamLength(session);
     this.scanStates.set(session.taskRunId, scanState);
 
     return { idle: scanState.idle, shouldCacheToStore: scanState.idle };

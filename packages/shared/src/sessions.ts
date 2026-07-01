@@ -62,6 +62,7 @@ export interface AgentSession {
   currentPromptId?: number | null;
   logUrl?: string;
   processedLineCount?: number;
+  trimmedEventCount?: number;
   framework?: "claude";
   adapter?: Adapter;
   configOptions?: SessionConfigOption[];
