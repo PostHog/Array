@@ -94,6 +94,14 @@ const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
 const AUTH_RESTORE_MAX_RETRY_WAITS = 6;
 const MAX_SUPERSEDED_RUN_IDS = 100;
+/**
+ * Streamed events are buffered and flushed on this cadence so a burst of tokens
+ * coalesces into one processing pass (and roughly one render) instead of one
+ * per event. Electron IPC delivers each event as its own task, so a microtask
+ * flush wouldn't batch across them — a short timer does. One frame is
+ * imperceptible for streamed text.
+ */
+const SESSION_EVENT_FLUSH_MS = 16;
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
   constructor(
@@ -1323,6 +1331,48 @@ export class SessionService {
 
   // --- Subscription Management ---
 
+  /** Streamed events awaiting their frame flush, keyed by taskRunId. Order
+   * within a taskRunId is preserved; taskRunIds are independent. */
+  private pendingSessionEvents = new Map<string, AcpMessage[]>();
+  private sessionEventFlushHandle: ReturnType<typeof setTimeout> | null = null;
+
+  private enqueueSessionEvent(taskRunId: string, acpMsg: AcpMessage): void {
+    const buffered = this.pendingSessionEvents.get(taskRunId);
+    if (buffered) {
+      buffered.push(acpMsg);
+    } else {
+      this.pendingSessionEvents.set(taskRunId, [acpMsg]);
+    }
+    if (this.sessionEventFlushHandle === null) {
+      this.sessionEventFlushHandle = setTimeout(() => {
+        this.sessionEventFlushHandle = null;
+        this.flushSessionEvents();
+      }, SESSION_EVENT_FLUSH_MS);
+    }
+  }
+
+  private flushSessionEvents(): void {
+    if (this.pendingSessionEvents.size === 0) return;
+    const batches = this.pendingSessionEvents;
+    this.pendingSessionEvents = new Map();
+    for (const [taskRunId, events] of batches) {
+      for (const acpMsg of events) {
+        this.handleSessionEvent(taskRunId, acpMsg);
+      }
+    }
+  }
+
+  /** Drain one task's buffer immediately, so a reader (permission handling,
+   * teardown) never sees a transcript missing already-received events. */
+  private flushSessionEventsForTask(taskRunId: string): void {
+    const events = this.pendingSessionEvents.get(taskRunId);
+    if (!events) return;
+    this.pendingSessionEvents.delete(taskRunId);
+    for (const acpMsg of events) {
+      this.handleSessionEvent(taskRunId, acpMsg);
+    }
+  }
+
   private subscribeToChannel(taskRunId: string): void {
     if (this.subscriptions.has(taskRunId)) {
       return;
@@ -1332,7 +1382,7 @@ export class SessionService {
       { taskRunId },
       {
         onData: (payload: unknown) => {
-          this.handleSessionEvent(taskRunId, payload as AcpMessage);
+          this.enqueueSessionEvent(taskRunId, payload as AcpMessage);
         },
         onError: (err) => {
           this.d.log.error("Session subscription error", {
@@ -1383,6 +1433,9 @@ export class SessionService {
   }
 
   private unsubscribeFromChannel(taskRunId: string): void {
+    // Apply anything still buffered before we stop listening, so a closing
+    // channel doesn't drop its final events.
+    this.flushSessionEventsForTask(taskRunId);
     const subscription = this.subscriptions.get(taskRunId);
     subscription?.event.unsubscribe();
     subscription?.permission?.unsubscribe();
@@ -1411,6 +1464,11 @@ export class SessionService {
       this.stopCloudTaskWatch(taskId);
     }
 
+    if (this.sessionEventFlushHandle !== null) {
+      clearTimeout(this.sessionEventFlushHandle);
+      this.sessionEventFlushHandle = null;
+    }
+    this.pendingSessionEvents.clear();
     this.connectingTasks.clear();
     this.localRepoPaths.clear();
     this.localRecoveryAttempts.clear();
@@ -1800,6 +1858,10 @@ export class SessionService {
       toolCallId: payload.toolCall.toolCallId,
       title: payload.toolCall.title,
     });
+
+    // A permission request references a tool call from the stream; apply any
+    // buffered events first so that tool call is present in the transcript.
+    this.flushSessionEventsForTask(taskRunId);
 
     // Get fresh session state
     const session = this.d.store.getSessions()[taskRunId];
