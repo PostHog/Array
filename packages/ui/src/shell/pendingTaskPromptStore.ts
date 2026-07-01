@@ -86,8 +86,12 @@ export const usePendingTaskPromptStore = create<PendingTaskPromptStore>()(
       name: "pending-task-prompts",
       storage: electronStorage,
       partialize: (state) => ({ byKey: state.byKey }),
-      onRehydrateStorage: () => (state) => {
-        state?.setHasHydrated(true);
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          usePendingTaskPromptStore.getState().setHasHydrated(true);
+        } else {
+          state?.setHasHydrated(true);
+        }
       },
     },
   ),
