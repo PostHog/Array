@@ -104,7 +104,8 @@ describe("ConnectivityService", () => {
       service.on(ConnectivityEvent.StatusChange, handler);
 
       mockFetch.mockRejectedValue(new Error("offline"));
-      await vi.advanceTimersByTimeAsync(6000); // two failed polls
+      await vi.advanceTimersByTimeAsync(30_000); // 1st failure at the healthy cadence
+      await vi.advanceTimersByTimeAsync(3000); // fast recheck confirms offline
 
       expect(handler).toHaveBeenCalledWith({ isOnline: false });
       expect(handler).toHaveBeenCalledTimes(1);
@@ -219,7 +220,7 @@ describe("ConnectivityService", () => {
 
       const callsAfterInit = mockFetch.mock.calls.length;
 
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(30_000);
       expect(mockFetch.mock.calls.length).toBeGreaterThan(callsAfterInit);
     });
   });
