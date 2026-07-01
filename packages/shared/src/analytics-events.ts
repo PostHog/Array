@@ -1286,3 +1286,25 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.CANVAS_PROMPT_SENT]: CanvasPromptSentProperties;
   [ANALYTICS_EVENTS.CONTEXT_ACTION]: ContextActionProperties;
 };
+
+/**
+ * The inbox event family. Every host stamps an `inbox_client` property (e.g.
+ * "code" on desktop, "mobile" on the mobile app, "cloud" on the PostHog web
+ * frontend) on exactly these events so the shared PostHog project can be sliced
+ * by surface. Mirrors posthog's `frontend/src/scenes/inbox/inboxAnalytics.ts`.
+ *
+ * Keep this in sync with the inbox entries in `EventPropertyMap` above.
+ */
+export const INBOX_ANALYTICS_EVENT_NAMES: ReadonlySet<string> = new Set([
+  ANALYTICS_EVENTS.INBOX_VIEWED,
+  ANALYTICS_EVENTS.INBOX_REPORT_OPENED,
+  ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,
+  ANALYTICS_EVENTS.INBOX_REPORT_ACTION,
+  ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED,
+  ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED,
+]);
+
+/** True when `eventName` is an inbox event that should carry `inbox_client`. */
+export function isInboxAnalyticsEvent(eventName: string): boolean {
+  return INBOX_ANALYTICS_EVENT_NAMES.has(eventName);
+}
