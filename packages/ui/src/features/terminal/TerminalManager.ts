@@ -565,7 +565,19 @@ class TerminalManagerImpl {
 
     instance.term.dispose();
 
+    instance.terminalElement?.remove();
+    instance.terminalElement = null;
+
     this.instances.delete(sessionId);
+  }
+
+  destroyForTask(taskId: string): void {
+    for (const [sessionId, instance] of this.instances) {
+      const key = instance.persistenceKey;
+      if (key === taskId || key.startsWith(`${taskId}-`)) {
+        this.destroy(sessionId);
+      }
+    }
   }
 
   focus(sessionId: string): void {
@@ -671,14 +683,6 @@ class TerminalManagerImpl {
         } catch (error) {
           log.error("Event listener error:", event, error);
         }
-      }
-    }
-  }
-
-  destroyByPrefix(prefix: string): void {
-    for (const sessionId of this.instances.keys()) {
-      if (sessionId.startsWith(prefix)) {
-        this.destroy(sessionId);
       }
     }
   }

@@ -1,5 +1,6 @@
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { useFocusStore } from "@posthog/ui/features/focus/focusStore";
+import { terminalManager } from "@posthog/ui/features/terminal/TerminalManager";
 import { useTerminalStore } from "@posthog/ui/features/terminal/terminalStore";
 import { logger } from "@posthog/ui/shell/logger";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -29,6 +30,7 @@ export function useSuspendTask() {
     const workspaces = await hostClient.workspace.getAll.query();
     const workspace = workspaces[taskId] ?? null;
 
+    terminalManager.destroyForTask(taskId);
     useTerminalStore.getState().clearTerminalStatesForTask(taskId);
 
     queryClient.setQueryData<string[]>(suspendedTaskIdsKey, (old) =>
