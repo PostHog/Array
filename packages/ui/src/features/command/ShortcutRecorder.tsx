@@ -121,9 +121,7 @@ function InlineRecorder({ shortcutId, onSave, onCancel }: InlineRecorderProps) {
               <Keycap key={part} label={part} size="sm" />
             ))}
             {partial && (
-              <span className="animate-pulse text-(--gray-9) text-[10px]">
-                …
-              </span>
+              <span className="animate-pulse text-(--gray-10) text-sm">…</span>
             )}
           </Flex>
         ) : (
@@ -134,15 +132,11 @@ function InlineRecorder({ shortcutId, onSave, onCancel }: InlineRecorderProps) {
       </div>
       {conflict ? (
         <Text className="mt-1 block text-center text-(--amber-11) text-[10px]">
-          Conflicts with &quot;{conflict}&quot;. Press a different combination.
-        </Text>
-      ) : captured ? (
-        <Text className="mt-1 block text-center text-(--gray-10) text-[10px]">
-          Press Enter to confirm, Escape to cancel
+          Conflicts with &quot;{conflict}&quot;.
         </Text>
       ) : (
-        <Text className="mt-1 block text-center text-(--gray-9) text-[10px]">
-          Press Escape to cancel
+        <Text className="mt-1 block text-center text-(--gray-10) text-[10px]">
+          Press Enter to save · Escape to cancel
         </Text>
       )}
     </div>
@@ -177,27 +171,21 @@ function BindingChip({
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger>
-        <div className="group/chip flex items-center gap-[2px]">
-          <button
-            type="button"
-            title={`Click to edit binding for "${commandLabel}"`}
-            onClick={() => onStartRecording({ type: "edit", key: combo })}
-            className="flex cursor-pointer items-center gap-[3px] rounded-(--radius-1) p-[2px]"
-          >
+        <button
+          type="button"
+          title={`Click to edit binding for "${commandLabel}"`}
+          onClick={() => onStartRecording({ type: "edit", key: combo })}
+          className="group/chip flex cursor-pointer items-center gap-[2px] rounded-(--radius-1) p-[2px]"
+        >
+          <span className="flex items-center gap-[3px]">
             {parts.map((part) => (
               <Keycap key={part} label={part} />
             ))}
-          </button>
-          <button
-            type="button"
-            tabIndex={-1}
-            title={`Click to edit binding for "${commandLabel}"`}
-            onClick={() => onStartRecording({ type: "edit", key: combo })}
-            className="cursor-pointer text-(--gray-8) opacity-0 transition-opacity group-hover/chip:opacity-100"
-          >
+          </span>
+          <span className="text-(--gray-8) opacity-0 transition-opacity group-hover/chip:opacity-100">
             <PencilIcon />
-          </button>
-        </div>
+          </span>
+        </button>
       </ContextMenu.Trigger>
 
       <ContextMenu.Content size="1">
@@ -330,7 +318,7 @@ export function ShortcutRecorder({
         {effectiveBindings.map((key, i) => (
           <Flex key={key} gap="1" align="center" className="shrink-0">
             {i > 0 && (
-              <Text color="gray" className="mr-[12px] shrink-0 text-[11px]">
+              <Text color="gray" className="mr-[14px] shrink-0 text-sm">
                 or
               </Text>
             )}

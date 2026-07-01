@@ -183,7 +183,7 @@ function ShortcutsSearchBar({
             <Keycap key={part} label={part} />
           ))}
           {comboSearch.isPartial && (
-            <Text className="animate-pulse text-(--gray-9) text-[11px]">…</Text>
+            <Text className="animate-pulse text-(--gray-10) text-sm">…</Text>
           )}
         </div>
       )}
@@ -433,46 +433,54 @@ export function KeyboardShortcutsList({
                   shortcut.configurable &&
                   recordingId === (shortcut.id as ConfigurableShortcutId);
                 return (
-                  <Flex
+                  <div
                     key={shortcut.id}
-                    align="center"
-                    justify="between"
-                    gap="3"
-                    px="3"
-                    className="group border-b border-b-(--gray-4) pt-[6px] pb-[6px] last:border-b-0 odd:bg-(--gray-2) even:bg-(--gray-1)"
+                    className="group border-b border-b-(--gray-4) last:border-b-0 odd:bg-(--gray-2) even:bg-(--gray-1)"
                   >
                     <Flex
-                      direction="column"
-                      gap="0"
-                      className={`min-w-0 flex-1 ${isRecording ? "hidden" : ""}`}
+                      align="center"
+                      justify="between"
+                      gap="3"
+                      px="3"
+                      className={`pt-[6px] ${isRecording ? "pb-1" : "pb-[6px]"}`}
                     >
-                      <Text className="text-sm">{shortcut.description}</Text>
-                      {shortcut.context && (
-                        <Text color="gray" className="text-[11px]">
-                          {shortcut.context}
-                        </Text>
-                      )}
+                      <Flex
+                        direction="column"
+                        gap="0"
+                        className="min-w-0 flex-1"
+                      >
+                        <Text className="text-sm">{shortcut.description}</Text>
+                        {shortcut.context && (
+                          <Text color="gray" className="text-[11px]">
+                            {shortcut.context}
+                          </Text>
+                        )}
+                      </Flex>
+                      <div
+                        className={
+                          isRecording ? "min-w-[180px] flex-1" : "shrink-0"
+                        }
+                      >
+                        {shortcut.configurable ? (
+                          <ShortcutRecorder
+                            id={shortcut.id as ConfigurableShortcutId}
+                            onRecordingChange={(r) =>
+                              setRecordingId(
+                                r
+                                  ? (shortcut.id as ConfigurableShortcutId)
+                                  : null,
+                              )
+                            }
+                          />
+                        ) : (
+                          <ShortcutKeys
+                            keys={shortcut.keys}
+                            alternateKeys={shortcut.alternateKeys}
+                          />
+                        )}
+                      </div>
                     </Flex>
-                    <div className={isRecording ? "w-full" : "shrink-0"}>
-                      {shortcut.configurable ? (
-                        <ShortcutRecorder
-                          id={shortcut.id as ConfigurableShortcutId}
-                          onRecordingChange={(r) =>
-                            setRecordingId(
-                              r
-                                ? (shortcut.id as ConfigurableShortcutId)
-                                : null,
-                            )
-                          }
-                        />
-                      ) : (
-                        <ShortcutKeys
-                          keys={shortcut.keys}
-                          alternateKeys={shortcut.alternateKeys}
-                        />
-                      )}
-                    </div>
-                  </Flex>
+                  </div>
                 );
               })}
             </Box>
