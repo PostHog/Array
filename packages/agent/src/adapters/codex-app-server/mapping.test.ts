@@ -176,7 +176,7 @@ describe("mapAppServerNotification", () => {
     ).toBeNull();
   });
 
-  it("maps thread/tokenUsage/updated to a usage_update", () => {
+  it("maps thread/tokenUsage/updated to a usage_update from the per-turn `last` (not cumulative `total`)", () => {
     const result = mapAppServerNotification(
       "s-1",
       APP_SERVER_NOTIFICATIONS.TOKEN_USAGE_UPDATED,
@@ -184,14 +184,35 @@ describe("mapAppServerNotification", () => {
         threadId: "t",
         turnId: "u",
         tokenUsage: {
-          total: {
-            totalTokens: 1500,
-            inputTokens: 1000,
-            outputTokens: 500,
+          // `total` is cumulative across the thread; the gauge must NOT use it.
+          total: { totalTokens: 1500, inputTokens: 1000, outputTokens: 500 },
+          // `last` is the current turn's occupancy — the value that must win.
+          last: {
+            totalTokens: 600,
+            inputTokens: 500,
+            outputTokens: 100,
             cachedInputTokens: 0,
             reasoningOutputTokens: 0,
           },
-          last: {},
+          modelContextWindow: 200000,
+        },
+      },
+    );
+    expect(result).toEqual({
+      sessionId: "s-1",
+      update: { sessionUpdate: "usage_update", used: 600, size: 200000 },
+    });
+  });
+
+  it("falls back to cumulative `total` when `last` is absent (pre-`last` build / turn 1)", () => {
+    const result = mapAppServerNotification(
+      "s-1",
+      APP_SERVER_NOTIFICATIONS.TOKEN_USAGE_UPDATED,
+      {
+        threadId: "t",
+        turnId: "u",
+        tokenUsage: {
+          total: { totalTokens: 1500, inputTokens: 1000, outputTokens: 500 },
           modelContextWindow: 200000,
         },
       },

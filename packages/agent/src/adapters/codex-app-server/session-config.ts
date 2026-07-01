@@ -44,11 +44,20 @@ export interface CodexMode {
    * than a relabeled read-only sandbox.
    */
   collaborationMode?: "plan" | "default";
+  /**
+   * codex's named permission profile, sent per-turn on `turn/start` as
+   * `activePermissionProfile: { extends }`. codex 0.140.0 enforces the sandbox
+   * through these built-in profiles (`:read-only` / `:workspace` /
+   * `:danger-full-access`); the raw per-turn `sandboxPolicy` we also send is no
+   * longer honored on its own. Undefined means keep the spawned default (editable).
+   */
+  permissionProfile?: string;
 }
 
 // Flattened Claude-style presets. Restriction is driven by approvalPolicy +
-// sandboxPolicy (the only honored levers); plan/read-only block edits via a
-// read-only sandbox, auto/full-access keep the spawned full-access sandbox.
+// the named permissionProfile (codex 0.140.0's enforced sandbox lever — the raw
+// sandboxPolicy is sent too but no longer honored alone); plan/read-only block
+// edits via `:read-only`, auto/full-access keep the spawned editable sandbox.
 export const CODEX_MODES: CodexMode[] = [
   {
     id: "plan",
@@ -56,6 +65,7 @@ export const CODEX_MODES: CodexMode[] = [
     description: "Plan first — inspect and propose; makes no changes",
     approvalPolicy: "on-request",
     sandboxPolicy: { type: "readOnly", networkAccess: true },
+    permissionProfile: ":read-only",
     collaborationMode: "plan",
   },
   {
@@ -64,6 +74,7 @@ export const CODEX_MODES: CodexMode[] = [
     description: "Read-only — can inspect but not modify files",
     approvalPolicy: "untrusted",
     sandboxPolicy: { type: "readOnly", networkAccess: true },
+    permissionProfile: ":read-only",
   },
   {
     id: "auto",
@@ -94,13 +105,24 @@ export function sandboxPolicyFor(
   return CODEX_MODES.find((m) => m.id === modeId)?.sandboxPolicy;
 }
 
+/** Named permission profile for a mode (undefined keeps the spawned default). */
+export function permissionProfileFor(
+  modeId: string | undefined,
+): string | undefined {
+  return CODEX_MODES.find((m) => m.id === modeId)?.permissionProfile;
+}
+
 /**
  * codex collaboration mode for a preset — "plan" only for the Plan preset, else
  * "default". Switching away from Plan must reset to "default", so this never
  * returns undefined.
  */
-export function collaborationModeFor(modeId: string | undefined): "plan" | "default" {
-  return CODEX_MODES.find((m) => m.id === modeId)?.collaborationMode ?? "default";
+export function collaborationModeFor(
+  modeId: string | undefined,
+): "plan" | "default" {
+  return (
+    CODEX_MODES.find((m) => m.id === modeId)?.collaborationMode ?? "default"
+  );
 }
 
 /**
@@ -146,9 +168,7 @@ export interface ConfigSelectors {
 }
 
 /** Builds the ACP configOptions (mode + model + thought_level) the host renders. */
-export function buildConfigOptions(
-  s: ConfigSelectors,
-): SessionConfigOption[] {
+export function buildConfigOptions(s: ConfigSelectors): SessionConfigOption[] {
   const baseModels = s.models.length
     ? s.models
     : [{ id: s.model, name: s.model }];
@@ -323,6 +343,15 @@ export class SessionConfigState {
   /** The per-turn sandbox override for the current mode, if any. */
   sandboxPolicy(): CodexSandboxPolicy | undefined {
     return sandboxPolicyFor(this._mode);
+  }
+
+  /**
+   * The per-turn `activePermissionProfile` for the current mode (codex 0.140.0's
+   * enforced sandbox mechanism), or undefined to keep the spawned default.
+   */
+  permissionProfile(): { extends: string } | undefined {
+    const profile = permissionProfileFor(this._mode);
+    return profile ? { extends: profile } : undefined;
   }
 
   private rebuild(): void {

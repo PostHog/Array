@@ -23,7 +23,7 @@ import { join, resolve } from "node:path";
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
 import { createAcpConnection } from "../src/adapters/acp-connection";
 import { Logger } from "../src/utils/logger";
-import type { Adapter } from "./config";
+import { type Adapter, E2E } from "./config";
 
 export type { Adapter } from "./config";
 
@@ -218,7 +218,12 @@ export async function openSession(opts: {
   const newSession = await c.conn.newSession({
     cwd: opts.cwd,
     mcpServers: [],
-    _meta: opts.meta,
+    // Inject the deployment environment (E2E_ENVIRONMENT) so the whole suite can
+    // run as a cloud session without threading it through every test's meta.
+    _meta: {
+      ...opts.meta,
+      ...(E2E.environment ? { environment: E2E.environment } : {}),
+    },
   });
   return {
     conn: c.conn,

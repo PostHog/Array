@@ -43,16 +43,21 @@ for (const adapter of ADAPTERS) {
 
     it("delivers schema-constrained structured output", async () => {
       let captured: Record<string, unknown> | undefined;
+      // The cheapest models hang on the constrained decode; use a stronger one.
+      const model = E2E.strongModel(adapter);
       const s = await openSession({
         adapter,
         cwd: repo,
-        codexOptions: adapter === "codex" ? E2E.codexOptions(repo) : undefined,
+        codexOptions:
+          adapter === "codex"
+            ? E2E.codexOptions(repo, undefined, model)
+            : undefined,
         onStructuredOutput: async (o) => {
           captured = o;
         },
         meta: {
           systemPrompt: "You answer strictly with JSON matching the schema.",
-          model: E2E.model(adapter),
+          model,
           permissionMode: "bypassPermissions",
           jsonSchema: SCHEMA,
           // Prod always sets taskRunId — exercise structured output and the

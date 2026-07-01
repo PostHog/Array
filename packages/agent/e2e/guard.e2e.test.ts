@@ -23,4 +23,17 @@ describe("live e2e preconditions", () => {
         "set E2E_GATEWAY_TOKEN against a reachable E2E_GATEWAY_URL.",
     ).toBe(true);
   });
+
+  // When the suite IS meant to run (token present) the codex arm must not skip
+  // silently: a failed binary download would otherwise let the whole run pass
+  // with ZERO codex coverage — the exact adapter this suite exists to test.
+  it("requires the native codex binary when a token is set (else codex skips-to-green)", () => {
+    if (!E2E.hasToken) return; // no token → whole suite skips; nothing to guard
+    expect(
+      E2E.skipReason("codex"),
+      "E2E_GATEWAY_TOKEN is set but the native codex binary is missing — the " +
+        "codex arm would silently skip and the run would pass without exercising " +
+        "the codex adapter. Ensure apps/code/scripts/download-binaries.mjs ran.",
+    ).toBeNull();
+  });
 });

@@ -55,15 +55,17 @@ side effects — never model prose — so they hold across adapters and cheap mo
 These never run under `pnpm test` or per-PR CI (the default vitest config only
 includes `src/**`). They are opt-in and cost a couple of short model turns.
 
-In CI they run **only** via the gated `agent-live-e2e` workflow (manual dispatch
-+ nightly cron), and only when the repo variable `AGENT_E2E_ENABLED` is `true`
+In CI they run as the **`e2e` job in `.github/workflows/test.yml`**, on pull
+requests only, after the unit + integration jobs pass. The job is opt-in and safe
+by default: it self-skips unless the repo variable `AGENT_E2E_ENABLED` is `true`
 with an `E2E_GATEWAY_TOKEN` secret and an `E2E_GATEWAY_URL` variable pointing at a
-gateway reachable from the runner. Off by default, so it costs nothing until
-explicitly enabled; the codex arm self-skips if the native binary isn't on the
-runner.
+gateway reachable from the runner, and it never runs for fork PRs (their secrets
+are withheld, which would otherwise red the fail-loud token guard). Off by
+default, so it costs nothing until explicitly enabled; the codex arm self-skips if
+the native binary isn't on the runner.
 
 ```bash
-# from packages/agent — mints a local-gateway OAuth token, runs both arms
+# from packages/agent — reads the local dev API key from the posthog repo, runs both arms
 bash e2e/run-e2e.sh
 
 # just one adapter (matches the (codex) / (claude) marker in every title)
@@ -78,11 +80,11 @@ arm self-skips if it is missing).
 
 | Var | Default | Notes |
 | --- | --- | --- |
-| `E2E_GATEWAY_TOKEN` | — | Required. OAuth token the gateway accepts. Without it every arm skips. `run-e2e.sh` mints one. |
-| `E2E_GATEWAY_URL` | `http://localhost:3308/posthog_code` | Gateway base (codex appends `/v1`). |
+| `E2E_GATEWAY_TOKEN` | — | Required. A token the gateway accepts — the `llm_gateway` product takes a personal API key (no OAuth). Without it every arm skips. `run-e2e.sh` reads the local dev key. |
+| `E2E_GATEWAY_URL` | `http://localhost:3308/llm_gateway` | Gateway base (codex appends `/v1`). `llm_gateway` accepts a personal API key; `posthog_code` is OAuth-only. |
 | `E2E_CLAUDE_MODEL` | `claude-haiku-4-5` | Override if the gateway serves a different cheap Claude id. |
 | `E2E_CODEX_MODEL` | `gpt-5-mini` | Cheapest codex id the local gateway serves; override if needed. |
-| `POSTHOG_REPO` | sibling `../posthog` | Where `run-e2e.sh` mints the token from. |
+| `POSTHOG_REPO` | sibling `../posthog` | Where `run-e2e.sh` reads the local dev key from. |
 | `E2E_DEBUG` | — | `1` for verbose adapter logging. |
 
 If a default model isn't served by your gateway, the turn fails loudly (never a

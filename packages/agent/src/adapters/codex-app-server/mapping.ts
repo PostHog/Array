@@ -54,7 +54,12 @@ export function mapAppServerNotification(
       // additionally emitted as a `_posthog/usage_update` ext-notification by
       // the agent.
       const tu = (params as { tokenUsage?: any })?.tokenUsage;
-      const used = tu?.total?.totalTokens ?? tu?.total?.inputTokens;
+      // Occupancy is THIS turn's `last` (mirroring usage-tracker.ts), not codex's
+      // cumulative `total` — `total` grows across the whole thread, so feeding it
+      // to the gauge over-reports and pegs it at 100% after enough turns. `total`
+      // is only the fallback for a build that predates `last` (≈ total on turn 1).
+      const context = tu?.last ?? tu?.total;
+      const used = context?.totalTokens ?? context?.inputTokens;
       if (used == null) return null;
       const size = tu?.modelContextWindow;
       // `usage_update` is a PostHog-convention update, not in the ACP union.

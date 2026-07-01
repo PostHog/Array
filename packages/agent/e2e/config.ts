@@ -45,6 +45,13 @@ export const E2E = {
   hasToken: !!TOKEN,
   gatewayUrl: GATEWAY_URL,
   codexBin: NATIVE_CODEX_BIN,
+  /**
+   * Deployment environment the session runs as. `E2E_ENVIRONMENT=cloud` exercises
+   * the cloud code path (sandbox/permission-profile gating, cloud notifications) —
+   * the driver injects it into every session's `_meta`. Undefined = local.
+   */
+  environment: (process.env.E2E_ENVIRONMENT as "local" | "cloud" | undefined) ||
+    undefined,
 
   /**
    * Cheap model per adapter (overridable). Defaults to a small/cheap model so a
@@ -93,6 +100,7 @@ export const E2E = {
   codexOptions(
     cwd: string,
     configOverrides?: Record<string, string | number>,
+    modelOverride?: string,
   ): {
     cwd: string;
     binaryPath: string;
@@ -106,8 +114,20 @@ export const E2E = {
       binaryPath: NATIVE_CODEX_BIN,
       apiBaseUrl: openAiBase(),
       apiKey: TOKEN,
-      model: this.model("codex"),
+      model: modelOverride || this.model("codex"),
       ...(configOverrides ? { configOverrides } : {}),
     };
+  },
+
+  /**
+   * A stronger model for the occasional test the cheapest models can't handle —
+   * e.g. gpt-5-mini / claude-haiku hang on schema-constrained (structured-output)
+   * decodes. Opts up to a capable model; still env-overridable.
+   */
+  strongModel(adapter: Adapter): string {
+    if (adapter === "claude") {
+      return process.env.E2E_CLAUDE_MODEL || "claude-sonnet-4-5";
+    }
+    return process.env.E2E_CODEX_MODEL || "gpt-5.5";
   },
 };

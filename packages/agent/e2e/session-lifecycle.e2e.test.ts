@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type Adapter, E2E } from "./config";
 import {
   type Capture,
+  type ConfigOption,
   cleanupRepo,
   INIT_PARAMS,
   killCodexStragglers,
@@ -40,6 +41,22 @@ for (const adapter of ADAPTERS) {
   // Codex-only capabilities; registered as skipped on the claude arm so the gap
   // is visible rather than silent.
   const itCodex = adapter === "codex" ? it : it.skip;
+  // OS-sandbox enforcement only TIGHTENS per-turn on macOS in a LOCAL session:
+  // spawn.ts spawns `workspace-write` there (Seatbelt available), so a per-turn
+  // `:read-only` profile can narrow it and block a write. On Linux the process
+  // spawns `danger-full-access` (the linux-sandbox launcher is unavailable), so
+  // the per-turn profile can't re-engage the sandbox. And in the cloud environment
+  // the adapter deliberately sends NO sandboxPolicy/permissionProfile at all (it
+  // would panic the absent launcher) — so on macOS + E2E_ENVIRONMENT=cloud the
+  // workspace-write spawn permits the edit. Gate to macOS AND non-cloud so the
+  // test only runs where the read-only profile is actually applied; otherwise it
+  // reds spuriously.
+  const itCodexSandbox =
+    adapter === "codex" &&
+    process.platform === "darwin" &&
+    E2E.environment !== "cloud"
+      ? it
+      : it.skip;
 
   describe.skipIf(!!skip)(title, () => {
     let repo: string;
@@ -56,7 +73,10 @@ for (const adapter of ADAPTERS) {
 
     let sessionId: string;
     let newSessionResponse: NewSessionResponse;
-    let turn: { stopReason?: string; capture: Capture; target: string };
+    let turn:
+      | { stopReason?: string; capture: Capture; target: string }
+      | undefined;
+    let goldenError: unknown;
 
     beforeAll(async () => {
       if (adapter === "codex") killCodexStragglers();
@@ -80,6 +100,12 @@ for (const adapter of ADAPTERS) {
           capture: s.capture,
           target: readTarget(repo),
         };
+      } catch (err) {
+        // Don't fail the whole describe on a flaky golden turn — record it so only
+        // the one test that consumes `turn` fails. sessionId/newSessionResponse are
+        // already captured above, so the independent scenarios (each opens its own
+        // session) and the reattach/list/fork/resume tests still run.
+        goldenError = err;
       } finally {
         await s.cleanup();
       }
@@ -96,6 +122,8 @@ for (const adapter of ADAPTERS) {
     });
 
     it("streams a working turn: assistant text, tool calls, usage, file edit", () => {
+      if (goldenError) throw goldenError;
+      if (!turn) throw new Error("golden turn did not produce a result");
       expect(turn.stopReason).toBe("end_turn");
       expect(
         turn.capture.updates("agent_message_chunk").length,
@@ -179,12 +207,13 @@ for (const adapter of ADAPTERS) {
             s.capture.updates("config_option_update").length,
           ).toBeGreaterThan(0);
         } else {
-          // claude acks via the returned configOptions and/or a re-emit.
-          const acknowledged =
-            s.capture.updates("config_option_update").length +
-              s.capture.updates("current_mode_update").length >
-              0 || Array.isArray(res?.configOptions);
-          expect(acknowledged).toBe(true);
+          // claude returns the updated configOptions — assert the switch actually
+          // took (the option's currentValue is now the value we set), not merely
+          // that an ack event/array was produced (which is unconditionally true).
+          const updated = ((res?.configOptions ?? []) as ConfigOption[]).find(
+            (o) => o.id === opt?.id,
+          );
+          expect(updated?.currentValue).toBe(alt?.value);
         }
       } finally {
         await s.cleanup();
@@ -227,10 +256,11 @@ for (const adapter of ADAPTERS) {
     }, 60_000);
 
     // The behavioral proof that the mode picker is NOT cosmetic: read-only maps
-    // to a per-turn sandboxPolicy:readOnly (codex app-server), which must block a
-    // write at the OS level even though the host auto-approves. If this fails the
-    // edit went through → the restriction is not actually applied.
-    itCodex(
+    // to a per-turn `:read-only` permission profile (codex app-server), which must
+    // block a write at the OS level even though the host auto-approves. macOS-only
+    // (see itCodexSandbox): on Linux the process spawns danger-full-access, so the
+    // per-turn profile can't tighten it and this would spuriously red.
+    itCodexSandbox(
       "read-only mode actually blocks a file edit (sandbox restricts, not just approval)",
       async () => {
         if (adapter === "codex") killCodexStragglers();
@@ -241,7 +271,7 @@ for (const adapter of ADAPTERS) {
           meta: meta(),
         });
         try {
-          // Switch to read-only; the per-turn sandboxPolicy applies on the next turn.
+          // Switch to read-only; the per-turn profile applies on the next turn.
           await s.conn.setSessionConfigOption({
             sessionId: s.sessionId,
             configId: "mode",
@@ -254,14 +284,21 @@ for (const adapter of ADAPTERS) {
               {
                 type: "text",
                 text:
-                  "Edit target.txt so its second line reads SENTINEL_RO_EDIT. " +
-                  "Then stop.",
+                  "Use your file-editing tool to change target.txt so its second " +
+                  "line reads SENTINEL_RO_EDIT. You MUST attempt the edit with your " +
+                  "tool even if it appears restricted. Then stop.",
               },
             ],
           });
           // The turn must complete (a read-only sandbox must not panic/hang)...
           expect(res.stopReason).toBeTruthy();
-          // ...and the on-disk file is byte-for-byte unchanged: the readOnly
+          // ...the model actually DID something (>=1 tool call), so a pure prose
+          // no-op can't masquerade as enforcement. (This only rules out the
+          // zero-activity false-green; the insistent prompt above pushes toward an
+          // edit, but a read-then-refuse could still satisfy this without a write
+          // attempt — an accepted residual on a nondeterministic cheap model.)
+          expect(s.capture.updates("tool_call").length).toBeGreaterThan(0);
+          // ...and the on-disk file is byte-for-byte unchanged: the read-only
           // sandbox blocked the write despite the host auto-approving.
           expect(readTarget(repo)).toBe(before);
           expect(readTarget(repo)).not.toContain("SENTINEL_RO_EDIT");
@@ -434,10 +471,25 @@ for (const adapter of ADAPTERS) {
           });
           const [r1] = await Promise.all([p1, p2]);
           expect(r1.stopReason).toBe("end_turn");
-          // Both the original and the steered message echoed as user turns.
+          // Both the original and the steered message echoed as user turns...
           expect(
             s.capture.updates("user_message_chunk").length,
           ).toBeGreaterThanOrEqual(2);
+          // ...and — the steer-specific proof — they folded into a SINGLE turn:
+          // exactly one _posthog/turn_complete. A swallowed/failed turn/steer, or
+          // p1 finishing before p2 lands (so p2 runs as its own turn), would yield
+          // 2. The bare user_message_chunk count above only proves prompt() ran
+          // twice; this proves the second prompt actually steered the first turn.
+          const turnCompletes = s.capture.events.filter(
+            (e) =>
+              e.kind === "extNotification" &&
+              e.method === "_posthog/turn_complete",
+          ).length;
+          expect(
+            turnCompletes,
+            "expected the steered prompt to fold into one running turn (1 " +
+              "turn_complete); 2 means the steer didn't take",
+          ).toBe(1);
         } finally {
           await s.cleanup();
         }

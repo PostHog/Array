@@ -190,9 +190,11 @@ jobs:
           pnpm --filter @posthog/enricher run build
 
       - name: Download native codex binary
-        # Non-fatal: if the download fails the codex arm self-skips (missing
-        # binary) and the claude arm still runs — never a false green.
-        run: node apps/code/scripts/download-binaries.mjs || echo "codex binary download failed; codex arm will self-skip"
+        # Non-fatal at the STEP so a failure surfaces as the fail-loud binary guard
+        # (guard.e2e.test.ts) with a clear message rather than an opaque download
+        # error. A missing binary then REDS the run (the guard fails when a token is
+        # set) instead of letting the codex arm silently skip to green.
+        run: node apps/code/scripts/download-binaries.mjs || echo "codex binary download failed; the binary guard test will red the run"
 
       - name: Run live e2e (both adapters)
         run: pnpm --filter agent run test:e2e
@@ -201,3 +203,7 @@ jobs:
           E2E_GATEWAY_URL: ${{ vars.E2E_GATEWAY_URL }}
           E2E_CLAUDE_MODEL: ${{ vars.E2E_CLAUDE_MODEL }}
           E2E_CODEX_MODEL: ${{ vars.E2E_CODEX_MODEL }}
+          # Optional: set vars.E2E_ENVIRONMENT=cloud to exercise the cloud code
+          # path (sandbox/permission-profile gating). Unset = local. The OS-sandbox
+          # enforcement test is macOS-gated, so it doesn't red this linux runner.
+          E2E_ENVIRONMENT: ${{ vars.E2E_ENVIRONMENT }}

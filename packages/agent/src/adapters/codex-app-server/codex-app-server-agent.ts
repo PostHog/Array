@@ -171,7 +171,6 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private compactionActive = false;
   /** Maps the host's taskRunId to this session, replayed for cloud notifications. */
   private taskRunId?: string;
-  private cwd?: string;
   /**
    * Deployment environment from the host `_meta`. Gates the per-turn
    * `sandboxPolicy` mode override: on "cloud" a non-danger sandbox would
@@ -420,7 +419,6 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     },
   ): Promise<{ threadId: string; thread: AppServerThread | undefined }> {
     this.jsonSchema = params.meta?.jsonSchema ?? undefined;
-    this.cwd = params.cwd;
     this.taskRunId = params.meta?.taskRunId;
     this.environment = params.meta?.environment;
     // Honor the host's initial approval mode (mirrors codex-acp). A non-codex
@@ -447,10 +445,22 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     // Fold the host's MCP servers and the local-tools stdio server into one map
     // — the local-tools server (signed-git etc.) is gated by the same cwd + meta
     // the codex-acp adapter uses, so local/desktop runs without a token get none.
-    const localTools = buildLocalToolsServer(
-      { cwd: params.cwd },
-      this.localToolsMeta(params.meta),
-    );
+    // Degrade gracefully: if the bundled server script can't be resolved (a
+    // packaging gap, or running from source), skip local-tools with a loud
+    // warning rather than throwing — a missing optional tool must not kill the
+    // whole session's thread setup.
+    let localTools: ReturnType<typeof buildLocalToolsServer> = null;
+    try {
+      localTools = buildLocalToolsServer(
+        { cwd: params.cwd },
+        this.localToolsMeta(params.meta),
+      );
+    } catch (err) {
+      this.logger.warn(
+        "local-tools server unavailable; continuing without it",
+        { error: String(err) },
+      );
+    }
     const mcpServers = toCodexMcpServers([
       ...(params.mcpServers ?? []),
       ...(localTools ? [localTools] : []),
@@ -680,6 +690,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     try {
       const approvalPolicy = this.config.approvalPolicy();
       const sandboxPolicy = this.config.sandboxPolicy();
+      const activePermissionProfile = this.config.permissionProfile();
       await this.rpc.request(APP_SERVER_METHODS.TURN_START, {
         threadId: this.threadId,
         input,
@@ -703,6 +714,14 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         collaborationMode: this.config.collaborationModeForTurn(),
         ...(this.environment !== "cloud" && sandboxPolicy
           ? { sandboxPolicy }
+          : {}),
+        // codex 0.140.0 enforces the sandbox through named permission profiles;
+        // the raw sandboxPolicy above is no longer honored on its own, so
+        // plan/read-only also send `activePermissionProfile: {extends:":read-only"}`.
+        // Same cloud gating — a restrictive profile would re-engage the absent
+        // linux-sandbox there.
+        ...(this.environment !== "cloud" && activePermissionProfile
+          ? { activePermissionProfile }
           : {}),
         // Constrain the final assistant message to the task's schema so it is
         // valid JSON we can parse for structured output (replaces the codex-acp
@@ -942,12 +961,30 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     // window below sees no live turn.
     const pending = this.turns.claim();
     if (!pending) return;
+    // If the turn ends while a compaction is still in progress (interrupt or a
+    // fatal error before item/completed(contextCompaction)), the boundary would
+    // never fire — leaving the host's `isCompacting` stuck true, which silently
+    // queues every later user message. Clear the flag and emit the boundary here
+    // (idempotent: only the first finalize for a turn gets past claim()) so the
+    // host recovers instead of wedging.
+    if (this.compactionActive) {
+      this.compactionActive = false;
+      this.emitCompactionBoundary();
+    }
     const message = this.lastAgentMessage;
     // Per-turn usage is codex's own `tokenUsage.last` (not a reconstructed delta).
     const usage = this.usage.perTurnUsage();
     const contextUsed = this.usage.contextTokens();
 
-    if (this.jsonSchema && this.onStructuredOutput && message) {
+    // Deliver structured output only on a clean completion — a cancelled
+    // (user-interrupted) or refused turn must not record task output the host
+    // considers failed (mirrors the Claude adapter's success-only delivery).
+    if (
+      reason === "end_turn" &&
+      this.jsonSchema &&
+      this.onStructuredOutput &&
+      message
+    ) {
       const parsed = parseStructuredOutput(message);
       if (parsed) {
         try {

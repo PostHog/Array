@@ -807,6 +807,37 @@ describe("CodexAppServerAgent", () => {
     expect(modelOpt.currentValue).toBe("gpt-6");
   });
 
+  it("sends activePermissionProfile :read-only on turn/start in read-only mode", async () => {
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    await agent.setSessionConfigOption({
+      configId: "mode",
+      value: "read-only",
+      sessionId: "t",
+    } as any);
+
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "look around" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await done;
+
+    // codex 0.140.0 enforces the sandbox via the named profile — the raw
+    // sandboxPolicy alone is no longer honored — so read-only MUST send
+    // activePermissionProfile:{extends:":read-only"} (alongside sandboxPolicy).
+    const turnStart = stub.requests.find((r) => r.method === "turn/start");
+    expect(turnStart?.params).toMatchObject({
+      activePermissionProfile: { extends: ":read-only" },
+      sandboxPolicy: { type: "readOnly" },
+    });
+  });
+
   it("resumeSession resumes the existing thread and returns configOptions", async () => {
     const stub = makeStubRpc({
       "thread/start": { thread: { id: "t1" } },
@@ -976,12 +1007,14 @@ describe("CodexAppServerAgent", () => {
       item: { type: "agentMessage", id: "a1", text: '{"ok":true}' },
     });
     // A fatal error AND turn/completed for the same turn must not double-fire
-    // the structured-output callback or the _posthog/turn_complete notification.
+    // the _posthog/turn_complete notification (idempotent finalize).
     stub.emit("error", { willRetry: false, error: { message: "boom" } });
     stub.emit("turn/completed", { turn: { status: "failed" } });
     await done;
 
-    expect(outputs).toEqual([{ ok: true }]);
+    // Structured output is gated on a clean end_turn: a refused/failed turn must
+    // NOT record task output even though a valid final message was captured.
+    expect(outputs).toEqual([]);
     expect(
       extNotifications.filter((n) => n.method === "_posthog/turn_complete")
         .length,
@@ -1617,6 +1650,37 @@ describe("CodexAppServerAgent", () => {
     expect(
       extNotifications.filter((n) => n.method === "_posthog/compact_boundary"),
     ).toHaveLength(1);
+  });
+
+  it("still emits compact_boundary when the turn dies mid-compaction (no stuck isCompacting)", async () => {
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client, extNotifications } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({
+      cwd: "/r",
+      _meta: {},
+    } as unknown as NewSessionRequest);
+
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    // Compaction starts, then a fatal error ends the turn BEFORE item/completed —
+    // without the finalize-time recovery the boundary would never fire and the
+    // host's isCompacting would stay stuck true.
+    stub.emit("item/started", {
+      item: { type: "contextCompaction", id: "c1" },
+    });
+    stub.emit("error", { willRetry: false, error: { message: "boom" } });
+    await done;
+
+    expect(
+      extNotifications.find((n) => n.method === "_posthog/compact_boundary")
+        ?.params,
+    ).toMatchObject({ sessionId: "t" });
   });
 
   it("loadSession resumes the thread and returns configOptions", async () => {

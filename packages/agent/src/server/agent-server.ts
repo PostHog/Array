@@ -395,7 +395,15 @@ export class AgentServer {
   }
 
   private shouldRelayPermissionToClient(mode: PermissionMode): boolean {
-    return mode === "default" || mode === "auto" || mode === "read-only";
+    // "plan" relays like "read-only": both are look-don't-touch modes, so an
+    // edit/command escalation must reach a connected desktop for a human veto
+    // rather than being silently auto-approved.
+    return (
+      mode === "default" ||
+      mode === "auto" ||
+      mode === "read-only" ||
+      mode === "plan"
+    );
   }
 
   private createApp(): Hono {
