@@ -366,6 +366,7 @@ export class AgentServer {
       this.eventStreamSender = new TaskRunEventStreamSender({
         apiUrl: config.apiUrl,
         eventIngestBaseUrl: config.eventIngestBaseUrl,
+        keepProxyStreamOpen: config.eventIngestKeepStreamOpen,
         projectId: config.projectId,
         taskId: config.taskId,
         runId: config.runId,

@@ -124,19 +124,6 @@ function createSender(
   });
 }
 
-async function waitFor(
-  predicate: () => boolean,
-  timeoutMs = 100,
-): Promise<void> {
-  const deadlineAtMs = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadlineAtMs) {
-      throw new Error("Timed out waiting for condition");
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1));
-  }
-}
-
 describe("TaskRunEventStreamSender", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -208,7 +195,7 @@ describe("TaskRunEventStreamSender", () => {
     expect(lastCall[0]).not.toContain("/api/projects/");
   });
 
-  it("closes the active ingest upload after each drained batch on the proxy path", async () => {
+  it("closes the ingest upload per drained batch on the proxy path by default", async () => {
     const requestBodies: string[] = [];
     let contentUploads = 0;
     const fetchMock = vi.fn(
@@ -231,25 +218,63 @@ describe("TaskRunEventStreamSender", () => {
       eventIngestBaseUrl: "http://agent-proxy:8003/",
     });
 
-    // A buffering ingress only forwards the request body when the upload
-    // closes, so each drained batch must ride its own promptly-closed upload
-    // rather than one long-lived request held open until stop.
     sender.enqueue({ type: "notification", notification: { method: "first" } });
-    await waitFor(() => contentUploads === 1);
-    expect(eventSequences(requestBodies[0])).toEqual([1]);
-    expect(completionSequences(requestBodies[0])).toEqual([]);
+    await vi.waitFor(() => expect(contentUploads).toBe(1));
 
     sender.enqueue({
       type: "notification",
       notification: { method: "second" },
     });
-    await waitFor(() => contentUploads === 2);
-    expect(eventSequences(requestBodies[1])).toEqual([2]);
-    expect(completionSequences(requestBodies[1])).toEqual([]);
+    await vi.waitFor(() => expect(contentUploads).toBe(2));
 
     await sender.stop();
 
+    expect(eventSequences(requestBodies[0] ?? "")).toEqual([1]);
+    expect(eventSequences(requestBodies[1] ?? "")).toEqual([2]);
+  });
+
+  it("holds one long-lived upload across batches when keepProxyStreamOpen is set", async () => {
+    const requestBodies: string[] = [];
+    let streamingRequests = 0;
+    let contentUploads = 0;
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        if (!init?.body || typeof init.body === "string") {
+          return responseForBody(await readRequestBody(init));
+        }
+
+        // Counted on open; resolves only once the sender closes the upload body.
+        streamingRequests += 1;
+        const body = await readRequestBody(init);
+        contentUploads += 1;
+        requestBodies.push(body);
+        return responseForBody(body);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sender = createSender({
+      flushDelayMs: 0,
+      eventIngestBaseUrl: "http://agent-proxy:8003/",
+      keepProxyStreamOpen: true,
+    });
+
+    sender.enqueue({ type: "notification", notification: { method: "first" } });
+    // First batch opens the upload and holds it open: nothing is delivered yet.
+    await vi.waitFor(() => expect(streamingRequests).toBe(1));
+    expect(contentUploads).toBe(0);
+
+    // A second batch reuses the held-open upload instead of opening another.
+    sender.enqueue({
+      type: "notification",
+      notification: { method: "second" },
+    });
+    await sender.stop();
+
+    expect(streamingRequests).toBe(1);
+    expect(contentUploads).toBe(1);
     const finalBody = requestBodies.at(-1) ?? "";
+    expect(eventSequences(finalBody)).toEqual([1, 2]);
     expect(completionSequences(finalBody)).toEqual([2]);
   });
 
