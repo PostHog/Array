@@ -12,7 +12,6 @@ vi.mock("../composer/attachments/buildCloudPrompt", () => ({
 }));
 vi.mock("../utils/sounds", () => ({
   playCompletionSound: vi.fn(() => Promise.resolve()),
-  playbackRateForTaskDuration: vi.fn(() => 1),
 }));
 vi.mock("@/features/notifications/lib/notifications", () => ({
   presentLocalNotification: vi.fn(() => Promise.resolve()),
