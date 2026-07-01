@@ -52,6 +52,41 @@ export class LocalLogsService implements ILogsService {
     }
   }
 
+  async readLocalLogsTail(
+    taskRunId: string,
+    maxBytes: number,
+  ): Promise<{ content: string; truncated: boolean } | null> {
+    const logPath = this.getLocalLogPath(taskRunId);
+    try {
+      const stat = await fs.promises.stat(logPath);
+      if (stat.size <= maxBytes) {
+        return {
+          content: await fs.promises.readFile(logPath, "utf-8"),
+          truncated: false,
+        };
+      }
+      const handle = await fs.promises.open(logPath, "r");
+      try {
+        const start = stat.size - maxBytes;
+        const buf = Buffer.alloc(maxBytes);
+        const { bytesRead } = await handle.read(buf, 0, maxBytes, start);
+        const raw = buf.toString("utf-8", 0, bytesRead);
+        // We began mid-file, so the first line is a fragment (and may start
+        // with a broken multi-byte char) — drop everything up to the first
+        // newline so only whole ndjson lines remain.
+        const nl = raw.indexOf("\n");
+        return { content: nl >= 0 ? raw.slice(nl + 1) : "", truncated: true };
+      } finally {
+        await handle.close();
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return null;
+      }
+      return null;
+    }
+  }
+
   writeLocalLogs(taskRunId: string, content: string): Promise<void> {
     const existing = this.writes.get(taskRunId);
     if (existing) {

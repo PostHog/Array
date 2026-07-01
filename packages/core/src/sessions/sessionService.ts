@@ -161,6 +161,9 @@ export interface SessionTrpc {
   };
   logs: {
     readLocalLogs: TrpcQuery;
+    /** Optional: only the Electron host exposes the tail read. Core feature-
+     * detects and falls back to a full read when it's absent. */
+    readLocalLogsTail?: TrpcQuery;
     fetchS3Logs: TrpcQuery;
     writeLocalLogs: TrpcMutation;
   };

@@ -132,6 +132,8 @@ import {
   deleteLocalLogCacheInput,
   readLocalLogsInput,
   readLocalLogsOutput,
+  readLocalLogsTailInput,
+  readLocalLogsTailOutput,
   seedLocalLogsInput,
   writeLocalLogsInput,
 } from "./services/local-logs/schemas";
@@ -852,6 +854,13 @@ export function createAppRouter({
         .output(readLocalLogsOutput)
         .query(({ input }) =>
           localLogsService().readLocalLogs(input.taskRunId),
+        ),
+
+      readTail: t.procedure
+        .input(readLocalLogsTailInput)
+        .output(readLocalLogsTailOutput)
+        .query(({ input }) =>
+          localLogsService().readLocalLogsTail(input.taskRunId, input.maxBytes),
         ),
 
       write: t.procedure
