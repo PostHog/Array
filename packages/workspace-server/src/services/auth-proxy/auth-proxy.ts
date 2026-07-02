@@ -10,7 +10,6 @@ import {
   type StreamProgress,
   streamBodyToResponse,
 } from "../proxy-stream/proxy-stream";
-import { compressMessagesBody, isCompressionEnabled } from "./compress-request";
 import { AUTH_PROXY_AUTH } from "./identifiers";
 import type { AuthProxyAuth } from "./ports";
 
@@ -170,26 +169,7 @@ export class AuthProxyService {
       const chunks: Buffer[] = [];
       req.on("data", (chunk: Buffer) => chunks.push(chunk));
       req.on("end", () => {
-        let body = Buffer.concat(chunks);
-        const contentType = req.headers["content-type"] ?? "";
-        if (
-          req.method === "POST" &&
-          contentType.includes("application/json") &&
-          isCompressionEnabled(process.env)
-        ) {
-          const compressed = compressMessagesBody(body);
-          if (compressed.length < body.length) {
-            this.log.debug("Compressed LLM request body", {
-              beforeBytes: body.length,
-              afterBytes: compressed.length,
-            });
-            body = compressed;
-            // The forwarded content-length header is now stale; drop it and let
-            // undici recompute it from the Buffer.
-            delete headers["content-length"];
-          }
-        }
-        fetchOptions.body = body;
+        fetchOptions.body = Buffer.concat(chunks);
         this.forwardRequest(targetUrl.toString(), fetchOptions, res);
       });
     } else {
