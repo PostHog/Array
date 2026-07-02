@@ -14,14 +14,7 @@ const CloudReviewPageLazy = lazy(() =>
 
 function ReviewFallback(): ReactNode {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100%",
-      }}
-    >
+    <div className="flex h-full items-center justify-center">
       <DotsCircleSpinner />
     </div>
   );
