@@ -100,7 +100,11 @@ ${truncatedDiff}${contextSection}`;
 
     const response = await this.llm.prompt(
       [{ role: "user", content: userMessage }],
-      { system, model: HELPER_GATEWAY_MODEL },
+      {
+        system,
+        model: HELPER_GATEWAY_MODEL,
+        posthogProperties: { $ai_span_name: "commit_message" },
+      },
     );
 
     return { message: response.content.trim() };
@@ -211,7 +215,12 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
 
     const response = await this.llm.prompt(
       [{ role: "user", content: userMessage }],
-      { system, maxTokens: 2000, model: HELPER_GATEWAY_MODEL },
+      {
+        system,
+        maxTokens: 2000,
+        model: HELPER_GATEWAY_MODEL,
+        posthogProperties: { $ai_span_name: "pr_description" },
+      },
     );
 
     const content = response.content.trim();

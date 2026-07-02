@@ -44,11 +44,12 @@ const hoisted = vi.hoisted(() => {
     cancel: vi.fn().mockResolvedValue(undefined),
   });
 
-  const clientSideConnectionCtor = vi.fn(() => {
-    const conn = makeConnection();
-    createdConnections.push(conn);
-    return conn;
-  });
+  const clientSideConnectionCtor = class {
+    constructor() {
+      Object.assign(this, makeConnection());
+      createdConnections.push(this as unknown as MockCodexConnection);
+    }
+  };
 
   const spawnCodexProcessMock = vi.fn(() => {
     const handle: SpawnHandle = {
@@ -75,7 +76,6 @@ const hoisted = vi.hoisted(() => {
 
 const createdConnections = hoisted.createdConnections;
 const spawnedProcesses = hoisted.spawnedProcesses;
-const clientSideConnectionCtor = hoisted.clientSideConnectionCtor;
 
 vi.mock("@agentclientprotocol/sdk", async () => {
   const actual = await vi.importActual("@agentclientprotocol/sdk");
@@ -91,13 +91,14 @@ vi.mock("./spawn", () => ({
 }));
 
 vi.mock("./settings", () => ({
-  CodexSettingsManager: vi.fn().mockImplementation((cwd: string) => ({
-    initialize: vi.fn().mockResolvedValue(undefined),
-    dispose: vi.fn(),
-    getCwd: () => cwd,
-    setCwd: vi.fn(),
-    getSettings: () => ({ mcpServerNames: [] }),
-  })),
+  CodexSettingsManager: class {
+    constructor(private readonly cwd: string) {}
+    initialize = vi.fn().mockResolvedValue(undefined);
+    dispose = vi.fn();
+    getCwd = () => this.cwd;
+    setCwd = vi.fn();
+    getSettings = () => ({ mcpServerNames: [] });
+  },
 }));
 
 import { CodexAcpAgent } from "./codex-agent";
@@ -171,7 +172,6 @@ describe("CodexAcpAgent.extMethod refresh_session", () => {
   beforeEach(() => {
     spawnedProcesses.length = 0;
     createdConnections.length = 0;
-    clientSideConnectionCtor.mockClear();
   });
 
   it("returns methodNotFound for unknown extension methods", async () => {

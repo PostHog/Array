@@ -175,6 +175,12 @@ export default function SettingsScreen() {
   const setCompletionSound = usePreferencesStore((s) => s.setCompletionSound);
   const completionVolume = usePreferencesStore((s) => s.completionVolume);
   const setCompletionVolume = usePreferencesStore((s) => s.setCompletionVolume);
+  const scaleSoundWithTaskLength = usePreferencesStore(
+    (s) => s.scaleSoundWithTaskLength,
+  );
+  const setScaleSoundWithTaskLength = usePreferencesStore(
+    (s) => s.setScaleSoundWithTaskLength,
+  );
   const defaultInitialTaskMode = usePreferencesStore(
     (s) => s.defaultInitialTaskMode,
   );
@@ -348,7 +354,6 @@ export default function SettingsScreen() {
               label="Sound volume"
               description="How loud the completion sound plays"
               onPress={() => setVolumeSheetOpen(true)}
-              showDivider={false}
               rightSlot={
                 <>
                   <Text className="text-[14px] text-gray-11">
@@ -356,6 +361,17 @@ export default function SettingsScreen() {
                   </Text>
                   <CaretRight size={14} color={themeColors.gray[10]} />
                 </>
+              }
+            />
+            <SettingsRow
+              label="Scale sound speed with task length"
+              description="Play the sound faster for quick tasks and slower for long ones"
+              showDivider={false}
+              rightSlot={
+                <Switch
+                  value={scaleSoundWithTaskLength}
+                  onValueChange={setScaleSoundWithTaskLength}
+                />
               }
             />
           </SettingsSection>

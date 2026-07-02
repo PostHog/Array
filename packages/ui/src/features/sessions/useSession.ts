@@ -150,3 +150,30 @@ export const useAdapterForTask = (
     return s.sessions[taskRunId]?.adapter;
   });
 };
+
+/**
+ * Whether a task's session is a cloud run. A primitive selector, so consumers
+ * that only need this flag don't re-render on every streamed event the way
+ * reading the whole session via {@link useSessionForTask} would.
+ */
+export const useSessionIsCloud = (taskId: string | undefined): boolean => {
+  return useSessionStore((s) => {
+    if (!taskId) return false;
+    const taskRunId = s.taskIdIndex[taskId];
+    if (!taskRunId) return false;
+    return s.sessions[taskRunId]?.isCloud ?? false;
+  });
+};
+
+/** Whether a cloud handoff is in progress for a task. Primitive selector — see
+ * {@link useSessionIsCloud}. */
+export const useSessionHandoffInProgress = (
+  taskId: string | undefined,
+): boolean => {
+  return useSessionStore((s) => {
+    if (!taskId) return false;
+    const taskRunId = s.taskIdIndex[taskId];
+    if (!taskRunId) return false;
+    return s.sessions[taskRunId]?.handoffInProgress ?? false;
+  });
+};

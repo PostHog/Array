@@ -13,6 +13,9 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import { GLM_MODEL_FLAG } from "@posthog/shared";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import {
   flattenSelectOptions,
   useModelConfigOptionForTask,
@@ -34,7 +37,12 @@ export function ModelSelector({
 }: ModelSelectorProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const session = useSessionForTask(taskId);
-  const modelOption = useModelConfigOptionForTask(taskId);
+  const rawModelOption = useModelConfigOptionForTask(taskId);
+  const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
+  const modelOption =
+    glmEnabled || !rawModelOption
+      ? rawModelOption
+      : stripGlmModelOption(rawModelOption);
 
   const selectOption = modelOption?.type === "select" ? modelOption : undefined;
   const options = selectOption

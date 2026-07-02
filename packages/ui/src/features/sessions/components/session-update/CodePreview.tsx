@@ -1,6 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { MultiFileDiff } from "@pierre/diffs/react";
 import { compactHomePath, parseImageDataUrl } from "@posthog/shared";
+import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
 import { Code } from "@radix-ui/themes";
 import { useEffect, useMemo, useRef } from "react";
 import { SafeImagePreview } from "../../../../primitives/SafeImagePreview";
@@ -146,10 +147,10 @@ function DiffPreview({
   );
   const options = useMemo(
     () => ({
+      ...DIFFS_HIGHLIGHTER_OPTIONS,
       diffStyle: "unified" as const,
       overflow: "wrap" as const,
       themeType: (isDarkMode ? "dark" : "light") as "dark" | "light",
-      theme: { dark: "github-dark" as const, light: "github-light" as const },
       disableFileHeader: true,
     }),
     [isDarkMode],

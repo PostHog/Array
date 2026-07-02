@@ -4,6 +4,7 @@ import {
   conversationTurnsToJsonlEntries,
   getSessionJsonlPath,
   rebuildConversation,
+  selectRecentTurns,
 } from "./jsonl-hydration";
 
 function entry(
@@ -284,6 +285,118 @@ describe("rebuildConversation", () => {
     expect(turns).toHaveLength(2);
     expect(turns[1].toolCalls).toHaveLength(1);
     expect(turns[1].toolCalls?.[0].result).toBeUndefined();
+  });
+
+  it("tracks tool calls from the ACP shape: top-level toolCallId/rawInput/rawOutput, toolName in _meta", () => {
+    // Mirrors the exact update sequence agent-server persists to S3. Before
+    // the top-level fields were read, every tool call was dropped and a
+    // 30-minute run resumed as a 4-line transcript.
+    const turns = rebuildConversation([
+      entry("user_message", { content: { type: "text", text: "fix it" } }),
+      entry("tool_call", {
+        toolCallId: "toolu_01",
+        _meta: { claudeCode: { toolName: "Bash" } },
+        rawInput: {},
+        status: "pending",
+        title: "Execute command",
+        kind: "execute",
+        content: [],
+      }),
+      entry("tool_call_update", {
+        toolCallId: "toolu_01",
+        rawInput: { command: "gh pr view 123" },
+      }),
+      entry("tool_call_update", {
+        toolCallId: "toolu_01",
+        _meta: { claudeCode: { toolName: "Bash" } },
+        status: "completed",
+        rawOutput: { stdout: "PR title" },
+      }),
+    ]);
+
+    expect(turns).toHaveLength(2);
+    expect(turns[1].toolCalls).toEqual([
+      {
+        toolCallId: "toolu_01",
+        toolName: "Bash",
+        input: { command: "gh pr view 123" },
+        result: { stdout: "PR title" },
+      },
+    ]);
+  });
+
+  it("truncates oversized tool payloads, keeping object inputs as objects", () => {
+    const bigOutput = "x".repeat(50_000);
+    const bigInput = { file_path: "/tmp/big.ts", content: "y".repeat(50_000) };
+    const turns = rebuildConversation([
+      entry("user_message", { content: { type: "text", text: "go" } }),
+      entry("tool_call", {
+        toolCallId: "toolu_01",
+        _meta: { claudeCode: { toolName: "Write" } },
+        rawInput: bigInput,
+      }),
+      entry("tool_call_update", {
+        toolCallId: "toolu_01",
+        rawOutput: bigOutput,
+      }),
+    ]);
+
+    // String outputs may truncate to a string; tool_use.input must stay an
+    // object per the Claude API schema.
+    const result = turns[1].toolCalls?.[0].result as string;
+    expect(result.length).toBeLessThan(11_000);
+    expect(result).toContain("[truncated");
+
+    const input = turns[1].toolCalls?.[0].input as {
+      _truncated: boolean;
+      preview: string;
+      originalSize: number;
+    };
+    expect(input._truncated).toBe(true);
+    expect(input.preview.length).toBeLessThan(11_000);
+    expect(input.originalSize).toBeGreaterThan(50_000);
+  });
+});
+
+describe("selectRecentTurns", () => {
+  it("keeps the user turn and sheds oldest tool calls when the final turn alone exceeds the budget", () => {
+    // A single-prompt run rebuilds into [user, one giant assistant turn].
+    // Before the fallback, that shape selected zero turns and hydration
+    // wrote an empty transcript.
+    const bigInput = { data: "y".repeat(8_000) };
+    const turns = rebuildConversation([
+      entry("user_message", { content: { type: "text", text: "the task" } }),
+      ...[1, 2, 3].map((i) =>
+        entry("tool_call", {
+          toolCallId: `toolu_0${i}`,
+          _meta: { claudeCode: { toolName: "Bash" } },
+          rawInput: bigInput,
+        }),
+      ),
+    ]);
+
+    // Budget fits the user turn plus roughly one big tool call.
+    const selected = selectRecentTurns(turns, 3_000);
+
+    expect(selected).toHaveLength(2);
+    expect(selected[0].role).toBe("user");
+    expect(selected[1].role).toBe("assistant");
+    const keptIds = selected[1].toolCalls?.map((tc) => tc.toolCallId);
+    expect(keptIds).toEqual(["toolu_03"]);
+  });
+
+  it("returns recent turns that fit the budget unchanged", () => {
+    const turns = [
+      {
+        role: "user" as const,
+        content: [{ type: "text" as const, text: "a" }],
+      },
+      {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "b" }],
+      },
+    ];
+    expect(selectRecentTurns(turns, 1_000)).toEqual(turns);
   });
 });
 

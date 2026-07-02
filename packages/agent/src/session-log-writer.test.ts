@@ -343,6 +343,48 @@ describe("SessionLogWriter", () => {
       expect(response).toBe("first message\n\nsecond message");
     });
 
+    it("getAgentResponseParts returns each turn message as a separate entry", async () => {
+      const sessionId = "s1";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_message_chunk", {
+          content: { type: "text", text: "I'll pull DAU." },
+        }),
+      );
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("tool_call", { toolCallId: "tc1" }),
+      );
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_message", {
+          content: { type: "text", text: "Here's your answer." },
+        }),
+      );
+
+      // getFullAgentResponse still joins for backends without text_parts support.
+      expect(logWriter.getFullAgentResponse(sessionId)).toBe(
+        "I'll pull DAU.\n\nHere's your answer.",
+      );
+      // getAgentResponseParts keeps the split — the Slack relay picks the last.
+      expect(logWriter.getAgentResponseParts(sessionId)).toEqual([
+        "I'll pull DAU.",
+        "Here's your answer.",
+      ]);
+    });
+
+    it("getAgentResponseParts returns undefined for an empty/unregistered turn", () => {
+      expect(
+        logWriter.getAgentResponseParts("never-registered"),
+      ).toBeUndefined();
+
+      const sessionId = "empty";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+      expect(logWriter.getAgentResponseParts(sessionId)).toBeUndefined();
+    });
+
     it("persisted log does not contain stale entries when chunks are superseded", async () => {
       const sessionId = "s1";
       logWriter.register(sessionId, { taskId: "t1", runId: sessionId });

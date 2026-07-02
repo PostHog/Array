@@ -2,6 +2,10 @@ import type { EffortLevel } from "../types";
 
 export const DEFAULT_MODEL = "opus";
 
+// Refusal/overload rescue target. The SDK rejects fallbackModel === Options.model
+// at spawn, so this must stay distinct from the alias form used for DEFAULT_MODEL.
+export const FALLBACK_MODEL = "claude-opus-4-8";
+
 // Default thinking level when the user hasn't picked one. Adaptive-only models
 // like claude-fable-5 reject the SDK's no-effort `thinking: { type: "disabled" }`
 // shape, so effort-capable models default to high to keep thinking enabled.
@@ -21,6 +25,7 @@ const MODELS_WITH_1M_CONTEXT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
+  "claude-sonnet-5",
   "claude-fable-5",
 ]);
 
@@ -32,12 +37,14 @@ const MODELS_WITH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
+  "claude-sonnet-5",
   "claude-fable-5",
 ]);
 
 const MODELS_WITH_XHIGH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
+  "claude-sonnet-5",
   "claude-fable-5",
 ]);
 

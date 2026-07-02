@@ -63,6 +63,7 @@ import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPick
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { useUserIntegrations } from "@/features/tasks/hooks/useUserIntegrations";
 import { useWarmTask } from "@/features/tasks/hooks/useWarmTask";
+import { pendingPromptRecoveryStoreApi } from "@/features/tasks/stores/pendingPromptRecoveryStore";
 import {
   generatePendingTaskKey,
   pendingTaskPromptStoreApi,
@@ -286,6 +287,13 @@ export default function NewTaskScreen() {
       setAt: Date.now(),
     });
 
+    // Durably record the prompt so it survives the app being killed before
+    // creation completes; cleared once the task exists (or on failure, when
+    // the text is still live in the composer).
+    if (trimmedPrompt) {
+      pendingPromptRecoveryStoreApi.set(pendingKey, trimmedPrompt);
+    }
+
     // Tracks where the optimistic echo currently lives so the catch block
     // can clear the correct key regardless of how far the flow got.
     let currentPendingKey = pendingKey;
@@ -320,6 +328,7 @@ export default function NewTaskScreen() {
 
       pendingTaskPromptStoreApi.move(pendingKey, task.id);
       currentPendingKey = task.id;
+      pendingPromptRecoveryStoreApi.clear(pendingKey);
 
       // Seed the per-task composer config with the mode/model/reasoning the
       // user picked here, so the task detail screen reflects them and every
@@ -354,6 +363,7 @@ export default function NewTaskScreen() {
     } catch (creationError) {
       log.error("Failed to create task", creationError);
       pendingTaskPromptStoreApi.clear(currentPendingKey);
+      pendingPromptRecoveryStoreApi.clear(pendingKey);
     } finally {
       setCreating(false);
     }

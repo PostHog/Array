@@ -29,12 +29,14 @@ import { extractPromptDisplayContent } from "./promptContent";
 function storedEntryToAcpMessage(entry: StoredLogEntry): AcpMessage {
   const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now();
   const promoted = promoteImportedUserPrompt(entry, ts);
-  if (promoted) return promoted;
-  return {
+  // Freeze at creation: events assigned via setSession bypass the store's
+  // per-append freeze, so this keeps them read-only once stored.
+  if (promoted) return Object.freeze(promoted);
+  return Object.freeze({
     type: "acp_message",
     ts,
     message: (entry.notification ?? {}) as JsonRpcMessage,
-  };
+  });
 }
 
 /**

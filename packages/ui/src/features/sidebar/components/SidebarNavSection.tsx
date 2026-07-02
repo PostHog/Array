@@ -30,6 +30,8 @@ import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 
+const SIDEBAR_INBOX_REFETCH_INTERVAL_MS = 60_000;
+
 interface SidebarNavSectionProps {
   // The Command Center badge counts how many command-center cells point at a
   // live task. Deriving it needs the task list, which the Code pane's
@@ -85,7 +87,12 @@ export function SidebarNavSection({
   // Pull requests tab shows, so the badge and the tab always agree.
   // `ignoreFilters` keeps the badge stable against the inbox's filter chrome;
   // scope still follows the user's For-you / project choice.
-  const { counts: inboxCounts } = useInboxAllReports({ ignoreFilters: true });
+  // The sidebar mounts on every route, so its badge polls slowly; opening the
+  // inbox adds its own 3s observers and React Query uses the shortest interval.
+  const { counts: inboxCounts } = useInboxAllReports({
+    ignoreFilters: true,
+    refetchIntervalMs: SIDEBAR_INBOX_REFETCH_INTERVAL_MS,
+  });
   const inboxPullRequestCount = inboxCounts.pulls;
 
   // Only subscribe to the task list when a parent hasn't already supplied the

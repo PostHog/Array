@@ -89,4 +89,5 @@ jobs:
     with:
       platform: all
       profile: production
-    secrets: inherit
+    secrets:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   BundleLocalSkill,
   CloudArtifactClient,
+  ResolveSkillBundleDependencies,
 } from "./cloudArtifactIdentifiers";
 import {
   CLOUD_ATTACHMENT_MAX_SIZE_BYTES,
@@ -17,6 +18,8 @@ function makeClient(): CloudArtifactClient {
     finalizeTaskRunArtifactUploads: vi.fn(),
   };
 }
+
+const passthroughDeps: ResolveSkillBundleDependencies = async (refs) => refs;
 
 const bundleLocalSkill: BundleLocalSkill = vi.fn(async (skillBundleRef) => {
   const contentBase64 = btoa("skill-bundle");
@@ -34,7 +37,11 @@ const bundleLocalSkill: BundleLocalSkill = vi.fn(async (skillBundleRef) => {
 
 describe("CloudArtifactService", () => {
   it("returns empty ids when no file paths are provided", async () => {
-    const service = new CloudArtifactService(vi.fn(), bundleLocalSkill);
+    const service = new CloudArtifactService(
+      vi.fn(),
+      bundleLocalSkill,
+      passthroughDeps,
+    );
     expect(
       await service.uploadRunAttachments(makeClient(), "t", "r", []),
     ).toEqual([]);
@@ -46,6 +53,7 @@ describe("CloudArtifactService", () => {
     const service = new CloudArtifactService(
       vi.fn().mockResolvedValue(base64),
       bundleLocalSkill,
+      passthroughDeps,
     );
 
     await expect(
@@ -61,6 +69,7 @@ describe("CloudArtifactService", () => {
     const service = new CloudArtifactService(
       vi.fn().mockResolvedValue(base64),
       bundleLocalSkill,
+      passthroughDeps,
     );
 
     await expect(
@@ -76,6 +85,7 @@ describe("CloudArtifactService", () => {
     const service = new CloudArtifactService(
       vi.fn().mockResolvedValue(null),
       bundleLocalSkill,
+      passthroughDeps,
     );
 
     await expect(
@@ -93,6 +103,7 @@ describe("CloudArtifactService", () => {
     const service = new CloudArtifactService(
       vi.fn().mockResolvedValue(base64),
       bundleLocalSkill,
+      passthroughDeps,
     );
 
     const client = makeClient();
@@ -127,7 +138,11 @@ describe("CloudArtifactService", () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue({ ok: true } as Response);
-    const service = new CloudArtifactService(vi.fn(), bundleLocalSkill);
+    const service = new CloudArtifactService(
+      vi.fn(),
+      bundleLocalSkill,
+      passthroughDeps,
+    );
     const client = makeClient();
 
     (
@@ -171,6 +186,54 @@ describe("CloudArtifactService", () => {
         }),
       ],
     );
+    fetchMock.mockRestore();
+  });
+
+  it("uploads dependency skills the resolver adds to a tagged skill", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue({ ok: true } as Response);
+    const resolveDeps: ResolveSkillBundleDependencies = vi.fn(async (refs) => [
+      ...refs,
+      { name: "dep-skill", source: "user", path: "/tmp/dep-skill" },
+    ]);
+    const service = new CloudArtifactService(
+      vi.fn(),
+      bundleLocalSkill,
+      resolveDeps,
+    );
+    const client = makeClient();
+
+    (
+      client.prepareTaskRunArtifactUploads as ReturnType<typeof vi.fn>
+    ).mockImplementation((_taskId, _runId, uploads: unknown[]) =>
+      uploads.map((_upload, index) => ({
+        id: `prep-${index}`,
+        name: `skill-${index}.zip`,
+        type: "skill_bundle",
+        size: 12,
+        presigned_post: { url: "https://s3/upload", fields: { key: "k" } },
+      })),
+    );
+    (
+      client.finalizeTaskRunArtifactUploads as ReturnType<typeof vi.fn>
+    ).mockResolvedValue([{ id: "primary-1" }, { id: "dep-1" }]);
+
+    const ids = await service.uploadRunAttachments(
+      client,
+      "task-1",
+      "run-1",
+      [],
+      [{ name: "primary-skill", source: "user", path: "/tmp/primary-skill" }],
+    );
+
+    expect(resolveDeps).toHaveBeenCalledWith([
+      { name: "primary-skill", source: "user", path: "/tmp/primary-skill" },
+    ]);
+    expect(bundleLocalSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "dep-skill" }),
+    );
+    expect(ids).toEqual(["primary-1", "dep-1"]);
     fetchMock.mockRestore();
   });
 });

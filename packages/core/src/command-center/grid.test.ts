@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  BRAINROT_CELL,
   clampZoom,
   getCellCount,
   getCellSessionId,
   getGridDimensions,
+  isBrainrotCell,
   resizeCells,
 } from "./grid";
 
@@ -48,6 +50,16 @@ describe("clampZoom", () => {
     { input: 1.06, expected: 1.1 },
   ])("clamps and rounds $input -> $expected", ({ input, expected }) => {
     expect(clampZoom(input)).toBe(expected);
+  });
+});
+
+describe("isBrainrotCell", () => {
+  it.each([
+    { value: BRAINROT_CELL, expected: true },
+    { value: "some-task-uuid", expected: false },
+    { value: null, expected: false },
+  ])("$value -> $expected", ({ value, expected }) => {
+    expect(isBrainrotCell(value)).toBe(expected);
   });
 });
 

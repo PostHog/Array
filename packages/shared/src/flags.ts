@@ -8,3 +8,4 @@ export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
 // routes, channels and dashboards.
 export const PROJECT_BLUEBIRD_FLAG = "project-bluebird";
 export const TASKS_PREWARM_SANDBOX_FLAG = "tasks-prewarm-sandbox";
+export const GLM_MODEL_FLAG = "posthog-code-glm-model";

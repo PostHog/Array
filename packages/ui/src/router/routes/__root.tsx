@@ -19,6 +19,7 @@ import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { BlankTabView } from "@posthog/ui/features/browser-tabs/BlankTabView";
 import { BrowserTabStrip } from "@posthog/ui/features/browser-tabs/BrowserTabStrip";
+import { BrowserTabsDndProvider } from "@posthog/ui/features/browser-tabs/BrowserTabsDnd";
 import { useTabsSnapshot } from "@posthog/ui/features/browser-tabs/useBrowserTabs";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
@@ -72,43 +73,11 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-// Dynamic import keeps the devtools chunk out of the prod bundle. Without the
-// gate at the import level, conditional render alone still ships the devtools
-// code to users.
-//
-// We embed the router devtools as a plugin inside the unified TanStack Devtools
-// shell rather than rendering the standalone floating logo. The shell owns a
-// single trigger that can be dragged, dismissed, and hidden-until-hover, and it
-// persists those choices to localStorage — so the panel stays out of the way.
-const TanStackDevtools = import.meta.env.DEV
-  ? lazy(async () => {
-      const [
-        { TanStackDevtools: DevtoolsShell },
-        { TanStackRouterDevtoolsPanel },
-      ] = await Promise.all([
-        import("@tanstack/react-devtools"),
-        import("@tanstack/react-router-devtools"),
-      ]);
-      // Hoisted so the config/plugins keep stable references across the
-      // RootLayout re-renders that fire on every navigation — otherwise the
-      // shell could remount the panel (and flash) on each route change.
-      const config = {
-        position: "bottom-right",
-        hideUntilHover: true,
-      } as const;
-      const plugins = [
-        {
-          name: "TanStack Router",
-          render: <TanStackRouterDevtoolsPanel />,
-        },
-      ];
-      return {
-        default: () => <DevtoolsShell config={config} plugins={plugins} />,
-      };
-    })
-  : () => null;
+// The router devtools render their genuine floating overlay, mounted by the
+// app's dev toolbar with the floating logo hidden so the toolbar owns the
+// trigger — see RouterDevtools.
 
 const log = logger.scope("root-route");
 
@@ -316,113 +285,115 @@ function RootLayout() {
 
   if (isChannelsSpace) {
     return (
-      <Flex direction="column" height="100vh" className="bg-chrome">
-        {/* Full-width title bar: a window-drag region carrying the PostHog
+      // DnD scope for the tab strip's drag-to-reorder (pill sortables live in
+      // the title bar; the provider must sit above them).
+      <BrowserTabsDndProvider>
+        <Flex direction="column" height="100%" className="bg-chrome">
+          {/* Full-width title bar: a window-drag region carrying the PostHog
             mark. The left section matches the sidebar width so the tab strip
             starts flush with the content pane; its padding clears the macOS
             stoplights. */}
-        <Flex align="center" className="drag h-10 shrink-0">
-          <Flex
-            id="title-bar-left"
-            align="center"
-            justify="between"
-            gap="3"
-            className="shrink-0 pr-2 pl-[78px]"
-            style={{ width: channelsSidebarWidth }}
-          >
-            <Flex align="center" gap="2" className="no-drag">
-              <Box className="h-[14px] w-[30px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
-                <LogosLandscape code={false} />
-              </Box>
+          <Flex align="center" className="drag h-10 shrink-0">
+            <Flex
+              id="title-bar-left"
+              align="center"
+              justify="between"
+              gap="3"
+              className="shrink-0 pr-2 pl-[78px]"
+              style={{ width: channelsSidebarWidth }}
+            >
+              <Flex align="center" gap="2" className="no-drag">
+                <Box className="h-[14px] w-[30px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
+                  <LogosLandscape code={false} />
+                </Box>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                      action_type: "leave_space",
+                      surface: "title_bar",
+                    });
+                    setFeedbackMode("leaving");
+                  }}
+                >
+                  Exit
+                </Button>
+              </Flex>
+              <Flex align="center" gap="2" className="no-drag">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Back"
+                  disabled={!canGoBack}
+                  onClick={() => router.history.back()}
+                >
+                  <CaretLeftIcon size={14} />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Forward"
+                  disabled={!canGoForward}
+                  onClick={() => router.history.forward()}
+                >
+                  <CaretRightIcon size={14} />
+                </Button>
+              </Flex>
+            </Flex>
+            <BrowserTabStrip />
+            <Flex align="center" className="no-drag ml-auto pr-3">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                    action_type: "leave_space",
-                    surface: "title_bar",
-                  });
-                  setFeedbackMode("leaving");
-                }}
+                disabled={!posthogWebUrl}
+                onClick={handleOpenPostHogWeb}
               >
-                Exit
-              </Button>
-            </Flex>
-            <Flex align="center" gap="2" className="no-drag">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Back"
-                disabled={!canGoBack}
-                onClick={() => router.history.back()}
-              >
-                <CaretLeftIcon size={14} />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Forward"
-                disabled={!canGoForward}
-                onClick={() => router.history.forward()}
-              >
-                <CaretRightIcon size={14} />
+                <ArrowSquareOut size={14} />
+                PostHog Web
               </Button>
             </Flex>
           </Flex>
-          <BrowserTabStrip />
-          <Flex align="center" className="no-drag ml-auto pr-3">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!posthogWebUrl}
-              onClick={handleOpenPostHogWeb}
-            >
-              <ArrowSquareOut size={14} />
-              PostHog Web
-            </Button>
-          </Flex>
-        </Flex>
-        <ConnectivityBanner />
-        <Flex flexGrow="1" overflow="hidden">
-          <ChannelsSidebar />
-          {/* Content sits in a bordered, rounded card inset from the window
+          <ConnectivityBanner />
+          <Flex flexGrow="1" overflow="hidden">
+            <ChannelsSidebar />
+            {/* Content sits in a bordered, rounded card inset from the window
               edges — the framed pane from the design. */}
-          <Box flexGrow="1" className="overflow-hidden">
-            <Box className="h-full overflow-hidden rounded-tl-sm border-border border-t border-l bg-background">
-              {activeTabIsBlank ? <BlankTabView /> : <Outlet />}
+            <Box flexGrow="1" className="overflow-hidden">
+              <Box className="h-full overflow-hidden rounded-tl-sm border-border border-t border-l bg-background">
+                {activeTabIsBlank ? <BlankTabView /> : <Outlet />}
+              </Box>
             </Box>
-          </Box>
+          </Flex>
+          <CommandMenu
+            open={commandMenuOpen}
+            onOpenChange={setCommandMenuOpen}
+          />
+          <KeyboardShortcutsSheet
+            open={shortcutsSheetOpen}
+            onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
+          />
+          <GlobalEventHandlers
+            onToggleCommandMenu={toggleCommandMenu}
+            onToggleShortcutsSheet={toggleShortcutsSheet}
+          />
+          {billingEnabled && <UsageLimitModal />}
+          <UpdateAvailableModal />
+          <WhatsNewModal />
+          <RemoteBranchCheckoutDialog />
+          <FeedbackModal
+            mode={feedbackMode}
+            onFinished={handleFeedbackFinished}
+          />
+          <ExistingWorktreeDialog />
         </Flex>
-        <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
-        <KeyboardShortcutsSheet
-          open={shortcutsSheetOpen}
-          onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
-        />
-        <GlobalEventHandlers
-          onToggleCommandMenu={toggleCommandMenu}
-          onToggleShortcutsSheet={toggleShortcutsSheet}
-        />
-        {billingEnabled && <UsageLimitModal />}
-        <UpdateAvailableModal />
-        <WhatsNewModal />
-        <RemoteBranchCheckoutDialog />
-        <FeedbackModal
-          mode={feedbackMode}
-          onFinished={handleFeedbackFinished}
-        />
-        <ExistingWorktreeDialog />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
-      </Flex>
+      </BrowserTabsDndProvider>
     );
   }
 
   if (isSettingsRoute) {
     return (
-      <Flex direction="column" height="100vh">
+      <Flex direction="column" height="100%">
         <ConnectivityBanner />
         <Outlet />
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
@@ -439,17 +410,12 @@ function RootLayout() {
         <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
         <ExistingWorktreeDialog />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
       </Flex>
     );
   }
 
   return (
-    <Flex height="100vh">
+    <Flex height="100%">
       <Flex direction="column" flexGrow="1" overflow="hidden">
         <HeaderRow />
         <ConnectivityBanner />
@@ -492,11 +458,6 @@ function RootLayout() {
         ) : null}
         <ExistingWorktreeDialog />
         <HedgehogMode />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
       </Flex>
     </Flex>
   );

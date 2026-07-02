@@ -123,6 +123,22 @@ function statusMsg(
   };
 }
 
+function refusalStatusMsg(
+  ts: number,
+  status: "refusal" | "refusal_fallback",
+  fields: { explanation?: string; fromModel?: string; toModel?: string } = {},
+): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "_posthog/status",
+      params: { sessionId: "session-1", status, ...fields },
+    },
+  };
+}
+
 describe("buildConversationItems", () => {
   it("extracts cloud prompt attachments into user messages", () => {
     const uri = makeAttachmentUri("/tmp/hello world.txt");
@@ -220,6 +236,56 @@ describe("buildConversationItems", () => {
       },
     ]);
     expect(result.isCompacting).toBe(false);
+  });
+
+  it("renders a terminal refusal as a status row carrying the explanation", () => {
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "hi"),
+        refusalStatusMsg(2, "refusal", {
+          explanation: "This request was declined.",
+        }),
+      ],
+      null,
+    );
+
+    const statusItems = result.items.filter(
+      (i): i is Extract<ConversationItem, { type: "session_update" }> =>
+        i.type === "session_update" && i.update.sessionUpdate === "status",
+    );
+    expect(statusItems.map((i) => i.update)).toEqual([
+      {
+        sessionUpdate: "status",
+        status: "refusal",
+        explanation: "This request was declined.",
+      },
+    ]);
+  });
+
+  it("renders a refusal fallback status row carrying the model swap", () => {
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "hi"),
+        refusalStatusMsg(2, "refusal_fallback", {
+          fromModel: "claude-fable-5",
+          toModel: "claude-opus-4-8",
+        }),
+      ],
+      null,
+    );
+
+    const statusItems = result.items.filter(
+      (i): i is Extract<ConversationItem, { type: "session_update" }> =>
+        i.type === "session_update" && i.update.sessionUpdate === "status",
+    );
+    expect(statusItems.map((i) => i.update)).toEqual([
+      {
+        sessionUpdate: "status",
+        status: "refusal_fallback",
+        fromModel: "claude-fable-5",
+        toModel: "claude-opus-4-8",
+      },
+    ]);
   });
 
   it("marks cloud turns complete from structured turn completion notifications", () => {
@@ -689,6 +755,53 @@ describe("buildConversationItems", () => {
       expect(buildConversationItems(events, true).completedToolCallCount).toBe(
         3,
       );
+    });
+  });
+
+  describe("session_update timestamps", () => {
+    const toolCallMsg = (ts: number, toolCallId: string): AcpMessage => ({
+      type: "acp_message",
+      ts,
+      message: {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            kind: "execute",
+            status: "pending",
+            title: toolCallId,
+          },
+        },
+      },
+    });
+
+    const firstSessionUpdate = (items: ConversationItem[]) =>
+      items.find((i) => i.type === "session_update") as
+        | Extract<ConversationItem, { type: "session_update" }>
+        | undefined;
+
+    it("stamps an agent message with the first chunk's ts and keeps it across merges", () => {
+      const events = [
+        userPromptMsg(1, 1, "hi"),
+        agentMessageMsg(5, "Hello"),
+        agentMessageMsg(9, " there"),
+      ];
+      const item = firstSessionUpdate(
+        buildConversationItems(events, true).items,
+      );
+      expect(item?.update.sessionUpdate).toBe("agent_message_chunk");
+      expect(item?.timestamp).toBe(5);
+    });
+
+    it("stamps a tool call with its ts", () => {
+      const events = [userPromptMsg(1, 1, "go"), toolCallMsg(4, "t1")];
+      const item = firstSessionUpdate(
+        buildConversationItems(events, true).items,
+      );
+      expect(item?.update.sessionUpdate).toBe("tool_call");
+      expect(item?.timestamp).toBe(4);
     });
   });
 });

@@ -68,15 +68,27 @@ export function playbackRateForTaskDuration(durationMs: number): number {
 
 let currentAudio: HTMLAudioElement | null = null;
 
+function pickRandom(pool: string[]): string | null {
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 // Resolves the playable URL for a completion sound: a bundled asset URL for the
-// built-ins, or the inline data URL of a user-installed custom sound. Returns
-// null for `none`, an unknown built-in, or a `custom:` id no longer installed
-// (e.g. the active sound was deleted) — callers then play nothing.
+// built-ins, the inline data URL of a user-installed custom sound, or a fresh
+// random pick per call for the `random-*` modes. Returns null for `none`, an
+// unknown built-in, a `custom:` id no longer installed (e.g. the active sound
+// was deleted), or `random-custom` with no sounds installed — callers then
+// play nothing.
 export function resolveSoundUrl(
   sound: CompletionSound,
   customSounds: CustomSound[],
 ): string | null {
   if (sound === "none") return null;
+  const customUrls = customSounds.map((s) => s.dataUrl);
+  if (sound === "random-all") {
+    return pickRandom([...Object.values(SOUND_URLS), ...customUrls]);
+  }
+  if (sound === "random-custom") return pickRandom(customUrls);
   if (sound.startsWith(CUSTOM_SOUND_PREFIX)) {
     const id = sound.slice(CUSTOM_SOUND_PREFIX.length);
     return customSounds.find((s) => s.id === id)?.dataUrl ?? null;

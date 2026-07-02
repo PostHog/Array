@@ -57,7 +57,7 @@ function friendlyName(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
 }
 
-function isToolActive(item: ToolGroupItem["tools"][number]): boolean {
+export function isToolActive(item: ToolGroupItem["tools"][number]): boolean {
   const { toolCall } = resolveTool(item);
   const incomplete =
     toolCall.status === "pending" || toolCall.status === "in_progress";

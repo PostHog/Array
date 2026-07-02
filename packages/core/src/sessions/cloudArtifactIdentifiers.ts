@@ -67,6 +67,14 @@ export type BundleLocalSkill = (
   skillBundleRef: CloudSkillBundleRef,
 ) => Promise<LocalSkillBundle>;
 
+/**
+ * Expand tagged skill refs to include their transitively-declared dependency
+ * skills so a cloud run gets every skill it needs, not just the tagged one.
+ */
+export type ResolveSkillBundleDependencies = (
+  skillBundleRefs: CloudSkillBundleRef[],
+) => Promise<CloudSkillBundleRef[]>;
+
 export const CLOUD_ARTIFACT_SERVICE = Symbol.for(
   "posthog.core.sessions.cloudArtifactService",
 );
@@ -75,4 +83,7 @@ export const CLOUD_ARTIFACT_READ_FILE_AS_BASE64 = Symbol.for(
 );
 export const CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL = Symbol.for(
   "posthog.core.sessions.cloudArtifactBundleLocalSkill",
+);
+export const CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES = Symbol.for(
+  "posthog.core.sessions.cloudArtifactResolveSkillDependencies",
 );

@@ -7,6 +7,7 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import { useWhatsNewStore } from "@posthog/ui/features/updates/whatsNewStore";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
 import { Badge, Button, Flex, Spinner, Switch, Text } from "@radix-ui/themes";
@@ -103,9 +104,18 @@ export function UpdatesSettings() {
   return (
     <Flex direction="column">
       <SettingRow label="Current version">
-        <Badge size="1" variant="soft" color="gray">
-          {appVersion || "Loading..."}
-        </Badge>
+        <Flex align="center" gap="2">
+          <Button
+            variant="ghost"
+            size="1"
+            onClick={() => useWhatsNewStore.getState().open()}
+          >
+            View changelog
+          </Button>
+          <Badge size="1" variant="soft" color="gray">
+            {appVersion || "Loading..."}
+          </Badge>
+        </Flex>
       </SettingRow>
 
       {updatesEnabled?.enabled ? (

@@ -1,6 +1,5 @@
 import { X } from "@phosphor-icons/react";
 import { useHostTRPC } from "@posthog/host-router/react";
-import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { ReleaseNotesSections } from "@posthog/ui/features/updates/ReleaseNotesSections";
 import { parseReleaseNotes } from "@posthog/ui/features/updates/releaseNotes";
 import { useUpdateModalStore } from "@posthog/ui/features/updates/updateModalStore";
@@ -63,7 +62,7 @@ export function UpdateAvailableModal() {
   const downloadMutation = useMutation(
     hostTRPC.updates.download.mutationOptions(),
   );
-  const { data: releasesData, isLoading: isLoadingReleases } = useQuery({
+  const { data: releasesData, isPending: isPendingReleases } = useQuery({
     ...hostTRPC.githubReleases.list.queryOptions(),
     enabled: isOpen,
   });
@@ -115,7 +114,7 @@ export function UpdateAvailableModal() {
             </Dialog.Close>
           </Flex>
 
-          {hasParsedNotes || rawNotes || isLoadingReleases ? (
+          {hasParsedNotes || isPendingReleases ? (
             <Flex direction="column" gap="2">
               <Text
                 size="1"
@@ -125,18 +124,14 @@ export function UpdateAvailableModal() {
               >
                 Release notes
               </Text>
-              {hasParsedNotes || rawNotes ? (
+              {hasParsedNotes && parsedNotes ? (
                 <ScrollArea
                   type="auto"
                   scrollbars="vertical"
                   style={{ maxHeight: 240 }}
                 >
                   <div className="pr-3">
-                    {hasParsedNotes && parsedNotes ? (
-                      <ReleaseNotesSections notes={parsedNotes} />
-                    ) : rawNotes ? (
-                      <MarkdownRenderer content={rawNotes} />
-                    ) : null}
+                    <ReleaseNotesSections notes={parsedNotes} />
                   </div>
                 </ScrollArea>
               ) : (

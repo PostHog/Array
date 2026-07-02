@@ -9,3 +9,9 @@ export function openExternalUrl(url: string): void {
     url,
   });
 }
+
+export function showLogFolder(): void {
+  void resolveService<HostTrpcClient>(
+    HOST_TRPC_CLIENT,
+  ).os.showLogFolder.mutate();
+}
