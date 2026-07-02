@@ -11,6 +11,7 @@ import {
 import os from "node:os";
 import { join } from "node:path";
 import { initOtelTransport } from "@main/utils/otel-log-transport";
+import type ElectronLog from "electron-log";
 import log from "electron-log/main";
 import { isDevBuild } from "./env";
 
@@ -21,35 +22,43 @@ const LOG_DIR = join(
   isDev ? "logs-dev" : "logs",
 );
 const LOG_FILE = "main.log";
+const NETWORK_LOG_FILE = "network.log";
 const MAX_ARCHIVES = 3;
+const MAX_LOG_SIZE = 10 * 1024 * 1024;
 
 mkdirSync(LOG_DIR, { recursive: true });
+
+function createArchiveLogFn(
+  prefix: string,
+): (oldLogFile: ElectronLog.LogFile) => void {
+  return (oldLogFile) => {
+    const archivePath = (n: number) => join(LOG_DIR, `${prefix}.${n}.log`);
+
+    try {
+      const lastArchive = archivePath(MAX_ARCHIVES);
+      if (existsSync(lastArchive)) {
+        unlinkSync(lastArchive);
+      }
+
+      for (let i = MAX_ARCHIVES - 1; i >= 1; i--) {
+        const from = archivePath(i);
+        if (existsSync(from)) {
+          renameSync(from, archivePath(i + 1));
+        }
+      }
+
+      renameSync(oldLogFile.path, archivePath(1));
+    } catch {
+      // Best-effort rotation
+    }
+  };
+}
 
 log.initialize();
 
 log.transports.file.resolvePathFn = () => join(LOG_DIR, LOG_FILE);
-log.transports.file.maxSize = 10 * 1024 * 1024; // 10 MB
-log.transports.file.archiveLogFn = (oldLogFile) => {
-  const archivePath = (n: number) => join(LOG_DIR, `main.${n}.log`);
-
-  try {
-    const lastArchive = archivePath(MAX_ARCHIVES);
-    if (existsSync(lastArchive)) {
-      unlinkSync(lastArchive);
-    }
-
-    for (let i = MAX_ARCHIVES - 1; i >= 1; i--) {
-      const from = archivePath(i);
-      if (existsSync(from)) {
-        renameSync(from, archivePath(i + 1));
-      }
-    }
-
-    renameSync(oldLogFile.path, archivePath(1));
-  } catch {
-    // Best-effort rotation
-  }
-};
+log.transports.file.maxSize = MAX_LOG_SIZE;
+log.transports.file.archiveLogFn = createArchiveLogFn("main");
 
 const level = isDev ? "debug" : "info";
 log.transports.file.level = level;
@@ -57,12 +66,28 @@ log.transports.console.level = level;
 log.transports.ipc.level = level;
 log.transports.otel = initOtelTransport(level);
 
+// File-only instance: console off, ipc off (defaults to active in dev and
+// would spam renderer devtools), no otel so network lines stay out of OTLP
+// ingestion, no initialize() since nothing routes to it over renderer IPC.
+export const networkLog = log.create({ logId: "network" });
+networkLog.transports.file.resolvePathFn = () =>
+  join(LOG_DIR, NETWORK_LOG_FILE);
+networkLog.transports.file.maxSize = MAX_LOG_SIZE;
+networkLog.transports.file.archiveLogFn = createArchiveLogFn("network");
+networkLog.transports.file.level = "info";
+networkLog.transports.console.level = false;
+networkLog.transports.ipc.level = false;
+
 export const logger = log;
 export type Logger = typeof logger;
 export type ScopedLogger = ReturnType<typeof logger.scope>;
 
 export function getLogFilePath(): string {
   return join(LOG_DIR, LOG_FILE);
+}
+
+export function getNetworkLogFilePath(): string {
+  return join(LOG_DIR, NETWORK_LOG_FILE);
 }
 
 export function getChromiumLogFilePath(): string | undefined {

@@ -4,7 +4,7 @@ import { TypedEventEmitter } from "@posthog/shared";
 import type { WorkspaceClient } from "@posthog/workspace-client/client";
 import { createWorkspaceClient } from "@posthog/workspace-client/client";
 import type { FileWatcherEvent } from "@posthog/workspace-client/types";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, session } from "electron";
 import log from "electron-log/main";
 import "./utils/logger";
 import "./services/index.js";
@@ -55,6 +55,7 @@ import {
   AUTH_SERVICE,
   CANVAS_LINK_SERVICE,
   DATABASE_SERVICE,
+  DEV_NETWORK_SERVICE,
   DISCORD_PRESENCE_SERVICE,
   EXTERNAL_APPS_SERVICE,
   FILE_WATCHER_SERVICE,
@@ -72,6 +73,7 @@ import {
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
+import type { DevNetworkService } from "./services/dev-network/service";
 import { initDevToolbar } from "./services/dev-toolbar";
 import type { DiscordPresenceService } from "./services/discord-presence/service";
 import {
@@ -87,9 +89,12 @@ import { ensureClaudeConfigDir } from "./utils/env";
 import {
   getChromiumLogFilePath,
   getLogFilePath,
+  getNetworkLogFilePath,
   readChromiumLogTail,
 } from "./utils/logger";
 import { isMacosPackagedUnsafeBundleLocation } from "./utils/macos-packaged-install-guard";
+import { installMainFetchLogging } from "./utils/network-fetch-logger";
+import { installRendererNetworkLogging } from "./utils/network-webrequest-logger";
 import { createWindow } from "./window";
 
 type FileWatcherEventsByKind = {
@@ -286,6 +291,11 @@ registerDeepLinkHandlers();
 // Initialize PostHog analytics
 posthogNodeAnalytics.initialize();
 
+// Must wrap fetch before DevNetworkService.install() (post-ready, dev toolbar)
+// so it stays the innermost layer; otherwise toggling dev mode off restores
+// native fetch and silently drops network.log capture.
+installMainFetchLogging();
+
 app.whenReady().then(async () => {
   if (
     process.platform === "darwin" &&
@@ -327,10 +337,14 @@ app.whenReady().then(async () => {
     ].join(" | "),
   );
   log.info(
-    `Logs: main=${getLogFilePath()} chromium=${getChromiumLogFilePath() ?? "(disabled)"}`,
+    `Logs: main=${getLogFilePath()} chromium=${getChromiumLogFilePath() ?? "(disabled)"} network=${getNetworkLogFilePath()}`,
   );
   ensureClaudeConfigDir();
   registerMcpSandboxProtocol();
+  installRendererNetworkLogging(
+    session.fromPartition("persist:main").webRequest,
+    container.get<DevNetworkService>(DEV_NETWORK_SERVICE),
+  );
   createWindow();
 
   const wsServer = container.get<WorkspaceServerService>(
