@@ -25,10 +25,10 @@ import {
   mergeConfigOptions,
   type OptimisticItem,
   type PermissionRequest,
-  resolveBypassRevertMode,
-  sessionSupportsNativeSteer,
   type QueuedMessage,
+  resolveBypassRevertMode,
   type StoredLogEntry,
+  sessionSupportsNativeSteer,
   type TaskRunStatus,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";

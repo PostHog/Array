@@ -34,9 +34,9 @@ describe("buildAppServerArgs", () => {
       try {
         const args = buildAppServerArgs({ binaryPath: "/bundle/codex" });
         expect(args).toContain(expected);
-        expect(
-          args.filter((a) => a.startsWith("sandbox_mode=")),
-        ).toHaveLength(1);
+        expect(args.filter((a) => a.startsWith("sandbox_mode="))).toHaveLength(
+          1,
+        );
       } finally {
         Object.defineProperty(process, "platform", {
           value: original,

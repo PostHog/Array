@@ -38,8 +38,8 @@ export const E2E = {
   gatewayUrl: GATEWAY_URL,
   codexBin: NATIVE_CODEX_BIN,
   /** Deployment environment. `E2E_ENVIRONMENT=cloud` exercises the cloud code path; undefined = local. */
-  environment: (process.env.E2E_ENVIRONMENT as "local" | "cloud" | undefined) ||
-    undefined,
+  environment:
+    (process.env.E2E_ENVIRONMENT as "local" | "cloud" | undefined) || undefined,
 
   /** Cheap model per adapter, overridable via `E2E_CLAUDE_MODEL` / `E2E_CODEX_MODEL`. */
   model(adapter: Adapter): string {

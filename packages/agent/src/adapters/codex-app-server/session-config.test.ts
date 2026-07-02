@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildConfigOptions,
   CODEX_MODES,
+  collaborationModeFor,
   DEFAULT_EFFORTS,
   modeApprovalPolicy,
-  collaborationModeFor,
   sandboxPolicyFor,
 } from "./session-config";
 

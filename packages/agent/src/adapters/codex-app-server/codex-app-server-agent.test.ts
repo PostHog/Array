@@ -11,9 +11,7 @@ import type {
 } from "./app-server-client";
 import { CodexAppServerAgent } from "./codex-app-server-agent";
 
-// The required-field invariants the native codex app-server enforces on each
-// client request (verified against the binary). turn/interrupt needs both ids;
-// turn/steer needs the precondition turnId plus the thread and the message.
+// Required-field invariants the native codex app-server enforces on each request.
 const REQUIRED_FIELDS: Record<string, string[]> = {
   "turn/interrupt": ["threadId", "turnId"],
   "turn/steer": ["threadId", "input", "expectedTurnId"],
@@ -36,10 +34,7 @@ function makeStubRpc(responses: Record<string, unknown>) {
   const rpc: AppServerRpc = {
     async request<T = unknown>(method: string, params?: unknown): Promise<T> {
       requests.push({ method, params });
-      // Enforce the real app-server schema contract so a dropped required field
-      // fails loudly here, not silently in production. The native binary rejects
-      // these with -32600; a stub that accepted anything would let an adapter
-      // regression (a missing required field) sail through CI as a false-green.
+      // Enforce the schema contract so a dropped required field fails loudly, not as a CI false-green.
       const missing = requiredFieldMissing(method, params);
       if (missing) {
         throw {
@@ -161,8 +156,7 @@ describe("CodexAppServerAgent", () => {
     await agent.initialize(init);
     await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
 
-    // The MCP tool call item arrives first, then codex asks to approve it via
-    // the command-execution approval (it has no MCP-specific approval request).
+    // The MCP tool call item arrives first, then codex approves it via a command-execution request.
     stub.emit("item/started", {
       item: {
         type: "mcpToolCall",
@@ -196,11 +190,8 @@ describe("CodexAppServerAgent", () => {
   });
 
   it("enriches the MCP elicitation approval (posthog exec) from the in-flight tool call", async () => {
-    // The real production path: codex gates the PostHog `exec` tool behind a
-    // generic mcpServer/elicitation/request (serverName only, no tool/args) —
-    // NOT the command approval. Without correlation the host showed a bare
-    // 'Allow the posthog MCP server to run tool "exec"?'. The adapter now
-    // resolves it to the in-flight mcpToolCall so the real tool + command render.
+    // codex gates PostHog `exec` behind a generic elicitation (serverName only, no tool/args);
+    // the adapter correlates it to the in-flight mcpToolCall so the real tool + command render.
     const stub = makeStubRpc({
       initialize: {},
       "thread/start": { thread: { id: "thr_1" } },
@@ -284,9 +275,7 @@ describe("CodexAppServerAgent", () => {
   }
 
   it("routes a non-MCP command approval to an execute permission (kind + command body)", async () => {
-    // The bug: a bare { toolCallId, title } routed to the DefaultPermission
-    // fallback, losing the command styling/monospace body. kind:"execute" plus
-    // the command as text content makes the host render ExecutePermission.
+    // kind:"execute" + command text content makes the host render ExecutePermission (not the fallback).
     const { agent, stub, permissionToolCalls } = makeApprovalAgent();
     await agent.initialize(init);
     await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
@@ -323,9 +312,8 @@ describe("CodexAppServerAgent", () => {
       },
     );
 
-    // The host gets an allow_always option (UI already renders this kind)...
     expect(permissionOptions[0].map((o) => o.kind)).toContain("allow_always");
-    // ...and picking it echoes codex's own decision so it applies the amendment.
+    // Picking it echoes codex's own decision so it applies the amendment.
     expect(decision).toEqual({ decision: "approved_execpolicy_amendment" });
   });
 
@@ -392,13 +380,11 @@ describe("CodexAppServerAgent", () => {
     );
 
     expect(decision).toEqual({ decision: "decline" });
-    // The "tell Codex what to do differently" option was offered (free-text).
     const feedbackOpt = offeredOptions[0].find(
       (o) => o.optionId === "reject_with_feedback",
     );
     expect(feedbackOpt).toBeTruthy();
-    // The guidance was steered into the running turn (codex's response carries
-    // no feedback field, so it's injected as a follow-up user message).
+    // The guidance was steered into the running turn as a follow-up message.
     const steer = stub.requests.find((r) => r.method === "turn/steer");
     expect((steer?.params as { expectedTurnId?: string })?.expectedTurnId).toBe(
       "turn_1",
@@ -514,8 +500,7 @@ describe("CodexAppServerAgent", () => {
     const agent = new CodexAppServerAgent(client, {
       processOptions: {
         binaryPath: "/x/codex",
-        // The host pre-flattens the session prompt into developerInstructions
-        // for codex AND also sends the raw {append} form as _meta.systemPrompt.
+        // The host pre-flattens into developerInstructions AND sends the raw {append} form.
         developerInstructions: "Be a careful engineer.",
       },
       rpcFactory: stub.factory,
@@ -527,8 +512,7 @@ describe("CodexAppServerAgent", () => {
     } as unknown as NewSessionRequest);
 
     const threadStart = stub.requests.find((r) => r.method === "thread/start");
-    // {append} is flattened (NOT "[object Object]") and, being identical to the
-    // pre-flattened developerInstructions, deduped to a single copy.
+    // {append} is flattened (not "[object Object]") and, being identical, deduped to one copy.
     expect(
       (threadStart?.params as { developerInstructions?: string })
         .developerInstructions,
@@ -626,7 +610,6 @@ describe("CodexAppServerAgent", () => {
       rpcFactory: stub.factory,
     });
     await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
-    // Switch the flattened picker to Plan, then run a turn.
     await agent.setSessionConfigOption({
       configId: "mode",
       value: "plan",
@@ -645,8 +628,7 @@ describe("CodexAppServerAgent", () => {
       approvalPolicy?: string;
       collaborationMode?: unknown;
     };
-    // Plan engages codex's native plan collaboration (unlocks request_user_input
-    // + plan proposals) AND blocks edits via a read-only sandbox.
+    // Plan engages codex's plan collaboration AND blocks edits via a read-only sandbox.
     expect(params.collaborationMode).toEqual({
       mode: "plan",
       settings: { model: "gpt-5.5" },
@@ -684,8 +666,7 @@ describe("CodexAppServerAgent", () => {
       collaborationMode?: unknown;
     };
     expect(params.sandboxPolicy).toBeUndefined();
-    // Default collaboration is pushed explicitly every turn so that switching
-    // back from Plan reverts (codex remembers the last collaboration mode).
+    // Default collaboration is pushed every turn so switching back from Plan reverts.
     expect(params.collaborationMode).toEqual({
       mode: "default",
       settings: { model: "gpt-5.5" },
@@ -754,8 +735,7 @@ describe("CodexAppServerAgent", () => {
             supportedReasoningEfforts: [],
           },
           {
-            // The gateway also serves Claude models — they must not leak into a
-            // codex session's model picker.
+            // The gateway also serves Claude models — they must not leak into the picker.
             id: "claude-opus-4-8",
             model: "claude-opus-4-8",
             hidden: false,
@@ -778,8 +758,7 @@ describe("CodexAppServerAgent", () => {
     expect(
       opts.find((o) => o.category === "model").options.map((x: any) => x.value),
     ).toEqual(["gpt-5.5"]);
-    // No live efforts → shared codex map, which exposes xhigh for the gpt-5.5
-    // family (instead of the bare low/medium/high fallback).
+    // No live efforts → shared codex map, which exposes xhigh for the gpt-5.5 family.
     expect(
       opts
         .find((o) => o.category === "thought_level")
@@ -828,9 +807,7 @@ describe("CodexAppServerAgent", () => {
     stub.emit("turn/completed", { turn: { status: "completed" } });
     await done;
 
-    // codex 0.140.0 enforces the sandbox via the named profile — the raw
-    // sandboxPolicy alone is no longer honored — so read-only MUST send
-    // activePermissionProfile:{extends:":read-only"} (alongside sandboxPolicy).
+    // codex 0.140.0 enforces the sandbox via the named profile, so read-only MUST send it alongside sandboxPolicy.
     const turnStart = stub.requests.find((r) => r.method === "turn/start");
     expect(turnStart?.params).toMatchObject({
       activePermissionProfile: { extends: ":read-only" },
@@ -1006,14 +983,12 @@ describe("CodexAppServerAgent", () => {
     stub.emit("item/completed", {
       item: { type: "agentMessage", id: "a1", text: '{"ok":true}' },
     });
-    // A fatal error AND turn/completed for the same turn must not double-fire
-    // the _posthog/turn_complete notification (idempotent finalize).
+    // error + turn/completed for one turn must not double-fire turn_complete (idempotent).
     stub.emit("error", { willRetry: false, error: { message: "boom" } });
     stub.emit("turn/completed", { turn: { status: "failed" } });
     await done;
 
-    // Structured output is gated on a clean end_turn: a refused/failed turn must
-    // NOT record task output even though a valid final message was captured.
+    // Structured output is gated on a clean end_turn: a refused turn records nothing.
     expect(outputs).toEqual([]);
     expect(
       extNotifications.filter((n) => n.method === "_posthog/turn_complete")
@@ -1070,9 +1045,7 @@ describe("CodexAppServerAgent", () => {
       sessionId: "t",
       prompt: [{ type: "text", text: "go" }],
     } as unknown as PromptRequest);
-    // turn/started carries the live turnId the real server REQUIRES on
-    // turn/interrupt — without it codex rejects the RPC (-32600) and the turn
-    // keeps running while the adapter falsely reports "cancelled".
+    // turn/started carries the live turnId the server REQUIRES on turn/interrupt (else -32600).
     stub.emit("turn/started", { turn: { id: "turn_1" } });
 
     await agent.cancel({ sessionId: "t" });
@@ -1109,8 +1082,7 @@ describe("CodexAppServerAgent", () => {
       prompt: [{ type: "text", text: "again" }],
     } as unknown as PromptRequest);
     stub.emit("turn/started", { turn: { id: "turn_2" } });
-    // codex's late completion of the cancelled turn arrives during turn 2 — it
-    // must be ignored, not finalize turn 2 as cancelled.
+    // The cancelled turn's late completion arrives during turn 2 — it must be ignored.
     stub.emit("turn/completed", {
       turn: { id: "turn_1", status: "interrupted" },
     });
@@ -1136,9 +1108,7 @@ describe("CodexAppServerAgent", () => {
       sessionId: "t",
       prompt: [{ type: "text", text: "go" }],
     } as unknown as PromptRequest);
-    // Emit turn/started so the interrupt actually reaches the binary — without
-    // it turnId is undefined, turn/interrupt is skipped, and this test would
-    // pass on the local finalize alone (the false-green it used to be).
+    // Emit turn/started so the interrupt actually reaches the binary (else false-green on local finalize).
     stub.emit("turn/started", { turn: { id: "turn_1" } });
     await agent.cancel({ sessionId: "t" });
 
@@ -1170,9 +1140,7 @@ describe("CodexAppServerAgent", () => {
       sessionId: "t",
       prompt: [{ type: "text", text: "go" }],
     } as unknown as PromptRequest);
-    // No turn/started → no live turnId. interrupt() must NOT send a turnId-less
-    // turn/interrupt (the binary would reject it -32600); it guards on turnId and
-    // falls back to the local finalize so cancel never hangs.
+    // No turn/started → no turnId: interrupt() must skip the RPC (else -32600) and still finalize.
     await agent.cancel({ sessionId: "t" });
 
     expect((await done).stopReason).toBe("cancelled");
@@ -1332,8 +1300,7 @@ describe("CodexAppServerAgent", () => {
       sessionId: "t",
       prompt: [{ type: "text", text: "two" }],
     } as unknown as PromptRequest);
-    // Let the first steer's response (turnId: turn_2) be applied before the next
-    // steer reads this.turnId — turn/started is not re-emitted for a steer.
+    // Let the first steer's rotated turnId apply before the next steer reads it.
     await new Promise((r) => setTimeout(r, 0));
     const third = agent.prompt({
       sessionId: "t",
@@ -1477,10 +1444,8 @@ describe("CodexAppServerAgent", () => {
   });
 
   it("context-usage indicator reports the latest turn, not the cumulative thread total", async () => {
-    // codex's ThreadTokenUsage is { total (cumulative, grows every turn), last
-    // (this turn's usage), modelContextWindow }. The window-occupancy indicator
-    // must track `last` — using `total` over-reports the window as filling up
-    // from accumulation alone (here a real 189k context shown as 433k = 43%).
+    // The window-occupancy indicator must track `last`, not the cumulative `total`
+    // (which over-reports the window as filling from accumulation alone).
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client, extNotifications } = makeFakeClient();
     const agent = new CodexAppServerAgent(client, {
@@ -1541,8 +1506,7 @@ describe("CodexAppServerAgent", () => {
       _meta: { taskRunId: "run_u" },
     } as unknown as NewSessionRequest);
 
-    // codex carries both the cumulative `total` and this turn's `last`; we let
-    // `last` drive the per-turn number rather than diffing the cumulative.
+    // We let `last` drive the per-turn number rather than diffing the cumulative `total`.
     const t1 = agent.prompt({
       sessionId: "t",
       prompt: [{ type: "text", text: "a" }],
@@ -1624,8 +1588,7 @@ describe("CodexAppServerAgent", () => {
       _meta: {},
     } as unknown as NewSessionRequest);
 
-    // The compaction item brackets the compaction: started → in progress, then
-    // completed → boundary (codex emits no separate thread/compacted).
+    // The compaction item brackets it: started → in progress, completed → boundary.
     stub.emit("item/started", {
       item: { type: "contextCompaction", id: "c1" },
     });
@@ -1668,9 +1631,7 @@ describe("CodexAppServerAgent", () => {
       sessionId: "t",
       prompt: [{ type: "text", text: "go" }],
     } as unknown as PromptRequest);
-    // Compaction starts, then a fatal error ends the turn BEFORE item/completed —
-    // without the finalize-time recovery the boundary would never fire and the
-    // host's isCompacting would stay stuck true.
+    // A fatal error ends the turn before item/completed; the finalize-time recovery still fires the boundary.
     stub.emit("item/started", {
       item: { type: "contextCompaction", id: "c1" },
     });
