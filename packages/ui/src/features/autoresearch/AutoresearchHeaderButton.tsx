@@ -6,6 +6,7 @@ import { Button } from "@posthog/quill";
 import { useEffect } from "react";
 import { Tooltip } from "../../primitives/Tooltip";
 import { usePanelLayoutStore } from "../panels/panelLayoutStore";
+import { useAutoresearchEnabled } from "./useAutoresearchEnabled";
 import {
   useActiveAutoresearchRun,
   useAutoresearchRuns,
@@ -30,11 +31,15 @@ export function AutoresearchHeaderButton({
   const runs = useAutoresearchRuns(taskId);
   const activeRun = useActiveAutoresearchRun(taskId);
 
+  const enabled = useAutoresearchEnabled();
+
   // Runs persist across app restarts; without this the entry point would
   // vanish for restored tasks until something else loads their history.
+  // Flag-gated: ungated users never hydrate, so the button (which needs
+  // hydrated runs) stays hidden for them.
   useEffect(() => {
-    if (service) void service.hydrateTask(taskId);
-  }, [service, taskId]);
+    if (service && enabled) void service.hydrateTask(taskId);
+  }, [service, enabled, taskId]);
 
   const isLive =
     activeRun?.status === "running" ||

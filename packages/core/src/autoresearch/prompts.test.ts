@@ -26,6 +26,8 @@ function makeConfig(
     maxIterations: 8,
     implementModel: null,
     measureModel: null,
+    implementEffort: null,
+    measureEffort: null,
     instructions: "Optimize the HTTP handler throughput benchmark.",
     ...overrides,
   };
@@ -50,6 +52,7 @@ function makeRun(
     metricName: "requests per second",
     phase: null,
     originalModel: null,
+    originalEffort: null,
     iterations,
     startedAt: 0,
     endedAt: null,

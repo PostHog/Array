@@ -16,6 +16,8 @@ export interface AutoresearchSessionClient {
   reconnect(taskId: string): Promise<void>;
   /** Switch the session's model (stage models in split runs). */
   setModel(taskId: string, model: string): Promise<void>;
+  /** Switch the session's reasoning-effort level (stage efforts in split runs). */
+  setEffort(taskId: string, effort: string): Promise<void>;
 }
 
 export const AUTORESEARCH_SESSION_CLIENT = Symbol.for(
@@ -46,3 +48,14 @@ export interface AutoresearchStorageClient {
 export const AUTORESEARCH_STORAGE_CLIENT = Symbol.for(
   "posthog.core.autoresearch.storageClient",
 );
+
+/**
+ * Availability gate, bound by hosts to their feature-flag system. Resolves
+ * once flag state is known; a disabled gate stops the boot-time restore of
+ * persisted runs, so the feature stays fully dormant for ungated users.
+ */
+export interface AutoresearchGate {
+  isEnabled(): Promise<boolean>;
+}
+
+export const AUTORESEARCH_GATE = Symbol.for("posthog.core.autoresearch.gate");

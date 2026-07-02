@@ -48,14 +48,18 @@ export const autoresearchConfigSchema = z.object({
     .max(AUTORESEARCH_MAX_ITERATIONS_LIMIT)
     .default(10),
   /**
-   * Stage models. When both are set, each iteration runs as two turns: an
-   * ideation/implementation turn on `implementModel` and a measurement turn
-   * on `measureModel` (typically a cheaper model — measuring is tool calls,
-   * not thinking). When null, iterations are single turns on the session's
-   * current model.
+   * Stage configuration. When the implement and measure stages differ (in
+   * model or effort), each iteration runs as two turns: an
+   * ideation/implementation turn on the implement stage and a measurement
+   * turn on the measure stage (typically a cheaper model/effort — measuring
+   * is tool calls, not thinking). When the stages are identical, iterations
+   * are single turns. Null fields mean "leave the session's current value
+   * alone".
    */
   implementModel: z.string().min(1).nullable().default(null),
   measureModel: z.string().min(1).nullable().default(null),
+  implementEffort: z.string().min(1).nullable().default(null),
+  measureEffort: z.string().min(1).nullable().default(null),
   /**
    * Free-form instructions for the agent: what to optimize, how to measure
    * the metric, and any constraints to respect. The metric itself is not
@@ -116,12 +120,13 @@ export const autoresearchRunSchema = z.object({
   metricName: z.string().nullable().default(null),
   phase: autoresearchPhaseSchema.nullable().default(null),
   /**
-   * The session model selected when the run started, captured so split runs
-   * can restore it when they pause or end instead of leaving the session
-   * pinned on a stage model. Null when unknown (e.g. composer runs whose
-   * session did not yet exist at registration).
+   * The session model/effort selected when the run started, captured so
+   * split runs can restore them when they pause or end instead of leaving
+   * the session pinned on a stage's values. Null when unknown (e.g.
+   * composer runs whose session did not yet exist at registration).
    */
   originalModel: z.string().nullable().default(null),
+  originalEffort: z.string().nullable().default(null),
   iterations: z.array(autoresearchIterationSchema),
   startedAt: z.number(),
   endedAt: z.number().nullable(),

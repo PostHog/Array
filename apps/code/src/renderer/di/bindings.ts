@@ -5,9 +5,11 @@ import {
 } from "@posthog/core/archive/identifiers";
 import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
 import {
+  AUTORESEARCH_GATE,
   AUTORESEARCH_SERVICE,
   AUTORESEARCH_SESSION_CLIENT,
   AUTORESEARCH_STORAGE_CLIENT,
+  type AutoresearchGate,
   type AutoresearchSessionClient,
   type AutoresearchStorageClient,
 } from "@posthog/core/autoresearch/identifiers";
@@ -302,6 +304,7 @@ export interface RendererBindings {
   [AGENT_PROMPT_SENDER]: AgentPromptSender;
   [AUTORESEARCH_SESSION_CLIENT]: AutoresearchSessionClient;
   [AUTORESEARCH_STORAGE_CLIENT]: AutoresearchStorageClient;
+  [AUTORESEARCH_GATE]: AutoresearchGate;
   [FILE_PATH_RESOLVER]: FilePathResolver;
   [NAVIGATION_TASK_BINDER]: NavigationTaskBinder;
   [ROOT_LOGGER]: RootLogger;

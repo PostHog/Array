@@ -23,6 +23,8 @@ export interface AutoresearchConfigValues {
   maxIterations: number;
   implementModel: string | null;
   measureModel: string | null;
+  implementEffort: string | null;
+  measureEffort: string | null;
   instructions?: string;
 }
 
@@ -36,6 +38,8 @@ interface AutoresearchConfigDialogProps {
   showInstructions?: boolean;
   /** Session model options for the stage-model selects; hidden when empty. */
   modelOptions?: AutoresearchModelOption[];
+  /** Session effort options for the stage-effort selects; hidden when empty. */
+  effortOptions?: AutoresearchModelOption[];
   initial?: Partial<AutoresearchConfigValues>;
   /** May throw — the message is shown inline and the dialog stays open. */
   onSubmit: (values: AutoresearchConfigValues) => void;
@@ -49,6 +53,7 @@ export function AutoresearchConfigDialog({
   submitLabel,
   showInstructions = false,
   modelOptions = [],
+  effortOptions = [],
   initial,
   onSubmit,
 }: AutoresearchConfigDialogProps) {
@@ -65,6 +70,7 @@ export function AutoresearchConfigDialog({
           submitLabel={submitLabel}
           showInstructions={showInstructions}
           modelOptions={modelOptions}
+          effortOptions={effortOptions}
           initial={initial}
           onSubmit={onSubmit}
           onDone={() => onOpenChange(false)}
@@ -80,6 +86,8 @@ interface FormValues {
   maxIterations: string;
   implementModel: string | null;
   measureModel: string | null;
+  implementEffort: string | null;
+  measureEffort: string | null;
   instructions: string;
 }
 
@@ -87,6 +95,7 @@ function ConfigForm({
   submitLabel,
   showInstructions,
   modelOptions,
+  effortOptions,
   initial,
   onSubmit,
   onDone,
@@ -94,6 +103,7 @@ function ConfigForm({
   submitLabel: string;
   showInstructions: boolean;
   modelOptions: AutoresearchModelOption[];
+  effortOptions: AutoresearchModelOption[];
   initial?: Partial<AutoresearchConfigValues>;
   onSubmit: (values: AutoresearchConfigValues) => void;
   onDone: () => void;
@@ -105,6 +115,8 @@ function ConfigForm({
     maxIterations: String(initial?.maxIterations ?? 10),
     implementModel: initial?.implementModel ?? null,
     measureModel: initial?.measureModel ?? null,
+    implementEffort: initial?.implementEffort ?? null,
+    measureEffort: initial?.measureEffort ?? null,
     instructions: initial?.instructions ?? "",
   }));
   const [error, setError] = useState<string | null>(null);
@@ -114,12 +126,7 @@ function ConfigForm({
     value: FormValues[K],
   ) => setValues((current) => ({ ...current, [field]: value }));
 
-  const stageModelsMismatched =
-    (values.implementModel === null) !== (values.measureModel === null);
-
-  const canSubmit =
-    !stageModelsMismatched &&
-    (!showInstructions || values.instructions.trim().length > 0);
+  const canSubmit = !showInstructions || values.instructions.trim().length > 0;
 
   const handleSubmit = () => {
     const target =
@@ -136,6 +143,8 @@ function ConfigForm({
         maxIterations: clampMaxIterations(iterations),
         implementModel: values.implementModel,
         measureModel: values.measureModel,
+        implementEffort: values.implementEffort,
+        measureEffort: values.measureEffort,
         instructions: showInstructions ? values.instructions : undefined,
       });
       setError(null);
@@ -216,56 +225,31 @@ function ConfigForm({
         </Flex>
 
         {modelOptions.length > 0 && (
-          <div>
-            <Flex gap="3">
-              <div className="flex-1">
-                <Text
-                  as="label"
-                  htmlFor="autoresearch-implement-model"
-                  size="1"
-                  weight="medium"
-                  className="mb-1 block"
-                >
-                  Build model
-                </Text>
-                <StageModelSelect
-                  id="autoresearch-implement-model"
-                  noneLabel="Single turn (default)"
-                  value={values.implementModel}
-                  options={modelOptions}
-                  className="w-full"
-                  onChange={(value) => setField("implementModel", value)}
-                />
-              </div>
-              <div className="flex-1">
-                <Text
-                  as="label"
-                  htmlFor="autoresearch-measure-model"
-                  size="1"
-                  weight="medium"
-                  className="mb-1 block"
-                >
-                  Measure model
-                </Text>
-                <StageModelSelect
-                  id="autoresearch-measure-model"
-                  noneLabel="Single turn (default)"
-                  value={values.measureModel}
-                  options={modelOptions}
-                  className="w-full"
-                  onChange={(value) => setField("measureModel", value)}
-                />
-              </div>
-            </Flex>
-            <Text
-              as="div"
-              size="1"
-              color={stageModelsMismatched ? "red" : "gray"}
-              mt="1"
-            >
-              {stageModelsMismatched
-                ? "Set both stage models, or leave both on single turn."
-                : "With stage models, each iteration ideates on the build model and measures on the measure model."}
+          <div className="flex flex-col gap-2">
+            <StageRow
+              legend="Implementation (ideate & build)"
+              idPrefix="autoresearch-implement"
+              model={values.implementModel}
+              effort={values.implementEffort}
+              modelOptions={modelOptions}
+              effortOptions={effortOptions}
+              onModelChange={(value) => setField("implementModel", value)}
+              onEffortChange={(value) => setField("implementEffort", value)}
+            />
+            <StageRow
+              legend="Experiment (measure)"
+              idPrefix="autoresearch-measure"
+              model={values.measureModel}
+              effort={values.measureEffort}
+              modelOptions={modelOptions}
+              effortOptions={effortOptions}
+              onModelChange={(value) => setField("measureModel", value)}
+              onEffortChange={(value) => setField("measureEffort", value)}
+            />
+            <Text as="div" size="1" color="gray">
+              Identical stages run each iteration as one turn. Different stages
+              split every iteration: build on the first, measure on the second —
+              pick a cheap model or low effort for measuring.
             </Text>
           </div>
         )}
@@ -309,5 +293,55 @@ function ConfigForm({
         </Button>
       </Flex>
     </>
+  );
+}
+
+function StageRow({
+  legend,
+  idPrefix,
+  model,
+  effort,
+  modelOptions,
+  effortOptions,
+  onModelChange,
+  onEffortChange,
+}: {
+  legend: string;
+  idPrefix: string;
+  model: string | null;
+  effort: string | null;
+  modelOptions: AutoresearchModelOption[];
+  effortOptions: AutoresearchModelOption[];
+  onModelChange: (value: string | null) => void;
+  onEffortChange: (value: string | null) => void;
+}) {
+  return (
+    <div>
+      <Text as="div" size="1" weight="medium" className="mb-1">
+        {legend}
+      </Text>
+      <Flex gap="2">
+        <StageModelSelect
+          id={`${idPrefix}-model`}
+          ariaLabel={`${legend} model`}
+          noneLabel="Session model"
+          value={model}
+          options={modelOptions}
+          className="min-w-0 flex-1"
+          onChange={onModelChange}
+        />
+        {effortOptions.length > 0 && (
+          <StageModelSelect
+            id={`${idPrefix}-effort`}
+            ariaLabel={`${legend} effort`}
+            noneLabel="Default effort"
+            value={effort}
+            options={effortOptions}
+            className="w-32"
+            onChange={onEffortChange}
+          />
+        )}
+      </Flex>
+    </div>
   );
 }

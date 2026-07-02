@@ -9,11 +9,13 @@ import {
   type AutoresearchModelOption,
   clampMaxIterations,
   StageModelSelect,
+  stageValueLabel,
 } from "./stageModels";
 
 interface AutoresearchComposerControlsProps {
   draft: AutoresearchDraftConfig;
   modelOptions: AutoresearchModelOption[];
+  effortOptions: AutoresearchModelOption[];
   disabled?: boolean;
   onChange: (patch: Partial<AutoresearchDraftConfig>) => void;
   onExit: () => void;
@@ -24,10 +26,14 @@ interface AutoresearchComposerControlsProps {
  * while the mode is armed — one input view, not a widget attached under it.
  * There is deliberately no metric or instructions field: the prompt IS the
  * optimization brief, and the agent names the metric in its reports.
+ *
+ * While armed, the composer's own model/effort pickers are hidden and the
+ * stage popover here is the single place models and efforts are chosen.
  */
 export function AutoresearchComposerControls({
   draft,
   modelOptions,
+  effortOptions,
   disabled = false,
   onChange,
   onExit,
@@ -88,14 +94,13 @@ export function AutoresearchComposerControls({
         />
         iterations
       </span>
-      {modelOptions.length > 0 && (
-        <StageModelsPopover
-          draft={draft}
-          modelOptions={modelOptions}
-          disabled={disabled}
-          onChange={onChange}
-        />
-      )}
+      <StagesPopover
+        draft={draft}
+        modelOptions={modelOptions}
+        effortOptions={effortOptions}
+        disabled={disabled}
+        onChange={onChange}
+      />
       <span className="ml-auto flex shrink-0 items-center">
         <Tooltip content="Exit autoresearch mode">
           <button
@@ -112,22 +117,52 @@ export function AutoresearchComposerControls({
   );
 }
 
+function stageSummary(
+  model: string | null,
+  effort: string | null,
+  modelOptions: AutoresearchModelOption[],
+  effortOptions: AutoresearchModelOption[],
+): string {
+  const modelLabel = stageValueLabel(model, modelOptions) ?? "task model";
+  const effortLabel = stageValueLabel(effort, effortOptions);
+  return effortLabel ? `${modelLabel} · ${effortLabel}` : modelLabel;
+}
+
 /**
- * Optional per-stage models, tucked behind a popover so the inline row stays
- * at the three inputs that matter (direction, target, budget).
+ * Per-stage model and effort. While autoresearch is armed this popover is
+ * the composer's only model/effort control, so the trigger always shows a
+ * summary of what the run will use. Identical stages mean single-turn
+ * iterations; any difference splits each iteration into a build turn and a
+ * measure turn, switching between the stages.
  */
-function StageModelsPopover({
+function StagesPopover({
   draft,
   modelOptions,
+  effortOptions,
   disabled,
   onChange,
 }: {
   draft: AutoresearchDraftConfig;
   modelOptions: AutoresearchModelOption[];
+  effortOptions: AutoresearchModelOption[];
   disabled: boolean;
   onChange: (patch: Partial<AutoresearchDraftConfig>) => void;
 }) {
-  const armed = draft.implementModel !== null || draft.measureModel !== null;
+  const split =
+    draft.implementModel !== draft.measureModel ||
+    draft.implementEffort !== draft.measureEffort;
+  const buildSummary = stageSummary(
+    draft.implementModel,
+    draft.implementEffort,
+    modelOptions,
+    effortOptions,
+  );
+  const measureSummary = stageSummary(
+    draft.measureModel,
+    draft.measureEffort,
+    modelOptions,
+    effortOptions,
+  );
 
   return (
     <Popover.Root>
@@ -135,47 +170,87 @@ function StageModelsPopover({
         <Button
           size="1"
           variant="ghost"
-          color={armed ? "violet" : "gray"}
+          color={split ? "violet" : "gray"}
           disabled={disabled}
-          aria-label="Stage models"
+          aria-label="Stage models and effort"
         >
           <SlidersHorizontal size={12} />
-          {armed ? "Stage models on" : "Stage models"}
+          {split ? `${buildSummary} → ${measureSummary}` : buildSummary}
         </Button>
       </Popover.Trigger>
-      <Popover.Content size="1" width="300px">
-        <div className="flex flex-col gap-2">
-          <div>
-            <Text as="label" size="1" weight="medium" className="mb-1 block">
-              Build model
-            </Text>
-            <StageModelSelect
-              noneLabel="Task model"
-              value={draft.implementModel}
-              options={modelOptions}
-              className="w-full"
-              onChange={(value) => onChange({ implementModel: value })}
-            />
-          </div>
-          <div>
-            <Text as="label" size="1" weight="medium" className="mb-1 block">
-              Measure model
-            </Text>
-            <StageModelSelect
-              noneLabel="Task model"
-              value={draft.measureModel}
-              options={modelOptions}
-              className="w-full"
-              onChange={(value) => onChange({ measureModel: value })}
-            />
-          </div>
+      <Popover.Content size="1" width="320px">
+        <div className="flex flex-col gap-3">
+          <StageFields
+            legend="Implementation (ideate & build)"
+            model={draft.implementModel}
+            effort={draft.implementEffort}
+            modelOptions={modelOptions}
+            effortOptions={effortOptions}
+            onModelChange={(value) => onChange({ implementModel: value })}
+            onEffortChange={(value) => onChange({ implementEffort: value })}
+          />
+          <StageFields
+            legend="Experiment (measure)"
+            model={draft.measureModel}
+            effort={draft.measureEffort}
+            modelOptions={modelOptions}
+            effortOptions={effortOptions}
+            onModelChange={(value) => onChange({ measureModel: value })}
+            onEffortChange={(value) => onChange({ measureEffort: value })}
+          />
           <Text size="1" color="gray">
-            With stage models, each iteration ideates and builds on one model
-            and runs the measurement on the other — pick a cheap one for
-            measuring.
+            Identical stages run each iteration as one turn. Different stages
+            split every iteration: build on the first, measure on the second —
+            pick a cheap model or low effort for measuring.
           </Text>
         </div>
       </Popover.Content>
     </Popover.Root>
+  );
+}
+
+function StageFields({
+  legend,
+  model,
+  effort,
+  modelOptions,
+  effortOptions,
+  onModelChange,
+  onEffortChange,
+}: {
+  legend: string;
+  model: string | null;
+  effort: string | null;
+  modelOptions: AutoresearchModelOption[];
+  effortOptions: AutoresearchModelOption[];
+  onModelChange: (value: string | null) => void;
+  onEffortChange: (value: string | null) => void;
+}) {
+  return (
+    <div>
+      <Text as="div" size="1" weight="medium" className="mb-1">
+        {legend}
+      </Text>
+      <div className="flex gap-2">
+        <StageModelSelect
+          className="flex-1"
+          ariaLabel={`${legend} model`}
+          noneLabel="Task model"
+          value={model}
+          options={modelOptions}
+          onChange={onModelChange}
+        />
+        {effortOptions.length > 0 && (
+          <StageModelSelect
+            className="w-28"
+            ariaLabel={`${legend} effort`}
+            noneLabel="Default effort"
+            value={effort}
+            options={effortOptions}
+            onChange={onEffortChange}
+          />
+        )}
+      </div>
+    </div>
   );
 }

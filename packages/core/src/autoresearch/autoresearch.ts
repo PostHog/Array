@@ -13,8 +13,10 @@ import {
   getActiveRunForTask,
 } from "./autoresearchStore";
 import {
+  AUTORESEARCH_GATE,
   AUTORESEARCH_SESSION_CLIENT,
   AUTORESEARCH_STORAGE_CLIENT,
+  type AutoresearchGate,
   type AutoresearchSessionClient,
   type AutoresearchStorageClient,
   type StoredAutoresearchRun,
@@ -83,6 +85,9 @@ export class AutoresearchService {
   @inject(AUTORESEARCH_STORAGE_CLIENT)
   private storage!: AutoresearchStorageClient;
 
+  @inject(AUTORESEARCH_GATE)
+  private gate!: AutoresearchGate;
+
   private logScoped: SagaLogger | null = null;
 
   private get log(): SagaLogger {
@@ -145,6 +150,7 @@ export class AutoresearchService {
       metricName: null,
       phase: null,
       originalModel: session ? currentSessionModel(session) : null,
+      originalEffort: session ? currentSessionEffort(session) : null,
       iterations: [],
       startedAt: Date.now(),
       endedAt: null,
@@ -178,12 +184,12 @@ export class AutoresearchService {
    */
   startRun(input: AutoresearchConfigInput): AutoresearchRun {
     const run = this.registerRun(input);
-    // The kickoff's baseline is a measurement turn.
-    const model = isSplitRun(run) ? run.config.measureModel : null;
+    // The kickoff's baseline is a measurement turn; apply the measure stage
+    // (a no-op when nothing is configured).
     this.switchThenSend(
       run.id,
       run.config.taskId,
-      model,
+      measureStage(run),
       buildKickoffPrompt(run.config),
     );
     return run;
@@ -199,7 +205,7 @@ export class AutoresearchService {
     this.remindersSent.delete(runId);
     autoresearchStoreActions.setRunStatus(runId, "paused");
     this.persist(runId);
-    this.restoreOriginalModel(run);
+    this.restoreOriginalStage(run);
     this.log.info("Autoresearch run paused", { runId });
   }
 
@@ -256,7 +262,7 @@ export class AutoresearchService {
       this.switchThenSend(
         runId,
         run.config.taskId,
-        phaseModel(current),
+        phaseStage(current),
         buildPhasePrompt(current),
       );
     }
@@ -277,6 +283,13 @@ export class AutoresearchService {
   async rehydrate(): Promise<void> {
     if (this.rehydrated) return;
     this.rehydrated = true;
+
+    // Feature-flagged: for ungated users the whole feature stays dormant —
+    // no restored runs, no auto-resume, no session subscription.
+    if (!(await this.gate.isEnabled())) {
+      this.log.info("Autoresearch disabled by feature flag; skipping restore");
+      return;
+    }
 
     let stored: StoredAutoresearchRun[];
     try {
@@ -469,7 +482,7 @@ export class AutoresearchService {
       this.switchThenSend(
         run.id,
         run.config.taskId,
-        null,
+        NO_STAGE,
         buildContinuationPrompt(run),
       );
       return;
@@ -480,7 +493,7 @@ export class AutoresearchService {
     this.switchThenSend(
       run.id,
       run.config.taskId,
-      run.config.implementModel,
+      implementStage(run),
       buildImplementPrompt(current),
     );
   }
@@ -492,60 +505,77 @@ export class AutoresearchService {
     this.switchThenSend(
       run.id,
       run.config.taskId,
-      run.config.measureModel,
+      measureStage(run),
       buildMeasurePrompt(current),
     );
   }
 
   /**
-   * Switch the session's stage model, then send — in that order, so the turn
-   * runs on the intended model rather than racing the switch. A run with no
-   * stage model (single-turn) skips straight to the send with no await, so
-   * ordering is unchanged for it. When there is a switch, a run that ended,
-   * paused, or was interrupted during it does not send.
+   * Switch the session's stage (model and/or effort), then send — in that
+   * order, so the turn runs on the intended configuration rather than racing
+   * the switch. A stage with nothing to set skips straight to the send with
+   * no await, so ordering is unchanged for it. When there is a switch, a run
+   * that ended, paused, or was interrupted during it does not send.
    */
   private switchThenSend(
     runId: string,
     taskId: string,
-    model: string | null,
+    stage: AutoresearchStage,
     prompt: string,
   ): void {
-    if (model === null) {
+    if (stage.model === null && stage.effort === null) {
       void this.send(runId, taskId, prompt);
       return;
     }
-    void this.switchModel(runId, taskId, model).then(() => {
+    void this.switchStage(runId, taskId, stage).then(() => {
       const run = autoresearchStore.getState().runs[runId];
       if (!run || run.status !== "running") return;
       return this.send(runId, taskId, prompt);
     });
   }
 
-  private async switchModel(
+  /**
+   * Apply a stage's model/effort to the session. Failures only warn — the
+   * turn falls back to whatever the session currently has (effort options
+   * can also legitimately differ per model, so a stale effort may be
+   * rejected by the session).
+   */
+  private async switchStage(
     runId: string,
     taskId: string,
-    model: string | null,
+    stage: AutoresearchStage,
   ): Promise<void> {
-    if (model === null) return;
-    try {
-      await this.sessionClient.setModel(taskId, model);
-    } catch (error) {
-      this.log.warn("Autoresearch model switch failed; continuing", {
-        runId,
-        model,
-        error,
-      });
+    if (stage.model !== null) {
+      try {
+        await this.sessionClient.setModel(taskId, stage.model);
+      } catch (error) {
+        this.log.warn("Autoresearch model switch failed; continuing", {
+          runId,
+          model: stage.model,
+          error,
+        });
+      }
+    }
+    if (stage.effort !== null) {
+      try {
+        await this.sessionClient.setEffort(taskId, stage.effort);
+      } catch (error) {
+        this.log.warn("Autoresearch effort switch failed; continuing", {
+          runId,
+          effort: stage.effort,
+          error,
+        });
+      }
     }
   }
 
-  /** Restore the session to the model the user had before a split run. */
-  private restoreOriginalModel(run: AutoresearchRun): void {
+  /** Restore the session to the model/effort the user had before a split run. */
+  private restoreOriginalStage(run: AutoresearchRun): void {
     if (!isSplitRun(run)) return;
-    void this.switchModel(
-      run.id,
-      run.config.taskId,
-      run.originalModel ?? run.config.implementModel,
-    );
+    void this.switchStage(run.id, run.config.taskId, {
+      model: run.originalModel ?? run.config.implementModel,
+      effort: run.originalEffort ?? run.config.implementEffort,
+    });
   }
 
   /**
@@ -639,7 +669,7 @@ export class AutoresearchService {
           this.remindersSent.delete(runId);
           autoresearchStoreActions.setRunStatus(runId, "paused");
           this.persist(runId);
-          this.restoreOriginalModel(run);
+          this.restoreOriginalStage(run);
           this.log.info("Autoresearch paused after user cancelled the turn", {
             runId,
           });
@@ -773,11 +803,11 @@ export class AutoresearchService {
       reason,
     });
     // A reconnected session comes back on its default model; switchThenSend
-    // re-applies the phase's stage model before re-entering the loop.
+    // re-applies the phase's stage before re-entering the loop.
     this.switchThenSend(
       runId,
       run.config.taskId,
-      phaseModel(run),
+      phaseStage(run),
       buildResumePrompt(run, reason),
     );
   }
@@ -796,7 +826,7 @@ export class AutoresearchService {
     this.recoveryAttempts.delete(runId);
     this.promptCursor.delete(runId);
     this.liveRunIds.delete(runId);
-    if (run) this.restoreOriginalModel(run);
+    if (run) this.restoreOriginalStage(run);
   }
 
   private clearPendingReaction(runId: string): void {
@@ -840,23 +870,47 @@ function isTerminal(run: AutoresearchRun): boolean {
   return isTerminalRunStatus(run.status);
 }
 
-/** Split runs alternate an implement turn and a measure turn per iteration. */
-function isSplitRun(run: AutoresearchRun): boolean {
-  return run.config.implementModel !== null && run.config.measureModel !== null;
+/** A session configuration a stage runs on; null fields are left alone. */
+interface AutoresearchStage {
+  model: string | null;
+  effort: string | null;
+}
+
+const NO_STAGE: AutoresearchStage = { model: null, effort: null };
+
+function implementStage(run: AutoresearchRun): AutoresearchStage {
+  return {
+    model: run.config.implementModel,
+    effort: run.config.implementEffort,
+  };
+}
+
+function measureStage(run: AutoresearchRun): AutoresearchStage {
+  return { model: run.config.measureModel, effort: run.config.measureEffort };
 }
 
 /**
- * The stage model for the run's current phase; null means leave the session
- * model alone. A null phase is the baseline measurement when nothing is
- * recorded yet, otherwise it re-enters at the implement half.
+ * Split runs alternate an implement turn and a measure turn per iteration.
+ * Any difference between the stages — model or effort — makes the run split;
+ * identical stages run as single turns with no mid-loop switching.
  */
-function phaseModel(run: AutoresearchRun): string | null {
-  if (!isSplitRun(run)) return null;
-  if (run.phase === "measure") return run.config.measureModel;
-  if (run.phase === "implement") return run.config.implementModel;
-  return run.iterations.length === 0
-    ? run.config.measureModel
-    : run.config.implementModel;
+function isSplitRun(run: AutoresearchRun): boolean {
+  return (
+    run.config.implementModel !== run.config.measureModel ||
+    run.config.implementEffort !== run.config.measureEffort
+  );
+}
+
+/**
+ * The stage for the run's current phase. A null phase is the baseline
+ * measurement when nothing is recorded yet, otherwise it re-enters at the
+ * implement half.
+ */
+function phaseStage(run: AutoresearchRun): AutoresearchStage {
+  if (!isSplitRun(run)) return NO_STAGE;
+  if (run.phase === "measure") return measureStage(run);
+  if (run.phase === "implement") return implementStage(run);
+  return run.iterations.length === 0 ? measureStage(run) : implementStage(run);
 }
 
 function isSessionUsable(session: AgentSession | undefined): boolean {
@@ -871,6 +925,15 @@ function isSessionUsable(session: AgentSession | undefined): boolean {
 /** The session's currently-selected model, or null if none is set. */
 function currentSessionModel(session: AgentSession): string | null {
   const option = getConfigOptionByCategory(session.configOptions, "model");
+  return option?.type === "select" ? (option.currentValue ?? null) : null;
+}
+
+/** The session's currently-selected reasoning effort, or null if none. */
+function currentSessionEffort(session: AgentSession): string | null {
+  const option = getConfigOptionByCategory(
+    session.configOptions,
+    "thought_level",
+  );
   return option?.type === "select" ? (option.currentValue ?? null) : null;
 }
 

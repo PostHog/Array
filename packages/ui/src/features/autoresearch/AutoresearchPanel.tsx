@@ -24,7 +24,12 @@ import { usePendingPermissionsForTask } from "../sessions/useSession";
 import { AutoresearchConfigDialog } from "./AutoresearchConfigDialog";
 import { IterationsTable } from "./IterationsTable";
 import { MetricChart } from "./MetricChart";
-import { toAutoresearchModelOptions } from "./stageModels";
+import {
+  type AutoresearchModelOption,
+  stageValueLabel,
+  toStageSelectOptions,
+} from "./stageModels";
+import { useAutoresearchEnabled } from "./useAutoresearchEnabled";
 import { useAutoresearchRuns } from "./useAutoresearchStore";
 
 const STATUS_BADGE: Record<
@@ -70,27 +75,51 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
+  const enabled = useAutoresearchEnabled();
+
   // Runs persist across app restarts; pull this task's history into the store.
+  // Flag-gated so the feature stays dormant for ungated users; already-live
+  // runs (flag revoked mid-session) keep their controls via the store.
   useEffect(() => {
-    if (service) void service.hydrateTask(taskId);
-  }, [service, taskId]);
+    if (service && enabled) void service.hydrateTask(taskId);
+  }, [service, enabled, taskId]);
 
   const modelOption = useSessionStore((state) => {
     const taskRunId = state.taskIdIndex[taskId];
     const session = taskRunId ? state.sessions[taskRunId] : undefined;
     return getConfigOptionByCategory(session?.configOptions, "model");
   });
+  const thoughtOption = useSessionStore((state) => {
+    const taskRunId = state.taskIdIndex[taskId];
+    const session = taskRunId ? state.sessions[taskRunId] : undefined;
+    return getConfigOptionByCategory(session?.configOptions, "thought_level");
+  });
   const modelOptions = useMemo(
-    () => toAutoresearchModelOptions(modelOption),
+    () => toStageSelectOptions(modelOption),
     [modelOption],
   );
+  const effortOptions = useMemo(
+    () => toStageSelectOptions(thoughtOption),
+    [thoughtOption],
+  );
+  // What the session is actually on right now — the loop switches these
+  // between stages, and this reflects the switches live.
+  const liveModel =
+    modelOption?.type === "select" ? (modelOption.currentValue ?? null) : null;
+  const liveEffort =
+    thoughtOption?.type === "select"
+      ? (thoughtOption.currentValue ?? null)
+      : null;
 
   const latestRun = runs[runs.length - 1] ?? null;
   const selectedRun =
     (selectedRunId && runs.find((run) => run.id === selectedRunId)) ||
     latestRun;
 
-  if (!service) {
+  // A persisted panel tab can outlive access to the feature (web, or the
+  // flag turned off). With runs already in the store, keep the dashboard
+  // functional so live runs stay controllable.
+  if (!service || (!enabled && runs.length === 0)) {
     return (
       <Empty className="h-full">
         <EmptyHeader>
@@ -99,7 +128,7 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
           </EmptyMedia>
           <EmptyTitle>Autoresearch unavailable</EmptyTitle>
           <EmptyDescription>
-            Autoresearch is not supported on this platform.
+            Autoresearch is not available here.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -131,6 +160,10 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
           run={selectedRun}
           runs={runs}
           service={service}
+          modelOptions={modelOptions}
+          effortOptions={effortOptions}
+          liveModel={liveModel}
+          liveEffort={liveEffort}
           onSelectRun={setSelectedRunId}
           onNewRun={() => setDialogOpen(true)}
         />
@@ -155,6 +188,7 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
         submitLabel="Start run"
         showInstructions
         modelOptions={modelOptions}
+        effortOptions={effortOptions}
         initial={selectedRun.config}
         onSubmit={(values) => {
           service.startRun({
@@ -164,6 +198,8 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
             maxIterations: values.maxIterations,
             implementModel: values.implementModel,
             measureModel: values.measureModel,
+            implementEffort: values.implementEffort,
+            measureEffort: values.measureEffort,
             instructions: values.instructions ?? "",
           });
           // Follow the new run even if a past run was selected.
@@ -178,12 +214,20 @@ function RunHeader({
   run,
   runs,
   service,
+  modelOptions,
+  effortOptions,
+  liveModel,
+  liveEffort,
   onSelectRun,
   onNewRun,
 }: {
   run: AutoresearchRun;
   runs: AutoresearchRun[];
   service: AutoresearchService;
+  modelOptions: AutoresearchModelOption[];
+  effortOptions: AutoresearchModelOption[];
+  liveModel: string | null;
+  liveEffort: string | null;
   onSelectRun: (runId: string) => void;
   onNewRun: () => void;
 }) {
@@ -192,6 +236,9 @@ function RunHeader({
     run.status === "running" ||
     run.status === "paused" ||
     run.status === "interrupted";
+  const isSplit =
+    run.config.implementModel !== run.config.measureModel ||
+    run.config.implementEffort !== run.config.measureEffort;
 
   return (
     <Flex direction="column" gap="1">
@@ -256,13 +303,31 @@ function RunHeader({
           )}
         </Flex>
       </Flex>
-      {run.config.implementModel && run.config.measureModel && (
+      {isSplit && (
         <Text size="1" color="gray">
-          Stage models: builds on {run.config.implementModel}, measures on{" "}
-          {run.config.measureModel}
-          {run.status === "running" && run.phase
-            ? ` — now in the ${run.phase} phase`
+          Stages: build{" "}
+          {stageText(
+            run.config.implementModel,
+            run.config.implementEffort,
+            modelOptions,
+            effortOptions,
+          )}{" "}
+          → measure{" "}
+          {stageText(
+            run.config.measureModel,
+            run.config.measureEffort,
+            modelOptions,
+            effortOptions,
+          )}
+        </Text>
+      )}
+      {run.status === "running" && liveModel && (
+        <Text size="1" color="blue">
+          Agent is on {stageValueLabel(liveModel, modelOptions) ?? liveModel}
+          {liveEffort
+            ? ` · ${stageValueLabel(liveEffort, effortOptions) ?? liveEffort} effort`
             : ""}
+          {isSplit && run.phase ? ` — ${run.phase} phase` : ""}
         </Text>
       )}
       {run.status === "interrupted" && (
@@ -362,4 +427,15 @@ function StatCard({ label, value }: { label: string; value: ReactNode }) {
       </Text>
     </div>
   );
+}
+
+function stageText(
+  model: string | null,
+  effort: string | null,
+  modelOptions: AutoresearchModelOption[],
+  effortOptions: AutoresearchModelOption[],
+): string {
+  const modelLabel = stageValueLabel(model, modelOptions) ?? "session model";
+  const effortLabel = stageValueLabel(effort, effortOptions);
+  return effortLabel ? `${modelLabel} · ${effortLabel}` : modelLabel;
 }

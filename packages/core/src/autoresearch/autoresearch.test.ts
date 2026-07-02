@@ -31,6 +31,7 @@ let sendPromptImpl: (
 let reconnectCalls: string[] = [];
 let reconnectImpl: (taskId: string) => Promise<void>;
 let modelSwitches: Array<{ taskId: string; model: string }> = [];
+let effortSwitches: Array<{ taskId: string; effort: string }> = [];
 
 const sessionClient = {
   sendPrompt: vi.fn((taskId: string, prompt: string) => {
@@ -45,6 +46,16 @@ const sessionClient = {
     modelSwitches.push({ taskId, model });
     return Promise.resolve();
   }),
+  setEffort: vi.fn((taskId: string, effort: string) => {
+    effortSwitches.push({ taskId, effort });
+    return Promise.resolve();
+  }),
+};
+
+let gateEnabledImpl: () => Promise<boolean>;
+
+const gateClient = {
+  isEnabled: vi.fn(() => gateEnabledImpl()),
 };
 
 let savedRuns: StoredAutoresearchRun[] = [];
@@ -66,6 +77,7 @@ function makeService(): AutoresearchService {
   s.rootLogger = { ...mockLog, scope: () => mockLog };
   s.sessionClient = sessionClient;
   s.storage = storageClient;
+  s.gate = gateClient;
   return service;
 }
 
@@ -130,9 +142,12 @@ function reportText(value: number, summary = "tweak"): string {
   return `Done.\n\`\`\`autoresearch\nmetric: ${value}\nsummary: ${summary}\n\`\`\``;
 }
 
-/** A session `model` config option set to `currentValue`. */
-function modelConfig(currentValue: string): SessionConfigOption[] {
-  return [
+/** A session `model` config option (and optional `thought_level`). */
+function modelConfig(
+  currentValue: string,
+  currentEffort?: string,
+): SessionConfigOption[] {
+  const options = [
     {
       id: "model",
       category: "model",
@@ -145,7 +160,22 @@ function modelConfig(currentValue: string): SessionConfigOption[] {
         { value: "claude-haiku-4-5", name: "Haiku" },
       ],
     },
-  ] as SessionConfigOption[];
+  ];
+  if (currentEffort) {
+    options.push({
+      id: "thought_level",
+      category: "thought_level",
+      name: "Effort",
+      type: "select",
+      currentValue: currentEffort,
+      options: [
+        { value: "low", name: "Low" },
+        { value: "high", name: "High" },
+        { value: currentEffort, name: currentEffort },
+      ],
+    });
+  }
+  return options as SessionConfigOption[];
 }
 
 function namedReportText(value: number, name: string): string {
@@ -207,6 +237,8 @@ function makeRun(
     maxIterations: 10,
     implementModel: null,
     measureModel: null,
+    implementEffort: null,
+    measureEffort: null,
     instructions: "Raise the score.",
   };
   const { config: configOverrides, ...runOverrides } = overrides;
@@ -217,6 +249,7 @@ function makeRun(
     metricName: null,
     phase: null,
     originalModel: null,
+    originalEffort: null,
     iterations: [],
     startedAt: 1_000,
     endedAt: null,
@@ -254,6 +287,8 @@ describe("AutoresearchService", () => {
     reconnectCalls = [];
     reconnectImpl = () => Promise.resolve();
     modelSwitches = [];
+    effortSwitches = [];
+    gateEnabledImpl = () => Promise.resolve(true);
     savedRuns = [];
     listOpenImpl = () => Promise.resolve([]);
     listByTaskImpl = () => Promise.resolve([]);
@@ -987,6 +1022,21 @@ describe("AutoresearchService", () => {
       await service.rehydrate();
       expect(storageClient.listOpen).toHaveBeenCalledTimes(1);
     });
+
+    it("stays dormant when the feature flag is off", async () => {
+      gateEnabledImpl = () => Promise.resolve(false);
+      listOpenImpl = () =>
+        Promise.resolve([
+          storedRow(makeRun({ id: "ar-r", config: { taskId: "task-9" } })),
+        ]);
+
+      await service.rehydrate();
+
+      expect(storageClient.listOpen).not.toHaveBeenCalled();
+      expect(autoresearchStore.getState().runs["ar-r"]).toBeUndefined();
+      await passRecoveryDelay();
+      expect(reconnectCalls).toHaveLength(0);
+    });
   });
 
   describe("hydrateTask", () => {
@@ -1103,6 +1153,47 @@ describe("AutoresearchService", () => {
     });
   });
 
+  describe("effort-only splits", () => {
+    it("alternates efforts between phases without touching the model", async () => {
+      service.startRun({
+        ...baseConfig,
+        implementEffort: "high",
+        measureEffort: "low",
+      });
+      // Kickoff baseline runs on the measure stage's effort.
+      expect(effortSwitches).toEqual([{ taskId: TASK_ID, effort: "low" }]);
+      await flush();
+      effortSwitches = [];
+
+      runTurn(reportText(10, "baseline"));
+      await flush();
+      expect(activeRun().phase).toBe("implement");
+      expect(effortSwitches).toEqual([{ taskId: TASK_ID, effort: "high" }]);
+      expect(modelSwitches).toEqual([]);
+
+      runTurn("changed the cache layout");
+      await passReminderGrace();
+      expect(activeRun().phase).toBe("measure");
+      expect(effortSwitches.at(-1)).toEqual({ taskId: TASK_ID, effort: "low" });
+      expect(modelSwitches).toEqual([]);
+    });
+
+    it("treats identical stages as a single-turn run", () => {
+      service.startRun({
+        ...baseConfig,
+        implementModel: "claude-opus-4-8",
+        measureModel: "claude-opus-4-8",
+        implementEffort: "high",
+        measureEffort: "high",
+      });
+      runTurn(reportText(10, "baseline"));
+
+      // No phase alternation: the next prompt is a plain continuation.
+      expect(activeRun().phase).toBeNull();
+      expect(sentPrompts.at(-1)?.prompt).toContain("Continue:");
+    });
+  });
+
   describe("stage-model restoration", () => {
     it("restores the user's model when a split run ends", async () => {
       sessionStoreSetters.setSession(
@@ -1134,6 +1225,30 @@ describe("AutoresearchService", () => {
       expect(modelSwitches).toEqual([
         { taskId: TASK_ID, model: "claude-sonnet-4-6" },
       ]);
+    });
+
+    it("restores the user's effort alongside the model", async () => {
+      sessionStoreSetters.setSession(
+        makeSession({
+          configOptions: modelConfig("claude-sonnet-4-6", "medium"),
+        }),
+      );
+      const run = service.startRun({
+        ...splitConfig,
+        implementEffort: "high",
+        measureEffort: "low",
+      });
+      await flush();
+      modelSwitches = [];
+      effortSwitches = [];
+
+      service.stopRun(run.id);
+      await flush();
+
+      expect(modelSwitches).toEqual([
+        { taskId: TASK_ID, model: "claude-sonnet-4-6" },
+      ]);
+      expect(effortSwitches).toEqual([{ taskId: TASK_ID, effort: "medium" }]);
     });
   });
 });

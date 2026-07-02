@@ -17,15 +17,27 @@ export interface AutoresearchModelOption {
  */
 export const NO_STAGE_MODEL = "__no_stage_model__";
 
-/** Derive stage-model options from a session's `model` config option. */
-export function toAutoresearchModelOptions(
-  modelOption: SessionConfigOption | undefined,
+/**
+ * Derive stage select options from a session config option — works for the
+ * `model` option and the `thought_level` (effort) option alike.
+ */
+export function toStageSelectOptions(
+  option: SessionConfigOption | undefined,
 ): AutoresearchModelOption[] {
-  if (modelOption?.type !== "select") return [];
-  return flattenSelectOptions(modelOption.options).map((option) => ({
-    value: option.value,
-    label: option.name ?? option.value,
+  if (option?.type !== "select") return [];
+  return flattenSelectOptions(option.options).map((item) => ({
+    value: item.value,
+    label: item.name ?? item.value,
   }));
+}
+
+/** Display label for a stage value, falling back to the raw value. */
+export function stageValueLabel(
+  value: string | null,
+  options: AutoresearchModelOption[],
+): string | null {
+  if (value === null) return null;
+  return options.find((option) => option.value === value)?.label ?? value;
 }
 
 /** Map a select value back to the stored stage model (null = leave alone). */
