@@ -2,6 +2,7 @@ import { Text } from "@components/text";
 import { Check, FunnelSimple } from "phosphor-react-native";
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, View } from "react-native";
+import { useUserQuery } from "@/features/auth";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 import {
@@ -48,6 +49,10 @@ export function TaskFilterMenu({ open, onClose }: TaskFilterMenuProps) {
   const setOrganizeMode = useTaskStore((s) => s.setOrganizeMode);
   const sortMode = useTaskStore((s) => s.sortMode);
   const setSortMode = useTaskStore((s) => s.setSortMode);
+  const showInternal = useTaskStore((s) => s.showInternal);
+  const setShowInternal = useTaskStore((s) => s.setShowInternal);
+  const { data: userData } = useUserQuery();
+  const isStaff = userData?.is_staff === true;
 
   const pickOrganize = (mode: OrganizeMode) => {
     setOrganizeMode(mode);
@@ -115,6 +120,25 @@ export function TaskFilterMenu({ open, onClose }: TaskFilterMenuProps) {
               onPress={() => pickSort("updated")}
             />
           </View>
+
+          {/* Task visibility (staff only) */}
+          {isStaff ? (
+            <>
+              <SectionHeader title="Task visibility" />
+              <View className="mb-5">
+                <OptionRow
+                  label="External"
+                  selected={!showInternal}
+                  onPress={() => setShowInternal(false)}
+                />
+                <OptionRow
+                  label="Internal"
+                  selected={showInternal}
+                  onPress={() => setShowInternal(true)}
+                />
+              </View>
+            </>
+          ) : null}
         </ScrollView>
       </View>
     </Modal>

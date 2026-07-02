@@ -12,6 +12,9 @@ import { useSuspendedTaskIds } from "@posthog/ui/features/suspension/useSuspende
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { useMemo } from "react";
 
+const EMPTY_SET: ReadonlySet<string> = new Set();
+const EMPTY_MAP: ReadonlyMap<string, string> = new Map();
+
 // Build the same `TaskData` shape the sidebar feeds into `<TaskIcon>` so a
 // filed channel task renders the same status icons (needs-permission, cloud
 // run status, PR state, generating, etc.) as in the sidebar/command palette.
@@ -33,6 +36,8 @@ export function useChannelTaskData(
       timestamp: timestamps[task.id],
       pinnedIds: pinnedTaskIds,
       suspendedIds: suspendedTaskIds,
+      slackTaskIds: EMPTY_SET,
+      slackThreadUrlByTaskId: EMPTY_MAP,
     });
   }, [task, session, workspace, timestamps, pinnedTaskIds, suspendedTaskIds]);
 }

@@ -60,7 +60,7 @@ export function useTasks(filters?: {
 }) {
   const { projectId, oauthAccessToken } = useAuthStore();
   const { data: currentUser } = useUserQuery();
-  const { sortMode, filter } = useTaskStore();
+  const { sortMode, showInternal, filter } = useTaskStore();
 
   const queryFilters = {
     ...filters,
@@ -81,7 +81,12 @@ export function useTasks(filters?: {
     (task) => task.latest_run?.environment !== "local",
   );
 
-  const filteredTasks = filterAndSortTasks(cloudTasks, sortMode, filter);
+  const filteredTasks = filterAndSortTasks(
+    cloudTasks,
+    sortMode,
+    showInternal,
+    filter,
+  );
 
   return {
     tasks: filteredTasks,

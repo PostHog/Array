@@ -44,19 +44,20 @@ export function useCreateTask() {
 
   const invalidateTasks = (newTask?: Task) => {
     if (newTask) {
-      // Seed origin-less list caches, plus any list scoped to this task's own
-      // origin_product (e.g. the sidebar's user_created list). A list scoped to
-      // a different origin is read by the sidebar to brand a task's icon by id
-      // membership, so seeding a mismatched task into it would make that task
-      // briefly render with the wrong origin's branding until the list refetches.
+      // Only seed list caches that aren't scoped to a specific origin_product.
+      // An origin-scoped list (e.g. the slack-origin list behind useSlackTasks)
+      // is read by the sidebar to brand a task's icon by id membership, so
+      // seeding a freshly created, non-slack task into it would make that task
+      // briefly render as a Slack task until the list refetches. Origin-less
+      // lists, by contrast, should mirror every new task.
       queryClient.setQueriesData<Task[]>(
         {
           queryKey: taskKeys.lists(),
           predicate: (query) => {
-            const listOrigin = taskKeys.filtersOf(
-              query.queryKey,
-            )?.originProduct;
-            return !listOrigin || listOrigin === newTask.origin_product;
+            const isOriginScopedList = Boolean(
+              taskKeys.filtersOf(query.queryKey)?.originProduct,
+            );
+            return !isOriginScopedList;
           },
         },
         (old) => insertTaskDedup(old, newTask),

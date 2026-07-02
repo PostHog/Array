@@ -34,13 +34,11 @@ function TaskFilterMenu() {
   const organizeMode = useSidebarStore((state) => state.organizeMode);
   const sortMode = useSidebarStore((state) => state.sortMode);
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
-  const showSystemStarted = useSidebarStore((state) => state.showSystemStarted);
+  const showInternal = useSidebarStore((state) => state.showInternal);
   const setOrganizeMode = useSidebarStore((state) => state.setOrganizeMode);
   const setSortMode = useSidebarStore((state) => state.setSortMode);
   const setShowAllUsers = useSidebarStore((state) => state.setShowAllUsers);
-  const setShowSystemStarted = useSidebarStore(
-    (state) => state.setShowSystemStarted,
-  );
+  const setShowInternal = useSidebarStore((state) => state.setShowInternal);
   const { data: currentUser } = useMeQuery();
   const isStaff = currentUser?.is_staff === true;
 
@@ -108,18 +106,16 @@ function TaskFilterMenu() {
           <>
             <DropdownMenuSeparator />
 
-            <MenuLabel>Task origin</MenuLabel>
+            <MenuLabel>Task visibility</MenuLabel>
             <DropdownMenuRadioGroup
-              value={showSystemStarted ? "system" : "user"}
-              onValueChange={(value) =>
-                setShowSystemStarted(value === "system")
-              }
+              value={showInternal ? "internal" : "external"}
+              onValueChange={(value) => setShowInternal(value === "internal")}
             >
-              <DropdownMenuRadioItem value="user">
-                User-started
+              <DropdownMenuRadioItem value="external">
+                External
               </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="system">
-                System-started
+              <DropdownMenuRadioItem value="internal">
+                Internal
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </>

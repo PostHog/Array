@@ -13,16 +13,17 @@ import type {
   TaskData,
   TaskGroup,
 } from "@posthog/core/sidebar/sidebarData.types";
+import { computeSummaryIds } from "@posthog/core/sidebar/summaryIds";
 import type { AppView } from "@posthog/ui/router/useAppView";
 import { useEffect, useMemo, useRef } from "react";
 import { useArchivedTaskIds } from "../archive/useArchivedTaskIds";
 import { useProvisioningStore } from "../provisioning/store";
 import { useSuspendedTaskIds } from "../suspension/useSuspendedTaskIds";
+import { useSlackTasks, useTaskSummaries, useTasks } from "../tasks/useTasks";
 import { useWorkspaces } from "../workspace/useWorkspace";
 import { useSidebarStore } from "./sidebarStore";
 import { usePinnedTasks } from "./usePinnedTasks";
 import { useSidebarSessionMap } from "./useSidebarSessionMap";
-import { useSidebarTasks } from "./useSidebarTasks";
 import { useTaskViewed } from "./useTaskViewed";
 
 export type { SidebarData, TaskData, TaskGroup };
@@ -35,9 +36,8 @@ export function useSidebarData({
   activeView,
 }: UseSidebarDataProps): SidebarData {
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
-  const showSystemStarted = useSidebarStore((state) => state.showSystemStarted);
+  const showInternal = useSidebarStore((state) => state.showInternal);
   const { data: workspaces, isFetched: isWorkspacesFetched } = useWorkspaces();
-  const { tasks: fullTasks, isLoading: isTasksLoading } = useSidebarTasks();
   const archivedTaskIds = useArchivedTaskIds();
   const suspendedTaskIds = useSuspendedTaskIds();
   const provisioningTaskIds = useProvisioningStore((s) => s.activeTasks);
@@ -51,12 +51,58 @@ export function useSidebarData({
   const sortMode = useSidebarStore((state) => state.sortMode);
   const folderOrder = useSidebarStore((state) => state.folderOrder);
 
-  const rawTasks = useMemo<SidebarTask[]>(
-    () => fullTasks.map((t) => narrowFullTask(t as FullTask)),
-    [fullTasks],
+  const summaryIds = useMemo(
+    () =>
+      showAllUsers
+        ? []
+        : computeSummaryIds({
+            workspaceIds: workspaces ? Object.keys(workspaces) : [],
+            pinnedTaskIds,
+            provisioningTaskIds,
+            archivedTaskIds,
+          }),
+    [
+      showAllUsers,
+      workspaces,
+      pinnedTaskIds,
+      provisioningTaskIds,
+      archivedTaskIds,
+    ],
   );
 
-  const isLoading = isTasksLoading || !isWorkspacesFetched;
+  const { data: summaryTasks = [], isLoading: isSummariesLoading } =
+    useTaskSummaries(summaryIds, { enabled: !showAllUsers });
+  const { data: fullTasks = [], isLoading: isTasksLoading } = useTasks(
+    { showAllUsers, showInternal },
+    { enabled: showAllUsers },
+  );
+  const { data: slackTasks = [] } = useSlackTasks({
+    enabled: !showAllUsers,
+    showInternal,
+  });
+  const slackTaskIds = useMemo(
+    () => new Set(slackTasks.map((t) => t.id)),
+    [slackTasks],
+  );
+  const slackThreadUrlByTaskId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of slackTasks) {
+      const url = t.latest_run?.state?.slack_thread_url;
+      if (typeof url === "string") map.set(t.id, url);
+    }
+    return map;
+  }, [slackTasks]);
+
+  const rawTasks = useMemo<SidebarTask[]>(
+    () =>
+      showAllUsers
+        ? fullTasks.map((t) => narrowFullTask(t as FullTask))
+        : (summaryTasks as SidebarTask[]),
+    [showAllUsers, summaryTasks, fullTasks],
+  );
+
+  const isPrimaryLoading = showAllUsers ? isTasksLoading : isSummariesLoading;
+  const isLoading = isPrimaryLoading || !isWorkspacesFetched;
 
   const workspaceIds = useMemo(
     () => new Set(workspaces ? Object.keys(workspaces) : []),
@@ -70,14 +116,14 @@ export function useSidebarData({
         workspaceIds,
         provisioningIds: provisioningTaskIds,
         showAllUsers,
-        showSystemStarted,
+        showInternal,
       }),
     [
       rawTasks,
       archivedTaskIds,
       workspaceIds,
       showAllUsers,
-      showSystemStarted,
+      showInternal,
       provisioningTaskIds,
     ],
   );
@@ -103,6 +149,8 @@ export function useSidebarData({
           timestamp: timestamps[task.id],
           pinnedIds: pinnedTaskIds,
           suspendedIds: suspendedTaskIds,
+          slackTaskIds,
+          slackThreadUrlByTaskId,
         }),
       ),
     [
@@ -112,6 +160,8 @@ export function useSidebarData({
       suspendedTaskIds,
       sessionByTaskId,
       workspaces,
+      slackTaskIds,
+      slackThreadUrlByTaskId,
     ],
   );
 

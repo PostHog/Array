@@ -64,10 +64,7 @@ export interface FilterVisibleOptions {
   workspaceIds: ReadonlySet<string>;
   provisioningIds: ReadonlySet<string>;
   showAllUsers: boolean;
-  // System-started tasks (signals, support queue, …) run in the cloud and have
-  // no local workspace, so this view bypasses the workspace/provisioning gate
-  // that scopes the default view to the tasks present on this machine.
-  showSystemStarted: boolean;
+  showInternal: boolean;
 }
 
 export function filterVisibleTasks(
@@ -78,7 +75,7 @@ export function filterVisibleTasks(
     (task) =>
       !options.archivedIds.has(task.id) &&
       (options.showAllUsers ||
-        options.showSystemStarted ||
+        options.showInternal ||
         options.workspaceIds.has(task.id) ||
         options.provisioningIds.has(task.id)),
   );
@@ -132,6 +129,8 @@ export interface DeriveTaskDataContext {
   timestamp: TaskTimestamp | undefined;
   pinnedIds: ReadonlySet<string>;
   suspendedIds: ReadonlySet<string>;
+  slackTaskIds: ReadonlySet<string>;
+  slackThreadUrlByTaskId: ReadonlyMap<string, string>;
 }
 
 export function deriveTaskData(
@@ -155,8 +154,11 @@ export function deriveTaskData(
       ? task.latest_run.output.pr_url
       : ((session?.cloudOutput?.pr_url as string | undefined) ?? null);
 
-  const originProduct = task.origin_product;
-  const slackThreadUrl = task.slack_thread_url;
+  const originProduct =
+    task.origin_product ??
+    (ctx.slackTaskIds.has(task.id) ? "slack" : undefined);
+  const slackThreadUrl =
+    task.slack_thread_url ?? ctx.slackThreadUrlByTaskId.get(task.id);
 
   return {
     id: task.id,

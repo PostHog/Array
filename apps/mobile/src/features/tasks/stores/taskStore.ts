@@ -25,6 +25,7 @@ interface TaskUIState {
   selectedTaskId: string | null;
   organizeMode: OrganizeMode;
   sortMode: SortMode;
+  showInternal: boolean;
   filter: string;
   /** Most-recently-used repository for the new-task composer. Pre-fills the
    *  repo pill so users don't have to re-pick the same repo every time. */
@@ -35,6 +36,7 @@ interface TaskUIState {
   selectTask: (taskId: string | null) => void;
   setOrganizeMode: (mode: OrganizeMode) => void;
   setSortMode: (mode: SortMode) => void;
+  setShowInternal: (showInternal: boolean) => void;
   setFilter: (filter: string) => void;
   setLastRepository: (selection: RepositorySelection) => void;
   setComposerConfig: (
@@ -51,6 +53,7 @@ export const useTaskStore = create<TaskUIState>()(
       selectedTaskId: null,
       organizeMode: "by-project",
       sortMode: "updated",
+      showInternal: false,
       filter: "",
       lastRepository: EMPTY_REPOSITORY_SELECTION,
       composerConfigByTaskId: {},
@@ -59,6 +62,7 @@ export const useTaskStore = create<TaskUIState>()(
       selectTask: (selectedTaskId) => set({ selectedTaskId }),
       setOrganizeMode: (organizeMode) => set({ organizeMode }),
       setSortMode: (sortMode) => set({ sortMode }),
+      setShowInternal: (showInternal) => set({ showInternal }),
       setFilter: (filter) => set({ filter }),
       setLastRepository: (lastRepository) => set({ lastRepository }),
       setComposerConfig: (taskId, config) =>
@@ -95,6 +99,7 @@ export const useTaskStore = create<TaskUIState>()(
       partialize: (state) => ({
         organizeMode: state.organizeMode,
         sortMode: state.sortMode,
+        showInternal: state.showInternal,
         lastRepository: state.lastRepository,
         composerConfigByTaskId: state.composerConfigByTaskId,
       }),
@@ -118,12 +123,18 @@ export function taskActivityTimestamp(task: Task, sortMode: SortMode): number {
 export function filterAndSortTasks(
   tasks: Task[],
   sortMode: SortMode,
+  showInternal: boolean,
   filter: string,
 ): Task[] {
   let filtered = tasks;
 
   // Warm-sandbox prewarming creates empty placeholder tasks; never surface them.
   filtered = filtered.filter((task) => !isContentlessTask(task));
+
+  // Visibility filter — mirrors desktop radio: External hides internal, Internal shows only internal.
+  filtered = filtered.filter((task) =>
+    showInternal ? task.internal === true : task.internal !== true,
+  );
 
   if (filter) {
     const lowerFilter = filter.toLowerCase();

@@ -2,7 +2,8 @@ import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
-import { useSidebarTasks } from "@posthog/ui/features/sidebar/useSidebarTasks";
+import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
+import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import {
   navigateToAgents,
   navigateToCommandCenter,
@@ -98,7 +99,12 @@ export function SidebarNavSection({
   // count — keeps the standalone (Channels) render self-contained without
   // opening a redundant subscription when composed inside SidebarMenu.
   const needsOwnCount = providedActiveCount === undefined;
-  const { tasks: allTasks } = useSidebarTasks({ enabled: needsOwnCount });
+  const showAllUsers = useSidebarStore((s) => s.showAllUsers);
+  const showInternal = useSidebarStore((s) => s.showInternal);
+  const { data: allTasks = [] } = useTasks(
+    { showAllUsers, showInternal },
+    { enabled: needsOwnCount },
+  );
   const commandCenterCells = useCommandCenterStore((s) => s.cells);
   const ownActiveCount = (() => {
     const taskIds = new Set(allTasks.map((t) => t.id));
