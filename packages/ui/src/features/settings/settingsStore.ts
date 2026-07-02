@@ -469,6 +469,12 @@ export const useSettingsStore = create<SettingsStore>()(
         if ((merged.autoConvertLongText as string) === "500") {
           (merged as Record<string, unknown>).autoConvertLongText = "1000";
         }
+        if (
+          merged.completionSound === "random-custom" &&
+          (!merged.customSounds || merged.customSounds.length === 0)
+        ) {
+          (merged as Record<string, unknown>).completionSound = "none";
+        }
         return merged;
       },
     },
