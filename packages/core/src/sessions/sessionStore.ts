@@ -7,16 +7,35 @@ import type {
   QueuedMessage,
   TaskRunStatus,
 } from "@posthog/shared";
-import { setAutoFreeze } from "immer";
-import { immer } from "zustand/middleware/immer";
-import { createStore } from "zustand/vanilla";
+import { Immer } from "immer";
+import type { immer as immerMiddleware } from "zustand/middleware/immer";
+import { createStore, type StateCreator } from "zustand/vanilla";
 
 // immer autofreeze deep-walks produced state on every commit. For the
 // append-only `events` array that re-walks the whole (growing) array on every
-// streamed event — O(n) per append, O(n²) per turn. Autofreeze is a dev-time
-// mutation guard with no runtime value, so disable it; events are frozen
-// individually at the append/creation seam instead, which is O(1) each.
-setAutoFreeze(false);
+// streamed event — O(n) per append, O(n²) per turn. A scoped Immer instance
+// disables it for this store only (setAutoFreeze would leak into every other
+// immer store in the process); events are frozen individually at the
+// append/creation seam instead, which is O(1) each.
+const sessionImmer = new Immer({ autoFreeze: false });
+
+// zustand's immer middleware inlined with the scoped instance; same shape and
+// cast as upstream, which also ships its impl loosely typed.
+const immerImpl = <T>(
+  initializer: StateCreator<T, [], []>,
+): StateCreator<T, [], []> => {
+  return (set, get, store) => {
+    store.setState = (updater, replace, ...args) => {
+      const nextState =
+        typeof updater === "function"
+          ? sessionImmer.produce(updater as never)
+          : updater;
+      return set(nextState as T, replace as never, ...args);
+    };
+    return initializer(store.setState, get, store);
+  };
+};
+const immer = immerImpl as unknown as typeof immerMiddleware;
 
 export interface SessionState {
   /** Sessions indexed by taskRunId */
@@ -300,7 +319,7 @@ export const sessionStoreSetters = {
     sessionStore.setState((state) => {
       const session = state.sessions[taskRunId];
       if (session) {
-        session.events.push(event);
+        session.events.push(Object.freeze(event));
         session.optimisticItems = [];
       }
     });

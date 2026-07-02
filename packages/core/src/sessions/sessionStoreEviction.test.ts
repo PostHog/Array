@@ -51,6 +51,18 @@ describe("evictEvents / restoreEvents", () => {
     expect(Object.isFrozen(s.events[0])).toBe(true);
   });
 
+  it("appendEvents and replaceOptimisticWithEvent freeze each stored event", () => {
+    seedWithEvents();
+    sessionStoreSetters.replaceOptimisticWithEvent(RUN, {
+      ts: 2,
+      message: {},
+    } as unknown as AcpMessage);
+
+    const s = sessionStore.getState().sessions[RUN];
+    expect(s.events).toHaveLength(2);
+    expect(s.events.every((event) => Object.isFrozen(event))).toBe(true);
+  });
+
   it("evictEvents is a no-op on an already-empty session", () => {
     sessionStoreSetters.setSession({
       taskRunId: RUN,
