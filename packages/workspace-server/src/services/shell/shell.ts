@@ -67,6 +67,12 @@ function buildShellEnv(
 ): Record<string, string> {
   const env = { ...process.env } as Record<string, string>;
 
+  // The workspace-server runs with ELECTRON_RUN_AS_NODE=1, but user-facing
+  // terminals must not inherit it: it makes any Electron-based CLI the user
+  // launches run as node instead of its app. The PATH node shim no longer
+  // needs the ambient var (it is self-contained).
+  delete env.ELECTRON_RUN_AS_NODE;
+
   if (platform() === "darwin" && !process.env.LC_ALL) {
     const locale = process.env.LC_CTYPE || "en_US.UTF-8";
     Object.assign(env, {
