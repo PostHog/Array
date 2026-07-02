@@ -27,8 +27,6 @@ If an MCP tool call returns an error, treat it as a normal tool error — troubl
 `;
 
 // Always-on minimalism, adapted from Ponytail (https://github.com/DietrichGebert/ponytail, MIT).
-// This is the deterministic baseline; the bundled \`ponytail\` skill carries the
-// fuller ruleset and loads on demand.
 const MINIMAL_CODE = `
 # Writing Minimal Code
 
