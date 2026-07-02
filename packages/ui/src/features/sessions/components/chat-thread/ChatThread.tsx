@@ -489,7 +489,7 @@ const ThreadRow = memo(function ThreadRow({
       style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
       {item.type === "tool_group" ? (
-        <div className="group">
+        <div className="group flex flex-col gap-2">
           <ToolGroup tools={item.tools} />
           <RowTimestamp
             timestamp={
@@ -647,7 +647,7 @@ export function ChatThread({
           );
           if (update.sessionUpdate === "tool_call") {
             return (
-              <div className="group">
+              <div className="group flex flex-col gap-2">
                 {rendered}
                 <RowTimestamp
                   timestamp={isToolActive(item) ? undefined : item.timestamp}
