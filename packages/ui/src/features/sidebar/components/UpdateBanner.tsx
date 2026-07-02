@@ -1,4 +1,6 @@
-import { ArrowsClockwise, Gift, Spinner } from "@phosphor-icons/react";
+import { ArrowsClockwise, Gift, Spinner, X } from "@phosphor-icons/react";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import { useUpdateBannerStore } from "@posthog/ui/features/updates/updateBannerStore";
 import { useUpdateModalStore } from "@posthog/ui/features/updates/updateModalStore";
 import {
   useInstallUpdate,
@@ -16,9 +18,20 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
     useUpdateView();
   const installUpdate = useInstallUpdate();
   const openModal = useUpdateModalStore((state) => state.open);
+  const canDismiss = useSettingsStore(
+    (state) => state.dismissibleUpdateBanners,
+  );
+  const dismissedVersion = useUpdateBannerStore(
+    (state) => state.dismissedVersion,
+  );
+  const dismissBanner = useUpdateBannerStore((state) => state.dismiss);
+
+  const dismissKey = version ?? availableVersion ?? "unknown";
+  const isDismissed = canDismiss && dismissedVersion === dismissKey;
 
   const isVisible =
     isEnabled &&
+    !isDismissed &&
     (status === "available" ||
       status === "downloading" ||
       status === "ready" ||
@@ -37,14 +50,19 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
             transition={{ duration: 0.2, ease: "easeOut" }}
           >
             {status === "available" && (
-              <button
-                type="button"
-                className="flex items-center gap-1.5 rounded-2 border border-(--green-a5) bg-(--green-a3) px-2.5 py-1 font-medium text-(--green-11) text-[13px] transition-colors hover:bg-(--green-a4)"
-                onClick={openModal}
-              >
-                <Gift size={14} weight="duotone" />
-                <span>Update available</span>
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 rounded-2 border border-(--green-a5) bg-(--green-a3) px-2.5 py-1 font-medium text-(--green-11) text-[13px] transition-colors hover:bg-(--green-a4)"
+                  onClick={openModal}
+                >
+                  <Gift size={14} weight="duotone" />
+                  <span>Update available</span>
+                </button>
+                {canDismiss && (
+                  <DismissButton onClick={() => dismissBanner(dismissKey)} />
+                )}
+              </div>
             )}
 
             {status === "downloading" && (
@@ -59,16 +77,21 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
             )}
 
             {status === "ready" && (
-              <button
-                type="button"
-                className="flex items-center gap-1.5 rounded-2 border border-(--green-a5) bg-(--green-a3) px-2.5 py-1 font-medium text-(--green-11) text-[13px] transition-colors hover:bg-(--green-a4)"
-                onClick={() => void installUpdate()}
-              >
-                <Gift size={14} weight="duotone" />
-                <span>
-                  {version ? `${version} ready` : "Update ready"} — Restart
-                </span>
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 rounded-2 border border-(--green-a5) bg-(--green-a3) px-2.5 py-1 font-medium text-(--green-11) text-[13px] transition-colors hover:bg-(--green-a4)"
+                  onClick={() => void installUpdate()}
+                >
+                  <Gift size={14} weight="duotone" />
+                  <span>
+                    {version ? `${version} ready` : "Update ready"} — Restart
+                  </span>
+                </button>
+                {canDismiss && (
+                  <DismissButton onClick={() => dismissBanner(dismissKey)} />
+                )}
+              </div>
             )}
 
             {status === "installing" && (
@@ -119,6 +142,9 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
                   >
                     View
                   </button>
+                  {canDismiss && (
+                    <DismissButton onClick={() => dismissBanner(dismissKey)} />
+                  )}
                 </div>
               </BannerCard>
             )}
@@ -180,6 +206,9 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
                   >
                     Restart
                   </button>
+                  {canDismiss && (
+                    <DismissButton onClick={() => dismissBanner(dismissKey)} />
+                  )}
                 </div>
               </BannerCard>
             )}
@@ -199,6 +228,20 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+function DismissButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Dismiss update banner"
+      title="Dismiss"
+      className="shrink-0 rounded-2 p-1 text-(--green-a11) transition-colors hover:bg-(--green-a4) hover:text-(--green-11)"
+      onClick={onClick}
+    >
+      <X size={12} weight="bold" />
+    </button>
   );
 }
 
