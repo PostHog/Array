@@ -573,8 +573,15 @@ class TerminalManagerImpl {
 
   destroyForTask(taskId: string): void {
     for (const [sessionId, instance] of this.instances) {
+      // Action terminals embed the taskId mid-key (`action-setup-<taskId>-…`),
+      // so the tagged taskId is authoritative; the key match covers instances
+      // created without one.
       const key = instance.persistenceKey;
-      if (key === taskId || key.startsWith(`${taskId}-`)) {
+      if (
+        instance.taskId === taskId ||
+        key === taskId ||
+        key.startsWith(`${taskId}-`)
+      ) {
         this.destroy(sessionId);
       }
     }

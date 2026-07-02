@@ -212,7 +212,9 @@ describe("TerminalManager.destroyForTask", () => {
     });
     terminalManager.create({
       sessionId: "sess-b",
-      persistenceKey: "task-1-action",
+      // Production action-terminal key shape: the taskId sits mid-key, so
+      // only the tagged instance.taskId can match it.
+      persistenceKey: "action-setup-task-1-1700000000000-0",
       taskId: "task-1",
     });
     terminalManager.create({
@@ -227,6 +229,21 @@ describe("TerminalManager.destroyForTask", () => {
     expect(mocks.terminalInstances[0].dispose).toHaveBeenCalled();
     expect(mocks.terminalInstances[1].dispose).toHaveBeenCalled();
     expect(mocks.terminalInstances[2].dispose).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the persistence key when an instance has no taskId", () => {
+    terminalManager.create({
+      sessionId: "sess-d",
+      persistenceKey: "task-3-shell",
+    });
+    terminalManager.create({
+      sessionId: "sess-e",
+      persistenceKey: "task-30-shell",
+    });
+
+    terminalManager.destroyForTask("task-3");
+
+    expect(terminalManager.getSessionsByPrefix("sess-")).toEqual(["sess-e"]);
   });
 
   it("removes the parked terminal element from the DOM on destroy", () => {
