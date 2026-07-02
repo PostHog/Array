@@ -1,11 +1,4 @@
-import {
-  CaretDown,
-  ChatCircle,
-  Check,
-  Copy,
-  FileText,
-  Scroll,
-} from "@phosphor-icons/react";
+import { CaretDown, ChatCircle, FileText, Scroll } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
 import {
@@ -37,7 +30,6 @@ import { ChatMarkdown } from "@posthog/ui/features/sessions/components/chat-thre
 import { ChatThreadFooter } from "@posthog/ui/features/sessions/components/chat-thread/ChatThreadFooter";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
 import {
-  isToolActive,
   ToolGroup,
   type ToolGroupItem,
 } from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
@@ -213,57 +205,28 @@ function formatTimestamp(ts: number): string {
   });
 }
 
-/** Small ghost icon button that copies `text` to the clipboard, flipping to a check for ~1.2s. */
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const onCopy = useCallback(() => {
-    void navigator.clipboard.writeText(text);
-    setCopied(true);
-  }, [text]);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 1200);
-    return () => clearTimeout(timer);
-  }, [copied]);
-  return (
-    <Button
-      type="button"
-      variant="link-muted"
-      size="icon-xs"
-      onClick={onCopy}
-      aria-label="Copy message"
-      title="Copy message"
-    >
-      {copied ? <Check size={12} /> : <Copy size={12} />}
-    </Button>
-  );
-}
-
 /**
- * Send-time footer revealed on hover. Sits inside a `group` container (a `ChatMessage` for prose, a
- * wrapper div for tool rows) so it fades in only while that row is hovered. When `copyText` is
- * given, a small copy button sits beside the timestamp.
+ * Hover-revealed timestamp rendered left-aligned under agent-side content (the end-aligned user
+ * bubble keeps its own right-aligned footer). Sits inside a `group` container so it fades in only
+ * while that container is hovered. Shown once per completed agent turn (under the turn card)
+ * rather than on every message — per-row it was too noisy.
  */
-function RowTimestamp({
-  timestamp,
-  copyText,
-}: {
-  timestamp?: number;
-  copyText?: string;
-}) {
-  if (timestamp == null && !copyText) return null;
+function RowTimestamp({ timestamp }: { timestamp?: number }) {
+  if (timestamp == null) return null;
   return (
-    <ChatMessageFooter className="items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-      {timestamp != null && formatTimestamp(timestamp)}
-      {copyText && <CopyButton text={copyText} />}
+    <ChatMessageFooter className="mt-2 items-center justify-end gap-1 pl-0 opacity-0 transition-opacity group-hover:opacity-100">
+      <span className="text-muted-foreground">
+        {formatTimestamp(timestamp)}
+      </span>
     </ChatMessageFooter>
   );
 }
 
 /**
- * End-aligned user bubble. The text is clamped to two lines (`max-height: 2lh` + `overflow-hidden`,
+ * End-aligned user bubble. The text is clamped to five lines (`max-height: 5lh` + `overflow-hidden`,
  * which — unlike `-webkit-line-clamp` — reliably clamps markdown's block `<p>` children); a "Show
- * more" toggle appears only when the content actually exceeds the clamp. Overflow can't be known
+ * more" toggle appears only when the content actually exceeds the clamp, so short messages never
+ * grow a toggle. Overflow can't be known
  * from character count (it depends on wrapping width), so we measure `scrollHeight` against the
  * clamped `clientHeight` — which holds even while clamped — and re-measure on resize.
  *
@@ -385,7 +348,7 @@ function UserBubble({
               ref={textRef}
               className={cn(
                 "[&_p]:my-0",
-                !isExpanded && "max-h-[2lh] overflow-hidden",
+                !isExpanded && "max-h-[5lh] overflow-hidden",
                 // Fade the clamped text out at the bottom so it reads as "continues below". Only
                 // when actually overflowing — a short collapsed message shouldn't fade. The mask is
                 // paint-only, so it doesn't affect the overflow measurement above.
@@ -558,16 +521,7 @@ function ThreadItemBody({
   renderItem: (item: ConversationItem) => ReactNode;
 }) {
   if (item.type === "tool_group") {
-    return (
-      <div className="group flex flex-col gap-1">
-        <ToolGroup tools={item.tools} />
-        <RowTimestamp
-          timestamp={
-            item.tools.some(isToolActive) ? undefined : item.tools[0]?.timestamp
-          }
-        />
-      </div>
-    );
+    return <ToolGroup tools={item.tools} />;
   }
   if (item.type === "user_message") {
     return (
@@ -579,6 +533,21 @@ function ThreadItemBody({
     );
   }
   return <>{renderItem(item)}</>;
+}
+
+/**
+ * Completion time of an agent turn, taken from its last session-update item (tool groups count by
+ * their last tool). Undefined while the turn is still streaming — the timestamp only appears once
+ * the whole turn is done.
+ */
+function completedTurnTimestamp(turn: AgentTurn): number | undefined {
+  for (let i = turn.items.length - 1; i >= 0; i--) {
+    const item = turn.items[i];
+    const last = item.type === "tool_group" ? item.tools.at(-1) : item;
+    if (last?.type !== "session_update") continue;
+    return last.turnContext.turnComplete ? last.timestamp : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -600,14 +569,15 @@ const ThreadRow = memo(function ThreadRow({
       <ChatMessageScrollerItem
         messageId={item.id}
         scrollAnchor={false}
-        className="mx-auto w-full px-2.5 empty:hidden"
+        className="group mx-auto w-full px-2.5 empty:hidden"
         style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
       >
-        <div className="flex flex-col gap-0.5 rounded-lg bg-muted/30 p-2 empty:hidden">
+        <div className="flex flex-col gap-4 empty:hidden">
           {item.items.map((sub) => (
             <ThreadItemBody key={sub.id} item={sub} renderItem={renderItem} />
           ))}
         </div>
+        <RowTimestamp timestamp={completedTurnTimestamp(item)} />
       </ChatMessageScrollerItem>
     );
   }
@@ -718,7 +688,7 @@ function ThreadScrollBody({
       <ThreadAutoFollow items={items} />
       <ChatMessageScrollerViewport>
         <ChatMessageScrollerContent
-          className="gap-1 py-4 pb-8"
+          className="gap-4 py-4 pb-8"
           density="default"
         >
           {keyedRows.map(({ item, key }) => (
@@ -811,19 +781,13 @@ export function ChatThread({
             update.content.type === "text"
           ) {
             return (
-              <ChatMessage align="start" className="group">
+              <ChatMessage align="start">
                 <ChatMessageContent className="gap-1">
                   <ChatBubble variant="ghost">
                     <ChatBubbleContent>
                       <ChatMarkdown content={update.content.text} />
                     </ChatBubbleContent>
                   </ChatBubble>
-                  <RowTimestamp
-                    timestamp={
-                      item.turnContext.turnComplete ? item.timestamp : undefined
-                    }
-                    copyText={update.content.text}
-                  />
                 </ChatMessageContent>
               </ChatMessage>
             );
@@ -838,16 +802,6 @@ export function ChatThread({
               thoughtComplete={item.thoughtComplete}
             />
           );
-          if (update.sessionUpdate === "tool_call") {
-            return (
-              <div className="group flex flex-col gap-1">
-                {rendered}
-                <RowTimestamp
-                  timestamp={isToolActive(item) ? undefined : item.timestamp}
-                />
-              </div>
-            );
-          }
           return rendered;
         }
         case "git_action_result":

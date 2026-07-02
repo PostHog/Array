@@ -63,13 +63,13 @@ export function ExecuteToolView({
       {headerText && <ToolTitle>{headerText}</ToolTitle>}
       {command &&
         (chatChrome ? (
-          <ToolTitle className="min-w-0 truncate font-mono">
+          <ToolTitle className="min-w-0 shrink truncate font-mono">
             <span className="block truncate" title={command}>
               {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
             </span>
           </ToolTitle>
         ) : (
-          <ToolTitle className="min-w-0 truncate">
+          <ToolTitle className="min-w-0 shrink truncate">
             <span
               className="block truncate border border-border bg-gray-5 font-mono"
               title={command}
