@@ -47,6 +47,11 @@ function renderBanner(variant?: "sidebar" | "compact") {
   );
 }
 
+const VARIANTS = [
+  { variant: "sidebar", readyText: "1.2.3 ready" },
+  { variant: "compact", readyText: "1.2.3 ready — Restart" },
+] as const;
+
 function dismissButton() {
   return screen.queryByLabelText("Dismiss update banner");
 }
@@ -69,23 +74,29 @@ describe("UpdateBanner", () => {
     useSettingsStore.setState({ dismissibleUpdateBanners: false });
   });
 
-  it("shows no dismiss button when the setting is off", () => {
-    renderBanner();
+  it.each(VARIANTS)(
+    "shows no dismiss button in the $variant variant when the setting is off",
+    ({ variant, readyText }) => {
+      renderBanner(variant);
 
-    expect(screen.getByText("1.2.3 ready")).toBeInTheDocument();
-    expect(dismissButton()).toBeNull();
-  });
+      expect(screen.getByText(readyText)).toBeInTheDocument();
+      expect(dismissButton()).toBeNull();
+    },
+  );
 
-  it("dismisses the banner when the setting is on", async () => {
-    useSettingsStore.setState({ dismissibleUpdateBanners: true });
-    renderBanner();
+  it.each(VARIANTS)(
+    "dismisses the $variant variant when the setting is on",
+    async ({ variant, readyText }) => {
+      useSettingsStore.setState({ dismissibleUpdateBanners: true });
+      renderBanner(variant);
 
-    const dismiss = dismissButton();
-    expect(dismiss).not.toBeNull();
-    fireEvent.click(dismiss as HTMLElement);
+      const dismiss = dismissButton();
+      expect(dismiss).not.toBeNull();
+      fireEvent.click(dismiss as HTMLElement);
 
-    await expectBannerRemoved("1.2.3 ready");
-  });
+      await expectBannerRemoved(readyText);
+    },
+  );
 
   it("keeps a dismissed version hidden across the update cycle", async () => {
     useSettingsStore.setState({ dismissibleUpdateBanners: true });
@@ -129,15 +140,5 @@ describe("UpdateBanner", () => {
       useSettingsStore.setState({ dismissibleUpdateBanners: false });
     });
     expect(screen.getByText("1.2.3 ready")).toBeInTheDocument();
-  });
-
-  it("dismisses the compact variant too", async () => {
-    useSettingsStore.setState({ dismissibleUpdateBanners: true });
-    renderBanner("compact");
-
-    expect(screen.getByText("1.2.3 ready — Restart")).toBeInTheDocument();
-    fireEvent.click(dismissButton() as HTMLElement);
-
-    await expectBannerRemoved("1.2.3 ready — Restart");
   });
 });
