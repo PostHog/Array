@@ -23,13 +23,13 @@ const IGNORE_PATTERNS = ["**/node_modules/**", "**/.git/**", "**/.jj/**"];
 // noise; shared refs (`refs/heads`, `packed-refs`) live outside `worktrees/`
 // and are still observed.
 const GIT_IGNORE_PATTERNS = ["**/worktrees/**"];
-const DEBOUNCE_MS = 500;
+export const DEBOUNCE_MS = 500;
 // Upper bound on how long working-tree events may be coalesced. The trailing
 // debounce resets on every event, so an agent writing continuously would other-
 // wise never trip it until it paused, freezing the diff panel/stats mid-run.
 // The max-wait forces a flush at least this often during sustained activity so
 // the UI keeps advancing while the agent works.
-const MAX_WAIT_MS = 1000;
+export const MAX_WAIT_MS = 1000;
 const BULK_THRESHOLD = 100;
 
 const dirname = (p: string): string => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FileWatcherEvent, WatcherEvent } from "./schemas";
-import { WatcherService } from "./service";
+import { DEBOUNCE_MS, MAX_WAIT_MS, WatcherService } from "./service";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -81,10 +81,6 @@ describe("WatcherService.watchRepo ignore patterns", () => {
     expect(gitDirCalls[0]?.ignore).toEqual(["**/worktrees/**"]);
   });
 });
-
-// Mirrors DEBOUNCE_MS / MAX_WAIT_MS in service.ts.
-const DEBOUNCE_MS = 500;
-const MAX_WAIT_MS = 1000;
 
 interface ManualGen {
   gen: AsyncGenerator<WatcherEvent[]>;
@@ -192,19 +188,23 @@ describe("WatcherService.watchRepo debounce", () => {
     const { events, done } = drainEvents(startWatch(wt));
     await vi.advanceTimersByTimeAsync(0);
 
-    // Push faster than the trailing debounce (every 300ms < 500ms) so the
-    // quiet-period timer keeps resetting and would not fire on its own until
-    // 1400ms (300*3 + 500).
-    for (let i = 0; i < 3; i++) {
-      wt.push([{ type: "update", path: `/repo/f${i}.ts` }]);
-      await vi.advanceTimersByTimeAsync(300);
+    // Push faster than the trailing debounce so its quiet-period timer keeps
+    // resetting and can never fire on its own; only the max-wait can flush.
+    const step = DEBOUNCE_MS - 100;
+    let elapsed = 0;
+    while (elapsed + step < MAX_WAIT_MS) {
+      wt.push([{ type: "update", path: `/repo/f${elapsed}.ts` }]);
+      await vi.advanceTimersByTimeAsync(step);
+      elapsed += step;
     }
+    // Continuously active for longer than the debounce window but not yet the
+    // max-wait: the trailing debounce alone would not have emitted anything.
+    expect(elapsed).toBeGreaterThan(DEBOUNCE_MS);
     expect(events).toHaveLength(0);
 
-    // The first event landed at ~0ms, so the max-wait forces a flush at
-    // MAX_WAIT_MS even though the trailing debounce is still pending.
-    wt.push([{ type: "update", path: "/repo/f3.ts" }]);
-    await vi.advanceTimersByTimeAsync(MAX_WAIT_MS - 900 + 1);
+    // Crossing MAX_WAIT_MS forces a flush despite the ongoing activity.
+    wt.push([{ type: "update", path: "/repo/final.ts" }]);
+    await vi.advanceTimersByTimeAsync(MAX_WAIT_MS - elapsed + 1);
     expect(workingTreeChanges(events)).toEqual([
       { kind: "working-tree-changed", repoPath: "/repo" },
     ]);
