@@ -87,10 +87,7 @@ function createHandlerContext() {
     toolUseStreamCache: new Map(),
     fileContentCache: {},
     logger: new Logger({ debug: false }),
-    streamedAssistantBlocks: {
-      textIds: new Set(),
-      thinkingIds: new Set(),
-    },
+    streamedAssistantBlocks: { blocks: [] },
   };
   return { context, updates, notifications };
 }
@@ -192,7 +189,7 @@ describe("assembled assistant text fallback", () => {
     ]);
   });
 
-  it("tracks streamed ids per message so a later message still falls back", async () => {
+  it("tracks streamed content per message so a later message still falls back", async () => {
     const { context, updates } = createHandlerContext();
     await streamLiveText(context, "msg_1", "streamed");
     updates.length = 0;
@@ -203,6 +200,77 @@ describe("assembled assistant text fallback", () => {
     expect(chunkTexts(updates, "agent_message_chunk")).toEqual([
       "not streamed",
     ]);
+  });
+
+  it("forwards only the un-streamed tail when the stream was cut short", async () => {
+    const { context, updates } = createHandlerContext();
+    await streamLiveText(context, "msg_1", "hello wor");
+    updates.length = 0;
+    await handleUserAssistantMessage(
+      assistantMessage("msg_1", [{ type: "text", text: "hello world" }]),
+      context,
+    );
+    expect(chunkTexts(updates, "agent_message_chunk")).toEqual(["ld"]);
+  });
+
+  it("dedupes by content when the consolidated message id differs from the stream", async () => {
+    const { context, updates } = createHandlerContext();
+    await streamLiveText(context, "msg_gateway_1", "same text");
+    updates.length = 0;
+    await handleUserAssistantMessage(
+      assistantMessage("msg_other_id", [{ type: "text", text: "same text" }]),
+      context,
+    );
+    expect(chunkTexts(updates, "agent_message_chunk")).toEqual([]);
+  });
+
+  it("clears streamed residue when a new top-level message starts", async () => {
+    const { context, updates } = createHandlerContext();
+    await streamLiveText(context, "msg_1", "cancelled turn text");
+    // A new message starts before msg_1's consolidated message ever arrived.
+    await streamLiveText(context, "msg_2", "cancelled");
+    updates.length = 0;
+    await handleUserAssistantMessage(
+      assistantMessage("msg_2", [{ type: "text", text: "cancelled turn" }]),
+      context,
+    );
+    // Only msg_2's own streamed prefix is consumed; msg_1's residue must not
+    // swallow (or truncate) msg_2's assembled block.
+    expect(chunkTexts(updates, "agent_message_chunk")).toEqual([" turn"]);
+  });
+
+  it("ignores empty streamed deltas so they cannot stall the diff cursor", async () => {
+    const { context, updates } = createHandlerContext();
+    await handleStreamEvent(
+      streamEvent({ type: "message_start", message: { id: "msg_1" } }),
+      context,
+    );
+    await handleStreamEvent(
+      streamEvent({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "thinking_delta", thinking: "" },
+      }),
+      context,
+    );
+    await handleStreamEvent(
+      streamEvent({
+        type: "content_block_delta",
+        index: 1,
+        delta: { type: "text_delta", text: "answer" },
+      }),
+      context,
+    );
+    updates.length = 0;
+    await handleUserAssistantMessage(
+      assistantMessage("msg_1", [
+        { type: "thinking", thinking: "" },
+        { type: "text", text: "answer" },
+      ]),
+      context,
+    );
+    expect(chunkTexts(updates, "agent_message_chunk")).toEqual([]);
+    expect(chunkTexts(updates, "agent_thought_chunk")).toEqual([]);
   });
 
   it("drops empty assembled blocks", async () => {

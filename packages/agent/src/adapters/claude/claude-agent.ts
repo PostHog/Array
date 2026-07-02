@@ -32,6 +32,8 @@ import {
 } from "@agentclientprotocol/sdk";
 import {
   type CanUseTool,
+  type FastModeState,
+  getSessionInfo,
   getSessionMessages,
   listSessions,
   type McpSdkServerConfigWithInstance,
@@ -113,10 +115,12 @@ import {
 import {
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
+  fastModeStateEnabled,
   getEffortOptions,
   resolveEffortForModel,
   resolveModelPreference,
   supports1MContext,
+  supportsFastMode,
   supportsMcpInjection,
   toSdkModelId,
 } from "./session/models";
@@ -141,6 +145,7 @@ import type {
   ToolUpdateMeta,
   ToolUseCache,
   ToolUseStreamCache,
+  Turn,
 } from "./types";
 
 const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
@@ -150,6 +155,12 @@ const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
 const MCP_STATUS_TIMEOUT_MS = 5_000;
 
 const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
+
+/** Returned when a prompt or cancel targets a session whose SDK query stream
+ *  has already ended (ran to `done` or died). The stream is not revivable, so
+ *  the only recovery is a fresh session. */
+const SESSION_ENDED_MESSAGE =
+  "The Claude Agent session has ended. Please start a new session.";
 
 const MAX_TITLE_LENGTH = 256;
 const LOCAL_ONLY_COMMANDS = new Set(["/context", "/heapdump", "/extra-usage"]);
@@ -246,6 +257,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   readonly adapterName = "claude";
   declare session: Session;
   toolUseCache: ToolUseCache;
+  /** Tool_use ids already surfaced to the client as a `tool_call`, so the
+   *  second source to encounter one (permission request vs streamed tool_use —
+   *  the SDK can invoke `canUseTool` before or after the block streams) sends a
+   *  `tool_call_update` instead of a duplicate `tool_call`. Pruned at
+   *  `tool_result` time alongside `toolUseCache`. */
+  emittedToolCalls: Set<string>;
   toolUseStreamCache: ToolUseStreamCache;
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
@@ -258,6 +275,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     super(client);
     this.options = options;
     this.toolUseCache = {};
+    this.emittedToolCalls = new Set();
     this.toolUseStreamCache = new Map();
     this.logger = new Logger({ debug: true, prefix: "[ClaudeAcpAgent]" });
     this.enrichment = createEnrichment(options?.posthogApiConfig, this.logger);
@@ -438,7 +456,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const userMessage = promptToClaude(params);
     const promptUuid = randomUUID();
     userMessage.uuid = promptUuid;
-    let promptReplayed = false;
     let isLocalOnlyCommand = false;
 
     // Detect local-only slash commands that return results without model invocation
@@ -457,65 +474,144 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const commandMatch = firstTextPart.match(/^(\/\S+)/);
     if (commandMatch && LOCAL_ONLY_COMMANDS.has(commandMatch[1])) {
       isLocalOnlyCommand = true;
-      promptReplayed = true;
     }
 
     if (commandMatch && !isLocalOnlyCommand) {
       await this.refreshSlashCommandsForPrompt(commandMatch[1]);
     }
 
-    if (this.session.promptRunning) {
-      const isSteer = isSteerMeta(params._meta);
-      if (isSteer) {
-        // Fold this message into the turn already running instead of queueing a
-        // new turn. promptToClaude tagged it priority:"next" so the SDK delivers
-        // it at the next tool-call boundary. Return immediately with a benign
-        // end_turn: the in-flight turn (not this call) owns the loop and the
-        // real stop reason. The client tells steers apart by the request's
-        // _meta.steer, not by this value.
-        this.session.input.push(userMessage);
-        await this.broadcastUserMessage(params);
-        return { stopReason: "end_turn" };
-      }
-      this.session.input.push(userMessage);
-      const order = this.session.nextPendingOrder++;
-      const cancelled = await new Promise<boolean>((resolve) => {
-        this.session.pendingMessages.set(promptUuid, { resolve, order });
-      });
-      if (cancelled) {
-        return { stopReason: "cancelled" };
-      }
-      promptReplayed = true;
-    } else {
-      // Reconnect the signed-commit server before the turn (guard hook backstops).
-      if (!isLocalOnlyCommand) {
-        await this.ensureLocalToolsConnected("pre-prompt");
-      }
-      this.session.input.push(userMessage);
+    // The SDK query stream already terminated (see `queryClosed`); its
+    // iterator can't be revived, so enqueueing here would hang on a deferred
+    // that never settles. Fail clearly and let the client start fresh.
+    if (this.session.queryClosed) {
+      throw RequestError.internalError(undefined, SESSION_ENDED_MESSAGE);
     }
 
-    // Reset session state here (after the queued-wait) rather than at the
-    // top of prompt(). Otherwise a new prompt() call would wipe cancelled=true
-    // on the previous still-running loop, causing it to return end_turn
-    // instead of the cancelled stop reason the spec requires.
-    this.session.cancelled = false;
-    this.session.interruptReason = undefined;
-    this.session.accumulatedUsage = {
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedReadTokens: 0,
-      cachedWriteTokens: 0,
+    const hasInFlightTurns =
+      this.session.activeTurn !== null || this.session.turnQueue.length > 0;
+
+    if (hasInFlightTurns && isSteerMeta(params._meta)) {
+      // Fold this message into the turn already running instead of queueing a
+      // new turn. promptToClaude tagged it priority:"next" so the SDK delivers
+      // it at the next tool-call boundary. Return immediately with a benign
+      // end_turn: the in-flight turn (not this call) owns the real stop
+      // reason. The client tells steers apart by the request's _meta.steer,
+      // not by this value.
+      this.session.input.push(userMessage);
+      await this.broadcastUserMessage(params);
+      return { stopReason: "end_turn" };
+    }
+
+    if (!hasInFlightTurns && !isLocalOnlyCommand) {
+      // Reconnect the signed-commit server before the turn (guard hook backstops).
+      await this.ensureLocalToolsConnected("pre-prompt");
+    }
+
+    if (this.session.lastContextWindowSize == null) {
+      this.session.lastContextWindowSize = this.getContextWindowForModel(
+        this.session.modelId ?? "",
+      );
+      this.logger.debug("Initial context window size from gateway", {
+        modelId: this.session.modelId,
+        contextWindowSize: this.session.lastContextWindowSize,
+      });
+    }
+
+    // Each prompt is a Turn whose deferred the persistent consumer settles
+    // once the turn's outcome is known. `prompt()` owns no loop: it enqueues
+    // the turn, pushes the user message onto the streaming input, makes sure
+    // the consumer is running, and awaits the deferred.
+    const turn: Turn = {
+      promptUuid,
+      isLocalOnlyCommand,
+      commandName: commandMatch?.[1],
+      broadcast: () => this.broadcastUserMessage(params),
+      settled: false,
+      resolve: () => {},
+      reject: () => {},
     };
-    // sessionResources is intentionally NOT reset here — the products list
-    // accumulates across the whole session and is deduped, not per-turn.
+    const response = new Promise<PromptResponse>((resolve, reject) => {
+      turn.resolve = resolve;
+      turn.reject = reject;
+    });
 
-    await this.broadcastUserMessage(params);
+    this.session.turnQueue.push(turn);
+    this.session.input.push(userMessage);
+    this.ensureConsumer(params.sessionId);
+    return response;
+  }
 
-    this.session.promptRunning = true;
-    const cancelController = new AbortController();
-    this.session.cancelController = cancelController;
-    let handedOff = false;
-    let errored = false;
+  /** Lazily start the per-session consumer that drains the SDK query stream
+   *  for the session's whole life. Idempotent: only the first `prompt()`
+   *  starts it (and refreshSession clears the handle so the next prompt
+   *  starts a fresh consumer on the new query). */
+  private ensureConsumer(sessionId: string): void {
+    const session = this.session;
+    if (session.consumer) {
+      return;
+    }
+    // Wake-up channel so cancel() can force the consumer to settle the active
+    // turn "cancelled" even when query.next() is wedged and never yields
+    // again. The consumer re-arms it after each fire.
+    session.cancelController = new AbortController();
+    session.consumer = this.runConsumer(session, sessionId);
+    session.consumer.catch((error) => {
+      this.logger.error("Consumer terminated unexpectedly", {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
+  private cancelledResponse(): PromptResponse {
+    return {
+      stopReason: "cancelled",
+      _meta: this.session.interruptReason
+        ? { interruptReason: this.session.interruptReason }
+        : undefined,
+    };
+  }
+
+  /** Mark the session's query stream as finished and release its resources.
+   *  The iterator can't be revived, so a later prompt() rejects up front with
+   *  SESSION_ENDED_MESSAGE rather than restarting a consumer on the exhausted
+   *  stream. Idempotent. */
+  private closeQueryStream(session: Session): void {
+    session.queryClosed = true;
+    session.consumer = undefined;
+    if (session.forceCancelTimer) {
+      clearTimeout(session.forceCancelTimer);
+      session.forceCancelTimer = undefined;
+    }
+    session.cancelController = undefined;
+    session.settingsManager.dispose();
+    session.input.end();
+    this.toolUseStreamCache.clear();
+  }
+
+  /** The single, long-lived consumer of the SDK query stream for the session.
+   *  It forwards every message as ACP `sessionUpdate`s (so background and
+   *  between-turn output streams live, not just while a prompt is awaiting)
+   *  and settles each Turn's deferred when that turn ends. Replaces the
+   *  per-prompt message loop. */
+  private async runConsumer(
+    session: Session,
+    sessionId: string,
+  ): Promise<void> {
+    // The query/generation this consumer serves. refreshSession swaps the
+    // session's query and bumps the generation; a consumer that observes the
+    // mismatch exits quietly instead of tearing down the refreshed session.
+    const query = session.query;
+    const generation = session.queryGeneration;
+    const refreshed = () =>
+      this.session !== session ||
+      session.query !== query ||
+      session.queryGeneration !== generation;
+
+    // Per-turn scratch, reset whenever a turn becomes active. Kept as
+    // consumer locals (rather than per-Turn fields) because they describe the
+    // message currently being processed, which is sequential — exactly one
+    // turn is active at a time.
     let lastAssistantTotalUsage: number | null = null;
     let lastRefusalExplanation: string | null = null;
     let lastRefusalCategory: string | null = null;
@@ -532,16 +628,15 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // `compacting` status sets it again, so every distinct compaction (e.g.
     // repeated auto-compactions in a long turn) is still shown.
     let compactionInProgress = false;
-    if (this.session.lastContextWindowSize == null) {
-      this.session.lastContextWindowSize = this.getContextWindowForModel(
-        this.session.modelId ?? "",
-      );
-      this.logger.debug("Initial context window size from gateway", {
-        modelId: this.session.modelId,
-        contextWindowSize: this.session.lastContextWindowSize,
-      });
-    }
-    let lastContextWindowSize = this.session.lastContextWindowSize;
+    // Stop reason accumulated for the active turn. Reset per turn; read when
+    // the turn settles at its terminal result (or at stream end).
+    let stopReason: PromptResponse["stopReason"] = "end_turn";
+
+    // Model switches reset session.lastContextWindowSize, so always read the
+    // live value instead of caching a copy across turns.
+    const windowSize = () =>
+      this.session.lastContextWindowSize ??
+      this.getContextWindowForModel(this.session.modelId ?? "");
 
     const supportsTerminalOutput =
       (
@@ -551,89 +646,277 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       )?.terminal_output === true;
 
     const context = {
-      session: this.session,
-      sessionId: params.sessionId,
+      session,
+      sessionId,
       client: this.client,
       toolUseCache: this.toolUseCache,
+      emittedToolCalls: this.emittedToolCalls,
       toolUseStreamCache: this.toolUseStreamCache,
       fileContentCache: this.fileContentCache,
       enrichedReadCache: this.enrichedReadCache,
       logger: this.logger,
       supportsTerminalOutput,
-      streamedAssistantBlocks: {
-        textIds: new Set<string>(),
-        thinkingIds: new Set<string>(),
-      },
+      // Consumer-lived on purpose: turn activation can fire mid-message, so
+      // the streamed-content record must NOT reset per turn. It is bounded by
+      // being cleared at each top-level message_start and again when the
+      // consolidated assistant message consumes it.
+      streamedAssistantBlocks: { blocks: [] },
     };
+
+    const sessionUsage = (): Usage => {
+      const acc = session.accumulatedUsage;
+      return {
+        inputTokens: acc.inputTokens,
+        outputTokens: acc.outputTokens,
+        cachedReadTokens: acc.cachedReadTokens,
+        cachedWriteTokens: acc.cachedWriteTokens,
+        totalTokens:
+          acc.inputTokens +
+          acc.outputTokens +
+          acc.cachedReadTokens +
+          acc.cachedWriteTokens,
+      };
+    };
+
+    const resetTurnScratch = () => {
+      lastAssistantTotalUsage = null;
+      lastRefusalExplanation = null;
+      lastRefusalCategory = null;
+      lastStreamUsage = {
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      };
+      compactionInProgress = false;
+      stopReason = "end_turn";
+      // sessionResources is intentionally NOT reset — the products list
+      // accumulates across the whole session and is deduped, not per-turn.
+      session.accumulatedUsage = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedReadTokens: 0,
+        cachedWriteTokens: 0,
+      };
+    };
+
+    /** Promote a queued turn to active: it becomes the one output is
+     *  attributed to, and its scratch starts fresh. Clears the cancelled flag
+     *  so a turn enqueued after a prior cancel isn't treated as cancelled.
+     *  Also clears any leftover orphan-skip count: the SDK echoes/runs input
+     *  FIFO, so every orphan from a prior cancel has already arrived by the
+     *  time a live turn activates — a non-zero remainder means the SDK
+     *  dropped a queued turn on interrupt, so the stale count must not skip a
+     *  later echo-less result. */
+    const activateTurn = async (turn: Turn) => {
+      session.activeTurn = turn;
+      session.cancelled = false;
+      session.interruptReason = undefined;
+      session.pendingOrphanResults = 0;
+      resetTurnScratch();
+      try {
+        await turn.broadcast();
+      } catch (error) {
+        this.logger.warn("Failed to broadcast user message", {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    };
+
+    /** Ensure there is an active turn before a user-turn result that carries
+     *  no echo to activate it, by promoting the queue head. Most turns are
+     *  activated by their replayed user message before their result, but
+     *  local-only commands (e.g. `/context`) and compaction produce a result
+     *  with no matching echo. An echo-less result can also be an ORPHAN:
+     *  cancel() settles+removes a queued turn whose user message was already
+     *  pushed, so the SDK still runs it and emits a result with no uuid to
+     *  match. Promoting the head for an orphan would misattribute its stop
+     *  reason/usage to an unrelated later prompt; `pendingOrphanResults`
+     *  counts exactly how many such orphans are still expected (FIFO — they
+     *  arrive before any live turn's result), so those are skipped. */
+    const ensureActiveTurn = async () => {
+      if (session.activeTurn) {
+        return;
+      }
+      const head = session.turnQueue.find((t) => !t.settled);
+      if (!head) {
+        return;
+      }
+      if (session.pendingOrphanResults > 0) {
+        session.pendingOrphanResults--;
+        return;
+      }
+      await activateTurn(head);
+    };
+
+    /** Settle the active turn's deferred exactly once, disarm the
+     *  force-cancel backstop, and drop it from the queue. */
+    const settleActive = (result: PromptResponse) => {
+      const turn = session.activeTurn;
+      if (!turn || turn.settled) {
+        return;
+      }
+      turn.settled = true;
+      if (session.forceCancelTimer) {
+        clearTimeout(session.forceCancelTimer);
+        session.forceCancelTimer = undefined;
+      }
+      session.turnQueue = session.turnQueue.filter((t) => t !== turn);
+      session.activeTurn = null;
+      turn.resolve(result);
+    };
+
+    /** Reject the active turn (auth required, error result, …) without
+     *  tearing down the consumer: the stream continues to idle and later
+     *  turns proceed. */
+    const failActive = (error: unknown) => {
+      if (session.forceCancelTimer) {
+        clearTimeout(session.forceCancelTimer);
+        session.forceCancelTimer = undefined;
+      }
+      const turn = session.activeTurn;
+      if (!turn || turn.settled) {
+        return;
+      }
+      turn.settled = true;
+      session.turnQueue = session.turnQueue.filter((t) => t !== turn);
+      session.activeTurn = null;
+      // A failed turn may leave partial streaming-input buffers behind;
+      // without this they'd collide with the next turn's content-block
+      // indices.
+      this.toolUseStreamCache.clear();
+      turn.reject(error);
+    };
+
+    /** Reject every in-flight turn — used when the stream dies. */
+    const failAllTurns = (error: unknown) => {
+      if (session.forceCancelTimer) {
+        clearTimeout(session.forceCancelTimer);
+        session.forceCancelTimer = undefined;
+      }
+      const turns = session.activeTurn
+        ? [
+            session.activeTurn,
+            ...session.turnQueue.filter((t) => t !== session.activeTurn),
+          ]
+        : [...session.turnQueue];
+      session.activeTurn = null;
+      session.turnQueue = [];
+      this.toolUseStreamCache.clear();
+      for (const turn of turns) {
+        if (!turn.settled) {
+          turn.settled = true;
+          turn.reject(error);
+        }
+      }
+    };
+
+    // The wake-up channel cancel() aborts to force the active turn to settle
+    // "cancelled" even when query.next() is wedged. Re-armed after each fire
+    // so the consumer keeps serving later turns.
+    let cancelController = session.cancelController as AbortController;
 
     try {
       while (true) {
-        const nextMessage = this.session.query.next();
+        const nextMessage = query.next();
         const next = await withAbort(nextMessage, cancelController.signal);
         if (next.result === "aborted" || cancelController.signal.aborted) {
+          // cancel() woke us. Abandon the in-flight next() (swallowing any
+          // later rejection so it can't surface as unhandled) and settle the
+          // active turn "cancelled" per the ACP contract. A cancelled or
+          // wedged turn may leave partial streaming-input buffers behind.
           void nextMessage.catch((err) =>
             this.logger.warn("in-flight query.next() rejected after cancel", {
-              sessionId: params.sessionId,
+              sessionId,
               error: err instanceof Error ? err.message : String(err),
             }),
           );
-          return {
-            stopReason: "cancelled",
-            _meta: this.session.interruptReason
-              ? { interruptReason: this.session.interruptReason }
-              : undefined,
-          };
+          settleActive(this.cancelledResponse());
+          this.toolUseStreamCache.clear();
+          if (refreshed() || session.queryClosed) {
+            return;
+          }
+          cancelController = new AbortController();
+          session.cancelController = cancelController;
+          continue;
         }
         const { value: message, done } = next.value;
 
         if (done || !message) {
-          if (this.session.cancelled) {
-            return {
-              stopReason: "cancelled",
-              _meta: this.session.interruptReason
-                ? { interruptReason: this.session.interruptReason }
-                : undefined,
-            };
+          if (refreshed()) {
+            // refreshSession ended the old input on purpose; the refreshed
+            // session owns fresh resources, so exit without touching them.
+            return;
           }
-          break;
+          // The stream ended. Settle the turn that was in flight so its
+          // prompt() doesn't hang: cancelled if a cancel is pending,
+          // otherwise the accumulated outcome.
+          settleActive(
+            session.cancelled
+              ? this.cancelledResponse()
+              : { stopReason, usage: sessionUsage() },
+          );
+          // Queued turns the SDK never started never ran, so reject them
+          // rather than reporting a success for a prompt that produced no
+          // output.
+          for (const queued of [...session.turnQueue]) {
+            if (!queued.settled) {
+              queued.settled = true;
+              queued.reject(
+                RequestError.internalError(undefined, SESSION_ENDED_MESSAGE),
+              );
+            }
+          }
+          session.turnQueue = [];
+          this.closeQueryStream(session);
+          return;
         }
 
         if (
-          this.session.emitRawSDKMessages &&
-          shouldEmitRawMessage(this.session.emitRawSDKMessages, message)
+          session.emitRawSDKMessages &&
+          shouldEmitRawMessage(session.emitRawSDKMessages, message)
         ) {
           await this.client.extNotification("_claude/sdkMessage", {
-            sessionId: params.sessionId,
+            sessionId,
             message: message as Record<string, unknown>,
           });
         }
 
         switch (message.type) {
           case "system":
+            if (message.subtype === "init") {
+              // A fresh init (e.g. after reinitialize) can carry an updated
+              // Fast mode state; reconcile it with what session creation
+              // seeded.
+              await this.syncFastModeState(message.fast_mode_state);
+            }
             if (message.subtype === "compact_boundary") {
+              // Compaction belongs to the user turn even when the result that
+              // carries it arrives without an echo (manual /compact).
+              await ensureActiveTurn();
               const usedTokens = await withAbort(
-                fetchContextUsedTokens(this.session.query, this.logger),
+                fetchContextUsedTokens(query, this.logger),
                 cancelController.signal,
               );
               lastAssistantTotalUsage =
                 usedTokens.result === "success" ? (usedTokens.value ?? 0) : 0;
-              promptReplayed = true;
               await this.client.sessionUpdate({
-                sessionId: params.sessionId,
+                sessionId,
                 update: {
                   sessionUpdate: "usage_update",
                   used: lastAssistantTotalUsage,
-                  size: lastContextWindowSize,
+                  size: windowSize(),
                 },
               });
             }
             if (message.subtype === "commands_changed") {
-              this.session.knownSlashCommands = collectKnownSlashCommands(
+              session.knownSlashCommands = collectKnownSlashCommands(
                 message.commands,
               );
               const available = getAvailableSlashCommands(message.commands);
               await this.client.sessionUpdate({
-                sessionId: params.sessionId,
+                sessionId,
                 update: {
                   sessionUpdate: "available_commands_update",
                   availableCommands: available,
@@ -646,7 +929,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               break;
             }
             if (message.subtype === "local_command_output") {
-              promptReplayed = true;
+              // A local command produced output, so the head turn is live —
+              // activate it so the unsupported-command gate can't fire and
+              // its result is attributed correctly.
+              await ensureActiveTurn();
             }
             if (message.subtype === "status") {
               // The SDK signals manual `/compact` completion with a status
@@ -665,7 +951,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               ) {
                 compactionInProgress = false;
                 await this.client.sessionUpdate({
-                  sessionId: params.sessionId,
+                  sessionId,
                   update: {
                     sessionUpdate: "agent_message_chunk",
                     content: {
@@ -680,7 +966,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 await this.client.extNotification(
                   POSTHOG_NOTIFICATIONS.STATUS,
                   {
-                    sessionId: params.sessionId,
+                    sessionId,
                     status: "compacting",
                     isComplete: true,
                   },
@@ -698,7 +984,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 await this.client.extNotification(
                   POSTHOG_NOTIFICATIONS.STATUS,
                   {
-                    sessionId: params.sessionId,
+                    sessionId,
                     status: "compacting_failed",
                     error: message.compact_error ?? undefined,
                   },
@@ -710,93 +996,121 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               message.subtype === "session_state_changed" &&
               (message as Record<string, unknown>).state === "idle"
             ) {
-              if (!promptReplayed) {
-                // The SDK consumed a slash command we do not handle locally
-                // and produced no output (e.g. /plugin in a non-interactive
-                // context). Without this branch we would loop forever waiting
-                // for an echo that never comes; surface a clear error instead.
-                //
-                // Only fire for commands the SDK does NOT recognize. Plugin
-                // and skill commands (e.g. /skills-store) produce a fresh
-                // user-message echo with a new uuid that our replay check
-                // can't match, so an early idle here is a race, not a real
-                // "unsupported" — fall through and let the loop continue.
-                const cmdName = commandMatch?.[1].slice(1);
-                const known =
-                  cmdName !== undefined &&
-                  this.session.knownSlashCommands?.has(cmdName) === true;
-                if (commandMatch && !known) {
-                  const cmd = commandMatch[1];
-                  this.logger.warn(
-                    "Slash command produced no output; treating as unsupported",
-                    { sessionId: params.sessionId, command: cmd },
-                  );
-                  await this.client.sessionUpdate({
-                    sessionId: params.sessionId,
-                    update: {
-                      sessionUpdate: "agent_message_chunk",
-                      content: {
-                        type: "text",
-                        text: `Unsupported slash command: \`${cmd}\`. PostHog Code does not implement this command.`,
-                      },
-                    },
-                  });
-                  return { stopReason: "end_turn" };
+              if (session.activeTurn) {
+                // A non-cancelled turn already settled at its terminal
+                // `result`, so a trailing `idle` is just absorbed. Only a
+                // cancelled turn relies on `idle`: its `result` is dropped at
+                // the `session.cancelled` guard, so it never settles at a
+                // result and must settle here.
+                if (session.cancelled) {
+                  settleActive(this.cancelledResponse());
                 }
-                this.logger.debug("Skipping idle state before prompt replay", {
-                  sessionId: params.sessionId,
-                  command: commandMatch?.[1],
-                  known,
-                });
+                // The SDK generates the session title in a background task
+                // and persists it to the session file; `idle` is the
+                // turn-over signal, so a new title may have landed.
+                await this.maybeUpdateSessionTitle(sessionId, session);
                 break;
               }
-
-              const acc = this.session.accumulatedUsage;
-              const totalUsed =
-                acc.inputTokens +
-                acc.outputTokens +
-                acc.cachedReadTokens +
-                acc.cachedWriteTokens;
-
-              await this.client.sessionUpdate({
-                sessionId: params.sessionId,
-                update: {
-                  sessionUpdate: "usage_update",
-                  used: totalUsed,
-                  size: lastContextWindowSize,
-                },
+              // The SDK generates the session title in a background task; a
+              // turn that settled at its result reaches idle with no active
+              // turn, which is still the point a new title may have landed.
+              await this.maybeUpdateSessionTitle(sessionId, session);
+              // No active turn. If the head turn is an SDK-consumed slash
+              // command that produced no output (e.g. /plugin in a
+              // non-interactive context), its echo never comes — surface a
+              // clear error instead of leaving the prompt hanging. Only fire
+              // for commands the SDK does NOT recognize: plugin and skill
+              // commands (e.g. /skills-store) produce a fresh user-message
+              // echo with a new uuid that the replay match can't see early,
+              // so an early idle for them is a race, not a real
+              // "unsupported".
+              const head = session.turnQueue.find((t) => !t.settled);
+              if (
+                head?.commandName &&
+                session.pendingOrphanResults === 0 &&
+                session.knownSlashCommands?.has(head.commandName.slice(1)) !==
+                  true
+              ) {
+                const cmd = head.commandName;
+                this.logger.warn(
+                  "Slash command produced no output; treating as unsupported",
+                  { sessionId, command: cmd },
+                );
+                await this.client.sessionUpdate({
+                  sessionId,
+                  update: {
+                    sessionUpdate: "agent_message_chunk",
+                    content: {
+                      type: "text",
+                      text: `Unsupported slash command: \`${cmd}\`. PostHog Code does not implement this command.`,
+                    },
+                  },
+                });
+                head.settled = true;
+                session.turnQueue = session.turnQueue.filter((t) => t !== head);
+                head.resolve({ stopReason: "end_turn" });
+                break;
+              }
+              this.logger.debug("Idle without an active turn", {
+                sessionId,
+                queuedTurns: session.turnQueue.length,
+                command: head?.commandName,
               });
-
-              return {
-                stopReason: this.session.cancelled ? "cancelled" : "end_turn",
-              };
+              break;
             }
             await handleSystemMessage(message, context);
             break;
 
           case "result": {
-            // Skip results from background tasks that finished after our prompt started
-            if (!promptReplayed) {
-              this.logger.debug(
-                "Skipping background task result before prompt replay",
-                { sessionId: params.sessionId },
+            // Task-notification followups are autonomous work triggered by a
+            // task-notification system message, not by the user's prompt.
+            // They must not influence the user-turn lifecycle (activation,
+            // stop reason, settle), but their cost is real and is still
+            // reported below.
+            const isTaskNotification =
+              (message as { origin?: { kind?: string } }).origin?.kind ===
+              "task-notification";
+
+            // Reconcile the Fast mode toggle with the SDK's reported state
+            // (e.g. flipped back to `on` once a rate-limit cooldown clears).
+            // Gated to user-driven turns like the other side effects below.
+            if (!isTaskNotification) {
+              await this.syncFastModeState(
+                (message as { fast_mode_state?: FastModeState })
+                  .fast_mode_state,
               );
+            }
+
+            // A user-turn result needs an active turn so its stop reason is
+            // attributed and the turn settles. Local-only commands carry no
+            // user-message echo to promote them, so promote the queue head
+            // here. Promote BEFORE accumulating usage: activation resets the
+            // accumulator, so promoting after would discard this result's
+            // tokens.
+            if (!isTaskNotification) {
+              await ensureActiveTurn();
+            }
+
+            if (session.cancelled) {
+              // The cancelled turn settles at the trailing idle (or via the
+              // force-cancel backstop); drop its result so a stale outcome
+              // isn't attributed anywhere.
               break;
             }
 
-            if (this.session.cancelled) {
-              return { stopReason: "cancelled" };
+            if (!isTaskNotification) {
+              // Accumulate usage from this result (guard against null from
+              // SDK). Skipped for task-notification followups so their
+              // tokens can't leak into a later live turn's response usage.
+              session.accumulatedUsage.inputTokens +=
+                message.usage.input_tokens ?? 0;
+              session.accumulatedUsage.outputTokens +=
+                message.usage.output_tokens ?? 0;
+              session.accumulatedUsage.cachedReadTokens +=
+                message.usage.cache_read_input_tokens ?? 0;
+              session.accumulatedUsage.cachedWriteTokens +=
+                message.usage.cache_creation_input_tokens ?? 0;
             }
-
-            // Accumulate usage from this result (guard against null from SDK)
-            this.session.accumulatedUsage.inputTokens +=
-              message.usage.input_tokens ?? 0;
-            this.session.accumulatedUsage.outputTokens +=
-              message.usage.output_tokens ?? 0;
-            this.session.accumulatedUsage.cachedReadTokens +=
-              message.usage.cache_read_input_tokens ?? 0;
-            this.session.accumulatedUsage.cachedWriteTokens +=
-              message.usage.cache_creation_input_tokens ?? 0;
 
             // SDK can underreport context window (e.g. 200k for 1M models).
             // Use SDK value only if it's larger than what gateway reported.
@@ -805,25 +1119,24 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             );
             if (contextWindows.length > 0) {
               const sdkContextWindow = Math.min(...contextWindows);
-              if (sdkContextWindow > lastContextWindowSize) {
-                lastContextWindowSize = sdkContextWindow;
+              if (sdkContextWindow > windowSize()) {
+                session.lastContextWindowSize = sdkContextWindow;
               }
             }
-            this.session.lastContextWindowSize = lastContextWindowSize;
 
-            this.session.contextSize = lastContextWindowSize;
+            session.contextSize = windowSize();
             if (lastAssistantTotalUsage !== null) {
-              this.session.contextUsed = lastAssistantTotalUsage;
+              session.contextUsed = lastAssistantTotalUsage;
             }
 
             // Send usage_update notification
             if (lastAssistantTotalUsage !== null) {
               await this.client.sessionUpdate({
-                sessionId: params.sessionId,
+                sessionId,
                 update: {
                   sessionUpdate: "usage_update",
                   used: lastAssistantTotalUsage,
-                  size: lastContextWindowSize,
+                  size: windowSize(),
                   cost: {
                     amount: message.total_cost_usd,
                     currency: "USD",
@@ -841,7 +1154,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             await this.client.extNotification(
               POSTHOG_NOTIFICATIONS.USAGE_UPDATE,
               {
-                sessionId: params.sessionId,
+                sessionId,
                 used: {
                   inputTokens: message.usage.input_tokens,
                   outputTokens: message.usage.output_tokens,
@@ -850,24 +1163,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 },
                 cost: message.total_cost_usd,
                 breakdown: buildBreakdown(
-                  this.session.contextBreakdownBaseline ?? emptyBaseline(),
+                  session.contextBreakdownBaseline ?? emptyBaseline(),
                   breakdownInputTokens,
                 ),
               },
             );
-
-            const usage: Usage = {
-              inputTokens: this.session.accumulatedUsage.inputTokens,
-              outputTokens: this.session.accumulatedUsage.outputTokens,
-              cachedReadTokens: this.session.accumulatedUsage.cachedReadTokens,
-              cachedWriteTokens:
-                this.session.accumulatedUsage.cachedWriteTokens,
-              totalTokens:
-                this.session.accumulatedUsage.inputTokens +
-                this.session.accumulatedUsage.outputTokens +
-                this.session.accumulatedUsage.cachedReadTokens +
-                this.session.accumulatedUsage.cachedWriteTokens,
-            };
 
             if (
               (message as { stop_reason?: string }).stop_reason === "refusal"
@@ -876,18 +1176,27 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               // so surface the refusal as a structured status row rather than
               // assistant text.
               await this.client.extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
-                sessionId: params.sessionId,
+                sessionId,
                 status: "refusal",
                 ...(lastRefusalExplanation && {
                   explanation: lastRefusalExplanation,
                 }),
                 ...(lastRefusalCategory && { category: lastRefusalCategory }),
               });
-              return { stopReason: "refusal", usage };
+              if (!isTaskNotification) {
+                stopReason = "refusal";
+                settleActive({ stopReason: "refusal", usage: sessionUsage() });
+              }
+              break;
             }
 
             const result = handleResultMessage(message);
-            if (result.error) throw result.error;
+            if (result.error) {
+              if (!isTaskNotification) {
+                failActive(result.error);
+              }
+              break;
+            }
 
             // Deliver structured output from SDK's native outputFormat
             if (
@@ -902,12 +1211,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
             // For local-only commands, forward the result text to the client
             if (
-              isLocalOnlyCommand &&
+              session.activeTurn?.isLocalOnlyCommand &&
+              !isTaskNotification &&
               message.subtype === "success" &&
               message.result
             ) {
               await this.client.sessionUpdate({
-                sessionId: params.sessionId,
+                sessionId,
                 update: {
                   sessionUpdate: "agent_message_chunk",
                   content: { type: "text", text: message.result },
@@ -915,7 +1225,17 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               });
             }
 
-            return { stopReason: result.stopReason ?? "end_turn", usage };
+            // Settle the user turn at its terminal result so the client
+            // unlocks as soon as the answer is done, rather than waiting for
+            // the SDK's trailing `idle` (which can lag while background work
+            // runs). The consumer keeps draining afterward, absorbing idle
+            // and forwarding any background output. settleActive is
+            // idempotent, so a duplicate settle attempt is a no-op.
+            if (!isTaskNotification) {
+              stopReason = result.stopReason ?? "end_turn";
+              settleActive({ stopReason, usage: sessionUsage() });
+            }
+            break;
           }
 
           case "stream_event": {
@@ -956,11 +1276,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               if (nextTotal !== lastAssistantTotalUsage) {
                 lastAssistantTotalUsage = nextTotal;
                 await this.client.sessionUpdate({
-                  sessionId: params.sessionId,
+                  sessionId,
                   update: {
                     sessionUpdate: "usage_update",
                     used: nextTotal,
-                    size: lastContextWindowSize,
+                    size: windowSize(),
                   },
                 });
               }
@@ -971,31 +1291,52 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
           case "user":
           case "assistant": {
-            // Check for prompt replay (our own message echoed back)
+            // A replayed user message echoes a queued turn back in
+            // submission order. The first echo promotes that turn to active;
+            // if a different turn is still active, it is handed off (settled
+            // end_turn) first. Done before the `cancelled` guard so a turn
+            // enqueued after a cancel is still promoted — activateTurn()
+            // clears the flag. The echo itself is then dropped from the feed
+            // (the client already shows it).
             if (message.type === "user" && "uuid" in message && message.uuid) {
-              if (message.uuid === promptUuid) {
-                promptReplayed = true;
+              const queued = session.turnQueue.find(
+                (t) => t.promptUuid === message.uuid && !t.settled,
+              );
+              if (queued) {
+                // Only (re)activate if this isn't already the active turn —
+                // a turn promoted early (e.g. by a result that preceded its
+                // echo) must not have its accumulated usage reset by its own
+                // echo.
+                if (session.activeTurn !== queued) {
+                  if (session.activeTurn) {
+                    // Hand off the previous turn. If a cancel is pending for
+                    // it (its trailing idle hasn't arrived yet), settle it
+                    // "cancelled" per the ACP contract rather than
+                    // "end_turn".
+                    settleActive(
+                      session.cancelled
+                        ? this.cancelledResponse()
+                        : { stopReason: "end_turn", usage: sessionUsage() },
+                    );
+                  }
+                  await activateTurn(queued);
+                }
                 break;
               }
-
-              const pending = this.session.pendingMessages.get(
-                message.uuid as string,
-              );
-              if (pending) {
-                pending.resolve(false);
-                this.session.pendingMessages.delete(message.uuid as string);
-                handedOff = true;
-                return {
-                  stopReason: this.session.cancelled ? "cancelled" : "end_turn",
-                };
+              if (
+                "isReplay" in message &&
+                (message as Record<string, unknown>).isReplay
+              ) {
+                // Unrelated replay (e.g. the echo of an already-settled turn).
+                break;
               }
             }
 
-            if (this.session.cancelled) {
+            if (session.cancelled) {
               break;
             }
 
-            // Skip replayed user messages that aren't pending prompts
+            // Skip replayed messages that aren't queued prompts
             if (
               "isReplay" in message &&
               (message as Record<string, unknown>).isReplay
@@ -1043,27 +1384,33 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 (usage.cache_creation_input_tokens ?? 0);
 
               await this.client.sessionUpdate({
-                sessionId: params.sessionId,
+                sessionId,
                 update: {
                   sessionUpdate: "usage_update",
                   used: lastAssistantTotalUsage,
-                  size: lastContextWindowSize,
+                  size: windowSize(),
                   cost: null,
                 },
               });
             }
 
             const result = await handleUserAssistantMessage(message, context);
-            if (result.error) throw result.error;
+            if (result.error) {
+              // Turn-level failure (e.g. auth required): reject the turn but
+              // keep consuming — the stream continues to idle and later
+              // turns proceed.
+              failActive(result.error);
+              break;
+            }
             if (result.shouldStop) {
-              return { stopReason: "end_turn" };
+              settleActive({ stopReason: "end_turn" });
             }
             break;
           }
 
           case "tool_progress": {
             await this.client.sessionUpdate({
-              sessionId: params.sessionId,
+              sessionId,
               update: {
                 sessionUpdate: "tool_call_update",
                 toolCallId: message.tool_use_id,
@@ -1083,11 +1430,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           case "rate_limit_event": {
             if (lastAssistantTotalUsage !== null) {
               await this.client.sessionUpdate({
-                sessionId: params.sessionId,
+                sessionId,
                 update: {
                   sessionUpdate: "usage_update",
                   used: lastAssistantTotalUsage,
-                  size: lastContextWindowSize,
+                  size: windowSize(),
                   _meta: { "_claude/rateLimit": message.rate_limit_info },
                 },
               });
@@ -1104,116 +1451,82 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             break;
         }
       }
-      throw new Error("Session did not end in result");
+      // `while (true)` only exits via the `done` return above or the catch
+      // below; there is no normal fall-through.
     } catch (error) {
-      errored = true;
-      // A failed turn typically leaves a trailing `session_state_changed: idle`
-      // (and possibly more) in the query iterator. If we don't drain it here,
-      // the next prompt's first `query.next()` consumes that stale idle and
-      // short-circuits to end_turn with zero usage.
-      try {
-        await this.session.query.interrupt();
-        const MAX_DRAIN = 100;
-        for (let i = 0; i < MAX_DRAIN; i++) {
-          const { value: m, done } = await this.session.query.next();
-          if (done || !m) break;
-          if (
-            m.type === "system" &&
-            m.subtype === "session_state_changed" &&
-            (m as Record<string, unknown>).state === "idle"
-          ) {
-            break;
-          }
-          if (i === MAX_DRAIN - 1) {
-            this.logger.error(
-              `Session ${params.sessionId}: drained ${MAX_DRAIN} messages after error without observing idle`,
-            );
-          }
-        }
-      } catch (drainErr) {
-        this.logger.error(
-          `Session ${params.sessionId}: failed to drain query after prompt error`,
-          { error: drainErr },
-        );
+      // The query stream itself died (a transport/process error surfaced
+      // from query.next()). Turn-level failures (auth, error results) are
+      // handled inline via failActive and never reach here.
+      if (refreshed()) {
+        this.logger.debug("Consumer for a refreshed query exiting on error", {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
       }
-
-      if (error instanceof RequestError || !(error instanceof Error)) {
-        throw error;
-      }
-      const msg = error.message;
-      if (
-        msg.includes("ProcessTransport") ||
-        msg.includes("terminated process") ||
-        msg.includes("process exited with") ||
-        msg.includes("process terminated by signal") ||
-        msg.includes("Failed to write to process stdin")
-      ) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const processDied =
+        error instanceof Error &&
+        (msg.includes("ProcessTransport") ||
+          msg.includes("terminated process") ||
+          msg.includes("process exited with") ||
+          msg.includes("process terminated by signal") ||
+          msg.includes("Failed to write to process stdin"));
+      if (processDied) {
         this.logger.error(`Process died: ${msg}`, {
           sessionId: this.sessionId,
         });
-        this.session.settingsManager.dispose();
-        this.session.input.end();
-        throw RequestError.internalError(
-          { details: msg },
-          "The Claude Agent process exited unexpectedly. Please start a new session.",
+        failAllTurns(
+          RequestError.internalError(
+            { details: msg },
+            "The Claude Agent process exited unexpectedly. Please start a new session.",
+          ),
         );
+      } else {
+        this.logger.error("Query stream error", { sessionId, error: msg });
+        failAllTurns(error);
       }
-      throw error;
-    } finally {
-      if (this.session.forceCancelTimer) {
-        clearTimeout(this.session.forceCancelTimer);
-        this.session.forceCancelTimer = undefined;
-      }
-      if (this.session.cancelController === cancelController) {
-        this.session.cancelController = undefined;
-      }
-      // Drop any leftover streaming-input buffers. Normally cleared per index
-      // on `content_block_stop`, but a cancelled or errored turn may leave
-      // entries behind; without this they'd carry over into the next turn
-      // and collide with new content-block indices.
-      this.toolUseStreamCache.clear();
-      if (!handedOff) {
-        this.session.promptRunning = false;
-        if (errored) {
-          // The query stream was just drained — handing pending prompts off
-          // onto it would let them race with the recovery. Cancel them so
-          // each waiting prompt() returns stopReason "cancelled" and the
-          // client can decide whether to retry.
-          for (const pending of this.session.pendingMessages.values()) {
-            pending.resolve(true);
-          }
-          this.session.pendingMessages.clear();
-        } else if (this.session.pendingMessages.size > 0) {
-          // Clean exit with queued prompts: hand off the lowest-order one
-          // so it can proceed. The rest stay queued for their own turn.
-          const next = [...this.session.pendingMessages.entries()].sort(
-            (a, b) => a[1].order - b[1].order,
-          )[0];
-          if (next) {
-            next[1].resolve(false);
-            this.session.pendingMessages.delete(next[0]);
-          }
-        }
-      }
+      // Either way the query iterator is finished, so release its resources;
+      // a later prompt() then rejects up front with SESSION_ENDED_MESSAGE.
+      this.closeQueryStream(session);
     }
   }
 
   // Called by BaseAcpAgent#cancel() to interrupt the session
   protected async interrupt(): Promise<void> {
-    this.session.cancelled = true;
-    for (const [, pending] of this.session.pendingMessages) {
-      pending.resolve(true);
+    const session = this.session;
+    // The stream already ended (see closeQueryStream): every in-flight turn
+    // was settled when it closed, and there is no live query to interrupt.
+    if (session.queryClosed) {
+      return;
     }
-    this.session.pendingMessages.clear();
+    session.cancelled = true;
 
+    // Settle queued turns that haven't started yet (no echo seen) right
+    // away. Their user messages were already pushed, so the SDK still runs
+    // them and emits echo-less results; count those as orphans so
+    // ensureActiveTurn doesn't promote a later live turn for them.
+    for (const turn of [...session.turnQueue]) {
+      if (turn === session.activeTurn || turn.settled) {
+        continue;
+      }
+      turn.settled = true;
+      session.turnQueue = session.turnQueue.filter((t) => t !== turn);
+      session.pendingOrphanResults += 1;
+      turn.resolve(this.cancelledResponse());
+    }
+
+    // Force-cancel backstop: if the SDK never yields after interrupt() (e.g.
+    // a wedged TaskOutput block), abort the consumer's wake-up channel so
+    // the active turn still settles "cancelled".
     if (
-      this.session.promptRunning &&
-      this.session.cancelController &&
-      !this.session.cancelController.signal.aborted &&
-      !this.session.forceCancelTimer
+      session.activeTurn &&
+      session.cancelController &&
+      !session.cancelController.signal.aborted &&
+      !session.forceCancelTimer
     ) {
-      const cancelController = this.session.cancelController;
-      this.session.forceCancelTimer = setTimeout(() => {
+      const cancelController = session.cancelController;
+      session.forceCancelTimer = setTimeout(() => {
         this.logger.error(
           `Session ${this.sessionId}: cancel floor elapsed without the SDK yielding; forcing "cancelled". The underlying query may still be wedged — a new session may be required.`,
         );
@@ -1221,7 +1534,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }, this.forceCancelGraceMs);
     }
 
-    await this.session.query.interrupt();
+    await session.query.interrupt();
   }
 
   /**
@@ -1280,7 +1593,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     mcpServers: Record<string, McpServerConfig>,
   ): Promise<void> {
     const prev = this.session;
-    if (prev.promptRunning) {
+    if (prev.activeTurn !== null || prev.turnQueue.length > 0) {
       throw new RequestError(
         -32002,
         "Cannot refresh session while a prompt turn is in flight",
@@ -1298,6 +1611,16 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       sessionId: this.sessionId,
     });
 
+    // Retire the old consumer before swapping the query: bumping the
+    // generation makes its teardown paths exit quietly (no closeQueryStream
+    // on the refreshed session), and aborting its wake-up channel unparks it
+    // if query.next() is in flight.
+    prev.queryGeneration += 1;
+    const oldConsumer = prev.consumer;
+    prev.consumer = undefined;
+    prev.cancelController?.abort();
+    prev.cancelController = undefined;
+
     // Abort FIRST so any stuck in-flight HTTP request unblocks — otherwise
     // interrupt() can deadlock waiting on an API call that never returns.
     // We allocate a fresh controller for the new Query below so aborting
@@ -1312,6 +1635,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       });
     }
     prev.input.end();
+    if (oldConsumer) {
+      // Bounded: a wedged old query must not block the refresh; the parked
+      // consumer exits on its own if the old next() ever settles.
+      await withTimeout(oldConsumer, 5_000);
+    }
 
     // Reuse every option from the running session; swap mcpServers, re-root
     // identity on `resume` instead of `sessionId`, and give the new Query a
@@ -1502,6 +1830,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.session.lastContextWindowSize =
         this.getContextWindowForModel(resolvedValue);
       this.rebuildEffortConfigOption(resolvedValue);
+      // The Fast mode toggle follows the newly selected model: it disappears
+      // when the model lacks fast support and reappears (with the retained
+      // user intent) when a supporting model is selected again.
+      this.rebuildFastModeConfigOption(resolvedValue);
     } else if (params.configId === "effort") {
       const newEffort = resolvedValue as EffortLevel;
       this.session.effort = newEffort;
@@ -1510,6 +1842,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         // @ts-expect-error SDK Settings.effortLevel omits "max" but runtime accepts it
         effortLevel: newEffort,
       });
+    } else if (params.configId === "fast") {
+      // Apply the SDK flag first so a rejected control request leaves both
+      // the session state and the config option untouched (no UI/SDK
+      // desync).
+      const enabled = resolvedValue === "on";
+      await this.session.query.applyFlagSettings({ fastMode: enabled });
+      this.session.fastModeEnabled = enabled;
     }
 
     this.session.configOptions = this.session.configOptions.map((o) =>
@@ -1801,9 +2140,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       sessionResources: new Set(),
       effort,
       configOptions: [],
-      promptRunning: false,
-      pendingMessages: new Map(),
-      nextPendingOrder: 0,
+      turnQueue: [],
+      activeTurn: null,
+      pendingOrphanResults: 0,
+      queryGeneration: 0,
+      fastModeEnabled: false,
       emitRawSDKMessages: meta?.claudeCode?.emitRawSDKMessages ?? false,
       contextBreakdownBaseline: {
         ...emptyBaseline(),
@@ -1837,6 +2178,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         }
         session.knownSlashCommands = collectKnownSlashCommands(
           result.value.commands,
+        );
+        session.fastModeEnabled = fastModeStateEnabled(
+          result.value.fast_mode_state,
         );
       } catch (err) {
         settingsManager.dispose();
@@ -1906,6 +2250,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         }
         session.knownSlashCommands = collectKnownSlashCommands(
           initResult.value.commands,
+        );
+        session.fastModeEnabled = fastModeStateEnabled(
+          initResult.value.fast_mode_state,
         );
         this.logger.info("Session initialized", {
           sessionId,
@@ -1977,6 +2324,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       permissionMode,
       modelOptions,
       this.session.effort ?? DEFAULT_EFFORT,
+      session.fastModeEnabled,
     );
     session.configOptions = configOptions;
 
@@ -2007,6 +2355,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           this.updateConfigOption(configId, value),
         applySessionMode: (modeId: string) => this.applySessionMode(modeId),
         allowedDomains,
+        emittedToolCalls: this.emittedToolCalls,
+        supportsTerminalOutput:
+          (
+            this.clientCapabilities?._meta as
+              | ClientCapabilities["_meta"]
+              | undefined
+          )?.terminal_output === true,
       });
   }
 
@@ -2089,6 +2444,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       options: SessionConfigSelectOption[];
     },
     currentEffort: EffortLevel = DEFAULT_EFFORT,
+    fastModeEnabled?: boolean,
   ): SessionConfigOption[] {
     const modeOptions = getAvailableModes().map((mode) => ({
       value: mode.id,
@@ -2131,7 +2487,105 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       });
     }
 
+    if (supportsFastMode(modelOptions.currentModelId)) {
+      configOptions.push(this.fastModeConfigOption(fastModeEnabled ?? false));
+    }
+
     return configOptions;
+  }
+
+  private fastModeConfigOption(enabled: boolean): SessionConfigOption {
+    return {
+      id: "fast",
+      name: "Fast mode",
+      type: "select",
+      currentValue: enabled ? "on" : "off",
+      options: [
+        { value: "on", name: "On" },
+        { value: "off", name: "Off" },
+      ],
+      description: "Faster responses on supported models",
+    };
+  }
+
+  /** Add/remove/refresh the Fast mode option for the selected model. The
+   *  user's intent (`session.fastModeEnabled`) is retained while the option
+   *  is hidden, so it is correct when a supporting model is reselected. */
+  private rebuildFastModeConfigOption(modelId: string): void {
+    const withoutFast = this.session.configOptions.filter(
+      (o) => o.id !== "fast",
+    );
+    this.session.configOptions = supportsFastMode(modelId)
+      ? [
+          ...withoutFast,
+          this.fastModeConfigOption(this.session.fastModeEnabled),
+        ]
+      : withoutFast;
+  }
+
+  /** Reconcile the session's Fast mode toggle with an SDK-reported
+   *  `fast_mode_state` (delivered on `system`/init and on user-turn results).
+   *  The SDK can flip fast mode independently of the user — e.g. back to `on`
+   *  once a rate-limit `cooldown` clears — so definitive on/off changes are
+   *  mirrored into the config option and pushed to the client. When the
+   *  current model doesn't surface the option, the reported state reflects
+   *  capability rather than intent, so the retained setting is left alone;
+   *  `cooldown` is a transient suspension and must not flap the toggle. */
+  private async syncFastModeState(
+    state: FastModeState | undefined,
+  ): Promise<void> {
+    if (state === undefined || state === "cooldown") {
+      return;
+    }
+    if (!this.session.configOptions.some((o) => o.id === "fast")) {
+      return;
+    }
+    const enabled = state === "on";
+    if (enabled === this.session.fastModeEnabled) {
+      return;
+    }
+    this.session.fastModeEnabled = enabled;
+    await this.updateConfigOption("fast", enabled ? "on" : "off");
+  }
+
+  /** Read the SDK-maintained title for the session and, if it changed since
+   *  the last look, notify the client with a `session_info_update`. The SDK
+   *  has no push event for the title it auto-generates in the background, so
+   *  it is pulled at turn-end. A missing session file or read error is
+   *  non-fatal: the title is best-effort and another turn will retry. */
+  private async maybeUpdateSessionTitle(
+    sessionId: string,
+    session: Session,
+  ): Promise<void> {
+    let info: Awaited<ReturnType<typeof getSessionInfo>>;
+    try {
+      info = await getSessionInfo(sessionId, { dir: session.cwd });
+    } catch (error) {
+      this.logger.warn("Failed to read session info for title update", {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    // `customTitle` is a user-set rename; `summary` is the auto-generated
+    // title (or first prompt). Prefer the explicit title when present.
+    const rawTitle = info?.customTitle ?? info?.summary;
+    if (!rawTitle) {
+      return;
+    }
+    const title = sanitizeTitle(rawTitle);
+    if (!title || title === session.lastTitle) {
+      return;
+    }
+    session.lastTitle = title;
+    await this.client.sessionUpdate({
+      sessionId,
+      update: {
+        sessionUpdate: "session_info_update",
+        title,
+        updatedAt: new Date(info?.lastModified ?? Date.now()).toISOString(),
+      },
+    });
   }
 
   private rebuildEffortConfigOption(modelId: string): void {
@@ -2280,6 +2734,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         sessionId,
         client: this.client,
         toolUseCache: this.toolUseCache,
+        emittedToolCalls: this.emittedToolCalls,
         toolUseStreamCache: this.toolUseStreamCache,
         fileContentCache: this.fileContentCache,
         enrichedReadCache: this.enrichedReadCache,

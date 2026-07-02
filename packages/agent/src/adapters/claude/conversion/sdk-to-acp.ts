@@ -66,6 +66,12 @@ interface AnthropicMessageWithContent {
 type ChunkHandlerContext = {
   sessionId: string;
   toolUseCache: ToolUseCache;
+  /** Tool_use ids already surfaced as a `tool_call` (a permission request
+   *  emits one eagerly, before the tool_use block streams). When the streamed
+   *  block arrives second it refines with a `tool_call_update` instead of
+   *  emitting a duplicate `tool_call`. Mutated in place; pruned at
+   *  `tool_result` time alongside `toolUseCache`. */
+  emittedToolCalls?: Set<string>;
   fileContentCache: { [key: string]: string };
   enrichedReadCache?: EnrichedReadCache;
   client: AgentSideConnection;
@@ -81,19 +87,20 @@ type ChunkHandlerContext = {
 };
 
 /**
- * Per-turn record of which top-level assistant message ids actually streamed
- * text/thinking live via `stream_event` deltas. The consolidated assistant
- * message normally has its text/thinking blocks dropped as duplicates of the
- * streamed chunks, but gateways that return a turn as a single non-streamed
- * block (common with OpenAI-compatible proxies) never fire deltas, so the
- * assembled block is the only copy the client will ever see. Tracked per
- * block type so a gateway that streams text but not thinking (or vice versa)
- * doesn't lose the un-streamed block.
+ * The text/thinking blocks that actually streamed live as `stream_event`
+ * deltas for the message the next consolidated `assistant` will repeat, in
+ * stream order, each accumulated to its full streamed text. The consolidated
+ * handler diffs each assembled block against these and forwards only the
+ * un-streamed remainder — nothing if it streamed in full (the common case),
+ * the whole block if it never streamed (a non-streaming gateway), or just the
+ * tail if the stream was cut short mid-block. Matching on content rather than
+ * the Anthropic message id makes dedupe robust to gateways that don't carry a
+ * stable/matching id across the stream and the consolidated message. Cleared
+ * at each top-level `message_start` and again once a consolidated message
+ * consumes it, so the record stays bounded to the in-flight message.
  */
 export interface StreamedAssistantBlocks {
-  currentStreamMessageId?: string;
-  textIds: Set<string>;
-  thinkingIds: Set<string>;
+  blocks: { index: number; type: "text" | "thinking"; text: string }[];
 }
 
 export interface MessageHandlerContext {
@@ -101,6 +108,8 @@ export interface MessageHandlerContext {
   sessionId: string;
   client: AgentSideConnection;
   toolUseCache: ToolUseCache;
+  /** See `ChunkHandlerContext.emittedToolCalls`. */
+  emittedToolCalls?: Set<string>;
   /** Buffers `input_json_delta` partial JSON per content-block index. */
   toolUseStreamCache: ToolUseStreamCache;
   fileContentCache: { [key: string]: string };
@@ -177,7 +186,12 @@ function handleImageChunk(
 function handleThinkingChunk(
   chunk: { thinking: string },
   parentToolCallId?: string,
-): SessionUpdate {
+): SessionUpdate | null {
+  // Recent models default `thinking.display` to "omitted", which streams
+  // signature-only thinking blocks whose text is empty.
+  if (chunk.thinking.length === 0) {
+    return null;
+  }
   const update: SessionUpdate = {
     sessionUpdate: "agent_thought_chunk",
     content: text(chunk.thinking),
@@ -197,6 +211,11 @@ function handleToolUseChunk(
   ctx: ChunkHandlerContext,
 ): SessionUpdate | null {
   const alreadyCached = chunk.id in ctx.toolUseCache;
+  // A permission request may have already surfaced this tool call to the
+  // client (see `emittedToolCalls`); if so this streamed encounter refines it
+  // rather than emitting a duplicate `tool_call`.
+  const alreadyEmitted =
+    alreadyCached || ctx.emittedToolCalls?.has(chunk.id) === true;
   ctx.toolUseCache[chunk.id] = chunk;
 
   // Suppress Task* tool_calls — plan updates are emitted from the matching
@@ -209,6 +228,7 @@ function handleToolUseChunk(
   ) {
     return null;
   }
+  ctx.emittedToolCalls?.add(chunk.id);
 
   if (!alreadyCached && ctx.registerHooks !== false) {
     const toolName = chunk.name;
@@ -260,11 +280,11 @@ function handleToolUseChunk(
       bashCommandFromToolUse(chunk),
     ),
   };
-  if (chunk.name === "Bash" && ctx.supportsTerminalOutput && !alreadyCached) {
+  if (chunk.name === "Bash" && ctx.supportsTerminalOutput && !alreadyEmitted) {
     meta.terminal_info = { terminal_id: chunk.id };
   }
 
-  if (alreadyCached) {
+  if (alreadyEmitted) {
     return {
       _meta: meta,
       toolCallId: chunk.id,
@@ -361,6 +381,7 @@ function handleToolResultChunk(
   }
 
   delete ctx.toolUseCache[chunk.tool_use_id];
+  ctx.emittedToolCalls?.delete(chunk.tool_use_id);
 
   if (
     toolUse.name === "TaskCreate" ||
@@ -544,6 +565,7 @@ function toAcpNotifications(
   mcpToolUseResult?: Record<string, unknown>,
   enrichedReadCache?: EnrichedReadCache,
   taskState?: TaskState,
+  emittedToolCalls?: Set<string>,
 ): SessionNotification[] {
   if (typeof content === "string") {
     const update: SessionUpdate = {
@@ -563,6 +585,7 @@ function toAcpNotifications(
   const ctx: ChunkHandlerContext = {
     sessionId,
     toolUseCache,
+    emittedToolCalls,
     fileContentCache,
     enrichedReadCache,
     client,
@@ -599,6 +622,7 @@ function streamEventToAcpNotifications(
   cwd?: string,
   enrichedReadCache?: EnrichedReadCache,
   taskState?: TaskState,
+  emittedToolCalls?: Set<string>,
 ): SessionNotification[] {
   const event = message.event;
   switch (event.type) {
@@ -625,6 +649,7 @@ function streamEventToAcpNotifications(
         undefined,
         enrichedReadCache,
         taskState,
+        emittedToolCalls,
       );
     }
     case "content_block_delta": {
@@ -651,6 +676,7 @@ function streamEventToAcpNotifications(
         undefined,
         enrichedReadCache,
         taskState,
+        emittedToolCalls,
       );
     }
     case "content_block_stop":
@@ -819,6 +845,25 @@ export async function handleSystemMessage(
       });
       break;
     }
+    case "informational": {
+      // Free-form notice from the SDK (e.g. why a UserPromptSubmit/Stop hook
+      // blocked continuation). Surface the text so the user sees it instead
+      // of a silent stop. ACP's agent_message_chunk has no severity field, so
+      // fold the level into the text for the more prominent levels ('info' is
+      // transcript-only noise — leave plain).
+      const informationalText =
+        message.level === "info"
+          ? message.content
+          : `**${message.level[0].toUpperCase()}${message.level.slice(1)}:** ${message.content}`;
+      await client.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: informationalText },
+        },
+      });
+      break;
+    }
     case "permission_denied": {
       const reason = message.decision_reason ?? message.message;
       await client.sessionUpdate({
@@ -977,20 +1022,50 @@ export async function handleStreamEvent(
 
   const streamed = context.streamedAssistantBlocks;
   if (streamed) {
-    if (message.event.type === "message_start") {
-      streamed.currentStreamMessageId = message.event.message.id || undefined;
-    }
-    // Only top-level streams are recorded — subagent text is never streamed
-    // and must stay filtered, as it is internal to the tool call.
+    // A new top-level message starts: clear any streamed-content residue from
+    // a prior message that never reached its consolidated reset (a cancelled
+    // turn breaks out before it). Block indices restart at 0 each message, so
+    // leftover entries would otherwise collide with this message's blocks and
+    // re-emit (or truncate) already-streamed text. Gated on
+    // `parent_tool_use_id === null` so a subagent stream can't clear the
+    // top-level record.
     if (
-      streamed.currentStreamMessageId &&
+      message.event.type === "message_start" &&
+      message.parent_tool_use_id === null
+    ) {
+      streamed.blocks.length = 0;
+    }
+    // Accumulate the text/thinking actually streamed live, so the assistant
+    // handler can diff its assembled blocks against what already reached the
+    // client as chunks and forward only the remainder. Only top-level streams
+    // are recorded — subagent text is never streamed and must stay filtered,
+    // as it is internal to the tool call. Contiguous deltas of the same block
+    // (same index and type) extend the current entry; anything else opens a
+    // new one.
+    if (
       message.parent_tool_use_id === null &&
       message.event.type === "content_block_delta"
     ) {
-      if (message.event.delta.type === "text_delta") {
-        streamed.textIds.add(streamed.currentStreamMessageId);
-      } else if (message.event.delta.type === "thinking_delta") {
-        streamed.thinkingIds.add(streamed.currentStreamMessageId);
+      const delta = message.event.delta;
+      const chunk =
+        delta.type === "text_delta"
+          ? { type: "text" as const, text: delta.text }
+          : delta.type === "thinking_delta"
+            ? { type: "thinking" as const, text: delta.thinking }
+            : undefined;
+      // Skip empty deltas (some gateways emit empty thinking chunks):
+      // appending "" is a no-op, but pushing a "" entry would create a block
+      // the consolidated handler's `text.length > 0` guard can never consume,
+      // stalling the diff cursor and re-emitting the next block as a
+      // duplicate.
+      if (chunk && chunk.text.length > 0) {
+        const index = message.event.index;
+        const last = streamed.blocks[streamed.blocks.length - 1];
+        if (last && last.index === index && last.type === chunk.type) {
+          last.text += chunk.text;
+        } else {
+          streamed.blocks.push({ index, type: chunk.type, text: chunk.text });
+        }
       }
     }
   }
@@ -1009,6 +1084,7 @@ export async function handleStreamEvent(
     context.session.cwd,
     context.enrichedReadCache,
     context.session.taskState,
+    context.emittedToolCalls,
   )) {
     await client.sessionUpdate(notification);
     context.session.notificationHistory.push(notification);
@@ -1146,12 +1222,14 @@ function logSpecialMessages(
 }
 
 /**
- * Drops assistant `text`/`thinking` blocks that already reached the client as
- * streamed chunks, while forwarding (as a fallback) any non-empty block that
- * never streamed — see `StreamedAssistantBlocks`. Subagent assistant content
- * (`parent_tool_use_id !== null`) is never streamed and stays internal to its
- * tool call, so it is always dropped, as is everything when no tracker is
- * available (replay).
+ * Diffs each assistant `text`/`thinking` block against what already streamed
+ * live as chunks (`StreamedAssistantBlocks`, in document order) and forwards
+ * only the un-streamed remainder — nothing if it streamed in full (the common
+ * case), the whole block if it never streamed (a non-streaming gateway), or
+ * just the tail if the stream was cut short mid-block. Subagent assistant
+ * content (`parent_tool_use_id !== null`) is never streamed and stays
+ * internal to its tool call, so it is always dropped, as is everything when
+ * no tracker is available (replay).
  */
 function filterAssistantContent(
   message: SDKAssistantMessage,
@@ -1175,22 +1253,58 @@ function filterAssistantContent(
     );
   }
 
-  const id = message.message.id || undefined;
-  return content.filter((block) => {
+  // `streamPos` walks the streamed blocks in step with the assembled
+  // text/thinking blocks; tool_use and other blocks pass through untouched
+  // (their own `toolUseCache` collapses the streamed/assembled pair) without
+  // advancing it.
+  const kept: typeof content = [];
+  let streamPos = 0;
+  for (const block of content) {
     if (block.type !== "text" && block.type !== "thinking") {
-      return true;
+      kept.push(block);
+      continue;
     }
-    const streamedLive =
-      id !== undefined &&
-      (block.type === "text" ? streamed.textIds : streamed.thinkingIds).has(id);
-    if (streamedLive) {
-      return false;
+    const full = block.type === "text" ? block.text : block.thinking;
+    // Empty assembled blocks carry nothing (some gateways emit an empty
+    // `thinking` block before the real text) — drop them.
+    if (full.length === 0) {
+      continue;
     }
-    // Some gateways emit an empty `thinking` block before the real text —
-    // don't forward stray empty chunks.
-    const blockText = block.type === "text" ? block.text : block.thinking;
-    return blockText.length > 0;
-  });
+    // A streamed block of the same type whose accumulated text is a prefix of
+    // this one was already (at least partly) delivered as chunks; consume it
+    // and forward only what's left. A non-empty streamed text is required so
+    // an empty/aborted streamed block doesn't swallow the assembled copy.
+    const streamedBlock = streamed.blocks[streamPos];
+    if (
+      streamedBlock &&
+      streamedBlock.type === block.type &&
+      streamedBlock.text.length > 0 &&
+      full.startsWith(streamedBlock.text)
+    ) {
+      streamPos++;
+      const remainder = full.slice(streamedBlock.text.length);
+      if (remainder.length === 0) {
+        continue;
+      }
+      // Overwrite in place with just the un-streamed tail (the assembled
+      // message isn't read again after this) so the block keeps its exact SDK
+      // type.
+      if (block.type === "text") {
+        block.text = remainder;
+      } else {
+        block.thinking = remainder;
+      }
+      kept.push(block);
+      continue;
+    }
+    // Not matched: never streamed (or the stream diverged from the assembled
+    // text) — forward the block in full.
+    kept.push(block);
+  }
+  // Consumed: reset so the next message's blocks accumulate fresh and the
+  // record stays bounded to the in-flight message.
+  streamed.blocks.length = 0;
+  return kept;
 }
 
 export async function handleUserAssistantMessage(
@@ -1296,6 +1410,7 @@ export async function handleUserAssistantMessage(
     mcpToolUseResult,
     context.enrichedReadCache,
     session.taskState,
+    context.emittedToolCalls,
   )) {
     // The renderer ignores raw user chunks; mark imported ones so the load path can promote them.
     if (

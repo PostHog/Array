@@ -569,7 +569,10 @@ export function toolUpdateFromToolResult(
     "is_error" in toolResult &&
     toolResult.is_error &&
     toolResult.content &&
-    (toolResult.content as unknown[]).length > 0
+    (toolResult.content as unknown[]).length > 0 &&
+    // Bash errors keep flowing through the terminal-output channel below so
+    // they render as terminal output rather than plain error text.
+    !(toolUse?.name === "Bash" && options?.supportsTerminalOutput)
   ) {
     return toAcpContentUpdate(toolResult.content, true);
   }
@@ -661,13 +664,25 @@ export function toolUpdateFromToolResult(
         exitCode = bashResult.return_code;
       } else if (typeof result === "string") {
         output = result;
-      } else if (
-        Array.isArray(result) &&
-        result.length > 0 &&
-        "text" in result[0] &&
-        typeof result[0].text === "string"
-      ) {
-        output = result.map((c: { text?: string }) => c.text ?? "").join("\n");
+      } else if (Array.isArray(result) && result.length > 0) {
+        const textOnly = result.every(
+          (c) =>
+            c &&
+            typeof c === "object" &&
+            typeof (c as { text?: unknown }).text === "string",
+        );
+        if (textOnly) {
+          output = result
+            .map((c: { text?: string }) => c.text ?? "")
+            .join("\n");
+        } else {
+          // Image (or mixed non-text) content. Binary payloads can't be
+          // streamed through the terminal-output _meta channel, so bypass it
+          // and surface the blocks as ACP content. This handles the local
+          // Bash tool's image output, which previously failed the text-only
+          // guard and was silently dropped.
+          return toAcpContentUpdate(result, isError === true);
+        }
       }
 
       if (options?.supportsTerminalOutput) {
