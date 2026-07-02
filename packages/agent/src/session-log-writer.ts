@@ -21,26 +21,38 @@ interface ChunkBuffer {
   firstTimestamp: string;
 }
 
+/**
+ * In-progress `tool_call_update`s buffered per toolCallId, awaiting a
+ * coalesced write to the local cache (see appendRawLine). `mergedUpdate` is
+ * the shallow union of every buffered update (later fields win) — updates
+ * carry different fields at different times (streamed rawInput snapshots,
+ * input-derived title/content, terminal status/rawOutput), so writing only
+ * the newest one would permanently drop the rest from the local file.
+ * `latestEntry` supplies the envelope (timestamp etc.) for the merged write.
+ * The merged update is a copy; entries shared with the API path are never
+ * mutated.
+ */
+interface BufferedToolUpdate {
+  latestEntry: StoredNotification;
+  mergedUpdate: Record<string, unknown>;
+  bufferedAt: number;
+}
+
 interface SessionState {
   context: SessionContext;
   chunkBuffer?: ChunkBuffer;
   lastAgentMessage?: string;
   currentTurnMessages: string[];
-  /** Latest in-progress `tool_call_update` per toolCallId, awaiting a
-   * coalesced write to the local cache (see appendRawLine). */
-  toolUpdateCache: Map<
-    string,
-    { entry: StoredNotification; bufferedAt: number }
-  >;
+  toolUpdateCache: Map<string, BufferedToolUpdate>;
 }
 
 export class SessionLogWriter {
   /**
    * When consecutive in-progress tool updates for one call span more than this
-   * window, the buffered snapshot is written and a new window starts, so the
+   * window, the buffered union is written and a new window starts, so the
    * local cache keeps periodic snapshots during active streaming instead of only
    * the final one. Not a durability bound: the API log receives every update
-   * uncoalesced and the local file is a load cache. A buffered snapshot is
+   * uncoalesced and the local file is a load cache. A buffered union is
    * otherwise written on a terminal update, any non-tool event, or flushAll.
    */
   private static readonly TOOL_UPDATE_MAX_HOLD_MS = 2000;
@@ -164,11 +176,12 @@ export class SessionLogWriter {
         notification: message,
       };
 
-      // Coalesce the local cache: hold in-progress tool_call_update snapshots
-      // (they re-send the full growing output) and write only the latest per
-      // toolCallId. Flushed on a terminal update, any non-tool event, or — during
-      // a long run of updates — once the hold window is exceeded. The API path is
-      // untouched, so the durable log keeps every update.
+      // Coalesce the local cache: buffer in-progress tool_call_update
+      // snapshots (they re-send the full growing output) and write one merged
+      // update per toolCallId. Written on a terminal update, any non-tool
+      // event, or — during a long run of updates — once the hold window is
+      // exceeded. The API path is untouched, so the durable log keeps every
+      // update.
       const tcu = this.toolCallUpdateInfo(message);
       if (tcu && !tcu.terminal) {
         const cache = session.toolUpdateCache;
@@ -178,23 +191,44 @@ export class SessionLogWriter {
           Date.now() - existing.bufferedAt >
             SessionLogWriter.TOOL_UPDATE_MAX_HOLD_MS
         ) {
-          this.writeToLocalCache(sessionId, existing.entry);
-          cache.set(tcu.toolCallId, { entry, bufferedAt: Date.now() });
+          // Window exceeded: persist the union buffered so far and start a
+          // fresh window from this update. The read path merges across lines,
+          // so splitting the union over periodic snapshots loses nothing.
+          this.writeToLocalCache(sessionId, this.buildMergedEntry(existing));
+          cache.set(tcu.toolCallId, {
+            latestEntry: entry,
+            mergedUpdate: { ...tcu.update },
+            bufferedAt: Date.now(),
+          });
+        } else if (existing) {
+          Object.assign(existing.mergedUpdate, tcu.update);
+          existing.latestEntry = entry;
         } else {
           cache.set(tcu.toolCallId, {
-            entry,
-            bufferedAt: existing?.bufferedAt ?? Date.now(),
+            latestEntry: entry,
+            mergedUpdate: { ...tcu.update },
+            bufferedAt: Date.now(),
           });
         }
       } else {
         if (tcu?.terminal) {
-          // The terminal update carries the full final output and supersedes
-          // any buffered in-progress snapshot for this call.
+          // Merge the terminal update into any buffered union so fields only
+          // carried by earlier snapshots (rawInput, edit diffs) still reach
+          // the local cache; later fields win, so status/rawOutput come from
+          // the terminal update itself.
+          const buffered = session.toolUpdateCache.get(tcu.toolCallId);
           session.toolUpdateCache.delete(tcu.toolCallId);
+          if (buffered) {
+            Object.assign(buffered.mergedUpdate, tcu.update);
+            buffered.latestEntry = entry;
+            this.writeToLocalCache(sessionId, this.buildMergedEntry(buffered));
+          } else {
+            this.writeToLocalCache(sessionId, entry);
+          }
         } else {
           this.flushToolUpdateCache(sessionId, session);
+          this.writeToLocalCache(sessionId, entry);
         }
-        this.writeToLocalCache(sessionId, entry);
       }
 
       if (this.posthogAPI) {
@@ -309,26 +343,45 @@ export class SessionLogWriter {
     return this.getSessionUpdateType(message) === "agent_message";
   }
 
-  private toolCallUpdateInfo(
-    message: Record<string, unknown>,
-  ): { toolCallId: string; terminal: boolean } | null {
+  private toolCallUpdateInfo(message: Record<string, unknown>): {
+    toolCallId: string;
+    terminal: boolean;
+    update: Record<string, unknown>;
+  } | null {
     if (this.getSessionUpdateType(message) !== "tool_call_update") return null;
     const params = message.params as Record<string, unknown> | undefined;
     const update = params?.update as Record<string, unknown> | undefined;
     const toolCallId = update?.toolCallId;
-    if (typeof toolCallId !== "string") return null;
-    const status = update?.status;
+    if (!update || typeof toolCallId !== "string") return null;
+    const status = update.status;
     return {
       toolCallId,
       terminal: status === "completed" || status === "failed",
+      update,
     };
   }
 
-  /** Write any buffered in-progress tool updates to the local cache, in order. */
+  /**
+   * Rebuild the buffered update's entry around the merged union. Builds a
+   * fresh object: the buffered `latestEntry` is also queued on the API path
+   * and must not be mutated.
+   */
+  private buildMergedEntry(buffered: BufferedToolUpdate): StoredNotification {
+    const { notification } = buffered.latestEntry;
+    return {
+      ...buffered.latestEntry,
+      notification: {
+        ...notification,
+        params: { ...notification.params, update: buffered.mergedUpdate },
+      },
+    };
+  }
+
+  /** Write any buffered tool-update unions to the local cache, in order. */
   private flushToolUpdateCache(sessionId: string, session: SessionState): void {
     if (session.toolUpdateCache.size === 0) return;
-    for (const { entry } of session.toolUpdateCache.values()) {
-      this.writeToLocalCache(sessionId, entry);
+    for (const buffered of session.toolUpdateCache.values()) {
+      this.writeToLocalCache(sessionId, this.buildMergedEntry(buffered));
     }
     session.toolUpdateCache.clear();
   }
