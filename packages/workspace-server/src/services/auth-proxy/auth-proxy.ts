@@ -170,7 +170,7 @@ export class AuthProxyService {
       const chunks: Buffer[] = [];
       req.on("data", (chunk: Buffer) => chunks.push(chunk));
       req.on("end", () => {
-        let body: Buffer = Buffer.concat(chunks);
+        let body = Buffer.concat(chunks);
         const contentType = req.headers["content-type"] ?? "";
         if (
           req.method === "POST" &&

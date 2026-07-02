@@ -96,7 +96,9 @@ function compressBlock(block: Record<string, unknown>): boolean {
  * request or nothing was compressible — fail-open, so a malformed body or an
  * unexpected shape never breaks a request.
  */
-export function compressMessagesBody(body: Buffer): Buffer {
+export function compressMessagesBody(
+  body: Buffer<ArrayBuffer>,
+): Buffer<ArrayBuffer> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body.toString("utf8"));

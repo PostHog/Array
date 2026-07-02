@@ -17,10 +17,13 @@ import { gitSubcommand } from "../git-command";
 // them changes only how much output reaches the model, never what runs.
 const RTK_PLAIN_COMMANDS = new Set(["grep", "find", "ls"]);
 
-// Read-only git subcommands. Excludes commit/push: they have side effects with
-// negligible output to compress, and the cloud signed-commit guard keys on a
-// leading `git` token that `rtk git …` would hide from it.
-const GIT_READONLY_SUBCOMMANDS = new Set([
+// Git subcommands whose output is worth compressing and that RTK handles
+// faithfully. The criterion is compressible output, NOT read-only: RTK never
+// changes what runs, so a mutating form (`git tag -d`, `git remote add`,
+// `git reflog expire`) still executes its write — its output is just shorter.
+// Excludes commit/push: negligible output to compress, and the cloud
+// signed-commit guard keys on a leading `git` token that `rtk git …` would hide.
+const GIT_COMPRESSIBLE_SUBCOMMANDS = new Set([
   "status",
   "diff",
   "log",
@@ -63,7 +66,7 @@ export function rewriteBashForRtk(
 
   if (head === "git") {
     const sub = gitSubcommand(trimmed);
-    if (!sub || !GIT_READONLY_SUBCOMMANDS.has(sub)) return null;
+    if (!sub || !GIT_COMPRESSIBLE_SUBCOMMANDS.has(sub)) return null;
   } else if (!RTK_PLAIN_COMMANDS.has(head)) {
     return null;
   }
