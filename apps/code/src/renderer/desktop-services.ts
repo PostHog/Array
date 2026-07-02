@@ -181,9 +181,13 @@ container
     reconnect: async (taskId) => {
       const workspaces = (await trpcClient.workspace.getAll.query()) as Record<
         string,
-        { worktreePath?: string | null; folderPath?: string }
+        { mode?: string; worktreePath?: string | null; folderPath?: string }
       >;
       const workspace = workspaces[taskId];
+      // Cloud sessions are re-established by the app's own cloud-task watcher,
+      // not clearSessionError (which is local-only). Leave recovery to that;
+      // autoresearch resumes when the session becomes usable again.
+      if (workspace?.mode === "cloud") return;
       const repoPath = workspace?.worktreePath ?? workspace?.folderPath;
       if (!repoPath) {
         throw new Error(`No workspace found for task ${taskId}`);

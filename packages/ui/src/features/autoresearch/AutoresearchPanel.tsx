@@ -16,9 +16,7 @@ import {
 } from "@posthog/quill";
 import { Badge, Button, Callout, Flex, Select, Text } from "@radix-ui/themes";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { shallow } from "zustand/shallow";
 import {
-  flattenSelectOptions,
   getConfigOptionByCategory,
   useSessionStore,
 } from "../sessions/sessionStore";
@@ -26,6 +24,7 @@ import { usePendingPermissionsForTask } from "../sessions/useSession";
 import { AutoresearchConfigDialog } from "./AutoresearchConfigDialog";
 import { IterationsTable } from "./IterationsTable";
 import { MetricChart } from "./MetricChart";
+import { toAutoresearchModelOptions } from "./stageModels";
 import { useAutoresearchRuns } from "./useAutoresearchStore";
 
 const STATUS_BADGE: Record<
@@ -76,21 +75,14 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
     if (service) void service.hydrateTask(taskId);
   }, [service, taskId]);
 
-  const rawModelOptions = useSessionStore((state) => {
+  const modelOption = useSessionStore((state) => {
     const taskRunId = state.taskIdIndex[taskId];
     const session = taskRunId ? state.sessions[taskRunId] : undefined;
-    const option = getConfigOptionByCategory(session?.configOptions, "model");
-    return option?.type === "select"
-      ? flattenSelectOptions(option.options)
-      : [];
-  }, shallow);
+    return getConfigOptionByCategory(session?.configOptions, "model");
+  });
   const modelOptions = useMemo(
-    () =>
-      rawModelOptions.map((option) => ({
-        value: option.value,
-        label: option.name ?? option.value,
-      })),
-    [rawModelOptions],
+    () => toAutoresearchModelOptions(modelOption),
+    [modelOption],
   );
 
   const latestRun = runs[runs.length - 1] ?? null;

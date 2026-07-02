@@ -44,6 +44,7 @@ function makeRun(overrides: {
     status: "running",
     metricName: "score",
     phase: null,
+    originalModel: null,
     iterations: overrides.iterations ?? [],
     startedAt: 0,
     endedAt: null,

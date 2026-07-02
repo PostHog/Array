@@ -49,6 +49,7 @@ function makeRun(
     status: "running",
     metricName: "requests per second",
     phase: null,
+    originalModel: null,
     iterations,
     startedAt: 0,
     endedAt: null,

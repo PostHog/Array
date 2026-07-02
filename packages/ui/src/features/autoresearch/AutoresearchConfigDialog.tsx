@@ -9,14 +9,13 @@ import {
   TextField,
 } from "@radix-ui/themes";
 import { useState } from "react";
+import {
+  type AutoresearchModelOption,
+  clampMaxIterations,
+  StageModelSelect,
+} from "./stageModels";
 
-/** Sentinel for "no stage model" — Radix Select items can't be empty. */
-const SINGLE_TURN = "__single_turn__";
-
-export interface AutoresearchModelOption {
-  value: string;
-  label: string;
-}
+export type { AutoresearchModelOption };
 
 export interface AutoresearchConfigValues {
   direction: AutoresearchDirection;
@@ -79,8 +78,8 @@ interface FormValues {
   direction: AutoresearchDirection;
   targetValue: string;
   maxIterations: string;
-  implementModel: string;
-  measureModel: string;
+  implementModel: string | null;
+  measureModel: string | null;
   instructions: string;
 }
 
@@ -104,8 +103,8 @@ function ConfigForm({
     targetValue:
       initial?.targetValue != null ? String(initial.targetValue) : "",
     maxIterations: String(initial?.maxIterations ?? 10),
-    implementModel: initial?.implementModel ?? SINGLE_TURN,
-    measureModel: initial?.measureModel ?? SINGLE_TURN,
+    implementModel: initial?.implementModel ?? null,
+    measureModel: initial?.measureModel ?? null,
     instructions: initial?.instructions ?? "",
   }));
   const [error, setError] = useState<string | null>(null);
@@ -116,8 +115,7 @@ function ConfigForm({
   ) => setValues((current) => ({ ...current, [field]: value }));
 
   const stageModelsMismatched =
-    (values.implementModel === SINGLE_TURN) !==
-    (values.measureModel === SINGLE_TURN);
+    (values.implementModel === null) !== (values.measureModel === null);
 
   const canSubmit =
     !stageModelsMismatched &&
@@ -135,11 +133,9 @@ function ConfigForm({
       onSubmit({
         direction: values.direction,
         targetValue: target,
-        maxIterations: Number.isFinite(iterations) ? iterations : 10,
-        implementModel:
-          values.implementModel === SINGLE_TURN ? null : values.implementModel,
-        measureModel:
-          values.measureModel === SINGLE_TURN ? null : values.measureModel,
+        maxIterations: clampMaxIterations(iterations),
+        implementModel: values.implementModel,
+        measureModel: values.measureModel,
         instructions: showInstructions ? values.instructions : undefined,
       });
       setError(null);
@@ -222,20 +218,44 @@ function ConfigForm({
         {modelOptions.length > 0 && (
           <div>
             <Flex gap="3">
-              <StageModelSelect
-                id="autoresearch-implement-model"
-                label="Build model"
-                value={values.implementModel}
-                options={modelOptions}
-                onChange={(value) => setField("implementModel", value)}
-              />
-              <StageModelSelect
-                id="autoresearch-measure-model"
-                label="Measure model"
-                value={values.measureModel}
-                options={modelOptions}
-                onChange={(value) => setField("measureModel", value)}
-              />
+              <div className="flex-1">
+                <Text
+                  as="label"
+                  htmlFor="autoresearch-implement-model"
+                  size="1"
+                  weight="medium"
+                  className="mb-1 block"
+                >
+                  Build model
+                </Text>
+                <StageModelSelect
+                  id="autoresearch-implement-model"
+                  noneLabel="Single turn (default)"
+                  value={values.implementModel}
+                  options={modelOptions}
+                  className="w-full"
+                  onChange={(value) => setField("implementModel", value)}
+                />
+              </div>
+              <div className="flex-1">
+                <Text
+                  as="label"
+                  htmlFor="autoresearch-measure-model"
+                  size="1"
+                  weight="medium"
+                  className="mb-1 block"
+                >
+                  Measure model
+                </Text>
+                <StageModelSelect
+                  id="autoresearch-measure-model"
+                  noneLabel="Single turn (default)"
+                  value={values.measureModel}
+                  options={modelOptions}
+                  className="w-full"
+                  onChange={(value) => setField("measureModel", value)}
+                />
+              </div>
             </Flex>
             <Text
               as="div"
@@ -289,44 +309,5 @@ function ConfigForm({
         </Button>
       </Flex>
     </>
-  );
-}
-
-function StageModelSelect({
-  id,
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  options: AutoresearchModelOption[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="flex-1">
-      <Text
-        as="label"
-        htmlFor={id}
-        size="1"
-        weight="medium"
-        className="mb-1 block"
-      >
-        {label}
-      </Text>
-      <Select.Root value={value} onValueChange={onChange}>
-        <Select.Trigger id={id} className="w-full" />
-        <Select.Content>
-          <Select.Item value={SINGLE_TURN}>Single turn (default)</Select.Item>
-          {options.map((option) => (
-            <Select.Item key={option.value} value={option.value}>
-              {option.label}
-            </Select.Item>
-          ))}
-        </Select.Content>
-      </Select.Root>
-    </div>
   );
 }

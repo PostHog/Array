@@ -1,5 +1,10 @@
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
-import type { AgentSession, SagaLogger } from "@posthog/shared";
+import {
+  type AgentSession,
+  getBackoffDelay,
+  getConfigOptionByCategory,
+  type SagaLogger,
+} from "@posthog/shared";
 import { inject, injectable, preDestroy } from "inversify";
 import { type SessionState, sessionStore } from "../sessions/sessionStore";
 import {
@@ -12,12 +17,14 @@ import {
   AUTORESEARCH_STORAGE_CLIENT,
   type AutoresearchSessionClient,
   type AutoresearchStorageClient,
+  type StoredAutoresearchRun,
 } from "./identifiers";
 import {
   buildContinuationPrompt,
   buildImplementPrompt,
   buildKickoffPrompt,
   buildMeasurePrompt,
+  buildPhasePrompt,
   buildReportReminderPrompt,
   buildResumePrompt,
   countPromptRequests,
@@ -39,9 +46,11 @@ import { computeBest, evaluateContinuation, isImprovement } from "./stats";
 let runCounter = 0;
 
 /**
- * A missing report only counts against the agent after this grace period:
- * `isPromptPending` flips false before a failed send's stop reason (e.g.
- * rate_limited) reaches us, and the reminder must lose that race.
+ * A reportless turn only triggers its reaction (reminder, or the split-run
+ * advance to the measure phase) after this grace period: `isPromptPending`
+ * flips false before a failed/cancelled send's stop reason reaches us, and
+ * the reaction must lose that race so a cancel/rate-limit pauses the run
+ * before we re-prompt the agent the user just silenced.
  */
 export const REMINDER_GRACE_MS = 1_500;
 export const RECOVERY_BASE_DELAY_MS = 60_000;
@@ -86,8 +95,11 @@ export class AutoresearchService {
   private unsubscribe: (() => void) | null = null;
   /** Reminders already sent for the in-flight iteration, per run id. */
   private remindersSent = new Map<string, number>();
-  /** Deferred missing-report reminders, cancelled if an interruption lands. */
-  private pendingReminders = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * Deferred reaction (reminder or measure-phase advance) to a reportless
+   * turn, cancelled if an interruption/pause lands during the grace window.
+   */
+  private pendingReactions = new Map<string, ReturnType<typeof setTimeout>>();
   /**
    * Count of session/prompt requests already handled per run. A turn
    * completion is only processed when the count moved past this cursor —
@@ -96,6 +108,14 @@ export class AutoresearchService {
   private promptCursor = new Map<string, number>();
   private recoveryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private recoveryAttempts = new Map<string, number>();
+  /** Per-run write-through chain so persisted saves land in call order. */
+  private persistChains = new Map<string, Promise<void>>();
+  /**
+   * Non-terminal run ids. The session subscription iterates only these, so a
+   * long-lived app that has run autoresearch on many tasks does not pay
+   * per-streamed-chunk work for runs that already ended.
+   */
+  private liveRunIds = new Set<string>();
   private hydratedTasks = new Set<string>();
   private rehydrated = false;
 
@@ -117,12 +137,14 @@ export class AutoresearchService {
       );
     }
 
+    const session = getSessionForTask(sessionStore.getState(), config.taskId);
     const run: AutoresearchRun = {
       id: `ar-${Date.now()}-${++runCounter}`,
       config,
       status: "running",
       metricName: null,
       phase: null,
+      originalModel: session ? currentSessionModel(session) : null,
       iterations: [],
       startedAt: Date.now(),
       endedAt: null,
@@ -132,7 +154,7 @@ export class AutoresearchService {
     };
 
     autoresearchStoreActions.upsertRun(run);
-    const session = getSessionForTask(sessionStore.getState(), config.taskId);
+    this.liveRunIds.add(run.id);
     this.promptCursor.set(
       run.id,
       session ? countPromptRequests(session.events) : 0,
@@ -157,10 +179,13 @@ export class AutoresearchService {
   startRun(input: AutoresearchConfigInput): AutoresearchRun {
     const run = this.registerRun(input);
     // The kickoff's baseline is a measurement turn.
-    if (isSplitRun(run)) {
-      this.switchModel(run.id, run.config.taskId, run.config.measureModel);
-    }
-    void this.send(run.id, run.config.taskId, buildKickoffPrompt(run.config));
+    const model = isSplitRun(run) ? run.config.measureModel : null;
+    this.switchThenSend(
+      run.id,
+      run.config.taskId,
+      model,
+      buildKickoffPrompt(run.config),
+    );
     return run;
   }
 
@@ -169,14 +194,12 @@ export class AutoresearchService {
     if (!run || (run.status !== "running" && run.status !== "interrupted")) {
       return;
     }
-    this.clearReminder(runId);
+    this.clearPendingReaction(runId);
     this.clearRecoveryTimer(runId);
+    this.remindersSent.delete(runId);
     autoresearchStoreActions.setRunStatus(runId, "paused");
     this.persist(runId);
-    // Hand the session back on the thinking model, not the measure one.
-    if (isSplitRun(run)) {
-      this.switchModel(runId, run.config.taskId, run.config.implementModel);
-    }
+    this.restoreOriginalModel(run);
     this.log.info("Autoresearch run paused", { runId });
   }
 
@@ -212,6 +235,9 @@ export class AutoresearchService {
     if (!session || !isSessionUsable(session)) {
       // The session is down; let the recovery machinery bring it back and
       // resume the loop. Attempt immediately — the user asked for it now.
+      // A manual resume is a fresh start, so it does not spend the automatic
+      // recovery budget.
+      this.recoveryAttempts.delete(runId);
       autoresearchStoreActions.setRunStatus(runId, "interrupted", {
         interruptedReason: run.interruptedReason ?? "session-error",
       });
@@ -227,8 +253,12 @@ export class AutoresearchService {
 
     const current = autoresearchStore.getState().runs[runId];
     if (current) {
-      this.switchModel(runId, run.config.taskId, phaseModel(current));
-      void this.send(runId, run.config.taskId, promptForPhase(current));
+      this.switchThenSend(
+        runId,
+        run.config.taskId,
+        phaseModel(current),
+        buildPhasePrompt(current),
+      );
     }
   }
 
@@ -248,7 +278,7 @@ export class AutoresearchService {
     if (this.rehydrated) return;
     this.rehydrated = true;
 
-    let stored: Awaited<ReturnType<AutoresearchStorageClient["listOpen"]>>;
+    let stored: StoredAutoresearchRun[];
     try {
       stored = await this.storage.listOpen();
     } catch (error) {
@@ -267,7 +297,9 @@ export class AutoresearchService {
     const state = autoresearchStore.getState();
     for (const runId of Object.values(state.activeRunIdByTask)) {
       const run = state.runs[runId];
-      if (run?.status !== "interrupted") continue;
+      if (!run || isTerminal(run)) continue;
+      this.liveRunIds.add(run.id);
+      if (run.status !== "interrupted") continue;
       // The stored blob still says "running"; persist the interruption.
       this.persist(run.id);
       this.scheduleRecovery(run.id);
@@ -283,7 +315,7 @@ export class AutoresearchService {
     if (this.hydratedTasks.has(taskId)) return;
     this.hydratedTasks.add(taskId);
 
-    let stored: Awaited<ReturnType<AutoresearchStorageClient["listByTask"]>>;
+    let stored: StoredAutoresearchRun[];
     try {
       stored = await this.storage.listByTask(taskId);
     } catch (error) {
@@ -304,7 +336,10 @@ export class AutoresearchService {
     if (runs.some((run) => !isTerminal(run))) {
       this.ensureSubscribed();
       const active = getActiveRunForTask(autoresearchStore.getState(), taskId);
-      if (active?.status === "interrupted") this.scheduleRecovery(active.id);
+      if (active && !isTerminal(active)) {
+        this.liveRunIds.add(active.id);
+        if (active.status === "interrupted") this.scheduleRecovery(active.id);
+      }
     }
   }
 
@@ -312,12 +347,13 @@ export class AutoresearchService {
   dispose(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
-    for (const timer of this.pendingReminders.values()) clearTimeout(timer);
-    this.pendingReminders.clear();
+    for (const timer of this.pendingReactions.values()) clearTimeout(timer);
+    this.pendingReactions.clear();
     for (const timer of this.recoveryTimers.values()) clearTimeout(timer);
     this.recoveryTimers.clear();
     this.remindersSent.clear();
     this.recoveryAttempts.clear();
+    this.liveRunIds.clear();
   }
 
   private ensureSubscribed(): void {
@@ -331,10 +367,17 @@ export class AutoresearchService {
     state: SessionState,
     prevState: SessionState,
   ): void {
-    const { runs, activeRunIdByTask } = autoresearchStore.getState();
-    for (const runId of Object.values(activeRunIdByTask)) {
+    // Fires on every session-store mutation (per streamed chunk of every
+    // session, app-wide); bail immediately when no run is live.
+    if (this.liveRunIds.size === 0) return;
+
+    const runs = autoresearchStore.getState().runs;
+    for (const runId of this.liveRunIds) {
       const run = runs[runId];
-      if (!run || isTerminal(run)) continue;
+      if (!run || isTerminal(run)) {
+        this.liveRunIds.delete(runId);
+        continue;
+      }
 
       const session = getSessionForTask(state, run.config.taskId);
       if (!session) continue;
@@ -380,18 +423,15 @@ export class AutoresearchService {
     const report = parseMetricReport(text);
 
     if (!report) {
-      // In a split run's implement phase a reportless turn is the expected
-      // outcome: the change is in, now measure it on the measure model.
-      const current = autoresearchStore.getState().runs[run.id];
-      if (current?.status === "running" && current.phase === "implement") {
-        this.beginMeasurePhase(current);
-        return;
-      }
-      this.scheduleReminder(run.id);
+      // Deferred: a reportless turn is either a split-run implement turn
+      // (advance to measure) or a genuine missing report (remind). Both wait
+      // out the grace window so a cancel/rate-limit resolving in the
+      // meantime pauses/interrupts the run first.
+      this.scheduleReportlessReaction(run.id);
       return;
     }
 
-    this.clearReminder(run.id);
+    this.clearPendingReaction(run.id);
     this.remindersSent.delete(run.id);
     // The loop is demonstrably turning again; future interruptions restart
     // the recovery backoff from scratch.
@@ -426,61 +466,108 @@ export class AutoresearchService {
   /** Kick off the next iteration after a recorded report. */
   private continueLoop(run: AutoresearchRun): void {
     if (!isSplitRun(run)) {
-      void this.send(run.id, run.config.taskId, buildContinuationPrompt(run));
+      this.switchThenSend(
+        run.id,
+        run.config.taskId,
+        null,
+        buildContinuationPrompt(run),
+      );
       return;
     }
     autoresearchStoreActions.setPhase(run.id, "implement");
     this.persist(run.id);
-    this.switchModel(run.id, run.config.taskId, run.config.implementModel);
-    const current = autoresearchStore.getState().runs[run.id];
-    if (current) {
-      void this.send(run.id, run.config.taskId, buildImplementPrompt(current));
-    }
+    const current = autoresearchStore.getState().runs[run.id] ?? run;
+    this.switchThenSend(
+      run.id,
+      run.config.taskId,
+      run.config.implementModel,
+      buildImplementPrompt(current),
+    );
   }
 
   private beginMeasurePhase(run: AutoresearchRun): void {
     autoresearchStoreActions.setPhase(run.id, "measure");
     this.persist(run.id);
-    this.switchModel(run.id, run.config.taskId, run.config.measureModel);
-    const current = autoresearchStore.getState().runs[run.id];
-    if (current) {
-      void this.send(run.id, run.config.taskId, buildMeasurePrompt(current));
-    }
+    const current = autoresearchStore.getState().runs[run.id] ?? run;
+    this.switchThenSend(
+      run.id,
+      run.config.taskId,
+      run.config.measureModel,
+      buildMeasurePrompt(current),
+    );
   }
 
   /**
-   * Fire-and-forget model switch; a failed switch must not stop the loop —
-   * the turn just runs on whatever model the session already has.
+   * Switch the session's stage model, then send — in that order, so the turn
+   * runs on the intended model rather than racing the switch. A run with no
+   * stage model (single-turn) skips straight to the send with no await, so
+   * ordering is unchanged for it. When there is a switch, a run that ended,
+   * paused, or was interrupted during it does not send.
    */
-  private switchModel(
+  private switchThenSend(
     runId: string,
     taskId: string,
     model: string | null,
+    prompt: string,
   ): void {
+    if (model === null) {
+      void this.send(runId, taskId, prompt);
+      return;
+    }
+    void this.switchModel(runId, taskId, model).then(() => {
+      const run = autoresearchStore.getState().runs[runId];
+      if (!run || run.status !== "running") return;
+      return this.send(runId, taskId, prompt);
+    });
+  }
+
+  private async switchModel(
+    runId: string,
+    taskId: string,
+    model: string | null,
+  ): Promise<void> {
     if (model === null) return;
-    void this.sessionClient.setModel(taskId, model).catch((error) => {
+    try {
+      await this.sessionClient.setModel(taskId, model);
+    } catch (error) {
       this.log.warn("Autoresearch model switch failed; continuing", {
         runId,
         model,
         error,
       });
-    });
+    }
+  }
+
+  /** Restore the session to the model the user had before a split run. */
+  private restoreOriginalModel(run: AutoresearchRun): void {
+    if (!isSplitRun(run)) return;
+    void this.switchModel(
+      run.id,
+      run.config.taskId,
+      run.originalModel ?? run.config.implementModel,
+    );
   }
 
   /**
-   * A turn ended without a report. Wait a grace period before reacting:
-   * when the "turn" was really a failed send, its stop reason (rate limit,
-   * cancel) arrives within the grace window and moots the reminder.
+   * React to a reportless turn once the grace window has passed and no
+   * cancel/rate-limit/interruption intervened. In a split run's implement
+   * phase that means advancing to the measure phase; otherwise it is a
+   * missing report — remind once, then fail.
    */
-  private scheduleReminder(runId: string): void {
+  private scheduleReportlessReaction(runId: string): void {
     const run = autoresearchStore.getState().runs[runId];
     if (!run || run.status !== "running") return;
-    if (this.pendingReminders.has(runId)) return;
+    if (this.pendingReactions.has(runId)) return;
 
     const timer = setTimeout(() => {
-      this.pendingReminders.delete(runId);
+      this.pendingReactions.delete(runId);
       const current = autoresearchStore.getState().runs[runId];
       if (!current || current.status !== "running") return;
+
+      if (isSplitRun(current) && current.phase === "implement") {
+        this.beginMeasurePhase(current);
+        return;
+      }
 
       const reminders = this.remindersSent.get(runId) ?? 0;
       if (reminders >= 1) {
@@ -500,7 +587,7 @@ export class AutoresearchService {
         buildReportReminderPrompt(current),
       );
     }, REMINDER_GRACE_MS);
-    this.pendingReminders.set(runId, timer);
+    this.pendingReactions.set(runId, timer);
   }
 
   private recordIteration(
@@ -548,13 +635,23 @@ export class AutoresearchService {
         // immediately re-prompting the agent they just silenced.
         const run = autoresearchStore.getState().runs[runId];
         if (run?.status === "running") {
-          this.clearReminder(runId);
+          this.clearPendingReaction(runId);
+          this.remindersSent.delete(runId);
           autoresearchStoreActions.setRunStatus(runId, "paused");
           this.persist(runId);
+          this.restoreOriginalModel(run);
           this.log.info("Autoresearch paused after user cancelled the turn", {
             runId,
           });
         }
+      } else if (stopReason === "queued") {
+        // The session was busy (a turn/compaction in flight), so our prompt
+        // sits in the session queue and drains when it frees up — producing
+        // a turn the subscription processes normally. Nothing to do but note
+        // it; if the session never frees, its error path drives recovery.
+        this.log.warn("Autoresearch prompt queued behind a busy session", {
+          runId,
+        });
       }
     } catch (error) {
       this.log.error("Failed to send autoresearch prompt", { runId, error });
@@ -578,7 +675,9 @@ export class AutoresearchService {
     // A user pause outranks automation: record nothing, resume nothing.
     if (run.status === "paused") return;
 
-    this.clearReminder(runId);
+    this.clearPendingReaction(runId);
+    // A fresh interruption gets its own reminder budget on resume.
+    this.remindersSent.delete(runId);
     autoresearchStoreActions.setRunStatus(runId, "interrupted", {
       interruptedReason: reason,
       lastError,
@@ -598,10 +697,10 @@ export class AutoresearchService {
       });
       return;
     }
-    const delay = Math.min(
-      RECOVERY_BASE_DELAY_MS * 2 ** attempts,
-      RECOVERY_MAX_DELAY_MS,
-    );
+    const delay = getBackoffDelay(attempts, {
+      initialDelayMs: RECOVERY_BASE_DELAY_MS,
+      maxDelayMs: RECOVERY_MAX_DELAY_MS,
+    });
     const timer = setTimeout(() => {
       this.recoveryTimers.delete(runId);
       void this.attemptRecovery(runId);
@@ -673,10 +772,14 @@ export class AutoresearchService {
       runId,
       reason,
     });
-    // A reconnected session comes back on its default model; re-apply the
-    // phase's stage model before re-entering the loop.
-    this.switchModel(runId, run.config.taskId, phaseModel(run));
-    void this.send(runId, run.config.taskId, buildResumePrompt(run, reason));
+    // A reconnected session comes back on its default model; switchThenSend
+    // re-applies the phase's stage model before re-entering the loop.
+    this.switchThenSend(
+      runId,
+      run.config.taskId,
+      phaseModel(run),
+      buildResumePrompt(run, reason),
+    );
   }
 
   private endRun(
@@ -687,21 +790,19 @@ export class AutoresearchService {
     const run = autoresearchStore.getState().runs[runId];
     autoresearchStoreActions.setRunStatus(runId, status, options);
     this.persist(runId);
-    this.clearReminder(runId);
+    this.clearPendingReaction(runId);
     this.clearRecoveryTimer(runId);
     this.remindersSent.delete(runId);
     this.recoveryAttempts.delete(runId);
     this.promptCursor.delete(runId);
-    // Hand the session back on the thinking model, not the measure one.
-    if (run && isSplitRun(run)) {
-      this.switchModel(runId, run.config.taskId, run.config.implementModel);
-    }
+    this.liveRunIds.delete(runId);
+    if (run) this.restoreOriginalModel(run);
   }
 
-  private clearReminder(runId: string): void {
-    const timer = this.pendingReminders.get(runId);
+  private clearPendingReaction(runId: string): void {
+    const timer = this.pendingReactions.get(runId);
     if (timer) clearTimeout(timer);
-    this.pendingReminders.delete(runId);
+    this.pendingReactions.delete(runId);
   }
 
   private clearRecoveryTimer(runId: string): void {
@@ -710,20 +811,28 @@ export class AutoresearchService {
     this.recoveryTimers.delete(runId);
   }
 
-  /** Fire-and-forget write-through; the in-memory store stays authoritative. */
+  /**
+   * Write-through persistence. Saves for a run are chained so they land in
+   * call order — a later transition can never be overwritten by an in-flight
+   * earlier one. The in-memory store stays authoritative.
+   */
   private persist(runId: string): void {
     const run = autoresearchStore.getState().runs[runId];
     if (!run) return;
-    void this.storage
-      .save({
-        id: run.id,
-        taskId: run.config.taskId,
-        endedAt: run.endedAt ? new Date(run.endedAt).toISOString() : null,
-        data: JSON.stringify(run),
-      })
+    const record: StoredAutoresearchRun = {
+      id: run.id,
+      taskId: run.config.taskId,
+      endedAt: run.endedAt ? new Date(run.endedAt).toISOString() : null,
+      data: JSON.stringify(run),
+    };
+    const previous = this.persistChains.get(runId) ?? Promise.resolve();
+    const next = previous
+      .catch(() => {})
+      .then(() => this.storage.save(record))
       .catch((error) => {
         this.log.error("Failed to persist autoresearch run", { runId, error });
       });
+    this.persistChains.set(runId, next);
   }
 }
 
@@ -750,13 +859,6 @@ function phaseModel(run: AutoresearchRun): string | null {
     : run.config.implementModel;
 }
 
-/** The prompt that re-enters the loop at the run's current phase. */
-function promptForPhase(run: AutoresearchRun): string {
-  if (run.phase === "implement") return buildImplementPrompt(run);
-  if (run.phase === "measure") return buildMeasurePrompt(run);
-  return buildContinuationPrompt(run);
-}
-
 function isSessionUsable(session: AgentSession | undefined): boolean {
   return (
     session !== undefined &&
@@ -764,6 +866,12 @@ function isSessionUsable(session: AgentSession | undefined): boolean {
     !session.isPromptPending &&
     !session.isCompacting
   );
+}
+
+/** The session's currently-selected model, or null if none is set. */
+function currentSessionModel(session: AgentSession): string | null {
+  const option = getConfigOptionByCategory(session.configOptions, "model");
+  return option?.type === "select" ? (option.currentValue ?? null) : null;
 }
 
 function getSessionForTask(

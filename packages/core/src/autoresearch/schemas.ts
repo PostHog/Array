@@ -115,6 +115,13 @@ export const autoresearchRunSchema = z.object({
    */
   metricName: z.string().nullable().default(null),
   phase: autoresearchPhaseSchema.nullable().default(null),
+  /**
+   * The session model selected when the run started, captured so split runs
+   * can restore it when they pause or end instead of leaving the session
+   * pinned on a stage model. Null when unknown (e.g. composer runs whose
+   * session did not yet exist at registration).
+   */
+  originalModel: z.string().nullable().default(null),
   iterations: z.array(autoresearchIterationSchema),
   startedAt: z.number(),
   endedAt: z.number().nullable(),

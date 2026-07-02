@@ -23,11 +23,12 @@ import { toast } from "../../../primitives/toast";
 import { useActiveRepoStore } from "../../../shell/activeRepoStore";
 import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
 import { useAuthStateValue } from "../../auth/store";
-import { AutoresearchComposerStrip } from "../../autoresearch/AutoresearchComposerStrip";
+import { AutoresearchComposerControls } from "../../autoresearch/AutoresearchComposerControls";
 import {
   autoresearchPendingRun,
   useAutoresearchDraftStore,
 } from "../../autoresearch/autoresearchDraftStore";
+import { toAutoresearchModelOptions } from "../../autoresearch/stageModels";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
 import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
@@ -61,10 +62,7 @@ import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { DropZoneOverlay } from "../../sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
 import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
-import {
-  flattenSelectOptions,
-  getCurrentModeFromConfigOptions,
-} from "../../sessions/sessionStore";
+import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
 import {
   type AgentAdapter,
   useSettingsStore,
@@ -620,13 +618,10 @@ export function TaskInput({
   const autoresearchDraft = useAutoresearchDraftStore(
     (state) => state.drafts[sessionId] ?? null,
   );
-  const autoresearchModelOptions = useMemo(() => {
-    if (modelOption?.type !== "select") return [];
-    return flattenSelectOptions(modelOption.options).map((option) => ({
-      value: option.value,
-      label: option.name ?? option.value,
-    }));
-  }, [modelOption]);
+  const autoresearchModelOptions = useMemo(
+    () => toAutoresearchModelOptions(modelOption),
+    [modelOption],
+  );
 
   const handleAutoresearchToggle = useCallback(() => {
     const store = useAutoresearchDraftStore.getState();
@@ -1041,7 +1036,28 @@ export function TaskInput({
             <PromptInput
               ref={editorRef}
               sessionId={promptSessionId}
-              placeholder={`What do you want to ship? ${hints}`}
+              placeholder={
+                autoresearchDraft
+                  ? "What should the agent optimize? Describe the goal, how to measure it, and any constraints — it measures a baseline, then iterates."
+                  : `What do you want to ship? ${hints}`
+              }
+              headerAddon={
+                autoresearchDraft ? (
+                  <AutoresearchComposerControls
+                    draft={autoresearchDraft}
+                    modelOptions={autoresearchModelOptions}
+                    disabled={isCreatingTask}
+                    onChange={(patch) =>
+                      useAutoresearchDraftStore
+                        .getState()
+                        .updateDraft(sessionId, patch)
+                    }
+                    onExit={() =>
+                      useAutoresearchDraftStore.getState().clearDraft(sessionId)
+                    }
+                  />
+                ) : undefined
+              }
               editorHeight="large"
               disabled={isCreatingTask}
               isLoading={isCreatingTask}
@@ -1115,21 +1131,6 @@ export function TaskInput({
                   </button>
                 </Tooltip>
               </div>
-            )}
-            {autoresearchDraft && (
-              <AutoresearchComposerStrip
-                draft={autoresearchDraft}
-                modelOptions={autoresearchModelOptions}
-                disabled={isCreatingTask}
-                onChange={(patch) =>
-                  useAutoresearchDraftStore
-                    .getState()
-                    .updateDraft(sessionId, patch)
-                }
-                onExit={() =>
-                  useAutoresearchDraftStore.getState().clearDraft(sessionId)
-                }
-              />
             )}
             {includeChannelContext && (
               <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">

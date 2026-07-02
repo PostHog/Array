@@ -132,6 +132,17 @@ const INTERRUPTION_PHRASE: Record<AutoresearchInterruptionReason, string> = {
 };
 
 /**
+ * The prompt that (re-)enters the loop at the run's current phase — the
+ * single source of truth for phase → prompt, shared by resume and the manual
+ * resume path so the two can't drift.
+ */
+export function buildPhasePrompt(run: AutoresearchRun): string {
+  if (run.phase === "implement") return buildImplementPrompt(run);
+  if (run.phase === "measure") return buildMeasurePrompt(run);
+  return buildContinuationPrompt(run);
+}
+
+/**
  * Continuation sent when the loop re-engages after an interruption. States
  * why the loop went quiet so the agent can re-check the workspace state
  * (a half-applied change from the aborted iteration must be measured or
@@ -141,15 +152,9 @@ export function buildResumePrompt(
   run: AutoresearchRun,
   reason: AutoresearchInterruptionReason,
 ): string {
-  const body =
-    run.phase === "implement"
-      ? buildImplementPrompt(run)
-      : run.phase === "measure"
-        ? buildMeasurePrompt(run)
-        : buildContinuationPrompt(run);
   return `The autoresearch loop was interrupted (${INTERRUPTION_PHRASE[reason]}) and is resuming now. Check the working tree for any half-applied change from the aborted iteration before continuing.
 
-${body}`;
+${buildPhasePrompt(run)}`;
 }
 
 export function buildReportReminderPrompt(run: AutoresearchRun): string {

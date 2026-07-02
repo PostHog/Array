@@ -1,8 +1,10 @@
+import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import type { AcpMessage, AgentSession } from "@posthog/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore, sessionStoreSetters } from "../sessions/sessionStore";
 import {
   AutoresearchService,
+  MAX_RECOVERY_ATTEMPTS,
   RECOVERY_BASE_DELAY_MS,
   REMINDER_GRACE_MS,
 } from "./autoresearch";
@@ -128,6 +130,24 @@ function reportText(value: number, summary = "tweak"): string {
   return `Done.\n\`\`\`autoresearch\nmetric: ${value}\nsummary: ${summary}\n\`\`\``;
 }
 
+/** A session `model` config option set to `currentValue`. */
+function modelConfig(currentValue: string): SessionConfigOption[] {
+  return [
+    {
+      id: "model",
+      category: "model",
+      name: "Model",
+      type: "select",
+      currentValue,
+      options: [
+        { value: currentValue, name: currentValue },
+        { value: "claude-opus-4-8", name: "Opus" },
+        { value: "claude-haiku-4-5", name: "Haiku" },
+      ],
+    },
+  ] as SessionConfigOption[];
+}
+
 function namedReportText(value: number, name: string): string {
   return `Done.\n\`\`\`autoresearch\nmetric: ${value}\nname: ${name}\nsummary: tweak\n\`\`\``;
 }
@@ -196,6 +216,7 @@ function makeRun(
     status: "running",
     metricName: null,
     phase: null,
+    originalModel: null,
     iterations: [],
     startedAt: 1_000,
     endedAt: null,
@@ -495,8 +516,10 @@ describe("AutoresearchService", () => {
       service.startRun(splitConfig);
       modelSwitches = [];
 
-      // Baseline report -> implement phase on the implement model.
+      // Baseline report -> implement phase on the implement model. The model
+      // switch is awaited before the send, so flush the microtask queue.
       runTurn(reportText(10, "baseline"));
+      await flush();
       expect(activeRun().phase).toBe("implement");
       expect(modelSwitches).toEqual([
         { taskId: TASK_ID, model: "claude-opus-4-8" },
@@ -526,14 +549,16 @@ describe("AutoresearchService", () => {
       expect(activeRun().phase).toBe("implement");
     });
 
-    it("records an opportunistic report from an implement turn", () => {
+    it("records an opportunistic report from an implement turn", async () => {
       service.startRun(splitConfig);
       runTurn(reportText(10, "baseline"));
+      await flush();
       expect(activeRun().phase).toBe("implement");
 
       // The agent measured during the implement turn anyway; skip the
       // dedicated measure turn and start the next iteration.
       runTurn(reportText(11, "changed and measured"));
+      await flush();
 
       expect(activeRun().iterations).toHaveLength(2);
       expect(activeRun().phase).toBe("implement");
@@ -582,6 +607,7 @@ describe("AutoresearchService", () => {
       sentPrompts = [];
 
       sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "connected" });
+      await flush();
 
       expect(activeRun().status).toBe("running");
       expect(modelSwitches).toEqual([
@@ -865,9 +891,10 @@ describe("AutoresearchService", () => {
   });
 
   describe("persistence", () => {
-    it("persists on register, iteration, and terminal transitions", () => {
+    it("persists on register, iteration, and terminal transitions", async () => {
       const run = service.startRun(baseConfig);
-      expect(savedRuns).toHaveLength(1);
+      await flush();
+      expect(savedRuns.length).toBeGreaterThanOrEqual(1);
       expect(savedRuns[0]).toMatchObject({
         id: run.id,
         taskId: TASK_ID,
@@ -875,9 +902,11 @@ describe("AutoresearchService", () => {
       });
 
       runTurn(reportText(10));
+      await flush();
       expect(savedRuns.length).toBeGreaterThanOrEqual(2);
 
       service.stopRun(run.id);
+      await flush();
       const last = savedRuns.at(-1);
       expect(last?.endedAt).not.toBeNull();
       expect(JSON.parse(last?.data ?? "{}")).toMatchObject({
@@ -990,6 +1019,121 @@ describe("AutoresearchService", () => {
       await service.hydrateTask(TASK_ID);
       await service.hydrateTask(TASK_ID);
       expect(storageClient.listByTask).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("interruption and cancel edges", () => {
+    it("defers the measure phase so a pause during the grace window wins", async () => {
+      service.startRun(splitConfig);
+      await flush();
+      runTurn(reportText(10, "baseline"));
+      await flush();
+      expect(activeRun().phase).toBe("implement");
+      sentPrompts = [];
+
+      // The implement turn ends without a report, arming the deferred advance
+      // to the measure phase. Before the grace elapses the run is paused (as a
+      // cancelled implement send would do).
+      runTurn("Made the change.");
+      service.pauseRun(activeRun().id);
+      await passReminderGrace();
+
+      // No measure prompt was sent to the agent the user just silenced.
+      expect(activeRun().status).toBe("paused");
+      expect(activeRun().phase).toBe("implement");
+      expect(
+        sentPrompts.some((p) => p.prompt.includes("Measurement phase")),
+      ).toBe(false);
+    });
+
+    it("gives a recovered run a fresh reminder budget", async () => {
+      service.startRun(baseConfig);
+      await flush();
+
+      runTurn("no report");
+      await passReminderGrace();
+      expect(sentPrompts.at(-1)?.prompt).toContain("did not include");
+
+      // The session drops after the first missed report, then recovers.
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "error" });
+      expect(activeRun().status).toBe("interrupted");
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "connected" });
+      await flush();
+      expect(activeRun().status).toBe("running");
+
+      // The first reportless turn after recovery reminds again instead of
+      // failing on a stale pre-interruption reminder count.
+      runTurn("still no report");
+      await passReminderGrace();
+      expect(activeRun().status).toBe("running");
+      expect(activeRun().endReason).toBeNull();
+      expect(sentPrompts.at(-1)?.prompt).toContain("did not include");
+    });
+
+    it("keeps the loop running when a send is queued behind a busy session", async () => {
+      service.startRun(baseConfig);
+      await flush();
+
+      sendPromptImpl = () => Promise.resolve({ stopReason: "queued" });
+      runTurn(reportText(10));
+      await flush();
+
+      // The iteration was still recorded; the queued continuation drains later.
+      expect(activeRun().iterations).toHaveLength(1);
+      expect(activeRun().status).toBe("running");
+      expect(activeRun().interruptedReason).toBeNull();
+    });
+
+    it("does not spend the automatic-recovery budget on a manual resume", () => {
+      service.startRun(baseConfig);
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "error" });
+      const runId = activeRun().id;
+      expect(activeRun().status).toBe("interrupted");
+
+      // Pretend automatic recovery has nearly given up.
+      const attempts = (
+        service as unknown as { recoveryAttempts: Map<string, number> }
+      ).recoveryAttempts;
+      attempts.set(runId, MAX_RECOVERY_ATTEMPTS - 1);
+
+      // A manual resume on the still-down session refreshes the budget before
+      // its own attempt, so automatic recovery is not left exhausted.
+      service.resumeRun(runId);
+      expect(attempts.get(runId) ?? 0).toBeLessThan(MAX_RECOVERY_ATTEMPTS);
+    });
+  });
+
+  describe("stage-model restoration", () => {
+    it("restores the user's model when a split run ends", async () => {
+      sessionStoreSetters.setSession(
+        makeSession({ configOptions: modelConfig("claude-sonnet-4-6") }),
+      );
+      const run = service.startRun(splitConfig);
+      await flush();
+      modelSwitches = [];
+
+      service.stopRun(run.id);
+      await flush();
+
+      expect(modelSwitches).toEqual([
+        { taskId: TASK_ID, model: "claude-sonnet-4-6" },
+      ]);
+    });
+
+    it("restores the user's model when a split run is paused", async () => {
+      sessionStoreSetters.setSession(
+        makeSession({ configOptions: modelConfig("claude-sonnet-4-6") }),
+      );
+      const run = service.startRun(splitConfig);
+      await flush();
+      modelSwitches = [];
+
+      service.pauseRun(run.id);
+      await flush();
+
+      expect(modelSwitches).toEqual([
+        { taskId: TASK_ID, model: "claude-sonnet-4-6" },
+      ]);
     });
   });
 });
