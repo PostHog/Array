@@ -44,14 +44,12 @@ import {
 import type { DevNetworkService } from "../../services/dev-network/service";
 import { publicProcedure, router } from "../trpc";
 
-const getFlagsService = () =>
-  container.get<DevFlagsService>(DEV_FLAGS_SERVICE);
+const getFlagsService = () => container.get<DevFlagsService>(DEV_FLAGS_SERVICE);
 const getMetricsService = () =>
   container.get<DevMetricsService>(DEV_METRICS_SERVICE);
 const getNetworkService = () =>
   container.get<DevNetworkService>(DEV_NETWORK_SERVICE);
-const getLogsService = () =>
-  container.get<DevLogsService>(DEV_LOGS_SERVICE);
+const getLogsService = () => container.get<DevLogsService>(DEV_LOGS_SERVICE);
 const getActionsService = () =>
   container.get<DevActionsService>(DEV_ACTIONS_SERVICE);
 const getAgentService = () => container.get<AgentService>(AGENT_SERVICE);
