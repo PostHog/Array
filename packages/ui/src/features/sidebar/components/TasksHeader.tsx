@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import { useMeQuery } from "@posthog/ui/features/auth/useMeQuery";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 
@@ -33,9 +34,15 @@ function TaskFilterMenu() {
   const organizeMode = useSidebarStore((state) => state.organizeMode);
   const sortMode = useSidebarStore((state) => state.sortMode);
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
+  const showSystemStarted = useSidebarStore((state) => state.showSystemStarted);
   const setOrganizeMode = useSidebarStore((state) => state.setOrganizeMode);
   const setSortMode = useSidebarStore((state) => state.setSortMode);
   const setShowAllUsers = useSidebarStore((state) => state.setShowAllUsers);
+  const setShowSystemStarted = useSidebarStore(
+    (state) => state.setShowSystemStarted,
+  );
+  const { data: currentUser } = useMeQuery();
+  const isStaff = currentUser?.is_staff === true;
 
   return (
     <DropdownMenu>
@@ -92,6 +99,27 @@ function TaskFilterMenu() {
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="all">
                 All tasks
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </>
+        )}
+
+        {isStaff && (
+          <>
+            <DropdownMenuSeparator />
+
+            <MenuLabel>Task origin</MenuLabel>
+            <DropdownMenuRadioGroup
+              value={showSystemStarted ? "system" : "user"}
+              onValueChange={(value) =>
+                setShowSystemStarted(value === "system")
+              }
+            >
+              <DropdownMenuRadioItem value="user">
+                User-started
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="system">
+                System-started
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </>

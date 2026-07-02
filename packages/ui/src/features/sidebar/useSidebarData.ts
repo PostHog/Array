@@ -27,12 +27,6 @@ import { useTaskViewed } from "./useTaskViewed";
 
 export type { SidebarData, TaskData, TaskGroup };
 
-// Slack thread metadata rides on each task's own `origin_product`/state (see
-// `narrowFullTask`), so the sidebar doesn't need a supplementary slack-task
-// lookup. Stable empty references keep `deriveTaskData` memoized.
-const EMPTY_TASK_IDS: ReadonlySet<string> = new Set();
-const EMPTY_THREAD_URLS: ReadonlyMap<string, string> = new Map();
-
 interface UseSidebarDataProps {
   activeView: AppView;
 }
@@ -41,6 +35,7 @@ export function useSidebarData({
   activeView,
 }: UseSidebarDataProps): SidebarData {
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
+  const showSystemStarted = useSidebarStore((state) => state.showSystemStarted);
   const { data: workspaces, isFetched: isWorkspacesFetched } = useWorkspaces();
   const { tasks: fullTasks, isLoading: isTasksLoading } = useSidebarTasks();
   const archivedTaskIds = useArchivedTaskIds();
@@ -75,12 +70,14 @@ export function useSidebarData({
         workspaceIds,
         provisioningIds: provisioningTaskIds,
         showAllUsers,
+        showSystemStarted,
       }),
     [
       rawTasks,
       archivedTaskIds,
       workspaceIds,
       showAllUsers,
+      showSystemStarted,
       provisioningTaskIds,
     ],
   );
@@ -106,8 +103,6 @@ export function useSidebarData({
           timestamp: timestamps[task.id],
           pinnedIds: pinnedTaskIds,
           suspendedIds: suspendedTaskIds,
-          slackTaskIds: EMPTY_TASK_IDS,
-          slackThreadUrlByTaskId: EMPTY_THREAD_URLS,
         }),
       ),
     [

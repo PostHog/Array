@@ -10,7 +10,6 @@ import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { useMemo } from "react";
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
-const EMPTY_STRING_MAP: ReadonlyMap<string, string> = new Map();
 
 // Which canvas generation tasks should be shown nested under their canvas in
 // the channel tree. A generation task nests while it's actively generating, and
@@ -57,8 +56,6 @@ export function useNestedGenerationTaskIds(
         timestamp: timestamps[taskId],
         pinnedIds: EMPTY_SET,
         suspendedIds: EMPTY_SET,
-        slackTaskIds: EMPTY_SET,
-        slackThreadUrlByTaskId: EMPTY_STRING_MAP,
       });
       // `isUnread` requires a prior view (lastViewedAt set); a never-viewed
       // task isn't "unread" but is still unseen, so check activity-vs-view

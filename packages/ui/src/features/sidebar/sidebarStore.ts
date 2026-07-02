@@ -13,6 +13,9 @@ interface SidebarStoreState {
   organizeMode: "by-project" | "chronological";
   sortMode: "updated" | "created";
   showAllUsers: boolean;
+  // Staff-only task-origin filter. false → "User-started" (user_created/slack);
+  // true → "System-started" (signals, support queue, session summaries, …).
+  showSystemStarted: boolean;
 }
 
 interface SidebarStoreActions {
@@ -30,6 +33,7 @@ interface SidebarStoreActions {
   setOrganizeMode: (mode: SidebarStoreState["organizeMode"]) => void;
   setSortMode: (mode: SidebarStoreState["sortMode"]) => void;
   setShowAllUsers: (showAllUsers: boolean) => void;
+  setShowSystemStarted: (showSystemStarted: boolean) => void;
 }
 
 type SidebarStore = SidebarStoreState & SidebarStoreActions;
@@ -47,6 +51,7 @@ export const useSidebarStore = create<SidebarStore>()(
       organizeMode: "by-project",
       sortMode: "updated",
       showAllUsers: false,
+      showSystemStarted: false,
       setOpen: (open) => set({ open, hasUserSetOpen: true }),
       setOpenAuto: (open) =>
         set((state) => (state.hasUserSetOpen ? state : { open })),
@@ -96,6 +101,7 @@ export const useSidebarStore = create<SidebarStore>()(
       setOrganizeMode: (organizeMode) => set({ organizeMode }),
       setSortMode: (sortMode) => set({ sortMode }),
       setShowAllUsers: (showAllUsers) => set({ showAllUsers }),
+      setShowSystemStarted: (showSystemStarted) => set({ showSystemStarted }),
     }),
     {
       name: "sidebar-storage",
@@ -109,6 +115,7 @@ export const useSidebarStore = create<SidebarStore>()(
         organizeMode: state.organizeMode,
         sortMode: state.sortMode,
         showAllUsers: state.showAllUsers,
+        showSystemStarted: state.showSystemStarted,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as {
@@ -121,6 +128,7 @@ export const useSidebarStore = create<SidebarStore>()(
           organizeMode?: SidebarStoreState["organizeMode"];
           sortMode?: SidebarStoreState["sortMode"];
           showAllUsers?: boolean;
+          showSystemStarted?: boolean;
         };
         return {
           ...current,
@@ -138,6 +146,8 @@ export const useSidebarStore = create<SidebarStore>()(
           organizeMode: persistedState.organizeMode ?? current.organizeMode,
           sortMode: persistedState.sortMode ?? current.sortMode,
           showAllUsers: persistedState.showAllUsers ?? current.showAllUsers,
+          showSystemStarted:
+            persistedState.showSystemStarted ?? current.showSystemStarted,
         };
       },
     },
