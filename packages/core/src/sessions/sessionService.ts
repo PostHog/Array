@@ -4344,6 +4344,10 @@ export class SessionService {
     } = params;
 
     if (isCloud) {
+      // Local connects bound the session budget inside connectToTask; cloud
+      // watches would otherwise never trigger eviction.
+      this.sessionLastUsedAt.set(task.id, Date.now());
+      void this.evictIdleSessions(task.id);
       return this.reconcileCloudConnection(
         task,
         cloudAuth,
