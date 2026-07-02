@@ -26,9 +26,25 @@ interface SessionState {
   chunkBuffer?: ChunkBuffer;
   lastAgentMessage?: string;
   currentTurnMessages: string[];
+  /**
+   * Latest in-progress `tool_call_update` per toolCallId, not yet written to
+   * the local cache. Agents re-send the full accumulated tool output on every
+   * update; only the last before a terminal/other event needs persisting, so
+   * we coalesce here to keep the on-disk log proportional to real content.
+   */
+  toolUpdateCache: Map<
+    string,
+    { entry: StoredNotification; bufferedAt: number }
+  >;
 }
 
 export class SessionLogWriter {
+  /**
+   * Max wall-clock a coalesced in-progress tool update is held before being
+   * written to the local cache anyway. Bounds crash loss to this window while
+   * still collapsing rapid re-sends of a growing tool output.
+   */
+  private static readonly TOOL_UPDATE_MAX_HOLD_MS = 2000;
   private static readonly FLUSH_DEBOUNCE_MS = 500;
   private static readonly FLUSH_MAX_INTERVAL_MS = 5000;
   private static readonly MAX_FLUSH_RETRIES = 10;
@@ -61,6 +77,7 @@ export class SessionLogWriter {
     const flushPromises: Promise<void>[] = [];
     for (const [sessionId, session] of this.sessions) {
       this.emitCoalescedMessage(sessionId, session);
+      this.flushToolUpdateCache(sessionId, session);
       flushPromises.push(this.flush(sessionId));
     }
     await Promise.all(flushPromises);
@@ -71,7 +88,11 @@ export class SessionLogWriter {
       return;
     }
 
-    this.sessions.set(sessionId, { context, currentTurnMessages: [] });
+    this.sessions.set(sessionId, {
+      context,
+      currentTurnMessages: [],
+      toolUpdateCache: new Map(),
+    });
 
     this.lastFlushAttemptTime.set(sessionId, Date.now());
 
@@ -144,7 +165,37 @@ export class SessionLogWriter {
         notification: message,
       };
 
-      this.writeToLocalCache(sessionId, entry);
+      // Coalesce the local cache: hold in-progress tool_call_update snapshots
+      // (they re-send the full growing output) and write only the latest per
+      // toolCallId. A terminal update, any non-tool event, or the hold window
+      // elapsing flushes them. The API path is untouched.
+      const tcu = this.toolCallUpdateInfo(message);
+      if (tcu && !tcu.terminal) {
+        const cache = session.toolUpdateCache;
+        const existing = cache.get(tcu.toolCallId);
+        if (
+          existing &&
+          Date.now() - existing.bufferedAt >
+            SessionLogWriter.TOOL_UPDATE_MAX_HOLD_MS
+        ) {
+          this.writeToLocalCache(sessionId, existing.entry);
+          cache.set(tcu.toolCallId, { entry, bufferedAt: Date.now() });
+        } else {
+          cache.set(tcu.toolCallId, {
+            entry,
+            bufferedAt: existing?.bufferedAt ?? Date.now(),
+          });
+        }
+      } else {
+        if (tcu?.terminal) {
+          // The terminal update carries the full final output and supersedes
+          // any buffered in-progress snapshot for this call.
+          session.toolUpdateCache.delete(tcu.toolCallId);
+        } else {
+          this.flushToolUpdateCache(sessionId, session);
+        }
+        this.writeToLocalCache(sessionId, entry);
+      }
 
       if (this.posthogAPI) {
         const pending = this.pendingEntries.get(sessionId) ?? [];
@@ -256,6 +307,30 @@ export class SessionLogWriter {
 
   private isDirectAgentMessage(message: Record<string, unknown>): boolean {
     return this.getSessionUpdateType(message) === "agent_message";
+  }
+
+  private toolCallUpdateInfo(
+    message: Record<string, unknown>,
+  ): { toolCallId: string; terminal: boolean } | null {
+    if (this.getSessionUpdateType(message) !== "tool_call_update") return null;
+    const params = message.params as Record<string, unknown> | undefined;
+    const update = params?.update as Record<string, unknown> | undefined;
+    const toolCallId = update?.toolCallId;
+    if (typeof toolCallId !== "string") return null;
+    const status = update?.status;
+    return {
+      toolCallId,
+      terminal: status === "completed" || status === "failed",
+    };
+  }
+
+  /** Write any buffered in-progress tool updates to the local cache, in order. */
+  private flushToolUpdateCache(sessionId: string, session: SessionState): void {
+    if (session.toolUpdateCache.size === 0) return;
+    for (const { entry } of session.toolUpdateCache.values()) {
+      this.writeToLocalCache(sessionId, entry);
+    }
+    session.toolUpdateCache.clear();
   }
 
   private isAgentMessageChunk(message: Record<string, unknown>): boolean {

@@ -514,3 +514,80 @@ describe("SessionLogWriter", () => {
     });
   });
 });
+
+describe("SessionLogWriter — local-cache tool_call_update coalescing", () => {
+  let tmp: string;
+  let writer: SessionLogWriter;
+  const RUN = "run-coalesce";
+
+  beforeEach(async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "slw-"));
+    writer = new SessionLogWriter({ localCachePath: tmp });
+    writer.register(RUN, { taskId: "t", runId: RUN });
+  });
+
+  afterEach(async () => {
+    const fs = await import("node:fs");
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const readLog = async (): Promise<Record<string, unknown>[]> => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const p = path.join(tmp, "sessions", RUN, "logs.ndjson");
+    if (!fs.existsSync(p)) return [];
+    return fs
+      .readFileSync(p, "utf-8")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
+  };
+
+  const update = (extra: Record<string, unknown>) =>
+    makeSessionUpdate("tool_call_update", { toolCallId: "a", ...extra });
+
+  const sessionUpdateOf = (e: Record<string, unknown>) =>
+    // biome-ignore lint/suspicious/noExplicitAny: test introspection
+    (e.notification as any).params.update;
+
+  it("writes only the latest in-progress update, flushed by a non-tool event", async () => {
+    writer.appendRawLine(RUN, update({ content: "a1" }));
+    writer.appendRawLine(RUN, update({ content: "a2" }));
+    writer.appendRawLine(RUN, update({ content: "a3" }));
+    // a non-tool event flushes the buffered latest, then writes itself
+    writer.appendRawLine(RUN, makeSessionUpdate("agent_message"));
+
+    const log = await readLog();
+    expect(log).toHaveLength(2);
+    expect(sessionUpdateOf(log[0]).content).toBe("a3");
+    expect(sessionUpdateOf(log[1]).sessionUpdate).toBe("agent_message");
+  });
+
+  it("a terminal update supersedes buffered in-progress snapshots", async () => {
+    writer.appendRawLine(RUN, update({ content: "a1" }));
+    writer.appendRawLine(RUN, update({ content: "a2" }));
+    writer.appendRawLine(
+      RUN,
+      update({ content: "final", status: "completed" }),
+    );
+
+    const log = await readLog();
+    expect(log).toHaveLength(1);
+    expect(sessionUpdateOf(log[0]).content).toBe("final");
+    expect(sessionUpdateOf(log[0]).status).toBe("completed");
+  });
+
+  it("flushAll persists a still-buffered update", async () => {
+    writer.appendRawLine(RUN, update({ content: "a1" }));
+    writer.appendRawLine(RUN, update({ content: "a2" }));
+    await writer.flushAll();
+
+    const log = await readLog();
+    expect(log).toHaveLength(1);
+    expect(sessionUpdateOf(log[0]).content).toBe("a2");
+  });
+});
