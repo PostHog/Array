@@ -51,6 +51,40 @@ export function formatRelativeTimeLong(timestamp: number | string): string {
   });
 }
 
+/**
+ * Format a message send time for display in a chat footer. Tiered:
+ * - under 60 minutes ago → relative ("just now", "5m ago")
+ * - earlier today → 24h clock time ("14:30")
+ * - yesterday → "Yesterday 22:34"
+ * - older → "2026/06/30 22:34"
+ */
+export function formatMessageTimestamp(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const minutes = Math.floor(diff / 60_000);
+
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfDate = new Date(date);
+  startOfDate.setHours(0, 0, 0, 0);
+  const days = Math.round(
+    (startOfToday.getTime() - startOfDate.getTime()) / 86_400_000,
+  );
+
+  if (days <= 0) return clock;
+  if (days === 1) return `Yesterday ${clock}`;
+
+  const ymd = `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}`;
+  return `${ymd} ${clock}`;
+}
+
 export function getRelativeDateGroup(
   timestamp: number | string,
 ): string | null {

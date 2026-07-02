@@ -757,6 +757,53 @@ describe("buildConversationItems", () => {
       );
     });
   });
+
+  describe("session_update timestamps", () => {
+    const toolCallMsg = (ts: number, toolCallId: string): AcpMessage => ({
+      type: "acp_message",
+      ts,
+      message: {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            kind: "execute",
+            status: "pending",
+            title: toolCallId,
+          },
+        },
+      },
+    });
+
+    const firstSessionUpdate = (items: ConversationItem[]) =>
+      items.find((i) => i.type === "session_update") as
+        | Extract<ConversationItem, { type: "session_update" }>
+        | undefined;
+
+    it("stamps an agent message with the first chunk's ts and keeps it across merges", () => {
+      const events = [
+        userPromptMsg(1, 1, "hi"),
+        agentMessageMsg(5, "Hello"),
+        agentMessageMsg(9, " there"),
+      ];
+      const item = firstSessionUpdate(
+        buildConversationItems(events, true).items,
+      );
+      expect(item?.update.sessionUpdate).toBe("agent_message_chunk");
+      expect(item?.timestamp).toBe(5);
+    });
+
+    it("stamps a tool call with its ts", () => {
+      const events = [userPromptMsg(1, 1, "go"), toolCallMsg(4, "t1")];
+      const item = firstSessionUpdate(
+        buildConversationItems(events, true).items,
+      );
+      expect(item?.update.sessionUpdate).toBe("tool_call");
+      expect(item?.timestamp).toBe(4);
+    });
+  });
 });
 
 // Local alias kept intentionally narrow to the shape we care about in tests.

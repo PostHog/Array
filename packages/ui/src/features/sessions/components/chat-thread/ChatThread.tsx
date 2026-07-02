@@ -21,7 +21,7 @@ import {
   useChatMessageScroller,
   useChatMessageScrollerVisibility,
 } from "@posthog/quill";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { formatMessageTimestamp, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
@@ -157,15 +157,17 @@ function groupToolRuns(items: ConversationItem[]): ThreadItem[] {
   return out;
 }
 
-function formatTimestamp(ts: number): string {
-  return new Date(ts).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+/**
+ * Send-time footer revealed on hover. Sits inside a `group` container (a `ChatMessage` for prose, a
+ * wrapper div for tool rows) so it fades in only while that row is hovered.
+ */
+function RowTimestamp({ timestamp }: { timestamp?: number }) {
+  if (timestamp == null) return null;
+  return (
+    <ChatMessageFooter className="opacity-0 transition-opacity group-hover:opacity-100">
+      {formatMessageTimestamp(timestamp)}
+    </ChatMessageFooter>
+  );
 }
 
 /**
@@ -335,7 +337,7 @@ function UserBubble({
         </ChatBubble>
         {timestamp != null && (
           <ChatMessageFooter className="opacity-0 transition-opacity group-hover:opacity-100">
-            {formatTimestamp(timestamp)}
+            {formatMessageTimestamp(timestamp)}
           </ChatMessageFooter>
         )}
       </ChatMessageContent>
@@ -475,7 +477,10 @@ const ThreadRow = memo(function ThreadRow({
       style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
       {item.type === "tool_group" ? (
-        <ToolGroup tools={item.tools} />
+        <div className="group">
+          <ToolGroup tools={item.tools} />
+          <RowTimestamp timestamp={item.tools[0]?.timestamp} />
+        </div>
       ) : item.type === "user_message" ? (
         <UserBubble
           content={item.content}
@@ -596,18 +601,19 @@ export function ChatThread({
             update.content.type === "text"
           ) {
             return (
-              <ChatMessage align="start">
+              <ChatMessage align="start" className="group">
                 <ChatMessageContent>
                   <ChatBubble variant="ghost">
                     <ChatBubbleContent>
                       <ChatMarkdown content={update.content.text} />
                     </ChatBubbleContent>
                   </ChatBubble>
+                  <RowTimestamp timestamp={item.timestamp} />
                 </ChatMessageContent>
               </ChatMessage>
             );
           }
-          return (
+          const rendered = (
             <SessionUpdateView
               item={item.update}
               toolCalls={item.turnContext.toolCalls}
@@ -617,6 +623,15 @@ export function ChatThread({
               thoughtComplete={item.thoughtComplete}
             />
           );
+          if (update.sessionUpdate === "tool_call") {
+            return (
+              <div className="group">
+                {rendered}
+                <RowTimestamp timestamp={item.timestamp} />
+              </div>
+            );
+          }
+          return rendered;
         }
         case "git_action_result":
           return repoPath ? (
