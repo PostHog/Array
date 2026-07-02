@@ -515,6 +515,7 @@ export class SessionService {
   private localRepoPaths = new Map<string, string>();
   private localRecoveryAttempts = new Map<string, Promise<boolean>>();
   private sessionLastUsedAt = new Map<string, number>();
+  private mountedTaskCounts = new Map<string, number>();
   /** Re-entrance guard for cloud queue dispatch (per taskId). */
   private dispatchingCloudQueues = new Set<string>();
   /** Coalesces deferred cloud queue flush timers (per taskId). */
@@ -1057,6 +1058,7 @@ export class SessionService {
     if (session) {
       this.localRepoPaths.delete(session.taskId);
       this.localRecoveryAttempts.delete(session.taskId);
+      this.sessionLastUsedAt.delete(session.taskId);
     }
     this.d.adapterStore.removeAdapter(taskRunId);
     this.d.removePersistedConfigOptions(taskRunId);
@@ -1362,10 +1364,28 @@ export class SessionService {
     await this.teardownSession(session.taskRunId);
   }
 
+  registerMountedTask(taskId: string): () => void {
+    this.mountedTaskCounts.set(
+      taskId,
+      (this.mountedTaskCounts.get(taskId) ?? 0) + 1,
+    );
+    this.sessionLastUsedAt.set(taskId, Date.now());
+    return () => {
+      const count = this.mountedTaskCounts.get(taskId) ?? 0;
+      if (count <= 1) {
+        this.mountedTaskCounts.delete(taskId);
+      } else {
+        this.mountedTaskCounts.set(taskId, count - 1);
+      }
+      this.sessionLastUsedAt.set(taskId, Date.now());
+    };
+  }
+
   private async evictIdleSessions(activeTaskId: string): Promise<void> {
     const toEvict = selectSessionsToEvict({
       sessions: Object.values(this.d.store.getSessions()),
       activeTaskId,
+      protectedTaskIds: new Set(this.mountedTaskCounts.keys()),
       lastUsedAt: (session) =>
         this.sessionLastUsedAt.get(session.taskId) ?? session.startedAt,
     });
@@ -1627,6 +1647,7 @@ export class SessionService {
     this.connectingTasks.clear();
     this.localRepoPaths.clear();
     this.localRecoveryAttempts.clear();
+    this.sessionLastUsedAt.clear();
     this.cloudPermissionRequestIds.clear();
     this.liveTurnContent.clear();
     this.cloudLogGapReconciler.clear();

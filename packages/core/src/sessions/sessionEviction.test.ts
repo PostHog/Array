@@ -45,6 +45,8 @@ describe("isSessionIdle", () => {
       true,
     ],
     ["cloud session without status", { isCloud: true }, false],
+    ["disconnected local session", { status: "disconnected" as const }, true],
+    ["errored local session", { status: "error" as const }, true],
   ])("%s -> %s", (_name, overrides, expected) => {
     expect(isSessionIdle(makeSession({ taskId: "t", ...overrides }))).toBe(
       expected,
@@ -55,49 +57,59 @@ describe("isSessionIdle", () => {
 describe("selectSessionsToEvict", () => {
   const lastUsedAt = (session: AgentSession) => session.startedAt;
 
-  it("returns nothing under the budget", () => {
-    const sessions = [
-      makeSession({ taskId: "a" }),
-      makeSession({ taskId: "b" }),
-    ];
-    expect(
-      selectSessionsToEvict({
-        sessions,
+  it.each([
+    [
+      "returns nothing under the budget",
+      {
+        sessions: [makeSession({ taskId: "a" }), makeSession({ taskId: "b" })],
         activeTaskId: "a",
-        lastUsedAt,
         maxSessions: 3,
-      }),
-    ).toEqual([]);
-  });
-
-  it("evicts the least recently used idle sessions over the budget", () => {
-    const sessions = [
-      makeSession({ taskId: "a", startedAt: 30 }),
-      makeSession({ taskId: "b", startedAt: 10 }),
-      makeSession({ taskId: "c", startedAt: 20 }),
-      makeSession({ taskId: "d", startedAt: 40 }),
-    ];
-    const evicted = selectSessionsToEvict({
-      sessions,
-      activeTaskId: "d",
-      lastUsedAt,
-      maxSessions: 3,
-    });
-    expect(evicted.map((s) => s.taskId)).toEqual(["b", "c"]);
-  });
-
-  it("never evicts the active task or busy sessions", () => {
-    const sessions = [
-      makeSession({ taskId: "active", startedAt: 1 }),
-      makeSession({ taskId: "busy", startedAt: 2, isPromptPending: true }),
-      makeSession({ taskId: "idle", startedAt: 3 }),
-    ];
-    const evicted = selectSessionsToEvict({
-      sessions,
-      activeTaskId: "active",
-      lastUsedAt,
-      maxSessions: 2,
-    });
-    expect(evicted.map((s) => s.taskId)).toEqual(["idle"]);
+      },
+      [],
+    ],
+    [
+      "evicts the least recently used idle sessions over the budget",
+      {
+        sessions: [
+          makeSession({ taskId: "a", startedAt: 30 }),
+          makeSession({ taskId: "b", startedAt: 10 }),
+          makeSession({ taskId: "c", startedAt: 20 }),
+          makeSession({ taskId: "d", startedAt: 40 }),
+        ],
+        activeTaskId: "d",
+        maxSessions: 3,
+      },
+      ["b", "c"],
+    ],
+    [
+      "never evicts the active task or busy sessions",
+      {
+        sessions: [
+          makeSession({ taskId: "active", startedAt: 1 }),
+          makeSession({ taskId: "busy", startedAt: 2, isPromptPending: true }),
+          makeSession({ taskId: "idle", startedAt: 3 }),
+        ],
+        activeTaskId: "active",
+        maxSessions: 2,
+      },
+      ["idle"],
+    ],
+    [
+      "never evicts mounted tasks",
+      {
+        sessions: [
+          makeSession({ taskId: "a", startedAt: 1 }),
+          makeSession({ taskId: "b", startedAt: 2 }),
+          makeSession({ taskId: "c", startedAt: 3 }),
+        ],
+        activeTaskId: "c",
+        protectedTaskIds: new Set(["a"]),
+        maxSessions: 2,
+      },
+      ["b"],
+    ],
+  ])("%s", (_name, params, expected) => {
+    const evicted = selectSessionsToEvict({ ...params, lastUsedAt });
+    expect(evicted.map((s) => s.taskId)).toEqual(expected);
   });
 });

@@ -1,7 +1,8 @@
 import type { AgentSession } from "@posthog/shared";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 
-export const MAX_CONNECTED_SESSIONS = 8;
+// Above the Command Center's 3x3 grid so fully-visible layouts never evict.
+export const MAX_CONNECTED_SESSIONS = 12;
 
 export function isSessionIdle(session: AgentSession): boolean {
   if (session.status === "connecting") return false;
@@ -15,10 +16,11 @@ export function isSessionIdle(session: AgentSession): boolean {
 export function selectSessionsToEvict(params: {
   sessions: AgentSession[];
   activeTaskId: string;
+  protectedTaskIds?: ReadonlySet<string>;
   lastUsedAt: (session: AgentSession) => number;
   maxSessions?: number;
 }): AgentSession[] {
-  const { sessions, activeTaskId, lastUsedAt } = params;
+  const { sessions, activeTaskId, protectedTaskIds, lastUsedAt } = params;
   const maxSessions = params.maxSessions ?? MAX_CONNECTED_SESSIONS;
 
   const excess = sessions.length - (maxSessions - 1);
@@ -26,7 +28,10 @@ export function selectSessionsToEvict(params: {
 
   return sessions
     .filter(
-      (session) => session.taskId !== activeTaskId && isSessionIdle(session),
+      (session) =>
+        session.taskId !== activeTaskId &&
+        !protectedTaskIds?.has(session.taskId) &&
+        isSessionIdle(session),
     )
     .sort((a, b) => lastUsedAt(a) - lastUsedAt(b))
     .slice(0, excess);
