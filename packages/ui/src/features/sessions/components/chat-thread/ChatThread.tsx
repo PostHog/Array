@@ -29,6 +29,7 @@ import { ChatMarkdown } from "@posthog/ui/features/sessions/components/chat-thre
 import { ChatThreadFooter } from "@posthog/ui/features/sessions/components/chat-thread/ChatThreadFooter";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
 import {
+  isToolActive,
   ToolGroup,
   type ToolGroupItem,
 } from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
@@ -490,7 +491,13 @@ const ThreadRow = memo(function ThreadRow({
       {item.type === "tool_group" ? (
         <div className="group">
           <ToolGroup tools={item.tools} />
-          <RowTimestamp timestamp={item.tools[0]?.timestamp} />
+          <RowTimestamp
+            timestamp={
+              item.tools.some(isToolActive)
+                ? undefined
+                : item.tools[0]?.timestamp
+            }
+          />
         </div>
       ) : item.type === "user_message" ? (
         <UserBubble
@@ -619,7 +626,11 @@ export function ChatThread({
                       <ChatMarkdown content={update.content.text} />
                     </ChatBubbleContent>
                   </ChatBubble>
-                  <RowTimestamp timestamp={item.timestamp} />
+                  <RowTimestamp
+                    timestamp={
+                      item.turnContext.turnComplete ? item.timestamp : undefined
+                    }
+                  />
                 </ChatMessageContent>
               </ChatMessage>
             );
@@ -638,7 +649,9 @@ export function ChatThread({
             return (
               <div className="group">
                 {rendered}
-                <RowTimestamp timestamp={item.timestamp} />
+                <RowTimestamp
+                  timestamp={isToolActive(item) ? undefined : item.timestamp}
+                />
               </div>
             );
           }
