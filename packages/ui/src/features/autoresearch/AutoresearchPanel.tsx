@@ -9,18 +9,16 @@ import { summarizeRun } from "@posthog/core/autoresearch/stats";
 import { useServiceOptional } from "@posthog/di/react";
 import {
   Empty,
-  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-  Button as QuillButton,
 } from "@posthog/quill";
 import { Badge, Button, Flex, Select, Text } from "@radix-ui/themes";
 import { type ReactNode, useMemo, useState } from "react";
+import { AutoresearchConfigDialog } from "./AutoresearchConfigDialog";
 import { IterationsTable } from "./IterationsTable";
 import { MetricChart } from "./MetricChart";
-import { StartAutoresearchDialog } from "./StartAutoresearchDialog";
 import { useAutoresearchRuns } from "./useAutoresearchStore";
 
 const STATUS_BADGE: Record<
@@ -80,35 +78,19 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
 
   if (!selectedRun) {
     return (
-      <>
-        <Empty className="h-full">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <ChartLineUp size={28} />
-            </EmptyMedia>
-            <EmptyTitle>Autoresearch</EmptyTitle>
-            <EmptyDescription>
-              Point the agent at a metric and let it iterate: each turn it makes
-              one change, measures, and reports back here.
-            </EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <QuillButton
-              variant="primary"
-              size="default"
-              onClick={() => setDialogOpen(true)}
-            >
-              Start autoresearch
-            </QuillButton>
-          </EmptyContent>
-        </Empty>
-        <StartAutoresearchDialog
-          taskId={taskId}
-          service={service}
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-        />
-      </>
+      <Empty className="h-full">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <ChartLineUp size={28} />
+          </EmptyMedia>
+          <EmptyTitle>No autoresearch run</EmptyTitle>
+          <EmptyDescription>
+            This task wasn't created in autoresearch mode. Start one from the
+            new-task composer: arm the Autoresearch toggle, describe what to
+            optimize and how to measure it, and submit.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     );
   }
 
@@ -134,11 +116,24 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
           direction={selectedRun.config.direction}
         />
       </Flex>
-      <StartAutoresearchDialog
-        taskId={taskId}
-        service={service}
+      <AutoresearchConfigDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
+        title="New autoresearch run"
+        description="Starts a fresh optimization loop in this task's session. The kickoff prompt is sent to the agent immediately."
+        submitLabel="Start run"
+        showInstructions
+        initial={selectedRun.config}
+        onSubmit={(values) =>
+          service.startRun({
+            taskId,
+            metricName: values.metricName,
+            direction: values.direction,
+            targetValue: values.targetValue,
+            maxIterations: values.maxIterations,
+            instructions: values.instructions ?? "",
+          })
+        }
       />
     </div>
   );

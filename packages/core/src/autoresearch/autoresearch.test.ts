@@ -199,6 +199,30 @@ describe("AutoresearchService", () => {
     });
   });
 
+  describe("registerRun", () => {
+    it("registers without sending — the kickoff rode the task's initial prompt", () => {
+      const run = service.registerRun(baseConfig);
+
+      expect(run.status).toBe("running");
+      expect(activeRun().id).toBe(run.id);
+      expect(sentPrompts).toHaveLength(0);
+    });
+
+    it("takes over the loop from the agent's first reply", () => {
+      service.registerRun(baseConfig);
+      runTurn(reportText(10, "baseline"));
+
+      expect(activeRun().iterations).toHaveLength(1);
+      expect(sentPrompts).toHaveLength(1);
+      expect(sentPrompts[0].prompt).toContain("iteration 2");
+    });
+
+    it("shares the one-live-run-per-task guard with startRun", () => {
+      service.registerRun(baseConfig);
+      expect(() => service.startRun(baseConfig)).toThrow(/already running/);
+    });
+  });
+
   describe("iteration loop", () => {
     it("records an iteration and sends a continuation prompt", () => {
       service.startRun(baseConfig);

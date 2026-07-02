@@ -1,5 +1,10 @@
-import { FileText, X } from "@phosphor-icons/react";
+import { ChartLineUp, FileText, X } from "@phosphor-icons/react";
+import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
+import { AUTORESEARCH_SERVICE } from "@posthog/core/autoresearch/identifiers";
+import { buildKickoffPreamble } from "@posthog/core/autoresearch/prompts";
+import type { EditorContent } from "@posthog/core/message-editor/content";
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
+import { useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
@@ -8,7 +13,7 @@ import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detai
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
-import { Flex, Text, Tooltip } from "@radix-ui/themes";
+import { Button, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -18,6 +23,14 @@ import { toast } from "../../../primitives/toast";
 import { useActiveRepoStore } from "../../../shell/activeRepoStore";
 import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
 import { useAuthStateValue } from "../../auth/store";
+import {
+  AutoresearchConfigDialog,
+  type AutoresearchConfigValues,
+} from "../../autoresearch/AutoresearchConfigDialog";
+import {
+  autoresearchPendingRun,
+  useAutoresearchDraftStore,
+} from "../../autoresearch/autoresearchDraftStore";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
 import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
@@ -41,11 +54,13 @@ import {
 import { skillToEditorCommand } from "../../message-editor/commands";
 import { PromptHistoryDialog } from "../../message-editor/components/PromptHistoryDialog";
 import { PromptInput } from "../../message-editor/components/PromptInput";
+import { contentToXml } from "../../message-editor/content";
 import { useDraftStore } from "../../message-editor/draftStore";
 import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryStore";
 import type { EditorHandle } from "../../message-editor/types";
 import { useAutoFocusOnTyping } from "../../message-editor/useAutoFocusOnTyping";
 import { resolveAndAttachDroppedFiles } from "../../message-editor/utils/persistFile";
+import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { DropZoneOverlay } from "../../sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
 import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
@@ -600,6 +615,35 @@ export function TaskInput({
       ? selectedBranch
       : null;
 
+  const autoresearchService =
+    useServiceOptional<AutoresearchService>(AUTORESEARCH_SERVICE);
+  const autoresearchDraft = useAutoresearchDraftStore(
+    (state) => state.drafts[sessionId] ?? null,
+  );
+  const [autoresearchDialogOpen, setAutoresearchDialogOpen] = useState(false);
+
+  // Registers the run against the freshly created task and opens its
+  // dashboard tab; the kickoff itself rides the task's initial prompt.
+  const handleAutoresearchTaskCreated = useCallback(
+    (task: Task) => {
+      const pending = autoresearchPendingRun.consume();
+      if (!pending || !autoresearchService) return;
+      try {
+        autoresearchService.registerRun({ ...pending, taskId: task.id });
+        const layoutStore = usePanelLayoutStore.getState();
+        if (!layoutStore.getLayout(task.id)) {
+          layoutStore.initializeTask(task.id);
+        }
+        layoutStore.openAutoresearchTab(task.id);
+      } catch (error) {
+        toast.error("Autoresearch setup failed", {
+          description: error instanceof Error ? error.message : undefined,
+        });
+      }
+    },
+    [autoresearchService],
+  );
+
   const {
     isCreatingTask,
     canSubmit,
@@ -629,7 +673,59 @@ export function TaskInput({
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
     allowNoRepo,
+    onTaskCreatedEffect: handleAutoresearchTaskCreated,
   });
+
+  // Wraps the prompt in the autoresearch kickoff: protocol preamble first,
+  // the user's composer content (chips intact) as the optimization brief.
+  const handleAutoresearchSubmit = useCallback(async (): Promise<boolean> => {
+    const editor = editorRef.current;
+    const draft = useAutoresearchDraftStore.getState().drafts[sessionId];
+    if (!editor || !draft) return handleSubmit();
+    if (!canSubmit) return false;
+
+    const content = editor.getContent();
+    const override: EditorContent = {
+      segments: [
+        { type: "text", text: `${buildKickoffPreamble(draft)}\n\n` },
+        ...content.segments,
+      ],
+      attachments: content.attachments,
+    };
+    autoresearchPendingRun.set({
+      ...draft,
+      instructions: contentToXml(content).trim(),
+    });
+    const submitted = await handleSubmit(override);
+    if (submitted) {
+      useAutoresearchDraftStore.getState().clearDraft(sessionId);
+      useDraftStore.getState().actions.setDraft(sessionId, null);
+      try {
+        editorRef.current?.clear();
+      } catch {
+        // Task creation can navigate away and tear down the editor first.
+      }
+    } else {
+      autoresearchPendingRun.clear();
+    }
+    return submitted;
+  }, [canSubmit, handleSubmit, sessionId]);
+
+  const submitTask = autoresearchDraft
+    ? handleAutoresearchSubmit
+    : handleSubmit;
+
+  const handleAutoresearchConfigured = useCallback(
+    (values: AutoresearchConfigValues) => {
+      useAutoresearchDraftStore.getState().setDraft(sessionId, {
+        metricName: values.metricName,
+        direction: values.direction,
+        targetValue: values.targetValue,
+        maxIterations: values.maxIterations,
+      });
+    },
+    [sessionId],
+  );
 
   const handleModeChange = useCallback(
     (value: string) => {
@@ -890,6 +986,26 @@ export function TaskInput({
                 disabled={isCreatingTask}
               />
             )}
+            {autoresearchService && (
+              <Tooltip
+                content={
+                  autoresearchDraft
+                    ? "Edit autoresearch settings"
+                    : "Create this task in autoresearch mode"
+                }
+              >
+                <Button
+                  size="1"
+                  variant={autoresearchDraft ? "soft" : "ghost"}
+                  color={autoresearchDraft ? undefined : "gray"}
+                  onClick={() => setAutoresearchDialogOpen(true)}
+                  disabled={isCreatingTask}
+                >
+                  <ChartLineUp size={14} />
+                  Autoresearch
+                </Button>
+              </Tooltip>
+            )}
             {cloudRegion === "dev" && (
               <Flex align="center" gap="1" className="shrink-0">
                 <span
@@ -951,9 +1067,9 @@ export function TaskInput({
               }
               getPromptHistory={getPromptHistory}
               onEmptyChange={handleEditorEmptyChange}
-              onSubmitClick={handleSubmit}
+              onSubmitClick={() => void submitTask()}
               onSubmit={() => {
-                if (canSubmit) handleSubmit();
+                if (canSubmit) void submitTask();
               }}
             />
             {activeReportAssociation && (
@@ -980,6 +1096,45 @@ export function TaskInput({
                     <X size={12} />
                   </button>
                 </Tooltip>
+              </div>
+            )}
+            {autoresearchDraft && (
+              <div className="-mt-px mx-2 flex select-none items-center justify-between gap-2 rounded-b-md border border-violet-6 border-t-0 bg-violet-2 px-2 py-1 text-[12px] text-violet-11">
+                <span className="flex min-w-0 flex-1 items-center gap-1">
+                  <ChartLineUp size={12} className="shrink-0" />
+                  <span className="min-w-0 truncate">
+                    Autoresearch: {autoresearchDraft.direction} “
+                    {autoresearchDraft.metricName}”
+                    {autoresearchDraft.targetValue !== null
+                      ? ` · target ${autoresearchDraft.targetValue}`
+                      : ""}{" "}
+                    · ≤{autoresearchDraft.maxIterations} iterations — the prompt
+                    becomes the optimization brief
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setAutoresearchDialogOpen(true)}
+                    className="rounded px-1 font-medium underline underline-offset-2 hover:text-violet-12"
+                  >
+                    Edit
+                  </button>
+                  <Tooltip content="Exit autoresearch mode">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        useAutoresearchDraftStore
+                          .getState()
+                          .clearDraft(sessionId)
+                      }
+                      aria-label="Exit autoresearch mode"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-violet-10 hover:bg-violet-4 hover:text-violet-12"
+                    >
+                      <X size={12} />
+                    </button>
+                  </Tooltip>
+                </span>
               </div>
             )}
             {includeChannelContext && (
@@ -1090,6 +1245,16 @@ export function TaskInput({
           </div>
         </div>
       </Flex>
+
+      <AutoresearchConfigDialog
+        open={autoresearchDialogOpen}
+        onOpenChange={setAutoresearchDialogOpen}
+        title="New autoresearch task"
+        description="The task's agent will loop on a metric: one focused change per iteration, measure, report to a live dashboard. Write what to optimize and how to measure it in the prompt box — that text becomes the optimization brief."
+        submitLabel={autoresearchDraft ? "Save settings" : "Arm autoresearch"}
+        initial={autoresearchDraft ?? undefined}
+        onSubmit={handleAutoresearchConfigured}
+      />
 
       <GitBranchDialog
         open={branchOpen}

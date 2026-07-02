@@ -55,7 +55,12 @@ export class AutoresearchService {
   /** Reminders already sent for the in-flight iteration, per run id. */
   private remindersSent = new Map<string, number>();
 
-  startRun(input: AutoresearchConfigInput): AutoresearchRun {
+  /**
+   * Register a run whose kickoff prompt the host has already delivered —
+   * the create-task flow sends it as the new task's initial prompt. The
+   * engine takes over from the agent's first reply.
+   */
+  registerRun(input: AutoresearchConfigInput): AutoresearchRun {
     const config = autoresearchConfigSchema.parse(input);
 
     const existing = getActiveRunForTask(
@@ -81,12 +86,21 @@ export class AutoresearchService {
 
     autoresearchStoreActions.upsertRun(run);
     this.ensureSubscribed();
-    this.log.info("Autoresearch run started", {
+    this.log.info("Autoresearch run registered", {
       runId: run.id,
       taskId: config.taskId,
       metricName: config.metricName,
     });
-    this.send(run.id, config.taskId, buildKickoffPrompt(config));
+    return run;
+  }
+
+  /**
+   * Register a run and send its kickoff into the task's existing session.
+   * Used to start a fresh run on a task that already ran autoresearch.
+   */
+  startRun(input: AutoresearchConfigInput): AutoresearchRun {
+    const run = this.registerRun(input);
+    this.send(run.id, run.config.taskId, buildKickoffPrompt(run.config));
     return run;
   }
 

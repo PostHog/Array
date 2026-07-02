@@ -46,6 +46,18 @@ export const autoresearchConfigSchema = z.object({
 export type AutoresearchConfig = z.infer<typeof autoresearchConfigSchema>;
 export type AutoresearchConfigInput = z.input<typeof autoresearchConfigSchema>;
 
+/**
+ * The part of a run config a user settles before the task exists: everything
+ * except the task id and the instructions, which are the new task's prompt.
+ */
+export const autoresearchDraftConfigSchema = autoresearchConfigSchema.omit({
+  taskId: true,
+  instructions: true,
+});
+export type AutoresearchDraftConfig = z.infer<
+  typeof autoresearchDraftConfigSchema
+>;
+
 export const autoresearchIterationSchema = z.object({
   /** 1-based iteration number. */
   index: z.number().int().min(1),

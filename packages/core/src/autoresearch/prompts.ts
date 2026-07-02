@@ -8,6 +8,7 @@ import type { AcpMessage } from "@posthog/shared";
 import { isJsonRpcNotification, isJsonRpcRequest } from "@posthog/shared";
 import type {
   AutoresearchConfig,
+  AutoresearchDraftConfig,
   AutoresearchReport,
   AutoresearchRun,
 } from "./schemas";
@@ -20,20 +21,23 @@ const REPORT_BLOCK_EXAMPLE = [
   "```",
 ].join("\n");
 
-function directionPhrase(config: AutoresearchConfig): string {
+function directionPhrase(config: AutoresearchDraftConfig): string {
   return config.direction === "maximize" ? "maximize" : "minimize";
 }
 
-function targetLine(config: AutoresearchConfig): string {
+function targetLine(config: AutoresearchDraftConfig): string {
   if (config.targetValue === null) return "";
   const comparator = config.direction === "maximize" ? "reaches" : "drops to";
   return `\nTarget: the run completes early once the metric ${comparator} ${config.targetValue}.`;
 }
 
-export function buildKickoffPrompt(config: AutoresearchConfig): string {
+/**
+ * Everything the kickoff says before the optimization brief. Hosts that
+ * deliver the kickoff as a new task's initial prompt prepend this to the
+ * user's own prompt content, so file/folder chips survive untouched.
+ */
+export function buildKickoffPreamble(config: AutoresearchDraftConfig): string {
   return `You are now in autoresearch mode: an iterative optimization loop to ${directionPhrase(config)} the metric "${config.metricName}".
-
-${config.instructions}
 
 Protocol for every iteration:
 1. Make ONE focused change aimed at improving the metric. Keep changes small and attributable.
@@ -44,7 +48,15 @@ ${REPORT_BLOCK_EXAMPLE}
 
 The report block is parsed by a machine — without it the iteration does not count. Budget: up to ${config.maxIterations} iterations.${targetLine(config)}
 
-Iteration 1 starts now. First establish and report the baseline measurement (your change for this iteration is the measurement setup itself if nothing exists yet), then keep improving in later iterations. If a change regresses the metric, revert it in the next iteration and try a different approach.`;
+Iteration 1 starts now. First establish and report the baseline measurement (your change for this iteration is the measurement setup itself if nothing exists yet), then keep improving in later iterations. If a change regresses the metric, revert it in the next iteration and try a different approach.
+
+Optimization brief (what to optimize, how to measure it, constraints):`;
+}
+
+export function buildKickoffPrompt(
+  config: AutoresearchDraftConfig & { instructions: string },
+): string {
+  return `${buildKickoffPreamble(config)}\n\n${config.instructions}`;
 }
 
 export function buildContinuationPrompt(run: AutoresearchRun): string {

@@ -2,6 +2,7 @@ import type { AcpMessage } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
   buildContinuationPrompt,
+  buildKickoffPreamble,
   buildKickoffPrompt,
   buildReportReminderPrompt,
   extractLastAgentTurnText,
@@ -207,6 +208,27 @@ describe("buildKickoffPrompt", () => {
         makeConfig({ direction: "minimize", targetValue: 500 }),
       ),
     ).toContain("drops to 500");
+  });
+
+  it("ends with the instructions so hosts can substitute prompt content", () => {
+    const config = makeConfig();
+    const prompt = buildKickoffPrompt(config);
+    expect(prompt.endsWith(config.instructions)).toBe(true);
+    expect(prompt).toBe(
+      `${buildKickoffPreamble(config)}\n\n${config.instructions}`,
+    );
+  });
+});
+
+describe("buildKickoffPreamble", () => {
+  it("carries the full protocol but no instructions", () => {
+    const preamble = buildKickoffPreamble(makeConfig());
+    expect(preamble).toContain('"requests per second"');
+    expect(preamble).toContain("```autoresearch");
+    expect(preamble).toContain("up to 8 iterations");
+    expect(preamble).not.toContain(
+      "Optimize the HTTP handler throughput benchmark.",
+    );
   });
 });
 
