@@ -36,9 +36,12 @@ interface SessionState {
 
 export class SessionLogWriter {
   /**
-   * Max wall-clock a coalesced in-progress tool update is held before being
-   * written to the local cache anyway. Bounds crash loss to this window while
-   * still collapsing rapid re-sends of a growing tool output.
+   * When consecutive in-progress tool updates for one call span more than this
+   * window, the buffered snapshot is written and a new window starts, so the
+   * local cache keeps periodic snapshots during active streaming instead of only
+   * the final one. Not a durability bound: the API log receives every update
+   * uncoalesced and the local file is a load cache. A buffered snapshot is
+   * otherwise written on a terminal update, any non-tool event, or flushAll.
    */
   private static readonly TOOL_UPDATE_MAX_HOLD_MS = 2000;
   private static readonly FLUSH_DEBOUNCE_MS = 500;
@@ -163,8 +166,9 @@ export class SessionLogWriter {
 
       // Coalesce the local cache: hold in-progress tool_call_update snapshots
       // (they re-send the full growing output) and write only the latest per
-      // toolCallId. A terminal update, any non-tool event, or the hold window
-      // elapsing flushes them. The API path is untouched.
+      // toolCallId. Flushed on a terminal update, any non-tool event, or — during
+      // a long run of updates — once the hold window is exceeded. The API path is
+      // untouched, so the durable log keeps every update.
       const tcu = this.toolCallUpdateInfo(message);
       if (tcu && !tcu.terminal) {
         const cache = session.toolUpdateCache;
