@@ -150,7 +150,7 @@ export function UpdatesSettings() {
           </SettingRow>
           <SettingRow
             label="Dismissible update banners"
-            description="Show a dismiss button on update banners. A dismissed banner stays hidden until a new update arrives or the app restarts."
+            description="Reveal a dismiss button when hovering update banners. A dismissed banner stays hidden until a new update arrives or the app restarts."
           >
             <Switch
               checked={dismissibleUpdateBanners}

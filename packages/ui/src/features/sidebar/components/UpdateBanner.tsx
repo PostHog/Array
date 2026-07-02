@@ -50,7 +50,7 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
             transition={{ duration: 0.2, ease: "easeOut" }}
           >
             {status === "available" && (
-              <div className="flex items-center gap-1">
+              <div className="group flex items-center gap-1">
                 <button
                   type="button"
                   className="flex items-center gap-1.5 rounded-2 border border-(--green-a5) bg-(--green-a3) px-2.5 py-1 font-medium text-(--green-11) text-[13px] transition-colors hover:bg-(--green-a4)"
@@ -77,7 +77,7 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
             )}
 
             {status === "ready" && (
-              <div className="flex items-center gap-1">
+              <div className="group flex items-center gap-1">
                 <button
                   type="button"
                   className="flex items-center gap-1.5 rounded-2 border border-(--green-a5) bg-(--green-a3) px-2.5 py-1 font-medium text-(--green-11) text-[13px] transition-colors hover:bg-(--green-a4)"
@@ -119,7 +119,7 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
           <AnimatePresence mode="wait">
             {status === "available" && (
               <BannerCard key="available">
-                <div className="flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
+                <div className="group relative flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
                   <Gift size={20} weight="duotone" className="shrink-0" />
                   <button
                     type="button"
@@ -143,7 +143,10 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
                     View
                   </button>
                   {canDismiss && (
-                    <DismissButton onClick={() => dismissBanner(dismissKey)} />
+                    <DismissButton
+                      variant="overlay"
+                      onClick={() => dismissBanner(dismissKey)}
+                    />
                   )}
                 </div>
               </BannerCard>
@@ -174,7 +177,7 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
 
             {status === "ready" && (
               <BannerCard key="ready">
-                <div className="flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
+                <div className="group relative flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
                   <motion.div
                     className="shrink-0"
                     animate={{ rotate: [0, -12, 12, -8, 8, -4, 0] }}
@@ -207,7 +210,10 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
                     Restart
                   </button>
                   {canDismiss && (
-                    <DismissButton onClick={() => dismissBanner(dismissKey)} />
+                    <DismissButton
+                      variant="overlay"
+                      onClick={() => dismissBanner(dismissKey)}
+                    />
                   )}
                 </div>
               </BannerCard>
@@ -231,16 +237,27 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
   );
 }
 
-function DismissButton({ onClick }: { onClick: () => void }) {
+function DismissButton({
+  onClick,
+  variant = "inline",
+}: {
+  onClick: () => void;
+  variant?: "inline" | "overlay";
+}) {
+  const className =
+    variant === "overlay"
+      ? "absolute -top-1.5 -right-1.5 rounded-full border border-(--green-a5) bg-(--gray-2) p-1 text-(--green-11) opacity-0 transition-all focus-visible:opacity-100 group-hover:opacity-100 hover:bg-(--green-a4)"
+      : "shrink-0 rounded-2 p-1 text-(--green-a11) opacity-0 transition-all focus-visible:opacity-100 group-hover:opacity-100 hover:bg-(--green-a4) hover:text-(--green-11)";
+
   return (
     <button
       type="button"
       aria-label="Dismiss update banner"
       title="Dismiss"
-      className="shrink-0 rounded-2 p-1 text-(--green-a11) transition-colors hover:bg-(--green-a4) hover:text-(--green-11)"
+      className={className}
       onClick={onClick}
     >
-      <X size={12} weight="bold" />
+      <X size={variant === "overlay" ? 10 : 12} weight="bold" />
     </button>
   );
 }
