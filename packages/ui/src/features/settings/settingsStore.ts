@@ -45,7 +45,11 @@ export type BuiltInCompletionSound =
   | "icq";
 
 // A user-installed sound is selected by referencing its id as `custom:<id>`.
-export type CompletionSound = BuiltInCompletionSound | `custom:${string}`;
+export type CompletionSound =
+  | BuiltInCompletionSound
+  | "random-all"
+  | "random-custom"
+  | `custom:${string}`;
 
 // A notification sound the user recorded or imported. The clip is stored inline
 // as a base64 data URL so it persists with the rest of the settings (no host
@@ -276,14 +280,21 @@ export const useSettingsStore = create<SettingsStore>()(
       addCustomSound: (sound) =>
         set((state) => ({ customSounds: [...state.customSounds, sound] })),
       removeCustomSound: (id) =>
-        set((state) => ({
-          customSounds: state.customSounds.filter((s) => s.id !== id),
-          // If the deleted sound was the active one, fall back to silence.
-          completionSound:
-            state.completionSound === `custom:${id}`
+        set((state) => {
+          const customSounds = state.customSounds.filter((s) => s.id !== id);
+          // If the deleted sound was the active one, or it was the last sound
+          // feeding "random-custom", fall back to silence.
+          const soundNowUnplayable =
+            state.completionSound === `custom:${id}` ||
+            (state.completionSound === "random-custom" &&
+              customSounds.length === 0);
+          return {
+            customSounds,
+            completionSound: soundNowUnplayable
               ? "none"
               : state.completionSound,
-        })),
+          };
+        }),
       renameCustomSound: (id, name) =>
         set((state) => ({
           customSounds: state.customSounds.map((s) =>

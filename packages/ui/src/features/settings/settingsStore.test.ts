@@ -195,6 +195,11 @@ describe("feature settingsStore custom sounds", () => {
       activeSound: "meep" as CompletionSound,
       expectedSound: "meep" as CompletionSound,
     },
+    {
+      label: "last sound feeding random-custom",
+      activeSound: "random-custom" as CompletionSound,
+      expectedSound: "none" as CompletionSound,
+    },
   ])(
     "removing the $label leaves completionSound as $expectedSound",
     ({ activeSound, expectedSound }) => {
@@ -205,6 +210,14 @@ describe("feature settingsStore custom sounds", () => {
       expect(useSettingsStore.getState().completionSound).toBe(expectedSound);
     },
   );
+
+  it("keeps random-custom active while other custom sounds remain", () => {
+    useSettingsStore.getState().addCustomSound(sound);
+    useSettingsStore.getState().addCustomSound({ ...sound, id: "def" });
+    useSettingsStore.getState().setCompletionSound("random-custom");
+    useSettingsStore.getState().removeCustomSound("abc");
+    expect(useSettingsStore.getState().completionSound).toBe("random-custom");
+  });
 
   it("persists custom sounds", async () => {
     useSettingsStore.getState().addCustomSound(sound);
