@@ -4,6 +4,7 @@ import type {
 } from "@posthog/core/autoresearch/schemas";
 import { Text } from "@radix-ui/themes";
 import { useMemo } from "react";
+import { withMetricUnit } from "./metricFormat";
 
 const WIDTH = 640;
 const HEIGHT = 220;
@@ -14,6 +15,7 @@ interface MetricChartProps {
   direction: AutoresearchDirection;
   targetValue: number | null;
   metricName: string;
+  unit: string | null;
 }
 
 const wholeNumberFormat = new Intl.NumberFormat("en-US", {
@@ -38,6 +40,7 @@ export function MetricChart({
   direction,
   targetValue,
   metricName,
+  unit,
 }: MetricChartProps) {
   const chart = useMemo(() => {
     if (iterations.length === 0) return null;
@@ -110,7 +113,7 @@ export function MetricChart({
           textAnchor="end"
           className="fill-(--gray-10) text-[10px]"
         >
-          {formatValue(chart.max)}
+          {withMetricUnit(formatValue(chart.max), unit)}
         </text>
         <text
           x={PADDING.left - 6}
@@ -118,7 +121,7 @@ export function MetricChart({
           textAnchor="end"
           className="fill-(--gray-10) text-[10px]"
         >
-          {formatValue(chart.min)}
+          {withMetricUnit(formatValue(chart.min), unit)}
         </text>
         <line
           x1={PADDING.left}
@@ -151,7 +154,7 @@ export function MetricChart({
               textAnchor="end"
               className="fill-(--green-11) text-[10px]"
             >
-              target {formatValue(targetValue ?? 0)}
+              target {withMetricUnit(formatValue(targetValue ?? 0), unit)}
             </text>
           </g>
         )}
@@ -178,7 +181,7 @@ export function MetricChart({
             className="fill-(--accent-9)"
           >
             <title>
-              {`Iteration ${iteration.index}: ${formatValue(iteration.value)}${iteration.summary ? ` — ${iteration.summary}` : ""}`}
+              {`Iteration ${iteration.index}: ${withMetricUnit(formatValue(iteration.value), unit)}${iteration.summary ? ` — ${iteration.summary}` : ""}`}
             </title>
           </circle>
         ))}

@@ -24,6 +24,7 @@ import { usePendingPermissionsForTask } from "../sessions/useSession";
 import { AutoresearchConfigDialog } from "./AutoresearchConfigDialog";
 import { IterationsTable } from "./IterationsTable";
 import { MetricChart } from "./MetricChart";
+import { withMetricUnit } from "./metricFormat";
 import {
   type AutoresearchModelOption,
   stageValueLabel,
@@ -174,10 +175,12 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
           direction={selectedRun.config.direction}
           targetValue={selectedRun.config.targetValue}
           metricName={selectedRun.metricName ?? "the metric"}
+          unit={selectedRun.metricUnit}
         />
         <IterationsTable
           iterations={selectedRun.iterations}
           direction={selectedRun.config.direction}
+          unit={selectedRun.metricUnit}
         />
       </Flex>
       <AutoresearchConfigDialog
@@ -377,6 +380,7 @@ function PendingPermissionNotice({
 
 function RunStats({ run }: { run: AutoresearchRun }) {
   const summary = useMemo(() => summarizeRun(run), [run]);
+  const unit = run.metricUnit;
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -385,7 +389,7 @@ function RunStats({ run }: { run: AutoresearchRun }) {
         value={
           summary.best ? (
             <>
-              {numberFormat.format(summary.best.value)}
+              {withMetricUnit(numberFormat.format(summary.best.value), unit)}
               <Text size="1" color="gray">
                 {" "}
                 (iter {summary.best.index})
@@ -398,7 +402,11 @@ function RunStats({ run }: { run: AutoresearchRun }) {
       />
       <StatCard
         label="Last"
-        value={summary.last ? numberFormat.format(summary.last.value) : "—"}
+        value={
+          summary.last
+            ? withMetricUnit(numberFormat.format(summary.last.value), unit)
+            : "—"
+        }
       />
       <StatCard
         label="Iterations"
@@ -409,7 +417,7 @@ function RunStats({ run }: { run: AutoresearchRun }) {
         value={
           run.config.targetValue === null
             ? "—"
-            : numberFormat.format(run.config.targetValue)
+            : withMetricUnit(numberFormat.format(run.config.targetValue), unit)
         }
       />
     </div>

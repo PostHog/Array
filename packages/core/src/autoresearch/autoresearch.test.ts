@@ -247,6 +247,7 @@ function makeRun(
     config: { ...config, ...configOverrides },
     status: "running",
     metricName: null,
+    metricUnit: null,
     phase: null,
     originalModel: null,
     originalEffort: null,
@@ -524,6 +525,18 @@ describe("AutoresearchService", () => {
       runTurn(namedReportText(9, "bundle kilobytes"));
 
       expect(activeRun().metricName).toBe("bundle size (kB)");
+    });
+
+    it("adopts the metric unit from the first report that carries one", () => {
+      service.startRun(baseConfig);
+      runTurn(
+        "```autoresearch\nmetric: 412\nname: bundle size\nunit: kB\nsummary: baseline\n```",
+      );
+      expect(activeRun().metricUnit).toBe("kB");
+
+      // First unit wins, like the name — a stable unit keeps values readable.
+      runTurn("```autoresearch\nmetric: 400000\nunit: bytes\n```");
+      expect(activeRun().metricUnit).toBe("kB");
     });
 
     it("runs unnamed until a report carries a name", () => {

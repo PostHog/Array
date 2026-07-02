@@ -17,7 +17,8 @@ import { computeBest } from "./stats";
 const REPORT_BLOCK_EXAMPLE = [
   "```autoresearch",
   "metric: <number>",
-  "name: <short metric label with units, e.g. bundle size (kB) — keep it identical every time>",
+  "name: <short metric label, e.g. bundle size — keep it identical every time>",
+  "unit: <the metric's unit, e.g. kB, ms, % — omit for unitless counts>",
   "summary: <one line describing what you changed>",
   "```",
 ].join("\n");
@@ -71,19 +72,20 @@ function historyBlock(run: AutoresearchRun): string {
   const { config, iterations } = run;
   const best = computeBest(iterations, config.direction);
   const last = iterations[iterations.length - 1];
+  const unit = run.metricUnit ? ` ${run.metricUnit}` : "";
 
   const recent = iterations
     .slice(-5)
     .map(
       (iteration) =>
-        `- Iteration ${iteration.index}: ${iteration.value}${iteration.summary ? ` — ${iteration.summary}` : ""}`,
+        `- Iteration ${iteration.index}: ${iteration.value}${unit}${iteration.summary ? ` — ${iteration.summary}` : ""}`,
     )
     .join("\n");
 
   return `Recent iterations:
 ${recent}
 
-Best so far: ${best ? `${best.value} (iteration ${best.index})` : "none"}. Last: ${last ? last.value : "none"}.${targetLine(config)}`;
+Best so far: ${best ? `${best.value}${unit} (iteration ${best.index})` : "none"}. Last: ${last ? `${last.value}${unit}` : "none"}.${targetLine(config)}`;
 }
 
 export function buildContinuationPrompt(run: AutoresearchRun): string {
@@ -179,9 +181,13 @@ export function parseMetricReport(text: string): AutoresearchReport | null {
   return report;
 }
 
+/** Anything longer is prose, not a unit; ignore it rather than blow up the UI. */
+const MAX_UNIT_LENGTH = 16;
+
 function parseReportBody(body: string): AutoresearchReport | null {
   let value: number | null = null;
   let name: string | null = null;
+  let unit: string | null = null;
   let summary: string | null = null;
   for (const line of body.split("\n")) {
     const separator = line.indexOf(":");
@@ -193,11 +199,17 @@ function parseReportBody(body: string): AutoresearchReport | null {
       if (Number.isFinite(numeric)) value = numeric;
     } else if (key === "name" && raw.length > 0) {
       name = raw;
+    } else if (
+      key === "unit" &&
+      raw.length > 0 &&
+      raw.length <= MAX_UNIT_LENGTH
+    ) {
+      unit = raw;
     } else if (key === "summary" && raw.length > 0) {
       summary = raw;
     }
   }
-  return value === null ? null : { value, name, summary };
+  return value === null ? null : { value, name, unit, summary };
 }
 
 interface AgentMessageChunkUpdate {

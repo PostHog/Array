@@ -118,6 +118,11 @@ export const autoresearchRunSchema = z.object({
    * "bundle size (kB)". Null until the first named report arrives.
    */
   metricName: z.string().nullable().default(null),
+  /**
+   * The metric's unit as reported by the agent (the `unit:` line), e.g.
+   * "kB", "ms", "%". Rendered after every value; null for unitless counts.
+   */
+  metricUnit: z.string().nullable().default(null),
   phase: autoresearchPhaseSchema.nullable().default(null),
   /**
    * The session model/effort selected when the run started, captured so
@@ -167,7 +172,9 @@ export function parseStoredAutoresearchRun(
 /** A metric report parsed from the agent's reply. */
 export interface AutoresearchReport {
   value: number;
-  /** The agent's short label for the metric, e.g. "bundle size (kB)". */
+  /** The agent's short label for the metric, e.g. "bundle size". */
   name: string | null;
+  /** The metric's unit, e.g. "kB", "ms", "%"; null for unitless counts. */
+  unit: string | null;
   summary: string | null;
 }

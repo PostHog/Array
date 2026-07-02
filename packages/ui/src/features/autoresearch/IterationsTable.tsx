@@ -5,10 +5,12 @@ import type {
 import { computeBest, isImprovement } from "@posthog/core/autoresearch/stats";
 import { Badge, Table, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
+import { withMetricUnit } from "./metricFormat";
 
 interface IterationsTableProps {
   iterations: AutoresearchIteration[];
   direction: AutoresearchDirection;
+  unit: string | null;
 }
 
 const numberFormat = new Intl.NumberFormat("en-US", {
@@ -31,6 +33,7 @@ function deltaColor(
 export function IterationsTable({
   iterations,
   direction,
+  unit,
 }: IterationsTableProps) {
   const best = useMemo(
     () => computeBest(iterations, direction),
@@ -63,7 +66,7 @@ export function IterationsTable({
             <Table.Cell>{iteration.index}</Table.Cell>
             <Table.Cell>
               <span className="flex items-center gap-1 tabular-nums">
-                {numberFormat.format(iteration.value)}
+                {withMetricUnit(numberFormat.format(iteration.value), unit)}
                 {best?.index === iteration.index && (
                   <Badge color="amber" size="1">
                     best
@@ -79,7 +82,10 @@ export function IterationsTable({
               >
                 {iteration.delta === null
                   ? "—"
-                  : `${iteration.delta > 0 ? "+" : ""}${numberFormat.format(iteration.delta)}`}
+                  : withMetricUnit(
+                      `${iteration.delta > 0 ? "+" : ""}${numberFormat.format(iteration.delta)}`,
+                      unit,
+                    )}
               </Text>
             </Table.Cell>
             <Table.Cell className="max-w-[320px]">

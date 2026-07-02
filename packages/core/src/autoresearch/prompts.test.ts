@@ -50,6 +50,7 @@ function makeRun(
     config: makeConfig(configOverrides),
     status: "running",
     metricName: "requests per second",
+    metricUnit: null,
     phase: null,
     originalModel: null,
     originalEffort: null,
@@ -74,6 +75,7 @@ describe("parseMetricReport", () => {
     expect(parseMetricReport(text)).toEqual({
       value: 1234.5,
       name: null,
+      unit: null,
       summary: "swapped JSON parser",
     });
   });
@@ -82,6 +84,7 @@ describe("parseMetricReport", () => {
     expect(parseMetricReport(report("42"))).toEqual({
       value: 42,
       name: null,
+      unit: null,
       summary: null,
     });
   });
@@ -99,6 +102,7 @@ describe("parseMetricReport", () => {
     expect(parseMetricReport(text)).toEqual({
       value: 2,
       name: null,
+      unit: null,
       summary: "final",
     });
   });
@@ -108,6 +112,7 @@ describe("parseMetricReport", () => {
     expect(parseMetricReport(text)).toEqual({
       value: 7,
       name: null,
+      unit: null,
       summary: "good",
     });
   });
@@ -125,6 +130,7 @@ describe("parseMetricReport", () => {
     expect(parseMetricReport(text)).toEqual({
       value: 99,
       name: null,
+      unit: null,
       summary: "tidy",
     });
   });
@@ -303,6 +309,42 @@ describe("buildResumePrompt", () => {
     const prompt = buildResumePrompt(makeRun([]), "app-restart");
     expect(prompt).toContain("the app restarted");
     expect(prompt).toContain("half-applied change");
+  });
+});
+
+describe("unit parsing and rendering", () => {
+  it("parses the unit line", () => {
+    const text =
+      "```autoresearch\nmetric: 412\nname: bundle size\nunit: kB\nsummary: trimmed deps\n```";
+    expect(parseMetricReport(text)).toEqual({
+      value: 412,
+      name: "bundle size",
+      unit: "kB",
+      summary: "trimmed deps",
+    });
+  });
+
+  it("ignores a unit that is too long to be a unit", () => {
+    const text =
+      "```autoresearch\nmetric: 5\nunit: kilobytes of gzipped production javascript\n```";
+    expect(parseMetricReport(text)?.unit).toBeNull();
+  });
+
+  it("includes the unit in continuation history once known", () => {
+    const run = {
+      ...makeRun([makeIteration(1, 100, "baseline")]),
+      metricUnit: "ms",
+    };
+    const prompt = buildContinuationPrompt(run);
+    expect(prompt).toContain("- Iteration 1: 100 ms — baseline");
+    expect(prompt).toContain("Best so far: 100 ms (iteration 1)");
+    expect(prompt).toContain("Last: 100 ms");
+  });
+
+  it("mentions the unit line in the protocol example", () => {
+    expect(buildKickoffPreamble(makeConfig())).toContain(
+      "unit: <the metric's unit",
+    );
   });
 });
 

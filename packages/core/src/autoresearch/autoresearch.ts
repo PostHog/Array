@@ -148,6 +148,7 @@ export class AutoresearchService {
       config,
       status: "running",
       metricName: null,
+      metricUnit: null,
       phase: null,
       originalModel: session ? currentSessionModel(session) : null,
       originalEffort: session ? currentSessionEffort(session) : null,
@@ -450,11 +451,16 @@ export class AutoresearchService {
     // the recovery backoff from scratch.
     this.recoveryAttempts.delete(run.id);
     this.recordIteration(run, report);
-    if (report.name) {
+    if (report.name || report.unit) {
       const current = autoresearchStore.getState().runs[run.id];
       // First named report wins; a stable label keeps the dashboard steady.
-      if (current && current.metricName === null) {
-        autoresearchStoreActions.setMetricName(run.id, report.name);
+      if (current) {
+        if (report.name && current.metricName === null) {
+          autoresearchStoreActions.setMetricName(run.id, report.name);
+        }
+        if (report.unit && current.metricUnit === null) {
+          autoresearchStoreActions.setMetricUnit(run.id, report.unit);
+        }
       }
     }
     this.persist(run.id);

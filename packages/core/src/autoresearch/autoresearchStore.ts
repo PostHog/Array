@@ -55,6 +55,11 @@ export const autoresearchStoreActions = {
     updateRun(runId, (run) => ({ ...run, metricName }));
   },
 
+  /** Record the metric unit the agent chose in its reports. */
+  setMetricUnit(runId: string, metricUnit: string): void {
+    updateRun(runId, (run) => ({ ...run, metricUnit }));
+  },
+
   setPhase(runId: string, phase: AutoresearchPhase | null): void {
     updateRun(runId, (run) => ({ ...run, phase }));
   },
