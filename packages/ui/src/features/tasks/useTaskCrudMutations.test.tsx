@@ -21,15 +21,25 @@ const deletionService = vi.hoisted(() => ({
   confirmAndDelete,
 }));
 
+const destroyTaskTerminals = vi.hoisted(() => vi.fn());
+
 vi.mock("@posthog/ui/hooks/useAuthenticatedMutation", () => ({
   useAuthenticatedMutation: () => ({ mutateAsync, isPending: false }),
 }));
 vi.mock("@posthog/di/react", () => ({
   useService: () => deletionService,
 }));
+vi.mock("@posthog/ui/features/terminal/destroyTaskTerminals", () => ({
+  destroyTaskTerminals,
+}));
 
+import type { SessionService } from "@posthog/core/sessions/sessionService";
 import { taskKeys } from "./taskKeys";
-import { useCreateTask, useDeleteTask } from "./useTaskCrudMutations";
+import {
+  releaseDeletedTaskResources,
+  useCreateTask,
+  useDeleteTask,
+} from "./useTaskCrudMutations";
 
 function wrapper({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient();
@@ -85,6 +95,57 @@ describe("useDeleteTask.deleteWithConfirm", () => {
     });
 
     expect(ok).toBe(false);
+  });
+});
+
+describe("releaseDeletedTaskResources", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("disconnects the session and destroys the task's terminals", async () => {
+    const sessionService = {
+      disconnectFromTask: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await releaseDeletedTaskResources(
+      "t1",
+      sessionService as unknown as SessionService,
+    );
+
+    expect(sessionService.disconnectFromTask).toHaveBeenCalledWith("t1");
+    expect(destroyTaskTerminals).toHaveBeenCalledWith("t1");
+  });
+
+  it("still destroys terminals when the disconnect fails, without throwing", async () => {
+    const sessionService = {
+      disconnectFromTask: vi.fn().mockRejectedValue(new Error("gone")),
+    };
+
+    await expect(
+      releaseDeletedTaskResources(
+        "t1",
+        sessionService as unknown as SessionService,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(destroyTaskTerminals).toHaveBeenCalledWith("t1");
+  });
+
+  it("never rejects when terminal teardown fails", async () => {
+    destroyTaskTerminals.mockImplementationOnce(() => {
+      throw new Error("boom");
+    });
+    const sessionService = {
+      disconnectFromTask: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      releaseDeletedTaskResources(
+        "t1",
+        sessionService as unknown as SessionService,
+      ),
+    ).resolves.toBeUndefined();
   });
 });
 
