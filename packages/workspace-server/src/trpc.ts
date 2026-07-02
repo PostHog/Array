@@ -130,6 +130,8 @@ import {
   countLocalLogEntriesInput,
   countLocalLogEntriesOutput,
   deleteLocalLogCacheInput,
+  readLocalLogsCollapsedInput,
+  readLocalLogsCollapsedOutput,
   readLocalLogsInput,
   readLocalLogsOutput,
   readLocalLogsTailInput,
@@ -854,6 +856,13 @@ export function createAppRouter({
         .output(readLocalLogsOutput)
         .query(({ input }) =>
           localLogsService().readLocalLogs(input.taskRunId),
+        ),
+
+      readCollapsed: t.procedure
+        .input(readLocalLogsCollapsedInput)
+        .output(readLocalLogsCollapsedOutput)
+        .query(({ input }) =>
+          localLogsService().readLocalLogsCollapsed(input.taskRunId),
         ),
 
       readTail: t.procedure

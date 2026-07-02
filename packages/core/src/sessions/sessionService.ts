@@ -168,6 +168,9 @@ export interface SessionTrpc {
   };
   logs: {
     readLocalLogs: TrpcQuery;
+    /** Optional: collapses superseded tool_call_update snapshots server-side so
+     * a tool-heavy log doesn't ship its full redundant history over IPC. */
+    readLocalLogsCollapsed?: TrpcQuery;
     /** Optional: only the Electron host exposes the tail read. Core feature-
      * detects and falls back to a full read when it's absent. */
     readLocalLogsTail?: TrpcQuery;
@@ -4860,16 +4863,40 @@ export class SessionService {
 
     if (taskRunId) {
       try {
-        const localContent = await this.d.trpc.logs.readLocalLogs.query({
-          taskRunId,
-        });
-        if (localContent?.trim()) {
-          localResult = this.parseLogContent(localContent);
-          if (
-            !options.minEntryCount ||
-            localResult.totalLineCount >= options.minEntryCount
-          ) {
-            return localResult;
+        const collapsedQuery = this.d.trpc.logs.readLocalLogsCollapsed;
+        if (collapsedQuery) {
+          // Collapse tool_call_update snapshots server-side so a tool-heavy
+          // log doesn't ship its full redundant history over IPC. The parsed
+          // line count is the collapsed count, so use the server's original
+          // totalLineCount for resume/gap tracking.
+          const res = (await collapsedQuery.query({ taskRunId })) as {
+            content: string;
+            totalLineCount: number;
+          } | null;
+          if (res?.content?.trim()) {
+            localResult = {
+              ...this.parseLogContent(res.content),
+              totalLineCount: res.totalLineCount,
+            };
+            if (
+              !options.minEntryCount ||
+              localResult.totalLineCount >= options.minEntryCount
+            ) {
+              return localResult;
+            }
+          }
+        } else {
+          const localContent = await this.d.trpc.logs.readLocalLogs.query({
+            taskRunId,
+          });
+          if (localContent?.trim()) {
+            localResult = this.parseLogContent(localContent);
+            if (
+              !options.minEntryCount ||
+              localResult.totalLineCount >= options.minEntryCount
+            ) {
+              return localResult;
+            }
           }
         }
       } catch {

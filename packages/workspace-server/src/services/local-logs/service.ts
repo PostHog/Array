@@ -8,6 +8,40 @@ import type { ILogsService } from "./identifiers";
 
 const DATA_DIR = ".posthog-code";
 
+const TOOL_CALL_UPDATE_MARKER = '"sessionUpdate":"tool_call_update"';
+const TOOL_CALL_ID_RE = /"toolCallId":"([^"]+)"/;
+
+/**
+ * Drop superseded `tool_call_update` lines, keeping only the last per
+ * `toolCallId`. Agents re-send the full accumulated tool output on every
+ * update, so a long-running tool leaves hundreds of MB of near-identical
+ * growing snapshots in the log; only the last is ever rendered. Collapsing
+ * here (before the log crosses to the renderer) keeps the transfer + parse
+ * proportional to the real content, not the redundant history. Whole lines are
+ * dropped, so the result is still valid NDJSON. Line-based (no JSON.parse) to
+ * stay cheap on a 300MB log.
+ */
+function collapseToolCallUpdateLines(ndjson: string): string {
+  const lines = ndjson.split("\n");
+  const lastIndexById = new Map<string, number>();
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].includes(TOOL_CALL_UPDATE_MARKER)) continue;
+    const id = lines[i].match(TOOL_CALL_ID_RE)?.[1];
+    if (id) lastIndexById.set(id, i);
+  }
+  if (lastIndexById.size === 0) return ndjson;
+
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes(TOOL_CALL_UPDATE_MARKER)) {
+      const id = lines[i].match(TOOL_CALL_ID_RE)?.[1];
+      if (id && lastIndexById.get(id) !== i) continue;
+    }
+    kept.push(lines[i]);
+  }
+  return kept.join("\n");
+}
+
 interface WriteState {
   pending: string | undefined;
   lastWritten: string | undefined;
@@ -50,6 +84,22 @@ export class LocalLogsService implements ILogsService {
       }
       return null;
     }
+  }
+
+  /**
+   * Like `readLocalLogs`, but collapses superseded `tool_call_update` snapshots
+   * before returning so a tool-heavy log doesn't ship its full redundant
+   * history across IPC. `totalLineCount` is the original (pre-collapse) line
+   * count, which callers use for resume/gap tracking.
+   */
+  async readLocalLogsCollapsed(
+    taskRunId: string,
+  ): Promise<{ content: string; totalLineCount: number } | null> {
+    const raw = await this.readLocalLogs(taskRunId);
+    if (raw === null) return null;
+    const trimmed = raw.trim();
+    const totalLineCount = trimmed ? trimmed.split("\n").length : 0;
+    return { content: collapseToolCallUpdateLines(raw), totalLineCount };
   }
 
   async readLocalLogsTail(
