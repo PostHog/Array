@@ -1,6 +1,8 @@
-import { injectable } from "inversify";
+import { inject, injectable } from "inversify";
+import { DEV_FLAGS_SERVICE } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "@posthog/shared";
+import type { DevFlagsService } from "../dev-flags/service";
 import {
   DevNetworkEvent,
   type DevNetworkEvents,
@@ -19,11 +21,22 @@ export class DevNetworkService extends TypedEventEmitter<DevNetworkEvents> {
   private sim: NetworkSim = { offline: false, slowDelayMs: 0 };
   private installed = false;
 
+  constructor(
+    @inject(DEV_FLAGS_SERVICE)
+    private readonly flags: DevFlagsService,
+  ) {
+    super();
+  }
+
   install(): void {
     if (this.installed) return;
     this.installed = true;
     this.wrapFetch();
     log.info("Network instrumentation installed");
+  }
+
+  private capturing(): boolean {
+    return this.installed && this.flags.getFlags().devMode;
   }
 
   getSnapshot(): NetworkRequest[] {
@@ -60,6 +73,9 @@ export class DevNetworkService extends TypedEventEmitter<DevNetworkEvents> {
       input: RequestInfo | URL,
       init?: RequestInit,
     ): Promise<Response> => {
+      if (!this.capturing()) {
+        return original(input, init);
+      }
       const startedAt = Date.now();
       const start = performance.now();
       const method = (init?.method ?? "GET").toUpperCase();

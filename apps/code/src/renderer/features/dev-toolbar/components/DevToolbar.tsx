@@ -51,10 +51,10 @@ import {
   X,
   ZapOff,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { MetricsSample } from "../../../../main/services/dev-metrics/schemas";
 import { REGION_LABELS } from "@posthog/shared";
-import { subscribeDevFlagsFromMain, useDevFlagsStore } from "../devFlagsStore";
+import { useDevFlagsStore } from "../devFlagsStore";
 import { useIpcMetricsStore } from "../ipcMetricsStore";
 import { useMainThreadHealthStore } from "../mainThreadHealth";
 import { AgentsPanel } from "./AgentsPanel";
@@ -85,8 +85,6 @@ export function DevToolbar() {
 
   const [openPanel, setOpenPanel] = useState<DetailPanel>(null);
   const [panelHeight, setPanelHeight] = useState(480);
-
-  useEffect(() => subscribeDevFlagsFromMain(), []);
 
   if (!devMode) return null;
 

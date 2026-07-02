@@ -55,8 +55,6 @@ import {
   AUTH_SERVICE,
   CANVAS_LINK_SERVICE,
   DATABASE_SERVICE,
-  DEV_LOGS_SERVICE,
-  DEV_NETWORK_SERVICE,
   DISCORD_PRESENCE_SERVICE,
   EXTERNAL_APPS_SERVICE,
   FILE_WATCHER_SERVICE,
@@ -74,8 +72,7 @@ import {
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
-import type { DevLogsService } from "./services/dev-logs/service";
-import type { DevNetworkService } from "./services/dev-network/service";
+import { initDevToolbar } from "./services/dev-toolbar";
 import type { DiscordPresenceService } from "./services/discord-presence/service";
 import {
   focusSessionStore,
@@ -243,8 +240,7 @@ app.on("child-process-gone", (_event, details) => {
 });
 
 async function initializeServices(): Promise<void> {
-  container.get<DevNetworkService>(DEV_NETWORK_SERVICE).install();
-  container.get<DevLogsService>(DEV_LOGS_SERVICE).install();
+  initDevToolbar();
 
   container.get<DatabaseService>(DATABASE_SERVICE);
   container.get<OAuthService>(OAUTH_SERVICE);

@@ -1,12 +1,10 @@
 import type ElectronLog from "electron-log";
 import log from "electron-log/main";
-import { injectable } from "inversify";
 import { TypedEventEmitter } from "@posthog/shared";
-import {
-  DevLogsEvent,
-  type DevLogsEvents,
-  type LogEntry,
-} from "./schemas";
+import { inject, injectable } from "inversify";
+import { DEV_FLAGS_SERVICE } from "../../di/tokens";
+import type { DevFlagsService } from "../dev-flags/service";
+import { DevLogsEvent, type DevLogsEvents, type LogEntry } from "./schemas";
 
 const RING_BUFFER_SIZE = 1000;
 
@@ -16,20 +14,27 @@ export class DevLogsService extends TypedEventEmitter<DevLogsEvents> {
   private nextId = 1;
   private installed = false;
 
+  constructor(
+    @inject(DEV_FLAGS_SERVICE)
+    private readonly flags: DevFlagsService,
+  ) {
+    super();
+  }
+
   install(): void {
     if (this.installed) return;
     this.installed = true;
 
     const transport = ((message: ElectronLog.LogMessage) => {
+      if (!this.flags.getFlags().devMode) return;
       const entry: LogEntry = {
         id: this.nextId++,
         level: message.level ?? "info",
         scope: message.scope,
         message: formatMessage(message.data),
         capturedAt: (message.date ?? new Date()).getTime(),
-        source: message.variables?.processType === "renderer"
-          ? "renderer"
-          : "main",
+        source:
+          message.variables?.processType === "renderer" ? "renderer" : "main",
       };
       this.entries.push(entry);
       if (this.entries.length > RING_BUFFER_SIZE) {

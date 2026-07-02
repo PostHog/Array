@@ -1,6 +1,7 @@
 import type { TRPCLink } from "@trpc/client";
 import { observable, tap } from "@trpc/server/observable";
 import type { AnyRouter } from "@trpc/server/unstable-core-do-not-import";
+import { useDevFlagsStore } from "./devFlagsStore";
 import { type IpcOpType, useIpcMetricsStore } from "./ipcMetricsStore";
 
 function byteLength(value: unknown): number {
@@ -16,8 +17,11 @@ export function ipcInstrumentationLink<
   TRouter extends AnyRouter = AnyRouter,
 >(): TRPCLink<TRouter> {
   return () =>
-    ({ op, next }) =>
-      observable((observer) => {
+    ({ op, next }) => {
+      if (!useDevFlagsStore.getState().devMode) {
+        return next(op);
+      }
+      return observable((observer) => {
         const start = performance.now();
         const startedAt = Date.now();
         const inputBytes = byteLength(op.input);
@@ -81,4 +85,5 @@ export function ipcInstrumentationLink<
           subscription.unsubscribe();
         };
       });
+    };
 }
