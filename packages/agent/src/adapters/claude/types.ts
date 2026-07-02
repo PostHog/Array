@@ -39,29 +39,13 @@ export type BackgroundTerminal =
       pendingOutput: TerminalOutputResponse;
     };
 
-/** One in-flight `prompt()` call. A persistent per-session consumer (see
- *  `runConsumer` in claude-agent.ts) drains the SDK query stream for the whole
- *  session and settles each Turn's deferred when that turn's outcome is known,
- *  so `prompt()` itself holds no loop. Turns are processed FIFO: the SDK
- *  echoes queued user messages back in submission order, so the first
- *  unsettled queue entry is the turn currently running. */
+/** One in-flight `prompt()` call, settled by the session's consumer. */
 export type Turn = {
-  /** uuid stamped on the pushed `SDKUserMessage`; the SDK echoes it back so
-   *  the consumer can match the replayed user message to this turn. */
   promptUuid: string;
-  /** Local-only slash commands (e.g. `/context`) return a result without an
-   *  echo, so the consumer can't promote them via the replay; it falls back
-   *  to promoting the queue head when the result arrives. */
   isLocalOnlyCommand: boolean;
-  /** Leading slash command of the prompt (e.g. "/foo"), if any. Drives the
-   *  unsupported-slash-command gate when idle arrives without an echo. */
   commandName?: string;
-  /** Mirrors the prompt's chunks to the feed/history. Invoked once, when the
-   *  turn activates, preserving the pre-consumer timing where a queued
-   *  prompt's broadcast fired when its turn took over the loop. */
+  /** Invoked once at activation, matching the pre-consumer broadcast timing. */
   broadcast: () => Promise<void>;
-  /** Set once the deferred has been resolved/rejected, so the consumer never
-   *  settles a turn twice (idle + handoff + stream-end can all race). */
   settled: boolean;
   resolve: (response: PromptResponse) => void;
   reject: (error: unknown) => void;
@@ -90,12 +74,9 @@ export type Session = BaseSession & {
   lastPlanFilePath?: string;
   lastPlanContent?: string;
   effort?: EffortLevel;
-  /** The user's Fast mode intent. Persists across model switches; the "fast"
-   *  config option is only surfaced while the selected model supports it. */
+  /** User intent; retained while a non-fast model hides the "fast" option. */
   fastModeEnabled: boolean;
-  /** Last session title pushed to the client via `session_info_update`. The
-   *  SDK auto-generates the title in a background task and persists it to the
-   *  session file; it is polled at turn-end and only pushed on change. */
+  /** Last title pushed via `session_info_update`, to dedupe turn-end polls. */
   lastTitle?: string;
   configOptions: SessionConfigOption[];
   accumulatedUsage: AccumulatedUsage;
@@ -110,30 +91,15 @@ export type Session = BaseSession & {
   contextSize?: number;
   /** Persists across prompt() calls so SDK-reported values survive turn boundaries */
   lastContextWindowSize?: number;
-  /** FIFO of in-flight prompts. The head is the turn the SDK is currently
-   *  processing; later entries are queued and will be echoed in order. */
+  /** FIFO of in-flight prompts; the SDK echoes them back in order. */
   turnQueue: Turn[];
-  /** The turn whose messages the consumer is currently attributing output to
-   *  (the head of `turnQueue` once its user message has been echoed). */
   activeTurn: Turn | null;
-  /** Count of result messages the consumer should treat as orphans and skip.
-   *  When cancel() settles+removes a queued turn, that turn's user message was
-   *  already pushed to the SDK, so the SDK still runs it and emits a result
-   *  with no uuid to match. The SDK processes input FIFO, so those orphan
-   *  results arrive before the next live turn's; skipping exactly this many
-   *  leaves the genuine head untouched. Reset to 0 on every activation. */
+  /** Echo-less results still owed by turns cancelled while queued. */
   pendingOrphanResults: number;
-  /** The long-lived consumer task. Lazily started on the first `prompt()` and
-   *  kept alive for the session so between-turn/background messages are still
-   *  drained and forwarded. */
   consumer?: Promise<void>;
-  /** Bumped by refreshSession before it swaps `query`/`input`, so the old
-   *  consumer (which captured the previous generation) exits quietly instead
-   *  of tearing down the refreshed session. */
+  /** Bumped by refreshSession so the retired consumer exits quietly. */
   queryGeneration: number;
-  /** Set once the SDK query stream has terminated (ran to `done` or threw).
-   *  The query iterator is not reusable afterward, so a later `prompt()`
-   *  rejects up front instead of enqueueing onto a dead stream and hanging. */
+  /** The query iterator ended and can't be revived; new prompts reject. */
   queryClosed?: boolean;
   cancelController?: AbortController;
   forceCancelTimer?: ReturnType<typeof setTimeout>;

@@ -570,8 +570,7 @@ export function toolUpdateFromToolResult(
     toolResult.is_error &&
     toolResult.content &&
     (toolResult.content as unknown[]).length > 0 &&
-    // Bash errors keep flowing through the terminal-output channel below so
-    // they render as terminal output rather than plain error text.
+    // Bash errors keep rendering through the terminal-output channel below.
     !(toolUse?.name === "Bash" && options?.supportsTerminalOutput)
   ) {
     return toAcpContentUpdate(toolResult.content, true);
@@ -676,11 +675,8 @@ export function toolUpdateFromToolResult(
             .map((c: { text?: string }) => c.text ?? "")
             .join("\n");
         } else {
-          // Image (or mixed non-text) content. Binary payloads can't be
-          // streamed through the terminal-output _meta channel, so bypass it
-          // and surface the blocks as ACP content. This handles the local
-          // Bash tool's image output, which previously failed the text-only
-          // guard and was silently dropped.
+          // Binary payloads can't ride the terminal-output _meta channel;
+          // surface image/mixed content as ACP content blocks instead.
           return toAcpContentUpdate(result, isError === true);
         }
       }

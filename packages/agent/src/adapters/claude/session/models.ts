@@ -76,10 +76,7 @@ export function supportsFastMode(modelId: string): boolean {
   return MODELS_WITH_FAST_MODE.has(modelId);
 }
 
-/** Map the SDK's tri-state `fast_mode_state` onto the boolean toggle.
- *  `cooldown` (fast mode temporarily suspended after a rate limit) keeps the
- *  toggle on so it reflects the user's intent — only an explicit `off` clears
- *  it. */
+// cooldown keeps the toggle on (user intent); only an explicit off clears it.
 export function fastModeStateEnabled(state: string | undefined): boolean {
   return state !== undefined && state !== "off";
 }

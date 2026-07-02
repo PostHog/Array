@@ -66,11 +66,8 @@ interface AnthropicMessageWithContent {
 type ChunkHandlerContext = {
   sessionId: string;
   toolUseCache: ToolUseCache;
-  /** Tool_use ids already surfaced as a `tool_call` (a permission request
-   *  emits one eagerly, before the tool_use block streams). When the streamed
-   *  block arrives second it refines with a `tool_call_update` instead of
-   *  emitting a duplicate `tool_call`. Mutated in place; pruned at
-   *  `tool_result` time alongside `toolUseCache`. */
+  /** Tool_use ids already surfaced as a `tool_call` (permission requests emit
+   *  eagerly); the second emitter refines instead of duplicating. */
   emittedToolCalls?: Set<string>;
   fileContentCache: { [key: string]: string };
   enrichedReadCache?: EnrichedReadCache;
@@ -87,17 +84,11 @@ type ChunkHandlerContext = {
 };
 
 /**
- * The text/thinking blocks that actually streamed live as `stream_event`
- * deltas for the message the next consolidated `assistant` will repeat, in
- * stream order, each accumulated to its full streamed text. The consolidated
- * handler diffs each assembled block against these and forwards only the
- * un-streamed remainder — nothing if it streamed in full (the common case),
- * the whole block if it never streamed (a non-streaming gateway), or just the
- * tail if the stream was cut short mid-block. Matching on content rather than
- * the Anthropic message id makes dedupe robust to gateways that don't carry a
- * stable/matching id across the stream and the consolidated message. Cleared
- * at each top-level `message_start` and again once a consolidated message
- * consumes it, so the record stays bounded to the in-flight message.
+ * Text/thinking actually streamed live for the in-flight message, in order.
+ * The consolidated assistant message prefix-diffs its blocks against this and
+ * forwards only the un-streamed remainder. Content matching (not message ids)
+ * keeps dedupe robust to gateways whose ids don't line up; cleared per
+ * message so it stays bounded.
  */
 export interface StreamedAssistantBlocks {
   blocks: { index: number; type: "text" | "thinking"; text: string }[];
@@ -211,9 +202,6 @@ function handleToolUseChunk(
   ctx: ChunkHandlerContext,
 ): SessionUpdate | null {
   const alreadyCached = chunk.id in ctx.toolUseCache;
-  // A permission request may have already surfaced this tool call to the
-  // client (see `emittedToolCalls`); if so this streamed encounter refines it
-  // rather than emitting a duplicate `tool_call`.
   const alreadyEmitted =
     alreadyCached || ctx.emittedToolCalls?.has(chunk.id) === true;
   ctx.toolUseCache[chunk.id] = chunk;
@@ -846,11 +834,8 @@ export async function handleSystemMessage(
       break;
     }
     case "informational": {
-      // Free-form notice from the SDK (e.g. why a UserPromptSubmit/Stop hook
-      // blocked continuation). Surface the text so the user sees it instead
-      // of a silent stop. ACP's agent_message_chunk has no severity field, so
-      // fold the level into the text for the more prominent levels ('info' is
-      // transcript-only noise — leave plain).
+      // Surface hook-blocked stops; the level is folded into the text since
+      // agent_message_chunk has no severity field.
       const informationalText =
         message.level === "info"
           ? message.content
@@ -1022,26 +1007,16 @@ export async function handleStreamEvent(
 
   const streamed = context.streamedAssistantBlocks;
   if (streamed) {
-    // A new top-level message starts: clear any streamed-content residue from
-    // a prior message that never reached its consolidated reset (a cancelled
-    // turn breaks out before it). Block indices restart at 0 each message, so
-    // leftover entries would otherwise collide with this message's blocks and
-    // re-emit (or truncate) already-streamed text. Gated on
-    // `parent_tool_use_id === null` so a subagent stream can't clear the
-    // top-level record.
+    // Clear residue from a message that never reached its consolidated reset
+    // (e.g. a cancelled turn); indices restart per message and would collide.
     if (
       message.event.type === "message_start" &&
       message.parent_tool_use_id === null
     ) {
       streamed.blocks.length = 0;
     }
-    // Accumulate the text/thinking actually streamed live, so the assistant
-    // handler can diff its assembled blocks against what already reached the
-    // client as chunks and forward only the remainder. Only top-level streams
-    // are recorded — subagent text is never streamed and must stay filtered,
-    // as it is internal to the tool call. Contiguous deltas of the same block
-    // (same index and type) extend the current entry; anything else opens a
-    // new one.
+    // Record only top-level streams; subagent text is never streamed and
+    // must stay filtered.
     if (
       message.parent_tool_use_id === null &&
       message.event.type === "content_block_delta"
@@ -1053,11 +1028,7 @@ export async function handleStreamEvent(
           : delta.type === "thinking_delta"
             ? { type: "thinking" as const, text: delta.thinking }
             : undefined;
-      // Skip empty deltas (some gateways emit empty thinking chunks):
-      // appending "" is a no-op, but pushing a "" entry would create a block
-      // the consolidated handler's `text.length > 0` guard can never consume,
-      // stalling the diff cursor and re-emitting the next block as a
-      // duplicate.
+      // An empty entry would stall the diff cursor in the assistant handler.
       if (chunk && chunk.text.length > 0) {
         const index = message.event.index;
         const last = streamed.blocks[streamed.blocks.length - 1];
@@ -1221,16 +1192,9 @@ function logSpecialMessages(
   }
 }
 
-/**
- * Diffs each assistant `text`/`thinking` block against what already streamed
- * live as chunks (`StreamedAssistantBlocks`, in document order) and forwards
- * only the un-streamed remainder — nothing if it streamed in full (the common
- * case), the whole block if it never streamed (a non-streaming gateway), or
- * just the tail if the stream was cut short mid-block. Subagent assistant
- * content (`parent_tool_use_id !== null`) is never streamed and stays
- * internal to its tool call, so it is always dropped, as is everything when
- * no tracker is available (replay).
- */
+// Forwards only the un-streamed remainder of each assistant text/thinking
+// block: nothing, the whole block (non-streaming gateway) or a cut-short
+// tail. Subagent content and tracker-less replay stay dropped.
 function filterAssistantContent(
   message: SDKAssistantMessage,
   streamed: StreamedAssistantBlocks | undefined,
@@ -1253,10 +1217,8 @@ function filterAssistantContent(
     );
   }
 
-  // `streamPos` walks the streamed blocks in step with the assembled
-  // text/thinking blocks; tool_use and other blocks pass through untouched
-  // (their own `toolUseCache` collapses the streamed/assembled pair) without
-  // advancing it.
+  // streamPos walks the streamed record in step with the assembled
+  // text/thinking blocks; other block types pass through without advancing.
   const kept: typeof content = [];
   let streamPos = 0;
   for (const block of content) {
@@ -1265,15 +1227,11 @@ function filterAssistantContent(
       continue;
     }
     const full = block.type === "text" ? block.text : block.thinking;
-    // Empty assembled blocks carry nothing (some gateways emit an empty
-    // `thinking` block before the real text) — drop them.
     if (full.length === 0) {
       continue;
     }
-    // A streamed block of the same type whose accumulated text is a prefix of
-    // this one was already (at least partly) delivered as chunks; consume it
-    // and forward only what's left. A non-empty streamed text is required so
-    // an empty/aborted streamed block doesn't swallow the assembled copy.
+    // A same-type streamed prefix means the block (or its head) was already
+    // delivered as chunks; consume it and forward only what's left.
     const streamedBlock = streamed.blocks[streamPos];
     if (
       streamedBlock &&
@@ -1286,9 +1244,7 @@ function filterAssistantContent(
       if (remainder.length === 0) {
         continue;
       }
-      // Overwrite in place with just the un-streamed tail (the assembled
-      // message isn't read again after this) so the block keeps its exact SDK
-      // type.
+      // Overwrite in place so the block keeps its exact SDK type.
       if (block.type === "text") {
         block.text = remainder;
       } else {
@@ -1297,12 +1253,8 @@ function filterAssistantContent(
       kept.push(block);
       continue;
     }
-    // Not matched: never streamed (or the stream diverged from the assembled
-    // text) — forward the block in full.
     kept.push(block);
   }
-  // Consumed: reset so the next message's blocks accumulate fresh and the
-  // record stays bounded to the in-flight message.
   streamed.blocks.length = 0;
   return kept;
 }

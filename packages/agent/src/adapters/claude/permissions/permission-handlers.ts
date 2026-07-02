@@ -65,16 +65,12 @@ interface ToolHandlerContext {
   updateConfigOption: (configId: string, value: string) => Promise<void>;
   applySessionMode: (modeId: string) => Promise<void>;
   allowedDomains?: string[];
-  /** Tool_use ids already surfaced to the client as a `tool_call`. Shared
-   *  with the streamed tool_use path so whichever side emits first wins and
-   *  the other refines with a `tool_call_update`. */
+  /** Shared with the streamed tool_use path; first emitter wins. */
   emittedToolCalls?: Set<string>;
   supportsTerminalOutput?: boolean;
 }
 
-/** Built-in tools whose tool_use never surfaces as a standalone `tool_call`
- *  (Task* are rendered as plan snapshots at tool_result time; TodoWrite as a
- *  plan), so a permission prompt for them must not emit a stray one. */
+// Task*/TodoWrite render as plans, never as standalone tool_calls.
 function shouldEmitToolCall(toolName: string): boolean {
   return (
     toolName !== "TodoWrite" &&
@@ -85,12 +81,8 @@ function shouldEmitToolCall(toolName: string): boolean {
   );
 }
 
-/** Emit the `tool_call` a permission request references if it hasn't been
- *  sent yet, so the client has the tool call before being asked to approve
- *  it. The SDK may invoke `canUseTool` before the assistant message's
- *  tool_use block streams to us; the streamed chunk later refines this with a
- *  `tool_call_update` rather than emitting a duplicate (see
- *  `emittedToolCalls` in the conversion layer). */
+// The SDK can invoke canUseTool before the tool_use block streams; make
+// sure the tool_call exists before the client is asked to approve it.
 async function ensureToolCallEmitted(
   context: ToolHandlerContext,
 ): Promise<void> {
@@ -129,13 +121,8 @@ async function ensureToolCallEmitted(
   });
 }
 
-/** Forward a permission request to the client, emitting the referenced
- *  `tool_call` first and wiring the tool call's abort `signal` through as a
- *  `cancellationSignal`. When the turn is cancelled while the client's prompt
- *  is still open the signal aborts, the SDK sends `$/cancel_request`, and the
- *  client settles the request (a `cancelled` outcome or a rejection). Either
- *  way callers see the same "Tool use aborted" they already expect, so a
- *  cancelled dialog no longer leaves the `await` hanging. */
+// The cancellationSignal lets a turn cancel dismiss the client's open
+// dialog ($/cancel_request) instead of leaving this await hanging.
 async function requestPermissionFromClient(
   context: ToolHandlerContext,
   params: RequestPermissionRequest,

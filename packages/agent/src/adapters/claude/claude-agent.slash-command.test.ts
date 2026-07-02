@@ -185,9 +185,7 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
         expect(text).toContain(tc.commandInMessage);
       }
     } else {
-      // No unsupported chunk. The idle is absorbed; the stream then ends
-      // without the turn ever starting, so the consumer rejects the queued
-      // prompt with the session-ended error.
+      // Idle absorbed; the stream then ends before the turn ever starts.
       await expect(promptPromise).rejects.toThrow(/session has ended/);
       expect(
         findUnsupportedChunkText(client.sessionUpdate.mock.calls),
@@ -233,8 +231,7 @@ describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
     });
 
     await new Promise((resolve) => setImmediate(resolve));
-    // Activate the turn via its echo so cancel() arms the backstop for it
-    // (a still-queued turn is settled directly, with no SDK work to force).
+    // cancel() only arms the backstop for an activated (echoed) turn.
     echoQueuedTurn(agent, query);
     await new Promise((resolve) => setImmediate(resolve));
 

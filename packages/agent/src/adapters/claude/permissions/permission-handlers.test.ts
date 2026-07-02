@@ -10,9 +10,7 @@ function createClient(response: Record<string, unknown>) {
   return {
     sessionUpdate: vi.fn().mockResolvedValue(undefined),
     requestPermission,
-    // Permission requests go through the generic request() so the tool
-    // call's abort signal rides along as a cancellationSignal; delegate to
-    // the requestPermission spy so assertions keep one target.
+    // Delegate so assertions keep one target.
     request: vi.fn((_method: string, params: unknown) =>
       requestPermission(params),
     ),
