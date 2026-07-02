@@ -102,6 +102,53 @@ describe("api", () => {
     expect(event.reply).not.toHaveBeenCalled();
   });
 
+  test("reports procedure failures through onError and still responds", async () => {
+    const failingRouter = t.router({
+      failingQuery: t.procedure.query(() => {
+        throw new Error("db exploded");
+      }),
+    });
+    const onError = vi.fn();
+    const event = makeEvent({
+      reply: vi.fn(),
+      sender: {
+        isDestroyed: () => false,
+        on: () => {},
+      },
+    });
+
+    await handleIPCMessage({
+      createContext: async () => ({}),
+      event,
+      internalId: "1-1:1",
+      message: {
+        method: "request",
+        operation: {
+          context: {},
+          id: 1,
+          input: undefined,
+          path: "failingQuery",
+          type: "query",
+          signal: undefined,
+        },
+      },
+      router: failingRouter,
+      operations: new Map(),
+      onError,
+    });
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError.mock.lastCall?.[0]).toMatchObject({
+      path: "failingQuery",
+      type: "query",
+    });
+    expect(onError.mock.lastCall?.[0].error.cause?.message).toBe("db exploded");
+    expect(event.reply.mock.lastCall?.[1]).toMatchObject({
+      id: 1,
+      error: expect.anything(),
+    });
+  });
+
   test("handles subscriptions using observables", async () => {
     const operations = new Map();
     const ee = new EventEmitter();
