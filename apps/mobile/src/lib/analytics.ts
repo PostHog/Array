@@ -196,7 +196,7 @@ export interface Analytics {
 // "cloud"). Mirrors packages/ui/src/shell/posthogAnalyticsImpl.ts.
 const INBOX_CLIENT = "mobile" as const;
 
-const INBOX_ANALYTICS_EVENT_NAMES: ReadonlySet<string> = new Set([
+export const INBOX_ANALYTICS_EVENT_NAMES: ReadonlySet<string> = new Set([
   ANALYTICS_EVENTS.INBOX_VIEWED,
   ANALYTICS_EVENTS.INBOX_REPORT_OPENED,
   ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,

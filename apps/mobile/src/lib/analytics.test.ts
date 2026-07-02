@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ANALYTICS_EVENTS,
   computeReportAgeHours,
+  INBOX_ANALYTICS_EVENT_NAMES,
   useActiveTaskAnalyticsContext,
   useAnalytics,
 } from "./analytics";
@@ -114,22 +115,17 @@ describe("useAnalytics track", () => {
     mockPosthog.capture.mockClear();
   });
 
-  const INBOX_EVENTS = [
-    ANALYTICS_EVENTS.INBOX_VIEWED,
-    ANALYTICS_EVENTS.INBOX_REPORT_OPENED,
-    ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,
-    ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED,
-    ANALYTICS_EVENTS.INBOX_REPORT_ACTION,
-  ] as const;
-
-  it.each(INBOX_EVENTS)("stamps inbox_client=mobile on %s", (eventName) => {
-    const track = renderTrack();
-    track(eventName as never, { foo: "bar" } as never);
-    expect(mockPosthog.capture).toHaveBeenCalledWith(
-      eventName,
-      expect.objectContaining({ inbox_client: "mobile", foo: "bar" }),
-    );
-  });
+  it.each([...INBOX_ANALYTICS_EVENT_NAMES])(
+    "stamps inbox_client=mobile on %s",
+    (eventName) => {
+      const track = renderTrack();
+      track(eventName as never, { foo: "bar" } as never);
+      expect(mockPosthog.capture).toHaveBeenCalledWith(
+        eventName,
+        expect.objectContaining({ inbox_client: "mobile", foo: "bar" }),
+      );
+    },
+  );
 
   it("does not stamp inbox_client on non-inbox events", () => {
     const track = renderTrack();
