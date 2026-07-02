@@ -53,6 +53,7 @@ export const sessionStoreSetters = {
 
       state.sessions[session.taskRunId] = session;
       state.taskIdIndex[session.taskId] = session.taskRunId;
+      trimSessionEvents(state.sessions[session.taskRunId]);
     });
   },
 
@@ -70,6 +71,9 @@ export const sessionStoreSetters = {
     sessionStore.setState((state) => {
       if (state.sessions[taskRunId]) {
         Object.assign(state.sessions[taskRunId], updates);
+        if (updates.events) {
+          trimSessionEvents(state.sessions[taskRunId]);
+        }
       }
     });
   },

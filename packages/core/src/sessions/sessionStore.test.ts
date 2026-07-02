@@ -91,4 +91,33 @@ describe("sessionStore event cap", () => {
     expect(session.trimmedEventCount).toBe(1);
     expect(session.optimisticItems).toHaveLength(0);
   });
+
+  it("trims oversized histories installed via setSession", () => {
+    const hydrated = makeSession("run-2", "task-2");
+    hydrated.events = events(MAX_SESSION_EVENTS + 200);
+    sessionStoreSetters.setSession(hydrated);
+
+    const session = sessionStore.getState().sessions["run-2"];
+    expect(session.events).toHaveLength(MAX_SESSION_EVENTS);
+    expect(session.trimmedEventCount).toBe(200);
+  });
+
+  it("trims oversized histories installed via updateSession", () => {
+    sessionStoreSetters.updateSession("run-1", {
+      events: events(MAX_SESSION_EVENTS + 30),
+    });
+
+    const session = sessionStore.getState().sessions["run-1"];
+    expect(session.events).toHaveLength(MAX_SESSION_EVENTS);
+    expect(session.trimmedEventCount).toBe(30);
+  });
+
+  it("leaves untouched events alone in updateSession without events", () => {
+    sessionStoreSetters.appendEvents("run-1", events(10));
+    sessionStoreSetters.updateSession("run-1", { taskTitle: "renamed" });
+
+    const session = sessionStore.getState().sessions["run-1"];
+    expect(session.events).toHaveLength(10);
+    expect(session.trimmedEventCount ?? 0).toBe(0);
+  });
 });
