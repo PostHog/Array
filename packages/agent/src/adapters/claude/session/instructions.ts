@@ -46,5 +46,26 @@ Prefer deletion over addition and boring over clever. No unrequested abstraction
 This is minimalism, not negligence. Never cut understanding the problem, input validation at trust boundaries, error handling that prevents data loss, security, accessibility, or anything the user explicitly asked for.
 `;
 
+// Behavioral guidelines adapted from the Karpathy guidelines
+// (https://github.com/multica-ai/andrej-karpathy-skills, MIT). Their "Simplicity
+// First" section is intentionally omitted — MINIMAL_CODE above already covers it.
+const WORKING_DISCIPLINE = `
+# Working Discipline
+
+These bias toward caution over speed; for trivial tasks, use judgment.
+
+## Think before coding
+
+Don't assume, don't hide confusion, surface tradeoffs. Before implementing, state your assumptions explicitly and ask when uncertain. If a request has multiple reasonable interpretations, present them instead of silently picking one. If a simpler approach exists, say so and push back when warranted. If something is unclear, stop and name what is confusing.
+
+## Make surgical changes
+
+Touch only what you must; clean up only your own mess. When editing existing code, don't "improve" adjacent code, comments, or formatting, and don't refactor things that aren't broken. Match the existing style even if you would do it differently. If you notice unrelated dead code, mention it — don't delete it. Remove only the imports, variables, and functions that YOUR changes made unused; leave pre-existing dead code unless asked. Every changed line should trace directly to the request.
+
+## Drive to verifiable goals
+
+Turn tasks into verifiable success criteria and loop until they are met: "add validation" becomes "write tests for invalid inputs, then make them pass"; "fix the bug" becomes "write a test that reproduces it, then make it pass." For a multi-step task, state a brief plan with a verification check for each step. Strong success criteria let you work independently; weak ones ("make it work") force constant clarification.
+`;
+
 export const APPENDED_INSTRUCTIONS =
-  BRANCH_NAMING + PLAN_MODE + MCP_TOOLS + MINIMAL_CODE;
+  BRANCH_NAMING + PLAN_MODE + MCP_TOOLS + MINIMAL_CODE + WORKING_DISCIPLINE;
