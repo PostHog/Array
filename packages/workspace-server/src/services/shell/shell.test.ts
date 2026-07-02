@@ -1,7 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createMockRepositoryRepository } from "../../db/repositories/repository-repository.mock";
+import { createMockWorkspaceRepository } from "../../db/repositories/workspace-repository.mock";
+import { createMockWorktreeRepository } from "../../db/repositories/worktree-repository.mock";
 import { ShellEvent } from "./schemas";
 
 const mockPty = vi.hoisted(() => ({
@@ -85,67 +88,52 @@ describe("ShellService.destroy", () => {
 
 describe("ShellService.createSession workspace env", () => {
   function createWorktreeTaskService(worktreePath: string) {
-    return createService({
-      workspaceRepo: {
-        findByTaskId: vi.fn(() => ({
-          id: "ws-1",
-          mode: "worktree",
-          repositoryId: "repo-1",
-        })),
-      },
-      repositoryRepo: {
-        findById: vi.fn(() => ({ id: "repo-1", path: "/repos/code" })),
-      },
-      worktreeRepo: {
-        findByWorkspaceId: vi.fn(() => ({
-          id: "wt-1",
-          workspaceId: "ws-1",
-          name: "spawn-tasks",
-          path: worktreePath,
-        })),
-      },
+    const repositoryRepo = createMockRepositoryRepository();
+    const workspaceRepo = createMockWorkspaceRepository();
+    const worktreeRepo = createMockWorktreeRepository();
+    const repo = repositoryRepo.create({ path: "/repos/code" });
+    const workspace = workspaceRepo.create({
+      taskId: "task-1",
+      repositoryId: repo.id,
+      mode: "worktree",
     });
+    worktreeRepo.create({
+      workspaceId: workspace.id,
+      name: "spawn-tasks",
+      path: worktreePath,
+    });
+    return createService({ repositoryRepo, workspaceRepo, worktreeRepo });
   }
 
   function spawnedEnv(): Record<string, string> {
     return mockPty.spawn.mock.calls[0][2].env;
   }
 
-  let tempDir: string;
-
   beforeEach(() => {
     mockPty.spawn.mockReset();
     mockPty.spawn.mockReturnValue(createMockPtyProcess());
     mockGitQueries.getCurrentBranch.mockResolvedValue("feature-branch");
     mockGitQueries.getDefaultBranch.mockResolvedValue("main");
-    tempDir = mkdtempSync(path.join(tmpdir(), "shell-test-"));
-  });
-
-  afterEach(() => {
-    rmSync(tempDir, { recursive: true, force: true });
   });
 
   it("uses the stored worktree path when it exists on disk", async () => {
-    const { service } = createWorktreeTaskService(tempDir);
+    const tempDir = mkdtempSync(path.join(tmpdir(), "shell-test-"));
+    try {
+      const { service } = createWorktreeTaskService(tempDir);
 
-    await service.createSession({
-      sessionId: "session-1",
-      cwd: tempDir,
-      taskId: "task-1",
-    });
+      await service.createSession({ sessionId: "session-1", taskId: "task-1" });
 
-    expect(spawnedEnv().POSTHOG_CODE_WORKSPACE_PATH).toBe(tempDir);
-    expect(mockGitQueries.getCurrentBranch).toHaveBeenCalledWith(tempDir);
+      expect(spawnedEnv().POSTHOG_CODE_WORKSPACE_PATH).toBe(tempDir);
+      expect(mockGitQueries.getCurrentBranch).toHaveBeenCalledWith(tempDir);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("falls back to the derived path when the stored path is missing", async () => {
     const { service } = createWorktreeTaskService("/does/not/exist");
 
-    await service.createSession({
-      sessionId: "session-1",
-      cwd: tempDir,
-      taskId: "task-1",
-    });
+    await service.createSession({ sessionId: "session-1", taskId: "task-1" });
 
     expect(spawnedEnv().POSTHOG_CODE_WORKSPACE_PATH).toBe(
       path.join("/tmp/worktrees", "spawn-tasks", "code"),
@@ -156,14 +144,10 @@ describe("ShellService.createSession workspace env", () => {
     mockGitQueries.getDefaultBranch.mockRejectedValue(
       new Error("Cannot use simple-git on a directory that does not exist"),
     );
-    const { service } = createWorktreeTaskService(tempDir);
+    const { service } = createWorktreeTaskService("/does/not/exist");
 
     await expect(
-      service.createSession({
-        sessionId: "session-1",
-        cwd: tempDir,
-        taskId: "task-1",
-      }),
+      service.createSession({ sessionId: "session-1", taskId: "task-1" }),
     ).resolves.toBeDefined();
 
     expect(mockPty.spawn).toHaveBeenCalledTimes(1);

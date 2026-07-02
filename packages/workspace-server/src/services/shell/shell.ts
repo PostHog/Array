@@ -409,31 +409,31 @@ export class ShellService extends TypedEventEmitter<ShellEvents> {
   ): Promise<Record<string, string> | undefined> {
     if (!taskId) return undefined;
 
+    const workspace = this.workspaceRepo.findByTaskId(taskId);
+    if (!workspace || workspace.mode === "cloud" || !workspace.repositoryId) {
+      return undefined;
+    }
+
+    const repo = this.repositoryRepo.findById(workspace.repositoryId);
+    if (!repo) return undefined;
+
+    let worktreePath: string | null = null;
+    let worktreeName: string | null = null;
+
+    if (workspace.mode === "worktree") {
+      const worktree = this.worktreeRepo.findByWorkspaceId(workspace.id);
+      if (worktree) {
+        worktreeName = worktree.name;
+        // The stored path is authoritative — reused worktrees can live
+        // outside the managed worktree directory. Only derive when the
+        // stored path is gone (e.g. stale row after a location move).
+        worktreePath = existsSync(worktree.path)
+          ? worktree.path
+          : this.deriveWorktreePath(repo.path, worktreeName);
+      }
+    }
+
     try {
-      const workspace = this.workspaceRepo.findByTaskId(taskId);
-      if (!workspace || workspace.mode === "cloud" || !workspace.repositoryId) {
-        return undefined;
-      }
-
-      const repo = this.repositoryRepo.findById(workspace.repositoryId);
-      if (!repo) return undefined;
-
-      let worktreePath: string | null = null;
-      let worktreeName: string | null = null;
-
-      if (workspace.mode === "worktree") {
-        const worktree = this.worktreeRepo.findByWorkspaceId(workspace.id);
-        if (worktree) {
-          worktreeName = worktree.name;
-          // The stored path is authoritative — reused worktrees can live
-          // outside the managed worktree directory. Only derive when the
-          // stored path is gone (e.g. stale row after a location move).
-          worktreePath = existsSync(worktree.path)
-            ? worktree.path
-            : this.deriveWorktreePath(repo.path, worktreeName);
-        }
-      }
-
       return await buildWorkspaceEnv({
         taskId,
         folderPath: repo.path,
