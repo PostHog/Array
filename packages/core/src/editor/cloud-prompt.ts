@@ -147,6 +147,12 @@ export function getAbsoluteAttachmentPaths(
   );
 }
 
+const TRAILING_ATTACHMENT_SUMMARY_REGEX = /(?:^|\n)Attached files: [^\n]*$/;
+
+export function stripTrailingAttachmentSummary(text: string): string {
+  return text.replace(TRAILING_ATTACHMENT_SUMMARY_REGEX, "").trim();
+}
+
 export function buildCloudTaskDescription(
   prompt: string,
   filePaths: string[] = [],
