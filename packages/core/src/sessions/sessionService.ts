@@ -4865,10 +4865,8 @@ export class SessionService {
       try {
         const collapsedQuery = this.d.trpc.logs.readLocalLogsCollapsed;
         if (collapsedQuery) {
-          // Collapse tool_call_update snapshots server-side so a tool-heavy
-          // log doesn't ship its full redundant history over IPC. The parsed
-          // line count is the collapsed count, so use the server's original
-          // totalLineCount for resume/gap tracking.
+          // The collapsed content has fewer lines, so use the server's
+          // original totalLineCount for resume/gap tracking, not the parsed one.
           const res = (await collapsedQuery.query({ taskRunId })) as {
             content: string;
             totalLineCount: number;

@@ -26,12 +26,8 @@ interface SessionState {
   chunkBuffer?: ChunkBuffer;
   lastAgentMessage?: string;
   currentTurnMessages: string[];
-  /**
-   * Latest in-progress `tool_call_update` per toolCallId, not yet written to
-   * the local cache. Agents re-send the full accumulated tool output on every
-   * update; only the last before a terminal/other event needs persisting, so
-   * we coalesce here to keep the on-disk log proportional to real content.
-   */
+  /** Latest in-progress `tool_call_update` per toolCallId, awaiting a
+   * coalesced write to the local cache (see appendRawLine). */
   toolUpdateCache: Map<
     string,
     { entry: StoredNotification; bufferedAt: number }
