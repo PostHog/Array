@@ -282,8 +282,6 @@ export const useSettingsStore = create<SettingsStore>()(
       removeCustomSound: (id) =>
         set((state) => {
           const customSounds = state.customSounds.filter((s) => s.id !== id);
-          // If the deleted sound was the active one, or it was the last sound
-          // feeding "random-custom", fall back to silence.
           const soundNowUnplayable =
             state.completionSound === `custom:${id}` ||
             (state.completionSound === "random-custom" &&
