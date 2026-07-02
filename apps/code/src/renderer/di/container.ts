@@ -123,6 +123,10 @@ import {
   SHELL_CLIENT,
   type ShellClient,
 } from "@posthog/ui/features/terminal/shellClient";
+import {
+  DEV_MODE_CLIENT,
+  type DevModeClient,
+} from "@posthog/ui/features/settings/devModeClient";
 import { updatesClient } from "@posthog/ui/features/updates/updatesAdapter";
 import { UPDATES_CLIENT } from "@posthog/ui/features/updates/updatesClient";
 import {
@@ -132,6 +136,7 @@ import {
 import { DIFF_WORKER_FACTORY } from "@posthog/ui/shell/diffWorkerHost";
 import { HOST_LOGGER } from "@posthog/ui/shell/logger";
 import { posthogAnalyticsTracker } from "@posthog/ui/shell/posthogAnalyticsImpl";
+import { useDevFlagsStore } from "@features/dev-toolbar/devFlagsStore";
 import {
   diffWorkerFactory,
   reviewHost,
@@ -164,6 +169,15 @@ container.bind<TRPCClient<TrpcRouter>>(TRPC_CLIENT).toConstantValue(trpcClient);
 container.bind(HOST_TRPC_CLIENT).toConstantValue(hostTrpcClient);
 
 container.bind(UPDATES_CLIENT).toConstantValue(updatesClient);
+
+// dev mode client — exposes the dev-toolbar flag store to the shared settings UI
+const devModeClient: DevModeClient = {
+  getDevMode: () => useDevFlagsStore.getState().devMode,
+  setDevMode: (enabled) => useDevFlagsStore.getState().setDevMode(enabled),
+  onDevModeChanged: (listener) =>
+    useDevFlagsStore.subscribe((state) => listener(state.devMode)),
+};
+container.bind(DEV_MODE_CLIENT).toConstantValue(devModeClient);
 
 // connectivity client — passthrough over the renderer host client
 const connectivityClient: ConnectivityClient = {

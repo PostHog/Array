@@ -15,6 +15,10 @@ import { buildApplicationMenu } from "./menu";
 import type { ElectronMainWindow } from "./platform-adapters/electron-main-window";
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { POSTHOG_SESSION_ID_ARG } from "./posthog-session-arg";
+import {
+  encodeDevFlagsForArg,
+  readDevFlagsSync,
+} from "./services/dev-flags/service";
 import { trpcRouter } from "./trpc/router";
 import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
@@ -216,6 +220,7 @@ export function createWindow(): void {
       additionalArguments: [
         ...(isDev ? ["--posthog-code-dev"] : []),
         `${POSTHOG_SESSION_ID_ARG}${posthogNodeAnalytics.getOrCreateSessionId()}`,
+        encodeDevFlagsForArg(readDevFlagsSync()),
       ],
       ...(isDev && { webSecurity: false }),
     },

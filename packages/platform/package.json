@@ -83,6 +83,10 @@
     "./deep-link": {
       "types": "./dist/deep-link.d.ts",
       "import": "./dist/deep-link.js"
+    },
+    "./app-metrics": {
+      "types": "./dist/app-metrics.d.ts",
+      "import": "./dist/app-metrics.js"
     }
   },
   "scripts": {

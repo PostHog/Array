@@ -1,3 +1,4 @@
+import { ipcInstrumentationLink } from "@features/dev-toolbar/ipcInstrumentationLink";
 import { ipcLink } from "@posthog/electron-trpc/renderer";
 import type { HostRouter } from "@posthog/host-router/router";
 import { createTRPCClient } from "@trpc/client";
@@ -9,7 +10,7 @@ import { queryClient } from "@utils/queryClient";
 import type { TrpcRouter } from "../../main/trpc/router";
 
 export const trpcClient = createTRPCClient<TrpcRouter>({
-  links: [ipcLink()],
+  links: [ipcInstrumentationLink<TrpcRouter>(), ipcLink()],
 });
 
 export const hostTrpcClient = createTRPCClient<HostRouter>({

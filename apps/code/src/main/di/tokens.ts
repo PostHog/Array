@@ -127,3 +127,18 @@ export const WORKSPACE_SERVER_SERVICE = Symbol.for(
 export const DISCORD_PRESENCE_SERVICE = Symbol.for(
   "posthog.host.main.discord-presence.service",
 );
+export const DEV_FLAGS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-flags.service",
+);
+export const DEV_METRICS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-metrics.service",
+);
+export const DEV_NETWORK_SERVICE = Symbol.for(
+  "posthog.host.main.dev-network.service",
+);
+export const DEV_LOGS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-logs.service",
+);
+export const DEV_ACTIONS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-actions.service",
+);

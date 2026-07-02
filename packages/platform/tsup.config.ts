@@ -22,6 +22,7 @@ export default defineConfig({
     "src/crypto.ts",
     "src/analytics.ts",
     "src/deep-link.ts",
+    "src/app-metrics.ts",
   ],
   format: ["esm"],
   dts: true,

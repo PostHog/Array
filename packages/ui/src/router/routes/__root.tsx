@@ -316,7 +316,7 @@ function RootLayout() {
 
   if (isChannelsSpace) {
     return (
-      <Flex direction="column" height="100vh" className="bg-chrome">
+      <Flex direction="column" height="100%" className="bg-chrome">
         {/* Full-width title bar: a window-drag region carrying the PostHog
             mark. The left section matches the sidebar width so the tab strip
             starts flush with the content pane; its padding clears the macOS
@@ -422,7 +422,7 @@ function RootLayout() {
 
   if (isSettingsRoute) {
     return (
-      <Flex direction="column" height="100vh">
+      <Flex direction="column" height="100%">
         <ConnectivityBanner />
         <Outlet />
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
@@ -449,7 +449,7 @@ function RootLayout() {
   }
 
   return (
-    <Flex height="100vh">
+    <Flex height="100%">
       <Flex direction="column" flexGrow="1" overflow="hidden">
         <HeaderRow />
         <ConnectivityBanner />
