@@ -75,7 +75,6 @@ type DetailPanel =
   | "agents"
   | "logs"
   | "health"
-  | "router"
   | null;
 
 export function DevToolbar() {
@@ -88,6 +87,9 @@ export function DevToolbar() {
 
   const [openPanel, setOpenPanel] = useState<DetailPanel>(null);
   const [panelHeight, setPanelHeight] = useState(480);
+  // The router devtools open in their own standalone box (as they did from the
+  // old floating trigger), not in the shared metric-panel chrome above.
+  const [routerDevtoolsOpen, setRouterDevtoolsOpen] = useState(false);
 
   if (!devMode) return null;
 
@@ -106,6 +108,9 @@ export function DevToolbar() {
           onResize={setPanelHeight}
         />
       )}
+      {routerDevtoolsOpen && (
+        <RouterDevtoolsBox onClose={() => setRouterDevtoolsOpen(false)} />
+      )}
       <Flex
         align="center"
         justify="between"
@@ -121,8 +126,8 @@ export function DevToolbar() {
             onToggleReactScan={() =>
               setReactScanEnabledState(!reactScanEnabled)
             }
-            routerDevtoolsOpen={openPanel === "router"}
-            onToggleRouterDevtools={() => togglePanel("router")}
+            routerDevtoolsOpen={routerDevtoolsOpen}
+            onToggleRouterDevtools={() => setRouterDevtoolsOpen((v) => !v)}
           />
           <Divider />
           <QuickActionsMenu />
@@ -145,6 +150,7 @@ export function DevToolbar() {
               type="button"
               onClick={() => {
                 setOpenPanel(null);
+                setRouterDevtoolsOpen(false);
                 void setDevMode(false);
               }}
               aria-label="Disable dev mode"
@@ -161,6 +167,27 @@ export function DevToolbar() {
 
 function Divider() {
   return <div className="h-3 w-px bg-(--gray-6)" />;
+}
+
+// The router devtools in their own floating box docked above the toolbar —
+// the panel renders its own chrome, so this is just a positioned container
+// (deliberately not the shared metric-panel chrome).
+function RouterDevtoolsBox({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="absolute right-2 bottom-[calc(100%+8px)] z-50 h-[440px] w-[680px] max-w-[calc(100vw-16px)] overflow-hidden rounded-md border border-(--gray-6) bg-(--gray-1) shadow-[0_8px_24px_-8px_rgba(0,0,0,0.4)]">
+      <Tooltip content="Close router devtools">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close router devtools"
+          className="absolute top-1 right-1 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md bg-(--gray-2) text-(--gray-11) hover:bg-(--gray-3) hover:text-(--gray-12)"
+        >
+          <X size={14} />
+        </button>
+      </Tooltip>
+      <RouterDevtoolsPanel />
+    </div>
+  );
 }
 
 const PANEL_HEADERS: Record<
@@ -194,10 +221,6 @@ const PANEL_HEADERS: Record<
   health: {
     title: "Main-thread health",
     subtitle: "ms · current main-thread event loop lag",
-  },
-  router: {
-    title: "Router",
-    subtitle: "TanStack Router devtools · matched routes, params and loaders",
   },
 };
 
@@ -252,7 +275,6 @@ function PanelChrome({
         {openPanel === "agents" && <AgentsPanel enabled={devMode} />}
         {openPanel === "logs" && <LogsPanel enabled={devMode} />}
         {openPanel === "health" && <HealthPanel enabled={devMode} />}
-        {openPanel === "router" && <RouterDevtoolsPanel />}
       </div>
     </div>
   );
