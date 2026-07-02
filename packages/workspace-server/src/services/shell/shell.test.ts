@@ -105,7 +105,7 @@ describe("ShellService.createSession workspace env", () => {
     return createService({ repositoryRepo, workspaceRepo, worktreeRepo });
   }
 
-  function spawnedEnv(): Record<string, string> {
+  function spawnedEnv(): Record<string, string | undefined> {
     return mockPty.spawn.mock.calls[0][2].env;
   }
 
@@ -135,9 +135,9 @@ describe("ShellService.createSession workspace env", () => {
 
     await service.createSession({ sessionId: "session-1", taskId: "task-1" });
 
-    expect(spawnedEnv().POSTHOG_CODE_WORKSPACE_PATH).toBe(
-      path.join("/tmp/worktrees", "spawn-tasks", "code"),
-    );
+    const derivedPath = path.join("/tmp/worktrees", "spawn-tasks", "code");
+    expect(spawnedEnv().POSTHOG_CODE_WORKSPACE_PATH).toBe(derivedPath);
+    expect(mockGitQueries.getCurrentBranch).toHaveBeenCalledWith(derivedPath);
   });
 
   it("still creates the shell when env construction fails", async () => {
