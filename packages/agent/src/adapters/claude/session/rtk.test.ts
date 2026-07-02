@@ -86,24 +86,30 @@ describe("resolveRtkPrefix", () => {
   });
 
   test.each([
-    ["undefined", undefined],
+    ["unset", undefined],
     ["empty", ""],
+    ["1", "1"],
+    ["true", "true"],
+  ])("auto-detects rtk on PATH when POSTHOG_RTK is %s", (_label, value) => {
+    expect(resolveRtkPrefix({ POSTHOG_RTK: value, PATH: dir })).toBe(binary);
+  });
+
+  test("returns undefined when rtk is not on PATH", () => {
+    expect(resolveRtkPrefix({ PATH: "/nonexistent" })).toBeUndefined();
+  });
+
+  test.each([
     ["zero", "0"],
     ["false", "false"],
     ["FALSE", "FALSE"],
-  ])("is disabled when POSTHOG_RTK is %s", (_label, value) => {
-    expect(resolveRtkPrefix({ POSTHOG_RTK: value })).toBeUndefined();
-  });
-
-  test("auto-detects rtk on PATH when enabled", () => {
-    expect(resolveRtkPrefix({ POSTHOG_RTK: "1", PATH: dir })).toBe(binary);
-  });
-
-  test("returns undefined when enabled but rtk is not on PATH", () => {
-    expect(
-      resolveRtkPrefix({ POSTHOG_RTK: "true", PATH: "/nonexistent" }),
-    ).toBeUndefined();
-  });
+  ])(
+    "opts out when POSTHOG_RTK is %s, even with rtk on PATH",
+    (_label, value) => {
+      expect(
+        resolveRtkPrefix({ POSTHOG_RTK: value, PATH: dir }),
+      ).toBeUndefined();
+    },
+  );
 
   test("uses an explicit path that exists", () => {
     expect(resolveRtkPrefix({ POSTHOG_RTK: binary })).toBe(binary);

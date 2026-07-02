@@ -10,7 +10,7 @@ import { gitSubcommand } from "../git-command";
  * available we rewrite eligible `Bash` calls to run through it, so the savings
  * happen at the source — the verbose output is never generated into context.
  *
- * Opt-in and dormant by default: nothing changes unless `POSTHOG_RTK` is set.
+ * Used automatically when `rtk` is on PATH; set `POSTHOG_RTK=0` to opt out.
  */
 
 // Commands RTK compresses faithfully and that have no side effects, so wrapping
@@ -100,27 +100,33 @@ function findOnPath(bin: string, env: NodeJS.ProcessEnv): string | undefined {
 }
 
 /**
- * Resolves the RTK binary to route shell output through, from `POSTHOG_RTK`:
- *   unset / "" / "0" / "false" → disabled (undefined)
- *   "1" / "true"               → auto-detect `rtk` on PATH
- *   any other value            → an explicit path to the binary
- *
- * Opt-in by design: a user who merely has `rtk` installed sees no behavior
- * change until they ask for it, since rewriting alters how their commands run.
+ * Resolves the RTK binary to route shell output through. Auto-detects `rtk` on
+ * PATH by default, so an installed `rtk` is used automatically. `POSTHOG_RTK`
+ * overrides:
+ *   unset / "" / "1" / "true" → auto-detect `rtk` on PATH
+ *   "0" / "false"             → disabled (opt out)
+ *   any other value           → an explicit path to the binary
  */
 export function resolveRtkPrefix(env: NodeJS.ProcessEnv): string | undefined {
   const raw = env.POSTHOG_RTK?.trim();
-  if (!raw || raw === "0" || raw.toLowerCase() === "false") return undefined;
-  if (raw === "1" || raw.toLowerCase() === "true") {
-    return findOnPath("rtk", env);
+  const lowered = raw?.toLowerCase();
+
+  // Explicit opt-out, even when rtk is installed.
+  if (lowered === "0" || lowered === "false") return undefined;
+
+  // An explicit binary-path override (anything other than a bare enable flag).
+  if (raw && lowered !== "1" && lowered !== "true") {
+    try {
+      if (fs.statSync(raw).isFile()) return raw;
+    } catch {
+      // Explicit path doesn't exist — treat as disabled rather than emit a
+      // command that would fail with "rtk: not found".
+    }
+    return undefined;
   }
-  try {
-    if (fs.statSync(raw).isFile()) return raw;
-  } catch {
-    // Explicit path doesn't exist — treat as disabled rather than emit a
-    // command that would fail with "rtk: not found".
-  }
-  return undefined;
+
+  // Default (unset) or explicit enable: use rtk if it is on PATH.
+  return findOnPath("rtk", env);
 }
 
 export const createRtkRewriteHook =
