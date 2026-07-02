@@ -44,12 +44,12 @@ function emit(
   title: string,
   detail: Detail | undefined,
   defaultTimeout?: number,
-): string {
+): string | undefined {
   const o = normalize(detail);
   // Toasts can be disabled in settings; errors always show since they carry
   // information the user needs regardless of that preference.
   if (level !== "error" && !useSettingsStore.getState().toastNotifications) {
-    return o.id ?? "";
+    return o.id;
   }
   // base-ui auto-dismisses any non-loading toast with `timeout > 0`; it has no
   // Infinity special-case (Infinity would fire immediately), so a request to

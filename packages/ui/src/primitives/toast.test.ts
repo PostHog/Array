@@ -109,6 +109,17 @@ describe("toast wrapper", () => {
     expect(quill.error).toHaveBeenCalled();
   });
 
+  it.each([
+    [undefined, undefined],
+    ["stable-id", "stable-id"],
+  ])(
+    "returns %s (not a fabricated id) when suppressed with detail id %s",
+    (id, expected) => {
+      settings.toastNotifications = false;
+      expect(toast.success("Title", id ? { id } : undefined)).toBe(expected);
+    },
+  );
+
   it("after a toast closes, its id frees up to create again", () => {
     toast.success("First", { id: "dup" });
     quill.success.mock.calls[0]?.[0]?.onClose?.(); // simulate the toast closing
