@@ -8,6 +8,7 @@ import {
 } from "@main/di/tokens";
 import type { AgentService } from "@posthog/workspace-server/services/agent/agent";
 import { AGENT_SERVICE } from "@posthog/workspace-server/services/agent/identifiers";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   DevActionsEvent,
@@ -42,7 +43,7 @@ import {
   networkSnapshotSchema,
 } from "../../services/dev-network/schemas";
 import type { DevNetworkService } from "../../services/dev-network/service";
-import { publicProcedure, router } from "../trpc";
+import { middleware, publicProcedure, router } from "../trpc";
 
 const getFlagsService = () => container.get<DevFlagsService>(DEV_FLAGS_SERVICE);
 const getMetricsService = () =>
@@ -53,6 +54,23 @@ const getLogsService = () => container.get<DevLogsService>(DEV_LOGS_SERVICE);
 const getActionsService = () =>
   container.get<DevActionsService>(DEV_ACTIONS_SERVICE);
 const getAgentService = () => container.get<AgentService>(AGENT_SERVICE);
+
+// Server-side gate: the toolbar UI only renders when devMode is on, but that
+// does not protect the IPC layer. Any renderer-side code with access to the
+// tRPC client could otherwise invoke destructive actions (crash/restart the
+// host) or read agent internals regardless of the toggle. `devProcedure`
+// rejects those calls unless developer mode is actually enabled.
+const requireDevMode = middleware(({ next }) => {
+  if (!getFlagsService().getFlags().devMode) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Developer mode is disabled",
+    });
+  }
+  return next();
+});
+
+const devProcedure = publicProcedure.use(requireDevMode);
 
 const agentSessionSchema = z.object({
   taskRunId: z.string(),
@@ -89,67 +107,67 @@ export const devRouter = router({
     .output(devFlagsSchema)
     .mutation(({ input }) => getFlagsService().setDevMode(input.enabled)),
 
-  getLastMetrics: publicProcedure
+  getLastMetrics: devProcedure
     .output(metricsSampleSchema.nullable())
     .query(() => getMetricsService().getLastSample()),
 
-  getNetworkRequests: publicProcedure
+  getNetworkRequests: devProcedure
     .output(networkSnapshotSchema)
     .query(() => ({ requests: getNetworkService().getSnapshot() })),
 
-  clearNetworkRequests: publicProcedure.mutation(() => {
+  clearNetworkRequests: devProcedure.mutation(() => {
     getNetworkService().clear();
     return { ok: true };
   }),
 
-  getNetworkSim: publicProcedure
+  getNetworkSim: devProcedure
     .output(networkSimSchema)
     .query(() => getNetworkService().getSim()),
 
-  setNetworkSim: publicProcedure
+  setNetworkSim: devProcedure
     .input(networkSimSchema.partial())
     .output(networkSimSchema)
     .mutation(({ input }) => getNetworkService().setSim(input)),
 
-  getLogs: publicProcedure
+  getLogs: devProcedure
     .output(logsSnapshotSchema)
     .query(() => ({ entries: getLogsService().getSnapshot() })),
 
-  clearLogs: publicProcedure.mutation(() => {
+  clearLogs: devProcedure.mutation(() => {
     getLogsService().clear();
     return { ok: true };
   }),
 
-  getAgentsSnapshot: publicProcedure
+  getAgentsSnapshot: devProcedure
     .output(agentSnapshotSchema)
     .query(() => getAgentService().getDebugSnapshot()),
 
-  openUserDataDir: publicProcedure.mutation(async () => {
+  openUserDataDir: devProcedure.mutation(async () => {
     await getActionsService().openUserDataDir();
     return { ok: true };
   }),
 
-  openLogFile: publicProcedure.mutation(async () => {
+  openLogFile: devProcedure.mutation(async () => {
     await getActionsService().openLogFile();
     return { ok: true };
   }),
 
-  reloadRenderer: publicProcedure.mutation(() => {
+  reloadRenderer: devProcedure.mutation(() => {
     getActionsService().reloadRenderer();
     return { ok: true };
   }),
 
-  restartMain: publicProcedure.mutation(() => {
+  restartMain: devProcedure.mutation(() => {
     getActionsService().restartMain();
     return { ok: true };
   }),
 
-  crashMain: publicProcedure.mutation(() => {
+  crashMain: devProcedure.mutation(() => {
     getActionsService().crashMain();
     return { ok: true };
   }),
 
-  triggerToast: publicProcedure
+  triggerToast: devProcedure
     .input(devToastInput)
     .output(devToastSchema)
     .mutation(({ input }) =>
@@ -166,7 +184,7 @@ export const devRouter = router({
     }
   }),
 
-  onMetrics: publicProcedure.subscription(async function* (opts) {
+  onMetrics: devProcedure.subscription(async function* (opts) {
     const service = getMetricsService();
     service.acquireSampler();
     try {
@@ -181,7 +199,7 @@ export const devRouter = router({
     }
   }),
 
-  onNetworkRequest: publicProcedure.subscription(async function* (opts) {
+  onNetworkRequest: devProcedure.subscription(async function* (opts) {
     const service = getNetworkService();
     const event: keyof DevNetworkEvents = DevNetworkEvent.Request;
     for await (const data of service.toIterable(event, {
@@ -191,7 +209,7 @@ export const devRouter = router({
     }
   }),
 
-  onNetworkSimChanged: publicProcedure.subscription(async function* (opts) {
+  onNetworkSimChanged: devProcedure.subscription(async function* (opts) {
     const service = getNetworkService();
     const event: keyof DevNetworkEvents = DevNetworkEvent.SimChanged;
     for await (const data of service.toIterable(event, {
@@ -201,7 +219,7 @@ export const devRouter = router({
     }
   }),
 
-  onLogEntry: publicProcedure.subscription(async function* (opts) {
+  onLogEntry: devProcedure.subscription(async function* (opts) {
     const service = getLogsService();
     const event: keyof DevLogsEvents = DevLogsEvent.Entry;
     for await (const data of service.toIterable(event, {
@@ -211,7 +229,7 @@ export const devRouter = router({
     }
   }),
 
-  onDevToast: publicProcedure.subscription(async function* (opts) {
+  onDevToast: devProcedure.subscription(async function* (opts) {
     const service = getActionsService();
     const event: keyof DevActionsEvents = DevActionsEvent.Toast;
     for await (const data of service.toIterable(event, {

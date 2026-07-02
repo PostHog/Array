@@ -20,6 +20,8 @@ export class DevNetworkService extends TypedEventEmitter<DevNetworkEvents> {
   private nextId = 1;
   private sim: NetworkSim = { offline: false, slowDelayMs: 0 };
   private installed = false;
+  private originalFetch: typeof fetch | null = null;
+  private wrappedFetch: typeof fetch | null = null;
 
   constructor(
     @inject(DEV_FLAGS_SERVICE)
@@ -33,6 +35,20 @@ export class DevNetworkService extends TypedEventEmitter<DevNetworkEvents> {
     this.installed = true;
     this.wrapFetch();
     log.info("Network instrumentation installed");
+  }
+
+  // Restore the original `globalThis.fetch` so the instrumentation is fully
+  // reversible when developer mode is turned off. Without this the wrapper
+  // would linger for the rest of the process even though it stops capturing.
+  uninstall(): void {
+    if (!this.installed) return;
+    this.installed = false;
+    if (this.originalFetch && globalThis.fetch === this.wrappedFetch) {
+      globalThis.fetch = this.originalFetch;
+    }
+    this.originalFetch = null;
+    this.wrappedFetch = null;
+    log.info("Network instrumentation uninstalled");
   }
 
   private capturing(): boolean {
@@ -68,6 +84,7 @@ export class DevNetworkService extends TypedEventEmitter<DevNetworkEvents> {
   private wrapFetch(): void {
     const original = globalThis.fetch;
     if (!original) return;
+    this.originalFetch = original;
 
     const wrapped = async (
       input: RequestInfo | URL,
@@ -158,7 +175,8 @@ export class DevNetworkService extends TypedEventEmitter<DevNetworkEvents> {
       value: preconnect?.bind(original) ?? (() => undefined),
     });
 
-    globalThis.fetch = wrapped as typeof fetch;
+    this.wrappedFetch = wrapped as typeof fetch;
+    globalThis.fetch = this.wrappedFetch;
   }
 }
 

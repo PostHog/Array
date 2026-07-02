@@ -84,11 +84,18 @@ export function installMainThreadHealth(): () => void {
   raf = requestAnimationFrame(tick);
   stopFpsLoop = () => cancelAnimationFrame(raf);
 
-  return () => {
+  const cleanup = () => {
     installed = false;
     observer?.disconnect();
     observer = null;
     stopFpsLoop?.();
     stopFpsLoop = null;
   };
+
+  // Under HMR the module can be replaced while the observer and rAF loop are
+  // still running. Tear them down on dispose so a fresh module instance does
+  // not attach a second observer/loop and double every measurement.
+  import.meta.hot?.dispose(cleanup);
+
+  return cleanup;
 }

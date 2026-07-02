@@ -50,6 +50,16 @@ export class DevLogsService extends TypedEventEmitter<DevLogsEvents> {
       transport;
   }
 
+  // Detach the electron-log transport so capture is fully reversible when
+  // developer mode is turned off.
+  uninstall(): void {
+    if (!this.installed) return;
+    this.installed = false;
+    (
+      log.transports as Record<string, ElectronLog.Transport | undefined>
+    ).devToolbar = undefined;
+  }
+
   getSnapshot(): LogEntry[] {
     return [...this.entries];
   }

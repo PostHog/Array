@@ -19,9 +19,18 @@ export function initDevToolbar(): void {
     logs.install();
   };
 
+  const uninstallCapture = () => {
+    network.uninstall();
+    logs.uninstall();
+  };
+
   if (flags.getFlags().devMode) installCapture();
 
   flags.on(DevFlagsEvent.Changed, (next) => {
-    if (next.devMode) installCapture();
+    if (next.devMode) {
+      installCapture();
+    } else {
+      uninstallCapture();
+    }
   });
 }
