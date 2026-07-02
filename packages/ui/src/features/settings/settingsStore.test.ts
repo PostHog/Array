@@ -1,6 +1,6 @@
 import { registerRendererStateStorage } from "@posthog/ui/shell/rendererStorage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useSettingsStore } from "./settingsStore";
+import { type CompletionSound, useSettingsStore } from "./settingsStore";
 
 const getItem = vi.fn();
 const setItem = vi.fn();
@@ -150,6 +150,120 @@ describe("feature settingsStore cloud selections", () => {
 
     expect(useSettingsStore.getState()._hasHydrated).toBe(true);
   });
+});
+
+describe("feature settingsStore custom sounds", () => {
+  beforeEach(() => {
+    getItem.mockReset();
+    setItem.mockReset();
+    removeItem.mockReset();
+    getItem.mockResolvedValue(null);
+    setItem.mockResolvedValue(undefined);
+    removeItem.mockResolvedValue(undefined);
+
+    useSettingsStore.setState({ customSounds: [], completionSound: "none" });
+  });
+
+  const sound = {
+    id: "abc",
+    name: "My ding",
+    dataUrl: "data:audio/webm;base64,AAAA",
+    durationMs: 1200,
+  };
+
+  it("adds a custom sound", () => {
+    useSettingsStore.getState().addCustomSound(sound);
+    expect(useSettingsStore.getState().customSounds).toEqual([sound]);
+  });
+
+  it("renames a custom sound without touching its clip", () => {
+    useSettingsStore.getState().addCustomSound(sound);
+    useSettingsStore.getState().renameCustomSound("abc", "Renamed");
+    const stored = useSettingsStore.getState().customSounds[0];
+    expect(stored.name).toBe("Renamed");
+    expect(stored.dataUrl).toBe(sound.dataUrl);
+  });
+
+  it.each([
+    {
+      label: "active sound",
+      activeSound: "custom:abc" as CompletionSound,
+      expectedSound: "none" as CompletionSound,
+    },
+    {
+      label: "non-active sound",
+      activeSound: "meep" as CompletionSound,
+      expectedSound: "meep" as CompletionSound,
+    },
+    {
+      label: "last sound feeding random-custom",
+      activeSound: "random-custom" as CompletionSound,
+      expectedSound: "none" as CompletionSound,
+    },
+  ])(
+    "removing the $label leaves completionSound as $expectedSound",
+    ({ activeSound, expectedSound }) => {
+      useSettingsStore.getState().addCustomSound(sound);
+      useSettingsStore.getState().setCompletionSound(activeSound);
+      useSettingsStore.getState().removeCustomSound("abc");
+      expect(useSettingsStore.getState().customSounds).toEqual([]);
+      expect(useSettingsStore.getState().completionSound).toBe(expectedSound);
+    },
+  );
+
+  it("keeps random-custom active while other custom sounds remain", () => {
+    useSettingsStore.getState().addCustomSound(sound);
+    useSettingsStore.getState().addCustomSound({ ...sound, id: "def" });
+    useSettingsStore.getState().setCompletionSound("random-custom");
+    useSettingsStore.getState().removeCustomSound("abc");
+    expect(useSettingsStore.getState().completionSound).toBe("random-custom");
+  });
+
+  it("persists custom sounds", async () => {
+    useSettingsStore.getState().addCustomSound(sound);
+
+    await vi.waitFor(() => {
+      expect(setItem).toHaveBeenCalled();
+    });
+
+    const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
+    const persisted = JSON.parse(lastCall[1]);
+    expect(persisted.state.customSounds).toEqual([sound]);
+  });
+
+  it.each([
+    {
+      label: "random-custom with empty customSounds array",
+      persistedState: { completionSound: "random-custom", customSounds: [] },
+      expectedCompletionSound: "none",
+    },
+    {
+      label: "random-custom with absent customSounds key",
+      persistedState: { completionSound: "random-custom" },
+      expectedCompletionSound: "none",
+    },
+    {
+      label: "random-custom with non-empty library",
+      persistedState: {
+        completionSound: "random-custom",
+        customSounds: [sound],
+      },
+      expectedCompletionSound: "random-custom",
+    },
+  ])(
+    "rehydrate merge normalizes $label",
+    async ({ persistedState, expectedCompletionSound }) => {
+      getItem.mockResolvedValue(
+        JSON.stringify({ state: persistedState, version: 0 }),
+      );
+
+      await useSettingsStore.persist.rehydrate();
+
+      expect(useSettingsStore.getState().completionSound).toBe(
+        expectedCompletionSound,
+      );
+    },
+  );
 });
 
 describe("feature settingsStore terminal font", () => {

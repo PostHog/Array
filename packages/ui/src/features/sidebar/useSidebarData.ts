@@ -18,12 +18,12 @@ import type { AppView } from "@posthog/ui/router/useAppView";
 import { useEffect, useMemo, useRef } from "react";
 import { useArchivedTaskIds } from "../archive/useArchivedTaskIds";
 import { useProvisioningStore } from "../provisioning/store";
-import { useSessions } from "../sessions/sessionStore";
 import { useSuspendedTaskIds } from "../suspension/useSuspendedTaskIds";
 import { useSlackTasks, useTaskSummaries, useTasks } from "../tasks/useTasks";
 import { useWorkspaces } from "../workspace/useWorkspace";
 import { useSidebarStore } from "./sidebarStore";
 import { usePinnedTasks } from "./usePinnedTasks";
+import { useSidebarSessionMap } from "./useSidebarSessionMap";
 import { useTaskViewed } from "./useTaskViewed";
 
 export type { SidebarData, TaskData, TaskGroup };
@@ -41,7 +41,7 @@ export function useSidebarData({
   const archivedTaskIds = useArchivedTaskIds();
   const suspendedTaskIds = useSuspendedTaskIds();
   const provisioningTaskIds = useProvisioningStore((s) => s.activeTasks);
-  const sessions = useSessions();
+  const sessionByTaskId = useSidebarSessionMap();
   const { timestamps } = useTaskViewed();
   const historyVisibleCount = useSidebarStore(
     (state) => state.historyVisibleCount,
@@ -139,16 +139,6 @@ export function useSidebarData({
 
   const activeTaskId =
     activeView.type === "task-detail" ? (activeView.taskId ?? null) : null;
-
-  const sessionByTaskId = useMemo(() => {
-    const map = new Map<string, (typeof sessions)[string]>();
-    for (const session of Object.values(sessions)) {
-      if (session.taskId) {
-        map.set(session.taskId, session);
-      }
-    }
-    return map;
-  }, [sessions]);
 
   const taskData = useMemo(
     () =>

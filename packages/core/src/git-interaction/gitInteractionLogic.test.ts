@@ -19,6 +19,7 @@ function makeState(overrides: Partial<GitState> = {}): GitState {
     ghStatus: { installed: true, authenticated: true },
     repoInfo: { owner: "test", repo: "test" },
     prStatus: null,
+    isOnline: true,
     ...overrides,
   };
 }
@@ -248,5 +249,59 @@ describe("computeGitInteractionState", () => {
       );
       expect(result.primaryAction.enabled).toBe(false);
     });
+  });
+
+  describe("offline", () => {
+    it.each([
+      {
+        action: "push",
+        field: "pushDisabledReason" as const,
+        overrides: {
+          currentBranch: "feature/test",
+          hasChanges: false,
+          aheadOfRemote: 2,
+        } satisfies Partial<GitState>,
+      },
+      {
+        action: "create-pr",
+        field: "createPrDisabledReason" as const,
+        overrides: {
+          currentBranch: "feature/test",
+          hasChanges: true,
+        } satisfies Partial<GitState>,
+      },
+    ])(
+      "gates $action with a no-internet reason while offline",
+      ({ field, overrides }) => {
+        const result = computeGitInteractionState(
+          makeState({ ...overrides, isOnline: false }),
+        );
+        expect(result[field]).toBe("No internet connection");
+      },
+    );
+
+    it.each([
+      {
+        action: "commit",
+        overrides: {
+          currentBranch: "feature/test",
+          hasChanges: true,
+        } satisfies Partial<GitState>,
+      },
+      {
+        action: "branch-here",
+        overrides: { currentBranch: null } satisfies Partial<GitState>,
+      },
+    ])(
+      "still allows the local $action action while offline",
+      ({ action, overrides }) => {
+        const result = computeGitInteractionState(
+          makeState({ ...overrides, isOnline: false }),
+        );
+        const found = result.actions.find((a) => a.id === action);
+        expect(found?.enabled).toBe(true);
+        expect(found?.disabledReason).toBeNull();
+      },
+    );
   });
 });

@@ -1,4 +1,5 @@
 import {
+  BRAINROT_CELL,
   clampZoom,
   getCellCount,
   type LayoutPreset,
@@ -31,6 +32,7 @@ interface CommandCenterStoreActions {
   setActiveTask: (taskId: string | null) => void;
   setActiveCell: (cellIndex: number | null) => void;
   assignTask: (cellIndex: number, taskId: string) => void;
+  setBrainrotCell: (cellIndex: number) => void;
   autofillCells: (taskIds: string[]) => void;
   removeTask: (cellIndex: number) => void;
   removeTaskById: (taskId: string) => void;
@@ -96,6 +98,20 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
             activeTaskId: taskId,
             creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
             // Manually placing a task counts as curating the grid.
+            hasAutofilled: true,
+          };
+        }),
+
+      setBrainrotCell: (cellIndex) =>
+        set((state) => {
+          if (cellIndex < 0 || cellIndex >= state.cells.length) return state;
+          const cells = [...state.cells];
+          cells[cellIndex] = BRAINROT_CELL;
+          return {
+            cells,
+            activeTaskId: null,
+            activeCellIndex: cellIndex,
+            creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
             hasAutofilled: true,
           };
         }),

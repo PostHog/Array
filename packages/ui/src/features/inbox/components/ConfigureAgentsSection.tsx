@@ -41,7 +41,7 @@ import {
 } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { Badge } from "@posthog/ui/primitives/Badge";
-import { toast as sonnerToast, toast } from "@posthog/ui/primitives/toast";
+import { toast } from "@posthog/ui/primitives/toast";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
@@ -314,7 +314,7 @@ function SetupTaskSection() {
       const model = resolvedModel ?? settings.lastUsedModel;
 
       if (!model) {
-        sonnerToast.dismiss(toastId);
+        toast.dismiss(toastId);
         trackSetupFailure();
         toast.error("Failed to start Self-driving setup", {
           description:
@@ -349,7 +349,7 @@ function SetupTaskSection() {
         void openTask(output.task);
       });
 
-      sonnerToast.dismiss(toastId);
+      toast.dismiss(toastId);
       track(ANALYTICS_EVENTS.AGENTS_ACTION, {
         action_type: "run_setup_agent",
         success: result.success,
@@ -375,7 +375,7 @@ function SetupTaskSection() {
         });
       }
     } catch (error) {
-      sonnerToast.dismiss(toastId);
+      toast.dismiss(toastId);
       track(ANALYTICS_EVENTS.AGENTS_ACTION, {
         action_type: "run_setup_agent",
         success: false,

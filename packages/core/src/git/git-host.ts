@@ -129,7 +129,10 @@ export class GitHostService extends TypedEventEmitter<GitServiceEvents> {
       await Promise.allSettled([
         this.git.getChangedFilesHead.query({ directoryPath }),
         this.git.getDiffStats.query({ directoryPath }),
-        this.git.getGitSyncStatus.query({ directoryPath, forceRefresh: true }),
+        this.git.getGitSyncStatus.query({
+          directoryPath,
+          fetchFromRemote: true,
+        }),
         this.git.getLatestCommit.query({ directoryPath }),
         this.git.getPrStatus.query({ directoryPath }),
       ]);

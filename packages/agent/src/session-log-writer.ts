@@ -328,6 +328,31 @@ export class SessionLogWriter {
     return session.currentTurnMessages.join("\n\n");
   }
 
+  /**
+   * Returns the ordered assistant text blocks for the current turn — one entry
+   * per message between tool calls. The last entry is the text after the final
+   * tool_use (the actual answer to the user).
+   *
+   * The Slack relay uses this so the backend can post only the last block
+   * instead of every interim "Let me check…" narration.
+   */
+  getAgentResponseParts(sessionId: string): string[] | undefined {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.currentTurnMessages.length === 0) return undefined;
+
+    if (session.chunkBuffer) {
+      this.logger.warn(
+        "getAgentResponseParts called with non-empty chunk buffer",
+        {
+          sessionId,
+          bufferedLength: session.chunkBuffer.text.length,
+        },
+      );
+    }
+
+    return [...session.currentTurnMessages];
+  }
+
   resetTurnMessages(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (session) {

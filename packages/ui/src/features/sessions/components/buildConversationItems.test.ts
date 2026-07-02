@@ -106,6 +106,39 @@ function resourcesUsedMsg(
   };
 }
 
+function statusMsg(
+  ts: number,
+  status: string,
+  isComplete?: boolean,
+  error?: string,
+): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "_posthog/status",
+      params: { sessionId: "session-1", status, isComplete, error },
+    },
+  };
+}
+
+function refusalStatusMsg(
+  ts: number,
+  status: "refusal" | "refusal_fallback",
+  fields: { explanation?: string; fromModel?: string; toModel?: string } = {},
+): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "_posthog/status",
+      params: { sessionId: "session-1", status, ...fields },
+    },
+  };
+}
+
 describe("buildConversationItems", () => {
   it("extracts cloud prompt attachments into user messages", () => {
     const uri = makeAttachmentUri("/tmp/hello world.txt");
@@ -149,6 +182,108 @@ describe("buildConversationItems", () => {
             label: "hello world.txt",
           },
         ],
+      },
+    ]);
+  });
+
+  it("clears the compacting spinner on a successful completion status, without duplicating the row", () => {
+    // A successful compaction sends a terminal `status: compacting, isComplete:
+    // true`. It must flip the existing status row, not append a second one.
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "hi"),
+        statusMsg(2, "compacting"),
+        statusMsg(3, "compacting", true),
+      ],
+      null,
+    );
+
+    const statusItems = result.items.filter(
+      (i): i is Extract<ConversationItem, { type: "session_update" }> =>
+        i.type === "session_update" && i.update.sessionUpdate === "status",
+    );
+    expect(statusItems).toHaveLength(1);
+    expect((statusItems[0].update as { isComplete?: boolean }).isComplete).toBe(
+      true,
+    );
+    expect(result.isCompacting).toBe(false);
+  });
+
+  it("renders a failed compaction as a compacting_failed status row and clears the spinner", () => {
+    // A failed compaction emits no compact_boundary, so the agent sends a
+    // structured `compacting_failed` status: it clears the spinner (the original
+    // compacting row goes complete) and adds the outcome row with the error.
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "hi"),
+        statusMsg(2, "compacting"),
+        statusMsg(3, "compacting_failed", undefined, "Not enough messages."),
+      ],
+      null,
+    );
+
+    const statusItems = result.items.filter(
+      (i): i is Extract<ConversationItem, { type: "session_update" }> =>
+        i.type === "session_update" && i.update.sessionUpdate === "status",
+    );
+    // Spinner row (now complete) + the failure row.
+    expect(statusItems.map((i) => i.update)).toEqual([
+      { sessionUpdate: "status", status: "compacting", isComplete: true },
+      {
+        sessionUpdate: "status",
+        status: "compacting_failed",
+        error: "Not enough messages.",
+      },
+    ]);
+    expect(result.isCompacting).toBe(false);
+  });
+
+  it("renders a terminal refusal as a status row carrying the explanation", () => {
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "hi"),
+        refusalStatusMsg(2, "refusal", {
+          explanation: "This request was declined.",
+        }),
+      ],
+      null,
+    );
+
+    const statusItems = result.items.filter(
+      (i): i is Extract<ConversationItem, { type: "session_update" }> =>
+        i.type === "session_update" && i.update.sessionUpdate === "status",
+    );
+    expect(statusItems.map((i) => i.update)).toEqual([
+      {
+        sessionUpdate: "status",
+        status: "refusal",
+        explanation: "This request was declined.",
+      },
+    ]);
+  });
+
+  it("renders a refusal fallback status row carrying the model swap", () => {
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "hi"),
+        refusalStatusMsg(2, "refusal_fallback", {
+          fromModel: "claude-fable-5",
+          toModel: "claude-opus-4-8",
+        }),
+      ],
+      null,
+    );
+
+    const statusItems = result.items.filter(
+      (i): i is Extract<ConversationItem, { type: "session_update" }> =>
+        i.type === "session_update" && i.update.sessionUpdate === "status",
+    );
+    expect(statusItems.map((i) => i.update)).toEqual([
+      {
+        sessionUpdate: "status",
+        status: "refusal_fallback",
+        fromModel: "claude-fable-5",
+        toModel: "claude-opus-4-8",
       },
     ]);
   });
@@ -287,6 +422,52 @@ describe("buildConversationItems", () => {
       const result = buildConversationItems(events, null);
       const [group] = findProgressGroups(result.items);
       expect(group.isActive).toBe(false);
+    });
+
+    it("keeps the agent step in_progress until its run emits run_started", () => {
+      const runStarted = (ts: number, runId: string): AcpMessage => ({
+        type: "acp_message",
+        ts,
+        message: {
+          jsonrpc: "2.0",
+          method: "_posthog/run_started",
+          params: { runId },
+        },
+      });
+      const base: AcpMessage[] = [
+        progressMsg(
+          1,
+          "sandbox",
+          "completed",
+          "Restored sandbox",
+          undefined,
+          "setup:run-9",
+        ),
+        progressMsg(
+          2,
+          "agent",
+          "completed",
+          "Started agent",
+          undefined,
+          "setup:run-9",
+        ),
+      ];
+
+      const gated = findProgressGroups(
+        buildConversationItems(base, null).items,
+      )[0];
+      expect(gated.steps.find((s) => s.key === "agent")?.status).toBe(
+        "in_progress",
+      );
+      expect(gated.isActive).toBe(true);
+
+      const ready = findProgressGroups(
+        buildConversationItems([...base, runStarted(3, "run-9")], null).items,
+      )[0];
+      expect(ready.steps.find((s) => s.key === "agent")?.status).toBe(
+        "completed",
+      );
+      expect(ready.isActive).toBe(false);
     });
 
     it("opens a separate progress_group per group id — distinct groups coexist inline", () => {
@@ -574,6 +755,53 @@ describe("buildConversationItems", () => {
       expect(buildConversationItems(events, true).completedToolCallCount).toBe(
         3,
       );
+    });
+  });
+
+  describe("session_update timestamps", () => {
+    const toolCallMsg = (ts: number, toolCallId: string): AcpMessage => ({
+      type: "acp_message",
+      ts,
+      message: {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            kind: "execute",
+            status: "pending",
+            title: toolCallId,
+          },
+        },
+      },
+    });
+
+    const firstSessionUpdate = (items: ConversationItem[]) =>
+      items.find((i) => i.type === "session_update") as
+        | Extract<ConversationItem, { type: "session_update" }>
+        | undefined;
+
+    it("stamps an agent message with the first chunk's ts and keeps it across merges", () => {
+      const events = [
+        userPromptMsg(1, 1, "hi"),
+        agentMessageMsg(5, "Hello"),
+        agentMessageMsg(9, " there"),
+      ];
+      const item = firstSessionUpdate(
+        buildConversationItems(events, true).items,
+      );
+      expect(item?.update.sessionUpdate).toBe("agent_message_chunk");
+      expect(item?.timestamp).toBe(5);
+    });
+
+    it("stamps a tool call with its ts", () => {
+      const events = [userPromptMsg(1, 1, "go"), toolCallMsg(4, "t1")];
+      const item = firstSessionUpdate(
+        buildConversationItems(events, true).items,
+      );
+      expect(item?.update.sessionUpdate).toBe("tool_call");
+      expect(item?.timestamp).toBe(4);
     });
   });
 });

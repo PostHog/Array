@@ -459,6 +459,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       promptReplayed = true;
     }
 
+    if (commandMatch && !isLocalOnlyCommand) {
+      await this.refreshSlashCommandsForPrompt(commandMatch[1]);
+    }
+
     if (this.session.promptRunning) {
       const isSteer = isSteerMeta(params._meta);
       if (isSteer) {
@@ -513,6 +517,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     let errored = false;
     let lastAssistantTotalUsage: number | null = null;
     let lastRefusalExplanation: string | null = null;
+    let lastRefusalCategory: string | null = null;
     let lastStreamUsage = {
       input_tokens: 0,
       output_tokens: 0,
@@ -668,25 +673,35 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                     },
                   },
                 });
+                // Clear the "Compacting…" spinner. On success a `compact_boundary`
+                // usually also clears it, but a no-op success carries none, so
+                // signal completion explicitly.
+                await this.client.extNotification(
+                  POSTHOG_NOTIFICATIONS.STATUS,
+                  {
+                    sessionId: params.sessionId,
+                    status: "compacting",
+                    isComplete: true,
+                  },
+                );
                 break;
               } else if (
                 message.compact_result === "failed" &&
                 compactionInProgress
               ) {
                 compactionInProgress = false;
-                const reason = message.compact_error
-                  ? `: ${message.compact_error}`
-                  : ".";
-                await this.client.sessionUpdate({
-                  sessionId: params.sessionId,
-                  update: {
-                    sessionUpdate: "agent_message_chunk",
-                    content: {
-                      type: "text",
-                      text: `\n\nCompacting failed${reason}`,
-                    },
+                // A failed compaction never emits a `compact_boundary`, so emit a
+                // structured failure status: the renderer clears the "Compacting…"
+                // spinner and reports the outcome as its own status row (a separator
+                // marker in the new thread), not as assistant prose.
+                await this.client.extNotification(
+                  POSTHOG_NOTIFICATIONS.STATUS,
+                  {
+                    sessionId: params.sessionId,
+                    status: "compacting_failed",
+                    error: message.compact_error ?? undefined,
                   },
-                });
+                );
                 break;
               }
             }
@@ -856,15 +871,17 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             if (
               (message as { stop_reason?: string }).stop_reason === "refusal"
             ) {
-              if (lastRefusalExplanation) {
-                await this.client.sessionUpdate({
-                  sessionId: params.sessionId,
-                  update: {
-                    sessionUpdate: "agent_message_chunk",
-                    content: { type: "text", text: lastRefusalExplanation },
-                  },
-                });
-              }
+              // The API's stop_details.explanation is integrator-facing prose,
+              // so surface the refusal as a structured status row rather than
+              // assistant text.
+              await this.client.extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
+                sessionId: params.sessionId,
+                status: "refusal",
+                ...(lastRefusalExplanation && {
+                  explanation: lastRefusalExplanation,
+                }),
+                ...(lastRefusalCategory && { category: lastRefusalCategory }),
+              });
               return { stopReason: "refusal", usage };
             }
 
@@ -988,11 +1005,15 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             if (message.type === "assistant") {
               const inner = message.message as unknown as {
                 stop_reason?: string | null;
-                stop_details?: { explanation?: string | null } | null;
+                stop_details?: {
+                  category?: string | null;
+                  explanation?: string | null;
+                } | null;
               };
               if (inner.stop_reason === "refusal") {
                 lastRefusalExplanation =
                   inner.stop_details?.explanation ?? null;
+                lastRefusalCategory = inner.stop_details?.category ?? null;
               }
             }
 
@@ -2164,6 +2185,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
   private async sendAvailableCommandsUpdate(): Promise<void> {
     const commands = await this.session.query.supportedCommands();
+    this.session.knownSlashCommands = collectKnownSlashCommands(commands);
     const available = getAvailableSlashCommands(commands);
     await this.client.sessionUpdate({
       sessionId: this.sessionId,
@@ -2173,6 +2195,27 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       },
     });
     this.updateBreakdownCategory("skills", estimateSkillsTokens(available));
+  }
+
+  private async refreshSlashCommandsForPrompt(command: string): Promise<void> {
+    const commandName = command.slice(1);
+    if (this.session.knownSlashCommands?.has(commandName)) {
+      return;
+    }
+    if (commandName.includes(":") || commandName.includes("__")) {
+      return;
+    }
+
+    try {
+      await this.session.query.reloadSkills();
+      await this.sendAvailableCommandsUpdate();
+    } catch (error) {
+      this.logger.warn("Failed to refresh slash commands before prompt", {
+        sessionId: this.sessionId,
+        command,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /** Update one category of the context-breakdown baseline so the next

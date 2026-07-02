@@ -9,7 +9,7 @@ import {
 import { builtinModules } from "node:module";
 import { dirname, resolve } from "node:path";
 import { defineConfig } from "tsup";
-// Plain ESM helper, shared with apps/code/vite.main.config.mts.
+// Plain ESM helper, shared with apps/code/vite-main-plugins.mts.
 import {
   CLAUDE_CLI_SUPPORT_DIRS,
   CLAUDE_CLI_SUPPORT_FILES,
@@ -83,7 +83,12 @@ const sharedOptions = {
   splitting: false,
   outDir: "dist",
   target: "node20",
-  noExternal: ["@posthog/shared", "@posthog/git", "@posthog/enricher"],
+  noExternal: [
+    "@posthog/shared",
+    "@posthog/git",
+    "@posthog/enricher",
+    "fflate",
+  ],
   external: [
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),

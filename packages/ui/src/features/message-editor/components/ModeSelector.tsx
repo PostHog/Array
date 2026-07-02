@@ -1,14 +1,5 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import {
-  CaretDown,
-  Circle,
-  Eye,
-  LockOpen,
-  Pause,
-  Pencil,
-  Robot,
-  ShieldCheck,
-} from "@phosphor-icons/react";
+import { CaretDown } from "@phosphor-icons/react";
 import {
   Button,
   DropdownMenu,
@@ -18,53 +9,10 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import { getModeStyle } from "@posthog/ui/features/sessions/modeStyles";
 import { flattenSelectOptions } from "@posthog/ui/features/sessions/sessionStore";
+import { useRetainedConfigOption } from "@posthog/ui/features/sessions/useRetainedConfigOption";
 import { useRef, useState } from "react";
-
-interface ModeStyle {
-  icon: React.ReactNode;
-  className: string;
-}
-
-const MODE_STYLES: Record<string, ModeStyle> = {
-  plan: {
-    icon: <Pause size={12} weight="bold" />,
-    className: "text-amber-11",
-  },
-  default: {
-    icon: <Pencil size={12} />,
-    className: "text-gray-11",
-  },
-  acceptEdits: {
-    icon: <ShieldCheck size={12} weight="fill" />,
-    className: "text-green-11",
-  },
-  bypassPermissions: {
-    icon: <LockOpen size={12} weight="bold" />,
-    className: "text-red-11",
-  },
-  auto: {
-    icon: <Robot size={12} weight="fill" />,
-    className: "text-blue-11",
-  },
-  "read-only": {
-    icon: <Eye size={12} />,
-    className: "text-amber-11",
-  },
-  "full-access": {
-    icon: <LockOpen size={12} weight="bold" />,
-    className: "text-red-11",
-  },
-};
-
-const DEFAULT_STYLE: ModeStyle = {
-  icon: <Circle size={12} />,
-  className: "text-gray-11",
-};
-
-function getStyle(value: string): ModeStyle {
-  return MODE_STYLES[value] ?? DEFAULT_STYLE;
-}
 
 interface ModeSelectorProps {
   modeOption: SessionConfigOption | undefined;
@@ -81,10 +29,17 @@ export function ModeSelector({
 }: ModeSelectorProps) {
   const [open, setOpen] = useState(false);
   const pendingValueRef = useRef<string | null>(null);
+  const displayOption = useRetainedConfigOption(modeOption);
 
-  if (!modeOption || modeOption.type !== "select") return null;
+  if (!displayOption || displayOption.type !== "select") return null;
 
-  const allOptions = flattenSelectOptions(modeOption.options);
+  // `modeOption` blanks out while the preview config reloads (e.g. a harness
+  // switch). Keep showing the last mode, disabled, so the toolbar stays put
+  // instead of collapsing and snapping the open model menu sideways.
+  const isReloading = !modeOption;
+  const isDisabled = disabled || isReloading;
+
+  const allOptions = flattenSelectOptions(displayOption.options);
   const options = allowBypassPermissions
     ? allOptions
     : allOptions.filter(
@@ -93,8 +48,8 @@ export function ModeSelector({
       );
   if (options.length === 0) return null;
 
-  const currentValue = modeOption.currentValue;
-  const currentStyle = getStyle(currentValue);
+  const currentValue = displayOption.currentValue;
+  const currentStyle = getModeStyle(currentValue);
   const currentLabel =
     allOptions.find((opt) => opt.value === currentValue)?.name ?? currentValue;
 
@@ -115,7 +70,7 @@ export function ModeSelector({
             type="button"
             variant="default"
             size="sm"
-            disabled={disabled}
+            disabled={isDisabled}
             aria-label="Mode"
           >
             <span className={currentStyle.className}>{currentStyle.icon}</span>
@@ -143,7 +98,7 @@ export function ModeSelector({
           }}
         >
           {options.map((option) => {
-            const style = getStyle(option.value);
+            const style = getModeStyle(option.value);
             return (
               <DropdownMenuRadioItem key={option.value} value={option.value}>
                 <span className={`${style.className}`}>{style.icon}</span>

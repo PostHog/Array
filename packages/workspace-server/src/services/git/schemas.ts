@@ -169,7 +169,13 @@ export type DiscardFileChangesOutput = z.infer<typeof discardFileChangesOutput>;
 
 export const getGitSyncStatusInput = z.object({
   directoryPath: z.string(),
-  forceRefresh: z.boolean().optional(),
+  /**
+   * Whether to run `git fetch` before reading sync status. Defaults to false:
+   * background pollers should read local refs only so that idle UI does not
+   * keep hitting the network (and, transitively, ssh-agent). Set true at the
+   * few callsites that genuinely need an up-to-date view of `origin/*`.
+   */
+  fetchFromRemote: z.boolean().optional(),
 });
 
 export const gitBusyStateInput = directoryPathInput;

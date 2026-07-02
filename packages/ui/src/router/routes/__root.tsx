@@ -17,7 +17,12 @@ import { DeepLinkApprovalModal } from "@posthog/ui/features/agent-applications/c
 import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
+import { BlankTabView } from "@posthog/ui/features/browser-tabs/BlankTabView";
+import { BrowserTabStrip } from "@posthog/ui/features/browser-tabs/BrowserTabStrip";
+import { BrowserTabsDndProvider } from "@posthog/ui/features/browser-tabs/BrowserTabsDnd";
+import { useTabsSnapshot } from "@posthog/ui/features/browser-tabs/useBrowserTabs";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
+import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import {
   FeedbackModal,
   type FeedbackModalMode,
@@ -25,6 +30,7 @@ import {
 import { useCanvasDeepLink } from "@posthog/ui/features/canvas/hooks/useCanvasDeepLink";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
+import { ConnectivityBanner } from "@posthog/ui/features/connectivity/ConnectivityBanner";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
 import { useOpenTargetDeepLink } from "@posthog/ui/features/deep-links/useOpenTargetDeepLink";
 import { useTaskDeepLink } from "@posthog/ui/features/deep-links/useTaskDeepLink";
@@ -40,6 +46,8 @@ import { ExistingWorktreeDialog } from "@posthog/ui/features/task-detail/compone
 import { RemoteBranchCheckoutDialog } from "@posthog/ui/features/task-detail/components/RemoteBranchCheckoutDialog";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { TourOverlay } from "@posthog/ui/features/tour/components/TourOverlay";
+import { UpdateAvailableModal } from "@posthog/ui/features/updates/UpdateAvailableModal";
+import { WhatsNewModal } from "@posthog/ui/features/updates/WhatsNewModal";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import LogosLandscape from "@posthog/ui/primitives/Logo";
 import { useAppView } from "@posthog/ui/router/useAppView";
@@ -65,43 +73,11 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-// Dynamic import keeps the devtools chunk out of the prod bundle. Without the
-// gate at the import level, conditional render alone still ships the devtools
-// code to users.
-//
-// We embed the router devtools as a plugin inside the unified TanStack Devtools
-// shell rather than rendering the standalone floating logo. The shell owns a
-// single trigger that can be dragged, dismissed, and hidden-until-hover, and it
-// persists those choices to localStorage — so the panel stays out of the way.
-const TanStackDevtools = import.meta.env.DEV
-  ? lazy(async () => {
-      const [
-        { TanStackDevtools: DevtoolsShell },
-        { TanStackRouterDevtoolsPanel },
-      ] = await Promise.all([
-        import("@tanstack/react-devtools"),
-        import("@tanstack/react-router-devtools"),
-      ]);
-      // Hoisted so the config/plugins keep stable references across the
-      // RootLayout re-renders that fire on every navigation — otherwise the
-      // shell could remount the panel (and flash) on each route change.
-      const config = {
-        position: "bottom-right",
-        hideUntilHover: true,
-      } as const;
-      const plugins = [
-        {
-          name: "TanStack Router",
-          render: <TanStackRouterDevtoolsPanel />,
-        },
-      ];
-      return {
-        default: () => <DevtoolsShell config={config} plugins={plugins} />,
-      };
-    })
-  : () => null;
+// The router devtools render their genuine floating overlay, mounted by the
+// app's dev toolbar with the floating logo hidden so the toolbar owns the
+// trigger — see RouterDevtools.
 
 const log = logger.scope("root-route");
 
@@ -114,6 +90,9 @@ function RootLayout() {
   const navigate = useNavigate();
   const router = useRouter();
   const canGoBack = useCanGoBack();
+  // Width of the Channels sidebar below — used to right-align the back/forward
+  // buttons in the title bar with the sidebar's (and project switcher's) right edge.
+  const channelsSidebarWidth = useChannelsSidebarStore((state) => state.width);
   // Forward availability isn't exposed by the router (and history.length counts
   // pre-app entries, so it can't be compared to __TSR_index). Track the newest
   // index we've reached: only a PUSH wipes the forward stack, so it resets the
@@ -134,10 +113,9 @@ function RootLayout() {
   }, [router]);
   const canGoForward = historyIndex < newestIndex;
 
-  // Feedback modal shown in the Channels title bar. Opened directly by "Leave
-  // feedback" (mode "feedback"), or as an intercept before navigating away —
-  // "Go back to Code" (mode "leaving") and "PostHog Web" (mode "posthog-web"),
-  // each of which routes once the modal is submitted or skipped.
+  // Feedback modal shown in the Channels title bar as an intercept before
+  // navigating away — "Exit" (mode "leaving") and "PostHog Web" (mode
+  // "posthog-web"), each of which routes once the modal is submitted or skipped.
   const [feedbackMode, setFeedbackMode] = useState<FeedbackModalMode | null>(
     null,
   );
@@ -276,6 +254,25 @@ function RootLayout() {
   });
   const isChannelsSpace = bluebirdEnabled && onWebsitePath;
 
+  // A blank browser tab (the "+" new-tab page) shows an empty placeholder — but
+  // ONLY on the channels index. Inside a channel (`/website/$channelId…`) the
+  // route owns the content (channel home, inbox, artifacts, a canvas, …), so the
+  // placeholder must never replace it, otherwise channel navigation looks dead.
+  const onChannelsIndex = useRouterState({
+    select: (s) => s.location.pathname === "/website",
+  });
+  const tabsSnapshot = useTabsSnapshot();
+  const activeTabIsBlank =
+    onChannelsIndex &&
+    (() => {
+      const w =
+        tabsSnapshot.windows.find((x) => x.isPrimary) ??
+        tabsSnapshot.windows[0];
+      if (!w?.activeTabId) return false;
+      const t = tabsSnapshot.tabs.find((x) => x.id === w.activeTabId);
+      return !!t && t.dashboardId == null && t.taskId == null;
+    })();
+
   // The /website (Channels) routes stay registered regardless of the flag, so a
   // stale URL or restored session could strand a flag-off user there (rendering
   // the channel layout inside the Code chrome). Once flags resolve, redirect
@@ -288,109 +285,116 @@ function RootLayout() {
 
   if (isChannelsSpace) {
     return (
-      <Flex direction="column" height="100vh" className="bg-chrome">
-        {/* Full-width title bar: a window-drag region carrying the PostHog
-            mark. The left padding clears the macOS stoplights. */}
-        <Flex align="center" gap="3" className="drag h-10 shrink-0 pl-[78px]">
-          <Box className="h-[14px] w-[26px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
-            <LogosLandscape code={false} />
-          </Box>
-          <Flex align="center" gap="2" className="no-drag">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Back"
-              disabled={!canGoBack}
-              onClick={() => router.history.back()}
+      // DnD scope for the tab strip's drag-to-reorder (pill sortables live in
+      // the title bar; the provider must sit above them).
+      <BrowserTabsDndProvider>
+        <Flex direction="column" height="100%" className="bg-chrome">
+          {/* Full-width title bar: a window-drag region carrying the PostHog
+            mark. The left section matches the sidebar width so the tab strip
+            starts flush with the content pane; its padding clears the macOS
+            stoplights. */}
+          <Flex align="center" className="drag h-10 shrink-0">
+            <Flex
+              id="title-bar-left"
+              align="center"
+              justify="between"
+              gap="3"
+              className="shrink-0 pr-2 pl-[78px]"
+              style={{ width: channelsSidebarWidth }}
             >
-              <CaretLeftIcon size={14} />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Forward"
-              disabled={!canGoForward}
-              onClick={() => router.history.forward()}
-            >
-              <CaretRightIcon size={14} />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                  action_type: "leave_space",
-                  surface: "title_bar",
-                });
-                setFeedbackMode("leaving");
-              }}
-            >
-              Go back to Code
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                  action_type: "leave_feedback",
-                  surface: "title_bar",
-                });
-                setFeedbackMode("feedback");
-              }}
-            >
-              Leave feedback
-            </Button>
+              <Flex align="center" gap="2" className="no-drag">
+                <Box className="h-[14px] w-[30px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
+                  <LogosLandscape code={false} />
+                </Box>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                      action_type: "leave_space",
+                      surface: "title_bar",
+                    });
+                    setFeedbackMode("leaving");
+                  }}
+                >
+                  Exit
+                </Button>
+              </Flex>
+              <Flex align="center" gap="2" className="no-drag">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Back"
+                  disabled={!canGoBack}
+                  onClick={() => router.history.back()}
+                >
+                  <CaretLeftIcon size={14} />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Forward"
+                  disabled={!canGoForward}
+                  onClick={() => router.history.forward()}
+                >
+                  <CaretRightIcon size={14} />
+                </Button>
+              </Flex>
+            </Flex>
+            <BrowserTabStrip />
+            <Flex align="center" className="no-drag ml-auto pr-3">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!posthogWebUrl}
+                onClick={handleOpenPostHogWeb}
+              >
+                <ArrowSquareOut size={14} />
+                PostHog Web
+              </Button>
+            </Flex>
           </Flex>
-          <Flex align="center" className="no-drag ml-auto pr-3">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!posthogWebUrl}
-              onClick={handleOpenPostHogWeb}
-            >
-              <ArrowSquareOut size={14} />
-              PostHog Web
-            </Button>
-          </Flex>
-        </Flex>
-        <Flex flexGrow="1" overflow="hidden">
-          <ChannelsSidebar />
-          {/* Content sits in a bordered, rounded card inset from the window
+          <ConnectivityBanner />
+          <Flex flexGrow="1" overflow="hidden">
+            <ChannelsSidebar />
+            {/* Content sits in a bordered, rounded card inset from the window
               edges — the framed pane from the design. */}
-          <Box flexGrow="1" className="overflow-hidden">
-            <Box className="h-full overflow-hidden rounded-tl-sm border-border border-t border-l bg-background">
-              <Outlet />
+            <Box flexGrow="1" className="overflow-hidden">
+              <Box className="h-full overflow-hidden rounded-tl-sm border-border border-t border-l bg-background">
+                {activeTabIsBlank ? <BlankTabView /> : <Outlet />}
+              </Box>
             </Box>
-          </Box>
+          </Flex>
+          <CommandMenu
+            open={commandMenuOpen}
+            onOpenChange={setCommandMenuOpen}
+          />
+          <KeyboardShortcutsSheet
+            open={shortcutsSheetOpen}
+            onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
+          />
+          <GlobalEventHandlers
+            onToggleCommandMenu={toggleCommandMenu}
+            onToggleShortcutsSheet={toggleShortcutsSheet}
+          />
+          {billingEnabled && <UsageLimitModal />}
+          <UpdateAvailableModal />
+          <WhatsNewModal />
+          <RemoteBranchCheckoutDialog />
+          <FeedbackModal
+            mode={feedbackMode}
+            onFinished={handleFeedbackFinished}
+          />
+          <ExistingWorktreeDialog />
         </Flex>
-        <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
-        <KeyboardShortcutsSheet
-          open={shortcutsSheetOpen}
-          onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
-        />
-        <GlobalEventHandlers
-          onToggleCommandMenu={toggleCommandMenu}
-          onToggleShortcutsSheet={toggleShortcutsSheet}
-        />
-        {billingEnabled && <UsageLimitModal />}
-        <RemoteBranchCheckoutDialog />
-        <FeedbackModal
-          mode={feedbackMode}
-          onFinished={handleFeedbackFinished}
-        />
-        <ExistingWorktreeDialog />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
-      </Flex>
+      </BrowserTabsDndProvider>
     );
   }
 
   if (isSettingsRoute) {
     return (
-      <Flex direction="column" height="100vh">
+      <Flex direction="column" height="100%">
+        <ConnectivityBanner />
         <Outlet />
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
         <KeyboardShortcutsSheet
@@ -402,21 +406,19 @@ function RootLayout() {
           onToggleShortcutsSheet={toggleShortcutsSheet}
         />
         {billingEnabled && <UsageLimitModal />}
+        <UpdateAvailableModal />
+        <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
         <ExistingWorktreeDialog />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
       </Flex>
     );
   }
 
   return (
-    <Flex height="100vh">
+    <Flex height="100%">
       <Flex direction="column" flexGrow="1" overflow="hidden">
         <HeaderRow />
+        <ConnectivityBanner />
         <Flex flexGrow="1" overflow="hidden">
           <MainSidebar />
           <Box flexGrow="1" overflow="hidden">
@@ -445,6 +447,8 @@ function RootLayout() {
         />
         <TourOverlay />
         {billingEnabled && <UsageLimitModal />}
+        <UpdateAvailableModal />
+        <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
         {approvalDeepLink.pending ? (
           <DeepLinkApprovalModal
@@ -454,11 +458,6 @@ function RootLayout() {
         ) : null}
         <ExistingWorktreeDialog />
         <HedgehogMode />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
       </Flex>
     </Flex>
   );

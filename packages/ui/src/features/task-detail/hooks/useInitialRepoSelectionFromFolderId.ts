@@ -38,6 +38,12 @@ export interface RepoSelectionInput {
   currentMode: WorkspaceMode;
   /** Mode to fall back to when leaving cloud (local or worktree). */
   lastUsedLocalMode: LocalWorkspaceMode;
+  /**
+   * Environment ("local" | "cloud") of this repo's most recent visible run, used
+   * to prefill the mode. `undefined` when nothing visible has run yet — then we
+   * fall back to the user's current (global last-used) mode.
+   */
+  mostRecentEnvironment?: "local" | "cloud";
 }
 
 export interface RepoSelection {
@@ -45,8 +51,12 @@ export interface RepoSelection {
   directory: string;
   /** Cloud `owner/repo` slug to select, or undefined to leave the cloud pick as-is. */
   cloudRepository?: string;
-  /** Workspace mode to switch to, or undefined to keep the current mode. */
-  nextMode?: LocalWorkspaceMode;
+  /**
+   * Workspace mode to switch to, or undefined to keep the current mode. Can be
+   * `"cloud"` when the repo's most recent run was in the cloud, so this is the full
+   * `WorkspaceMode` rather than the local-only fallback type.
+   */
+  nextMode?: WorkspaceMode;
 }
 
 /**
@@ -54,10 +64,13 @@ export interface RepoSelection {
  * what to select in both the local-directory and cloud-repo pickers, and whether the
  * workspace mode must change.
  *
- * Rules (see plan): prefill both selectors; keep the current mode when it can represent
- * the repo; only switch when it can't, i.e. you're in cloud but the repo has no cloud
- * counterpart (no remote slug, or the slug isn't a connected integration), in which case
- * fall back to the last-used local mode.
+ * Rules: always prefill the local directory and (when cloud-capable) the cloud repo.
+ * The mode follows the repo's own most recent visible run — open Local for a repo last
+ * run locally, Cloud for one last run in the cloud — falling back to the user's current
+ * (global last-used) mode only when nothing visible has run yet. A desired Cloud mode is
+ * honoured only when the repo has a connected cloud counterpart; otherwise it drops to
+ * the last-used local mode. A desired Local mode keeps the current mode when it's already
+ * local (preserving worktree), and otherwise switches to the last-used local mode.
  */
 export function resolveRepoSelectionForFolder({
   folder,
@@ -65,6 +78,7 @@ export function resolveRepoSelectionForFolder({
   reposLoaded,
   currentMode,
   lastUsedLocalMode,
+  mostRecentEnvironment,
 }: RepoSelectionInput): RepoSelection {
   const slug = folder.remoteUrl?.toLowerCase();
   // A folder is cloud-capable only when its remote is a real `owner/repo` (guards against
@@ -79,10 +93,21 @@ export function resolveRepoSelectionForFolder({
     cloudRepository,
   };
 
-  // Only decide the mode once the integrations list has loaded, so we never switch out
-  // of cloud while the repo list is still in flight (it would look "not cloud-capable").
-  if (reposLoaded && currentMode === "cloud" && !cloudRepository) {
-    selection.nextMode = lastUsedLocalMode;
+  // Only decide the mode once the integrations list has loaded, so cloud-capability is
+  // known and we never switch out of cloud while the repo list is still in flight.
+  if (reposLoaded) {
+    // Prefer the repo's own most recent run; fall back to the current global mode.
+    const desiredEnvironment =
+      mostRecentEnvironment ?? (currentMode === "cloud" ? "cloud" : "local");
+    const targetMode: WorkspaceMode =
+      desiredEnvironment === "cloud" && cloudRepository
+        ? "cloud"
+        : currentMode === "cloud"
+          ? lastUsedLocalMode
+          : currentMode;
+    if (targetMode !== currentMode) {
+      selection.nextMode = targetMode;
+    }
   }
 
   return selection;
@@ -98,6 +123,11 @@ export interface UseInitialRepoSelectionParams {
   currentMode: WorkspaceMode;
   /** Mode to fall back to when leaving cloud (local or worktree). */
   lastUsedLocalMode: LocalWorkspaceMode;
+  /**
+   * Environment of this repo's most recent visible run, used to prefill the mode.
+   * `undefined` falls back to the current global mode.
+   */
+  mostRecentEnvironment?: "local" | "cloud";
   setSelectedDirectory: (path: string) => void;
   setSelectedRepository: (repo: string) => void;
   /** Switches the workspace mode (without persisting it as the user's preference). */
@@ -120,6 +150,7 @@ export function useInitialRepoSelectionFromFolderId({
   reposLoaded,
   currentMode,
   lastUsedLocalMode,
+  mostRecentEnvironment,
   setSelectedDirectory,
   setSelectedRepository,
   switchWorkspaceMode,
@@ -149,6 +180,7 @@ export function useInitialRepoSelectionFromFolderId({
       reposLoaded,
       currentMode: currentModeRef.current,
       lastUsedLocalMode,
+      mostRecentEnvironment,
     });
 
     if (dirInitRef.current !== folderId) {
@@ -172,6 +204,7 @@ export function useInitialRepoSelectionFromFolderId({
     repositories,
     reposLoaded,
     lastUsedLocalMode,
+    mostRecentEnvironment,
     setSelectedDirectory,
     setSelectedRepository,
     switchWorkspaceMode,

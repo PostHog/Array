@@ -104,7 +104,8 @@ describe("ConnectivityService", () => {
       service.on(ConnectivityEvent.StatusChange, handler);
 
       mockFetch.mockRejectedValue(new Error("offline"));
-      await vi.advanceTimersByTimeAsync(6000); // two failed polls
+      await vi.advanceTimersByTimeAsync(30_000); // 1st failure at the healthy cadence
+      await vi.advanceTimersByTimeAsync(3000); // fast recheck confirms offline
 
       expect(handler).toHaveBeenCalledWith({ isOnline: false });
       expect(handler).toHaveBeenCalledTimes(1);
@@ -119,7 +120,7 @@ describe("ConnectivityService", () => {
       service.on(ConnectivityEvent.StatusChange, handler);
 
       mockFetch.mockRejectedValue(new Error("offline"));
-      await vi.advanceTimersByTimeAsync(3000); // one failed poll only
+      await vi.advanceTimersByTimeAsync(30_000); // one failed poll only
 
       expect(handler).not.toHaveBeenCalled();
     });
@@ -200,6 +201,18 @@ describe("ConnectivityService", () => {
       expect(result).toEqual({ isOnline: true });
     });
 
+    it("short-circuits after the first reachable host", async () => {
+      mockFetch.mockResolvedValue(ok(204));
+      service = new ConnectivityService();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://www.google.com/generate_204",
+        expect.objectContaining({ method: "HEAD" }),
+      );
+    });
+
     it("goes offline only when every host fails", async () => {
       mockFetch.mockRejectedValue(new Error("blocked"));
 
@@ -219,7 +232,7 @@ describe("ConnectivityService", () => {
 
       const callsAfterInit = mockFetch.mock.calls.length;
 
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(30_000);
       expect(mockFetch.mock.calls.length).toBeGreaterThan(callsAfterInit);
     });
   });

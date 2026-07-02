@@ -19,6 +19,7 @@ import {
   isJsonRpcNotification,
   isJsonRpcRequest,
 } from "@posthog/shared";
+import { skillTagsToSlashCommands } from "../message-editor/skillTags";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
 import { extractPromptDisplayContent } from "./promptContent";
 
@@ -28,12 +29,14 @@ import { extractPromptDisplayContent } from "./promptContent";
 function storedEntryToAcpMessage(entry: StoredLogEntry): AcpMessage {
   const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now();
   const promoted = promoteImportedUserPrompt(entry, ts);
-  if (promoted) return promoted;
-  return {
+  // Freeze at creation: events assigned via setSession bypass the store's
+  // per-append freeze, so this keeps them read-only once stored.
+  if (promoted) return Object.freeze(promoted);
+  return Object.freeze({
     type: "acp_message",
     ts,
     message: (entry.notification ?? {}) as JsonRpcMessage,
-  };
+  });
 }
 
 /**
@@ -246,8 +249,8 @@ export function extractUserPromptsFromEvents(events: AcpMessage[]): string[] {
 }
 
 export function extractPromptText(prompt: string | ContentBlock[]): string {
-  if (typeof prompt === "string") return prompt;
-  return extractPromptDisplayContent(prompt).text;
+  if (typeof prompt === "string") return skillTagsToSlashCommands(prompt);
+  return skillTagsToSlashCommands(extractPromptDisplayContent(prompt).text);
 }
 
 /**
@@ -256,7 +259,15 @@ export function extractPromptText(prompt: string | ContentBlock[]): string {
 export function normalizePromptToBlocks(
   prompt: string | ContentBlock[],
 ): ContentBlock[] {
-  return typeof prompt === "string" ? [{ type: "text", text: prompt }] : prompt;
+  if (typeof prompt === "string") {
+    return [{ type: "text", text: skillTagsToSlashCommands(prompt) }];
+  }
+
+  return prompt.map((block) =>
+    block.type === "text"
+      ? { ...block, text: skillTagsToSlashCommands(block.text) }
+      : block,
+  );
 }
 
 export { isFatalSessionError, isRateLimitError } from "@posthog/shared";

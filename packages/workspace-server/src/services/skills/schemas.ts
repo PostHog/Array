@@ -118,9 +118,32 @@ export const installTeamSkillInput = z.object({
 export type ExportedSkill = z.infer<typeof exportSkillOutput>;
 export type InstallTeamSkillInput = z.infer<typeof installTeamSkillInput>;
 
+export const bundleLocalSkillInput = z.object({
+  name: z.string().min(1),
+  source: z.enum(["user", "repo", "marketplace", "codex"]),
+  path: z.string().min(1),
+});
+
+export const bundleLocalSkillOutput = z.object({
+  name: z.string(),
+  source: z.enum(["user", "repo", "marketplace", "codex"]),
+  fileName: z.string(),
+  contentType: z.literal("application/zip"),
+  contentBase64: z.string(),
+  contentSha256: z.string(),
+  size: z.number().int().positive(),
+});
+
+export const resolveSkillDependenciesInput = z.array(bundleLocalSkillInput);
+export const resolveSkillDependenciesOutput = z.array(bundleLocalSkillInput);
+
+export type BundleLocalSkillInput = z.infer<typeof bundleLocalSkillInput>;
+export type BundleLocalSkillOutput = z.infer<typeof bundleLocalSkillOutput>;
+export type SkillBundleRef = z.infer<typeof bundleLocalSkillInput>;
 export type SkillInfo = z.infer<typeof skillInfo>;
 export type SkillScope = z.infer<typeof skillScope>;
 export type CreateSkillInput = z.infer<typeof createSkillInput>;
 export type SkillSource = z.infer<typeof skillSource>;
 export type SkillFileEntry = z.infer<typeof skillFileEntry>;
 export type SkillContents = z.infer<typeof skillContentsOutput>;
+export type UploadableSkillSource = BundleLocalSkillInput["source"];

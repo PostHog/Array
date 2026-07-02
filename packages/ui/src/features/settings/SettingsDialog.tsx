@@ -67,7 +67,7 @@ export function SettingsDialog() {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex bg-(--color-background)"
+      className="absolute inset-0 z-[100] flex bg-(--color-background)"
       data-overlay="settings"
     >
       <SettingsPanel

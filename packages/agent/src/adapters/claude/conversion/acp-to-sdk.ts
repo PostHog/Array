@@ -4,6 +4,7 @@ import type { PromptRequest } from "@agentclientprotocol/sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { isClaudeImageMimeType, isImageFile } from "@posthog/shared";
+import { isLocalSkillCommandChunk } from "../../local-skill";
 
 const PDF_EXTENSIONS = new Set(["pdf"]);
 
@@ -168,8 +169,24 @@ export function promptToClaude(prompt: PromptRequest): SDKUserMessage {
   if (typeof prContext === "string") {
     content.push(sdkText(prContext));
   }
+  const localSkillContext = meta?.localSkillContext;
+  if (typeof localSkillContext === "string") {
+    content.push(sdkText(localSkillContext));
+  }
+  const localSkillName =
+    typeof meta?.localSkillName === "string" ? meta.localSkillName : null;
+  let skippedLocalSkillCommand = false;
 
   for (const chunk of prompt.prompt) {
+    if (
+      localSkillContext &&
+      localSkillName &&
+      !skippedLocalSkillCommand &&
+      isLocalSkillCommandChunk(chunk, localSkillName)
+    ) {
+      skippedLocalSkillCommand = true;
+      continue;
+    }
     processPromptChunk(chunk, content, context);
   }
 

@@ -27,9 +27,7 @@ export interface ArchiveOrchestrationDeps {
   unpin(taskId: string): Promise<void>;
   togglePin(taskId: string): Promise<void>;
   navigateAwayFromTaskIfActive(taskId: string): void;
-  snapshotTerminalStates(taskId: string): Record<string, unknown>;
   clearTerminalStates(taskId: string): void;
-  restoreTerminalStates(states: Record<string, unknown>): void;
   snapshotCommandCenter(taskId: string): { index: number; wasActive: boolean };
   removeFromCommandCenter(taskId: string): void;
   restoreCommandCenter(
@@ -69,11 +67,9 @@ export async function archiveTask(
     deps.navigateAwayFromTaskIfActive(taskId);
   }
 
-  const terminalStatesSnapshot = deps.snapshotTerminalStates(taskId);
   const commandCenterSnapshot = deps.snapshotCommandCenter(taskId);
 
   await deps.unpin(taskId);
-  deps.clearTerminalStates(taskId);
   deps.removeFromCommandCenter(taskId);
 
   await deps.cache.cancelPathFilter();
@@ -101,6 +97,9 @@ export async function archiveTask(
   try {
     await deps.disconnectFromTask(taskId);
     await deps.archive(taskId);
+    // Destroying terminals is irreversible, so it waits for the archive to
+    // commit; a failed archive keeps its live terminals.
+    deps.clearTerminalStates(taskId);
     // Non-optimistic flows keep the row visible during the request, then remove
     // it the moment the archive succeeds.
     if (!optimistic) {
@@ -114,9 +113,6 @@ export async function archiveTask(
     deps.cache.setArchiveList((old) => removeArchivedTask(old, taskId));
     if (wasPinned) {
       await deps.togglePin(taskId);
-    }
-    if (Object.keys(terminalStatesSnapshot).length > 0) {
-      deps.restoreTerminalStates(terminalStatesSnapshot);
     }
     if (commandCenterSnapshot.index !== -1) {
       deps.restoreCommandCenter(taskId, commandCenterSnapshot);

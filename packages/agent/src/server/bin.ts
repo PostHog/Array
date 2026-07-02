@@ -33,6 +33,8 @@ const envSchema = z.object({
     .enum(["low", "medium", "high", "xhigh", "max"])
     .optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN: z.string().min(1).optional(),
+  // Base URL for the event-ingest POST only; falls back to POSTHOG_API_URL when unset.
+  POSTHOG_TASK_RUN_EVENT_INGEST_URL: z.url().optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS: z
     .string()
     .regex(
@@ -40,6 +42,10 @@ const envSchema = z.object({
       "POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS must be a positive integer",
     )
     .transform((value) => parseInt(value, 10))
+    .optional(),
+  POSTHOG_TASK_RUN_EVENT_INGEST_KEEP_STREAM_OPEN: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
     .optional(),
 });
 
@@ -89,6 +95,10 @@ program
     "interactive",
   )
   .option("--repositoryPath <path>", "Path to the repository")
+  .option(
+    "--repoReadyFile <path>",
+    "Sentinel file; session creation blocks until it exists (set while cloning concurrently)",
+  )
   .requiredOption("--taskId <id>", "Task ID")
   .requiredOption("--runId <id>", "Task run ID")
   .option(
@@ -158,9 +168,13 @@ program
       port: parseInt(options.port, 10),
       jwtPublicKey: env.JWT_PUBLIC_KEY,
       eventIngestToken: env.POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN,
+      eventIngestBaseUrl: env.POSTHOG_TASK_RUN_EVENT_INGEST_URL,
       eventIngestStreamWindowMs:
         env.POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS,
+      eventIngestKeepStreamOpen:
+        env.POSTHOG_TASK_RUN_EVENT_INGEST_KEEP_STREAM_OPEN,
       repositoryPath: options.repositoryPath,
+      repoReadyFile: options.repoReadyFile,
       apiUrl: env.POSTHOG_API_URL,
       apiKey: env.POSTHOG_PERSONAL_API_KEY,
       projectId: env.POSTHOG_PROJECT_ID,
@@ -187,11 +201,8 @@ program
       process.exit(0);
     });
 
-    // A hard crash would otherwise leave the run non-terminal and the user staring
-    // at a generic "Cloud stream disconnected". Mark the run failed before exiting
-    // so the desktop surfaces a real error instead of a silent stall. The deadline
-    // guarantees we exit even if reportFatalError's network calls hang at crash time
-    // (e.g. API unreachable during a restart), so we never block pod shutdown.
+    // Mark the run failed before exiting so a hard crash surfaces a real error instead of a
+    // silent stall. The deadline guarantees we exit even if the report hangs at crash time.
     const FATAL_ERROR_REPORT_DEADLINE_MS = 5_000;
     const handleFatalError = async (error: unknown) => {
       try {

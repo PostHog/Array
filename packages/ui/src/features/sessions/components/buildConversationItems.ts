@@ -55,6 +55,7 @@ export type ConversationItem =
       update: RenderItem;
       turnContext: TurnContext;
       thoughtComplete?: boolean;
+      timestamp?: number;
     }
   | {
       type: "git_action_result";
@@ -91,6 +92,8 @@ interface ProgressCardState {
   };
   /** Index in `items` where this card sits. */
   itemIndex: number;
+  /** Run id parsed from the `group` (`setup:<runId>`); empty if absent. */
+  runId: string;
 }
 
 interface TurnState {
@@ -132,6 +135,9 @@ export interface ItemBuilder {
    *  Drives the generating indicator's status word so it advances on real work
    *  finishing rather than on a timer. */
   completedToolCallCount: number;
+  /** Runs that emitted `_posthog/run_started`; until then the setup card's
+   *  "agent" step stays in_progress rather than completing at HTTP-boot time. */
+  runStartedRunIds: Set<string>;
 }
 
 export function createItemBuilder(): ItemBuilder {
@@ -147,6 +153,7 @@ export function createItemBuilder(): ItemBuilder {
     progressCards: new Map(),
     lowestTouchedProgressIndex: Number.POSITIVE_INFINITY,
     completedToolCallCount: 0,
+    runStartedRunIds: new Set(),
   };
 }
 
@@ -182,7 +189,7 @@ export function markThoughtCompletion(items: ConversationItem[]) {
   }
 }
 
-function pushItem(b: ItemBuilder, update: RenderItem) {
+function pushItem(b: ItemBuilder, update: RenderItem, ts?: number) {
   const turn = b.currentTurn;
   if (!turn) return;
   turn.itemCount++;
@@ -191,6 +198,7 @@ function pushItem(b: ItemBuilder, update: RenderItem) {
     id: `${turn.id}-item-${b.nextId()}`,
     update,
     turnContext: turn.context,
+    timestamp: ts,
   });
 }
 
@@ -206,7 +214,14 @@ export function buildConversationItems(
 ): BuildResult {
   const b = createItemBuilder();
 
-  for (const event of events) {
+  let ordered = events;
+  for (let i = 1; i < events.length; i++) {
+    if (events[i].ts < events[i - 1].ts) {
+      ordered = [...events].sort((a, b) => a.ts - b.ts);
+      break;
+    }
+  }
+  for (const event of ordered) {
     processEvent(b, event, options);
   }
 
@@ -447,7 +462,7 @@ function handleNotification(
     if (!b.currentTurn) {
       ensureImplicitTurn(b, ts);
     }
-    processSessionUpdate(b, update);
+    processSessionUpdate(b, update, ts);
     return;
   }
 
@@ -484,6 +499,21 @@ function handleNotification(
     return;
   }
 
+  if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.RUN_STARTED)) {
+    const runId = (msg.params as { runId?: string } | undefined)?.runId;
+    if (runId) {
+      b.runStartedRunIds.add(runId);
+      const card = b.progressCards.get(`setup:${runId}`);
+      if (card) {
+        if (card.itemIndex < b.lowestTouchedProgressIndex) {
+          b.lowestTouchedProgressIndex = card.itemIndex;
+        }
+        syncProgressCard(card, b);
+      }
+    }
+    return;
+  }
+
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.COMPACT_BOUNDARY)) {
     if (!b.currentTurn) ensureImplicitTurn(b, ts);
     const params = msg.params as {
@@ -503,9 +533,42 @@ function handleNotification(
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.STATUS)) {
     if (!b.currentTurn) ensureImplicitTurn(b, ts);
-    const params = msg.params as { status: string; isComplete?: boolean };
-    if (params.status === "compacting" && !params.isComplete) {
+    const params = msg.params as {
+      status: string;
+      isComplete?: boolean;
+      error?: string;
+      explanation?: string;
+      fromModel?: string;
+      toModel?: string;
+    };
+    if (params.status === "refusal" || params.status === "refusal_fallback") {
+      pushItem(b, {
+        sessionUpdate: "status",
+        status: params.status,
+        explanation: params.explanation,
+        fromModel: params.fromModel,
+        toModel: params.toModel,
+      });
+      return;
+    }
+    if (params.status === "compacting") {
+      if (params.isComplete) {
+        // Successful compaction — flip the existing "Compacting…" status to
+        // complete instead of pushing a second item, so the spinner stops.
+        markCompactingStatusComplete(b);
+        return;
+      }
       b.isCompacting = true;
+    } else if (params.status === "compacting_failed") {
+      // A failed compaction emits no `compact_boundary`, so clear the spinner
+      // and render the outcome as its own status row.
+      markCompactingStatusComplete(b);
+      pushItem(b, {
+        sessionUpdate: "status",
+        status: "compacting_failed",
+        error: params.error,
+      });
+      return;
     }
     pushItem(b, {
       sessionUpdate: "status",
@@ -532,18 +595,26 @@ function ensureProgressCardForGroup(
     steps: [] as Step[],
     isActive: true,
   };
+  const colon = group.indexOf(":");
   const card: ProgressCardState = {
     steps: new Map(),
     renderItem,
     itemIndex: b.items.length,
+    runId: colon >= 0 ? group.slice(colon + 1) : "",
   };
   b.progressCards.set(group, card);
   pushItem(b, renderItem);
   return card;
 }
 
-function syncProgressCard(card: ProgressCardState) {
-  const ordered: Step[] = Array.from(card.steps.values());
+function syncProgressCard(card: ProgressCardState, b: ItemBuilder) {
+  const gateAgentStep =
+    card.runId !== "" && !b.runStartedRunIds.has(card.runId);
+  const ordered: Step[] = Array.from(card.steps.values()).map((step) =>
+    step.key === "agent" && step.status === "completed" && gateAgentStep
+      ? { ...step, status: "in_progress" as StepStatus }
+      : step,
+  );
   card.renderItem.steps = ordered;
   card.renderItem.isActive = ordered.some((s) => s.status === "in_progress");
 }
@@ -572,7 +643,7 @@ function handleProgress(b: ItemBuilder, rawParams: unknown, ts: number) {
     label: params.label,
     detail: params.detail,
   });
-  syncProgressCard(card);
+  syncProgressCard(card, b);
 }
 
 function normalizeStepStatus(raw: string | undefined): StepStatus {
@@ -714,7 +785,11 @@ function appendTextChunkToChildren(
   }
 }
 
-function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
+function processSessionUpdate(
+  b: ItemBuilder,
+  update: SessionUpdate,
+  ts: number,
+) {
   switch (update.sessionUpdate) {
     case "user_message_chunk":
       break;
@@ -726,7 +801,7 @@ function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
       if (parentId) {
         appendTextChunkToChildren(b, parentId, update);
       } else {
-        appendTextChunk(b, update);
+        appendTextChunk(b, update, ts);
       }
       break;
     }
@@ -751,7 +826,7 @@ function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
         if (parentId) {
           pushChildItem(b, parentId, toolCall);
         } else {
-          pushItem(b, toolCall);
+          pushItem(b, toolCall, ts);
         }
       }
       break;
@@ -788,16 +863,20 @@ function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
       };
       if (customUpdate.sessionUpdate === "agent_message") {
         if (customUpdate.content?.type === "text") {
-          appendTextChunk(b, {
-            sessionUpdate: "agent_message_chunk" as const,
-            content: customUpdate.content as { type: "text"; text: string },
-          });
+          appendTextChunk(
+            b,
+            {
+              sessionUpdate: "agent_message_chunk" as const,
+              content: customUpdate.content as { type: "text"; text: string },
+            },
+            ts,
+          );
         }
       } else if (
         customUpdate.sessionUpdate === "status" ||
         customUpdate.sessionUpdate === "error"
       ) {
-        pushItem(b, customUpdate as unknown as SessionUpdate);
+        pushItem(b, customUpdate as unknown as SessionUpdate, ts);
       }
       break;
     }
@@ -809,6 +888,7 @@ function appendTextChunk(
   update: SessionUpdate & {
     sessionUpdate: "agent_message_chunk" | "agent_thought_chunk";
   },
+  ts: number,
 ) {
   if (update.content.type !== "text") return;
 
@@ -830,6 +910,6 @@ function appendTextChunk(
       },
     };
   } else {
-    pushItem(b, { ...update, content: { ...update.content } });
+    pushItem(b, { ...update, content: { ...update.content } }, ts);
   }
 }

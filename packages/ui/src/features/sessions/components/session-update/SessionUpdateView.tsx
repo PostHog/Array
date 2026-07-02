@@ -33,6 +33,14 @@ export type RenderItem =
       sessionUpdate: "status";
       status: string;
       isComplete?: boolean;
+      /** Set when a status ends in failure (e.g. a failed compaction) so the row renders the error. */
+      error?: string;
+      /** Refusal statuses: display-only stop_details.explanation from the API. */
+      explanation?: string;
+      /** Refusal fallback: the model that declined the request. */
+      fromModel?: string;
+      /** Refusal fallback: the model that retried the request. */
+      toModel?: string;
     }
   | {
       sessionUpdate: "error";
@@ -122,6 +130,10 @@ export const SessionUpdateView = memo(function SessionUpdateView({
         <StatusNotificationView
           status={item.status}
           isComplete={item.isComplete}
+          error={item.error}
+          explanation={item.explanation}
+          fromModel={item.fromModel}
+          toModel={item.toModel}
         />
       );
     case "error":

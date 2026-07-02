@@ -15,16 +15,24 @@ import { buildApplicationMenu } from "./menu";
 import type { ElectronMainWindow } from "./platform-adapters/electron-main-window";
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { POSTHOG_SESSION_ID_ARG } from "./posthog-session-arg";
+import {
+  encodeDevFlagsForArg,
+  readDevFlagsSync,
+} from "./services/dev-flags/service";
 import { trpcRouter } from "./trpc/router";
 import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
-import { type WindowStateSchema, windowStateStore } from "./utils/store";
+import {
+  saveZoomLevel,
+  type WindowStateSchema,
+  windowStateStore,
+} from "./utils/store";
 
 const log = logger.scope("window");
 
-declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
-declare const MAIN_WINDOW_VITE_NAME: string;
+const MAIN_WINDOW_VITE_DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
+const MAIN_WINDOW_VITE_NAME = "main_window";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,6 +52,7 @@ function getSavedWindowState(): WindowStateSchema {
     width: windowStateStore.get("width", 1200),
     height: windowStateStore.get("height", 600),
     isMaximized: windowStateStore.get("isMaximized", true),
+    zoomLevel: windowStateStore.get("zoomLevel", 0),
   };
 
   // Validate position is still on a connected display
@@ -167,7 +176,10 @@ export function createWindow(): void {
     process.platform === "darwin"
       ? {
           titleBarStyle: "hiddenInset" as const,
-          trafficLightPosition: { x: 12, y: 9 },
+          // Centre the traffic lights vertically with the title bar's back/forward
+          // buttons (40px bar, 24px buttons → centre at y=20; 12px dots → top at 14).
+          // x mirrors y so the inset from the top and the left match.
+          trafficLightPosition: { x: 14, y: 14 },
         }
       : process.platform === "win32"
         ? {
@@ -208,6 +220,7 @@ export function createWindow(): void {
       additionalArguments: [
         ...(isDev ? ["--posthog-code-dev"] : []),
         `${POSTHOG_SESSION_ID_ARG}${posthogNodeAnalytics.getOrCreateSessionId()}`,
+        encodeDevFlagsForArg(readDevFlagsSync()),
       ],
       ...(isDev && { webSecurity: false }),
     },
@@ -229,6 +242,22 @@ export function createWindow(): void {
 
   mainWindow.once("ready-to-show", showWindow);
   const showFallback = setTimeout(showWindow, 3000);
+
+  // Restore the zoom level once the renderer has loaded. Read the latest
+  // persisted value from the store (not the create-time snapshot) so zooming
+  // done during the session survives in-app reloads, which otherwise reset
+  // Chromium's per-webContents zoom.
+  mainWindow.webContents.on("did-finish-load", () => {
+    mainWindow?.webContents.setZoomLevel(windowStateStore.get("zoomLevel", 0));
+  });
+
+  // Persist mouse-wheel/pinch zoom. Menu-driven zoom is persisted by the
+  // menu items themselves (see buildViewMenu in menu.ts).
+  mainWindow.webContents.on("zoom-changed", () => {
+    if (mainWindow) {
+      saveZoomLevel(mainWindow.webContents.getZoomLevel());
+    }
+  });
 
   // Persist window state on changes
   mainWindow.on(

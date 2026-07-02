@@ -39,6 +39,7 @@ import {
 import { useDraftStore } from "../../message-editor/draftStore";
 import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryStore";
 import type { EditorHandle } from "../../message-editor/types";
+import { useProvisioningStore } from "../../provisioning/store";
 import { useSettingsStore } from "../../settings/settingsStore";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
 import { useTasks } from "../../tasks/useTasks";
@@ -278,6 +279,8 @@ export function useTaskCreation({
         }
       }
 
+      let createdTaskId: string | undefined;
+
       try {
         if (!contentOverride) {
           const plainText = editor.getText()?.trim() ?? plainPromptText;
@@ -340,6 +343,7 @@ export function useTaskCreation({
             if (signalReportId) {
               clearTaskInputReportAssociation();
             }
+            createdTaskId = output.task.id;
             if (pendingTaskKey) {
               pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
             }
@@ -361,7 +365,28 @@ export function useTaskCreation({
           { skipCloudUsagePreflight: true },
         );
 
+        if (result.success && result.data.provisioningError) {
+          // Worktree provisioning failed but the task (and its prompt) was kept
+          // so the user can retry setup on it. Stay on the task the onTaskReady
+          // callback already navigated to — don't reopen the composer — and
+          // flag the failure so the task view shows a retry prompt.
+          useProvisioningStore
+            .getState()
+            .setFailed(result.data.task.id, result.data.provisioningError);
+          toast.error(getErrorTitle("workspace_creation"), {
+            description: result.data.provisioningError,
+          });
+        }
+
         if (result.success) {
+          if (!result.data.provisioningError) {
+            if (pendingTaskKey) {
+              pendingTaskPromptStoreApi.clear(pendingTaskKey);
+            }
+            if (createdTaskId) {
+              pendingTaskPromptStoreApi.clear(createdTaskId);
+            }
+          }
           setAdditionalDirectoriesOverride(null);
           // Guarantee the editor draft is wiped on success. editor.clear()
           // above only runs inside the onTaskReady callback (and after it
@@ -398,6 +423,9 @@ export function useTaskCreation({
           }
           if (pendingTaskKey) {
             pendingTaskPromptStoreApi.clear(pendingTaskKey);
+            if (createdTaskId) {
+              pendingTaskPromptStoreApi.clear(createdTaskId);
+            }
             openTaskInput({ initialPrompt: plainPromptText });
           }
         }
@@ -409,6 +437,9 @@ export function useTaskCreation({
         log.error("Unexpected error during task creation", { error });
         if (pendingTaskKey) {
           pendingTaskPromptStoreApi.clear(pendingTaskKey);
+          if (createdTaskId) {
+            pendingTaskPromptStoreApi.clear(createdTaskId);
+          }
           openTaskInput({ initialPrompt: plainPromptText });
         }
         return false;

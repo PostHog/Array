@@ -54,12 +54,14 @@ export function buildDraftAnnotations(
 export function buildCommentMergedOptions(
   options: DiffOptions | undefined,
   hasOpenComment: boolean,
+  handleLineSelectionChange: (range: SelectedLineRange | null) => void,
   handleLineSelectionEnd: (range: SelectedLineRange | null) => void,
 ): DiffOptions {
   return {
     ...options,
     enableLineSelection: !hasOpenComment,
     enableGutterUtility: !hasOpenComment,
+    onLineSelectionChange: handleLineSelectionChange,
     onLineSelectionEnd: handleLineSelectionEnd,
     onGutterUtilityClick: handleLineSelectionEnd,
   };

@@ -99,6 +99,38 @@ describe("LlmGatewayService.prompt", () => {
     expect(body.stream).toBe(false);
   });
 
+  it("forwards posthogProperties as x-posthog-property-* request headers and skips nulls", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(createJsonResponse(SUCCESS_BODY));
+    const { service } = createService(fetchMock);
+
+    await service.prompt([{ role: "user", content: "hi" }], {
+      posthogProperties: {
+        $ai_span_name: "pr_description",
+        task_id: 42,
+        is_dry_run: false,
+        // Null/undefined values are dropped so the gateway doesn't see
+        // literal "null" strings on the captured event.
+        unused: null,
+        skipped: undefined,
+        // Newlines and non-latin1 bytes are sanitized so an undici-backed
+        // fetch doesn't reject the request before it's sent.
+        rich: "line one\nline two — done 🎉",
+      },
+    });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers).toMatchObject({
+      "x-posthog-property-$ai_span_name": "pr_description",
+      "x-posthog-property-task_id": "42",
+      "x-posthog-property-is_dry_run": "false",
+      "x-posthog-property-rich": "line one line two  done ",
+    });
+    expect(init.headers).not.toHaveProperty("x-posthog-property-unused");
+    expect(init.headers).not.toHaveProperty("x-posthog-property-skipped");
+  });
+
   it("throws a typed LlmGatewayError with parsed error fields on non-ok response", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       createJsonResponse(

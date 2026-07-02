@@ -50,17 +50,18 @@ pnpm build:deps                        # turbo build of @posthog/code deps
 tail -f /dev/null | pnpm dev:code      # run in the background; leave it running
 ```
 
-`pnpm dev:code` is `electron-forge start -- --remote-debugging-port=9222` — just
-the app, no TUI and no watch rebuilders (fine for screenshotting/interacting).
+`pnpm dev:code` is `pnpm --filter code start`, i.e. `electron-vite dev --watch` — just
+the app, no `phrocs` TUI; it watches and rebuilds main/preload and hot-reloads the
+renderer (fine for screenshotting/interacting). The CDP port (`:9222`) is opened by
+the app itself in dev (the `remote-debugging-port` switch in
+`apps/code/src/main/bootstrap.ts`), not by a CLI flag.
 
-**The `tail -f /dev/null |` is required, do not drop it.** `electron-forge start`
-runs an interactive "type `rs` to restart" stdin reader. With no stdin it hits
-EOF immediately, treats that as quit, tears down the Electron window, and exits
-**0** before the CDP port ever opens — so the app looks like it launched
-("✔ Launched Electron app") and then silently vanishes. Piping from
-`tail -f /dev/null` gives it a stdin that never closes, so it stays up. A
-pseudo-TTY via `script` does **not** help: `script` forwards the EOF (`^D`) and
-the app still quits.
+The `tail -f /dev/null |` prefix is a harmless guard and no longer strictly required.
+The old `electron-forge start` ran an interactive "type `rs` to restart" stdin reader
+that hit EOF in a no-stdin shell, treated it as quit, and tore the Electron window
+down before the CDP port ever opened. `electron-vite dev` has no such reader, so a
+backgrounded `pnpm dev:code` with no stdin stays up on its own; keeping the pipe does
+no harm.
 
 Then wait for the port and connect (poll, don't sleep blindly):
 
@@ -113,7 +114,7 @@ rm -f /tmp/posthog-dev-lastuse
 ```
 
 Group-killing the launcher (`kill -TERM -PGID`) takes down `tail`, `pnpm`,
-`electron-forge` and Electron together, so nothing — not even the
+`electron-vite` and Electron together, so nothing — not even the
 `tail -f /dev/null` stdin pipe — lingers. Matching `remote-debugging-port=9222`
 hits only your dev instance (prod has no debug port and a separate
 `posthog-code-dev` profile), so it never touches the user's app. Verify with
@@ -212,11 +213,12 @@ PostHog Code orchestrates the agent, so the usual loop is: **prod** (the install
 - **Connection refused on :9222:** the app isn't running with the debug flag.
   Start it (see *Launching the app yourself* for the headless recipe). Verify the
   port: `lsof -i :9222` or `curl -s localhost:9222/json/version`.
-- **App launches then immediately exits 0; CDP never opens:** you started it with
-  no stdin (background / no TTY) and `electron-forge` quit on stdin EOF. Relaunch
-  with `tail -f /dev/null | pnpm dev:code` so stdin never closes (see *Launching
-  the app yourself*). Note `pnpm dev` cannot run headlessly at all — its `phrocs`
-  TUI needs a TTY; use `pnpm dev:code`.
+- **App launches then immediately exits; CDP never opens:** the old `electron-forge`
+  "quit on stdin EOF" behavior is gone under `electron-vite`, so the
+  `tail -f /dev/null |` prefix is optional and not the fix here. This is now usually a
+  build error, the single-instance lock (another dev instance running) or a crash —
+  check the `pnpm dev:code` output. Note `pnpm dev` cannot run headlessly at all — its
+  `phrocs` TUI needs a TTY; use `pnpm dev:code`.
 - **Snapshot is empty / wrong window:** you're on the wrong target. Run
   `agent-browser tab` and switch to the "PostHog Code" page.
 - **Can't type into an input:** try `agent-browser keyboard type "text"` (types at

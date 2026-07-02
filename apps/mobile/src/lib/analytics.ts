@@ -191,17 +191,34 @@ export interface Analytics {
   ): void;
 }
 
+// Client discriminator stamped on inbox events so the shared PostHog project
+// can be sliced by surface (desktop sends "code", the web frontend sends
+// "cloud"). Mirrors packages/ui/src/shell/posthogAnalyticsImpl.ts.
+const INBOX_CLIENT = "mobile" as const;
+
+export const INBOX_ANALYTICS_EVENT_NAMES: ReadonlySet<string> = new Set([
+  ANALYTICS_EVENTS.INBOX_VIEWED,
+  ANALYTICS_EVENTS.INBOX_REPORT_OPENED,
+  ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,
+  ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED,
+  ANALYTICS_EVENTS.INBOX_REPORT_ACTION,
+]);
+
 export function useAnalytics(): Analytics {
   const posthog = usePostHog();
   return useMemo<Analytics>(
     () => ({
       track: (eventName, properties) => {
+        // Spread first so a caller could override the client, matching desktop.
+        const enriched = INBOX_ANALYTICS_EVENT_NAMES.has(eventName)
+          ? { inbox_client: INBOX_CLIENT, ...properties }
+          : properties;
         // Our typed property interfaces don't carry an index signature; cast
         // to the wider PostHog event-properties shape without losing the
         // narrower call-site type-check.
         posthog?.capture(
           eventName,
-          properties as unknown as PostHogEventProperties,
+          enriched as unknown as PostHogEventProperties,
         );
       },
     }),

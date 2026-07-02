@@ -6,6 +6,7 @@ import type {
   PrAuthorshipMode,
   SeatData,
   StoredLogEntry,
+  TaskRunArtifactMetadata,
 } from "@posthog/shared";
 import {
   DISMISSAL_REASON_OPTIONS,
@@ -434,10 +435,11 @@ export class FolderInstructionsConflictError extends Error {
 
 export interface TaskArtifactUploadRequest {
   name: string;
-  type: "user_attachment";
+  type: "user_attachment" | "skill_bundle";
   size: number;
   content_type?: string;
   source?: string;
+  metadata?: TaskRunArtifactMetadata;
 }
 
 export interface DirectUploadPresignedPost {
@@ -459,6 +461,7 @@ export interface FinalizedTaskArtifactUpload {
   source?: string;
   size?: number;
   content_type?: string;
+  metadata?: TaskArtifactUploadRequest["metadata"];
   storage_path: string;
   uploaded_at?: string;
 }
@@ -1852,6 +1855,29 @@ export class PostHogAPIClient {
     return (await response.json()) as T;
   }
 
+  private async scoutPost<T>(
+    projectId: number,
+    subPath: string,
+    body: unknown,
+  ): Promise<T> {
+    const urlPath = `/api/projects/${projectId}/signals/scout/${subPath}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(body),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Scout request failed (${subPath}): ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as T;
+  }
+
   async listScoutConfigs(projectId: number): Promise<ScoutConfig[]> {
     const data = await this.scoutGet<
       { results: ScoutConfig[] } | ScoutConfig[]
@@ -1916,29 +1942,67 @@ export class PostHogAPIClient {
     return await this.scoutGet<ScoutRun>(projectId, `runs/${runId}/`);
   }
 
-  async listScoutRunEmissions(
+  /**
+   * POST a run-id list to a scout batch endpoint and flatten the response. The
+   * API caps each call at SCOUT_BATCH_RUN_ID_LIMIT ids, so larger lists are
+   * split into parallel chunks and concatenated — the caller never has to know
+   * the cap exists. Run ids belonging to another team contribute no rows rather
+   * than erroring, so a single stale id can't blank the list.
+   */
+  private async scoutBatchByRunIds<T>(
     projectId: number,
-    runId: string,
-  ): Promise<ScoutEmission[]> {
-    const data = await this.scoutGet<
-      { results: ScoutEmission[] } | ScoutEmission[]
-    >(projectId, `runs/${runId}/emissions/`);
-    return Array.isArray(data) ? data : (data.results ?? []);
+    subPath: string,
+    runIds: string[],
+  ): Promise<T[]> {
+    if (runIds.length === 0) return [];
+    const SCOUT_BATCH_RUN_ID_LIMIT = 200;
+    const chunks: string[][] = [];
+    for (let i = 0; i < runIds.length; i += SCOUT_BATCH_RUN_ID_LIMIT) {
+      chunks.push(runIds.slice(i, i + SCOUT_BATCH_RUN_ID_LIMIT));
+    }
+    const pages = await Promise.all(
+      chunks.map((chunk) =>
+        this.scoutPost<{ results: T[] } | T[]>(projectId, subPath, {
+          run_ids: chunk,
+        }),
+      ),
+    );
+    return pages.flatMap((data) =>
+      Array.isArray(data) ? data : (data.results ?? []),
+    );
   }
 
   /**
-   * Best-effort reverse lookup: for each finding a run emitted, the inbox report
-   * (if any) its underlying signal grouped into. Pairs with the report's evidence
-   * list, which links the other direction.
+   * Every supplied run's emitted findings in one request, flattened newest-first
+   * (each row keeps its `run_id` so the caller can regroup). Replaces the old
+   * per-run fan-out — one Postgres query instead of one request per run.
    */
-  async listScoutEmissionReports(
+  async batchScoutRunEmissions(
     projectId: number,
-    runId: string,
+    runIds: string[],
+  ): Promise<ScoutEmission[]> {
+    return this.scoutBatchByRunIds<ScoutEmission>(
+      projectId,
+      "runs/emissions/batch/",
+      runIds,
+    );
+  }
+
+  /**
+   * Best-effort reverse lookup: for each finding the supplied runs emitted, the
+   * inbox report (if any) its underlying signal grouped into. Resolves every
+   * run's findings in a single ClickHouse round-trip instead of one per run.
+   * Pairs with the report's evidence list, which links the other direction.
+   */
+  async batchScoutEmissionReports(
+    projectId: number,
+    runIds: string[],
   ): Promise<ScoutEmissionReportLink[]> {
-    const data = await this.scoutGet<
-      { results: ScoutEmissionReportLink[] } | ScoutEmissionReportLink[]
-    >(projectId, `runs/${runId}/emissions/reports/`);
-    return Array.isArray(data) ? data : (data.results ?? []);
+    return this.scoutBatchByRunIds<ScoutEmissionReportLink>(
+      projectId,
+      "runs/emissions/reports/batch/",
+      runIds,
+    );
   }
 
   async searchScoutScratchpad(
@@ -2372,6 +2436,7 @@ export class PostHogAPIClient {
             type: artifact.type,
             source: artifact.source,
             content_type: artifact.content_type,
+            metadata: artifact.metadata,
             storage_path: artifact.storage_path,
           })),
         }),
@@ -2447,6 +2512,7 @@ export class PostHogAPIClient {
             type: artifact.type,
             source: artifact.source,
             content_type: artifact.content_type,
+            metadata: artifact.metadata,
             storage_path: artifact.storage_path,
           })),
         }),

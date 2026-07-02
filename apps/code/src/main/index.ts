@@ -72,6 +72,7 @@ import {
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
+import { initDevToolbar } from "./services/dev-toolbar";
 import type { DiscordPresenceService } from "./services/discord-presence/service";
 import {
   focusSessionStore,
@@ -239,6 +240,8 @@ app.on("child-process-gone", (_event, details) => {
 });
 
 async function initializeServices(): Promise<void> {
+  initDevToolbar();
+
   container.get<DatabaseService>(DATABASE_SERVICE);
   container.get<OAuthService>(OAUTH_SERVICE);
   const authService = container.get<AuthService>(AUTH_SERVICE);
@@ -381,6 +384,19 @@ app.whenReady().then(async () => {
   container.bind(FS_SERVICE).toService(MAIN_FS_SERVICE);
   await initializeServices();
   initializeDeepLinks();
+
+  if (process.env.POSTHOG_E2E_UPDATE_FEED) {
+    const updates = container.get<UpdatesService>(UPDATES_SERVICE);
+    Object.assign(globalThis, {
+      __e2eUpdates: {
+        check: () => updates.checkForUpdates(),
+        download: () => updates.requestDownload(),
+        install: () => updates.installUpdate(),
+        status: () => updates.getStatus(),
+      },
+    });
+    log.info("E2E update hook installed on globalThis.__e2eUpdates");
+  }
 });
 
 app.on("window-all-closed", () => {

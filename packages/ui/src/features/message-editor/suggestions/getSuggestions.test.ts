@@ -2,13 +2,14 @@ import type { AcpMessage } from "@posthog/shared";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useSessionStore } from "../../sessions/sessionStore";
 import { useDraftStore } from "../draftStore";
+import type { EditorAvailableCommand } from "../types";
 import { getCommandSuggestions } from "./getSuggestions";
 
 const SESSION_ID = "task-123";
 const TASK_ID = "task-123";
 const TASK_RUN_ID = "run-1";
 
-function seedDraftCommands(commands: { name: string; description: string }[]) {
+function seedDraftCommands(commands: EditorAvailableCommand[]) {
   useDraftStore.getState().actions.setCommands(SESSION_ID, commands);
 }
 
@@ -69,7 +70,7 @@ interface Scenario {
   contextTaskId?: string;
   sessionCommands?: { name: string; description: string }[];
   adapter?: "claude" | "codex";
-  draftCommands?: { name: string; description: string }[];
+  draftCommands?: EditorAvailableCommand[];
   expectContains: string[];
   expectNotContains?: string[];
 }
@@ -103,6 +104,23 @@ const SCENARIOS: Scenario[] = [
     sessionCommands: [{ name: "agent-cmd", description: "From agent" }],
     expectContains: ["agent-cmd"],
     expectNotContains: ["fallback-only"],
+  },
+  {
+    name: "agent-supplied commands keep local skill commands for follow-ups",
+    contextTaskId: TASK_ID,
+    draftCommands: [
+      {
+        name: "local-test-skill",
+        description: "Local user skill",
+        localSkill: {
+          name: "local-test-skill",
+          source: "user",
+          path: "/Users/example/.claude/skills/local-test-skill",
+        },
+      },
+    ],
+    sessionCommands: [{ name: "agent-cmd", description: "From agent" }],
+    expectContains: ["agent-cmd", "local-test-skill"],
   },
   {
     name: "uses draft-store skills when there is no running task",
@@ -168,4 +186,33 @@ describe("getCommandSuggestions", () => {
       }
     },
   );
+
+  it("preserves local skill metadata when the agent has reported commands", () => {
+    seedSessionContext(TASK_ID);
+    seedDraftCommands([
+      {
+        name: "local-test-skill",
+        description: "Local user skill",
+        localSkill: {
+          name: "local-test-skill",
+          source: "user",
+          path: "/Users/example/.claude/skills/local-test-skill",
+        },
+      },
+    ]);
+    seedSessionAvailableCommands([
+      { name: "agent-cmd", description: "From agent" },
+    ]);
+
+    const localSkill = getCommandSuggestions(
+      SESSION_ID,
+      "local-test-skill",
+    ).find((suggestion) => suggestion.command.name === "local-test-skill");
+
+    expect(localSkill).toMatchObject({
+      skillName: "local-test-skill",
+      skillSource: "user",
+      skillPath: "/Users/example/.claude/skills/local-test-skill",
+    });
+  });
 });

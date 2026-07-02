@@ -51,7 +51,10 @@ export interface UseAgentChatOptions {
   contextProvider?: () => unknown;
   /** AgentBuilder UI-driving tools (focus_*, set_secret); null → built-in handling. */
   clientTools?: ClientToolHandler;
-  /** `kind:'client'` tool ids this client can fulfil; sent to the runner at /run. */
+  /**
+   * `kind:'client'` tool ids this client can fulfil; sent to the runner at /run.
+   * Pass a stable (module-level) array — it keys the session-config memo.
+   */
   supportedClientTools?: readonly string[];
 }
 

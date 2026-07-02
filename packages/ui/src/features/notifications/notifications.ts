@@ -5,7 +5,11 @@ import {
 } from "@posthog/platform/notifications";
 import { toast } from "@posthog/ui/primitives/toast";
 import { openNotificationTarget } from "@posthog/ui/router/navigationBridge";
-import { playCompletionSound } from "@posthog/ui/utils/sounds";
+import {
+  playbackRateForTaskDuration,
+  playCompletionSound,
+  resolveSoundUrl,
+} from "@posthog/ui/utils/sounds";
 import { inject, injectable } from "inversify";
 import {
   ACTIVE_VIEW_PROVIDER,
@@ -34,6 +38,9 @@ export interface NotificationDescriptor {
     duration?: number;
   };
   silent?: boolean;
+  // How long the task took, in ms. When the user enables sound scaling, this
+  // drives the completion sound's playback rate (fast task -> faster/higher).
+  soundDurationMs?: number;
 }
 
 // The single channel every app notification flows through. Reads focus + the
@@ -61,9 +68,19 @@ export class NotificationBus {
     if (channel === "suppress") return;
 
     const settings = this.settings.get();
+    const playbackRate =
+      settings.scaleSoundWithTaskLength &&
+      descriptor.soundDurationMs !== undefined
+        ? playbackRateForTaskDuration(descriptor.soundDurationMs)
+        : 1;
     // Sound fires on both delivered tiers (toast + native), not on suppress —
     // matching the pre-bus behavior where any non-suppressed notification rang.
-    playCompletionSound(settings.completionSound, settings.completionVolume);
+    playCompletionSound(
+      settings.completionSound,
+      settings.completionVolume,
+      settings.customSounds,
+      playbackRate,
+    );
 
     if (channel === "toast") {
       this.showToast(descriptor);
@@ -71,12 +88,17 @@ export class NotificationBus {
     }
 
     // native
-    const willPlayCustomSound = settings.completionSound !== "none";
+    // Silence the OS notification's own chime only when we'll actually play a
+    // completion sound. A `custom:` id whose sound was deleted resolves to
+    // nothing, so the native chime should still ring rather than leaving the
+    // notification silent-and-soundless.
+    const willPlaySound =
+      resolveSoundUrl(settings.completionSound, settings.customSounds) !== null;
     if (settings.desktopNotifications) {
       this.notifications.notify({
         title: descriptor.title ?? "PostHog Code",
         body: descriptor.body,
-        silent: descriptor.silent ?? willPlayCustomSound,
+        silent: descriptor.silent ?? willPlaySound,
         target: descriptor.target,
       });
     }
@@ -91,12 +113,14 @@ export class NotificationBus {
     taskTitle: string,
     stopReason: string,
     taskId?: string,
+    durationMs?: number,
   ): void {
     if (stopReason !== "end_turn") return;
     this.notify({
       body: `"${this.truncateTitle(taskTitle)}" finished`,
       target: taskId ? { kind: "task", taskId } : undefined,
       toast: { level: "success" },
+      soundDurationMs: durationMs,
     });
   }
 

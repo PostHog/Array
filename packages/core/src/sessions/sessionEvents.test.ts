@@ -237,6 +237,14 @@ describe("convertStoredEntriesToEvents — imported user prompts", () => {
     const msg = events[0].message;
     expect("method" in msg && msg.method).toBe("session/update");
   });
+
+  it("freezes converted events on both the promoted and raw branches", () => {
+    const events = convertStoredEntriesToEvents([
+      userChunkEntry("promoted", { importedUserPrompt: true }),
+      userChunkEntry("raw"),
+    ]);
+    expect(events.every((event) => Object.isFrozen(event))).toBe(true);
+  });
 });
 
 describe("isAbsoluteFolderPath", () => {

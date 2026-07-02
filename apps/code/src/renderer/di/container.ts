@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { useDevFlagsStore } from "@features/dev-toolbar/devFlagsStore";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
 import type { TrpcRouter } from "@main/trpc/router";
 import {
@@ -29,7 +30,11 @@ import {
 import { LLM_GATEWAY_SERVICE } from "@posthog/core/llm-gateway/identifiers";
 import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
 import type { LlmMessage } from "@posthog/core/llm-gateway/schemas";
-import { CLOUD_ARTIFACT_READ_FILE_AS_BASE64 } from "@posthog/core/sessions/cloudArtifactIdentifiers";
+import {
+  CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
+  CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
+  CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES,
+} from "@posthog/core/sessions/cloudArtifactIdentifiers";
 import {
   LOCAL_HANDOFF_DIALOG,
   LOCAL_HANDOFF_HOST,
@@ -79,6 +84,10 @@ import { WorkspaceSetupService } from "@posthog/core/workspace/WorkspaceSetupSer
 import { setRootContainer } from "@posthog/di/container";
 import { HOST_TRPC_CLIENT } from "@posthog/host-router/client";
 import {
+  BROWSER_TABS_CLIENT,
+  type BrowserTabsClient,
+} from "@posthog/ui/features/browser-tabs/browserTabsClient";
+import {
   REVIEW_HOST,
   type ReviewHost,
 } from "@posthog/ui/features/code-review/reviewHost";
@@ -109,6 +118,10 @@ import {
   localHandoffNotifier,
 } from "@posthog/ui/features/sessions/localHandoffService";
 import { getSessionService } from "@posthog/ui/features/sessions/sessionServiceHost";
+import {
+  DEV_MODE_CLIENT,
+  type DevModeClient,
+} from "@posthog/ui/features/settings/devModeClient";
 import { taskCreationEffects } from "@posthog/ui/features/task-detail/taskCreationEffectsImpl";
 import { TrpcTaskCreationHost } from "@posthog/ui/features/task-detail/taskCreationHostImpl";
 import {
@@ -157,13 +170,37 @@ container.bind(HOST_TRPC_CLIENT).toConstantValue(hostTrpcClient);
 
 container.bind(UPDATES_CLIENT).toConstantValue(updatesClient);
 
+// dev mode client — exposes the dev-toolbar flag store to the shared settings UI
+const devModeClient: DevModeClient = {
+  getDevMode: () => useDevFlagsStore.getState().devMode,
+  setDevMode: (enabled) => useDevFlagsStore.getState().setDevMode(enabled),
+  onDevModeChanged: (listener) =>
+    useDevFlagsStore.subscribe((state) => listener(state.devMode)),
+};
+container.bind(DEV_MODE_CLIENT).toConstantValue(devModeClient);
+
 // connectivity client — passthrough over the renderer host client
 const connectivityClient: ConnectivityClient = {
   getStatus: () => trpcClient.connectivity.getStatus.query(),
+  checkNow: () => trpcClient.connectivity.checkNow.mutate(),
   onStatusChange: (sub) =>
     trpcClient.connectivity.onStatusChange.subscribe(undefined, sub),
 };
 container.bind(CONNECTIVITY_CLIENT).toConstantValue(connectivityClient);
+
+// browser tabs client — passthrough over the renderer host client
+const browserTabsClient: BrowserTabsClient = {
+  getSnapshot: () => trpcClient.browserTabs.getSnapshot.query(),
+  getPrimaryWindowId: () => trpcClient.browserTabs.getPrimaryWindowId.query(),
+  openOrFocus: (input) => trpcClient.browserTabs.openOrFocus.mutate(input),
+  newBlankTab: (input) => trpcClient.browserTabs.newBlankTab.mutate(input),
+  setTabTarget: (input) => trpcClient.browserTabs.setTabTarget.mutate(input),
+  close: (tabId) => trpcClient.browserTabs.close.mutate({ tabId }),
+  setActiveTab: (input) => trpcClient.browserTabs.setActiveTab.mutate(input),
+  onSnapshotChange: (sub) =>
+    trpcClient.browserTabs.onSnapshotChange.subscribe(undefined, sub),
+};
+container.bind(BROWSER_TABS_CLIENT).toConstantValue(browserTabsClient);
 
 // discord presence client — passthrough over the local main-process router
 const discordPresenceClient: DiscordPresenceClient = {
@@ -364,6 +401,16 @@ container
   .bind(CLOUD_ARTIFACT_READ_FILE_AS_BASE64)
   .toConstantValue((filePath: string) =>
     trpcClient.fs.readFileAsBase64.query({ filePath }),
+  );
+container
+  .bind(CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL)
+  .toConstantValue((skillBundleRef) =>
+    hostTrpcClient.skills.bundleLocal.query(skillBundleRef),
+  );
+container
+  .bind(CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES)
+  .toConstantValue((skillBundleRefs) =>
+    hostTrpcClient.skills.resolveDependencies.query(skillBundleRefs),
   );
 container.bind(LLM_GATEWAY_SERVICE).toConstantValue({
   prompt: (

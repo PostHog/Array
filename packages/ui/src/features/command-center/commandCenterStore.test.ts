@@ -1,3 +1,4 @@
+import { BRAINROT_CELL } from "@posthog/core/command-center/grid";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@posthog/ui/shell/rendererStorage", () => ({
@@ -84,6 +85,50 @@ describe("commandCenterStore", () => {
     it("leaves hasAutofilled unset when there is nothing to fill", () => {
       useCommandCenterStore.getState().autofillCells([]);
       expect(useCommandCenterStore.getState().hasAutofilled).toBe(false);
+    });
+  });
+
+  describe("setBrainrotCell", () => {
+    it("marks the target cell as brainrot without disturbing others", () => {
+      useCommandCenterStore.setState({ cells: ["t1", null, null, null] });
+      useCommandCenterStore.getState().setBrainrotCell(2);
+      expect(useCommandCenterStore.getState().cells).toEqual([
+        "t1",
+        null,
+        BRAINROT_CELL,
+        null,
+      ]);
+    });
+
+    it("does not dedupe, so multiple cells can be brainrot", () => {
+      useCommandCenterStore.getState().setBrainrotCell(0);
+      useCommandCenterStore.getState().setBrainrotCell(1);
+      expect(useCommandCenterStore.getState().cells).toEqual([
+        BRAINROT_CELL,
+        BRAINROT_CELL,
+        null,
+        null,
+      ]);
+    });
+
+    it("focuses the cell, clears its creating state, and marks the grid curated", () => {
+      useCommandCenterStore.setState({ creatingCells: [3] });
+      useCommandCenterStore.getState().setBrainrotCell(3);
+      const state = useCommandCenterStore.getState();
+      expect(state.activeCellIndex).toBe(3);
+      expect(state.activeTaskId).toBeNull();
+      expect(state.creatingCells).toEqual([]);
+      expect(state.hasAutofilled).toBe(true);
+    });
+
+    it("ignores out-of-range indices", () => {
+      useCommandCenterStore.getState().setBrainrotCell(9);
+      expect(useCommandCenterStore.getState().cells).toEqual([
+        null,
+        null,
+        null,
+        null,
+      ]);
     });
   });
 
