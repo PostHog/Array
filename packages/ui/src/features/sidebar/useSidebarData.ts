@@ -13,13 +13,12 @@ import type {
   TaskData,
   TaskGroup,
 } from "@posthog/core/sidebar/sidebarData.types";
-import { computeSummaryIds } from "@posthog/core/sidebar/summaryIds";
 import type { AppView } from "@posthog/ui/router/useAppView";
 import { useEffect, useMemo, useRef } from "react";
 import { useArchivedTaskIds } from "../archive/useArchivedTaskIds";
 import { useProvisioningStore } from "../provisioning/store";
 import { useSuspendedTaskIds } from "../suspension/useSuspendedTaskIds";
-import { useSlackTasks, useTaskSummaries, useTasks } from "../tasks/useTasks";
+import { useTasks } from "../tasks/useTasks";
 import { useWorkspaces } from "../workspace/useWorkspace";
 import { useSidebarStore } from "./sidebarStore";
 import { usePinnedTasks } from "./usePinnedTasks";
@@ -27,6 +26,11 @@ import { useSidebarSessionMap } from "./useSidebarSessionMap";
 import { useTaskViewed } from "./useTaskViewed";
 
 export type { SidebarData, TaskData, TaskGroup };
+
+// The sidebar only lists user-created tasks, so no task ever carries slack
+// origin metadata here. Stable empty references keep `deriveTaskData` memoized.
+const EMPTY_TASK_IDS: ReadonlySet<string> = new Set();
+const EMPTY_THREAD_URLS: ReadonlyMap<string, string> = new Map();
 
 interface UseSidebarDataProps {
   activeView: AppView;
@@ -36,7 +40,6 @@ export function useSidebarData({
   activeView,
 }: UseSidebarDataProps): SidebarData {
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
-  const showInternal = useSidebarStore((state) => state.showInternal);
   const { data: workspaces, isFetched: isWorkspacesFetched } = useWorkspaces();
   const archivedTaskIds = useArchivedTaskIds();
   const suspendedTaskIds = useSuspendedTaskIds();
@@ -51,58 +54,20 @@ export function useSidebarData({
   const sortMode = useSidebarStore((state) => state.sortMode);
   const folderOrder = useSidebarStore((state) => state.folderOrder);
 
-  const summaryIds = useMemo(
-    () =>
-      showAllUsers
-        ? []
-        : computeSummaryIds({
-            workspaceIds: workspaces ? Object.keys(workspaces) : [],
-            pinnedTaskIds,
-            provisioningTaskIds,
-            archivedTaskIds,
-          }),
-    [
-      showAllUsers,
-      workspaces,
-      pinnedTaskIds,
-      provisioningTaskIds,
-      archivedTaskIds,
-    ],
-  );
-
-  const { data: summaryTasks = [], isLoading: isSummariesLoading } =
-    useTaskSummaries(summaryIds, { enabled: !showAllUsers });
-  const { data: fullTasks = [], isLoading: isTasksLoading } = useTasks(
-    { showAllUsers, showInternal },
-    { enabled: showAllUsers },
-  );
-  const { data: slackTasks = [] } = useSlackTasks({
-    enabled: !showAllUsers,
-    showInternal,
+  // The sidebar only ever lists user-created tasks. Tasks from other origins —
+  // signals, slack, support queue, session summaries, etc. — are deliberately
+  // excluded so agent-provisioned work never shows up in a user's task list.
+  const { data: fullTasks = [], isLoading: isTasksLoading } = useTasks({
+    showAllUsers,
+    originProduct: "user_created",
   });
-  const slackTaskIds = useMemo(
-    () => new Set(slackTasks.map((t) => t.id)),
-    [slackTasks],
-  );
-  const slackThreadUrlByTaskId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const t of slackTasks) {
-      const url = t.latest_run?.state?.slack_thread_url;
-      if (typeof url === "string") map.set(t.id, url);
-    }
-    return map;
-  }, [slackTasks]);
 
   const rawTasks = useMemo<SidebarTask[]>(
-    () =>
-      showAllUsers
-        ? fullTasks.map((t) => narrowFullTask(t as FullTask))
-        : (summaryTasks as SidebarTask[]),
-    [showAllUsers, summaryTasks, fullTasks],
+    () => fullTasks.map((t) => narrowFullTask(t as FullTask)),
+    [fullTasks],
   );
 
-  const isPrimaryLoading = showAllUsers ? isTasksLoading : isSummariesLoading;
-  const isLoading = isPrimaryLoading || !isWorkspacesFetched;
+  const isLoading = isTasksLoading || !isWorkspacesFetched;
 
   const workspaceIds = useMemo(
     () => new Set(workspaces ? Object.keys(workspaces) : []),
@@ -116,14 +81,12 @@ export function useSidebarData({
         workspaceIds,
         provisioningIds: provisioningTaskIds,
         showAllUsers,
-        showInternal,
       }),
     [
       rawTasks,
       archivedTaskIds,
       workspaceIds,
       showAllUsers,
-      showInternal,
       provisioningTaskIds,
     ],
   );
@@ -149,8 +112,8 @@ export function useSidebarData({
           timestamp: timestamps[task.id],
           pinnedIds: pinnedTaskIds,
           suspendedIds: suspendedTaskIds,
-          slackTaskIds,
-          slackThreadUrlByTaskId,
+          slackTaskIds: EMPTY_TASK_IDS,
+          slackThreadUrlByTaskId: EMPTY_THREAD_URLS,
         }),
       ),
     [
@@ -160,8 +123,6 @@ export function useSidebarData({
       suspendedTaskIds,
       sessionByTaskId,
       workspaces,
-      slackTaskIds,
-      slackThreadUrlByTaskId,
     ],
   );
 

@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
-import { useMeQuery } from "@posthog/ui/features/auth/useMeQuery";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 
@@ -34,13 +33,9 @@ function TaskFilterMenu() {
   const organizeMode = useSidebarStore((state) => state.organizeMode);
   const sortMode = useSidebarStore((state) => state.sortMode);
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
-  const showInternal = useSidebarStore((state) => state.showInternal);
   const setOrganizeMode = useSidebarStore((state) => state.setOrganizeMode);
   const setSortMode = useSidebarStore((state) => state.setSortMode);
   const setShowAllUsers = useSidebarStore((state) => state.setShowAllUsers);
-  const setShowInternal = useSidebarStore((state) => state.setShowInternal);
-  const { data: currentUser } = useMeQuery();
-  const isStaff = currentUser?.is_staff === true;
 
   return (
     <DropdownMenu>
@@ -97,25 +92,6 @@ function TaskFilterMenu() {
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="all">
                 All tasks
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </>
-        )}
-
-        {isStaff && (
-          <>
-            <DropdownMenuSeparator />
-
-            <MenuLabel>Task visibility</MenuLabel>
-            <DropdownMenuRadioGroup
-              value={showInternal ? "internal" : "external"}
-              onValueChange={(value) => setShowInternal(value === "internal")}
-            >
-              <DropdownMenuRadioItem value="external">
-                External
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="internal">
-                Internal
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </>

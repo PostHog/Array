@@ -64,7 +64,6 @@ export interface FilterVisibleOptions {
   workspaceIds: ReadonlySet<string>;
   provisioningIds: ReadonlySet<string>;
   showAllUsers: boolean;
-  showInternal: boolean;
 }
 
 export function filterVisibleTasks(
@@ -75,7 +74,6 @@ export function filterVisibleTasks(
     (task) =>
       !options.archivedIds.has(task.id) &&
       (options.showAllUsers ||
-        options.showInternal ||
         options.workspaceIds.has(task.id) ||
         options.provisioningIds.has(task.id)),
   );

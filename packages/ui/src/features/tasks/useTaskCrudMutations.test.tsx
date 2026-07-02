@@ -210,6 +210,11 @@ describe("useCreateTask.invalidateTasks", () => {
       filters: { originProduct: "slack" },
       expectedLength: 0,
     },
+    {
+      name: "user_created-origin list (the sidebar list)",
+      filters: { originProduct: "user_created" },
+      expectedLength: 1,
+    },
   ])(
     "seeds the $name with the new task ($expectedLength entr(y/ies))",
     ({ filters, expectedLength }) => {
@@ -228,8 +233,9 @@ describe("useCreateTask.invalidateTasks", () => {
 
       result.current.invalidateTasks(createTask());
 
-      // Origin-less lists mirror the new task; origin-scoped lists (read by the
-      // sidebar to brand icons by id membership) must not be seeded.
+      // Origin-less lists and lists scoped to the new task's own origin mirror
+      // it; a list scoped to a different origin (read by the sidebar to brand
+      // icons by id membership) must not be seeded.
       expect(queryClient.getQueryData<Task[]>(key)).toHaveLength(
         expectedLength,
       );

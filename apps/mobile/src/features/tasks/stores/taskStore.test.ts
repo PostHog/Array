@@ -26,12 +26,7 @@ describe("filterAndSortTasks", () => {
       const placeholder = makeTask({ id: "warm", title, description });
       const real = makeTask({ id: "real" });
 
-      const result = filterAndSortTasks(
-        [placeholder, real],
-        "updated",
-        false,
-        "",
-      );
+      const result = filterAndSortTasks([placeholder, real], "updated", "");
 
       expect(result.map((t) => t.id)).toEqual(["real"]);
     },
@@ -47,7 +42,7 @@ describe("filterAndSortTasks", () => {
   ])("keeps a real task with $name", ({ title, description }) => {
     const task = makeTask({ id: "real", title, description });
 
-    const result = filterAndSortTasks([task], "updated", false, "");
+    const result = filterAndSortTasks([task], "updated", "");
 
     expect(result.map((t) => t.id)).toEqual(["real"]);
   });

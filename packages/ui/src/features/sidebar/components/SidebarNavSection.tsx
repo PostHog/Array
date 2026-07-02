@@ -100,9 +100,8 @@ export function SidebarNavSection({
   // opening a redundant subscription when composed inside SidebarMenu.
   const needsOwnCount = providedActiveCount === undefined;
   const showAllUsers = useSidebarStore((s) => s.showAllUsers);
-  const showInternal = useSidebarStore((s) => s.showInternal);
   const { data: allTasks = [] } = useTasks(
-    { showAllUsers, showInternal },
+    { showAllUsers, originProduct: "user_created" },
     { enabled: needsOwnCount },
   );
   const commandCenterCells = useCommandCenterStore((s) => s.cells);

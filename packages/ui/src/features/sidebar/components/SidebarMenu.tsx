@@ -46,8 +46,10 @@ function SidebarMenuComponent() {
   // Must mirror useSidebarData's filters so taskMap covers every rendered
   // task — otherwise handleTaskClick silently bails for tasks not in the map.
   const showAllUsers = useSidebarStore((s) => s.showAllUsers);
-  const showInternal = useSidebarStore((s) => s.showInternal);
-  const { data: allTasks = [] } = useTasks({ showAllUsers, showInternal });
+  const { data: allTasks = [] } = useTasks({
+    showAllUsers,
+    originProduct: "user_created",
+  });
 
   const { data: workspaces = {} } = useWorkspaces();
   const { markAsViewed } = useTaskViewed();
