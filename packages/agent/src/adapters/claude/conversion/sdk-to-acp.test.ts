@@ -390,44 +390,49 @@ describe("handleSystemMessage model_refusal_fallback", () => {
     };
   }
 
-  it("emits a refusal_fallback status notification with the model swap", async () => {
+  it.each<
+    [string, Partial<SDKModelRefusalFallbackMessage>, Record<string, unknown>]
+  >([
+    [
+      "emits a refusal_fallback status notification with the model swap",
+      {},
+      {
+        sessionId: "test-session",
+        status: "refusal_fallback",
+        fromModel: "claude-fable-5",
+        toModel: "claude-opus-4-8",
+        explanation: "This request was declined.",
+      },
+    ],
+    [
+      "omits the explanation when the refused response carried none",
+      { api_refusal_explanation: null },
+      {
+        sessionId: "test-session",
+        status: "refusal_fallback",
+        fromModel: "claude-fable-5",
+        toModel: "claude-opus-4-8",
+      },
+    ],
+  ])("%s", async (_name, overrides, expectedParams) => {
     const { context, updates, notifications } = createHandlerContext();
 
-    await handleSystemMessage(refusalFallbackMessage(), context);
+    await handleSystemMessage(refusalFallbackMessage(overrides), context);
 
     expect(updates).toEqual([]);
     expect(notifications).toEqual([
-      {
-        method: "_posthog/status",
-        params: {
-          sessionId: "test-session",
-          status: "refusal_fallback",
-          fromModel: "claude-fable-5",
-          toModel: "claude-opus-4-8",
-          explanation: "This request was declined.",
-        },
-      },
+      { method: "_posthog/status", params: expectedParams },
     ]);
   });
 
-  it("omits the explanation when the refused response carried none", async () => {
-    const { context, notifications } = createHandlerContext();
+  it.each(["revert", "sticky"] as const)(
+    "skips the notification for the legacy %s direction",
+    async (direction) => {
+      const { context, notifications } = createHandlerContext();
 
-    await handleSystemMessage(
-      refusalFallbackMessage({ api_refusal_explanation: null }),
-      context,
-    );
+      await handleSystemMessage(refusalFallbackMessage({ direction }), context);
 
-    expect(notifications).toEqual([
-      {
-        method: "_posthog/status",
-        params: {
-          sessionId: "test-session",
-          status: "refusal_fallback",
-          fromModel: "claude-fable-5",
-          toModel: "claude-opus-4-8",
-        },
-      },
-    ]);
-  });
+      expect(notifications).toEqual([]);
+    },
+  );
 });

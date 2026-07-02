@@ -805,6 +805,9 @@ export async function handleSystemMessage(
         category: message.api_refusal_category ?? undefined,
         requestId: message.request_id ?? undefined,
       });
+      // Only "retry" is emitted live; "revert" and "sticky" are legacy enum
+      // values whose semantics don't match the "retried with" notice.
+      if (message.direction !== "retry") break;
       await client.extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
         sessionId,
         status: "refusal_fallback",
