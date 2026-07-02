@@ -191,6 +191,7 @@ export class WorkspaceServerService extends TypedEventEmitter<WorkspaceServerEve
       env: {
         ...process.env,
         ELECTRON_RUN_AS_NODE: "1",
+        POSTHOG_CODE_INTERNAL_CHILD: "1",
         WORKSPACE_SERVER_SECRET: secret,
         WORKSPACE_SERVER_PORT: String(port),
         WORKSPACE_SERVER_PARENT_PID: String(process.pid),
