@@ -257,8 +257,6 @@ describe("feature settingsStore custom sounds", () => {
         JSON.stringify({ state: persistedState, version: 0 }),
       );
 
-      useSettingsStore.setState({ completionSound: "none", customSounds: [] });
-
       await useSettingsStore.persist.rehydrate();
 
       expect(useSettingsStore.getState().completionSound).toBe(
