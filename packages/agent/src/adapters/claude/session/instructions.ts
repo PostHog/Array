@@ -26,26 +26,6 @@ If an MCP tool call is explicitly denied with a message, relay that denial messa
 If an MCP tool call returns an error, treat it as a normal tool error — troubleshoot, retry, or inform the user about the specific error. Do NOT assume it is a permissions issue and do NOT direct the user to any settings page.
 `;
 
-// Always-on minimalism, adapted from Ponytail (https://github.com/DietrichGebert/ponytail, MIT).
-const MINIMAL_CODE = `
-# Writing Minimal Code
-
-After you understand the problem — never instead of it — write the least code that fully solves the task. Less code means fewer output tokens now and fewer review and edit turns later.
-
-Before writing code, stop at the first rung that holds:
-1. YAGNI — does this need building at all?
-2. Reuse — is it already in the codebase? Use it.
-3. Standard library — does the stdlib cover it?
-4. Native platform feature — does the platform already do this?
-5. Installed dependency — can an already-installed dep handle it? Don't add a new one.
-6. One line — if it can be one line, make it one line.
-7. Otherwise, write the minimum that works.
-
-Prefer deletion over addition and boring over clever. No unrequested abstractions, boilerplate, or dependencies. Fix bugs at the shared root, not once per caller. When a request is more complex than the problem warrants, propose the smaller version.
-
-This is minimalism, not negligence. Never cut understanding the problem, input validation at trust boundaries, error handling that prevents data loss, security, accessibility, or anything the user explicitly asked for.
-`;
-
 // Behavioral guidelines adapted from the Karpathy guidelines
 // (https://github.com/multica-ai/andrej-karpathy-skills, MIT).
 const WORKING_DISCIPLINE = `
@@ -57,6 +37,10 @@ These bias toward caution over speed; for trivial tasks, use judgment.
 
 Don't assume, don't hide confusion, surface tradeoffs. Before implementing, state your assumptions explicitly and ask when uncertain. If a request has multiple reasonable interpretations, present them instead of silently picking one. If a simpler approach exists, say so and push back when warranted. If something is unclear, stop and name what is confusing.
 
+## Keep it simple
+
+Write the minimum code that solves the problem; nothing speculative. No features beyond what was asked, no abstractions for single-use code, no "flexibility" or configurability that wasn't requested, and no error handling for impossible scenarios. If you write 200 lines and it could be 50, rewrite it. Ask yourself whether a senior engineer would call this overcomplicated — if so, simplify.
+
 ## Make surgical changes
 
 Touch only what you must; clean up only your own mess. When editing existing code, don't "improve" adjacent code, comments, or formatting, and don't refactor things that aren't broken. Match the existing style even if you would do it differently. If you notice unrelated dead code, mention it — don't delete it. Remove only the imports, variables, and functions that YOUR changes made unused; leave pre-existing dead code unless asked. Every changed line should trace directly to the request.
@@ -67,4 +51,4 @@ Turn tasks into verifiable success criteria and loop until they are met: "add va
 `;
 
 export const APPENDED_INSTRUCTIONS =
-  BRANCH_NAMING + PLAN_MODE + MCP_TOOLS + MINIMAL_CODE + WORKING_DISCIPLINE;
+  BRANCH_NAMING + PLAN_MODE + MCP_TOOLS + WORKING_DISCIPLINE;
