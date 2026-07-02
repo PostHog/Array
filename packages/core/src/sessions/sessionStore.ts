@@ -69,10 +69,16 @@ export const sessionStoreSetters = {
 
   updateSession: (taskRunId: string, updates: Partial<AgentSession>) => {
     sessionStore.setState((state) => {
-      if (state.sessions[taskRunId]) {
-        Object.assign(state.sessions[taskRunId], updates);
+      const session = state.sessions[taskRunId];
+      if (session) {
+        Object.assign(session, updates);
         if (updates.events) {
-          trimSessionEvents(state.sessions[taskRunId]);
+          // A wholesale replacement starts a new stream snapshot, so a stale
+          // head-trim offset from the previous array must not carry over.
+          if (updates.trimmedEventCount === undefined) {
+            session.trimmedEventCount = 0;
+          }
+          trimSessionEvents(session);
         }
       }
     });
@@ -109,6 +115,7 @@ export const sessionStoreSetters = {
       if (session && session.events.length > 0) {
         session.events = [];
         session.processedLineCount = 0;
+        session.trimmedEventCount = 0;
       }
     });
   },
@@ -128,6 +135,8 @@ export const sessionStoreSetters = {
         for (const event of events) Object.freeze(event);
         session.events = events;
         session.processedLineCount = lineCount;
+        session.trimmedEventCount = 0;
+        trimSessionEvents(session);
       }
     });
   },

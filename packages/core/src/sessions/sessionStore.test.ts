@@ -120,4 +120,41 @@ describe("sessionStore event cap", () => {
     expect(session.events).toHaveLength(10);
     expect(session.trimmedEventCount ?? 0).toBe(0);
   });
+
+  it("resets the trim offset when updateSession replaces the stream", () => {
+    sessionStoreSetters.appendEvents("run-1", events(MAX_SESSION_EVENTS + 40));
+    expect(sessionStore.getState().sessions["run-1"].trimmedEventCount).toBe(
+      40,
+    );
+
+    sessionStoreSetters.updateSession("run-1", { events: events(10) });
+
+    const session = sessionStore.getState().sessions["run-1"];
+    expect(session.events).toHaveLength(10);
+    expect(session.trimmedEventCount).toBe(0);
+  });
+
+  it("caps rehydrated histories in restoreEvents and restarts the offset", () => {
+    sessionStoreSetters.appendEvents("run-1", events(MAX_SESSION_EVENTS + 40));
+
+    sessionStoreSetters.restoreEvents(
+      "run-1",
+      events(MAX_SESSION_EVENTS + 7),
+      MAX_SESSION_EVENTS + 7,
+    );
+
+    const session = sessionStore.getState().sessions["run-1"];
+    expect(session.events).toHaveLength(MAX_SESSION_EVENTS);
+    expect(session.trimmedEventCount).toBe(7);
+  });
+
+  it("clears the trim offset when a transcript is evicted", () => {
+    sessionStoreSetters.appendEvents("run-1", events(MAX_SESSION_EVENTS + 5));
+
+    sessionStoreSetters.evictEvents("run-1");
+
+    const session = sessionStore.getState().sessions["run-1"];
+    expect(session.events).toHaveLength(0);
+    expect(session.trimmedEventCount).toBe(0);
+  });
 });
