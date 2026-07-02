@@ -114,7 +114,9 @@ describe("UnifiedModelSelector", () => {
     renderSelector({ onAdapterChange });
 
     await user.click(screen.getByRole("button", { name: "Model" }));
-    await user.click(await screen.findByText("Switch to Claude"));
+    await user.click(
+      await screen.findByRole("menuitem", { name: /switch to claude/i }),
+    );
 
     expect(onAdapterChange).toHaveBeenCalledExactlyOnceWith("claude");
   });
