@@ -13,10 +13,10 @@ import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
 import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
+import { useSidebarTasks } from "@posthog/ui/features/sidebar/useSidebarTasks";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
-import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import { DotsCircleSpinner } from "@posthog/ui/primitives/DotsCircleSpinner";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -43,13 +43,10 @@ function SidebarMenuComponent() {
   const archiveCacheKeys = useArchiveCacheKeys();
   const view = useAppView();
 
-  // Must mirror useSidebarData's filters so taskMap covers every rendered
-  // task — otherwise handleTaskClick silently bails for tasks not in the map.
-  const showAllUsers = useSidebarStore((s) => s.showAllUsers);
-  const { data: allTasks = [] } = useTasks({
-    showAllUsers,
-    originProduct: "user_created",
-  });
+  // Shares useSidebarData's task source (useSidebarTasks), so taskMap covers
+  // every rendered task — otherwise handleTaskClick silently bails for tasks
+  // not in the map.
+  const { tasks: allTasks } = useSidebarTasks();
 
   const { data: workspaces = {} } = useWorkspaces();
   const { markAsViewed } = useTaskViewed();

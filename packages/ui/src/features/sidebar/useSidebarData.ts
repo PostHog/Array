@@ -18,17 +18,18 @@ import { useEffect, useMemo, useRef } from "react";
 import { useArchivedTaskIds } from "../archive/useArchivedTaskIds";
 import { useProvisioningStore } from "../provisioning/store";
 import { useSuspendedTaskIds } from "../suspension/useSuspendedTaskIds";
-import { useTasks } from "../tasks/useTasks";
 import { useWorkspaces } from "../workspace/useWorkspace";
 import { useSidebarStore } from "./sidebarStore";
 import { usePinnedTasks } from "./usePinnedTasks";
 import { useSidebarSessionMap } from "./useSidebarSessionMap";
+import { useSidebarTasks } from "./useSidebarTasks";
 import { useTaskViewed } from "./useTaskViewed";
 
 export type { SidebarData, TaskData, TaskGroup };
 
-// The sidebar only lists user-created tasks, so no task ever carries slack
-// origin metadata here. Stable empty references keep `deriveTaskData` memoized.
+// Slack thread metadata rides on each task's own `origin_product`/state (see
+// `narrowFullTask`), so the sidebar doesn't need a supplementary slack-task
+// lookup. Stable empty references keep `deriveTaskData` memoized.
 const EMPTY_TASK_IDS: ReadonlySet<string> = new Set();
 const EMPTY_THREAD_URLS: ReadonlyMap<string, string> = new Map();
 
@@ -41,6 +42,7 @@ export function useSidebarData({
 }: UseSidebarDataProps): SidebarData {
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
   const { data: workspaces, isFetched: isWorkspacesFetched } = useWorkspaces();
+  const { tasks: fullTasks, isLoading: isTasksLoading } = useSidebarTasks();
   const archivedTaskIds = useArchivedTaskIds();
   const suspendedTaskIds = useSuspendedTaskIds();
   const provisioningTaskIds = useProvisioningStore((s) => s.activeTasks);
@@ -53,14 +55,6 @@ export function useSidebarData({
   const organizeMode = useSidebarStore((state) => state.organizeMode);
   const sortMode = useSidebarStore((state) => state.sortMode);
   const folderOrder = useSidebarStore((state) => state.folderOrder);
-
-  // The sidebar only ever lists user-created tasks. Tasks from other origins —
-  // signals, slack, support queue, session summaries, etc. — are deliberately
-  // excluded so agent-provisioned work never shows up in a user's task list.
-  const { data: fullTasks = [], isLoading: isTasksLoading } = useTasks({
-    showAllUsers,
-    originProduct: "user_created",
-  });
 
   const rawTasks = useMemo<SidebarTask[]>(
     () => fullTasks.map((t) => narrowFullTask(t as FullTask)),
