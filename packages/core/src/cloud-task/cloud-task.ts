@@ -426,6 +426,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.lastEventId = null;
     watcher.lastEventIdLeg = null;
     watcher.streamLeg = null;
+    // The rebuild re-resolves the read leg, so a retained id could false-match a
+    // different entry on the next connection — and the leg-switch clear in
+    // connectSse can't catch it, since lastEventId was just nulled. The re-fetched
+    // snapshot re-delivers history, so no dedup state is lost.
+    watcher.seenEventIds.clear();
     watcher.totalEntryCount = 0;
     watcher.isBootstrapping = false;
     watcher.streamTargetResolved = false;
