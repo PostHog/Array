@@ -92,19 +92,19 @@ describe("buildSessionOptions", () => {
     expect(options.agents?.["ph-explore"]).toEqual(override);
   });
 
-  it("defaults fallbackModel so refusals and overloads retry on another model", () => {
-    const options = buildSessionOptions(makeParams());
+  it.each([
+    ["a new session", () => makeParams()],
+    ["a resumed session", () => ({ ...makeParams(), isResume: true })],
+  ])(
+    "defaults fallbackModel on %s so refusals and overloads retry on another model",
+    (_label, params) => {
+      const options = buildSessionOptions(params());
 
-    expect(options.fallbackModel).toBe("claude-opus-4-8");
-    // The SDK throws at spawn when fallbackModel equals Options.model.
-    expect(options.fallbackModel).not.toBe(options.model);
-  });
-
-  it("defaults fallbackModel on resumed sessions", () => {
-    const options = buildSessionOptions({ ...makeParams(), isResume: true });
-
-    expect(options.fallbackModel).toBe("claude-opus-4-8");
-  });
+      expect(options.fallbackModel).toBe("claude-opus-4-8");
+      // The SDK throws at spawn when fallbackModel equals Options.model.
+      expect(options.fallbackModel).not.toBe(options.model);
+    },
+  );
 
   it("preserves a caller-provided fallbackModel", () => {
     const options = buildSessionOptions({
