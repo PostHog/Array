@@ -55,6 +55,22 @@ describe("LocalLogsService.readLocalLogsTail", () => {
     expect(tailLines.length).toBeLessThan(lines.length);
   });
 
+  it("keeps the whole first line when the window starts on a line boundary", async () => {
+    fs.writeFileSync(logPath(), "aaaa\nbbbb\ncccc\n");
+
+    const res = await new LocalLogsService().readLocalLogsTail(RUN, 10);
+
+    expect(res).toEqual({ content: "bbbb\ncccc\n", truncated: true });
+  });
+
+  it("returns empty content when a single line exceeds maxBytes", async () => {
+    fs.writeFileSync(logPath(), `{"pad":"${"x".repeat(500)}"}\n`);
+
+    const res = await new LocalLogsService().readLocalLogsTail(RUN, 100);
+
+    expect(res).toEqual({ content: "", truncated: true });
+  });
+
   it("returns null when the log doesn't exist", async () => {
     expect(
       await new LocalLogsService().readLocalLogsTail("missing", 1000),

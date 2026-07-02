@@ -67,22 +67,24 @@ export class LocalLogsService implements ILogsService {
       }
       const handle = await fs.promises.open(logPath, "r");
       try {
-        const start = stat.size - maxBytes;
-        const buf = Buffer.alloc(maxBytes);
-        const { bytesRead } = await handle.read(buf, 0, maxBytes, start);
-        const raw = buf.toString("utf-8", 0, bytesRead);
-        // We began mid-file, so the first line is a fragment (and may start
-        // with a broken multi-byte char) — drop everything up to the first
-        // newline so only whole ndjson lines remain.
+        // Read one extra byte before the window: a newline there means the
+        // window already starts on a whole line. Otherwise the first line is
+        // a fragment (and may start with a broken multi-byte char) — drop
+        // everything up to the first newline so only whole ndjson lines
+        // remain.
+        const start = stat.size - maxBytes - 1;
+        const buf = Buffer.alloc(maxBytes + 1);
+        const { bytesRead } = await handle.read(buf, 0, maxBytes + 1, start);
+        const raw = buf.toString("utf-8", 1, bytesRead);
+        if (buf[0] === 0x0a) {
+          return { content: raw, truncated: true };
+        }
         const nl = raw.indexOf("\n");
         return { content: nl >= 0 ? raw.slice(nl + 1) : "", truncated: true };
       } finally {
         await handle.close();
       }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return null;
-      }
+    } catch {
       return null;
     }
   }
