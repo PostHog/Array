@@ -313,6 +313,41 @@ describe("createIncrementalConversationBuilder", () => {
     );
   });
 
+  // The idle call arrives with trailing events the builder hasn't seen, so the
+  // finalize-in-place catch-up loop must process them before finalizing.
+  it("catches up trailing events that arrive with the idle flip", () => {
+    const events = SCENARIOS["multi-turn with tools"];
+    const inc = createIncrementalConversationBuilder();
+    const streamedPrefix = 7; // through promptResponseMsg(7, 1)
+
+    for (let k = 1; k <= streamedPrefix; k++) {
+      inc.update(events.slice(0, k), true);
+    }
+
+    expect(normalize(inc.update(events, false))).toEqual(
+      normalize(buildConversationItems(events, false)),
+    );
+  });
+
+  // A full rebuild sorts by ts while the incremental builder processed arrival
+  // order, so out-of-order events must reject finalize-in-place and fall back.
+  it("falls back to a full rebuild on out-of-order timestamps at idle", () => {
+    const events = [
+      userPromptMsg(1, 1, "hello"),
+      agentChunk(5, "later "),
+      agentChunk(3, "earlier "),
+      promptResponseMsg(6, 1),
+    ];
+    const inc = createIncrementalConversationBuilder();
+    for (let k = 1; k <= events.length; k++) {
+      inc.update(events.slice(0, k), true);
+    }
+
+    expect(normalize(inc.update(events, false))).toEqual(
+      normalize(buildConversationItems(events, false)),
+    );
+  });
+
   it("keeps completed-turn item references stable while the active turn streams", () => {
     const inc = createIncrementalConversationBuilder();
     const base = [
