@@ -104,6 +104,14 @@ export interface ITaskCreationHost {
     prompt: string | ContentBlock[],
     filePaths?: string[],
   ): CloudPromptTransport;
+  /**
+   * Rewrite a leading local-skill slash command (e.g. `/my-skill args`) into a
+   * `<skill .../>` tag so its bundle is uploaded on the first cloud message.
+   * Returns the prompt unchanged when it isn't a local-skill invocation. The
+   * follow-up message path already does this; the initial-creation path must
+   * too, or a typed `/my-skill` reaches the sandbox with no bundle attached.
+   */
+  resolveLocalSkillCommandPrompt(prompt: string): Promise<string>;
   uploadRunAttachments(
     client: TaskCreationApiClient,
     taskId: string,

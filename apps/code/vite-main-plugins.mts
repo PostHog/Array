@@ -119,6 +119,11 @@ function detectBinaryArch(
   return null;
 }
 
+function isStagedCopyCurrent(source: string, dest: string): boolean {
+  if (!existsSync(dest)) return false;
+  return statSync(dest).mtimeMs >= statSync(source).mtimeMs;
+}
+
 function signClaudeBinary(destPath: string): void {
   if (targetPlatform() !== "darwin") return;
   if (process.platform !== "darwin") {
@@ -193,6 +198,11 @@ export function copyClaudeExecutable(): Plugin {
           `[copy-claude-executable] FAILED to find native Claude binary for ${targetPlatform()}-${targetArch()}. Agent execution may fail.`,
         );
         console.warn(`Checked paths:\n  ${packageCandidates.join("\n  ")}`);
+        return;
+      }
+
+      if (isStagedCopyCurrent(source, destBinary)) {
+        claudeCliCopied = true;
         return;
       }
 
@@ -569,6 +579,11 @@ export function copyCodexAcpBinaries(): Plugin {
 
         if (existsSync(sourcePath)) {
           const destPath = join(destDir, binaryName);
+
+          if (isStagedCopyCurrent(sourcePath, destPath)) {
+            continue;
+          }
+
           copyFileSync(sourcePath, destPath);
           console.log(`Copied ${binary.name} binary to ${destDir}`);
 

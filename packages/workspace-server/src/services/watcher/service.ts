@@ -10,6 +10,19 @@ export type WatchOptions = {
 };
 
 const IGNORE_PATTERNS = ["**/node_modules/**", "**/.git/**", "**/.jj/**"];
+
+// Ignore patterns for the git-dir watches. Linked worktrees share the main
+// repo's `.git` as their `commondir`, so every worktree's commondir watch sees
+// the whole `.git/worktrees/` admin subtree — including sibling worktrees'
+// HEAD/index files. Without this, creating or mutating one worktree wakes every
+// other worktree's watcher (each firing a branch re-check + renderer
+// invalidation), so the per-event cost grows linearly with the number of
+// worktrees. A worktree's own admin dir is watched directly as its `gitDir`
+// (rooted inside `worktrees/<name>`, where this pattern matches nothing), so
+// excluding the subtree from the commondir watch drops only cross-worktree
+// noise; shared refs (`refs/heads`, `packed-refs`) live outside `worktrees/`
+// and are still observed.
+const GIT_IGNORE_PATTERNS = ["**/worktrees/**"];
 const DEBOUNCE_MS = 500;
 const BULK_THRESHOLD = 100;
 
@@ -202,7 +215,11 @@ export class WatcherService {
     for (const dir of gitDirs) {
       gitLoops.push(
         (async () => {
-          for await (const batch of this.watch(dir, {}, signal)) {
+          for await (const batch of this.watch(
+            dir,
+            { ignore: GIT_IGNORE_PATTERNS },
+            signal,
+          )) {
             if (batch.some((e) => isRelevantGitEvent(e.path))) {
               pushOut([{ kind: "git-state-changed", repoPath }]);
             }

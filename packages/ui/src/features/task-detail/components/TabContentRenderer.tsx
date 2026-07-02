@@ -1,7 +1,9 @@
 import type { Task } from "@posthog/shared/domain-types";
 import { CodeEditorPanel } from "../../code-editor/components/CodeEditorPanel";
-import { CloudReviewPage } from "../../code-review/components/CloudReviewPage";
-import { ReviewPage } from "../../code-review/components/ReviewPage";
+import {
+  LazyCloudReviewPage as CloudReviewPage,
+  LazyReviewPage as ReviewPage,
+} from "../../code-review/components/LazyReviewPages";
 import type { Tab } from "../../panels/panelTypes";
 import { useIsWorkspaceCloudRun } from "../../workspace/useWorkspace";
 import { ActionPanel } from "./ActionPanel";

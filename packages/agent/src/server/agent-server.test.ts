@@ -1372,6 +1372,109 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
+  describe("resume prompt display", () => {
+    it("hides synthetic resume context while keeping the pending user message visible", async () => {
+      const s = createServer() as unknown as {
+        resumeState: ResumeState | null;
+        session: {
+          payload: JwtPayload;
+          acpSessionId: string;
+          clientConnection: {
+            prompt: ReturnType<typeof vi.fn>;
+          };
+          logWriter: {
+            resetTurnMessages: ReturnType<typeof vi.fn>;
+            appendRawLine: ReturnType<typeof vi.fn>;
+            flushAll: ReturnType<typeof vi.fn>;
+          };
+          sseController: null;
+          deviceInfo: { type: "cloud"; name: string };
+          permissionMode: PermissionMode;
+          hasDesktopConnected: boolean;
+        };
+        sendResumeMessage(
+          payload: JwtPayload,
+          taskRun: TaskRun | null,
+        ): Promise<void>;
+      };
+      const payload: JwtPayload = {
+        run_id: "test-run-id",
+        task_id: "test-task-id",
+        team_id: 1,
+        user_id: 1,
+        distinct_id: "test-distinct-id",
+        mode: "interactive",
+      };
+      const prompt = vi.fn(async () => ({ stopReason: "cancelled" }));
+      s.session = {
+        payload,
+        acpSessionId: "acp-session",
+        clientConnection: { prompt },
+        logWriter: {
+          resetTurnMessages: vi.fn(),
+          appendRawLine: vi.fn(),
+          flushAll: vi.fn(),
+        },
+        sseController: null,
+        deviceInfo: { type: "cloud", name: "test-sandbox" },
+        permissionMode: "bypassPermissions",
+        hasDesktopConnected: false,
+      };
+      s.resumeState = {
+        conversation: [
+          { role: "user", content: [{ type: "text", text: "old request" }] },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "old answer" }],
+          },
+        ],
+        latestGitCheckpoint: null,
+        interrupted: false,
+        logEntryCount: 2,
+        sessionId: "prior-session",
+      };
+
+      await s.sendResumeMessage(
+        payload,
+        createTaskRun({
+          id: "test-run-id",
+          task: "test-task-id",
+          state: {
+            pending_user_message: "visible follow-up",
+            pending_user_message_ts: "123.456",
+          },
+        }),
+      );
+
+      const [{ prompt: promptBlocks }] = prompt.mock.calls[0] as unknown as [
+        { prompt: ContentBlock[] },
+      ];
+      const visibleText = promptBlocks
+        .filter(
+          (block) =>
+            block.type === "text" &&
+            !(
+              (block as { _meta?: { ui?: { hidden?: boolean } } })._meta?.ui
+                ?.hidden === true
+            ),
+        )
+        .map((block) => (block as { text: string }).text);
+
+      expect(promptBlocks[0]).toMatchObject({
+        type: "text",
+        _meta: { ui: { hidden: true } },
+      });
+      expect((promptBlocks[0] as { text: string }).text).toContain(
+        "You are resuming a previous conversation",
+      );
+      expect(visibleText).toEqual(["visible follow-up"]);
+      expect(promptBlocks.at(-1)).toMatchObject({
+        type: "text",
+        _meta: { ui: { hidden: true } },
+      });
+    });
+  });
+
   describe("runtime adapter selection", () => {
     it("defaults to claude when no runtime adapter is configured", () => {
       const s = createServer();

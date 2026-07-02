@@ -32,6 +32,7 @@ import type { LlmMessage } from "@posthog/core/llm-gateway/schemas";
 import {
   CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
   CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
+  CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES,
 } from "@posthog/core/sessions/cloudArtifactIdentifiers";
 import {
   LOCAL_HANDOFF_DIALOG,
@@ -392,6 +393,11 @@ container
   .bind(CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL)
   .toConstantValue((skillBundleRef) =>
     hostTrpcClient.skills.bundleLocal.query(skillBundleRef),
+  );
+container
+  .bind(CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES)
+  .toConstantValue((skillBundleRefs) =>
+    hostTrpcClient.skills.resolveDependencies.query(skillBundleRefs),
   );
 container.bind(LLM_GATEWAY_SERVICE).toConstantValue({
   prompt: (

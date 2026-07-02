@@ -4,13 +4,17 @@ import {
   Desktop,
   Folder,
   GitFork,
+  Lightning,
   Plus,
   X,
 } from "@phosphor-icons/react";
-import type { WorkspaceMode } from "@posthog/shared";
+import { isBrainrotCell } from "@posthog/core/command-center/grid";
+import { ANALYTICS_EVENTS, type WorkspaceMode } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { openTask } from "@posthog/ui/router/useOpenTask";
-import { Flex, Text } from "@radix-ui/themes";
+import { track } from "@posthog/ui/shell/analytics";
+import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCloudPrUrl } from "../../git-interaction/useCloudPrUrl";
 import { useDraftStore } from "../../message-editor/draftStore";
@@ -23,6 +27,7 @@ import type {
   CellStatus,
   CommandCenterCellData,
 } from "../hooks/useCommandCenterData";
+import { useElementOrientation } from "../hooks/useElementOrientation";
 import { CommandCenterPRButton } from "./CommandCenterPRButton";
 import { TaskSelector } from "./TaskSelector";
 
@@ -103,11 +108,23 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
     s.creatingCells.includes(cellIndex),
   );
   const assignTask = useCommandCenterStore((s) => s.assignTask);
+  const setBrainrotCell = useCommandCenterStore((s) => s.setBrainrotCell);
   const startCreating = useCommandCenterStore((s) => s.startCreating);
   const stopCreating = useCommandCenterStore((s) => s.stopCreating);
+  const layout = useCommandCenterStore((s) => s.layout);
+  const cells = useCommandCenterStore((s) => s.cells);
+  const brainrotMode = useSettingsStore((s) => s.brainrotMode);
   const clearDraft = useDraftStore((s) => s.actions.setDraft);
 
   const sessionId = getCellSessionId(cellIndex);
+
+  const handleBrainrot = useCallback(() => {
+    track(ANALYTICS_EVENTS.BRAINROT_ACTIVATED, {
+      layout,
+      filled_cells: cells.filter((c) => c && !isBrainrotCell(c)).length,
+    });
+    setBrainrotCell(cellIndex);
+  }, [layout, cells, setBrainrotCell, cellIndex]);
 
   const handleTaskCreated = useCallback(
     (task: Task) => {
@@ -167,6 +184,7 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
           open={selectorOpen}
           onOpenChange={setSelectorOpen}
           onNewTask={() => startCreating(cellIndex)}
+          onBrainrot={brainrotMode ? handleBrainrot : undefined}
         >
           <button
             type="button"
@@ -181,6 +199,67 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
           or drag a task from the sidebar
         </Text>
       </Flex>
+    </Flex>
+  );
+}
+
+const BRAINROT_LANDSCAPE_URL =
+  "https://res.cloudinary.com/dmukukwp6/video/upload/brainrot_landscape_051f419306.mp4";
+const BRAINROT_PORTRAIT_URL =
+  "https://res.cloudinary.com/dmukukwp6/video/upload/brainrot_portrait_0f14096e6a.mp4";
+
+function BrainrotCell({ cellIndex }: { cellIndex: number }) {
+  const removeTask = useCommandCenterStore((s) => s.removeTask);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const orientation = useElementOrientation(stageRef);
+  const src =
+    orientation === "portrait" ? BRAINROT_PORTRAIT_URL : BRAINROT_LANDSCAPE_URL;
+  const [loading, setLoading] = useState(true);
+
+  return (
+    <Flex direction="column" height="100%">
+      <Flex
+        align="center"
+        gap="2"
+        px="2"
+        py="1"
+        className="shrink-0 border-gray-6 border-b"
+      >
+        <Lightning size={12} weight="fill" className="shrink-0 text-amber-9" />
+        <Text className="min-w-0 flex-1 truncate font-medium text-[12px]">
+          Brainrot
+        </Text>
+        <button
+          type="button"
+          onClick={() => removeTask(cellIndex)}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+          title="Remove from grid"
+        >
+          <X size={12} />
+        </button>
+      </Flex>
+      <div
+        ref={stageRef}
+        className="relative min-h-0 flex-1 overflow-hidden bg-black"
+      >
+        <video
+          key={orientation}
+          src={src}
+          aria-label="Brainrot"
+          autoPlay
+          loop
+          muted
+          playsInline
+          onLoadStart={() => setLoading(true)}
+          onCanPlay={() => setLoading(false)}
+          className="h-full w-full object-contain"
+        />
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center text-gray-11">
+            <Spinner size="3" />
+          </div>
+        )}
+      </div>
     </Flex>
   );
 }
@@ -263,6 +342,10 @@ export function CommandCenterPanel({
   cell,
   isActiveSession,
 }: CommandCenterPanelProps) {
+  if (cell.isBrainrot) {
+    return <BrainrotCell cellIndex={cell.cellIndex} />;
+  }
+
   if (!cell.taskId || !cell.task) {
     return <EmptyCell cellIndex={cell.cellIndex} />;
   }

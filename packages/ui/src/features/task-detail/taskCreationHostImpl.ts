@@ -29,6 +29,7 @@ import { injectable } from "inversify";
 import { track } from "../../shell/analytics";
 import { getAuthenticatedClient } from "../auth/authClientImperative";
 import { assertCloudUsageAvailable } from "../billing/preflightCloudUsage";
+import { resolveLocalSkillPrompt } from "../message-editor/commands";
 import { DEFAULT_PANEL_IDS } from "../panels/panelConstants";
 import { usePanelLayoutStore } from "../panels/panelLayoutStore";
 import { useProvisioningStore } from "../provisioning/store";
@@ -144,6 +145,14 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
     filePaths?: string[],
   ): CloudPromptTransport {
     return getCloudPromptTransport(prompt, filePaths);
+  }
+
+  async resolveLocalSkillCommandPrompt(prompt: string): Promise<string> {
+    return (
+      (await resolveLocalSkillPrompt(prompt, () =>
+        hostClient().skills.list.query(),
+      )) ?? prompt
+    );
   }
 
   uploadRunAttachments(

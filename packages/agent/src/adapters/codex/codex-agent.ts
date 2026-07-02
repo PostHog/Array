@@ -73,6 +73,7 @@ import {
   estimateTokens,
 } from "../claude/context-breakdown";
 import { classifyAgentError } from "../error-classification";
+import { isLocalSkillCommandChunk } from "../local-skill";
 import {
   enabledLocalTools,
   LOCAL_TOOLS_MCP_NAME,
@@ -165,6 +166,52 @@ function prependPrContext(params: PromptRequest): PromptRequest {
   return {
     ...params,
     prompt: [{ type: "text", text: prContext }, ...params.prompt],
+  };
+}
+
+/**
+ * Apply an installed local-skill invocation for codex. Claude consumes
+ * `_meta.localSkillContext` in `promptToClaude`; codex has no such seam, so
+ * without this the resolved skill instructions are dropped and the bare
+ * `/<skill>` slash command reaches codex-acp, which rejects it as an unknown
+ * command ("Internal error"). Mirror Claude: drop the leading `/<skill>` chunk
+ * (the context already carries the user's args), prepend the skill
+ * instructions as text, and strip the local-skill `_meta` before forwarding.
+ */
+function prependLocalSkillContext(params: PromptRequest): PromptRequest {
+  const meta = params._meta as Record<string, unknown> | undefined;
+  const localSkillContext = meta?.localSkillContext;
+  if (typeof localSkillContext !== "string" || localSkillContext.length === 0) {
+    return params;
+  }
+  const localSkillName =
+    typeof meta?.localSkillName === "string" ? meta.localSkillName : null;
+  // The agent-server always sets `localSkillContext` and `localSkillName`
+  // together. Without the name we can't identify the `/skill` chunk to drop, so
+  // injecting the context while leaving the bare command in place would forward
+  // exactly what codex-acp rejects — bail out rather than emit that broken mix.
+  if (!localSkillName) {
+    return params;
+  }
+
+  let skipped = false;
+  const rest = params.prompt.filter((chunk) => {
+    if (!skipped && isLocalSkillCommandChunk(chunk, localSkillName)) {
+      skipped = true;
+      return false;
+    }
+    return true;
+  });
+
+  const {
+    localSkillContext: _ctx,
+    localSkillName: _name,
+    ...restMeta
+  } = meta ?? {};
+  return {
+    ...params,
+    prompt: [{ type: "text", text: localSkillContext }, ...rest],
+    _meta: restMeta,
   };
 }
 
@@ -762,7 +809,9 @@ export class CodexAcpAgent extends BaseAcpAgent {
     this.session.promptRunning = true;
     let response: PromptResponse;
     try {
-      response = await this.codexConnection.prompt(prependPrContext(params));
+      response = await this.codexConnection.prompt(
+        prependPrContext(prependLocalSkillContext(params)),
+      );
     } catch (error) {
       throw classifyPromptError(error);
     } finally {

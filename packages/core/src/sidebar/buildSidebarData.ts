@@ -88,6 +88,29 @@ export interface TaskSession {
   cloudOutput?: { pr_url?: unknown } | null;
 }
 
+/**
+ * A primitive signature of just the session fields the sidebar renders (see
+ * {@link deriveTaskData}). The sidebar subscribes to this instead of the whole
+ * sessions record, so it doesn't rebuild on every streamed event — only when a
+ * field it actually reads changes. It deliberately ignores `events`.
+ */
+export function computeSidebarSessionSignature(
+  sessions: Record<string, TaskSession & { taskId?: string }>,
+): string {
+  let signature = "";
+  for (const session of Object.values(sessions)) {
+    if (!session.taskId) continue;
+    const prUrl =
+      typeof session.cloudOutput?.pr_url === "string"
+        ? session.cloudOutput.pr_url
+        : "";
+    signature += `${session.taskId}:${session.isPromptPending ? 1 : 0}:${
+      session.pendingPermissions?.size ?? 0
+    }:${session.cloudStatus ?? ""}:${prUrl};`;
+  }
+  return signature;
+}
+
 export interface TaskWorkspace {
   folderId?: string | null;
   folderPath?: string | null;

@@ -55,6 +55,18 @@ describe("formatGatewayModelName", () => {
     ).toBe("gpt-5.5");
   });
 
+  it("formats Cloudflare models as the lowercase final path segment", () => {
+    expect(
+      formatGatewayModelName({
+        id: "@cf/zai-org/glm-5.2",
+        owned_by: "cloudflare",
+        context_window: 128000,
+        supports_streaming: true,
+        supports_vision: false,
+      }),
+    ).toBe("glm-5.2");
+  });
+
   it("blocks deprecated Claude gateway models", () => {
     expect(isBlockedModelId("claude-opus-4-5")).toBe(true);
     expect(isBlockedModelId("claude-opus-4-6")).toBe(true);

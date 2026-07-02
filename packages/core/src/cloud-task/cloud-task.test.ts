@@ -340,6 +340,75 @@ describe("CloudTaskService", () => {
     );
   });
 
+  it("emits sandbox liveness from run detail when retrying a live watcher", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    mockNetFetch
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          state: { sandbox_alive: true },
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse([], 200, { "X-Has-More": "false" }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          state: { sandbox_alive: false },
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:01:00Z",
+        }),
+      );
+
+    mockStreamFetch
+      .mockResolvedValueOnce(createOpenSseResponse(""))
+      .mockResolvedValueOnce(createOpenSseResponse(""));
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() =>
+      updates.some(
+        (update) =>
+          typeof update === "object" &&
+          update !== null &&
+          (update as { kind?: string; sandboxAlive?: boolean }).kind ===
+            "snapshot" &&
+          (update as { sandboxAlive?: boolean }).sandboxAlive === true,
+      ),
+    );
+
+    await service.retry("task-1", "run-1");
+
+    await waitFor(() =>
+      updates.some(
+        (update) =>
+          typeof update === "object" &&
+          update !== null &&
+          (update as { kind?: string; sandboxAlive?: boolean }).kind ===
+            "status" &&
+          (update as { sandboxAlive?: boolean }).sandboxAlive === false,
+      ),
+    );
+  });
+
   it("replays a current snapshot when a subscriber attaches to an existing watcher", async () => {
     const updates: unknown[] = [];
     service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));

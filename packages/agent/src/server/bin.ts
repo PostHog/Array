@@ -43,6 +43,10 @@ const envSchema = z.object({
     )
     .transform((value) => parseInt(value, 10))
     .optional(),
+  POSTHOG_TASK_RUN_EVENT_INGEST_KEEP_STREAM_OPEN: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
 });
 
 const program = new Command();
@@ -167,6 +171,8 @@ program
       eventIngestBaseUrl: env.POSTHOG_TASK_RUN_EVENT_INGEST_URL,
       eventIngestStreamWindowMs:
         env.POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS,
+      eventIngestKeepStreamOpen:
+        env.POSTHOG_TASK_RUN_EVENT_INGEST_KEEP_STREAM_OPEN,
       repositoryPath: options.repositoryPath,
       repoReadyFile: options.repoReadyFile,
       apiUrl: env.POSTHOG_API_URL,
