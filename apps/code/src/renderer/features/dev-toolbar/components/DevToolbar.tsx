@@ -22,7 +22,10 @@ import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingSt
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { useSetupStore } from "@posthog/ui/features/setup/setupStore";
 import { useTourStore } from "@posthog/ui/features/tour/tourStore";
-import { RouterDevtoolsPanel } from "@posthog/ui/router/RouterDevtoolsPanel";
+import {
+  RouterDevtools,
+  toggleRouterDevtools,
+} from "@posthog/ui/router/RouterDevtools";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import { clearApplicationStorage } from "@posthog/ui/utils/clearStorage";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
@@ -87,10 +90,6 @@ export function DevToolbar() {
 
   const [openPanel, setOpenPanel] = useState<DetailPanel>(null);
   const [panelHeight, setPanelHeight] = useState(480);
-  // The router devtools open in their own standalone box (as they did from the
-  // old floating trigger), not in the shared metric-panel chrome above.
-  const [routerDevtoolsOpen, setRouterDevtoolsOpen] = useState(false);
-  const [routerBoxHeight, setRouterBoxHeight] = useState(500);
 
   if (!devMode) return null;
 
@@ -109,13 +108,7 @@ export function DevToolbar() {
           onResize={setPanelHeight}
         />
       )}
-      {routerDevtoolsOpen && (
-        <RouterDevtoolsBox
-          onClose={() => setRouterDevtoolsOpen(false)}
-          height={routerBoxHeight}
-          onResize={setRouterBoxHeight}
-        />
-      )}
+      <RouterDevtools />
       <Flex
         align="center"
         justify="between"
@@ -131,8 +124,7 @@ export function DevToolbar() {
             onToggleReactScan={() =>
               setReactScanEnabledState(!reactScanEnabled)
             }
-            routerDevtoolsOpen={routerDevtoolsOpen}
-            onToggleRouterDevtools={() => setRouterDevtoolsOpen((v) => !v)}
+            onToggleRouterDevtools={toggleRouterDevtools}
           />
           <Divider />
           <QuickActionsMenu />
@@ -155,7 +147,6 @@ export function DevToolbar() {
               type="button"
               onClick={() => {
                 setOpenPanel(null);
-                setRouterDevtoolsOpen(false);
                 void setDevMode(false);
               }}
               aria-label="Disable dev mode"
@@ -172,42 +163,6 @@ export function DevToolbar() {
 
 function Divider() {
   return <div className="h-3 w-px bg-(--gray-6)" />;
-}
-
-// The router devtools in their own box — a full-width, resizable drawer docked
-// above the toolbar, the same shape the panel had inside the old floating
-// devtools shell. Deliberately not the shared metric-panel chrome: the panel
-// renders its own header, so this is just the drawer container.
-function RouterDevtoolsBox({
-  onClose,
-  height,
-  onResize,
-}: {
-  onClose: () => void;
-  height: number;
-  onResize: (next: number) => void;
-}) {
-  return (
-    <div
-      style={{ height }}
-      className="absolute right-0 bottom-full left-0 z-50 flex flex-col overflow-hidden border-(--gray-6) border-t border-b bg-(--gray-1) shadow-[0_-8px_24px_-8px_rgba(0,0,0,0.3)]"
-    >
-      <ResizeHandle height={height} onResize={onResize} />
-      <Tooltip content="Close router devtools">
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close router devtools"
-          className="absolute top-1 right-1 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md bg-(--gray-2) text-(--gray-11) hover:bg-(--gray-3) hover:text-(--gray-12)"
-        >
-          <X size={14} />
-        </button>
-      </Tooltip>
-      <div className="min-h-0 flex-1">
-        <RouterDevtoolsPanel />
-      </div>
-    </div>
-  );
 }
 
 const PANEL_HEADERS: Record<
@@ -483,14 +438,12 @@ function UserMenu() {
 interface DevGadgetsProps {
   reactScanEnabled: boolean;
   onToggleReactScan: () => void;
-  routerDevtoolsOpen: boolean;
   onToggleRouterDevtools: () => void;
 }
 
 function DevGadgets({
   reactScanEnabled,
   onToggleReactScan,
-  routerDevtoolsOpen,
   onToggleRouterDevtools,
 }: DevGadgetsProps) {
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
@@ -512,17 +465,13 @@ function DevGadgets({
       >
         <Radar size={14} />
       </GadgetButton>
-      {/* Router devtools are DEV-only — the panel's code is stripped from prod
-          builds, so the trigger must be too. */}
+      {/* Router devtools are DEV-only — the overlay's code is stripped from
+          prod builds, so the trigger must be too. */}
       {import.meta.env.DEV && (
         <GadgetButton
-          label={
-            routerDevtoolsOpen
-              ? "Close router devtools"
-              : "Open router devtools"
-          }
+          label="Toggle router devtools"
           onClick={onToggleRouterDevtools}
-          active={routerDevtoolsOpen}
+          active={false}
         >
           <Route size={14} />
         </GadgetButton>

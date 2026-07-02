@@ -74,8 +74,9 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
-// The router devtools are rendered inside the app's dev toolbar (Router panel),
-// not as a standalone floating logo — see RouterDevtoolsPanel.
+// The router devtools render their genuine floating overlay, mounted by the
+// app's dev toolbar with the floating logo hidden so the toolbar owns the
+// trigger — see RouterDevtools.
 
 const log = logger.scope("root-route");
 
