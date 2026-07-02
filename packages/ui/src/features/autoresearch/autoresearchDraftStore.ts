@@ -8,6 +8,10 @@ import { create } from "zustand";
 interface AutoresearchDraftState {
   drafts: Record<string, AutoresearchDraftConfig>;
   setDraft: (sessionId: string, draft: AutoresearchDraftConfig) => void;
+  updateDraft: (
+    sessionId: string,
+    patch: Partial<AutoresearchDraftConfig>,
+  ) => void;
   clearDraft: (sessionId: string) => void;
 }
 
@@ -16,6 +20,14 @@ export const useAutoresearchDraftStore = create<AutoresearchDraftState>(
     drafts: {},
     setDraft: (sessionId, draft) =>
       set((state) => ({ drafts: { ...state.drafts, [sessionId]: draft } })),
+    updateDraft: (sessionId, patch) =>
+      set((state) => {
+        const draft = state.drafts[sessionId];
+        if (!draft) return state;
+        return {
+          drafts: { ...state.drafts, [sessionId]: { ...draft, ...patch } },
+        };
+      }),
     clearDraft: (sessionId) =>
       set((state) => {
         const drafts = { ...state.drafts };

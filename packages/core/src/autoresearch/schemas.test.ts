@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   AUTORESEARCH_MAX_ITERATIONS_LIMIT,
   autoresearchConfigSchema,
+  parseStoredAutoresearchRun,
 } from "./schemas";
 
 const validInput = {
   taskId: "task-1",
-  metricName: "bundle size (kB)",
   direction: "minimize" as const,
   instructions: "Shrink the production bundle.",
 };
@@ -16,21 +16,29 @@ describe("autoresearchConfigSchema", () => {
     const config = autoresearchConfigSchema.parse(validInput);
     expect(config.targetValue).toBeNull();
     expect(config.maxIterations).toBe(10);
-    expect(config.metricName).toBe("bundle size (kB)");
+    expect(config.implementModel).toBeNull();
+    expect(config.measureModel).toBeNull();
   });
 
-  it("trims metric name and instructions", () => {
+  it("trims instructions", () => {
     const config = autoresearchConfigSchema.parse({
       ...validInput,
-      metricName: "  latency p95  ",
       instructions: "  Reduce it.  ",
     });
-    expect(config.metricName).toBe("latency p95");
     expect(config.instructions).toBe("Reduce it.");
   });
 
+  it("accepts stage models", () => {
+    const config = autoresearchConfigSchema.parse({
+      ...validInput,
+      implementModel: "claude-opus-4-8",
+      measureModel: "claude-haiku-4-5",
+    });
+    expect(config.implementModel).toBe("claude-opus-4-8");
+    expect(config.measureModel).toBe("claude-haiku-4-5");
+  });
+
   it.each([
-    ["empty metric name", { ...validInput, metricName: "   " }],
     ["empty instructions", { ...validInput, instructions: "" }],
     ["empty task id", { ...validInput, taskId: "" }],
     ["unknown direction", { ...validInput, direction: "increase" }],
@@ -53,5 +61,49 @@ describe("autoresearchConfigSchema", () => {
     });
     expect(config.targetValue).toBe(150);
     expect(config.maxIterations).toBe(25);
+  });
+});
+
+describe("parseStoredAutoresearchRun", () => {
+  const storedRun = (status: string) =>
+    JSON.stringify({
+      id: "ar-1",
+      config: { ...validInput, targetValue: null, maxIterations: 10 },
+      status,
+      metricName: null,
+      phase: null,
+      iterations: [],
+      startedAt: 1,
+      endedAt: null,
+      endReason: null,
+      interruptedReason: null,
+      lastError: null,
+    });
+
+  it("restores a paused run as-is", () => {
+    const run = parseStoredAutoresearchRun(storedRun("paused"));
+    expect(run?.status).toBe("paused");
+    expect(run?.interruptedReason).toBeNull();
+  });
+
+  it("restores a running run as an app-restart interruption", () => {
+    const run = parseStoredAutoresearchRun(storedRun("running"));
+    expect(run?.status).toBe("interrupted");
+    expect(run?.interruptedReason).toBe("app-restart");
+  });
+
+  it("defaults interruptedReason for blobs persisted before the field existed", () => {
+    const legacy = JSON.parse(storedRun("paused"));
+    delete legacy.interruptedReason;
+    expect(parseStoredAutoresearchRun(JSON.stringify(legacy))?.status).toBe(
+      "paused",
+    );
+  });
+
+  it.each([
+    ["corrupt JSON", "{nope"],
+    ["schema mismatch", JSON.stringify({ id: "ar-1" })],
+  ])("returns null for %s", (_name, data) => {
+    expect(parseStoredAutoresearchRun(data)).toBeNull();
   });
 });

@@ -7,8 +7,8 @@
 import type { AcpMessage } from "@posthog/shared";
 import { isJsonRpcNotification, isJsonRpcRequest } from "@posthog/shared";
 import type {
-  AutoresearchConfig,
   AutoresearchDraftConfig,
+  AutoresearchInterruptionReason,
   AutoresearchReport,
   AutoresearchRun,
 } from "./schemas";
@@ -17,12 +17,18 @@ import { computeBest } from "./stats";
 const REPORT_BLOCK_EXAMPLE = [
   "```autoresearch",
   "metric: <number>",
+  "name: <short metric label with units, e.g. bundle size (kB) — keep it identical every time>",
   "summary: <one line describing what you changed>",
   "```",
 ].join("\n");
 
 function directionPhrase(config: AutoresearchDraftConfig): string {
   return config.direction === "maximize" ? "maximize" : "minimize";
+}
+
+/** The metric as we can name it so far — reports define it, the brief implies it. */
+function metricPhrase(run: AutoresearchRun): string {
+  return run.metricName ? `"${run.metricName}"` : "the metric";
 }
 
 function targetLine(config: AutoresearchDraftConfig): string {
@@ -35,9 +41,11 @@ function targetLine(config: AutoresearchDraftConfig): string {
  * Everything the kickoff says before the optimization brief. Hosts that
  * deliver the kickoff as a new task's initial prompt prepend this to the
  * user's own prompt content, so file/folder chips survive untouched.
+ * The metric is not named here — the brief defines it and the agent labels
+ * it in every report's `name:` line.
  */
 export function buildKickoffPreamble(config: AutoresearchDraftConfig): string {
-  return `You are now in autoresearch mode: an iterative optimization loop to ${directionPhrase(config)} the metric "${config.metricName}".
+  return `You are now in autoresearch mode: an iterative optimization loop to ${directionPhrase(config)} the metric defined by the brief below.
 
 Protocol for every iteration:
 1. Make ONE focused change aimed at improving the metric. Keep changes small and attributable.
@@ -59,11 +67,10 @@ export function buildKickoffPrompt(
   return `${buildKickoffPreamble(config)}\n\n${config.instructions}`;
 }
 
-export function buildContinuationPrompt(run: AutoresearchRun): string {
+function historyBlock(run: AutoresearchRun): string {
   const { config, iterations } = run;
   const best = computeBest(iterations, config.direction);
   const last = iterations[iterations.length - 1];
-  const nextIndex = iterations.length + 1;
 
   const recent = iterations
     .slice(-5)
@@ -73,20 +80,80 @@ export function buildContinuationPrompt(run: AutoresearchRun): string {
     )
     .join("\n");
 
-  return `Autoresearch iteration ${nextIndex} of ${config.maxIterations} for "${config.metricName}" (${directionPhrase(config)}).
-
-Recent iterations:
+  return `Recent iterations:
 ${recent}
 
-Best so far: ${best ? `${best.value} (iteration ${best.index})` : "none"}. Last: ${last ? last.value : "none"}.${targetLine(config)}
+Best so far: ${best ? `${best.value} (iteration ${best.index})` : "none"}. Last: ${last ? last.value : "none"}.${targetLine(config)}`;
+}
 
-Continue: make the next focused change, measure "${config.metricName}", and end your reply with the report block:
+export function buildContinuationPrompt(run: AutoresearchRun): string {
+  const { config, iterations } = run;
+  const nextIndex = iterations.length + 1;
+
+  return `Autoresearch iteration ${nextIndex} of ${config.maxIterations} for ${metricPhrase(run)} (${directionPhrase(config)}).
+
+${historyBlock(run)}
+
+Continue: make the next focused change, measure ${metricPhrase(run)}, and end your reply with the report block:
 
 ${REPORT_BLOCK_EXAMPLE}`;
 }
 
-export function buildReportReminderPrompt(config: AutoresearchConfig): string {
-  return `Your last reply did not include a parseable autoresearch report block, so the iteration was not recorded. Measure "${config.metricName}" now and reply ending with exactly:
+/**
+ * First half of a split iteration: think and change, don't measure. Runs on
+ * the implement-stage model.
+ */
+export function buildImplementPrompt(run: AutoresearchRun): string {
+  const nextIndex = run.iterations.length + 1;
+
+  return `Autoresearch iteration ${nextIndex} of ${run.config.maxIterations} for ${metricPhrase(run)} (${directionPhrase(run.config)}) — implementation phase.
+
+${historyBlock(run)}
+
+Plan and implement ONE focused change aimed at improving the metric. Do NOT run the measurement in this turn — a separate measurement turn follows. Reply with a one-line summary of what you changed and why.`;
+}
+
+/**
+ * Second half of a split iteration: run the measurement and report. Runs on
+ * the measure-stage model, which can be a cheap one — this turn is tool
+ * calls, not thinking.
+ */
+export function buildMeasurePrompt(run: AutoresearchRun): string {
+  return `Measurement phase: run the measurement for ${metricPhrase(run)} exactly as the brief describes, without changing any code. End your reply with the report block:
+
+${REPORT_BLOCK_EXAMPLE}`;
+}
+
+const INTERRUPTION_PHRASE: Record<AutoresearchInterruptionReason, string> = {
+  "session-error": "the agent session disconnected",
+  "rate-limited": "a usage limit was hit",
+  "send-failed": "the agent could not be reached",
+  "app-restart": "the app restarted",
+};
+
+/**
+ * Continuation sent when the loop re-engages after an interruption. States
+ * why the loop went quiet so the agent can re-check the workspace state
+ * (a half-applied change from the aborted iteration must be measured or
+ * reverted, not assumed), then re-enters at the phase the run was in.
+ */
+export function buildResumePrompt(
+  run: AutoresearchRun,
+  reason: AutoresearchInterruptionReason,
+): string {
+  const body =
+    run.phase === "implement"
+      ? buildImplementPrompt(run)
+      : run.phase === "measure"
+        ? buildMeasurePrompt(run)
+        : buildContinuationPrompt(run);
+  return `The autoresearch loop was interrupted (${INTERRUPTION_PHRASE[reason]}) and is resuming now. Check the working tree for any half-applied change from the aborted iteration before continuing.
+
+${body}`;
+}
+
+export function buildReportReminderPrompt(run: AutoresearchRun): string {
+  return `Your last reply did not include a parseable autoresearch report block, so the iteration was not recorded. Measure ${metricPhrase(run)} now and reply ending with exactly:
 
 ${REPORT_BLOCK_EXAMPLE}`;
 }
@@ -109,6 +176,7 @@ export function parseMetricReport(text: string): AutoresearchReport | null {
 
 function parseReportBody(body: string): AutoresearchReport | null {
   let value: number | null = null;
+  let name: string | null = null;
   let summary: string | null = null;
   for (const line of body.split("\n")) {
     const separator = line.indexOf(":");
@@ -118,11 +186,13 @@ function parseReportBody(body: string): AutoresearchReport | null {
     if (key === "metric") {
       const numeric = Number.parseFloat(raw.replace(/,/g, ""));
       if (Number.isFinite(numeric)) value = numeric;
+    } else if (key === "name" && raw.length > 0) {
+      name = raw;
     } else if (key === "summary" && raw.length > 0) {
       summary = raw;
     }
   }
-  return value === null ? null : { value, summary };
+  return value === null ? null : { value, name, summary };
 }
 
 interface AgentMessageChunkUpdate {
@@ -130,6 +200,22 @@ interface AgentMessageChunkUpdate {
     sessionUpdate?: string;
     content?: { type?: string; text?: string };
   };
+}
+
+/**
+ * Number of session/prompt requests in the transcript. Used as a turn
+ * cursor: `isPromptPending` can flip false without a turn having run (a
+ * rate-limited or failed send resets it), so a completion only counts when
+ * the prompt-request count moved past the last one handled. The count is
+ * stable across transcript replays, unlike event indexes.
+ */
+export function countPromptRequests(events: AcpMessage[]): number {
+  let count = 0;
+  for (const event of events) {
+    const msg = event.message;
+    if (isJsonRpcRequest(msg) && msg.method === "session/prompt") count++;
+  }
+  return count;
 }
 
 /**

@@ -3,6 +3,7 @@ import {
   ARCHIVE_REPOSITORY,
   AUTH_PREFERENCE_REPOSITORY,
   AUTH_SESSION_REPOSITORY,
+  AUTORESEARCH_RUN_REPOSITORY,
   BROWSER_TABS_REPOSITORY,
   CLAUDE_SESSION_IMPORT_REPOSITORY,
   DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
@@ -15,6 +16,7 @@ import {
 import { ArchiveRepository } from "./repositories/archive-repository";
 import { AuthPreferenceRepository } from "./repositories/auth-preference-repository";
 import { AuthSessionRepository } from "./repositories/auth-session-repository";
+import { AutoresearchRunRepository } from "./repositories/autoresearch-run-repository";
 import { BrowserTabsRepository } from "./repositories/browser-tabs-repository";
 import { ClaudeSessionImportRepository } from "./repositories/claude-session-import-repository";
 import { DefaultAdditionalDirectoryRepository } from "./repositories/default-additional-directory-repository";
@@ -38,6 +40,9 @@ export const repositoriesModule = new ContainerModule(({ bind }) => {
     .to(DefaultAdditionalDirectoryRepository)
     .inSingletonScope();
   bind(TASK_METADATA_REPOSITORY).to(TaskMetadataRepository).inSingletonScope();
+  bind(AUTORESEARCH_RUN_REPOSITORY)
+    .to(AutoresearchRunRepository)
+    .inSingletonScope();
   bind(CLAUDE_SESSION_IMPORT_REPOSITORY)
     .to(ClaudeSessionImportRepository)
     .inSingletonScope();

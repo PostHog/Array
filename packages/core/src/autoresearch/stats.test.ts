@@ -34,17 +34,21 @@ function makeRun(overrides: {
     id: "ar-1",
     config: {
       taskId: "task-1",
-      metricName: "score",
       direction: overrides.direction ?? "maximize",
       targetValue: overrides.targetValue ?? null,
       maxIterations: overrides.maxIterations ?? 10,
+      implementModel: null,
+      measureModel: null,
       instructions: "Improve the score.",
     },
     status: "running",
+    metricName: "score",
+    phase: null,
     iterations: overrides.iterations ?? [],
     startedAt: 0,
     endedAt: null,
     endReason: null,
+    interruptedReason: null,
     lastError: null,
   };
 }

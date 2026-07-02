@@ -11,8 +11,10 @@ import {
   type ArchiveClient,
 } from "@posthog/core/archive/identifiers";
 import {
-  AUTORESEARCH_PROMPT_CLIENT,
-  type AutoresearchPromptClient,
+  AUTORESEARCH_SESSION_CLIENT,
+  AUTORESEARCH_STORAGE_CLIENT,
+  type AutoresearchSessionClient,
+  type AutoresearchStorageClient,
 } from "@posthog/core/autoresearch/identifiers";
 import {
   LINEAR_OAUTH_FLOW,
@@ -165,14 +167,42 @@ container
     );
   });
 container
-  .bind<AutoresearchPromptClient>(AUTORESEARCH_PROMPT_CLIENT)
+  .bind<AutoresearchSessionClient>(AUTORESEARCH_SESSION_CLIENT)
   .toConstantValue({
-    sendPrompt: async (taskId, prompt) => {
-      await resolveService<SessionService>(SESSION_SERVICE).sendPrompt(
+    sendPrompt: (taskId, prompt) =>
+      resolveService<SessionService>(SESSION_SERVICE).sendPrompt(
         taskId,
         prompt,
+      ),
+    setModel: (taskId, model) =>
+      resolveService<SessionService>(
+        SESSION_SERVICE,
+      ).setSessionConfigOptionByCategory(taskId, "model", model),
+    reconnect: async (taskId) => {
+      const workspaces = (await trpcClient.workspace.getAll.query()) as Record<
+        string,
+        { worktreePath?: string | null; folderPath?: string }
+      >;
+      const workspace = workspaces[taskId];
+      const repoPath = workspace?.worktreePath ?? workspace?.folderPath;
+      if (!repoPath) {
+        throw new Error(`No workspace found for task ${taskId}`);
+      }
+      await resolveService<SessionService>(SESSION_SERVICE).clearSessionError(
+        taskId,
+        repoPath,
       );
     },
+  });
+container
+  .bind<AutoresearchStorageClient>(AUTORESEARCH_STORAGE_CLIENT)
+  .toConstantValue({
+    save: async (run) => {
+      await trpcClient.autoresearch.save.mutate(run);
+    },
+    listOpen: () => trpcClient.autoresearch.listOpen.query(),
+    listByTask: (taskId) =>
+      trpcClient.autoresearch.listByTask.query({ taskId }),
   });
 container.bind<FilePathResolver>(FILE_PATH_RESOLVER).toConstantValue({
   resolve: (file) => window.electronUtils?.getPathForFile?.(file),

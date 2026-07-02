@@ -5,7 +5,11 @@ export type AutoresearchDirection = z.infer<typeof autoresearchDirectionSchema>;
 
 export const autoresearchRunStatusSchema = z.enum([
   "running",
+  // User chose to halt the loop; only the user resumes it.
   "paused",
+  // The loop hit a recoverable obstacle (session died, usage limit, app
+  // restart) and resumes automatically once the obstacle clears.
+  "interrupted",
   "completed",
   "stopped",
   "failed",
@@ -17,17 +21,23 @@ export const autoresearchEndReasonSchema = z.enum([
   "max-iterations",
   "stopped-by-user",
   "missing-report",
-  "session-error",
-  "send-failed",
 ]);
 export type AutoresearchEndReason = z.infer<typeof autoresearchEndReasonSchema>;
+
+export const autoresearchInterruptionReasonSchema = z.enum([
+  "session-error",
+  "rate-limited",
+  "send-failed",
+  "app-restart",
+]);
+export type AutoresearchInterruptionReason = z.infer<
+  typeof autoresearchInterruptionReasonSchema
+>;
 
 export const AUTORESEARCH_MAX_ITERATIONS_LIMIT = 200;
 
 export const autoresearchConfigSchema = z.object({
   taskId: z.string().min(1),
-  /** Human name of the metric being optimized, e.g. "bundle size (kB)". */
-  metricName: z.string().trim().min(1),
   direction: autoresearchDirectionSchema,
   /** Optional value at which the run auto-completes. */
   targetValue: z.number().finite().nullable().default(null),
@@ -38,8 +48,19 @@ export const autoresearchConfigSchema = z.object({
     .max(AUTORESEARCH_MAX_ITERATIONS_LIMIT)
     .default(10),
   /**
+   * Stage models. When both are set, each iteration runs as two turns: an
+   * ideation/implementation turn on `implementModel` and a measurement turn
+   * on `measureModel` (typically a cheaper model — measuring is tool calls,
+   * not thinking). When null, iterations are single turns on the session's
+   * current model.
+   */
+  implementModel: z.string().min(1).nullable().default(null),
+  measureModel: z.string().min(1).nullable().default(null),
+  /**
    * Free-form instructions for the agent: what to optimize, how to measure
-   * the metric, and any constraints to respect.
+   * the metric, and any constraints to respect. The metric itself is not
+   * configured anywhere — the agent names it in its reports based on this
+   * brief.
    */
   instructions: z.string().trim().min(1),
 });
@@ -77,20 +98,64 @@ export function isTerminalRunStatus(status: AutoresearchRunStatus): boolean {
   return status === "completed" || status === "stopped" || status === "failed";
 }
 
+/**
+ * Which half of a split iteration the loop is waiting on. Null for
+ * single-turn runs and for the baseline turn of split runs.
+ */
+export const autoresearchPhaseSchema = z.enum(["implement", "measure"]);
+export type AutoresearchPhase = z.infer<typeof autoresearchPhaseSchema>;
+
 export const autoresearchRunSchema = z.object({
   id: z.string().min(1),
   config: autoresearchConfigSchema,
   status: autoresearchRunStatusSchema,
+  /**
+   * Metric label derived from the agent's reports (the `name:` line), e.g.
+   * "bundle size (kB)". Null until the first named report arrives.
+   */
+  metricName: z.string().nullable().default(null),
+  phase: autoresearchPhaseSchema.nullable().default(null),
   iterations: z.array(autoresearchIterationSchema),
   startedAt: z.number(),
   endedAt: z.number().nullable(),
   endReason: autoresearchEndReasonSchema.nullable(),
+  interruptedReason: autoresearchInterruptionReasonSchema
+    .nullable()
+    .default(null),
   lastError: z.string().nullable(),
 });
 export type AutoresearchRun = z.infer<typeof autoresearchRunSchema>;
 
+/**
+ * Restore a run from its persisted JSON blob. Unparseable rows (corrupt or
+ * from an incompatible future version) restore as null and are skipped.
+ * A run persisted as "running" comes back as an app-restart interruption:
+ * the loop that drove it died with the process that persisted it.
+ */
+export function parseStoredAutoresearchRun(
+  data: string,
+): AutoresearchRun | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(data);
+  } catch {
+    return null;
+  }
+  const parsed = autoresearchRunSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const run = parsed.data;
+  if (run.status !== "running") return run;
+  return {
+    ...run,
+    status: "interrupted",
+    interruptedReason: "app-restart",
+  };
+}
+
 /** A metric report parsed from the agent's reply. */
 export interface AutoresearchReport {
   value: number;
+  /** The agent's short label for the metric, e.g. "bundle size (kB)". */
+  name: string | null;
   summary: string | null;
 }

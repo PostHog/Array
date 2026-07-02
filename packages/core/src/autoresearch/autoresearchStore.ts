@@ -1,7 +1,9 @@
 import { createStore } from "zustand/vanilla";
 import {
   type AutoresearchEndReason,
+  type AutoresearchInterruptionReason,
   type AutoresearchIteration,
+  type AutoresearchPhase,
   type AutoresearchRun,
   type AutoresearchRunStatus,
   isTerminalRunStatus,
@@ -48,10 +50,23 @@ export const autoresearchStoreActions = {
     }));
   },
 
+  /** Record the metric label the agent chose in its reports. */
+  setMetricName(runId: string, metricName: string): void {
+    updateRun(runId, (run) => ({ ...run, metricName }));
+  },
+
+  setPhase(runId: string, phase: AutoresearchPhase | null): void {
+    updateRun(runId, (run) => ({ ...run, phase }));
+  },
+
   setRunStatus(
     runId: string,
     status: AutoresearchRunStatus,
-    options?: { endReason?: AutoresearchEndReason; lastError?: string },
+    options?: {
+      endReason?: AutoresearchEndReason;
+      interruptedReason?: AutoresearchInterruptionReason;
+      lastError?: string;
+    },
   ): void {
     const terminal = isTerminalRunStatus(status);
     updateRun(runId, (run) => ({
@@ -59,8 +74,36 @@ export const autoresearchStoreActions = {
       status,
       endedAt: terminal ? Date.now() : run.endedAt,
       endReason: options?.endReason ?? (terminal ? run.endReason : null),
-      lastError: options?.lastError ?? run.lastError,
+      interruptedReason:
+        status === "interrupted"
+          ? (options?.interruptedReason ?? run.interruptedReason)
+          : null,
+      lastError:
+        options?.lastError ?? (status === "running" ? null : run.lastError),
     }));
+  },
+
+  /**
+   * Merge persisted runs into the store. In-memory runs win over their
+   * stored counterparts (they are strictly fresher); the active run per task
+   * is recomputed as the most recently started one.
+   */
+  hydrateRuns(hydrated: AutoresearchRun[]): void {
+    if (hydrated.length === 0) return;
+    autoresearchStore.setState((state) => {
+      const runs = { ...state.runs };
+      for (const run of hydrated) {
+        if (!runs[run.id]) runs[run.id] = run;
+      }
+      const activeRunIdByTask = { ...state.activeRunIdByTask };
+      for (const taskId of new Set(hydrated.map((r) => r.config.taskId))) {
+        const newest = Object.values(runs)
+          .filter((run) => run.config.taskId === taskId)
+          .sort((a, b) => b.startedAt - a.startedAt)[0];
+        if (newest) activeRunIdByTask[taskId] = newest.id;
+      }
+      return { runs, activeRunIdByTask };
+    });
   },
 
   reset(): void {

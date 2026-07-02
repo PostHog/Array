@@ -5,6 +5,8 @@ import {
   buildKickoffPreamble,
   buildKickoffPrompt,
   buildReportReminderPrompt,
+  buildResumePrompt,
+  countPromptRequests,
   extractLastAgentTurnText,
   parseMetricReport,
 } from "./prompts";
@@ -19,10 +21,11 @@ function makeConfig(
 ): AutoresearchConfig {
   return {
     taskId: "task-1",
-    metricName: "requests per second",
     direction: "maximize",
     targetValue: null,
     maxIterations: 8,
+    implementModel: null,
+    measureModel: null,
     instructions: "Optimize the HTTP handler throughput benchmark.",
     ...overrides,
   };
@@ -44,10 +47,13 @@ function makeRun(
     id: "ar-1",
     config: makeConfig(configOverrides),
     status: "running",
+    metricName: "requests per second",
+    phase: null,
     iterations,
     startedAt: 0,
     endedAt: null,
     endReason: null,
+    interruptedReason: null,
     lastError: null,
   };
 }
@@ -63,6 +69,7 @@ describe("parseMetricReport", () => {
     const text = `I switched to a faster parser.\n\n${report("1234.5", "swapped JSON parser")}`;
     expect(parseMetricReport(text)).toEqual({
       value: 1234.5,
+      name: null,
       summary: "swapped JSON parser",
     });
   });
@@ -70,6 +77,7 @@ describe("parseMetricReport", () => {
   it("parses a report without a summary", () => {
     expect(parseMetricReport(report("42"))).toEqual({
       value: 42,
+      name: null,
       summary: null,
     });
   });
@@ -84,12 +92,20 @@ describe("parseMetricReport", () => {
 
   it("uses the last well-formed block when several exist", () => {
     const text = `${report("1")}\nthen I measured again\n${report("2", "final")}`;
-    expect(parseMetricReport(text)).toEqual({ value: 2, summary: "final" });
+    expect(parseMetricReport(text)).toEqual({
+      value: 2,
+      name: null,
+      summary: "final",
+    });
   });
 
   it("falls back to an earlier valid block when the last one is malformed", () => {
     const text = `${report("7", "good")}\n${report("not-a-number")}`;
-    expect(parseMetricReport(text)).toEqual({ value: 7, summary: "good" });
+    expect(parseMetricReport(text)).toEqual({
+      value: 7,
+      name: null,
+      summary: "good",
+    });
   });
 
   it("strips thousands separators", () => {
@@ -102,7 +118,11 @@ describe("parseMetricReport", () => {
 
   it("accepts mixed-case keys and extra whitespace", () => {
     const text = "```autoresearch\n  Metric :  99 \n  Summary : tidy \n```";
-    expect(parseMetricReport(text)).toEqual({ value: 99, summary: "tidy" });
+    expect(parseMetricReport(text)).toEqual({
+      value: 99,
+      name: null,
+      summary: "tidy",
+    });
   });
 });
 
@@ -189,9 +209,9 @@ describe("extractLastAgentTurnText", () => {
 });
 
 describe("buildKickoffPrompt", () => {
-  it("includes the metric, direction, budget, and instructions", () => {
+  it("includes the direction, budget, and instructions", () => {
     const prompt = buildKickoffPrompt(makeConfig());
-    expect(prompt).toContain('"requests per second"');
+    expect(prompt).toContain("the metric defined by the brief");
     expect(prompt).toContain("maximize");
     expect(prompt).toContain("up to 8 iterations");
     expect(prompt).toContain("Optimize the HTTP handler throughput benchmark.");
@@ -223,7 +243,7 @@ describe("buildKickoffPrompt", () => {
 describe("buildKickoffPreamble", () => {
   it("carries the full protocol but no instructions", () => {
     const preamble = buildKickoffPreamble(makeConfig());
-    expect(preamble).toContain('"requests per second"');
+    expect(preamble).toContain("name: <short metric label");
     expect(preamble).toContain("```autoresearch");
     expect(preamble).toContain("up to 8 iterations");
     expect(preamble).not.toContain(
@@ -259,8 +279,40 @@ describe("buildContinuationPrompt", () => {
 
 describe("buildReportReminderPrompt", () => {
   it("names the metric and repeats the block format", () => {
-    const prompt = buildReportReminderPrompt(makeConfig());
+    const prompt = buildReportReminderPrompt(makeRun([]));
     expect(prompt).toContain('"requests per second"');
     expect(prompt).toContain("```autoresearch");
+  });
+});
+
+describe("buildResumePrompt", () => {
+  it("states the interruption cause and carries the continuation", () => {
+    const run = makeRun([makeIteration(1, 100, "baseline")]);
+    const prompt = buildResumePrompt(run, "rate-limited");
+    expect(prompt).toContain("a usage limit was hit");
+    expect(prompt).toContain("resuming now");
+    expect(prompt).toContain("iteration 2 of 8");
+    expect(prompt).toContain("```autoresearch");
+  });
+
+  it("warns about half-applied changes from the aborted iteration", () => {
+    const prompt = buildResumePrompt(makeRun([]), "app-restart");
+    expect(prompt).toContain("the app restarted");
+    expect(prompt).toContain("half-applied change");
+  });
+});
+
+describe("countPromptRequests", () => {
+  it("counts only session/prompt requests", () => {
+    expect(countPromptRequests([])).toBe(0);
+    expect(
+      countPromptRequests([
+        promptEvent(1),
+        agentChunkEvent(2, "hi"),
+        toolCallEvent(3),
+        promptEvent(4),
+        agentChunkEvent(5, "done"),
+      ]),
+    ).toBe(2);
   });
 });

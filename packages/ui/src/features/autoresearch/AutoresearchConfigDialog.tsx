@@ -10,11 +10,20 @@ import {
 } from "@radix-ui/themes";
 import { useState } from "react";
 
+/** Sentinel for "no stage model" — Radix Select items can't be empty. */
+const SINGLE_TURN = "__single_turn__";
+
+export interface AutoresearchModelOption {
+  value: string;
+  label: string;
+}
+
 export interface AutoresearchConfigValues {
-  metricName: string;
   direction: AutoresearchDirection;
   targetValue: number | null;
   maxIterations: number;
+  implementModel: string | null;
+  measureModel: string | null;
   instructions?: string;
 }
 
@@ -26,6 +35,8 @@ interface AutoresearchConfigDialogProps {
   submitLabel: string;
   /** Show the instructions field (dashboard re-runs); the create-task flow takes instructions from the composer prompt instead. */
   showInstructions?: boolean;
+  /** Session model options for the stage-model selects; hidden when empty. */
+  modelOptions?: AutoresearchModelOption[];
   initial?: Partial<AutoresearchConfigValues>;
   /** May throw — the message is shown inline and the dialog stays open. */
   onSubmit: (values: AutoresearchConfigValues) => void;
@@ -38,6 +49,7 @@ export function AutoresearchConfigDialog({
   description,
   submitLabel,
   showInstructions = false,
+  modelOptions = [],
   initial,
   onSubmit,
 }: AutoresearchConfigDialogProps) {
@@ -53,6 +65,7 @@ export function AutoresearchConfigDialog({
         <ConfigForm
           submitLabel={submitLabel}
           showInstructions={showInstructions}
+          modelOptions={modelOptions}
           initial={initial}
           onSubmit={onSubmit}
           onDone={() => onOpenChange(false)}
@@ -63,32 +76,36 @@ export function AutoresearchConfigDialog({
 }
 
 interface FormValues {
-  metricName: string;
   direction: AutoresearchDirection;
   targetValue: string;
   maxIterations: string;
+  implementModel: string;
+  measureModel: string;
   instructions: string;
 }
 
 function ConfigForm({
   submitLabel,
   showInstructions,
+  modelOptions,
   initial,
   onSubmit,
   onDone,
 }: {
   submitLabel: string;
   showInstructions: boolean;
+  modelOptions: AutoresearchModelOption[];
   initial?: Partial<AutoresearchConfigValues>;
   onSubmit: (values: AutoresearchConfigValues) => void;
   onDone: () => void;
 }) {
   const [values, setValues] = useState<FormValues>(() => ({
-    metricName: initial?.metricName ?? "",
     direction: initial?.direction ?? "maximize",
     targetValue:
       initial?.targetValue != null ? String(initial.targetValue) : "",
     maxIterations: String(initial?.maxIterations ?? 10),
+    implementModel: initial?.implementModel ?? SINGLE_TURN,
+    measureModel: initial?.measureModel ?? SINGLE_TURN,
     instructions: initial?.instructions ?? "",
   }));
   const [error, setError] = useState<string | null>(null);
@@ -98,8 +115,12 @@ function ConfigForm({
     value: FormValues[K],
   ) => setValues((current) => ({ ...current, [field]: value }));
 
+  const stageModelsMismatched =
+    (values.implementModel === SINGLE_TURN) !==
+    (values.measureModel === SINGLE_TURN);
+
   const canSubmit =
-    values.metricName.trim().length > 0 &&
+    !stageModelsMismatched &&
     (!showInstructions || values.instructions.trim().length > 0);
 
   const handleSubmit = () => {
@@ -112,10 +133,13 @@ function ConfigForm({
     const iterations = Number.parseInt(values.maxIterations, 10);
     try {
       onSubmit({
-        metricName: values.metricName.trim(),
         direction: values.direction,
         targetValue: target,
         maxIterations: Number.isFinite(iterations) ? iterations : 10,
+        implementModel:
+          values.implementModel === SINGLE_TURN ? null : values.implementModel,
+        measureModel:
+          values.measureModel === SINGLE_TURN ? null : values.measureModel,
         instructions: showInstructions ? values.instructions : undefined,
       });
       setError(null);
@@ -132,24 +156,6 @@ function ConfigForm({
   return (
     <>
       <Flex direction="column" gap="3" mt="4">
-        <div>
-          <Text
-            as="label"
-            htmlFor="autoresearch-metric"
-            size="1"
-            weight="medium"
-            className="mb-1 block"
-          >
-            Metric
-          </Text>
-          <TextField.Root
-            id="autoresearch-metric"
-            value={values.metricName}
-            onChange={(event) => setField("metricName", event.target.value)}
-            placeholder="e.g. bundle size (kB), requests/sec, test coverage %"
-          />
-        </div>
-
         <Flex gap="3">
           <div className="flex-1">
             <Text
@@ -213,6 +219,37 @@ function ConfigForm({
           </div>
         </Flex>
 
+        {modelOptions.length > 0 && (
+          <div>
+            <Flex gap="3">
+              <StageModelSelect
+                id="autoresearch-implement-model"
+                label="Build model"
+                value={values.implementModel}
+                options={modelOptions}
+                onChange={(value) => setField("implementModel", value)}
+              />
+              <StageModelSelect
+                id="autoresearch-measure-model"
+                label="Measure model"
+                value={values.measureModel}
+                options={modelOptions}
+                onChange={(value) => setField("measureModel", value)}
+              />
+            </Flex>
+            <Text
+              as="div"
+              size="1"
+              color={stageModelsMismatched ? "red" : "gray"}
+              mt="1"
+            >
+              {stageModelsMismatched
+                ? "Set both stage models, or leave both on single turn."
+                : "With stage models, each iteration ideates on the build model and measures on the measure model."}
+            </Text>
+          </div>
+        )}
+
         {showInstructions && (
           <div>
             <Text
@@ -222,13 +259,13 @@ function ConfigForm({
               weight="medium"
               className="mb-1 block"
             >
-              Instructions
+              Optimization brief
             </Text>
             <TextArea
               id="autoresearch-instructions"
               value={values.instructions}
               onChange={(event) => setField("instructions", event.target.value)}
-              placeholder="What to optimize, how to measure the metric, and any constraints to respect."
+              placeholder="What to optimize, how to measure it, and any constraints to respect."
               rows={4}
             />
           </div>
@@ -252,5 +289,44 @@ function ConfigForm({
         </Button>
       </Flex>
     </>
+  );
+}
+
+function StageModelSelect({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  options: AutoresearchModelOption[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex-1">
+      <Text
+        as="label"
+        htmlFor={id}
+        size="1"
+        weight="medium"
+        className="mb-1 block"
+      >
+        {label}
+      </Text>
+      <Select.Root value={value} onValueChange={onChange}>
+        <Select.Trigger id={id} className="w-full" />
+        <Select.Content>
+          <Select.Item value={SINGLE_TURN}>Single turn (default)</Select.Item>
+          {options.map((option) => (
+            <Select.Item key={option.value} value={option.value}>
+              {option.label}
+            </Select.Item>
+          ))}
+        </Select.Content>
+      </Select.Root>
+    </div>
   );
 }

@@ -23,10 +23,7 @@ import { toast } from "../../../primitives/toast";
 import { useActiveRepoStore } from "../../../shell/activeRepoStore";
 import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
 import { useAuthStateValue } from "../../auth/store";
-import {
-  AutoresearchConfigDialog,
-  type AutoresearchConfigValues,
-} from "../../autoresearch/AutoresearchConfigDialog";
+import { AutoresearchComposerStrip } from "../../autoresearch/AutoresearchComposerStrip";
 import {
   autoresearchPendingRun,
   useAutoresearchDraftStore,
@@ -64,7 +61,10 @@ import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { DropZoneOverlay } from "../../sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
 import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
-import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
+import {
+  flattenSelectOptions,
+  getCurrentModeFromConfigOptions,
+} from "../../sessions/sessionStore";
 import {
   type AgentAdapter,
   useSettingsStore,
@@ -620,7 +620,28 @@ export function TaskInput({
   const autoresearchDraft = useAutoresearchDraftStore(
     (state) => state.drafts[sessionId] ?? null,
   );
-  const [autoresearchDialogOpen, setAutoresearchDialogOpen] = useState(false);
+  const autoresearchModelOptions = useMemo(() => {
+    if (modelOption?.type !== "select") return [];
+    return flattenSelectOptions(modelOption.options).map((option) => ({
+      value: option.value,
+      label: option.name ?? option.value,
+    }));
+  }, [modelOption]);
+
+  const handleAutoresearchToggle = useCallback(() => {
+    const store = useAutoresearchDraftStore.getState();
+    if (store.drafts[sessionId]) {
+      store.clearDraft(sessionId);
+      return;
+    }
+    store.setDraft(sessionId, {
+      direction: "maximize",
+      targetValue: null,
+      maxIterations: 10,
+      implementModel: null,
+      measureModel: null,
+    });
+  }, [sessionId]);
 
   // Registers the run against the freshly created task and opens its
   // dashboard tab; the kickoff itself rides the task's initial prompt.
@@ -692,8 +713,17 @@ export function TaskInput({
       ],
       attachments: content.attachments,
     };
+    // Touching either stage model opts into split iterations; the untouched
+    // one falls back to the model this task is being created with.
+    const stageModelsArmed =
+      draft.implementModel !== null || draft.measureModel !== null;
+    const taskModel = currentModel ?? null;
     autoresearchPendingRun.set({
       ...draft,
+      implementModel: stageModelsArmed
+        ? (draft.implementModel ?? taskModel)
+        : null,
+      measureModel: stageModelsArmed ? (draft.measureModel ?? taskModel) : null,
       instructions: contentToXml(content).trim(),
     });
     const submitted = await handleSubmit(override);
@@ -709,23 +739,11 @@ export function TaskInput({
       autoresearchPendingRun.clear();
     }
     return submitted;
-  }, [canSubmit, handleSubmit, sessionId]);
+  }, [canSubmit, currentModel, handleSubmit, sessionId]);
 
   const submitTask = autoresearchDraft
     ? handleAutoresearchSubmit
     : handleSubmit;
-
-  const handleAutoresearchConfigured = useCallback(
-    (values: AutoresearchConfigValues) => {
-      useAutoresearchDraftStore.getState().setDraft(sessionId, {
-        metricName: values.metricName,
-        direction: values.direction,
-        targetValue: values.targetValue,
-        maxIterations: values.maxIterations,
-      });
-    },
-    [sessionId],
-  );
 
   const handleModeChange = useCallback(
     (value: string) => {
@@ -990,15 +1008,15 @@ export function TaskInput({
               <Tooltip
                 content={
                   autoresearchDraft
-                    ? "Edit autoresearch settings"
-                    : "Create this task in autoresearch mode"
+                    ? "Exit autoresearch mode"
+                    : "Create this task in autoresearch mode: the prompt becomes the optimization brief"
                 }
               >
                 <Button
                   size="1"
                   variant={autoresearchDraft ? "soft" : "ghost"}
                   color={autoresearchDraft ? undefined : "gray"}
-                  onClick={() => setAutoresearchDialogOpen(true)}
+                  onClick={handleAutoresearchToggle}
                   disabled={isCreatingTask}
                 >
                   <ChartLineUp size={14} />
@@ -1099,43 +1117,19 @@ export function TaskInput({
               </div>
             )}
             {autoresearchDraft && (
-              <div className="-mt-px mx-2 flex select-none items-center justify-between gap-2 rounded-b-md border border-violet-6 border-t-0 bg-violet-2 px-2 py-1 text-[12px] text-violet-11">
-                <span className="flex min-w-0 flex-1 items-center gap-1">
-                  <ChartLineUp size={12} className="shrink-0" />
-                  <span className="min-w-0 truncate">
-                    Autoresearch: {autoresearchDraft.direction} “
-                    {autoresearchDraft.metricName}”
-                    {autoresearchDraft.targetValue !== null
-                      ? ` · target ${autoresearchDraft.targetValue}`
-                      : ""}{" "}
-                    · ≤{autoresearchDraft.maxIterations} iterations — the prompt
-                    becomes the optimization brief
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setAutoresearchDialogOpen(true)}
-                    className="rounded px-1 font-medium underline underline-offset-2 hover:text-violet-12"
-                  >
-                    Edit
-                  </button>
-                  <Tooltip content="Exit autoresearch mode">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        useAutoresearchDraftStore
-                          .getState()
-                          .clearDraft(sessionId)
-                      }
-                      aria-label="Exit autoresearch mode"
-                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-violet-10 hover:bg-violet-4 hover:text-violet-12"
-                    >
-                      <X size={12} />
-                    </button>
-                  </Tooltip>
-                </span>
-              </div>
+              <AutoresearchComposerStrip
+                draft={autoresearchDraft}
+                modelOptions={autoresearchModelOptions}
+                disabled={isCreatingTask}
+                onChange={(patch) =>
+                  useAutoresearchDraftStore
+                    .getState()
+                    .updateDraft(sessionId, patch)
+                }
+                onExit={() =>
+                  useAutoresearchDraftStore.getState().clearDraft(sessionId)
+                }
+              />
             )}
             {includeChannelContext && (
               <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
@@ -1245,16 +1239,6 @@ export function TaskInput({
           </div>
         </div>
       </Flex>
-
-      <AutoresearchConfigDialog
-        open={autoresearchDialogOpen}
-        onOpenChange={setAutoresearchDialogOpen}
-        title="New autoresearch task"
-        description="The task's agent will loop on a metric: one focused change per iteration, measure, report to a live dashboard. Write what to optimize and how to measure it in the prompt box — that text becomes the optimization brief."
-        submitLabel={autoresearchDraft ? "Save settings" : "Arm autoresearch"}
-        initial={autoresearchDraft ?? undefined}
-        onSubmit={handleAutoresearchConfigured}
-      />
 
       <GitBranchDialog
         open={branchOpen}

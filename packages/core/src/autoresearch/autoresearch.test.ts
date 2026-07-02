@@ -1,12 +1,17 @@
 import type { AcpMessage, AgentSession } from "@posthog/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore, sessionStoreSetters } from "../sessions/sessionStore";
-import { AutoresearchService } from "./autoresearch";
+import {
+  AutoresearchService,
+  RECOVERY_BASE_DELAY_MS,
+  REMINDER_GRACE_MS,
+} from "./autoresearch";
 import {
   autoresearchStore,
   autoresearchStoreActions,
   getActiveRunForTask,
 } from "./autoresearchStore";
+import type { StoredAutoresearchRun } from "./identifiers";
 import type { AutoresearchConfigInput, AutoresearchRun } from "./schemas";
 
 const mockLog = {
@@ -17,20 +22,48 @@ const mockLog = {
 };
 
 let sentPrompts: Array<{ taskId: string; prompt: string }> = [];
-let sendPromptImpl: (taskId: string, prompt: string) => Promise<void>;
+let sendPromptImpl: (
+  taskId: string,
+  prompt: string,
+) => Promise<{ stopReason: string }>;
+let reconnectCalls: string[] = [];
+let reconnectImpl: (taskId: string) => Promise<void>;
+let modelSwitches: Array<{ taskId: string; model: string }> = [];
 
-const promptClient = {
+const sessionClient = {
   sendPrompt: vi.fn((taskId: string, prompt: string) => {
     sentPrompts.push({ taskId, prompt });
     return sendPromptImpl(taskId, prompt);
   }),
+  reconnect: vi.fn((taskId: string) => {
+    reconnectCalls.push(taskId);
+    return reconnectImpl(taskId);
+  }),
+  setModel: vi.fn((taskId: string, model: string) => {
+    modelSwitches.push({ taskId, model });
+    return Promise.resolve();
+  }),
+};
+
+let savedRuns: StoredAutoresearchRun[] = [];
+let listOpenImpl: () => Promise<StoredAutoresearchRun[]>;
+let listByTaskImpl: (taskId: string) => Promise<StoredAutoresearchRun[]>;
+
+const storageClient = {
+  save: vi.fn((run: StoredAutoresearchRun) => {
+    savedRuns.push(run);
+    return Promise.resolve();
+  }),
+  listOpen: vi.fn(() => listOpenImpl()),
+  listByTask: vi.fn((taskId: string) => listByTaskImpl(taskId)),
 };
 
 function makeService(): AutoresearchService {
   const service = new AutoresearchService();
   const s = service as unknown as Record<string, unknown>;
   s.rootLogger = { ...mockLog, scope: () => mockLog };
-  s.promptClient = promptClient;
+  s.sessionClient = sessionClient;
+  s.storage = storageClient;
   return service;
 }
 
@@ -95,6 +128,10 @@ function reportText(value: number, summary = "tweak"): string {
   return `Done.\n\`\`\`autoresearch\nmetric: ${value}\nsummary: ${summary}\n\`\`\``;
 }
 
+function namedReportText(value: number, name: string): string {
+  return `Done.\n\`\`\`autoresearch\nmetric: ${value}\nname: ${name}\nsummary: tweak\n\`\`\``;
+}
+
 /** Simulate the agent starting a turn on the task's session. */
 function beginTurn(taskRunId = TASK_RUN_ID): void {
   sessionStoreSetters.updateSession(taskRunId, {
@@ -122,28 +159,83 @@ function runTurn(text: string, taskRunId = TASK_RUN_ID): void {
 
 const baseConfig: AutoresearchConfigInput = {
   taskId: TASK_ID,
-  metricName: "score",
   direction: "maximize",
   instructions: "Raise the score.",
 };
 
-function activeRun(): AutoresearchRun {
-  const run = getActiveRunForTask(autoresearchStore.getState(), TASK_ID);
+const splitConfig: AutoresearchConfigInput = {
+  ...baseConfig,
+  implementModel: "claude-opus-4-8",
+  measureModel: "claude-haiku-4-5",
+};
+
+function activeRun(taskId = TASK_ID): AutoresearchRun {
+  const run = getActiveRunForTask(autoresearchStore.getState(), taskId);
   if (!run) throw new Error("expected an active run");
   return run;
 }
 
-async function flushSends(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
+function makeRun(
+  overrides: Partial<Omit<AutoresearchRun, "config">> & {
+    config?: Partial<AutoresearchRun["config"]>;
+  } = {},
+): AutoresearchRun {
+  const config: AutoresearchRun["config"] = {
+    taskId: TASK_ID,
+    direction: "maximize",
+    targetValue: null,
+    maxIterations: 10,
+    implementModel: null,
+    measureModel: null,
+    instructions: "Raise the score.",
+  };
+  const { config: configOverrides, ...runOverrides } = overrides;
+  return {
+    id: "ar-stored-1",
+    config: { ...config, ...configOverrides },
+    status: "running",
+    metricName: null,
+    phase: null,
+    iterations: [],
+    startedAt: 1_000,
+    endedAt: null,
+    endReason: null,
+    interruptedReason: null,
+    lastError: null,
+    ...runOverrides,
+  };
 }
+
+function storedRow(run: AutoresearchRun): StoredAutoresearchRun {
+  return {
+    id: run.id,
+    taskId: run.config.taskId,
+    endedAt: run.endedAt ? new Date(run.endedAt).toISOString() : null,
+    data: JSON.stringify(run),
+  };
+}
+
+const flush = () => vi.advanceTimersByTimeAsync(0);
+
+/** Grace period plus the send microtasks it may trigger. */
+const passReminderGrace = () => vi.advanceTimersByTimeAsync(REMINDER_GRACE_MS);
+const passRecoveryDelay = (multiplier = 1) =>
+  vi.advanceTimersByTimeAsync(RECOVERY_BASE_DELAY_MS * multiplier);
 
 describe("AutoresearchService", () => {
   let service: AutoresearchService;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
     sentPrompts = [];
-    sendPromptImpl = () => Promise.resolve();
+    sendPromptImpl = () => Promise.resolve({ stopReason: "end_turn" });
+    reconnectCalls = [];
+    reconnectImpl = () => Promise.resolve();
+    modelSwitches = [];
+    savedRuns = [];
+    listOpenImpl = () => Promise.resolve([]);
+    listByTaskImpl = () => Promise.resolve([]);
     autoresearchStoreActions.reset();
     sessionStore.setState({ sessions: {}, taskIdIndex: {} });
     sessionStoreSetters.setSession(makeSession());
@@ -152,6 +244,7 @@ describe("AutoresearchService", () => {
 
   afterEach(() => {
     service.dispose();
+    vi.useRealTimers();
   });
 
   describe("startRun", () => {
@@ -162,13 +255,13 @@ describe("AutoresearchService", () => {
       expect(activeRun().id).toBe(run.id);
       expect(sentPrompts).toHaveLength(1);
       expect(sentPrompts[0].taskId).toBe(TASK_ID);
-      expect(sentPrompts[0].prompt).toContain('"score"');
+      expect(sentPrompts[0].prompt).toContain("autoresearch mode");
       expect(sentPrompts[0].prompt).toContain("```autoresearch");
     });
 
     it("rejects invalid configs", () => {
       expect(() =>
-        service.startRun({ ...baseConfig, metricName: " " }),
+        service.startRun({ ...baseConfig, instructions: " " }),
       ).toThrow();
       expect(sentPrompts).toHaveLength(0);
     });
@@ -187,14 +280,14 @@ describe("AutoresearchService", () => {
       expect(activeRun().id).toBe(second.id);
     });
 
-    it("fails the run when the kickoff prompt cannot be sent", async () => {
+    it("interrupts the run when the kickoff prompt cannot be sent", async () => {
       sendPromptImpl = () => Promise.reject(new Error("no session"));
       const run = service.startRun(baseConfig);
-      await flushSends();
+      await flush();
 
       const stored = autoresearchStore.getState().runs[run.id];
-      expect(stored?.status).toBe("failed");
-      expect(stored?.endReason).toBe("send-failed");
+      expect(stored?.status).toBe("interrupted");
+      expect(stored?.interruptedReason).toBe("send-failed");
       expect(stored?.lastError).toBe("no session");
     });
   });
@@ -290,6 +383,23 @@ describe("AutoresearchService", () => {
       expect(sentPrompts).toHaveLength(1);
     });
 
+    it("ignores a prompt-pending flip that is not a real turn", () => {
+      service.startRun(baseConfig);
+      runTurn(reportText(10));
+      expect(activeRun().iterations).toHaveLength(1);
+
+      // A failed send flips isPromptPending without adding a session/prompt
+      // event. Re-parsing the previous turn here would duplicate iteration 1.
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { isPromptPending: true });
+      sessionStoreSetters.updateSession(TASK_RUN_ID, {
+        isPromptPending: false,
+      });
+
+      expect(activeRun().iterations).toHaveLength(1);
+      expect(sentPrompts).toHaveLength(2);
+      expect(activeRun().status).toBe("running");
+    });
+
     it("does nothing after dispose", () => {
       service.startRun(baseConfig);
       service.dispose();
@@ -301,9 +411,10 @@ describe("AutoresearchService", () => {
   });
 
   describe("missing reports", () => {
-    it("reminds the agent once when a turn has no report", () => {
+    it("reminds the agent once when a turn has no report", async () => {
       service.startRun(baseConfig);
       runTurn("I made a change but forgot to measure.");
+      await passReminderGrace();
 
       const run = activeRun();
       expect(run.status).toBe("running");
@@ -312,19 +423,22 @@ describe("AutoresearchService", () => {
       expect(sentPrompts[1].prompt).toContain("did not include");
     });
 
-    it("fails the run when the reminder also goes unanswered", () => {
+    it("fails the run when the reminder also goes unanswered", async () => {
       service.startRun(baseConfig);
       runTurn("no report");
+      await passReminderGrace();
       runTurn("still no report");
+      await passReminderGrace();
 
       const run = activeRun();
       expect(run.status).toBe("failed");
       expect(run.endReason).toBe("missing-report");
     });
 
-    it("recovers when the reminder produces a report", () => {
+    it("recovers when the reminder produces a report", async () => {
       service.startRun(baseConfig);
       runTurn("no report");
+      await passReminderGrace();
       runTurn(reportText(42));
 
       expect(activeRun().status).toBe("running");
@@ -333,8 +447,273 @@ describe("AutoresearchService", () => {
       // The reminder budget is reset: a later lapse reminds again
       // instead of failing immediately.
       runTurn("oops, no report again");
+      await passReminderGrace();
       expect(activeRun().status).toBe("running");
       expect(sentPrompts.at(-1)?.prompt).toContain("did not include");
+    });
+  });
+
+  describe("metric naming", () => {
+    it("adopts the metric name from the first named report", () => {
+      service.startRun(baseConfig);
+      runTurn(namedReportText(10, "bundle size (kB)"));
+
+      expect(activeRun().metricName).toBe("bundle size (kB)");
+      expect(sentPrompts.at(-1)?.prompt).toContain('"bundle size (kB)"');
+    });
+
+    it("keeps the first name when later reports rename the metric", () => {
+      service.startRun(baseConfig);
+      runTurn(namedReportText(10, "bundle size (kB)"));
+      runTurn(namedReportText(9, "bundle kilobytes"));
+
+      expect(activeRun().metricName).toBe("bundle size (kB)");
+    });
+
+    it("runs unnamed until a report carries a name", () => {
+      service.startRun(baseConfig);
+      runTurn(reportText(10));
+
+      expect(activeRun().metricName).toBeNull();
+      expect(sentPrompts.at(-1)?.prompt).toContain("the metric");
+
+      runTurn(namedReportText(11, "score"));
+      expect(activeRun().metricName).toBe("score");
+    });
+  });
+
+  describe("split runs (stage models)", () => {
+    it("switches to the measure model for the kickoff baseline", () => {
+      service.startRun(splitConfig);
+
+      expect(modelSwitches).toEqual([
+        { taskId: TASK_ID, model: "claude-haiku-4-5" },
+      ]);
+    });
+
+    it("alternates implement and measure turns with model switches", async () => {
+      service.startRun(splitConfig);
+      modelSwitches = [];
+
+      // Baseline report -> implement phase on the implement model.
+      runTurn(reportText(10, "baseline"));
+      expect(activeRun().phase).toBe("implement");
+      expect(modelSwitches).toEqual([
+        { taskId: TASK_ID, model: "claude-opus-4-8" },
+      ]);
+      expect(sentPrompts.at(-1)?.prompt).toContain("implementation phase");
+      expect(sentPrompts.at(-1)?.prompt).toContain(
+        "Do NOT run the measurement",
+      );
+
+      // Implement turn ends without a report -> measure phase, cheap model,
+      // and no missing-report reminder.
+      runTurn("Refactored the hot path.");
+      await passReminderGrace();
+      expect(activeRun().phase).toBe("measure");
+      expect(modelSwitches.at(-1)).toEqual({
+        taskId: TASK_ID,
+        model: "claude-haiku-4-5",
+      });
+      expect(sentPrompts.at(-1)?.prompt).toContain("Measurement phase");
+      expect(
+        sentPrompts.some((p) => p.prompt.includes("did not include")),
+      ).toBe(false);
+
+      // Measure turn reports -> iteration recorded, next implement begins.
+      runTurn(reportText(12));
+      expect(activeRun().iterations).toHaveLength(2);
+      expect(activeRun().phase).toBe("implement");
+    });
+
+    it("records an opportunistic report from an implement turn", () => {
+      service.startRun(splitConfig);
+      runTurn(reportText(10, "baseline"));
+      expect(activeRun().phase).toBe("implement");
+
+      // The agent measured during the implement turn anyway; skip the
+      // dedicated measure turn and start the next iteration.
+      runTurn(reportText(11, "changed and measured"));
+
+      expect(activeRun().iterations).toHaveLength(2);
+      expect(activeRun().phase).toBe("implement");
+      expect(sentPrompts.at(-1)?.prompt).toContain("implementation phase");
+    });
+
+    it("still fails a measure turn that never reports", async () => {
+      service.startRun(splitConfig);
+      runTurn(reportText(10, "baseline"));
+      runTurn("changed things");
+      await passReminderGrace();
+      expect(activeRun().phase).toBe("measure");
+
+      runTurn("ran it, forgot the block");
+      await passReminderGrace();
+      runTurn("still prose");
+      await passReminderGrace();
+
+      expect(activeRun().status).toBe("failed");
+      expect(activeRun().endReason).toBe("missing-report");
+    });
+
+    it("hands the session back on the implement model when the run ends", () => {
+      service.startRun(splitConfig);
+      runTurn(reportText(10, "baseline"));
+      runTurn("changed things");
+      modelSwitches = [];
+
+      service.stopRun(activeRun().id);
+
+      expect(modelSwitches).toEqual([
+        { taskId: TASK_ID, model: "claude-opus-4-8" },
+      ]);
+    });
+
+    it("re-applies the phase model when resuming after an interruption", async () => {
+      service.startRun(splitConfig);
+      runTurn(reportText(10, "baseline"));
+      runTurn("changed things");
+      await passReminderGrace();
+      expect(activeRun().phase).toBe("measure");
+
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "error" });
+      expect(activeRun().status).toBe("interrupted");
+      modelSwitches = [];
+      sentPrompts = [];
+
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "connected" });
+
+      expect(activeRun().status).toBe("running");
+      expect(modelSwitches).toEqual([
+        { taskId: TASK_ID, model: "claude-haiku-4-5" },
+      ]);
+      expect(sentPrompts.at(-1)?.prompt).toContain("resuming now");
+      expect(sentPrompts.at(-1)?.prompt).toContain("Measurement phase");
+    });
+  });
+
+  describe("rate limits", () => {
+    it("interrupts instead of failing when a send is rate-limited", async () => {
+      sendPromptImpl = () => Promise.resolve({ stopReason: "rate_limited" });
+      const run = service.startRun(baseConfig);
+      await flush();
+
+      const stored = autoresearchStore.getState().runs[run.id];
+      expect(stored?.status).toBe("interrupted");
+      expect(stored?.interruptedReason).toBe("rate-limited");
+    });
+
+    it("does not burn a reminder on a rate-limited send", async () => {
+      service.startRun(baseConfig);
+      runTurn(reportText(10));
+      expect(activeRun().iterations).toHaveLength(1);
+
+      // The continuation for iteration 2 gets rate-limited. The send echoes
+      // a session/prompt request but the agent produces no reply text, so
+      // without the grace period this would look like a missing report.
+      sendPromptImpl = () => Promise.resolve({ stopReason: "rate_limited" });
+      runTurn(reportText(11));
+      beginTurn();
+      sessionStoreSetters.updateSession(TASK_RUN_ID, {
+        isPromptPending: false,
+      });
+      await passReminderGrace();
+
+      const run = activeRun();
+      expect(run.status).toBe("interrupted");
+      expect(run.interruptedReason).toBe("rate-limited");
+      expect(run.iterations).toHaveLength(2);
+      expect(
+        sentPrompts.some((p) => p.prompt.includes("did not include")),
+      ).toBe(false);
+    });
+
+    it("retries after the recovery delay and resumes when the limit clears", async () => {
+      sendPromptImpl = () => Promise.resolve({ stopReason: "rate_limited" });
+      const run = service.startRun(baseConfig);
+      await flush();
+      expect(autoresearchStore.getState().runs[run.id]?.status).toBe(
+        "interrupted",
+      );
+
+      sendPromptImpl = () => Promise.resolve({ stopReason: "end_turn" });
+      await passRecoveryDelay();
+
+      const stored = autoresearchStore.getState().runs[run.id];
+      expect(stored?.status).toBe("running");
+      expect(stored?.interruptedReason).toBeNull();
+      expect(sentPrompts.at(-1)?.prompt).toContain("resuming now");
+    });
+  });
+
+  describe("session errors and recovery", () => {
+    it("interrupts the run when the session errors out", () => {
+      service.startRun(baseConfig);
+      sessionStoreSetters.updateSession(TASK_RUN_ID, {
+        status: "error",
+        errorMessage: "agent crashed",
+      });
+
+      const run = activeRun();
+      expect(run.status).toBe("interrupted");
+      expect(run.interruptedReason).toBe("session-error");
+      expect(run.lastError).toBe("agent crashed");
+    });
+
+    it("resumes automatically when the session reconnects", async () => {
+      service.startRun(baseConfig);
+      runTurn(reportText(10));
+      sessionStoreSetters.updateSession(TASK_RUN_ID, {
+        status: "error",
+        errorMessage: "idle killed",
+      });
+      expect(activeRun().status).toBe("interrupted");
+      sentPrompts = [];
+
+      sessionStoreSetters.updateSession(TASK_RUN_ID, {
+        status: "connected",
+        errorMessage: undefined,
+      });
+
+      expect(activeRun().status).toBe("running");
+      expect(sentPrompts).toHaveLength(1);
+      expect(sentPrompts[0].prompt).toContain("resuming now");
+      expect(sentPrompts[0].prompt).toContain("iteration 2");
+    });
+
+    it("asks the host to reconnect a dead session on the recovery tick", async () => {
+      service.startRun(baseConfig);
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "error" });
+      expect(activeRun().status).toBe("interrupted");
+
+      await passRecoveryDelay();
+
+      expect(reconnectCalls).toEqual([TASK_ID]);
+      // Still interrupted until the session actually comes back.
+      expect(activeRun().status).toBe("interrupted");
+
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "connected" });
+      expect(activeRun().status).toBe("running");
+    });
+
+    it("interrupts the run when a continuation prompt cannot be sent", async () => {
+      service.startRun(baseConfig);
+      sendPromptImpl = () => Promise.reject(new Error("disconnected"));
+      runTurn(reportText(10));
+      await flush();
+
+      const run = activeRun();
+      expect(run.status).toBe("interrupted");
+      expect(run.interruptedReason).toBe("send-failed");
+      expect(run.iterations).toHaveLength(1);
+    });
+
+    it("pauses the run when the user cancels the turn", async () => {
+      sendPromptImpl = () => Promise.resolve({ stopReason: "cancelled" });
+      const run = service.startRun(baseConfig);
+      await flush();
+
+      expect(autoresearchStore.getState().runs[run.id]?.status).toBe("paused");
     });
   });
 
@@ -349,13 +728,28 @@ describe("AutoresearchService", () => {
       expect(sentPrompts).toHaveLength(1);
     });
 
-    it("does not nag about missing reports while paused", () => {
+    it("does not nag about missing reports while paused", async () => {
       const run = service.startRun(baseConfig);
       service.pauseRun(run.id);
       runTurn("just chatting");
+      await passReminderGrace();
 
       expect(sentPrompts).toHaveLength(1);
       expect(activeRun().status).toBe("paused");
+    });
+
+    it("a user pause outranks interruptions and auto-resume", async () => {
+      const run = service.startRun(baseConfig);
+      service.pauseRun(run.id);
+
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "error" });
+      expect(activeRun().status).toBe("paused");
+
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "connected" });
+      await passRecoveryDelay();
+      expect(activeRun().status).toBe("paused");
+      expect(reconnectCalls).toHaveLength(0);
+      expect(sentPrompts).toHaveLength(1);
     });
 
     it("resume sends a continuation when the agent is idle", () => {
@@ -397,7 +791,33 @@ describe("AutoresearchService", () => {
       expect(sentPrompts).toHaveLength(1);
     });
 
-    it("pause only applies to running runs", () => {
+    it("resume with a dead session goes through recovery instead of sending", () => {
+      const run = service.startRun(baseConfig);
+      service.pauseRun(run.id);
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "error" });
+      sentPrompts = [];
+
+      service.resumeRun(run.id);
+
+      expect(activeRun().status).toBe("interrupted");
+      expect(sentPrompts).toHaveLength(0);
+      expect(reconnectCalls).toEqual([TASK_ID]);
+    });
+
+    it("pause applies to interrupted runs and stops recovery", async () => {
+      service.startRun(baseConfig);
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "error" });
+      const run = activeRun();
+      expect(run.status).toBe("interrupted");
+
+      service.pauseRun(run.id);
+      expect(activeRun().status).toBe("paused");
+
+      await passRecoveryDelay();
+      expect(reconnectCalls).toHaveLength(0);
+    });
+
+    it("pause does not apply to ended runs", () => {
       const run = service.startRun(baseConfig);
       service.stopRun(run.id);
       service.pauseRun(run.id);
@@ -405,7 +825,7 @@ describe("AutoresearchService", () => {
     });
   });
 
-  describe("stop and session errors", () => {
+  describe("stop", () => {
     it("stopRun marks the run stopped and ends the loop", () => {
       const run = service.startRun(baseConfig);
       service.stopRun(run.id);
@@ -418,29 +838,17 @@ describe("AutoresearchService", () => {
       expect(sentPrompts).toHaveLength(1);
     });
 
-    it("fails the run when the session errors out", () => {
+    it("stopRun ends an interrupted run without further recovery", async () => {
       service.startRun(baseConfig);
-      sessionStoreSetters.updateSession(TASK_RUN_ID, {
-        status: "error",
-        errorMessage: "agent crashed",
-      });
-
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "error" });
       const run = activeRun();
-      expect(run.status).toBe("failed");
-      expect(run.endReason).toBe("session-error");
-      expect(run.lastError).toBe("agent crashed");
-    });
+      expect(run.status).toBe("interrupted");
 
-    it("fails the run when a continuation prompt cannot be sent", async () => {
-      service.startRun(baseConfig);
-      sendPromptImpl = () => Promise.reject(new Error("disconnected"));
-      runTurn(reportText(10));
-      await flushSends();
+      service.stopRun(run.id);
+      await passRecoveryDelay();
 
-      const run = activeRun();
-      expect(run.status).toBe("failed");
-      expect(run.endReason).toBe("send-failed");
-      expect(run.iterations).toHaveLength(1);
+      expect(activeRun().status).toBe("stopped");
+      expect(reconnectCalls).toHaveLength(0);
     });
 
     it("a late send failure does not overwrite an already-ended run", async () => {
@@ -448,11 +856,140 @@ describe("AutoresearchService", () => {
       const run = service.startRun(baseConfig);
       // The user stops the run while the kickoff send is still in flight.
       service.stopRun(run.id);
-      await flushSends();
+      await flush();
 
       const stored = activeRun();
       expect(stored.status).toBe("stopped");
       expect(stored.endReason).toBe("stopped-by-user");
+    });
+  });
+
+  describe("persistence", () => {
+    it("persists on register, iteration, and terminal transitions", () => {
+      const run = service.startRun(baseConfig);
+      expect(savedRuns).toHaveLength(1);
+      expect(savedRuns[0]).toMatchObject({
+        id: run.id,
+        taskId: TASK_ID,
+        endedAt: null,
+      });
+
+      runTurn(reportText(10));
+      expect(savedRuns.length).toBeGreaterThanOrEqual(2);
+
+      service.stopRun(run.id);
+      const last = savedRuns.at(-1);
+      expect(last?.endedAt).not.toBeNull();
+      expect(JSON.parse(last?.data ?? "{}")).toMatchObject({
+        id: run.id,
+        status: "stopped",
+      });
+    });
+
+    it("keeps the loop alive when persistence fails", async () => {
+      storageClient.save.mockImplementation(() =>
+        Promise.reject(new Error("db locked")),
+      );
+      service.startRun(baseConfig);
+      runTurn(reportText(10));
+      await flush();
+
+      expect(activeRun().status).toBe("running");
+      expect(activeRun().iterations).toHaveLength(1);
+    });
+  });
+
+  describe("rehydrate", () => {
+    it("restores open runs; running ones come back interrupted", async () => {
+      const wasRunning = makeRun({
+        id: "ar-stored-running",
+        config: { taskId: "task-9" },
+        iterations: [
+          {
+            index: 1,
+            value: 10,
+            bestValue: 10,
+            delta: null,
+            summary: "baseline",
+            at: 1_000,
+          },
+        ],
+      });
+      const wasPaused = makeRun({
+        id: "ar-stored-paused",
+        status: "paused",
+        config: { taskId: "task-10" },
+      });
+      listOpenImpl = () =>
+        Promise.resolve([
+          storedRow(wasRunning),
+          storedRow(wasPaused),
+          { id: "bad", taskId: "task-11", endedAt: null, data: "{corrupt" },
+        ]);
+
+      await service.rehydrate();
+
+      const state = autoresearchStore.getState();
+      expect(state.runs["ar-stored-running"]).toMatchObject({
+        status: "interrupted",
+        interruptedReason: "app-restart",
+      });
+      expect(state.runs["ar-stored-running"]?.iterations).toHaveLength(1);
+      expect(state.runs["ar-stored-paused"]?.status).toBe("paused");
+      expect(state.runs.bad).toBeUndefined();
+      expect(state.activeRunIdByTask["task-9"]).toBe("ar-stored-running");
+    });
+
+    it("schedules recovery for restored interrupted runs", async () => {
+      listOpenImpl = () =>
+        Promise.resolve([
+          storedRow(makeRun({ id: "ar-r", config: { taskId: "task-9" } })),
+        ]);
+      await service.rehydrate();
+
+      // No session exists for task-9 yet — recovery asks the host to
+      // reconnect it.
+      await passRecoveryDelay();
+      expect(reconnectCalls).toEqual(["task-9"]);
+    });
+
+    it("only rehydrates once", async () => {
+      await service.rehydrate();
+      await service.rehydrate();
+      expect(storageClient.listOpen).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("hydrateTask", () => {
+    it("loads a task's history without clobbering in-memory runs", async () => {
+      const live = service.startRun(baseConfig);
+      runTurn(reportText(10));
+
+      const staleLive = makeRun({ id: live.id, iterations: [] });
+      const past = makeRun({
+        id: "ar-past",
+        status: "completed",
+        endedAt: 500,
+        endReason: "target-reached",
+        startedAt: 1,
+      });
+      listByTaskImpl = () =>
+        Promise.resolve([storedRow(past), storedRow(staleLive)]);
+
+      await service.hydrateTask(TASK_ID);
+
+      const state = autoresearchStore.getState();
+      // The in-memory run (with its recorded iteration) wins over the row.
+      expect(state.runs[live.id]?.iterations).toHaveLength(1);
+      expect(state.runs["ar-past"]?.status).toBe("completed");
+      // The live run stays the active one — it started later.
+      expect(state.activeRunIdByTask[TASK_ID]).toBe(live.id);
+    });
+
+    it("queries storage once per task", async () => {
+      await service.hydrateTask(TASK_ID);
+      await service.hydrateTask(TASK_ID);
+      expect(storageClient.listByTask).toHaveBeenCalledTimes(1);
     });
   });
 });

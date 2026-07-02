@@ -14,8 +14,15 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import { Badge, Button, Flex, Select, Text } from "@radix-ui/themes";
-import { type ReactNode, useMemo, useState } from "react";
+import { Badge, Button, Callout, Flex, Select, Text } from "@radix-ui/themes";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { shallow } from "zustand/shallow";
+import {
+  flattenSelectOptions,
+  getConfigOptionByCategory,
+  useSessionStore,
+} from "../sessions/sessionStore";
+import { usePendingPermissionsForTask } from "../sessions/useSession";
 import { AutoresearchConfigDialog } from "./AutoresearchConfigDialog";
 import { IterationsTable } from "./IterationsTable";
 import { MetricChart } from "./MetricChart";
@@ -23,10 +30,14 @@ import { useAutoresearchRuns } from "./useAutoresearchStore";
 
 const STATUS_BADGE: Record<
   AutoresearchRunStatus,
-  { color: "blue" | "amber" | "green" | "gray" | "red"; label: string }
+  {
+    color: "blue" | "amber" | "orange" | "green" | "gray" | "red";
+    label: string;
+  }
 > = {
   running: { color: "blue", label: "Running" },
   paused: { color: "amber", label: "Paused" },
+  interrupted: { color: "orange", label: "Interrupted" },
   completed: { color: "green", label: "Completed" },
   stopped: { color: "gray", label: "Stopped" },
   failed: { color: "red", label: "Failed" },
@@ -37,8 +48,13 @@ const END_REASON_LABEL: Record<string, string> = {
   "max-iterations": "Iteration budget spent",
   "stopped-by-user": "Stopped by user",
   "missing-report": "Agent stopped reporting the metric",
-  "session-error": "Agent session error",
-  "send-failed": "Could not message the agent",
+};
+
+const INTERRUPTION_LABEL: Record<string, string> = {
+  "session-error": "Agent session disconnected",
+  "rate-limited": "Usage limit reached",
+  "send-failed": "Couldn't reach the agent",
+  "app-restart": "App restarted mid-run",
 };
 
 const numberFormat = new Intl.NumberFormat("en-US", {
@@ -54,6 +70,28 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
   const runs = useAutoresearchRuns(taskId);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Runs persist across app restarts; pull this task's history into the store.
+  useEffect(() => {
+    if (service) void service.hydrateTask(taskId);
+  }, [service, taskId]);
+
+  const rawModelOptions = useSessionStore((state) => {
+    const taskRunId = state.taskIdIndex[taskId];
+    const session = taskRunId ? state.sessions[taskRunId] : undefined;
+    const option = getConfigOptionByCategory(session?.configOptions, "model");
+    return option?.type === "select"
+      ? flattenSelectOptions(option.options)
+      : [];
+  }, shallow);
+  const modelOptions = useMemo(
+    () =>
+      rawModelOptions.map((option) => ({
+        value: option.value,
+        label: option.name ?? option.value,
+      })),
+    [rawModelOptions],
+  );
 
   const latestRun = runs[runs.length - 1] ?? null;
   const selectedRun =
@@ -104,12 +142,13 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
           onSelectRun={setSelectedRunId}
           onNewRun={() => setDialogOpen(true)}
         />
+        <PendingPermissionNotice taskId={taskId} run={selectedRun} />
         <RunStats run={selectedRun} />
         <MetricChart
           iterations={selectedRun.iterations}
           direction={selectedRun.config.direction}
           targetValue={selectedRun.config.targetValue}
-          metricName={selectedRun.config.metricName}
+          metricName={selectedRun.metricName ?? "the metric"}
         />
         <IterationsTable
           iterations={selectedRun.iterations}
@@ -123,14 +162,16 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
         description="Starts a fresh optimization loop in this task's session. The kickoff prompt is sent to the agent immediately."
         submitLabel="Start run"
         showInstructions
+        modelOptions={modelOptions}
         initial={selectedRun.config}
         onSubmit={(values) => {
           service.startRun({
             taskId,
-            metricName: values.metricName,
             direction: values.direction,
             targetValue: values.targetValue,
             maxIterations: values.maxIterations,
+            implementModel: values.implementModel,
+            measureModel: values.measureModel,
             instructions: values.instructions ?? "",
           });
           // Follow the new run even if a past run was selected.
@@ -155,14 +196,17 @@ function RunHeader({
   onNewRun: () => void;
 }) {
   const badge = STATUS_BADGE[run.status];
-  const isLive = run.status === "running" || run.status === "paused";
+  const isLive =
+    run.status === "running" ||
+    run.status === "paused" ||
+    run.status === "interrupted";
 
   return (
     <Flex direction="column" gap="1">
       <Flex align="center" justify="between" gap="3">
         <Flex align="center" gap="2" className="min-w-0">
           <Text size="3" weight="bold" className="truncate">
-            {run.config.metricName}
+            {run.metricName ?? "Autoresearch"}
           </Text>
           <Badge color="gray" size="1">
             {run.config.direction}
@@ -184,7 +228,7 @@ function RunHeader({
               </Select.Content>
             </Select.Root>
           )}
-          {run.status === "running" && (
+          {(run.status === "running" || run.status === "interrupted") && (
             <Button
               size="1"
               variant="soft"
@@ -194,7 +238,7 @@ function RunHeader({
               <Pause size={12} /> Pause
             </Button>
           )}
-          {run.status === "paused" && (
+          {(run.status === "paused" || run.status === "interrupted") && (
             <Button
               size="1"
               variant="soft"
@@ -220,6 +264,23 @@ function RunHeader({
           )}
         </Flex>
       </Flex>
+      {run.config.implementModel && run.config.measureModel && (
+        <Text size="1" color="gray">
+          Stage models: builds on {run.config.implementModel}, measures on{" "}
+          {run.config.measureModel}
+          {run.status === "running" && run.phase
+            ? ` — now in the ${run.phase} phase`
+            : ""}
+        </Text>
+      )}
+      {run.status === "interrupted" && (
+        <Text size="1" color="orange">
+          {INTERRUPTION_LABEL[run.interruptedReason ?? ""] ??
+            "Loop interrupted"}
+          {run.lastError ? ` — ${run.lastError}` : ""}. Resumes automatically;
+          Resume retries now.
+        </Text>
+      )}
       {run.endReason && (
         <Text size="1" color="gray">
           {END_REASON_LABEL[run.endReason] ?? run.endReason}
@@ -227,6 +288,33 @@ function RunHeader({
         </Text>
       )}
     </Flex>
+  );
+}
+
+/**
+ * An unattended loop stalls silently when the agent sits on a tool-approval
+ * request; say so instead of looking idle.
+ */
+function PendingPermissionNotice({
+  taskId,
+  run,
+}: {
+  taskId: string;
+  run: AutoresearchRun;
+}) {
+  const pendingPermissions = usePendingPermissionsForTask(taskId);
+  const waiting =
+    (run.status === "running" || run.status === "interrupted") &&
+    pendingPermissions.size > 0;
+  if (!waiting) return null;
+
+  return (
+    <Callout.Root color="amber" size="1">
+      <Callout.Text>
+        The agent is waiting for a tool approval in the chat. The loop continues
+        once you respond.
+      </Callout.Text>
+    </Callout.Root>
   );
 }
 

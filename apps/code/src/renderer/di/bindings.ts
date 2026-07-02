@@ -5,9 +5,11 @@ import {
 } from "@posthog/core/archive/identifiers";
 import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
 import {
-  AUTORESEARCH_PROMPT_CLIENT,
   AUTORESEARCH_SERVICE,
-  type AutoresearchPromptClient,
+  AUTORESEARCH_SESSION_CLIENT,
+  AUTORESEARCH_STORAGE_CLIENT,
+  type AutoresearchSessionClient,
+  type AutoresearchStorageClient,
 } from "@posthog/core/autoresearch/identifiers";
 import {
   CODE_REVIEW_WORKSPACE_CLIENT,
@@ -298,7 +300,8 @@ export interface RendererBindings {
   [REPOSITORIES_SERVICE]: RepositoriesService;
   [HEDGEHOG_MODE_HOST]: HedgehogModeHost;
   [AGENT_PROMPT_SENDER]: AgentPromptSender;
-  [AUTORESEARCH_PROMPT_CLIENT]: AutoresearchPromptClient;
+  [AUTORESEARCH_SESSION_CLIENT]: AutoresearchSessionClient;
+  [AUTORESEARCH_STORAGE_CLIENT]: AutoresearchStorageClient;
   [FILE_PATH_RESOLVER]: FilePathResolver;
   [NAVIGATION_TASK_BINDER]: NavigationTaskBinder;
   [ROOT_LOGGER]: RootLogger;

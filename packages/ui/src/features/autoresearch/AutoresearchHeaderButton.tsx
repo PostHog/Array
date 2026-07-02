@@ -1,7 +1,9 @@
 import { ChartLineUp } from "@phosphor-icons/react";
+import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
 import { AUTORESEARCH_SERVICE } from "@posthog/core/autoresearch/identifiers";
 import { useServiceOptional } from "@posthog/di/react";
 import { Button } from "@posthog/quill";
+import { useEffect } from "react";
 import { Tooltip } from "../../primitives/Tooltip";
 import { usePanelLayoutStore } from "../panels/panelLayoutStore";
 import {
@@ -21,20 +23,36 @@ interface AutoresearchHeaderButtonProps {
 export function AutoresearchHeaderButton({
   taskId,
 }: AutoresearchHeaderButtonProps) {
-  const service = useServiceOptional(AUTORESEARCH_SERVICE);
+  const service = useServiceOptional<AutoresearchService>(AUTORESEARCH_SERVICE);
   const openAutoresearchTab = usePanelLayoutStore(
     (state) => state.openAutoresearchTab,
   );
   const runs = useAutoresearchRuns(taskId);
   const activeRun = useActiveAutoresearchRun(taskId);
+
+  // Runs persist across app restarts; without this the entry point would
+  // vanish for restored tasks until something else loads their history.
+  useEffect(() => {
+    if (service) void service.hydrateTask(taskId);
+  }, [service, taskId]);
+
   const isLive =
-    activeRun?.status === "running" || activeRun?.status === "paused";
+    activeRun?.status === "running" ||
+    activeRun?.status === "paused" ||
+    activeRun?.status === "interrupted";
+  const needsAttention = activeRun?.status === "interrupted";
 
   if (!service || runs.length === 0) return null;
 
   return (
     <Tooltip
-      content={isLive ? "Autoresearch (running)" : "Autoresearch"}
+      content={
+        needsAttention
+          ? "Autoresearch (interrupted)"
+          : isLive
+            ? "Autoresearch (running)"
+            : "Autoresearch"
+      }
       side="bottom"
     >
       <Button
@@ -46,7 +64,11 @@ export function AutoresearchHeaderButton({
       >
         <ChartLineUp size={16} />
         {isLive && (
-          <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-(--blue-9)" />
+          <span
+            className={`absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full ${
+              needsAttention ? "bg-(--orange-9)" : "bg-(--blue-9)"
+            }`}
+          />
         )}
       </Button>
     </Tooltip>

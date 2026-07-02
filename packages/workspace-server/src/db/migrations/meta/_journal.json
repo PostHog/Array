@@ -120,6 +120,13 @@
       "when": 1782781314961,
       "tag": "0016_add_channel_section",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1783005202636,
+      "tag": "0017_nice_bloodaxe",
+      "breakpoints": true
     }
   ]
 }
