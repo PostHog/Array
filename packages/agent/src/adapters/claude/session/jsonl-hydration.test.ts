@@ -325,14 +325,15 @@ describe("rebuildConversation", () => {
     ]);
   });
 
-  it("truncates oversized tool payloads", () => {
+  it("truncates oversized tool payloads, keeping object inputs as objects", () => {
     const bigOutput = "x".repeat(50_000);
+    const bigInput = { file_path: "/tmp/big.ts", content: "y".repeat(50_000) };
     const turns = rebuildConversation([
       entry("user_message", { content: { type: "text", text: "go" } }),
       entry("tool_call", {
         toolCallId: "toolu_01",
-        _meta: { claudeCode: { toolName: "Bash" } },
-        rawInput: { command: "cat big-file" },
+        _meta: { claudeCode: { toolName: "Write" } },
+        rawInput: bigInput,
       }),
       entry("tool_call_update", {
         toolCallId: "toolu_01",
@@ -340,9 +341,20 @@ describe("rebuildConversation", () => {
       }),
     ]);
 
+    // String outputs may truncate to a string; tool_use.input must stay an
+    // object per the Claude API schema.
     const result = turns[1].toolCalls?.[0].result as string;
     expect(result.length).toBeLessThan(11_000);
     expect(result).toContain("[truncated");
+
+    const input = turns[1].toolCalls?.[0].input as {
+      _truncated: boolean;
+      preview: string;
+      originalSize: number;
+    };
+    expect(input._truncated).toBe(true);
+    expect(input.preview.length).toBeLessThan(11_000);
+    expect(input.originalSize).toBeGreaterThan(50_000);
   });
 });
 

@@ -58,7 +58,12 @@ function capToolPayload(value: unknown): unknown {
   if (typeof text !== "string" || text.length <= MAX_TOOL_PAYLOAD_CHARS) {
     return value;
   }
-  return `${text.slice(0, MAX_TOOL_PAYLOAD_CHARS)}… [truncated ${text.length - MAX_TOOL_PAYLOAD_CHARS} chars]`;
+  const preview = `${text.slice(0, MAX_TOOL_PAYLOAD_CHARS)}… [truncated ${text.length - MAX_TOOL_PAYLOAD_CHARS} chars]`;
+  // tool_use.input must stay an object per the Claude API schema — wrap
+  // instead of replacing with a bare string.
+  return typeof value === "string"
+    ? preview
+    : { _truncated: true, preview, originalSize: text.length };
 }
 
 function isEmptyRecord(value: unknown): boolean {
