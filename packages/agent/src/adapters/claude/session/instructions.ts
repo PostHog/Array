@@ -47,8 +47,7 @@ This is minimalism, not negligence. Never cut understanding the problem, input v
 `;
 
 // Behavioral guidelines adapted from the Karpathy guidelines
-// (https://github.com/multica-ai/andrej-karpathy-skills, MIT). Their "Simplicity
-// First" section is intentionally omitted — MINIMAL_CODE above already covers it.
+// (https://github.com/multica-ai/andrej-karpathy-skills, MIT).
 const WORKING_DISCIPLINE = `
 # Working Discipline
 
