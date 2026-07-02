@@ -73,6 +73,10 @@ export const autoresearchIterationSchema = z.object({
 });
 export type AutoresearchIteration = z.infer<typeof autoresearchIterationSchema>;
 
+export function isTerminalRunStatus(status: AutoresearchRunStatus): boolean {
+  return status === "completed" || status === "stopped" || status === "failed";
+}
+
 export const autoresearchRunSchema = z.object({
   id: z.string().min(1),
   config: autoresearchConfigSchema,

@@ -16,15 +16,17 @@ interface MetricChartProps {
   metricName: string;
 }
 
+const wholeNumberFormat = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 0,
+});
+const fractionalNumberFormat = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+});
+
 function formatValue(value: number): string {
-  if (Math.abs(value) >= 1000) {
-    return new Intl.NumberFormat("en-US", {
-      maximumFractionDigits: 0,
-    }).format(value);
-  }
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 2,
-  }).format(value);
+  return (
+    Math.abs(value) >= 1000 ? wholeNumberFormat : fractionalNumberFormat
+  ).format(value);
 }
 
 /**

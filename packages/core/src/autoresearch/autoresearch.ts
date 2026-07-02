@@ -23,6 +23,7 @@ import {
   type AutoresearchReport,
   type AutoresearchRun,
   autoresearchConfigSchema,
+  isTerminalRunStatus,
 } from "./schemas";
 import { computeBest, evaluateContinuation, isImprovement } from "./stats";
 
@@ -273,6 +274,10 @@ export class AutoresearchService {
   private send(runId: string, taskId: string, prompt: string): void {
     void this.promptClient.sendPrompt(taskId, prompt).catch((error) => {
       this.log.error("Failed to send autoresearch prompt", { runId, error });
+      // The run can end (stop, session error) while the send is in flight;
+      // a late rejection must not overwrite that terminal state.
+      const current = autoresearchStore.getState().runs[runId];
+      if (!current || isTerminal(current)) return;
       autoresearchStoreActions.setRunStatus(runId, "failed", {
         endReason: "send-failed",
         lastError: error instanceof Error ? error.message : String(error),
@@ -282,11 +287,7 @@ export class AutoresearchService {
 }
 
 function isTerminal(run: AutoresearchRun): boolean {
-  return (
-    run.status === "completed" ||
-    run.status === "stopped" ||
-    run.status === "failed"
-  );
+  return isTerminalRunStatus(run.status);
 }
 
 function getSessionForTask(

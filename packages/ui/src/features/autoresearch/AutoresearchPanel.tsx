@@ -124,7 +124,7 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
         submitLabel="Start run"
         showInstructions
         initial={selectedRun.config}
-        onSubmit={(values) =>
+        onSubmit={(values) => {
           service.startRun({
             taskId,
             metricName: values.metricName,
@@ -132,8 +132,10 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
             targetValue: values.targetValue,
             maxIterations: values.maxIterations,
             instructions: values.instructions ?? "",
-          })
-        }
+          });
+          // Follow the new run even if a past run was selected.
+          setSelectedRunId(null);
+        }}
       />
     </div>
   );

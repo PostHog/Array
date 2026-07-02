@@ -442,5 +442,17 @@ describe("AutoresearchService", () => {
       expect(run.endReason).toBe("send-failed");
       expect(run.iterations).toHaveLength(1);
     });
+
+    it("a late send failure does not overwrite an already-ended run", async () => {
+      sendPromptImpl = () => Promise.reject(new Error("disconnected"));
+      const run = service.startRun(baseConfig);
+      // The user stops the run while the kickoff send is still in flight.
+      service.stopRun(run.id);
+      await flushSends();
+
+      const stored = activeRun();
+      expect(stored.status).toBe("stopped");
+      expect(stored.endReason).toBe("stopped-by-user");
+    });
   });
 });

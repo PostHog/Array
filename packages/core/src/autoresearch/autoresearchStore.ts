@@ -1,9 +1,10 @@
 import { createStore } from "zustand/vanilla";
-import type {
-  AutoresearchEndReason,
-  AutoresearchIteration,
-  AutoresearchRun,
-  AutoresearchRunStatus,
+import {
+  type AutoresearchEndReason,
+  type AutoresearchIteration,
+  type AutoresearchRun,
+  type AutoresearchRunStatus,
+  isTerminalRunStatus,
 } from "./schemas";
 
 export interface AutoresearchState {
@@ -52,8 +53,7 @@ export const autoresearchStoreActions = {
     status: AutoresearchRunStatus,
     options?: { endReason?: AutoresearchEndReason; lastError?: string },
   ): void {
-    const terminal =
-      status === "completed" || status === "stopped" || status === "failed";
+    const terminal = isTerminalRunStatus(status);
     updateRun(runId, (run) => ({
       ...run,
       status,
