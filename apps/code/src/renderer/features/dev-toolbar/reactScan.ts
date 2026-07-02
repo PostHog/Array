@@ -16,11 +16,11 @@ export async function setReactScanEnabled(enabled: boolean): Promise<void> {
   try {
     const mod = await loadReactScan();
     if (!initialized) {
-      mod.scan({ enabled });
+      mod.scan({ enabled, showToolbar: enabled });
       initialized = true;
       return;
     }
-    mod.setOptions({ enabled });
+    mod.setOptions({ enabled, showToolbar: enabled });
   } catch (error) {
     log.warn("Failed to toggle react-scan", { error });
   }
