@@ -230,6 +230,42 @@ describe("feature settingsStore custom sounds", () => {
     const persisted = JSON.parse(lastCall[1]);
     expect(persisted.state.customSounds).toEqual([sound]);
   });
+
+  it.each([
+    {
+      label: "random-custom with empty customSounds array",
+      persistedState: { completionSound: "random-custom", customSounds: [] },
+      expectedCompletionSound: "none",
+    },
+    {
+      label: "random-custom with absent customSounds key",
+      persistedState: { completionSound: "random-custom" },
+      expectedCompletionSound: "none",
+    },
+    {
+      label: "random-custom with non-empty library",
+      persistedState: {
+        completionSound: "random-custom",
+        customSounds: [sound],
+      },
+      expectedCompletionSound: "random-custom",
+    },
+  ])(
+    "rehydrate merge normalizes $label",
+    async ({ persistedState, expectedCompletionSound }) => {
+      getItem.mockResolvedValue(
+        JSON.stringify({ state: persistedState, version: 0 }),
+      );
+
+      useSettingsStore.setState({ completionSound: "none", customSounds: [] });
+
+      await useSettingsStore.persist.rehydrate();
+
+      expect(useSettingsStore.getState().completionSound).toBe(
+        expectedCompletionSound,
+      );
+    },
+  );
 });
 
 describe("feature settingsStore terminal font", () => {
