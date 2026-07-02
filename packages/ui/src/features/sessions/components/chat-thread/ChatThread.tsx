@@ -1,4 +1,11 @@
-import { CaretDown, ChatCircle, FileText, Scroll } from "@phosphor-icons/react";
+import {
+  CaretDown,
+  ChatCircle,
+  Check,
+  Copy,
+  FileText,
+  Scroll,
+} from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
 import {
@@ -206,15 +213,49 @@ function formatTimestamp(ts: number): string {
   });
 }
 
+/** Small ghost icon button that copies `text` to the clipboard, flipping to a check for ~1.2s. */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = useCallback(() => {
+    void navigator.clipboard.writeText(text);
+    setCopied(true);
+  }, [text]);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1200);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <Button
+      type="button"
+      variant="link-muted"
+      size="icon-xs"
+      onClick={onCopy}
+      aria-label="Copy message"
+      title="Copy message"
+    >
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+    </Button>
+  );
+}
+
 /**
  * Send-time footer revealed on hover. Sits inside a `group` container (a `ChatMessage` for prose, a
- * wrapper div for tool rows) so it fades in only while that row is hovered.
+ * wrapper div for tool rows) so it fades in only while that row is hovered. When `copyText` is
+ * given, a small copy button sits beside the timestamp.
  */
-function RowTimestamp({ timestamp }: { timestamp?: number }) {
-  if (timestamp == null) return null;
+function RowTimestamp({
+  timestamp,
+  copyText,
+}: {
+  timestamp?: number;
+  copyText?: string;
+}) {
+  if (timestamp == null && !copyText) return null;
   return (
-    <ChatMessageFooter className="justify-end opacity-0 transition-opacity group-hover:opacity-100">
-      {formatTimestamp(timestamp)}
+    <ChatMessageFooter className="items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      {timestamp != null && formatTimestamp(timestamp)}
+      {copyText && <CopyButton text={copyText} />}
     </ChatMessageFooter>
   );
 }
@@ -781,6 +822,7 @@ export function ChatThread({
                     timestamp={
                       item.turnContext.turnComplete ? item.timestamp : undefined
                     }
+                    copyText={update.content.text}
                   />
                 </ChatMessageContent>
               </ChatMessage>
