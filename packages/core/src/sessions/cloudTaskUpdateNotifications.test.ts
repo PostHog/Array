@@ -47,6 +47,32 @@ function permissionRequest(
   };
 }
 
+function logsUpdate(
+  newEntries: StoredLogEntry[],
+  totalEntryCount: number,
+): CloudTaskUpdatePayload {
+  return {
+    taskId: TASK_ID,
+    runId: RUN_ID,
+    kind: "logs",
+    newEntries,
+    totalEntryCount,
+  };
+}
+
+function snapshotUpdate(
+  newEntries: StoredLogEntry[],
+  totalEntryCount: number,
+): CloudTaskUpdatePayload {
+  return {
+    taskId: TASK_ID,
+    runId: RUN_ID,
+    kind: "snapshot",
+    newEntries,
+    totalEntryCount,
+  };
+}
+
 function createHarness() {
   const sessions: Record<string, AgentSession> = {};
   const store = {
@@ -169,17 +195,57 @@ describe("cloud task update notifications", () => {
     expect(harness.markActivity).not.toHaveBeenCalled();
   });
 
-  it("notifies once for a live turn that starts and completes", () => {
-    const harness = createHarness();
-    harness.sendUpdate({
-      taskId: TASK_ID,
-      runId: RUN_ID,
-      kind: "logs",
-      newEntries: [sessionPrompt(1), turnComplete()],
-      totalEntryCount: 2,
-    });
+  // The completion notification must fire exactly once per turn regardless of
+  // how the turn's entries are delivered. Each case is a sequence of updates
+  // applied to a fresh harness; `expected` is the resulting notify count.
+  it.each([
+    {
+      label: "a live turn that starts and completes",
+      updates: [logsUpdate([sessionPrompt(1), turnComplete()], 2)],
+      expected: 1,
+    },
+    {
+      // A reconnect/durable re-emit replays the tail: the same turn_complete
+      // arrives again with a fresh totalEntryCount, slipping past the
+      // processedLineCount guard. It must not ring a second time.
+      label: "a re-delivered live turn_complete",
+      updates: [
+        logsUpdate([sessionPrompt(1), turnComplete()], 2),
+        logsUpdate([turnComplete()], 3),
+      ],
+      expected: 1,
+    },
+    {
+      label: "several turns each completing",
+      updates: [
+        logsUpdate([sessionPrompt(1), turnComplete()], 2),
+        logsUpdate([sessionPrompt(2), turnComplete()], 4),
+      ],
+      expected: 2,
+    },
+    {
+      // Opening a task mid-turn: its session/prompt is already in history and
+      // only the turn_complete arrives live. The completion must still ring.
+      label: "a prompt seen only in the snapshot, completing live",
+      updates: [
+        snapshotUpdate([sessionPrompt(1)], 1),
+        logsUpdate([turnComplete()], 2),
+      ],
+      expected: 1,
+    },
+  ])(
+    "fires the completion notification once per turn: $label",
+    ({ updates, expected }) => {
+      const harness = createHarness();
+      for (const update of updates) harness.sendUpdate(update);
+      expect(harness.notifyPromptComplete).toHaveBeenCalledTimes(expected);
+    },
+  );
 
-    expect(harness.notifyPromptComplete).toHaveBeenCalledTimes(1);
+  it("notifies with the task title and stop reason, and marks activity", () => {
+    const harness = createHarness();
+    harness.sendUpdate(logsUpdate([sessionPrompt(1), turnComplete()], 2));
+
     expect(harness.notifyPromptComplete).toHaveBeenCalledWith(
       "Cloud Task",
       "end_turn",
@@ -187,75 +253,6 @@ describe("cloud task update notifications", () => {
       undefined,
     );
     expect(harness.markActivity).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not notify again when a live turn_complete is re-delivered", () => {
-    const harness = createHarness();
-    harness.sendUpdate({
-      taskId: TASK_ID,
-      runId: RUN_ID,
-      kind: "logs",
-      newEntries: [sessionPrompt(1), turnComplete()],
-      totalEntryCount: 2,
-    });
-    expect(harness.notifyPromptComplete).toHaveBeenCalledTimes(1);
-
-    // The stream replays the tail (reconnect/durable re-emit): the same
-    // turn_complete arrives again with a fresh totalEntryCount, slipping past
-    // the processedLineCount guard. It must not ring a second time.
-    harness.sendUpdate({
-      taskId: TASK_ID,
-      runId: RUN_ID,
-      kind: "logs",
-      newEntries: [turnComplete()],
-      totalEntryCount: 3,
-    });
-
-    expect(harness.notifyPromptComplete).toHaveBeenCalledTimes(1);
-  });
-
-  it("notifies once per turn across multiple turns", () => {
-    const harness = createHarness();
-    harness.sendUpdate({
-      taskId: TASK_ID,
-      runId: RUN_ID,
-      kind: "logs",
-      newEntries: [sessionPrompt(1), turnComplete()],
-      totalEntryCount: 2,
-    });
-    harness.sendUpdate({
-      taskId: TASK_ID,
-      runId: RUN_ID,
-      kind: "logs",
-      newEntries: [sessionPrompt(2), turnComplete()],
-      totalEntryCount: 4,
-    });
-
-    expect(harness.notifyPromptComplete).toHaveBeenCalledTimes(2);
-  });
-
-  it("notifies when the in-flight prompt was only seen in the snapshot", () => {
-    const harness = createHarness();
-    // Opening a task mid-turn: its session/prompt is already in history, and
-    // only the turn_complete arrives live. The completion must still ring.
-    harness.sendUpdate({
-      taskId: TASK_ID,
-      runId: RUN_ID,
-      kind: "snapshot",
-      newEntries: [sessionPrompt(1)],
-      totalEntryCount: 1,
-    });
-    expect(harness.notifyPromptComplete).not.toHaveBeenCalled();
-
-    harness.sendUpdate({
-      taskId: TASK_ID,
-      runId: RUN_ID,
-      kind: "logs",
-      newEntries: [turnComplete()],
-      totalEntryCount: 2,
-    });
-
-    expect(harness.notifyPromptComplete).toHaveBeenCalledTimes(1);
   });
 
   it("notifies a pending permission once across repeated snapshots", () => {
