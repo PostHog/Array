@@ -224,29 +224,31 @@ describe("resolveModelPreference", () => {
     expect(resolveModelPreference("default", options)).toBeNull();
   });
 
-  it("resolves single-number family versions like Sonnet 5", () => {
-    const withSonnet5 = [
-      { value: "claude-sonnet-5", name: "Claude Sonnet 5" },
-      { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-    ];
-    expect(resolveModelPreference("sonnet 5", withSonnet5)).toBe(
-      "claude-sonnet-5",
-    );
-  });
-
-  it("refuses a cross-version match between a bare and dotted version", () => {
-    const sonnet5Alias = [{ value: "sonnet", name: "Claude Sonnet 5" }];
-    expect(resolveModelPreference("claude-sonnet-4-6", sonnet5Alias)).toBe(
-      null,
-    );
-  });
-
-  it("does not read a [1m] context hint as a family version", () => {
-    const hinted = [{ value: "sonnet[1m]", name: "Claude Sonnet (1M)" }];
-    // "sonnet[1m]" carries no version; a versioned preference must still
-    // match it rather than being rejected on the hint's "1".
-    expect(resolveModelPreference("claude-sonnet-4-6", hinted)).toBe(
-      "sonnet[1m]",
-    );
+  it.each([
+    {
+      label: "resolves single-number family versions like Sonnet 5",
+      preference: "sonnet 5",
+      models: [
+        { value: "claude-sonnet-5", name: "Claude Sonnet 5" },
+        { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+      ],
+      expected: "claude-sonnet-5",
+    },
+    {
+      label: "refuses a cross-version match between bare and dotted versions",
+      preference: "claude-sonnet-4-6",
+      models: [{ value: "sonnet", name: "Claude Sonnet 5" }],
+      expected: null,
+    },
+    {
+      // "sonnet[1m]" carries no version; a versioned preference must still
+      // match it rather than being rejected on the hint's "1".
+      label: "does not read a [1m] context hint as a family version",
+      preference: "claude-sonnet-4-6",
+      models: [{ value: "sonnet[1m]", name: "Claude Sonnet (1M)" }],
+      expected: "sonnet[1m]",
+    },
+  ])("$label", ({ preference, models, expected }) => {
+    expect(resolveModelPreference(preference, models)).toBe(expected);
   });
 });

@@ -202,41 +202,42 @@ describe("assembled assistant text fallback", () => {
     ]);
   });
 
-  it("forwards only the un-streamed tail when the stream was cut short", async () => {
+  it.each([
+    {
+      label: "forwards only the un-streamed tail when the stream was cut short",
+      streams: [["msg_1", "hello wor"]] as const,
+      assembled: { id: "msg_1", text: "hello world" },
+      expected: ["ld"],
+    },
+    {
+      label:
+        "dedupes by content when the consolidated message id differs from the stream",
+      streams: [["msg_gateway_1", "same text"]] as const,
+      assembled: { id: "msg_other_id", text: "same text" },
+      expected: [],
+    },
+    {
+      // msg_1 never got its consolidated message (e.g. cancelled turn);
+      // its residue must not swallow or truncate msg_2's block.
+      label: "clears streamed residue when a new top-level message starts",
+      streams: [
+        ["msg_1", "cancelled turn text"],
+        ["msg_2", "cancelled"],
+      ] as const,
+      assembled: { id: "msg_2", text: "cancelled turn" },
+      expected: [" turn"],
+    },
+  ])("$label", async ({ streams, assembled, expected }) => {
     const { context, updates } = createHandlerContext();
-    await streamLiveText(context, "msg_1", "hello wor");
+    for (const [apiId, text] of streams) {
+      await streamLiveText(context, apiId, text);
+    }
     updates.length = 0;
     await handleUserAssistantMessage(
-      assistantMessage("msg_1", [{ type: "text", text: "hello world" }]),
+      assistantMessage(assembled.id, [{ type: "text", text: assembled.text }]),
       context,
     );
-    expect(chunkTexts(updates, "agent_message_chunk")).toEqual(["ld"]);
-  });
-
-  it("dedupes by content when the consolidated message id differs from the stream", async () => {
-    const { context, updates } = createHandlerContext();
-    await streamLiveText(context, "msg_gateway_1", "same text");
-    updates.length = 0;
-    await handleUserAssistantMessage(
-      assistantMessage("msg_other_id", [{ type: "text", text: "same text" }]),
-      context,
-    );
-    expect(chunkTexts(updates, "agent_message_chunk")).toEqual([]);
-  });
-
-  it("clears streamed residue when a new top-level message starts", async () => {
-    const { context, updates } = createHandlerContext();
-    await streamLiveText(context, "msg_1", "cancelled turn text");
-    // A new message starts before msg_1's consolidated message ever arrived.
-    await streamLiveText(context, "msg_2", "cancelled");
-    updates.length = 0;
-    await handleUserAssistantMessage(
-      assistantMessage("msg_2", [{ type: "text", text: "cancelled turn" }]),
-      context,
-    );
-    // Only msg_2's own streamed prefix is consumed; msg_1's residue must not
-    // swallow (or truncate) msg_2's assembled block.
-    expect(chunkTexts(updates, "agent_message_chunk")).toEqual([" turn"]);
+    expect(chunkTexts(updates, "agent_message_chunk")).toEqual(expected);
   });
 
   it("ignores empty streamed deltas so they cannot stall the diff cursor", async () => {
