@@ -21,7 +21,7 @@ import {
   useChatMessageScroller,
   useChatMessageScrollerVisibility,
 } from "@posthog/quill";
-import { formatMessageTimestamp, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
@@ -157,6 +157,17 @@ function groupToolRuns(items: ConversationItem[]): ThreadItem[] {
   return out;
 }
 
+function formatTimestamp(ts: number): string {
+  return new Date(ts).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 /**
  * Send-time footer revealed on hover. Sits inside a `group` container (a `ChatMessage` for prose, a
  * wrapper div for tool rows) so it fades in only while that row is hovered.
@@ -165,7 +176,7 @@ function RowTimestamp({ timestamp }: { timestamp?: number }) {
   if (timestamp == null) return null;
   return (
     <ChatMessageFooter className="opacity-0 transition-opacity group-hover:opacity-100">
-      {formatMessageTimestamp(timestamp)}
+      {formatTimestamp(timestamp)}
     </ChatMessageFooter>
   );
 }
@@ -337,7 +348,7 @@ function UserBubble({
         </ChatBubble>
         {timestamp != null && (
           <ChatMessageFooter className="opacity-0 transition-opacity group-hover:opacity-100">
-            {formatMessageTimestamp(timestamp)}
+            {formatTimestamp(timestamp)}
           </ChatMessageFooter>
         )}
       </ChatMessageContent>

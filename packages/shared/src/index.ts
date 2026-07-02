@@ -213,7 +213,6 @@ export type {
   TaskCreationOutput,
 } from "./task-creation-domain";
 export {
-  formatMessageTimestamp,
   formatRelativeTimeLong,
   formatRelativeTimeShort,
   getRelativeDateGroup,
