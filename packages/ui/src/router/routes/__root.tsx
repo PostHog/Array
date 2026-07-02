@@ -72,43 +72,10 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-// Dynamic import keeps the devtools chunk out of the prod bundle. Without the
-// gate at the import level, conditional render alone still ships the devtools
-// code to users.
-//
-// We embed the router devtools as a plugin inside the unified TanStack Devtools
-// shell rather than rendering the standalone floating logo. The shell owns a
-// single trigger that can be dragged, dismissed, and hidden-until-hover, and it
-// persists those choices to localStorage — so the panel stays out of the way.
-const TanStackDevtools = import.meta.env.DEV
-  ? lazy(async () => {
-      const [
-        { TanStackDevtools: DevtoolsShell },
-        { TanStackRouterDevtoolsPanel },
-      ] = await Promise.all([
-        import("@tanstack/react-devtools"),
-        import("@tanstack/react-router-devtools"),
-      ]);
-      // Hoisted so the config/plugins keep stable references across the
-      // RootLayout re-renders that fire on every navigation — otherwise the
-      // shell could remount the panel (and flash) on each route change.
-      const config = {
-        position: "bottom-right",
-        hideUntilHover: true,
-      } as const;
-      const plugins = [
-        {
-          name: "TanStack Router",
-          render: <TanStackRouterDevtoolsPanel />,
-        },
-      ];
-      return {
-        default: () => <DevtoolsShell config={config} plugins={plugins} />,
-      };
-    })
-  : () => null;
+// The router devtools are rendered inside the app's dev toolbar (Router panel),
+// not as a standalone floating logo — see RouterDevtoolsPanel.
 
 const log = logger.scope("root-route");
 
@@ -411,11 +378,6 @@ function RootLayout() {
           onFinished={handleFeedbackFinished}
         />
         <ExistingWorktreeDialog />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
       </Flex>
     );
   }
@@ -439,11 +401,6 @@ function RootLayout() {
         <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
         <ExistingWorktreeDialog />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
       </Flex>
     );
   }
@@ -492,11 +449,6 @@ function RootLayout() {
         ) : null}
         <ExistingWorktreeDialog />
         <HedgehogMode />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
       </Flex>
     </Flex>
   );

@@ -22,6 +22,7 @@ import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingSt
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { useSetupStore } from "@posthog/ui/features/setup/setupStore";
 import { useTourStore } from "@posthog/ui/features/tour/tourStore";
+import { RouterDevtoolsPanel } from "@posthog/ui/router/RouterDevtoolsPanel";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import { clearApplicationStorage } from "@posthog/ui/utils/clearStorage";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
@@ -44,6 +45,7 @@ import {
   Radar,
   RefreshCw,
   RotateCcw,
+  Route,
   ScrollText,
   Sun,
   Timer,
@@ -73,6 +75,7 @@ type DetailPanel =
   | "agents"
   | "logs"
   | "health"
+  | "router"
   | null;
 
 export function DevToolbar() {
@@ -118,6 +121,8 @@ export function DevToolbar() {
             onToggleReactScan={() =>
               setReactScanEnabledState(!reactScanEnabled)
             }
+            routerDevtoolsOpen={openPanel === "router"}
+            onToggleRouterDevtools={() => togglePanel("router")}
           />
           <Divider />
           <QuickActionsMenu />
@@ -190,6 +195,10 @@ const PANEL_HEADERS: Record<
     title: "Main-thread health",
     subtitle: "ms · current main-thread event loop lag",
   },
+  router: {
+    title: "Router",
+    subtitle: "TanStack Router devtools · matched routes, params and loaders",
+  },
 };
 
 function PanelChrome({
@@ -243,6 +252,7 @@ function PanelChrome({
         {openPanel === "agents" && <AgentsPanel enabled={devMode} />}
         {openPanel === "logs" && <LogsPanel enabled={devMode} />}
         {openPanel === "health" && <HealthPanel enabled={devMode} />}
+        {openPanel === "router" && <RouterDevtoolsPanel />}
       </div>
     </div>
   );
@@ -431,9 +441,16 @@ function UserMenu() {
 interface DevGadgetsProps {
   reactScanEnabled: boolean;
   onToggleReactScan: () => void;
+  routerDevtoolsOpen: boolean;
+  onToggleRouterDevtools: () => void;
 }
 
-function DevGadgets({ reactScanEnabled, onToggleReactScan }: DevGadgetsProps) {
+function DevGadgets({
+  reactScanEnabled,
+  onToggleReactScan,
+  routerDevtoolsOpen,
+  onToggleRouterDevtools,
+}: DevGadgetsProps) {
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
   const setTheme = useThemeStore((s) => s.setTheme);
 
@@ -453,6 +470,21 @@ function DevGadgets({ reactScanEnabled, onToggleReactScan }: DevGadgetsProps) {
       >
         <Radar size={14} />
       </GadgetButton>
+      {/* Router devtools are DEV-only — the panel's code is stripped from prod
+          builds, so the trigger must be too. */}
+      {import.meta.env.DEV && (
+        <GadgetButton
+          label={
+            routerDevtoolsOpen
+              ? "Close router devtools"
+              : "Open router devtools"
+          }
+          onClick={onToggleRouterDevtools}
+          active={routerDevtoolsOpen}
+        >
+          <Route size={14} />
+        </GadgetButton>
+      )}
     </Flex>
   );
 }
