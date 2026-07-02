@@ -27,4 +27,18 @@ describe("highlightSyntax", () => {
   it("returns null for an unsupported language", () => {
     expect(highlightSyntax("whatever", "brainfuck", true)).toBeNull();
   });
+
+  it("evicts the oldest entry once the cache is full", () => {
+    const code = "const evicted = true;";
+    const first = highlightSyntax(code, "javascript", true);
+
+    // 256 distinct inserts push everything older out of the bounded cache.
+    for (let i = 0; i < 256; i++) {
+      highlightSyntax(`const filler${i} = ${i};`, "javascript", true);
+    }
+
+    const again = highlightSyntax(code, "javascript", true);
+    expect(again).not.toBe(first);
+    expect(again).toEqual(first);
+  });
 });
