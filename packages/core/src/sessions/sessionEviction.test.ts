@@ -1,6 +1,11 @@
 import type { AgentSession } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
-import { isSessionIdle, selectSessionsToEvict } from "./sessionEviction";
+import { getCellCount, type LayoutPreset } from "../command-center/grid";
+import {
+  isSessionIdle,
+  MAX_CONNECTED_SESSIONS,
+  selectSessionsToEvict,
+} from "./sessionEviction";
 
 function makeSession(overrides: Partial<AgentSession>): AgentSession {
   return {
@@ -19,6 +24,8 @@ describe("isSessionIdle", () => {
     ["connected idle local session", {}, true],
     ["connecting session", { status: "connecting" as const }, false],
     ["pending prompt", { isPromptPending: true }, false],
+    ["compacting session", { isCompacting: true }, false],
+    ["handoff in progress", { handoffInProgress: true }, false],
     [
       "pending permission",
       { pendingPermissions: new Map([["p1", {} as never]]) },
@@ -111,5 +118,25 @@ describe("selectSessionsToEvict", () => {
   ])("%s", (_name, params, expected) => {
     const evicted = selectSessionsToEvict({ ...params, lastUsedAt });
     expect(evicted.map((s) => s.taskId)).toEqual(expected);
+  });
+});
+
+describe("MAX_CONNECTED_SESSIONS", () => {
+  it("stays above the largest Command Center grid so full layouts never evict", () => {
+    // Record<LayoutPreset, ...> forces this list to grow with the union, so a
+    // new larger preset breaks this test instead of silently churning cells.
+    const allPresets: Record<LayoutPreset, true> = {
+      "1x1": true,
+      "2x1": true,
+      "1x2": true,
+      "2x2": true,
+      "3x2": true,
+      "3x3": true,
+    };
+    const largestGrid = Math.max(
+      ...(Object.keys(allPresets) as LayoutPreset[]).map(getCellCount),
+    );
+
+    expect(MAX_CONNECTED_SESSIONS).toBeGreaterThan(largestGrid);
   });
 });
