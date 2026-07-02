@@ -319,7 +319,7 @@ export function closeTabs(
   );
 
   let next = snapshot;
-  for (const id of tabIds) {
+  for (const id of ids) {
     next = closeTab(next, id).snapshot;
   }
 
