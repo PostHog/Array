@@ -65,6 +65,18 @@ if (typeof window.localStorage?.setItem !== "function") {
   });
 }
 
+// jsdom does not implement ResizeObserver; @dnd-kit/dom instantiates one at
+// module load, so components using useSortable/useDroppable need a stub.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  class ResizeObserverStub {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver =
+    ResizeObserverStub as unknown as typeof ResizeObserver;
+}
+
 // jsdom does not implement matchMedia; UI stores (e.g. themeStore) read it at
 // module load to resolve the system color scheme.
 Object.defineProperty(window, "matchMedia", {

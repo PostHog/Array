@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   activeTabIsBlank,
   closeTab,
+  closeTabs,
   decideTabNavigation,
   newBlankTab,
   openOrFocusTab,
   POSITION_GAP,
   primaryWindow,
   primaryWindowHasNoTabs,
-  reorderTab,
+  setTabOrder,
   setTabTarget,
 } from "./browser-tabs";
 import type { TabsSnapshot } from "./browser-tabs-schemas";
@@ -147,57 +148,6 @@ describe("closeTab", () => {
     expect(r.closedWindowId).toBeNull();
     expect(r.snapshot.windows[0].activeTabId).toBeNull();
     expect(r.snapshot.tabs).toHaveLength(0);
-  });
-});
-
-describe("reorderTab", () => {
-  it("moves a tab to a new index", () => {
-    let s = snapshot();
-    const a = open(s, "w1", "dash-a");
-    const b = open(a.snapshot, "w1", "dash-b");
-    const c = open(b.snapshot, "w1", "dash-c");
-    s = c.snapshot; // order a,b,c
-    const moved = reorderTab(s, c.tabId, 0); // c to front
-    const order = moved.tabs
-      .slice()
-      .sort((x, y) => x.position - y.position)
-      .map((t) => t.dashboardId);
-    expect(order).toEqual(["dash-c", "dash-a", "dash-b"]);
-  });
-
-  it("reindexes when positions would collide", () => {
-    const tabs = [
-      {
-        id: "a",
-        windowId: "w1",
-        dashboardId: "da",
-        taskId: null,
-        channelId: null,
-        channelSection: null,
-        position: 1,
-        scrollState: null,
-        createdAt: 0,
-        lastActiveAt: 0,
-      },
-      {
-        id: "b",
-        windowId: "w1",
-        dashboardId: "db",
-        taskId: null,
-        channelId: null,
-        channelSection: null,
-        position: 2,
-        scrollState: null,
-        createdAt: 0,
-        lastActiveAt: 0,
-      },
-    ];
-    const s = snapshot({ tabs });
-    const moved = reorderTab(s, "b", 0);
-    const positions = moved.tabs.map((t) => t.position);
-    // distinct + spaced after reindex
-    expect(new Set(positions).size).toBe(2);
-    expect(positions).toContain(POSITION_GAP);
   });
 });
 
@@ -501,6 +451,142 @@ describe("primaryWindowHasNoTabs", () => {
     });
     const onlyInSecondary = open(s, "w2", "dash-a");
     expect(primaryWindowHasNoTabs(onlyInSecondary.snapshot)).toBe(true);
+  });
+});
+
+describe("closeTabs", () => {
+  /** Open n dashboards in w1, returning the snapshot and ordered tab ids. */
+  function openMany(n: number) {
+    let s = snapshot();
+    const ids: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const r = open(s, "w1", `dash-${i}`);
+      s = r.snapshot;
+      ids.push(r.tabId);
+    }
+    return { s, ids };
+  }
+
+  it("is a noop for an empty or unknown id list", () => {
+    const { s } = openMany(2);
+    expect(closeTabs(s, [])).toBe(s);
+    expect(closeTabs(s, ["nope"]).tabs).toHaveLength(2);
+  });
+
+  it("removes the given tabs and keeps the rest", () => {
+    const { s, ids } = openMany(4);
+    const r = closeTabs(s, [ids[1], ids[2]]);
+    expect(r.tabs.map((t) => t.id)).toEqual([ids[0], ids[3]]);
+    expect(r.windows).toHaveLength(1);
+  });
+
+  it("keeps the active tab focused when it survives", () => {
+    const { s, ids } = openMany(3);
+    const focused = closeTabs(setFocus(s, ids[0]), [ids[1], ids[2]]);
+    expect(focused.windows[0].activeTabId).toBe(ids[0]);
+  });
+
+  it("focuses the anchor when the active tab is closed", () => {
+    const { s, ids } = openMany(4);
+    // Active is ids[1]; "close others" on anchor ids[0] closes 1,2,3 → the
+    // anchor takes focus even though a stored-order neighbour differs.
+    const r = closeTabs(setFocus(s, ids[1]), [ids[1], ids[2], ids[3]], ids[0]);
+    expect(r.windows[0].activeTabId).toBe(ids[0]);
+  });
+
+  it("falls back to closeTab's neighbour when no anchor is given", () => {
+    const { s, ids } = openMany(4);
+    // Active ids[1]; closing 1,2 leaves [0,3]; the survivor at the old slot is 3.
+    const r = closeTabs(setFocus(s, ids[1]), [ids[1], ids[2]]);
+    expect(r.windows[0].activeTabId).toBe(ids[3]);
+  });
+
+  it("ignores an anchor when the active tab survived", () => {
+    const { s, ids } = openMany(4);
+    // Active ids[0] survives; anchor must not steal focus from it.
+    const r = closeTabs(setFocus(s, ids[0]), [ids[2], ids[3]], ids[1]);
+    expect(r.windows[0].activeTabId).toBe(ids[0]);
+  });
+
+  it("lands the primary window on channels when all tabs close", () => {
+    const { s, ids } = openMany(2);
+    const r = closeTabs(s, ids);
+    expect(r.tabs).toHaveLength(0);
+    expect(r.windows[0].activeTabId).toBeNull();
+  });
+
+  it("drops an emptied secondary window", () => {
+    const base = snapshot({
+      windows: [
+        { id: "w1", isPrimary: true, bounds: null, activeTabId: null },
+        { id: "w2", isPrimary: false, bounds: null, activeTabId: null },
+      ],
+    });
+    const a = open(base, "w2", "dash-a");
+    const b = open(a.snapshot, "w2", "dash-b");
+    const r = closeTabs(b.snapshot, [a.tabId, b.tabId]);
+    expect(r.windows.map((w) => w.id)).toEqual(["w1"]);
+  });
+
+  function setFocus(s: TabsSnapshot, tabId: string): TabsSnapshot {
+    return {
+      ...s,
+      windows: s.windows.map((w) =>
+        w.id === "w1" ? { ...w, activeTabId: tabId } : w,
+      ),
+    };
+  }
+});
+
+describe("setTabOrder", () => {
+  function openThree() {
+    let s = snapshot();
+    const ids: string[] = [];
+    for (const d of ["a", "b", "c"]) {
+      const r = open(s, "w1", `dash-${d}`);
+      s = r.snapshot;
+      ids.push(r.tabId);
+    }
+    return { s, ids };
+  }
+
+  function orderOf(s: TabsSnapshot): string[] {
+    return s.tabs
+      .filter((t) => t.windowId === "w1")
+      .sort((a, b) => a.position - b.position)
+      .map((t) => t.id);
+  }
+
+  it("persists the given order with clean gap positions", () => {
+    const { s, ids } = openThree();
+    const next = setTabOrder(s, "w1", [ids[2], ids[0], ids[1]]);
+    expect(orderOf(next)).toEqual([ids[2], ids[0], ids[1]]);
+    expect(
+      next.tabs
+        .filter((t) => t.windowId === "w1")
+        .sort((a, b) => a.position - b.position)
+        .map((t) => t.position),
+    ).toEqual([POSITION_GAP, 2 * POSITION_GAP, 3 * POSITION_GAP]);
+  });
+
+  it("ignores unknown ids and appends unlisted tabs in old order", () => {
+    const { s, ids } = openThree();
+    const next = setTabOrder(s, "w1", ["nope", ids[1]]);
+    expect(orderOf(next)).toEqual([ids[1], ids[0], ids[2]]);
+  });
+
+  it("leaves other windows' tabs untouched", () => {
+    const base = snapshot({
+      windows: [
+        { id: "w1", isPrimary: true, bounds: null, activeTabId: null },
+        { id: "w2", isPrimary: false, bounds: null, activeTabId: null },
+      ],
+    });
+    const other = open(base, "w2", "dash-z");
+    const r = open(other.snapshot, "w1", "dash-a");
+    const next = setTabOrder(r.snapshot, "w1", [r.tabId]);
+    const w2tab = next.tabs.find((t) => t.windowId === "w2");
+    expect(w2tab?.position).toBe(POSITION_GAP);
   });
 });
 

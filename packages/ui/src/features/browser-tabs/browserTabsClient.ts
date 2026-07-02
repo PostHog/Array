@@ -30,7 +30,6 @@ export interface BrowserTabsClient {
     channelSection?: string | null;
   }): Promise<TabsSnapshot>;
   close(tabId: string): Promise<TabsSnapshot>;
-  reorder(input: { tabId: string; toIndex: number }): Promise<TabsSnapshot>;
   setActiveTab(input: {
     windowId: string;
     tabId: string | null;
