@@ -45,7 +45,11 @@ export type BuiltInCompletionSound =
   | "icq";
 
 // A user-installed sound is selected by referencing its id as `custom:<id>`.
-export type CompletionSound = BuiltInCompletionSound | `custom:${string}`;
+export type CompletionSound =
+  | BuiltInCompletionSound
+  | "random-all"
+  | "random-custom"
+  | `custom:${string}`;
 
 // A notification sound the user recorded or imported. The clip is stored inline
 // as a base64 data URL so it persists with the rest of the settings (no host
@@ -84,6 +88,8 @@ interface SettingsStore {
   lastUsedEnvironments: Record<string, string>;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
+  // Mode last chosen when approving a plan; pre-selected on the next approval.
+  lastPlanApprovalMode: ExecutionMode | null;
   defaultReasoningEffort: DefaultReasoningEffort;
   defaultMessagingMode: DefaultMessagingMode;
   setDefaultMessagingMode: (mode: DefaultMessagingMode) => void;
@@ -105,6 +111,7 @@ interface SettingsStore {
   getLastUsedEnvironment: (repoPath: string) => string | null;
   setDefaultInitialTaskMode: (mode: DefaultInitialTaskMode) => void;
   setLastUsedInitialTaskMode: (mode: ExecutionMode) => void;
+  setLastPlanApprovalMode: (mode: ExecutionMode) => void;
   setDefaultReasoningEffort: (effort: DefaultReasoningEffort) => void;
 
   // Notifications
@@ -165,6 +172,7 @@ interface SettingsStore {
   brainrotMode: boolean;
   mcpAppsDisabledServers: string[];
   downloadUpdatesAutomatically: boolean;
+  dismissibleUpdateBanners: boolean;
   lastSeenChangelogVersion: string | null;
   // Renders the conversation with the new ChatX (quill) primitives instead of
   // the virtualized ConversationView. Local A/B toggle while the rebuild bakes.
@@ -175,6 +183,7 @@ interface SettingsStore {
   setBrainrotMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
   setDownloadUpdatesAutomatically: (enabled: boolean) => void;
+  setDismissibleUpdateBanners: (enabled: boolean) => void;
   setLastSeenChangelogVersion: (version: string | null) => void;
 
   // Onboarding hints
@@ -217,6 +226,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedEnvironments: {},
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
+      lastPlanApprovalMode: null,
       defaultReasoningEffort: "last_used",
       defaultMessagingMode: "queue",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
@@ -248,6 +258,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ defaultInitialTaskMode: mode }),
       setLastUsedInitialTaskMode: (mode) =>
         set({ lastUsedInitialTaskMode: mode }),
+      setLastPlanApprovalMode: (mode) => set({ lastPlanApprovalMode: mode }),
       setDefaultReasoningEffort: (effort) =>
         set({ defaultReasoningEffort: effort }),
       setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
@@ -271,14 +282,19 @@ export const useSettingsStore = create<SettingsStore>()(
       addCustomSound: (sound) =>
         set((state) => ({ customSounds: [...state.customSounds, sound] })),
       removeCustomSound: (id) =>
-        set((state) => ({
-          customSounds: state.customSounds.filter((s) => s.id !== id),
-          // If the deleted sound was the active one, fall back to silence.
-          completionSound:
-            state.completionSound === `custom:${id}`
+        set((state) => {
+          const customSounds = state.customSounds.filter((s) => s.id !== id);
+          const soundNowUnplayable =
+            state.completionSound === `custom:${id}` ||
+            (state.completionSound === "random-custom" &&
+              customSounds.length === 0);
+          return {
+            customSounds,
+            completionSound: soundNowUnplayable
               ? "none"
               : state.completionSound,
-        })),
+          };
+        }),
       renameCustomSound: (id, name) =>
         set((state) => ({
           customSounds: state.customSounds.map((s) =>
@@ -330,6 +346,7 @@ export const useSettingsStore = create<SettingsStore>()(
       brainrotMode: false,
       mcpAppsDisabledServers: [],
       downloadUpdatesAutomatically: true,
+      dismissibleUpdateBanners: false,
       lastSeenChangelogVersion: null,
       useNewChatThread: false,
       setUseNewChatThread: (enabled) => set({ useNewChatThread: enabled }),
@@ -338,6 +355,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setBrainrotMode: (enabled) => set({ brainrotMode: enabled }),
       setDownloadUpdatesAutomatically: (enabled) =>
         set({ downloadUpdatesAutomatically: enabled }),
+      setDismissibleUpdateBanners: (enabled) =>
+        set({ dismissibleUpdateBanners: enabled }),
       setLastSeenChangelogVersion: (version) =>
         set({ lastSeenChangelogVersion: version }),
       setMcpAppsDisabledServers: (servers) =>
@@ -391,6 +410,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedEnvironments: state.lastUsedEnvironments,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
+        lastPlanApprovalMode: state.lastPlanApprovalMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
         defaultMessagingMode: state.defaultMessagingMode,
 
@@ -431,6 +451,7 @@ export const useSettingsStore = create<SettingsStore>()(
         brainrotMode: state.brainrotMode,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
         downloadUpdatesAutomatically: state.downloadUpdatesAutomatically,
+        dismissibleUpdateBanners: state.dismissibleUpdateBanners,
         lastSeenChangelogVersion: state.lastSeenChangelogVersion,
         useNewChatThread: state.useNewChatThread,
 
@@ -451,6 +472,12 @@ export const useSettingsStore = create<SettingsStore>()(
         }
         if ((merged.autoConvertLongText as string) === "500") {
           (merged as Record<string, unknown>).autoConvertLongText = "1000";
+        }
+        if (
+          merged.completionSound === "random-custom" &&
+          (!merged.customSounds || merged.customSounds.length === 0)
+        ) {
+          (merged as Record<string, unknown>).completionSound = "none";
         }
         return merged;
       },

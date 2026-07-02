@@ -169,6 +169,12 @@ export interface SessionTrpc {
   };
   logs: {
     readLocalLogs: TrpcQuery;
+    /** Optional: merges superseded tool_call_update snapshots server-side so
+     * a tool-heavy log doesn't ship its full redundant history over IPC.
+     * Presence can't be trusted on proxy-based hosts (a tRPC client fabricates
+     * a query for any path), so callers fall back to `readLocalLogs` when the
+     * call itself fails. */
+    readLocalLogsCollapsed?: TrpcQuery;
     /** Optional: only the Electron host exposes the tail read. Core feature-
      * detects and falls back to a full read when it's absent. */
     readLocalLogsTail?: TrpcQuery;
@@ -508,6 +514,9 @@ function classifyTurnEventKind(
 export class SessionService {
   private connectingTasks = new Map<string, Promise<void>>();
   private reconcilingTasks = new Set<string>();
+  private reconcileSkipLogged = new Set<string>();
+  private taskCreationMarks = new Map<string, number>();
+  private static readonly TASK_CREATION_IN_FLIGHT_TTL_MS = 10 * 60 * 1000;
   private activityHeartbeats = new Map<
     string,
     ReturnType<typeof setInterval>
@@ -612,6 +621,7 @@ export class SessionService {
   async connectToTask(params: ConnectParams): Promise<void> {
     const { task } = params;
     const taskId = task.id;
+    this.taskCreationMarks.delete(taskId);
     this.localRepoPaths.set(taskId, params.repoPath);
     this.sessionLastUsedAt.set(taskId, Date.now());
     void this.evictIdleSessions(taskId);
@@ -1656,6 +1666,8 @@ export class SessionService {
     this.connectingTasks.clear();
     this.localRepoPaths.clear();
     this.localRecoveryAttempts.clear();
+    this.reconcileSkipLogged.clear();
+    this.taskCreationMarks.clear();
     this.sessionLastUsedAt.clear();
     this.cloudPermissionRequestIds.clear();
     this.liveTurnContent.clear();
@@ -4365,8 +4377,42 @@ export class SessionService {
       });
     }
 
+    this.logReconcileSkipOnce(task.id, "no-workspace-path", {
+      hasRun: !!task.latest_run?.id,
+    });
     this.loadLogsOnlyIfDisconnected(task, session);
     return () => {};
+  }
+
+  private logReconcileSkipOnce(
+    taskId: string,
+    reason: string,
+    context: Record<string, unknown> = {},
+  ): void {
+    const key = `${taskId}:${reason}`;
+    if (this.reconcileSkipLogged.has(key)) return;
+    this.reconcileSkipLogged.add(key);
+    this.d.log.info("Skipping local session reconcile", {
+      taskId,
+      reason,
+      ...context,
+    });
+  }
+
+  public markTaskCreationInFlight(taskId: string): void {
+    this.taskCreationMarks.set(taskId, Date.now());
+  }
+
+  private isTaskCreationInFlight(taskId: string): boolean {
+    const markedAt = this.taskCreationMarks.get(taskId);
+    if (markedAt === undefined) return false;
+    const expired =
+      Date.now() - markedAt > SessionService.TASK_CREATION_IN_FLIGHT_TTL_MS;
+    if (expired) {
+      this.taskCreationMarks.delete(taskId);
+      return false;
+    }
+    return true;
   }
 
   private reconcileCloudConnection(
@@ -4456,10 +4502,31 @@ export class SessionService {
       return () => {};
     }
 
-    if (!task.latest_run?.id) return () => {};
+    const connectParams: ConnectParams = { task, repoPath };
+
+    // A local task with no run means creation was interrupted before its
+    // first run started (e.g. the app quit for an update mid-setup). Connect
+    // fresh and deliver the prompt persisted as the task description, unless
+    // a creation saga is actively working on this task right now. Recovery
+    // replays the description as literal text; original attachments are gone.
+    if (!task.latest_run?.id) {
+      if (this.isTaskCreationInFlight(taskId)) {
+        this.logReconcileSkipOnce(taskId, "creation-in-flight");
+        return () => {};
+      }
+      this.d.log.info("Recovering local task with no run", {
+        taskId,
+        hasDescription: !!task.description,
+      });
+      if (task.description) {
+        connectParams.initialPrompt = [
+          { type: "text", text: task.description },
+        ];
+      }
+    }
 
     this.reconcilingTasks.add(taskId);
-    this.connectToTask({ task, repoPath }).finally(() => {
+    this.connectToTask(connectParams).finally(() => {
       this.reconcilingTasks.delete(taskId);
     });
 
@@ -4908,6 +4975,40 @@ export class SessionService {
     }
   }
 
+  /**
+   * Read the local log, preferring the collapsed read (superseded
+   * tool_call_update snapshots merged server-side, so a tool-heavy log
+   * doesn't cross the transport at full size). `originalLineCount` is the
+   * pre-collapse line count when the collapsed read served the content.
+   *
+   * A tRPC proxy client fabricates a query object for any path, so a host
+   * whose router lacks the procedure only fails at call time — fall back to
+   * the plain read then, instead of misreporting the local log as unreadable.
+   */
+  private async readLocalLogsPreferCollapsed(
+    taskRunId: string,
+  ): Promise<{ content: string | null; originalLineCount?: number }> {
+    const collapsedQuery = this.d.trpc.logs.readLocalLogsCollapsed;
+    if (collapsedQuery) {
+      try {
+        const res = (await collapsedQuery.query({ taskRunId })) as {
+          content: string;
+          totalLineCount: number;
+        } | null;
+        return {
+          content: res?.content ?? null,
+          originalLineCount: res?.totalLineCount,
+        };
+      } catch {
+        this.d.log.warn("Collapsed local log read failed, using plain read", {
+          taskRunId,
+        });
+      }
+    }
+    const content = await this.d.trpc.logs.readLocalLogs.query({ taskRunId });
+    return { content };
+  }
+
   private async fetchSessionLogs(
     logUrl: string | undefined,
     taskRunId?: string,
@@ -4923,11 +5024,16 @@ export class SessionService {
 
     if (taskRunId) {
       try {
-        const localContent = await this.d.trpc.logs.readLocalLogs.query({
-          taskRunId,
-        });
-        if (localContent?.trim()) {
-          localResult = this.parseLogContent(localContent);
+        const { content, originalLineCount } =
+          await this.readLocalLogsPreferCollapsed(taskRunId);
+        if (content?.trim()) {
+          const parsed = this.parseLogContent(content);
+          // Collapsed content has fewer lines than the file, so keep the
+          // server's original line count for resume/gap tracking.
+          localResult =
+            originalLineCount === undefined
+              ? parsed
+              : { ...parsed, totalLineCount: originalLineCount };
           if (
             !options.minEntryCount ||
             localResult.totalLineCount >= options.minEntryCount

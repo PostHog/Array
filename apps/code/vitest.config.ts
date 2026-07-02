@@ -1,6 +1,7 @@
 import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
+import { trunkTestOptions } from "../../vitest.config.base";
 import { rendererAliases } from "./vite.shared.mjs";
 
 export default defineConfig({
@@ -10,6 +11,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    ...trunkTestOptions,
     environment: "jsdom",
     setupFiles: ["./src/shared/test/setup.ts"],
     exclude: ["**/node_modules/**", "**/dist/**", "tests/e2e/**"],

@@ -242,6 +242,10 @@ export function NotificationsSettings() {
             <Select.Trigger className="min-w-[100px]" />
             <Select.Content>
               <Select.Item value="none">None</Select.Item>
+              <Select.Item value="random-all">Random (all)</Select.Item>
+              {customSounds.length > 0 && (
+                <Select.Item value="random-custom">Random (custom)</Select.Item>
+              )}
               <Select.Item value="guitar">Guitar solo</Select.Item>
               <Select.Item value="danilo">I'm ready</Select.Item>
               <Select.Item value="revi">Cute noise</Select.Item>

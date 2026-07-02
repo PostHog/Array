@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { useDevFlagsStore } from "@features/dev-toolbar/devFlagsStore";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
 import type { TrpcRouter } from "@main/trpc/router";
 import {
@@ -117,6 +118,10 @@ import {
   localHandoffNotifier,
 } from "@posthog/ui/features/sessions/localHandoffService";
 import { getSessionService } from "@posthog/ui/features/sessions/sessionServiceHost";
+import {
+  DEV_MODE_CLIENT,
+  type DevModeClient,
+} from "@posthog/ui/features/settings/devModeClient";
 import { taskCreationEffects } from "@posthog/ui/features/task-detail/taskCreationEffectsImpl";
 import { TrpcTaskCreationHost } from "@posthog/ui/features/task-detail/taskCreationHostImpl";
 import {
@@ -165,6 +170,15 @@ container.bind(HOST_TRPC_CLIENT).toConstantValue(hostTrpcClient);
 
 container.bind(UPDATES_CLIENT).toConstantValue(updatesClient);
 
+// dev mode client — exposes the dev-toolbar flag store to the shared settings UI
+const devModeClient: DevModeClient = {
+  getDevMode: () => useDevFlagsStore.getState().devMode,
+  setDevMode: (enabled) => useDevFlagsStore.getState().setDevMode(enabled),
+  onDevModeChanged: (listener) =>
+    useDevFlagsStore.subscribe((state) => listener(state.devMode)),
+};
+container.bind(DEV_MODE_CLIENT).toConstantValue(devModeClient);
+
 // connectivity client — passthrough over the renderer host client
 const connectivityClient: ConnectivityClient = {
   getStatus: () => trpcClient.connectivity.getStatus.query(),
@@ -182,7 +196,6 @@ const browserTabsClient: BrowserTabsClient = {
   newBlankTab: (input) => trpcClient.browserTabs.newBlankTab.mutate(input),
   setTabTarget: (input) => trpcClient.browserTabs.setTabTarget.mutate(input),
   close: (tabId) => trpcClient.browserTabs.close.mutate({ tabId }),
-  reorder: (input) => trpcClient.browserTabs.reorder.mutate(input),
   setActiveTab: (input) => trpcClient.browserTabs.setActiveTab.mutate(input),
   onSnapshotChange: (sub) =>
     trpcClient.browserTabs.onSnapshotChange.subscribe(undefined, sub),

@@ -28,8 +28,6 @@ export const POSTHOG_PRODUCTS = {
   logs: "Logs",
   apm: "APM",
   sql: "SQL",
-  /** Generic fallback for a recognized-PostHog call we don't classify yet. */
-  posthog: "PostHog",
 } as const;
 
 export type PostHogProductId = keyof typeof POSTHOG_PRODUCTS;
@@ -38,7 +36,8 @@ export type PostHogProductId = keyof typeof POSTHOG_PRODUCTS;
  * Domain prefix → product, or `null` for admin/meta/introspection domains we
  * deliberately do not surface (listing projects, reading the activity log,
  * managing tasks, searching docs, …). A sub-tool whose domain is absent here
- * falls back to the generic `posthog` product rather than disappearing.
+ * surfaces nothing — every chip in the bar is already a PostHog resource, so a
+ * generic "PostHog" fallback chip would be redundant.
  */
 const DOMAIN_PRODUCT: Record<string, PostHogProductId | null> = {
   // Experiments
@@ -54,22 +53,21 @@ const DOMAIN_PRODUCT: Record<string, PostHogProductId | null> = {
   "visual-review": "session_replay",
   // Surveys
   survey: "surveys",
-  // LLM analytics
+  // Session replay (Replay Vision)
+  vision: "session_replay",
+  // LLM analytics. `llm` covers `llm-total-costs`; `llma` covers the whole
+  // `llma-*` family (evaluation, clustering, prompt, sentiment, trace, …) in
+  // one token rather than one entry per sub-tool.
   llm: "llm_analytics",
-  "llma-evaluation-judge-models": "llm_analytics",
-  "llma-personal-spend": "llm_analytics",
-  "llma-tagger-test-hog": "llm_analytics",
+  llma: "llm_analytics",
   "agent-feedback": "llm_analytics",
-  // Data warehouse
-  "external-data-sources": "data_warehouse",
-  "external-data-schemas": "data_warehouse",
-  "external-data-sync-logs": "data_warehouse",
+  // Data warehouse. `external-data` covers sources/schemas/sync-logs.
+  "external-data": "data_warehouse",
   "read-data-warehouse-schema": "data_warehouse",
   "read-data-schema": "data_warehouse",
   "batch-export": "data_warehouse",
-  // Data pipelines (CDP)
-  "cdp-functions": "cdp",
-  "cdp-function-templates": "cdp",
+  // Data pipelines (CDP). `cdp-function` covers `cdp-function-templates` too.
+  "cdp-function": "cdp",
   "hog-flows-logs": "cdp",
   "hog-flows-metrics": "cdp",
   workflows: "cdp",
@@ -79,7 +77,7 @@ const DOMAIN_PRODUCT: Record<string, PostHogProductId | null> = {
   // SQL
   "execute-sql": "sql",
   // Web analytics
-  "web-analytics-weekly-digest": "web_analytics",
+  "web-analytics": "web_analytics",
   // Product analytics
   insight: "product_analytics",
   dashboard: "product_analytics",
@@ -87,12 +85,14 @@ const DOMAIN_PRODUCT: Record<string, PostHogProductId | null> = {
   cohorts: "product_analytics",
   persons: "product_analytics",
   annotation: "product_analytics",
+  "event-definition": "product_analytics",
+  "custom-property-definition": "product_analytics",
   endpoint: "product_analytics",
   view: "product_analytics",
   "usage-metrics": "product_analytics",
   subscriptions: "product_analytics",
   alert: "product_analytics",
-  notebooks: "product_analytics",
+  notebook: "product_analytics",
   // Admin / meta / introspection — recognized but not surfaced.
   project: null,
   user: null,
@@ -293,6 +293,28 @@ function classifyPostHogActivityLog(commandText: string): PostHogProductId[] {
   return [...products];
 }
 
+/* Call shapes classified by their arguments rather than the domain map:
+ * `query-<type>` by query type, `execute-sql` by the SQL it runs, activity-log
+ * reads by their `scope`. Single source of truth shared by the classifiers and
+ * `isUnclassifiedPostHogSubTool`, so a new special case added to one can't be
+ * missed by the other. Each takes an already trimmed+lowercased name. */
+
+function isQueryCall(name: string): boolean {
+  return name === "query" || name.startsWith("query-");
+}
+
+function isExecuteSqlCall(name: string): boolean {
+  return name === "execute-sql" || name === "execute_sql";
+}
+
+function isActivityLogCall(name: string): boolean {
+  return (
+    name === "activity-log" ||
+    name.startsWith("activity-log-") ||
+    name.startsWith("advanced-activity-logs")
+  );
+}
+
 /**
  * Classify an executed MCP exec `call` into the products it touched. For
  * `execute-sql` the query text is inspected so the call is attributed to the
@@ -309,15 +331,11 @@ export function classifyPostHogExecCall(
   commandText?: string,
 ): PostHogProductId[] {
   const name = subTool.trim().toLowerCase();
-  if (name === "execute-sql" || name === "execute_sql") {
+  if (isExecuteSqlCall(name)) {
     const fromTables = commandText ? classifyPostHogSqlQuery(commandText) : [];
     return fromTables.length > 0 ? fromTables : ["sql"];
   }
-  if (
-    name === "activity-log" ||
-    name.startsWith("activity-log-") ||
-    name.startsWith("advanced-activity-logs")
-  ) {
+  if (isActivityLogCall(name)) {
     return commandText ? classifyPostHogActivityLog(commandText) : [];
   }
   const product = classifyPostHogSubTool(subTool);
@@ -337,8 +355,9 @@ function classifyQuery(type: string): PostHogProductId | null {
 
 /**
  * Map a PostHog MCP `call` sub-tool (e.g. `feature-flag-update`, `query-trends`)
- * to a product id. Returns `null` when the sub-tool is an admin/meta domain we
- * deliberately don't surface, or when the name is empty.
+ * to a product id. Returns `null` when the name is empty, or when the domain is
+ * one we don't surface — either a known admin/meta domain or an unrecognized
+ * one (no point in a generic "PostHog" chip inside a PostHog-resources bar).
  */
 export function classifyPostHogSubTool(
   subTool: string,
@@ -346,19 +365,43 @@ export function classifyPostHogSubTool(
   const name = subTool.trim().toLowerCase();
   if (!name) return null;
 
-  if (name === "query" || name.startsWith("query-")) {
+  if (isQueryCall(name)) {
     return classifyQuery(name.slice("query-".length));
   }
 
-  // Longest matching domain wins so `feature-flag` beats a hypothetical
-  // `feature` and multi-word domains aren't shadowed by shorter prefixes.
+  const best = matchDomain(name);
+  if (best === null) return null;
+  return DOMAIN_PRODUCT[best];
+}
+
+/**
+ * Best (longest) matching known domain for a sub-tool name, or `null` if none
+ * match. Longest wins so `feature-flag` beats a hypothetical `feature` and
+ * multi-word domains aren't shadowed by shorter prefixes.
+ */
+function matchDomain(name: string): string | null {
   let best: string | null = null;
   for (const [domain, re] of DOMAIN_PATTERNS) {
     if (re.test(name)) {
       if (best === null || domain.length > best.length) best = domain;
     }
   }
+  return best;
+}
 
-  if (best === null) return "posthog";
-  return DOMAIN_PRODUCT[best];
+/**
+ * True when a `call` sub-tool is a PostHog resource call we don't recognize at
+ * all: not a query/execute-sql/activity-log call and matching no known domain,
+ * so it surfaces no product chip. Distinct from a domain we deliberately
+ * suppress (project, docs-search, …), which is recognized and returns `null` on
+ * purpose. Lets callers log genuinely-unknown calls so `DOMAIN_PRODUCT` can be
+ * expanded deliberately instead of silently dropping them.
+ */
+export function isUnclassifiedPostHogSubTool(subTool: string): boolean {
+  const name = subTool.trim().toLowerCase();
+  if (!name) return false;
+  if (isQueryCall(name) || isExecuteSqlCall(name) || isActivityLogCall(name)) {
+    return false;
+  }
+  return matchDomain(name) === null;
 }

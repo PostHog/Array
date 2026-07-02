@@ -57,6 +57,7 @@ import {
 } from "../../enrichment/file-enricher";
 import {
   classifyPostHogExecCall,
+  isUnclassifiedPostHogSubTool,
   POSTHOG_PRODUCTS,
   type PostHogProductId,
 } from "../../posthog-products";
@@ -2026,6 +2027,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
    *  any newly-seen product so the client's persistent list can update live. */
   private createOnPostHogResourceUsed() {
     return (subTool: string, commandText?: string) => {
+      // Surface PostHog calls whose domain we don't recognize yet, so the gap
+      // can be closed in `DOMAIN_PRODUCT` rather than the call silently
+      // surfacing no chip. Deliberately-suppressed admin domains don't log.
+      if (isUnclassifiedPostHogSubTool(subTool)) {
+        this.logger.debug("Unclassified PostHog MCP sub-tool", { subTool });
+      }
       this.recordSessionResources(
         classifyPostHogExecCall(subTool, commandText),
       );

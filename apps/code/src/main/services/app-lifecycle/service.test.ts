@@ -8,6 +8,7 @@ const {
   mockSuspensionService,
   mockWatcherRegistry,
   mockProcessTracking,
+  mockWorkspaceService,
   mockTrackAppEvent,
   mockShutdownPostHog,
   mockShutdownOtelTransport,
@@ -22,6 +23,10 @@ const {
     },
     mockWatcherRegistry: {
       shutdownAll: vi.fn(() => Promise.resolve()),
+    },
+    mockWorkspaceService: {
+      pendingCreationCount: 0,
+      waitForPendingCreations: vi.fn(() => Promise.resolve()),
     },
     mockProcessTracking: {
       getSnapshot: vi.fn(() =>
@@ -83,12 +88,14 @@ describe("AppLifecycleService", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     process.exit = mockProcessExit;
+    mockWorkspaceService.pendingCreationCount = 0;
     service = new AppLifecycleService(
       mockAppLifecycle as unknown as IAppLifecycle,
       mockDatabaseService as never,
       mockSuspensionService as never,
       mockWatcherRegistry as never,
       mockProcessTracking as never,
+      mockWorkspaceService as never,
     );
   });
 
@@ -202,6 +209,50 @@ describe("AppLifecycleService", () => {
       await promise;
 
       expect(mockProcessExit).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe("shutdownWithoutContainer", () => {
+    it("skips the wait when no creations are pending", async () => {
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(
+        mockWorkspaceService.waitForPendingCreations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("waits for in-flight workspace creations before teardown", async () => {
+      mockWorkspaceService.pendingCreationCount = 1;
+      const callOrder: string[] = [];
+      mockWorkspaceService.waitForPendingCreations.mockImplementation(
+        async () => {
+          callOrder.push("waitForCreations");
+        },
+      );
+      mockWatcherRegistry.shutdownAll.mockImplementation(async () => {
+        callOrder.push("teardown");
+      });
+
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(callOrder).toEqual(["waitForCreations", "teardown"]);
+    });
+
+    it("proceeds with teardown when creations do not settle in time", async () => {
+      mockWorkspaceService.pendingCreationCount = 1;
+      mockWorkspaceService.waitForPendingCreations.mockReturnValue(
+        new Promise(() => {}),
+      );
+
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockProcessTracking.getSnapshot).toHaveBeenCalled();
     });
   });
 

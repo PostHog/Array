@@ -4,6 +4,8 @@ import { LOGS_SERVICE } from "@posthog/workspace-server/services/local-logs/iden
 import {
   fetchS3LogsInput,
   fetchS3LogsOutput,
+  readLocalLogsCollapsedInput,
+  readLocalLogsCollapsedOutput,
   readLocalLogsInput,
   readLocalLogsOutput,
   readLocalLogsTailInput,
@@ -26,6 +28,15 @@ export const logsRouter = router({
       ctx.container
         .get<ILogsService>(LOGS_SERVICE)
         .readLocalLogs(input.taskRunId),
+    ),
+
+  readLocalLogsCollapsed: publicProcedure
+    .input(readLocalLogsCollapsedInput)
+    .output(readLocalLogsCollapsedOutput)
+    .query(({ ctx, input }) =>
+      ctx.container
+        .get<ILogsService>(LOGS_SERVICE)
+        .readLocalLogsCollapsed(input.taskRunId),
     ),
 
   readLocalLogsTail: publicProcedure

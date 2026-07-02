@@ -24,9 +24,16 @@ export const setTabTargetInput = z.object({
 
 export const closeTabInput = z.object({ tabId: z.string() });
 
-export const reorderTabInput = z.object({
-  tabId: z.string(),
-  toIndex: z.number().int().nonnegative(),
+export const closeTabsInput = z.object({
+  tabIds: z.array(z.string()),
+  // The bulk close's anchor (the right-clicked tab, which always survives);
+  // focus falls to it when the active tab is among those closed.
+  focusTabId: z.string().nullable().default(null),
+});
+
+export const setTabOrderInput = z.object({
+  windowId: z.string(),
+  tabIds: z.array(z.string()),
 });
 
 export const setActiveTabInput = z.object({

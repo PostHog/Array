@@ -578,6 +578,64 @@ describe("WorkspaceService", () => {
     });
   });
 
+  describe("pending creations", () => {
+    afterEach(() => {
+      vi.mocked(getCurrentBranch).mockReset();
+    });
+
+    function localInput(taskId: string): CreateWorkspaceInput {
+      return {
+        taskId,
+        mainRepoPath: "/repo",
+        folderId: "folder-1",
+        folderPath: "/repo",
+        mode: "local",
+        branch: "feature/x",
+      };
+    }
+
+    it("tracks in-flight creations and clears them when creation settles", async () => {
+      let rejectBranch: (error: Error) => void = () => {};
+      vi.mocked(getCurrentBranch).mockReturnValue(
+        new Promise((_, reject) => {
+          rejectBranch = reject;
+        }),
+      );
+
+      const pending = service.createWorkspace(localInput("task-1"));
+      expect(service.pendingCreationCount).toBe(1);
+
+      rejectBranch(new Error("boom"));
+      await expect(pending).rejects.toThrow("boom");
+      expect(service.pendingCreationCount).toBe(0);
+    });
+
+    it("waitForPendingCreations resolves even when creations reject", async () => {
+      const rejectors: Array<(error: Error) => void> = [];
+      const deferredBranch = () =>
+        new Promise<string | null>((_, reject) => {
+          rejectors.push(reject);
+        });
+      vi.mocked(getCurrentBranch)
+        .mockReturnValueOnce(deferredBranch())
+        .mockReturnValueOnce(deferredBranch());
+
+      const first = service.createWorkspace(localInput("task-1"));
+      const second = service.createWorkspace(localInput("task-2"));
+      expect(service.pendingCreationCount).toBe(2);
+
+      const wait = service.waitForPendingCreations();
+      for (const reject of rejectors) {
+        reject(new Error("boom"));
+      }
+
+      await expect(wait).resolves.toBeUndefined();
+      await expect(first).rejects.toThrow("boom");
+      await expect(second).rejects.toThrow("boom");
+      expect(service.pendingCreationCount).toBe(0);
+    });
+  });
+
   describe("worktree path resolved from the stored row", () => {
     const tempDirs: string[] = [];
 

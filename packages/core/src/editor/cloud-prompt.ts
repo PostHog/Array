@@ -147,6 +147,15 @@ export function getAbsoluteAttachmentPaths(
   );
 }
 
+export const ATTACHMENT_SUMMARY_PREFIX = "Attached files: ";
+const TRAILING_ATTACHMENT_SUMMARY_REGEX = new RegExp(
+  `(?:^|\\n)${ATTACHMENT_SUMMARY_PREFIX}[^\\n]*$`,
+);
+
+export function stripTrailingAttachmentSummary(text: string): string {
+  return text.replace(TRAILING_ATTACHMENT_SUMMARY_REGEX, "").trim();
+}
+
 export function buildCloudTaskDescription(
   prompt: string,
   filePaths: string[] = [],
@@ -160,7 +169,7 @@ export function buildCloudTaskDescription(
     return strippedPrompt;
   }
 
-  const attachmentSummary = `Attached files: ${attachmentNames.join(", ")}`;
+  const attachmentSummary = `${ATTACHMENT_SUMMARY_PREFIX}${attachmentNames.join(", ")}`;
   return strippedPrompt
     ? `${strippedPrompt}\n\n${attachmentSummary}`
     : attachmentSummary;

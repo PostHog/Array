@@ -1,6 +1,6 @@
 import {
   ArrowBendDownLeft,
-  ArrowUUpLeft,
+  PencilSimple,
   Stack,
   Trash,
 } from "@phosphor-icons/react";
@@ -64,7 +64,7 @@ export function QueuedMessageView({
                 aria-label="Return to editor"
                 onClick={onReturnToEditor}
               >
-                <ArrowUUpLeft size={12} />
+                <PencilSimple size={12} />
               </IconButton>
             </Tooltip>
           )}

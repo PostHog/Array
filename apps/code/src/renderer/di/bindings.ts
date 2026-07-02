@@ -189,6 +189,10 @@ import {
   type McpToolBlockComponent,
 } from "@posthog/ui/features/sessions/components/session-update/identifiers";
 import {
+  DEV_MODE_CLIENT,
+  type DevModeClient,
+} from "@posthog/ui/features/settings/devModeClient";
+import {
   SHELL_CLIENT,
   type ShellClient,
 } from "@posthog/ui/features/terminal/shellClient";
@@ -235,6 +239,7 @@ export interface RendererBindings {
   [TRPC_CLIENT]: TRPCClient<TrpcRouter>;
   [HOST_TRPC_CLIENT]: HostTrpcClient;
   [UPDATES_CLIENT]: UpdatesClient;
+  [DEV_MODE_CLIENT]: DevModeClient;
   [CONNECTIVITY_CLIENT]: ConnectivityClient;
   [BROWSER_TABS_CLIENT]: BrowserTabsClient;
   [DISCORD_PRESENCE_CLIENT]: DiscordPresenceClient;
