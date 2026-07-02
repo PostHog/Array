@@ -512,6 +512,34 @@ const ThreadRow = memo(function ThreadRow({
   );
 });
 
+/**
+ * Scrolls to the end when the user sends a prompt, regardless of current position. The engine only
+ * auto-follows in `following-bottom` mode, which it re-enters solely within 8px of the exact bottom
+ * — with the thread's bottom padding you're rarely that close, so without this a submit can leave
+ * the new prompt (and the streaming response) below the fold. `scrollToEnd` also puts the engine
+ * back into `following-bottom`, so the response streams with the view following.
+ */
+function ScrollToEndOnSubmit({ items }: { items: ConversationItem[] }) {
+  const { scrollToEnd } = useChatMessageScroller();
+  const lastItem = items.at(-1);
+  const userMessageCount = useMemo(
+    () =>
+      items.reduce((n, item) => (item.type === "user_message" ? n + 1 : n), 0),
+    [items],
+  );
+  const prevCountRef = useRef(userMessageCount);
+
+  useLayoutEffect(() => {
+    const previous = prevCountRef.current;
+    prevCountRef.current = userMessageCount;
+    if (previous === 0 || userMessageCount <= previous) return;
+    if (lastItem?.type !== "user_message") return;
+    scrollToEnd({ behavior: "auto" });
+  }, [userMessageCount, lastItem, scrollToEnd]);
+
+  return null;
+}
+
 /** The scroll body, under the Provider so the overlay + scroll-button hooks can read engine state. */
 function ThreadScrollBody({
   items,
@@ -538,6 +566,7 @@ function ThreadScrollBody({
   return (
     <ChatMessageScroller className="group/thread">
       <StickyHeaderOverlay items={items} />
+      <ScrollToEndOnSubmit items={items} />
       <ChatMessageScrollerViewport>
         <ChatMessageScrollerContent className="py-4 pb-8" density="default">
           {keyedRows.map(({ item, key }) => (
@@ -700,6 +729,11 @@ export function ChatThread({
           <ChatMessageScrollerProvider
             autoScroll
             defaultScrollPosition="end"
+            // Default is 8px: with the thread's bottom padding you're rarely that close, so
+            // auto-follow ("following-bottom") would disengage on any stray trackpad wheel and
+            // never re-engage. Within this band the engine recaptures follow on the next content
+            // change; deliberate upward flicks travel past it and stay free-scrolling.
+            scrollEdgeThreshold={100}
             scrollPreviousItemPeek={64}
           >
             <ThreadScrollBody
