@@ -4,6 +4,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import type {
   SDKAssistantMessage,
+  SDKModelRefusalFallbackMessage,
   SDKPartialAssistantMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -12,6 +13,7 @@ import { Logger } from "../../../utils/logger";
 import type { Session } from "../types";
 import {
   handleStreamEvent,
+  handleSystemMessage,
   handleUserAssistantMessage,
   type MessageHandlerContext,
   stripMarkerTags,
@@ -64,9 +66,13 @@ describe("stripMarkerTags", () => {
 
 function createHandlerContext() {
   const updates: SessionNotification[] = [];
+  const notifications: Array<{ method: string; params: unknown }> = [];
   const client = {
     sessionUpdate: async (notification: SessionNotification) => {
       updates.push(notification);
+    },
+    extNotification: async (method: string, params: unknown) => {
+      notifications.push({ method, params });
     },
   } as unknown as AgentSideConnection;
   const context: MessageHandlerContext = {
@@ -86,7 +92,7 @@ function createHandlerContext() {
       thinkingIds: new Set(),
     },
   };
-  return { context, updates };
+  return { context, updates, notifications };
 }
 
 function streamEvent(
@@ -359,5 +365,69 @@ describe("import replay (no client-side history)", () => {
       context,
     );
     expect(chunkTexts(updates, "agent_message_chunk")).toEqual([]);
+  });
+});
+
+describe("handleSystemMessage model_refusal_fallback", () => {
+  function refusalFallbackMessage(
+    overrides: Partial<SDKModelRefusalFallbackMessage> = {},
+  ): SDKModelRefusalFallbackMessage {
+    return {
+      type: "system",
+      subtype: "model_refusal_fallback",
+      trigger: "refusal",
+      direction: "retry",
+      original_model: "claude-fable-5",
+      fallback_model: "claude-opus-4-8",
+      request_id: "req_1",
+      api_refusal_category: "cyber",
+      api_refusal_explanation: "This request was declined.",
+      retracted_message_uuids: [],
+      content: "Retried on fallback model",
+      uuid: "00000000-0000-0000-0000-000000000009",
+      session_id: "test-session",
+      ...overrides,
+    };
+  }
+
+  it("emits a refusal_fallback status notification with the model swap", async () => {
+    const { context, updates, notifications } = createHandlerContext();
+
+    await handleSystemMessage(refusalFallbackMessage(), context);
+
+    expect(updates).toEqual([]);
+    expect(notifications).toEqual([
+      {
+        method: "_posthog/status",
+        params: {
+          sessionId: "test-session",
+          status: "refusal_fallback",
+          fromModel: "claude-fable-5",
+          toModel: "claude-opus-4-8",
+          explanation: "This request was declined.",
+        },
+      },
+    ]);
+  });
+
+  it("omits the explanation when the refused response carried none", async () => {
+    const { context, notifications } = createHandlerContext();
+
+    await handleSystemMessage(
+      refusalFallbackMessage({ api_refusal_explanation: null }),
+      context,
+    );
+
+    expect(notifications).toEqual([
+      {
+        method: "_posthog/status",
+        params: {
+          sessionId: "test-session",
+          status: "refusal_fallback",
+          fromModel: "claude-fable-5",
+          toModel: "claude-opus-4-8",
+        },
+      },
+    ]);
   });
 });

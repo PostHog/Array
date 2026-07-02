@@ -517,6 +517,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     let errored = false;
     let lastAssistantTotalUsage: number | null = null;
     let lastRefusalExplanation: string | null = null;
+    let lastRefusalCategory: string | null = null;
     let lastStreamUsage = {
       input_tokens: 0,
       output_tokens: 0,
@@ -870,15 +871,17 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             if (
               (message as { stop_reason?: string }).stop_reason === "refusal"
             ) {
-              if (lastRefusalExplanation) {
-                await this.client.sessionUpdate({
-                  sessionId: params.sessionId,
-                  update: {
-                    sessionUpdate: "agent_message_chunk",
-                    content: { type: "text", text: lastRefusalExplanation },
-                  },
-                });
-              }
+              // The API's stop_details.explanation is integrator-facing prose,
+              // so surface the refusal as a structured status row rather than
+              // assistant text.
+              await this.client.extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
+                sessionId: params.sessionId,
+                status: "refusal",
+                ...(lastRefusalExplanation && {
+                  explanation: lastRefusalExplanation,
+                }),
+                ...(lastRefusalCategory && { category: lastRefusalCategory }),
+              });
               return { stopReason: "refusal", usage };
             }
 
@@ -1002,11 +1005,15 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             if (message.type === "assistant") {
               const inner = message.message as unknown as {
                 stop_reason?: string | null;
-                stop_details?: { explanation?: string | null } | null;
+                stop_details?: {
+                  category?: string | null;
+                  explanation?: string | null;
+                } | null;
               };
               if (inner.stop_reason === "refusal") {
                 lastRefusalExplanation =
                   inner.stop_details?.explanation ?? null;
+                lastRefusalCategory = inner.stop_details?.category ?? null;
               }
             }
 

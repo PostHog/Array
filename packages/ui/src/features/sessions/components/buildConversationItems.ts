@@ -535,7 +535,20 @@ function handleNotification(
       status: string;
       isComplete?: boolean;
       error?: string;
+      explanation?: string;
+      fromModel?: string;
+      toModel?: string;
     };
+    if (params.status === "refusal" || params.status === "refusal_fallback") {
+      pushItem(b, {
+        sessionUpdate: "status",
+        status: params.status,
+        explanation: params.explanation,
+        fromModel: params.fromModel,
+        toModel: params.toModel,
+      });
+      return;
+    }
     if (params.status === "compacting") {
       if (params.isComplete) {
         // Successful compaction — flip the existing "Compacting…" status to

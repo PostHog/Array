@@ -92,6 +92,29 @@ describe("buildSessionOptions", () => {
     expect(options.agents?.["ph-explore"]).toEqual(override);
   });
 
+  it("defaults fallbackModel so refusals and overloads retry on another model", () => {
+    const options = buildSessionOptions(makeParams());
+
+    expect(options.fallbackModel).toBe("claude-opus-4-8");
+    // The SDK throws at spawn when fallbackModel equals Options.model.
+    expect(options.fallbackModel).not.toBe(options.model);
+  });
+
+  it("defaults fallbackModel on resumed sessions", () => {
+    const options = buildSessionOptions({ ...makeParams(), isResume: true });
+
+    expect(options.fallbackModel).toBe("claude-opus-4-8");
+  });
+
+  it("preserves a caller-provided fallbackModel", () => {
+    const options = buildSessionOptions({
+      ...makeParams(),
+      userProvidedOptions: { fallbackModel: "claude-sonnet-5" },
+    });
+
+    expect(options.fallbackModel).toBe("claude-sonnet-5");
+  });
+
   it("threads onEnsureLocalToolsConnected into the signed-commit guard (cloud)", async () => {
     const healSpy = vi.fn().mockResolvedValue(true);
     await runPreToolUseHooks(
