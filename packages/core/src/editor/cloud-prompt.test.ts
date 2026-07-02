@@ -64,15 +64,21 @@ describe("cloud-prompt", () => {
     );
   });
 
-  it("strips the trailing attachment summary from a task description", () => {
-    expect(
-      stripTrailingAttachmentSummary("do this\n\nAttached files: a.png, b.txt"),
-    ).toBe("do this");
-    expect(stripTrailingAttachmentSummary("Attached files: a.png")).toBe("");
-    expect(stripTrailingAttachmentSummary("do this")).toBe("do this");
-    expect(
-      stripTrailingAttachmentSummary("Attached files: a.png\n\nthen do this"),
-    ).toBe("Attached files: a.png\n\nthen do this");
+  it.each([
+    [
+      "text + trailing summary",
+      "do this\n\nAttached files: a.png, b.txt",
+      "do this",
+    ],
+    ["summary only", "Attached files: a.png", ""],
+    ["no summary", "do this", "do this"],
+    [
+      "summary not at end",
+      "Attached files: a.png\n\nthen do this",
+      "Attached files: a.png\n\nthen do this",
+    ],
+  ])("stripTrailingAttachmentSummary: %s", (_label, input, expected) => {
+    expect(stripTrailingAttachmentSummary(input)).toBe(expected);
   });
 
   it("uses resource_link path references for text attachments", async () => {
