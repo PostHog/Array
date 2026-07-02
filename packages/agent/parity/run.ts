@@ -33,7 +33,12 @@ const SCENARIOS: Scenario[] = [
         conn.newSession({
           cwd: ctx.cwd,
           mcpServers: [],
-          _meta: { sessionId: "parity", systemPrompt: "You are a coding assistant in a tiny test repo.", model: ctx.model, permissionMode: "bypassPermissions" },
+          _meta: {
+            sessionId: "parity",
+            systemPrompt: "You are a coding assistant in a tiny test repo.",
+            model: ctx.model,
+            permissionMode: "bypassPermissions",
+          },
         }),
       );
       const sessionId = session.sessionId;
@@ -54,14 +59,53 @@ const SCENARIOS: Scenario[] = [
     name: "modes-and-resume",
     async run(conn, ctx) {
       const session = await ctx.step("newSession", () =>
-        conn.newSession({ cwd: ctx.cwd, mcpServers: [], _meta: { sessionId: "parity2", systemPrompt: "You are a coding assistant.", model: ctx.model, permissionMode: "auto" } }),
+        conn.newSession({
+          cwd: ctx.cwd,
+          mcpServers: [],
+          _meta: {
+            sessionId: "parity2",
+            systemPrompt: "You are a coding assistant.",
+            model: ctx.model,
+            permissionMode: "auto",
+          },
+        }),
       );
       const sessionId = session.sessionId;
       // Mode switch — codex-acp supports it; app-server gap until migration.
-      await ctx.step("setSessionConfigOption(mode)", () => conn.setSessionConfigOption({ sessionId, configId: "mode", value: "read-only" }).catch((e: any) => { throw e; }));
-      await ctx.step("prompt", () => conn.prompt({ sessionId, prompt: [{ type: "text", text: "List the files in this repo with `ls`, then stop." }] }));
+      await ctx.step("setSessionConfigOption(mode)", () =>
+        conn
+          .setSessionConfigOption({
+            sessionId,
+            configId: "mode",
+            value: "read-only",
+          })
+          .catch((e: any) => {
+            throw e;
+          }),
+      );
+      await ctx.step("prompt", () =>
+        conn.prompt({
+          sessionId,
+          prompt: [
+            {
+              type: "text",
+              text: "List the files in this repo with `ls`, then stop.",
+            },
+          ],
+        }),
+      );
       // Resume in the same connection (host calls resumeSession on reconnect).
-      await ctx.step("resumeSession", () => conn.resumeSession({ sessionId, cwd: ctx.cwd, mcpServers: [], _meta: { systemPrompt: "You are a coding assistant.", model: ctx.model } }));
+      await ctx.step("resumeSession", () =>
+        conn.resumeSession({
+          sessionId,
+          cwd: ctx.cwd,
+          mcpServers: [],
+          _meta: {
+            systemPrompt: "You are a coding assistant.",
+            model: ctx.model,
+          },
+        }),
+      );
     },
   },
 ];
@@ -97,20 +141,35 @@ function extractFeatures(run: CapturedRun): Record<string, any> {
           if (c?.type === "content") hasToolContent = true;
         }
       }
-      if (d.rawInput?.diff || (typeof d.rawOutput === "string" && d.rawOutput.includes("diff"))) hasDiff = true;
+      if (
+        d.rawInput?.diff ||
+        (typeof d.rawOutput === "string" && d.rawOutput.includes("diff"))
+      )
+        hasDiff = true;
     }
-    if (u === "current_mode_update" || u === "config_option_update") modeUpdate = true;
-    if (u === "usage_update") usageFields = new Set([...usageFields, ...Object.keys(d.usage ?? d ?? {})]);
+    if (u === "current_mode_update" || u === "config_option_update")
+      modeUpdate = true;
+    if (u === "usage_update")
+      usageFields = new Set([
+        ...usageFields,
+        ...Object.keys(d.usage ?? d ?? {}),
+      ]);
   }
 
   // newSession response: configOptions / modes
   const ns = run.stepResults.find((s) => s.op === "newSession")?.result ?? {};
-  const configCategories = (ns.configOptions ?? []).map((o: any) => o.category).filter(Boolean);
+  const configCategories = (ns.configOptions ?? [])
+    .map((o: any) => o.category)
+    .filter(Boolean);
   const modes = ns.modes ?? null;
   // prompt response usage / stopReason
-  const promptRes = run.stepResults.filter((s) => s.op === "prompt").map((s) => s.result ?? {});
+  const promptRes = run.stepResults
+    .filter((s) => s.op === "prompt")
+    .map((s) => s.result ?? {});
   const stopReasons = promptRes.map((r) => r.stopReason).filter(Boolean);
-  const promptUsage = promptRes.some((r) => r.usage && Object.keys(r.usage).length > 0);
+  const promptUsage = promptRes.some(
+    (r) => r.usage && Object.keys(r.usage).length > 0,
+  );
 
   return {
     fatalError: run.fatalError ?? null,
@@ -119,7 +178,10 @@ function extractFeatures(run: CapturedRun): Record<string, any> {
     toolStatuses: [...toolStatuses].sort(),
     hasDiffContent: hasDiff,
     hasToolContent: hasToolContent,
-    hasUsage: promptUsage || updateTypes.has("usage_update") || extNotifs.has("_posthog/usage_update"),
+    hasUsage:
+      promptUsage ||
+      updateTypes.has("usage_update") ||
+      extNotifs.has("_posthog/usage_update"),
     usageFields: [...usageFields].sort(),
     configOptionCategories: [...new Set(configCategories)].sort(),
     modesPresent: !!modes,
@@ -135,13 +197,46 @@ function extractFeatures(run: CapturedRun): Record<string, any> {
 // on which tools the model chose (native codex edits via shell `execute`;
 // codex-acp exposes Edit/Read) — a tool-surface difference, not an adapter bug —
 // so they're reported as behavioral, not counted as parity gaps.
-const ADAPTER_KEYS = ["fatalError", "updateTypes", "hasUsage", "usageFields", "configOptionCategories", "modesPresent", "modeChangeEmitted", "extNotifications", "stopReasons"];
-const BEHAVIORAL_KEYS = ["toolKinds", "toolStatuses", "hasDiffContent", "hasToolContent"];
+const ADAPTER_KEYS = [
+  "fatalError",
+  "updateTypes",
+  "hasUsage",
+  "usageFields",
+  "configOptionCategories",
+  "modesPresent",
+  "modeChangeEmitted",
+  "extNotifications",
+  "stopReasons",
+];
+const BEHAVIORAL_KEYS = [
+  "toolKinds",
+  "toolStatuses",
+  "hasDiffContent",
+  "hasToolContent",
+];
 
-function diffFeatures(acp: Record<string, any>, app: Record<string, any>): Array<{ feature: string; acp: any; appServer: any; match: boolean; behavioral: boolean }> {
+function diffFeatures(
+  acp: Record<string, any>,
+  app: Record<string, any>,
+): Array<{
+  feature: string;
+  acp: any;
+  appServer: any;
+  match: boolean;
+  behavioral: boolean;
+}> {
   const j = (v: any) => JSON.stringify(v);
-  const mk = (k: string, behavioral: boolean) => ({ feature: k, acp: acp[k], appServer: app[k], match: j(acp[k]) === j(app[k]), behavioral });
-  return [...ADAPTER_KEYS.map((k) => mk(k, false)), ...BEHAVIORAL_KEYS.map((k) => mk(k, true))];
+  const mk = (k: string, behavioral: boolean) => ({
+    feature: k,
+    acp: acp[k],
+    appServer: app[k],
+    match: j(acp[k]) === j(app[k]),
+    behavioral,
+  });
+  return [
+    ...ADAPTER_KEYS.map((k) => mk(k, false)),
+    ...BEHAVIORAL_KEYS.map((k) => mk(k, true)),
+  ];
 }
 
 function setupRepo(): void {
@@ -152,7 +247,21 @@ function setupRepo(): void {
   try {
     // -c commit.gpgsign=false: ignore the user's global commit-signing config
     // (e.g. 1Password SSH signer), which fails in this non-interactive context.
-    execFileSync("git", ["-c", "commit.gpgsign=false", "-c", "user.email=p@p.dev", "-c", "user.name=parity", "commit", "-qm", "init"], { cwd: REPO });
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "user.email=p@p.dev",
+        "-c",
+        "user.name=parity",
+        "commit",
+        "-qm",
+        "init",
+      ],
+      { cwd: REPO },
+    );
   } catch {
     /* already committed */
   }
@@ -160,18 +269,31 @@ function setupRepo(): void {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const only = args.includes("--only") ? (args[args.indexOf("--only") + 1] as AdapterMode) : null;
-  const scenarioFilter = args.includes("--scenario") ? args[args.indexOf("--scenario") + 1] : null;
+  const only = args.includes("--only")
+    ? (args[args.indexOf("--only") + 1] as AdapterMode)
+    : null;
+  const scenarioFilter = args.includes("--scenario")
+    ? args[args.indexOf("--scenario") + 1]
+    : null;
   mkdirSync(OUT_DIR, { recursive: true });
   setupRepo();
 
   const modes: AdapterMode[] = [];
   if (!only || only === "acp") modes.push("acp");
-  if ((!only || only === "app-server") && existsSync(NATIVE_CODEX_BIN)) modes.push("app-server");
-  else if (only === "app-server") console.warn(`native codex binary missing at ${NATIVE_CODEX_BIN}; app-server arm skipped`);
+  if ((!only || only === "app-server") && existsSync(NATIVE_CODEX_BIN))
+    modes.push("app-server");
+  else if (only === "app-server")
+    console.warn(
+      `native codex binary missing at ${NATIVE_CODEX_BIN}; app-server arm skipped`,
+    );
 
-  const scenarios = SCENARIOS.filter((s) => !scenarioFilter || s.name === scenarioFilter);
-  const logger = new Logger({ debug: !!process.env.PARITY_DEBUG, prefix: "[parity]" });
+  const scenarios = SCENARIOS.filter(
+    (s) => !scenarioFilter || s.name === scenarioFilter,
+  );
+  const logger = new Logger({
+    debug: !!process.env.PARITY_DEBUG,
+    prefix: "[parity]",
+  });
   const featuresByMode: Record<string, Record<string, any>> = {};
 
   for (const scenario of scenarios) {
@@ -183,23 +305,41 @@ async function main(): Promise<void> {
       // stragglers first — process death releases the flock. (Uses the default
       // CODEX_HOME: an isolated empty home makes codex-acp crash at startup.)
       try {
-        execFileSync("pkill", ["-9", "-f", "resources/codex-acp"], { stdio: "ignore" });
+        execFileSync("pkill", ["-9", "-f", "resources/codex-acp"], {
+          stdio: "ignore",
+        });
       } catch {
         /* none running */
       }
       const cfg = {
         cwd: REPO,
-        codexOptions: { cwd: REPO, binaryPath: CODEX_ACP_BIN, apiBaseUrl: GATEWAY, apiKey: API_KEY, model: MODEL },
+        codexOptions: {
+          cwd: REPO,
+          binaryPath: CODEX_ACP_BIN,
+          apiBaseUrl: GATEWAY,
+          apiKey: API_KEY,
+          model: MODEL,
+        },
         timeoutMs: 240000,
         logger,
       };
       const run = await runScenario(mode, scenario, cfg);
-      writeFileSync(join(OUT_DIR, `${scenario.name}.${mode}.json`), JSON.stringify(run, null, 2));
+      writeFileSync(
+        join(OUT_DIR, `${scenario.name}.${mode}.json`),
+        JSON.stringify(run, null, 2),
+      );
       const feats = extractFeatures(run);
       featuresByMode[scenario.name][mode] = feats;
-      writeFileSync(join(OUT_DIR, `${scenario.name}.${mode}.features.json`), JSON.stringify(feats, null, 2));
-      console.log(`  steps: ${feats.steps.map((s: any) => `${s.op}${s.ok ? "✓" : "✗"}`).join(" ")}`);
-      console.log(`  updates: ${feats.updateTypes.join(",")} | tools: ${feats.toolKinds.join(",")} | usage:${feats.hasUsage} diff:${feats.hasDiffContent} stop:${feats.stopReasons.join(",")}`);
+      writeFileSync(
+        join(OUT_DIR, `${scenario.name}.${mode}.features.json`),
+        JSON.stringify(feats, null, 2),
+      );
+      console.log(
+        `  steps: ${feats.steps.map((s: any) => `${s.op}${s.ok ? "✓" : "✗"}`).join(" ")}`,
+      );
+      console.log(
+        `  updates: ${feats.updateTypes.join(",")} | tools: ${feats.toolKinds.join(",")} | usage:${feats.hasUsage} diff:${feats.hasDiffContent} stop:${feats.stopReasons.join(",")}`,
+      );
       if (feats.fatalError) console.log(`  ⚠ fatalError: ${feats.fatalError}`);
     }
   }
@@ -215,17 +355,35 @@ async function main(): Promise<void> {
       const gaps = diff.filter((d) => !d.match && !d.behavioral);
       const behavioral = diff.filter((d) => !d.match && d.behavioral);
       totalGaps += gaps.length;
-      report.scenarios[scenario.name] = { gaps, behavioral, allMatch: gaps.length === 0 };
+      report.scenarios[scenario.name] = {
+        gaps,
+        behavioral,
+        allMatch: gaps.length === 0,
+      };
       console.log(`\n=== parity diff: ${scenario.name} ===`);
       if (!gaps.length) console.log("  ✅ adapter parity");
-      for (const g of gaps) console.log(`  ✗ ${g.feature}: acp=${JSON.stringify(g.acp)} app-server=${JSON.stringify(g.appServer)}`);
-      for (const b of behavioral) console.log(`  · behavioral: ${b.feature} acp=${JSON.stringify(b.acp)} app-server=${JSON.stringify(b.appServer)}`);
+      for (const g of gaps)
+        console.log(
+          `  ✗ ${g.feature}: acp=${JSON.stringify(g.acp)} app-server=${JSON.stringify(g.appServer)}`,
+        );
+      for (const b of behavioral)
+        console.log(
+          `  · behavioral: ${b.feature} acp=${JSON.stringify(b.acp)} app-server=${JSON.stringify(b.appServer)}`,
+        );
     } else {
-      report.scenarios[scenario.name] = { baselineOnly: acp ? "acp" : "app-server", features: acp ?? app };
+      report.scenarios[scenario.name] = {
+        baselineOnly: acp ? "acp" : "app-server",
+        features: acp ?? app,
+      };
     }
   }
-  writeFileSync(join(OUT_DIR, "parity-report.json"), JSON.stringify(report, null, 2));
-  console.log(`\nWrote ${join(OUT_DIR, "parity-report.json")} — ${totalGaps} parity gap(s).`);
+  writeFileSync(
+    join(OUT_DIR, "parity-report.json"),
+    JSON.stringify(report, null, 2),
+  );
+  console.log(
+    `\nWrote ${join(OUT_DIR, "parity-report.json")} — ${totalGaps} parity gap(s).`,
+  );
   process.exit(totalGaps > 0 ? 1 : 0);
 }
 

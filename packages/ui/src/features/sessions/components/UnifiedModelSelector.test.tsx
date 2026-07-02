@@ -43,9 +43,9 @@ const flatCodexModel: SessionConfigOption = {
   ],
 };
 
-function renderSelector(props: Partial<
-  React.ComponentProps<typeof UnifiedModelSelector>
-> = {}) {
+function renderSelector(
+  props: Partial<React.ComponentProps<typeof UnifiedModelSelector>> = {},
+) {
   return render(
     <Theme>
       <UnifiedModelSelector

@@ -149,37 +149,43 @@ describe("handleServerRequest", () => {
     expect(result.response).toEqual({ answers: { q1: { answers: [] } } });
   });
 
-  it("grants the requested permission profile for the turn on allow", async () => {
-    const { client } = fakeClient([{ outcome: "selected", optionId: "allow" }]);
+  it.each([
+    // "allow_once" grants for the turn, not session-wide; reject grants nothing.
+    { optionId: "allow", expected: { network: { enabled: true } } },
+    { optionId: "reject", expected: {} },
+  ])(
+    "resolves a permission approval on $optionId",
+    async ({ optionId, expected }) => {
+      const { client } = fakeClient([{ outcome: "selected", optionId }]);
 
-    const params = {
-      threadId: "t",
-      turnId: "turn",
-      itemId: "perm-1",
-      environmentId: null,
-      startedAtMs: 0,
-      cwd: "/repo",
-      reason: "needs network",
-      permissions: {
-        network: { enabled: true },
-        fileSystem: null,
-      },
-    };
+      const params = {
+        threadId: "t",
+        turnId: "turn",
+        itemId: "perm-1",
+        environmentId: null,
+        startedAtMs: 0,
+        cwd: "/repo",
+        reason: "needs network",
+        permissions: {
+          network: { enabled: true },
+          fileSystem: null,
+        },
+      };
 
-    const result = await handleServerRequest(
-      APP_SERVER_REQUESTS.PERMISSIONS_APPROVAL,
-      params,
-      client,
-      opts,
-    );
+      const result = await handleServerRequest(
+        APP_SERVER_REQUESTS.PERMISSIONS_APPROVAL,
+        params,
+        client,
+        opts,
+      );
 
-    expect(result.handled).toBe(true);
-    // "allow_once" click grants for the turn, not session-wide.
-    expect(result.response).toEqual({
-      permissions: { network: { enabled: true } },
-      scope: "turn",
-    });
-  });
+      expect(result.handled).toBe(true);
+      expect(result.response).toEqual({
+        permissions: expected,
+        scope: "turn",
+      });
+    },
+  );
 
   it("fails closed to the safe default when a payload is malformed", async () => {
     const { client } = fakeClient([{ outcome: "selected", optionId: "allow" }]);
@@ -195,84 +201,31 @@ describe("handleServerRequest", () => {
     });
   });
 
-  it("denies a permission request with an empty profile on reject", async () => {
-    const { client } = fakeClient([
-      { outcome: "selected", optionId: "reject" },
-    ]);
+  it.each([
+    { optionId: "accept", action: "accept", content: {} },
+    { optionId: "decline", action: "decline", content: null },
+  ])(
+    "resolves an elicitation on $optionId",
+    async ({ optionId, action, content }) => {
+      const { client } = fakeClient([{ outcome: "selected", optionId }]);
 
-    const params = {
-      threadId: "t",
-      turnId: "turn",
-      itemId: "perm-2",
-      environmentId: null,
-      startedAtMs: 0,
-      cwd: "/repo",
-      reason: null,
-      permissions: { network: { enabled: true }, fileSystem: null },
-    };
+      const result = await handleServerRequest(
+        APP_SERVER_REQUESTS.MCP_ELICITATION,
+        {
+          threadId: "t",
+          turnId: "turn",
+          serverName: "posthog",
+          mode: "form",
+          message: "Confirm the export",
+        },
+        client,
+        opts,
+      );
 
-    const result = await handleServerRequest(
-      APP_SERVER_REQUESTS.PERMISSIONS_APPROVAL,
-      params,
-      client,
-      opts,
-    );
-
-    expect(result.response).toEqual({ permissions: {}, scope: "turn" });
-  });
-
-  it("returns an accept elicitation response when the user accepts", async () => {
-    const { client } = fakeClient([
-      { outcome: "selected", optionId: "accept" },
-    ]);
-
-    const params = {
-      threadId: "t",
-      turnId: "turn",
-      serverName: "posthog",
-      mode: "form",
-      message: "Confirm the export",
-    };
-
-    const result = await handleServerRequest(
-      APP_SERVER_REQUESTS.MCP_ELICITATION,
-      params,
-      client,
-      opts,
-    );
-
-    expect(result.handled).toBe(true);
-    expect(result.response).toEqual({
-      action: "accept",
-      content: {},
-      _meta: null,
-    });
-  });
-
-  it("declines an elicitation when the user rejects", async () => {
-    const { client } = fakeClient([
-      { outcome: "selected", optionId: "decline" },
-    ]);
-
-    const result = await handleServerRequest(
-      APP_SERVER_REQUESTS.MCP_ELICITATION,
-      {
-        threadId: "t",
-        turnId: null,
-        serverName: "x",
-        mode: "url",
-        message: "",
-      },
-      client,
-      opts,
-    );
-
-    expect(result.response).toEqual({
-      action: "decline",
-      content: null,
-      _meta: null,
-    });
-  });
+      expect(result.handled).toBe(true);
+      expect(result.response).toEqual({ action, content, _meta: null });
+    },
+  );
 
   it("enriches an elicitation with the in-flight MCP tool call so the host renders the real tool", async () => {
     const { client, calls } = fakeClient([

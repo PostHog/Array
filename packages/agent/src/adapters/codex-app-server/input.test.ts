@@ -93,6 +93,23 @@ describe("toCodexInput", () => {
     ]);
   });
 
+  it("omits the bare-uri text block for a resource with no uri", () => {
+    const prompt: ContentBlock[] = [
+      {
+        type: "resource",
+        resource: { text: "inline snippet" },
+      } as unknown as ContentBlock,
+    ];
+
+    expect(toCodexInput(prompt)).toEqual([
+      {
+        type: "text",
+        text: '<context ref="">\ninline snippet\n</context>',
+        text_elements: [],
+      },
+    ]);
+  });
+
   it("surfaces a file:// resource as its path, not inline text", () => {
     const prompt: ContentBlock[] = [
       {

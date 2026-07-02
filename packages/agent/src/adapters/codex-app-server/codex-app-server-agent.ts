@@ -1002,11 +1002,14 @@ export class CodexAppServerAgent extends BaseAcpAgent {
           const activeTurnId = this.turns.activeTurnId;
           if (typeof feedback === "string" && feedback.trim() && activeTurnId) {
             void this.rpc
-              .request(APP_SERVER_METHODS.TURN_STEER, {
+              .request<{ turnId?: string }>(APP_SERVER_METHODS.TURN_STEER, {
                 threadId: this.threadId,
                 input: toCodexInput([{ type: "text", text: feedback.trim() }]),
                 expectedTurnId: activeTurnId,
               })
+              // codex rotates the turn id on steer; adopt it or later
+              // interrupts/steers target a dead turn.
+              .then((res) => this.turns.onSteered(res?.turnId))
               .catch((err) =>
                 this.logger.warn("turn/steer (reject feedback) failed", err),
               );

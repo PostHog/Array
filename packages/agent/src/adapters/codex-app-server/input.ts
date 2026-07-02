@@ -56,7 +56,9 @@ export function toCodexInput(prompt: ContentBlock[]): CodexUserInput[] {
         input.push(textInput(resourceLinkText(uri)));
         continue;
       }
-      input.push(textInput(uri));
+      if (uri) {
+        input.push(textInput(uri));
+      }
       context.push(
         `<context ref="${uri}">\n${block.resource.text}\n</context>`,
       );

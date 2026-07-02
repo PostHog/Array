@@ -6,7 +6,10 @@ import {
   sessionSupportsNativeSteer,
 } from "./sessions";
 
-function modeOption(values: string[], currentValue: string): SessionConfigOption {
+function modeOption(
+  values: string[],
+  currentValue: string,
+): SessionConfigOption {
   return {
     type: "select",
     id: "mode",
@@ -37,15 +40,19 @@ describe("resolveBypassRevertMode", () => {
   });
 
   it("falls back to the first non-bypass option when neither default nor auto exist", () => {
-    expect(resolveBypassRevertMode(modeOption(["read-only", "full-access"], "full-access"))).toBe(
-      "read-only",
-    );
+    expect(
+      resolveBypassRevertMode(
+        modeOption(["read-only", "full-access"], "full-access"),
+      ),
+    ).toBe("read-only");
   });
 
   it("returns undefined for a missing or non-select option", () => {
     expect(resolveBypassRevertMode(undefined)).toBeUndefined();
     expect(
-      resolveBypassRevertMode({ type: "boolean" } as unknown as SessionConfigOption),
+      resolveBypassRevertMode({
+        type: "boolean",
+      } as unknown as SessionConfigOption),
     ).toBeUndefined();
   });
 });
@@ -55,18 +62,50 @@ describe("sessionSupportsNativeSteer", () => {
 
   it.each<[string, Case, boolean]>([
     // Capability-driven: "native" folds the message into the running turn.
-    ["claude advertises native", { isCloud: false, steering: "native", adapter: "claude" }, true],
-    ["codex app-server advertises native", { isCloud: false, steering: "native", adapter: "codex" }, true],
+    [
+      "claude advertises native",
+      { isCloud: false, steering: "native", adapter: "claude" },
+      true,
+    ],
+    [
+      "codex app-server advertises native",
+      { isCloud: false, steering: "native", adapter: "codex" },
+      true,
+    ],
     // codex-acp advertises "interrupt-resend" — must NOT steer natively.
-    ["codex-acp interrupt-resend", { isCloud: false, steering: "interrupt-resend", adapter: "codex" }, false],
+    [
+      "codex-acp interrupt-resend",
+      { isCloud: false, steering: "interrupt-resend", adapter: "codex" },
+      false,
+    ],
     // Fallback: pre-capability start paths leave steering unset; never regress claude.
-    ["claude with no capability (fallback)", { isCloud: false, steering: undefined, adapter: "claude" }, true],
-    ["codex with no capability (no fallback)", { isCloud: false, steering: undefined, adapter: "codex" }, false],
+    [
+      "claude with no capability (fallback)",
+      { isCloud: false, steering: undefined, adapter: "claude" },
+      true,
+    ],
+    [
+      "codex with no capability (no fallback)",
+      { isCloud: false, steering: undefined, adapter: "codex" },
+      false,
+    ],
     // An explicit non-native capability overrides the claude fallback.
-    ["claude explicitly non-native", { isCloud: false, steering: "interrupt-resend", adapter: "claude" }, false],
+    [
+      "claude explicitly non-native",
+      { isCloud: false, steering: "interrupt-resend", adapter: "claude" },
+      false,
+    ],
     // Cloud runs queue/resend; they never steer locally regardless of capability.
-    ["cloud claude native", { isCloud: true, steering: "native", adapter: "claude" }, false],
-    ["cloud codex native", { isCloud: true, steering: "native", adapter: "codex" }, false],
+    [
+      "cloud claude native",
+      { isCloud: true, steering: "native", adapter: "claude" },
+      false,
+    ],
+    [
+      "cloud codex native",
+      { isCloud: true, steering: "native", adapter: "codex" },
+      false,
+    ],
   ])("%s", (_label, session, expected) => {
     expect(sessionSupportsNativeSteer(session)).toBe(expected);
   });

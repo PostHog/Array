@@ -343,6 +343,8 @@ describe("CodexAppServerAgent", () => {
       initialize: {},
       "thread/start": { thread: { id: "thr_1" } },
       "turn/start": { turn: { id: "turn_1" } },
+      // codex rotates the turn id on steer.
+      "turn/steer": { turnId: "turn_2" },
     });
     const offeredOptions: Array<Array<{ optionId?: string; kind?: string }>> =
       [];
@@ -389,6 +391,18 @@ describe("CodexAppServerAgent", () => {
     expect((steer?.params as { expectedTurnId?: string })?.expectedTurnId).toBe(
       "turn_1",
     );
+
+    // The rotated turn id from the steer response was adopted: a second
+    // rejection targets turn_2, not the dead turn_1.
+    await new Promise((r) => setImmediate(r));
+    await stub.invokeRequest("item/commandExecution/requestApproval", {
+      itemId: "c2",
+      command: "rm -rf dist",
+    });
+    const steers = stub.requests.filter((r) => r.method === "turn/steer");
+    expect(
+      (steers[1]?.params as { expectedTurnId?: string })?.expectedTurnId,
+    ).toBe("turn_2");
 
     stub.emit("turn/completed", { turn: { status: "completed" } });
     await done;
