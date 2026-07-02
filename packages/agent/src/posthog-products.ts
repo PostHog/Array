@@ -86,6 +86,7 @@ const DOMAIN_PRODUCT: Record<string, PostHogProductId | null> = {
   persons: "product_analytics",
   annotation: "product_analytics",
   "event-definition": "product_analytics",
+  "custom-property-definition": "product_analytics",
   endpoint: "product_analytics",
   view: "product_analytics",
   "usage-metrics": "product_analytics",
@@ -292,6 +293,28 @@ function classifyPostHogActivityLog(commandText: string): PostHogProductId[] {
   return [...products];
 }
 
+/* Call shapes classified by their arguments rather than the domain map:
+ * `query-<type>` by query type, `execute-sql` by the SQL it runs, activity-log
+ * reads by their `scope`. Single source of truth shared by the classifiers and
+ * `isUnclassifiedPostHogSubTool`, so a new special case added to one can't be
+ * missed by the other. Each takes an already trimmed+lowercased name. */
+
+function isQueryCall(name: string): boolean {
+  return name === "query" || name.startsWith("query-");
+}
+
+function isExecuteSqlCall(name: string): boolean {
+  return name === "execute-sql" || name === "execute_sql";
+}
+
+function isActivityLogCall(name: string): boolean {
+  return (
+    name === "activity-log" ||
+    name.startsWith("activity-log-") ||
+    name.startsWith("advanced-activity-logs")
+  );
+}
+
 /**
  * Classify an executed MCP exec `call` into the products it touched. For
  * `execute-sql` the query text is inspected so the call is attributed to the
@@ -308,15 +331,11 @@ export function classifyPostHogExecCall(
   commandText?: string,
 ): PostHogProductId[] {
   const name = subTool.trim().toLowerCase();
-  if (name === "execute-sql" || name === "execute_sql") {
+  if (isExecuteSqlCall(name)) {
     const fromTables = commandText ? classifyPostHogSqlQuery(commandText) : [];
     return fromTables.length > 0 ? fromTables : ["sql"];
   }
-  if (
-    name === "activity-log" ||
-    name.startsWith("activity-log-") ||
-    name.startsWith("advanced-activity-logs")
-  ) {
+  if (isActivityLogCall(name)) {
     return commandText ? classifyPostHogActivityLog(commandText) : [];
   }
   const product = classifyPostHogSubTool(subTool);
@@ -346,7 +365,7 @@ export function classifyPostHogSubTool(
   const name = subTool.trim().toLowerCase();
   if (!name) return null;
 
-  if (name === "query" || name.startsWith("query-")) {
+  if (isQueryCall(name)) {
     return classifyQuery(name.slice("query-".length));
   }
 
@@ -381,13 +400,7 @@ function matchDomain(name: string): string | null {
 export function isUnclassifiedPostHogSubTool(subTool: string): boolean {
   const name = subTool.trim().toLowerCase();
   if (!name) return false;
-  if (name === "query" || name.startsWith("query-")) return false;
-  if (name === "execute-sql" || name === "execute_sql") return false;
-  if (
-    name === "activity-log" ||
-    name.startsWith("activity-log-") ||
-    name.startsWith("advanced-activity-logs")
-  ) {
+  if (isQueryCall(name) || isExecuteSqlCall(name) || isActivityLogCall(name)) {
     return false;
   }
   return matchDomain(name) === null;

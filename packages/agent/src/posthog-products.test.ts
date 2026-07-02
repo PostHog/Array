@@ -24,8 +24,8 @@ describe("classifyPostHogSubTool", () => {
     expect(classifyPostHogSubTool(subTool)).toBe(product);
   });
 
-  // Domains whose canonical token differs from the longer per-sub-tool name we
-  // used to key on — these previously fell through to the generic fallback.
+  // Domains that previously fell through to the generic fallback — keyed on a
+  // longer per-sub-tool name than the canonical token, or missing entirely.
   it.each([
     ["llma-evaluation-list", "llm_analytics"],
     ["llma-clustering-get", "llm_analytics"],
@@ -35,6 +35,7 @@ describe("classifyPostHogSubTool", () => {
     ["cdp-function-templates-list", "cdp"],
     ["external-data-schemas-list", "data_warehouse"],
     ["event-definition-list", "product_analytics"],
+    ["custom-property-definitions-list", "product_analytics"],
     ["web-analytics-weekly-digest-get", "web_analytics"],
     ["vision-scanners-create", "session_replay"],
   ])("maps newly-covered sub-tool %s to %s", (subTool, product) => {
@@ -123,6 +124,7 @@ describe("isUnclassifiedPostHogSubTool", () => {
     "experiment-list",
     "llma-evaluation-list",
     "vision-scanners-create",
+    "custom-property-definitions-list",
     // Deliberately-suppressed admin/meta domains — recognized, not unknown.
     "project-get",
     "docs-search",
