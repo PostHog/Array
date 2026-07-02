@@ -26,6 +26,7 @@ jobs:
        contains(github.event.pull_request.labels.*.name, 'Create release'))
     permissions:
       contents: write
+      actions: write
     runs-on: ubuntu-latest
     steps:
       - name: Get app token
@@ -45,7 +46,7 @@ jobs:
         id: quiet
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.quiet_retries != '0')
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           QUIET_RETRIES: ${{ github.event.inputs.quiet_retries || 0 }}
         run: |
           RETRIES="${QUIET_RETRIES}"
