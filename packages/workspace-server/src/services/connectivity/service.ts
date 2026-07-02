@@ -75,6 +75,8 @@ export class ConnectivityService extends TypedEventEmitter<ConnectivityEvents> {
   }
 
   private async verifyWithHttp(): Promise<boolean> {
+    // Sequential on purpose: one request per check in the common case, at the
+    // cost of up to CHECK_TIMEOUT_MS extra latency when the first host is blocked.
     for (const url of CHECK_URLS) {
       try {
         await this.probe(url);

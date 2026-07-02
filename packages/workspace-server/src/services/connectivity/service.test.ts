@@ -120,7 +120,7 @@ describe("ConnectivityService", () => {
       service.on(ConnectivityEvent.StatusChange, handler);
 
       mockFetch.mockRejectedValue(new Error("offline"));
-      await vi.advanceTimersByTimeAsync(3000); // one failed poll only
+      await vi.advanceTimersByTimeAsync(30_000); // one failed poll only
 
       expect(handler).not.toHaveBeenCalled();
     });
@@ -199,6 +199,18 @@ describe("ConnectivityService", () => {
 
       const result = await service.checkNow();
       expect(result).toEqual({ isOnline: true });
+    });
+
+    it("short-circuits after the first reachable host", async () => {
+      mockFetch.mockResolvedValue(ok(204));
+      service = new ConnectivityService();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://www.google.com/generate_204",
+        expect.objectContaining({ method: "HEAD" }),
+      );
     });
 
     it("goes offline only when every host fails", async () => {
