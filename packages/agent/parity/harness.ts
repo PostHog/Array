@@ -10,16 +10,21 @@
  */
 import { promises as fs } from "node:fs";
 import { resolve } from "node:path";
-// @ts-ignore - resolved by tsx at runtime
+// @ts-expect-error - resolved by tsx at runtime
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
 import { createAcpConnection } from "../src/adapters/acp-connection";
-import { Logger } from "../src/utils/logger";
+import type { Logger } from "../src/utils/logger";
 
 export type AdapterMode = "acp" | "app-server";
 
 export interface CapturedEvent {
   t: number;
-  kind: "step" | "sessionUpdate" | "requestPermission" | "extNotification" | "extMethod";
+  kind:
+    | "step"
+    | "sessionUpdate"
+    | "requestPermission"
+    | "extNotification"
+    | "extMethod";
   op?: string;
   sessionUpdate?: string;
   data?: any;

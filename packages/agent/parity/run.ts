@@ -11,16 +11,31 @@
  *   PARITY_MODEL        default gpt-5.5
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { Logger } from "../src/utils/logger";
-import { type AdapterMode, type CapturedRun, type Scenario, runScenario } from "./harness";
+import {
+  type AdapterMode,
+  type CapturedRun,
+  runScenario,
+  type Scenario,
+} from "./harness";
 
 const OUT_DIR = join(import.meta.dirname, "out");
-const RESOURCES = join(import.meta.dirname, "..", "..", "..", "apps", "code", "resources", "codex-acp");
+const RESOURCES = join(
+  import.meta.dirname,
+  "..",
+  "..",
+  "..",
+  "apps",
+  "code",
+  "resources",
+  "codex-acp",
+);
 const CODEX_ACP_BIN = join(RESOURCES, "codex-acp");
 const NATIVE_CODEX_BIN = join(RESOURCES, "codex");
-const GATEWAY = process.env.PARITY_GATEWAY_URL ?? "http://localhost:3308/posthog_code/v1";
+const GATEWAY =
+  process.env.PARITY_GATEWAY_URL ?? "http://localhost:3308/posthog_code/v1";
 const API_KEY = process.env.PARITY_API_KEY ?? "";
 const MODEL = process.env.PARITY_MODEL ?? "gpt-5.5";
 const REPO = "/tmp/codex-parity-repo";
