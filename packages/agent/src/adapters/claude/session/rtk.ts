@@ -60,10 +60,7 @@ export function rewriteBashForRtk(
   const trimmed = command.trim();
   if (!trimmed || SHELL_OPERATORS.test(trimmed)) return null;
 
-  // Already routed through rtk — keep the rewrite idempotent. Match against the
-  // *quoted* prefix (our own output form) via startsWith, not a whitespace-split
-  // head: when rtkPrefix contains spaces the head is only the quoted first token
-  // (e.g. `'/Apps/PostHog`), so a `head === rtkPrefix` compare would never fire.
+  // Already routed through rtk — keep the rewrite idempotent.
   const quotedPrefix = shQuote(rtkPrefix);
   if (
     trimmed === quotedPrefix ||
