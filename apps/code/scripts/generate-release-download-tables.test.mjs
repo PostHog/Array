@@ -44,19 +44,26 @@ const downloadCells = (markdown) =>
   tableRows(markdown).map((line) => line.split(" | ")[2]);
 
 describe("parseChecksums", () => {
-  it("parses sha256sum and shasum output, ignoring other lines", () => {
-    const text = [
+  it.each([
+    [
+      "sha256sum text mode (two spaces)",
       `${sha("a")}  PostHog-Code-1.2.3-arm64-mac.dmg`,
+      "PostHog-Code-1.2.3-arm64-mac.dmg",
+      sha("a"),
+    ],
+    [
+      "shasum binary mode (space + asterisk)",
       `${sha("b")} *PostHog-Code-1.2.3-x64-win.exe`,
-      "not a checksum line",
-      "",
-    ].join("\n");
+      "PostHog-Code-1.2.3-x64-win.exe",
+      sha("b"),
+    ],
+  ])("parses %s output, ignoring other lines", (_label, line, name, hash) => {
+    const text = [line, "not a checksum line", ""].join("\n");
 
     const checksums = parseChecksums(text);
 
-    expect(checksums.get("PostHog-Code-1.2.3-arm64-mac.dmg")).toBe(sha("a"));
-    expect(checksums.get("PostHog-Code-1.2.3-x64-win.exe")).toBe(sha("b"));
-    expect(checksums.size).toBe(2);
+    expect(checksums.get(name)).toBe(hash);
+    expect(checksums.size).toBe(1);
   });
 });
 
@@ -93,17 +100,18 @@ describe("buildDownloadTables", () => {
     ]);
   });
 
-  it("links the blockmap when present and shows a dash when absent", () => {
-    const markdown = buildDownloadTables("0.56.90", releaseChecksums());
-    const rows = tableRows(markdown);
-
-    const dmgRow = rows.find((row) => row.includes("arm64-mac.dmg]("));
-    expect(dmgRow).toContain(
+  it.each([
+    [
+      "links the blockmap when present",
+      "arm64-mac.dmg](",
       "[blockmap](https://github.com/PostHog/code/releases/download/v0.56.90/PostHog-Code-0.56.90-arm64-mac.dmg.blockmap)",
-    );
+    ],
+    ["shows a dash when the blockmap is absent", "amd64-linux.deb](", "| — |"],
+  ])("%s", (_label, rowFragment, expected) => {
+    const rows = tableRows(buildDownloadTables("0.56.90", releaseChecksums()));
 
-    const debRow = rows.find((row) => row.includes("amd64-linux.deb]("));
-    expect(debRow).toContain("| — |");
+    const row = rows.find((line) => line.includes(rowFragment));
+    expect(row).toContain(expected);
   });
 
   it("abbreviates the sha to 6 digits with the full hash as hover tooltip", () => {
