@@ -134,7 +134,7 @@ function groupToolRuns(items: ConversationItem[]): ThreadItem[] {
   const flush = () => {
     if (toolCount >= 2) {
       const tools = buffer.filter(isToolCallItem);
-      out.push({ type: "tool_group", id: `tool-group-${tools[0].id}`, tools });
+      out.push({ type: "tool_group", id: tools[0].id, tools });
     } else {
       out.push(...buffer);
     }
@@ -512,6 +512,27 @@ const ThreadRow = memo(function ThreadRow({
   );
 });
 
+function AnchorNewPrompt({ items }: { items: ConversationItem[] }) {
+  const { scrollToMessage } = useChatMessageScroller();
+  const lastItem = items.at(-1);
+  const userMessageCount = useMemo(
+    () =>
+      items.reduce((n, item) => (item.type === "user_message" ? n + 1 : n), 0),
+    [items],
+  );
+  const prevCountRef = useRef(userMessageCount);
+
+  useLayoutEffect(() => {
+    const previous = prevCountRef.current;
+    prevCountRef.current = userMessageCount;
+    if (previous === 0 || userMessageCount <= previous) return;
+    if (lastItem?.type !== "user_message") return;
+    scrollToMessage(lastItem.id, { align: "start" });
+  }, [userMessageCount, lastItem, scrollToMessage]);
+
+  return null;
+}
+
 /** The scroll body, under the Provider so the overlay + scroll-button hooks can read engine state. */
 function ThreadScrollBody({
   items,
@@ -525,15 +546,24 @@ function ThreadScrollBody({
   /** Status row (duration / context usage) pinned as the last item in the thread. */
   footer?: ReactNode;
 }) {
+  const keyedRows = useMemo(() => {
+    let userTurn = 0;
+    return rows.map((item) => ({
+      item,
+      key: item.type === "user_message" ? `user-turn-${userTurn++}` : item.id,
+    }));
+  }, [rows]);
+
   // `group/thread` so the footer's hover-reveal (opacity-50 → 100 on group-hover) tracks the thread,
   // mirroring the legacy ConversationView container.
   return (
     <ChatMessageScroller className="group/thread">
       <StickyHeaderOverlay items={items} />
+      <AnchorNewPrompt items={items} />
       <ChatMessageScrollerViewport>
         <ChatMessageScrollerContent className="py-4 pb-8" density="default">
-          {rows.map((item) => (
-            <ThreadRow key={item.id} item={item} renderItem={renderItem} />
+          {keyedRows.map(({ item, key }) => (
+            <ThreadRow key={key} item={item} renderItem={renderItem} />
           ))}
           {footer && (
             <div
