@@ -111,6 +111,7 @@ interface SettingsStore {
   desktopNotifications: boolean;
   dockBadgeNotifications: boolean;
   dockBounceNotifications: boolean;
+  toastNotifications: boolean;
   completionSound: CompletionSound;
   completionVolume: number;
   scaleSoundWithTaskLength: boolean;
@@ -118,6 +119,7 @@ interface SettingsStore {
   setDesktopNotifications: (enabled: boolean) => void;
   setDockBadgeNotifications: (enabled: boolean) => void;
   setDockBounceNotifications: (enabled: boolean) => void;
+  setToastNotifications: (enabled: boolean) => void;
   setCompletionSound: (sound: CompletionSound) => void;
   setCompletionVolume: (volume: number) => void;
   setScaleSoundWithTaskLength: (enabled: boolean) => void;
@@ -193,6 +195,7 @@ export const NOTIFICATION_DEFAULTS = {
   desktopNotifications: true,
   dockBadgeNotifications: true,
   dockBounceNotifications: false,
+  toastNotifications: true,
   completionSound: "none" as CompletionSound,
   completionVolume: 80,
   scaleSoundWithTaskLength: false,
@@ -260,6 +263,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ dockBadgeNotifications: enabled }),
       setDockBounceNotifications: (enabled) =>
         set({ dockBounceNotifications: enabled }),
+      setToastNotifications: (enabled) => set({ toastNotifications: enabled }),
       setCompletionSound: (sound) => set({ completionSound: sound }),
       setCompletionVolume: (volume) => set({ completionVolume: volume }),
       setScaleSoundWithTaskLength: (enabled) =>
@@ -394,6 +398,7 @@ export const useSettingsStore = create<SettingsStore>()(
         desktopNotifications: state.desktopNotifications,
         dockBadgeNotifications: state.dockBadgeNotifications,
         dockBounceNotifications: state.dockBounceNotifications,
+        toastNotifications: state.toastNotifications,
         completionSound: state.completionSound,
         completionVolume: state.completionVolume,
         scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,

@@ -39,6 +39,7 @@ export function NotificationsSettings() {
     desktopNotifications,
     dockBadgeNotifications,
     dockBounceNotifications,
+    toastNotifications,
     completionSound,
     completionVolume,
     scaleSoundWithTaskLength,
@@ -46,6 +47,7 @@ export function NotificationsSettings() {
     setDesktopNotifications,
     setDockBadgeNotifications,
     setDockBounceNotifications,
+    setToastNotifications,
     setCompletionSound,
     setCompletionVolume,
     setScaleSoundWithTaskLength,
@@ -104,6 +106,18 @@ export function NotificationsSettings() {
     [desktopNotifications, setDesktopNotifications],
   );
 
+  const handleToastNotificationsChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "toast_notifications",
+        new_value: checked,
+        old_value: toastNotifications,
+      });
+      setToastNotifications(checked);
+    },
+    [toastNotifications, setToastNotifications],
+  );
+
   const handleCompletionSoundChange = useCallback(
     (value: CompletionSound) => {
       // Don't leak generated custom-sound ids into analytics.
@@ -136,6 +150,7 @@ export function NotificationsSettings() {
     setDesktopNotifications(NOTIFICATION_DEFAULTS.desktopNotifications);
     setDockBadgeNotifications(NOTIFICATION_DEFAULTS.dockBadgeNotifications);
     setDockBounceNotifications(NOTIFICATION_DEFAULTS.dockBounceNotifications);
+    setToastNotifications(NOTIFICATION_DEFAULTS.toastNotifications);
     setCompletionSound(NOTIFICATION_DEFAULTS.completionSound);
     setCompletionVolume(NOTIFICATION_DEFAULTS.completionVolume);
     setScaleSoundWithTaskLength(NOTIFICATION_DEFAULTS.scaleSoundWithTaskLength);
@@ -144,6 +159,7 @@ export function NotificationsSettings() {
     setDesktopNotifications,
     setDockBadgeNotifications,
     setDockBounceNotifications,
+    setToastNotifications,
     setCompletionSound,
     setCompletionVolume,
     setScaleSoundWithTaskLength,
@@ -195,6 +211,17 @@ export function NotificationsSettings() {
         <Switch
           checked={dockBounceNotifications}
           onCheckedChange={setDockBounceNotifications}
+          size="1"
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="In-app toasts"
+        description="Show an in-app toast when the agent finishes a task or needs your input, and for other in-app confirmations. Error messages always show."
+      >
+        <Switch
+          checked={toastNotifications}
+          onCheckedChange={handleToastNotificationsChange}
           size="1"
         />
       </SettingRow>

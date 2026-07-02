@@ -22,11 +22,18 @@ const quill = vi.hoisted(() => {
 
 vi.mock("@posthog/quill", () => ({ toast: quill }));
 
+const settings = vi.hoisted(() => ({ toastNotifications: true }));
+
+vi.mock("@posthog/ui/features/settings/settingsStore", () => ({
+  useSettingsStore: { getState: () => settings },
+}));
+
 import { toast } from "./toast";
 
 beforeEach(() => {
   vi.clearAllMocks();
   quill._reset();
+  settings.toastNotifications = true;
   // clearAllMocks resets the level fns to undefined returns; restore ids.
   let n = 0;
   for (const key of [
@@ -85,6 +92,21 @@ describe("toast wrapper", () => {
     expect(quill.error).toHaveBeenCalledWith(
       expect.objectContaining({ timeout: 0 }),
     );
+  });
+
+  it.each(["success", "info", "warning", "loading"] as const)(
+    "suppresses %s when toast notifications are disabled",
+    (level) => {
+      settings.toastNotifications = false;
+      toast[level]("Title");
+      expect(quill[level]).not.toHaveBeenCalled();
+    },
+  );
+
+  it("always shows error toasts, even when toast notifications are disabled", () => {
+    settings.toastNotifications = false;
+    toast.error("Offline");
+    expect(quill.error).toHaveBeenCalled();
   });
 
   it("after a toast closes, its id frees up to create again", () => {
