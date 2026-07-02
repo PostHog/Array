@@ -90,6 +90,7 @@ export function DevToolbar() {
   // The router devtools open in their own standalone box (as they did from the
   // old floating trigger), not in the shared metric-panel chrome above.
   const [routerDevtoolsOpen, setRouterDevtoolsOpen] = useState(false);
+  const [routerBoxHeight, setRouterBoxHeight] = useState(500);
 
   if (!devMode) return null;
 
@@ -109,7 +110,11 @@ export function DevToolbar() {
         />
       )}
       {routerDevtoolsOpen && (
-        <RouterDevtoolsBox onClose={() => setRouterDevtoolsOpen(false)} />
+        <RouterDevtoolsBox
+          onClose={() => setRouterDevtoolsOpen(false)}
+          height={routerBoxHeight}
+          onResize={setRouterBoxHeight}
+        />
       )}
       <Flex
         align="center"
@@ -169,12 +174,25 @@ function Divider() {
   return <div className="h-3 w-px bg-(--gray-6)" />;
 }
 
-// The router devtools in their own floating box docked above the toolbar —
-// the panel renders its own chrome, so this is just a positioned container
-// (deliberately not the shared metric-panel chrome).
-function RouterDevtoolsBox({ onClose }: { onClose: () => void }) {
+// The router devtools in their own box — a full-width, resizable drawer docked
+// above the toolbar, the same shape the panel had inside the old floating
+// devtools shell. Deliberately not the shared metric-panel chrome: the panel
+// renders its own header, so this is just the drawer container.
+function RouterDevtoolsBox({
+  onClose,
+  height,
+  onResize,
+}: {
+  onClose: () => void;
+  height: number;
+  onResize: (next: number) => void;
+}) {
   return (
-    <div className="absolute right-2 bottom-[calc(100%+8px)] z-50 h-[440px] w-[680px] max-w-[calc(100vw-16px)] overflow-hidden rounded-md border border-(--gray-6) bg-(--gray-1) shadow-[0_8px_24px_-8px_rgba(0,0,0,0.4)]">
+    <div
+      style={{ height }}
+      className="absolute right-0 bottom-full left-0 z-50 flex flex-col overflow-hidden border-(--gray-6) border-t border-b bg-(--gray-1) shadow-[0_-8px_24px_-8px_rgba(0,0,0,0.3)]"
+    >
+      <ResizeHandle height={height} onResize={onResize} />
       <Tooltip content="Close router devtools">
         <button
           type="button"
@@ -185,7 +203,9 @@ function RouterDevtoolsBox({ onClose }: { onClose: () => void }) {
           <X size={14} />
         </button>
       </Tooltip>
-      <RouterDevtoolsPanel />
+      <div className="min-h-0 flex-1">
+        <RouterDevtoolsPanel />
+      </div>
     </div>
   );
 }
