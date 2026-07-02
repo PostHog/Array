@@ -171,6 +171,46 @@ export function shellExecutesToContextBlocks(
  * Convert stored log entries to ACP messages.
  * Optionally prepends a user message with the task description.
  */
+function toolCallUpdateId(event: AcpMessage): string | undefined {
+  const msg = event.message;
+  if (!isJsonRpcNotification(msg) || msg.method !== "session/update") {
+    return undefined;
+  }
+  const update = (msg.params as SessionNotification | undefined)?.update as
+    | { sessionUpdate?: string; toolCallId?: string }
+    | undefined;
+  if (update?.sessionUpdate !== "tool_call_update") return undefined;
+  return typeof update.toolCallId === "string" ? update.toolCallId : undefined;
+}
+
+/**
+ * Drop superseded `tool_call_update` snapshots, keeping only the latest per
+ * `toolCallId`. Agents re-send the full accumulated tool output on every
+ * update, so a long-running tool leaves thousands of near-identical growing
+ * snapshots in a loaded transcript — only the last is ever rendered. Keeping
+ * just that one (in its original position, carrying the full final output)
+ * caps resident memory: a 9k-update tool run drops from ~312MB to ~3MB of
+ * tool content with no visible change.
+ */
+export function collapseSupersededToolCallUpdates(
+  events: AcpMessage[],
+): AcpMessage[] {
+  const lastIndexById = new Map<string, number>();
+  for (let i = 0; i < events.length; i++) {
+    const id = toolCallUpdateId(events[i]);
+    if (id !== undefined) lastIndexById.set(id, i);
+  }
+  if (lastIndexById.size === 0) return events;
+
+  const collapsed: AcpMessage[] = [];
+  for (let i = 0; i < events.length; i++) {
+    const id = toolCallUpdateId(events[i]);
+    if (id !== undefined && lastIndexById.get(id) !== i) continue;
+    collapsed.push(events[i]);
+  }
+  return collapsed;
+}
+
 export function convertStoredEntriesToEvents(
   entries: StoredLogEntry[],
   taskDescription?: string,
@@ -188,7 +228,7 @@ export function convertStoredEntriesToEvents(
     events.push(storedEntryToAcpMessage(entry));
   }
 
-  return events;
+  return collapseSupersededToolCallUpdates(events);
 }
 
 /**

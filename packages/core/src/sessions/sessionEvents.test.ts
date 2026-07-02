@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { makeAttachmentUri } from "./promptContent";
 import {
+  collapseSupersededToolCallUpdates,
   convertStoredEntriesToEvents,
   extractUserPromptsFromEvents,
   hasSessionPromptEvent,
@@ -286,5 +287,75 @@ describe("promptReferencesAbsoluteFolder", () => {
 
   it("returns false when no folder tag is present", () => {
     expect(promptReferencesAbsoluteFolder("just text")).toBe(false);
+  });
+});
+
+describe("collapseSupersededToolCallUpdates", () => {
+  const toolUpdate = (toolCallId: string, text: string): AcpMessage =>
+    ({
+      type: "acp_message",
+      ts: 1,
+      message: {
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            content: text,
+          },
+        },
+      },
+    }) as unknown as AcpMessage;
+
+  const other = (text: string): AcpMessage =>
+    ({
+      type: "acp_message",
+      ts: 1,
+      message: {
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text },
+          },
+        },
+      },
+    }) as unknown as AcpMessage;
+
+  // biome-ignore lint/suspicious/noExplicitAny: test introspection
+  const sessionUpdate = (e: AcpMessage) => (e.message as any).params.update;
+
+  it("keeps only the latest update per toolCallId, in its original position", () => {
+    const events = [
+      toolUpdate("a", "a1"),
+      toolUpdate("a", "a2"),
+      other("hi"),
+      toolUpdate("a", "a3"),
+    ];
+    const collapsed = collapseSupersededToolCallUpdates(events);
+    expect(collapsed).toHaveLength(2);
+    expect(sessionUpdate(collapsed[0]).sessionUpdate).toBe(
+      "agent_message_chunk",
+    );
+    expect(sessionUpdate(collapsed[1]).content).toBe("a3");
+  });
+
+  it("keeps the latest of each distinct toolCallId", () => {
+    const events = [
+      toolUpdate("a", "a1"),
+      toolUpdate("b", "b1"),
+      toolUpdate("a", "a2"),
+      toolUpdate("b", "b2"),
+    ];
+    const collapsed = collapseSupersededToolCallUpdates(events);
+    expect(collapsed.map((e) => sessionUpdate(e).content)).toEqual([
+      "a2",
+      "b2",
+    ]);
+  });
+
+  it("leaves transcripts without tool updates untouched", () => {
+    const events = [other("one"), other("two")];
+    expect(collapseSupersededToolCallUpdates(events)).toBe(events);
   });
 });
