@@ -1,4 +1,4 @@
-import fs, { mkdirSync, symlinkSync } from "node:fs";
+import fs from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
@@ -88,6 +88,7 @@ import {
   AGENT_REPO_FILES,
   AGENT_SLEEP_COORDINATOR,
 } from "./identifiers";
+import { ensureNodeShim } from "./node-shim";
 import type {
   AgentLogger,
   AgentMcpApps,
@@ -1593,19 +1594,7 @@ For git operations while detached:
     const mockNodeDir = getMockNodeDir();
     if (!this.mockNodeReady) {
       try {
-        mkdirSync(mockNodeDir, { recursive: true });
-        const nodeSymlinkPath = join(mockNodeDir, "node");
-        try {
-          symlinkSync(process.execPath, nodeSymlinkPath);
-        } catch (err) {
-          if (
-            !(err instanceof Error) ||
-            !("code" in err) ||
-            err.code !== "EEXIST"
-          ) {
-            throw err;
-          }
-        }
+        ensureNodeShim(mockNodeDir, process.execPath);
         this.mockNodeReady = true;
       } catch (err) {
         this.log.warn("Failed to setup mock node environment", err);
