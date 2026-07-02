@@ -73,8 +73,19 @@ describe("PendingPromptRecovery", () => {
     expect(mockPush).toHaveBeenCalledTimes(1);
   });
 
-  it("does nothing when there is no orphaned prompt", async () => {
-    getAllNewestFirst.mockReturnValue([]);
+  it.each([
+    { name: "there is no orphaned prompt", setup: () => {} },
+    {
+      name: "the user is not authenticated",
+      setup: () => {
+        authState.isAuthenticated = false;
+        getAllNewestFirst.mockReturnValue([
+          { key: "newest", prompt: { promptText: "Newest prompt" } },
+        ]);
+      },
+    },
+  ])("does nothing when $name", async ({ setup }) => {
+    setup();
 
     await mountRecovery();
 
@@ -82,14 +93,33 @@ describe("PendingPromptRecovery", () => {
     expect(clear).not.toHaveBeenCalled();
   });
 
-  it("does not recover until the user is authenticated", async () => {
-    authState.isAuthenticated = false;
+  it("re-arms after logout so a new session recovers again", async () => {
     getAllNewestFirst.mockReturnValue([
       { key: "newest", prompt: { promptText: "Newest prompt" } },
     ]);
 
-    await mountRecovery();
+    vi.resetModules();
+    const { PendingPromptRecovery } = await import("./PendingPromptRecovery");
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(createElement(PendingPromptRecovery));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockPush).toHaveBeenCalledTimes(1);
 
-    expect(mockPush).not.toHaveBeenCalled();
+    authState.isAuthenticated = false;
+    await act(async () => {
+      renderer.update(createElement(PendingPromptRecovery));
+      await Promise.resolve();
+    });
+
+    authState.isAuthenticated = true;
+    await act(async () => {
+      renderer.update(createElement(PendingPromptRecovery));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockPush).toHaveBeenCalledTimes(2);
   });
 });

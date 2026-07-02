@@ -12,7 +12,13 @@ export function PendingPromptRecovery(): null {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   useEffect(() => {
-    if (!isAuthenticated || recoveryStarted) return;
+    // Re-arm on logout so a fresh session recovers again without a full app
+    // restart (an orphaned prompt outlives logout in storage).
+    if (!isAuthenticated) {
+      recoveryStarted = false;
+      return;
+    }
+    if (recoveryStarted) return;
     recoveryStarted = true;
     void recoverNewestPrompt();
   }, [isAuthenticated]);
