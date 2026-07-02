@@ -132,12 +132,8 @@ function startWatch(wt: ManualGen): AsyncGenerator<FileWatcherEvent> {
     gitDir: null,
     commonDir: null,
   });
-  vi.spyOn(service, "watch").mockImplementation(
-    (_dir: string, options: { ignore?: string[] }) => {
-      if (options.ignore?.includes("**/node_modules/**")) return wt.gen;
-      return (async function* (): AsyncGenerator<WatcherEvent[]> {})();
-    },
-  );
+  // With no git dirs resolved, the only watch() call is the working-tree one.
+  vi.spyOn(service, "watch").mockReturnValue(wt.gen);
   return service.watchRepo("/repo", new AbortController().signal);
 }
 

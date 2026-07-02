@@ -1,7 +1,6 @@
+import { EMPTY_DIFF_STATS } from "@posthog/core/code-review/selectTaskDiffStats";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { useQuery } from "@tanstack/react-query";
-
-const EMPTY_DIFF_STATS = { filesChanged: 0, linesAdded: 0, linesRemoved: 0 };
 
 export interface UseDiffStatsOptions {
   enabled?: boolean;
@@ -28,7 +27,12 @@ export function useDiffStats(
       {
         enabled: (options.enabled ?? true) && !!directoryPath,
         staleTime: 30_000,
-        placeholderData: (prev) => prev ?? EMPTY_DIFF_STATS,
+        // Plain value, not the `(prev) => prev` carry-over idiom: the header
+        // badge's observer survives task switches without remounting, so
+        // carrying data across query keys would show the previous repo's
+        // numbers — indefinitely when the next task has no cwd and the query
+        // stays disabled.
+        placeholderData: EMPTY_DIFF_STATS,
       },
     ),
   );
