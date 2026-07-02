@@ -19,6 +19,7 @@ import {
   ChatMessageScrollerViewport,
   cn,
   useChatMessageScroller,
+  useChatMessageScrollerScrollable,
   useChatMessageScrollerVisibility,
 } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
@@ -513,14 +514,23 @@ const ThreadRow = memo(function ThreadRow({
 });
 
 /**
- * Scrolls to the end when the user sends a prompt, regardless of current position. The engine only
- * auto-follows in `following-bottom` mode, which it re-enters solely within 8px of the exact bottom
- * — with the thread's bottom padding you're rarely that close, so without this a submit can leave
- * the new prompt (and the streaming response) below the fold. `scrollToEnd` also puts the engine
- * back into `following-bottom`, so the response streams with the view following.
+ * Keeps the view pinned to the bottom from prompt submit until the user scrolls away.
+ *
+ * The engine's own follow mode isn't enough on its own:
+ * - It only re-engages within `scrollEdgeThreshold` of the exact bottom, so a submit from anywhere
+ *   higher would leave the new prompt (and the reply) below the fold. Scrolling to the end on
+ *   submit also flips the engine back into `following-bottom`.
+ * - Each engine autoscroll is guarded by a 180ms grace window; a large streamed block (heavy
+ *   markdown render) can jank past it, making the engine observe "content below the fold while not
+ *   autoscrolling" and silently demote itself to `free-scrolling` mid-reply. While armed, any
+ *   commit that leaves content below the fold re-issues `scrollToEnd` to recapture follow.
+ *
+ * User scroll intent (wheel, touch, pointer, keys — same signals the engine listens to) disarms
+ * the pin; the next submit or the scroll-to-bottom button re-engages following.
  */
-function ScrollToEndOnSubmit({ items }: { items: ConversationItem[] }) {
+function ThreadAutoFollow({ items }: { items: ConversationItem[] }) {
   const { scrollToEnd } = useChatMessageScroller();
+  const { end } = useChatMessageScrollerScrollable();
   const lastItem = items.at(-1);
   const userMessageCount = useMemo(
     () =>
@@ -528,16 +538,45 @@ function ScrollToEndOnSubmit({ items }: { items: ConversationItem[] }) {
     [items],
   );
   const prevCountRef = useRef(userMessageCount);
+  const armedRef = useRef(false);
+  const probeRef = useRef<HTMLSpanElement>(null);
 
   useLayoutEffect(() => {
     const previous = prevCountRef.current;
     prevCountRef.current = userMessageCount;
     if (previous === 0 || userMessageCount <= previous) return;
     if (lastItem?.type !== "user_message") return;
+    armedRef.current = true;
     scrollToEnd({ behavior: "auto" });
   }, [userMessageCount, lastItem, scrollToEnd]);
 
-  return null;
+  useEffect(() => {
+    const viewport = probeRef.current
+      ?.closest('[data-slot="chat-message-scroller"]')
+      ?.querySelector('[data-slot="chat-message-scroller-viewport"]');
+    if (!viewport) return;
+    const disarm = () => {
+      armedRef.current = false;
+    };
+    const events = ["wheel", "touchmove", "pointerdown", "keydown"] as const;
+    for (const event of events) {
+      viewport.addEventListener(event, disarm, { passive: true });
+    }
+    return () => {
+      for (const event of events) {
+        viewport.removeEventListener(event, disarm);
+      }
+    };
+  }, []);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-check on every streamed change — `end` alone doesn't re-notify while it stays true across commits.
+  useEffect(() => {
+    if (armedRef.current && end) {
+      scrollToEnd({ behavior: "auto" });
+    }
+  }, [items, end, scrollToEnd]);
+
+  return <span ref={probeRef} className="hidden" aria-hidden="true" />;
 }
 
 /** The scroll body, under the Provider so the overlay + scroll-button hooks can read engine state. */
@@ -566,7 +605,7 @@ function ThreadScrollBody({
   return (
     <ChatMessageScroller className="group/thread">
       <StickyHeaderOverlay items={items} />
-      <ScrollToEndOnSubmit items={items} />
+      <ThreadAutoFollow items={items} />
       <ChatMessageScrollerViewport>
         <ChatMessageScrollerContent className="py-4 pb-8" density="default">
           {keyedRows.map(({ item, key }) => (
