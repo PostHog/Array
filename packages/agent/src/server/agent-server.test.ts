@@ -1184,6 +1184,99 @@ describe("AgentServer HTTP Mode", () => {
       expect(sentMeta?.localSkillContext).toContain("with context");
       expect(sentMeta?.localSkillName).toBe("local-test-skill");
     }, 20000);
+
+    it("ignores a redelivered user_message whose messageId was already accepted", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(async () => ({ stopReason: "end_turn" }));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async (messageId: string | undefined) => {
+        const response = await fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: messageId ?? "no-id",
+            method: "user_message",
+            params: {
+              content: "do the thing",
+              ...(messageId ? { messageId } : {}),
+            },
+          }),
+        });
+        expect(response.status).toBe(200);
+        return (await response.json()) as {
+          result?: { stopReason?: string; duplicate?: boolean };
+        };
+      };
+
+      const first = await send("m-1");
+      expect(first.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const redelivery = await send("m-1");
+      expect(redelivery.result?.duplicate).toBe(true);
+      expect(redelivery.result?.stopReason).toBe("duplicate_delivery");
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const distinct = await send("m-2");
+      expect(distinct.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(2);
+
+      const anonymousFirst = await send(undefined);
+      const anonymousSecond = await send(undefined);
+      expect(anonymousFirst.result?.stopReason).toBe("end_turn");
+      expect(anonymousSecond.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(4);
+    }, 20000);
+
+    it("redelivers a messageId whose first delivery failed before producing a turn", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi
+        .fn(async () => ({ stopReason: "end_turn" }))
+        .mockRejectedValueOnce(new Error("sdk connection lost"));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async () =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: "m-err",
+            method: "user_message",
+            params: { content: "do the thing", messageId: "m-err" },
+          }),
+        });
+
+      await send();
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const retry = await send();
+      expect(retry.status).toBe(200);
+      const body = (await retry.json()) as {
+        result?: { stopReason?: string; duplicate?: boolean };
+      };
+      expect(body.result?.duplicate).toBeUndefined();
+      expect(body.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(2);
+    }, 20000);
   });
 
   describe("404 handling", () => {

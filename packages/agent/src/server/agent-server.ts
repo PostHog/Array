@@ -307,6 +307,7 @@ export class AgentServer {
   // causing a second session to be created and duplicate Slack messages to be sent.
   private initializationPromise: Promise<void> | null = null;
   private pendingEvents: Record<string, unknown>[] = [];
+  private deliveredMessageIds = new Set<string>();
   private pendingPermissions = new Map<
     string,
     {
@@ -822,6 +823,26 @@ export class AgentServer {
         if (prompt.length === 0) {
           throw new Error("User message cannot be empty");
         }
+
+        const messageId =
+          typeof params.messageId === "string" && params.messageId
+            ? params.messageId
+            : undefined;
+        if (messageId) {
+          if (this.deliveredMessageIds.has(messageId)) {
+            this.logger.info("Duplicate user_message delivery ignored", {
+              messageId,
+            });
+            return { stopReason: "duplicate_delivery", duplicate: true };
+          }
+          this.deliveredMessageIds.add(messageId);
+          if (this.deliveredMessageIds.size > 500) {
+            const oldest = this.deliveredMessageIds.values().next().value;
+            if (oldest !== undefined) {
+              this.deliveredMessageIds.delete(oldest);
+            }
+          }
+        }
         this.logger.debug("Built user_message prompt", {
           blockTypes: prompt.map((block) => block.type),
         });
@@ -852,6 +873,9 @@ export class AgentServer {
               : {}),
           });
         } catch (error) {
+          if (messageId) {
+            this.deliveredMessageIds.delete(messageId);
+          }
           await this.session.logWriter.flushAll();
           const { recoverable } = await this.handleTurnFailure(
             this.session.payload,
