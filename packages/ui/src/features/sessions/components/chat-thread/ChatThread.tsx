@@ -512,27 +512,6 @@ const ThreadRow = memo(function ThreadRow({
   );
 });
 
-function AnchorNewPrompt({ items }: { items: ConversationItem[] }) {
-  const { scrollToMessage } = useChatMessageScroller();
-  const lastItem = items.at(-1);
-  const userMessageCount = useMemo(
-    () =>
-      items.reduce((n, item) => (item.type === "user_message" ? n + 1 : n), 0),
-    [items],
-  );
-  const prevCountRef = useRef(userMessageCount);
-
-  useLayoutEffect(() => {
-    const previous = prevCountRef.current;
-    prevCountRef.current = userMessageCount;
-    if (previous === 0 || userMessageCount <= previous) return;
-    if (lastItem?.type !== "user_message") return;
-    scrollToMessage(lastItem.id, { align: "start" });
-  }, [userMessageCount, lastItem, scrollToMessage]);
-
-  return null;
-}
-
 /** The scroll body, under the Provider so the overlay + scroll-button hooks can read engine state. */
 function ThreadScrollBody({
   items,
@@ -559,7 +538,6 @@ function ThreadScrollBody({
   return (
     <ChatMessageScroller className="group/thread">
       <StickyHeaderOverlay items={items} />
-      <AnchorNewPrompt items={items} />
       <ChatMessageScrollerViewport>
         <ChatMessageScrollerContent className="py-4 pb-8" density="default">
           {keyedRows.map(({ item, key }) => (
