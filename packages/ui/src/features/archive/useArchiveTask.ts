@@ -19,7 +19,7 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFocusStore } from "@posthog/ui/features/focus/focusStore";
 import { pinnedTasksApi } from "@posthog/ui/features/sidebar/taskMetaApi";
-import { terminalManager } from "@posthog/ui/features/terminal/TerminalManager";
+import { destroyTaskTerminals } from "@posthog/ui/features/terminal/destroyTaskTerminals";
 import {
   type TerminalState,
   useTerminalStore,
@@ -103,10 +103,7 @@ function makeOrchestrationDeps(
           ([key]) => key === taskId || key.startsWith(`${taskId}-`),
         ),
       ),
-    clearTerminalStates: (taskId) => {
-      terminalManager.destroyForTask(taskId);
-      useTerminalStore.getState().clearTerminalStatesForTask(taskId);
-    },
+    clearTerminalStates: (taskId) => destroyTaskTerminals(taskId),
     restoreTerminalStates: (states) => {
       useTerminalStore.setState((s) => ({
         terminalStates: {
