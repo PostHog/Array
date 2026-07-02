@@ -549,6 +549,14 @@ export class SessionService {
     string,
     { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
   >();
+  // Cloud runs whose in-flight turn still owes exactly one completion
+  // notification. Armed when the turn's `session/prompt` is processed and
+  // consumed when its `turn_complete` fires the notification. Cloud streams can
+  // re-deliver the `turn_complete` tail (durable-stream re-emit or a reconnect
+  // replay), each delivery slipping past the processedLineCount guard with a
+  // fresh totalEntryCount; without this a replay rang a second "meep"/toast for
+  // the same turn.
+  private cloudTurnAwaitingCompletionNotify = new Set<string>();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
@@ -1057,6 +1065,7 @@ export class SessionService {
     this.evictedRunIds.delete(taskRunId);
     this.d.store.removeSession(taskRunId);
     this.cloudRunIdleTracker.delete(taskRunId);
+    this.cloudTurnAwaitingCompletionNotify.delete(taskRunId);
     this.cloudLogGapReconciler.forgetDeficiency(taskRunId);
     if (session) {
       this.localRepoPaths.delete(session.taskId);
@@ -1659,6 +1668,7 @@ export class SessionService {
     this.sessionLastUsedAt.clear();
     this.cloudPermissionRequestIds.clear();
     this.liveTurnContent.clear();
+    this.cloudTurnAwaitingCompletionNotify.clear();
     this.cloudLogGapReconciler.clear();
     this.dispatchingCloudQueues.clear();
     this.scheduledCloudQueueFlushes.clear();
@@ -1744,6 +1754,10 @@ export class SessionService {
         }
         const promptSession = this.d.store.getSessions()[taskRunId];
         if (promptSession?.isCloud) {
+          // A fresh turn started — arm its single completion notification.
+          // Processed for snapshot and live alike so that opening a task whose
+          // in-flight prompt is only in history still notifies when it finishes.
+          this.cloudTurnAwaitingCompletionNotify.add(taskRunId);
           this.cloudRunIdleTracker.markBusy(promptSession);
           if (promptSession.agentIdleForRunId) {
             this.d.store.updateSession(taskRunId, {
@@ -1781,6 +1795,13 @@ export class SessionService {
         // above. Cloud sessions never see that response.
         const session = this.getSessionByRunId(taskRunId);
         if (session?.isCloud) {
+          // Consume the turn's armed completion notification. Done for snapshot
+          // and live alike so a completed turn replayed in history doesn't leave
+          // the run armed for a later spurious notify. `delete` returns whether
+          // it was still armed — a re-delivered `turn_complete` finds it already
+          // consumed and rings nothing, which is what stops the duplicate.
+          const awaitingNotify =
+            this.cloudTurnAwaitingCompletionNotify.delete(taskRunId);
           this.d.store.updateSession(taskRunId, {
             isPromptPending: false,
             promptStartedAt: null,
@@ -1788,7 +1809,7 @@ export class SessionService {
           });
           if (isLive) {
             // Queued messages will start a new turn — suppress the "done" notification in that case.
-            if (session.messageQueue.length === 0) {
+            if (awaitingNotify && session.messageQueue.length === 0) {
               this.d.notifyPromptComplete(
                 session.taskTitle,
                 "end_turn",
