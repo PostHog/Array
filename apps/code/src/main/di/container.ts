@@ -105,6 +105,7 @@ import { CLIPBOARD_SERVICE } from "@posthog/platform/clipboard";
 import { CONTEXT_MENU_SERVICE } from "@posthog/platform/context-menu";
 import { CRYPTO_SERVICE } from "@posthog/platform/crypto";
 import { DEEP_LINK_SERVICE } from "@posthog/platform/deep-link";
+import { DEV_HOST_ACTIONS_SERVICE } from "@posthog/platform/dev-host-actions";
 import { DIALOG_SERVICE } from "@posthog/platform/dialog";
 import { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
 import { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
@@ -223,6 +224,7 @@ import { ElectronBundledResources } from "../platform-adapters/electron-bundled-
 import { ElectronClipboard } from "../platform-adapters/electron-clipboard";
 import { ElectronContextMenu } from "../platform-adapters/electron-context-menu";
 import { ElectronCrypto } from "../platform-adapters/electron-crypto";
+import { ElectronDevHostActions } from "../platform-adapters/electron-dev-host-actions";
 import { ElectronDialog } from "../platform-adapters/electron-dialog";
 import { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
 import { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
@@ -331,6 +333,7 @@ container.bind(BUNDLED_RESOURCES_SERVICE).to(ElectronBundledResources);
 container.bind(IMAGE_PROCESSOR_SERVICE).to(ElectronImageProcessor);
 container.bind(WORKSPACE_SETTINGS_SERVICE).to(ElectronWorkspaceSettings);
 container.bind(APP_METRICS_SERVICE).to(ElectronAppMetrics);
+container.bind(DEV_HOST_ACTIONS_SERVICE).to(ElectronDevHostActions);
 
 container.load(databaseModule);
 container.load(repositoriesModule);

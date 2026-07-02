@@ -1,7 +1,7 @@
+import { TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { DEV_FLAGS_SERVICE } from "../../di/tokens";
 import { logger } from "../../utils/logger";
-import { TypedEventEmitter } from "@posthog/shared";
 import type { DevFlagsService } from "../dev-flags/service";
 import {
   DevNetworkEvent,
@@ -149,8 +149,13 @@ export class DevNetworkService extends TypedEventEmitter<DevNetworkEvents> {
       }
     };
 
+    const preconnect = (
+      original as unknown as {
+        preconnect?: (...args: unknown[]) => unknown;
+      }
+    ).preconnect;
     Object.defineProperty(wrapped, "preconnect", {
-      value: original.preconnect?.bind(original) ?? (() => undefined),
+      value: preconnect?.bind(original) ?? (() => undefined),
     });
 
     globalThis.fetch = wrapped as typeof fetch;

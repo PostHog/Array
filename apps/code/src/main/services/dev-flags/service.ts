@@ -1,9 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { TypedEventEmitter } from "@posthog/shared";
 import { injectable } from "inversify";
 import { getUserDataDir } from "../../utils/env";
 import { logger } from "../../utils/logger";
-import { TypedEventEmitter } from "@posthog/shared";
 import {
   DEFAULT_DEV_FLAGS,
   type DevFlags,

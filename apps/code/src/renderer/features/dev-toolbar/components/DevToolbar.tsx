@@ -1,13 +1,3 @@
-import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
-import { useLogoutMutation } from "@posthog/ui/features/auth/useAuthMutations";
-import {
-  useAuthStateValue,
-  useCurrentUser,
-} from "@features/auth/hooks/authQueries";
-import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
-import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
-import { useSetupStore } from "@posthog/ui/features/setup/setupStore";
-import { useTourStore } from "@posthog/ui/features/tour/tourStore";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,12 +11,23 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@posthog/quill";
-import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { REGION_LABELS } from "@posthog/shared";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import {
+  useAuthStateValue,
+  useCurrentUser,
+} from "@posthog/ui/features/auth/authQueries";
+import { useLogoutMutation } from "@posthog/ui/features/auth/useAuthMutations";
+import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
+import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { useSetupStore } from "@posthog/ui/features/setup/setupStore";
+import { useTourStore } from "@posthog/ui/features/tour/tourStore";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
+import { clearApplicationStorage } from "@posthog/ui/utils/clearStorage";
+import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
-import { clearApplicationStorage } from "@posthog/ui/utils/clearStorage";
 import {
   Activity,
   AlertTriangle,
@@ -53,7 +54,6 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import type { MetricsSample } from "../../../../main/services/dev-metrics/schemas";
-import { REGION_LABELS } from "@posthog/shared";
 import { useDevFlagsStore } from "../devFlagsStore";
 import { useIpcMetricsStore } from "../ipcMetricsStore";
 import { useMainThreadHealthStore } from "../mainThreadHealth";
@@ -291,9 +291,7 @@ function ResizeHandle({
 
   return (
     <div
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="Resize panel"
+      aria-hidden="true"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

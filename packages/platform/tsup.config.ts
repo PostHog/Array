@@ -23,6 +23,7 @@ export default defineConfig({
     "src/analytics.ts",
     "src/deep-link.ts",
     "src/app-metrics.ts",
+    "src/dev-host-actions.ts",
   ],
   format: ["esm"],
   dts: true,

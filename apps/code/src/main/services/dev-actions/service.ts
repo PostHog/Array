@@ -1,9 +1,12 @@
-import { app, BrowserWindow, shell } from "electron";
+import {
+  DEV_HOST_ACTIONS_SERVICE,
+  type IDevHostActions,
+} from "@posthog/platform/dev-host-actions";
+import { TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { DEV_NETWORK_SERVICE } from "../../di/tokens";
 import { getUserDataDir } from "../../utils/env";
 import { getLogFilePath, logger } from "../../utils/logger";
-import { TypedEventEmitter } from "@posthog/shared";
 import type { DevNetworkService } from "../dev-network/service";
 import {
   DevActionsEvent,
@@ -20,33 +23,32 @@ export class DevActionsService extends TypedEventEmitter<DevActionsEvents> {
   constructor(
     @inject(DEV_NETWORK_SERVICE)
     private readonly network: DevNetworkService,
+    @inject(DEV_HOST_ACTIONS_SERVICE)
+    private readonly host: IDevHostActions,
   ) {
     super();
   }
 
   async openUserDataDir(): Promise<void> {
-    await shell.openPath(getUserDataDir());
+    await this.host.openPath(getUserDataDir());
   }
 
   async openLogFile(): Promise<void> {
-    await shell.openPath(getLogFilePath());
+    await this.host.openPath(getLogFilePath());
   }
 
   reloadRenderer(): void {
-    for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.reload();
-    }
+    this.host.reloadAllWindows();
   }
 
   restartMain(): void {
     log.warn("Restarting main process from dev toolbar");
-    app.relaunch();
-    app.exit(0);
+    this.host.relaunch();
   }
 
   crashMain(): void {
     log.warn("Crashing main process from dev toolbar");
-    process.crash();
+    this.host.crash();
   }
 
   triggerToast(variant: "info" | "error", message: string): DevToast {

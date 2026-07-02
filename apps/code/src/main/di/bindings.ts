@@ -113,6 +113,7 @@ import type { CLIPBOARD_SERVICE } from "@posthog/platform/clipboard";
 import type { CONTEXT_MENU_SERVICE } from "@posthog/platform/context-menu";
 import type { CRYPTO_SERVICE } from "@posthog/platform/crypto";
 import type { DEEP_LINK_SERVICE } from "@posthog/platform/deep-link";
+import type { DEV_HOST_ACTIONS_SERVICE } from "@posthog/platform/dev-host-actions";
 import type { DIALOG_SERVICE } from "@posthog/platform/dialog";
 import type { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
 import type { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
@@ -215,6 +216,7 @@ import type { ElectronBundledResources } from "../platform-adapters/electron-bun
 import type { ElectronClipboard } from "../platform-adapters/electron-clipboard";
 import type { ElectronContextMenu } from "../platform-adapters/electron-context-menu";
 import type { ElectronCrypto } from "../platform-adapters/electron-crypto";
+import type { ElectronDevHostActions } from "../platform-adapters/electron-dev-host-actions";
 import type { ElectronDialog } from "../platform-adapters/electron-dialog";
 import type { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
 import type { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
@@ -316,6 +318,7 @@ export interface MainBindings {
   [IMAGE_PROCESSOR_SERVICE]: ElectronImageProcessor;
   [WORKSPACE_SETTINGS_SERVICE]: ElectronWorkspaceSettings;
   [APP_METRICS_SERVICE]: ElectronAppMetrics;
+  [DEV_HOST_ACTIONS_SERVICE]: ElectronDevHostActions;
 
   // Database (main aliases + ws-server source tokens via toService)
   [MAIN_DATABASE_SERVICE]: DatabaseService;

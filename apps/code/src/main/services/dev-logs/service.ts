@@ -1,6 +1,6 @@
+import { TypedEventEmitter } from "@posthog/shared";
 import type ElectronLog from "electron-log";
 import log from "electron-log/main";
-import { TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { DEV_FLAGS_SERVICE } from "../../di/tokens";
 import type { DevFlagsService } from "../dev-flags/service";

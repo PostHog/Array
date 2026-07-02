@@ -89,7 +89,7 @@ export function LogsPanel({ enabled }: LogsPanelProps) {
           placeholder="Filter message or scope..."
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="flex-1 min-w-[180px]"
+          className="min-w-[180px] flex-1"
         />
         <Select.Root
           size="1"

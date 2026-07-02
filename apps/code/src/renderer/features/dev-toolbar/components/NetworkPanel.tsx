@@ -96,7 +96,7 @@ export function NetworkPanel({ enabled }: NetworkPanelProps) {
           placeholder="Filter url, host, status..."
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="flex-1 min-w-[180px]"
+          className="min-w-[180px] flex-1"
         />
         <Flex align="center" gap="1">
           <Switch
