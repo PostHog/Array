@@ -28,8 +28,8 @@ import type { CodeExecutionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { APPENDED_INSTRUCTIONS } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
-import { createRtkRewriteHook, resolveRtkPrefix } from "./rtk";
 import { DEFAULT_MODEL, FALLBACK_MODEL } from "./models";
+import { createRtkRewriteHook, resolveRtkPrefix } from "./rtk";
 import type { SettingsManager } from "./settings";
 
 export interface ProcessSpawnedInfo {
