@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
-import type { WatcherEvent } from "./schemas";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { FileWatcherEvent, WatcherEvent } from "./schemas";
 import { WatcherService } from "./service";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 /**
  * Records every `watch()` call so we can assert what each watched directory is
@@ -75,5 +79,137 @@ describe("WatcherService.watchRepo ignore patterns", () => {
     const gitDirCalls = calls.filter((c) => c.dir === "/main/.git");
     expect(gitDirCalls).toHaveLength(1);
     expect(gitDirCalls[0]?.ignore).toEqual(["**/worktrees/**"]);
+  });
+});
+
+// Mirrors DEBOUNCE_MS / MAX_WAIT_MS in service.ts.
+const DEBOUNCE_MS = 500;
+const MAX_WAIT_MS = 1000;
+
+interface ManualGen {
+  gen: AsyncGenerator<WatcherEvent[]>;
+  push: (batch: WatcherEvent[]) => void;
+  end: () => void;
+}
+
+/** A watch generator whose batches the test emits on demand. */
+function manualGen(): ManualGen {
+  const queue: WatcherEvent[][] = [];
+  let notify: (() => void) | null = null;
+  let ended = false;
+
+  const wake = () => {
+    if (notify) {
+      const n = notify;
+      notify = null;
+      n();
+    }
+  };
+
+  async function* generate(): AsyncGenerator<WatcherEvent[]> {
+    while (true) {
+      while (queue.length > 0) yield queue.shift() as WatcherEvent[];
+      if (ended) return;
+      await new Promise<void>((resolve) => {
+        notify = resolve;
+      });
+    }
+  }
+
+  return {
+    gen: generate(),
+    push(batch) {
+      queue.push(batch);
+      wake();
+    },
+    end() {
+      ended = true;
+      wake();
+    },
+  };
+}
+
+/** Drives watchRepo with a controllable working-tree watch and no git dirs. */
+function startWatch(wt: ManualGen): AsyncGenerator<FileWatcherEvent> {
+  const service = new WatcherService();
+  vi.spyOn(service, "resolveGitDirs").mockResolvedValue({
+    gitDir: null,
+    commonDir: null,
+  });
+  vi.spyOn(service, "watch").mockImplementation(
+    (_dir: string, options: { ignore?: string[] }) => {
+      if (options.ignore?.includes("**/node_modules/**")) return wt.gen;
+      return (async function* (): AsyncGenerator<WatcherEvent[]> {})();
+    },
+  );
+  return service.watchRepo("/repo", new AbortController().signal);
+}
+
+/**
+ * A working-tree change also emits per-file/dir events (below BULK_THRESHOLD);
+ * the coalesced `working-tree-changed` is the one that drives invalidation, so
+ * the debounce tests assert on just those.
+ */
+const workingTreeChanges = (events: FileWatcherEvent[]): FileWatcherEvent[] =>
+  events.filter((e) => e.kind === "working-tree-changed");
+
+/** Consumes watchRepo in the background, collecting every emitted event. */
+function drainEvents(out: AsyncGenerator<FileWatcherEvent>): {
+  events: FileWatcherEvent[];
+  done: Promise<void>;
+} {
+  const events: FileWatcherEvent[] = [];
+  const done = (async () => {
+    for await (const ev of out) events.push(ev);
+  })();
+  return { events, done };
+}
+
+describe("WatcherService.watchRepo debounce", () => {
+  it("coalesces a burst and emits once it goes quiet", async () => {
+    vi.useFakeTimers();
+    const wt = manualGen();
+    const { events, done } = drainEvents(startWatch(wt));
+    // Let watchRepo settle past resolveGitDirs and start its file loop.
+    await vi.advanceTimersByTimeAsync(0);
+
+    wt.push([{ type: "update", path: "/repo/a.ts" }]);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS - 1);
+    expect(events).toHaveLength(0);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(workingTreeChanges(events)).toEqual([
+      { kind: "working-tree-changed", repoPath: "/repo" },
+    ]);
+
+    wt.end();
+    await done;
+  });
+
+  it("flushes during sustained activity via the max-wait", async () => {
+    vi.useFakeTimers();
+    const wt = manualGen();
+    const { events, done } = drainEvents(startWatch(wt));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Push faster than the trailing debounce (every 300ms < 500ms) so the
+    // quiet-period timer keeps resetting and would not fire on its own until
+    // 1400ms (300*3 + 500).
+    for (let i = 0; i < 3; i++) {
+      wt.push([{ type: "update", path: `/repo/f${i}.ts` }]);
+      await vi.advanceTimersByTimeAsync(300);
+    }
+    expect(events).toHaveLength(0);
+
+    // The first event landed at ~0ms, so the max-wait forces a flush at
+    // MAX_WAIT_MS even though the trailing debounce is still pending.
+    wt.push([{ type: "update", path: "/repo/f3.ts" }]);
+    await vi.advanceTimersByTimeAsync(MAX_WAIT_MS - 900 + 1);
+    expect(workingTreeChanges(events)).toEqual([
+      { kind: "working-tree-changed", repoPath: "/repo" },
+    ]);
+
+    wt.end();
+    await done;
   });
 });

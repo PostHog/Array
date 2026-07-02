@@ -750,12 +750,6 @@ export function createAppRouter({
         }
       }),
     }),
-    diffStats: t.router({
-      getDiffStats: t.procedure
-        .input(diffStatsInput)
-        .output(diffStatsSchema)
-        .query(({ input }) => gitService().getDiffStats(input.directoryPath)),
-    }),
     fs: t.router({
       listDirectory: t.procedure
         .input(listDirectoryInput)
