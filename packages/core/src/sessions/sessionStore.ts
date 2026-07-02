@@ -32,16 +32,6 @@ export const sessionStore = createStore<SessionState>()(
   })),
 );
 
-export const MAX_SESSION_EVENTS = 5000;
-
-function trimSessionEvents(session: AgentSession) {
-  const excess = session.events.length - MAX_SESSION_EVENTS;
-  if (excess > 0) {
-    session.events.splice(0, excess);
-    session.trimmedEventCount = (session.trimmedEventCount ?? 0) + excess;
-  }
-}
-
 export const sessionStoreSetters = {
   setSession: (session: AgentSession) => {
     sessionStore.setState((state) => {
@@ -53,7 +43,6 @@ export const sessionStoreSetters = {
 
       state.sessions[session.taskRunId] = session;
       state.taskIdIndex[session.taskId] = session.taskRunId;
-      trimSessionEvents(state.sessions[session.taskRunId]);
     });
   },
 
@@ -69,17 +58,8 @@ export const sessionStoreSetters = {
 
   updateSession: (taskRunId: string, updates: Partial<AgentSession>) => {
     sessionStore.setState((state) => {
-      const session = state.sessions[taskRunId];
-      if (session) {
-        Object.assign(session, updates);
-        if (updates.events) {
-          // A wholesale replacement starts a new stream snapshot, so a stale
-          // head-trim offset from the previous array must not carry over.
-          if (updates.trimmedEventCount === undefined) {
-            session.trimmedEventCount = 0;
-          }
-          trimSessionEvents(session);
-        }
+      if (state.sessions[taskRunId]) {
+        Object.assign(state.sessions[taskRunId], updates);
       }
     });
   },
@@ -96,7 +76,6 @@ export const sessionStoreSetters = {
         // immer autofreeze, so this is the only freeze.
         for (const event of events) Object.freeze(event);
         session.events.push(...events);
-        trimSessionEvents(session);
         if (newLineCount !== undefined) {
           session.processedLineCount = newLineCount;
         }
@@ -115,7 +94,6 @@ export const sessionStoreSetters = {
       if (session && session.events.length > 0) {
         session.events = [];
         session.processedLineCount = 0;
-        session.trimmedEventCount = 0;
       }
     });
   },
@@ -135,8 +113,6 @@ export const sessionStoreSetters = {
         for (const event of events) Object.freeze(event);
         session.events = events;
         session.processedLineCount = lineCount;
-        session.trimmedEventCount = 0;
-        trimSessionEvents(session);
       }
     });
   },
@@ -325,7 +301,6 @@ export const sessionStoreSetters = {
       const session = state.sessions[taskRunId];
       if (session) {
         session.events.push(Object.freeze(event));
-        trimSessionEvents(session);
         session.optimisticItems = [];
       }
     });

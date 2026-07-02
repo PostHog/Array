@@ -130,39 +130,3 @@ describe("CloudRunIdleTracker mark/capture/restore", () => {
     expect(tracker.evaluateIdle(session("r1", [])).idle).toBe(false);
   });
 });
-
-describe("CloudRunIdleTracker with trimmed event history", () => {
-  it("keeps incremental cursors stable when the event head is trimmed", () => {
-    const tracker = new CloudRunIdleTracker();
-    const s = session("r1", [runStarted("r1"), promptRequest()]);
-    expect(tracker.evaluateIdle(s).idle).toBe(false);
-
-    const trimmed = session("r1", [turnComplete()]);
-    trimmed.trimmedEventCount = 2;
-    expect(tracker.evaluateIdle(trimmed).idle).toBe(true);
-  });
-
-  it("does not skip events appended in the same batch as a trim", () => {
-    const tracker = new CloudRunIdleTracker();
-    const s = session("r1", [runStarted("r1")]);
-    expect(tracker.evaluateIdle(s).idle).toBe(false);
-
-    const trimmed = session("r1", [promptRequest(), turnComplete()]);
-    trimmed.trimmedEventCount = 1;
-    expect(tracker.evaluateIdle(trimmed).idle).toBe(true);
-  });
-
-  it("restoreAfterFailedSend translates snapshot offsets across trims", () => {
-    const tracker = new CloudRunIdleTracker();
-    const before = session("r1", [runStarted("r1")], "r1");
-    tracker.markIdle(before);
-    const snapshot = tracker.capture(before);
-
-    const after = session("r1", [], "r1");
-    after.trimmedEventCount = 1;
-    tracker.markBusy(after);
-    expect(tracker.restoreAfterFailedSend(snapshot, after)).toEqual({
-      agentIdleForRunId: "r1",
-    });
-  });
-});
