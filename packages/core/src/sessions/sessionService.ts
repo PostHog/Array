@@ -1034,7 +1034,10 @@ export class SessionService {
     }
   }
 
-  private async teardownSession(taskRunId: string): Promise<void> {
+  private async teardownSession(
+    taskRunId: string,
+    opts?: { preserveResumeState?: boolean },
+  ): Promise<void> {
     const session = this.getSessionByRunId(taskRunId);
 
     try {
@@ -1060,8 +1063,12 @@ export class SessionService {
       this.localRecoveryAttempts.delete(session.taskId);
       this.sessionLastUsedAt.delete(session.taskId);
     }
-    this.d.adapterStore.removeAdapter(taskRunId);
-    this.d.removePersistedConfigOptions(taskRunId);
+    if (!opts?.preserveResumeState) {
+      // Reconnect restores the model and permission mode from these; only a
+      // permanent disconnect (archive, delete, fresh session) may drop them.
+      this.d.adapterStore.removeAdapter(taskRunId);
+      this.d.removePersistedConfigOptions(taskRunId);
+    }
   }
 
   /**
@@ -1397,7 +1404,9 @@ export class SessionService {
       });
       this.sessionLastUsedAt.delete(session.taskId);
       try {
-        await this.teardownSession(session.taskRunId);
+        await this.teardownSession(session.taskRunId, {
+          preserveResumeState: true,
+        });
       } catch (error) {
         this.d.log.error("Failed to evict idle session", {
           taskId: session.taskId,
