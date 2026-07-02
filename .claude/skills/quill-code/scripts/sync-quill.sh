@@ -31,7 +31,12 @@ mkdir -p "$DEST"
 RAW="$(ls -t "$DEST"/posthog-quill-*.tgz | grep -v -- '-local-' | head -1)"
 [ -n "$RAW" ] || { echo "npm pack produced no posthog-quill-*.tgz" >&2; exit 1; }
 
-HASH="$(md5 -q "$RAW" | cut -c1-8)"
+# portable content hash: md5sum on Linux, md5 -q on macOS/BSD
+if command -v md5sum >/dev/null 2>&1; then
+  HASH="$(md5sum "$RAW" | cut -c1-8)"
+else
+  HASH="$(md5 -q "$RAW" | cut -c1-8)"
+fi
 HASHED="posthog-quill-local-$HASH.tgz"
 cp "$RAW" "$DEST/$HASHED"
 rm -f "$RAW"
@@ -40,7 +45,8 @@ find "$DEST" -name 'posthog-quill-local-*.tgz' ! -name "$HASHED" -delete
 
 echo "==> pointing override at .local-quill/$HASHED"
 # single override line: '@posthog/quill': file:./.local-quill/...
-sed -i '' -E "s#('@posthog/quill': file:\./\.local-quill/)[^']*#\1$HASHED#" "$WS"
+# portable in-place edit (GNU sed and BSD/macOS sed disagree on -i syntax)
+sed -E "s#('@posthog/quill': file:\./\.local-quill/)[^']*#\1$HASHED#" "$WS" > "$WS.tmp" && mv "$WS.tmp" "$WS"
 grep -q "$HASHED" "$WS" || { echo "failed to rewrite override line in $WS" >&2; exit 1; }
 
 echo "==> pnpm install"
