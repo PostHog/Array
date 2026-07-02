@@ -48,7 +48,9 @@ export function stepIndexOf(
  * `activeSteps` (the conditional steps appear and disappear as their async
  * gates resolve). Prefers the next remaining step in canonical order — the
  * user was moving forward — and falls back to the closest earlier one, so a
- * vanishing step never resets progress to the start of the flow.
+ * vanishing step never resets progress to the start of the flow. Returns
+ * `step` unchanged when it is still active, or when `activeSteps` is empty
+ * (degenerate input: the flow always keeps at least the welcome step).
  */
 export function nearestActiveStep(
   activeSteps: OnboardingStep[],
@@ -64,7 +66,7 @@ export function nearestActiveStep(
     const candidate = ONBOARDING_STEPS[i];
     if (activeSteps.includes(candidate)) return candidate;
   }
-  return activeSteps[0];
+  return step;
 }
 
 export function isFirstStep(currentIndex: number): boolean {

@@ -149,6 +149,62 @@ describe("api", () => {
     });
   });
 
+  test("reports subscription stream failures through onError", async () => {
+    const failingSubRouter = t.router({
+      failingSubscription: t.procedure.subscription(() =>
+        observable((emit) => {
+          emit.error(new Error("stream exploded"));
+          return () => {};
+        }),
+      ),
+    });
+    const onError = vi.fn();
+    const event = makeEvent({
+      reply: vi.fn(),
+      sender: {
+        isDestroyed: () => false,
+        on: () => {},
+      },
+    });
+
+    await handleIPCMessage({
+      createContext: async () => ({}),
+      event,
+      internalId: "1-1:1",
+      message: {
+        method: "request",
+        operation: {
+          context: {},
+          id: 1,
+          input: undefined,
+          path: "failingSubscription",
+          type: "subscription",
+          signal: undefined,
+        },
+      },
+      router: failingSubRouter,
+      operations: new Map(),
+      onError,
+    });
+
+    await vi.waitFor(() => {
+      expect(onError).toHaveBeenCalledOnce();
+    });
+    expect(onError.mock.lastCall?.[0]).toMatchObject({
+      path: "failingSubscription",
+      type: "subscription",
+    });
+    // The stream error is serialized to the renderer before the final
+    // "stopped" message, so it is not necessarily the last reply.
+    await vi.waitFor(() => {
+      expect(
+        event.reply.mock.calls.some(
+          ([, payload]) => (payload as { error?: unknown }).error !== undefined,
+        ),
+      ).toBe(true);
+    });
+  });
+
   test("handles subscriptions using observables", async () => {
     const operations = new Map();
     const ee = new EventEmitter();

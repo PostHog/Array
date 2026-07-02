@@ -54,6 +54,10 @@ describe("nearestActiveStep", () => {
       "project-select",
     );
   });
+
+  it("returns the step itself when no steps are active", () => {
+    expect(nearestActiveStep([], "import-config")).toBe("import-config");
+  });
 });
 
 describe("step navigation", () => {
