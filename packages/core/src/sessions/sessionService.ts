@@ -704,13 +704,12 @@ export class SessionService {
         }
 
         // Paint the log tail immediately so a big transcript is visible in tens
-        // of ms; the full read + reconnect below replaces it with the
-        // authoritative session.
-        await this.paintTailFirst(existingRunId, taskId, taskTitle, logUrl);
-
+        // of ms; the full read + reconnect replace it with the authoritative
+        // session once everything below resolves.
         const [workspaceResult, logResult] = await Promise.all([
           this.d.trpc.workspace.verify.query({ taskId }),
           this.fetchSessionLogs(logUrl, existingRunId),
+          this.paintTailFirst(existingRunId, taskId, taskTitle, logUrl),
         ]);
 
         if (!workspaceResult.exists) {
@@ -1046,6 +1045,8 @@ export class SessionService {
     }
 
     this.unsubscribeFromChannel(taskRunId);
+    this.cancelEventEviction(taskRunId);
+    this.evictedRunIds.delete(taskRunId);
     this.d.store.removeSession(taskRunId);
     this.cloudRunIdleTracker.delete(taskRunId);
     this.cloudLogGapReconciler.forgetDeficiency(taskRunId);
