@@ -81,6 +81,15 @@ import type { ConversationViewProps } from "../ConversationView";
 /** A row is either a parsed conversation item or a synthesized group of tool calls. */
 type ThreadItem = ConversationItem | ToolGroupItem;
 
+/**
+ * A contiguous run of non-user rows (assistant prose, tools, git actions, ...) shown as one
+ * `bg-muted/30` block with tight internal spacing. Broken only by a user message.
+ */
+type AgentTurn = { type: "agent_turn"; id: string; items: ThreadItem[] };
+
+/** Top-level row: a standalone user message, or a grouped agent turn. */
+type TurnRow = ThreadItem | AgentTurn;
+
 type SessionUpdateItem = Extract<ConversationItem, { type: "session_update" }>;
 
 function isToolCallItem(item: ConversationItem): item is SessionUpdateItem {
@@ -159,6 +168,33 @@ function groupToolRuns(items: ConversationItem[]): ThreadItem[] {
   return out;
 }
 
+/**
+ * Collapse each contiguous run of non-user rows into one {@link AgentTurn}, broken only by a user
+ * message (which stays a standalone row so it remains the scroll anchor for the sticky header and
+ * auto-follow). The turn block renders as a single muted card, tightening the spacing between the
+ * agent's successive replies and tool calls.
+ */
+function groupIntoTurns(rows: ThreadItem[]): TurnRow[] {
+  const out: TurnRow[] = [];
+  let buffer: ThreadItem[] = [];
+  const flush = () => {
+    if (buffer.length > 0) {
+      out.push({ type: "agent_turn", id: buffer[0].id, items: buffer });
+      buffer = [];
+    }
+  };
+  for (const row of rows) {
+    if (row.type === "user_message") {
+      flush();
+      out.push(row);
+    } else {
+      buffer.push(row);
+    }
+  }
+  flush();
+  return out;
+}
+
 function formatTimestamp(ts: number): string {
   return new Date(ts).toLocaleString([], {
     month: "short",
@@ -177,7 +213,7 @@ function formatTimestamp(ts: number): string {
 function RowTimestamp({ timestamp }: { timestamp?: number }) {
   if (timestamp == null) return null;
   return (
-    <ChatMessageFooter className="opacity-0 transition-opacity group-hover:opacity-100">
+    <ChatMessageFooter className="justify-end opacity-0 transition-opacity group-hover:opacity-100">
       {formatTimestamp(timestamp)}
     </ChatMessageFooter>
   );
@@ -264,7 +300,7 @@ function UserBubble({
 
   return (
     <ChatMessage align="end" className="group">
-      <ChatMessageContent>
+      <ChatMessageContent className="gap-1">
         {showHeaderChips && (
           <ChatMessageHeader className="flex-wrap gap-1">
             {showChannelContextTag && channelContext && (
@@ -471,44 +507,77 @@ function StickyHeaderOverlay({ items }: { items: ConversationItem[] }) {
   );
 }
 
-/**
- * One transcript row. Memoized and scroll-state-free, so rows never re-render while scrolling — the
- * non-virtualized thread stays cheap. The pinned header is the separate overlay, not the rows.
- */
-const ThreadRow = memo(function ThreadRow({
+/** Renders a single thread item's body (no scroller wrapper), reused for standalone rows and for
+ * each item inside an agent-turn card. */
+function ThreadItemBody({
   item,
   renderItem,
 }: {
   item: ThreadItem;
   renderItem: (item: ConversationItem) => ReactNode;
 }) {
+  if (item.type === "tool_group") {
+    return (
+      <div className="group flex flex-col gap-1">
+        <ToolGroup tools={item.tools} />
+        <RowTimestamp
+          timestamp={
+            item.tools.some(isToolActive) ? undefined : item.tools[0]?.timestamp
+          }
+        />
+      </div>
+    );
+  }
+  if (item.type === "user_message") {
+    return (
+      <UserBubble
+        content={item.content}
+        timestamp={item.timestamp}
+        attachments={item.attachments}
+      />
+    );
+  }
+  return <>{renderItem(item)}</>;
+}
+
+/**
+ * One transcript row. Memoized and scroll-state-free, so rows never re-render while scrolling — the
+ * non-virtualized thread stays cheap. The pinned header is the separate overlay, not the rows.
+ *
+ * An {@link AgentTurn} renders as a single muted card wrapping its items with tight spacing; a user
+ * message stays a standalone anchored row.
+ */
+const ThreadRow = memo(function ThreadRow({
+  item,
+  renderItem,
+}: {
+  item: TurnRow;
+  renderItem: (item: ConversationItem) => ReactNode;
+}) {
+  if (item.type === "agent_turn") {
+    return (
+      <ChatMessageScrollerItem
+        messageId={item.id}
+        scrollAnchor={false}
+        className="mx-auto w-full px-2.5 empty:hidden"
+        style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+      >
+        <div className="flex flex-col gap-0.5 rounded-lg bg-muted/30 p-2 empty:hidden">
+          {item.items.map((sub) => (
+            <ThreadItemBody key={sub.id} item={sub} renderItem={renderItem} />
+          ))}
+        </div>
+      </ChatMessageScrollerItem>
+    );
+  }
   return (
     <ChatMessageScrollerItem
       messageId={item.id}
       scrollAnchor={item.type === "user_message"}
-      className="mx-auto w-full px-2.5 empty:hidden"
+      className="mx-auto w-full px-2.5 py-1 empty:hidden"
       style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
-      {item.type === "tool_group" ? (
-        <div className="group flex flex-col gap-2">
-          <ToolGroup tools={item.tools} />
-          <RowTimestamp
-            timestamp={
-              item.tools.some(isToolActive)
-                ? undefined
-                : item.tools[0]?.timestamp
-            }
-          />
-        </div>
-      ) : item.type === "user_message" ? (
-        <UserBubble
-          content={item.content}
-          timestamp={item.timestamp}
-          attachments={item.attachments}
-        />
-      ) : (
-        renderItem(item)
-      )}
+      <ThreadItemBody item={item} renderItem={renderItem} />
     </ChatMessageScrollerItem>
   );
 });
@@ -587,7 +656,7 @@ function ThreadScrollBody({
   footer,
 }: {
   items: ConversationItem[];
-  rows: ThreadItem[];
+  rows: TurnRow[];
   renderItem: (item: ConversationItem) => ReactNode;
   /** Status row (duration / context usage) pinned as the last item in the thread. */
   footer?: ReactNode;
@@ -607,7 +676,10 @@ function ThreadScrollBody({
       <StickyHeaderOverlay items={items} />
       <ThreadAutoFollow items={items} />
       <ChatMessageScrollerViewport>
-        <ChatMessageScrollerContent className="py-4 pb-8" density="default">
+        <ChatMessageScrollerContent
+          className="gap-1 py-4 pb-8"
+          density="default"
+        >
           {keyedRows.map(({ item, key }) => (
             <ThreadRow key={key} item={item} renderItem={renderItem} />
           ))}
@@ -673,7 +745,10 @@ export function ChatThread({
     [conversationItems, optimisticItems, isCloud],
   );
 
-  const rows = useMemo<ThreadItem[]>(() => groupToolRuns(items), [items]);
+  const rows = useMemo<TurnRow[]>(
+    () => groupIntoTurns(groupToolRuns(items)),
+    [items],
+  );
 
   const renderItem = useCallback(
     (item: ConversationItem) => {
@@ -696,7 +771,7 @@ export function ChatThread({
           ) {
             return (
               <ChatMessage align="start" className="group">
-                <ChatMessageContent>
+                <ChatMessageContent className="gap-1">
                   <ChatBubble variant="ghost">
                     <ChatBubbleContent>
                       <ChatMarkdown content={update.content.text} />
@@ -723,7 +798,7 @@ export function ChatThread({
           );
           if (update.sessionUpdate === "tool_call") {
             return (
-              <div className="group flex flex-col gap-2">
+              <div className="group flex flex-col gap-1">
                 {rendered}
                 <RowTimestamp
                   timestamp={isToolActive(item) ? undefined : item.timestamp}
