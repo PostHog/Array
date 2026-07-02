@@ -195,24 +195,15 @@ describe("cloud task update notifications", () => {
     expect(harness.markActivity).not.toHaveBeenCalled();
   });
 
-  // The completion notification must fire exactly once per turn regardless of
-  // how the turn's entries are delivered. Each case is a sequence of updates
-  // applied to a fresh harness; `expected` is the resulting notify count.
+  // Each case applies a sequence of updates to a fresh harness; `expected` is
+  // the resulting notify count. Snapshots never ring; each live turn_complete
+  // rings once. Re-delivered stream entries are dropped upstream in
+  // CloudTaskService by their event id (see cloud-task.test.ts), so a replay
+  // never reaches this layer.
   it.each([
     {
       label: "a live turn that starts and completes",
       updates: [logsUpdate([sessionPrompt(1), turnComplete()], 2)],
-      expected: 1,
-    },
-    {
-      // A reconnect/durable re-emit replays the tail: the same turn_complete
-      // arrives again with a fresh totalEntryCount, slipping past the
-      // processedLineCount guard. It must not ring a second time.
-      label: "a re-delivered live turn_complete",
-      updates: [
-        logsUpdate([sessionPrompt(1), turnComplete()], 2),
-        logsUpdate([turnComplete()], 3),
-      ],
       expected: 1,
     },
     {
