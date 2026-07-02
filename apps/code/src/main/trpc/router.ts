@@ -44,6 +44,7 @@ import { uiRouter } from "@posthog/host-router/routers/ui.router";
 import { updatesRouter } from "@posthog/host-router/routers/updates.router";
 import { usageMonitorRouter } from "@posthog/host-router/routers/usage-monitor.router";
 import { workspaceRouter } from "@posthog/host-router/routers/workspace.router";
+import { devRouter } from "./routers/dev";
 import { discordPresenceRouter } from "./routers/discord-presence";
 import { encryptionRouter } from "./routers/encryption";
 import { workspaceServerRouter } from "./routers/workspace-server";
@@ -64,6 +65,7 @@ export const trpcRouter = router({
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,
+  dev: devRouter,
   discordPresence: discordPresenceRouter,
   enrichment: enrichmentRouter,
   environment: environmentRouter,

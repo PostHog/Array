@@ -99,11 +99,13 @@ import {
 import { ANALYTICS_SERVICE } from "@posthog/platform/analytics";
 import { APP_LIFECYCLE_SERVICE } from "@posthog/platform/app-lifecycle";
 import { APP_META_SERVICE } from "@posthog/platform/app-meta";
+import { APP_METRICS_SERVICE } from "@posthog/platform/app-metrics";
 import { BUNDLED_RESOURCES_SERVICE } from "@posthog/platform/bundled-resources";
 import { CLIPBOARD_SERVICE } from "@posthog/platform/clipboard";
 import { CONTEXT_MENU_SERVICE } from "@posthog/platform/context-menu";
 import { CRYPTO_SERVICE } from "@posthog/platform/crypto";
 import { DEEP_LINK_SERVICE } from "@posthog/platform/deep-link";
+import { DEV_HOST_ACTIONS_SERVICE } from "@posthog/platform/dev-host-actions";
 import { DIALOG_SERVICE } from "@posthog/platform/dialog";
 import { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
 import { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
@@ -217,10 +219,12 @@ import ExternalAppsStoreImpl from "electron-store";
 import type { FileWatcherBridge } from "../index";
 import { ElectronAppLifecycle } from "../platform-adapters/electron-app-lifecycle";
 import { ElectronAppMeta } from "../platform-adapters/electron-app-meta";
+import { ElectronAppMetrics } from "../platform-adapters/electron-app-metrics";
 import { ElectronBundledResources } from "../platform-adapters/electron-bundled-resources";
 import { ElectronClipboard } from "../platform-adapters/electron-clipboard";
 import { ElectronContextMenu } from "../platform-adapters/electron-context-menu";
 import { ElectronCrypto } from "../platform-adapters/electron-crypto";
+import { ElectronDevHostActions } from "../platform-adapters/electron-dev-host-actions";
 import { ElectronDialog } from "../platform-adapters/electron-dialog";
 import { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
 import { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
@@ -243,6 +247,11 @@ import {
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
 import { DeepLinkService } from "../services/deep-link/service";
+import { DevActionsService } from "../services/dev-actions/service";
+import { DevFlagsService } from "../services/dev-flags/service";
+import { DevLogsService } from "../services/dev-logs/service";
+import { DevMetricsService } from "../services/dev-metrics/service";
+import { DevNetworkService } from "../services/dev-network/service";
 import { DiscordPresenceService } from "../services/discord-presence/service";
 import { EncryptionService } from "../services/encryption/service";
 import { SecureStoreService } from "../services/secure-store/service";
@@ -265,6 +274,11 @@ import {
   DATABASE_SERVICE as MAIN_DATABASE_SERVICE,
   DEEP_LINK_SERVICE as MAIN_DEEP_LINK_SERVICE,
   DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY as MAIN_DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
+  DEV_ACTIONS_SERVICE as MAIN_DEV_ACTIONS_SERVICE,
+  DEV_FLAGS_SERVICE as MAIN_DEV_FLAGS_SERVICE,
+  DEV_LOGS_SERVICE as MAIN_DEV_LOGS_SERVICE,
+  DEV_METRICS_SERVICE as MAIN_DEV_METRICS_SERVICE,
+  DEV_NETWORK_SERVICE as MAIN_DEV_NETWORK_SERVICE,
   DISCORD_PRESENCE_SERVICE as MAIN_DISCORD_PRESENCE_SERVICE,
   ENCRYPTION_SERVICE as MAIN_ENCRYPTION_SERVICE,
   EXTERNAL_APPS_SERVICE as MAIN_EXTERNAL_APPS_SERVICE,
@@ -318,6 +332,8 @@ container.bind(CONTEXT_MENU_SERVICE).to(ElectronContextMenu);
 container.bind(BUNDLED_RESOURCES_SERVICE).to(ElectronBundledResources);
 container.bind(IMAGE_PROCESSOR_SERVICE).to(ElectronImageProcessor);
 container.bind(WORKSPACE_SETTINGS_SERVICE).to(ElectronWorkspaceSettings);
+container.bind(APP_METRICS_SERVICE).to(ElectronAppMetrics);
+container.bind(DEV_HOST_ACTIONS_SERVICE).to(ElectronDevHostActions);
 
 container.load(databaseModule);
 container.load(repositoriesModule);
@@ -503,10 +519,10 @@ container.bind(GIT_DIFF_SOURCE).toDynamicValue((ctx) => {
       }),
     getPrTemplate: (directoryPath: string) =>
       git().getPrTemplate.query({ directoryPath }),
-    fetchIfStale: async (directoryPath: string) => {
+    fetchFromRemote: async (directoryPath: string) => {
       await git().getGitSyncStatus.query({
         directoryPath,
-        forceRefresh: true,
+        fetchFromRemote: true,
       });
     },
   };
@@ -711,6 +727,8 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
     },
     readLocalLogs: (taskRunId: string) =>
       ws.localLogs.read.query({ taskRunId }),
+    readLocalLogsTail: (taskRunId: string, maxBytes: number) =>
+      ws.localLogs.readTail.query({ taskRunId, maxBytes }),
     writeLocalLogs: (taskRunId: string, content: string) =>
       ws.localLogs.write.mutate({ taskRunId, content }),
   };
@@ -726,3 +744,9 @@ container.load(canvasCoreModule);
 // Browser tabs for the Channels canvas surface. Authoritative sqlite-backed
 // service in the main process; resolved by the host-router browserTabs router.
 container.load(browserTabsModule);
+
+container.bind(MAIN_DEV_FLAGS_SERVICE).to(DevFlagsService);
+container.bind(MAIN_DEV_METRICS_SERVICE).to(DevMetricsService);
+container.bind(MAIN_DEV_NETWORK_SERVICE).to(DevNetworkService);
+container.bind(MAIN_DEV_LOGS_SERVICE).to(DevLogsService);
+container.bind(MAIN_DEV_ACTIONS_SERVICE).to(DevActionsService);

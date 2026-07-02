@@ -1,4 +1,4 @@
-import { Plus } from "@phosphor-icons/react";
+import { Lightning, Plus } from "@phosphor-icons/react";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { Popover } from "@radix-ui/themes";
 import { type ReactNode, useCallback } from "react";
@@ -11,6 +11,7 @@ interface TaskSelectorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onNewTask?: () => void;
+  onBrainrot?: () => void;
   children: ReactNode;
 }
 
@@ -19,6 +20,7 @@ export function TaskSelector({
   open,
   onOpenChange,
   onNewTask,
+  onBrainrot,
   children,
 }: TaskSelectorProps) {
   const availableTasks = useAvailableTasks();
@@ -40,6 +42,11 @@ export function TaskSelector({
       openTaskInput();
     }
   }, [onOpenChange, onNewTask]);
+
+  const handleBrainrot = useCallback(() => {
+    onOpenChange(false);
+    onBrainrot?.();
+  }, [onOpenChange, onBrainrot]);
 
   return (
     <Combobox.Root
@@ -86,6 +93,16 @@ export function TaskSelector({
                 <Plus size={11} weight="bold" />
                 New task
               </button>
+              {onBrainrot && (
+                <button
+                  type="button"
+                  className="combobox-footer-button"
+                  onClick={handleBrainrot}
+                >
+                  <Lightning size={11} weight="bold" />
+                  Brainrot
+                </button>
+              )}
             </Combobox.Footer>
           </>
         )}

@@ -26,6 +26,10 @@ describe("toSdkModelId", () => {
     expect(toSdkModelId("claude-fable-5")).toBe("claude-fable-5");
   });
 
+  it("passes claude-sonnet-5 through unchanged (no SDK alias)", () => {
+    expect(toSdkModelId("claude-sonnet-5")).toBe("claude-sonnet-5");
+  });
+
   it("passes deprecated gateway IDs through unchanged", () => {
     expect(toSdkModelId("claude-opus-4-6")).toBe("claude-opus-4-6");
     expect(toSdkModelId("claude-sonnet-4-5")).toBe("claude-sonnet-4-5");
@@ -34,36 +38,72 @@ describe("toSdkModelId", () => {
 });
 
 describe("model capability flags", () => {
-  it("flags 1M context support", () => {
-    expect(supports1MContext("claude-opus-4-6")).toBe(false);
-    expect(supports1MContext("claude-opus-4-7")).toBe(true);
-    expect(supports1MContext("claude-sonnet-4-6")).toBe(true);
-    expect(supports1MContext("claude-haiku-4-5")).toBe(false);
-  });
-
-  it("flags effort support and xhigh-effort support", () => {
-    expect(supportsEffort("claude-opus-4-5")).toBe(false);
-    expect(supportsEffort("claude-opus-4-6")).toBe(false);
-    expect(supportsXhighEffort("claude-opus-4-7")).toBe(true);
-    expect(supportsXhighEffort("claude-opus-4-6")).toBe(false);
-    expect(supportsEffort("claude-haiku-4-5")).toBe(false);
-  });
-
-  it("flags claude-fable-5 as a flagship model", () => {
-    expect(supports1MContext("claude-fable-5")).toBe(true);
-    expect(supportsEffort("claude-fable-5")).toBe(true);
-    expect(supportsXhighEffort("claude-fable-5")).toBe(true);
-    expect(supportsMcpInjection("claude-fable-5")).toBe(true);
-  });
-
-  it("allows MCP injection for supported Claude models", () => {
-    expect(supportsMcpInjection("claude-opus-4-7")).toBe(true);
-    expect(supportsMcpInjection("claude-sonnet-4-6")).toBe(true);
-  });
-
-  it("keeps deprecated Haiku sessions excluded from MCP injection", () => {
-    expect(supportsMcpInjection("claude-haiku-4-5")).toBe(false);
-  });
+  it.each([
+    {
+      modelId: "claude-opus-4-5",
+      oneMContext: false,
+      effort: false,
+      xhighEffort: false,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-opus-4-6",
+      oneMContext: false,
+      effort: false,
+      xhighEffort: false,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-opus-4-7",
+      oneMContext: true,
+      effort: true,
+      xhighEffort: true,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-opus-4-8",
+      oneMContext: true,
+      effort: true,
+      xhighEffort: true,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-sonnet-4-6",
+      oneMContext: true,
+      effort: true,
+      xhighEffort: false,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-sonnet-5",
+      oneMContext: true,
+      effort: true,
+      xhighEffort: true,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-fable-5",
+      oneMContext: true,
+      effort: true,
+      xhighEffort: true,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-haiku-4-5",
+      oneMContext: false,
+      effort: false,
+      xhighEffort: false,
+      mcpInjection: false,
+    },
+  ])(
+    "$modelId capability flags",
+    ({ modelId, oneMContext, effort, xhighEffort, mcpInjection }) => {
+      expect(supports1MContext(modelId)).toBe(oneMContext);
+      expect(supportsEffort(modelId)).toBe(effort);
+      expect(supportsXhighEffort(modelId)).toBe(xhighEffort);
+      expect(supportsMcpInjection(modelId)).toBe(mcpInjection);
+    },
+  );
 });
 
 describe("resolveEffortForModel", () => {
@@ -77,12 +117,14 @@ describe("resolveEffortForModel", () => {
     ["claude-opus-4-8", undefined, "high"],
     ["claude-opus-4-7", undefined, "high"],
     ["claude-sonnet-4-6", undefined, "high"],
+    ["claude-sonnet-5", undefined, "high"],
     // Models without effort support stay unset (SDK disables thinking).
     ["claude-haiku-4-5", undefined, undefined],
     ["claude-opus-4-6", undefined, undefined],
     // An explicit choice is always honored, including on adaptive-only models.
     ["claude-opus-4-8", "low", "low"],
     ["claude-fable-5", "max", "max"],
+    ["claude-sonnet-5", "max", "max"],
   ] as const)(
     "resolveEffortForModel(%s, %s) === %s",
     (modelId, effort, expected) => {

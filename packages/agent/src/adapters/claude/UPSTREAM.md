@@ -38,6 +38,12 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 - `SYSTEM_REMINDER` stripping from Read tool results
 - WebFetch `resourceLink` content enrichment
 - `customTitle` in listSessions (PostHog Code is ahead of upstream here)
+- Refusal support: `Options.fallbackModel` defaults to `FALLBACK_MODEL` in
+  `session/options.ts`; `model_refusal_fallback` system messages emit a
+  `_posthog/status` notification (`refusal_fallback`) in `sdk-to-acp.ts`; a
+  terminal `stop_reason: "refusal"` emits `_posthog/status` (`refusal`) instead
+  of upstream's raw-explanation `agent_message_chunk` (supersedes the v0.42.0
+  "Refusal handling" port and the v0.44.0 `model_refusal_fallback` skip)
 - SettingsManager `PreToolUse` hook for permission rules
 - `ensureLocalSettings` / `clearStatsigCache`
 - `ELECTRON_RUN_AS_NODE` / `ENABLE_TOOL_SEARCH` env vars

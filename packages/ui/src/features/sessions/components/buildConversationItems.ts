@@ -55,6 +55,7 @@ export type ConversationItem =
       update: RenderItem;
       turnContext: TurnContext;
       thoughtComplete?: boolean;
+      timestamp?: number;
     }
   | {
       type: "git_action_result";
@@ -188,7 +189,7 @@ export function markThoughtCompletion(items: ConversationItem[]) {
   }
 }
 
-function pushItem(b: ItemBuilder, update: RenderItem) {
+function pushItem(b: ItemBuilder, update: RenderItem, ts?: number) {
   const turn = b.currentTurn;
   if (!turn) return;
   turn.itemCount++;
@@ -197,6 +198,7 @@ function pushItem(b: ItemBuilder, update: RenderItem) {
     id: `${turn.id}-item-${b.nextId()}`,
     update,
     turnContext: turn.context,
+    timestamp: ts,
   });
 }
 
@@ -460,7 +462,7 @@ function handleNotification(
     if (!b.currentTurn) {
       ensureImplicitTurn(b, ts);
     }
-    processSessionUpdate(b, update);
+    processSessionUpdate(b, update, ts);
     return;
   }
 
@@ -531,9 +533,42 @@ function handleNotification(
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.STATUS)) {
     if (!b.currentTurn) ensureImplicitTurn(b, ts);
-    const params = msg.params as { status: string; isComplete?: boolean };
-    if (params.status === "compacting" && !params.isComplete) {
+    const params = msg.params as {
+      status: string;
+      isComplete?: boolean;
+      error?: string;
+      explanation?: string;
+      fromModel?: string;
+      toModel?: string;
+    };
+    if (params.status === "refusal" || params.status === "refusal_fallback") {
+      pushItem(b, {
+        sessionUpdate: "status",
+        status: params.status,
+        explanation: params.explanation,
+        fromModel: params.fromModel,
+        toModel: params.toModel,
+      });
+      return;
+    }
+    if (params.status === "compacting") {
+      if (params.isComplete) {
+        // Successful compaction — flip the existing "Compacting…" status to
+        // complete instead of pushing a second item, so the spinner stops.
+        markCompactingStatusComplete(b);
+        return;
+      }
       b.isCompacting = true;
+    } else if (params.status === "compacting_failed") {
+      // A failed compaction emits no `compact_boundary`, so clear the spinner
+      // and render the outcome as its own status row.
+      markCompactingStatusComplete(b);
+      pushItem(b, {
+        sessionUpdate: "status",
+        status: "compacting_failed",
+        error: params.error,
+      });
+      return;
     }
     pushItem(b, {
       sessionUpdate: "status",
@@ -750,7 +785,11 @@ function appendTextChunkToChildren(
   }
 }
 
-function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
+function processSessionUpdate(
+  b: ItemBuilder,
+  update: SessionUpdate,
+  ts: number,
+) {
   switch (update.sessionUpdate) {
     case "user_message_chunk":
       break;
@@ -762,7 +801,7 @@ function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
       if (parentId) {
         appendTextChunkToChildren(b, parentId, update);
       } else {
-        appendTextChunk(b, update);
+        appendTextChunk(b, update, ts);
       }
       break;
     }
@@ -787,7 +826,7 @@ function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
         if (parentId) {
           pushChildItem(b, parentId, toolCall);
         } else {
-          pushItem(b, toolCall);
+          pushItem(b, toolCall, ts);
         }
       }
       break;
@@ -824,16 +863,20 @@ function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
       };
       if (customUpdate.sessionUpdate === "agent_message") {
         if (customUpdate.content?.type === "text") {
-          appendTextChunk(b, {
-            sessionUpdate: "agent_message_chunk" as const,
-            content: customUpdate.content as { type: "text"; text: string },
-          });
+          appendTextChunk(
+            b,
+            {
+              sessionUpdate: "agent_message_chunk" as const,
+              content: customUpdate.content as { type: "text"; text: string },
+            },
+            ts,
+          );
         }
       } else if (
         customUpdate.sessionUpdate === "status" ||
         customUpdate.sessionUpdate === "error"
       ) {
-        pushItem(b, customUpdate as unknown as SessionUpdate);
+        pushItem(b, customUpdate as unknown as SessionUpdate, ts);
       }
       break;
     }
@@ -845,6 +888,7 @@ function appendTextChunk(
   update: SessionUpdate & {
     sessionUpdate: "agent_message_chunk" | "agent_thought_chunk";
   },
+  ts: number,
 ) {
   if (update.content.type !== "text") return;
 
@@ -866,6 +910,6 @@ function appendTextChunk(
       },
     };
   } else {
-    pushItem(b, { ...update, content: { ...update.content } });
+    pushItem(b, { ...update, content: { ...update.content } }, ts);
   }
 }

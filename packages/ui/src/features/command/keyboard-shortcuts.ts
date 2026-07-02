@@ -25,6 +25,7 @@ export const SHORTCUTS = {
   BLUR: "escape",
   SUBMIT_BLUR: "mod+enter",
   SWITCH_MESSAGING_MODE: "mod+s",
+  RELOAD_WINDOW: "mod+shift+r",
 } as const;
 
 export type ShortcutCategory = "general" | "navigation" | "panels" | "editor";

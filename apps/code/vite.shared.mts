@@ -102,6 +102,10 @@ export const workspaceAliases: Alias[] = [
       "../../packages/workspace-server/src/$1",
     ),
   },
+  {
+    find: /^@posthog\/platform\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/platform/src/$1"),
+  },
 ];
 
 export const mainAliases: Alias[] = [
@@ -112,6 +116,10 @@ export const mainAliases: Alias[] = [
       __dirname,
       "../../packages/electron-trpc/src/main/index.ts",
     ),
+  },
+  {
+    find: /^@posthog\/git\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/git/src/$1"),
   },
   ...workspaceAliases,
 ];

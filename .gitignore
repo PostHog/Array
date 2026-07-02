@@ -57,6 +57,8 @@ test-results/
 *storybook.log
 .session-store.json
 .playwright-mcp
+# Trunk Flaky Tests JUnit reports (one per package, uploaded from CI)
+junit.xml
 
 # Downloaded binaries
 apps/code/resources/codex-acp/
@@ -74,3 +76,5 @@ posthog-sym
 CLAUDE.local.md
 
 apps/mobile/ROADMAP.md
+# Local quill tarball for ChatX thread testing (not committed)
+.local-quill/

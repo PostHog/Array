@@ -72,6 +72,10 @@ export function useSessionConnection({
   ]);
 
   useEffect(() => {
+    return sessionService.registerMountedTask(task.id);
+  }, [task.id, sessionService]);
+
+  useEffect(() => {
     if (!taskRunId) return;
     return sessionService.startActivityHeartbeat(taskRunId);
   }, [taskRunId, sessionService]);

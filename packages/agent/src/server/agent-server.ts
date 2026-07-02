@@ -250,6 +250,14 @@ interface BuiltPrompt {
   meta?: Record<string, unknown>;
 }
 
+function hiddenTextBlock(text: string): ContentBlock {
+  return {
+    type: "text",
+    text,
+    _meta: { ui: { hidden: true } },
+  } as ContentBlock;
+}
+
 interface LocalSkillPromptContext {
   skillName: string;
   context: string;
@@ -357,6 +365,8 @@ export class AgentServer {
     if (config.eventIngestToken) {
       this.eventStreamSender = new TaskRunEventStreamSender({
         apiUrl: config.apiUrl,
+        eventIngestBaseUrl: config.eventIngestBaseUrl,
+        keepProxyStreamOpen: config.eventIngestKeepStreamOpen,
         projectId: config.projectId,
         taskId: config.taskId,
         runId: config.runId,
@@ -1081,7 +1091,7 @@ export class AgentServer {
       aiStage: getTaskRunStateString(preTaskRun, "ai_stage"),
       taskId: payload.task_id,
       taskRunId: payload.run_id,
-      taskUserId: payload.user_id,
+      taskUserId: payload.user_id || preTask?.created_by?.id || null,
       taskTitle: preTask?.title,
     });
 
@@ -1335,6 +1345,28 @@ export class AgentServer {
       JSON.stringify(runStartedNotification),
     );
 
+    // Mirror the "agent" setup step onto the ingest leg the client is reading;
+    // the orchestrator's completed progress only lands in Django.
+    const agentStartedProgress = {
+      jsonrpc: "2.0" as const,
+      method: POSTHOG_NOTIFICATIONS.PROGRESS,
+      params: {
+        group: `setup:${payload.run_id}`,
+        step: "agent",
+        status: "completed",
+        label: "Started agent",
+      },
+    };
+    this.broadcastEvent({
+      type: "notification",
+      timestamp: new Date().toISOString(),
+      notification: agentStartedProgress,
+    });
+    this.session.logWriter.appendRawLine(
+      payload.run_id,
+      JSON.stringify(agentStartedProgress),
+    );
+
     // Signal in_progress so the UI can start polling for updates
     this.posthogAPI
       .updateTaskRun(payload.task_id, payload.run_id, {
@@ -1548,39 +1580,34 @@ export class AgentServer {
 
       const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
 
-      const sandboxContext = checkpointApplied
+      const checkpointContext = checkpointApplied
         ? `The workspace environment (all files, packages, and code changes) has been fully restored from the latest checkpoint.`
-        : `The workspace from the previous session was not restored from a checkpoint, so you are starting with a fresh environment. Your conversation history is fully preserved below.`;
+        : `No additional git checkpoint was applied before resuming. Use the current workspace contents together with the preserved conversation history below.`;
 
       let resumePromptBlocks: ContentBlock[];
       let resumePromptMeta: Record<string, unknown> | undefined;
       if (pendingUserPrompt?.prompt.length) {
         resumePromptMeta = pendingUserPrompt.meta;
         resumePromptBlocks = [
-          {
-            type: "text",
-            text:
-              `You are resuming a previous conversation. ${sandboxContext}\n\n` +
+          hiddenTextBlock(
+            `You are resuming a previous conversation. ${checkpointContext}\n\n` +
               `Here is the conversation history from the previous session:\n\n` +
               `${conversationSummary}\n\n` +
               `The user has sent a new message:\n\n`,
-          },
+          ),
           ...pendingUserPrompt.prompt,
-          {
-            type: "text",
-            text: "\n\nRespond to the user's new message above. You have full context from the previous session.",
-          },
+          hiddenTextBlock(
+            "\n\nRespond to the user's new message above. You have full context from the previous session.",
+          ),
         ];
       } else {
         resumePromptBlocks = [
-          {
-            type: "text",
-            text:
-              `You are resuming a previous conversation. ${sandboxContext}\n\n` +
+          hiddenTextBlock(
+            `You are resuming a previous conversation. ${checkpointContext}\n\n` +
               `Here is the conversation history from the previous session:\n\n` +
               `${conversationSummary}\n\n` +
               `Continue from where you left off. The user is waiting for your response.`,
-          },
+          ),
         ];
       }
 
@@ -3000,11 +3027,20 @@ ${signedCommitInstructions}
       return;
     }
 
+    // Ordered assistant text blocks (one per message between tool calls).
+    // The backend picks the last entry — the post-last-tool-use answer — so
+    // Slack no longer sees the "Let me check…" narration. `message` stays as
+    // the joined fallback for backends that don't understand `text_parts`.
+    const messageParts = this.session.logWriter.getAgentResponseParts(
+      payload.run_id,
+    );
+
     try {
       await this.posthogAPI.relayMessage(
         payload.task_id,
         payload.run_id,
         message,
+        messageParts,
       );
     } catch (error) {
       this.logger.debug("Failed to relay initial agent response to Slack", {

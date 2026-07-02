@@ -73,43 +73,11 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-// Dynamic import keeps the devtools chunk out of the prod bundle. Without the
-// gate at the import level, conditional render alone still ships the devtools
-// code to users.
-//
-// We embed the router devtools as a plugin inside the unified TanStack Devtools
-// shell rather than rendering the standalone floating logo. The shell owns a
-// single trigger that can be dragged, dismissed, and hidden-until-hover, and it
-// persists those choices to localStorage — so the panel stays out of the way.
-const TanStackDevtools = import.meta.env.DEV
-  ? lazy(async () => {
-      const [
-        { TanStackDevtools: DevtoolsShell },
-        { TanStackRouterDevtoolsPanel },
-      ] = await Promise.all([
-        import("@tanstack/react-devtools"),
-        import("@tanstack/react-router-devtools"),
-      ]);
-      // Hoisted so the config/plugins keep stable references across the
-      // RootLayout re-renders that fire on every navigation — otherwise the
-      // shell could remount the panel (and flash) on each route change.
-      const config = {
-        position: "bottom-right",
-        hideUntilHover: true,
-      } as const;
-      const plugins = [
-        {
-          name: "TanStack Router",
-          render: <TanStackRouterDevtoolsPanel />,
-        },
-      ];
-      return {
-        default: () => <DevtoolsShell config={config} plugins={plugins} />,
-      };
-    })
-  : () => null;
+// The router devtools render their genuine floating overlay, mounted by the
+// app's dev toolbar with the floating logo hidden so the toolbar owns the
+// trigger — see RouterDevtools.
 
 const log = logger.scope("root-route");
 
@@ -317,7 +285,7 @@ function RootLayout() {
 
   if (isChannelsSpace) {
     return (
-      <Flex direction="column" height="100vh" className="bg-chrome">
+      <Flex direction="column" height="100%" className="bg-chrome">
         {/* Full-width title bar: a window-drag region carrying the PostHog
             mark. The left section matches the sidebar width so the tab strip
             starts flush with the content pane; its padding clears the macOS
@@ -413,18 +381,13 @@ function RootLayout() {
           onFinished={handleFeedbackFinished}
         />
         <ExistingWorktreeDialog />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
       </Flex>
     );
   }
 
   if (isSettingsRoute) {
     return (
-      <Flex direction="column" height="100vh">
+      <Flex direction="column" height="100%">
         <ConnectivityBanner />
         <Outlet />
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
@@ -442,17 +405,12 @@ function RootLayout() {
         <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
         <ExistingWorktreeDialog />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
       </Flex>
     );
   }
 
   return (
-    <Flex height="100vh">
+    <Flex height="100%">
       <Flex direction="column" flexGrow="1" overflow="hidden">
         <HeaderRow />
         <ConnectivityBanner />
@@ -496,11 +454,6 @@ function RootLayout() {
         ) : null}
         <ExistingWorktreeDialog />
         <HedgehogMode />
-        {import.meta.env.DEV && (
-          <Suspense fallback={null}>
-            <TanStackDevtools />
-          </Suspense>
-        )}
       </Flex>
     </Flex>
   );

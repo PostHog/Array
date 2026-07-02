@@ -471,6 +471,9 @@ describe("Question relay", () => {
         logWriter: {
           flush: vi.fn().mockResolvedValue(undefined),
           getFullAgentResponse: vi.fn().mockReturnValue("agent response"),
+          getAgentResponseParts: vi
+            .fn()
+            .mockReturnValue(["first part", "agent response"]),
           isRegistered: vi.fn().mockReturnValue(true),
         },
       };
@@ -482,6 +485,7 @@ describe("Question relay", () => {
         "test-task-id",
         "test-run-id",
         "agent response",
+        ["first part", "agent response"],
       );
     });
 

@@ -17,7 +17,6 @@ import { useAutoFocusOnTyping } from "@posthog/ui/features/message-editor/useAut
 import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
 import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
-import { ConversationView } from "@posthog/ui/features/sessions/components/ConversationView";
 import {
   copyFromContextMenu,
   getGithubRefUrlFromEventTarget,
@@ -31,7 +30,9 @@ import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
+import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/useSessionEventsResidency";
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
   useAdapterForTask,
@@ -44,7 +45,7 @@ import {
   useShowRawLogs,
 } from "@posthog/ui/features/sessions/sessionViewStore";
 import type { Plan } from "@posthog/ui/features/sessions/types";
-import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import { useSessionHandoffInProgress } from "@posthog/ui/features/sessions/useSession";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
@@ -164,6 +165,7 @@ export function SessionView({
   hideInput = false,
 }: SessionViewProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  useSessionEventsResidency(taskId);
   const showRawLogs = useShowRawLogs();
   const { setShowRawLogs } = useSessionViewActions();
   const pendingTaskPrompt = usePendingTaskPrompt(taskId);
@@ -173,10 +175,10 @@ export function SessionView({
   const adapter = useAdapterForTask(taskId);
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();
+  const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
   const { isOnline } = useConnectivity();
   const currentModeId = modeOption?.currentValue;
-  const handoffInProgress =
-    useSessionForTask(taskId)?.handoffInProgress ?? false;
+  const handoffInProgress = useSessionHandoffInProgress(taskId);
   const showInlineBanner = hasError && errorRetryable && events.length > 0;
 
   useEffect(() => {
@@ -421,7 +423,7 @@ export function SessionView({
           >
             {isSuspended ? (
               <>
-                <ConversationView
+                <ThreadView
                   events={events}
                   isPromptPending={isPromptPending}
                   promptStartedAt={promptStartedAt}
@@ -505,7 +507,7 @@ export function SessionView({
                     onRetry={onRetry}
                   />
                 )}
-                <ConversationView
+                <ThreadView
                   events={events}
                   isPromptPending={isPromptPending}
                   promptStartedAt={promptStartedAt}
@@ -517,7 +519,7 @@ export function SessionView({
                   scrollX={false}
                 />
 
-                <SessionResourcesBar events={events} />
+                {!useNewChatThread && <SessionResourcesBar events={events} />}
 
                 <PlanStatusBar plan={latestPlan} />
 
@@ -565,7 +567,10 @@ export function SessionView({
                     </Flex>
                   </Flex>
                 ) : hideInput ? null : firstPendingPermission ? (
-                  <Box className="min-h-0 overflow-y-auto">
+                  // This box replaces the composer while a permission is pending, so it's an input
+                  // region: `shrink-0` keeps it from being compressed by the scroller above, and
+                  // `min-h-0 overflow-y-auto` lets a tall permission prompt scroll inside itself.
+                  <Box className="min-h-0 shrink-0 overflow-y-auto">
                     <Box
                       className={compact ? "p-1" : "mx-auto px-2 pb-3"}
                       style={

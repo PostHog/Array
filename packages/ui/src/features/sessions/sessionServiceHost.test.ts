@@ -47,6 +47,7 @@ const mockTrpcFs = vi.hoisted(() => ({
 const mockTrpcSkills = vi.hoisted(() => ({
   list: { query: vi.fn() },
   bundleLocal: { query: vi.fn() },
+  resolveDependencies: { query: vi.fn() },
 }));
 
 const mockTrpcHandoff = vi.hoisted(() => ({
@@ -426,6 +427,10 @@ describe("SessionService", () => {
     mockTrpcSkills.list.query.mockResolvedValue([]);
     mockTrpcSkills.bundleLocal.query.mockRejectedValue(
       new Error("Unexpected skill bundle upload"),
+    );
+    // Dependency resolution is a no-op passthrough by default (no declared deps).
+    mockTrpcSkills.resolveDependencies.query.mockImplementation(
+      async (refs: unknown) => refs,
     );
     mockTrpcHandoff.preflightToCloud.query.mockResolvedValue({
       canHandoff: true,
@@ -3167,6 +3172,110 @@ describe("SessionService", () => {
         mockSessionStoreSetters.appendOptimisticItem,
       ).not.toHaveBeenCalled();
     });
+
+    it("hydrates an in-progress resumed run from the full session-log chain", async () => {
+      const service = getSessionService();
+      const resumedSession = createMockSession({
+        taskRunId: "run-456",
+        taskId: "task-123",
+        status: "disconnected",
+        isCloud: true,
+        events: [],
+        optimisticItems: [
+          {
+            id: "optimistic-follow-up",
+            type: "user_message",
+            content: "continue",
+            timestamp: 1700000001,
+            pinToTop: false,
+          },
+        ],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        resumedSession,
+      );
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-456": resumedSession,
+      });
+      const chainedEntries = [
+        { timestamp: "2024-01-01T00:00:00Z", notification: {} },
+        { timestamp: "2024-01-01T00:01:00Z", notification: {} },
+      ];
+      mockAuthenticatedClient.getTaskRunSessionLogs.mockResolvedValue(
+        chainedEntries,
+      );
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue(
+        "leaf log should not be used",
+      );
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue(
+        "leaf s3 log should not be used",
+      );
+
+      const priorPrompt = {
+        type: "acp_message" as const,
+        ts: 1700000000,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 1,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "first request" }] },
+        },
+      };
+      const resumePrompt = {
+        type: "acp_message" as const,
+        ts: 1700000060,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 2,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "continue" }] },
+        },
+      };
+      mockConvertStoredEntriesToEvents.mockReturnValueOnce([
+        priorPrompt,
+        resumePrompt,
+      ]);
+
+      service.watchCloudTask(
+        "task-123",
+        "run-456",
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://logs.example.com/run-456",
+        undefined,
+        "claude",
+        undefined,
+        "first request",
+        undefined,
+        "in_progress",
+        undefined,
+        { resume_from_run_id: "run-123" },
+      );
+
+      await vi.waitFor(() => {
+        expect(
+          mockAuthenticatedClient.getTaskRunSessionLogs,
+        ).toHaveBeenCalledWith("task-123", "run-456", { limit: 100000 });
+      });
+      expect(mockConvertStoredEntriesToEvents).toHaveBeenCalledWith(
+        chainedEntries,
+      );
+      expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+        "run-456",
+        expect.objectContaining({
+          events: [priorPrompt, resumePrompt],
+          processedLineCount: chainedEntries.length,
+        }),
+      );
+      expect(
+        mockSessionStoreSetters.clearTailOptimisticItems,
+      ).toHaveBeenCalledWith("run-456");
+      expect(
+        mockSessionStoreSetters.appendOptimisticItem,
+      ).not.toHaveBeenCalled();
+    });
+
     it("ignores stale async starts when the same watcher is replaced", async () => {
       const service = getSessionService();
       let resolveFirstWatchStart!: () => void;
@@ -4578,6 +4687,108 @@ describe("SessionService", () => {
           expect.objectContaining({ sessionId: "run-123" }),
         );
       });
+    });
+  });
+
+  describe("steer echo routing", () => {
+    async function connectAndCaptureOnData(): Promise<
+      (payload: unknown) => void
+    > {
+      const service = getSessionService();
+
+      let session: AgentSession | undefined;
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => session,
+      );
+      mockSessionStoreSetters.getSessions.mockImplementation(() =>
+        session ? { "run-123": session } : {},
+      );
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_taskRunId, updates) => {
+          if (session) session = { ...session, ...updates };
+        },
+      );
+      mockSessionStoreSetters.setSession.mockImplementation((next) => {
+        session = next as AgentSession;
+      });
+
+      mockBuildAuthenticatedClient.mockReturnValue({
+        ...mockAuthenticatedClient,
+        createTaskRun: vi.fn().mockResolvedValue({ id: "run-123" }),
+        appendTaskRunLog: vi.fn(),
+      });
+      mockTrpcAgent.start.mutate.mockResolvedValue({
+        channel: "agent-event:run-123",
+        configOptions: [],
+      });
+
+      await service.connectToTask({
+        task: createMockTask(),
+        repoPath: "/repo",
+      });
+
+      session = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: false,
+        adapter: "claude",
+        currentPromptId: 42,
+        isPromptPending: true,
+      });
+
+      const onData = mockTrpcAgent.onSessionEvent.subscribe.mock.calls.at(
+        -1,
+      )?.[1]?.onData as ((payload: unknown) => void) | undefined;
+      expect(onData).toBeDefined();
+      return onData as (payload: unknown) => void;
+    }
+
+    it.each([
+      {
+        name: "appends a steer echo without clearing pending optimistic placeholders",
+        steer: true,
+      },
+      {
+        name: "replaces the optimistic placeholder for a normal prompt echo",
+        steer: false,
+      },
+    ])("$name", async ({ steer }) => {
+      const onData = await connectAndCaptureOnData();
+      mockSessionStoreSetters.appendEvents.mockClear();
+      mockSessionStoreSetters.replaceOptimisticWithEvent.mockClear();
+
+      const echo = {
+        type: "acp_message",
+        ts: 1700000001,
+        message: {
+          jsonrpc: "2.0",
+          id: 101,
+          method: "session/prompt",
+          params: {
+            prompt: [{ type: "text", text: "hello" }],
+            ...(steer ? { _meta: { steer: true } } : {}),
+          },
+        },
+      };
+      onData(echo);
+      // Streamed events are buffered and flushed on a frame timer; let it run.
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      if (steer) {
+        expect(mockSessionStoreSetters.appendEvents).toHaveBeenCalledWith(
+          "run-123",
+          [echo],
+        );
+        expect(
+          mockSessionStoreSetters.replaceOptimisticWithEvent,
+        ).not.toHaveBeenCalled();
+      } else {
+        expect(
+          mockSessionStoreSetters.replaceOptimisticWithEvent,
+        ).toHaveBeenCalledWith("run-123", echo);
+        expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
+      }
     });
   });
 

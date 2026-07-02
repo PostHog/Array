@@ -796,6 +796,29 @@ export async function handleSystemMessage(
         `Session ${sessionId}: failed to persist history: ${message.error}`,
       );
       break;
+    case "model_refusal_fallback": {
+      logger.info("Refusal retried on fallback model", {
+        sessionId,
+        direction: message.direction,
+        originalModel: message.original_model,
+        fallbackModel: message.fallback_model,
+        category: message.api_refusal_category ?? undefined,
+        requestId: message.request_id ?? undefined,
+      });
+      // Only "retry" is emitted live; "revert" and "sticky" are legacy enum
+      // values whose semantics don't match the "retried with" notice.
+      if (message.direction !== "retry") break;
+      await client.extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
+        sessionId,
+        status: "refusal_fallback",
+        fromModel: message.original_model,
+        toModel: message.fallback_model,
+        ...(message.api_refusal_explanation && {
+          explanation: message.api_refusal_explanation,
+        }),
+      });
+      break;
+    }
     case "permission_denied": {
       const reason = message.decision_reason ?? message.message;
       await client.sessionUpdate({
