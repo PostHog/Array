@@ -252,7 +252,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       },
       {
         id: "command-center",
-        label: "Command Center",
+        label: "Command center",
         keywords: "lightning grid tasks parallel dashboard",
         icon: <LightningBoltIcon className="h-3 w-3 text-gray-11" />,
         action: "open-command-center",
