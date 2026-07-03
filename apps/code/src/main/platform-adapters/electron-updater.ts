@@ -67,13 +67,6 @@ export class ElectronUpdater implements IUpdater {
   }
 
   public quitAndInstall(): void {
-    // An unpackaged (dev) build has no staged artifact to swap and
-    // the real quitAndInstall would no-op or throw, so relaunch instead.
-    if (!app.isPackaged) {
-      app.relaunch();
-      app.quit();
-      return;
-    }
     autoUpdater.quitAndInstall(false, true);
   }
 

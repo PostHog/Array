@@ -1,4 +1,3 @@
-import { updateStore } from "@posthog/core/updates/updateStore";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,7 +39,6 @@ import {
   Bug,
   ChevronDown,
   Cpu,
-  DownloadCloud,
   FileText,
   FolderOpen,
   Globe,
@@ -815,13 +813,6 @@ function QuickActionsMenu() {
     if (ok) void trpcClient.dev.restartMain.mutate();
   };
 
-  const handleSimulateUpdate = () => {
-    // Updates report as disabled in dev, which hides the sidebar banner.
-    // Force it on so the simulated "ready" state surfaces the real prompt.
-    updateStore.getState().setEnabled(true);
-    void trpcClient.dev.simulateUpdate.mutate();
-  };
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -864,10 +855,6 @@ function QuickActionsMenu() {
           <DropdownMenuItem onClick={handleRestart}>
             <Power size={12} className="mr-2 text-(--gray-9)" />
             Restart main process
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleSimulateUpdate}>
-            <DownloadCloud size={12} className="mr-2 text-(--gray-9)" />
-            Simulate update
           </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onClick={handleCrash}>
             <AlertTriangle size={12} className="mr-2" />

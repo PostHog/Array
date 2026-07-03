@@ -229,20 +229,6 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     return { success: true };
   }
 
-  /**
-   * Forces a "ready" state with a fake version so the real update banner
-   * surfaces, without a packaged build or a real downloaded artifact (dev only).
-   */
-  simulateUpdateReady(version = "Update"): void {
-    this.downloadedVersion = version;
-    this.transitionTo("ready", {
-      reason: "simulated update",
-      incomingVersion: version,
-    });
-    this.emitStatus(this.stagedStatusPayload());
-    this.emit(UpdatesEvent.Ready, { version });
-  }
-
   async installUpdate(): Promise<InstallUpdateOutput> {
     if (this.state === "installing") {
       this.logStateTransition("installing", {
