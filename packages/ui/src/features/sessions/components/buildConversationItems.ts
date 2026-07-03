@@ -335,7 +335,34 @@ function handlePromptRequest(
     turnComplete: false,
   };
 
-  b.currentTurnStartIndex = b.items.length;
+  // The orchestrator emits its setup progress ("Started agent") before the
+  // prompt it responds to is replayed onto the stream, so the card would sit
+  // above the user's message. Open the turn before any trailing progress cards
+  // so the transcript reads user message → setup → work.
+  let insertIndex = b.items.length;
+  while (insertIndex > 0) {
+    const prev = b.items[insertIndex - 1];
+    if (
+      prev.type === "session_update" &&
+      prev.update.sessionUpdate === "progress_group"
+    ) {
+      insertIndex--;
+    } else {
+      break;
+    }
+  }
+  if (insertIndex < b.items.length) {
+    for (const card of b.progressCards.values()) {
+      if (card.itemIndex >= insertIndex) card.itemIndex++;
+    }
+    // The shifted cards may live inside a turn the incremental builder already
+    // froze; flag the mutation so it falls back to a full rebuild.
+    if (insertIndex < b.lowestTouchedProgressIndex) {
+      b.lowestTouchedProgressIndex = insertIndex;
+    }
+  }
+
+  b.currentTurnStartIndex = insertIndex;
   b.currentTurn = {
     id: turnId,
     promptId: msg.id,
@@ -350,19 +377,19 @@ function handlePromptRequest(
   b.pendingPrompts.set(msg.id, b.currentTurn);
 
   if (gitAction.isGitAction && gitAction.actionType) {
-    b.items.push({
+    b.items.splice(insertIndex, 0, {
       type: "git_action",
       id: `${turnId}-git-action`,
       actionType: gitAction.actionType,
     });
   } else if (skillButtonId) {
-    b.items.push({
+    b.items.splice(insertIndex, 0, {
       type: "skill_button_action",
       id: `${turnId}-skill-action`,
       buttonId: skillButtonId,
     });
   } else {
-    b.items.push({
+    b.items.splice(insertIndex, 0, {
       type: "user_message",
       id: `${turnId}-user`,
       content: userContent,

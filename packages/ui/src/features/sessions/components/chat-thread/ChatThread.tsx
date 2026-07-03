@@ -512,16 +512,27 @@ function StickyHeaderOverlay({ items }: { items: ConversationItem[] }) {
 }
 
 /** Renders a single thread item's body (no scroller wrapper), reused for standalone rows and for
- * each item inside an agent-turn card. */
+ * each item inside an agent-turn card. `isTrailing` marks the turn's last item — a trailing tool
+ * group of a streaming turn may still grow, so its label stays "Using …" between tool calls. */
 function ThreadItemBody({
   item,
   renderItem,
+  isTrailing = false,
 }: {
   item: ThreadItem;
   renderItem: (item: ConversationItem) => ReactNode;
+  isTrailing?: boolean;
 }) {
   if (item.type === "tool_group") {
-    return <ToolGroup tools={item.tools} />;
+    const context = item.tools[0]?.turnContext;
+    const turnStreaming =
+      !!context && !context.turnComplete && !context.turnCancelled;
+    return (
+      <ToolGroup
+        tools={item.tools}
+        mayStillGrow={isTrailing && turnStreaming}
+      />
+    );
   }
   if (item.type === "user_message") {
     return (
@@ -569,12 +580,17 @@ const ThreadRow = memo(function ThreadRow({
       <ChatMessageScrollerItem
         messageId={item.id}
         scrollAnchor={false}
-        className="group mx-auto w-full px-2.5 empty:hidden"
+        className="group mx-auto w-full @max-sm/thread:px-2.5 px-4 empty:hidden"
         style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
       >
         <div className="flex flex-col gap-4 empty:hidden">
-          {item.items.map((sub) => (
-            <ThreadItemBody key={sub.id} item={sub} renderItem={renderItem} />
+          {item.items.map((sub, i) => (
+            <ThreadItemBody
+              key={sub.id}
+              item={sub}
+              renderItem={renderItem}
+              isTrailing={i === item.items.length - 1}
+            />
           ))}
         </div>
         <RowTimestamp timestamp={completedTurnTimestamp(item)} />
@@ -683,7 +699,7 @@ function ThreadScrollBody({
   // `group/thread` so the footer's hover-reveal (opacity-50 → 100 on group-hover) tracks the thread,
   // mirroring the legacy ConversationView container.
   return (
-    <ChatMessageScroller className="group/thread">
+    <ChatMessageScroller className="group/thread @container/thread">
       <StickyHeaderOverlay items={items} />
       <ThreadAutoFollow items={items} />
       <ChatMessageScrollerViewport>
