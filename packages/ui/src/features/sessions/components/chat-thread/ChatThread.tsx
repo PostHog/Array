@@ -23,10 +23,14 @@ import {
   useChatMessageScrollerVisibility,
 } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { useSmoothedText } from "@posthog/ui/features/editor/components/useSmoothedText";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
-import { ChatMarkdown } from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
+import {
+  ChatMarkdown,
+  ChatStreamingMarkdown,
+} from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
 import { ChatThreadFooter } from "@posthog/ui/features/sessions/components/chat-thread/ChatThreadFooter";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
 import {
@@ -511,6 +515,40 @@ function StickyHeaderOverlay({ items }: { items: ConversationItem[] }) {
   );
 }
 
+/**
+ * Start-aligned assistant prose bubble. Streamed tokens arrive in bursts; `useSmoothedText` reveals
+ * them at a steady character rate so the text reads as even typing (text present on mount shows
+ * immediately, so completed messages render in full with no replay).
+ *
+ * While streaming, the smoothed reveal re-renders every animation frame, so the markdown goes
+ * through `ChatStreamingMarkdown` (block-split: each frame re-parses only the tail block). Once the
+ * turn completes it swaps to a single full `ChatMarkdown` parse.
+ */
+const AgentProse = memo(function AgentProse({
+  text,
+  isStreaming = false,
+}: {
+  text: string;
+  isStreaming?: boolean;
+}) {
+  const smoothed = useSmoothedText(text);
+  return (
+    <ChatMessage align="start">
+      <ChatMessageContent className="gap-1">
+        <ChatBubble variant="ghost">
+          <ChatBubbleContent>
+            {isStreaming ? (
+              <ChatStreamingMarkdown content={smoothed} />
+            ) : (
+              <ChatMarkdown content={text} />
+            )}
+          </ChatBubbleContent>
+        </ChatBubble>
+      </ChatMessageContent>
+    </ChatMessage>
+  );
+});
+
 /** Renders a single thread item's body (no scroller wrapper), reused for standalone rows and for
  * each item inside an agent-turn card. `isTrailing` marks the turn's last item — a trailing tool
  * group of a streaming turn may still grow, so its label stays "Using …" between tool calls. */
@@ -797,15 +835,10 @@ export function ChatThread({
             update.content.type === "text"
           ) {
             return (
-              <ChatMessage align="start">
-                <ChatMessageContent className="gap-1">
-                  <ChatBubble variant="ghost">
-                    <ChatBubbleContent>
-                      <ChatMarkdown content={update.content.text} />
-                    </ChatBubbleContent>
-                  </ChatBubble>
-                </ChatMessageContent>
-              </ChatMessage>
+              <AgentProse
+                text={update.content.text}
+                isStreaming={!item.turnContext.turnComplete}
+              />
             );
           }
           const rendered = (
