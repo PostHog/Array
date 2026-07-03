@@ -25,14 +25,14 @@ import { saveZoomLevel } from "./utils/store";
 // Zoom is measured in Electron "levels" (factor = 1.2 ** level; 0 = 100%).
 // ZOOM_STEP is one Zoom In/Out notch; the bounds clamp the level so a runaway
 // accelerator can't persist an unusable zoom across restarts.
-const ZOOM_STEP = 0.5;
+export const ZOOM_STEP = 0.5;
 const ZOOM_MIN = -3;
 const ZOOM_MAX = 3;
 
 // Apply a zoom change to the focused window and persist the new level so it
 // survives restarts. `delta` adjusts relative to the current level; "reset"
 // returns to 100%.
-function applyZoom(delta: number | "reset"): void {
+export function applyZoom(delta: number | "reset"): void {
   const webContents = BrowserWindow.getFocusedWindow()?.webContents;
   if (!webContents) return;
   const next = delta === "reset" ? 0 : webContents.getZoomLevel() + delta;

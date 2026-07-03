@@ -1,4 +1,8 @@
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
+import {
+  type IMainWindow,
+  MAIN_WINDOW_SERVICE,
+} from "@posthog/platform/main-window";
 import { OS_SERVICE } from "@posthog/workspace-server/services/os/identifiers";
 import type { OsService } from "@posthog/workspace-server/services/os/os";
 import {
@@ -120,4 +124,16 @@ export const osRouter = router({
         .get<OsService>(OS_SERVICE)
         .saveClipboardFile(input.base64Data, input.originalName),
     ),
+
+  zoomIn: publicProcedure.mutation(({ ctx }) =>
+    ctx.container.get<IMainWindow>(MAIN_WINDOW_SERVICE).zoomIn(),
+  ),
+
+  zoomOut: publicProcedure.mutation(({ ctx }) =>
+    ctx.container.get<IMainWindow>(MAIN_WINDOW_SERVICE).zoomOut(),
+  ),
+
+  resetZoom: publicProcedure.mutation(({ ctx }) =>
+    ctx.container.get<IMainWindow>(MAIN_WINDOW_SERVICE).resetZoom(),
+  ),
 });

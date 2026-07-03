@@ -56,7 +56,10 @@ export type CommandMenuAction =
   | "search-files"
   | "open-file"
   | "reload-window"
-  | "show-log-folder";
+  | "show-log-folder"
+  | "zoom-in"
+  | "zoom-out"
+  | "zoom-reset";
 
 // Event property interfaces
 export interface TaskListViewProperties {
