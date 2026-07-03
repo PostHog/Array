@@ -11,14 +11,23 @@ export function taskThreadQueryKey(taskId: string | undefined) {
 }
 
 /** A task's thread — the human side conversation — in chronological order. */
-export function useTaskThread(taskId: string | undefined): {
+export function useTaskThread(
+  taskId: string | undefined,
+  options?: {
+    /** Poll cadence override; feed rows poll slower than the open panel. */
+    pollIntervalMs?: number;
+  },
+): {
   messages: TaskThreadMessage[];
   isLoading: boolean;
 } {
   const query = useAuthenticatedQuery<TaskThreadMessage[]>(
     taskThreadQueryKey(taskId),
     (client) => client.getTaskThreadMessages(taskId as string),
-    { enabled: !!taskId, refetchInterval: THREAD_POLL_INTERVAL_MS },
+    {
+      enabled: !!taskId,
+      refetchInterval: options?.pollIntervalMs ?? THREAD_POLL_INTERVAL_MS,
+    },
   );
   return { messages: query.data ?? [], isLoading: query.isLoading };
 }

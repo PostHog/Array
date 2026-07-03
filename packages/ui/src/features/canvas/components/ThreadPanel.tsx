@@ -7,6 +7,8 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import {
+  Avatar,
+  AvatarFallback,
   Badge,
   Button,
   DropdownMenu,
@@ -20,11 +22,7 @@ import {
   Spinner,
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
-import type {
-  Task,
-  TaskThreadMessage,
-  UserBasic,
-} from "@posthog/shared/domain-types";
+import type { Task, TaskThreadMessage } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
@@ -32,21 +30,15 @@ import {
   useTaskThread,
   useTaskThreadMutations,
 } from "@posthog/ui/features/canvas/hooks/useTaskThread";
+import {
+  userDisplayName,
+  userInitials,
+} from "@posthog/ui/features/canvas/utils/userDisplay";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { toast } from "@posthog/ui/primitives/toast";
-import { Avatar, Text } from "@radix-ui/themes";
+import { Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-
-export function userDisplayName(user: UserBasic | null | undefined): string {
-  if (!user) return "Unknown";
-  const name = [user.first_name, user.last_name].filter(Boolean).join(" ");
-  return name || user.email;
-}
-
-export function userInitials(user: UserBasic | null | undefined): string {
-  return userDisplayName(user).slice(0, 1).toUpperCase();
-}
 
 function ThreadMessageRow({
   message,
@@ -69,12 +61,9 @@ function ThreadMessageRow({
 
   return (
     <div className="group flex gap-2 rounded-md px-2 py-1.5 hover:bg-fill-secondary">
-      <Avatar
-        size="1"
-        radius="full"
-        fallback={userInitials(message.author)}
-        className="mt-0.5 shrink-0"
-      />
+      <Avatar size="xs" className="mt-0.5 shrink-0">
+        <AvatarFallback>{userInitials(message.author)}</AvatarFallback>
+      </Avatar>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <Text size="1" weight="medium" className="truncate">
@@ -192,6 +181,14 @@ export function ThreadPanel({
     });
   };
 
+  const handleDelete = (messageId: string) => {
+    deleteMessage(messageId).catch((error: unknown) => {
+      toast.error("Couldn't delete message", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
+
   if (collapsed) {
     return (
       <div className="flex h-full w-9 flex-col items-center border-border border-l bg-gray-1 py-2">
@@ -267,7 +264,7 @@ export function ThreadPanel({
                 }
                 canForward={canForward}
                 onSendToAgent={() => handleSendToAgent(message.id)}
-                onDelete={() => void deleteMessage(message.id)}
+                onDelete={() => handleDelete(message.id)}
               />
             ))}
           </div>

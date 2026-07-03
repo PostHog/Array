@@ -2,12 +2,22 @@ import {
   ArrowSquareOutIcon,
   ChatCircleIcon,
   GitBranchIcon,
+  RobotIcon,
+  UserIcon,
 } from "@phosphor-icons/react";
 import {
+  Avatar,
+  AvatarFallback,
+  AvatarGroup,
   Badge,
   Button,
+  ButtonGroup,
   Card,
   CardContent,
+  ChatMessage,
+  ChatMessageAvatar,
+  ChatMessageContent,
+  ChatMessageHeader,
   ChatMessageScroller,
   ChatMessageScrollerButton,
   ChatMessageScrollerContent,
@@ -15,17 +25,26 @@ import {
   ChatMessageScrollerProvider,
   ChatMessageScrollerViewport,
   Spinner,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
+import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import {
   userDisplayName,
   userInitials,
-} from "@posthog/ui/features/canvas/components/ThreadPanel";
+} from "@posthog/ui/features/canvas/utils/userDisplay";
 import { xmlToPlainText } from "@posthog/ui/features/message-editor/content";
 import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
-import { Avatar, Text } from "@radix-ui/themes";
+import { Text } from "@radix-ui/themes";
 import { useMemo } from "react";
+
+// Feed rows poll their reply counts slower than the open thread panel — the
+// shared query key means an open panel naturally speeds the row up too.
+const FEED_REPLIES_POLL_INTERVAL_MS = 15_000;
 
 const STATUS_LABELS: Record<TaskRunStatus, string> = {
   not_started: "Not started",
@@ -34,6 +53,16 @@ const STATUS_LABELS: Record<TaskRunStatus, string> = {
   completed: "Completed",
   failed: "Failed",
   cancelled: "Cancelled",
+};
+
+const ORIGIN_LABELS: Record<string, string> = {
+  error_tracking: "Error tracking",
+  signal_report: "Signal report",
+  signals_scout: "Signals scout",
+  automation: "Automation",
+  slack: "Slack",
+  onboarding: "Onboarding",
+  session_summaries: "Session summaries",
 };
 
 function statusBadge(status: TaskRunStatus | undefined) {
@@ -66,6 +95,121 @@ function promptText(task: Task): string {
   }
 }
 
+// The card's context line, mirroring the storybook feed: who/what kicked the
+// task off ("Requested by @Ann" for humans, the origin product otherwise).
+function TaskCardOrigin({ task }: { task: Task }) {
+  const isUserCreated = task.origin_product === "user_created";
+  const label = isUserCreated
+    ? `Requested by @${userDisplayName(task.created_by)}`
+    : (ORIGIN_LABELS[task.origin_product] ?? task.origin_product);
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
+      {isUserCreated ? <UserIcon size={12} /> : <RobotIcon size={12} />}
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
+// The task the message kicked off, as a card everyone in the channel sees:
+// origin + status up top, bold title, then run metadata.
+function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
+  const prUrl =
+    typeof task.latest_run?.output?.pr_url === "string"
+      ? task.latest_run.output.pr_url
+      : undefined;
+  const meta = [
+    task.slug || null,
+    task.repository,
+    task.latest_run?.stage ?? null,
+    task.latest_run?.environment === "cloud" ? "Cloud" : null,
+  ].filter(Boolean) as string[];
+
+  return (
+    <Card
+      size="sm"
+      className="mt-1.5 max-w-xl cursor-pointer transition-colors hover:border-border-primary"
+      onClick={onOpen}
+    >
+      <CardContent className="flex flex-col gap-1 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <TaskCardOrigin task={task} />
+          {statusBadge(task.latest_run?.status)}
+        </div>
+        <Text size="2" weight="medium" className="line-clamp-2">
+          {task.title || "Untitled task"}
+        </Text>
+        {(meta.length > 0 || prUrl) && (
+          <div className="flex min-w-0 items-center gap-3">
+            {task.repository && (
+              <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
+                <GitBranchIcon size={12} />
+                {task.repository}
+              </span>
+            )}
+            <Text size="1" className="truncate text-muted-foreground">
+              {meta.filter((m) => m !== task.repository).join(" · ")}
+            </Text>
+            {prUrl && (
+              <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
+                <ArrowSquareOutIcon size={12} />
+                PR
+              </span>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Slack-style thread teaser under the card: reply-author facepile, count, and
+// last-reply time. Only renders once the thread has messages; starting a
+// thread lives in the row's hover toolbar.
+function RepliesRow({
+  taskId,
+  onOpenThread,
+}: {
+  taskId: string;
+  onOpenThread: () => void;
+}) {
+  const { messages } = useTaskThread(taskId, {
+    pollIntervalMs: FEED_REPLIES_POLL_INTERVAL_MS,
+  });
+  const authors = useMemo(() => {
+    const seen = new Map<string, (typeof messages)[number]["author"]>();
+    for (const message of messages) {
+      const key = message.author?.uuid ?? "unknown";
+      if (!seen.has(key)) seen.set(key, message.author);
+    }
+    return [...seen.values()].slice(0, 4);
+  }, [messages]);
+
+  if (messages.length === 0) return null;
+  const last = messages[messages.length - 1];
+
+  return (
+    <button
+      type="button"
+      onClick={onOpenThread}
+      className="mt-1 flex w-fit items-center gap-2 rounded-md px-1.5 py-1 hover:bg-fill-secondary"
+    >
+      <AvatarGroup size="xs" stacked>
+        {authors.map((author, index) => (
+          <Avatar key={author?.uuid ?? index} size="xs">
+            <AvatarFallback>{userInitials(author)}</AvatarFallback>
+          </Avatar>
+        ))}
+      </AvatarGroup>
+      <Text size="1" weight="medium" className="text-accent-11">
+        {messages.length} {messages.length === 1 ? "reply" : "replies"}
+      </Text>
+      <Text size="1" className="text-muted-foreground">
+        Last reply {formatRelativeTimeShort(last.created_at)}
+      </Text>
+    </button>
+  );
+}
+
 function FeedItem({
   task,
   onOpenTask,
@@ -76,84 +220,78 @@ function FeedItem({
   onOpenThread: (task: Task) => void;
 }) {
   const prompt = useMemo(() => promptText(task), [task]);
-  const prUrl =
-    typeof task.latest_run?.output?.pr_url === "string"
-      ? task.latest_run.output.pr_url
-      : undefined;
+  const isAgent = !task.created_by || task.origin_product !== "user_created";
 
   return (
-    <div className="group relative flex gap-2.5 px-4 py-2.5 hover:bg-fill-secondary/50">
-      <Avatar
-        size="2"
-        radius="full"
-        fallback={userInitials(task.created_by)}
-        className="mt-0.5 shrink-0"
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <Text size="2" weight="medium" className="truncate">
-            {userDisplayName(task.created_by)}
+    <ChatMessage className="group relative rounded-md px-3 py-2 hover:bg-fill-secondary/50">
+      <ChatMessageAvatar>
+        <Avatar>
+          <AvatarFallback>
+            {isAgent && !task.created_by ? (
+              <RobotIcon size={16} />
+            ) : (
+              userInitials(task.created_by)
+            )}
+          </AvatarFallback>
+        </Avatar>
+      </ChatMessageAvatar>
+      <ChatMessageContent className="min-w-0 gap-0.5">
+        <ChatMessageHeader className="items-baseline gap-2">
+          <Text size="2" weight="bold" className="truncate">
+            {task.created_by ? userDisplayName(task.created_by) : "Agent"}
           </Text>
+          {isAgent && <Badge variant="info">Agent</Badge>}
           <Text size="1" className="shrink-0 text-muted-foreground">
             {formatRelativeTimeShort(task.created_at)}
           </Text>
-        </div>
+        </ChatMessageHeader>
 
-        <Text
-          size="2"
-          className="mt-0.5 line-clamp-4 block whitespace-pre-wrap break-words"
-        >
+        <Text size="2" className="line-clamp-4 whitespace-pre-wrap break-words">
           {prompt}
         </Text>
 
-        {/* The task the message kicked off, as a card everyone in the channel sees. */}
-        <Card
-          size="sm"
-          className="mt-2 max-w-xl cursor-pointer transition-colors hover:border-border-primary"
-          onClick={() => onOpenTask(task)}
-        >
-          <CardContent className="flex flex-col gap-1.5 py-2.5">
-            <div className="flex items-center gap-2">
-              {statusBadge(task.latest_run?.status)}
-              {task.latest_run?.stage && (
-                <Text size="1" className="text-muted-foreground">
-                  {task.latest_run.stage}
-                </Text>
-              )}
-            </div>
-            <Text size="2" weight="medium" className="line-clamp-2">
-              {task.title || "Untitled task"}
-            </Text>
-            <div className="flex items-center gap-3">
-              {task.repository && (
-                <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
-                  <GitBranchIcon size={12} />
-                  {task.repository}
-                </span>
-              )}
-              {prUrl && (
-                <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
-                  <ArrowSquareOutIcon size={12} />
-                  PR
-                </span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <TaskCard task={task} onOpen={() => onOpenTask(task)} />
+        <RepliesRow taskId={task.id} onOpenThread={() => onOpenThread(task)} />
+      </ChatMessageContent>
 
-        <div className="mt-1">
-          <Button
-            variant="default"
-            size="xs"
-            onClick={() => onOpenThread(task)}
-            className="opacity-0 transition-opacity group-hover:opacity-100"
-          >
-            <ChatCircleIcon size={13} />
-            Reply in thread
-          </Button>
-        </div>
+      {/* Hover toolbar, storybook-style: floats top-right of the row. */}
+      <div className="absolute top-1 right-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <TooltipProvider delay={400}>
+          <ButtonGroup className="rounded-md border border-border bg-surface shadow-sm">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="default"
+                    size="icon-sm"
+                    aria-label="Reply in thread"
+                    onClick={() => onOpenThread(task)}
+                  >
+                    <ChatCircleIcon size={15} />
+                  </Button>
+                }
+              />
+              <TooltipContent side="top">Reply in thread</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="default"
+                    size="icon-sm"
+                    aria-label="Open task"
+                    onClick={() => onOpenTask(task)}
+                  >
+                    <ArrowSquareOutIcon size={15} />
+                  </Button>
+                }
+              />
+              <TooltipContent side="top">Open task</TooltipContent>
+            </Tooltip>
+          </ButtonGroup>
+        </TooltipProvider>
       </div>
-    </div>
+    </ChatMessage>
   );
 }
 
@@ -189,7 +327,7 @@ export function ChannelFeedView({
     <ChatMessageScrollerProvider defaultScrollPosition="end">
       <ChatMessageScroller className="min-h-0 flex-1">
         <ChatMessageScrollerViewport>
-          <ChatMessageScrollerContent className="mx-auto w-full max-w-[820px] py-3">
+          <ChatMessageScrollerContent className="mx-auto w-full max-w-[820px] px-1 py-3">
             {tasks.map((task) => (
               <ChatMessageScrollerItem key={task.id} messageId={task.id}>
                 <FeedItem
