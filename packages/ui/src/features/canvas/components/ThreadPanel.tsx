@@ -9,11 +9,14 @@ import {
 import {
   Badge,
   Button,
-  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
   Spinner,
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
@@ -272,8 +275,8 @@ export function ThreadPanel({
       </div>
 
       <div className="border-border border-t p-2">
-        <div className="flex items-end gap-1 rounded-md border border-border bg-surface p-1">
-          <textarea
+        <InputGroup className="h-auto cursor-text bg-card">
+          <InputGroupTextarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -284,21 +287,22 @@ export function ThreadPanel({
             }}
             placeholder="Reply in thread…"
             rows={2}
-            className={cn(
-              "max-h-40 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5",
-              "text-[13px] outline-none placeholder:text-muted-foreground",
-            )}
+            className="max-h-40 text-[13px]"
           />
-          <Button
-            variant="primary"
-            size="icon-sm"
-            aria-label="Send"
-            disabled={!draft.trim() || isPosting}
-            onClick={submit}
-          >
-            <PaperPlaneRightIcon size={14} />
-          </Button>
-        </div>
+          <InputGroupAddon align="block-end" className="p-1">
+            <span className="ml-auto flex items-center gap-1">
+              <InputGroupButton
+                variant="primary"
+                size="icon-sm"
+                aria-label="Send"
+                disabled={!draft.trim() || isPosting}
+                onClick={submit}
+              >
+                <PaperPlaneRightIcon size={14} />
+              </InputGroupButton>
+            </span>
+          </InputGroupAddon>
+        </InputGroup>
       </div>
     </div>
   );
