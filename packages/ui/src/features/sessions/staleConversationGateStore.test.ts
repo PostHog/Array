@@ -1,22 +1,22 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useStaleConversationGateStore } from "./staleConversationGateStore";
 
+const acknowledged = (id: string) =>
+  useStaleConversationGateStore.getState().acknowledgedSessions.has(id);
+
 describe("useStaleConversationGateStore", () => {
   beforeEach(() => {
     useStaleConversationGateStore.setState({ acknowledgedSessions: new Set() });
   });
 
   it("starts with nothing acknowledged", () => {
-    expect(useStaleConversationGateStore.getState().isAcknowledged("s1")).toBe(
-      false,
-    );
+    expect(acknowledged("s1")).toBe(false);
   });
 
   it("acknowledges a single session without affecting others", () => {
     useStaleConversationGateStore.getState().acknowledge("s1");
-    const state = useStaleConversationGateStore.getState();
-    expect(state.isAcknowledged("s1")).toBe(true);
-    expect(state.isAcknowledged("s2")).toBe(false);
+    expect(acknowledged("s1")).toBe(true);
+    expect(acknowledged("s2")).toBe(false);
   });
 
   it("replaces the Set immutably on acknowledge", () => {
@@ -35,14 +35,5 @@ describe("useStaleConversationGateStore", () => {
     const second =
       useStaleConversationGateStore.getState().acknowledgedSessions;
     expect(second).toBe(first);
-  });
-
-  it("reset clears a single session's acknowledgement", () => {
-    const { acknowledge, reset } = useStaleConversationGateStore.getState();
-    acknowledge("s1");
-    reset("s1");
-    expect(useStaleConversationGateStore.getState().isAcknowledged("s1")).toBe(
-      false,
-    );
   });
 });

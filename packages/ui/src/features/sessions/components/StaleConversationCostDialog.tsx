@@ -1,39 +1,30 @@
 import { Warning } from "@phosphor-icons/react";
+import { formatRelativeTimeLong } from "@posthog/shared";
+import { formatTokensCompact } from "@posthog/ui/features/sessions/contextColors";
 import { AlertDialog, Button, Flex } from "@radix-ui/themes";
 
 interface StaleConversationCostDialogProps {
   open: boolean;
   usedTokens: number;
-  idleMs: number;
+  lastActivityAt: number | null;
   /** Cumulative session cost so far, when the gateway reports it. */
   costUsd: number | null;
   onContinue: () => void;
   onOpenChange: (open: boolean) => void;
 }
 
-function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}k`;
-  return `${tokens}`;
-}
-
-function formatIdle(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `${Math.max(1, minutes)} min`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`;
-  const days = Math.round(hours / 24);
-  return `${days} day${days === 1 ? "" : "s"}`;
-}
-
 export function StaleConversationCostDialog({
   open,
   usedTokens,
-  idleMs,
+  lastActivityAt,
   costUsd,
   onContinue,
   onOpenChange,
 }: StaleConversationCostDialogProps) {
+  const activity =
+    lastActivityAt !== null
+      ? `was last active ${formatRelativeTimeLong(lastActivityAt)}`
+      : "has been idle";
   return (
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialog.Content maxWidth="460px" size="2">
@@ -44,10 +35,10 @@ export function StaleConversationCostDialog({
           </Flex>
         </AlertDialog.Title>
         <AlertDialog.Description className="text-sm">
-          This conversation holds about {formatTokens(usedTokens)} tokens and
-          has been idle for {formatIdle(idleMs)}. Its prompt cache has likely
-          expired, so your next message re-processes the whole conversation at
-          full input price instead of the ~10% cached rate
+          This conversation holds about {formatTokensCompact(usedTokens)} tokens
+          and {activity}. Its prompt cache has likely expired, so your next
+          message re-processes the whole conversation at full input price
+          instead of the ~10% cached rate
           {costUsd !== null ? ` (≈$${costUsd.toFixed(2)} spent so far)` : ""}.
           Starting a new conversation avoids the cost — continue only if you
           need this thread's context.

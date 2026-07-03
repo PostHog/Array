@@ -4,6 +4,7 @@ import {
   createContextUsageTracker,
   DEFAULT_STALE_COSTLY_THRESHOLD,
   extractContextUsage,
+  extractLastActivityAt,
   shouldWarnStaleCostlyConversation,
 } from "./contextUsage";
 
@@ -226,5 +227,19 @@ describe("shouldWarnStaleCostlyConversation", () => {
         now,
       }),
     ).toBe(true);
+  });
+});
+
+describe("extractLastActivityAt", () => {
+  it("returns null for an empty event list", () => {
+    expect(extractLastActivityAt([])).toBeNull();
+  });
+
+  it("returns the ts of the most recent event", () => {
+    const events: AcpMessage[] = [
+      { ...agentChunkEvent(), ts: 10 },
+      { ...usageUpdateEvent(50_000, 200_000), ts: 20 },
+    ];
+    expect(extractLastActivityAt(events)).toBe(20);
   });
 });

@@ -119,10 +119,8 @@ export interface StaleCostlyThreshold {
   /** Minimum context tokens for a conversation to count as "large". */
   tokens: number;
   /**
-   * Minimum idle time (ms) before a conversation counts as "stale" — set at or
-   * above the prompt-cache TTL so that, once exceeded, the cache is expired and
-   * the next turn re-processes the whole prefix at full input price instead of
-   * the ~10% cached-read rate.
+   * Minimum idle time (ms) before a conversation counts as "stale". See
+   * {@link DEFAULT_STALE_COSTLY_THRESHOLD} for how this bound is chosen.
    */
   staleMs: number;
 }
@@ -147,17 +145,13 @@ export const DEFAULT_STALE_COSTLY_THRESHOLD: StaleCostlyThreshold = {
 };
 
 /**
- * Decide whether to warn that continuing a conversation will be costly.
+ * Decide whether to warn that continuing a conversation will be costly: true
+ * when it is both large (>= `threshold.tokens`) and stale (idle >=
+ * `threshold.staleMs`). See {@link DEFAULT_STALE_COSTLY_THRESHOLD} for the
+ * pricing rationale behind the defaults.
  *
- * Flags a conversation that is both large (>= `threshold.tokens` of context)
- * and stale (idle >= `threshold.staleMs`). Staleness approximates whether the
- * Anthropic prompt cache has expired: continuing a stale, large conversation
- * re-sends the whole prefix at full input price rather than the cached-read
- * rate, so starting fresh is often cheaper.
- *
- * Pure and time-injected (no `Date.now()`) so it stays host-agnostic and
- * testable. A `null` `lastActivityAt` (no activity yet) never warns, and a
- * future timestamp (clock skew) reads as fresh, not stale.
+ * Pure and time-injected (no `Date.now()`). A `null` `lastActivityAt` never
+ * warns, and a future timestamp (clock skew) reads as fresh.
  */
 export function shouldWarnStaleCostlyConversation(args: {
   usedTokens: number;
@@ -170,4 +164,16 @@ export function shouldWarnStaleCostlyConversation(args: {
   if (lastActivityAt === null) return false;
   if (usedTokens < threshold.tokens) return false;
   return now - lastActivityAt >= threshold.staleMs;
+}
+
+/**
+ * Best-effort "time of last activity" for a session: the emit timestamp of the
+ * most recent event, or null for an empty list. Heuristic proxy for
+ * prompt-cache freshness — `ts` is stamped on *any* AcpMessage (agent chunks,
+ * tool calls, client-side events), not only turns sent to the model, so a
+ * purely local event can reset it without the cache being refreshed. Good
+ * enough for a soft cost warning; not a billing signal.
+ */
+export function extractLastActivityAt(events: AcpMessage[]): number | null {
+  return events.length > 0 ? events[events.length - 1].ts : null;
 }
