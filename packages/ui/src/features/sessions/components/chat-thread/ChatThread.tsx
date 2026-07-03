@@ -172,10 +172,10 @@ function groupToolRuns(items: ConversationItem[]): ThreadItem[] {
 }
 
 /**
- * Collapse each contiguous run of non-user rows into one {@link AgentTurn}, broken only by a user
- * message (which stays a standalone row so it remains the scroll anchor for the sticky header and
- * auto-follow). The turn block renders as a single muted card, tightening the spacing between the
- * agent's successive replies and tool calls.
+ * Collapse each contiguous run of non-user rows into one {@link AgentTurn}, broken only by a
+ * user-initiated row (which stays standalone so it remains the scroll anchor for the sticky header
+ * and auto-follow). The turn block renders as a single muted card, tightening the spacing between
+ * the agent's successive replies and tool calls.
  */
 function groupIntoTurns(rows: ThreadItem[]): TurnRow[] {
   const out: TurnRow[] = [];
@@ -187,7 +187,15 @@ function groupIntoTurns(rows: ThreadItem[]): TurnRow[] {
     }
   };
   for (const row of rows) {
-    if (row.type === "user_message") {
+    // git_action and skill_button_action stand in for the user's message when the prompt was a
+    // git operation or a skill button click (see handlePromptRequest) — they open a turn just
+    // like a user message, so they break the agent card too rather than render inside it as if
+    // they were agent output. Same boundary set as the legacy view's buildThreadGroups.
+    if (
+      row.type === "user_message" ||
+      row.type === "git_action" ||
+      row.type === "skill_button_action"
+    ) {
       flush();
       out.push(row);
     } else {
