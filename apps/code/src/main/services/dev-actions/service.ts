@@ -3,6 +3,8 @@ import {
   type IDevHostActions,
 } from "@posthog/platform/dev-host-actions";
 import { TypedEventEmitter } from "@posthog/shared";
+import { UPDATES_SERVICE } from "@posthog/core/updates/identifiers";
+import type { UpdatesService } from "@posthog/core/updates/updates";
 import { inject, injectable } from "inversify";
 import { DEV_NETWORK_SERVICE } from "../../di/tokens";
 import { getUserDataDir } from "../../utils/env";
@@ -25,6 +27,8 @@ export class DevActionsService extends TypedEventEmitter<DevActionsEvents> {
     private readonly network: DevNetworkService,
     @inject(DEV_HOST_ACTIONS_SERVICE)
     private readonly host: IDevHostActions,
+    @inject(UPDATES_SERVICE)
+    private readonly updates: UpdatesService,
   ) {
     super();
   }
@@ -44,6 +48,17 @@ export class DevActionsService extends TypedEventEmitter<DevActionsEvents> {
   restartMain(): void {
     log.warn("Restarting main process from dev toolbar");
     this.host.relaunch();
+  }
+
+  /**
+   * Surfaces the real update banner in the sidebar without a packaged build or
+   * a downloaded artifact. Clicking the banner's Restart then runs the normal
+   * install path (which persists the restore-fullscreen intent and relaunches),
+   * so the update-restart behaviour can be exercised in local dev.
+   */
+  simulateUpdate(): void {
+    log.warn("Simulating an available update from dev toolbar");
+    this.updates.simulateUpdateReady();
   }
 
   crashMain(): void {

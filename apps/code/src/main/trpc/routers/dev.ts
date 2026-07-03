@@ -162,6 +162,11 @@ export const devRouter = router({
     return { ok: true };
   }),
 
+  simulateUpdate: devProcedure.mutation(() => {
+    getActionsService().simulateUpdate();
+    return { ok: true };
+  }),
+
   crashMain: devProcedure.mutation(() => {
     getActionsService().crashMain();
     return { ok: true };
