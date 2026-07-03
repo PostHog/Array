@@ -210,7 +210,7 @@ function formatTimestamp(ts: number): string {
 }
 
 /**
- * Hover-revealed timestamp rendered left-aligned under agent-side content (the end-aligned user
+ * Hover-revealed timestamp rendered right-aligned under agent-side content (the end-aligned user
  * bubble keeps its own right-aligned footer). Sits inside a `group` container so it fades in only
  * while that container is hovered. Shown once per completed agent turn (under the turn card)
  * rather than on every message — per-row it was too noisy.
