@@ -111,3 +111,54 @@ function extractBreakdown(msg: AcpMessage["message"]): ContextBreakdown | null {
   const params = msg.params as { breakdown?: ContextBreakdown } | undefined;
   return params?.breakdown ?? null;
 }
+
+/**
+ * Threshold controlling when {@link shouldWarnStaleCostlyConversation} fires.
+ */
+export interface StaleCostlyThreshold {
+  /** Minimum context tokens for a conversation to count as "large". */
+  tokens: number;
+  /**
+   * Minimum idle time (ms) before a conversation counts as "stale". Set to
+   * roughly the Anthropic prompt-cache TTL: once the cache expires, the next
+   * turn re-processes the whole prefix at full input price instead of the
+   * ~10% cached-read rate.
+   */
+  staleMs: number;
+}
+
+/**
+ * Defaults for the stale-costly conversation warning: a conversation large
+ * enough that a cold cache rebuild is noticeable, left idle past the default
+ * 5-minute prompt-cache TTL.
+ */
+export const DEFAULT_STALE_COSTLY_THRESHOLD: StaleCostlyThreshold = {
+  tokens: 40_000,
+  staleMs: 5 * 60 * 1000,
+};
+
+/**
+ * Decide whether to warn that continuing a conversation will be costly.
+ *
+ * Flags a conversation that is both large (>= `threshold.tokens` of context)
+ * and stale (idle >= `threshold.staleMs`). Staleness approximates whether the
+ * Anthropic prompt cache has expired: continuing a stale, large conversation
+ * re-sends the whole prefix at full input price rather than the cached-read
+ * rate, so starting fresh is often cheaper.
+ *
+ * Pure and time-injected (no `Date.now()`) so it stays host-agnostic and
+ * testable. A `null` `lastActivityAt` (no activity yet) never warns, and a
+ * future timestamp (clock skew) reads as fresh, not stale.
+ */
+export function shouldWarnStaleCostlyConversation(args: {
+  usedTokens: number;
+  lastActivityAt: number | null;
+  now: number;
+  threshold?: StaleCostlyThreshold;
+}): boolean {
+  const { usedTokens, lastActivityAt, now } = args;
+  const threshold = args.threshold ?? DEFAULT_STALE_COSTLY_THRESHOLD;
+  if (lastActivityAt === null) return false;
+  if (usedTokens < threshold.tokens) return false;
+  return now - lastActivityAt >= threshold.staleMs;
+}

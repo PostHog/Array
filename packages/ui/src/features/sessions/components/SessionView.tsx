@@ -1,4 +1,5 @@
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
+import { shouldWarnStaleCostlyConversation } from "@posthog/core/sessions/contextUsage";
 import {
   createLatestPlanTracker,
   SESSION_SERVICE,
@@ -7,6 +8,7 @@ import {
 import { useService } from "@posthog/di/react";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
+import { useMeQuery } from "@posthog/ui/features/auth/useMeQuery";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import {
   PromptInput,
@@ -29,9 +31,11 @@ import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/Que
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
+import { StaleConversationCostDialog } from "@posthog/ui/features/sessions/components/StaleConversationCostDialog";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { useContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
 import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/useSessionEventsResidency";
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
@@ -44,6 +48,7 @@ import {
   useSessionViewActions,
   useShowRawLogs,
 } from "@posthog/ui/features/sessions/sessionViewStore";
+import { useStaleConversationGateStore } from "@posthog/ui/features/sessions/staleConversationGateStore";
 import type { Plan } from "@posthog/ui/features/sessions/types";
 import { useSessionHandoffInProgress } from "@posthog/ui/features/sessions/useSession";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
@@ -264,6 +269,41 @@ export function SessionView({
     },
     [isOnline, onBeforeSubmit],
   );
+
+  // Warn PostHog employees before continuing a large conversation that has gone
+  // idle long enough that its Anthropic prompt cache has likely expired — the
+  // next turn would re-process the whole prefix at full price rather than the
+  // ~10% cached rate. Gated to staff via `is_staff`; dismissible per session.
+  const contextUsage = useContextUsage(events);
+  const { data: currentUser } = useMeQuery();
+  const isStaff = currentUser?.is_staff === true;
+  const staleConversationAcknowledged = useStaleConversationGateStore((s) =>
+    s.acknowledgedSessions.has(sessionId),
+  );
+  const acknowledgeStaleConversation = useStaleConversationGateStore(
+    (s) => s.acknowledge,
+  );
+  const lastActivityAt =
+    events.length > 0 ? events[events.length - 1].ts : null;
+  const now = Date.now();
+  const costGateActive =
+    isStaff &&
+    !staleConversationAcknowledged &&
+    shouldWarnStaleCostlyConversation({
+      usedTokens: contextUsage?.used ?? 0,
+      lastActivityAt,
+      now,
+    });
+  // Track which session the cost dialog was dismissed for, so switching to a
+  // different gated session re-opens it — without a reset effect.
+  const [costGateDismissedFor, setCostGateDismissedFor] = useState<
+    string | null
+  >(null);
+  const costGateDialogOpen =
+    costGateActive && costGateDismissedFor !== sessionId;
+  const handleContinueStaleConversation = useCallback(() => {
+    acknowledgeStaleConversation(sessionId);
+  }, [acknowledgeStaleConversation, sessionId]);
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
@@ -617,16 +657,50 @@ export function SessionView({
                         }
                       >
                         {taskId && <QueuedMessagesDock taskId={taskId} />}
+                        {costGateActive && !costGateDialogOpen && (
+                          <Flex justify="center" mb="2">
+                            <Button
+                              variant="soft"
+                              color="amber"
+                              size="1"
+                              onClick={() => setCostGateDismissedFor(null)}
+                            >
+                              <Warning size={14} weight="fill" />
+                              Conversation paused to avoid a costly reload —
+                              review
+                            </Button>
+                          </Flex>
+                        )}
+                        <StaleConversationCostDialog
+                          open={costGateDialogOpen}
+                          usedTokens={contextUsage?.used ?? 0}
+                          idleMs={
+                            lastActivityAt !== null
+                              ? Math.max(0, now - lastActivityAt)
+                              : 0
+                          }
+                          costUsd={contextUsage?.cost?.amount ?? null}
+                          onContinue={handleContinueStaleConversation}
+                          onOpenChange={(open) =>
+                            setCostGateDismissedFor(open ? null : sessionId)
+                          }
+                        />
                         <PromptInput
                           ref={editorRef}
                           sessionId={sessionId}
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
-                          disabled={!isRunning && !handoffInProgress}
+                          disabled={
+                            (!isRunning && !handoffInProgress) || costGateActive
+                          }
                           submitDisabledExternal={
                             handoffInProgress || !isOnline
                           }
                           submitTooltipOverride={
-                            !isOnline ? "No internet connection" : undefined
+                            costGateActive
+                              ? "Large idle conversation — review the cost notice to continue"
+                              : !isOnline
+                                ? "No internet connection"
+                                : undefined
                           }
                           isLoading={!!isPromptPending}
                           isActiveSession={isActiveSession}
