@@ -194,6 +194,7 @@ export const useGitInteractionStore = create<GitInteractionStore>()(
             prBody: existingDraft?.prBody ?? "",
             isGeneratingCommitMessage: false,
             isGeneratingPr: false,
+            isSubmitting: false,
             activeCreatePrDraftKey: draftKey,
           });
         },
@@ -201,7 +202,7 @@ export const useGitInteractionStore = create<GitInteractionStore>()(
           const state = get();
           const key = state.activeCreatePrDraftKey;
           if (key === null) {
-            set({ createPrOpen: false });
+            set({ createPrOpen: false, isSubmitting: false });
             return;
           }
           const snapshot: CreatePrDraftValues = {
@@ -220,6 +221,7 @@ export const useGitInteractionStore = create<GitInteractionStore>()(
             createPrOpen: false,
             createPrDrafts: nextDrafts,
             activeCreatePrDraftKey: null,
+            isSubmitting: false,
           });
         },
         setCreatePrStep: (step) => set({ createPrStep: step }),
