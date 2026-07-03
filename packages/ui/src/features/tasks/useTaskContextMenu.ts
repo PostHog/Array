@@ -38,7 +38,7 @@ export function useTaskContextMenu() {
 
   const showContextMenu = useCallback(
     async (
-      task: Task,
+      task: Pick<Task, "id" | "title">,
       event: React.MouseEvent,
       options?: {
         worktreePath?: string;

@@ -237,10 +237,10 @@ function SidebarMenuComponent() {
       clearSelection();
     }
 
-    const task = taskMap.get(taskId);
+    const taskData = allSidebarTasks.find((t) => t.id === taskId);
+    const task = taskMap.get(taskId) ?? taskData;
     if (task) {
       const workspace = workspaces[taskId];
-      const taskData = allSidebarTasks.find((t) => t.id === taskId);
       const isInCommandCenter = commandCenterCells.some(
         (id) => id === taskId && taskMap.has(id),
       );
