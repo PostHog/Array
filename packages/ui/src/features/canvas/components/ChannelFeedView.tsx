@@ -32,6 +32,9 @@ import {
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
+import { isTerminalStatus } from "@posthog/shared/domain-types";
+import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
+import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import {
   userDisplayName,
@@ -65,8 +68,7 @@ const ORIGIN_LABELS: Record<string, string> = {
   session_summaries: "Session summaries",
 };
 
-function statusBadge(status: TaskRunStatus | undefined) {
-  if (!status) return <Badge>Draft</Badge>;
+function statusBadge(status: TaskRunStatus) {
   const variant =
     status === "completed"
       ? "success"
@@ -81,6 +83,32 @@ function statusBadge(status: TaskRunStatus | undefined) {
       {STATUS_LABELS[status]}
     </Badge>
   );
+}
+
+// Live status for the card, derived the same way the sidebar's TaskIcon does
+// (via useChannelTaskData: local session + workspace + cloud run). The raw
+// `latest_run.status` alone is wrong for local runs — the backend row often
+// stays "queued" while the agent runs on the creator's machine — so it is
+// only trusted for cloud runs and terminal states (which imply a sync).
+function TaskStatusBadge({ task }: { task: Task }) {
+  const data = useChannelTaskData(task);
+  if (data?.needsPermission)
+    return <Badge variant="warning">Needs input</Badge>;
+  if (data?.isGenerating) {
+    return (
+      <Badge variant="info">
+        <Spinner className="size-2.5" />
+        In progress
+      </Badge>
+    );
+  }
+  const status = data?.taskRunStatus ?? task.latest_run?.status;
+  const environment = data?.taskRunEnvironment ?? task.latest_run?.environment;
+  if (!status) return <Badge>Draft</Badge>;
+  if (environment === "cloud" || isTerminalStatus(status)) {
+    return statusBadge(status);
+  }
+  return <Badge>Local</Badge>;
 }
 
 // The prompt as the user typed it: drop the channel CONTEXT.md block the saga
@@ -127,17 +155,23 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   return (
     <Card
       size="sm"
-      className="mt-1.5 max-w-xl cursor-pointer transition-colors hover:border-border-primary"
+      className="mt-1.5 w-full cursor-pointer transition-colors hover:border-border-primary"
       onClick={onOpen}
     >
       <CardContent className="flex flex-col gap-1 py-2.5">
         <div className="flex items-center justify-between gap-2">
           <TaskCardOrigin task={task} />
-          {statusBadge(task.latest_run?.status)}
+          <TaskStatusBadge task={task} />
         </div>
-        <Text size="2" weight="medium" className="line-clamp-2">
-          {task.title || "Untitled task"}
-        </Text>
+        <div className="flex min-w-0 items-center gap-1.5">
+          {/* Same live status icon as the code side nav, so the card and the
+              nav never disagree (generating spinner, needs-permission, cloud
+              status colors, PR state). */}
+          <TaskTabIcon task={task} size={14} />
+          <Text size="2" weight="medium" className="line-clamp-2">
+            {task.title || "Untitled task"}
+          </Text>
+        </div>
         {(meta.length > 0 || prUrl) && (
           <div className="flex min-w-0 items-center gap-3">
             {task.repository && (
@@ -224,7 +258,10 @@ function FeedItem({
 
   return (
     <ChatMessage className="group relative rounded-md px-3 py-2 hover:bg-fill-secondary/50">
-      <ChatMessageAvatar>
+      {/* Quill's avatar slot bottom-aligns for bubble chats; a Slack feed
+          anchors it beside the name row. The slot draws its own circle, so
+          drop its background and let the inner Avatar render. */}
+      <ChatMessageAvatar className="self-start bg-transparent">
         <Avatar>
           <AvatarFallback>
             {isAgent && !task.created_by ? (
@@ -236,7 +273,7 @@ function FeedItem({
         </Avatar>
       </ChatMessageAvatar>
       <ChatMessageContent className="min-w-0 gap-0.5">
-        <ChatMessageHeader className="items-baseline gap-2">
+        <ChatMessageHeader className="items-baseline gap-2 px-0">
           <Text size="2" weight="bold" className="truncate">
             {task.created_by ? userDisplayName(task.created_by) : "Agent"}
           </Text>
