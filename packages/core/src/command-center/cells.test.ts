@@ -1,7 +1,7 @@
 import type { Task } from "@posthog/shared/domain-types";
 import { describe, expect, it } from "vitest";
 import { buildCommandCenterCells } from "./cells";
-import { BRAINROT_CELL } from "./grid";
+import { BRAINROT_CELL, makeTerminalCellValue } from "./grid";
 
 const EMPTY_INPUT = {
   taskById: new Map<string, Task>(),
@@ -23,9 +23,21 @@ describe("buildCommandCenterCells", () => {
       },
     },
     {
+      name: "terminal cell exposes its terminal id and no task",
+      input: makeTerminalCellValue("term-1"),
+      expected: {
+        cellIndex: 0,
+        terminalId: "term-1",
+        isBrainrot: false,
+        taskId: null,
+        task: undefined,
+        status: "idle",
+      },
+    },
+    {
       name: "empty cell is a non-brainrot empty slot",
       input: null,
-      expected: { isBrainrot: false, taskId: null },
+      expected: { isBrainrot: false, taskId: null, terminalId: null },
     },
     {
       name: "unknown task id is a non-brainrot cell",

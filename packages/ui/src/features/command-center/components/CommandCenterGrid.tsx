@@ -1,3 +1,4 @@
+import { destroyShellTerminal } from "@posthog/ui/features/terminal/destroyShellTerminal";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
 import {
@@ -6,6 +7,7 @@ import {
   useCommandCenterStore,
 } from "../commandCenterStore";
 import type { CommandCenterCellData } from "../hooks/useCommandCenterData";
+import { getTerminalCellStateKey } from "../terminalCells";
 import { CommandCenterPanel } from "./CommandCenterPanel";
 
 interface CommandCenterGridProps {
@@ -105,10 +107,13 @@ function GridCell({
       setIsDragOver(false);
       const taskId = e.dataTransfer.getData("text/x-task-id");
       if (taskId) {
+        if (cell.terminalId) {
+          destroyShellTerminal(getTerminalCellStateKey(cell.terminalId));
+        }
         useCommandCenterStore.getState().assignTask(cell.cellIndex, taskId);
       }
     },
-    [cell.cellIndex],
+    [cell.cellIndex, cell.terminalId],
   );
 
   return (
