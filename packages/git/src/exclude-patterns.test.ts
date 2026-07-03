@@ -32,7 +32,12 @@ describe("matchesExcludePatterns", () => {
     ],
     ["comment lines never match", "# .env", ".env", false],
     ["star glob within a segment", "*.local", ".env.local", true],
-    ["star glob does not cross directories", "*.local", "a/b.local", true],
+    [
+      "star glob matches a nested file via the non-anchored prefix",
+      "*.local",
+      "a/b.local",
+      true,
+    ],
     ["star does not span slashes", "a*b", "a/b", false],
     ["question mark matches one char", ".env?", ".envX", true],
     ["question mark does not match slash", ".env?", ".env/", false],
@@ -87,8 +92,33 @@ describe("matchesExcludePatterns", () => {
     ["escaped bang matches literal bang", "\\!important", "!important", true],
     ["escaped hash matches literal hash", "\\#file", "#file", true],
     ["trailing spaces are trimmed", ".env   ", ".env", true],
+    ["CRLF line endings do not defeat matching", ".env\r\n", ".env", true],
+    [
+      "consecutive double-star segments collapse",
+      "**/**/logs",
+      "a/b/logs",
+      true,
+    ],
   ])("%s", (_label, content, entry, expected) => {
     expect(matches(content, entry)).toBe(expected);
+  });
+
+  it("skips a malformed pattern line instead of dropping the whole file", () => {
+    // An unterminated char class on one line must not throw out the valid ones.
+    const patterns = parseExcludePatterns(".env\n[\n.envrc");
+    expect(matchesExcludePatterns(".env", patterns)).toBe(true);
+    expect(matchesExcludePatterns(".envrc", patterns)).toBe(true);
+  });
+
+  it("matches a pathological consecutive-double-star pattern in bounded time", () => {
+    // Regression for ReDoS: a run of `**/` used to compile to that many
+    // overlapping backtracking groups, blowing up exponentially with path depth.
+    const pattern = `${Array(30).fill("**").join("/")}/NOMATCH`;
+    const patterns = parseExcludePatterns(pattern);
+    const deepPath = `${Array.from({ length: 24 }, (_, i) => String.fromCharCode(97 + (i % 26))).join("/")}/`;
+    const start = performance.now();
+    expect(matchesExcludePatterns(deepPath, patterns)).toBe(false);
+    expect(performance.now() - start).toBeLessThan(1000);
   });
 
   it("never matches entries only reachable through unrelated names", () => {

@@ -66,6 +66,7 @@ export interface SuspensionServiceEvents {
 @injectable()
 export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents> {
   private inactivityTimerId: ReturnType<typeof setInterval> | null = null;
+  private suspendSweep: Promise<void> = Promise.resolve();
   private readonly log: ScopedLogger;
 
   constructor(
@@ -153,8 +154,21 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
    * Suspends the least-recently-active worktree tasks until the active count
    * is back at the cap. Runs after a workspace is created (not before), so the
    * expensive checkpoint-and-delete never blocks creating a new session.
+   *
+   * Sweeps are serialized: it is called fire-and-forget from every worktree
+   * creation, and two concurrent sweeps would each read the same `active` list
+   * and pick the same oldest task, double-deleting one worktree. Chaining makes
+   * each sweep re-read `active` after the previous one's suspensions commit. The
+   * `.catch` keeps a failed sweep from wedging the chain for later callers.
    */
-  async suspendLeastRecentIfOverLimit(): Promise<void> {
+  suspendLeastRecentIfOverLimit(): Promise<void> {
+    this.suspendSweep = this.suspendSweep
+      .catch(() => {})
+      .then(() => this.runSuspendSweep());
+    return this.suspendSweep;
+  }
+
+  private async runSuspendSweep(): Promise<void> {
     if (!this.workspaceSettings.getAutoSuspendEnabled()) return;
     const maxActive = this.workspaceSettings.getMaxActiveWorktrees();
     const active = this.getActiveWorktreeWorkspaces();
@@ -167,10 +181,10 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
       return aTime.localeCompare(bTime);
     });
 
+    this.log.info(
+      `Auto-suspending ${excess} task(s) over the worktree cap (max: ${maxActive}, active: ${active.length})`,
+    );
     for (const workspace of oldestFirst.slice(0, excess)) {
-      this.log.info(
-        `Auto-suspending task ${workspace.taskId} (max: ${maxActive}, active: ${active.length})`,
-      );
       await this.autoSuspend(workspace.taskId, "max_worktrees");
     }
   }

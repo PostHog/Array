@@ -38,7 +38,15 @@ export function parseExcludePatterns(content: string): ExcludePattern[] {
       pattern = pattern.slice(1);
     }
 
-    patterns.push({ negated, dirOnly, regex: globToRegExp(pattern, anchored) });
+    // A single malformed pattern must not drop the whole exclude file: skip the
+    // offending line rather than letting a RegExp throw propagate out.
+    let regex: RegExp;
+    try {
+      regex = globToRegExp(pattern, anchored);
+    } catch {
+      continue;
+    }
+    patterns.push({ negated, dirOnly, regex });
   }
 
   return patterns;
@@ -86,7 +94,9 @@ function patternMatches(
 }
 
 function trimUnescapedTrailingSpaces(line: string): string {
-  return line.replace(/(?<!\\) +$/, "");
+  // Drop a trailing CR first so CRLF-terminated exclude files don't bake a \r
+  // into every pattern (which would make the compiled regex match nothing).
+  return line.replace(/\r$/, "").replace(/(?<!\\) +$/, "");
 }
 
 function globToRegExp(pattern: string, anchored: boolean): RegExp {
@@ -98,8 +108,19 @@ function globToRegExp(pattern: string, anchored: boolean): RegExp {
     if (char === "*") {
       if (pattern[i + 1] === "*") {
         if (pattern[i + 2] === "/") {
+          // Collapse a run of consecutive `**/` into one `(?:.*/)?`. They are
+          // semantically equivalent, and emitting one group per segment would
+          // stack overlapping backtracking `.*` groups — catastrophic on a
+          // slash-heavy path that fails the final literal (ReDoS).
           source += "(?:.*/)?";
           i += 3;
+          while (
+            pattern[i] === "*" &&
+            pattern[i + 1] === "*" &&
+            pattern[i + 2] === "/"
+          ) {
+            i += 3;
+          }
         } else {
           source += ".*";
           i += 2;
