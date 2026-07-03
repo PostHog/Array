@@ -44,6 +44,7 @@ interface SessionState {
   lastAgentMessage?: string;
   currentTurnMessages: string[];
   toolUpdateCache: Map<string, BufferedToolUpdate>;
+  pendingRawInputSnapshots: Map<string, StoredNotification>;
 }
 
 export class SessionLogWriter {
@@ -51,9 +52,10 @@ export class SessionLogWriter {
    * When consecutive in-progress tool updates for one call span more than this
    * window, the buffered union is written and a new window starts, so the
    * local cache keeps periodic snapshots during active streaming instead of only
-   * the final one. Not a durability bound: the API log receives every update
-   * uncoalesced and the local file is a load cache. A buffered union is
-   * otherwise written on a terminal update, any non-tool event, or flushAll.
+   * the final one. Not a durability bound: the local file is a load cache, and
+   * the API log keeps every update except intermediate rawInput-only streaming
+   * snapshots (see queueForApiLog). A buffered union is otherwise written on a
+   * terminal update, any non-tool event, or flushAll.
    */
   private static readonly TOOL_UPDATE_MAX_HOLD_MS = 2000;
   private static readonly FLUSH_DEBOUNCE_MS = 500;
@@ -89,6 +91,7 @@ export class SessionLogWriter {
     for (const [sessionId, session] of this.sessions) {
       this.emitCoalescedMessage(sessionId, session);
       this.flushToolUpdateCache(sessionId, session);
+      this.drainRawInputSnapshots(sessionId, session);
       flushPromises.push(this.flush(sessionId));
     }
     await Promise.all(flushPromises);
@@ -103,6 +106,7 @@ export class SessionLogWriter {
       context,
       currentTurnMessages: [],
       toolUpdateCache: new Map(),
+      pendingRawInputSnapshots: new Map(),
     });
 
     this.lastFlushAttemptTime.set(sessionId, Date.now());
@@ -180,8 +184,7 @@ export class SessionLogWriter {
       // snapshots (they re-send the full growing output) and write one merged
       // update per toolCallId. Written on a terminal update, any non-tool
       // event, or — during a long run of updates — once the hold window is
-      // exceeded. The API path is untouched, so the durable log keeps every
-      // update.
+      // exceeded. The API path coalesces separately in queueForApiLog.
       const tcu = this.toolCallUpdateInfo(message);
       if (tcu && !tcu.terminal) {
         const cache = session.toolUpdateCache;
@@ -232,10 +235,7 @@ export class SessionLogWriter {
       }
 
       if (this.posthogAPI) {
-        const pending = this.pendingEntries.get(sessionId) ?? [];
-        pending.push(entry);
-        this.pendingEntries.set(sessionId, pending);
-        this.scheduleFlush(sessionId);
+        this.queueForApiLog(sessionId, session, entry, tcu);
       }
     } catch {
       this.logger.warn("Failed to parse raw line for persistence", {
@@ -254,6 +254,7 @@ export class SessionLogWriter {
       const session = this.sessions.get(sessionId);
       if (session) {
         this.emitCoalescedMessage(sessionId, session);
+        this.drainRawInputSnapshots(sessionId, session);
       }
     }
 
@@ -386,6 +387,54 @@ export class SessionLogWriter {
     session.toolUpdateCache.clear();
   }
 
+  private queueForApiLog(
+    sessionId: string,
+    session: SessionState,
+    entry: StoredNotification,
+    tcu: { toolCallId: string; update: Record<string, unknown> } | null,
+  ): void {
+    if (tcu && this.isRawInputOnlyUpdate(tcu.update)) {
+      session.pendingRawInputSnapshots.set(tcu.toolCallId, entry);
+      return;
+    }
+    if (tcu) {
+      const buffered = session.pendingRawInputSnapshots.get(tcu.toolCallId);
+      if (buffered) {
+        session.pendingRawInputSnapshots.delete(tcu.toolCallId);
+        if (tcu.update.rawInput === undefined) {
+          this.pushPendingEntry(sessionId, buffered);
+        }
+      }
+    }
+    this.pushPendingEntry(sessionId, entry);
+  }
+
+  private isRawInputOnlyUpdate(update: Record<string, unknown>): boolean {
+    if (update.rawInput === undefined) return false;
+    return Object.keys(update).every(
+      (key) =>
+        key === "sessionUpdate" || key === "toolCallId" || key === "rawInput",
+    );
+  }
+
+  private pushPendingEntry(sessionId: string, entry: StoredNotification): void {
+    const pending = this.pendingEntries.get(sessionId) ?? [];
+    pending.push(entry);
+    this.pendingEntries.set(sessionId, pending);
+    this.scheduleFlush(sessionId);
+  }
+
+  private drainRawInputSnapshots(
+    sessionId: string,
+    session: SessionState,
+  ): void {
+    if (session.pendingRawInputSnapshots.size === 0) return;
+    for (const entry of session.pendingRawInputSnapshots.values()) {
+      this.pushPendingEntry(sessionId, entry);
+    }
+    session.pendingRawInputSnapshots.clear();
+  }
+
   private isAgentMessageChunk(message: Record<string, unknown>): boolean {
     return this.getSessionUpdateType(message) === "agent_message_chunk";
   }
@@ -428,10 +477,7 @@ export class SessionLogWriter {
     this.writeToLocalCache(sessionId, entry);
 
     if (this.posthogAPI) {
-      const pending = this.pendingEntries.get(sessionId) ?? [];
-      pending.push(entry);
-      this.pendingEntries.set(sessionId, pending);
-      this.scheduleFlush(sessionId);
+      this.pushPendingEntry(sessionId, entry);
     }
   }
 

@@ -1032,4 +1032,188 @@ describe("PostHogAPIClient", () => {
       expect(result.map((row) => row.run_id)).toEqual(runIds);
     });
   });
+
+  describe("getTaskRunSessionLogs", () => {
+    function makeClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    function makeEntries(count: number, prefix: string) {
+      return Array.from({ length: count }, (_, i) => ({
+        type: "notification",
+        timestamp: `2026-07-01T00:00:00.${String(i).padStart(3, "0")}Z`,
+        notification: { method: `${prefix}-${i}` },
+      }));
+    }
+
+    function page(entries: unknown[], hasMore: boolean) {
+      return {
+        ok: true,
+        json: async () => entries,
+        headers: new Headers({ "X-Has-More": String(hasMore) }),
+      };
+    }
+
+    function requestedParams(call: { url: URL }) {
+      return Object.fromEntries(call.url.searchParams);
+    }
+
+    it.each([
+      {
+        name: "defaults to the server's max page size",
+        options: undefined,
+        expectedLimit: "5000",
+      },
+      {
+        name: "clamps a larger total cap to the server's max page size",
+        options: { limit: 100000 },
+        expectedLimit: "5000",
+      },
+      {
+        name: "requests fewer when the total cap is below the page size",
+        options: { limit: 100 },
+        expectedLimit: "100",
+      },
+    ])("$name", async ({ options, expectedLimit }) => {
+      const fetch = vi.fn().mockResolvedValue(page(makeEntries(3, "a"), false));
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs(
+        "task-1",
+        "run-1",
+        options,
+      );
+
+      expect(result).toHaveLength(3);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(requestedParams(fetch.mock.calls[0][0])).toEqual({
+        limit: expectedLimit,
+      });
+    });
+
+    it("paginates until X-Has-More is false, advancing offset by entries actually returned", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(page(makeEntries(120, "a"), true))
+        .mockResolvedValueOnce(page(makeEntries(80, "b"), true))
+        .mockResolvedValueOnce(page(makeEntries(10, "c"), false));
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 100000,
+      });
+
+      expect(result).toHaveLength(210);
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(requestedParams(fetch.mock.calls[1][0])).toEqual({
+        limit: "5000",
+        offset: "120",
+      });
+      expect(requestedParams(fetch.mock.calls[2][0])).toEqual({
+        limit: "5000",
+        offset: "200",
+      });
+    });
+
+    it("stops at the requested total limit even when more pages remain", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(page(makeEntries(5000, "a"), true))
+        .mockResolvedValueOnce(page(makeEntries(1000, "b"), true));
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 6000,
+      });
+
+      expect(result).toHaveLength(6000);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(requestedParams(fetch.mock.calls[1][0])).toEqual({
+        limit: "1000",
+        offset: "5000",
+      });
+    });
+
+    it("forwards the after cursor on every page", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(page(makeEntries(10, "a"), true))
+        .mockResolvedValueOnce(page(makeEntries(5, "b"), false));
+      const client = makeClient(fetch);
+
+      await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 100000,
+        after: "2026-07-01T00:00:00Z",
+      });
+
+      expect(requestedParams(fetch.mock.calls[0][0])).toEqual({
+        limit: "5000",
+        after: "2026-07-01T00:00:00Z",
+      });
+      expect(requestedParams(fetch.mock.calls[1][0])).toEqual({
+        limit: "5000",
+        offset: "10",
+        after: "2026-07-01T00:00:00Z",
+      });
+    });
+
+    it("returns the entries collected so far when a later page fails", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(page(makeEntries(50, "a"), true))
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          statusText: "Internal Server Error",
+          headers: new Headers(),
+        });
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 100000,
+      });
+
+      expect(result).toHaveLength(50);
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("treats a missing X-Has-More header as the final page", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => makeEntries(10, "a"),
+        headers: new Headers(),
+      });
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 100000,
+      });
+
+      expect(result).toHaveLength(10);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops on an empty page even if the server claims more", async () => {
+      const fetch = vi.fn().mockResolvedValue(page([], true));
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 100000,
+      });
+
+      expect(result).toHaveLength(0);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+  });
 });
