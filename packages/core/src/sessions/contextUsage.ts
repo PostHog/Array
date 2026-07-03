@@ -119,22 +119,31 @@ export interface StaleCostlyThreshold {
   /** Minimum context tokens for a conversation to count as "large". */
   tokens: number;
   /**
-   * Minimum idle time (ms) before a conversation counts as "stale". Set to
-   * roughly the Anthropic prompt-cache TTL: once the cache expires, the next
-   * turn re-processes the whole prefix at full input price instead of the
-   * ~10% cached-read rate.
+   * Minimum idle time (ms) before a conversation counts as "stale" — set at or
+   * above the prompt-cache TTL so that, once exceeded, the cache is expired and
+   * the next turn re-processes the whole prefix at full input price instead of
+   * the ~10% cached-read rate.
    */
   staleMs: number;
 }
 
 /**
- * Defaults for the stale-costly conversation warning: a conversation large
- * enough that a cold cache rebuild is noticeable, left idle past the default
- * 5-minute prompt-cache TTL.
+ * Defaults for the stale-costly conversation warning.
+ *
+ * `tokens` (100k): only conversations big enough that a cold prefix rebuild is
+ * a real cost — roughly 10% of the 1M context window — trip the warning.
+ *
+ * `staleMs` (60 min): Anthropic ephemeral caches default to a 5-minute TTL and
+ * can opt into a 1-hour one; the effective value depends on what the Agent SDK
+ * requests, which we don't control or observe. We deliberately use the longer
+ * 1-hour bound so the cache is almost certainly cold before we warn — warning
+ * while it is still warm would nag about a continuation that is in fact cheap,
+ * the worse failure. Erring long only means we occasionally skip a warning,
+ * never that we nag needlessly.
  */
 export const DEFAULT_STALE_COSTLY_THRESHOLD: StaleCostlyThreshold = {
-  tokens: 40_000,
-  staleMs: 5 * 60 * 1000,
+  tokens: 100_000,
+  staleMs: 60 * 60 * 1000,
 };
 
 /**
