@@ -5,7 +5,7 @@ import {
   type TaskSession,
 } from "@posthog/core/sidebar/buildSidebarData";
 import type { Task } from "@posthog/shared/domain-types";
-import { useSessions } from "@posthog/ui/features/sessions/useSession";
+import { useSidebarSessionMap } from "@posthog/ui/features/sidebar/useSidebarSessionMap";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { useMemo } from "react";
 
@@ -30,7 +30,10 @@ export function useNestedGenerationTaskIds(
   tasks: Task[] | undefined,
   openTaskId: string | undefined,
 ): ReadonlySet<string> {
-  const sessions = useSessions();
+  // Signature-guarded map: stable across the per-token event appends of a live
+  // turn, so this hook (mounted in the always-present channel tree) recomputes
+  // only when a nesting-relevant session field changes — not 60x/sec.
+  const sessionByTaskId = useSidebarSessionMap();
   const { timestamps } = useTaskViewed();
 
   return useMemo(() => {
@@ -39,10 +42,6 @@ export function useNestedGenerationTaskIds(
       .filter((id): id is string => !!id);
     if (generationTaskIds.length === 0) return EMPTY_SET;
 
-    const sessionByTaskId = new Map<string, (typeof sessions)[string]>();
-    for (const session of Object.values(sessions)) {
-      if (session.taskId) sessionByTaskId.set(session.taskId, session);
-    }
     const taskById = new Map(tasks?.map((t) => [t.id, t]) ?? []);
 
     const nested = new Set<string>();
@@ -70,5 +69,5 @@ export function useNestedGenerationTaskIds(
         nested.add(taskId);
     }
     return nested;
-  }, [dashboards, tasks, sessions, timestamps, openTaskId]);
+  }, [dashboards, tasks, sessionByTaskId, timestamps, openTaskId]);
 }
