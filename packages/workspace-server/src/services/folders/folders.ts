@@ -80,18 +80,26 @@ export class FoldersService {
 
     const existingFolders = folders.filter((f) => f.exists);
     const results = await Promise.allSettled(
-      existingFolders.map((folder) =>
-        this.cleanupOrphanedWorktrees(folder.path),
-      ),
+      existingFolders.map(async (folder) => {
+        await this.createWorktreeManager(folder.path).sweepTrash();
+        await this.cleanupOrphanedWorktrees(folder.path);
+      }),
     );
     for (const [i, result] of results.entries()) {
       if (result.status === "rejected") {
         this.log.error(
-          `Failed to cleanup orphaned worktrees for ${existingFolders[i].path}:`,
+          `Failed to clean up worktrees for ${existingFolders[i].path}:`,
           result.reason,
         );
       }
     }
+  }
+
+  private createWorktreeManager(mainRepoPath: string): WorktreeManager {
+    return new WorktreeManager({
+      mainRepoPath,
+      worktreeBasePath: this.workspaceSettings.getWorktreeLocation(),
+    });
   }
 
   private getDisplayName(
@@ -225,11 +233,9 @@ export class FoldersService {
             worktree.name,
           );
           try {
-            const manager = new WorktreeManager({
-              mainRepoPath: repo.path,
-              worktreeBasePath,
-            });
-            await manager.deleteWorktree(worktreePath);
+            await this.createWorktreeManager(repo.path).deleteWorktree(
+              worktreePath,
+            );
           } catch (error) {
             this.log.error(`Failed to delete worktree ${worktreePath}:`, error);
           }
@@ -246,13 +252,12 @@ export class FoldersService {
   }
 
   async cleanupOrphanedWorktrees(mainRepoPath: string): Promise<void> {
-    const worktreeBasePath = this.workspaceSettings.getWorktreeLocation();
-    const manager = new WorktreeManager({ mainRepoPath, worktreeBasePath });
-
     const allWorktrees = this.worktreeRepo.findAll();
     const associatedWorktreePaths = allWorktrees.map((wt) => wt.path);
 
-    await manager.cleanupOrphanedWorktrees(associatedWorktreePaths);
+    await this.createWorktreeManager(mainRepoPath).cleanupOrphanedWorktrees(
+      associatedWorktreePaths,
+    );
   }
 
   private async resolveRepoKey(

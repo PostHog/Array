@@ -149,23 +149,30 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
     return this.suspensionRepo.findByWorkspaceId(workspace.id) !== null;
   }
 
+  /**
+   * Suspends the least-recently-active worktree tasks until the active count
+   * is back at the cap. Runs after a workspace is created (not before), so the
+   * expensive checkpoint-and-delete never blocks creating a new session.
+   */
   async suspendLeastRecentIfOverLimit(): Promise<void> {
     if (!this.workspaceSettings.getAutoSuspendEnabled()) return;
     const maxActive = this.workspaceSettings.getMaxActiveWorktrees();
     const active = this.getActiveWorktreeWorkspaces();
-    if (active.length < maxActive) return;
+    const excess = active.length - maxActive;
+    if (excess <= 0) return;
 
-    const oldest = active.sort((a, b) => {
+    const oldestFirst = active.sort((a, b) => {
       const aTime = a.lastActivityAt ?? a.createdAt ?? "";
       const bTime = b.lastActivityAt ?? b.createdAt ?? "";
       return aTime.localeCompare(bTime);
-    })[0];
+    });
 
-    if (!oldest) return;
-    this.log.info(
-      `Auto-suspending task ${oldest.taskId} (max: ${maxActive}, active: ${active.length})`,
-    );
-    await this.autoSuspend(oldest.taskId, "max_worktrees");
+    for (const workspace of oldestFirst.slice(0, excess)) {
+      this.log.info(
+        `Auto-suspending task ${workspace.taskId} (max: ${maxActive}, active: ${active.length})`,
+      );
+      await this.autoSuspend(workspace.taskId, "max_worktrees");
+    }
   }
 
   async suspendInactiveWorktrees(): Promise<void> {

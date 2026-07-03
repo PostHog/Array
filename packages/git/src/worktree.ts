@@ -1,6 +1,11 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import {
+  type ExcludePattern,
+  matchesExcludePatterns,
+  parseExcludePatterns,
+} from "./exclude-patterns";
 import { getCleanEnv, getGitOperationManager } from "./operation-manager";
 import {
   addToLocalExclude,
@@ -552,6 +557,16 @@ export class WorktreeManager {
       }
     }
 
+    const trashedPath = await this.moveToTrash(resolvedWorktreePath);
+    if (trashedPath) {
+      await manager.executeWrite(this.mainRepoPath, (git) =>
+        git.raw(["worktree", "prune"]),
+      );
+      await fs.rmdir(path.dirname(resolvedWorktreePath)).catch(() => {});
+      void forceRemove(trashedPath).catch(() => {});
+      return;
+    }
+
     await manager.executeWrite(this.mainRepoPath, async (git) => {
       try {
         await git.raw(["worktree", "remove", worktreePath, "--force"]);
@@ -560,6 +575,37 @@ export class WorktreeManager {
         await git.raw(["worktree", "prune"]);
       }
     });
+  }
+
+  private getTrashFolderPath(): string {
+    return path.join(this.getWorktreeBaseFolderPath(), ".trash");
+  }
+
+  /**
+   * Renames a worktree into the trash folder so callers get an instant delete;
+   * the multi-gigabyte recursive removal then runs in the background (and
+   * `sweepTrash` mops up anything left behind by a crash). Returns null when
+   * the rename cannot work (path missing, or on a different volume), in which
+   * case the caller falls back to removing in place.
+   */
+  private async moveToTrash(worktreePath: string): Promise<string | null> {
+    const trashDir = this.getTrashFolderPath();
+    const trashedPath = path.join(
+      trashDir,
+      `${path.basename(path.dirname(worktreePath))}-${Date.now()}`,
+    );
+    try {
+      await fs.mkdir(trashDir, { recursive: true });
+      await fs.rename(worktreePath, trashedPath);
+      return trashedPath;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Removes trashed worktrees left behind by interrupted background deletes. */
+  async sweepTrash(): Promise<void> {
+    await forceRemove(this.getTrashFolderPath());
   }
 
   async getWorktreeInfo(worktreePath: string): Promise<WorktreeInfo | null> {
@@ -658,7 +704,37 @@ export class WorktreeManager {
 /**
  * get all gitignored paths matching patterns from an exclude file
  */
-function getIgnoredPathsFromExcludeFile(
+async function getIgnoredPathsFromExcludeFile(
+  mainRepoPath: string,
+  excludeFile: string,
+): Promise<string[]> {
+  let patterns: ExcludePattern[];
+  try {
+    const content = await fs.readFile(
+      path.join(mainRepoPath, excludeFile),
+      "utf-8",
+    );
+    patterns = parseExcludePatterns(content);
+  } catch {
+    return [];
+  }
+  if (patterns.length === 0) return [];
+
+  const candidates = await listExcludeCandidates(mainRepoPath, excludeFile);
+  return candidates
+    .filter((candidate) => matchesExcludePatterns(candidate, patterns))
+    .map((candidate) => candidate.replace(/\/$/, ""));
+}
+
+/**
+ * Candidate untracked paths for exclude-file matching. `--exclude-standard`
+ * lets git collapse gitignored trees (node_modules et al) into a single entry
+ * instead of recursing through them — on a large repo that turns a multi-second
+ * walk into a sub-second one. The exclude file's own patterns are then
+ * re-applied in-process, which also stops matches buried inside standard-
+ * ignored directories (e.g. a stray .env deep in node_modules) from surfacing.
+ */
+function listExcludeCandidates(
   mainRepoPath: string,
   excludeFile: string,
 ): Promise<string[]> {
@@ -670,6 +746,7 @@ function getIgnoredPathsFromExcludeFile(
         "--ignored",
         "--others",
         "--directory",
+        "--exclude-standard",
         `--exclude-from=${excludeFile}`,
       ],
       { cwd: mainRepoPath },
@@ -682,8 +759,7 @@ function getIgnoredPathsFromExcludeFile(
           stdout
             .trim()
             .split("\n")
-            .filter((line) => line.length > 0)
-            .map((line) => line.replace(/\/$/, "")),
+            .filter((line) => line.length > 0),
         );
       },
     );

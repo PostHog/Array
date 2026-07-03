@@ -662,8 +662,6 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       };
     }
 
-    await this.suspensionService.suspendLeastRecentIfOverLimit();
-
     const worktreeBasePath = this.workspaceSettings.getWorktreeLocation();
     const worktreeManager = new WorktreeManager({
       mainRepoPath,
@@ -794,6 +792,13 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       workspaceId: createdWorkspace.id,
       name: worktree.worktreeName,
       path: worktree.worktreePath,
+    });
+
+    // Enforce the worktree cap after the new workspace exists rather than
+    // before: suspending the least-recent task checkpoints and deletes a
+    // potentially multi-gigabyte worktree, which must not block this creation.
+    this.suspensionService.suspendLeastRecentIfOverLimit().catch((error) => {
+      this.log.error("Failed to auto-suspend over-limit worktrees:", error);
     });
 
     return {
