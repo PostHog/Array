@@ -242,4 +242,12 @@ describe("extractLastActivityAt", () => {
     ];
     expect(extractLastActivityAt(events)).toBe(20);
   });
+
+  it("returns the maximum ts even when events are out of order", () => {
+    const events: AcpMessage[] = [
+      { ...usageUpdateEvent(50_000, 200_000), ts: 30 },
+      { ...agentChunkEvent(), ts: 10 },
+    ];
+    expect(extractLastActivityAt(events)).toBe(30);
+  });
 });

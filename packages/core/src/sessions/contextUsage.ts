@@ -167,13 +167,20 @@ export function shouldWarnStaleCostlyConversation(args: {
 }
 
 /**
- * Best-effort "time of last activity" for a session: the emit timestamp of the
- * most recent event, or null for an empty list. Heuristic proxy for
- * prompt-cache freshness — `ts` is stamped on *any* AcpMessage (agent chunks,
- * tool calls, client-side events), not only turns sent to the model, so a
- * purely local event can reset it without the cache being refreshed. Good
- * enough for a soft cost warning; not a billing signal.
+ * Best-effort "time of last activity" for a session: the most recent (maximum)
+ * `ts` among events, or null for an empty list. Scans for the max rather than
+ * trusting positional order, so an out-of-order append can't report a staler
+ * time than reality. (Uses a loop, not the spread form of `Math.max`, which can
+ * overflow the stack on long event lists.) Heuristic proxy for prompt-cache
+ * freshness — `ts` is stamped on *any* AcpMessage (agent chunks, tool calls,
+ * client-side events), not only turns sent to the model. Good enough for a soft
+ * cost warning; not a billing signal.
  */
 export function extractLastActivityAt(events: AcpMessage[]): number | null {
-  return events.length > 0 ? events[events.length - 1].ts : null;
+  if (events.length === 0) return null;
+  let latest = events[0].ts;
+  for (let i = 1; i < events.length; i++) {
+    if (events[i].ts > latest) latest = events[i].ts;
+  }
+  return latest;
 }
