@@ -258,6 +258,7 @@ describe("TerminalManager.destroyForTask", () => {
     terminalManager.detach("sess-parked");
 
     const parking = document.getElementById("terminal-parking");
+    expect(parking?.classList.contains("ph-no-capture")).toBe(true);
     expect(parking?.childElementCount).toBe(1);
 
     terminalManager.destroy("sess-parked");

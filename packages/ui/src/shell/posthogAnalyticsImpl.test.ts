@@ -192,6 +192,19 @@ describe("initializePostHog", () => {
     expect(mockPosthog.onFeatureFlags).not.toHaveBeenCalled();
   });
 
+  it("disables replay canvas capture regardless of remote config", async () => {
+    const { initializePostHog } = await loadAnalytics();
+
+    initializePostHog();
+
+    expect(mockPosthog.init).toHaveBeenCalledWith(
+      "test-key",
+      expect.objectContaining({
+        session_recording: { captureCanvas: { recordCanvas: false } },
+      }),
+    );
+  });
+
   it("bootstraps posthog with the main-owned session id", async () => {
     const { initializePostHog } = await loadAnalytics();
 
