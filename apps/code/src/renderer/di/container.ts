@@ -196,7 +196,6 @@ const browserTabsClient: BrowserTabsClient = {
   newBlankTab: (input) => trpcClient.browserTabs.newBlankTab.mutate(input),
   setTabTarget: (input) => trpcClient.browserTabs.setTabTarget.mutate(input),
   close: (tabId) => trpcClient.browserTabs.close.mutate({ tabId }),
-  reorder: (input) => trpcClient.browserTabs.reorder.mutate(input),
   setActiveTab: (input) => trpcClient.browserTabs.setActiveTab.mutate(input),
   onSnapshotChange: (sub) =>
     trpcClient.browserTabs.onSnapshotChange.subscribe(undefined, sub),

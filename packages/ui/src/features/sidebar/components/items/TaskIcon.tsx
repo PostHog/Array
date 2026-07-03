@@ -1,12 +1,19 @@
 import {
+  Binoculars,
+  Broadcast,
+  Bug,
   ChatCircle,
   Cloud as CloudIcon,
+  FilmSlate,
+  Flask,
   GitBranch,
   GitMerge,
   GitPullRequest,
   HandPalm,
+  Lifebuoy,
   Pause,
   PushPin,
+  Robot,
   SlackLogo,
   WarningCircle,
 } from "@phosphor-icons/react";
@@ -30,11 +37,19 @@ export const ICON_SIZE = 12;
 // `fill` is immune, and renders identically in the sidebar.
 
 // Map origin_product values to the icon + label used to brand the task's
-// status icon. Extend this when a new product (e.g. email, support) needs its
-// own indicator.
+// status icon, so every non-`user_created` origin is distinguishable at a
+// glance in the list. `user_created` is intentionally absent — those tasks get
+// the default status icon. Extend this when a new origin needs its own badge.
 type OriginProductMeta = { Icon: typeof SlackLogo; label: string };
 const ORIGIN_PRODUCT_META: Record<string, OriginProductMeta> = {
   slack: { Icon: SlackLogo, label: "Slack" },
+  signal_report: { Icon: Broadcast, label: "Signals" },
+  signals_scout: { Icon: Binoculars, label: "Signals scout" },
+  support_queue: { Icon: Lifebuoy, label: "Support" },
+  session_summaries: { Icon: FilmSlate, label: "Session summary" },
+  error_tracking: { Icon: Bug, label: "Error tracking" },
+  eval_clusters: { Icon: Flask, label: "Evals" },
+  automation: { Icon: Robot, label: "Automation" },
 };
 
 function getOriginProductMeta(

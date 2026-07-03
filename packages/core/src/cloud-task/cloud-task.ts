@@ -119,6 +119,11 @@ interface WatcherState {
   // Leg that issued lastEventId, and the leg of the connection currently being read.
   lastEventIdLeg: StreamLeg | null;
   streamLeg: StreamLeg | null;
+  // Ids of log entries already ingested on the current leg. The durable stream
+  // re-sends the tail by id on reconnect/replay, so dropping a seen id here is
+  // what stops a re-delivered entry (e.g. a `turn_complete`) from being counted
+  // and emitted twice. Cleared on a leg switch, where the id space changes.
+  seenEventIds: Set<string>;
   lastStatus: TaskRunStatus | null;
   lastStage: string | null;
   lastOutput: Record<string, unknown> | null;
@@ -421,6 +426,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.lastEventId = null;
     watcher.lastEventIdLeg = null;
     watcher.streamLeg = null;
+    // The rebuild re-resolves the read leg, so a retained id could false-match a
+    // different entry on the next connection — and the leg-switch clear in
+    // connectSse can't catch it, since lastEventId was just nulled. The re-fetched
+    // snapshot re-delivers history, so no dedup state is lost.
+    watcher.seenEventIds.clear();
     watcher.totalEntryCount = 0;
     watcher.isBootstrapping = false;
     watcher.streamTargetResolved = false;
@@ -538,6 +548,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       lastEventId: null,
       lastEventIdLeg: null,
       streamLeg: null,
+      seenEventIds: new Set(),
       lastStatus: null,
       lastStage: null,
       lastOutput: null,
@@ -790,6 +801,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       });
       watcher.lastEventId = null;
       watcher.lastEventIdLeg = null;
+      // Proxy and Django ids are unrelated, so a retained id could false-match a
+      // different entry on the new leg. Drop them; the snapshot covers the gap.
+      watcher.seenEventIds.clear();
     }
     watcher.streamLeg = leg;
 
@@ -1134,6 +1148,20 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         options: event.data.options,
       });
       return null;
+    }
+
+    // Drop a re-delivered log entry by its stream id. The durable stream
+    // re-sends the tail on reconnect/replay, and each resend would otherwise be
+    // counted as a new entry (advancing totalEntryCount past the renderer's
+    // processedLineCount guard) and emitted again — the root cause of duplicate
+    // transcript entries and back-to-back completion notifications. Entries
+    // without an id (legacy servers) fall through and are handled downstream.
+    const eventId = event.id;
+    if (eventId !== undefined) {
+      if (watcher.seenEventIds.has(eventId)) {
+        return null;
+      }
+      watcher.seenEventIds.add(eventId);
     }
 
     watcher.pendingLogEntries.push(event.data as StoredLogEntry);

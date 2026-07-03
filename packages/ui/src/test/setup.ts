@@ -65,6 +65,27 @@ if (typeof window.localStorage?.setItem !== "function") {
   });
 }
 
+// jsdom does not implement ResizeObserver; @dnd-kit/dom instantiates one at
+// module load, so components using useSortable/useDroppable need a stub.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  class ResizeObserverStub {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver =
+    ResizeObserverStub as unknown as typeof ResizeObserver;
+}
+
+// jsdom does not implement Element.getAnimations. With ResizeObserver stubbed
+// above, Base UI's ScrollAreaViewport now mounts fully and schedules a timer
+// that calls viewport.getAnimations() — which would otherwise throw an
+// uncaught exception after the test tears down (any component using a Base UI
+// scroll area, e.g. menus/modals). Return no running animations.
+if (typeof Element.prototype.getAnimations !== "function") {
+  Element.prototype.getAnimations = () => [];
+}
+
 // jsdom does not implement matchMedia; UI stores (e.g. themeStore) read it at
 // module load to resolve the system color scheme.
 Object.defineProperty(window, "matchMedia", {

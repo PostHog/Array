@@ -172,6 +172,7 @@ interface SettingsStore {
   brainrotMode: boolean;
   mcpAppsDisabledServers: string[];
   downloadUpdatesAutomatically: boolean;
+  dismissibleUpdateBanners: boolean;
   lastSeenChangelogVersion: string | null;
   // Renders the conversation with the new ChatX (quill) primitives instead of
   // the virtualized ConversationView. Local A/B toggle while the rebuild bakes.
@@ -182,6 +183,7 @@ interface SettingsStore {
   setBrainrotMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
   setDownloadUpdatesAutomatically: (enabled: boolean) => void;
+  setDismissibleUpdateBanners: (enabled: boolean) => void;
   setLastSeenChangelogVersion: (version: string | null) => void;
 
   // Onboarding hints
@@ -344,6 +346,7 @@ export const useSettingsStore = create<SettingsStore>()(
       brainrotMode: false,
       mcpAppsDisabledServers: [],
       downloadUpdatesAutomatically: true,
+      dismissibleUpdateBanners: false,
       lastSeenChangelogVersion: null,
       useNewChatThread: false,
       setUseNewChatThread: (enabled) => set({ useNewChatThread: enabled }),
@@ -352,6 +355,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setBrainrotMode: (enabled) => set({ brainrotMode: enabled }),
       setDownloadUpdatesAutomatically: (enabled) =>
         set({ downloadUpdatesAutomatically: enabled }),
+      setDismissibleUpdateBanners: (enabled) =>
+        set({ dismissibleUpdateBanners: enabled }),
       setLastSeenChangelogVersion: (version) =>
         set({ lastSeenChangelogVersion: version }),
       setMcpAppsDisabledServers: (servers) =>
@@ -446,6 +451,7 @@ export const useSettingsStore = create<SettingsStore>()(
         brainrotMode: state.brainrotMode,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
         downloadUpdatesAutomatically: state.downloadUpdatesAutomatically,
+        dismissibleUpdateBanners: state.dismissibleUpdateBanners,
         lastSeenChangelogVersion: state.lastSeenChangelogVersion,
         useNewChatThread: state.useNewChatThread,
 

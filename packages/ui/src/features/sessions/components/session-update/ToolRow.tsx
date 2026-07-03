@@ -91,7 +91,14 @@ export function ToolRow({
         defaultOpen={defaultOpen}
         open={open}
         onOpenChange={onOpenChange}
-        className="opacity-50 hover:opacity-100 data-panel-open:bg-fill-selected data-panel-open:opacity-100"
+        // Hover/selected chrome only when the row actually expands on click — a
+        // flat marker (e.g. "Thinking" before any content arrives) shouldn't
+        // invite interaction it can't honor.
+        className={cn(
+          "opacity-50",
+          isCollapsible &&
+            "hover:opacity-100 data-panel-open:bg-fill-selected data-panel-open:opacity-100",
+        )}
       >
         <ChatMarkerIcon>{iconNode}</ChatMarkerIcon>
         <ChatMarkerContent className="flex w-full min-w-0 flex-nowrap items-center gap-1">

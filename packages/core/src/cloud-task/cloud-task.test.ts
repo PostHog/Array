@@ -283,6 +283,144 @@ describe("CloudTaskService", () => {
     );
   });
 
+  it("drops a re-delivered log entry with a duplicate stream id", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    mockNetFetch
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse([], 200, { "X-Has-More": "false" }),
+      );
+
+    const consoleEntry = (message: string) =>
+      `data: {"type":"notification","timestamp":"2026-01-01T00:00:01Z","notification":{"jsonrpc":"2.0","method":"_posthog/console","params":{"sessionId":"run-1","level":"info","message":"${message}"}}}`;
+
+    // The durable stream re-sends the tail by id on reconnect/replay. Here id 1
+    // arrives twice; the second copy must be dropped so the entry is delivered
+    // — and counted — exactly once (the fix for duplicate transcript entries and
+    // back-to-back completion notifications).
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        `id: 1\n${consoleEntry("first")}\n\nid: 1\n${consoleEntry("first")}\n\nid: 2\n${consoleEntry("second")}\n\n`,
+      ),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() =>
+      updates.some(
+        (u) =>
+          (u as { kind?: string; totalEntryCount?: number }).kind === "logs" &&
+          ((u as { totalEntryCount?: number }).totalEntryCount ?? 0) >= 2,
+      ),
+    );
+
+    const messages = updates
+      .filter((u) => (u as { kind?: string }).kind === "logs")
+      .flatMap(
+        (u) =>
+          (u as { newEntries: Array<{ notification?: { params?: unknown } }> })
+            .newEntries,
+      )
+      .map(
+        (entry) =>
+          (entry.notification?.params as { message?: string } | undefined)
+            ?.message,
+      );
+
+    // id 1 delivered once (not twice), id 2 delivered once, order preserved.
+    expect(messages).toEqual(["first", "second"]);
+  });
+
+  it("delivers an id-colliding entry after a retry resets the watcher", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    // Route by URL: the initial watch and the retry-triggered rebuild each
+    // fetch run detail and history, plus post-bootstrap status verification.
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    const consoleEntry = (message: string) =>
+      `data: {"type":"notification","timestamp":"2026-01-01T00:00:01Z","notification":{"jsonrpc":"2.0","method":"_posthog/console","params":{"sessionId":"run-1","level":"info","message":"${message}"}}}`;
+
+    // The rebuilt connection re-resolves the read leg, so its id space is
+    // unrelated to the first connection's: id 1 here is a different entry.
+    mockStreamFetch
+      .mockResolvedValueOnce(
+        createOpenSseResponse(`id: 1\n${consoleEntry("before retry")}\n\n`),
+      )
+      .mockResolvedValueOnce(
+        createOpenSseResponse(`id: 1\n${consoleEntry("after retry")}\n\n`),
+      );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    const messages = () =>
+      updates
+        .filter((u) => (u as { kind?: string }).kind === "logs")
+        .flatMap(
+          (u) =>
+            (
+              u as {
+                newEntries: Array<{ notification?: { params?: unknown } }>;
+              }
+            ).newEntries,
+        )
+        .map(
+          (entry) =>
+            (entry.notification?.params as { message?: string } | undefined)
+              ?.message,
+        );
+
+    await waitFor(() => messages().includes("before retry"));
+
+    await service.retry("task-1", "run-1");
+
+    // An id retained across the reset would false-match the new connection's
+    // id 1 and silently drop this entry before it is counted or emitted.
+    await waitFor(() => messages().includes("after retry"));
+    expect(messages()).toEqual(["before retry", "after retry"]);
+  });
+
   it("reconnects with Last-Event-ID after a stream error", async () => {
     vi.useFakeTimers();
 

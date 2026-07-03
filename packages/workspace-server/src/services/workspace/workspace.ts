@@ -531,6 +531,14 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     };
   }
 
+  get pendingCreationCount(): number {
+    return this.creatingWorkspaces.size;
+  }
+
+  async waitForPendingCreations(): Promise<void> {
+    await Promise.allSettled([...this.creatingWorkspaces.values()]);
+  }
+
   async createWorkspace(options: CreateWorkspaceInput): Promise<WorkspaceInfo> {
     // Prevent concurrent workspace creation for the same task
     const existingPromise = this.creatingWorkspaces.get(options.taskId);
@@ -541,11 +549,22 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       return existingPromise;
     }
 
+    const startedAt = Date.now();
     const promise = this.doCreateWorkspace(options);
     this.creatingWorkspaces.set(options.taskId, promise);
 
     try {
-      return await promise;
+      const workspaceInfo = await promise;
+      this.log.info(
+        `Workspace ready for task ${options.taskId} after ${Date.now() - startedAt}ms (mode: ${workspaceInfo.mode})`,
+      );
+      return workspaceInfo;
+    } catch (error) {
+      this.log.error(
+        `Workspace creation failed for task ${options.taskId} after ${Date.now() - startedAt}ms`,
+        error,
+      );
+      throw error;
     } finally {
       this.creatingWorkspaces.delete(options.taskId);
     }
@@ -629,6 +648,9 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         repositoryId,
         mode: "local",
       });
+      this.log.info(
+        `Workspace record persisted for task ${taskId} (mode: local)`,
+      );
 
       const localBranch = await getBranchFromPath(folderPath);
       return {

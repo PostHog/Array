@@ -9,6 +9,7 @@ import {
   nextStep as computeNextStep,
   previousStep as computePreviousStep,
   type DetectedRepo,
+  nearestActiveStep,
   type OnboardingStep,
   stepDirection,
 } from "@posthog/core/onboarding/steps";
@@ -87,7 +88,7 @@ export function useOnboardingFlow() {
 
   useEffect(() => {
     if (!activeSteps.includes(currentStep)) {
-      setCurrentStep(activeSteps[0]);
+      setCurrentStep(nearestActiveStep(activeSteps, currentStep));
     }
   }, [activeSteps, currentStep, setCurrentStep]);
 

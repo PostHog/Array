@@ -8,6 +8,108 @@ import type { ILogsService } from "./identifiers";
 
 const DATA_DIR = ".posthog-code";
 
+const TOOL_CALL_UPDATE_MARKER = '"sessionUpdate":"tool_call_update"';
+
+interface StoredEntryShape {
+  notification?: {
+    params?: Record<string, unknown>;
+  } & Record<string, unknown>;
+}
+
+function toolCallUpdateOfLine(
+  line: string,
+): { entry: StoredEntryShape; update: Record<string, unknown> } | null {
+  // Substring pre-filter: an unescaped marker can only occur as JSON
+  // structure (a quote inside a string value is always escaped), so
+  // non-matching lines are skipped without parsing.
+  if (!line.includes(TOOL_CALL_UPDATE_MARKER)) return null;
+  let entry: StoredEntryShape;
+  try {
+    entry = JSON.parse(line) as StoredEntryShape;
+  } catch {
+    return null;
+  }
+  const update = entry?.notification?.params?.update as
+    | Record<string, unknown>
+    | undefined;
+  if (update?.sessionUpdate !== "tool_call_update") return null;
+  if (typeof update.toolCallId !== "string") return null;
+  return { entry, update };
+}
+
+/**
+ * Collapse superseded `tool_call_update` lines into one merged line per
+ * `toolCallId` (at the last update's position) before the log crosses to the
+ * renderer. Agents re-send the full accumulated tool output on every update,
+ * so the transfer + parse would otherwise carry hundreds of MB of redundant
+ * snapshots.
+ *
+ * Updates are merged (shallow, later fields win) rather than dropped: they
+ * carry different fields at different times (streamed `rawInput` snapshots,
+ * input-derived title/content, edit diffs, terminal status/rawOutput) and the
+ * renderer reducer `Object.assign`s each one, so a merged update reproduces
+ * exactly what replaying every line would build. Only `tool_call_update`
+ * lines are parsed; other lines pass through untouched, so the result stays
+ * valid NDJSON. Parsing those lines here trades one pass of workspace-server
+ * CPU for not shipping and parsing the same bytes in the renderer.
+ */
+function collapseToolCallUpdateLines(ndjson: string): string {
+  const lines = ndjson.split("\n");
+  const idByIndex = new Array<string | undefined>(lines.length);
+  const firstIndexById = new Map<string, number>();
+  const lastIndexById = new Map<string, number>();
+  const lastEntryById = new Map<string, StoredEntryShape>();
+  const mergedById = new Map<string, Record<string, unknown>>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const parsed = toolCallUpdateOfLine(lines[i]);
+    if (!parsed) continue;
+    const id = parsed.update.toolCallId as string;
+    idByIndex[i] = id;
+    lastIndexById.set(id, i);
+    lastEntryById.set(id, parsed.entry);
+    const merged = mergedById.get(id);
+    if (merged) {
+      Object.assign(merged, parsed.update);
+    } else {
+      firstIndexById.set(id, i);
+      mergedById.set(id, { ...parsed.update });
+    }
+  }
+  if (lastIndexById.size === 0) return ndjson;
+
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const id = idByIndex[i];
+    if (id === undefined) {
+      kept.push(lines[i]);
+      continue;
+    }
+    if (lastIndexById.get(id) !== i) continue;
+    if (firstIndexById.get(id) === i) {
+      // Single update for this call: the original line already is the merge.
+      kept.push(lines[i]);
+      continue;
+    }
+    const entry = lastEntryById.get(id);
+    const merged = mergedById.get(id);
+    if (!entry || !merged) {
+      kept.push(lines[i]);
+      continue;
+    }
+    kept.push(
+      JSON.stringify({
+        ...entry,
+        notification: {
+          ...entry.notification,
+          params: { ...entry.notification?.params, update: merged },
+        },
+      }),
+    );
+  }
+  return kept.join("\n");
+}
+
 interface WriteState {
   pending: string | undefined;
   lastWritten: string | undefined;
@@ -50,6 +152,16 @@ export class LocalLogsService implements ILogsService {
       }
       return null;
     }
+  }
+
+  async readLocalLogsCollapsed(
+    taskRunId: string,
+  ): Promise<{ content: string; totalLineCount: number } | null> {
+    const raw = await this.readLocalLogs(taskRunId);
+    if (raw === null) return null;
+    const trimmed = raw.trim();
+    const totalLineCount = trimmed ? trimmed.split("\n").length : 0;
+    return { content: collapseToolCallUpdateLines(raw), totalLineCount };
   }
 
   async readLocalLogsTail(

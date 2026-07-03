@@ -10,12 +10,23 @@ import type {
   NavigationTaskBinder,
 } from "@posthog/ui/features/navigation/taskBinder";
 import { useProvisioningStore } from "@posthog/ui/features/provisioning/store";
+import { WORKSPACE_QUERY_KEY } from "@posthog/ui/features/workspace/identifiers";
 import { logger } from "@posthog/ui/shell/logger";
+import {
+  IMPERATIVE_QUERY_CLIENT,
+  type ImperativeQueryClient,
+} from "@posthog/ui/shell/queryClient";
 
 const log = logger.scope("navigation-store");
 
 function hostClient(): HostTrpcClient {
   return resolveService<HostTrpcClient>(HOST_TRPC_CLIENT);
+}
+
+function invalidateWorkspaces(): void {
+  void resolveService<ImperativeQueryClient>(
+    IMPERATIVE_QUERY_CLIENT,
+  ).invalidateQueries({ queryKey: WORKSPACE_QUERY_KEY });
 }
 
 async function getTaskDirectory(
@@ -84,11 +95,17 @@ export const navigationTaskBinder: NavigationTaskBinder = {
     const directory = await getTaskDirectory(task.id, repoKey ?? undefined);
 
     if (directory) {
+      const workspaceMode =
+        task.latest_run?.environment === "cloud" ? "cloud" : "local";
+      log.info("Ensuring workspace binding on task open", {
+        taskId: task.id,
+        directory,
+        mode: workspaceMode,
+        hadWorkspaceRecord: !!existingWorkspace,
+        hasRun: !!task.latest_run?.id,
+      });
       try {
         await hostClient().folders.addFolder.mutate({ folderPath: directory });
-
-        const workspaceMode =
-          task.latest_run?.environment === "cloud" ? "cloud" : "local";
 
         await hostClient().workspace.create.mutate({
           taskId: task.id,
@@ -97,6 +114,7 @@ export const navigationTaskBinder: NavigationTaskBinder = {
           folderPath: directory,
           mode: workspaceMode,
         });
+        invalidateWorkspaces();
       } catch (error) {
         log.error("Failed to auto-register folder on task open:", error);
       }
@@ -107,6 +125,13 @@ export const navigationTaskBinder: NavigationTaskBinder = {
         folderId: "",
         folderPath: "",
         mode: "cloud",
+      });
+      invalidateWorkspaces();
+    } else {
+      log.warn("No directory resolved on task open, workspace not created", {
+        taskId: task.id,
+        repoKey: repoKey ?? null,
+        hasRun: !!task.latest_run?.id,
       });
     }
 

@@ -1,7 +1,11 @@
 import { HashIcon } from "@phosphor-icons/react";
 import { browserTabsStore } from "@posthog/core/browser-tabs/browserTabsStore";
 import { useHostTRPC } from "@posthog/host-router/react";
-import { decideTabNavigation, type TabsSnapshot } from "@posthog/shared";
+import {
+  decideTabNavigation,
+  setTabOrder,
+  type TabsSnapshot,
+} from "@posthog/shared";
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
@@ -19,8 +23,15 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
+import {
+  frontOfUnpinnedOrder,
+  partitionPinnedFirst,
+  storedOrderIds,
+} from "./displayOrder";
+import { usePinnedTabsStore } from "./pinnedTabsStore";
 import { TabStrip, type TabView } from "./TabStrip";
 import { TaskTabIcon } from "./TaskTabIcon";
+import { useTabReorderStore } from "./tabReorderStore";
 import { useTabsSnapshot } from "./useBrowserTabs";
 
 /** The active tab id is carried in router history state so back/forward replay
@@ -100,9 +111,24 @@ export function BrowserTabStrip() {
     trpc.browserTabs.setTabTarget.mutationOptions(),
   );
   const close = useMutation(trpc.browserTabs.close.mutationOptions());
+  const closeMany = useMutation(trpc.browserTabs.closeMany.mutationOptions());
+  const setOrder = useMutation(trpc.browserTabs.setOrder.mutationOptions());
   const setActiveTab = useMutation(
     trpc.browserTabs.setActiveTab.mutationOptions(),
   );
+
+  const pinnedTabIds = usePinnedTabsStore((s) => s.pinnedTabIds);
+  const togglePinned = usePinnedTabsStore((s) => s.togglePinned);
+  const prunePinned = usePinnedTabsStore((s) => s.prune);
+  // Transient reorder preview (set while a pill is dragged); overrides the
+  // strip's order without touching the domain snapshot mirror.
+  const previewOrder = useTabReorderStore((s) => s.previewOrder);
+  // Drop pins for tabs that no longer exist (closed here or in another
+  // window). Skip the pre-seed empty snapshot so a slow boot doesn't wipe pins.
+  useEffect(() => {
+    if (snapshot.windows.length === 0) return;
+    prunePinned(snapshot.tabs.map((t) => t.id));
+  }, [snapshot, prunePinned]);
 
   const win = primaryWindow(snapshot);
   const windowId = win?.id;
@@ -242,10 +268,26 @@ export function BrowserTabStrip() {
         ? activeTaskRecord
         : allTasks?.find((t) => t.id === id);
 
-    return snapshot.tabs
-      .filter((t) => t.windowId === windowId)
-      .sort((a, b) => a.position - b.position)
+    const pinnedSet = new Set(pinnedTabIds);
+    const byId = new Map(snapshot.tabs.map((t) => [t.id, t]));
+    // Base stored order — during a drag, the transient preview order overrides
+    // it (filtered to live tabs; any tab not in the preview is appended in
+    // stored order). The pinned-first partition is applied on top.
+    const stored = storedOrderIds(snapshot, windowId);
+    let base = stored;
+    if (previewOrder) {
+      const live = new Set(stored);
+      const seen = new Set(previewOrder);
+      base = [
+        ...previewOrder.filter((id) => live.has(id)),
+        ...stored.filter((id) => !seen.has(id)),
+      ];
+    }
+    return partitionPinnedFirst(base, pinnedTabIds)
+      .map((id) => byId.get(id))
+      .filter((t) => t !== undefined)
       .map((t): TabView => {
+        const pinned = pinnedSet.has(t.id);
         // The active tab shows the current route's target, so resolve from the
         // route (instant) rather than its stored ids (which lag a navigation).
         const isActive = t.id === activeTabId;
@@ -261,6 +303,7 @@ export function BrowserTabStrip() {
             label: task?.title ?? taskInfo.get(taskId) ?? "Task",
             icon: <TaskTabIcon task={task} size={14} />,
             channelName: channel,
+            pinned,
           };
         }
         if (dashId) {
@@ -268,8 +311,11 @@ export function BrowserTabStrip() {
           return {
             id: t.id,
             label: info?.name ?? "Canvas",
-            icon: iconForTemplate(info?.templateId ?? "freeform", { size: 14 }),
+            icon: iconForTemplate(info?.templateId ?? "freeform", {
+              size: 14,
+            }),
             channelName: channel,
+            pinned,
           };
         }
         // A channel tab: a sub-section (Inbox/Artifacts/…) or the channel home.
@@ -282,13 +328,18 @@ export function BrowserTabStrip() {
             label: meta?.label ?? channel ?? "Channel",
             icon: <HashIcon size={14} />,
             channelName: channel,
+            // No section meta → the channel's index page.
+            isChannelHome: !meta,
+            pinned,
           };
         }
-        return { id: t.id, label: "New tab", channelName: null };
+        return { id: t.id, label: "New tab", channelName: null, pinned };
       });
   }, [
     snapshot,
     windowId,
+    pinnedTabIds,
+    previewOrder,
     channelName,
     dashboards,
     activeRecord,
@@ -349,25 +400,80 @@ export function BrowserTabStrip() {
     goToTab(tab);
   };
 
+  // Apply a post-close snapshot to the store synchronously before navigating.
+  // The store otherwise lags a subscription round-trip, so the /website index
+  // would render against the still-has-tabs snapshot and redirect to the first
+  // channel (re-opening a tab) before the empty strip arrives.
+  const applyCloseResult = (next: TabsSnapshot) => {
+    browserTabsStore.getState().setSnapshot(next);
+    const w = primaryWindow(next);
+    const active = w?.activeTabId
+      ? next.tabs.find((t) => t.id === w.activeTabId)
+      : null;
+    if (active) goToTab(active);
+    else navigate({ to: "/website" });
+  };
+
   const handleClose = (tabId: string) => {
-    close.mutate(
-      { tabId },
-      {
-        onSuccess: (next) => {
-          // Apply the post-close snapshot to the store synchronously before
-          // navigating. The store otherwise lags a subscription round-trip, so
-          // the /website index would render against the still-has-tabs snapshot
-          // and redirect to the first channel (re-opening a tab) before the
-          // empty strip arrives.
-          browserTabsStore.getState().setSnapshot(next);
-          const w = primaryWindow(next);
-          const active = w?.activeTabId
-            ? next.tabs.find((t) => t.id === w.activeTabId)
-            : null;
-          if (active) goToTab(active);
-          else navigate({ to: "/website" });
-        },
-      },
+    close.mutate({ tabId }, { onSuccess: applyCloseResult });
+  };
+
+  // Unpinning re-homes the tab at the front of the unpinned block. Apply the
+  // reorder optimistically (in the same tick as the pin toggle) so the tab
+  // doesn't visibly jump from its stored slot to the front a round-trip later.
+  const handleTogglePin = (tabId: string) => {
+    const wasPinned = pinnedTabIds.includes(tabId);
+    togglePinned(tabId);
+    if (!wasPinned || !windowId) return;
+    const order = frontOfUnpinnedOrder(snapshot, windowId, tabId, pinnedTabIds);
+    browserTabsStore
+      .getState()
+      .setSnapshot(setTabOrder(snapshot, windowId, order));
+    setOrder.mutate(
+      { windowId, tabIds: order },
+      { onSuccess: (next) => browserTabsStore.getState().setSnapshot(next) },
+    );
+  };
+
+  // Bulk closes operate on the strip's *displayed* order (pinned-first) and
+  // never take pinned tabs with them. The anchor (the right-clicked tab, which
+  // always survives) takes focus if the active tab was among those closed.
+  const handleCloseMany = (tabIds: string[], anchorTabId: string) => {
+    if (tabIds.length === 0) return;
+    closeMany.mutate(
+      { tabIds, focusTabId: anchorTabId },
+      { onSuccess: applyCloseResult },
+    );
+  };
+
+  const handleCloseOthers = (tabId: string) => {
+    handleCloseMany(
+      tabs.filter((t) => t.id !== tabId && !t.pinned).map((t) => t.id),
+      tabId,
+    );
+  };
+
+  const handleCloseToRight = (tabId: string) => {
+    const idx = tabs.findIndex((t) => t.id === tabId);
+    if (idx === -1) return;
+    handleCloseMany(
+      tabs
+        .slice(idx + 1)
+        .filter((t) => !t.pinned)
+        .map((t) => t.id),
+      tabId,
+    );
+  };
+
+  const handleCloseToLeft = (tabId: string) => {
+    const idx = tabs.findIndex((t) => t.id === tabId);
+    if (idx === -1) return;
+    handleCloseMany(
+      tabs
+        .slice(0, idx)
+        .filter((t) => !t.pinned)
+        .map((t) => t.id),
+      tabId,
     );
   };
 
@@ -377,6 +483,10 @@ export function BrowserTabStrip() {
       activeTabId={activeTabId}
       onSelect={handleSelect}
       onClose={handleClose}
+      onTogglePin={handleTogglePin}
+      onCloseOthers={handleCloseOthers}
+      onCloseToRight={handleCloseToRight}
+      onCloseToLeft={handleCloseToLeft}
       onNewTab={() => {
         if (!windowId) return;
         newBlankTab.mutate(

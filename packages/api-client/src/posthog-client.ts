@@ -122,6 +122,8 @@ export type UsageLimitType = "burst" | "sustained" | null;
 // Stable message so callers recognize this after a saga reduces the error to a string.
 export const CLOUD_USAGE_LIMIT_ERROR_MESSAGE = "Cloud usage limit reached";
 
+export const SESSION_LOGS_MAX_PAGE_SIZE = 5000;
+
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
 export class CloudUsageLimitError extends Error {
   limitType: UsageLimitType;
@@ -2699,32 +2701,51 @@ export class PostHogAPIClient {
     runId: string,
     options?: { limit?: number; after?: string },
   ): Promise<StoredLogEntry[]> {
+    const maxEntries = options?.limit ?? SESSION_LOGS_MAX_PAGE_SIZE;
+    const entries: StoredLogEntry[] = [];
     try {
       const teamId = await this.getTeamId();
-      const url = new URL(
-        `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`,
-      );
-      url.searchParams.set("limit", String(options?.limit ?? 5000));
-      if (options?.after) {
-        url.searchParams.set("after", options.after);
-      }
-      const response = await this.api.fetcher.fetch({
-        method: "get",
-        url,
-        path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`,
-      });
-
-      if (!response.ok) {
-        log.warn(
-          `Failed to fetch session logs: ${response.status} ${response.statusText}`,
+      const path = `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`;
+      let offset = 0;
+      while (entries.length < maxEntries) {
+        const url = new URL(`${this.api.baseUrl}${path}`);
+        url.searchParams.set(
+          "limit",
+          String(
+            Math.min(SESSION_LOGS_MAX_PAGE_SIZE, maxEntries - entries.length),
+          ),
         );
-        return [];
-      }
+        if (offset > 0) {
+          url.searchParams.set("offset", String(offset));
+        }
+        if (options?.after) {
+          url.searchParams.set("after", options.after);
+        }
+        const response = await this.api.fetcher.fetch({
+          method: "get",
+          url,
+          path,
+        });
 
-      return (await response.json()) as StoredLogEntry[];
+        if (!response.ok) {
+          log.warn(
+            `Failed to fetch session logs page at offset ${offset}: ${response.status} ${response.statusText}`,
+          );
+          break;
+        }
+
+        const page = (await response.json()) as StoredLogEntry[];
+        entries.push(...page);
+        const hasMore = response.headers.get("X-Has-More") === "true";
+        if (!hasMore || page.length === 0) {
+          break;
+        }
+        offset += page.length;
+      }
+      return entries;
     } catch (err) {
       log.warn("Failed to fetch task run session logs", err);
-      return [];
+      return entries;
     }
   }
 

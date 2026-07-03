@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { zipSync } from "fflate";
@@ -1184,6 +1185,99 @@ describe("AgentServer HTTP Mode", () => {
       expect(sentMeta?.localSkillContext).toContain("with context");
       expect(sentMeta?.localSkillName).toBe("local-test-skill");
     }, 20000);
+
+    it("ignores a redelivered user_message whose messageId was already accepted", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(async () => ({ stopReason: "end_turn" }));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async (messageId: string | undefined) => {
+        const response = await fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: messageId ?? "no-id",
+            method: "user_message",
+            params: {
+              content: "do the thing",
+              ...(messageId ? { messageId } : {}),
+            },
+          }),
+        });
+        expect(response.status).toBe(200);
+        return (await response.json()) as {
+          result?: { stopReason?: string; duplicate?: boolean };
+        };
+      };
+
+      const first = await send("m-1");
+      expect(first.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const redelivery = await send("m-1");
+      expect(redelivery.result?.duplicate).toBe(true);
+      expect(redelivery.result?.stopReason).toBe("duplicate_delivery");
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const distinct = await send("m-2");
+      expect(distinct.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(2);
+
+      const anonymousFirst = await send(undefined);
+      const anonymousSecond = await send(undefined);
+      expect(anonymousFirst.result?.stopReason).toBe("end_turn");
+      expect(anonymousSecond.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(4);
+    }, 20000);
+
+    it("redelivers a messageId whose first delivery failed before producing a turn", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi
+        .fn(async () => ({ stopReason: "end_turn" }))
+        .mockRejectedValueOnce(new Error("sdk connection lost"));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async () =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: "m-err",
+            method: "user_message",
+            params: { content: "do the thing", messageId: "m-err" },
+          }),
+        });
+
+      await send();
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const retry = await send();
+      expect(retry.status).toBe(200);
+      const body = (await retry.json()) as {
+        result?: { stopReason?: string; duplicate?: boolean };
+      };
+      expect(body.result?.duplicate).toBeUndefined();
+      expect(body.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(2);
+    }, 20000);
   });
 
   describe("404 handling", () => {
@@ -2281,5 +2375,181 @@ describe("AgentServer HTTP Mode", () => {
       expect(context).not.toContain("gh pr checkout");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
+  });
+});
+
+// Exercises getPendingUserPrompt directly (no HTTP server / git repo) so we can
+// assert how the initial cloud prompt degrades when an attached file can't be
+// hydrated — the case behind a pasted-text task reaching the agent as a bare
+// "Attached files: …" description with no readable file.
+describe("AgentServer pending user attachments", () => {
+  interface PendingPromptInternals {
+    posthogAPI: {
+      getTaskRun: (taskId: string, runId: string) => Promise<TaskRun>;
+      downloadArtifact: (
+        taskId: string,
+        runId: string,
+        storagePath: string,
+      ) => Promise<ArrayBuffer | null>;
+    };
+    getPendingUserPrompt(
+      taskRun: TaskRun | null,
+    ): Promise<{ prompt: ContentBlock[] } | null>;
+  }
+
+  let tempDir: string;
+  let server: AgentServer | undefined;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-pending-"));
+  });
+
+  afterEach(async () => {
+    await server?.stop();
+    server = undefined;
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  const buildInternals = (): PendingPromptInternals => {
+    server = new AgentServer({
+      port: getNextTestPort(),
+      jwtPublicKey: TEST_PUBLIC_KEY,
+      repositoryPath: tempDir,
+      apiUrl: "http://localhost:8000",
+      apiKey: "test-api-key",
+      projectId: 1,
+      mode: "interactive",
+      taskId: "test-task-id",
+      runId: "test-run-id",
+    });
+    return server as unknown as PendingPromptInternals;
+  };
+
+  it("appends an explicit notice when a pending attachment never reaches the manifest", async () => {
+    const internals = buildInternals();
+    // Refetch still can't see the attachment (truly absent, not just lagging).
+    const getTaskRun = vi.fn(async () =>
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: [],
+      }),
+    );
+    internals.posthogAPI.getTaskRun = getTaskRun;
+
+    const result = await internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: [],
+      }),
+    );
+
+    // Refetched once to recover a lagging manifest, then — still missing —
+    // surfaced an explicit notice instead of returning null (which would let the
+    // caller fall back to the misleading "Attached files: …" description).
+    expect(getTaskRun).toHaveBeenCalledTimes(1);
+    expect(result).not.toBeNull();
+    expect(result?.prompt).toHaveLength(1);
+    const [block] = result?.prompt ?? [];
+    expect(block?.type).toBe("text");
+    expect((block as { text: string }).text).toContain("could not be loaded");
+  });
+
+  it("recovers a pending attachment from a refetched run manifest", async () => {
+    const internals = buildInternals();
+    internals.posthogAPI.getTaskRun = vi.fn(async () =>
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["att-1"] },
+        artifacts: [
+          {
+            id: "att-1",
+            name: "pasted-text.txt",
+            type: "user_attachment",
+            storage_path: "tasks/artifacts/pasted-text.txt",
+            content_type: "text/plain",
+          },
+        ],
+      }),
+    );
+    const downloadArtifact = vi.fn(async () =>
+      exactArrayBuffer(new TextEncoder().encode("pasted body")),
+    );
+    internals.posthogAPI.downloadArtifact = downloadArtifact;
+
+    const result = await internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["att-1"] },
+        artifacts: [],
+      }),
+    );
+
+    expect(downloadArtifact).toHaveBeenCalledWith(
+      "task-1",
+      "run-1",
+      "tasks/artifacts/pasted-text.txt",
+    );
+    const resourceLinks = result?.prompt.filter(
+      (block) => block.type === "resource_link",
+    );
+    expect(resourceLinks).toHaveLength(1);
+    // No "couldn't load" notice once the attachment is recovered.
+    const hasNotice = result?.prompt.some(
+      (block) =>
+        block.type === "text" &&
+        (block as { text: string }).text.includes("could not be loaded"),
+    );
+    expect(hasNotice).toBe(false);
+  });
+
+  it("returns null without refetching when no pending artifacts were declared", async () => {
+    const internals = buildInternals();
+    const getTaskRun = vi.fn();
+    internals.posthogAPI.getTaskRun = getTaskRun;
+
+    const result = await internals.getPendingUserPrompt(
+      createTaskRun({ state: {}, artifacts: [] }),
+    );
+
+    expect(result).toBeNull();
+    expect(getTaskRun).not.toHaveBeenCalled();
+  });
+
+  it("warns once (not twice) about a missing artifact across the speculative and post-refetch resolves", async () => {
+    const internals = buildInternals();
+    // A non-empty manifest that never lists the requested id — so getArtifactsById
+    // reaches its per-id "missing" warning on both the pre- and post-refetch calls
+    // (an empty manifest would short-circuit before warning at all).
+    const decoyManifest = [
+      {
+        id: "unrelated-artifact",
+        name: "other.txt",
+        type: "user_attachment" as const,
+      },
+    ];
+    internals.posthogAPI.getTaskRun = vi.fn(async () =>
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: decoyManifest,
+      }),
+    );
+    const loggerHost = internals as unknown as {
+      logger: { warn: (...args: unknown[]) => void };
+    };
+    const warnSpy = vi
+      .spyOn(loggerHost.logger, "warn")
+      .mockImplementation(() => {});
+
+    await internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: decoyManifest,
+      }),
+    );
+
+    // The speculative pre-refetch resolve stays quiet (a miss there is expected);
+    // only the post-refetch resolve emits the per-id "missing" warning.
+    const manifestWarnings = warnSpy.mock.calls.filter(
+      ([message]) => message === "Pending artifact missing from run manifest",
+    );
+    expect(manifestWarnings).toHaveLength(1);
   });
 });

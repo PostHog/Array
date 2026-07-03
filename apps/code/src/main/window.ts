@@ -30,6 +30,7 @@ import {
 } from "./utils/store";
 
 const log = logger.scope("window");
+const trpcLog = logger.scope("host-trpc");
 
 const MAIN_WINDOW_VITE_DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
 const MAIN_WINDOW_VITE_NAME = "main_window";
@@ -280,6 +281,13 @@ export function createWindow(): void {
     router: trpcRouter,
     windows: [mainWindow],
     createContext: async () => ({ container }),
+    // Input is deliberately not logged — it can carry tokens or file contents.
+    onError: ({ error, path, type }) => {
+      trpcLog.error(`${type} '${path ?? "<unknown>"}' failed (${error.code})`, {
+        message: error.message,
+        cause: error.cause instanceof Error ? error.cause.stack : error.cause,
+      });
+    },
   });
 
   setupExternalLinkHandlers(mainWindow);
