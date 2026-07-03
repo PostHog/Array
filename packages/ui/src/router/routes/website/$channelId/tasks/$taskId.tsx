@@ -1,5 +1,7 @@
 import type { Task } from "@posthog/shared/domain-types";
+import { ThreadPanel } from "@posthog/ui/features/canvas/components/ThreadPanel";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { TaskDetail } from "@posthog/ui/features/task-detail/components/TaskDetail";
 import {
@@ -8,10 +10,11 @@ import {
   taskDetailQuery,
 } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { RoutePending } from "@posthog/ui/router/RoutePending";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/website/$channelId/tasks/$taskId")({
   component: ChannelTaskDetailRoute,
@@ -38,6 +41,18 @@ function ChannelTaskDetailRoute() {
     markAsViewed(taskId);
   }, [taskId, markAsViewed]);
 
+  // Opening a task shows its thread docked on the right (collapsible). The
+  // panel follows the task being viewed.
+  const openThread = useThreadPanelStore((s) => s.openThread);
+  const threadCollapsed = useThreadPanelStore((s) => s.collapsed);
+  const threadWidth = useThreadPanelStore((s) => s.width);
+  const setThreadWidth = useThreadPanelStore((s) => s.setWidth);
+  const setThreadCollapsed = useThreadPanelStore((s) => s.setCollapsed);
+  const [isResizingThread, setIsResizingThread] = useState(false);
+  useEffect(() => {
+    openThread(taskId);
+  }, [openThread, taskId]);
+
   const { data: fetched } = useQuery({
     ...taskDetailQuery(taskId),
     enabled: !fromList && !loaderTask,
@@ -50,11 +65,38 @@ function ChannelTaskDetailRoute() {
   }
 
   return (
-    <TaskDetail
-      key={task.id}
-      task={task}
-      channelName={channelName ?? "Channel"}
-      channelId={channelId}
-    />
+    <div className="flex h-full min-w-0">
+      <div className="min-w-0 flex-1">
+        <TaskDetail
+          key={task.id}
+          task={task}
+          channelName={channelName ?? "Channel"}
+          channelId={channelId}
+        />
+      </div>
+      {threadCollapsed ? (
+        <ThreadPanel
+          taskId={taskId}
+          task={task}
+          collapsed
+          onToggleCollapsed={() => setThreadCollapsed(false)}
+        />
+      ) : (
+        <ResizableSidebar
+          open
+          width={threadWidth}
+          setWidth={setThreadWidth}
+          isResizing={isResizingThread}
+          setIsResizing={setIsResizingThread}
+          side="right"
+        >
+          <ThreadPanel
+            taskId={taskId}
+            task={task}
+            onToggleCollapsed={() => setThreadCollapsed(true)}
+          />
+        </ResizableSidebar>
+      )}
+    </div>
   );
 }
