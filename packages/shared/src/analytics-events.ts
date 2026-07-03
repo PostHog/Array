@@ -51,6 +51,8 @@ export type CommandMenuAction =
   | "go-forward"
   | "open-task"
   | "open-channel"
+  | "open-command-center"
+  | "open-inbox"
   | "search-files"
   | "open-file"
   | "reload-window"
