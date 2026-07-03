@@ -247,6 +247,7 @@ function SidebarMenuComponent() {
         }
       } catch (error) {
         log.error("Failed to show folder context menu", error);
+        toast.error("Couldn't perform folder action");
       }
     },
     [folders, removeFolder, hostClient, openExternalApp],

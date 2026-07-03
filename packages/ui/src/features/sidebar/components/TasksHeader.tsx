@@ -52,7 +52,6 @@ function AddFolderButton() {
         size="icon-sm"
         onClick={handleClick}
         disabled={isOpening}
-        aria-busy={isOpening}
       >
         <FolderPlus size={14} />
       </Button>
