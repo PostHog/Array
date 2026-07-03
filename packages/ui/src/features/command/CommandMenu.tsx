@@ -445,6 +445,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           items={sections}
           value={query}
           autoHighlight="always"
+          keepHighlight
           onValueChange={(val, eventDetails) => {
             if (eventDetails.reason !== "input-change") return;
             if (typeof val === "string") {

@@ -83,6 +83,7 @@ export function FilePicker({
           filter={null}
           value={searchQuery}
           autoHighlight="always"
+          keepHighlight
           onValueChange={(val, eventDetails) => {
             if (eventDetails.reason !== "input-change") return;
             if (typeof val === "string") setSearchQuery(val);
