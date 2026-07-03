@@ -17,6 +17,10 @@ import { posthogNodeAnalytics } from "../../platform-adapters/posthog-analytics"
 import { withTimeout } from "../../utils/async";
 import { logger } from "../../utils/logger";
 import { shutdownOtelTransport } from "../../utils/otel-log-transport";
+import {
+  getFullScreenState,
+  setRestoreFullScreenOnNextLaunch,
+} from "../../utils/store";
 
 const log = logger.scope("app-lifecycle");
 
@@ -53,10 +57,17 @@ export class AppLifecycleService {
 
   setQuittingForUpdate(): void {
     this._isQuittingForUpdate = true;
+    // Remember whether we were fullscreen so the post-update relaunch restores
+    // it. A normal quit never runs this, so the flag stays false and the app
+    // reopens windowed.
+    setRestoreFullScreenOnNextLaunch(getFullScreenState());
   }
 
   clearQuittingForUpdate(): void {
     this._isQuittingForUpdate = false;
+    // The install handoff was aborted; don't let a stale flag restore
+    // fullscreen on the next manual launch.
+    setRestoreFullScreenOnNextLaunch(false);
   }
 
   /**
