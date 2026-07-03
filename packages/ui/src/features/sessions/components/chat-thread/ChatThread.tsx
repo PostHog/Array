@@ -618,17 +618,26 @@ const ThreadRow = memo(function ThreadRow({
       <ChatMessageScrollerItem
         messageId={item.id}
         scrollAnchor={false}
-        className="group mx-auto w-full @max-sm/thread:px-2.5 px-4 empty:hidden"
+        className="group mx-auto w-full px-4 empty:hidden"
         style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
       >
         <div className="flex flex-col gap-4 empty:hidden">
           {item.items.map((sub, i) => (
-            <ThreadItemBody
+            // The scroller item's own content-visibility works at whole-turn granularity — a
+            // large turn (diffs, charts, dozens of tools) would render wholesale as soon as the
+            // card nears the viewport. Nesting content-visibility per sub-item keeps layout +
+            // paint bounded to the viewport-sized slice while scrolling; `auto` remembers each
+            // row's real size after first render so the scrollbar stays stable.
+            <div
               key={sub.id}
-              item={sub}
-              renderItem={renderItem}
-              isTrailing={i === item.items.length - 1}
-            />
+              className="[contain-intrinsic-size:auto_2rem] [content-visibility:auto] empty:hidden"
+            >
+              <ThreadItemBody
+                item={sub}
+                renderItem={renderItem}
+                isTrailing={i === item.items.length - 1}
+              />
+            </div>
           ))}
         </div>
         <RowTimestamp timestamp={completedTurnTimestamp(item)} />
@@ -737,7 +746,7 @@ function ThreadScrollBody({
   // `group/thread` so the footer's hover-reveal (opacity-50 → 100 on group-hover) tracks the thread,
   // mirroring the legacy ConversationView container.
   return (
-    <ChatMessageScroller className="group/thread @container/thread">
+    <ChatMessageScroller className="group/thread">
       <StickyHeaderOverlay items={items} />
       <ThreadAutoFollow items={items} />
       <ChatMessageScrollerViewport>
