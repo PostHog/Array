@@ -311,7 +311,7 @@ export function TaskListView({
                   >
                     {group.tasks.length === 0 ? (
                       <p className="px-4 py-2 text-[12px] text-gray-9">
-                        No agents yet
+                        No tasks yet
                       </p>
                     ) : (
                       group.tasks.map((task) => (
