@@ -57,16 +57,13 @@ export class AppLifecycleService {
 
   setQuittingForUpdate(): void {
     this._isQuittingForUpdate = true;
-    // Remember whether we were fullscreen so the post-update relaunch restores
-    // it. A normal quit never runs this, so the flag stays false and the app
-    // reopens windowed.
+    // Remember fullscreen state so the post-update relaunch restores it.
     setRestoreFullScreenOnNextLaunch(getFullScreenState());
   }
 
   clearQuittingForUpdate(): void {
     this._isQuittingForUpdate = false;
-    // The install handoff was aborted; don't let a stale flag restore
-    // fullscreen on the next manual launch.
+    // The install handoff was aborted.
     setRestoreFullScreenOnNextLaunch(false);
   }
 

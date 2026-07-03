@@ -24,7 +24,6 @@ import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import {
-  getRestoreFullScreenOnNextLaunch,
   saveFullScreenState,
   saveZoomLevel,
   setRestoreFullScreenOnNextLaunch,
@@ -79,10 +78,8 @@ export function saveWindowState(window: BrowserWindow): void {
   const isMaximized = window.isMaximized();
   windowStateStore.set("isMaximized", isMaximized);
 
-  // Only save bounds when the window is in its normal state. Persisting the
-  // maximized or fullscreen bounds would clobber the user's windowed
-  // size/position, so a later "revert to windowed" launch has nothing to
-  // restore to.
+  // Only save bounds when not maximized, so restoring from maximized
+  // gives the user their previous windowed size/position
   if (!isMaximized && !window.isFullScreen()) {
     const bounds = window.getBounds();
     windowStateStore.set("x", bounds.x);
@@ -170,9 +167,8 @@ export function createWindow(): void {
   const savedState = getSavedWindowState();
 
   // Read the one-shot fullscreen-restore flag and clear it immediately, so it
-  // only ever affects the single launch that follows an update restart. A
-  // normal quit never sets it, so this is false and the app launches windowed.
-  const restoreFullScreen = getRestoreFullScreenOnNextLaunch();
+  // only ever affects the single launch that follows an update restart.
+  const restoreFullScreen = savedState.restoreFullScreenOnNextLaunch;
   if (restoreFullScreen) {
     setRestoreFullScreenOnNextLaunch(false);
   }

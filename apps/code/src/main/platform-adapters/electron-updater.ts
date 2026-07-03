@@ -67,13 +67,10 @@ export class ElectronUpdater implements IUpdater {
   }
 
   public quitAndInstall(): void {
-    // An unpackaged (dev) build has no staged artifact to swap, so the real
-    // quitAndInstall would no-op or throw. Relaunch instead, so a simulated
-    // update can still exercise the post-update startup path (e.g. fullscreen
-    // restore) during local testing.
+    // An unpackaged (dev) build has no staged artifact to swap and
+    // the real quitAndInstall would no-op or throw, so relaunch instead.
     if (!app.isPackaged) {
       app.relaunch();
-      app.exit(0);
       return;
     }
     autoUpdater.quitAndInstall(false, true);

@@ -72,10 +72,9 @@ export function getFullScreenState(): boolean {
 }
 
 /**
- * One-shot flag that survives a single relaunch. Set only when the app quits
- * to install an update, so a fullscreen session is restored after the
- * "restart to apply" handoff — but a normal quit (Cmd+Q, window close) leaves
- * it false and launches windowed.
+ * Set only when the app quits to install an update, so a fullscreen session
+ * is restored after the "restart to apply" handoff.
+ * A normal quit leaves it false and launches windowed.
  */
 export function setRestoreFullScreenOnNextLaunch(restore: boolean): void {
   windowStateStore.set("restoreFullScreenOnNextLaunch", restore);

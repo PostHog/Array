@@ -230,11 +230,8 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   }
 
   /**
-   * Dev/testing affordance (reached only through the dev-mode-gated toolbar):
-   * forces a "ready" state with a fake version so the real update banner
-   * surfaces, without a packaged build or a real downloaded artifact. Clicking
-   * the banner's Restart then runs the normal installUpdate() path; in an
-   * unpackaged build the updater relaunches instead of swapping binaries.
+   * Forces a "ready" state with a fake version so the real update banner
+   * surfaces, without a packaged build or a real downloaded artifact (dev only).
    */
   simulateUpdateReady(version = "Update"): void {
     this.downloadedVersion = version;

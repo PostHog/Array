@@ -1,3 +1,4 @@
+import { updateStore } from "@posthog/core/updates/updateStore";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +12,6 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@posthog/quill";
-import { updateStore } from "@posthog/core/updates/updateStore";
 import { REGION_LABELS } from "@posthog/shared";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import {
@@ -816,8 +816,8 @@ function QuickActionsMenu() {
   };
 
   const handleSimulateUpdate = () => {
-    // Updates report as disabled in dev, which hides the sidebar banner. Force
-    // it on so the simulated "ready" state surfaces the real prompt.
+    // Updates report as disabled in dev, which hides the sidebar banner.
+    // Force it on so the simulated "ready" state surfaces the real prompt.
     updateStore.getState().setEnabled(true);
     void trpcClient.dev.simulateUpdate.mutate();
   };

@@ -129,17 +129,16 @@ describe("AppLifecycleService", () => {
       expect(service.isQuittingForUpdate).toBe(false);
     });
 
-    it("remembers fullscreen for the next launch when quitting for update in fullscreen", () => {
-      mockGetFullScreenState.mockReturnValue(true);
-      service.setQuittingForUpdate();
-      expect(mockSetRestoreFullScreenOnNextLaunch).toHaveBeenCalledWith(true);
-    });
-
-    it("does not schedule a fullscreen restore when not fullscreen", () => {
-      mockGetFullScreenState.mockReturnValue(false);
-      service.setQuittingForUpdate();
-      expect(mockSetRestoreFullScreenOnNextLaunch).toHaveBeenCalledWith(false);
-    });
+    it.each([[true], [false]])(
+      "schedules restore-fullscreen=%s on update-quit",
+      (isFullScreen) => {
+        mockGetFullScreenState.mockReturnValue(isFullScreen);
+        service.setQuittingForUpdate();
+        expect(mockSetRestoreFullScreenOnNextLaunch).toHaveBeenCalledWith(
+          isFullScreen,
+        );
+      },
+    );
 
     it("clears the fullscreen-restore flag when the update handoff is aborted", () => {
       mockGetFullScreenState.mockReturnValue(true);
