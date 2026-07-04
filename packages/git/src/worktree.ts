@@ -557,11 +557,27 @@ export class WorktreeManager {
       }
     }
 
-    const trashedPath = await this.moveToTrash(resolvedWorktreePath);
-    if (trashedPath) {
-      await manager.executeWrite(this.mainRepoPath, (git) =>
-        git.raw(["worktree", "prune"]),
-      );
+    // Rename-to-trash and prune both run inside the write lock so the on-disk
+    // move and the git metadata update are atomic: if prune can't run (e.g. a
+    // persistent external index.lock) we roll the rename back rather than leave
+    // the worktree gone from disk but still registered (which would strand the
+    // branch). Only the slow recursive removal of the trashed copy happens
+    // outside the lock.
+    const trashedPath = await manager
+      .executeWrite(this.mainRepoPath, async (git) => {
+        const moved = await this.moveToTrash(resolvedWorktreePath);
+        if (!moved) return null;
+        try {
+          await git.raw(["worktree", "prune"]);
+          return moved;
+        } catch (pruneError) {
+          await fs.rename(moved, resolvedWorktreePath).catch(() => {});
+          throw pruneError;
+        }
+      })
+      .catch(() => "prune-failed" as const);
+
+    if (trashedPath && trashedPath !== "prune-failed") {
       await fs.rmdir(path.dirname(resolvedWorktreePath)).catch(() => {});
       void forceRemove(trashedPath).catch(() => {});
       return;
@@ -586,7 +602,8 @@ export class WorktreeManager {
    * the multi-gigabyte recursive removal then runs in the background (and
    * `sweepTrash` mops up anything left behind by a crash). Returns null when
    * the rename cannot work (path missing, or on a different volume), in which
-   * case the caller falls back to removing in place.
+   * case the caller falls back to removing in place. Call inside the repo write
+   * lock so the move stays ordered with the follow-up `git worktree prune`.
    */
   private async moveToTrash(worktreePath: string): Promise<string | null> {
     const trashDir = this.getTrashFolderPath();
