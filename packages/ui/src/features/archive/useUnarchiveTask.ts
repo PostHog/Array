@@ -34,15 +34,16 @@ export function useUnarchiveTask(): UseUnarchiveTask {
 
   const invalidateArchiveQueries = useCallback(async () => {
     await Promise.all([
+      queryClient.invalidateQueries({ queryKey: WORKSPACE_QUERY_KEY }),
       queryClient.invalidateQueries(trpc.archive.pathFilter()),
       queryClient.refetchQueries({ queryKey: ["tasks"] }),
     ]);
   }, [queryClient, trpc]);
 
-  const invalidateOnRestore = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: WORKSPACE_QUERY_KEY });
-    await invalidateArchiveQueries();
-  }, [queryClient, invalidateArchiveQueries]);
+  const invalidateOnRestore = useCallback(
+    async () => invalidateArchiveQueries(),
+    [invalidateArchiveQueries],
+  );
 
   const restore = useCallback(
     async (
