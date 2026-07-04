@@ -52,7 +52,7 @@ const ORIGIN_PRODUCT_META: Record<string, OriginProductMeta> = {
   automation: { Icon: Robot, label: "Automation" },
 };
 
-function getOriginProductMeta(
+export function getOriginProductMeta(
   originProduct?: string,
 ): OriginProductMeta | undefined {
   return originProduct ? ORIGIN_PRODUCT_META[originProduct] : undefined;

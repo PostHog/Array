@@ -1,5 +1,5 @@
 import type { Task } from "@posthog/shared/domain-types";
-import { ThreadPanel } from "@posthog/ui/features/canvas/components/ThreadPanel";
+import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
@@ -10,11 +10,10 @@ import {
   taskDetailQuery,
 } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { RoutePending } from "@posthog/ui/router/RoutePending";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 export const Route = createFileRoute("/website/$channelId/tasks/$taskId")({
   component: ChannelTaskDetailRoute,
@@ -44,11 +43,6 @@ function ChannelTaskDetailRoute() {
   // Opening a task shows its thread docked on the right (collapsible). The
   // panel follows the task being viewed.
   const openThread = useThreadPanelStore((s) => s.openThread);
-  const threadCollapsed = useThreadPanelStore((s) => s.collapsed);
-  const threadWidth = useThreadPanelStore((s) => s.width);
-  const setThreadWidth = useThreadPanelStore((s) => s.setWidth);
-  const setThreadCollapsed = useThreadPanelStore((s) => s.setCollapsed);
-  const [isResizingThread, setIsResizingThread] = useState(false);
   useEffect(() => {
     openThread(taskId);
   }, [openThread, taskId]);
@@ -74,29 +68,7 @@ function ChannelTaskDetailRoute() {
           channelId={channelId}
         />
       </div>
-      {threadCollapsed ? (
-        <ThreadPanel
-          taskId={taskId}
-          task={task}
-          collapsed
-          onToggleCollapsed={() => setThreadCollapsed(false)}
-        />
-      ) : (
-        <ResizableSidebar
-          open
-          width={threadWidth}
-          setWidth={setThreadWidth}
-          isResizing={isResizingThread}
-          setIsResizing={setIsResizingThread}
-          side="right"
-        >
-          <ThreadPanel
-            taskId={taskId}
-            task={task}
-            onToggleCollapsed={() => setThreadCollapsed(true)}
-          />
-        </ResizableSidebar>
-      )}
+      <ThreadSidebar taskId={taskId} task={task} />
     </div>
   );
 }

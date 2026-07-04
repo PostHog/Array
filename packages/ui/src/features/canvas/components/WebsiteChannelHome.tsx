@@ -7,7 +7,7 @@ import {
   ChannelHomeComposer,
   type ChannelHomeComposerHandle,
 } from "@posthog/ui/features/canvas/components/ChannelHomeComposer";
-import { ThreadPanel } from "@posthog/ui/features/canvas/components/ThreadPanel";
+import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
 import {
   channelFeedQueryKey,
   useChannelFeed,
@@ -20,13 +20,12 @@ import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPa
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
-import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 // A channel: a Slack-style multiplayer feed. Each member message kicks off a
 // task rendered as a card everyone in the channel sees; the composer stays
@@ -54,13 +53,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
 
   const threadTaskId = useThreadPanelStore((s) => s.taskId);
-  const threadCollapsed = useThreadPanelStore((s) => s.collapsed);
-  const threadWidth = useThreadPanelStore((s) => s.width);
-  const setThreadWidth = useThreadPanelStore((s) => s.setWidth);
   const openThread = useThreadPanelStore((s) => s.openThread);
   const closeThread = useThreadPanelStore((s) => s.closeThread);
-  const setThreadCollapsed = useThreadPanelStore((s) => s.setCollapsed);
-  const [isResizingThread, setIsResizingThread] = useState(false);
 
   // A thread from another channel shouldn't linger when switching feeds.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-close per channel
@@ -185,31 +179,13 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
         </div>
       </div>
 
-      {threadTaskId &&
-        (threadCollapsed ? (
-          <ThreadPanel
-            taskId={threadTaskId}
-            task={threadTask}
-            collapsed
-            onToggleCollapsed={() => setThreadCollapsed(false)}
-          />
-        ) : (
-          <ResizableSidebar
-            open
-            width={threadWidth}
-            setWidth={setThreadWidth}
-            isResizing={isResizingThread}
-            setIsResizing={setIsResizingThread}
-            side="right"
-          >
-            <ThreadPanel
-              taskId={threadTaskId}
-              task={threadTask}
-              onClose={closeThread}
-              onToggleCollapsed={() => setThreadCollapsed(true)}
-            />
-          </ResizableSidebar>
-        ))}
+      {threadTaskId && (
+        <ThreadSidebar
+          taskId={threadTaskId}
+          task={threadTask}
+          onClose={closeThread}
+        />
+      )}
     </div>
   );
 }

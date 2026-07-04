@@ -21,12 +21,16 @@ export function useTaskThread(
   messages: TaskThreadMessage[];
   isLoading: boolean;
 } {
+  const pollIntervalMs = options?.pollIntervalMs ?? THREAD_POLL_INTERVAL_MS;
   const query = useAuthenticatedQuery<TaskThreadMessage[]>(
     taskThreadQueryKey(taskId),
     (client) => client.getTaskThreadMessages(taskId as string),
     {
       enabled: !!taskId,
-      refetchInterval: options?.pollIntervalMs ?? THREAD_POLL_INTERVAL_MS,
+      refetchInterval: pollIntervalMs,
+      // Fresh-within-the-poll-window so focus/remount doesn't refire every
+      // feed row's thread query on top of the interval.
+      staleTime: pollIntervalMs,
     },
   );
   return { messages: query.data ?? [], isLoading: query.isLoading };

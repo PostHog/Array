@@ -33,15 +33,14 @@ import {
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
+import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
-import {
-  userDisplayName,
-  userInitials,
-} from "@posthog/ui/features/canvas/utils/userDisplay";
+import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { xmlToPlainText } from "@posthog/ui/features/message-editor/content";
 import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
+import { getOriginProductMeta } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 import { Text } from "@radix-ui/themes";
 import { useMemo } from "react";
 
@@ -56,16 +55,6 @@ const STATUS_LABELS: Record<TaskRunStatus, string> = {
   completed: "Completed",
   failed: "Failed",
   cancelled: "Cancelled",
-};
-
-const ORIGIN_LABELS: Record<string, string> = {
-  error_tracking: "Error tracking",
-  signal_report: "Signal report",
-  signals_scout: "Signals scout",
-  automation: "Automation",
-  slack: "Slack",
-  onboarding: "Onboarding",
-  session_summaries: "Session summaries",
 };
 
 function statusBadge(status: TaskRunStatus) {
@@ -129,7 +118,7 @@ function TaskCardOrigin({ task }: { task: Task }) {
   const isUserCreated = task.origin_product === "user_created";
   const label = isUserCreated
     ? `Requested by @${userDisplayName(task.created_by)}`
-    : (ORIGIN_LABELS[task.origin_product] ?? task.origin_product);
+    : (getOriginProductMeta(task.origin_product)?.label ?? task.origin_product);
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
       {isUserCreated ? <UserIcon size={12} /> : <RobotIcon size={12} />}
@@ -145,9 +134,10 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
     typeof task.latest_run?.output?.pr_url === "string"
       ? task.latest_run.output.pr_url
       : undefined;
+  // The repository renders separately with its icon; `meta` is the plain-text
+  // remainder of the row.
   const meta = [
     task.slug || null,
-    task.repository,
     task.latest_run?.stage ?? null,
     task.latest_run?.environment === "cloud" ? "Cloud" : null,
   ].filter(Boolean) as string[];
@@ -172,7 +162,7 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
             {task.title || "Untitled task"}
           </Text>
         </div>
-        {(meta.length > 0 || prUrl) && (
+        {(meta.length > 0 || task.repository || prUrl) && (
           <div className="flex min-w-0 items-center gap-3">
             {task.repository && (
               <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
@@ -180,9 +170,11 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
                 {task.repository}
               </span>
             )}
-            <Text size="1" className="truncate text-muted-foreground">
-              {meta.filter((m) => m !== task.repository).join(" · ")}
-            </Text>
+            {meta.length > 0 && (
+              <Text size="1" className="truncate text-muted-foreground">
+                {meta.join(" · ")}
+              </Text>
+            )}
             {prUrl && (
               <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
                 <ArrowSquareOutIcon size={12} />
@@ -230,7 +222,7 @@ function RepliesRow({
       <AvatarGroup size="xs" stacked>
         {authors.map((author, index) => (
           <Avatar key={author?.uuid ?? index} size="xs">
-            <AvatarFallback>{userInitials(author)}</AvatarFallback>
+            <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
           </Avatar>
         ))}
       </AvatarGroup>
@@ -267,7 +259,7 @@ function FeedItem({
             {isAgent && !task.created_by ? (
               <RobotIcon size={16} />
             ) : (
-              userInitials(task.created_by)
+              getUserInitials(task.created_by)
             )}
           </AvatarFallback>
         </Avatar>

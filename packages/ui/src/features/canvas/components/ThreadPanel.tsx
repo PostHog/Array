@@ -26,14 +26,12 @@ import type { Task, TaskThreadMessage } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
+import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import {
   useTaskThread,
   useTaskThreadMutations,
 } from "@posthog/ui/features/canvas/hooks/useTaskThread";
-import {
-  userDisplayName,
-  userInitials,
-} from "@posthog/ui/features/canvas/utils/userDisplay";
+import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Text } from "@radix-ui/themes";
@@ -62,7 +60,7 @@ function ThreadMessageRow({
   return (
     <div className="group flex gap-2 rounded-md px-2 py-1.5 hover:bg-fill-secondary">
       <Avatar size="xs" className="mt-0.5 shrink-0">
-        <AvatarFallback>{userInitials(message.author)}</AvatarFallback>
+        <AvatarFallback>{getUserInitials(message.author)}</AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
@@ -143,8 +141,13 @@ export function ThreadPanel({
   const task = taskProp ?? fetchedTask;
 
   const { messages, isLoading } = useTaskThread(collapsed ? undefined : taskId);
-  const { postMessage, deleteMessage, sendToAgent, isPosting } =
-    useTaskThreadMutations(taskId);
+  const {
+    postMessage,
+    deleteMessage,
+    sendToAgent,
+    isPosting,
+    isSendingToAgent,
+  } = useTaskThreadMutations(taskId);
 
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -157,9 +160,11 @@ export function ThreadPanel({
 
   const isTaskAuthor =
     !!currentUser?.uuid && currentUser.uuid === task?.created_by?.uuid;
-  // Forwarding needs a run the workflow can still signal.
+  // Forwarding needs a run the workflow can still signal, one send at a time.
   const canForward =
-    !!task?.latest_run && !isTerminalStatus(task.latest_run.status);
+    !!task?.latest_run &&
+    !isTerminalStatus(task.latest_run.status) &&
+    !isSendingToAgent;
 
   const submit = () => {
     const content = draft.trim();

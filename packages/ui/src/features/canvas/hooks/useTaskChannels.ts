@@ -1,6 +1,8 @@
 import type { TaskChannel } from "@posthog/shared/domain-types";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
-import { useMemo } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
 
 const TASK_CHANNELS_POLL_INTERVAL_MS = 30_000;
 export const TASK_CHANNELS_QUERY_KEY = ["task-channels"] as const;
@@ -18,7 +20,7 @@ export function normalizeChannelName(name: string): string {
  * folder "channels" stay on the desktop file system for CONTEXT.md and
  * artifacts). Listing also lazily provisions the requester's #me channel.
  */
-export function useTaskChannels(options?: { enabled?: boolean }): {
+export function useTaskChannels(): {
   channels: TaskChannel[];
   personalChannel: TaskChannel | undefined;
   isLoading: boolean;
@@ -26,10 +28,7 @@ export function useTaskChannels(options?: { enabled?: boolean }): {
   const query = useAuthenticatedQuery<TaskChannel[]>(
     TASK_CHANNELS_QUERY_KEY,
     (client) => client.getTaskChannels(),
-    {
-      enabled: options?.enabled ?? true,
-      refetchInterval: TASK_CHANNELS_POLL_INTERVAL_MS,
-    },
+    { refetchInterval: TASK_CHANNELS_POLL_INTERVAL_MS },
   );
   const channels = useMemo(() => query.data ?? [], [query.data]);
   const personalChannel = useMemo(
@@ -52,6 +51,8 @@ export function useBackendChannel(channelName: string | undefined): {
   const normalized = channelName ? normalizeChannelName(channelName) : "";
   const isPersonal = normalized === PERSONAL_CHANNEL_NAME;
   const { channels, personalChannel, isLoading } = useTaskChannels();
+  const client = useOptionalAuthenticatedClient();
+  const queryClient = useQueryClient();
 
   const existing = isPersonal
     ? personalChannel
@@ -59,16 +60,33 @@ export function useBackendChannel(channelName: string | undefined): {
         (c) => c.channel_type === "public" && c.name === normalized,
       );
 
-  // resolve is idempotent server-side (get_or_create), so running it as a
-  // query keyed on the name is safe and self-deduplicating.
-  const resolveQuery = useAuthenticatedQuery<TaskChannel>(
-    ["task-channel-resolve", normalized],
-    (client) => client.resolveTaskChannel(normalized),
-    { enabled: !!normalized && !isPersonal && !isLoading && !existing },
-  );
+  // Resolve-or-create is a POST, so it runs as a mutation fired once per
+  // missing name — not a query TanStack would refire on focus/remount. The
+  // result is merged into the channels-list cache, which stops the effect.
+  const resolveMutation = useMutation({
+    mutationFn: async (name: string) => {
+      if (!client) throw new Error("Not authenticated");
+      return client.resolveTaskChannel(name);
+    },
+    onSuccess: (channel) => {
+      queryClient.setQueryData<TaskChannel[]>(
+        TASK_CHANNELS_QUERY_KEY,
+        (prev) =>
+          prev?.some((c) => c.id === channel.id)
+            ? prev
+            : [...(prev ?? []), channel],
+      );
+    },
+  });
+  const { mutate: resolve, isPending: isResolving } = resolveMutation;
+  useEffect(() => {
+    if (normalized && !isPersonal && !isLoading && !existing && !isResolving) {
+      resolve(normalized);
+    }
+  }, [normalized, isPersonal, isLoading, existing, isResolving, resolve]);
 
   return {
-    channel: existing ?? resolveQuery.data ?? undefined,
-    isLoading: isLoading || (!existing && resolveQuery.isLoading),
+    channel: existing,
+    isLoading: isLoading || (!existing && isResolving),
   };
 }
