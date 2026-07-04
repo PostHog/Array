@@ -3394,6 +3394,7 @@ ${signedCommitInstructions}
         notification: {
           jsonrpc: "2.0",
           method: POSTHOG_NOTIFICATIONS.RTK_SAVINGS,
+          // snake_case: these land as PostHog event properties.
           params: {
             task_id: this.config.taskId,
             run_id: this.config.runId,

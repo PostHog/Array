@@ -15,7 +15,7 @@ const GAIN_JSON = JSON.stringify({
 });
 
 function gain(stdout: string) {
-  return vi.fn().mockResolvedValue({ stdout, stderr: "" });
+  return vi.fn().mockResolvedValue(stdout);
 }
 
 describe("resolveRtkSavings", () => {
@@ -26,7 +26,7 @@ describe("resolveRtkSavings", () => {
       runGain,
     });
 
-    expect(runGain).toHaveBeenCalledWith("/bundled/rtk");
+    expect(runGain).toHaveBeenCalledWith("/bundled/rtk", expect.anything());
     expect(savings).toEqual({
       totalCommands: 2,
       inputTokens: 502691,
@@ -54,6 +54,8 @@ describe("resolveRtkSavings", () => {
     ],
     ["malformed JSON", "not json"],
     ["missing summary block", JSON.stringify({ daily: [] })],
+    ["the payload is JSON null", "null"],
+    ["the payload is a non-object", "42"],
   ])("returns null when %s", async (_label, stdout) => {
     const savings = await resolveRtkSavings({
       resolveBinary: () => "/bundled/rtk",

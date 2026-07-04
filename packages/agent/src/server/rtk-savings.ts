@@ -5,8 +5,10 @@ import { resolveRtkPrefix } from "../adapters/claude/session/rtk";
 const execFileAsync = promisify(execFile);
 
 /**
- * The `summary` block of `rtk gain --format json` — RTK's own tally of how much
- * command output it compressed away before it reached the model.
+ * The `summary` block of `rtk gain --format json` — RTK's own tally of the
+ * output it compressed away before it reached the model. The counts are RTK's
+ * token estimates (its own output labels them "Input/Output tokens" and "Tokens
+ * saved"), not raw bytes.
  */
 export interface RtkSavingsSummary {
   totalCommands: number;
@@ -16,17 +18,12 @@ export interface RtkSavingsSummary {
   avgSavingsPct: number;
 }
 
-interface GainOutput {
-  stdout: string;
-  stderr: string;
-}
-
 interface ResolveRtkSavingsOptions {
   env?: NodeJS.ProcessEnv;
   /** Resolves the rtk binary to invoke; undefined disables reporting. Overridable for tests. */
   resolveBinary?: (env: NodeJS.ProcessEnv) => string | undefined;
-  /** Runs `rtk gain` and returns its stdio; overridable for tests. */
-  runGain?: (binary: string) => Promise<GainOutput>;
+  /** Runs `rtk gain` and returns its stdout; overridable for tests. */
+  runGain?: (binary: string, env: NodeJS.ProcessEnv) => Promise<string>;
 }
 
 function toFiniteNumber(value: unknown): number {
@@ -34,8 +31,11 @@ function toFiniteNumber(value: unknown): number {
 }
 
 function parseGainSummary(stdout: string): RtkSavingsSummary | null {
-  const parsed = JSON.parse(stdout) as { summary?: Record<string, unknown> };
-  const summary = parsed.summary;
+  const parsed: unknown = JSON.parse(stdout);
+  // `JSON.parse("null")` returns null, and a non-object payload has no summary —
+  // guard before indexing rather than leaning on the caller's try/catch.
+  if (!parsed || typeof parsed !== "object") return null;
+  const summary = (parsed as { summary?: Record<string, unknown> }).summary;
   if (!summary || typeof summary !== "object") return null;
   return {
     totalCommands: toFiniteNumber(summary.total_commands),
@@ -46,13 +46,16 @@ function parseGainSummary(stdout: string): RtkSavingsSummary | null {
   };
 }
 
-async function defaultRunGain(binary: string): Promise<GainOutput> {
-  const { stdout, stderr } = await execFileAsync(
+async function defaultRunGain(
+  binary: string,
+  env: NodeJS.ProcessEnv,
+): Promise<string> {
+  const { stdout } = await execFileAsync(
     binary,
     ["gain", "--format", "json"],
-    { timeout: 5_000 },
+    { timeout: 5_000, env },
   );
-  return { stdout, stderr };
+  return stdout;
 }
 
 /**
@@ -73,9 +76,9 @@ export async function resolveRtkSavings({
   if (!binary) return null;
 
   try {
-    const { stdout } = await runGain(binary);
+    const stdout = await runGain(binary, env);
     const summary = parseGainSummary(stdout);
-    // Nothing was compressed this run — no point emitting a zero.
+    // No rtk-wrapped commands ran this session — nothing worth reporting.
     if (!summary || summary.totalCommands <= 0) return null;
     return summary;
   } catch {
