@@ -574,22 +574,27 @@ export class WorktreeManager {
           throw pruneError;
         }
       })
-      .catch(() => "prune-failed" as const);
+      // A null (rename couldn't happen) or a throw (prune failed, rename rolled
+      // back) both fall through to the in-place remove below.
+      .catch(() => null);
 
-    if (trashedPath && trashedPath !== "prune-failed") {
-      await fs.rmdir(path.dirname(resolvedWorktreePath)).catch(() => {});
+    if (trashedPath) {
       void forceRemove(trashedPath).catch(() => {});
-      return;
+    } else {
+      await manager.executeWrite(this.mainRepoPath, async (git) => {
+        try {
+          await git.raw(["worktree", "remove", worktreePath, "--force"]);
+        } catch {
+          await forceRemove(worktreePath);
+          await git.raw(["worktree", "prune"]);
+        }
+      });
     }
 
-    await manager.executeWrite(this.mainRepoPath, async (git) => {
-      try {
-        await git.raw(["worktree", "remove", worktreePath, "--force"]);
-      } catch {
-        await forceRemove(worktreePath);
-        await git.raw(["worktree", "prune"]);
-      }
-    });
+    // Both branches leave the worktree's `<base>/<name>` parent empty; remove it
+    // so a deleted worktree never leaves a stray directory behind (best-effort:
+    // rmdir no-ops if it isn't empty).
+    await fs.rmdir(path.dirname(resolvedWorktreePath)).catch(() => {});
   }
 
   private getTrashFolderPath(): string {
