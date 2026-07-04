@@ -305,6 +305,7 @@ export class AgentServer {
   private app: Hono;
   private posthogAPI: PostHogAPIClient;
   private eventStreamSender: TaskRunEventStreamSender | null = null;
+  private rtkSavingsEmitted = false;
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
@@ -2839,6 +2840,11 @@ ${signedCommitInstructions}
       error: errorMessage ?? "Agent error",
     });
 
+    // Emit before the finally below stops the stream — failed runs still used
+    // RTK-compressed commands and must be counted. cleanupSession's emit runs
+    // after this stop on the error path, so it can't rely on that one.
+    await this.emitRtkSavings();
+
     try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
         status,
@@ -3378,11 +3384,14 @@ ${signedCommitInstructions}
   /**
    * Emit RTK's output-compression token savings for this run as a telemetry
    * event, so PostHog can report how much context RTK saved. Best-effort and
-   * cloud-only (no-op when the event stream isn't configured); runs just before
-   * the stream is completed so the event is flushed with the rest of the run.
+   * cloud-only (no-op when the event stream isn't configured). Fires at most
+   * once per run: it's called from both terminal seams (the error path stops
+   * the stream in signalTaskComplete, before cleanupSession runs) and must land
+   * before the stream is stopped, since enqueue is a no-op once stopped.
    */
   private async emitRtkSavings(): Promise<void> {
-    if (!this.eventStreamSender) return;
+    if (!this.eventStreamSender || this.rtkSavingsEmitted) return;
+    this.rtkSavingsEmitted = true;
 
     try {
       const savings = await resolveRtkSavings();
