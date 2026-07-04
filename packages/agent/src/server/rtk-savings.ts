@@ -50,11 +50,10 @@ async function defaultRunGain(
   binary: string,
   env: NodeJS.ProcessEnv,
 ): Promise<string> {
-  const { stdout } = await execFileAsync(
-    binary,
-    ["gain", "--format", "json"],
-    { timeout: 5_000, env },
-  );
+  const { stdout } = await execFileAsync(binary, ["gain", "--format", "json"], {
+    timeout: 5_000,
+    env,
+  });
   return stdout;
 }
 
