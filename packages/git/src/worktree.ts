@@ -2,7 +2,6 @@ import { type ChildProcess, execFile, spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {
-  type ExcludePattern,
   matchesExcludePatterns,
   parseExcludePatterns,
 } from "./exclude-patterns";
@@ -720,27 +719,76 @@ export class WorktreeManager {
 
 /**
  * get all gitignored paths matching patterns from an exclude file
+ *
+ * Fast path: list candidates with `--exclude-standard` (so git collapses
+ * standard-ignored trees) and re-apply the exclude file's patterns in-process.
+ * If that in-process matching ever throws, fall back to letting git do the
+ * whole match itself (`--exclude-from` only) — slower and does not collapse
+ * ignored trees, but it is git's own battle-tested ignore logic, so a bug in
+ * the hand-rolled matcher degrades to correct-but-slower rather than failing
+ * worktree setup or silently linking nothing.
  */
 async function getIgnoredPathsFromExcludeFile(
   mainRepoPath: string,
   excludeFile: string,
 ): Promise<string[]> {
-  let patterns: ExcludePattern[];
+  let content: string;
   try {
-    const content = await fs.readFile(
-      path.join(mainRepoPath, excludeFile),
-      "utf-8",
-    );
-    patterns = parseExcludePatterns(content);
+    content = await fs.readFile(path.join(mainRepoPath, excludeFile), "utf-8");
   } catch {
+    // No exclude file (the common case) — genuinely nothing to link/copy.
     return [];
   }
-  if (patterns.length === 0) return [];
 
-  const candidates = await listExcludeCandidates(mainRepoPath, excludeFile);
-  return candidates
-    .filter((candidate) => matchesExcludePatterns(candidate, patterns))
-    .map((candidate) => candidate.replace(/\/$/, ""));
+  try {
+    const patterns = parseExcludePatterns(content);
+    if (patterns.length === 0) return [];
+
+    const candidates = await listExcludeCandidates(mainRepoPath, excludeFile);
+    return candidates
+      .filter((candidate) => matchesExcludePatterns(candidate, patterns))
+      .map((candidate) => candidate.replace(/\/$/, ""));
+  } catch {
+    return listIgnoredPathsViaGit(mainRepoPath, excludeFile);
+  }
+}
+
+/**
+ * Fallback matcher: git's own ignore matching over the exclude file, without
+ * `--exclude-standard`. This is the pre-fast-path behavior — correct but it
+ * walks standard-ignored trees instead of collapsing them. Used only when the
+ * in-process matcher throws.
+ */
+function listIgnoredPathsViaGit(
+  mainRepoPath: string,
+  excludeFile: string,
+): Promise<string[]> {
+  return new Promise((resolve) => {
+    execFile(
+      "git",
+      [
+        "ls-files",
+        "--ignored",
+        "--others",
+        "--directory",
+        `--exclude-from=${excludeFile}`,
+      ],
+      { cwd: mainRepoPath },
+      (error, stdout) => {
+        if (error || !stdout) {
+          resolve([]);
+          return;
+        }
+        resolve(
+          stdout
+            .trim()
+            .split("\n")
+            .filter((line) => line.length > 0)
+            .map((line) => line.replace(/\/$/, "")),
+        );
+      },
+    );
+  });
 }
 
 /**
