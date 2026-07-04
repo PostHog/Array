@@ -75,6 +75,7 @@ import {
 } from "./cloud-prompt";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
+import { resolveRtkSavings } from "./rtk-savings";
 import {
   handoffLocalGitStateSchema,
   jsonRpcRequestSchema,
@@ -3365,12 +3366,50 @@ ${signedCommitInstructions}
     }
 
     if (completeEventStream) {
+      await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
     }
 
     this.pendingEvents = [];
     this.lastReportedBranch = null;
     this.session = null;
+  }
+
+  /**
+   * Emit RTK's output-compression token savings for this run as a telemetry
+   * event, so PostHog can report how much context RTK saved. Best-effort and
+   * cloud-only (no-op when the event stream isn't configured); runs just before
+   * the stream is completed so the event is flushed with the rest of the run.
+   */
+  private async emitRtkSavings(): Promise<void> {
+    if (!this.eventStreamSender) return;
+
+    try {
+      const savings = await resolveRtkSavings();
+      if (!savings) return;
+
+      this.eventStreamSender.enqueue({
+        type: "notification",
+        timestamp: new Date().toISOString(),
+        notification: {
+          jsonrpc: "2.0",
+          method: POSTHOG_NOTIFICATIONS.RTK_SAVINGS,
+          params: {
+            task_id: this.config.taskId,
+            run_id: this.config.runId,
+            team_id: this.config.projectId,
+            total_commands: savings.totalCommands,
+            input_tokens: savings.inputTokens,
+            output_tokens: savings.outputTokens,
+            tokens_saved: savings.tokensSaved,
+            avg_savings_pct: savings.avgSavingsPct,
+          },
+        },
+      });
+      this.logger.debug("Emitted rtk savings", { ...savings });
+    } catch (error) {
+      this.logger.debug("Failed to emit rtk savings", { error });
+    }
   }
 
   private async captureCheckpointState(
