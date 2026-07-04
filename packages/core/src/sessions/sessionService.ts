@@ -1540,9 +1540,7 @@ export class SessionService {
     const batches = this.pendingSessionEvents;
     this.pendingSessionEvents = new Map();
     for (const [taskRunId, events] of batches) {
-      for (const acpMsg of events) {
-        this.handleSessionEvent(taskRunId, acpMsg);
-      }
+      this.handleSessionEvents(taskRunId, events);
     }
   }
 
@@ -1552,9 +1550,7 @@ export class SessionService {
     const events = this.pendingSessionEvents.get(taskRunId);
     if (!events) return;
     this.pendingSessionEvents.delete(taskRunId);
-    for (const acpMsg of events) {
-      this.handleSessionEvent(taskRunId, acpMsg);
-    }
+    this.handleSessionEvents(taskRunId, events);
   }
 
   // --- Transcript residency (memory eviction) ---
@@ -1965,6 +1961,50 @@ export class SessionService {
     }
   }
 
+  /** Apply one flush batch for a task. Runs of plain notifications (message
+   * chunks, tool-call updates — the bulk of a streamed turn) are appended to
+   * the store in a single `appendEvents` call: every store write costs
+   * O(transcript) (session-map copy plus subscriber notification fan-out), so
+   * writing per event made a 15-event flush walk the whole transcript 15
+   * times. Events carrying a JSON-RPC `id` (user-prompt echoes, stop-reason
+   * responses) keep going through `handleSessionEvent` one at a time, so
+   * turn-lifecycle semantics are untouched. Global event order is preserved:
+   * a run is flushed before any id-carrying event is handled. */
+  private handleSessionEvents(taskRunId: string, acpMsgs: AcpMessage[]): void {
+    let run: AcpMessage[] = [];
+
+    const flushRun = () => {
+      if (run.length === 0) return;
+      const batch = run;
+      run = [];
+      const session = this.d.store.getSessions()[taskRunId];
+      if (!session) return;
+      // Once the agent starts responding, clear initialPrompt so that retry
+      // reconnects to this session instead of creating a new one.
+      if (session.initialPrompt?.length) {
+        this.d.store.updateSession(taskRunId, { initialPrompt: undefined });
+      }
+      this.d.store.appendEvents(taskRunId, batch);
+      this.updatePromptStateFromEvents(taskRunId, batch, { isLive: true });
+      for (const acpMsg of batch) {
+        this.applyNotificationEffects(taskRunId, acpMsg, session);
+      }
+    };
+
+    for (const acpMsg of acpMsgs) {
+      // Notifications carry no JSON-RPC id; requests and responses do. Only
+      // id-less events are safe to coalesce: they are pure appends plus
+      // field-level side effects, with no turn-lifecycle branching.
+      if ("id" in acpMsg.message) {
+        flushRun();
+        this.handleSessionEvent(taskRunId, acpMsg);
+      } else {
+        run.push(acpMsg);
+      }
+    }
+    flushRun();
+  }
+
   private handleSessionEvent(taskRunId: string, acpMsg: AcpMessage): void {
     const session = this.d.store.getSessions()[taskRunId];
     if (!session) return;
@@ -2026,6 +2066,20 @@ export class SessionService {
 
       this.d.taskViewedApi.markActivity(session.taskId);
     }
+
+    this.applyNotificationEffects(taskRunId, acpMsg, session);
+  }
+
+  /** Side effects carried by session notifications (config, usage, adapter,
+   * compaction status). Split out of `handleSessionEvent` so a coalesced run
+   * of notifications (see `handleSessionEvents`) shares it; no-op for
+   * requests/responses, which carry no `method`. */
+  private applyNotificationEffects(
+    taskRunId: string,
+    acpMsg: AcpMessage,
+    session: AgentSession,
+  ): void {
+    const msg = acpMsg.message;
 
     if ("method" in msg && msg.method === "session/update" && "params" in msg) {
       const params = msg.params as {

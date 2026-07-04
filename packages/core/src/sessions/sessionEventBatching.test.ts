@@ -32,6 +32,35 @@ function chunkText(event: AcpMessage): string {
   return params.update.content.text;
 }
 
+/** The renderer-side echo of a user prompt — a JSON-RPC request (carries an
+ * id), so it must not be coalesced with plain notifications. */
+function promptEcho(id: number, text: string): AcpMessage {
+  return {
+    ts: 1,
+    message: {
+      jsonrpc: "2.0",
+      id,
+      method: "session/prompt",
+      params: {
+        sessionId: RUN_ID,
+        prompt: [{ type: "text", text }],
+      },
+    },
+  } as unknown as AcpMessage;
+}
+
+/** The agent's terminal response for a prompt — completes the turn. */
+function stopResponse(id: number): AcpMessage {
+  return {
+    ts: 2,
+    message: {
+      jsonrpc: "2.0",
+      id,
+      result: { stopReason: "end_turn" },
+    },
+  } as unknown as AcpMessage;
+}
+
 function createHarness() {
   const sessions: Record<string, AgentSession> = {
     [RUN_ID]: {
@@ -62,6 +91,9 @@ function createHarness() {
       sessions[session.taskRunId] = session;
     },
     updateSession: (taskRunId: string, updates: Partial<AgentSession>) => {
+      // Like the real store: produce a NEW session object per update, so a
+      // reference captured before the update keeps its pre-update values
+      // (handleSessionEvent's stop-reason check depends on that).
       const session = sessions[taskRunId];
       if (session) sessions[taskRunId] = { ...session, ...updates };
     },
@@ -174,6 +206,60 @@ describe("streamed event batching", () => {
     // A single flush tick drains the whole burst, in arrival order.
     vi.advanceTimersByTime(FLUSH_MS);
     expect(h.events().map(chunkText)).toEqual(["a", "b", "c"]);
+  });
+
+  it("coalesces a run of plain notifications into one appendEvents call", () => {
+    const h = createHarness();
+
+    h.emit(chunk("a"));
+    h.emit(chunk("b"));
+    h.emit(chunk("c"));
+    vi.advanceTimersByTime(FLUSH_MS);
+
+    // One store write for the whole run — not one per event. Each write costs
+    // O(transcript) (map copy + subscriber fan-out), so this is the batching
+    // that keeps big transcripts smooth during streaming.
+    expect(h.appendEvents).toHaveBeenCalledTimes(1);
+    expect(h.appendEvents.mock.calls[0][1].map(chunkText)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
+  it("an id-carrying event splits the run but preserves global order", () => {
+    const h = createHarness();
+
+    h.emit(chunk("a"));
+    h.emit(chunk("b"));
+    h.emit(promptEcho(7, "user steer-less prompt"));
+    h.emit(chunk("c"));
+    vi.advanceTimersByTime(FLUSH_MS);
+
+    // Two coalesced appends around the individually-handled echo.
+    expect(h.appendEvents).toHaveBeenCalledTimes(2);
+    expect(h.appendEvents.mock.calls[0][1].map(chunkText)).toEqual(["a", "b"]);
+    expect(h.appendEvents.mock.calls[1][1].map(chunkText)).toEqual(["c"]);
+    expect(h.events().map(chunkText)).toEqual(["a", "b", "c"]);
+  });
+
+  it("a stop-reason response batched with chunks still completes the turn", () => {
+    const h = createHarness();
+
+    // Turn starts: the echo claims currentPromptId…
+    h.emit(promptEcho(9, "do the thing"));
+    // …streams some content…
+    h.emit(chunk("a"));
+    h.emit(chunk("b"));
+    // …and finishes, all within one flush window.
+    h.emit(stopResponse(9));
+    vi.advanceTimersByTime(FLUSH_MS);
+
+    // Transcript keeps everything appendable: the two chunks plus the
+    // response itself (the echo goes through replaceOptimisticWithEvent).
+    expect(h.events()).toHaveLength(3);
+    expect(h.events().slice(0, 2).map(chunkText)).toEqual(["a", "b"]);
+    expect(h.notifyPromptComplete).toHaveBeenCalledTimes(1);
   });
 
   it("flushes buffered events synchronously on teardown", () => {
