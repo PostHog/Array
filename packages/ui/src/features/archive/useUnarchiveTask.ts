@@ -40,11 +40,6 @@ export function useUnarchiveTask(): UseUnarchiveTask {
     ]);
   }, [queryClient, trpc]);
 
-  const invalidateOnRestore = useCallback(
-    async () => invalidateArchiveQueries(),
-    [invalidateArchiveQueries],
-  );
-
   const restore = useCallback(
     async (
       taskId: string,
@@ -53,11 +48,11 @@ export function useUnarchiveTask(): UseUnarchiveTask {
     ) => {
       const outcome = await controller.restore(taskId, hasTask, options);
       if (outcome.kind === "restored") {
-        await invalidateOnRestore();
+        await invalidateArchiveQueries();
       }
       return outcome;
     },
-    [controller, invalidateOnRestore],
+    [controller, invalidateArchiveQueries],
   );
 
   const remove = useCallback(
@@ -79,7 +74,7 @@ export function useUnarchiveTask(): UseUnarchiveTask {
         hasTask,
       );
       if (outcome.kind === "restore" && outcome.outcome.kind === "restored") {
-        await invalidateOnRestore();
+        await invalidateArchiveQueries();
       } else if (
         outcome.kind === "delete" &&
         outcome.outcome.kind === "deleted"
@@ -88,7 +83,7 @@ export function useUnarchiveTask(): UseUnarchiveTask {
       }
       return outcome;
     },
-    [controller, invalidateOnRestore, invalidateArchiveQueries],
+    [controller, invalidateArchiveQueries],
   );
 
   return { restore, remove, runContextMenuAction };
