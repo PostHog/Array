@@ -1,5 +1,10 @@
+import { useServiceOptional } from "@posthog/di/react";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
+import {
+  DEV_MODE_CLIENT,
+  type DevModeClient,
+} from "@posthog/ui/features/settings/devModeClient";
 import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
@@ -7,6 +12,7 @@ import { useSetupStore } from "@posthog/ui/features/setup/setupStore";
 import { useTourStore } from "@posthog/ui/features/tour/tourStore";
 import { clearApplicationStorage } from "@posthog/ui/utils/clearStorage";
 import { Button, Flex, Switch } from "@radix-ui/themes";
+import { useSyncExternalStore } from "react";
 
 export function AdvancedSettings() {
   const showDebugLogsToggle =
@@ -17,6 +23,7 @@ export function AdvancedSettings() {
   );
   const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
   const setUseNewChatThread = useSettingsStore((s) => s.setUseNewChatThread);
+  const devModeClient = useServiceOptional<DevModeClient>(DEV_MODE_CLIENT);
 
   return (
     <Flex direction="column">
@@ -40,7 +47,6 @@ export function AdvancedSettings() {
       <SettingRow
         label="Clear application storage"
         description="This will remove all locally stored application data"
-        noBorder={!showDebugLogsToggle}
       >
         <Button
           variant="soft"
@@ -66,7 +72,7 @@ export function AdvancedSettings() {
       <SettingRow
         label="Use new chat thread (experimental)"
         description="Render conversations with the new ChatX (quill) primitives instead of the virtualized thread"
-        noBorder
+        noBorder={!devModeClient}
       >
         <Switch
           checked={useNewChatThread}
@@ -74,6 +80,30 @@ export function AdvancedSettings() {
           size="1"
         />
       </SettingRow>
+      {devModeClient && <DevModeRow client={devModeClient} />}
     </Flex>
+  );
+}
+
+function DevModeRow({ client }: { client: DevModeClient }) {
+  const devMode = useSyncExternalStore(
+    client.onDevModeChanged,
+    client.getDevMode,
+  );
+
+  return (
+    <SettingRow
+      label="Developer mode"
+      description="Show the dev toolbar with live CPU, memory, IPC timings and render tracking"
+      noBorder
+    >
+      <Switch
+        checked={devMode}
+        onCheckedChange={(checked) => {
+          void client.setDevMode(checked);
+        }}
+        size="1"
+      />
+    </SettingRow>
   );
 }

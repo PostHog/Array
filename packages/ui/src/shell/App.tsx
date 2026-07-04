@@ -29,9 +29,14 @@ import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { RouterProvider } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
-function App() {
+interface AppProps {
+  /** Host-provided dev diagnostics toolbar, docked below the app content. */
+  devToolbar?: ReactNode;
+}
+
+function App({ devToolbar }: AppProps) {
   const { isBootstrapped } = useAuthSession();
   const authState = useAuthStateValue((state) => state);
   const hasCompletedOnboarding = useOnboardingStore(
@@ -105,7 +110,11 @@ function App() {
   const renderContent = () => {
     if (!hasCompletedOnboarding) {
       return (
-        <motion.div key="onboarding" initial={{ opacity: 1 }}>
+        <motion.div
+          key="onboarding"
+          initial={{ opacity: 1 }}
+          className="h-full"
+        >
           <OnboardingFlow />
         </motion.div>
       );
@@ -113,7 +122,7 @@ function App() {
 
     if (!isAuthenticated) {
       return (
-        <motion.div key="auth" initial={{ opacity: 1 }}>
+        <motion.div key="auth" initial={{ opacity: 1 }} className="h-full">
           <AuthScreen />
         </motion.div>
       );
@@ -121,8 +130,12 @@ function App() {
 
     if (isCheckingAccess) {
       return (
-        <motion.div key="access-check" initial={{ opacity: 1 }}>
-          <Flex align="center" justify="center" minHeight="100vh">
+        <motion.div
+          key="access-check"
+          initial={{ opacity: 1 }}
+          className="h-full"
+        >
+          <Flex align="center" justify="center" height="100%">
             <Flex align="center" gap="3">
               <Spinner size="3" />
               <Text color="gray">Checking access...</Text>
@@ -134,7 +147,11 @@ function App() {
 
     if (needsInviteCode) {
       return (
-        <motion.div key="invite-code" initial={{ opacity: 1 }}>
+        <motion.div
+          key="invite-code"
+          initial={{ opacity: 1 }}
+          className="h-full"
+        >
           <InviteCodeScreen />
         </motion.div>
       );
@@ -142,7 +159,11 @@ function App() {
 
     if (needsAiApproval) {
       return (
-        <motion.div key="ai-approval" initial={{ opacity: 1 }}>
+        <motion.div
+          key="ai-approval"
+          initial={{ opacity: 1 }}
+          className="h-full"
+        >
           <AiApprovalScreen
             orgName={currentOrg?.name ?? null}
             isAdmin={isAdmin}
@@ -160,6 +181,7 @@ function App() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5, delay: showTransition ? 0.5 : 0 }}
+        className="h-full"
       >
         <RouterProvider router={router} />
         {/* Surfaces a toast when a backgrounded canvas generation finishes,
@@ -180,18 +202,23 @@ function App() {
         resetKey={authState.status}
         shouldSuppress={isNotAuthenticatedError}
       >
-        {isAuthenticated ? (
-          <AnimatePresence mode="wait">{content}</AnimatePresence>
-        ) : (
-          content
-        )}
-        <LoginTransition
-          isAnimating={showTransition}
-          isDarkMode={isDarkMode}
-          onComplete={handleTransitionComplete}
-        />
-        <ScopeReauthPrompt />
-        <AddDirectoryDialog />
+        <div className="flex h-screen flex-col">
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            {isAuthenticated ? (
+              <AnimatePresence mode="wait">{content}</AnimatePresence>
+            ) : (
+              content
+            )}
+            <LoginTransition
+              isAnimating={showTransition}
+              isDarkMode={isDarkMode}
+              onComplete={handleTransitionComplete}
+            />
+            <ScopeReauthPrompt />
+            <AddDirectoryDialog />
+          </div>
+          {devToolbar}
+        </div>
       </ErrorBoundary>
     </ToastProvider>
   );

@@ -55,6 +55,7 @@ export type ConversationItem =
       update: RenderItem;
       turnContext: TurnContext;
       thoughtComplete?: boolean;
+      timestamp?: number;
     }
   | {
       type: "git_action_result";
@@ -188,7 +189,7 @@ export function markThoughtCompletion(items: ConversationItem[]) {
   }
 }
 
-function pushItem(b: ItemBuilder, update: RenderItem) {
+function pushItem(b: ItemBuilder, update: RenderItem, ts?: number) {
   const turn = b.currentTurn;
   if (!turn) return;
   turn.itemCount++;
@@ -197,6 +198,7 @@ function pushItem(b: ItemBuilder, update: RenderItem) {
     id: `${turn.id}-item-${b.nextId()}`,
     update,
     turnContext: turn.context,
+    timestamp: ts,
   });
 }
 
@@ -333,7 +335,34 @@ function handlePromptRequest(
     turnComplete: false,
   };
 
-  b.currentTurnStartIndex = b.items.length;
+  // The orchestrator emits its setup progress ("Started agent") before the
+  // prompt it responds to is replayed onto the stream, so the card would sit
+  // above the user's message. Open the turn before any trailing progress cards
+  // so the transcript reads user message → setup → work.
+  let insertIndex = b.items.length;
+  while (insertIndex > 0) {
+    const prev = b.items[insertIndex - 1];
+    if (
+      prev.type === "session_update" &&
+      prev.update.sessionUpdate === "progress_group"
+    ) {
+      insertIndex--;
+    } else {
+      break;
+    }
+  }
+  if (insertIndex < b.items.length) {
+    for (const card of b.progressCards.values()) {
+      if (card.itemIndex >= insertIndex) card.itemIndex++;
+    }
+    // The shifted cards may live inside a turn the incremental builder already
+    // froze; flag the mutation so it falls back to a full rebuild.
+    if (insertIndex < b.lowestTouchedProgressIndex) {
+      b.lowestTouchedProgressIndex = insertIndex;
+    }
+  }
+
+  b.currentTurnStartIndex = insertIndex;
   b.currentTurn = {
     id: turnId,
     promptId: msg.id,
@@ -348,19 +377,19 @@ function handlePromptRequest(
   b.pendingPrompts.set(msg.id, b.currentTurn);
 
   if (gitAction.isGitAction && gitAction.actionType) {
-    b.items.push({
+    b.items.splice(insertIndex, 0, {
       type: "git_action",
       id: `${turnId}-git-action`,
       actionType: gitAction.actionType,
     });
   } else if (skillButtonId) {
-    b.items.push({
+    b.items.splice(insertIndex, 0, {
       type: "skill_button_action",
       id: `${turnId}-skill-action`,
       buttonId: skillButtonId,
     });
   } else {
-    b.items.push({
+    b.items.splice(insertIndex, 0, {
       type: "user_message",
       id: `${turnId}-user`,
       content: userContent,
@@ -460,7 +489,7 @@ function handleNotification(
     if (!b.currentTurn) {
       ensureImplicitTurn(b, ts);
     }
-    processSessionUpdate(b, update);
+    processSessionUpdate(b, update, ts);
     return;
   }
 
@@ -535,7 +564,20 @@ function handleNotification(
       status: string;
       isComplete?: boolean;
       error?: string;
+      explanation?: string;
+      fromModel?: string;
+      toModel?: string;
     };
+    if (params.status === "refusal" || params.status === "refusal_fallback") {
+      pushItem(b, {
+        sessionUpdate: "status",
+        status: params.status,
+        explanation: params.explanation,
+        fromModel: params.fromModel,
+        toModel: params.toModel,
+      });
+      return;
+    }
     if (params.status === "compacting") {
       if (params.isComplete) {
         // Successful compaction — flip the existing "Compacting…" status to
@@ -770,7 +812,11 @@ function appendTextChunkToChildren(
   }
 }
 
-function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
+function processSessionUpdate(
+  b: ItemBuilder,
+  update: SessionUpdate,
+  ts: number,
+) {
   switch (update.sessionUpdate) {
     case "user_message_chunk":
       break;
@@ -782,7 +828,7 @@ function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
       if (parentId) {
         appendTextChunkToChildren(b, parentId, update);
       } else {
-        appendTextChunk(b, update);
+        appendTextChunk(b, update, ts);
       }
       break;
     }
@@ -807,7 +853,7 @@ function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
         if (parentId) {
           pushChildItem(b, parentId, toolCall);
         } else {
-          pushItem(b, toolCall);
+          pushItem(b, toolCall, ts);
         }
       }
       break;
@@ -844,16 +890,20 @@ function processSessionUpdate(b: ItemBuilder, update: SessionUpdate) {
       };
       if (customUpdate.sessionUpdate === "agent_message") {
         if (customUpdate.content?.type === "text") {
-          appendTextChunk(b, {
-            sessionUpdate: "agent_message_chunk" as const,
-            content: customUpdate.content as { type: "text"; text: string },
-          });
+          appendTextChunk(
+            b,
+            {
+              sessionUpdate: "agent_message_chunk" as const,
+              content: customUpdate.content as { type: "text"; text: string },
+            },
+            ts,
+          );
         }
       } else if (
         customUpdate.sessionUpdate === "status" ||
         customUpdate.sessionUpdate === "error"
       ) {
-        pushItem(b, customUpdate as unknown as SessionUpdate);
+        pushItem(b, customUpdate as unknown as SessionUpdate, ts);
       }
       break;
     }
@@ -865,6 +915,7 @@ function appendTextChunk(
   update: SessionUpdate & {
     sessionUpdate: "agent_message_chunk" | "agent_thought_chunk";
   },
+  ts: number,
 ) {
   if (update.content.type !== "text") return;
 
@@ -886,6 +937,6 @@ function appendTextChunk(
       },
     };
   } else {
-    pushItem(b, { ...update, content: { ...update.content } });
+    pushItem(b, { ...update, content: { ...update.content } }, ts);
   }
 }

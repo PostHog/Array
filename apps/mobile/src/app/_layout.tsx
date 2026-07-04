@@ -17,6 +17,7 @@ import {
 import { useAuthStore } from "@/features/auth";
 import { setupNotificationResponseListener } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
+import { PendingPromptRecovery } from "@/features/tasks/components/PendingPromptRecovery";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import {
   POSTHOG_API_KEY,
@@ -197,6 +198,7 @@ export default function RootLayout() {
             <View style={themeVars} className="flex-1">
               <RootLayoutNav isConnected={isConnected} />
               <OfflineBanner isConnected={isConnected} />
+              <PendingPromptRecovery />
             </View>
             <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
           </QueryClientProvider>

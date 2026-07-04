@@ -2,7 +2,9 @@ import { ChartLineUp, FileText, X } from "@phosphor-icons/react";
 import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
 import { AUTORESEARCH_SERVICE } from "@posthog/core/autoresearch/identifiers";
 import { buildKickoffPreamble } from "@posthog/core/autoresearch/prompts";
+import { buildFileLineReferencePrompt } from "@posthog/core/code-review/reviewPrompts";
 import type { EditorContent } from "@posthog/core/message-editor/content";
+import { xmlToContent } from "@posthog/core/message-editor/content";
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
@@ -13,7 +15,7 @@ import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detai
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
-import { Button, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Button, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,6 +32,8 @@ import {
 } from "../../autoresearch/autoresearchDraftStore";
 import { toStageSelectOptions } from "../../autoresearch/stageModels";
 import { useAutoresearchEnabled } from "../../autoresearch/useAutoresearchEnabled";
+import { useFileSearchStore } from "../../command/fileSearchStore";
+import { NewTaskFilePreview } from "../../command/NewTaskFilePreview";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
 import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
@@ -160,6 +164,12 @@ export function TaskInput({
   );
   const selectedDirectory = useActiveRepoStore((s) => s.path);
   const setSelectedDirectory = useActiveRepoStore((s) => s.setPath);
+  // Inline file preview opened from the command palette's file search.
+  const previewFile = useFileSearchStore((s) => s.previewFile);
+  const closePreviewFile = useFileSearchStore((s) => s.closePreview);
+  // Clear the open file on repo change + unmount.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: clear on repo change + unmount only
+  useEffect(() => closePreviewFile, [selectedDirectory, closePreviewFile]);
   const { data: mostRecentRepo } = useQuery(
     trpc.folders.getMostRecentlyAccessedRepository.queryOptions(),
   );
@@ -184,6 +194,21 @@ export function TaskInput({
   const { data: skills } = useSkills();
 
   const editorRef = useRef<EditorHandle>(null);
+  const handleAddSelectionToPrompt = useCallback(
+    (startLine: number, endLine: number, text: string) => {
+      if (!selectedDirectory || !previewFile) return;
+      const absolutePath = `${selectedDirectory.replace(/\/+$/, "")}/${previewFile}`;
+      const prompt = buildFileLineReferencePrompt(
+        absolutePath,
+        startLine,
+        endLine,
+        text,
+      );
+      editorRef.current?.insertEditorContent(xmlToContent(prompt));
+      editorRef.current?.focus();
+    },
+    [selectedDirectory, previewFile],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonGroupRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
@@ -728,6 +753,7 @@ export function TaskInput({
     model: effectiveModel,
     reasoningLevel: effectiveReasoningLevel,
     onTaskCreated,
+    onTaskCreatedEffect: handleAutoresearchTaskCreated,
     environmentId: selectedEnvironment,
     sandboxEnvironmentId:
       effectiveWorkspaceMode === "cloud" && selectedCloudEnvId
@@ -737,7 +763,6 @@ export function TaskInput({
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
     allowNoRepo,
-    onTaskCreatedEffect: handleAutoresearchTaskCreated,
   });
 
   // Wraps the prompt in the autoresearch kickoff: protocol preamble first,
@@ -911,385 +936,411 @@ export function TaskInput({
       className="relative h-full w-full"
     >
       <DropZoneOverlay isVisible={isDraggingFile} />
-      <Flex height="100%" className="relative px-4">
-        <DotPatternBackground className="h-[100.333%]" />
-        <div
-          style={{
-            // Raise the input when the suggestion cards are shown so the longer
-            // list below it isn't squished against the bottom of the viewport.
-            // Note: this is NOT tied to `editorIsEmpty` — the input keeps its
-            // position as the user types so the box doesn't jump down when the
-            // suggestions fade out (and back in when the prompt is cleared).
-            top: suggestions && suggestions.length > 0 ? "38%" : "50%",
-            transform: "translate(-50%, -50%)",
-          }}
-          className="absolute left-1/2 z-[1] flex w-[calc(100%-2rem)] max-w-[600px] flex-col gap-2"
-        >
-          <Flex
-            gap="2"
-            align="center"
-            className="absolute bottom-full left-0 mb-2 min-w-0"
-          >
-            <WorkspaceModeSelect
-              value={workspaceMode}
-              onChange={setWorkspaceMode}
-              selectedCloudEnvironmentId={selectedCloudEnvId}
-              onCloudEnvironmentChange={setSelectedCloudEnvId}
-              size="1"
+      <Flex height="100%" width="100%">
+        {previewFile && selectedDirectory && (
+          <Box className="h-full min-w-0 flex-1 border-gray-4 border-r">
+            <NewTaskFilePreview
+              repoPath={selectedDirectory}
+              filePath={previewFile}
+              onAddSelection={handleAddSelectionToPrompt}
             />
-            {!allowNoRepo && workspaceMode === "worktree" && (
-              <EnvironmentSelector
-                repoPath={effectiveRepoPath ?? null}
-                value={selectedEnvironment}
-                onChange={setSelectedEnvironment}
-                disabled={isCreatingTask}
-                onCreateEnvironment={() =>
-                  openSettings("environments", {
-                    repoPath: effectiveRepoPath ?? undefined,
-                  })
-                }
-              />
-            )}
-            {!allowNoRepo && (
-              <ButtonGroup
-                ref={buttonGroupRef}
-                data-tour="folder-picker"
-                data-tour-ready={
-                  (
-                    workspaceMode === "cloud"
-                      ? selectedRepository
-                      : selectedDirectory
-                  )
-                    ? "true"
-                    : undefined
-                }
+          </Box>
+        )}
+        <Box className="relative h-full min-w-0 flex-1">
+          <Flex height="100%" className="relative px-4">
+            <DotPatternBackground className="h-[100.333%]" />
+            <div
+              style={{
+                // Raise the input when the suggestion cards are shown so the longer
+                // list below it isn't squished against the bottom of the viewport.
+                // Note: this is NOT tied to `editorIsEmpty` — the input keeps its
+                // position as the user types so the box doesn't jump down when the
+                // suggestions fade out (and back in when the prompt is cleared).
+                top: suggestions && suggestions.length > 0 ? "38%" : "50%",
+                transform: "translate(-50%, -50%)",
+              }}
+              className="absolute left-1/2 z-[1] flex w-[calc(100%-2rem)] max-w-[600px] flex-col gap-2"
+            >
+              <Flex
+                gap="2"
+                align="center"
+                className="absolute bottom-full left-0 mb-2 min-w-0"
               >
-                {workspaceMode === "cloud" ? (
-                  <GitHubRepoPicker
-                    value={selectedRepository}
-                    onChange={handleRepositorySelect}
-                    repositories={
-                      isCloudRepoPickerOpen
-                        ? visibleCloudRepositories
-                        : repositories
-                    }
-                    isLoading={
-                      isLoadingRepos ||
-                      (isCloudRepoPickerOpen && cloudRepositoriesLoading)
-                    }
-                    isRefreshing={isRefreshingRepos}
-                    onRefresh={handleRefreshRepositories}
-                    open={isCloudRepoPickerOpen}
-                    onOpenChange={handleCloudRepoPickerOpenChange}
-                    searchQuery={cloudRepoSearchQuery}
-                    onSearchQueryChange={handleCloudRepoSearchChange}
-                    hasMore={cloudRepositoriesHasMore}
-                    onLoadMore={handleLoadMoreCloudRepositories}
-                    placeholder="Select repository..."
-                    size="1"
+                <WorkspaceModeSelect
+                  value={workspaceMode}
+                  onChange={setWorkspaceMode}
+                  selectedCloudEnvironmentId={selectedCloudEnvId}
+                  onCloudEnvironmentChange={setSelectedCloudEnvId}
+                  size="1"
+                />
+                {!allowNoRepo && workspaceMode === "worktree" && (
+                  <EnvironmentSelector
+                    repoPath={effectiveRepoPath ?? null}
+                    value={selectedEnvironment}
+                    onChange={setSelectedEnvironment}
                     disabled={isCreatingTask}
-                  />
-                ) : (
-                  <FolderPicker
-                    value={selectedDirectory}
-                    onChange={setSelectedDirectory}
-                    placeholder="Select repository..."
-                    anchor={buttonGroupRef}
+                    onCreateEnvironment={() =>
+                      openSettings("environments", {
+                        repoPath: effectiveRepoPath ?? undefined,
+                      })
+                    }
                   />
                 )}
-                <BranchSelector
-                  repoPath={
-                    workspaceMode === "cloud"
-                      ? selectedCloudRepository
-                      : selectedDirectory
-                  }
-                  currentBranch={currentBranch}
-                  defaultBranch={
-                    workspaceMode === "cloud"
-                      ? cloudDefaultBranch
-                      : defaultBranch
-                  }
-                  disabled={
-                    isCreatingTask ||
-                    (workspaceMode === "cloud" && !selectedCloudRepository)
-                  }
-                  loading={workspaceMode === "cloud" ? false : branchLoading}
-                  workspaceMode={workspaceMode}
-                  selectedBranch={selectedBranch}
-                  onBranchSelect={setSelectedBranch}
-                  busyState={busyState}
-                  cloudBranches={cloudBranches}
-                  cloudBranchesLoading={cloudBranchesLoading}
-                  isRefreshing={cloudBranchesRefreshing}
-                  cloudBranchesFetchingMore={cloudBranchesFetchingMore}
-                  cloudBranchesHasMore={cloudBranchesHasMore}
-                  cloudSearchQuery={cloudBranchSearchQuery}
-                  onCloudPickerClose={handleCloudBranchPickerClose}
-                  onCloudSearchChange={handleCloudBranchSearchChange}
-                  onCloudBranchCommit={handleCloudBranchPickerClose}
-                  onCloudLoadMore={handleLoadMoreCloudBranches}
-                  onRefresh={
-                    workspaceMode === "cloud"
-                      ? handleRefreshBranches
-                      : undefined
-                  }
-                  anchor={buttonGroupRef}
-                />
-              </ButtonGroup>
-            )}
-            {!allowNoRepo && workspaceMode !== "cloud" && (
-              <AdditionalDirectoriesButton
-                values={additionalDirectories}
-                onChange={setAdditionalDirectories}
-                primaryDirectory={selectedDirectory}
-                disabled={isCreatingTask}
-              />
-            )}
-            {autoresearchService && autoresearchEnabled && (
-              <Tooltip
-                content={
-                  autoresearchDraft
-                    ? "Exit autoresearch mode"
-                    : "Create this task in autoresearch mode: the prompt becomes the optimization brief"
-                }
-              >
-                <Button
-                  size="1"
-                  variant={autoresearchDraft ? "soft" : "ghost"}
-                  color={autoresearchDraft ? undefined : "gray"}
-                  onClick={handleAutoresearchToggle}
-                  disabled={isCreatingTask}
-                >
-                  <ChartLineUp size={14} />
-                  Autoresearch
-                </Button>
-              </Tooltip>
-            )}
-            {cloudRegion === "dev" && (
-              <Flex align="center" gap="1" className="shrink-0">
-                <span
-                  className="inline-block h-2 w-2 rounded-full bg-orange-9"
-                  aria-hidden
-                />
-                <Text color="orange" className="font-medium text-[13px]">
-                  Dev
-                </Text>
+                {!allowNoRepo && (
+                  <ButtonGroup
+                    ref={buttonGroupRef}
+                    data-tour="folder-picker"
+                    data-tour-ready={
+                      (
+                        workspaceMode === "cloud"
+                          ? selectedRepository
+                          : selectedDirectory
+                      )
+                        ? "true"
+                        : undefined
+                    }
+                  >
+                    {workspaceMode === "cloud" ? (
+                      <GitHubRepoPicker
+                        value={selectedRepository}
+                        onChange={handleRepositorySelect}
+                        repositories={
+                          isCloudRepoPickerOpen
+                            ? visibleCloudRepositories
+                            : repositories
+                        }
+                        isLoading={
+                          isLoadingRepos ||
+                          (isCloudRepoPickerOpen && cloudRepositoriesLoading)
+                        }
+                        isRefreshing={isRefreshingRepos}
+                        onRefresh={handleRefreshRepositories}
+                        open={isCloudRepoPickerOpen}
+                        onOpenChange={handleCloudRepoPickerOpenChange}
+                        searchQuery={cloudRepoSearchQuery}
+                        onSearchQueryChange={handleCloudRepoSearchChange}
+                        hasMore={cloudRepositoriesHasMore}
+                        onLoadMore={handleLoadMoreCloudRepositories}
+                        placeholder="Select repository..."
+                        size="1"
+                        disabled={isCreatingTask}
+                      />
+                    ) : (
+                      <FolderPicker
+                        value={selectedDirectory}
+                        onChange={setSelectedDirectory}
+                        placeholder="Select repository..."
+                        anchor={buttonGroupRef}
+                      />
+                    )}
+                    <BranchSelector
+                      repoPath={
+                        workspaceMode === "cloud"
+                          ? selectedCloudRepository
+                          : selectedDirectory
+                      }
+                      currentBranch={currentBranch}
+                      defaultBranch={
+                        workspaceMode === "cloud"
+                          ? cloudDefaultBranch
+                          : defaultBranch
+                      }
+                      disabled={
+                        isCreatingTask ||
+                        (workspaceMode === "cloud" && !selectedCloudRepository)
+                      }
+                      loading={
+                        workspaceMode === "cloud" ? false : branchLoading
+                      }
+                      workspaceMode={workspaceMode}
+                      selectedBranch={selectedBranch}
+                      onBranchSelect={setSelectedBranch}
+                      busyState={busyState}
+                      cloudBranches={cloudBranches}
+                      cloudBranchesLoading={cloudBranchesLoading}
+                      isRefreshing={cloudBranchesRefreshing}
+                      cloudBranchesFetchingMore={cloudBranchesFetchingMore}
+                      cloudBranchesHasMore={cloudBranchesHasMore}
+                      cloudSearchQuery={cloudBranchSearchQuery}
+                      onCloudPickerClose={handleCloudBranchPickerClose}
+                      onCloudSearchChange={handleCloudBranchSearchChange}
+                      onCloudBranchCommit={handleCloudBranchPickerClose}
+                      onCloudLoadMore={handleLoadMoreCloudBranches}
+                      onRefresh={
+                        workspaceMode === "cloud"
+                          ? handleRefreshBranches
+                          : undefined
+                      }
+                      anchor={buttonGroupRef}
+                    />
+                  </ButtonGroup>
+                )}
+                {!allowNoRepo && workspaceMode !== "cloud" && (
+                  <AdditionalDirectoriesButton
+                    values={additionalDirectories}
+                    onChange={setAdditionalDirectories}
+                    primaryDirectory={selectedDirectory}
+                    disabled={isCreatingTask}
+                  />
+                )}
+                {autoresearchService && autoresearchEnabled && (
+                  <Tooltip
+                    content={
+                      autoresearchDraft
+                        ? "Exit autoresearch mode"
+                        : "Create this task in autoresearch mode: the prompt becomes the optimization brief"
+                    }
+                  >
+                    <Button
+                      size="1"
+                      variant={autoresearchDraft ? "soft" : "ghost"}
+                      color={autoresearchDraft ? undefined : "gray"}
+                      onClick={handleAutoresearchToggle}
+                      disabled={isCreatingTask}
+                    >
+                      <ChartLineUp size={14} />
+                      Autoresearch
+                    </Button>
+                  </Tooltip>
+                )}
+                {cloudRegion === "dev" && (
+                  <Flex align="center" gap="1" className="shrink-0">
+                    <span
+                      className="inline-block h-2 w-2 rounded-full bg-orange-9"
+                      aria-hidden
+                    />
+                    <Text color="orange" className="font-medium text-[13px]">
+                      Dev
+                    </Text>
+                  </Flex>
+                )}
               </Flex>
-            )}
-          </Flex>
 
-          <Flex direction="column" gap="0">
-            <PromptInput
-              ref={editorRef}
-              sessionId={promptSessionId}
-              placeholder={
-                autoresearchDraft
-                  ? "What should the agent optimize? Describe the goal, how to measure it, and any constraints — it measures a baseline, then iterates."
-                  : `What do you want to ship? ${hints}`
-              }
-              headerAddon={
-                autoresearchDraft ? (
-                  <AutoresearchComposerControls
-                    draft={autoresearchDraft}
-                    modelOptions={autoresearchModelOptions}
-                    effortOptions={autoresearchEffortOptions}
-                    disabled={isCreatingTask}
-                    onChange={(patch) =>
-                      useAutoresearchDraftStore
-                        .getState()
-                        .updateDraft(sessionId, patch)
-                    }
-                    onExit={() =>
-                      useAutoresearchDraftStore.getState().clearDraft(sessionId)
-                    }
-                  />
-                ) : undefined
-              }
-              editorHeight="large"
-              disabled={isCreatingTask}
-              isLoading={isCreatingTask}
-              autoFocus
-              clearOnSubmit={false}
-              submitDisabledExternal={
-                !canSubmit || isCreatingTask || !isOnline || isPreviewLoading
-              }
-              tourTarget="task-input"
-              repoPath={selectedDirectory}
-              modeOption={modeOption}
-              onModeChange={handleModeChange}
-              allowBypassPermissions={allowBypassPermissions}
-              enableCommands
-              enableBashMode={false}
-              modelSelector={
-                autoresearchDraft ? null : (
-                  <UnifiedModelSelector
-                    modelOption={modelOption}
-                    adapter={adapter ?? "claude"}
-                    onAdapterChange={setAdapter}
-                    disabled={isCreatingTask}
-                    isConnecting={isPreviewLoading}
-                    onModelChange={handleModelChange}
-                  />
-                )
-              }
-              historyButton={
-                <PromptHistoryDialog
-                  onSelect={handleHistorySelect}
-                  hasPendingDraft={hasPendingDraft}
+              <Flex direction="column" gap="0">
+                <PromptInput
+                  ref={editorRef}
+                  sessionId={promptSessionId}
+                  placeholder={
+                    autoresearchDraft
+                      ? "What should the agent optimize? Describe the goal, how to measure it, and any constraints — it measures a baseline, then iterates."
+                      : `What do you want to ship? ${hints}`
+                  }
+                  headerAddon={
+                    autoresearchDraft ? (
+                      <AutoresearchComposerControls
+                        draft={autoresearchDraft}
+                        modelOptions={autoresearchModelOptions}
+                        effortOptions={autoresearchEffortOptions}
+                        disabled={isCreatingTask}
+                        onChange={(patch) =>
+                          useAutoresearchDraftStore
+                            .getState()
+                            .updateDraft(sessionId, patch)
+                        }
+                        onExit={() =>
+                          useAutoresearchDraftStore
+                            .getState()
+                            .clearDraft(sessionId)
+                        }
+                      />
+                    ) : undefined
+                  }
+                  editorHeight="large"
                   disabled={isCreatingTask}
+                  isLoading={isCreatingTask}
+                  autoFocus
+                  clearOnSubmit={false}
+                  submitDisabledExternal={
+                    !canSubmit ||
+                    isCreatingTask ||
+                    !isOnline ||
+                    isPreviewLoading
+                  }
+                  tourTarget="task-input"
+                  repoPath={selectedDirectory}
+                  modeOption={modeOption}
+                  onModeChange={handleModeChange}
+                  allowBypassPermissions={allowBypassPermissions}
+                  enableCommands
+                  enableBashMode={false}
+                  modelSelector={
+                    autoresearchDraft ? null : (
+                      <UnifiedModelSelector
+                        modelOption={modelOption}
+                        adapter={adapter ?? "claude"}
+                        onAdapterChange={setAdapter}
+                        disabled={isCreatingTask}
+                        isConnecting={isPreviewLoading}
+                        onModelChange={handleModelChange}
+                      />
+                    )
+                  }
+                  historyButton={
+                    <PromptHistoryDialog
+                      onSelect={handleHistorySelect}
+                      hasPendingDraft={hasPendingDraft}
+                      disabled={isCreatingTask}
+                    />
+                  }
+                  reasoningSelector={
+                    autoresearchDraft ? null : (
+                      <ReasoningLevelSelector
+                        thoughtOption={thoughtOption}
+                        adapter={adapter}
+                        onChange={handleThoughtChange}
+                        disabled={isCreatingTask}
+                        isLoading={isPreviewLoading}
+                      />
+                    )
+                  }
+                  getPromptHistory={getPromptHistory}
+                  onEmptyChange={handleEditorEmptyChange}
+                  onSubmitClick={() => void submitTask()}
+                  onSubmit={() => {
+                    if (canSubmit) void submitTask();
+                  }}
                 />
-              }
-              reasoningSelector={
-                autoresearchDraft ? null : (
-                  <ReasoningLevelSelector
-                    thoughtOption={thoughtOption}
-                    adapter={adapter}
-                    onChange={handleThoughtChange}
-                    disabled={isCreatingTask}
-                    isLoading={isPreviewLoading}
-                  />
-                )
-              }
-              getPromptHistory={getPromptHistory}
-              onEmptyChange={handleEditorEmptyChange}
-              onSubmitClick={() => void submitTask()}
-              onSubmit={() => {
-                if (canSubmit) void submitTask();
-              }}
-            />
-            {activeReportAssociation && (
-              <div className="-mt-px mx-2 flex select-none items-center justify-between gap-2 rounded-b-md border border-blue-6 border-t-0 bg-blue-2 px-2 py-1 text-[12px] text-blue-11">
-                <span className="flex min-w-0 flex-1 items-center gap-1">
-                  <span className="shrink-0">
-                    This task will be associated with report
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleOpenAssociatedReport}
-                    className="min-w-0 truncate text-left font-medium underline underline-offset-2 hover:text-blue-12"
-                  >
-                    {activeReportAssociation.title || "Untitled report"}
-                  </button>
-                </span>
-                <Tooltip content="Exit Inbox mode">
-                  <button
-                    type="button"
-                    onClick={handleDismissReportAssociation}
-                    aria-label="Exit Inbox mode"
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-blue-10 hover:bg-blue-4 hover:text-blue-12"
-                  >
-                    <X size={12} />
-                  </button>
-                </Tooltip>
-              </div>
-            )}
-            {includeChannelContext && (
-              <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
-                <span className="shrink-0 text-gray-10">Using:</span>
-                <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
-                  {onContextChipClick ? (
-                    <Tooltip content="View this context">
+                {activeReportAssociation && (
+                  <div className="-mt-px mx-2 flex select-none items-center justify-between gap-2 rounded-b-md border border-blue-6 border-t-0 bg-blue-2 px-2 py-1 text-[12px] text-blue-11">
+                    <span className="flex min-w-0 flex-1 items-center gap-1">
+                      <span className="shrink-0">
+                        This task will be associated with report
+                      </span>
                       <button
                         type="button"
-                        onClick={onContextChipClick}
-                        className="inline-flex min-w-0 items-center gap-1 rounded text-[var(--gray-11)] hover:text-gray-12"
+                        onClick={handleOpenAssociatedReport}
+                        className="min-w-0 truncate text-left font-medium underline underline-offset-2 hover:text-blue-12"
                       >
-                        <FileText size={12} />
-                        <span className="truncate">
-                          {channelName ? `#${channelName} ` : ""}CONTEXT.md
-                        </span>
+                        {activeReportAssociation.title || "Untitled report"}
+                      </button>
+                    </span>
+                    <Tooltip content="Exit Inbox mode">
+                      <button
+                        type="button"
+                        onClick={handleDismissReportAssociation}
+                        aria-label="Exit Inbox mode"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-blue-10 hover:bg-blue-4 hover:text-blue-12"
+                      >
+                        <X size={12} />
                       </button>
                     </Tooltip>
-                  ) : (
-                    <>
-                      <FileText size={12} />
-                      <span className="truncate">
-                        {channelName ? `#${channelName} ` : ""}CONTEXT.md
-                      </span>
-                    </>
-                  )}
-                  <Tooltip content="Don't include this context">
-                    <button
-                      type="button"
-                      onClick={() => setChannelContextDismissed(true)}
-                      aria-label="Remove channel context from prompt"
-                      className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
-                    >
-                      <X size={12} />
-                    </button>
-                  </Tooltip>
-                </span>
-              </div>
-            )}
-            {effectiveWorkspaceMode === "cloud" &&
-              !isLoadingRepos &&
-              !hasGithubIntegration && (
-                <div className="mx-2 mt-2">
-                  <CloudGithubMissingNotice />
-                </div>
-              )}
-          </Flex>
-          <div className="absolute top-full right-0 left-0 z-10">
-            {suggestions ? (
-              <AnimatePresence>
-                {suggestions.length > 0 && editorIsEmpty && (
-                  <motion.div
-                    key="suggestions"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.2, ease: "easeInOut" }}
-                    className="mt-6 flex flex-col gap-2"
-                  >
-                    <Text
-                      size="1"
-                      weight="medium"
-                      className="px-2.5 text-(--gray-11)"
-                    >
-                      Suggestions
-                    </Text>
-                    <div className="grid grid-cols-2 gap-2">
-                      {suggestions.map((suggestion) => (
-                        <SuggestedPromptCard
-                          key={suggestion.label}
-                          suggestion={suggestion}
-                          onSelect={() => {
-                            onSuggestionSelect?.(suggestion.label);
-                            // Use pending content (not setContent) so the
-                            // multi-line template — intro + "User input:" fill-in
-                            // lines — keeps its line breaks; focuses at the end.
-                            useDraftStore
-                              .getState()
-                              .actions.setPendingContent(sessionId, {
-                                segments: [
-                                  { type: "text", text: suggestion.prompt },
-                                ],
-                              });
-                            // Bug/feature suggestions start in plan mode; the
-                            // analysis ones start in auto mode. Suggestions
-                            // without a mode leave the composer's mode as-is.
-                            if (
-                              suggestion.mode &&
-                              isValidConfigValue(modeOption, suggestion.mode)
-                            ) {
-                              setConfigOption(modeOption.id, suggestion.mode);
-                            }
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </motion.div>
+                  </div>
                 )}
-              </AnimatePresence>
-            ) : (
-              <NewTaskSuggestions
-                repoPath={selectedDirectory || null}
-                workspaceMode={effectiveWorkspaceMode}
-                disabled={isCreatingTask}
-              />
-            )}
-          </div>
-        </div>
+                {includeChannelContext && (
+                  <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
+                    <span className="shrink-0 text-gray-10">Using:</span>
+                    <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
+                      {onContextChipClick ? (
+                        <Tooltip content="View this context">
+                          <button
+                            type="button"
+                            onClick={onContextChipClick}
+                            className="inline-flex min-w-0 items-center gap-1 rounded text-[var(--gray-11)] hover:text-gray-12"
+                          >
+                            <FileText size={12} />
+                            <span className="truncate">
+                              {channelName ? `#${channelName} ` : ""}CONTEXT.md
+                            </span>
+                          </button>
+                        </Tooltip>
+                      ) : (
+                        <>
+                          <FileText size={12} />
+                          <span className="truncate">
+                            {channelName ? `#${channelName} ` : ""}CONTEXT.md
+                          </span>
+                        </>
+                      )}
+                      <Tooltip content="Don't include this context">
+                        <button
+                          type="button"
+                          onClick={() => setChannelContextDismissed(true)}
+                          aria-label="Remove channel context from prompt"
+                          className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
+                        >
+                          <X size={12} />
+                        </button>
+                      </Tooltip>
+                    </span>
+                  </div>
+                )}
+                {effectiveWorkspaceMode === "cloud" &&
+                  !isLoadingRepos &&
+                  !hasGithubIntegration && (
+                    <div className="mx-2 mt-2">
+                      <CloudGithubMissingNotice />
+                    </div>
+                  )}
+              </Flex>
+              <div className="absolute top-full right-0 left-0 z-10">
+                {suggestions ? (
+                  <AnimatePresence>
+                    {suggestions.length > 0 && editorIsEmpty && (
+                      <motion.div
+                        key="suggestions"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2, ease: "easeInOut" }}
+                        className="mt-6 flex flex-col gap-2"
+                      >
+                        <Text
+                          size="1"
+                          weight="medium"
+                          className="px-2.5 text-(--gray-11)"
+                        >
+                          Suggestions
+                        </Text>
+                        <div className="grid grid-cols-2 gap-2">
+                          {suggestions.map((suggestion) => (
+                            <SuggestedPromptCard
+                              key={suggestion.label}
+                              suggestion={suggestion}
+                              onSelect={() => {
+                                onSuggestionSelect?.(suggestion.label);
+                                // Use pending content (not setContent) so the
+                                // multi-line template — intro + "User input:" fill-in
+                                // lines — keeps its line breaks; focuses at the end.
+                                useDraftStore
+                                  .getState()
+                                  .actions.setPendingContent(sessionId, {
+                                    segments: [
+                                      { type: "text", text: suggestion.prompt },
+                                    ],
+                                  });
+                                // Bug/feature suggestions start in plan mode; the
+                                // analysis ones start in auto mode. Suggestions
+                                // without a mode leave the composer's mode as-is.
+                                if (
+                                  suggestion.mode &&
+                                  isValidConfigValue(
+                                    modeOption,
+                                    suggestion.mode,
+                                  )
+                                ) {
+                                  setConfigOption(
+                                    modeOption.id,
+                                    suggestion.mode,
+                                  );
+                                }
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                ) : (
+                  <NewTaskSuggestions
+                    repoPath={selectedDirectory || null}
+                    workspaceMode={effectiveWorkspaceMode}
+                    disabled={isCreatingTask}
+                  />
+                )}
+              </div>
+            </div>
+          </Flex>
+        </Box>
       </Flex>
 
       <GitBranchDialog

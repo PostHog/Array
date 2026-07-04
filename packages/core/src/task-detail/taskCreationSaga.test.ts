@@ -40,6 +40,7 @@ const sessionService = {
   connectToTask: vi.fn(),
   disconnectFromTask: vi.fn(),
   rememberInitialCloudPrompt: vi.fn(),
+  markTaskCreationInFlight: vi.fn(),
 } as unknown as SessionService;
 
 const createTask = (overrides: Partial<Task> = {}): Task => ({
@@ -747,6 +748,31 @@ describe("TaskCreationSaga", () => {
         importedSessionId: "imported-session-id",
         adapter: "claude",
       }),
+    );
+  });
+
+  it("marks task creation in flight before connecting the session", async () => {
+    const createTaskMock = vi.fn().mockResolvedValue(createTask());
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+
+    const saga = makeSaga({ createTask: createTaskMock });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repoPath: "/repo",
+      workspaceMode: "local",
+    });
+
+    expect(result.success).toBe(true);
+    expect(sessionService.markTaskCreationInFlight).toHaveBeenCalledWith(
+      "task-123",
+    );
+    expect(
+      vi.mocked(sessionService.markTaskCreationInFlight).mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(sessionService.connectToTask).mock.invocationCallOrder[0],
     );
   });
 

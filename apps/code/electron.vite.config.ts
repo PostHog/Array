@@ -3,7 +3,6 @@ import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
-import { devtools } from "@tanstack/devtools-vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
@@ -199,7 +198,6 @@ export default defineConfig(({ mode }) => {
     renderer: {
       root: __dirname,
       plugins: [
-        isDev && devtools(),
         TanStackRouterVite({
           target: "react",
           autoCodeSplitting: true,

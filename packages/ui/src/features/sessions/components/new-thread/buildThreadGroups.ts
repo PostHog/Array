@@ -141,6 +141,7 @@ function summarize(items: ConversationItem[]): GroupSummary {
   };
   let liveLabel: string | null = null;
   let lastToolStatus: string | undefined;
+  let trailingThoughtStreaming = false;
   const icons: GroupIconEntry[] = [];
   const seenIcons = new Set<string>();
 
@@ -200,10 +201,20 @@ function summarize(items: ConversationItem[]): GroupSummary {
     ) {
       counts.messages++;
     }
+    // A thought still streaming at the end of the group means the agent is
+    // actively thinking — the chip must not read as finished ("Worked").
+    if (update.sessionUpdate === "agent_thought_chunk") {
+      trailingThoughtStreaming = item.thoughtComplete === false;
+    } else if (update.sessionUpdate === "tool_call") {
+      trailingThoughtStreaming = false;
+    }
   }
 
+  if (trailingThoughtStreaming) liveLabel = "Thinking…";
   const active =
-    lastToolStatus === "pending" || lastToolStatus === "in_progress";
+    trailingThoughtStreaming ||
+    lastToolStatus === "pending" ||
+    lastToolStatus === "in_progress";
   const hasCountableWork =
     counts.execute +
       counts.read +
@@ -283,11 +294,15 @@ export function buildThreadGroups(
 
     // Base behavior from the global mode; a per-group override (true=expanded,
     // false=collapsed) wins. A chip is shown whenever the group is collapsible
-    // by the mode or the user explicitly collapsed it.
+    // by the mode or the user explicitly collapsed it — but never for a group
+    // with no countable tool work (e.g. a lone streaming thought): folding it
+    // would hide the only thing happening behind a meaningless "Worked" chip.
+    const summary = summarizeMemo(leading, turnComplete);
     const baseCollapse = mode === "all" || (mode === "partial" && turnComplete);
     const override = overrides[groupId];
     const expanded = override ?? !baseCollapse;
-    const chipPresent = baseCollapse || override === false;
+    const chipPresent =
+      summary.hasCountableWork && (baseCollapse || override === false);
 
     if (chipPresent) {
       // The chip owns its children (rendered inside one bordered box when
@@ -298,7 +313,7 @@ export function buildThreadGroups(
         kind: "tool_group",
         id: groupId,
         items: leading,
-        summary: summarizeMemo(leading, turnComplete),
+        summary,
         turnComplete,
         expanded,
       });

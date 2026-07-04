@@ -29,9 +29,11 @@ import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/Que
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
+import { StaleConversationCostDialog } from "@posthog/ui/features/sessions/components/StaleConversationCostDialog";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/useSessionEventsResidency";
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
   useAdapterForTask,
@@ -44,7 +46,8 @@ import {
   useShowRawLogs,
 } from "@posthog/ui/features/sessions/sessionViewStore";
 import type { Plan } from "@posthog/ui/features/sessions/types";
-import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import { useSessionHandoffInProgress } from "@posthog/ui/features/sessions/useSession";
+import { useStaleConversationGate } from "@posthog/ui/features/sessions/useStaleConversationGate";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
@@ -164,6 +167,7 @@ export function SessionView({
   hideInput = false,
 }: SessionViewProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  useSessionEventsResidency(taskId);
   const showRawLogs = useShowRawLogs();
   const { setShowRawLogs } = useSessionViewActions();
   const pendingTaskPrompt = usePendingTaskPrompt(taskId);
@@ -176,8 +180,7 @@ export function SessionView({
   const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
   const { isOnline } = useConnectivity();
   const currentModeId = modeOption?.currentValue;
-  const handoffInProgress =
-    useSessionForTask(taskId)?.handoffInProgress ?? false;
+  const handoffInProgress = useSessionHandoffInProgress(taskId);
   const showInlineBanner = hasError && errorRetryable && events.length > 0;
 
   useEffect(() => {
@@ -263,6 +266,10 @@ export function SessionView({
     },
     [isOnline, onBeforeSubmit],
   );
+
+  // Warn PostHog staff before continuing a large, idle conversation whose
+  // prompt cache has likely expired (see useStaleConversationGate).
+  const staleGate = useStaleConversationGate(sessionId, events);
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
@@ -616,16 +623,45 @@ export function SessionView({
                         }
                       >
                         {taskId && <QueuedMessagesDock taskId={taskId} />}
+                        {staleGate.dismissed && (
+                          <Flex justify="center" mb="2">
+                            <Button
+                              variant="soft"
+                              color="amber"
+                              size="1"
+                              onClick={staleGate.onReopen}
+                            >
+                              <Warning size={14} weight="fill" />
+                              Conversation paused to avoid a costly reload —
+                              review
+                            </Button>
+                          </Flex>
+                        )}
+                        <StaleConversationCostDialog
+                          open={staleGate.dialogOpen}
+                          usedTokens={staleGate.usedTokens}
+                          lastActivityAt={staleGate.lastActivityAt}
+                          costUsd={staleGate.costUsd}
+                          onContinue={staleGate.onContinue}
+                          onOpenChange={staleGate.onDialogOpenChange}
+                        />
                         <PromptInput
                           ref={editorRef}
                           sessionId={sessionId}
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
-                          disabled={!isRunning && !handoffInProgress}
+                          disabled={
+                            (!isRunning && !handoffInProgress) ||
+                            staleGate.active
+                          }
                           submitDisabledExternal={
                             handoffInProgress || !isOnline
                           }
                           submitTooltipOverride={
-                            !isOnline ? "No internet connection" : undefined
+                            staleGate.active
+                              ? "Large idle conversation — review the cost notice to continue"
+                              : !isOnline
+                                ? "No internet connection"
+                                : undefined
                           }
                           isLoading={!!isPromptPending}
                           isActiveSession={isActiveSession}

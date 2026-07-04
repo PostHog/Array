@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
   const openExternal = vi.fn();
   const logInfo = vi.fn();
   const logError = vi.fn();
+  const logWarn = vi.fn();
 
   class MockTerminal {
     cols = 80;
@@ -56,6 +57,7 @@ const mocks = vi.hoisted(() => {
     openExternal,
     logInfo,
     logError,
+    logWarn,
     MockTerminal,
     terminalInstances,
   };
@@ -77,6 +79,7 @@ vi.mock("@posthog/ui/shell/logger", () => ({
     scope: () => ({
       info: mocks.logInfo,
       error: mocks.logError,
+      warn: mocks.logWarn,
     }),
   },
 }));
@@ -99,6 +102,13 @@ vi.mock("@xterm/addon-serialize", () => ({
 
 vi.mock("@xterm/addon-web-links", () => ({
   WebLinksAddon: class {},
+}));
+
+vi.mock("@xterm/addon-webgl", () => ({
+  WebglAddon: class {
+    onContextLoss = vi.fn();
+    dispose = vi.fn();
+  },
 }));
 
 vi.mock("@xterm/xterm", () => ({
@@ -167,5 +177,92 @@ describe("TerminalManager shell recovery", () => {
       sessionId,
       data: "a",
     });
+  });
+});
+
+describe("TerminalManager.destroyForTask", () => {
+  beforeEach(() => {
+    mocks.check.mockReset().mockResolvedValue(true);
+    mocks.create.mockReset().mockResolvedValue(undefined);
+    mocks.write.mockReset().mockResolvedValue(undefined);
+    mocks.resize.mockReset().mockResolvedValue(undefined);
+    mocks.terminalInstances.length = 0;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  });
+
+  afterEach(() => {
+    for (const id of terminalManager.getSessionsByPrefix("")) {
+      terminalManager.destroy(id);
+    }
+    vi.unstubAllGlobals();
+  });
+
+  it("destroys the task's main and action terminals only", () => {
+    terminalManager.create({
+      sessionId: "sess-a",
+      persistenceKey: "task-1",
+      taskId: "task-1",
+    });
+    terminalManager.create({
+      sessionId: "sess-b",
+      // Production action-terminal key shape: the taskId sits mid-key, so
+      // only the tagged instance.taskId can match it.
+      persistenceKey: "action-setup-task-1-1700000000000-0",
+      taskId: "task-1",
+    });
+    terminalManager.create({
+      sessionId: "sess-c",
+      persistenceKey: "task-10",
+      taskId: "task-10",
+    });
+
+    terminalManager.destroyForTask("task-1");
+
+    expect(terminalManager.getSessionsByPrefix("sess-")).toEqual(["sess-c"]);
+    expect(mocks.terminalInstances[0].dispose).toHaveBeenCalled();
+    expect(mocks.terminalInstances[1].dispose).toHaveBeenCalled();
+    expect(mocks.terminalInstances[2].dispose).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the persistence key when an instance has no taskId", () => {
+    terminalManager.create({
+      sessionId: "sess-d",
+      persistenceKey: "task-3-shell",
+    });
+    terminalManager.create({
+      sessionId: "sess-e",
+      persistenceKey: "task-30-shell",
+    });
+
+    terminalManager.destroyForTask("task-3");
+
+    expect(terminalManager.getSessionsByPrefix("sess-")).toEqual(["sess-e"]);
+  });
+
+  it("removes the parked terminal element from the DOM on destroy", () => {
+    terminalManager.create({
+      sessionId: "sess-parked",
+      persistenceKey: "task-2",
+      taskId: "task-2",
+    });
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    terminalManager.attach("sess-parked", host);
+    terminalManager.detach("sess-parked");
+
+    const parking = document.getElementById("terminal-parking");
+    expect(parking?.classList.contains("ph-no-capture")).toBe(true);
+    expect(parking?.childElementCount).toBe(1);
+
+    terminalManager.destroy("sess-parked");
+    expect(parking?.childElementCount).toBe(0);
+    host.remove();
   });
 });

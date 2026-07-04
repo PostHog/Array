@@ -292,34 +292,77 @@ export function closeTab(
 }
 
 /**
- * Move a tab to a target index within its window's strip, recomputing its
- * position. Falls back to a full reindex when gap-spacing collapses.
+ * Close several tabs at once — the bulk primitive behind "close other tabs" /
+ * "close tabs to the right/left". Composes {@link closeTab} so the per-window
+ * succession rules (survivor focus, secondary-window drop, primary lands on
+ * channels) live in exactly one place.
+ *
+ * `focusTabId` is the bulk close's anchor (the right-clicked tab, which always
+ * survives these operations). When a window's active tab is among those closed,
+ * focus moves to the anchor rather than closeTab's stored-order neighbour — the
+ * caller closes by *displayed* (pinned-first) order, so the stored-order
+ * neighbour can be a pinned tab at the far end of the strip.
  */
-export function reorderTab(
+export function closeTabs(
   snapshot: TabsSnapshot,
-  tabId: string,
-  toIndex: number,
+  tabIds: string[],
+  focusTabId?: string | null,
 ): TabsSnapshot {
-  const tab = snapshot.tabs.find((t) => t.id === tabId);
-  if (!tab) return snapshot;
-  const ordered = tabsInWindow(snapshot, tab.windowId).filter(
-    (t) => t.id !== tabId,
-  );
-  const clamped = Math.max(0, Math.min(toIndex, ordered.length));
-  const next = [...ordered];
-  next.splice(clamped, 0, tab);
+  const ids = new Set(tabIds);
+  if (ids.size === 0) return snapshot;
 
-  // Renormalise to clean gap-spacing every move: deterministic positions, no
-  // unbounded drift or fractional collapse. Cheap for a tab strip.
-  const reindexed = next.map((t, i) => ({
-    ...t,
-    position: (i + 1) * POSITION_GAP,
-  }));
-  const byId = new Map(reindexed.map((t) => [t.id, t]));
-  return {
-    ...snapshot,
-    tabs: snapshot.tabs.map((t) => byId.get(t.id) ?? t),
-  };
+  // Windows whose active tab is being closed — only these honour the anchor.
+  const activeClosedWindows = new Set(
+    snapshot.windows
+      .filter((w) => w.activeTabId != null && ids.has(w.activeTabId))
+      .map((w) => w.id),
+  );
+
+  let next = snapshot;
+  for (const id of ids) {
+    next = closeTab(next, id).snapshot;
+  }
+
+  if (focusTabId) {
+    const anchor = next.tabs.find((t) => t.id === focusTabId);
+    if (anchor && activeClosedWindows.has(anchor.windowId)) {
+      next = setActiveTab(next, anchor.windowId, focusTabId);
+    }
+  }
+  return next;
+}
+
+/**
+ * Persist a window's full tab order — the drop primitive for drag-to-reorder.
+ * The UI sends the final stored order (pin-agnostic; the pinned-first display
+ * partition is applied on top at render time) and it becomes the stored order.
+ * Ids not in the window are ignored; the window's tabs missing from the list
+ * keep their relative order after the listed ones. Tabs whose position does not
+ * change keep their object identity so downstream memos/effects stay stable.
+ */
+export function setTabOrder(
+  snapshot: TabsSnapshot,
+  windowId: string,
+  orderedTabIds: string[],
+): TabsSnapshot {
+  const current = tabsInWindow(snapshot, windowId);
+  const byId = new Map(current.map((t) => [t.id, t]));
+  const listed = orderedTabIds
+    .map((id) => byId.get(id))
+    .filter((t): t is BrowserTab => t !== undefined);
+  const listedIds = new Set(listed.map((t) => t.id));
+  const rest = current.filter((t) => !listedIds.has(t.id));
+  const positioned = new Map<string, number>(
+    [...listed, ...rest].map((t, i) => [t.id, (i + 1) * POSITION_GAP]),
+  );
+  let changed = false;
+  const tabs = snapshot.tabs.map((t) => {
+    const pos = positioned.get(t.id);
+    if (pos === undefined || pos === t.position) return t;
+    changed = true;
+    return { ...t, position: pos };
+  });
+  return changed ? { ...snapshot, tabs } : snapshot;
 }
 
 // ----- Navigation intent (drives the renderer effect) -----

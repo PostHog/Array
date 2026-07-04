@@ -28,7 +28,8 @@ import type { CodeExecutionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { APPENDED_INSTRUCTIONS } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
-import { DEFAULT_MODEL } from "./models";
+import { DEFAULT_MODEL, FALLBACK_MODEL } from "./models";
+import { createRtkRewriteHook, resolveRtkPrefix } from "./rtk";
 import type { SettingsManager } from "./settings";
 
 export interface ProcessSpawnedInfo {
@@ -210,6 +211,7 @@ function buildHooks(
   onEnsureLocalToolsConnected: (() => Promise<boolean>) | undefined,
   taskState: TaskState,
   onTaskStateChange: (() => Promise<void>) | undefined,
+  rtkPrefix: string | undefined,
 ): Options["hooks"] {
   const postToolUseHooks = [
     createPostToolUseHook({
@@ -231,6 +233,10 @@ function buildHooks(
     preToolUseHooks.push(
       createSignedCommitGuardHook(logger, onEnsureLocalToolsConnected),
     );
+  }
+  // Registered last so the signed-commit guard evaluates the raw command first.
+  if (rtkPrefix) {
+    preToolUseHooks.push(createRtkRewriteHook(rtkPrefix, logger));
   }
 
   const taskHook = createTaskHook(taskState, onTaskStateChange);
@@ -457,6 +463,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.onEnsureLocalToolsConnected,
       params.taskState,
       params.onTaskStateChange,
+      resolveRtkPrefix(process.env),
     ),
     outputFormat: params.outputFormat,
     abortController: getAbortController(
@@ -485,6 +492,10 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
   } else {
     options.sessionId = params.sessionId;
     options.model = DEFAULT_MODEL;
+  }
+
+  if (!options.fallbackModel && options.model !== FALLBACK_MODEL) {
+    options.fallbackModel = FALLBACK_MODEL;
   }
 
   if (params.additionalDirectories) {

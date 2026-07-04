@@ -1,4 +1,8 @@
 import {
+  SESSION_SERVICE,
+  type SessionService,
+} from "@posthog/core/sessions/sessionService";
+import {
   insertTaskDedup,
   removeTaskFromList,
 } from "@posthog/core/tasks/taskDelete";
@@ -8,10 +12,32 @@ import {
 } from "@posthog/core/tasks/taskDeletionService";
 import { useService } from "@posthog/di/react";
 import type { Task } from "@posthog/shared/domain-types";
+import { destroyTaskTerminals } from "@posthog/ui/features/terminal/destroyTaskTerminals";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
+import { logger } from "@posthog/ui/shell/logger";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { taskKeys } from "./taskKeys";
+
+const log = logger.scope("tasks");
+
+// Never throws: the task is already deleted server-side, so a cleanup failure
+// must not reject the mutation and roll back the optimistic list removal.
+export async function releaseDeletedTaskResources(
+  taskId: string,
+  sessionService: SessionService,
+): Promise<void> {
+  try {
+    await sessionService.disconnectFromTask(taskId);
+  } catch (error) {
+    log.error("Failed to disconnect session for deleted task", error);
+  }
+  try {
+    destroyTaskTerminals(taskId);
+  } catch (error) {
+    log.error("Failed to release terminals for deleted task", error);
+  }
+}
 
 export function useCreateTask() {
   const queryClient = useQueryClient();
@@ -75,9 +101,14 @@ export function useDeleteTask() {
   const deletionService = useService<TaskDeletionService>(
     TASK_DELETION_SERVICE,
   );
+  const sessionService = useService<SessionService>(SESSION_SERVICE);
 
   const mutation = useAuthenticatedMutation(
-    (client, taskId: string) => deletionService.deleteTask(client, taskId),
+    async (client, taskId: string) => {
+      const result = await deletionService.deleteTask(client, taskId);
+      await releaseDeletedTaskResources(taskId, sessionService);
+      return result;
+    },
     {
       onMutate: async (taskId) => {
         await queryClient.cancelQueries({ queryKey: taskKeys.lists() });

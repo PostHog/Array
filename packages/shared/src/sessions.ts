@@ -64,6 +64,9 @@ export interface AgentSession {
   processedLineCount?: number;
   framework?: "claude";
   adapter?: Adapter;
+  model?: string;
+  executionMode?: ExecutionMode;
+  reasoningLevel?: string;
   configOptions?: SessionConfigOption[];
   pendingPermissions: Map<string, PermissionRequest>;
   pausedDurationMs: number;

@@ -130,8 +130,12 @@ import {
   countLocalLogEntriesInput,
   countLocalLogEntriesOutput,
   deleteLocalLogCacheInput,
+  readLocalLogsCollapsedInput,
+  readLocalLogsCollapsedOutput,
   readLocalLogsInput,
   readLocalLogsOutput,
+  readLocalLogsTailInput,
+  readLocalLogsTailOutput,
   seedLocalLogsInput,
   writeLocalLogsInput,
 } from "./services/local-logs/schemas";
@@ -748,12 +752,6 @@ export function createAppRouter({
         }
       }),
     }),
-    diffStats: t.router({
-      getDiffStats: t.procedure
-        .input(diffStatsInput)
-        .output(diffStatsSchema)
-        .query(({ input }) => gitService().getDiffStats(input.directoryPath)),
-    }),
     fs: t.router({
       listDirectory: t.procedure
         .input(listDirectoryInput)
@@ -852,6 +850,20 @@ export function createAppRouter({
         .output(readLocalLogsOutput)
         .query(({ input }) =>
           localLogsService().readLocalLogs(input.taskRunId),
+        ),
+
+      readCollapsed: t.procedure
+        .input(readLocalLogsCollapsedInput)
+        .output(readLocalLogsCollapsedOutput)
+        .query(({ input }) =>
+          localLogsService().readLocalLogsCollapsed(input.taskRunId),
+        ),
+
+      readTail: t.procedure
+        .input(readLocalLogsTailInput)
+        .output(readLocalLogsTailOutput)
+        .query(({ input }) =>
+          localLogsService().readLocalLogsTail(input.taskRunId, input.maxBytes),
         ),
 
       write: t.procedure

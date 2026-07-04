@@ -10,8 +10,9 @@ import type { ProcessTrackingService } from "@posthog/workspace-server/services/
 import { SUSPENSION_SERVICE } from "@posthog/workspace-server/services/suspension/identifiers";
 import type { SuspensionService } from "@posthog/workspace-server/services/suspension/suspension";
 import type { WatcherRegistryService } from "@posthog/workspace-server/services/watcher-registry/watcher-registry";
+import type { WorkspaceService } from "@posthog/workspace-server/services/workspace/workspace";
 import { inject, injectable } from "inversify";
-import { WATCHER_REGISTRY_SERVICE } from "../../di/tokens";
+import { WATCHER_REGISTRY_SERVICE, WORKSPACE_SERVICE } from "../../di/tokens";
 import { posthogNodeAnalytics } from "../../platform-adapters/posthog-analytics";
 import { withTimeout } from "../../utils/async";
 import { logger } from "../../utils/logger";
@@ -22,6 +23,7 @@ const log = logger.scope("app-lifecycle");
 @injectable()
 export class AppLifecycleService {
   private static readonly SHUTDOWN_TIMEOUT_MS = 3000;
+  private static readonly PENDING_CREATION_WAIT_MS = 10_000;
 
   private _isQuittingForUpdate = false;
   private _isShuttingDown = false;
@@ -37,6 +39,8 @@ export class AppLifecycleService {
     private readonly watcherRegistry: WatcherRegistryService,
     @inject(PROCESS_TRACKING_SERVICE)
     private readonly processTracking: ProcessTrackingService,
+    @inject(WORKSPACE_SERVICE)
+    private readonly workspaceService: WorkspaceService,
   ) {}
 
   get isQuittingForUpdate(): boolean {
@@ -93,6 +97,7 @@ export class AppLifecycleService {
    */
   async shutdownWithoutContainer(): Promise<void> {
     log.info("Partial shutdown started (keeping container)");
+    await this.waitForPendingWorkspaceCreations();
     await this.teardownNativeResources();
     try {
       this.db.close();
@@ -149,6 +154,32 @@ export class AppLifecycleService {
     }
 
     log.info("Shutdown complete");
+  }
+
+  /**
+   * An update install that lands while a task's workspace is still being
+   * created leaves the task permanently half-provisioned. Give in-flight
+   * creations a bounded window to settle before tearing processes down.
+   */
+  private async waitForPendingWorkspaceCreations(): Promise<void> {
+    const pending = this.workspaceService.pendingCreationCount;
+    if (pending === 0) return;
+
+    log.warn(
+      `Waiting for ${pending} in-flight workspace creations before teardown`,
+      { timeoutMs: AppLifecycleService.PENDING_CREATION_WAIT_MS },
+    );
+    const result = await withTimeout(
+      this.workspaceService.waitForPendingCreations(),
+      AppLifecycleService.PENDING_CREATION_WAIT_MS,
+    );
+    if (result.result === "timeout") {
+      log.warn(
+        "Workspace creations still pending after wait, proceeding with teardown",
+      );
+    } else {
+      log.info("In-flight workspace creations settled before teardown");
+    }
   }
 
   /**

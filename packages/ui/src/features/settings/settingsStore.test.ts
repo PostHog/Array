@@ -127,6 +127,7 @@ describe("feature settingsStore cloud selections", () => {
     ["lastUsedWorkspaceMode", "local", "cloud"],
     ["debugLogsCloudRuns", false, true],
     ["slotMachineMode", false, true],
+    ["dismissibleUpdateBanners", false, true],
   ] as const)("rehydrates %s", async (field, initial, persisted) => {
     getItem.mockResolvedValue(
       JSON.stringify({ state: { [field]: persisted }, version: 0 }),
@@ -195,6 +196,11 @@ describe("feature settingsStore custom sounds", () => {
       activeSound: "meep" as CompletionSound,
       expectedSound: "meep" as CompletionSound,
     },
+    {
+      label: "last sound feeding random-custom",
+      activeSound: "random-custom" as CompletionSound,
+      expectedSound: "none" as CompletionSound,
+    },
   ])(
     "removing the $label leaves completionSound as $expectedSound",
     ({ activeSound, expectedSound }) => {
@@ -205,6 +211,14 @@ describe("feature settingsStore custom sounds", () => {
       expect(useSettingsStore.getState().completionSound).toBe(expectedSound);
     },
   );
+
+  it("keeps random-custom active while other custom sounds remain", () => {
+    useSettingsStore.getState().addCustomSound(sound);
+    useSettingsStore.getState().addCustomSound({ ...sound, id: "def" });
+    useSettingsStore.getState().setCompletionSound("random-custom");
+    useSettingsStore.getState().removeCustomSound("abc");
+    expect(useSettingsStore.getState().completionSound).toBe("random-custom");
+  });
 
   it("persists custom sounds", async () => {
     useSettingsStore.getState().addCustomSound(sound);
@@ -217,6 +231,40 @@ describe("feature settingsStore custom sounds", () => {
     const persisted = JSON.parse(lastCall[1]);
     expect(persisted.state.customSounds).toEqual([sound]);
   });
+
+  it.each([
+    {
+      label: "random-custom with empty customSounds array",
+      persistedState: { completionSound: "random-custom", customSounds: [] },
+      expectedCompletionSound: "none",
+    },
+    {
+      label: "random-custom with absent customSounds key",
+      persistedState: { completionSound: "random-custom" },
+      expectedCompletionSound: "none",
+    },
+    {
+      label: "random-custom with non-empty library",
+      persistedState: {
+        completionSound: "random-custom",
+        customSounds: [sound],
+      },
+      expectedCompletionSound: "random-custom",
+    },
+  ])(
+    "rehydrate merge normalizes $label",
+    async ({ persistedState, expectedCompletionSound }) => {
+      getItem.mockResolvedValue(
+        JSON.stringify({ state: persistedState, version: 0 }),
+      );
+
+      await useSettingsStore.persist.rehydrate();
+
+      expect(useSettingsStore.getState().completionSound).toBe(
+        expectedCompletionSound,
+      );
+    },
+  );
 });
 
 describe("feature settingsStore terminal font", () => {

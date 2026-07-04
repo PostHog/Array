@@ -5,6 +5,7 @@ import {
   buildConversationItems,
   type ConversationItem,
   createItemBuilder,
+  finalizeBuilder,
   type ItemBuilder,
   markThoughtCompletion,
   processEvent,
@@ -49,9 +50,46 @@ export function createIncrementalConversationBuilder() {
   ): BuildResult {
     const debug = options?.showDebugLogs;
 
-    // Idle (not streaming): cheap to rebuild, and it sidesteps the speculative
-    // end-of-stream completions that only `buildConversationItems` resolves.
+    // Idle (not streaming): finalize the persistent builder in place instead of
+    // re-parsing every event, but only when the append-only prefix is still
+    // valid AND events are already in ts-order — a full rebuild sorts, while the
+    // incremental builder processed in arrival order, so out-of-order events
+    // must fall back to keep output identical.
     if (isPromptPending === false) {
+      let inOrder = true;
+      for (let i = 1; i < events.length; i++) {
+        if (events[i].ts < events[i - 1].ts) {
+          inOrder = false;
+          break;
+        }
+      }
+      const canFinalizeInPlace =
+        inOrder &&
+        b !== null &&
+        debug === showDebugLogs &&
+        events.length >= processedCount &&
+        (processedCount === 0 || events[0] === firstEventRef) &&
+        (processedCount === 0 ||
+          events[processedCount - 1] === boundaryEventRef);
+
+      if (canFinalizeInPlace) {
+        const builder = b as ItemBuilder;
+        for (let i = processedCount; i < events.length; i++) {
+          processEvent(builder, events[i], options);
+        }
+        finalizeBuilder(builder, isPromptPending);
+        const result: BuildResult = {
+          items: builder.items,
+          lastTurnInfo: readLastTurnInfo(builder),
+          isCompacting: builder.isCompacting,
+          completedToolCallCount: builder.completedToolCallCount,
+        };
+        // A finalized builder can't be safely continued; the next streaming
+        // call rebuilds fresh.
+        reset();
+        return result;
+      }
+
       reset();
       return buildConversationItems(events, isPromptPending, options);
     }
@@ -142,7 +180,16 @@ function assembleItems(
 
   for (let i = activeStart; i < b.items.length; i++) {
     const item = b.items[i];
-    if (item.type === "session_update" && activeContext) {
+    // Only rows of the active turn get the fresh context. A prompt can open
+    // its turn *before* a trailing progress card from the previous turn (see
+    // `handlePromptRequest`), so the active range may hold older-turn rows —
+    // those keep their own (frozen) context, matching a full rebuild.
+    if (
+      item.type === "session_update" &&
+      activeContext &&
+      turn &&
+      item.turnContext === turn.context
+    ) {
       out.push({ ...item, turnContext: activeContext });
     } else {
       out.push(item);

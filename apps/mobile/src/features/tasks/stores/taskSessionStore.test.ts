@@ -11,7 +11,7 @@ vi.mock("../composer/attachments/buildCloudPrompt", () => ({
   buildCloudPromptBlocks: vi.fn(() => Promise.resolve([])),
 }));
 vi.mock("../utils/sounds", () => ({
-  playMeepSound: vi.fn(() => Promise.resolve()),
+  playCompletionSound: vi.fn(() => Promise.resolve()),
 }));
 vi.mock("@/features/notifications/lib/notifications", () => ({
   presentLocalNotification: vi.fn(() => Promise.resolve()),

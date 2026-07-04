@@ -4772,6 +4772,8 @@ describe("SessionService", () => {
         },
       };
       onData(echo);
+      // Streamed events are buffered and flushed on a frame timer; let it run.
+      await new Promise((resolve) => setTimeout(resolve, 25));
 
       if (steer) {
         expect(mockSessionStoreSetters.appendEvents).toHaveBeenCalledWith(
