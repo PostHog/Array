@@ -34,9 +34,9 @@ function chunkText(event: AcpMessage): string {
 
 /** The renderer-side echo of a user prompt — a JSON-RPC request (carries an
  * id), so it must not be coalesced with plain notifications. */
-function promptEcho(id: number, text: string): AcpMessage {
+function promptEcho(id: number, text: string, ts = 1): AcpMessage {
   return {
-    ts: 1,
+    ts,
     message: {
       jsonrpc: "2.0",
       id,
@@ -50,9 +50,9 @@ function promptEcho(id: number, text: string): AcpMessage {
 }
 
 /** The agent's terminal response for a prompt — completes the turn. */
-function stopResponse(id: number): AcpMessage {
+function stopResponse(id: number, ts = 2): AcpMessage {
   return {
-    ts: 2,
+    ts,
     message: {
       jsonrpc: "2.0",
       id,
@@ -161,29 +161,6 @@ function createHarness() {
   };
 }
 
-function promptEcho(id: number, ts: number): AcpMessage {
-  return {
-    ts,
-    message: {
-      jsonrpc: "2.0",
-      id,
-      method: "session/prompt",
-      params: { sessionId: RUN_ID, prompt: [] },
-    },
-  } as unknown as AcpMessage;
-}
-
-function promptResponse(id: number, ts: number): AcpMessage {
-  return {
-    ts,
-    message: {
-      jsonrpc: "2.0",
-      id,
-      result: { stopReason: "end_turn" },
-    },
-  } as unknown as AcpMessage;
-}
-
 describe("streamed event batching", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -208,39 +185,60 @@ describe("streamed event batching", () => {
     expect(h.events().map(chunkText)).toEqual(["a", "b", "c"]);
   });
 
-  it("coalesces a run of plain notifications into one appendEvents call", () => {
+  // Coalescing table: chunks are plain notifications (coalesce into one
+  // appendEvents call per run — each store write costs O(transcript), so this
+  // is the batching that keeps big transcripts smooth during streaming);
+  // { echoId } items are id-carrying prompt echoes handled individually.
+  it.each<{
+    name: string;
+    emitted: (string | { echoId: number })[];
+    expectedGroups: string[][];
+  }>([
+    {
+      name: "coalesces a run of plain notifications into one appendEvents call",
+      emitted: ["a", "b", "c"],
+      expectedGroups: [["a", "b", "c"]],
+    },
+    {
+      name: "an id-carrying event splits the run but preserves global order",
+      emitted: ["a", "b", { echoId: 7 }, "c"],
+      expectedGroups: [["a", "b"], ["c"]],
+    },
+    {
+      name: "consecutive id-carrying events do not produce empty appends",
+      emitted: ["a", { echoId: 7 }, { echoId: 8 }, "b"],
+      expectedGroups: [["a"], ["b"]],
+    },
+    {
+      name: "a single-notification batch appends once",
+      emitted: ["a"],
+      expectedGroups: [["a"]],
+    },
+    {
+      name: "a batch of only id-carrying events never calls appendEvents",
+      emitted: [{ echoId: 7 }],
+      expectedGroups: [],
+    },
+  ])("$name", ({ emitted, expectedGroups }) => {
     const h = createHarness();
 
-    h.emit(chunk("a"));
-    h.emit(chunk("b"));
-    h.emit(chunk("c"));
+    for (const item of emitted) {
+      h.emit(
+        typeof item === "string"
+          ? chunk(item)
+          : promptEcho(item.echoId, "user prompt"),
+      );
+    }
     vi.advanceTimersByTime(FLUSH_MS);
 
-    // One store write for the whole run — not one per event. Each write costs
-    // O(transcript) (map copy + subscriber fan-out), so this is the batching
-    // that keeps big transcripts smooth during streaming.
-    expect(h.appendEvents).toHaveBeenCalledTimes(1);
-    expect(h.appendEvents.mock.calls[0][1].map(chunkText)).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
-  });
-
-  it("an id-carrying event splits the run but preserves global order", () => {
-    const h = createHarness();
-
-    h.emit(chunk("a"));
-    h.emit(chunk("b"));
-    h.emit(promptEcho(7, "user steer-less prompt"));
-    h.emit(chunk("c"));
-    vi.advanceTimersByTime(FLUSH_MS);
-
-    // Two coalesced appends around the individually-handled echo.
-    expect(h.appendEvents).toHaveBeenCalledTimes(2);
-    expect(h.appendEvents.mock.calls[0][1].map(chunkText)).toEqual(["a", "b"]);
-    expect(h.appendEvents.mock.calls[1][1].map(chunkText)).toEqual(["c"]);
-    expect(h.events().map(chunkText)).toEqual(["a", "b", "c"]);
+    expect(
+      h.appendEvents.mock.calls.map((call) => call[1].map(chunkText)),
+    ).toEqual(expectedGroups);
+    // Arrival order is preserved in the transcript (echoes go through
+    // replaceOptimisticWithEvent, so only chunks land in `events`).
+    expect(h.events().map(chunkText)).toEqual(
+      emitted.filter((item) => typeof item === "string"),
+    );
   });
 
   it("a stop-reason response batched with chunks still completes the turn", () => {
@@ -281,10 +279,10 @@ describe("streamed event batching", () => {
   it("keeps the turn duration when the prompt mutation clears state before the response flushes", () => {
     const h = createHarness();
 
-    h.emit(promptEcho(1, 1_000));
+    h.emit(promptEcho(1, "user prompt", 1_000));
     vi.advanceTimersByTime(FLUSH_MS);
 
-    h.emit(promptResponse(1, 6_000));
+    h.emit(stopResponse(1, 6_000));
     h.updateSession(RUN_ID, { isPromptPending: false, promptStartedAt: null });
     vi.advanceTimersByTime(FLUSH_MS);
 

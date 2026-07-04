@@ -1,7 +1,8 @@
-// Mide el hot path real de appendEvents (módulo real, sin réplicas):
-// 1 segundo de streaming pesado = 60 flushes x 15 eventos sobre un transcript
-// de N eventos. Correr en main y en la rama para comparar.
-//   bun scripts/measure-append-hotpath.ts
+// Measures the real appendEvents hot path (the actual store module, no
+// replicas): 1 second of heavy streaming = 60 flushes x 15 events over a
+// transcript seeded with N events. Run on main and on a branch to compare.
+//   node node_modules/.bin/tsx scripts/measure-append-hotpath.ts
+// (use tsx/Node so numbers come from V8, the engine Electron ships)
 import type { AcpMessage, AgentSession } from "@posthog/shared";
 import { sessionStoreSetters } from "../packages/core/src/sessions/sessionStore";
 
@@ -31,7 +32,7 @@ function makeEvent(): AcpMessage {
             sessionId: RUN_ID,
             update: {
               sessionUpdate: "agent_message_chunk",
-              content: { type: "text", text: "palabra ".repeat(10) },
+              content: { type: "text", text: "word ".repeat(16) },
             },
           },
         };
@@ -74,7 +75,7 @@ function run(perEvent: boolean): number {
 
 for (const n of [10_000, 30_000]) {
   for (const perEvent of [true, false]) {
-    const label = perEvent ? "per-evento x15" : "batcheado x1  ";
+    const label = perEvent ? "per-event x15" : "coalesced x1 ";
     const times: number[] = [];
     for (let rep = 0; rep < 7; rep++) {
       seedSession(n);
@@ -82,7 +83,7 @@ for (const n of [10_000, 30_000]) {
     }
     times.sort((a, b) => a - b);
     console.log(
-      `transcript ${n.toLocaleString()} | ${label} | mediana ${times[3].toFixed(1)} ms/seg-streaming (min ${times[0].toFixed(1)}, max ${times[6].toFixed(1)})`,
+      `transcript ${n.toLocaleString("en-US")} | ${label} | median ${times[3].toFixed(1)} ms per streamed second (min ${times[0].toFixed(1)}, max ${times[6].toFixed(1)})`,
     );
   }
 }
