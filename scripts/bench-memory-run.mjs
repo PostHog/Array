@@ -125,8 +125,33 @@ async function sendTurn(page, prompt, doneMarker) {
   return Date.now() - started;
 }
 
-/** N cheap agent turns in the restored thread. */
+/**
+ * Navigate to the dedicated local bench task before sending anything — the
+ * restored-at-boot task can be a real work task, and benchmark turns must
+ * never land in one.
+ */
+async function openBenchTask(page) {
+  const taskId = arg("thread-task-id", "5feefee1-c818-4931-84c7-e4a68d37b4f0");
+  const title = arg("thread-title", "Casual greeting");
+  await page.evaluate((id) => {
+    window.location.hash = `#/code/tasks/${id}`;
+  }, taskId);
+  await page.waitForTimeout(6000);
+  const header = await page
+    .locator("span.rt-truncate")
+    .first()
+    .textContent()
+    .catch(() => "");
+  if (!header?.includes(title)) {
+    throw new Error(
+      `refusing to send benchmark turns: open task is "${header}", expected "${title}"`,
+    );
+  }
+}
+
+/** N cheap agent turns in the dedicated bench thread. */
 async function driveThread(page) {
+  await openBenchTask(page);
   const turns = [];
   for (let i = 0; i < messageCount; i++) {
     const token = `pong-${label}-${i}`;
@@ -146,6 +171,7 @@ async function driveThread(page) {
  * exercising event streaming + conversation rendering, then a settle.
  */
 async function driveLongOutput(page) {
+  await openBenchTask(page);
   const token = `longout-${label}`;
   const ms = await sendTurn(
     page,
