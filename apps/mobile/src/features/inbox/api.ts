@@ -1,6 +1,5 @@
-import { fetch } from "expo/fetch";
 import { HttpError } from "@/features/tasks/api";
-import { getBaseUrl, getHeaders, getProjectId } from "@/lib/api";
+import { authedFetch, getBaseUrl, getProjectId } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import type { DismissalReasonOptionValue } from "./constants";
 
@@ -9,6 +8,7 @@ const log = logger.scope("inbox-api");
 import type {
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
+  CommitDiffResponse,
   ReportArtefact,
   SignalProcessingStateResponse,
   SignalReport,
@@ -16,7 +16,7 @@ import type {
   SignalReportSignalsResponse,
   SignalReportsQueryParams,
   SignalReportsResponse,
-  SignalReportTask,
+  SuggestedReviewerWriteEntry,
 } from "./types";
 
 export async function getSignalReports(
@@ -24,7 +24,6 @@ export async function getSignalReports(
 ): Promise<SignalReportsResponse> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
   const url = new URL(`${baseUrl}/api/projects/${projectId}/signals/reports/`);
 
@@ -46,8 +45,11 @@ export async function getSignalReports(
   if (params?.suggested_reviewers) {
     url.searchParams.set("suggested_reviewers", params.suggested_reviewers);
   }
+  if (params?.priority) {
+    url.searchParams.set("priority", params.priority);
+  }
 
-  const response = await fetch(url.toString(), { headers });
+  const response = await authedFetch(url.toString());
 
   if (!response.ok) {
     throw new HttpError(
@@ -69,11 +71,9 @@ export async function getSignalReport(
 ): Promise<SignalReport | null> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/`,
-    { headers },
   );
 
   if (response.status === 404 || response.status === 403) {
@@ -94,11 +94,9 @@ export async function getSignalReport(
 export async function getSignalProcessingState(): Promise<SignalProcessingStateResponse> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/signals/processing_state/`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -117,7 +115,6 @@ export async function getAvailableSuggestedReviewers(
 ): Promise<AvailableSuggestedReviewersResponse> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
   const url = new URL(
     `${baseUrl}/api/projects/${projectId}/signals/reports/available_reviewers/`,
@@ -127,7 +124,7 @@ export async function getAvailableSuggestedReviewers(
     url.searchParams.set("query", query.trim());
   }
 
-  const response = await fetch(url.toString(), { headers });
+  const response = await authedFetch(url.toString());
 
   if (!response.ok) {
     throw new HttpError(
@@ -155,40 +152,14 @@ export async function getAvailableSuggestedReviewers(
   return { results, count: results.length };
 }
 
-export async function getSignalReportTasks(
-  reportId: string,
-): Promise<SignalReportTask[]> {
-  const baseUrl = getBaseUrl();
-  const projectId = getProjectId();
-  const headers = getHeaders();
-
-  const response = await fetch(
-    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/tasks/`,
-    { headers },
-  );
-
-  if (!response.ok) {
-    throw new HttpError(
-      response.status,
-      response.statusText,
-      "Failed to fetch signal report tasks",
-    );
-  }
-
-  const data = await response.json();
-  return data.results ?? [];
-}
-
 export async function getSignalReportArtefacts(
   reportId: string,
 ): Promise<SignalReportArtefactsResponse> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/artefacts/`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -206,16 +177,68 @@ export async function getSignalReportArtefacts(
   return { results, count: data.count ?? results.length };
 }
 
+/** Fetch a commit artefact's diff against its parent (lazily, on demand). */
+export async function getCommitDiff(
+  reportId: string,
+  artefactId: string,
+): Promise<CommitDiffResponse> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/artefacts/${artefactId}/diff/`,
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Couldn’t load the diff",
+    );
+  }
+
+  const data = await response.json();
+  return {
+    diff: typeof data.diff === "string" ? data.diff : "",
+    truncated: data.truncated === true,
+  };
+}
+
+/** Replace the content of a report artefact (full PUT, not a partial update). */
+export async function updateSignalReportArtefact(
+  reportId: string,
+  artefactId: string,
+  content: SuggestedReviewerWriteEntry[],
+): Promise<void> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/artefacts/${artefactId}/`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ content }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      errorText || "Failed to update suggested reviewers",
+    );
+  }
+}
+
 export async function getSignalReportSignals(
   reportId: string,
 ): Promise<SignalReportSignalsResponse> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/signals/`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -268,13 +291,11 @@ export async function dismissSignalReport(
 ): Promise<SignalReport> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/state/`,
     {
       method: "POST",
-      headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({
         state: "suppressed",
         dismissal_reason: input.reason,
@@ -289,6 +310,33 @@ export async function dismissSignalReport(
       response.status,
       response.statusText,
       errorText || "Failed to dismiss signal report",
+    );
+  }
+
+  return await response.json();
+}
+
+/** Re-queue a dismissed report into the inbox via the `potential` transition. */
+export async function restoreSignalReport(
+  reportId: string,
+): Promise<SignalReport> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/state/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ state: "potential" }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      errorText || "Failed to restore signal report",
     );
   }
 

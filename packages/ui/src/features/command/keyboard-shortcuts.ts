@@ -1,0 +1,341 @@
+import { isMac } from "@posthog/ui/utils/platform";
+
+export const SHORTCUTS = {
+  COMMAND_MENU: "mod+k",
+  NEW_TASK: "mod+n,mod+t",
+  SETTINGS: "mod+,",
+  SHORTCUTS_SHEET: "mod+/",
+  GO_BACK: "mod+[",
+  GO_FORWARD: "mod+]",
+  TOGGLE_LEFT_SIDEBAR: "mod+b",
+  TOGGLE_REVIEW_PANEL: "mod+shift+b",
+  PREV_TASK: "mod+shift+[,ctrl+shift+tab",
+  NEXT_TASK: "mod+shift+],ctrl+tab",
+  CLOSE_TAB: "mod+w",
+  SWITCH_TAB: "ctrl+1,ctrl+2,ctrl+3,ctrl+4,ctrl+5,ctrl+6,ctrl+7,ctrl+8,ctrl+9",
+  SWITCH_TASK: "mod+1,mod+2,mod+3,mod+4,mod+5,mod+6,mod+7,mod+8,mod+9",
+  OPEN_IN_EDITOR: "mod+o",
+  COPY_PATH: "mod+shift+c",
+  TOGGLE_FOCUS: "mod+r",
+  PASTE_AS_FILE: "mod+shift+v",
+  INBOX: "mod+i",
+  SPACE_UP: "mod+up",
+  SPACE_DOWN: "mod+down",
+  FIND_IN_CONVERSATION: "mod+f",
+  FILE_PICKER: "mod+p",
+  BLUR: "escape",
+  SUBMIT_BLUR: "mod+enter",
+  SWITCH_MESSAGING_MODE: "mod+s",
+} as const;
+
+export type ShortcutCategory = "general" | "navigation" | "panels" | "editor";
+
+export interface KeyboardShortcut {
+  id: string;
+  keys: string;
+  description: string;
+  category: ShortcutCategory;
+  context?: string;
+  alternateKeys?: string;
+  /** Whether this shortcut's keybinding can be customized by the user. */
+  configurable?: boolean;
+}
+
+export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
+  {
+    id: "new-task",
+    keys: "mod+n",
+    description: "New task",
+    category: "general",
+    alternateKeys: "mod+t",
+  },
+  {
+    id: "command-menu",
+    keys: SHORTCUTS.COMMAND_MENU,
+    description: "Open command menu",
+    category: "general",
+  },
+  {
+    id: "settings",
+    keys: SHORTCUTS.SETTINGS,
+    description: "Open settings",
+    category: "general",
+  },
+  {
+    id: "shortcuts",
+    keys: SHORTCUTS.SHORTCUTS_SHEET,
+    description: "Show keyboard shortcuts",
+    category: "general",
+  },
+  {
+    id: "switch-messaging-mode",
+    keys: SHORTCUTS.SWITCH_MESSAGING_MODE,
+    description: "Switch Steer / Queue mode",
+    category: "editor",
+    context: "Session composer",
+  },
+  {
+    id: "inbox",
+    keys: SHORTCUTS.INBOX,
+    description: "Open inbox",
+    category: "navigation",
+  },
+  {
+    id: "switch-task",
+    keys: "mod+1-9",
+    description: "Switch to task 1-9",
+    category: "navigation",
+  },
+  {
+    id: "prev-task",
+    keys: "mod+shift+[",
+    description: "Previous task",
+    category: "navigation",
+    alternateKeys: "ctrl+shift+tab",
+  },
+  {
+    id: "next-task",
+    keys: "mod+shift+]",
+    description: "Next task",
+    category: "navigation",
+    alternateKeys: "ctrl+tab",
+  },
+  {
+    id: "space-up",
+    keys: SHORTCUTS.SPACE_UP,
+    description: "Previous space",
+    category: "navigation",
+  },
+  {
+    id: "space-down",
+    keys: SHORTCUTS.SPACE_DOWN,
+    description: "Next space",
+    category: "navigation",
+  },
+  {
+    id: "go-back",
+    keys: SHORTCUTS.GO_BACK,
+    description: "Go back",
+    category: "navigation",
+  },
+  {
+    id: "go-forward",
+    keys: SHORTCUTS.GO_FORWARD,
+    description: "Go forward",
+    category: "navigation",
+  },
+  {
+    id: "toggle-left-sidebar",
+    keys: SHORTCUTS.TOGGLE_LEFT_SIDEBAR,
+    description: "Toggle left sidebar",
+    category: "navigation",
+  },
+  {
+    id: "toggle-review-panel",
+    keys: SHORTCUTS.TOGGLE_REVIEW_PANEL,
+    description: "Toggle review panel",
+    category: "navigation",
+  },
+  {
+    id: "switch-tab",
+    keys: "ctrl+1-9",
+    description: "Switch to tab 1-9",
+    category: "panels",
+    context: "Task detail",
+  },
+  {
+    id: "close-tab",
+    keys: SHORTCUTS.CLOSE_TAB,
+    description: "Close active tab",
+    category: "panels",
+    context: "Task detail",
+  },
+  {
+    id: "open-in-editor",
+    keys: SHORTCUTS.OPEN_IN_EDITOR,
+    description: "Open in external editor",
+    category: "panels",
+    context: "Task detail",
+  },
+  {
+    id: "copy-path",
+    keys: SHORTCUTS.COPY_PATH,
+    description: "Copy file path",
+    category: "panels",
+    context: "Task detail",
+  },
+  {
+    id: "find-in-conversation",
+    keys: SHORTCUTS.FIND_IN_CONVERSATION,
+    description: "Find in conversation",
+    category: "panels",
+    context: "Task detail",
+  },
+  {
+    id: "file-picker",
+    keys: SHORTCUTS.FILE_PICKER,
+    description: "Open file picker",
+    category: "panels",
+    context: "Task detail",
+    configurable: true,
+  },
+  {
+    id: "paste-as-file",
+    keys: SHORTCUTS.PASTE_AS_FILE,
+    description: "Paste as file attachment",
+    category: "editor",
+    context: "Message editor",
+  },
+  {
+    id: "prompt-history-prev",
+    keys: "up",
+    description: "Previous prompt (when input is empty)",
+    category: "editor",
+    context: "Message editor",
+  },
+  {
+    id: "prompt-history-next",
+    keys: "down",
+    description: "Next prompt (when input is empty)",
+    category: "editor",
+    context: "Message editor",
+  },
+  {
+    id: "editor-bold",
+    keys: "mod+b",
+    description: "Bold",
+    category: "editor",
+    context: "Rich text editor",
+  },
+  {
+    id: "editor-italic",
+    keys: "mod+i",
+    description: "Italic",
+    category: "editor",
+    context: "Rich text editor",
+  },
+  {
+    id: "editor-underline",
+    keys: "mod+u",
+    description: "Underline",
+    category: "editor",
+    context: "Rich text editor",
+  },
+  {
+    id: "editor-code",
+    keys: "mod+e",
+    description: "Inline code",
+    category: "editor",
+    context: "Rich text editor",
+  },
+];
+
+export const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
+  general: "General",
+  navigation: "Navigation",
+  panels: "Panels & Tabs",
+  editor: "Editor",
+};
+
+export const CONFIGURABLE_SHORTCUT_IDS = [
+  "command-menu",
+  "new-task",
+  "settings",
+  "shortcuts",
+  "inbox",
+  "prev-task",
+  "next-task",
+  "space-up",
+  "space-down",
+  "go-back",
+  "go-forward",
+  "toggle-left-sidebar",
+  "toggle-review-panel",
+  "close-tab",
+  "open-in-editor",
+  "copy-path",
+  "toggle-focus",
+  "file-picker",
+  "paste-as-file",
+  "prompt-history-prev",
+  "prompt-history-next",
+] as const;
+
+export type ConfigurableShortcutId = (typeof CONFIGURABLE_SHORTCUT_IDS)[number];
+
+export const DEFAULT_KEYBINDINGS: Record<ConfigurableShortcutId, string> = {
+  "command-menu": SHORTCUTS.COMMAND_MENU,
+  "new-task": SHORTCUTS.NEW_TASK,
+  settings: SHORTCUTS.SETTINGS,
+  shortcuts: SHORTCUTS.SHORTCUTS_SHEET,
+  inbox: SHORTCUTS.INBOX,
+  "prev-task": SHORTCUTS.PREV_TASK,
+  "next-task": SHORTCUTS.NEXT_TASK,
+  "space-up": SHORTCUTS.SPACE_UP,
+  "space-down": SHORTCUTS.SPACE_DOWN,
+  "go-back": SHORTCUTS.GO_BACK,
+  "go-forward": SHORTCUTS.GO_FORWARD,
+  "toggle-left-sidebar": SHORTCUTS.TOGGLE_LEFT_SIDEBAR,
+  "toggle-review-panel": SHORTCUTS.TOGGLE_REVIEW_PANEL,
+  "close-tab": SHORTCUTS.CLOSE_TAB,
+  "open-in-editor": SHORTCUTS.OPEN_IN_EDITOR,
+  "copy-path": SHORTCUTS.COPY_PATH,
+  "toggle-focus": SHORTCUTS.TOGGLE_FOCUS,
+  "file-picker": SHORTCUTS.FILE_PICKER,
+  "paste-as-file": SHORTCUTS.PASTE_AS_FILE,
+  "prompt-history-prev": "shift+up",
+  "prompt-history-next": "shift+down",
+};
+
+export function getShortcutsByCategory(): Record<
+  ShortcutCategory,
+  KeyboardShortcut[]
+> {
+  const grouped: Record<ShortcutCategory, KeyboardShortcut[]> = {
+    general: [],
+    navigation: [],
+    panels: [],
+    editor: [],
+  };
+  for (const shortcut of KEYBOARD_SHORTCUTS) {
+    grouped[shortcut.category].push(shortcut);
+  }
+  return grouped;
+}
+
+function formatKey(key: string): string {
+  const k = key.trim().toLowerCase();
+  if (k === "mod") return isMac ? "⌘" : "Ctrl";
+  if (k === "shift") return isMac ? "⇧" : "Shift";
+  if (k === "alt") return isMac ? "⌥" : "Alt";
+  if (k === "ctrl") return isMac ? "⌃" : "Ctrl";
+  if (k === "enter") return isMac ? "↩" : "Enter";
+  if (k === "escape" || k === "esc") return "Esc";
+  if (k === "up" || k === "arrowup") return "↑";
+  if (k === "down" || k === "arrowdown") return "↓";
+  if (k === ",") return ",";
+  if (k === "[") return "[";
+  if (k === "]") return "]";
+  if (k === "tab") return "Tab";
+  return k.toUpperCase();
+}
+
+function extractHotkey(keys: string): string {
+  if (keys.includes(",") && !keys.endsWith(",")) {
+    return keys.split(",")[0];
+  }
+  return keys;
+}
+
+export function formatHotkey(keys: string): string {
+  const hotkey = extractHotkey(keys);
+  return hotkey
+    .split("+")
+    .map(formatKey)
+    .join(isMac ? "" : "+");
+}
+
+export function formatHotkeyParts(keys: string): string[] {
+  const hotkey = extractHotkey(keys);
+  return hotkey.split("+").map(formatKey);
+}

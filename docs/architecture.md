@@ -1,378 +1,228 @@
-# Architecture reference
+# Architecture
 
-Deep reference for the patterns that the architecture rules in [AGENTS.md](../AGENTS.md) point at. Read AGENTS.md first; this file is the long form.
+Read [AGENTS.md](../AGENTS.md) first. This file documents implementation details.
 
-## Electron app (apps/code)
+## Layers
 
-The desktop app has two processes. Main is the system of record for business logic and host state. Renderer owns UI state via Zustand and renders the world the main process describes.
+```text
+apps/<host>
+  boot, lifecycle, platform adapters, DI bindings
+    |
+    v
+@posthog/ui
+  React views, hooks, view-state stores, contributions
+    |
+    v
+@posthog/core
+  services, domain stores, domain schemas
+    |
+    v
+@posthog/api-client              PostHog cloud HTTP API
+@posthog/workspace-client        typed client for workspace-server
+    |
+    v
+@posthog/workspace-server        Node capabilities: git, fs, pty, spawn, watchers
 
+@posthog/platform                host-capability interfaces
+@posthog/shared                  zero-dependency primitives
 ```
-Main Process (Node.js)                      Renderer Process (React)
-┌───────────────────────┐                   ┌───────────────────────────┐
-│  DI Container         │                   │  DI Container             │
-│  ├── GitService       │                   │  ├── TRPCClient           │
-│  └── ...              │                   │  └── narrow renderer svcs │
-├───────────────────────┤                   ├───────────────────────────┤
-│  tRPC Routers         │ ◄─tRPC(ipcLink)─► │  tRPC Clients             │
-│  (resolve services)   │                   │  ├── useTRPC() (hooks)    │
-├───────────────────────┤                   │  └── trpcClient (vanilla) │
-│  Services + I/O       │                   ├───────────────────────────┤
-│  (fs, git, shell,     │                   │  Zustand Stores           │
-│   business logic)     │                   │  ├── pure UI state        │
-└───────────────────────┘                   │  └── subscription caches  │
-                                            ├───────────────────────────┤
-                                            │  React UI                 │
-                                            └───────────────────────────┘
-```
 
-- Both processes use InversifyJS for DI with singleton scope
-- Main holds all services. Renderer DI holds the tRPC client and narrow renderer services
-- Zustand stores own all UI state (not in DI)
-- Main services emit typed events. Renderer reacts via tRPC subscriptions wired once at boot
+Host code boots and binds. Shared packages own reusable logic and UI. `core` and `ui` never import host transports.
 
-## Dependency injection
+Two tRPC surfaces exist:
 
-Both processes use [InversifyJS](https://inversify.io/) with singleton scope. Services declare dependencies via constructor injection. No `container.get(...)` inside service methods.
+- `@posthog/host-router`: Electron main process API for its renderer.
+- `@posthog/workspace-server`: privileged Node backend API consumed by `@posthog/workspace-client`.
 
-**Define a service:**
+## Dependency Injection
 
-```typescript
-// src/main/services/my-service/service.ts
-import { injectable } from "inversify"
+Use plain Inversify through `@posthog/di`.
 
-@injectable()
-export class MyService {
-  doSomething() {
-    // ...
-  }
+- Define an interface and `Symbol.for(...)` token in the owning package.
+- Inject dependencies through constructors.
+- Bind services in feature `ContainerModule`s.
+- Load modules in host composition files.
+- Call `setRootContainer(container)` before React service resolution.
+- Use `bindToContainer((container) => ...)` for plain modules that register bindings before root initialization.
+- Do not call `container.get(...)` or `resolveService(...)` inside services or components.
+
+```ts
+export const FOCUS_SERVICE = Symbol.for("posthog.core.focusService");
+
+export interface IFocusService {
+  enableFocus(input: EnableFocusInput): Promise<EnableFocusResult>;
 }
 ```
 
-**Register the token and binding:**
-
-```typescript
-// src/main/di/tokens.ts
-export const MAIN_TOKENS = Object.freeze({
-  MyService: Symbol.for("Main.MyService"),
-})
-
-// src/main/di/container.ts
-container.bind<MyService>(MAIN_TOKENS.MyService).to(MyService)
-```
-
-**Inject dependencies via constructor:**
-
-```typescript
-import { inject, injectable } from "inversify"
-import { MAIN_TOKENS } from "../di/tokens"
-
+```ts
 @injectable()
-export class MyService {
+export class FocusService implements IFocusService {
   constructor(
-    @inject(MAIN_TOKENS.OtherService)
-    private readonly otherService: OtherService,
+    @inject(GIT_SERVICE) private readonly git: IGitService,
+    @inject(FOCUS_WORKSPACE_CLIENT) private readonly workspace: FocusWorkspaceClient,
   ) {}
-}
-```
 
-**Test with mocks via constructor injection or container rebind:**
-
-```typescript
-// Direct instantiation
-const mockOther = { getData: vi.fn().mockReturnValue("test") }
-const service = new MyService(mockOther as OtherService)
-
-// Or rebind in container for integration tests
-container.snapshot()
-container.rebind(MAIN_TOKENS.OtherService).toConstantValue(mockOther)
-// ... run tests
-container.restore()
-```
-
-## IPC via tRPC
-
-We use [tRPC](https://trpc.io/) over Electron IPC via the workspace `@posthog/electron-trpc` package. All inputs and outputs are Zod schemas. Types are inferred from schemas, never declared separately.
-
-**Three tRPC exports, each for a different context:**
-
-| Export       | Where to use                                  | Purpose                                                                  |
-| ------------ | --------------------------------------------- | ------------------------------------------------------------------------ |
-| `useTRPC()`  | React components and hooks                    | Options proxy via React context                                          |
-| `trpc`       | Outside React (module scope, services, stores) | Options proxy bound to the singleton `queryClient`                       |
-| `trpcClient` | Anywhere (imperative calls)                   | Vanilla tRPC client for direct `.query()` / `.mutate()` / `.subscribe()` |
-
-**Create a router (main process). Routers are one-liners that delegate to a backing service:**
-
-```typescript
-// src/main/trpc/routers/my-router.ts
-import { container } from "../../di/container"
-import { MAIN_TOKENS } from "../../di/tokens"
-import {
-  getDataInput,
-  getDataOutput,
-  updateDataInput,
-} from "../../services/my-service/schemas"
-import { router, publicProcedure } from "../trpc"
-
-const getService = () => container.get<MyService>(MAIN_TOKENS.MyService)
-
-export const myRouter = router({
-  getData: publicProcedure
-    .input(getDataInput)
-    .output(getDataOutput)
-    .query(({ input }) => getService().getData(input.id)),
-
-  updateData: publicProcedure
-    .input(updateDataInput)
-    .mutation(({ input }) => getService().updateData(input.id, input.value)),
-})
-```
-
-**Register the router on the root:**
-
-```typescript
-// src/main/trpc/router.ts
-import { myRouter } from "./routers/my-router"
-
-export const trpcRouter = router({
-  my: myRouter,
-  // ...
-})
-```
-
-**Use in React with TanStack Query:**
-
-```typescript
-import { useTRPC } from "@renderer/trpc/client"
-import { useMutation, useQuery } from "@tanstack/react-query"
-
-function MyComponent() {
-  const trpc = useTRPC()
-
-  const { data } = useQuery(trpc.my.getData.queryOptions({ id: "123" }))
-
-  const mutation = useMutation(
-    trpc.my.updateData.mutationOptions({
-      onSuccess: () => { /* ... */ },
-    }),
-  )
-  const handleUpdate = () => mutation.mutate({ id: "123", value: "new" })
-}
-```
-
-**Cache invalidation uses `pathFilter()` or `queryFilter()`:**
-
-```typescript
-const queryClient = useQueryClient()
-
-// Invalidate all queries under a router path
-queryClient.invalidateQueries(trpc.workspace.getAll.pathFilter())
-
-// Invalidate a specific query by input
-queryClient.invalidateQueries(
-  trpc.git.getCurrentBranch.queryFilter({ directoryPath: repoPath }),
-)
-
-// Set cache data directly
-queryClient.setQueryData(
-  trpc.git.getLatestCommit.queryKey({ directoryPath: repoPath }),
-  commitData,
-)
-```
-
-**Outside React (stores, sagas, module-scope utilities):**
-
-```typescript
-// Imperative calls use trpcClient
-import { trpcClient } from "@renderer/trpc/client"
-
-const data = await trpcClient.my.getData.query({ id: "123" })
-await trpcClient.my.updateData.mutate({ id: "123", value: "new" })
-
-// Cache operations outside React use trpc (the module-level options proxy)
-import { trpc } from "@renderer/trpc"
-import { queryClient } from "@utils/queryClient"
-
-queryClient.invalidateQueries(trpc.workspace.getAll.pathFilter())
-```
-
-## State management
-
-All UI state lives in the renderer. Domain state and host state live in main and are exposed via tRPC. Anything that survives a renderer reload, or that another client (mobile, web, CLI) would also need, lives in main.
-
-```typescript
-// Bad - main service hoarding renderer-shaped state
-@injectable()
-class TaskService {
-  private currentTask: Task | null = null // belongs in renderer
-}
-
-// Good - main service is the system of record for task data
-@injectable()
-class TaskService {
-  async readTask(id: string): Promise<Task> { /* ... */ }
-  async writeTask(task: Task): Promise<void> { /* ... */ }
-}
-
-// Good - renderer state is pure UI selection
-const useTaskUiStore = create<TaskUiState>((set) => ({
-  currentTaskId: null,
-  setCurrentTaskId: (id) => set({ currentTaskId: id }),
-}))
-```
-
-This keeps state predictable, easy to debug and naturally supports patterns like undo and rollback.
-
-## Service file layout
-
-Main services live in `src/main/services/<feature>/`:
-
-```
-src/main/services/
-└── my-service/
-    ├── service.ts      # The @injectable() service class
-    ├── schemas.ts      # Zod schemas + event constants for tRPC
-    └── types.ts        # Internal types (not exposed via tRPC)
-```
-
-**Zod schemas are the source of truth.** Types are inferred from schemas, never declared separately.
-
-```typescript
-// src/main/services/my-service/schemas.ts
-import { z } from "zod"
-
-export const getDataInput = z.object({ id: z.string() })
-
-export const getDataOutput = z.object({
-  id: z.string(),
-  name: z.string(),
-  createdAt: z.string(),
-})
-
-export type GetDataInput = z.infer<typeof getDataInput>
-export type GetDataOutput = z.infer<typeof getDataOutput>
-```
-
-Services and routers import the schemas and inferred types from the same `schemas.ts`. The router validates at the boundary; the service consumes the inferred types.
-
-## Events (tRPC subscriptions)
-
-For pushing real-time updates from main to renderer, services extend `TypedEventEmitter` and routers expose them as subscriptions.
-
-**Define event names and payload types in `schemas.ts`:**
-
-```typescript
-// src/main/services/my-service/schemas.ts
-export const MyServiceEvent = {
-  ItemCreated: "item-created",
-  ItemDeleted: "item-deleted",
-} as const
-
-export interface MyServiceEvents {
-  [MyServiceEvent.ItemCreated]: { id: string; name: string }
-  [MyServiceEvent.ItemDeleted]: { id: string }
-}
-```
-
-**Extend `TypedEventEmitter` in the service:**
-
-```typescript
-// src/main/services/my-service/service.ts
-import { TypedEventEmitter } from "../../lib/typed-event-emitter"
-import { MyServiceEvent, type MyServiceEvents } from "./schemas"
-
-@injectable()
-export class MyService extends TypedEventEmitter<MyServiceEvents> {
-  async createItem(name: string) {
-    const item = { id: "123", name }
-    this.emit(MyServiceEvent.ItemCreated, item) // typed
-    return item
+  async enableFocus(input: EnableFocusInput): Promise<EnableFocusResult> {
+    // orchestration
   }
 }
 ```
 
-**Expose as subscriptions via `toIterable()`. Global events broadcast to all subscribers:**
-
-```typescript
-function subscribe<K extends keyof MyServiceEvents>(event: K) {
-  return publicProcedure.subscription(async function* (opts) {
-    const service = getService()
-    for await (const data of service.toIterable(event, { signal: opts.signal })) {
-      yield data
-    }
-  })
-}
-
-export const myRouter = router({
-  // ... queries and mutations
-  onItemCreated: subscribe(MyServiceEvent.ItemCreated),
-  onItemDeleted: subscribe(MyServiceEvent.ItemDeleted),
-})
+```ts
+export const focusCoreModule = new ContainerModule(({ bind }) => {
+  bind(FOCUS_SERVICE).to(FocusService).inSingletonScope();
+});
 ```
 
-**For per-instance events (shell sessions, workspaces, etc.), filter server-side rather than broadcasting:**
+React resolves services only at boundaries:
 
-```typescript
-export interface ShellEvents {
-  [ShellEvent.Data]: { sessionId: string; data: string }
-  [ShellEvent.Exit]: { sessionId: string; exitCode: number }
-}
+```ts
+const focus = useService(FOCUS_SERVICE);
+```
 
-function subscribeFiltered<K extends keyof ShellEvents>(event: K) {
-  return publicProcedure
-    .input(sessionIdInput)
-    .subscription(async function* (opts) {
-      const service = getService()
-      const targetSessionId = opts.input.sessionId
-      for await (const data of service.toIterable(event, { signal: opts.signal })) {
-        if (data.sessionId === targetSessionId) yield data
-      }
-    })
+Unit tests construct services with fakes instead of using the container.
+
+## Contributions
+
+Boot side effects are `Contribution`s:
+
+- subscriptions
+- routes
+- commands
+- menus
+- feature initialization
+
+Bind contributions in feature modules. `boot()` resolves and starts them before rendering.
+
+```ts
+bind(CONTRIBUTION).to(FileWatcherContribution).inSingletonScope();
+```
+
+```ts
+setRootContainer(container);
+
+import "./desktop-services";
+import "./desktop-contributions";
+
+await boot(container);
+```
+
+Components do not start long-lived subscriptions. A contribution starts the subscription, writes to a store, and components render store state.
+
+## Host Router
+
+`@posthog/host-router` is the Electron main-to-renderer API. Router files live at:
+
+```text
+packages/host-router/src/routers/<feature>.router.ts
+```
+
+Router rules:
+
+- Import service tokens and schemas from the owning package.
+- Resolve the service from `ctx.container`.
+- Validate input with Zod.
+- Forward to the service.
+- Do not add business logic.
+
+```ts
+export const focusRouter = router({
+  enableFocus: publicProcedure
+    .input(enableFocusInput)
+    .mutation(({ ctx, input }) =>
+      ctx.container.get<IFocusService>(FOCUS_SERVICE).enableFocus(input)
+    ),
+});
+```
+
+The renderer imports `HostRouter` as a type and uses `useHostTRPC`. `trpcClient` remains in host glue under `apps/<host>`.
+
+## Workspace Server
+
+`@posthog/workspace-server` owns privileged Node work:
+
+- git
+- filesystem
+- pty
+- process spawn
+- watchers
+
+It exposes colocated tRPC routers. `@posthog/workspace-client` is the typed client. `core` services inject narrow workspace-client slices and call those procedures.
+
+## Schemas
+
+Use Zod at runtime boundaries. Infer TypeScript types from schemas.
+
+```ts
+export const getDataInput = z.object({
+  id: z.string(),
+});
+
+export type GetDataInput = z.infer<typeof getDataInput>;
+```
+
+Use schemas for tRPC inputs/outputs, API boundary data, persisted data, and external tool payloads.
+
+## Events
+
+Use typed events for real-time push. Services may extend `TypedEventEmitter`. Routers expose streams as subscriptions.
+
+```ts
+@injectable()
+export class FocusService extends TypedEventEmitter<FocusServiceEvents> {
+  async checkout(input: CheckoutInput) {
+    this.emit(FocusServiceEvent.Switched, { sessionId, branch });
+  }
 }
 ```
 
-**Subscribe in the renderer via the feature's subscription registrar, not in components:**
+For per-instance streams, filter server-side by id.
 
-```typescript
-// src/renderer/features/my-feature/subscriptions.ts
-import { trpcClient } from "@renderer/trpc/client"
+## State
 
-export function registerMyFeatureSubscriptions() {
-  trpcClient.my.onItemCreated.subscribe(undefined, {
-    onData: (item) => useMyStore.getState().handleItemCreated(item),
-  })
-}
-```
+Store each fact once.
 
-Subscriptions are started once at app boot. Components do not start subscriptions ad hoc.
+Domain state:
 
-## Adding a new feature
+- lives in `@posthog/core`
+- uses `zustand/vanilla`
+- represents facts read by business logic
 
-1. Create the service in `src/main/services/<feature>/`. Add `schemas.ts` for Zod inputs, outputs and event types.
-2. Add a DI token in `src/main/di/tokens.ts`.
-3. Register the service in `src/main/di/container.ts`.
-4. Create a tRPC router in `src/main/trpc/routers/<feature>.ts`. Routers are one-liners that delegate to the service.
-5. Mount the router on the root in `src/main/trpc/router.ts`.
-6. In the renderer, consume the procedures via `useQuery` and `useMutation`. If the feature pushes events, add a subscription registrar in `src/renderer/features/<feature>/subscriptions.ts` and register it at boot.
+View state:
 
-## MCP apps
+- lives in `@posthog/ui`
+- uses React Zustand `create`
+- represents selection, panel state, scroll position, drafts, and filters
 
-MCP Apps let MCP servers ship interactive HTML UIs alongside their tools. When a tool has an associated `ui://` resource, we render the app's HTML inside a sandboxed iframe instead of the raw tool input and output.
+Compute counts, labels, filtered lists, and status summaries from source facts.
 
-- Schemas live in `src/shared/types/mcp-apps.ts` because both processes need them.
-- `McpAppsService` (`src/main/services/mcp-apps/service.ts`) manages MCP server connections, caches resources (capped at 5MB per resource) and proxies calls between the renderer and remote servers.
-- `AgentService` intercepts ACP `sessionUpdate` callbacks for `mcp__` tools and forwards inputs and results to `McpAppsService`.
-- The renderer feature is `src/renderer/features/mcp-apps/`. `McpToolBlock` always renders `McpToolView` and additionally renders `McpAppHost` when the tool has a UI resource and the server isn't disabled.
-- Apps run in a double-iframe sandbox. The outer iframe loads a generated proxy with `sandbox="allow-scripts allow-same-origin ..."` and the inner iframe enforces a server-declared CSP meta tag.
-- `useAppBridge` manages the host side of `@modelcontextprotocol/ext-apps`. App requests route to tRPC mutations. Host context (theme, display mode, dimensions) flows back via the bridge.
-- Users can disable MCP Apps per server via `settingsStore.mcpAppsDisabledServers`.
+## Adding a Feature
 
-## Other packages
+1. Choose the data source.
+2. Add a `core` service when the feature has orchestration, retries, rules, sagas, or decisions.
+3. Define Zod schemas in `schemas.ts`.
+4. Define interface and token in `identifiers.ts`.
+5. Bind the service in `<feature>.module.ts`.
+6. Expose the service through host-router, or expose Node work through workspace-server.
+7. Build UI in `packages/ui/src/features/<feature>/`.
+8. Add hooks that each wrap one query, mutation, subscription, or selector.
+9. Add a contribution for subscriptions, routes, commands, or feature boot.
+10. Wire host adapters in `apps/<host>`.
+11. Run `node scripts/check-host-boundaries.mjs`.
 
-- **`packages/agent`** TypeScript agent framework wrapping `@anthropic-ai/claude-agent-sdk`. Owns the ACP connection, worktree management, PostHog API integration, task execution and session management. The cloud agent server is exported via `@posthog/agent/server`.
-- **`packages/git`** Platform-agnostic git saga operations (clone, branch, commit, push, stash, worktree, patch, publish), a read-write lock and a gh CLI client. Depends only on `@posthog/shared` and `@posthog/platform`.
-- **`packages/enricher`** AST-based PostHog flag call detection and source enrichment across languages. No workspace dependencies. Reusable from any host (Electron, mobile, CI, server).
-- **`packages/platform`** Interface-only. Declares the host capabilities a service can depend on (`ISecureStorage`, `IClipboard`, `IDialog`, `INotifier`, `IUpdater`, `IShell`, `IFileSystem`, etc.). No implementations. Per-target adapters fulfill the interfaces. Electron adapters live in `apps/code/src/main/platform-adapters/`. Future React Native and web adapters will live in their respective apps. Domain packages and main services depend on these interfaces, never on Electron APIs directly.
-- **`packages/electron-trpc`** tRPC-over-Electron-IPC bridge.
-- **`packages/shared`** Zero-dependency shared utilities (Saga pattern for atomic multi-step operations with automatic rollback, cloud-prompt encoding). Built with tsup, outputs ESM.
-- **`apps/cli`** Thin shell over the external `@posthog/cli` npm package. Command files handle argument parsing and output formatting only. No business logic. No data transformation. No tree building.
+## MCP Apps
+
+MCP Apps render tool-provided HTML UIs inside sandboxed iframes.
+
+- Shared schemas: `@posthog/shared`.
+- Service: `packages/core/src/mcp-apps/`.
+- UI feature: `packages/ui/src/features/mcp-apps/`.
+- Desktop host glue: `apps/code/src/renderer/features/mcp-apps/`.
+
+The core service manages MCP server connections, caches resources, and proxies UI calls. `useAppBridge` handles `@modelcontextprotocol/ext-apps` host communication, tRPC routing, theme, display mode, and dimensions.
+
+## References
+
+- [AGENTS.md](../AGENTS.md)
+- [conventions.md](./conventions.md)
+- [testing.md](./testing.md)

@@ -1,46 +1,21 @@
-const PR_URL_REGEX = /https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/;
-const GH_PR_CREATE_REGEX = /\bgh\s+pr\s+create\b/;
+const PR_URL_REGEX = /https:\/\/github\.com\/[^/\s"]+\/[^/\s"]+\/pull\/\d+/;
 
-export interface ExtractCreatedPrUrlInput {
-  toolName: string | undefined;
-  bashCommand: string | undefined;
-  toolResponse: unknown;
-  content?: Array<{ type?: string; text?: string }>;
+// A fixed window (not "since run start") so a PR the agent merely views on a
+// long run is too old to be mistaken for one it just created.
+export const PR_CREATION_RECENCY_MS = 5 * 60 * 1000;
+
+export function findPrUrl(text: string): string | null {
+  return text.match(PR_URL_REGEX)?.[0] ?? null;
 }
 
-export function extractCreatedPrUrl(
-  input: ExtractCreatedPrUrlInput,
-): string | null {
-  const { toolName, bashCommand, toolResponse, content } = input;
-
-  if (!toolName || !/bash/i.test(toolName)) return null;
-  if (!bashCommand || !GH_PR_CREATE_REGEX.test(bashCommand)) return null;
-
-  let textToSearch = "";
-
-  if (toolResponse) {
-    if (typeof toolResponse === "string") {
-      textToSearch = toolResponse;
-    } else if (typeof toolResponse === "object" && toolResponse !== null) {
-      const respObj = toolResponse as Record<string, unknown>;
-      textToSearch =
-        String(respObj.stdout || "") + String(respObj.stderr || "");
-      if (!textToSearch && respObj.output) {
-        textToSearch = String(respObj.output);
-      }
-    }
-  }
-
-  if (Array.isArray(content)) {
-    for (const item of content) {
-      if (item.type === "text" && item.text) {
-        textToSearch += ` ${item.text}`;
-      }
-    }
-  }
-
-  if (!textToSearch) return null;
-
-  const match = textToSearch.match(PR_URL_REGEX);
-  return match ? match[0] : null;
+// Fails closed on missing/invalid input so we never attribute on uncertainty.
+export function wasCreatedRecently(
+  createdAtIso: string | null | undefined,
+  nowMs: number,
+  maxAgeMs: number = PR_CREATION_RECENCY_MS,
+): boolean {
+  if (!createdAtIso) return false;
+  const createdAt = new Date(createdAtIso);
+  if (Number.isNaN(createdAt.getTime())) return false;
+  return createdAt.getTime() >= nowMs - maxAgeMs;
 }

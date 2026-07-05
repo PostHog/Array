@@ -15,6 +15,14 @@ interface InboxStoreState {
   skippedIds: SkippedSet;
   /** Index of the currently visible card in the deck */
   currentIndex: number;
+  /**
+   * Snapshot of the report IDs visible in the last-rendered list view, used
+   * for analytics (rank + list_size) when a detail screen is opened by tapping
+   * a list row.
+   */
+  lastVisibleReportIds: string[];
+  /** Most recently opened report ID, used for `previous_report_id` on OPENED events. */
+  previousOpenedReportId: string | null;
 }
 
 interface InboxStoreActions {
@@ -24,6 +32,8 @@ interface InboxStoreActions {
   resetSkipped: () => void;
   setCurrentIndex: (index: number) => void;
   advanceCard: () => void;
+  setLastVisibleReportIds: (ids: string[]) => void;
+  setPreviousOpenedReportId: (id: string | null) => void;
 }
 
 type InboxStore = InboxStoreState & InboxStoreActions;
@@ -33,6 +43,8 @@ export const useInboxStore = create<InboxStore>((set) => ({
   orderDirection: "desc",
   skippedIds: new Set(),
   currentIndex: 0,
+  lastVisibleReportIds: [],
+  previousOpenedReportId: null,
 
   setOrderByField: (orderByField) => set({ orderByField }),
   setOrderDirection: (orderDirection) => set({ orderDirection }),
@@ -45,4 +57,8 @@ export const useInboxStore = create<InboxStore>((set) => ({
   resetSkipped: () => set({ skippedIds: new Set(), currentIndex: 0 }),
   setCurrentIndex: (currentIndex) => set({ currentIndex }),
   advanceCard: () => set((state) => ({ currentIndex: state.currentIndex + 1 })),
+  setLastVisibleReportIds: (lastVisibleReportIds) =>
+    set({ lastVisibleReportIds }),
+  setPreviousOpenedReportId: (previousOpenedReportId) =>
+    set({ previousOpenedReportId }),
 }));

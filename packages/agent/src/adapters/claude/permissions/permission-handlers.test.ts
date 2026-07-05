@@ -104,6 +104,35 @@ describe("canUseTool MCP approval enforcement", () => {
     expect(context.client.requestPermission).toHaveBeenCalled();
   });
 
+  it("tags MCP tools in the default permission flow with claudeCode.toolName so the renderer can show the server name and unwrap exec dispatch args", async () => {
+    setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
+
+    const context = createContext("mcp__posthog__exec", {
+      toolInput: { command: "call experiment-get-all {}" },
+    });
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(context.client.requestPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          _meta: { claudeCode: { toolName: "mcp__posthog__exec" } },
+        }),
+      }),
+    );
+  });
+
+  it("does not set claudeCode._meta on non-MCP tools in the default permission flow", async () => {
+    const context = createContext("WebFetch", {
+      toolInput: { url: "https://example.com" },
+    });
+    await canUseTool(context);
+
+    const call = (context.client.requestPermission as ReturnType<typeof vi.fn>)
+      .mock.calls[0]?.[0];
+    expect(call?.toolCall?._meta).toBeUndefined();
+  });
+
   it("blocks do_not_use even on read-only MCP tools", async () => {
     setMcpToolApprovalStates({
       mcp__server__readonly_blocked: "do_not_use",

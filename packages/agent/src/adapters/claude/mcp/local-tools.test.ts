@@ -43,7 +43,10 @@ describe("createLocalToolsMcpServer", () => {
     await client.connect(clientTransport);
 
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toContain("git_signed_commit");
+    const names = tools.map((t) => t.name);
+    expect(names).toContain("git_signed_commit");
+    expect(names).toContain("git_signed_merge");
+    expect(names).toContain("git_signed_rewrite");
 
     await client.close();
   });

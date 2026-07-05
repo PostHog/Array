@@ -4,10 +4,12 @@ import type {
   TerminalOutputResponse,
 } from "@agentclientprotocol/sdk";
 import type {
+  McpSdkServerConfigWithInstance,
   Options,
   Query,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { PostHogProductId } from "../../posthog-products";
 import type { Pushable } from "../../utils/streams";
 import type { BaseSession } from "../base-acp-agent";
 import type { ContextBreakdownBaseline } from "./context-breakdown";
@@ -45,6 +47,15 @@ export type Session = BaseSession & {
   query: Query;
   /** The Options object passed to query() — mutating it affects subsequent prompts */
   queryOptions: Options;
+  /** Rebuilds the in-process ("sdk") signed-commit server with a fresh instance
+   * each call (reusing one throws "Already connected"); {} when none is enabled. */
+  buildInProcessMcpServers: () => Record<
+    string,
+    McpSdkServerConfigWithInstance
+  >;
+  /** Names of the in-process servers registered at session start. Lets the
+   * self-heal check status without rebuilding instances on every prompt. */
+  localToolsServerNames: string[];
   input: Pushable<SDKUserMessage>;
   settingsManager: SettingsManager;
   permissionMode: CodeExecutionMode;
@@ -57,6 +68,11 @@ export type Session = BaseSession & {
   effort?: EffortLevel;
   configOptions: SessionConfigOption[];
   accumulatedUsage: AccumulatedUsage;
+  /** PostHog products used during this session, derived from MCP exec calls.
+   *  Accumulates for the whole session (deduped); each newly-seen product is
+   *  emitted immediately so the client can show a persistent, de-duplicated
+   *  list. Never reset between turns. */
+  sessionResources: Set<PostHogProductId>;
   /** Latest context window usage (total tokens from last assistant message) */
   contextUsed?: number;
   /** Context window size in tokens */
@@ -64,6 +80,8 @@ export type Session = BaseSession & {
   /** Persists across prompt() calls so SDK-reported values survive turn boundaries */
   lastContextWindowSize?: number;
   promptRunning: boolean;
+  cancelController?: AbortController;
+  forceCancelTimer?: ReturnType<typeof setTimeout>;
   pendingMessages: Map<string, PendingMessage>;
   nextPendingOrder: number;
   emitRawSDKMessages: boolean | SDKMessageFilter[];
@@ -149,6 +167,14 @@ export type NewSessionMeta = {
   allowedDomains?: string[];
   /** Model ID to use for this session (e.g. "claude-sonnet-4-6") */
   model?: string;
+  /** Base branch of the task's repo (e.g. "master"), for the signed-git tools. */
+  baseBranch?: string;
+  /**
+   * Repo-less channel "generic chat box" session: enables the lazy-repo tools
+   * (list_repos / clone_repo) and channel guidance. The agent decides at
+   * runtime whether it needs a repo and clones one only if so.
+   */
+  channelMode?: boolean;
   jsonSchema?: Record<string, unknown> | null;
   mcpToolApprovals?: McpToolApprovals;
   claudeCode?: {

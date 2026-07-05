@@ -62,6 +62,7 @@ import { Pill } from "@/features/tasks/composer/Pill";
 import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPickerInline";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { useUserIntegrations } from "@/features/tasks/hooks/useUserIntegrations";
+import { useWarmTask } from "@/features/tasks/hooks/useWarmTask";
 import {
   generatePendingTaskKey,
   pendingTaskPromptStoreApi,
@@ -155,6 +156,7 @@ export default function NewTaskScreen() {
   // re-pick the same one for every new task.
   const lastRepository = useTaskStore((s) => s.lastRepository);
   const setLastRepository = useTaskStore((s) => s.setLastRepository);
+  const setComposerConfig = useTaskStore((s) => s.setComposerConfig);
   const [prompt, setPrompt] = useState(initialPrompt ?? "");
   const [selection, setSelectionState] = useState<RepositorySelection>(() => {
     if (initialRepo) {
@@ -319,6 +321,12 @@ export default function NewTaskScreen() {
       pendingTaskPromptStoreApi.move(pendingKey, task.id);
       currentPendingKey = task.id;
 
+      // Seed the per-task composer config with the mode/model/reasoning the
+      // user picked here, so the task detail screen reflects them and every
+      // subsequent run (resume-after-terminal) reuses the selected mode rather
+      // than falling back to DEFAULT_EXECUTION_MODE ("plan").
+      setComposerConfig(task.id, { mode, model, reasoning });
+
       const pendingUserMessage =
         attachments.length > 0
           ? serializeCloudPrompt(
@@ -360,12 +368,25 @@ export default function NewTaskScreen() {
     selection,
     signalReport,
     getUserIntegrationId,
+    setComposerConfig,
   ]);
 
   const hasContent = !!prompt.trim() || attachments.length > 0;
   const canSubmit =
     hasContent && isRepositorySelectionComplete(selection) && !creating;
   const showReasoningPill = modelSupportsReasoning(model);
+
+  // Best-effort prewarm; failures are swallowed. `selection.integrationId` is
+  // the GitHub installation id, not a PostHog integration id — the backend
+  // resolves the integration from the repository, so this only keys the warm.
+  useWarmTask({
+    repository: selection.repository,
+    githubIntegrationId: selection.integrationId,
+    composerIsEmpty: !hasContent,
+    runtimeAdapter: "claude",
+    model,
+    reasoningEffort: showReasoningPill ? reasoning : null,
+  });
 
   if (isLoading && hasGithubIntegration === null) {
     return (

@@ -7,6 +7,8 @@ export interface Task {
   created_at: string;
   updated_at: string;
   origin_product: string;
+  /** Inbox report UUID when origin_product is "signal_report". */
+  signal_report?: string | null;
   repository?: string | null;
   github_integration?: number | null;
   internal?: boolean;
@@ -63,6 +65,7 @@ export interface TaskRun {
   status: TaskRunStatus;
   log_url: string;
   error_message: string | null;
+  reasoning_effort?: string | null;
   output: Record<string, unknown> | null;
   state: Record<string, unknown>;
   created_at: string;

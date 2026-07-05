@@ -176,10 +176,16 @@ export type OnModeChange = (mode: CodeExecutionMode) => Promise<void>;
 
 interface CreatePostToolUseHookParams {
   onModeChange?: OnModeChange;
+  /** Called after a PostHog MCP `call` exec executes, with the sub-tool name
+   *  and the raw command (the command embeds the SQL for execute-sql). */
+  onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
 }
 
 export const createPostToolUseHook =
-  ({ onModeChange }: CreatePostToolUseHookParams): HookCallback =>
+  ({
+    onModeChange,
+    onPostHogResourceUsed,
+  }: CreatePostToolUseHookParams): HookCallback =>
   async (
     input: HookInput,
     toolUseID: string | undefined,
@@ -189,6 +195,20 @@ export const createPostToolUseHook =
 
       if (onModeChange && toolName === "EnterPlanMode") {
         await onModeChange("plan");
+      }
+
+      // Record PostHog product usage from the MCP exec dispatcher. Only the
+      // `call <sub-tool>` verb counts as "used a resource" — extractPostHogSubTool
+      // matches that verb and ignores introspection (tools/info/schema/search).
+      if (onPostHogResourceUsed && isPostHogExecTool(toolName)) {
+        const subTool = extractPostHogSubTool(input.tool_input);
+        if (subTool) {
+          const command = (input.tool_input as { command?: unknown })?.command;
+          onPostHogResourceUsed(
+            subTool,
+            typeof command === "string" ? command : undefined,
+          );
+        }
       }
 
       if (toolUseID) {
@@ -321,7 +341,10 @@ function blocksUnsignedGit(command: string): boolean {
  * which creates GitHub-signed (Verified) commits via the API.
  */
 export const createSignedCommitGuardHook =
-  (logger: Logger): HookCallback =>
+  (
+    logger: Logger,
+    onEnsureLocalToolsConnected?: () => Promise<boolean>,
+  ): HookCallback =>
   async (input: HookInput, _toolUseID: string | undefined) => {
     if (input.hook_event_name !== "PreToolUse") return { continue: true };
     if (input.tool_name !== "Bash") return { continue: true };
@@ -335,16 +358,34 @@ export const createSignedCommitGuardHook =
     logger.info(
       `[SignedCommitGuard] Blocking unsigned git command: ${command}`,
     );
+
+    // Try to restore the server before denying; tailor the message to the result.
+    let toolsAvailable = true;
+    if (onEnsureLocalToolsConnected) {
+      try {
+        toolsAvailable = await onEnsureLocalToolsConnected();
+      } catch {
+        toolsAvailable = false;
+      }
+    }
+
+    const reason = toolsAvailable
+      ? "Commits must be signed: `git commit` and `git push` are disabled here. " +
+        "Stage changes with `git add`, then call the `git_signed_commit` tool " +
+        `(${SIGNED_COMMIT_QUALIFIED_TOOL_NAME}) with a \`message\` to create a signed ` +
+        "commit on the branch."
+      : "Commits must be signed, and the signed-commit tooling is momentarily " +
+        "reconnecting, so it isn't available this instant. Your staged and unstaged " +
+        "changes are safe in the working tree — nothing is lost. Wait a moment, then " +
+        `call the \`git_signed_commit\` tool (${SIGNED_COMMIT_QUALIFIED_TOOL_NAME}) with a ` +
+        "`message`; raw `git commit`/`git push` stay disabled.";
+
     return {
       continue: true,
       hookSpecificOutput: {
         hookEventName: "PreToolUse" as const,
         permissionDecision: "deny" as const,
-        permissionDecisionReason:
-          "Commits must be signed: `git commit` and `git push` are disabled here. " +
-          "Stage changes with `git add`, then call the `git_signed_commit` tool " +
-          `(${SIGNED_COMMIT_QUALIFIED_TOOL_NAME}) with a \`message\` to create a signed ` +
-          "commit on the branch.",
+        permissionDecisionReason: reason,
       },
     };
   };

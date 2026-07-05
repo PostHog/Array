@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildGatewayPropertyHeaders, resolveGatewayProduct } from "./gateway";
+import {
+  getLlmGatewayUrl,
+  resolveGatewayProduct,
+  resolveLlmGatewayUrl,
+} from "./gateway";
 
 describe("resolveGatewayProduct", () => {
   it.each([
@@ -12,7 +16,7 @@ describe("resolveGatewayProduct", () => {
     {
       isInternal: false,
       originProduct: "signal_report",
-      expected: "posthog_code",
+      expected: "signals",
     },
     {
       isInternal: true,
@@ -25,6 +29,26 @@ describe("resolveGatewayProduct", () => {
       expected: "background_agents",
     },
     { isInternal: true, originProduct: "signal_report", expected: "signals" },
+    {
+      isInternal: false,
+      originProduct: "signals_scout",
+      expected: "signals",
+    },
+    {
+      isInternal: false,
+      originProduct: "posthog_ai",
+      expected: "posthog_ai",
+    },
+    {
+      isInternal: true,
+      originProduct: "signals_scout",
+      expected: "signals",
+    },
+    {
+      isInternal: true,
+      originProduct: "posthog_ai",
+      expected: "posthog_ai",
+    },
   ] as const)(
     "isInternal=$isInternal originProduct=$originProduct -> $expected",
     ({ isInternal, originProduct, expected }) => {
@@ -35,36 +59,69 @@ describe("resolveGatewayProduct", () => {
   );
 });
 
-describe("buildGatewayPropertyHeaders", () => {
-  it("renders each property as an x-posthog-property header line", () => {
+describe("resolveLlmGatewayUrl", () => {
+  it("appends the product slug to an env-provided base URL", () => {
     expect(
-      buildGatewayPropertyHeaders({
-        task_origin_product: "signal_report",
-        task_internal: true,
-      }),
-    ).toBe(
-      "x-posthog-property-task_origin_product: signal_report\nx-posthog-property-task_internal: true",
-    );
+      resolveLlmGatewayUrl(
+        "https://gateway.dev.posthog.dev",
+        "https://app.dev.posthog.dev",
+        "slack_app",
+      ),
+    ).toBe("https://gateway.dev.posthog.dev/slack_app");
   });
 
-  it("drops null and undefined values but keeps falsy primitives", () => {
+  it("appends the product slug after a trailing slash on the env URL", () => {
     expect(
-      buildGatewayPropertyHeaders({
-        task_origin_product: null,
-        task_internal: false,
-        task_count: 0,
-      }),
-    ).toBe(
-      "x-posthog-property-task_internal: false\nx-posthog-property-task_count: 0",
-    );
+      resolveLlmGatewayUrl(
+        "https://gateway.dev.posthog.dev/",
+        "https://app.dev.posthog.dev",
+        "posthog_code",
+      ),
+    ).toBe("https://gateway.dev.posthog.dev/posthog_code");
   });
 
-  it("returns an empty string when no usable properties remain", () => {
+  it("falls back to the region-aware default when no env URL is provided", () => {
     expect(
-      buildGatewayPropertyHeaders({
-        task_origin_product: null,
-        task_internal: undefined,
-      }),
-    ).toBe("");
+      resolveLlmGatewayUrl(
+        undefined,
+        "https://us.posthog.com",
+        "background_agents",
+      ),
+    ).toBe("https://gateway.us.posthog.com/background_agents");
+  });
+
+  it("treats an empty string env URL as unset", () => {
+    expect(resolveLlmGatewayUrl("", "https://eu.posthog.com", "signals")).toBe(
+      "https://gateway.eu.posthog.com/signals",
+    );
+  });
+});
+
+describe("getLlmGatewayUrl", () => {
+  it.each([
+    {
+      posthogHost: "https://us.posthog.com",
+      expected: "https://gateway.us.posthog.com/posthog_code",
+    },
+    {
+      posthogHost: "https://eu.posthog.com",
+      expected: "https://gateway.eu.posthog.com/posthog_code",
+    },
+    {
+      posthogHost: "https://app.dev.posthog.dev",
+      expected: "https://gateway.dev.posthog.dev/posthog_code",
+    },
+    {
+      posthogHost: "http://localhost:8000",
+      expected: "http://localhost:3308/posthog_code",
+    },
+  ] as const)("$posthogHost -> $expected", ({ posthogHost, expected }) => {
+    expect(getLlmGatewayUrl(posthogHost)).toBe(expected);
+  });
+
+  it("uses the PostHog AI product route when requested", () => {
+    expect(getLlmGatewayUrl("http://localhost:8000", "posthog_ai")).toBe(
+      "http://localhost:3308/posthog_ai",
+    );
   });
 });

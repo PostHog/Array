@@ -1,40 +1,112 @@
-import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ArchivedReportList } from "@/features/inbox/components/ArchivedReportList";
 import { FilterSheet } from "@/features/inbox/components/FilterSheet";
 import { FloatingInboxHeader } from "@/features/inbox/components/FloatingInboxHeader";
-import { InboxViewToggle } from "@/features/inbox/components/InboxViewToggle";
+import {
+  type InboxViewMode,
+  InboxViewToggle,
+} from "@/features/inbox/components/InboxViewToggle";
 import { ReportList } from "@/features/inbox/components/ReportList";
 import { ReviewerFilterSheet } from "@/features/inbox/components/ReviewerFilterSheet";
 import { TinderView } from "@/features/inbox/components/TinderView";
-import { useInboxReports } from "@/features/inbox/hooks/useInboxReports";
+import {
+  useArchivedReports,
+  useInboxReports,
+} from "@/features/inbox/hooks/useInboxReports";
 import {
   decidedIds,
   useDismissedReportsStore,
 } from "@/features/inbox/stores/dismissedReportsStore";
-import { useInboxFilterStore } from "@/features/inbox/stores/inboxFilterStore";
+import {
+  DEFAULT_STATUS_FILTER,
+  useInboxFilterStore,
+} from "@/features/inbox/stores/inboxFilterStore";
 import { useInboxStore } from "@/features/inbox/stores/inboxStore";
 import type { SignalReport } from "@/features/inbox/types";
+import { buildInboxViewedProperties } from "@/features/inbox/utils";
 import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
-
-type InboxViewMode = "list" | "tinder";
+import { ANALYTICS_EVENTS, useAnalytics } from "@/lib/analytics";
 
 export default function InboxScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { reports, isFetching, isLoading, error } = useInboxReports();
+  const { reports, totalCount, isFetching, isLoading, error } =
+    useInboxReports();
   const [filterOpen, setFilterOpen] = useState(false);
   const [reviewerOpen, setReviewerOpen] = useState(false);
   const [viewMode, setViewMode] = useState<InboxViewMode>("list");
+  const archived = useArchivedReports({ enabled: viewMode === "archive" });
   const reviewerFilterCount = useInboxFilterStore(
     (s) => s.suggestedReviewerFilter.length,
   );
+  const sourceProductFilter = useInboxFilterStore((s) => s.sourceProductFilter);
+  const statusFilter = useInboxFilterStore((s) => s.statusFilter);
+  const priorityFilter = useInboxFilterStore((s) => s.priorityFilter);
+  const suggestedReviewerFilter = useInboxFilterStore(
+    (s) => s.suggestedReviewerFilter,
+  );
+
+  const analytics = useAnalytics();
+  // Fire INBOX_VIEWED once per focus when the report list has settled. We
+  // bump a focus counter on every focus so the useEffect re-runs even when
+  // the data is already cached (no loading/filter/list change to trigger it
+  // on its own), then guard against double-fires within the same focus via
+  // a ref keyed on the focus-version we last fired for.
+  const [focusVersion, setFocusVersion] = useState(0);
+  useFocusEffect(
+    useCallback(() => {
+      setFocusVersion((v) => v + 1);
+    }, []),
+  );
+  const viewedFiredForFocusRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (focusVersion === 0) return;
+    if (isLoading) return;
+    if (viewedFiredForFocusRef.current === focusVersion) return;
+    viewedFiredForFocusRef.current = focusVersion;
+    analytics.track(
+      ANALYTICS_EVENTS.INBOX_VIEWED,
+      buildInboxViewedProperties(reports, totalCount, {
+        sourceProductFilter,
+        statusFilter,
+        suggestedReviewerFilter,
+        priorityFilter,
+        defaultStatusFilter: DEFAULT_STATUS_FILTER,
+      }),
+    );
+  }, [
+    analytics,
+    focusVersion,
+    isLoading,
+    reports,
+    totalCount,
+    sourceProductFilter,
+    statusFilter,
+    suggestedReviewerFilter,
+    priorityFilter,
+  ]);
 
   // ── Tinder mode data ──────────────────────────────────────────────────────
   const decided = useDismissedReportsStore(decidedIds);
   const setCurrentIndex = useInboxStore((s) => s.setCurrentIndex);
+  const setLastVisibleReportIds = useInboxStore(
+    (s) => s.setLastVisibleReportIds,
+  );
   const { repositoryOptions } = useIntegrations();
+
+  // Snapshot the visible-list IDs into the store so the detail screen can
+  // record rank/list_size on OPENED. Only the list view exposes a rank — the
+  // tinder card stack swaps cards in place.
+  useEffect(() => {
+    if (viewMode === "list") {
+      setLastVisibleReportIds(reports.map((r) => r.id));
+    } else {
+      setLastVisibleReportIds([]);
+    }
+  }, [viewMode, reports, setLastVisibleReportIds]);
 
   // Same data as the list view, excluding already-decided reports.
   const tinderReports = useMemo(
@@ -68,6 +140,11 @@ export default function InboxScreen() {
           onReportPress={handleReportPress}
           contentInsetTop={headerHeight}
         />
+      ) : viewMode === "archive" ? (
+        <ArchivedReportList
+          onReportPress={handleReportPress}
+          contentInsetTop={headerHeight}
+        />
       ) : (
         <View style={{ paddingTop: headerHeight }} className="flex-1">
           <TinderView
@@ -79,8 +156,8 @@ export default function InboxScreen() {
       )}
 
       <FloatingInboxHeader
-        isFetching={isFetching}
-        hasError={!!error}
+        isFetching={viewMode === "archive" ? archived.isFetching : isFetching}
+        hasError={viewMode === "archive" ? !!archived.error : !!error}
         reviewerFilterCount={reviewerFilterCount}
         showFilters={viewMode === "list"}
         onReviewerPress={() => setReviewerOpen(true)}

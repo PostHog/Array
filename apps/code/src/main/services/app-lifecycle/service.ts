@@ -1,16 +1,21 @@
-import type { IAppLifecycle } from "@posthog/platform/app-lifecycle";
-import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import {
+  APP_LIFECYCLE_SERVICE,
+  type IAppLifecycle,
+} from "@posthog/platform/app-lifecycle";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { DATABASE_SERVICE } from "@posthog/workspace-server/db/identifiers";
+import type { DatabaseService } from "@posthog/workspace-server/db/service";
+import { PROCESS_TRACKING_SERVICE } from "@posthog/workspace-server/services/process-tracking/identifiers";
+import type { ProcessTrackingService } from "@posthog/workspace-server/services/process-tracking/process-tracking";
+import { SUSPENSION_SERVICE } from "@posthog/workspace-server/services/suspension/identifiers";
+import type { SuspensionService } from "@posthog/workspace-server/services/suspension/suspension";
+import type { WatcherRegistryService } from "@posthog/workspace-server/services/watcher-registry/watcher-registry";
 import { inject, injectable } from "inversify";
-import type { DatabaseService } from "../../db/service";
-import { container } from "../../di/container";
-import { MAIN_TOKENS } from "../../di/tokens";
+import { WATCHER_REGISTRY_SERVICE } from "../../di/tokens";
+import { posthogNodeAnalytics } from "../../platform-adapters/posthog-analytics";
 import { withTimeout } from "../../utils/async";
 import { logger } from "../../utils/logger";
 import { shutdownOtelTransport } from "../../utils/otel-log-transport";
-import { shutdownPostHog, trackAppEvent } from "../posthog-analytics";
-import type { ProcessTrackingService } from "../process-tracking/service";
-import type { SuspensionService } from "../suspension/service.js";
-import type { WatcherRegistryService } from "../watcher-registry/service";
 
 const log = logger.scope("app-lifecycle");
 
@@ -22,8 +27,16 @@ export class AppLifecycleService {
   private _isShuttingDown = false;
 
   constructor(
-    @inject(MAIN_TOKENS.AppLifecycle)
+    @inject(APP_LIFECYCLE_SERVICE)
     private readonly appLifecycle: IAppLifecycle,
+    @inject(DATABASE_SERVICE)
+    private readonly db: DatabaseService,
+    @inject(SUSPENSION_SERVICE)
+    private readonly suspensionService: SuspensionService,
+    @inject(WATCHER_REGISTRY_SERVICE)
+    private readonly watcherRegistry: WatcherRegistryService,
+    @inject(PROCESS_TRACKING_SERVICE)
+    private readonly processTracking: ProcessTrackingService,
   ) {}
 
   get isQuittingForUpdate(): boolean {
@@ -82,23 +95,27 @@ export class AppLifecycleService {
     log.info("Partial shutdown started (keeping container)");
     await this.teardownNativeResources();
     try {
-      const db = container.get<DatabaseService>(MAIN_TOKENS.DatabaseService);
-      db.close();
+      this.db.close();
     } catch (error) {
       log.warn("Failed to close database during partial shutdown", error);
     }
   }
 
   /**
-   * Runs a full shutdown then exits the Electron app.
+   * Runs a full shutdown then exits the Electron app. The optional
+   * `beforeExit` hook lets the composition root tear down the DI container
+   * after shutdown completes but before the process exits.
    */
-  async gracefulExit(): Promise<void> {
+  async gracefulExit(beforeExit?: () => Promise<void>): Promise<void> {
     await this.shutdown();
+    if (beforeExit) {
+      await beforeExit();
+    }
     this.appLifecycle.exit(0);
   }
 
   /**
-   * Runs the full shutdown sequence: native resources, container, analytics.
+   * Runs the full shutdown sequence: native resources, database, analytics.
    */
   private async doShutdown(): Promise<void> {
     log.info("Shutdown started");
@@ -106,28 +123,18 @@ export class AppLifecycleService {
     await this.teardownNativeResources();
 
     try {
-      const suspensionService = container.get<SuspensionService>(
-        MAIN_TOKENS.SuspensionService,
-      );
-      suspensionService.stopInactivityChecker();
+      this.suspensionService.stopInactivityChecker();
     } catch (error) {
       log.warn("Failed to stop inactivity checker during shutdown", error);
     }
 
     try {
-      const db = container.get<DatabaseService>(MAIN_TOKENS.DatabaseService);
-      db.close();
+      this.db.close();
     } catch (error) {
       log.warn("Failed to close database during shutdown", error);
     }
 
-    try {
-      await container.unbindAll();
-    } catch (error) {
-      log.warn("Failed to unbind container", error);
-    }
-
-    trackAppEvent(ANALYTICS_EVENTS.APP_QUIT);
+    posthogNodeAnalytics.track(ANALYTICS_EVENTS.APP_QUIT);
 
     try {
       await shutdownOtelTransport();
@@ -136,7 +143,7 @@ export class AppLifecycleService {
     }
 
     try {
-      await shutdownPostHog();
+      await posthogNodeAnalytics.shutdown();
     } catch (error) {
       log.warn("Failed to shutdown PostHog", error);
     }
@@ -150,19 +157,13 @@ export class AppLifecycleService {
    */
   private async teardownNativeResources(): Promise<void> {
     try {
-      const watcherRegistry = container.get<WatcherRegistryService>(
-        MAIN_TOKENS.WatcherRegistryService,
-      );
-      await watcherRegistry.shutdownAll();
+      await this.watcherRegistry.shutdownAll();
     } catch (error) {
       log.warn("Failed to shutdown watcher registry", error);
     }
 
     try {
-      const processTracking = container.get<ProcessTrackingService>(
-        MAIN_TOKENS.ProcessTrackingService,
-      );
-      const snapshot = await processTracking.getSnapshot(true);
+      const snapshot = await this.processTracking.getSnapshot(true);
       log.debug("Process snapshot", {
         tracked: {
           shell: snapshot.tracked.shell.length,
@@ -179,7 +180,7 @@ export class AppLifecycleService {
 
       if (trackedCount > 0) {
         log.info(`Killing ${trackedCount} tracked processes`);
-        processTracking.killAll();
+        this.processTracking.killAll();
       }
     } catch (error) {
       log.warn("Failed to kill tracked processes", error);

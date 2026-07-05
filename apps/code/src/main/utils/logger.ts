@@ -61,8 +61,6 @@ export const logger = log;
 export type Logger = typeof logger;
 export type ScopedLogger = ReturnType<typeof logger.scope>;
 
-export { shutdownOtelTransport } from "@main/utils/otel-log-transport";
-
 export function getLogFilePath(): string {
   return join(LOG_DIR, LOG_FILE);
 }

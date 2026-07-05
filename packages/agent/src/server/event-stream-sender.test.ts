@@ -187,89 +187,70 @@ describe("TaskRunEventStreamSender", () => {
     ]);
   });
 
-  it("keeps the active ingest request open across scheduled flushes", async () => {
-    const requestBodies: string[] = [];
-    let activeStreamClosed = false;
+  it("routes the ingest POST to the agent-proxy run-scoped path when eventIngestBaseUrl is set", async () => {
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        if (!init?.body || typeof init.body === "string") {
-          const body = await readRequestBody(init);
-          requestBodies.push(body);
-          return responseForBody(body);
-        }
-
         const body = await readRequestBody(init);
-        activeStreamClosed = true;
-        requestBodies.push(body);
         return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = createSender({ flushDelayMs: 0 });
-
-    sender.enqueue({ type: "notification", notification: { method: "first" } });
-    await waitFor(() => fetchMock.mock.calls.length === 2);
-    expect(activeStreamClosed).toBe(false);
-
-    sender.enqueue({
-      type: "notification",
-      notification: { method: "second" },
+    const sender = createSender({
+      eventIngestBaseUrl: "http://agent-proxy:8003/",
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(activeStreamClosed).toBe(false);
-
+    sender.enqueue({ type: "notification", notification: { method: "first" } });
     await sender.stop();
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(activeStreamClosed).toBe(true);
-    expect(parseLines(requestBodies[1])).toEqual([
-      {
-        seq: 1,
-        event: { type: "notification", notification: { method: "first" } },
-      },
-      {
-        seq: 2,
-        event: { type: "notification", notification: { method: "second" } },
-      },
-      { type: STREAM_COMPLETE_CONTROL_TYPE, final_seq: 2 },
-    ]);
+    expect(fetchMock).toHaveBeenCalled();
+    const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    expect(lastCall[0]).toBe("http://agent-proxy:8003/v1/runs/run-1/ingest");
+    expect(lastCall[0]).not.toContain("/api/projects/");
   });
 
-  it("closes an idle active ingest request after the stream window elapses", async () => {
+  it("closes the active ingest upload after each drained batch on the proxy path", async () => {
     const requestBodies: string[] = [];
-    let activeStreamClosed = false;
+    let contentUploads = 0;
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
         if (!init?.body || typeof init.body === "string") {
           return responseForBody(await readRequestBody(init));
         }
 
+        // Resolves only once the sender closes the upload body.
         const body = await readRequestBody(init);
-        activeStreamClosed = true;
+        contentUploads += 1;
         requestBodies.push(body);
         return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = createSender({ flushDelayMs: 0, streamWindowMs: 5 });
+    const sender = createSender({
+      flushDelayMs: 0,
+      eventIngestBaseUrl: "http://agent-proxy:8003/",
+    });
 
+    // A buffering ingress only forwards the request body when the upload
+    // closes, so each drained batch must ride its own promptly-closed upload
+    // rather than one long-lived request held open until stop.
     sender.enqueue({ type: "notification", notification: { method: "first" } });
-    await waitFor(() => fetchMock.mock.calls.length === 2);
-    expect(activeStreamClosed).toBe(false);
-
-    await waitFor(() => activeStreamClosed, 200);
+    await waitFor(() => contentUploads === 1);
     expect(eventSequences(requestBodies[0])).toEqual([1]);
     expect(completionSequences(requestBodies[0])).toEqual([]);
 
+    sender.enqueue({
+      type: "notification",
+      notification: { method: "second" },
+    });
+    await waitFor(() => contentUploads === 2);
+    expect(eventSequences(requestBodies[1])).toEqual([2]);
+    expect(completionSequences(requestBodies[1])).toEqual([]);
+
     await sender.stop();
 
-    expect(eventSequences(requestBodies[1])).toEqual([]);
-    expect(completionSequences(requestBodies[1])).toEqual([1]);
+    const finalBody = requestBodies.at(-1) ?? "";
+    expect(completionSequences(finalBody)).toEqual([2]);
   });
 
   it("aborts a stuck ingest response after closing the request body", async () => {
@@ -593,7 +574,7 @@ describe("TaskRunEventStreamSender", () => {
           }
         },
       }),
-      retryDelayMs: 5,
+      retryDelayMs: 10_000,
       stopTimeoutMs: 1,
     });
 

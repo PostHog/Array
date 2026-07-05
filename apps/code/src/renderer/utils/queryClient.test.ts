@@ -1,4 +1,4 @@
-import type { Task } from "@shared/types";
+import type { Task } from "@posthog/shared/domain-types";
 import { focusManager } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getCachedTask, queryClient } from "./queryClient";

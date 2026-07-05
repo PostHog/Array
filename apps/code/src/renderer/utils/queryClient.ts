@@ -1,4 +1,4 @@
-import type { Task } from "@shared/types";
+import type { Task } from "@posthog/shared/domain-types";
 import { focusManager, QueryClient } from "@tanstack/react-query";
 
 export const queryClient = new QueryClient({

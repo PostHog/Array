@@ -2,7 +2,8 @@ import "./mocks/electron-trpc";
 import { Theme } from "@radix-ui/themes";
 import "@radix-ui/themes/styles.css";
 import type { Preview } from "@storybook/react-vite";
-import "../src/renderer/styles/globals.css";
+import "../../../packages/ui/src/styles/globals.css";
+import { withAppProviders } from "./withAppProviders";
 
 const preview: Preview = {
   parameters: {
@@ -21,6 +22,7 @@ const preview: Preview = {
   },
 
   decorators: [
+    withAppProviders,
     (Story, context) => {
       const isDark = context.globals.theme !== "light";
       return (

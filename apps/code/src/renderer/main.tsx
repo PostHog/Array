@@ -1,12 +1,33 @@
 import "reflect-metadata";
+// Side effect: registers the host (electron-trpc-backed) storage with @posthog/ui.
+// Persisted stores hydrate from it once it registers, wherever in the import
+// graph they are created.
+import "@utils/electronStorage";
+// Side effect: composes the renderer container and calls setRootContainer.
+// Must precede the updates adapter below, which resolves UPDATES_CLIENT at
+// module scope.
+import "@renderer/di/container";
+// Side effect: drives the updates subscription + toast via the core update store.
+import "@renderer/platform-adapters/updates";
 // Side effect: attaches window focus/visibility listeners so `focused` is accurate before inbox queries mount.
-import "@stores/rendererWindowFocusStore";
+import "@posthog/ui/shell/rendererWindowFocusStore";
+import {
+  BootErrorBoundary,
+  BootErrorScreen,
+} from "@components/BootErrorBoundary";
 import { Providers } from "@components/Providers";
 import { preloadHighlighter } from "@pierre/diffs";
-import App from "@renderer/App";
+import { boot } from "@posthog/di/contribution";
+import { ServiceProvider } from "@posthog/di/react";
+import App from "@posthog/ui/shell/App";
+import { logger } from "@posthog/ui/shell/logger";
+import { initializePostHog } from "@posthog/ui/shell/posthogAnalyticsImpl";
+import { registerDesktopContributions } from "@renderer/desktop-contributions";
+import { container } from "@renderer/di/container";
+import "@renderer/desktop-services";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "./styles/globals.css";
+import "@posthog/ui/styles/globals.css";
 
 void preloadHighlighter({
   themes: ["github-dark", "github-light"],
@@ -59,13 +80,39 @@ document.title = import.meta.env.DEV
   ? "PostHog Code (Development)"
   : "PostHog Code";
 
+const bootstrapSessionId = window.__posthogBootstrap?.sessionId;
+if (bootstrapSessionId) {
+  initializePostHog(bootstrapSessionId);
+}
+
+const bootLog = logger.scope("renderer-boot");
+
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");
 
-ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <Providers>
-      <App />
-    </Providers>
-  </React.StrictMode>,
-);
+const root = ReactDOM.createRoot(rootElement);
+
+try {
+  registerDesktopContributions();
+  boot(container).catch((error: unknown) => {
+    bootLog.error("Renderer boot sequence failed", error);
+    // Replaces the mounted tree without running effect cleanup; acceptable
+    // because a failed boot leaves the app unusable regardless.
+    root.render(<BootErrorScreen error={error} />);
+  });
+
+  root.render(
+    <React.StrictMode>
+      <BootErrorBoundary>
+        <ServiceProvider container={container}>
+          <Providers>
+            <App />
+          </Providers>
+        </ServiceProvider>
+      </BootErrorBoundary>
+    </React.StrictMode>,
+  );
+} catch (error) {
+  bootLog.error("Renderer failed to start", error);
+  root.render(<BootErrorScreen error={error} />);
+}

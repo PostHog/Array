@@ -205,6 +205,31 @@ export class PostHogAPIClient {
     );
   }
 
+  /**
+   * Truncate a task run's S3 log at the given checkpoint's boundary, dropping
+   * every entry after it. Returns the line counts and the checkpoint IDs the
+   * backend considers orphaned by the truncation (their turns no longer exist).
+   */
+  async truncateTaskRunLog(
+    taskId: string,
+    runId: string,
+    checkpointId: string,
+  ): Promise<{
+    truncated: boolean;
+    original_line_count: number;
+    truncated_line_count: number;
+    orphaned_checkpoint_ids: string[];
+  }> {
+    const teamId = this.getTeamId();
+    return this.apiRequest(
+      `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/truncate_log/`,
+      {
+        method: "POST",
+        body: JSON.stringify({ checkpoint_id: checkpointId }),
+      },
+    );
+  }
+
   async relayMessage(
     taskId: string,
     runId: string,
@@ -243,6 +268,35 @@ export class PostHogAPIClient {
     // The backend returns the full run artifact manifest after each upload.
     // Callers want the artifacts corresponding to this upload request only.
     return manifest.slice(-artifacts.length);
+  }
+
+  /** Signal reports the given task is associated with (via report task associations). */
+  async getSignalReportIdsForTask(taskId: string): Promise<string[]> {
+    const teamId = this.getTeamId();
+    const response = await this.apiRequest<{ results?: { id: string }[] }>(
+      `/api/projects/${teamId}/signals/reports/?task_id=${encodeURIComponent(taskId)}&limit=100`,
+    );
+    return (response.results ?? []).map((r) => r.id);
+  }
+
+  /**
+   * Append a log artefact to a signal report, attributed to `taskId` via the
+   * `X-PostHog-Task-Id` header (the server validates it against the token's team).
+   */
+  async createSignalReportArtefact(
+    reportId: string,
+    taskId: string,
+    body: { artefact_type: string; content: Record<string, unknown> },
+  ): Promise<void> {
+    const teamId = this.getTeamId();
+    await this.apiRequest(
+      `/api/projects/${teamId}/signals/reports/${reportId}/artefacts/`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: { "X-PostHog-Task-Id": taskId },
+      },
+    );
   }
 
   /**

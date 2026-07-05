@@ -2,7 +2,8 @@ export type GatewayProduct =
   | "posthog_code"
   | "background_agents"
   | "signals"
-  | "slack_app";
+  | "slack_app"
+  | "posthog_ai";
 
 export function resolveGatewayProduct({
   isInternal,
@@ -14,28 +15,19 @@ export function resolveGatewayProduct({
   if (originProduct === "slack") {
     return "slack_app";
   }
+  if (originProduct === "posthog_ai") {
+    return "posthog_ai";
+  }
+  if (originProduct === "signal_report" || originProduct === "signals_scout") {
+    return "signals";
+  }
   if (isInternal) {
-    return originProduct === "signal_report" ? "signals" : "background_agents";
+    return "background_agents";
   }
   return "posthog_code";
 }
 
-/**
- * Build `x-posthog-property-<name>: <value>` header lines that the LLM
- * gateway lifts onto the `$ai_generation` event it captures for each call
- * (see `services/llm-gateway/src/llm_gateway/request_context.py`).
- *
- * Returns a newline-joined string ready for `ANTHROPIC_CUSTOM_HEADERS`.
- * `null`/`undefined` property values are dropped.
- */
-export function buildGatewayPropertyHeaders(
-  properties: Record<string, string | number | boolean | null | undefined>,
-): string {
-  return Object.entries(properties)
-    .filter(([, value]) => value !== null && value !== undefined)
-    .map(([key, value]) => `x-posthog-property-${key}: ${value}`)
-    .join("\n");
-}
+export { buildPosthogPropertyHeaderLines as buildGatewayPropertyHeaders } from "@posthog/shared/posthog-property-headers";
 
 function getGatewayBaseUrl(posthogHost: string): string {
   const url = new URL(posthogHost);
@@ -49,6 +41,13 @@ function getGatewayBaseUrl(posthogHost: string): string {
     return `${url.protocol}//host.docker.internal:3308`;
   }
 
+  // The hosted dev environment runs its own LLM gateway with its own auth DB,
+  // so a dev-minted `pha_` token can't be routed to the US gateway — that's
+  // a different DB and returns 401 Authentication required.
+  if (hostname === "app.dev.posthog.dev") {
+    return "https://gateway.dev.posthog.dev";
+  }
+
   const region = hostname.match(/^(us|eu)\.posthog\.com$/)?.[1] ?? "us";
   return `https://gateway.${region}.posthog.com`;
 }
@@ -58,6 +57,26 @@ export function getLlmGatewayUrl(
   product: GatewayProduct = "posthog_code",
 ): string {
   return `${getGatewayBaseUrl(posthogHost)}/${product}`;
+}
+
+/**
+ * Resolve the gateway URL for a request, preferring an explicit
+ * `LLM_GATEWAY_URL` override over the region-aware default. The override is
+ * treated as a *base* URL — the product slug is always appended so the gateway
+ * can route to the correct product config. Without this, a bare-host override
+ * (e.g. `https://gateway.dev.posthog.dev`) lost the product suffix and every
+ * request fell into the catch-all `llm_gateway` product which OAuth tokens
+ * cannot use (403).
+ */
+export function resolveLlmGatewayUrl(
+  envUrl: string | undefined,
+  posthogHost: string,
+  product: GatewayProduct = "posthog_code",
+): string {
+  if (envUrl) {
+    return `${envUrl.replace(/\/$/, "")}/${product}`;
+  }
+  return getLlmGatewayUrl(posthogHost, product);
 }
 
 export function getGatewayUsageUrl(

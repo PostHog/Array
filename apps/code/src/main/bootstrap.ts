@@ -16,6 +16,7 @@
 
 import dns from "node:dns";
 import { mkdirSync } from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { app, crashReporter, protocol } from "electron";
@@ -57,11 +58,23 @@ app.commandLine.appendSwitch("enable-logging", "file");
 app.commandLine.appendSwitch("log-file", chromiumLogPath);
 app.commandLine.appendSwitch("log-level", "0");
 
+// In dev, expose the renderer over CDP (:9222) for the test-electron-app skill.
+// electron-vite launches Electron itself, so this is set in-process rather than
+// via a CLI flag.
+if (isDev) {
+  app.commandLine.appendSwitch("remote-debugging-port", "9222");
+}
+
 crashReporter.start({ uploadToServer: false });
 
 // Force IPv4 resolution when "localhost" is used so the agent hits 127.0.0.1
 // instead of ::1. This matches how the renderer already reaches the PostHog API.
 dns.setDefaultResultOrder("ipv4first");
+
+// Disable "Happy Eyeballs": PostHog's many-address ELB times out the connect
+// when IPv6 is unreachable (e.g. Tailscale), as family racing abandons each
+// IPv4 attempt before it completes. ipv4first alone isn't enough.
+net.setDefaultAutoSelectFamily(false);
 
 // Call fixPath early to ensure PATH is correct for any child processes
 fixPath();

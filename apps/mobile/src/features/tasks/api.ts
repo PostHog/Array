@@ -1,9 +1,9 @@
 import { fetch } from "expo/fetch";
 import {
+  authedFetch,
   createTimeoutSignal,
   getAccessToken,
   getBaseUrl,
-  getHeaders,
   getProjectId,
 } from "@/lib/api";
 import { logger } from "@/lib/logger";
@@ -127,7 +127,6 @@ export async function getTasks(filters?: {
 }): Promise<Task[]> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
   const params = new URLSearchParams({ limit: "500" });
   if (filters?.repository) {
@@ -140,9 +139,8 @@ export async function getTasks(filters?: {
     params.set("origin_product", filters.originProduct);
   }
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/tasks/?${params}`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -160,11 +158,9 @@ export async function getTasks(filters?: {
 export async function getTask(taskId: string): Promise<Task> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -181,11 +177,9 @@ export async function getTask(taskId: string): Promise<Task> {
 export async function getTaskAutomations(): Promise<TaskAutomation[]> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/task_automations/?limit=500`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -207,11 +201,9 @@ export async function getTaskAutomation(
 ): Promise<TaskAutomation> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -230,13 +222,11 @@ export async function createTaskAutomation(
 ): Promise<TaskAutomation> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/task_automations/`,
     {
       method: "POST",
-      headers,
       body: JSON.stringify(options),
     },
   );
@@ -254,13 +244,11 @@ export async function updateTaskAutomation(
 ): Promise<TaskAutomation> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/`,
     {
       method: "PATCH",
-      headers,
       body: JSON.stringify(updates),
     },
   );
@@ -277,14 +265,10 @@ export async function deleteTaskAutomation(
 ): Promise<void> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/`,
-    {
-      method: "DELETE",
-      headers,
-    },
+    { method: "DELETE" },
   );
 
   if (!response.ok) {
@@ -301,14 +285,10 @@ export async function runTaskAutomation(
 ): Promise<TaskAutomation> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/run/`,
-    {
-      method: "POST",
-      headers,
-    },
+    { method: "POST" },
   );
 
   if (!response.ok) {
@@ -322,19 +302,61 @@ export async function runTaskAutomation(
   return await parseJsonResponse<TaskAutomation>(response);
 }
 
+export async function warmTask(options: {
+  repository: string;
+  github_integration: number;
+  branch?: string | null;
+  runtime_adapter?: string | null;
+  model?: string | null;
+  reasoning_effort?: string | null;
+}): Promise<{ task_id: string; run_id: string } | null> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/warm/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        repository: options.repository,
+        github_integration: options.github_integration,
+        branch: options.branch ?? null,
+        runtime_adapter: options.runtime_adapter ?? null,
+        model: options.model ?? null,
+        reasoning_effort: options.reasoning_effort ?? null,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to warm task",
+    );
+  }
+
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  return JSON.parse(text) as { task_id: string; run_id: string };
+}
+
 export async function createTask(options: CreateTaskOptions): Promise<Task> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(`${baseUrl}/api/projects/${projectId}/tasks/`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      origin_product: "user_created",
-      ...options,
-    }),
-  });
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        origin_product: "user_created",
+        ...options,
+      }),
+    },
+  );
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -355,13 +377,11 @@ export async function updateTask(
 ): Promise<Task> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/`,
     {
       method: "PATCH",
-      headers,
       body: JSON.stringify(updates),
     },
   );
@@ -380,14 +400,10 @@ export async function updateTask(
 export async function deleteTask(taskId: string): Promise<void> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/`,
-    {
-      method: "DELETE",
-      headers,
-    },
+    { method: "DELETE" },
   );
 
   if (!response.ok) {
@@ -424,7 +440,6 @@ export async function runTaskInCloud(
 ): Promise<Task> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
   // Only serialize a body when we have options to send. Sending an empty
   // or minimal body on the initial run historically changed backend
@@ -470,11 +485,10 @@ export async function runTaskInCloud(
     body = JSON.stringify(payload);
   }
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/run/`,
     {
       method: "POST",
-      headers,
       body,
     },
   );
@@ -496,11 +510,9 @@ export async function getTaskRun(
 ): Promise<TaskRun> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -523,13 +535,11 @@ export async function appendTaskRunLog(
     async () => {
       const baseUrl = getBaseUrl();
       const projectId = getProjectId();
-      const headers = getHeaders();
 
-      const response = await fetch(
+      const response = await authedFetch(
         `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/append_log/`,
         {
           method: "POST",
-          headers,
           body: JSON.stringify({ entries }),
         },
       );
@@ -593,7 +603,6 @@ export async function sendCloudCommand(
 ): Promise<unknown> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
   const body = {
     jsonrpc: "2.0",
@@ -602,11 +611,10 @@ export async function sendCloudCommand(
     id: `posthog-mobile-${Date.now()}`,
   };
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/command/`,
     {
       method: "POST",
-      headers,
       body: JSON.stringify(body),
     },
   );
@@ -661,16 +669,15 @@ export async function fetchSessionLogs(
     async () => {
       const baseUrl = getBaseUrl();
       const projectId = getProjectId();
-      const headers = getHeaders();
 
       const params = new URLSearchParams({
         limit: String(options.limit ?? 5000),
         offset: String(options.offset ?? 0),
       });
 
-      const response = await fetch(
+      const response = await authedFetch(
         `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/session_logs/?${params}`,
-        { headers, signal: createTimeoutSignal(10_000) },
+        { signal: createTimeoutSignal(10_000) },
       );
 
       if (!response.ok) {
@@ -731,11 +738,9 @@ export async function streamCloudTask(
 export async function getIntegrations(): Promise<Integration[]> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/environments/${projectId}/integrations/`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -762,7 +767,6 @@ export async function getGithubRepositories(
 ): Promise<string[]> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
   const allRepos: string[] = [];
   let offset = 0;
@@ -772,9 +776,8 @@ export async function getGithubRepositories(
       limit: String(GITHUB_REPOS_PAGE_SIZE),
       offset: String(offset),
     });
-    const response = await fetch(
+    const response = await authedFetch(
       `${baseUrl}/api/environments/${projectId}/integrations/${integrationId}/github_repos/?${params}`,
-      { headers },
     );
 
     if (!response.ok) {
@@ -822,13 +825,11 @@ export interface GithubUserConnectResult {
 export async function startGithubUserIntegrationConnect(): Promise<GithubUserConnectResult> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/users/@me/integrations/github/start/`,
     {
       method: "POST",
-      headers,
       body: JSON.stringify({
         team_id: projectId,
         connect_from: "posthog_mobile",
@@ -854,11 +855,10 @@ export async function getUserGithubIntegrations(): Promise<
   UserGithubIntegration[]
 > {
   const baseUrl = getBaseUrl();
-  const headers = getHeaders();
 
-  const response = await fetch(`${baseUrl}/api/users/@me/integrations/`, {
-    headers,
-  });
+  const response = await authedFetch(
+    `${baseUrl}/api/users/@me/integrations/?kind=github`,
+  );
 
   if (!response.ok) {
     throw new HttpError(
@@ -871,14 +871,13 @@ export async function getUserGithubIntegrations(): Promise<
   const data = await parseJsonResponse<{ results?: UserGithubIntegration[] }>(
     response,
   );
-  return (data.results ?? []).filter((i) => i.kind === "github");
+  return data.results ?? [];
 }
 
 export async function getUserGithubRepositories(
   installationId: string,
 ): Promise<string[]> {
   const baseUrl = getBaseUrl();
-  const headers = getHeaders();
 
   const allRepos: string[] = [];
   let offset = 0;
@@ -888,9 +887,8 @@ export async function getUserGithubRepositories(
       limit: String(GITHUB_REPOS_PAGE_SIZE),
       offset: String(offset),
     });
-    const response = await fetch(
+    const response = await authedFetch(
       `${baseUrl}/api/users/@me/integrations/github/${installationId}/repos/?${params}`,
-      { headers },
     );
 
     if (!response.ok) {

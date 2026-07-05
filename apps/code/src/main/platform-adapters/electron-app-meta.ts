@@ -11,4 +11,12 @@ export class ElectronAppMeta implements IAppMeta {
   public get isProduction(): boolean {
     return app.isPackaged;
   }
+
+  public get platform(): string {
+    return process.platform;
+  }
+
+  public get arch(): string {
+    return process.arch;
+  }
 }

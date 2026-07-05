@@ -2,7 +2,11 @@ import { spawn } from "node:child_process";
 import { copyFile, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { SagaLogger } from "@posthog/shared";
+import type {
+  GitHandoffCheckpoint,
+  HandoffLocalGitState,
+  SagaLogger,
+} from "@posthog/shared";
 import { createGitClient, type GitClient } from "./client";
 import {
   CaptureCheckpointSaga,
@@ -10,39 +14,14 @@ import {
   materializeCheckpointRefFromMetadata,
 } from "./sagas/checkpoint";
 
+export type {
+  GitHandoffCheckpoint,
+  HandoffLocalGitState,
+} from "@posthog/shared";
+
 const HANDOFF_HEAD_REF_PREFIX = "refs/posthog-code-handoff/head/";
 const CHECKPOINT_REF_PREFIX = "refs/posthog-code-checkpoint/";
 const MAX_HANDOFF_FILE_BYTES = 1024 * 1024;
-
-export interface HandoffLocalGitState {
-  head: string | null;
-  branch: string | null;
-  upstreamHead: string | null;
-  upstreamRemote: string | null;
-  upstreamMergeRef: string | null;
-}
-
-export interface GitHandoffCheckpoint {
-  checkpointId: string;
-  commit: string;
-  checkpointRef: string;
-  headRef?: string;
-  head: string | null;
-  branch: string | null;
-  indexTree: string;
-  worktreeTree: string;
-  timestamp: string;
-  upstreamRemote: string | null;
-  upstreamMergeRef: string | null;
-  remoteUrl: string | null;
-  /**
-   * The exact commit the differential pack was built against (negative ref). The
-   * receiver must have this commit's objects to unpack/apply. Recorded so the apply
-   * side can fetch this precise SHA — the receiver's clone tip may have diverged from
-   * it, but it's typically still reachable on the remote. Null = self-contained pack.
-   */
-  packBaseline?: string | null;
-}
 
 export interface GitHandoffArtifactFile {
   path: string;

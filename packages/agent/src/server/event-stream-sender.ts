@@ -8,6 +8,8 @@ import {
 
 interface TaskRunEventStreamSenderConfig {
   apiUrl: string;
+  // Base URL for the event-ingest POST only; falls back to apiUrl (Django path) when unset.
+  eventIngestBaseUrl?: string;
   projectId: number;
   taskId: string;
   runId: string;
@@ -67,6 +69,7 @@ export class TaskRunEventStreamSender {
   private readonly requestTimeoutMs: number;
   private readonly stopTimeoutMs: number;
   private readonly streamWindowMs: number;
+  private readonly usingProxy: boolean;
   private readonly createStreamingUpload: StreamingUploadFactory;
   private readonly encoder = new TextEncoder();
   private sequence = 0;
@@ -85,10 +88,20 @@ export class TaskRunEventStreamSender {
   private bufferRevision = 0;
 
   constructor(private readonly config: TaskRunEventStreamSenderConfig) {
-    const apiUrl = config.apiUrl.replace(/\/$/, "");
-    this.ingestUrl = `${apiUrl}/api/projects/${config.projectId}/tasks/${encodeURIComponent(
-      config.taskId,
-    )}/runs/${encodeURIComponent(config.runId)}/event_stream/`;
+    const usingProxy = Boolean(config.eventIngestBaseUrl);
+    const ingestBase = (config.eventIngestBaseUrl ?? config.apiUrl).replace(
+      /\/$/,
+      "",
+    );
+    this.ingestUrl = usingProxy
+      ? `${ingestBase}/v1/runs/${encodeURIComponent(config.runId)}/ingest`
+      : `${ingestBase}/api/projects/${config.projectId}/tasks/${encodeURIComponent(
+          config.taskId,
+        )}/runs/${encodeURIComponent(config.runId)}/event_stream/`;
+    config.logger.info("Event ingest target resolved", {
+      ingestUrl: this.ingestUrl,
+      routedToProxy: usingProxy,
+    });
     this.maxBufferedEvents =
       config.maxBufferedEvents ?? DEFAULT_MAX_BUFFERED_EVENTS;
     this.maxStreamEvents = config.maxStreamEvents ?? DEFAULT_MAX_STREAM_EVENTS;
@@ -100,6 +113,7 @@ export class TaskRunEventStreamSender {
       config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.stopTimeoutMs = config.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
     this.streamWindowMs = config.streamWindowMs ?? DEFAULT_STREAM_WINDOW_MS;
+    this.usingProxy = usingProxy;
     this.createStreamingUpload =
       config.createStreamingUpload ?? createNodeStreamingUpload;
   }
@@ -196,6 +210,16 @@ export class TaskRunEventStreamSender {
 
     try {
       await flushPromise;
+      // On the proxy path, deliver the drained batch now instead of holding one
+      // long-lived upload. The ingress in front of the proxy buffers the ingest
+      // request body and only forwards it once the request closes, so a
+      // long-lived upload strands events; closing per batch forwards each within
+      // a round-trip. Gated to the proxy write leg so the Django path keeps its
+      // existing long-lived upload. The stop path leaves closing to drainForStop
+      // so the completion line rides the final upload.
+      if (!this.stopped && this.usingProxy) {
+        await this.closeActiveStream();
+      }
       return this.bufferedEvents.length < previousBufferLength;
     } catch (error) {
       this.config.logger.warn(
@@ -341,8 +365,7 @@ export class TaskRunEventStreamSender {
     delayOverrideMs?: number,
   ): void {
     this.clearStreamWindowClose(stream);
-    // Rotate long-lived uploads even when the agent goes idle; this is a
-    // transport boundary, not a batching window.
+    // Rotate long-lived uploads even when idle: a transport boundary, not a batching window.
     const delayMs =
       delayOverrideMs ??
       Math.max(0, stream.startedAtMs + this.streamWindowMs - Date.now());
@@ -671,7 +694,7 @@ export class TaskRunEventStreamSender {
     }
 
     if (this.droppedBeforeSequenceCount > 0) {
-      this.config.logger.warn("Task run event ingest recovered after drops", {
+      this.config.logger.info("Task run event ingest recovered after drops", {
         dropped: this.droppedBeforeSequenceCount,
       });
       this.droppedBeforeSequenceCount = 0;

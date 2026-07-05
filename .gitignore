@@ -11,6 +11,12 @@ out/
 storybook-static
 bin/
 
+# node-gyp configure artifact from a stray run at the repo root
+/build/
+
+# tsup bundled config artifacts (temporary files left behind when bundling TS configs)
+*.config.bundled_*.mjs
+
 # Environment
 .env
 .env.local
@@ -50,6 +56,7 @@ playwright-report/
 test-results/
 *storybook.log
 .session-store.json
+.playwright-mcp
 
 # Downloaded binaries
 apps/code/resources/codex-acp/
@@ -67,3 +74,5 @@ posthog-sym
 CLAUDE.local.md
 
 apps/mobile/ROADMAP.md
+# Local quill tarball for ChatX thread testing (not committed)
+.local-quill/

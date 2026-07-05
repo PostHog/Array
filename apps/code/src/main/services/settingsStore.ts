@@ -11,6 +11,9 @@ interface SettingsSchema {
   autoSuspendEnabled: boolean;
   maxActiveWorktrees: number;
   autoSuspendAfterDays: number;
+  discordPresenceEnabled: boolean;
+  discordPresenceShowTaskTitle: boolean;
+  discordPresenceShowRepoName: boolean;
 }
 
 function getDefaultWorktreeLocation(): string {
@@ -84,6 +87,18 @@ const schema = {
     minimum: 1,
     maximum: 365,
   },
+  discordPresenceEnabled: {
+    type: "boolean" as const,
+    default: false,
+  },
+  discordPresenceShowTaskTitle: {
+    type: "boolean" as const,
+    default: false,
+  },
+  discordPresenceShowRepoName: {
+    type: "boolean" as const,
+    default: false,
+  },
 };
 
 export const settingsStore = new Store<SettingsSchema>({
@@ -96,6 +111,9 @@ export const settingsStore = new Store<SettingsSchema>({
     autoSuspendEnabled: true,
     maxActiveWorktrees: 5,
     autoSuspendAfterDays: 7,
+    discordPresenceEnabled: false,
+    discordPresenceShowTaskTitle: false,
+    discordPresenceShowRepoName: false,
   },
 });
 
@@ -165,4 +183,12 @@ export function getAutoSuspendAfterDays(): number {
 
 export function setAutoSuspendAfterDays(value: number): void {
   settingsStore.set("autoSuspendAfterDays", value);
+}
+
+export function getPreventSleepWhileRunning(): boolean {
+  return settingsStore.get("preventSleepWhileRunning", false);
+}
+
+export function setPreventSleepWhileRunning(value: boolean): void {
+  settingsStore.set("preventSleepWhileRunning", value);
 }

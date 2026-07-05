@@ -5,6 +5,7 @@ import { GithubLogo, Lightning } from "phosphor-react-native";
 import { useRef } from "react";
 import { Animated, PanResponder, Pressable, View } from "react-native";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
+import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import { useThemeColors } from "@/lib/theme";
 import type {
   SignalReport,
@@ -290,6 +291,15 @@ function CardContent({
             </View>
           </>
         )}
+        {report.implementation_pr_url ? (
+          <View className="ml-auto">
+            <PrStatusBadge
+              prUrl={report.implementation_pr_url}
+              hideWhenUnresolved
+              size="sm"
+            />
+          </View>
+        ) : null}
       </View>
     </View>
   );

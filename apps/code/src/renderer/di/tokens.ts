@@ -4,11 +4,9 @@
  * IMPORTANT: These tokens are for renderer process only.
  * Never import this file from main code.
  */
-export const RENDERER_TOKENS = Object.freeze({
-  // Infrastructure
-  TRPCClient: Symbol.for("Renderer.TRPCClient"),
 
-  // Services
-  TaskService: Symbol.for("Renderer.TaskService"),
-  SetupRunService: Symbol.for("Renderer.SetupRunService"),
-});
+// Infrastructure
+export const TRPC_CLIENT = Symbol.for("posthog.host.renderer.trpc-client");
+
+// Services
+export const TASK_SERVICE = Symbol.for("posthog.host.renderer.task-service");

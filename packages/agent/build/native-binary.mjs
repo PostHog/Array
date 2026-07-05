@@ -5,7 +5,7 @@ import { join } from "node:path";
  * via `@anthropic-ai/claude-agent-sdk-${platform}-${arch}` optional deps.
  *
  * Used by both `packages/agent/tsup.config.ts` (bundles the binary into the
- * agent package's `dist/claude-cli/`) and `apps/code/vite.main.config.mts`
+ * agent package's `dist/claude-cli/`) and `apps/code/vite-main-plugins.mts`
  * (copies it into the Electron app's `.vite/build/claude-cli/`).
  *
  * The runtime equivalent of this lives upstream in `acp-agent.ts` as

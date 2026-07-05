@@ -1,7 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { SignalReportOrderingField, SignalReportStatus } from "../types";
+import type {
+  SignalReportOrderingField,
+  SignalReportPriority,
+  SignalReportStatus,
+} from "../types";
 
 type SortField = Extract<
   SignalReportOrderingField,
@@ -17,9 +21,10 @@ export type SourceProduct =
   | "github"
   | "linear"
   | "zendesk"
-  | "conversations";
+  | "conversations"
+  | "signals_scout";
 
-const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
+export const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
   "ready",
   "pending_input",
   "in_progress",
@@ -34,6 +39,7 @@ interface InboxFilterState {
   statusFilter: SignalReportStatus[];
   sourceProductFilter: SourceProduct[];
   suggestedReviewerFilter: string[];
+  priorityFilter: SignalReportPriority[];
 }
 
 interface InboxFilterActions {
@@ -43,6 +49,8 @@ interface InboxFilterActions {
   toggleSourceProduct: (source: SourceProduct) => void;
   toggleSuggestedReviewer: (reviewerUuid: string) => void;
   setSuggestedReviewerFilter: (reviewerUuids: string[]) => void;
+  togglePriority: (priority: SignalReportPriority) => void;
+  setPriorityFilter: (priorities: SignalReportPriority[]) => void;
   resetFilters: () => void;
 }
 
@@ -56,6 +64,7 @@ export const useInboxFilterStore = create<InboxFilterStore>()(
       statusFilter: DEFAULT_STATUS_FILTER,
       sourceProductFilter: [],
       suggestedReviewerFilter: [],
+      priorityFilter: [],
 
       setSort: (sortField, sortDirection) => set({ sortField, sortDirection }),
       setStatusFilter: (statusFilter) => set({ statusFilter }),
@@ -88,11 +97,22 @@ export const useInboxFilterStore = create<InboxFilterStore>()(
         set({
           suggestedReviewerFilter: Array.from(new Set(reviewerUuids)),
         }),
+      togglePriority: (priority) =>
+        set((state) => {
+          const current = state.priorityFilter;
+          const next = current.includes(priority)
+            ? current.filter((p) => p !== priority)
+            : [...current, priority];
+          return { priorityFilter: next };
+        }),
+      setPriorityFilter: (priorities) =>
+        set({ priorityFilter: Array.from(new Set(priorities)) }),
       resetFilters: () =>
         set({
           statusFilter: DEFAULT_STATUS_FILTER,
           sourceProductFilter: [],
           suggestedReviewerFilter: [],
+          priorityFilter: [],
         }),
     }),
     {
@@ -104,6 +124,7 @@ export const useInboxFilterStore = create<InboxFilterStore>()(
         statusFilter: state.statusFilter,
         sourceProductFilter: state.sourceProductFilter,
         suggestedReviewerFilter: state.suggestedReviewerFilter,
+        priorityFilter: state.priorityFilter,
       }),
     },
   ),

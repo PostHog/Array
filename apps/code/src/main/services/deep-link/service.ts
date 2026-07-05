@@ -1,26 +1,33 @@
-import type { IAppLifecycle } from "@posthog/platform/app-lifecycle";
-import { getDeeplinkProtocol } from "@shared/deeplink";
+import {
+  APP_LIFECYCLE_SERVICE,
+  type IAppLifecycle,
+} from "@posthog/platform/app-lifecycle";
+import type {
+  DeepLinkHandler,
+  IDeepLinkRegistry,
+} from "@posthog/platform/deep-link";
+import { getDeeplinkProtocol } from "@posthog/shared";
 import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
 import { isDevBuild } from "../../utils/env";
+import {
+  isAppImage,
+  registerAppImageSchemes,
+} from "../../utils/linux-appimage-protocol";
 import { logger } from "../../utils/logger";
+
+export type { DeepLinkHandler } from "@posthog/platform/deep-link";
 
 const log = logger.scope("deep-link-service");
 
 const LEGACY_PROTOCOLS = ["twig", "array"];
 
-export type DeepLinkHandler = (
-  path: string,
-  searchParams: URLSearchParams,
-) => boolean;
-
 @injectable()
-export class DeepLinkService {
+export class DeepLinkService implements IDeepLinkRegistry {
   private protocolRegistered = false;
   private handlers = new Map<string, DeepLinkHandler>();
 
   constructor(
-    @inject(MAIN_TOKENS.AppLifecycle)
+    @inject(APP_LIFECYCLE_SERVICE)
     private readonly appLifecycle: IAppLifecycle,
   ) {}
 
@@ -31,11 +38,22 @@ export class DeepLinkService {
 
     // Dev uses `posthog-code-dev` so local builds do not steal `posthog-code`
     // from the production app. Production also registers legacy schemes.
-    this.appLifecycle.registerDeepLinkScheme(getDeeplinkProtocol(isDevBuild()));
+    const schemes = [getDeeplinkProtocol(isDevBuild())];
     if (!isDevBuild()) {
-      for (const legacy of LEGACY_PROTOCOLS) {
-        this.appLifecycle.registerDeepLinkScheme(legacy);
-      }
+      schemes.push(...LEGACY_PROTOCOLS);
+    }
+
+    for (const scheme of schemes) {
+      this.appLifecycle.registerDeepLinkScheme(scheme);
+    }
+
+    // AppImage builds have no installed .desktop file, so the above
+    // `setAsDefaultProtocolClient` calls (which point xdg at one) are no-ops and
+    // the browser can't hand `posthog-code://callback?...` back after OAuth. Write
+    // a desktop entry pointing at the stable $APPIMAGE path and register it.
+    // Best-effort: failures here must not block startup.
+    if (isAppImage()) {
+      void registerAppImageSchemes(schemes);
     }
 
     this.protocolRegistered = true;

@@ -10,7 +10,7 @@ PostHog Code registers custom URL schemes so the desktop app can be opened with 
 | Development | `posthog-code-dev://` |
 | Legacy (production only) | `twig://`, `array://` |
 
-All schemes route through the same dispatcher. The host portion of the URL selects the handler (`task`, `inbox`, `new`, `plan`, `issue`, `callback`, `integration`, `slack-integration`, `mcp-oauth-complete`).
+All schemes route through the same dispatcher. The host portion of the URL selects the handler (`task`, `inbox`, `scout`, `approval`, `canvas`, `new`, `plan`, `issue`, `callback`, `integration`, `slack-integration`, `mcp-oauth-complete`).
 
 If the app is not running, the OS launches it and the link is queued until the renderer is ready. If the app is minimised, it is restored and focused before the link is handled.
 
@@ -100,6 +100,55 @@ Open a specific inbox report.
 posthog-code://inbox/report_abc123
 ```
 
+### `posthog-code://scout/<skillSlug>`
+
+Open a scout's detail page, optionally focused on a specific finding (expanded
+and scrolled into view). This is the link copied by the "Share" CTA on a scout
+emission card.
+
+| Segment / Parameter | Required | Description |
+|---|---|---|
+| `<skillSlug>` | Yes | Scout route slug, i.e. the skill name with the `signals-scout-` prefix stripped (e.g. `error-tracking`) |
+| `finding` | No | Emission id to expand and scroll to. Best effort – only resolves while the finding is still inside the scout's runs window. |
+
+```
+posthog-code://scout/error-tracking
+posthog-code://scout/error-tracking?finding=abc123
+```
+
+### `posthog-code://approval/<requestId>`
+
+Open the agent fleet approvals inbox focused on a specific tool-approval request.
+Emitted by the agent-runner on a gated tool call so non-PostHog-Code clients
+(Slack, MCP) can land on the approval; the request id alone resolves it.
+
+| Segment / Parameter | Required | Description |
+|---|---|---|
+| `<requestId>` | Yes | Agent tool-approval request id (e.g. `ar_...`). |
+
+```
+posthog-code://approval/ar_abc123
+```
+
+### `posthog-code://canvas/<channelId>/<dashboardId>`
+
+Open a canvas (a dashboard inside a Channels-space channel) straight in the
+desktop app. Gated on the `project-bluebird` flag. Unlike the links above,
+users don't share this scheme link directly — the "Copy link" affordance on a
+canvas copies an **https** link (`<instance>/code/canvas/<channelId>/<dashboardId>`)
+that resolves to a web interstitial in PostHog Cloud, which fires this scheme
+(or offers the desktop-app download). That way the link works for anyone,
+whether or not they have the app.
+
+| Segment | Required | Description |
+|---|---|---|
+| `<channelId>` | Yes | Channel (folder) row id the canvas lives under. |
+| `<dashboardId>` | Yes | Dashboard row id of the canvas. Both are stable, rename-proof desktop file-system row ids. |
+
+```
+posthog-code://canvas/019ebc38-d862-77f2-9e56-c5ec42965758/dash_abc123
+```
+
 ## OAuth callback links
 
 These are issued by external services and consumed by the app. You should not need to construct them yourself, but they are documented for completeness.
@@ -161,13 +210,16 @@ In development the same payload is delivered to `http://localhost:8238/mcp-oauth
 | Handler | Source |
 |---|---|
 | Dispatcher | [apps/code/src/main/services/deep-link/service.ts](../apps/code/src/main/services/deep-link/service.ts) |
-| `task` | [apps/code/src/main/services/task-link/service.ts](../apps/code/src/main/services/task-link/service.ts) |
-| `inbox` | [apps/code/src/main/services/inbox-link/service.ts](../apps/code/src/main/services/inbox-link/service.ts) |
-| `new`, `plan`, `issue` | [apps/code/src/main/services/new-task-link/service.ts](../apps/code/src/main/services/new-task-link/service.ts) |
-| `callback` | [apps/code/src/main/services/oauth/service.ts](../apps/code/src/main/services/oauth/service.ts) |
-| `integration` | [apps/code/src/main/services/github-integration/service.ts](../apps/code/src/main/services/github-integration/service.ts) |
-| `slack-integration` | [apps/code/src/main/services/slack-integration/service.ts](../apps/code/src/main/services/slack-integration/service.ts) |
-| `mcp-oauth-complete` | [apps/code/src/main/services/mcp-callback/service.ts](../apps/code/src/main/services/mcp-callback/service.ts) |
-| Scheme constants | [apps/code/src/shared/deeplink.ts](../apps/code/src/shared/deeplink.ts) |
+| `task` | [packages/core/src/links/task-link.ts](../packages/core/src/links/task-link.ts) |
+| `inbox` | [packages/core/src/links/inbox-link.ts](../packages/core/src/links/inbox-link.ts) |
+| `scout` | [packages/core/src/links/scout-link.ts](../packages/core/src/links/scout-link.ts) |
+| `approval` | [packages/core/src/links/approval-link.ts](../packages/core/src/links/approval-link.ts) |
+| `canvas` | [packages/core/src/links/canvas-link.ts](../packages/core/src/links/canvas-link.ts) |
+| `new`, `plan`, `issue` | [packages/core/src/links/new-task-link.ts](../packages/core/src/links/new-task-link.ts) |
+| `callback` | [packages/core/src/oauth/oauth.ts](../packages/core/src/oauth/oauth.ts) |
+| `integration` | [packages/core/src/integrations/github.ts](../packages/core/src/integrations/github.ts) |
+| `slack-integration` | [packages/core/src/integrations/slack.ts](../packages/core/src/integrations/slack.ts) |
+| `mcp-oauth-complete` | [packages/workspace-server/src/services/mcp-callback/mcp-callback.ts](../packages/workspace-server/src/services/mcp-callback/mcp-callback.ts) |
+| Scheme constants & link builders | [packages/shared/src/deep-links.ts](../packages/shared/src/deep-links.ts) |
 
-To add a new deep link, register a handler with `DeepLinkService.registerHandler(key, handler)` and route renderer-side events through the [`deepLinkRouter`](../apps/code/src/main/trpc/routers/deep-link.ts) tRPC router.
+To add a new deep link, register a handler with `DeepLinkService.registerHandler(key, handler)` (typically from a `@injectable()` service in `packages/core/src/links/`), expose renderer-side events through the [`deepLinkRouter`](../packages/host-router/src/routers/deep-link.router.ts) tRPC router, and add a builder + handler hook on the renderer side. The `scout` handler is a minimal reference for path + query-param links.

@@ -78,39 +78,48 @@ describe("getAppVersion", () => {
   });
 });
 
-describe("registerAppVersion", () => {
-  it("registers app_version as a super property on the PostHog client", async () => {
+describe("registerPersistentSuperProperties", () => {
+  it("registers team and app_version as super properties on the PostHog client", async () => {
     const register = vi.fn();
-    const { registerAppVersion } = await import("./posthog");
+    const { registerPersistentSuperProperties } = await import("./posthog");
 
-    registerAppVersion({ register }, "1.2.3");
+    registerPersistentSuperProperties({ register }, "1.2.3");
 
     expect(register).toHaveBeenCalledTimes(1);
-    expect(register).toHaveBeenCalledWith({ app_version: "1.2.3" });
+    expect(register).toHaveBeenCalledWith({
+      team: "posthog-code",
+      app_version: "1.2.3",
+    });
   });
 
   it("does nothing when the PostHog client is not yet available", async () => {
-    const { registerAppVersion } = await import("./posthog");
+    const { registerPersistentSuperProperties } = await import("./posthog");
 
-    expect(() => registerAppVersion(null, "1.2.3")).not.toThrow();
+    expect(() =>
+      registerPersistentSuperProperties(null, "1.2.3"),
+    ).not.toThrow();
   });
 
-  it("does nothing when no app version can be resolved", async () => {
+  it("still registers team when no app version can be resolved", async () => {
     const register = vi.fn();
-    const { registerAppVersion } = await import("./posthog");
+    const { registerPersistentSuperProperties } = await import("./posthog");
 
-    registerAppVersion({ register }, null);
+    registerPersistentSuperProperties({ register }, null);
 
-    expect(register).not.toHaveBeenCalled();
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(register).toHaveBeenCalledWith({ team: "posthog-code" });
   });
 
   it("resolves the version from getAppVersion when none is provided", async () => {
     expoApplication.nativeApplicationVersion = "4.5.6";
     const register = vi.fn();
-    const { registerAppVersion } = await import("./posthog");
+    const { registerPersistentSuperProperties } = await import("./posthog");
 
-    registerAppVersion({ register });
+    registerPersistentSuperProperties({ register });
 
-    expect(register).toHaveBeenCalledWith({ app_version: "4.5.6" });
+    expect(register).toHaveBeenCalledWith({
+      team: "posthog-code",
+      app_version: "4.5.6",
+    });
   });
 });

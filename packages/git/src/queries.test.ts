@@ -1,14 +1,17 @@
 import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createGitClient } from "./client";
 import {
+  type ChangedFileInfo,
+  computeDiffStatsFromFiles,
   detectDefaultBranch,
   getAllBranches,
   getBranchDiffPatchesByPath,
   getChangedFilesDetailed,
   getGitBusyState,
+  remoteBranchExists,
   splitUnifiedDiffByFile,
 } from "./queries";
 
@@ -313,6 +316,59 @@ describe("getChangedFilesDetailed > untracked line counts", () => {
       linesAdded: LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK,
     });
   });
+
+  // Regression for #2983 follow-up: an untracked binary file (png, mp4, …)
+  // must not have its newline bytes counted as added lines. Pre-fix this
+  // surfaced as an inflated diff badge (e.g. +8147) after dropping in a
+  // screenshot or screen recording.
+  it.each([["shot.png"], ["clip.mp4"]])(
+    "reports no line count for untracked binary file %s",
+    async (name) => {
+      repoDir = await setupRepo();
+      // Content packed with newline bytes — what the line counter would have
+      // tallied if it didn't skip binary files.
+      await writeFile(path.join(repoDir, name), "\n".repeat(8147));
+
+      const files = await getChangedFilesDetailed(repoDir);
+      const binary = files.find((f) => f.path === name);
+
+      expect(binary).toMatchObject({ status: "untracked" });
+      expect(binary?.linesAdded).toBeUndefined();
+      expect(binary?.linesRemoved).toBeUndefined();
+    },
+  );
+});
+
+describe("computeDiffStatsFromFiles", () => {
+  it("excludes binary files from line totals but still counts them as changed", () => {
+    const files: ChangedFileInfo[] = [
+      {
+        path: "src/app.ts",
+        status: "modified",
+        linesAdded: 10,
+        linesRemoved: 4,
+      },
+      // Binary line counts are meaningless newline-byte tallies — exclude them.
+      {
+        path: "assets/shot.png",
+        status: "untracked",
+        linesAdded: 8147,
+        linesRemoved: 0,
+      },
+      {
+        path: "assets/clip.mp4",
+        status: "untracked",
+        linesAdded: 5000,
+        linesRemoved: 0,
+      },
+    ];
+
+    expect(computeDiffStatsFromFiles(files)).toEqual({
+      filesChanged: 3,
+      linesAdded: 10,
+      linesRemoved: 4,
+    });
+  });
 });
 
 describe("getAllBranches", () => {
@@ -394,5 +450,58 @@ describe("getGitBusyState", () => {
       busy: true,
       operation: "rebase",
     });
+  });
+});
+
+describe("remoteBranchExists", () => {
+  let repoDir: string;
+  let remoteDir: string;
+
+  beforeEach(async () => {
+    remoteDir = await mkdtemp(path.join(tmpdir(), "posthog-code-bare-"));
+    const remoteGit = createGitClient(remoteDir);
+    await remoteGit.init(["--bare", "--initial-branch", "main"]);
+
+    repoDir = await mkdtemp(path.join(tmpdir(), "posthog-code-queries-"));
+    const git = createGitClient(repoDir);
+    await git.init(["--initial-branch", "main"]);
+    await git.addConfig("user.name", "Test");
+    await git.addConfig("user.email", "test@example.com");
+    await git.addConfig("commit.gpgsign", "false");
+    await git.addRemote("origin", remoteDir);
+    await writeFile(path.join(repoDir, "file.txt"), "content\n");
+    await git.add(["file.txt"]);
+    await git.commit("initial");
+    await git.push(["origin", "main"]);
+
+    await git.checkoutLocalBranch("remote-only");
+    await writeFile(path.join(repoDir, "extra.txt"), "extra\n");
+    await git.add(["extra.txt"]);
+    await git.commit("extra");
+    await git.push(["origin", "remote-only"]);
+    await git.checkout("main");
+  });
+
+  afterEach(async () => {
+    for (const d of [repoDir, remoteDir]) {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { branch: "main", expected: true },
+    { branch: "remote-only", expected: true },
+    { branch: "nonexistent", expected: false },
+  ])("returns $expected for branch '$branch'", async ({ branch, expected }) => {
+    expect(await remoteBranchExists(repoDir, branch)).toBe(expected);
+  });
+
+  it("returns false when the remote is unreachable", async () => {
+    await createGitClient(repoDir).remote([
+      "set-url",
+      "origin",
+      "/nonexistent/path/to/remote",
+    ]);
+    expect(await remoteBranchExists(repoDir, "main")).toBe(false);
   });
 });

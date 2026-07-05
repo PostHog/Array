@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { isBinaryFile } from "@posthog/shared";
 import type { CreateGitClientOptions } from "./client";
 import { mapWithConcurrency } from "./concurrency";
 import { getGitOperationManager } from "./operation-manager";
@@ -215,6 +216,41 @@ export async function branchExists(
       try {
         await git.revparse(["--verify", branchName]);
         return true;
+      } catch {
+        return false;
+      }
+    },
+    { signal: options?.abortSignal },
+  );
+}
+
+/**
+ * Checks whether a branch exists on the remote without fetching it.
+ * Uses `git ls-remote --heads`, which is read-only and reaches the remote.
+ */
+export async function remoteBranchExists(
+  baseDir: string,
+  branchName: string,
+  options?: CreateGitClientOptions & { remote?: string },
+): Promise<boolean> {
+  const manager = getGitOperationManager();
+  const remote = options?.remote ?? "origin";
+  return manager.executeRead(
+    baseDir,
+    async (git) => {
+      try {
+        // `--` keeps a branch name beginning with `-` from being parsed as an option.
+        const output = await git.raw([
+          "ls-remote",
+          "--heads",
+          remote,
+          "--",
+          branchName,
+        ]);
+        const target = `refs/heads/${branchName}`;
+        return output
+          .split("\n")
+          .some((line) => line.trim().endsWith(`\t${target}`));
       } catch {
         return false;
       }
@@ -620,6 +656,10 @@ export async function getChangedFilesDetailed(
           if (excludePatterns && matchesExcludePattern(file, excludePatterns)) {
             continue;
           }
+          if (isBinaryFile(file)) {
+            files.push({ path: file, status: "untracked" });
+            continue;
+          }
           untrackedToCount.push(file);
         }
 
@@ -791,9 +831,10 @@ export function computeDiffStatsFromFiles(files: ChangedFileInfo[]): DiffStats {
   const uniquePaths = new Set<string>();
 
   for (const file of files) {
+    uniquePaths.add(file.path);
+    if (isBinaryFile(file.path)) continue;
     linesAdded += file.linesAdded ?? 0;
     linesRemoved += file.linesRemoved ?? 0;
-    uniquePaths.add(file.path);
   }
 
   return {
@@ -1038,7 +1079,8 @@ export async function fetchRef(
   ref: string,
 ): Promise<boolean> {
   try {
-    await git.raw(["fetch", "--quiet", "--no-tags", remote, ref]);
+    // `--` keeps a ref beginning with `-` from being parsed as an option.
+    await git.raw(["fetch", "--quiet", "--no-tags", remote, "--", ref]);
     return true;
   } catch {
     return false;

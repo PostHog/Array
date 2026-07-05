@@ -51,6 +51,12 @@ type ModelsListResponse =
 
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
+// Bound the gateway /v1/models request so a stalled connection cannot hold up
+// session init: this fetch runs inside the Promise.all that gates the 30s SDK
+// initialization timeout, so it must resolve well within that window. On abort
+// the callers fall through to `return []`.
+const GATEWAY_FETCH_TIMEOUT_MS = 10_000;
+
 let gatewayModelsCache: {
   models: GatewayModel[];
   expiry: number;
@@ -76,7 +82,9 @@ export async function fetchGatewayModels(
   const modelsUrl = `${gatewayUrl}/v1/models`;
 
   try {
-    const response = await fetch(modelsUrl);
+    const response = await fetch(modelsUrl, {
+      signal: AbortSignal.timeout(GATEWAY_FETCH_TIMEOUT_MS),
+    });
 
     if (!response.ok) {
       return [];
@@ -109,6 +117,22 @@ export function isOpenAIModel(model: GatewayModel): boolean {
   return model.id.startsWith("gpt-") || model.id.startsWith("openai/");
 }
 
+// Cloudflare Workers AI model ids carry the `@cf/` path prefix (e.g. `@cf/zai-org/glm-5.2`). Kept as
+// a standalone id-only check so callers that only have a model id (not a full GatewayModel) — like the
+// Claude adapter's desync guard — share one source of truth with `isCloudflareModel`.
+export function isCloudflareModelId(modelId: string): boolean {
+  return modelId.startsWith("@cf/");
+}
+
+// Cloudflare Workers AI models (e.g. `@cf/zai-org/glm-5.2`). The gateway serves these over both its
+// OpenAI and Anthropic-Messages surfaces (it translates the `@cf/` path), so the Claude adapter can
+// drive them just like an Anthropic model. The `@cf/` path prefix is the structural, always-present
+// signal, so honour it regardless of `owned_by` — a Cloudflare-served model can report an upstream
+// owner (e.g. `@cf/openai/...` with `owned_by: "openai"`) and must still classify as Cloudflare.
+export function isCloudflareModel(model: GatewayModel): boolean {
+  return isCloudflareModelId(model.id) || model.owned_by === "cloudflare";
+}
+
 export interface ModelInfo {
   id: string;
   owned_by?: string;
@@ -138,7 +162,9 @@ export async function fetchModelsList(
 
   try {
     const modelsUrl = `${gatewayUrl}/v1/models`;
-    const response = await fetch(modelsUrl);
+    const response = await fetch(modelsUrl, {
+      signal: AbortSignal.timeout(GATEWAY_FETCH_TIMEOUT_MS),
+    });
     if (!response.ok) {
       return [];
     }
@@ -172,6 +198,24 @@ const PROVIDER_NAMES: Record<string, string> = {
 
 export function getProviderName(ownedBy: string): string {
   return PROVIDER_NAMES[ownedBy] ?? ownedBy;
+}
+
+// Sort key for ordering models oldest-to-newest in pickers. The model menu
+// opens upward (side="top"), so the last item sits closest to the trigger —
+// sorting ascending by this key puts the newest model right under the user's
+// cursor. The key is the version embedded in the model id, e.g.
+// "claude-sonnet-4-6" -> 4006, "claude-opus-4-8" -> 4008, "claude-fable-5" ->
+// 5000; a higher number means a newer model. An id with no recognisable
+// version (a brand-new or unexpected release) ranks as newest so it still
+// surfaces at the end rather than at an arbitrary gateway-determined position.
+// Only the first version group is read, so a trailing date suffix (e.g.
+// "-20251001") is ignored; the minor component is assumed to be < 1000.
+export function getClaudeModelRecency(modelId: string): number {
+  const match = modelId.toLowerCase().match(/-(\d+)(?:[-.](\d+))?/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  const major = Number(match[1]);
+  const minor = match[2] ? Number(match[2]) : 0;
+  return major * 1000 + minor;
 }
 
 const PROVIDER_PREFIXES = ["anthropic/", "openai/", "google-vertex/"];

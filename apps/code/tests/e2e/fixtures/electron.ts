@@ -14,21 +14,21 @@ function getAppPath(): string {
   if (process.platform === "darwin") {
     const arm64Path = path.join(
       outDir,
-      "PostHog Code-darwin-arm64/PostHog Code.app/Contents/MacOS/PostHog Code",
+      "mac-arm64/PostHog Code.app/Contents/MacOS/PostHog Code",
     );
     const x64Path = path.join(
       outDir,
-      "PostHog Code-darwin-x64/PostHog Code.app/Contents/MacOS/PostHog Code",
+      "mac/PostHog Code.app/Contents/MacOS/PostHog Code",
     );
 
     if (requestedArch === "arm64") {
       if (existsSync(arm64Path)) return arm64Path;
-      throw new Error(`No darwin-arm64 packaged app found at ${arm64Path}.`);
+      throw new Error(`No mac-arm64 packaged app found at ${arm64Path}.`);
     }
 
     if (requestedArch === "x64") {
       if (existsSync(x64Path)) return x64Path;
-      throw new Error(`No darwin-x64 packaged app found at ${x64Path}.`);
+      throw new Error(`No mac x64 packaged app found at ${x64Path}.`);
     }
 
     if (existsSync(arm64Path)) return arm64Path;
@@ -40,10 +40,7 @@ function getAppPath(): string {
   }
 
   if (process.platform === "win32") {
-    const winPath = path.join(
-      outDir,
-      "PostHog Code-win32-x64/PostHog Code.exe",
-    );
+    const winPath = path.join(outDir, "win-unpacked/PostHog Code.exe");
     if (existsSync(winPath)) return winPath;
 
     throw new Error(
@@ -52,7 +49,7 @@ function getAppPath(): string {
   }
 
   if (process.platform === "linux") {
-    const linuxPath = path.join(outDir, "PostHog Code-linux-x64/PostHog Code");
+    const linuxPath = path.join(outDir, "linux-unpacked/PostHog Code");
     if (existsSync(linuxPath)) return linuxPath;
 
     throw new Error(

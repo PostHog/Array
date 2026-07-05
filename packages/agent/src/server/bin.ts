@@ -33,6 +33,8 @@ const envSchema = z.object({
     .enum(["low", "medium", "high", "xhigh", "max"])
     .optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN: z.string().min(1).optional(),
+  // Base URL for the event-ingest POST only; falls back to POSTHOG_API_URL when unset.
+  POSTHOG_TASK_RUN_EVENT_INGEST_URL: z.url().optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS: z
     .string()
     .regex(
@@ -89,6 +91,10 @@ program
     "interactive",
   )
   .option("--repositoryPath <path>", "Path to the repository")
+  .option(
+    "--repoReadyFile <path>",
+    "Sentinel file; session creation blocks until it exists (set while cloning concurrently)",
+  )
   .requiredOption("--taskId <id>", "Task ID")
   .requiredOption("--runId <id>", "Task run ID")
   .option(
@@ -158,9 +164,11 @@ program
       port: parseInt(options.port, 10),
       jwtPublicKey: env.JWT_PUBLIC_KEY,
       eventIngestToken: env.POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN,
+      eventIngestBaseUrl: env.POSTHOG_TASK_RUN_EVENT_INGEST_URL,
       eventIngestStreamWindowMs:
         env.POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS,
       repositoryPath: options.repositoryPath,
+      repoReadyFile: options.repoReadyFile,
       apiUrl: env.POSTHOG_API_URL,
       apiKey: env.POSTHOG_PERSONAL_API_KEY,
       projectId: env.POSTHOG_PROJECT_ID,
@@ -186,6 +194,24 @@ program
       await server.stop();
       process.exit(0);
     });
+
+    // Mark the run failed before exiting so a hard crash surfaces a real error instead of a
+    // silent stall. The deadline guarantees we exit even if the report hangs at crash time.
+    const FATAL_ERROR_REPORT_DEADLINE_MS = 5_000;
+    const handleFatalError = async (error: unknown) => {
+      try {
+        await Promise.race([
+          server.reportFatalError(error),
+          new Promise((resolve) =>
+            setTimeout(resolve, FATAL_ERROR_REPORT_DEADLINE_MS).unref(),
+          ),
+        ]);
+      } finally {
+        process.exit(1);
+      }
+    };
+    process.on("uncaughtException", handleFatalError);
+    process.on("unhandledRejection", handleFatalError);
 
     await server.start();
   });

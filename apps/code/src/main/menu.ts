@@ -1,6 +1,12 @@
 import { readdirSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { AuthService } from "@posthog/core/auth/auth";
+import { MCP_APPS_SERVICE } from "@posthog/core/mcp-apps/identifiers";
+import type { McpAppsService } from "@posthog/core/mcp-apps/mcp-apps";
+import { UI_SERVICE } from "@posthog/core/ui/identifiers";
+import type { UIService } from "@posthog/core/ui/ui";
+import type { UpdatesService } from "@posthog/core/updates/updates";
 import {
   app,
   BrowserWindow,
@@ -11,13 +17,29 @@ import {
   shell,
 } from "electron";
 import { container } from "./di/container";
-import { MAIN_TOKENS } from "./di/tokens";
-import type { AuthService } from "./services/auth/service";
-import type { McpAppsService } from "./services/mcp-apps/service";
-import type { UIService } from "./services/ui/service";
-import type { UpdatesService } from "./services/updates/service";
+import { AUTH_SERVICE, UPDATES_SERVICE } from "./di/tokens";
 import { isDevBuild } from "./utils/env";
 import { getLogFilePath } from "./utils/logger";
+import { saveZoomLevel } from "./utils/store";
+
+// Zoom is measured in Electron "levels" (factor = 1.2 ** level; 0 = 100%).
+// ZOOM_STEP is one Zoom In/Out notch; the bounds clamp the level so a runaway
+// accelerator can't persist an unusable zoom across restarts.
+const ZOOM_STEP = 0.5;
+const ZOOM_MIN = -3;
+const ZOOM_MAX = 3;
+
+// Apply a zoom change to the focused window and persist the new level so it
+// survives restarts. `delta` adjusts relative to the current level; "reset"
+// returns to 100%.
+function applyZoom(delta: number | "reset"): void {
+  const webContents = BrowserWindow.getFocusedWindow()?.webContents;
+  if (!webContents) return;
+  const next = delta === "reset" ? 0 : webContents.getZoomLevel() + delta;
+  const level = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
+  webContents.setZoomLevel(level);
+  saveZoomLevel(level);
+}
 
 function findLatestCrashDump(): string | null {
   const pendingDir = path.join(app.getPath("crashDumps"), "pending");
@@ -101,7 +123,7 @@ function buildAppMenu(): MenuItemConstructorOptions {
         label: "Settings...",
         accelerator: "CmdOrCtrl+,",
         click: () => {
-          container.get<UIService>(MAIN_TOKENS.UIService).openSettings();
+          container.get<UIService>(UI_SERVICE).openSettings();
         },
       },
       { type: "separator" },
@@ -111,7 +133,7 @@ function buildAppMenu(): MenuItemConstructorOptions {
               label: "Check for Updates...",
               click: () => {
                 container
-                  .get<UpdatesService>(MAIN_TOKENS.UpdatesService)
+                  .get<UpdatesService>(UPDATES_SERVICE)
                   .triggerMenuCheck();
               },
             },
@@ -135,7 +157,7 @@ function buildFileMenu(): MenuItemConstructorOptions {
         label: "New task",
         accelerator: "CmdOrCtrl+N",
         click: () => {
-          container.get<UIService>(MAIN_TOKENS.UIService).newTask();
+          container.get<UIService>(UI_SERVICE).newTask();
         },
       },
       { type: "separator" },
@@ -213,16 +235,14 @@ function buildFileMenu(): MenuItemConstructorOptions {
           {
             label: "Invalidate OAuth token",
             click: () => {
-              void container
-                .get<UIService>(MAIN_TOKENS.UIService)
-                .invalidateToken();
+              void container.get<UIService>(UI_SERVICE).invalidateToken();
             },
           },
           {
             label: "Force refresh of OAuth token",
             click: () => {
               container
-                .get<AuthService>(MAIN_TOKENS.AuthService)
+                .get<AuthService>(AUTH_SERVICE)
                 .refreshAccessToken()
                 .then(() => {
                   dialog.showMessageBox({
@@ -244,7 +264,7 @@ function buildFileMenu(): MenuItemConstructorOptions {
             label: "Refresh MCP Apps discovery",
             click: () => {
               container
-                .get<McpAppsService>(MAIN_TOKENS.McpAppsService)
+                .get<McpAppsService>(MCP_APPS_SERVICE)
                 .refreshDiscovery()
                 .then(() => {
                   dialog.showMessageBox({
@@ -267,7 +287,7 @@ function buildFileMenu(): MenuItemConstructorOptions {
           {
             label: "Clear application storage",
             click: () => {
-              container.get<UIService>(MAIN_TOKENS.UIService).clearStorage();
+              container.get<UIService>(UI_SERVICE).clearStorage();
             },
           },
         ],
@@ -308,16 +328,36 @@ function buildViewMenu(): MenuItemConstructorOptions {
       },
       { role: "toggleDevTools" },
       { type: "separator" },
-      { role: "resetZoom" },
-      { role: "zoomIn" },
-      { role: "zoomOut" },
+      {
+        label: "Actual Size",
+        accelerator: "CmdOrCtrl+0",
+        click: () => applyZoom("reset"),
+      },
+      {
+        label: "Zoom In",
+        accelerator: "CmdOrCtrl+Plus",
+        click: () => applyZoom(ZOOM_STEP),
+      },
+      // Hidden duplicate so Cmd+= (i.e. Cmd++ without Shift) also zooms in,
+      // matching the built-in zoomIn role's dual accelerator.
+      {
+        label: "Zoom In",
+        accelerator: "CmdOrCtrl+=",
+        visible: false,
+        click: () => applyZoom(ZOOM_STEP),
+      },
+      {
+        label: "Zoom Out",
+        accelerator: "CmdOrCtrl+-",
+        click: () => applyZoom(-ZOOM_STEP),
+      },
       { type: "separator" },
       { role: "togglefullscreen" },
       { type: "separator" },
       {
         label: "Reset layout",
         click: () => {
-          container.get<UIService>(MAIN_TOKENS.UIService).resetLayout();
+          container.get<UIService>(UI_SERVICE).resetLayout();
         },
       },
     ],

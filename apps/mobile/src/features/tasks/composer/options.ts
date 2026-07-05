@@ -37,9 +37,21 @@ export interface ModelOption {
 
 export const MODELS: ModelOption[] = [
   {
+    value: "claude-fable-5",
+    label: "Claude Fable 5",
+    description: "Newest, most capable",
+    supportsReasoning: true,
+  },
+  {
     value: "claude-opus-4-8",
     label: "Claude Opus 4.8",
     description: "Most capable, slower",
+    supportsReasoning: true,
+  },
+  {
+    value: "claude-sonnet-5",
+    label: "Claude Sonnet 5",
+    description: "Balanced, fast",
     supportsReasoning: true,
   },
   {

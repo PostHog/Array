@@ -1,9 +1,9 @@
-import { initTRPC } from "@trpc/server";
+import {
+  publicProcedure as baseProcedure,
+  router as baseRouter,
+  middleware,
+} from "@posthog/host-trpc/trpc";
 import log from "electron-log/main";
-
-const trpc = initTRPC.create({
-  isServer: true,
-});
 
 const CALL_RATE_WINDOW_MS = 2000;
 const CALL_RATE_THRESHOLD = 50;
@@ -14,7 +14,7 @@ const ipcTimingEnabled = process.env.IPC_TIMINGS === "true";
 const ipcTimingBootMs = 15_000;
 const bootTime = Date.now();
 
-const callRateMonitor = trpc.middleware(async ({ path, next, type }) => {
+const callRateMonitor = middleware(async ({ path, next, type }) => {
   const shouldTime =
     ipcTimingEnabled && Date.now() - bootTime < ipcTimingBootMs;
   const t = shouldTime ? performance.now() : 0;
@@ -55,6 +55,6 @@ const callRateMonitor = trpc.middleware(async ({ path, next, type }) => {
   return result;
 });
 
-export const router = trpc.router;
-export const publicProcedure = trpc.procedure.use(callRateMonitor);
-export const middleware = trpc.middleware;
+export const router = baseRouter;
+export const publicProcedure = baseProcedure.use(callRateMonitor);
+export { middleware };
