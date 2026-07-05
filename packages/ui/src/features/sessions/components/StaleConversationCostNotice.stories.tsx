@@ -79,3 +79,14 @@ export const WithoutNewSessionOrCost: Story = {
     onCompact: () => {},
   },
 };
+
+/** Compact is hidden while a permission is pending — two-option layout. */
+export const PermissionPending: Story = {
+  args: {
+    usedTokens: 481_000,
+    lastActivityAt: TWO_HOURS_AGO,
+    costUsd: 12.34,
+    onContinue: () => {},
+    onNewSession: () => {},
+  },
+};

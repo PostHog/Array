@@ -5,7 +5,11 @@ import {
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
-import { type AcpMessage, ANALYTICS_EVENTS } from "@posthog/shared";
+import {
+  type AcpMessage,
+  ANALYTICS_EVENTS,
+  type StaleConversationGateChoiceProperties,
+} from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import {
@@ -273,7 +277,7 @@ export function SessionView({
   const staleGate = useStaleConversationGate(sessionId, events);
 
   const trackStaleGateChoice = useCallback(
-    (choice: "compact" | "continue" | "new_session") =>
+    (choice: StaleConversationGateChoiceProperties["choice"]) =>
       track(ANALYTICS_EVENTS.STALE_CONVERSATION_GATE_CHOICE, {
         choice,
         used_tokens: staleGate.usedTokens,
@@ -297,12 +301,9 @@ export function SessionView({
     staleGate.onContinue();
   }, [trackStaleGateChoice, staleGate.onContinue]);
 
-  const handleStaleNewSession = useMemo(() => {
-    if (!onNewSession) return undefined;
-    return () => {
-      trackStaleGateChoice("new_session");
-      onNewSession();
-    };
+  const handleStaleNewSession = useCallback(() => {
+    trackStaleGateChoice("new_session");
+    onNewSession?.();
   }, [trackStaleGateChoice, onNewSession]);
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -606,37 +607,62 @@ export function SessionView({
                       )}
                     </Flex>
                   </Flex>
-                ) : hideInput ? null : staleGate.active && isRunning ? (
+                ) : hideInput ? null : staleGate.active ? (
                   // Replaces the composer (and any pending permission — answering
                   // one also resumes the costly turn) until the user chooses.
-                  // Waits for isRunning so the choices can't fire into a session
-                  // that is still reconnecting.
-                  <Box className="min-h-0 shrink-0 overflow-y-auto">
-                    <Box
-                      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
-                      style={
-                        compact
-                          ? undefined
-                          : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
-                      }
-                    >
-                      <StaleConversationCostNotice
-                        usedTokens={staleGate.usedTokens}
-                        lastActivityAt={staleGate.lastActivityAt}
-                        costUsd={staleGate.costUsd}
-                        onContinue={handleStaleContinue}
-                        // A queued /compact would land after the pending
-                        // permission resumes the costly turn — paying the
-                        // reload twice — so the option hides until then.
-                        onCompact={
-                          firstPendingPermission
+                  isRunning ? (
+                    <Box className="min-h-0 shrink-0 overflow-y-auto">
+                      <Box
+                        className={compact ? "p-1" : "mx-auto px-2 pb-3"}
+                        style={
+                          compact
                             ? undefined
-                            : handleStaleCompact
+                            : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
                         }
-                        onNewSession={handleStaleNewSession}
-                      />
+                      >
+                        <StaleConversationCostNotice
+                          // Remount when the option set changes so the
+                          // selector's highlighted index can't dereference or
+                          // fire a different option than the one shown.
+                          key={
+                            firstPendingPermission
+                              ? "no-compact"
+                              : "with-compact"
+                          }
+                          usedTokens={staleGate.usedTokens}
+                          lastActivityAt={staleGate.lastActivityAt}
+                          costUsd={staleGate.costUsd}
+                          onContinue={handleStaleContinue}
+                          // A queued /compact would land after the pending
+                          // permission resumes the costly turn — paying the
+                          // reload twice — so the option hides until then.
+                          onCompact={
+                            firstPendingPermission
+                              ? undefined
+                              : handleStaleCompact
+                          }
+                          onNewSession={
+                            onNewSession ? handleStaleNewSession : undefined
+                          }
+                        />
+                      </Box>
                     </Box>
-                  </Box>
+                  ) : (
+                    // While reconnecting the gate still covers the composer
+                    // slot: handoff can leave pendingPermissions set, and the
+                    // choices must not fire into a half-connected session.
+                    <Flex
+                      align="center"
+                      justify="center"
+                      gap="2"
+                      className="min-h-[66px]"
+                    >
+                      <Spinner size={28} className="animate-spin text-gray-9" />
+                      <Text color="gray" className="text-base">
+                        Connecting to agent...
+                      </Text>
+                    </Flex>
+                  )
                 ) : firstPendingPermission ? (
                   // This box replaces the composer while a permission is pending, so it's an input
                   // region: `shrink-0` keeps it from being compressed by the scroller above, and
