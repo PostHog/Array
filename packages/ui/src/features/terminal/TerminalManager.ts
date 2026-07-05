@@ -484,6 +484,9 @@ class TerminalManagerImpl {
       this.loadWebglRenderer(instance);
     } else if (instance.terminalElement) {
       element.appendChild(instance.terminalElement);
+      // Detach dropped the WebGL renderer to free its GPU context; restore it
+      // now that the terminal is visible again.
+      this.loadWebglRenderer(instance);
       instance.term.refresh(0, instance.term.rows - 1);
     }
 
@@ -535,6 +538,14 @@ class TerminalManagerImpl {
 
     if (instance.terminalElement) {
       getParkingContainer().appendChild(instance.terminalElement);
+    }
+
+    // A parked terminal renders nothing, but a live WebglAddon still holds a
+    // GPU context (Chromium also drops the oldest context past 16). Release
+    // it; attach() reloads it when the terminal becomes visible again.
+    if (instance.webglAddon) {
+      instance.webglAddon.dispose();
+      instance.webglAddon = null;
     }
 
     instance.attachedElement = null;

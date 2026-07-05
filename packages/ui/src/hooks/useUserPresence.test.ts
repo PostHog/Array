@@ -7,6 +7,8 @@ const MINUTE = 60 * 1000;
 describe("useUserPresence", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    // Input only counts while the window has focus; jsdom has no real focus.
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -54,6 +56,20 @@ describe("useUserPresence", () => {
     });
 
     expect(result.current).toBe(true);
+  });
+
+  it("ignores input while the window is unfocused", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const { result } = renderHook(() => useUserPresence());
+
+    act(() => {
+      for (let i = 0; i < 11; i++) {
+        vi.advanceTimersByTime(MINUTE);
+        window.dispatchEvent(new Event("pointermove"));
+      }
+    });
+
+    expect(result.current).toBe(false);
   });
 
   it("respects a custom idle threshold", () => {

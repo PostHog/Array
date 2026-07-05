@@ -340,7 +340,12 @@ interface PendingPermission {
 
 @injectable()
 export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
-  private static readonly IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+  // POSTHOG_CODE_AGENT_IDLE_TIMEOUT_MS overrides for dev/test only — the
+  // memory bench shrinks it to verify idle reclaim in minutes.
+  private static readonly IDLE_TIMEOUT_MS =
+    Number(process.env.POSTHOG_CODE_AGENT_IDLE_TIMEOUT_MS) > 0
+      ? Number(process.env.POSTHOG_CODE_AGENT_IDLE_TIMEOUT_MS)
+      : 15 * 60 * 1000;
 
   private sessions = new Map<string, ManagedSession>();
   private pendingPermissions = new Map<string, PendingPermission>();

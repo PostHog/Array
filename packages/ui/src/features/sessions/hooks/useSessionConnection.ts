@@ -9,9 +9,12 @@ import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import type { AgentSession } from "@posthog/ui/features/sessions/sessionStore";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { useUserPresence } from "@posthog/ui/hooks/useUserPresence";
+import { logger } from "@posthog/ui/shell/logger";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { useChatTitleGenerator } from "./useChatTitleGenerator";
+
+const log = logger.scope("session-connection");
 
 interface UseSessionConnectionOptions {
   taskId: string;
@@ -83,7 +86,10 @@ export function useSessionConnection({
 
   useEffect(() => {
     if (!taskRunId) return;
-    if (!userPresent) return;
+    if (!userPresent) {
+      log.info("User away — pausing activity heartbeat", { taskRunId });
+      return;
+    }
     return sessionService.startActivityHeartbeat(taskRunId);
   }, [taskRunId, sessionService, userPresent]);
 
