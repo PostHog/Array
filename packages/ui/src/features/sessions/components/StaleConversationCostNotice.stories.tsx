@@ -24,24 +24,36 @@ const meta: Meta<typeof StaleConversationCostNotice> = {
 export default meta;
 type Story = StoryObj<typeof StaleConversationCostNotice>;
 
-/** Stand-in chat content so the notice sits below a thread, like the composer. */
+/**
+ * Stand-in chat content, capped at the same width as real thread content
+ * (ConversationView) so the notice reads at its true relative width.
+ */
 function FakeConversation() {
   return (
-    <Flex direction="column" gap="3" p="4" className="flex-1 overflow-hidden">
-      {[
-        "Investigate detached element memory leaks",
-        "Ran 3 commands, 1 subagent",
-        "Review posted. Now the sticky summary comment:",
-        "Pushed and in sync. Now the simplify pass on this HEAD:",
-        "1 subagent - simplify pass on 68452",
-      ].map((line) => (
-        <Box key={line} p="3" className="rounded-2 bg-gray-2">
-          <Text color="gray" className="text-sm">
-            {line}
-          </Text>
-        </Box>
-      ))}
-    </Flex>
+    <Box className="flex-1 overflow-hidden">
+      <Flex
+        direction="column"
+        gap="3"
+        py="4"
+        px="2"
+        className="mx-auto"
+        style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+      >
+        {[
+          "Investigate detached element memory leaks",
+          "Ran 3 commands, 1 subagent",
+          "Review posted. Now the sticky summary comment:",
+          "Pushed and in sync. Now the simplify pass on this HEAD:",
+          "1 subagent - simplify pass on 68452",
+        ].map((line) => (
+          <Box key={line} p="3" className="rounded-2 bg-gray-2">
+            <Text color="gray" className="text-sm">
+              {line}
+            </Text>
+          </Box>
+        ))}
+      </Flex>
+    </Box>
   );
 }
 
