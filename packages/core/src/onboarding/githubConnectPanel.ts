@@ -1,3 +1,5 @@
+import { POSTHOG_GITHUB_APP_URL } from "../integrations/githubApp";
+
 export interface GithubPanelMessageOptions {
   hasConnectError: boolean;
   connectErrorMessage: string;
@@ -57,8 +59,8 @@ export function buildInstallationSettingsUrl(
   account: GithubInstallationAccount | null | undefined,
   installationId: string,
 ): string {
-  if (account?.type === "Organization" && account.name) {
-    return `https://github.com/organizations/${account.name}/settings/installations/${installationId}`;
+  if (account?.type?.toLowerCase() === "organization") {
+    return POSTHOG_GITHUB_APP_URL;
   }
   return `https://github.com/settings/installations/${installationId}`;
 }

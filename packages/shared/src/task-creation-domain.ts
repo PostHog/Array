@@ -46,6 +46,8 @@ export interface TaskCreationInput {
   channelContext?: string;
   /** Display name of that channel, embedded in the context block for the UI. */
   channelName?: string;
+  /** Backend channel UUID the created task is owned by (its feed home). */
+  channelId?: string;
   /**
    * The user's saved personalization (Settings → Personalization custom
    * instructions). Cloud-only: local tasks already receive these through the
@@ -74,4 +76,11 @@ export interface TaskCreationInput {
 export interface TaskCreationOutput {
   task: Task;
   workspace: Workspace | null;
+  /**
+   * Set when worktree provisioning failed but the task was kept (not rolled
+   * back) so the user can retry setup on the existing task. The saga returns a
+   * partial success in this case; consumers surface the error and keep the user
+   * on the task rather than reopening the composer.
+   */
+  provisioningError?: string;
 }

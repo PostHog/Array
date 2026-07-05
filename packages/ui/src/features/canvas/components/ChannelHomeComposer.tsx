@@ -35,6 +35,8 @@ interface ChannelHomeComposerProps {
   channelName?: string;
   /** Channel CONTEXT.md, attached to the created task as background. */
   channelContext?: string;
+  /** Backend channel UUID that will own the created task (its feed home). */
+  backendChannelId?: string;
   onTaskCreated: (task: Task) => void;
 }
 
@@ -48,7 +50,7 @@ export const ChannelHomeComposer = forwardRef<
   ChannelHomeComposerHandle,
   ChannelHomeComposerProps
 >(function ChannelHomeComposer(
-  { channelId, channelName, channelContext, onTaskCreated },
+  { channelId, channelName, channelContext, backendChannelId, onTaskCreated },
   ref,
 ) {
   const sessionId = `channel-home:${channelId}`;
@@ -127,6 +129,7 @@ export const ChannelHomeComposer = forwardRef<
     allowNoRepo: true,
     channelContext,
     channelName,
+    channelId: backendChannelId,
     onTaskCreated,
   });
 

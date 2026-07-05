@@ -19,10 +19,7 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFocusStore } from "@posthog/ui/features/focus/focusStore";
 import { pinnedTasksApi } from "@posthog/ui/features/sidebar/taskMetaApi";
-import {
-  type TerminalState,
-  useTerminalStore,
-} from "@posthog/ui/features/terminal/terminalStore";
+import { destroyTaskTerminals } from "@posthog/ui/features/terminal/destroyTaskTerminals";
 import { toast } from "@posthog/ui/primitives/toast";
 import { getAppViewSnapshot } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -96,22 +93,7 @@ function makeOrchestrationDeps(
         );
       }
     },
-    snapshotTerminalStates: (taskId) =>
-      Object.fromEntries(
-        Object.entries(useTerminalStore.getState().terminalStates).filter(
-          ([key]) => key === taskId || key.startsWith(`${taskId}-`),
-        ),
-      ),
-    clearTerminalStates: (taskId) =>
-      useTerminalStore.getState().clearTerminalStatesForTask(taskId),
-    restoreTerminalStates: (states) => {
-      useTerminalStore.setState((s) => ({
-        terminalStates: {
-          ...s.terminalStates,
-          ...(states as Record<string, TerminalState>),
-        },
-      }));
-    },
+    clearTerminalStates: (taskId) => destroyTaskTerminals(taskId),
     snapshotCommandCenter: (taskId) => {
       const state = useCommandCenterStore.getState();
       return {

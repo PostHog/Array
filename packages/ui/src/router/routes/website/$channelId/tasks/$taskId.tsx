@@ -1,5 +1,7 @@
 import type { Task } from "@posthog/shared/domain-types";
+import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { TaskDetail } from "@posthog/ui/features/task-detail/components/TaskDetail";
 import {
@@ -38,6 +40,13 @@ function ChannelTaskDetailRoute() {
     markAsViewed(taskId);
   }, [taskId, markAsViewed]);
 
+  // Opening a task shows its thread docked on the right (collapsible). The
+  // panel follows the task being viewed.
+  const openThread = useThreadPanelStore((s) => s.openThread);
+  useEffect(() => {
+    openThread(taskId);
+  }, [openThread, taskId]);
+
   const { data: fetched } = useQuery({
     ...taskDetailQuery(taskId),
     enabled: !fromList && !loaderTask,
@@ -50,11 +59,16 @@ function ChannelTaskDetailRoute() {
   }
 
   return (
-    <TaskDetail
-      key={task.id}
-      task={task}
-      channelName={channelName ?? "Channel"}
-      channelId={channelId}
-    />
+    <div className="flex h-full min-w-0">
+      <div className="min-w-0 flex-1">
+        <TaskDetail
+          key={task.id}
+          task={task}
+          channelName={channelName ?? "Channel"}
+          channelId={channelId}
+        />
+      </div>
+      <ThreadSidebar taskId={taskId} task={task} />
+    </div>
   );
 }

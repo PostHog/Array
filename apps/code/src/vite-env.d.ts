@@ -16,3 +16,9 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface Window {
+  readonly __posthogCodeDevFlags?: {
+    readonly devMode: boolean;
+  };
+}

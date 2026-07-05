@@ -1,4 +1,12 @@
-import { ArrowsIn, ArrowsOut, ListChecks, X } from "@phosphor-icons/react";
+import {
+  ArrowsIn,
+  ArrowsOut,
+  Check,
+  Copy,
+  ListChecks,
+  X,
+} from "@phosphor-icons/react";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -15,6 +23,17 @@ interface PlanContentProps {
 export function PlanContent({ id, plan }: PlanContentProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(plan);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard write failed
+    }
+  };
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -79,15 +98,31 @@ export function PlanContent({ id, plan }: PlanContentProps) {
                   <ListChecks size={14} className="text-blue-11" />
                   <Text className="text-blue-11 text-sm">Plan</Text>
                 </Flex>
-                <IconButton
-                  size="1"
-                  variant="ghost"
-                  color="gray"
-                  onClick={() => setIsFullscreen(false)}
-                  title="Exit fullscreen (Escape)"
-                >
-                  <X size={14} />
-                </IconButton>
+                <Flex align="center" gap="2">
+                  <Tooltip
+                    content={copied ? "Copied!" : "Copy plan to clipboard"}
+                    side="bottom"
+                  >
+                    <IconButton
+                      size="1"
+                      variant="ghost"
+                      color="gray"
+                      onClick={handleCopy}
+                    >
+                      {copied ? <Check size={12} /> : <Copy size={12} />}
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip content="Exit fullscreen (Escape)" side="bottom">
+                    <IconButton
+                      size="1"
+                      variant="ghost"
+                      color="gray"
+                      onClick={() => setIsFullscreen(false)}
+                    >
+                      <X size={14} />
+                    </IconButton>
+                  </Tooltip>
+                </Flex>
               </Flex>
 
               <Box
@@ -109,16 +144,31 @@ export function PlanContent({ id, plan }: PlanContentProps) {
       ref={scrollRef}
       className="relative max-h-[50vh] max-w-[750px] overflow-y-auto rounded-lg border-2 border-blue-6 bg-blue-2 p-4"
     >
-      <IconButton
-        size="1"
-        variant="ghost"
-        color="gray"
-        className="sticky top-0 z-10 float-right"
-        onClick={() => setIsFullscreen(true)}
-        title="Expand to fullscreen"
-      >
-        <ArrowsOut size={12} />
-      </IconButton>
+      <Flex gap="2" className="sticky top-0 z-10 float-right">
+        <Tooltip
+          content={copied ? "Copied!" : "Copy plan to clipboard"}
+          side="bottom"
+        >
+          <IconButton
+            size="1"
+            variant="ghost"
+            color="gray"
+            onClick={handleCopy}
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+          </IconButton>
+        </Tooltip>
+        <Tooltip content="Expand to fullscreen" side="bottom">
+          <IconButton
+            size="1"
+            variant="ghost"
+            color="gray"
+            onClick={() => setIsFullscreen(true)}
+          >
+            <ArrowsOut size={12} />
+          </IconButton>
+        </Tooltip>
+      </Flex>
 
       <Box className="plan-markdown text-blue-12">{markdown}</Box>
     </Box>

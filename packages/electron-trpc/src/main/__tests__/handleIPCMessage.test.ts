@@ -102,6 +102,109 @@ describe("api", () => {
     expect(event.reply).not.toHaveBeenCalled();
   });
 
+  test("reports procedure failures through onError and still responds", async () => {
+    const failingRouter = t.router({
+      failingQuery: t.procedure.query(() => {
+        throw new Error("db exploded");
+      }),
+    });
+    const onError = vi.fn();
+    const event = makeEvent({
+      reply: vi.fn(),
+      sender: {
+        isDestroyed: () => false,
+        on: () => {},
+      },
+    });
+
+    await handleIPCMessage({
+      createContext: async () => ({}),
+      event,
+      internalId: "1-1:1",
+      message: {
+        method: "request",
+        operation: {
+          context: {},
+          id: 1,
+          input: undefined,
+          path: "failingQuery",
+          type: "query",
+          signal: undefined,
+        },
+      },
+      router: failingRouter,
+      operations: new Map(),
+      onError,
+    });
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError.mock.lastCall?.[0]).toMatchObject({
+      path: "failingQuery",
+      type: "query",
+    });
+    expect(onError.mock.lastCall?.[0].error.cause?.message).toBe("db exploded");
+    expect(event.reply.mock.lastCall?.[1]).toMatchObject({
+      id: 1,
+      error: expect.anything(),
+    });
+  });
+
+  test("reports subscription stream failures through onError", async () => {
+    const failingSubRouter = t.router({
+      failingSubscription: t.procedure.subscription(() =>
+        observable((emit) => {
+          emit.error(new Error("stream exploded"));
+          return () => {};
+        }),
+      ),
+    });
+    const onError = vi.fn();
+    const event = makeEvent({
+      reply: vi.fn(),
+      sender: {
+        isDestroyed: () => false,
+        on: () => {},
+      },
+    });
+
+    await handleIPCMessage({
+      createContext: async () => ({}),
+      event,
+      internalId: "1-1:1",
+      message: {
+        method: "request",
+        operation: {
+          context: {},
+          id: 1,
+          input: undefined,
+          path: "failingSubscription",
+          type: "subscription",
+          signal: undefined,
+        },
+      },
+      router: failingSubRouter,
+      operations: new Map(),
+      onError,
+    });
+
+    await vi.waitFor(() => {
+      expect(onError).toHaveBeenCalledOnce();
+    });
+    expect(onError.mock.lastCall?.[0]).toMatchObject({
+      path: "failingSubscription",
+      type: "subscription",
+    });
+    // The stream error is serialized to the renderer before the final
+    // "stopped" message, so it is not necessarily the last reply.
+    await vi.waitFor(() => {
+      expect(
+        event.reply.mock.calls.some(
+          ([, payload]) => (payload as { error?: unknown }).error !== undefined,
+        ),
+      ).toBe(true);
+    });
+  });
+
   test("handles subscriptions using observables", async () => {
     const operations = new Map();
     const ee = new EventEmitter();

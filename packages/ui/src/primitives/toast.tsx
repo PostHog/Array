@@ -1,4 +1,5 @@
 import { toast as quillToast } from "@posthog/quill";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 
 // Thin wrapper over quill's toast so the whole app shares one import and a
 // stable `(title, options)` signature. Quill (base-ui under the hood) owns
@@ -43,8 +44,13 @@ function emit(
   title: string,
   detail: Detail | undefined,
   defaultTimeout?: number,
-): string {
+): string | undefined {
   const o = normalize(detail);
+  // Toasts can be disabled in settings; errors always show since they carry
+  // information the user needs regardless of that preference.
+  if (level !== "error" && !useSettingsStore.getState().toastNotifications) {
+    return o.id;
+  }
   // base-ui auto-dismisses any non-loading toast with `timeout > 0`; it has no
   // Infinity special-case (Infinity would fire immediately), so a request to
   // never auto-dismiss maps to `0`.

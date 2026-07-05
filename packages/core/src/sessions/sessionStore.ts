@@ -8,9 +8,17 @@ import type {
   TaskRunStatus,
 } from "@posthog/shared";
 import { isJsonRpcNotification, isJsonRpcRequest } from "@posthog/shared";
+import { setAutoFreeze } from "immer";
 import { immer } from "zustand/middleware/immer";
 import { createStore } from "zustand/vanilla";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
+
+// immer autofreeze deep-walks produced state on every commit. For the
+// append-only `events` array that re-walks the whole (growing) array on every
+// streamed event — O(n) per append, O(n²) per turn. Autofreeze is a dev-time
+// mutation guard with no runtime value, so disable it; events are frozen
+// individually at the append/creation seam instead, which is O(1) each.
+setAutoFreeze(false);
 
 export interface SessionState {
   /** Sessions indexed by taskRunId */
@@ -66,10 +74,47 @@ export const sessionStoreSetters = {
     sessionStore.setState((state) => {
       const session = state.sessions[taskRunId];
       if (session) {
+        // Keep each event immutable once stored (O(1) each). The store disables
+        // immer autofreeze, so this is the only freeze.
+        for (const event of events) Object.freeze(event);
         session.events.push(...events);
         if (newLineCount !== undefined) {
           session.processedLineCount = newLineCount;
         }
+      }
+    });
+  },
+
+  /**
+   * Free a backgrounded session's transcript to reclaim memory. The events are
+   * reloaded from disk the next time the session is viewed (see
+   * `SessionService.ensureEventsLoaded`). No-op if the session is gone.
+   */
+  evictEvents: (taskRunId: string) => {
+    sessionStore.setState((state) => {
+      const session = state.sessions[taskRunId];
+      if (session && session.events.length > 0) {
+        session.events = [];
+        session.processedLineCount = 0;
+      }
+    });
+  },
+
+  /**
+   * Replace a session's transcript in place (rehydration after eviction),
+   * preserving its live status/config. No-op if the session is gone.
+   */
+  restoreEvents: (
+    taskRunId: string,
+    events: AcpMessage[],
+    lineCount: number,
+  ) => {
+    sessionStore.setState((state) => {
+      const session = state.sessions[taskRunId];
+      if (session) {
+        for (const event of events) Object.freeze(event);
+        session.events = events;
+        session.processedLineCount = lineCount;
       }
     });
   },
@@ -257,7 +302,7 @@ export const sessionStoreSetters = {
     sessionStore.setState((state) => {
       const session = state.sessions[taskRunId];
       if (session) {
-        session.events.push(event);
+        session.events.push(Object.freeze(event));
         session.optimisticItems = [];
       }
     });

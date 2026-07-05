@@ -77,6 +77,7 @@ import {
   promptReferencesAbsoluteFolder,
   shellExecutesToContextBlocks,
 } from "./sessionEvents";
+import { selectSessionsToEvict } from "./sessionEviction";
 import { createBaseSession } from "./sessionFactory";
 import { type ParsedSessionLogs, parseSessionLogContent } from "./sessionLogs";
 
@@ -94,6 +95,28 @@ const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
 const AUTH_RESTORE_MAX_RETRY_WAITS = 6;
 const MAX_SUPERSEDED_RUN_IDS = 100;
+/**
+ * Streamed events are buffered and flushed on this cadence so a burst of tokens
+ * coalesces into one processing pass (and roughly one render) instead of one
+ * per event. Electron IPC delivers each event as its own task, so a microtask
+ * flush wouldn't batch across them — a short timer does. One frame is
+ * imperceptible for streamed text.
+ */
+const SESSION_EVENT_FLUSH_MS = 16;
+/**
+ * A backgrounded session's transcript is freed this long after it stops being
+ * viewed, and reloaded from disk on return. Only disconnected (idle, no live
+ * subscription) sessions are eligible, so no streamed event can append to an
+ * evicted transcript.
+ */
+const SESSION_EVENT_EVICT_GRACE_MS = 20_000;
+/**
+ * On open, paint the last this-many bytes of the log immediately so a big
+ * transcript shows its latest turns in tens of ms, while the authoritative
+ * full read + connect completes behind it. ~1.5MB is a few hundred entries —
+ * plenty for the initial (scrolled-to-bottom) view.
+ */
+const OPEN_TAIL_BYTES = 1_500_000;
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
   constructor(
@@ -146,6 +169,15 @@ export interface SessionTrpc {
   };
   logs: {
     readLocalLogs: TrpcQuery;
+    /** Optional: merges superseded tool_call_update snapshots server-side so
+     * a tool-heavy log doesn't ship its full redundant history over IPC.
+     * Presence can't be trusted on proxy-based hosts (a tRPC client fabricates
+     * a query for any path), so callers fall back to `readLocalLogs` when the
+     * call itself fails. */
+    readLocalLogsCollapsed?: TrpcQuery;
+    /** Optional: only the Electron host exposes the tail read. Core feature-
+     * detects and falls back to a full read when it's absent. */
+    readLocalLogsTail?: TrpcQuery;
     fetchS3Logs: TrpcQuery;
     writeLocalLogs: TrpcMutation;
   };
@@ -164,6 +196,12 @@ export interface ISessionStore {
     taskRunId: string,
     events: AcpMessage[],
     newLineCount?: number,
+  ): void;
+  evictEvents(taskRunId: string): void;
+  restoreEvents(
+    taskRunId: string,
+    events: AcpMessage[],
+    lineCount: number,
   ): void;
   updateCloudStatus(
     taskRunId: string,
@@ -480,12 +518,17 @@ function classifyTurnEventKind(
 export class SessionService {
   private connectingTasks = new Map<string, Promise<void>>();
   private reconcilingTasks = new Set<string>();
+  private reconcileSkipLogged = new Set<string>();
+  private taskCreationMarks = new Map<string, number>();
+  private static readonly TASK_CREATION_IN_FLIGHT_TTL_MS = 10 * 60 * 1000;
   private activityHeartbeats = new Map<
     string,
     ReturnType<typeof setInterval>
   >();
   private localRepoPaths = new Map<string, string>();
   private localRecoveryAttempts = new Map<string, Promise<boolean>>();
+  private sessionLastUsedAt = new Map<string, number>();
+  private mountedTaskCounts = new Map<string, number>();
   /** Re-entrance guard for cloud queue dispatch (per taskId). */
   private dispatchingCloudQueues = new Set<string>();
   /** Coalesces deferred cloud queue flush timers (per taskId). */
@@ -582,7 +625,10 @@ export class SessionService {
   async connectToTask(params: ConnectParams): Promise<void> {
     const { task } = params;
     const taskId = task.id;
+    this.taskCreationMarks.delete(taskId);
     this.localRepoPaths.set(taskId, params.repoPath);
+    this.sessionLastUsedAt.set(taskId, Date.now());
+    void this.evictIdleSessions(taskId);
 
     // Return existing connection promise if already connecting
     const existingPromise = this.connectingTasks.get(taskId);
@@ -608,6 +654,16 @@ export class SessionService {
     this.connectingTasks.set(taskId, connectPromise);
 
     return connectPromise;
+  }
+
+  private stampRunConfig(session: AgentSession, params: ConnectParams): void {
+    session.adapter = params.adapter;
+    session.model = params.model;
+    session.executionMode = params.executionMode;
+    session.reasoningLevel = params.reasoningLevel;
+    if (params.initialPrompt?.length) {
+      session.initialPrompt = params.initialPrompt;
+    }
   }
 
   private async doConnect(params: ConnectParams): Promise<void> {
@@ -651,9 +707,7 @@ export class SessionService {
         session.status = "error";
         session.errorMessage =
           "Authentication required. Please sign in to continue.";
-        if (initialPrompt?.length) {
-          session.initialPrompt = initialPrompt;
-        }
+        this.stampRunConfig(session, params);
         this.d.store.setSession(session);
         return;
       }
@@ -676,9 +730,13 @@ export class SessionService {
           return;
         }
 
+        // Paint the log tail immediately so a big transcript is visible in tens
+        // of ms; the full read + reconnect replace it with the authoritative
+        // session once everything below resolves.
         const [workspaceResult, logResult] = await Promise.all([
           this.d.trpc.workspace.verify.query({ taskId }),
           this.fetchSessionLogs(logUrl, existingRunId),
+          this.paintTailFirst(existingRunId, taskId, taskTitle, logUrl),
         ]);
 
         if (!workspaceResult.exists) {
@@ -738,9 +796,7 @@ export class SessionService {
 
       const taskRunId = latestRun?.id ?? `error-${taskId}`;
       const session = createBaseSession(taskRunId, taskId, taskTitle);
-      if (initialPrompt?.length) {
-        session.initialPrompt = initialPrompt;
-      }
+      this.stampRunConfig(session, params);
       if (latestRun?.log_url) {
         try {
           const { rawEntries } = await this.fetchSessionLogs(
@@ -1018,7 +1074,10 @@ export class SessionService {
     }
   }
 
-  private async teardownSession(taskRunId: string): Promise<void> {
+  private async teardownSession(
+    taskRunId: string,
+    opts?: { preserveResumeState?: boolean },
+  ): Promise<void> {
     const session = this.getSessionByRunId(taskRunId);
 
     try {
@@ -1034,15 +1093,22 @@ export class SessionService {
     }
 
     this.unsubscribeFromChannel(taskRunId);
+    this.cancelEventEviction(taskRunId);
+    this.evictedRunIds.delete(taskRunId);
     this.d.store.removeSession(taskRunId);
     this.cloudRunIdleTracker.delete(taskRunId);
     this.cloudLogGapReconciler.forgetDeficiency(taskRunId);
     if (session) {
       this.localRepoPaths.delete(session.taskId);
       this.localRecoveryAttempts.delete(session.taskId);
+      this.sessionLastUsedAt.delete(session.taskId);
     }
-    this.d.adapterStore.removeAdapter(taskRunId);
-    this.d.removePersistedConfigOptions(taskRunId);
+    if (!opts?.preserveResumeState) {
+      // Reconnect restores the model and permission mode from these; only a
+      // permanent disconnect (archive, delete, fresh session) may drop them.
+      this.d.adapterStore.removeAdapter(taskRunId);
+      this.d.removePersistedConfigOptions(taskRunId);
+    }
   }
 
   /**
@@ -1263,6 +1329,9 @@ export class SessionService {
     session.channel = result.channel;
     session.status = "connected";
     session.adapter = adapter;
+    session.model = model;
+    session.executionMode = executionMode;
+    session.reasoningLevel = reasoningLevel;
 
     // An imported CLI session had its history replayed during agent.start;
     // the replay is already in the local run log, so load it for the UI.
@@ -1345,7 +1414,188 @@ export class SessionService {
     await this.teardownSession(session.taskRunId);
   }
 
+  registerMountedTask(taskId: string): () => void {
+    this.mountedTaskCounts.set(
+      taskId,
+      (this.mountedTaskCounts.get(taskId) ?? 0) + 1,
+    );
+    this.sessionLastUsedAt.set(taskId, Date.now());
+    return () => {
+      const count = this.mountedTaskCounts.get(taskId) ?? 0;
+      if (count <= 1) {
+        this.mountedTaskCounts.delete(taskId);
+      } else {
+        this.mountedTaskCounts.set(taskId, count - 1);
+      }
+      this.sessionLastUsedAt.set(taskId, Date.now());
+    };
+  }
+
+  private async evictIdleSessions(activeTaskId: string): Promise<void> {
+    const toEvict = selectSessionsToEvict({
+      sessions: Object.values(this.d.store.getSessions()),
+      activeTaskId,
+      protectedTaskIds: new Set(this.mountedTaskCounts.keys()),
+      lastUsedAt: (session) =>
+        this.sessionLastUsedAt.get(session.taskId) ?? session.startedAt,
+    });
+
+    for (const session of toEvict) {
+      this.d.log.info("Evicting idle session to bound memory", {
+        taskId: session.taskId,
+        taskRunId: session.taskRunId,
+      });
+      this.sessionLastUsedAt.delete(session.taskId);
+      try {
+        await this.teardownSession(session.taskRunId, {
+          preserveResumeState: true,
+        });
+      } catch (error) {
+        this.d.log.error("Failed to evict idle session", {
+          taskId: session.taskId,
+          error,
+        });
+      }
+    }
+  }
+
   // --- Subscription Management ---
+
+  /** Streamed events awaiting their frame flush, keyed by taskRunId. Order
+   * within a taskRunId is preserved; taskRunIds are independent. */
+  private pendingSessionEvents = new Map<string, AcpMessage[]>();
+  private sessionEventFlushHandle: ReturnType<typeof setTimeout> | null = null;
+
+  private enqueueSessionEvent(taskRunId: string, acpMsg: AcpMessage): void {
+    const buffered = this.pendingSessionEvents.get(taskRunId);
+    if (buffered) {
+      buffered.push(acpMsg);
+    } else {
+      this.pendingSessionEvents.set(taskRunId, [acpMsg]);
+    }
+    if (this.sessionEventFlushHandle === null) {
+      this.sessionEventFlushHandle = setTimeout(() => {
+        this.sessionEventFlushHandle = null;
+        this.flushSessionEvents();
+      }, SESSION_EVENT_FLUSH_MS);
+    }
+  }
+
+  private flushSessionEvents(): void {
+    if (this.pendingSessionEvents.size === 0) return;
+    const batches = this.pendingSessionEvents;
+    this.pendingSessionEvents = new Map();
+    for (const [taskRunId, events] of batches) {
+      for (const acpMsg of events) {
+        this.handleSessionEvent(taskRunId, acpMsg);
+      }
+    }
+  }
+
+  /** Drain one task's buffer immediately, so a reader (permission handling,
+   * teardown) never sees a transcript missing already-received events. */
+  private flushSessionEventsForTask(taskRunId: string): void {
+    const events = this.pendingSessionEvents.get(taskRunId);
+    if (!events) return;
+    this.pendingSessionEvents.delete(taskRunId);
+    for (const acpMsg of events) {
+      this.handleSessionEvent(taskRunId, acpMsg);
+    }
+  }
+
+  // --- Transcript residency (memory eviction) ---
+
+  /** taskRunIds whose transcript was freed and must be reloaded on next view. */
+  private evictedRunIds = new Set<string>();
+  private eventEvictionTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+
+  /**
+   * Called when a task's transcript becomes visible. Cancels any pending
+   * eviction and, if the transcript was freed while backgrounded, reloads it
+   * from disk — but only if a reconnect hasn't already refilled it.
+   */
+  async ensureEventsLoaded(taskId: string): Promise<void> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return;
+    const { taskRunId } = session;
+    this.cancelEventEviction(taskRunId);
+    if (!this.evictedRunIds.has(taskRunId)) return;
+
+    try {
+      if (session.events.length === 0) {
+        const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
+          session.logUrl,
+          taskRunId,
+        );
+        // A reconnect may have refilled events while we awaited the log read;
+        // only restore if the transcript is still empty for the same run.
+        const fresh = this.d.store.getSessionByTaskId(taskId);
+        if (
+          fresh?.taskRunId === taskRunId &&
+          fresh.events.length === 0 &&
+          rawEntries.length > 0
+        ) {
+          this.d.store.restoreEvents(
+            taskRunId,
+            convertStoredEntriesToEvents(rawEntries),
+            totalLineCount,
+          );
+        }
+      }
+      // Clear the evicted flag only once the transcript is populated — restored
+      // here, or refilled by a reconnect. An empty read leaves the run evicted so
+      // a later visit retries: fetchSessionLogs swallows read errors and returns
+      // empty rather than throwing, so a transient failure would otherwise strand
+      // the transcript empty permanently.
+      if ((this.d.store.getSessionByTaskId(taskId)?.events.length ?? 0) > 0) {
+        this.evictedRunIds.delete(taskRunId);
+      }
+    } catch (error) {
+      this.d.log.warn("Failed to rehydrate evicted session transcript", {
+        taskId,
+        error,
+      });
+    }
+  }
+
+  /**
+   * Called when a task's transcript stops being visible. Schedules its
+   * transcript to be freed after a grace period, if it's still a settled,
+   * disconnected background session by then.
+   */
+  scheduleEventEviction(taskId: string): void {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return;
+    const { taskRunId } = session;
+    if (this.eventEvictionTimers.has(taskRunId)) return;
+
+    const timer = setTimeout(() => {
+      this.eventEvictionTimers.delete(taskRunId);
+      const current = this.d.store.getSessions()[taskRunId];
+      if (
+        !current ||
+        current.status !== "disconnected" ||
+        current.isPromptPending ||
+        current.events.length === 0
+      ) {
+        return;
+      }
+      this.evictedRunIds.add(taskRunId);
+      this.d.store.evictEvents(taskRunId);
+    }, SESSION_EVENT_EVICT_GRACE_MS);
+    this.eventEvictionTimers.set(taskRunId, timer);
+  }
+
+  private cancelEventEviction(taskRunId: string): void {
+    const timer = this.eventEvictionTimers.get(taskRunId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.eventEvictionTimers.delete(taskRunId);
+    }
+  }
 
   private subscribeToChannel(taskRunId: string): void {
     if (this.subscriptions.has(taskRunId)) {
@@ -1356,7 +1606,7 @@ export class SessionService {
       { taskRunId },
       {
         onData: (payload: unknown) => {
-          this.handleSessionEvent(taskRunId, payload as AcpMessage);
+          this.enqueueSessionEvent(taskRunId, payload as AcpMessage);
         },
         onError: (err) => {
           this.d.log.error("Session subscription error", {
@@ -1407,6 +1657,9 @@ export class SessionService {
   }
 
   private unsubscribeFromChannel(taskRunId: string): void {
+    // Apply anything still buffered before we stop listening, so a closing
+    // channel doesn't drop its final events.
+    this.flushSessionEventsForTask(taskRunId);
     const subscription = this.subscriptions.get(taskRunId);
     subscription?.event.unsubscribe();
     subscription?.permission?.unsubscribe();
@@ -1435,9 +1688,20 @@ export class SessionService {
       this.stopCloudTaskWatch(taskId);
     }
 
+    if (this.sessionEventFlushHandle !== null) {
+      clearTimeout(this.sessionEventFlushHandle);
+      this.sessionEventFlushHandle = null;
+    }
+    this.pendingSessionEvents.clear();
+    for (const timer of this.eventEvictionTimers.values()) clearTimeout(timer);
+    this.eventEvictionTimers.clear();
+    this.evictedRunIds.clear();
     this.connectingTasks.clear();
     this.localRepoPaths.clear();
     this.localRecoveryAttempts.clear();
+    this.reconcileSkipLogged.clear();
+    this.taskCreationMarks.clear();
+    this.sessionLastUsedAt.clear();
     this.cloudPermissionRequestIds.clear();
     this.liveTurnContent.clear();
     this.cloudLogGapReconciler.clear();
@@ -1877,6 +2141,10 @@ export class SessionService {
       toolCallId: payload.toolCall.toolCallId,
       title: payload.toolCall.title,
     });
+
+    // A permission request references a tool call from the stream; apply any
+    // buffered events first so that tool call is present in the transcript.
+    this.flushSessionEventsForTask(taskRunId);
 
     // Get fresh session state
     const session = this.d.store.getSessions()[taskRunId];
@@ -2575,7 +2843,10 @@ export class SessionService {
    * Skipping early lets the next trigger retry instead of re-queueing the
    * already-dequeued prompt back into the same queue.
    */
-  private async sendQueuedCloudMessages(taskId: string): Promise<void> {
+  private async sendQueuedCloudMessages(
+    taskId: string,
+    options?: { force?: boolean },
+  ): Promise<void> {
     if (this.dispatchingCloudQueues.has(taskId)) return;
 
     this.dispatchingCloudQueues.add(taskId);
@@ -2590,7 +2861,7 @@ export class SessionService {
       const canSendNow =
         isTerminal ||
         (session.cloudStatus === "in_progress" &&
-          session.status === "connected");
+          (session.status === "connected" || options?.force === true));
       if (!canSendNow || session.isPromptPending) return;
 
       // Draining while auth is still restoring would route through the restoring
@@ -2799,6 +3070,7 @@ export class SessionService {
       resumeFromEntryCount,
       undefined,
       initialReasoningEffort,
+      newRun.state,
     );
 
     this.d.queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -3207,7 +3479,14 @@ export class SessionService {
     this.localRepoPaths.set(taskId, repoPath);
     const session = this.d.store.getSessionByTaskId(taskId);
     if (session?.initialPrompt?.length) {
-      const { taskTitle, initialPrompt } = session;
+      const {
+        taskTitle,
+        initialPrompt,
+        executionMode,
+        adapter,
+        model,
+        reasoningLevel,
+      } = session;
       await this.teardownSession(session.taskRunId);
       const authStatus = await this.getAuthCredentialsStatus();
       if (authStatus.kind === "restoring") {
@@ -3224,6 +3503,10 @@ export class SessionService {
         repoPath,
         authStatus.auth,
         initialPrompt,
+        executionMode,
+        adapter,
+        model,
+        reasoningLevel,
       );
       return;
     }
@@ -3601,6 +3884,7 @@ export class SessionService {
     resumeFromEntryCount?: number,
     runStatus?: TaskRunStatus,
     initialReasoningEffort?: string,
+    runState?: Record<string, unknown>,
   ): () => void {
     const taskRunId = runId;
 
@@ -3742,6 +4026,7 @@ export class SessionService {
         logUrl,
         taskDescription,
         runStatus,
+        runState,
       );
     }
 
@@ -3827,14 +4112,17 @@ export class SessionService {
     logUrl?: string,
     taskDescription?: string,
     runStatus?: TaskRunStatus,
+    runState?: Record<string, unknown>,
   ): void {
     void (async () => {
       let rawEntries: StoredLogEntry[];
       let totalLineCount: number;
-      if (isTerminalStatus(runStatus)) {
-        // Terminal runs: fetch the full resume chain (matches the snapshot) so a
-        // resumed run isn't under-counted. In-progress runs use the single-run
-        // log so hydrate can't race the live stream and double the active turn.
+      const isResumeRun = Boolean(runState?.resume_from_run_id);
+      if (isTerminalStatus(runStatus) || isResumeRun) {
+        // Resume chains need the full history even while the leaf run is still
+        // active; otherwise a renderer restart hydrates only the final run.
+        // Non-resume in-progress runs keep using the single-run log so hydrate
+        // cannot race the live stream and double the active turn.
         const authStatus = await this.getAuthCredentialsStatus();
         if (authStatus.kind !== "ready") {
           return;
@@ -3889,6 +4177,7 @@ export class SessionService {
       if (hasUserPrompt) {
         // The real prompt has landed; the stash is no longer needed.
         this.initialCloudOptimisticPrompt.delete(taskId);
+        this.d.store.clearTailOptimisticItems(taskRunId);
       }
 
       if (rawEntries.length === 0) {
@@ -4365,6 +4654,10 @@ export class SessionService {
     } = params;
 
     if (isCloud) {
+      // Local connects bound the session budget inside connectToTask; cloud
+      // watches would otherwise never trigger eviction.
+      this.sessionLastUsedAt.set(task.id, Date.now());
+      void this.evictIdleSessions(task.id);
       return this.reconcileCloudConnection(
         task,
         cloudAuth,
@@ -4382,8 +4675,42 @@ export class SessionService {
       });
     }
 
+    this.logReconcileSkipOnce(task.id, "no-workspace-path", {
+      hasRun: !!task.latest_run?.id,
+    });
     this.loadLogsOnlyIfDisconnected(task, session);
     return () => {};
+  }
+
+  private logReconcileSkipOnce(
+    taskId: string,
+    reason: string,
+    context: Record<string, unknown> = {},
+  ): void {
+    const key = `${taskId}:${reason}`;
+    if (this.reconcileSkipLogged.has(key)) return;
+    this.reconcileSkipLogged.add(key);
+    this.d.log.info("Skipping local session reconcile", {
+      taskId,
+      reason,
+      ...context,
+    });
+  }
+
+  public markTaskCreationInFlight(taskId: string): void {
+    this.taskCreationMarks.set(taskId, Date.now());
+  }
+
+  private isTaskCreationInFlight(taskId: string): boolean {
+    const markedAt = this.taskCreationMarks.get(taskId);
+    if (markedAt === undefined) return false;
+    const expired =
+      Date.now() - markedAt > SessionService.TASK_CREATION_IN_FLIGHT_TTL_MS;
+    if (expired) {
+      this.taskCreationMarks.delete(taskId);
+      return false;
+    }
+    return true;
   }
 
   private reconcileCloudConnection(
@@ -4426,6 +4753,7 @@ export class SessionService {
       undefined,
       task.latest_run?.status,
       initialReasoningEffort,
+      task.latest_run?.state,
     );
   }
 
@@ -4472,10 +4800,31 @@ export class SessionService {
       return () => {};
     }
 
-    if (!task.latest_run?.id) return () => {};
+    const connectParams: ConnectParams = { task, repoPath };
+
+    // A local task with no run means creation was interrupted before its
+    // first run started (e.g. the app quit for an update mid-setup). Connect
+    // fresh and deliver the prompt persisted as the task description, unless
+    // a creation saga is actively working on this task right now. Recovery
+    // replays the description as literal text; original attachments are gone.
+    if (!task.latest_run?.id) {
+      if (this.isTaskCreationInFlight(taskId)) {
+        this.logReconcileSkipOnce(taskId, "creation-in-flight");
+        return () => {};
+      }
+      this.d.log.info("Recovering local task with no run", {
+        taskId,
+        hasDescription: !!task.description,
+      });
+      if (task.description) {
+        connectParams.initialPrompt = [
+          { type: "text", text: task.description },
+        ];
+      }
+    }
 
     this.reconcilingTasks.add(taskId);
-    this.connectToTask({ task, repoPath }).finally(() => {
+    this.connectToTask(connectParams).finally(() => {
       this.reconcilingTasks.delete(taskId);
     });
 
@@ -4597,7 +4946,11 @@ export class SessionService {
    * state; `sendQueuedCloudMessages` is reentrancy-guarded so stacked
    * schedules from multiple triggers collapse to one.
    */
-  private scheduleCloudQueueFlush(taskId: string, reason: string): void {
+  private scheduleCloudQueueFlush(
+    taskId: string,
+    reason: string,
+    options?: { force?: boolean },
+  ): void {
     if (
       this.scheduledCloudQueueFlushes.has(taskId) ||
       this.dispatchingCloudQueues.has(taskId)
@@ -4608,7 +4961,7 @@ export class SessionService {
     this.scheduledCloudQueueFlushes.add(taskId);
     setTimeout(() => {
       this.scheduledCloudQueueFlushes.delete(taskId);
-      this.sendQueuedCloudMessages(taskId).catch((err) =>
+      this.sendQueuedCloudMessages(taskId, options).catch((err) =>
         this.d.log.error("cloud queue flush failed", {
           taskId,
           reason,
@@ -4634,7 +4987,10 @@ export class SessionService {
    * alive (`cloudStatus === "in_progress"`) and the agent provably idle
    * for THIS run (`isAgentIdleForRun`), recover readiness and drain.
    */
-  private tryRecoverIdleCloudQueue(taskRunId: string): void {
+  private tryRecoverIdleCloudQueue(
+    taskRunId: string,
+    options?: { serverSandboxAlive?: boolean | null },
+  ): void {
     const session = this.d.store.getSessions()[taskRunId];
     if (!session?.isCloud || session.messageQueue.length === 0) {
       return;
@@ -4652,6 +5008,8 @@ export class SessionService {
     const recoverableAfterTransportDrop =
       (session.status === "disconnected" || session.status === "error") &&
       !session.isPromptPending;
+    const serverReportsSandboxStopped =
+      options?.serverSandboxAlive === false && recoverableAfterTransportDrop;
 
     if (session.status !== "connected" && !recoverableAfterTransportDrop) {
       return;
@@ -4660,6 +5018,17 @@ export class SessionService {
     // A local prompt in flight means a queued follow-up would double-send.
     // The idle scan below is still the real safety check after reconnect.
     if (session.isPromptPending) {
+      return;
+    }
+
+    if (serverReportsSandboxStopped) {
+      this.d.log.info("Recovering cloud queue after sandbox stopped", {
+        taskId: session.taskId,
+        previousStatus: session.status,
+      });
+      this.scheduleCloudQueueFlush(session.taskId, "sandbox-stopped-recovery", {
+        force: true,
+      });
       return;
     }
 
@@ -4796,7 +5165,9 @@ export class SessionService {
       });
 
       if (update.status === "in_progress") {
-        this.tryRecoverIdleCloudQueue(taskRunId);
+        this.tryRecoverIdleCloudQueue(taskRunId, {
+          serverSandboxAlive: update.sandboxAlive,
+        });
       }
 
       if (isTerminalStatus(update.status)) {
@@ -4882,6 +5253,77 @@ export class SessionService {
     });
   }
 
+  /**
+   * Paint the tail of a task's local log immediately so a big transcript shows
+   * its latest turns in tens of ms, instead of blocking on the full-log read +
+   * IPC transfer. This is a throwaway fast-paint: the authoritative full read +
+   * connect (`reconnectToLocalSession`) replaces this session shortly after with
+   * correct processed-line tracking. No-op when a session already exists, the
+   * host doesn't expose the tail read, or there's no local log.
+   */
+  private async paintTailFirst(
+    taskRunId: string,
+    taskId: string,
+    taskTitle: string,
+    logUrl: string,
+  ): Promise<void> {
+    const tailQuery = this.d.trpc.logs.readLocalLogsTail;
+    if (!tailQuery) return;
+    if (this.d.store.getSessionByTaskId(taskId)) return;
+    try {
+      const res = (await tailQuery.query({
+        taskRunId,
+        maxBytes: OPEN_TAIL_BYTES,
+      })) as { content: string; truncated: boolean } | null;
+      if (!res?.content?.trim()) return;
+      // The full read may have set the session while we awaited the tail.
+      if (this.d.store.getSessionByTaskId(taskId)) return;
+      const { rawEntries } = this.parseLogContent(res.content);
+      if (rawEntries.length === 0) return;
+      const session = createBaseSession(taskRunId, taskId, taskTitle);
+      session.events = convertStoredEntriesToEvents(rawEntries);
+      session.logUrl = logUrl;
+      session.status = "connecting";
+      this.d.store.setSession(session);
+    } catch (error) {
+      this.d.log.debug("Tail-first paint skipped", { taskId, error });
+    }
+  }
+
+  /**
+   * Read the local log, preferring the collapsed read (superseded
+   * tool_call_update snapshots merged server-side, so a tool-heavy log
+   * doesn't cross the transport at full size). `originalLineCount` is the
+   * pre-collapse line count when the collapsed read served the content.
+   *
+   * A tRPC proxy client fabricates a query object for any path, so a host
+   * whose router lacks the procedure only fails at call time — fall back to
+   * the plain read then, instead of misreporting the local log as unreadable.
+   */
+  private async readLocalLogsPreferCollapsed(
+    taskRunId: string,
+  ): Promise<{ content: string | null; originalLineCount?: number }> {
+    const collapsedQuery = this.d.trpc.logs.readLocalLogsCollapsed;
+    if (collapsedQuery) {
+      try {
+        const res = (await collapsedQuery.query({ taskRunId })) as {
+          content: string;
+          totalLineCount: number;
+        } | null;
+        return {
+          content: res?.content ?? null,
+          originalLineCount: res?.totalLineCount,
+        };
+      } catch {
+        this.d.log.warn("Collapsed local log read failed, using plain read", {
+          taskRunId,
+        });
+      }
+    }
+    const content = await this.d.trpc.logs.readLocalLogs.query({ taskRunId });
+    return { content };
+  }
+
   private async fetchSessionLogs(
     logUrl: string | undefined,
     taskRunId?: string,
@@ -4897,11 +5339,16 @@ export class SessionService {
 
     if (taskRunId) {
       try {
-        const localContent = await this.d.trpc.logs.readLocalLogs.query({
-          taskRunId,
-        });
-        if (localContent?.trim()) {
-          localResult = this.parseLogContent(localContent);
+        const { content, originalLineCount } =
+          await this.readLocalLogsPreferCollapsed(taskRunId);
+        if (content?.trim()) {
+          const parsed = this.parseLogContent(content);
+          // Collapsed content has fewer lines than the file, so keep the
+          // server's original line count for resume/gap tracking.
+          localResult =
+            originalLineCount === undefined
+              ? parsed
+              : { ...parsed, totalLineCount: originalLineCount };
           if (
             !options.minEntryCount ||
             localResult.totalLineCount >= options.minEntryCount

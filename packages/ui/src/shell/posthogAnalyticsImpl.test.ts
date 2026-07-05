@@ -1,3 +1,4 @@
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockPosthog = {
@@ -127,6 +128,48 @@ describe("registerAppVersion", () => {
   });
 });
 
+describe("track", () => {
+  it("stamps inbox_client on inbox events", async () => {
+    const { initializePostHog, track } = await loadAnalytics();
+    initializePostHog();
+
+    track(ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED, {
+      source_product: "github",
+      is_first_connection: true,
+      via_setup_wizard: false,
+    });
+
+    expect(mockPosthog.capture).toHaveBeenCalledWith(
+      ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED,
+      expect.objectContaining({ inbox_client: "code" }),
+    );
+  });
+
+  it("does not stamp inbox_client on non-inbox events", async () => {
+    const { initializePostHog, track } = await loadAnalytics();
+    initializePostHog();
+
+    track(ANALYTICS_EVENTS.PROMPT_HISTORY_OPENED, { entry_count: 3 });
+
+    expect(mockPosthog.capture).toHaveBeenCalledWith(
+      ANALYTICS_EVENTS.PROMPT_HISTORY_OPENED,
+      expect.not.objectContaining({ inbox_client: expect.anything() }),
+    );
+  });
+
+  it("does nothing before init", async () => {
+    const { track } = await loadAnalytics();
+
+    track(ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED, {
+      source_product: "github",
+      is_first_connection: true,
+      via_setup_wizard: false,
+    });
+
+    expect(mockPosthog.capture).not.toHaveBeenCalled();
+  });
+});
+
 describe("initializePostHog", () => {
   it("is idempotent across repeat calls", async () => {
     const { initializePostHog } = await loadAnalytics();
@@ -147,6 +190,19 @@ describe("initializePostHog", () => {
 
     expect(mockPosthog.init).not.toHaveBeenCalled();
     expect(mockPosthog.onFeatureFlags).not.toHaveBeenCalled();
+  });
+
+  it("disables replay canvas capture regardless of remote config", async () => {
+    const { initializePostHog } = await loadAnalytics();
+
+    initializePostHog();
+
+    expect(mockPosthog.init).toHaveBeenCalledWith(
+      "test-key",
+      expect.objectContaining({
+        session_recording: { captureCanvas: { recordCanvas: false } },
+      }),
+    );
   });
 
   it("bootstraps posthog with the main-owned session id", async () => {

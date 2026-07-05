@@ -343,6 +343,48 @@ describe("SessionLogWriter", () => {
       expect(response).toBe("first message\n\nsecond message");
     });
 
+    it("getAgentResponseParts returns each turn message as a separate entry", async () => {
+      const sessionId = "s1";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_message_chunk", {
+          content: { type: "text", text: "I'll pull DAU." },
+        }),
+      );
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("tool_call", { toolCallId: "tc1" }),
+      );
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_message", {
+          content: { type: "text", text: "Here's your answer." },
+        }),
+      );
+
+      // getFullAgentResponse still joins for backends without text_parts support.
+      expect(logWriter.getFullAgentResponse(sessionId)).toBe(
+        "I'll pull DAU.\n\nHere's your answer.",
+      );
+      // getAgentResponseParts keeps the split — the Slack relay picks the last.
+      expect(logWriter.getAgentResponseParts(sessionId)).toEqual([
+        "I'll pull DAU.",
+        "Here's your answer.",
+      ]);
+    });
+
+    it("getAgentResponseParts returns undefined for an empty/unregistered turn", () => {
+      expect(
+        logWriter.getAgentResponseParts("never-registered"),
+      ).toBeUndefined();
+
+      const sessionId = "empty";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+      expect(logWriter.getAgentResponseParts(sessionId)).toBeUndefined();
+    });
+
     it("persisted log does not contain stale entries when chunks are superseded", async () => {
       const sessionId = "s1";
       logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
@@ -372,6 +414,176 @@ describe("SessionLogWriter", () => {
         sessionUpdate: "agent_message",
         content: { type: "text", text: "complete" },
       });
+    });
+  });
+
+  describe("API-path rawInput snapshot coalescing", () => {
+    function rawInputSnapshot(toolCallId: string, rawInput: unknown): string {
+      return makeSessionUpdate("tool_call_update", { toolCallId, rawInput });
+    }
+
+    it("persists only the last cumulative snapshot, before the completing update", async () => {
+      const sessionId = "s1";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("tool_call", {
+          toolCallId: "tc1",
+          status: "pending",
+        }),
+      );
+      logWriter.appendRawLine(sessionId, rawInputSnapshot("tc1", {}));
+      logWriter.appendRawLine(
+        sessionId,
+        rawInputSnapshot("tc1", { command: "ls" }),
+      );
+      logWriter.appendRawLine(
+        sessionId,
+        rawInputSnapshot("tc1", { command: "ls -la" }),
+      );
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("tool_call_update", {
+          toolCallId: "tc1",
+          status: "completed",
+          rawOutput: { content: [] },
+        }),
+      );
+
+      await logWriter.flush(sessionId);
+
+      const entries: StoredNotification[] = mockAppendLog.mock.calls[0][2];
+      expect(entries).toHaveLength(3);
+      expect(entries[1].notification.params?.update).toEqual({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tc1",
+        rawInput: { command: "ls -la" },
+      });
+      expect(
+        (entries[2].notification.params?.update as { status?: string }).status,
+      ).toBe("completed");
+    });
+
+    it("drops the buffered snapshot when a richer update carries rawInput itself", async () => {
+      const sessionId = "s1";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+      logWriter.appendRawLine(sessionId, rawInputSnapshot("tc1", { a: 1 }));
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("tool_call_update", {
+          toolCallId: "tc1",
+          title: "Execute command",
+          kind: "execute",
+          rawInput: { a: 1, b: 2 },
+        }),
+      );
+
+      await logWriter.flush(sessionId);
+
+      const entries: StoredNotification[] = mockAppendLog.mock.calls[0][2];
+      expect(entries).toHaveLength(1);
+      expect(entries[0].notification.params?.update).toEqual({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tc1",
+        title: "Execute command",
+        kind: "execute",
+        rawInput: { a: 1, b: 2 },
+      });
+    });
+
+    it("buffers interleaved tool calls independently", async () => {
+      const sessionId = "s1";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+      logWriter.appendRawLine(sessionId, rawInputSnapshot("tc1", { n: 1 }));
+      logWriter.appendRawLine(sessionId, rawInputSnapshot("tc2", { m: 1 }));
+      logWriter.appendRawLine(sessionId, rawInputSnapshot("tc1", { n: 2 }));
+      logWriter.appendRawLine(sessionId, rawInputSnapshot("tc2", { m: 2 }));
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("tool_call_update", {
+          toolCallId: "tc1",
+          status: "completed",
+          rawOutput: {},
+        }),
+      );
+
+      await logWriter.flush(sessionId);
+
+      const entries: StoredNotification[] = mockAppendLog.mock.calls[0][2];
+      expect(entries).toHaveLength(2);
+      expect(entries[0].notification.params?.update).toEqual({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tc1",
+        rawInput: { n: 2 },
+      });
+    });
+
+    it("does not emit buffered snapshots on a timed flush mid-stream", async () => {
+      const sessionId = "s1";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+      logWriter.appendRawLine(sessionId, rawInputSnapshot("tc1", { a: 1 }));
+
+      await logWriter.flush(sessionId);
+
+      expect(mockAppendLog).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {
+        drainVia: "flushAll",
+        drain: (writer: SessionLogWriter) => writer.flushAll(),
+      },
+      {
+        drainVia: "flush with coalesce",
+        drain: (writer: SessionLogWriter) =>
+          writer.flush("s1", { coalesce: true }),
+      },
+    ])(
+      "drains buffered snapshots on $drainVia, keeping only the latest",
+      async ({ drain }) => {
+        const sessionId = "s1";
+        logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+        logWriter.appendRawLine(sessionId, rawInputSnapshot("tc1", { a: 1 }));
+        logWriter.appendRawLine(sessionId, rawInputSnapshot("tc1", { a: 2 }));
+
+        await drain(logWriter);
+
+        expect(mockAppendLog).toHaveBeenCalledTimes(1);
+        const entries: StoredNotification[] = mockAppendLog.mock.calls[0][2];
+        expect(entries).toHaveLength(1);
+        expect(entries[0].notification.params?.update).toEqual({
+          sessionUpdate: "tool_call_update",
+          toolCallId: "tc1",
+          rawInput: { a: 2 },
+        });
+      },
+    );
+
+    it("keeps snapshots buffered while other events flow to the API", async () => {
+      const sessionId = "s1";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+      logWriter.appendRawLine(sessionId, rawInputSnapshot("tc1", { a: 1 }));
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_message", {
+          content: { type: "text", text: "still working" },
+        }),
+      );
+
+      await logWriter.flush(sessionId);
+
+      const entries: StoredNotification[] = mockAppendLog.mock.calls[0][2];
+      expect(entries).toHaveLength(1);
+      expect(
+        (entries[0].notification.params?.update as { sessionUpdate?: string })
+          .sessionUpdate,
+      ).toBe("agent_message");
     });
   });
 
@@ -470,5 +682,176 @@ describe("SessionLogWriter", () => {
       expect(batch2).toHaveLength(1);
       expect(batch2[0].notification.method).toBe("b");
     });
+  });
+});
+
+describe("SessionLogWriter — local-cache tool_call_update coalescing", () => {
+  let tmp: string;
+  let writer: SessionLogWriter;
+  const RUN = "run-coalesce";
+
+  beforeEach(async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "slw-"));
+    writer = new SessionLogWriter({ localCachePath: tmp });
+    writer.register(RUN, { taskId: "t", runId: RUN });
+  });
+
+  afterEach(async () => {
+    const fs = await import("node:fs");
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const readLog = async (): Promise<Record<string, unknown>[]> => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const p = path.join(tmp, "sessions", RUN, "logs.ndjson");
+    if (!fs.existsSync(p)) return [];
+    return fs
+      .readFileSync(p, "utf-8")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
+  };
+
+  const update = (extra: Record<string, unknown>) =>
+    makeSessionUpdate("tool_call_update", { toolCallId: "a", ...extra });
+
+  const sessionUpdateOf = (e: Record<string, unknown>) =>
+    // biome-ignore lint/suspicious/noExplicitAny: test introspection
+    (e.notification as any).params.update;
+
+  it("writes one merged update per call, flushed by a non-tool event", async () => {
+    writer.appendRawLine(RUN, update({ content: "a1" }));
+    writer.appendRawLine(RUN, update({ content: "a2" }));
+    writer.appendRawLine(RUN, update({ content: "a3" }));
+    // a non-tool event flushes the buffered union, then writes itself
+    writer.appendRawLine(RUN, makeSessionUpdate("agent_message"));
+
+    const log = await readLog();
+    expect(log).toHaveLength(2);
+    expect(sessionUpdateOf(log[0]).content).toBe("a3");
+    expect(sessionUpdateOf(log[1]).sessionUpdate).toBe("agent_message");
+  });
+
+  it("a terminal update merges into buffered snapshots, later fields winning", async () => {
+    writer.appendRawLine(RUN, update({ content: "a1" }));
+    writer.appendRawLine(RUN, update({ content: "a2" }));
+    writer.appendRawLine(
+      RUN,
+      update({ content: "final", status: "completed" }),
+    );
+
+    const log = await readLog();
+    expect(log).toHaveLength(1);
+    expect(sessionUpdateOf(log[0]).content).toBe("final");
+    expect(sessionUpdateOf(log[0]).status).toBe("completed");
+  });
+
+  it("fields carried only by earlier updates survive the terminal write", async () => {
+    // Mirrors the real emission shape: streamed rawInput snapshots carry the
+    // input, the terminal update carries only status/rawOutput.
+    writer.appendRawLine(RUN, update({ rawInput: { command: "ls" } }));
+    writer.appendRawLine(
+      RUN,
+      update({ rawInput: { command: "ls -la" }, title: "List files" }),
+    );
+    writer.appendRawLine(
+      RUN,
+      update({ status: "completed", rawOutput: "done" }),
+    );
+
+    const log = await readLog();
+    expect(log).toHaveLength(1);
+    expect(sessionUpdateOf(log[0])).toMatchObject({
+      toolCallId: "a",
+      rawInput: { command: "ls -la" },
+      title: "List files",
+      status: "completed",
+      rawOutput: "done",
+    });
+  });
+
+  it("keeps the final snapshot and terminal update on the API path, unmutated by the merge", async () => {
+    const appendLog = vi.fn().mockResolvedValue(undefined);
+    const apiWriter = new SessionLogWriter({
+      localCachePath: tmp,
+      posthogAPI: { appendTaskRunLog: appendLog } as never,
+    });
+    const API_RUN = "run-api";
+    apiWriter.register(API_RUN, { taskId: "t", runId: API_RUN });
+
+    apiWriter.appendRawLine(
+      API_RUN,
+      makeSessionUpdate("tool_call_update", {
+        toolCallId: "a",
+        rawInput: { command: "ls" },
+      }),
+    );
+    apiWriter.appendRawLine(
+      API_RUN,
+      makeSessionUpdate("tool_call_update", {
+        toolCallId: "a",
+        status: "completed",
+      }),
+    );
+    await apiWriter.flush(API_RUN);
+
+    // The durable log receives both updates as emitted; the buffered merge
+    // must build its own object rather than write into the shared entries.
+    const entries = appendLog.mock.calls[0][2] as {
+      notification: { params: { update: Record<string, unknown> } };
+    }[];
+    expect(entries).toHaveLength(2);
+    expect(entries[0].notification.params.update).toEqual({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "a",
+      rawInput: { command: "ls" },
+    });
+    expect(entries[1].notification.params.update).toEqual({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "a",
+      status: "completed",
+    });
+  });
+
+  it("flushAll persists a still-buffered merged update", async () => {
+    writer.appendRawLine(RUN, update({ rawInput: { command: "ls" } }));
+    writer.appendRawLine(RUN, update({ content: "a2" }));
+    await writer.flushAll();
+
+    const log = await readLog();
+    expect(log).toHaveLength(1);
+    expect(sessionUpdateOf(log[0]).content).toBe("a2");
+    expect(sessionUpdateOf(log[0]).rawInput).toEqual({ command: "ls" });
+  });
+
+  it("hold-window flush writes the union so far and starts a new window", async () => {
+    vi.useFakeTimers();
+    try {
+      writer.appendRawLine(RUN, update({ rawInput: { command: "ls" } }));
+      vi.advanceTimersByTime(2500);
+      // Exceeds TOOL_UPDATE_MAX_HOLD_MS: the buffered union is written, this
+      // update starts a fresh window.
+      writer.appendRawLine(RUN, update({ content: "partial" }));
+      writer.appendRawLine(
+        RUN,
+        update({ status: "completed", rawOutput: "done" }),
+      );
+
+      const log = await readLog();
+      expect(log).toHaveLength(2);
+      expect(sessionUpdateOf(log[0]).rawInput).toEqual({ command: "ls" });
+      // The second line unions the post-window snapshot with the terminal
+      // update; a merge-on-read of both lines rebuilds the full call state.
+      expect(sessionUpdateOf(log[1]).content).toBe("partial");
+      expect(sessionUpdateOf(log[1]).status).toBe("completed");
+      expect(sessionUpdateOf(log[1]).rawOutput).toBe("done");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

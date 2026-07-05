@@ -72,6 +72,7 @@ import {
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
+import { initDevToolbar } from "./services/dev-toolbar";
 import type { DiscordPresenceService } from "./services/discord-presence/service";
 import {
   focusSessionStore,
@@ -239,6 +240,8 @@ app.on("child-process-gone", (_event, details) => {
 });
 
 async function initializeServices(): Promise<void> {
+  initDevToolbar();
+
   container.get<DatabaseService>(DATABASE_SERVICE);
   container.get<OAuthService>(OAUTH_SERVICE);
   const authService = container.get<AuthService>(AUTH_SERVICE);

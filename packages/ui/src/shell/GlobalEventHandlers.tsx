@@ -167,6 +167,11 @@ export function GlobalEventHandlers({
     setReviewMode(currentTaskId, mode === "closed" ? "split" : "closed");
   }, [currentTaskId, getReviewMode, setReviewMode]);
 
+  useHotkeys(
+    SHORTCUTS.RELOAD_WINDOW,
+    () => window.location.reload(),
+    globalOptions,
+  );
   useHotkeys(SHORTCUTS.TOGGLE_LEFT_SIDEBAR, toggleLeftSidebar, globalOptions);
   useHotkeys(SHORTCUTS.TOGGLE_REVIEW_PANEL, handleToggleReview, globalOptions);
   useHotkeys(SHORTCUTS.SHORTCUTS_SHEET, onToggleShortcutsSheet, globalOptions);

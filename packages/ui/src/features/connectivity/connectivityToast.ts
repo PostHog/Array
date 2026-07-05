@@ -5,7 +5,7 @@ const OFFLINE_DEBOUNCE_MS = 5_000;
 
 // The live offline toast's id, tracked so re-entry never stacks a second one and
 // reconnect dismisses exactly this toast.
-let offlineToastId: string | null = null;
+let offlineToastId: string | undefined;
 
 export function showOfflineToast() {
   if (offlineToastId) return;
@@ -19,7 +19,7 @@ export function showOfflineToast() {
 function dismissOfflineToast() {
   if (!offlineToastId) return;
   toast.dismiss(offlineToastId);
-  offlineToastId = null;
+  offlineToastId = undefined;
 }
 
 // Debounces flaky transitions: only surfaces a toast when continuously offline

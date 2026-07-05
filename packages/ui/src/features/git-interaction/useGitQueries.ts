@@ -1,7 +1,7 @@
+import { EMPTY_DIFF_STATS } from "@posthog/core/code-review/selectTaskDiffStats";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { useQuery } from "@tanstack/react-query";
 
-const EMPTY_DIFF_STATS = { filesChanged: 0, linesAdded: 0, linesRemoved: 0 };
 const EMPTY_CHANGED_FILES: never[] = [];
 
 const GIT_QUERY_DEFAULTS = {

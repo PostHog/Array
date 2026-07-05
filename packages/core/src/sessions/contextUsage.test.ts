@@ -1,6 +1,12 @@
 import type { AcpMessage } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
-import { createContextUsageTracker, extractContextUsage } from "./contextUsage";
+import {
+  createContextUsageTracker,
+  DEFAULT_STALE_COSTLY_THRESHOLD,
+  extractContextUsage,
+  extractLastActivityAt,
+  shouldWarnStaleCostlyConversation,
+} from "./contextUsage";
 
 function usageUpdateEvent(used: number, size: number): AcpMessage {
   return {
@@ -130,5 +136,118 @@ describe("createContextUsageTracker", () => {
     tracker.update([first, usageUpdateEvent(80_000, 200_000)]);
     const events = [first, replaced];
     expect(tracker.update(events)).toEqual(extractContextUsage(events));
+  });
+});
+
+describe("shouldWarnStaleCostlyConversation", () => {
+  const now = 1_000_000_000;
+  const threshold = { tokens: 40_000, staleMs: 5 * 60 * 1000 };
+
+  it.each([
+    {
+      name: "large + stale → warn",
+      usedTokens: 50_000,
+      idleMs: 10 * 60 * 1000,
+      expected: true,
+    },
+    {
+      name: "large + fresh → no warn",
+      usedTokens: 50_000,
+      idleMs: 60 * 1000,
+      expected: false,
+    },
+    {
+      name: "small + stale → no warn",
+      usedTokens: 10_000,
+      idleMs: 10 * 60 * 1000,
+      expected: false,
+    },
+    {
+      name: "small + fresh → no warn",
+      usedTokens: 10_000,
+      idleMs: 60 * 1000,
+      expected: false,
+    },
+    {
+      name: "exactly at both thresholds → warn",
+      usedTokens: 40_000,
+      idleMs: 5 * 60 * 1000,
+      expected: true,
+    },
+    {
+      name: "one token below the size threshold → no warn",
+      usedTokens: 39_999,
+      idleMs: 10 * 60 * 1000,
+      expected: false,
+    },
+    {
+      name: "one ms below the stale threshold → no warn",
+      usedTokens: 50_000,
+      idleMs: 5 * 60 * 1000 - 1,
+      expected: false,
+    },
+  ])("$name", ({ usedTokens, idleMs, expected }) => {
+    expect(
+      shouldWarnStaleCostlyConversation({
+        usedTokens,
+        lastActivityAt: now - idleMs,
+        now,
+        threshold,
+      }),
+    ).toBe(expected);
+  });
+
+  it("never warns without a last-activity timestamp", () => {
+    expect(
+      shouldWarnStaleCostlyConversation({
+        usedTokens: 1_000_000,
+        lastActivityAt: null,
+        now,
+        threshold,
+      }),
+    ).toBe(false);
+  });
+
+  it("treats a future timestamp (clock skew) as fresh", () => {
+    expect(
+      shouldWarnStaleCostlyConversation({
+        usedTokens: 50_000,
+        lastActivityAt: now + 60_000,
+        now,
+        threshold,
+      }),
+    ).toBe(false);
+  });
+
+  it("falls back to DEFAULT_STALE_COSTLY_THRESHOLD when none is given", () => {
+    expect(
+      shouldWarnStaleCostlyConversation({
+        usedTokens: DEFAULT_STALE_COSTLY_THRESHOLD.tokens,
+        lastActivityAt: now - DEFAULT_STALE_COSTLY_THRESHOLD.staleMs,
+        now,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("extractLastActivityAt", () => {
+  it("returns null for an empty event list", () => {
+    expect(extractLastActivityAt([])).toBeNull();
+  });
+
+  it("returns the ts of the most recent event", () => {
+    const events: AcpMessage[] = [
+      { ...agentChunkEvent(), ts: 10 },
+      { ...usageUpdateEvent(50_000, 200_000), ts: 20 },
+    ];
+    expect(extractLastActivityAt(events)).toBe(20);
+  });
+
+  it("returns the maximum ts even when events are out of order", () => {
+    const events: AcpMessage[] = [
+      { ...usageUpdateEvent(50_000, 200_000), ts: 30 },
+      { ...agentChunkEvent(), ts: 10 },
+    ];
+    expect(extractLastActivityAt(events)).toBe(30);
   });
 });

@@ -1,9 +1,10 @@
 import {
   type BrowserWindow,
   closeTab,
+  closeTabs,
   newBlankTab,
   openOrFocusTab,
-  reorderTab,
+  setTabOrder,
   setTabTarget,
   type TabsSnapshot,
   type TabTarget,
@@ -36,7 +37,8 @@ export interface IBrowserTabsService {
     },
   ): TabsSnapshot;
   close(tabId: string): TabsSnapshot;
-  reorder(input: { tabId: string; toIndex: number }): TabsSnapshot;
+  closeMany(tabIds: string[], focusTabId?: string | null): TabsSnapshot;
+  setOrder(input: { windowId: string; tabIds: string[] }): TabsSnapshot;
   setActiveTab(input: { windowId: string; tabId: string | null }): TabsSnapshot;
   snapshotChangeEvents(
     signal: AbortSignal | undefined,
@@ -131,8 +133,14 @@ export class BrowserTabsService
     return this.commit(snapshot);
   }
 
-  reorder(input: { tabId: string; toIndex: number }): TabsSnapshot {
-    return this.commit(reorderTab(this.snapshot, input.tabId, input.toIndex));
+  closeMany(tabIds: string[], focusTabId?: string | null): TabsSnapshot {
+    return this.commit(closeTabs(this.snapshot, tabIds, focusTabId));
+  }
+
+  setOrder(input: { windowId: string; tabIds: string[] }): TabsSnapshot {
+    return this.commit(
+      setTabOrder(this.snapshot, input.windowId, input.tabIds),
+    );
   }
 
   setActiveTab(input: {

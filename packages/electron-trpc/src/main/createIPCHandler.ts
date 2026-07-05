@@ -5,7 +5,7 @@ import { ipcMain } from "electron";
 import { ELECTRON_TRPC_CHANNEL } from "../constants";
 import type { ETRPCRequest } from "../types";
 import { handleIPCMessage } from "./handleIPCMessage";
-import type { CreateContextOptions } from "./types";
+import type { CreateContextOptions, OnProcedureError } from "./types";
 
 type MaybePromise<TType> = Promise<TType> | TType;
 
@@ -24,12 +24,14 @@ class IPCHandler<TRouter extends AnyTRPCRouter> {
     createContext,
     router,
     windows = [],
+    onError,
   }: {
     createContext?: (
       opts: CreateContextOptions,
     ) => MaybePromise<inferRouterContext<TRouter>>;
     router: TRouter;
     windows?: BrowserWindow[];
+    onError?: OnProcedureError;
   }) {
     for (const win of windows) {
       this.attachWindow(win);
@@ -43,6 +45,7 @@ class IPCHandler<TRouter extends AnyTRPCRouter> {
         event,
         message: request,
         operations: this.#operations,
+        onError,
       });
     };
     ipcMain.on(ELECTRON_TRPC_CHANNEL, this.#listener);
@@ -116,16 +119,18 @@ export const createIPCHandler = <TRouter extends AnyTRPCRouter>({
   createContext,
   router,
   windows = [],
+  onError,
 }: {
   createContext?: (
     opts: CreateContextOptions,
   ) => Promise<inferRouterContext<TRouter>>;
   router: TRouter;
   windows?: Electron.BrowserWindow[];
+  onError?: OnProcedureError;
 }) => {
   if (currentHandler) {
     currentHandler.destroy();
   }
-  currentHandler = new IPCHandler({ createContext, router, windows });
+  currentHandler = new IPCHandler({ createContext, router, windows, onError });
   return currentHandler;
 };

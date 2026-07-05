@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
+import { trunkTestOptions } from "../../vitest.config.base";
 
 export default defineConfig({
   plugins: [react()],
@@ -20,6 +21,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    ...trunkTestOptions,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],

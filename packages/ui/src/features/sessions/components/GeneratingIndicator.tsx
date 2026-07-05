@@ -152,7 +152,7 @@ export function GeneratingIndicator({
     const startTime = startedAt ?? Date.now();
     const interval = setInterval(() => {
       setElapsed(Math.max(0, Date.now() - startTime - pausedRef.current));
-    }, 50);
+    }, 100);
 
     return () => clearInterval(interval);
   }, [startedAt]);
