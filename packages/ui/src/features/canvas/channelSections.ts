@@ -5,12 +5,11 @@
  * `channelSection`; `label` is the tab + nav text.
  */
 export interface ChannelSection {
-  key: "inbox" | "artifacts" | "history" | "context";
+  key: "artifacts" | "history" | "context";
   label: string;
 }
 
 export const CHANNEL_SECTIONS: readonly ChannelSection[] = [
-  { key: "inbox", label: "Inbox" },
   { key: "artifacts", label: "Artifacts" },
   { key: "history", label: "Recents" },
   { key: "context", label: "CONTEXT.md" },
