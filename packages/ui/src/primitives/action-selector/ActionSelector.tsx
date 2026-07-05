@@ -326,7 +326,8 @@ export function ActionSelector({
           </Flex>
 
           <Text color="gray" mt="2" as="p" className="text-[13px]">
-            Enter to select · Tab/Arrow keys to navigate · Esc to cancel
+            Enter to select · Tab/Arrow keys to navigate
+            {onCancel ? " · Esc to cancel" : ""}
           </Text>
         </Box>
       </Flex>

@@ -1,7 +1,10 @@
-import { Warning } from "@phosphor-icons/react";
 import { formatRelativeTimeLong } from "@posthog/shared";
 import { formatTokensCompact } from "@posthog/ui/features/sessions/contextColors";
-import { Box, Button, Flex, Text } from "@radix-ui/themes";
+import { ActionSelector } from "@posthog/ui/primitives/ActionSelector";
+
+const COMPACT_OPTION = "compact";
+const CONTINUE_OPTION = "continue";
+const NEW_SESSION_OPTION = "new-session";
 
 interface StaleConversationCostNoticeProps {
   usedTokens: number;
@@ -15,9 +18,10 @@ interface StaleConversationCostNoticeProps {
 }
 
 /**
- * Blocking overlay shown over the chat window when PostHog staff return to a
- * large, idle conversation whose prompt cache has likely expired. Covers the
- * thread and composer so the user must choose before continuing.
+ * Composer state shown in place of the prompt input when PostHog staff return
+ * to a large, idle conversation whose prompt cache has likely expired. Uses
+ * the same ActionSelector as permission prompts, so the user must choose how
+ * to continue before they can type again.
  */
 export function StaleConversationCostNotice({
   usedTokens,
@@ -31,49 +35,38 @@ export function StaleConversationCostNotice({
     lastActivityAt !== null
       ? `was last active ${formatRelativeTimeLong(lastActivityAt)}`
       : "has been idle";
+  const spent =
+    costUsd !== null ? ` (≈$${costUsd.toFixed(2)} spent so far)` : "";
   return (
-    <Flex
-      align="center"
-      justify="center"
-      position="absolute"
-      inset="0"
-      p="4"
-      className="z-40 bg-(--color-overlay)"
-    >
-      <Box
-        p="4"
-        className="max-w-[460px] rounded-3 border border-(--gray-6) bg-(--color-panel-solid) shadow-5"
-      >
-        <Flex align="center" gap="2" mb="2">
-          <Warning size={18} weight="fill" color="var(--orange-9)" />
-          <Text weight="bold" className="text-base">
-            Continue this large, idle conversation?
-          </Text>
-        </Flex>
-        <Text as="p" color="gray" className="text-sm">
-          This conversation holds about {formatTokensCompact(usedTokens)} tokens
-          and {activity}. Its prompt cache has likely expired, so your next
-          message re-processes the whole conversation at full input price
-          instead of the ~10% cached rate
-          {costUsd !== null ? ` (≈$${costUsd.toFixed(2)} spent so far)` : ""}.
-          Starting a new session avoids the cost entirely. Compacting pays the
-          reload once but summarizes the thread, so every later turn is cheaper.
-          Continue as-is only if you need the full context.
-        </Text>
-        <Flex justify="end" gap="2" mt="4">
-          {onNewSession && (
-            <Button variant="soft" color="gray" size="1" onClick={onNewSession}>
-              Start a new session
-            </Button>
-          )}
-          <Button variant="soft" size="1" onClick={onContinue}>
-            Continue anyway
-          </Button>
-          <Button variant="solid" size="1" onClick={onCompact}>
-            Compact and continue
-          </Button>
-        </Flex>
-      </Box>
-    </Flex>
+    <ActionSelector
+      title="Continue this large, idle conversation?"
+      question={`This conversation holds about ${formatTokensCompact(usedTokens)} tokens and ${activity}${spent}. Its prompt cache has likely expired, so the next message re-processes everything at full input price instead of the ~10% cached rate. How do you want to continue?`}
+      options={[
+        {
+          id: COMPACT_OPTION,
+          label: "Compact and continue",
+          description: "Pays the reload once, then every later turn is cheaper",
+        },
+        {
+          id: CONTINUE_OPTION,
+          label: "Continue anyway",
+          description: "Full-price reload, keeps the whole conversation",
+        },
+        ...(onNewSession
+          ? [
+              {
+                id: NEW_SESSION_OPTION,
+                label: "Start a new session",
+                description: "Avoids the cost entirely",
+              },
+            ]
+          : []),
+      ]}
+      onSelect={(optionId) => {
+        if (optionId === COMPACT_OPTION) onCompact();
+        else if (optionId === CONTINUE_OPTION) onContinue();
+        else onNewSession?.();
+      }}
+    />
   );
 }

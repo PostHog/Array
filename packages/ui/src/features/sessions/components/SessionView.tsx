@@ -577,7 +577,29 @@ export function SessionView({
                       )}
                     </Flex>
                   </Flex>
-                ) : hideInput ? null : firstPendingPermission ? (
+                ) : hideInput ? null : staleGate.active ? (
+                  // Replaces the composer (and any pending permission — answering
+                  // one also resumes the costly turn) until the user chooses.
+                  <Box className="min-h-0 shrink-0 overflow-y-auto">
+                    <Box
+                      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
+                      style={
+                        compact
+                          ? undefined
+                          : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
+                      }
+                    >
+                      <StaleConversationCostNotice
+                        usedTokens={staleGate.usedTokens}
+                        lastActivityAt={staleGate.lastActivityAt}
+                        costUsd={staleGate.costUsd}
+                        onContinue={staleGate.onContinue}
+                        onCompact={handleStaleCompact}
+                        onNewSession={onNewSession}
+                      />
+                    </Box>
+                  </Box>
+                ) : firstPendingPermission ? (
                   // This box replaces the composer while a permission is pending, so it's an input
                   // region: `shrink-0` keeps it from being compressed by the scroller above, and
                   // `min-h-0 overflow-y-auto` lets a tall permission prompt scroll inside itself.
@@ -632,10 +654,7 @@ export function SessionView({
                           ref={editorRef}
                           sessionId={sessionId}
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
-                          disabled={
-                            (!isRunning && !handoffInProgress) ||
-                            staleGate.active
-                          }
+                          disabled={!isRunning && !handoffInProgress}
                           submitDisabledExternal={
                             handoffInProgress || !isOnline
                           }
@@ -684,16 +703,6 @@ export function SessionView({
                       </Box>
                     </Box>
                   </Box>
-                )}
-                {staleGate.active && !hideInput && (
-                  <StaleConversationCostNotice
-                    usedTokens={staleGate.usedTokens}
-                    lastActivityAt={staleGate.lastActivityAt}
-                    costUsd={staleGate.costUsd}
-                    onContinue={staleGate.onContinue}
-                    onCompact={handleStaleCompact}
-                    onNewSession={onNewSession}
-                  />
                 )}
               </>
             )}
