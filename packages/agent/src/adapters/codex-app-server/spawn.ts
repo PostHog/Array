@@ -4,6 +4,7 @@ import { delimiter, dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import type { ProcessSpawnedCallback } from "../../types";
 import { Logger } from "../../utils/logger";
+import { stripElectronNodeShimFromPath } from "../../utils/spawn-env";
 import { CodexSettingsManager } from "../codex/settings";
 
 export interface CodexAppServerProcessOptions {
@@ -12,6 +13,12 @@ export interface CodexAppServerProcessOptions {
   cwd?: string;
   apiBaseUrl?: string;
   apiKey?: string;
+  /**
+   * Private CODEX_HOME for this run (skills + config). Without it codex falls
+   * back to the user's ~/.codex, whose ambient plugins/MCP servers can stall
+   * every turn (a broken plugin MCP blocks turn/start for its full timeout).
+   */
+  codexHome?: string;
   /** Guidance appended to Codex's base prompt via `developer_instructions`. */
   developerInstructions?: string;
   /** Extra codex `-c key=value` config overrides (e.g. auto_compact_token_limit). */
@@ -33,6 +40,12 @@ export function buildAppServerArgs(
   const args: string[] = ["app-server"];
 
   args.push("-c", "features.remote_models=false");
+
+  // Ambient plugins from the user's config.toml inject MCP servers and
+  // session-start hooks into PostHog sessions (e.g. an unauthenticated plugin
+  // MCP failing every thread, hooks wedging turns). Threads only get the MCP
+  // servers PostHog injects, so disable the plugin system outright.
+  args.push("-c", "features.plugins=false");
 
   // OS sandbox gated on platform (= availability): macOS Seatbelt → workspace-write
   // (keeps the sandbox engaged so a per-turn readOnly can tighten it and block
@@ -98,7 +111,10 @@ export function spawnCodexAppServerProcess(
   if (options.apiKey) {
     env.POSTHOG_GATEWAY_API_KEY = options.apiKey;
   }
-  env.PATH = `${dirname(options.binaryPath)}${delimiter}${env.PATH ?? ""}`;
+  if (options.codexHome) {
+    env.CODEX_HOME = options.codexHome;
+  }
+  env.PATH = `${dirname(options.binaryPath)}${delimiter}${stripElectronNodeShimFromPath(env.PATH) ?? ""}`;
 
   const args = buildAppServerArgs(options);
 

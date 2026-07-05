@@ -4,6 +4,7 @@ import { delimiter, dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import type { ProcessSpawnedCallback } from "../../types";
 import { Logger } from "../../utils/logger";
+import { stripElectronNodeShimFromPath } from "../../utils/spawn-env";
 import type { CodexSettings } from "./settings";
 
 export interface CodexProcessOptions {
@@ -143,6 +144,7 @@ export function spawnCodexProcess(options: CodexProcessOptions): CodexProcess {
 
   const { command, args } = findCodexBinary(options);
 
+  env.PATH = stripElectronNodeShimFromPath(env.PATH);
   if (options.binaryPath && existsSync(options.binaryPath)) {
     const binDir = dirname(options.binaryPath);
     env.PATH = `${binDir}${delimiter}${env.PATH ?? ""}`;
