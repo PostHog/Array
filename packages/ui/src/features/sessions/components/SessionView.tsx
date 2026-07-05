@@ -643,6 +643,12 @@ export function SessionView({
                           lastActivityAt={staleGate.lastActivityAt}
                           costUsd={staleGate.costUsd}
                           onContinue={staleGate.onContinue}
+                          onCompact={() => {
+                            // Acknowledge so the gate clears and the dialog
+                            // closes, then trigger the agent's manual compaction.
+                            staleGate.onContinue();
+                            onSendPrompt("/compact");
+                          }}
                           onOpenChange={staleGate.onDialogOpenChange}
                         />
                         <PromptInput

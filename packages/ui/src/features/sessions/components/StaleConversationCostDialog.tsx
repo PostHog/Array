@@ -10,6 +10,8 @@ interface StaleConversationCostDialogProps {
   /** Cumulative session cost so far, when the gateway reports it. */
   costUsd: number | null;
   onContinue: () => void;
+  /** Compact the history in place (runs `/compact`) instead of reloading it whole. */
+  onCompact: () => void;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -19,6 +21,7 @@ export function StaleConversationCostDialog({
   lastActivityAt,
   costUsd,
   onContinue,
+  onCompact,
   onOpenChange,
 }: StaleConversationCostDialogProps) {
   const activity =
@@ -40,8 +43,9 @@ export function StaleConversationCostDialog({
           message re-processes the whole conversation at full input price
           instead of the ~10% cached rate
           {costUsd !== null ? ` (≈$${costUsd.toFixed(2)} spent so far)` : ""}.
-          Starting a new conversation avoids the cost — continue only if you
-          need this thread's context.
+          Compacting summarizes the history so you keep this thread's context at
+          a fraction of the size, or start a new conversation to avoid the cost
+          entirely.
         </AlertDialog.Description>
 
         <Flex justify="end" gap="2" mt="4">
@@ -51,8 +55,13 @@ export function StaleConversationCostDialog({
             </Button>
           </AlertDialog.Cancel>
           <AlertDialog.Action>
-            <Button variant="solid" size="1" onClick={onContinue}>
+            <Button variant="soft" color="gray" size="1" onClick={onContinue}>
               Continue anyway
+            </Button>
+          </AlertDialog.Action>
+          <AlertDialog.Action>
+            <Button variant="solid" size="1" onClick={onCompact}>
+              Compact instead
             </Button>
           </AlertDialog.Action>
         </Flex>
