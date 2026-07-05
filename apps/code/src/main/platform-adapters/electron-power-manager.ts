@@ -9,8 +9,6 @@ const execFileAsync = promisify(execFile);
 
 @injectable()
 export class ElectronPowerManager implements IPowerManager {
-  private hasBuiltInBatteryResult: Promise<boolean> | null = null;
-
   public onResume(handler: () => void): () => void {
     powerMonitor.on("resume", handler);
     return () => powerMonitor.off("resume", handler);
@@ -26,12 +24,12 @@ export class ElectronPowerManager implements IPowerManager {
   }
 
   public hasBuiltInBattery(): Promise<boolean> {
-    if (!this.hasBuiltInBatteryResult) {
-      this.hasBuiltInBatteryResult = detectBuiltInBattery().catch(() => false);
-    }
-    return this.hasBuiltInBatteryResult;
+    memoizedBuiltInBattery ??= detectBuiltInBattery().catch(() => false);
+    return memoizedBuiltInBattery;
   }
 }
+
+let memoizedBuiltInBattery: Promise<boolean> | null = null;
 
 async function detectBuiltInBattery(): Promise<boolean> {
   switch (process.platform) {
