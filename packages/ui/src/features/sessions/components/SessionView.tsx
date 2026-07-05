@@ -29,7 +29,7 @@ import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/Que
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
-import { StaleConversationCostDialog } from "@posthog/ui/features/sessions/components/StaleConversationCostDialog";
+import { StaleConversationCostNotice } from "@posthog/ui/features/sessions/components/StaleConversationCostNotice";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
@@ -623,34 +623,6 @@ export function SessionView({
                         }
                       >
                         {taskId && <QueuedMessagesDock taskId={taskId} />}
-                        {staleGate.dismissed && (
-                          <Flex justify="center" mb="2">
-                            <Button
-                              variant="soft"
-                              color="amber"
-                              size="1"
-                              onClick={staleGate.onReopen}
-                            >
-                              <Warning size={14} weight="fill" />
-                              Conversation paused to avoid a costly reload —
-                              review
-                            </Button>
-                          </Flex>
-                        )}
-                        <StaleConversationCostDialog
-                          open={staleGate.dialogOpen}
-                          usedTokens={staleGate.usedTokens}
-                          lastActivityAt={staleGate.lastActivityAt}
-                          costUsd={staleGate.costUsd}
-                          onContinue={staleGate.onContinue}
-                          onCompact={() => {
-                            // Acknowledge so the gate clears and the dialog
-                            // closes, then trigger the agent's manual compaction.
-                            staleGate.onContinue();
-                            onSendPrompt("/compact");
-                          }}
-                          onOpenChange={staleGate.onDialogOpenChange}
-                        />
                         <PromptInput
                           ref={editorRef}
                           sessionId={sessionId}
@@ -663,11 +635,7 @@ export function SessionView({
                             handoffInProgress || !isOnline
                           }
                           submitTooltipOverride={
-                            staleGate.active
-                              ? "Large idle conversation — review the cost notice to continue"
-                              : !isOnline
-                                ? "No internet connection"
-                                : undefined
+                            !isOnline ? "No internet connection" : undefined
                           }
                           isLoading={!!isPromptPending}
                           isActiveSession={isActiveSession}
@@ -711,6 +679,15 @@ export function SessionView({
                       </Box>
                     </Box>
                   </Box>
+                )}
+                {staleGate.active && !hideInput && (
+                  <StaleConversationCostNotice
+                    usedTokens={staleGate.usedTokens}
+                    lastActivityAt={staleGate.lastActivityAt}
+                    costUsd={staleGate.costUsd}
+                    onContinue={staleGate.onContinue}
+                    onNewSession={onNewSession}
+                  />
                 )}
               </>
             )}
