@@ -49,6 +49,10 @@ export class AppServerClient implements AppServerRpc {
   }
 
   request<T = unknown>(method: string, params?: unknown): Promise<T> {
+    // The read loop is gone once closed, so a registered call could never settle.
+    if (this.closed) {
+      return Promise.reject(new Error("AppServerClient closed"));
+    }
     const id = this.nextId++;
     const promise = new Promise<T>((resolve, reject) => {
       this.pending.set(id, {
@@ -61,6 +65,7 @@ export class AppServerClient implements AppServerRpc {
   }
 
   notify(method: string, params?: unknown): void {
+    if (this.closed) return;
     this.send({ method, params });
   }
 

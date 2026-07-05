@@ -106,6 +106,56 @@ describe("mapAppServerNotification", () => {
     });
   });
 
+  it("maps a started webSearch item to a fetch tool_call titled by its query", () => {
+    const result = mapAppServerNotification(
+      "s-1",
+      APP_SERVER_NOTIFICATIONS.ITEM_STARTED,
+      { item: { type: "webSearch", id: "w1", query: "posthog hogql docs" } },
+    );
+
+    expect(result).toEqual({
+      sessionId: "s-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "w1",
+        title: "posthog hogql docs",
+        kind: "fetch",
+        status: "in_progress",
+      },
+    });
+
+    const queryless = mapAppServerNotification(
+      "s-1",
+      APP_SERVER_NOTIFICATIONS.ITEM_STARTED,
+      { item: { type: "webSearch", id: "w2" } },
+    );
+    expect(queryless?.update).toMatchObject({ title: "Web search" });
+  });
+
+  it("maps a declined completion to a failed tool_call_update", () => {
+    const result = mapAppServerNotification(
+      "s-1",
+      APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED,
+      {
+        item: {
+          type: "commandExecution",
+          id: "i2",
+          command: "rm -rf build",
+          status: "declined",
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      sessionId: "s-1",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "i2",
+        status: "failed",
+      },
+    });
+  });
+
   it("maps a started mcp tool call item, surfacing arguments as rawInput", () => {
     const result = mapAppServerNotification(
       "s-1",

@@ -9,9 +9,10 @@ agent/model/tool path is stubbed.
 
 ## What it covers
 
-Two suites, each a per-adapter loop with `describe.skipIf` over `["claude",
-"codex"]` (titles carry a `(claude)` / `(codex)` marker so `-t "(codex)"` selects
-one arm across both files):
+Four suites. The two adapter-parametrized ones loop with `describe.skipIf` over
+`["claude", "codex"]` (titles carry a `(claude)` / `(codex)` marker so
+`-t "(codex)"` selects one arm across files); `compaction.e2e.test.ts` runs the
+codex arm only, and `guard.e2e.test.ts` always runs:
 
 `session-lifecycle.e2e.test.ts` — one shared golden turn plus focused scenarios:
 - **newSession config options** — model / effort selectors are offered.
@@ -38,6 +39,16 @@ an approval request to assert on. That envelope is covered by unit tests instead
 
 `structured-output.e2e.test.ts` — `_meta.jsonSchema` + `onStructuredOutput`
 delivers a parsed, schema-constrained object (the signals-pipeline contract).
+Runs on the strong model (`E2E_*_STRONG_MODEL`); the cheapest models hang on
+the constrained decode.
+
+`compaction.e2e.test.ts` — codex only: a low `auto_compact_token_limit` plus a
+big input blob trips auto-compaction, and the adapter must surface
+`_posthog/compact_boundary`.
+
+`guard.e2e.test.ts` — always runs: fails loudly when the token is missing (every
+arm would self-skip) or the codex binary is absent despite a token, so the suite
+can never skip itself green.
 
 Assertions are structural lifecycle invariants + the deterministic file/JSON
 side effects — never model prose — so they hold across adapters and cheap models.
@@ -84,6 +95,8 @@ arm self-skips if it is missing).
 | `E2E_GATEWAY_URL` | `http://localhost:3308/llm_gateway` | Gateway base (codex appends `/v1`). `llm_gateway` accepts a personal API key; `posthog_code` is OAuth-only. |
 | `E2E_CLAUDE_MODEL` | `claude-haiku-4-5` | Override if the gateway serves a different cheap Claude id. |
 | `E2E_CODEX_MODEL` | `gpt-5-mini` | Cheapest codex id the local gateway serves; override if needed. |
+| `E2E_CLAUDE_STRONG_MODEL` | `claude-sonnet-4-5` | Stronger Claude id for tests the cheap model can't handle (structured output). |
+| `E2E_CODEX_STRONG_MODEL` | `gpt-5.5` | Stronger codex id for the same tests. |
 | `POSTHOG_REPO` | sibling `../posthog` | Where `run-e2e.sh` reads the local dev key from. |
 | `E2E_DEBUG` | — | `1` for verbose adapter logging. |
 

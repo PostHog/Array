@@ -46,6 +46,19 @@ describe("buildAppServerArgs", () => {
     },
   );
 
+  it("renders configOverrides bare for numbers and quoted for strings", () => {
+    const args = buildAppServerArgs({
+      binaryPath: "/bundle/codex",
+      configOverrides: {
+        auto_compact_token_limit: 16000,
+        model_verbosity: "low",
+      },
+    });
+
+    expect(args).toContain("auto_compact_token_limit=16000");
+    expect(args).toContain('model_verbosity="low"');
+  });
+
   it("does not set instructions at spawn (developer_instructions are per-thread)", () => {
     const args = buildAppServerArgs({
       binaryPath: "/bundle/codex",

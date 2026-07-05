@@ -71,6 +71,113 @@ describe("handleServerRequest", () => {
     ]);
   });
 
+  it("answers each question in a multi-question request independently", async () => {
+    const { client, calls } = fakeClient([
+      { outcome: "selected", optionId: "option_0" },
+      { outcome: "selected", optionId: "option_1" },
+    ]);
+
+    const params = {
+      threadId: "t",
+      turnId: "turn",
+      itemId: "item-2",
+      autoResolutionMs: null,
+      questions: [
+        {
+          id: "q1",
+          header: "Env",
+          question: "Which environment?",
+          isOther: false,
+          isSecret: false,
+          options: [
+            { label: "staging", description: "" },
+            { label: "production", description: "" },
+          ],
+        },
+        {
+          id: "q2",
+          header: "Region",
+          question: "Which region?",
+          isOther: false,
+          isSecret: false,
+          options: [
+            { label: "us", description: "" },
+            { label: "eu", description: "" },
+          ],
+        },
+      ],
+    };
+
+    const result = await handleServerRequest(
+      APP_SERVER_REQUESTS.TOOL_USER_INPUT,
+      params,
+      client,
+      opts,
+    );
+
+    expect(result.handled).toBe(true);
+    expect(result.response).toEqual({
+      answers: {
+        q1: { answers: ["staging"] },
+        q2: { answers: ["eu"] },
+      },
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls.map((c) => c.toolCall?.title)).toEqual([
+      "Which environment?",
+      "Which region?",
+    ]);
+  });
+
+  it("skips a free-text question (no options) with a well-formed empty answer", async () => {
+    const { client, calls } = fakeClient([
+      { outcome: "selected", optionId: "option_0" },
+    ]);
+
+    const params = {
+      threadId: "t",
+      turnId: "turn",
+      itemId: "item-3",
+      autoResolutionMs: null,
+      questions: [
+        {
+          id: "free",
+          header: "Notes",
+          question: "Anything else?",
+          isOther: true,
+          isSecret: false,
+          options: [],
+        },
+        {
+          id: "pick",
+          header: "Env",
+          question: "Which environment?",
+          isOther: false,
+          isSecret: false,
+          options: [{ label: "staging", description: "" }],
+        },
+      ],
+    };
+
+    const result = await handleServerRequest(
+      APP_SERVER_REQUESTS.TOOL_USER_INPUT,
+      params,
+      client,
+      opts,
+    );
+
+    expect(result.handled).toBe(true);
+    expect(result.response).toEqual({
+      answers: {
+        free: { answers: [] },
+        pick: { answers: ["staging"] },
+      },
+    });
+    // The free-text question never reaches requestPermission.
+    expect(calls).toHaveLength(1);
+    expect(calls[0].toolCall?.title).toBe("Which environment?");
+  });
+
   it("carries a QuestionMetaSchema-valid questions array so the host card renders", async () => {
     const { client, calls } = fakeClient([
       { outcome: "selected", optionId: "option_0" },

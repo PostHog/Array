@@ -5,6 +5,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
 import { APP_SERVER_NOTIFICATIONS } from "./protocol";
+import { readTokenUsage } from "./token-usage";
 
 /**
  * Translates a native app-server notification into an ACP SessionNotification.
@@ -42,20 +43,15 @@ export function mapAppServerNotification(
     }
     case APP_SERVER_NOTIFICATIONS.TOKEN_USAGE_UPDATED: {
       // Context indicator: renderer reads `used`/`size`; detailed breakdown comes via `_posthog/usage_update`.
-      const tu = (params as { tokenUsage?: any })?.tokenUsage;
-      // Use this turn's `last`, not cumulative `total` (which over-reports and pegs the
-      // gauge); `total` is the fallback for pre-`last` builds.
-      const context = tu?.last ?? tu?.total;
-      const used = context?.totalTokens ?? context?.inputTokens;
-      if (used == null) return null;
-      const size = tu?.modelContextWindow;
+      const usage = readTokenUsage(params);
+      if (!usage) return null;
       // `usage_update` is a PostHog-convention update, not in the ACP union.
       return {
         sessionId,
         update: {
           sessionUpdate: "usage_update",
-          used,
-          ...(size != null ? { size } : {}),
+          used: usage.used,
+          ...(usage.size != null ? { size: usage.size } : {}),
         },
       } as unknown as SessionNotification;
     }

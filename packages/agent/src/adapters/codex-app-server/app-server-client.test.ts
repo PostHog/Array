@@ -172,4 +172,34 @@ describe("AppServerClient", () => {
 
     await expect(pending).rejects.toThrow(/closed/i);
   });
+
+  it("rejects new requests immediately once closed instead of registering them", async () => {
+    const streams = createBidirectionalStreams();
+    const client = new AppServerClient(streams.client, {
+      logger: silentLogger,
+    });
+
+    await client.close();
+
+    await expect(client.request("turn/interrupt", {})).rejects.toThrow(
+      /closed/i,
+    );
+    expect(() => client.notify("thread/archive", {})).not.toThrow();
+  });
+
+  it("rejects new requests after the stream ends without close (process exit)", async () => {
+    const streams = createBidirectionalStreams();
+    const onClose = vi.fn();
+    const client = new AppServerClient(streams.client, {
+      logger: silentLogger,
+      onClose,
+    });
+
+    await streams.agent.writable.getWriter().close();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+
+    await expect(client.request("turn/interrupt", {})).rejects.toThrow(
+      /closed/i,
+    );
+  });
 });

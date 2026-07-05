@@ -67,6 +67,7 @@ import {
   type CodexAppServerProcessOptions,
   spawnCodexAppServerProcess,
 } from "./spawn";
+import { parseStructuredOutput } from "./structured-output";
 import { TurnController } from "./turn-controller";
 import { UsageTracker } from "./usage-tracker";
 
@@ -579,7 +580,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
     this.lastAgentMessage = "";
     this.resetUsage();
-    const completion = this.turns.begin();
+    const { completion, turn } = this.turns.begin();
     try {
       const approvalPolicy = this.config.approvalPolicy();
       const sandboxPolicy = this.config.sandboxPolicy();
@@ -609,7 +610,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       });
       return { stopReason: await completion };
     } finally {
-      this.turns.finishPrompt();
+      this.turns.finishPrompt(turn);
     }
   }
 
@@ -683,11 +684,11 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       this.turns.onStarted((params as { turn?: { id?: string } })?.turn?.id);
     }
 
-    if (
-      method === APP_SERVER_NOTIFICATIONS.ITEM_STARTED ||
-      method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED
-    ) {
+    if (method === APP_SERVER_NOTIFICATIONS.ITEM_STARTED) {
       this.mcp.capture(params);
+    }
+    if (method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED) {
+      this.mcp.release(params);
     }
 
     // codex auto-compaction surfaces as a contextCompaction item: item/started → in progress,
@@ -1073,26 +1074,4 @@ function flattenSystemPrompt(
     return systemPrompt.append || undefined;
   }
   return undefined;
-}
-
-/** Parse structured output from the final message, defensively (fenced block / first object). */
-function parseStructuredOutput(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim();
-  const candidates = [trimmed];
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) candidates.push(fenced[1].trim());
-  const brace = trimmed.match(/\{[\s\S]*\}/);
-  if (brace) candidates.push(brace[0]);
-
-  for (const candidate of candidates) {
-    try {
-      const parsed: unknown = JSON.parse(candidate);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      // Try the next candidate.
-    }
-  }
-  return null;
 }

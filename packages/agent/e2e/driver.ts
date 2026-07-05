@@ -89,6 +89,9 @@ export function openConnection(opts: {
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
 }): E2EConnection {
   const { adapter, cwd } = opts;
+  // Sweep before every codex spawn so one leaked process (holding the
+  // ~/.codex/tmp flock) cannot wedge the rest of the run.
+  if (adapter === "codex") killCodexStragglers();
   const events: CapturedEvent[] = [];
 
   // Mirror the cloud host's client surface. Deliberately no extMethod: the real
@@ -197,23 +200,30 @@ export async function openSession(opts: {
   meta: Record<string, unknown>;
 }): Promise<OpenSession> {
   const c = openConnection(opts);
-  await c.conn.initialize(INIT_PARAMS);
-  const newSession = await c.conn.newSession({
-    cwd: opts.cwd,
-    mcpServers: [],
-    // Inject E2E_ENVIRONMENT so the suite can run as a cloud session without threading it through every test's meta.
-    _meta: {
-      ...opts.meta,
-      ...(E2E.environment ? { environment: E2E.environment } : {}),
-    },
-  });
-  return {
-    conn: c.conn,
-    capture: c.capture,
-    sessionId: newSession.sessionId,
-    newSession,
-    cleanup: c.cleanup,
-  };
+  // initialize/newSession hit a live gateway; on failure the caller never gets
+  // a cleanup handle, so clean up here or the spawned adapter process leaks.
+  try {
+    await c.conn.initialize(INIT_PARAMS);
+    const newSession = await c.conn.newSession({
+      cwd: opts.cwd,
+      mcpServers: [],
+      // Inject E2E_ENVIRONMENT so the suite can run as a cloud session without threading it through every test's meta.
+      _meta: {
+        ...opts.meta,
+        ...(E2E.environment ? { environment: E2E.environment } : {}),
+      },
+    });
+    return {
+      conn: c.conn,
+      capture: c.capture,
+      sessionId: newSession.sessionId,
+      newSession,
+      cleanup: c.cleanup,
+    };
+  } catch (err) {
+    await c.cleanup();
+    throw err;
+  }
 }
 
 export const ORIGINAL_TARGET = "line1\nline2\nline3\n";
@@ -274,11 +284,13 @@ export async function waitFor<T>(
 
 /**
  * codex spawns detached; a killed run can orphan it holding a flock under
- * ~/.codex/tmp, wedging the next run. Kill stragglers first to release the flock.
+ * ~/.codex/tmp, wedging the next run. Kill stragglers first to release the
+ * flock. Matched on THIS checkout's absolute resources path so a concurrent
+ * run from another checkout (or a dev's real session) is never killed.
  */
 export function killCodexStragglers(): void {
   try {
-    execFileSync("pkill", ["-9", "-f", "resources/codex-acp"], {
+    execFileSync("pkill", ["-9", "-f", E2E.codexResourcesDir], {
       stdio: "ignore",
     });
   } catch {

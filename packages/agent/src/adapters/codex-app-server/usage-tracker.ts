@@ -3,6 +3,7 @@ import {
   emptyBaseline,
 } from "../claude/context-breakdown";
 import type { AccumulatedUsage } from "./ext-notifications";
+import { readTokenUsage } from "./token-usage";
 
 /** The live `_posthog/usage_update` fields (context-window occupancy). */
 export interface UsageUpdate {
@@ -43,12 +44,11 @@ export class UsageTracker {
 
   /** Ingest a `thread/tokenUsage/updated` payload; returns the live usage_update, or null if unusable. */
   ingest(params: unknown): UsageUpdate | null {
-    const tu = (params as { tokenUsage?: any })?.tokenUsage;
-    const total = tu?.total;
-    if (!total) return null;
-    const context = tu.last ?? total;
+    const reading = readTokenUsage(params);
+    if (!reading) return null;
+    const { context, used, size } = reading;
     // Drives the per-source breakdown's "conversation" bucket on turn complete.
-    this.contextUsed = context.inputTokens ?? context.totalTokens;
+    this.contextUsed = used;
     this.lastTurn = {
       inputTokens: context.inputTokens ?? 0,
       outputTokens: context.outputTokens ?? 0,
@@ -57,8 +57,8 @@ export class UsageTracker {
       cachedWriteTokens: 0,
     };
     return {
-      used: context.totalTokens,
-      size: tu.modelContextWindow ?? null,
+      used,
+      size: size ?? null,
       usage: {
         inputTokens: context.inputTokens,
         outputTokens: context.outputTokens,
@@ -81,7 +81,7 @@ export class UsageTracker {
     );
   }
 
-  /** Live context occupancy (last turn's input tokens), or undefined pre-usage. */
+  /** Live context occupancy (same derivation as the renderer gauge), or undefined pre-usage. */
   contextTokens(): number | undefined {
     return this.contextUsed;
   }

@@ -931,6 +931,27 @@ describe("CodexAppServerAgent", () => {
     expect((await done).stopReason).toBe("cancelled");
   });
 
+  it("closeSession resolves an in-flight prompt as cancelled instead of hanging", async () => {
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+
+    await agent.closeSession();
+
+    expect((await done).stopReason).toBe("cancelled");
+    // The session is fully torn down: a late turn/completed is a no-op.
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+  });
+
   it("finalizes the turn on a non-retried error notification", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client } = makeFakeClient();

@@ -14,8 +14,8 @@ const GATEWAY_URL =
   process.env.E2E_GATEWAY_URL || "http://localhost:3308/llm_gateway";
 const TOKEN = process.env.E2E_GATEWAY_TOKEN ?? "";
 
-// The native app-server binary, relative to packages/agent/e2e.
-const NATIVE_CODEX_BIN = join(
+// This checkout's bundled codex binaries, relative to packages/agent/e2e.
+const CODEX_RESOURCES_DIR = join(
   __dirname,
   "..",
   "..",
@@ -24,8 +24,8 @@ const NATIVE_CODEX_BIN = join(
   "code",
   "resources",
   "codex-acp",
-  "codex",
 );
+const NATIVE_CODEX_BIN = join(CODEX_RESOURCES_DIR, "codex");
 
 /** The gateway base with a trailing `/v1` (codex / OpenAI-format endpoint). */
 function openAiBase(): string {
@@ -37,6 +37,8 @@ export const E2E = {
   hasToken: !!TOKEN,
   gatewayUrl: GATEWAY_URL,
   codexBin: NATIVE_CODEX_BIN,
+  /** Scopes the straggler sweep to binaries spawned from THIS checkout. */
+  codexResourcesDir: CODEX_RESOURCES_DIR,
   /** Deployment environment. `E2E_ENVIRONMENT=cloud` exercises the cloud code path; undefined = local. */
   environment:
     (process.env.E2E_ENVIRONMENT as "local" | "cloud" | undefined) || undefined,
@@ -50,6 +52,18 @@ export const E2E = {
     // gpt-5-mini is on the product block list, but that gate is only enforced in
     // Agent.run — the e2e drives createAcpConnection directly, so it's accepted.
     return process.env.E2E_CODEX_MODEL || "gpt-5-mini";
+  },
+
+  /**
+   * A stronger model for tests the cheapest models can't handle (e.g.
+   * structured-output decodes). Its own env vars, so the documented cheap-model
+   * overrides cannot silently downgrade these tests.
+   */
+  strongModel(adapter: Adapter): string {
+    if (adapter === "claude") {
+      return process.env.E2E_CLAUDE_STRONG_MODEL || "claude-sonnet-4-5";
+    }
+    return process.env.E2E_CODEX_STRONG_MODEL || "gpt-5.5";
   },
 
   /** Null => runnable; a string => skip this arm with that reason (never silent). */
@@ -94,13 +108,5 @@ export const E2E = {
       model: modelOverride || this.model("codex"),
       ...(configOverrides ? { configOverrides } : {}),
     };
-  },
-
-  /** A stronger model for tests the cheapest models can't handle (e.g. structured-output decodes). */
-  strongModel(adapter: Adapter): string {
-    if (adapter === "claude") {
-      return process.env.E2E_CLAUDE_MODEL || "claude-sonnet-4-5";
-    }
-    return process.env.E2E_CODEX_MODEL || "gpt-5.5";
   },
 };

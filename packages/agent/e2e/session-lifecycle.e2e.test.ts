@@ -5,7 +5,6 @@ import {
   type ConfigOption,
   cleanupRepo,
   INIT_PARAMS,
-  killCodexStragglers,
   type NewSessionResponse,
   ORIGINAL_TARGET,
   openConnection,
@@ -64,7 +63,6 @@ for (const adapter of ADAPTERS) {
     let goldenError: unknown;
 
     beforeAll(async () => {
-      if (adapter === "codex") killCodexStragglers();
       E2E.configureEnv(adapter);
       repo = setupRepo();
       const s = await openSession({
@@ -194,7 +192,6 @@ for (const adapter of ADAPTERS) {
 
     // Cloud host switches mode only via setSessionConfigOption(configId:"mode"), so exercise both arms.
     it("emits current_mode_update when the mode is switched via setSessionConfigOption", async () => {
-      if (adapter === "codex") killCodexStragglers();
       const s = await openSession({
         adapter,
         cwd: repo,
@@ -231,7 +228,6 @@ for (const adapter of ADAPTERS) {
     itCodexSandbox(
       "read-only mode actually blocks a file edit (sandbox restricts, not just approval)",
       async () => {
-        if (adapter === "codex") killCodexStragglers();
         const s = await openSession({
           adapter,
           cwd: repo,
@@ -276,7 +272,6 @@ for (const adapter of ADAPTERS) {
     itCodex(
       "plan mode engages codex's plan collaboration, and reverts when switched back to auto",
       async () => {
-        if (adapter === "codex") killCodexStragglers();
         const s = await openSession({
           adapter,
           cwd: repo,
@@ -323,7 +318,6 @@ for (const adapter of ADAPTERS) {
     );
 
     it("handles the host's refresh_session extMethod per adapter", async () => {
-      if (adapter === "codex") killCodexStragglers();
       const s = await openSession({
         adapter,
         cwd: repo,
@@ -353,7 +347,6 @@ for (const adapter of ADAPTERS) {
     // unit-covered in codex-app-server-agent.test.ts / approvals.test.ts.
 
     it("incorporates a prompt's _meta.prContext without error", async () => {
-      if (adapter === "codex") killCodexStragglers();
       const s = await openSession({
         adapter,
         cwd: repo,
@@ -387,7 +380,6 @@ for (const adapter of ADAPTERS) {
     itCodex(
       "folds a mid-turn prompt into the running turn via steering",
       async () => {
-        killCodexStragglers();
         const s = await openSession({
           adapter,
           cwd: repo,
@@ -442,7 +434,6 @@ for (const adapter of ADAPTERS) {
     itCodex(
       "lists the session and forks it",
       async () => {
-        killCodexStragglers();
         const b = openConnection({
           adapter,
           cwd: repo,
@@ -473,7 +464,6 @@ for (const adapter of ADAPTERS) {
     // approvals.test.ts / codex-app-server-agent.test.ts.
 
     it("interrupts an in-flight turn", async () => {
-      if (adapter === "codex") killCodexStragglers();
       const s = await openSession({
         adapter,
         cwd: repo,
@@ -515,7 +505,6 @@ for (const adapter of ADAPTERS) {
     }, 120_000);
 
     it("resumeSession reconnects and returns config options", async () => {
-      if (adapter === "codex") killCodexStragglers();
       const b = openConnection({
         adapter,
         cwd: repo,
@@ -537,7 +526,6 @@ for (const adapter of ADAPTERS) {
     }, 60_000);
 
     it("reattach (loadSession) restores the session and replays the transcript", async () => {
-      if (adapter === "codex") killCodexStragglers();
       const b = openConnection({
         adapter,
         cwd: repo,

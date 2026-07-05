@@ -5,6 +5,36 @@ export interface McpCall {
   args: unknown;
 }
 
+interface McpItem {
+  id: string;
+  server: string;
+  tool: string;
+  arguments: unknown;
+}
+
+function readMcpItem(params: unknown): McpItem | null {
+  const item = (
+    params as {
+      item?: {
+        type?: string;
+        id?: string;
+        server?: string;
+        tool?: string;
+        arguments?: unknown;
+      };
+    }
+  )?.item;
+  if (item?.type === "mcpToolCall" && item.id && item.server && item.tool) {
+    return {
+      id: item.id,
+      server: item.server,
+      tool: item.tool,
+      arguments: item.arguments,
+    };
+  }
+  return null;
+}
+
 /**
  * Correlates codex approval prompts back to the MCP tool that triggered them: by
  * item id for a command approval, or by server name for an elicitation (which
@@ -14,28 +44,29 @@ export class McpManager {
   private readonly byId = new Map<string, McpCall>();
   private latest?: McpCall;
 
-  /** Record an `mcpToolCall` item from an item/started or item/completed notification. */
+  /** Record an `mcpToolCall` item from an item/started notification. */
   capture(params: unknown): void {
-    const item = (
-      params as {
-        item?: {
-          type?: string;
-          id?: string;
-          server?: string;
-          tool?: string;
-          arguments?: unknown;
-        };
-      }
-    )?.item;
-    if (item?.type === "mcpToolCall" && item.id && item.server && item.tool) {
-      const call: McpCall = {
-        server: item.server,
-        tool: item.tool,
-        args: item.arguments,
-      };
-      this.byId.set(item.id, call);
-      this.latest = call;
-    }
+    const item = readMcpItem(params);
+    if (!item) return;
+    const call: McpCall = {
+      server: item.server,
+      tool: item.tool,
+      args: item.arguments,
+    };
+    this.byId.set(item.id, call);
+    this.latest = call;
+  }
+
+  /**
+   * Evict on item/completed — approvals only arrive while a call is in flight,
+   * and keeping every finished call would grow the map for the session's lifetime.
+   */
+  release(params: unknown): void {
+    const item = readMcpItem(params);
+    if (!item) return;
+    const call = this.byId.get(item.id);
+    this.byId.delete(item.id);
+    if (call && this.latest === call) this.latest = undefined;
   }
 
   /** The MCP call for a command-execution approval's item id, if known. */

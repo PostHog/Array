@@ -301,6 +301,9 @@ export interface SessionServiceDeps {
   adapterStore: {
     getAdapter(taskRunId: string): Adapter | undefined;
     setAdapter(taskRunId: string, adapter: Adapter): void;
+    /** Codex sub-adapter pin: true = app-server, null = resolved undefined at creation. */
+    setUseCodexAppServer(taskRunId: string, useAppServer: boolean | null): void;
+    getUseCodexAppServer(taskRunId: string): boolean | null | undefined;
     removeAdapter(taskRunId: string): void;
   };
   readonly settings: { customInstructions?: string | null };
@@ -496,6 +499,11 @@ export function isPermissionRequestAlreadySurfaced(
     trackedRequestId === update.requestId &&
     pendingPermissions.has(update.toolCall.toolCallId)
   );
+}
+
+/** The steering capability on a loosely-typed agent start/reconnect result. */
+function readSteering(result: unknown): string | undefined {
+  return (result as { steering?: string } | undefined)?.steering;
 }
 
 function classifyTurnEventKind(
@@ -914,6 +922,25 @@ export class SessionService {
       this.d.adapterStore.setAdapter(taskRunId, resolvedAdapter);
     }
 
+    // Reuse the codex sub-adapter pinned at session creation so a rollout-flag
+    // flip cannot resume an app-server thread through codex-acp (or vice
+    // versa). Sessions from before pinning existed resolve live once, then get
+    // backfilled so later reconnects stay stable.
+    const pinnedUseCodexAppServer =
+      resolvedAdapter === "codex"
+        ? this.d.adapterStore.getUseCodexAppServer(taskRunId)
+        : undefined;
+    const useCodexAppServer =
+      pinnedUseCodexAppServer === undefined
+        ? this.resolveUseCodexAppServer(resolvedAdapter)
+        : (pinnedUseCodexAppServer ?? undefined);
+    if (resolvedAdapter === "codex" && pinnedUseCodexAppServer === undefined) {
+      this.d.adapterStore.setUseCodexAppServer(
+        taskRunId,
+        useCodexAppServer ?? null,
+      );
+    }
+
     if (previous) {
       session.optimisticItems = previous.optimisticItems;
       session.messageQueue = previous.messageQueue;
@@ -969,7 +996,7 @@ export class SessionService {
         logUrl,
         sessionId,
         adapter: resolvedAdapter,
-        useCodexAppServer: this.resolveUseCodexAppServer(resolvedAdapter),
+        useCodexAppServer,
         permissionMode: persistedMode,
         model: persistedModel,
         customInstructions: customInstructions || undefined,
@@ -994,7 +1021,7 @@ export class SessionService {
         this.d.store.updateSession(taskRunId, {
           status: "connected",
           configOptions,
-          steering: (result as { steering?: string }).steering,
+          steering: readSteering(result),
         });
 
         // Persist the merged config options
@@ -1272,6 +1299,10 @@ export class SessionService {
    * override (`POSTHOG_CODEX_USE_APP_SERVER`) and then the codex-acp default —
    * hard-passing `false` would shadow that env, since the host value has the
    * highest precedence in resolveUseCodexAppServer.
+   *
+   * Consulted for NEW sessions (and once to backfill legacy ones); reconnects
+   * reuse the value pinned in the adapter store at creation, so a flag flip
+   * never resumes an existing thread through the other codex sub-adapter.
    */
   private resolveUseCodexAppServer(
     adapter: "claude" | "codex" | undefined,
@@ -1306,6 +1337,7 @@ export class SessionService {
 
     const { customInstructions: startCustomInstructions } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
+    const useCodexAppServer = this.resolveUseCodexAppServer(adapter);
     const result = await this.d.trpc.agent.start.mutate({
       taskId,
       taskRunId: taskRun.id,
@@ -1314,7 +1346,7 @@ export class SessionService {
       projectId: auth.projectId,
       permissionMode: executionMode,
       adapter,
-      useCodexAppServer: this.resolveUseCodexAppServer(adapter),
+      useCodexAppServer,
       customInstructions: startCustomInstructions || undefined,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
@@ -1350,16 +1382,23 @@ export class SessionService {
       | SessionConfigOption[]
       | undefined;
     session.configOptions = configOptions;
-    session.steering = (result as { steering?: string }).steering;
+    session.steering = readSteering(result);
 
     // Persist the config options
     if (configOptions) {
       this.d.setPersistedConfigOptions(taskRun.id, configOptions);
     }
 
-    // Persist the adapter
+    // Persist the adapter, pinning the codex sub-adapter so reconnects keep
+    // using the one that created this thread even if the rollout flag flips.
     if (adapter) {
       this.d.adapterStore.setAdapter(taskRun.id, adapter);
+      if (adapter === "codex") {
+        this.d.adapterStore.setUseCodexAppServer(
+          taskRun.id,
+          useCodexAppServer ?? null,
+        );
+      }
     }
 
     // Store the initial prompt on the session so retry/reset flows can

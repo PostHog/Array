@@ -11,7 +11,7 @@
  *   PARITY_MODEL        default gpt-5.5
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Logger } from "../src/utils/logger";
 import {
@@ -254,32 +254,35 @@ function diffFeatures(
   ];
 }
 
+/**
+ * Recreate the repo from scratch. Runs before every (scenario, mode) pair so
+ * the second arm starts from the same pristine state as the first — a scenario
+ * edits target.txt, and comparing arms against different starting files would
+ * bias the exact diff this harness exists to produce.
+ */
 function setupRepo(): void {
-  if (!existsSync(REPO)) mkdirSync(REPO, { recursive: true });
+  rmSync(REPO, { recursive: true, force: true });
+  mkdirSync(REPO, { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: REPO });
   writeFileSync(join(REPO, "target.txt"), "line1\nline2\nline3\n");
   execFileSync("git", ["add", "-A"], { cwd: REPO });
-  try {
-    // -c commit.gpgsign=false: ignore the user's global commit-signing config
-    // (e.g. 1Password SSH signer), which fails in this non-interactive context.
-    execFileSync(
-      "git",
-      [
-        "-c",
-        "commit.gpgsign=false",
-        "-c",
-        "user.email=p@p.dev",
-        "-c",
-        "user.name=parity",
-        "commit",
-        "-qm",
-        "init",
-      ],
-      { cwd: REPO },
-    );
-  } catch {
-    /* already committed */
-  }
+  // -c commit.gpgsign=false: ignore the user's global commit-signing config
+  // (e.g. 1Password SSH signer), which fails in this non-interactive context.
+  execFileSync(
+    "git",
+    [
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "user.email=p@p.dev",
+      "-c",
+      "user.name=parity",
+      "commit",
+      "-qm",
+      "init",
+    ],
+    { cwd: REPO },
+  );
 }
 
 async function main(): Promise<void> {
@@ -291,7 +294,6 @@ async function main(): Promise<void> {
     ? args[args.indexOf("--scenario") + 1]
     : null;
   mkdirSync(OUT_DIR, { recursive: true });
-  setupRepo();
 
   const modes: AdapterMode[] = [];
   if (!only || only === "acp") modes.push("acp");
@@ -315,12 +317,15 @@ async function main(): Promise<void> {
     featuresByMode[scenario.name] = {};
     for (const mode of modes) {
       console.log(`\n▶ ${scenario.name} via ${mode} ...`);
+      setupRepo();
       // codex spawns detached (own process group); a timed-out run orphans it
       // holding a flock under ~/.codex/tmp, which wedges the next run. Kill any
-      // stragglers first — process death releases the flock. (Uses the default
-      // CODEX_HOME: an isolated empty home makes codex-acp crash at startup.)
+      // stragglers first — process death releases the flock, matched on THIS
+      // checkout's absolute resources path so unrelated runs are never killed.
+      // (Uses the default CODEX_HOME: an isolated empty home makes codex-acp
+      // crash at startup.)
       try {
-        execFileSync("pkill", ["-9", "-f", "resources/codex-acp"], {
+        execFileSync("pkill", ["-9", "-f", RESOURCES], {
           stdio: "ignore",
         });
       } catch {

@@ -60,8 +60,6 @@ export interface HarnessConfig {
     model?: string;
     reasoningEffort?: string;
   };
-  /** Override flag plumbing once the migration adds useCodexAppServer. */
-  selectAppServer?: boolean;
   timeoutMs?: number;
   logger?: Logger;
 }

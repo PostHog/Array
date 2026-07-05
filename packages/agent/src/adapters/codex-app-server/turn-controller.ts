@@ -14,13 +14,15 @@ export class TurnController {
   private turnId?: string;
   private pending?: PendingTurn;
   private completion?: Promise<StopReason>;
+  private generation = 0;
   private readonly cancelled = new Set<string>();
 
-  begin(): Promise<StopReason> {
+  begin(): { completion: Promise<StopReason>; turn: number } {
+    const turn = ++this.generation;
     this.completion = new Promise<StopReason>((resolve, reject) => {
       this.pending = { resolve, reject };
     });
-    return this.completion;
+    return { completion: this.completion, turn };
   }
 
   /** The live turn id (steer precondition / interrupt target), if a turn started. */
@@ -72,14 +74,20 @@ export class TurnController {
     return id ? this.cancelled.delete(id) : false;
   }
 
-  /** Clear the pending slot after prompt() returns (covers a turn/start throw). */
-  finishPrompt(): void {
+  /**
+   * Clear the pending slot after prompt() returns (covers a turn/start throw). Guarded by
+   * the caller's turn token: finalizeTurn claims before it awaits, so a new prompt() can
+   * begin() in that window; the older prompt's cleanup must not wipe the newer turn.
+   */
+  finishPrompt(turn: number): void {
+    if (turn !== this.generation) return;
     this.pending = undefined;
     this.completion = undefined;
   }
 
   /** Reject the in-flight turn (e.g. the server exited before it completed). */
   fail(err: Error): void {
+    this.turnId = undefined;
     this.pending?.reject(err);
     this.pending = undefined;
     this.completion = undefined;

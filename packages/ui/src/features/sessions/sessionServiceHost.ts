@@ -108,6 +108,12 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         useSessionAdapterStore.getState().getAdapter(taskRunId),
       setAdapter: (taskRunId, adapter) =>
         useSessionAdapterStore.getState().setAdapter(taskRunId, adapter),
+      setUseCodexAppServer: (taskRunId, useAppServer) =>
+        useSessionAdapterStore
+          .getState()
+          .setUseCodexAppServer(taskRunId, useAppServer),
+      getUseCodexAppServer: (taskRunId) =>
+        useSessionAdapterStore.getState().getUseCodexAppServer(taskRunId),
       removeAdapter: (taskRunId) =>
         useSessionAdapterStore.getState().removeAdapter(taskRunId),
     },

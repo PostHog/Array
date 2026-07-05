@@ -268,7 +268,7 @@ function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
     }
 
     agent = new CodexAcpAgent(client, {
-      codexProcessOptions: codexOptions,
+      codexProcessOptions: { ...codexOptions, environment: config.deviceType },
       processCallbacks: config.processCallbacks,
       posthogApiConfig: resolveEnricherApiConfig(config),
       onStructuredOutput: config.onStructuredOutput,

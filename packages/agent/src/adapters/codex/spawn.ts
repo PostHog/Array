@@ -32,6 +32,8 @@ export interface CodexProcessOptions {
    * `auto_compact_token_limit` low to force a compaction.
    */
   configOverrides?: Record<string, string | number>;
+  /** Deployment environment; "cloud" disables codex's own OS sandbox (the enclosing sandbox isolates). */
+  environment?: "local" | "cloud";
 }
 
 export interface CodexProcess {
@@ -46,13 +48,16 @@ function buildConfigArgs(options: CodexProcessOptions): string[] {
 
   args.push("-c", `features.remote_models=false`);
 
-  // The agent already runs inside PostHog's isolated sandbox (docker/Modal with
-  // agentsh egress + filesystem controls), so Codex's own OS-level sandbox is
+  // On cloud the agent already runs inside PostHog's isolated sandbox (docker/Modal
+  // with agentsh egress + filesystem controls), so Codex's own OS-level sandbox is
   // redundant — and its `linux-sandbox` launcher is unavailable inside that
   // sandbox, so the default workspace-write mode panics ("sandbox launcher
   // unavailable" → require_escalated) and wedges the session. Run Codex with no
-  // nested sandbox; the enclosing sandbox provides the isolation.
-  args.push("-c", `sandbox_mode="danger-full-access"`);
+  // nested sandbox there; the enclosing sandbox provides the isolation. Local
+  // desktop sessions keep codex's own sandbox as the OS-level backstop.
+  if (options.environment === "cloud") {
+    args.push("-c", `sandbox_mode="danger-full-access"`);
+  }
 
   // Disable the user's local MCPs one-by-one so Codex only uses the MCPs we
   // provide via ACP. We can't use `-c mcp_servers={}` because that makes Codex

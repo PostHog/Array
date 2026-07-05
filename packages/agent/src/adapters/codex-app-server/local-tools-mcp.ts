@@ -5,11 +5,10 @@
  * the single owner of the ACP→Codex map.
  */
 
-import { existsSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
 import type { McpServerStdio } from "@agentclientprotocol/sdk";
 import { ghTokenEnv } from "@posthog/git/signed-commit";
 import { resolveGithubToken } from "../../utils/github-token";
+import { resolveBundledMcpScript } from "../../utils/resolve-bundled-script";
 import {
   enabledLocalTools,
   LOCAL_TOOLS_MCP_NAME,
@@ -27,22 +26,6 @@ export interface LocalToolsMeta extends LocalToolGateMeta {
   taskId?: string;
   persistence?: { taskId?: string };
   baseBranch?: string;
-}
-
-/**
- * Resolve a shared dist asset by walking up from the compiled adapter location —
- * its depth varies across bundle entry points. Mirrors the codex-acp adapter.
- */
-function resolveBundledMcpScript(rel: string): string {
-  let dir = import.meta.dirname ?? __dirname;
-  for (let i = 0; i < 5; i++) {
-    const candidate = resolvePath(dir, rel);
-    if (existsSync(candidate)) return candidate;
-    dir = resolvePath(dir, "..");
-  }
-  throw new Error(
-    `Could not locate ${rel} relative to ${import.meta.dirname ?? __dirname}.`,
-  );
 }
 
 function toMcpServerStdio(

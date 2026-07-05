@@ -1,11 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type Adapter, E2E } from "./config";
-import {
-  cleanupRepo,
-  killCodexStragglers,
-  openSession,
-  setupRepo,
-} from "./driver";
+import { cleanupRepo, openSession, setupRepo } from "./driver";
 
 /**
  * Live structured-output e2e: both adapters constrain the final message to a JSON
@@ -30,7 +25,6 @@ for (const adapter of ADAPTERS) {
     let repo: string;
 
     beforeAll(() => {
-      if (adapter === "codex") killCodexStragglers();
       E2E.configureEnv(adapter);
       repo = setupRepo();
     });

@@ -1,4 +1,5 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import { CODEX_MODE_PRESETS, type CodexModePreset } from "@posthog/shared";
 import { type GatewayModel, isOpenAIModel } from "../../gateway-models";
 import { getReasoningEffortOptions } from "../codex/models";
 
@@ -42,40 +43,44 @@ export interface CodexMode {
   permissionProfile?: string;
 }
 
-// Flattened Claude-style presets. Restriction is driven by approvalPolicy + the
-// named permissionProfile (codex 0.140.0's enforced sandbox lever); plan/read-only
-// block edits, auto/full-access keep the spawned editable sandbox.
-export const CODEX_MODES: CodexMode[] = [
-  {
-    id: "plan",
-    name: "Plan",
-    description: "Plan first — inspect and propose; makes no changes",
+// Flattened Claude-style presets: the `{id, name, description}` literals live
+// in @posthog/shared (one copy for every picker); this map owns the behavior.
+// Restriction is driven by approvalPolicy + the named permissionProfile (codex
+// 0.140.0's enforced sandbox lever); plan/read-only block edits,
+// auto/full-access keep the spawned editable sandbox.
+const CODEX_MODE_POLICIES: Record<
+  CodexModePreset["id"],
+  Pick<
+    CodexMode,
+    | "approvalPolicy"
+    | "sandboxPolicy"
+    | "permissionProfile"
+    | "collaborationMode"
+  >
+> = {
+  plan: {
     approvalPolicy: "on-request",
     sandboxPolicy: { type: "readOnly", networkAccess: true },
     permissionProfile: ":read-only",
     collaborationMode: "plan",
   },
-  {
-    id: "read-only",
-    name: "Read only",
-    description: "Read-only — can inspect but not modify files",
+  "read-only": {
     approvalPolicy: "untrusted",
     sandboxPolicy: { type: "readOnly", networkAccess: true },
     permissionProfile: ":read-only",
   },
-  {
-    id: "auto",
-    name: "Auto",
-    description: "Edits the workspace; asks before risky operations",
+  auto: {
     approvalPolicy: "on-request",
   },
-  {
-    id: "full-access",
-    name: "Full access",
-    description: "Auto-approves all operations",
+  "full-access": {
     approvalPolicy: "never",
   },
-];
+};
+
+export const CODEX_MODES: CodexMode[] = CODEX_MODE_PRESETS.map((preset) => ({
+  ...preset,
+  ...CODEX_MODE_POLICIES[preset.id],
+}));
 
 export const DEFAULT_MODE = "auto";
 
