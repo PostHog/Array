@@ -271,6 +271,11 @@ export function SessionView({
   // prompt cache has likely expired (see useStaleConversationGate).
   const staleGate = useStaleConversationGate(sessionId, events);
 
+  const handleStaleCompact = useCallback(() => {
+    staleGate.onContinue();
+    onSendPrompt("/compact");
+  }, [staleGate.onContinue, onSendPrompt]);
+
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
   const dragCounterRef = useRef(0);
@@ -686,6 +691,7 @@ export function SessionView({
                     lastActivityAt={staleGate.lastActivityAt}
                     costUsd={staleGate.costUsd}
                     onContinue={staleGate.onContinue}
+                    onCompact={handleStaleCompact}
                     onNewSession={onNewSession}
                   />
                 )}

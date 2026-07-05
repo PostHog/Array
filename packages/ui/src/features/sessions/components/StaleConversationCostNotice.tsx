@@ -9,6 +9,8 @@ interface StaleConversationCostNoticeProps {
   /** Cumulative session cost so far, when the gateway reports it. */
   costUsd: number | null;
   onContinue: () => void;
+  /** Compact the thread: pay the reload once, then every later turn is smaller. */
+  onCompact: () => void;
   onNewSession?: () => void;
 }
 
@@ -22,6 +24,7 @@ export function StaleConversationCostNotice({
   lastActivityAt,
   costUsd,
   onContinue,
+  onCompact,
   onNewSession,
 }: StaleConversationCostNoticeProps) {
   const activity =
@@ -53,8 +56,9 @@ export function StaleConversationCostNotice({
           message re-processes the whole conversation at full input price
           instead of the ~10% cached rate
           {costUsd !== null ? ` (≈$${costUsd.toFixed(2)} spent so far)` : ""}.
-          Starting a new conversation avoids the cost — continue only if you
-          need this thread's context.
+          Starting a new session avoids the cost entirely. Compacting pays the
+          reload once but summarizes the thread, so every later turn is cheaper.
+          Continue as-is only if you need the full context.
         </Text>
         <Flex justify="end" gap="2" mt="4">
           {onNewSession && (
@@ -62,8 +66,11 @@ export function StaleConversationCostNotice({
               Start a new session
             </Button>
           )}
-          <Button variant="solid" size="1" onClick={onContinue}>
+          <Button variant="soft" size="1" onClick={onContinue}>
             Continue anyway
+          </Button>
+          <Button variant="solid" size="1" onClick={onCompact}>
+            Compact and continue
           </Button>
         </Flex>
       </Box>
