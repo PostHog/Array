@@ -46,7 +46,10 @@ import {
   useShowRawLogs,
 } from "@posthog/ui/features/sessions/sessionViewStore";
 import type { Plan } from "@posthog/ui/features/sessions/types";
-import { useSessionHandoffInProgress } from "@posthog/ui/features/sessions/useSession";
+import {
+  useSessionForTask,
+  useSessionHandoffInProgress,
+} from "@posthog/ui/features/sessions/useSession";
 import { useStaleConversationGate } from "@posthog/ui/features/sessions/useStaleConversationGate";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
