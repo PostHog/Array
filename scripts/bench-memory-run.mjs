@@ -43,6 +43,12 @@ const messageCount = Number(arg("messages", 2));
 const label = arg("label", "run");
 const outFile = arg("out", null);
 const idleOnly = flag("idle-only");
+/**
+ * thread  — N cheap agent turns in the restored thread (default)
+ * switch  — visit up to N tasks in the sidebar, then return to the first
+ * longout — one turn with a large (~40KB) bash tool output
+ */
+const scenario = arg("scenario", "thread");
 
 const BOOT_SETTLE_MS = 20_000;
 const CDP_TIMEOUT_MS = 120_000;
@@ -86,7 +92,7 @@ function sample(sampleLabel, durationS) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function driveWorkflow() {
+async function withRendererPage(fn) {
   const { chromium } = await import(
     path.join(repoRoot, "node_modules/playwright-core/index.mjs")
   );
@@ -95,35 +101,117 @@ async function driveWorkflow() {
     const pages = browser.contexts().flatMap((c) => c.pages());
     const page = pages.find((p) => !p.url().startsWith("devtools://"));
     if (!page) throw new Error("no renderer page target found");
-
-    const composer = page.locator('[contenteditable="true"]').last();
-    await composer.waitFor({ state: "visible", timeout: 30_000 });
-
-    const turns = [];
-    for (let i = 0; i < messageCount; i++) {
-      const token = `pong-${label}-${i}`;
-      const started = Date.now();
-      await composer.click();
-      await composer.pressSequentially(
-        `Reply with exactly: ${token} (benchmark turn, nothing else)`,
-      );
-      await page.getByRole("button", { name: "Send message" }).click();
-      // The reply contains the token; the composed message shows it too, so
-      // wait for at least two occurrences in the page text.
-      await page.waitForFunction(
-        (t) => (document.body.innerText.split(t).length - 1) >= 2,
-        token,
-        { timeout: REPLY_TIMEOUT_MS, polling: 1000 },
-      );
-      turns.push({ token, ms: Date.now() - started });
-      log(`turn ${i + 1}/${messageCount} done in ${turns[i].ms}ms`);
-    }
-    return turns;
+    return await fn(page);
   } finally {
-    // Do not browser.close(): over CDP that can close the app's window.
-    // Disconnecting the CDP session is enough.
+    // Do not close the app's window; disconnecting the CDP session is enough.
     await browser.close().catch(() => {});
   }
+}
+
+async function sendTurn(page, prompt, doneMarker) {
+  const composer = page.locator('[contenteditable="true"]').last();
+  await composer.waitFor({ state: "visible", timeout: 30_000 });
+  const started = Date.now();
+  await composer.click();
+  await composer.pressSequentially(prompt);
+  await page.getByRole("button", { name: "Send message" }).click();
+  // The reply contains the marker; the composed message shows it too, so
+  // wait for at least two occurrences in the page text.
+  await page.waitForFunction(
+    (t) => document.body.innerText.split(t).length - 1 >= 2,
+    doneMarker,
+    { timeout: REPLY_TIMEOUT_MS, polling: 1000 },
+  );
+  return Date.now() - started;
+}
+
+/** N cheap agent turns in the restored thread. */
+async function driveThread(page) {
+  const turns = [];
+  for (let i = 0; i < messageCount; i++) {
+    const token = `pong-${label}-${i}`;
+    const ms = await sendTurn(
+      page,
+      `Reply with exactly: ${token} (benchmark turn, nothing else)`,
+      token,
+    );
+    turns.push({ token, ms });
+    log(`turn ${i + 1}/${messageCount} done in ${ms}ms`);
+  }
+  return { turns };
+}
+
+/**
+ * One turn whose tool output is large (~40KB streamed to the transcript),
+ * exercising event streaming + conversation rendering, then a settle.
+ */
+async function driveLongOutput(page) {
+  const token = `longout-${label}`;
+  const ms = await sendTurn(
+    page,
+    `Run this exact bash command: seq 1 5000 — then reply with exactly: ${token}`,
+    token,
+  );
+  log(`long-output turn done in ${ms}ms`);
+  return { turns: [{ token, ms }] };
+}
+
+/**
+ * Hop across up to `messageCount` tasks in the sidebar (the realest daily
+ * workflow): expand the repo group, visit each task with a dwell so its
+ * transcript loads and its session connects, then return to the first.
+ */
+async function driveSwitch(page) {
+  const group = page.getByRole("button", { name: "posthog", exact: true });
+  if ((await group.getAttribute("aria-expanded")) === "false") {
+    await group.click();
+    await page.waitForTimeout(1500);
+  }
+  // Task rows are the only buttons with long accessible names.
+  const names = (
+    await page
+      .getByRole("button")
+      .evaluateAll((els) =>
+        els.map(
+          (el) => el.getAttribute("aria-label") || el.textContent?.trim() || "",
+        ),
+      )
+  )
+    // Row names end with a live relative-time suffix ("… 5m") that goes stale
+    // between enumeration and click; match on a title prefix instead.
+    .map((n) => n.replace(/\s*\d+[smhd]$/, "").slice(0, 40))
+    .filter((n) => n.length >= 30);
+  const visits = [];
+  const targets = names.slice(0, Math.max(2, messageCount));
+  for (const name of targets) {
+    const started = Date.now();
+    await page.getByRole("button", { name }).first().click();
+    await page.waitForTimeout(8000);
+    visits.push({ task: name, ms: Date.now() - started });
+    log(`visited: ${name}`);
+  }
+  // Best-effort return to the first task; the list may have re-sorted or
+  // virtualized it away, and the post-visit state is the measurement anyway.
+  if (targets.length) {
+    try {
+      await page
+        .getByRole("button", { name: targets[0] })
+        .first()
+        .click({ timeout: 5000 });
+      await page.waitForTimeout(5000);
+    } catch {
+      log("return-to-first skipped (row no longer locatable)");
+    }
+  }
+  return { visits };
+}
+
+async function driveWorkflow() {
+  return withRendererPage(async (page) => {
+    if (scenario === "switch") return driveSwitch(page);
+    if (scenario === "longout") return driveLongOutput(page);
+    return driveThread(page);
+  });
 }
 
 if (await portListening()) {
@@ -167,10 +255,10 @@ log(`idle: ${idle.totalRssMb}MB`);
 let workflow = null;
 let post = null;
 if (!idleOnly) {
-  const turns = await driveWorkflow();
+  workflow = await driveWorkflow();
+  workflow.scenario = scenario;
   await sleep(POST_WORKFLOW_SETTLE_MS);
   post = sample(`${label}-post`, 30);
-  workflow = { turns };
   log(`post-workflow: ${post.totalRssMb}MB`);
 }
 
