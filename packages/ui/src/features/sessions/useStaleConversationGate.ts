@@ -66,6 +66,9 @@ export function useStaleConversationGate(
   );
 
   return {
+    // shouldEngage covers the first paint before the effect latches;
+    // engagement covers every render after (reconnect events flip
+    // shouldEngage back off — see the hook doc).
     active: shouldEngage || engagement !== undefined,
     usedTokens,
     lastActivityAt: engagement ? engagement.lastActivityAt : liveLastActivityAt,

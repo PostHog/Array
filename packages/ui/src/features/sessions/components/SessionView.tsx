@@ -5,7 +5,7 @@ import {
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
-import type { AcpMessage } from "@posthog/shared";
+import { type AcpMessage, ANALYTICS_EVENTS } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import {
@@ -52,6 +52,7 @@ import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import {
   pendingTaskPromptStoreApi,
   usePendingTaskPrompt,
@@ -271,10 +272,38 @@ export function SessionView({
   // prompt cache has likely expired (see useStaleConversationGate).
   const staleGate = useStaleConversationGate(sessionId, events);
 
+  const trackStaleGateChoice = useCallback(
+    (choice: "compact" | "continue" | "new_session") =>
+      track(ANALYTICS_EVENTS.STALE_CONVERSATION_GATE_CHOICE, {
+        choice,
+        used_tokens: staleGate.usedTokens,
+        cost_usd: staleGate.costUsd,
+      }),
+    [staleGate.usedTokens, staleGate.costUsd],
+  );
+
   const handleStaleCompact = useCallback(() => {
+    if (!isOnline) {
+      showOfflineToast();
+      return;
+    }
+    trackStaleGateChoice("compact");
     staleGate.onContinue();
     onSendPrompt("/compact");
-  }, [staleGate.onContinue, onSendPrompt]);
+  }, [isOnline, trackStaleGateChoice, staleGate.onContinue, onSendPrompt]);
+
+  const handleStaleContinue = useCallback(() => {
+    trackStaleGateChoice("continue");
+    staleGate.onContinue();
+  }, [trackStaleGateChoice, staleGate.onContinue]);
+
+  const handleStaleNewSession = useMemo(() => {
+    if (!onNewSession) return undefined;
+    return () => {
+      trackStaleGateChoice("new_session");
+      onNewSession();
+    };
+  }, [trackStaleGateChoice, onNewSession]);
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
@@ -577,9 +606,11 @@ export function SessionView({
                       )}
                     </Flex>
                   </Flex>
-                ) : hideInput ? null : staleGate.active ? (
+                ) : hideInput ? null : staleGate.active && isRunning ? (
                   // Replaces the composer (and any pending permission — answering
                   // one also resumes the costly turn) until the user chooses.
+                  // Waits for isRunning so the choices can't fire into a session
+                  // that is still reconnecting.
                   <Box className="min-h-0 shrink-0 overflow-y-auto">
                     <Box
                       className={compact ? "p-1" : "mx-auto px-2 pb-3"}
@@ -593,9 +624,16 @@ export function SessionView({
                         usedTokens={staleGate.usedTokens}
                         lastActivityAt={staleGate.lastActivityAt}
                         costUsd={staleGate.costUsd}
-                        onContinue={staleGate.onContinue}
-                        onCompact={handleStaleCompact}
-                        onNewSession={onNewSession}
+                        onContinue={handleStaleContinue}
+                        // A queued /compact would land after the pending
+                        // permission resumes the costly turn — paying the
+                        // reload twice — so the option hides until then.
+                        onCompact={
+                          firstPendingPermission
+                            ? undefined
+                            : handleStaleCompact
+                        }
+                        onNewSession={handleStaleNewSession}
                       />
                     </Box>
                   </Box>

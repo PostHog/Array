@@ -135,6 +135,12 @@ export interface PromptSentProperties {
   prompt_length_chars: number;
 }
 
+export interface StaleConversationGateChoiceProperties {
+  choice: "compact" | "continue" | "new_session";
+  used_tokens: number;
+  cost_usd: number | null;
+}
+
 // Git operations
 export interface GitActionExecutedProperties {
   action_type: GitActionType;
@@ -1005,6 +1011,7 @@ export const ANALYTICS_EVENTS = {
   TASK_RUN_COMPLETED: "Task run completed",
   TASK_RUN_CANCELLED: "Task run cancelled",
   PROMPT_SENT: "Prompt sent",
+  STALE_CONVERSATION_GATE_CHOICE: "Stale conversation gate choice",
 
   // Claude Code session import
   CLAUDE_SESSIONS_SHOWN: "Claude Code sessions shown",
@@ -1159,6 +1166,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.TASK_RUN_COMPLETED]: TaskRunCompletedProperties;
   [ANALYTICS_EVENTS.TASK_RUN_CANCELLED]: TaskRunCancelledProperties;
   [ANALYTICS_EVENTS.PROMPT_SENT]: PromptSentProperties;
+  [ANALYTICS_EVENTS.STALE_CONVERSATION_GATE_CHOICE]: StaleConversationGateChoiceProperties;
 
   // Claude Code session import
   [ANALYTICS_EVENTS.CLAUDE_SESSIONS_SHOWN]: ClaudeSessionsShownProperties;

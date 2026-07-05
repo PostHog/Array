@@ -12,8 +12,12 @@ interface StaleConversationCostNoticeProps {
   /** Cumulative session cost so far, when the gateway reports it. */
   costUsd: number | null;
   onContinue: () => void;
-  /** Compact the thread: pay the reload once, then every later turn is smaller. */
-  onCompact: () => void;
+  /**
+   * Compact the thread: pay the reload once, then every later turn is
+   * smaller. Omitted while a permission is pending — a queued /compact would
+   * land after answering it, paying the reload twice.
+   */
+  onCompact?: () => void;
   onNewSession?: () => void;
 }
 
@@ -40,13 +44,18 @@ export function StaleConversationCostNotice({
   return (
     <ActionSelector
       title="Continue this large, idle conversation?"
-      question={`This conversation holds about ${formatTokensCompact(usedTokens)} tokens and ${activity}${spent}. Its prompt cache has likely expired, so the next message re-processes everything at full input price instead of the ~10% cached rate. How do you want to continue?`}
+      question={`This conversation holds about ${formatTokensCompact(usedTokens)} tokens and ${activity}. Its prompt cache has likely expired, so the next message re-processes everything at full input price instead of the ~10% cached rate${spent}. How do you want to continue?`}
       options={[
-        {
-          id: COMPACT_OPTION,
-          label: "Compact and continue",
-          description: "Pays the reload once, then every later turn is cheaper",
-        },
+        ...(onCompact
+          ? [
+              {
+                id: COMPACT_OPTION,
+                label: "Compact and continue",
+                description:
+                  "Pays the reload once, then every later turn is cheaper",
+              },
+            ]
+          : []),
         {
           id: CONTINUE_OPTION,
           label: "Continue anyway",
@@ -63,9 +72,9 @@ export function StaleConversationCostNotice({
           : []),
       ]}
       onSelect={(optionId) => {
-        if (optionId === COMPACT_OPTION) onCompact();
+        if (optionId === COMPACT_OPTION) onCompact?.();
         else if (optionId === CONTINUE_OPTION) onContinue();
-        else onNewSession?.();
+        else if (optionId === NEW_SESSION_OPTION) onNewSession?.();
       }}
     />
   );

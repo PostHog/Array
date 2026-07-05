@@ -102,18 +102,25 @@ export function ActionSelector({
     hasSteps,
     showSubmitButton,
     multiSelect,
+    hasCancel: onCancel !== undefined,
   });
   stateRef.current = {
     showInlineEdit,
     hasSteps,
     showSubmitButton,
     multiSelect,
+    hasCancel: onCancel !== undefined,
   };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const { showInlineEdit, hasSteps, showSubmitButton, multiSelect } =
-        stateRef.current;
+      const {
+        showInlineEdit,
+        hasSteps,
+        showSubmitButton,
+        multiSelect,
+        hasCancel,
+      } = stateRef.current;
       const h = handlersRef.current;
 
       if (showInlineEdit || document.activeElement?.tagName === "TEXTAREA")
@@ -179,6 +186,8 @@ export function ActionSelector({
           }
           break;
         case "Escape":
+          // Nothing to cancel — let Escape bubble instead of swallowing it.
+          if (!hasCancel) break;
           e.preventDefault();
           e.stopPropagation();
           h.handleCancel();
