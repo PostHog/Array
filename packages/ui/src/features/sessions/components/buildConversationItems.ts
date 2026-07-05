@@ -310,15 +310,32 @@ export function finalizeBuilder(
     b.currentTurn.context.turnComplete = true;
   }
 
-  // Post-pass: assign deferred checkpoints now that every turn is known.
-  //
-  // promptId is unique WITHIN a session but repeats across a local→cloud→local
-  // handoff (the cloud session restarts prompt numbering and post-restore turns
-  // reuse low ids), so a raw `allTurns.get(promptId)` mis-binds — the cloud/
-  // post-restore turns would steal the harness/alpha turns' checkpoints. Use
-  // promptId only when it identifies exactly one turn; otherwise fall back to the
-  // event timestamp, which is monotonic across the whole run. Process in ts order
-  // so the latest checkpoint inside a turn's window wins.
+  // Bind deferred git checkpoints to their turns now that every turn is known.
+  assignDeferredCheckpoints(b);
+
+  markThoughtCompletion(b.items);
+}
+
+/**
+ * Bind deferred git checkpoints to their turns. A checkpoint arrives as a
+ * standalone event and is only mappable once every turn in the batch exists, so
+ * `processEvent` defers them into `pendingCheckpoints`; this assigns each to a
+ * turn's `lastCheckpointId` (which drives the per-turn restore button).
+ *
+ * Safe to run incrementally: it only sets `lastCheckpointId`, never completing a
+ * turn, so the streaming builder calls it every frame to keep PAST turns'
+ * restore icons live while the current turn is still generating (otherwise those
+ * turns fall back to the misleading "No checkpoint was captured" until idle).
+ *
+ * promptId is unique WITHIN a session but repeats across a local→cloud→local
+ * handoff (the cloud session restarts prompt numbering and post-restore turns
+ * reuse low ids), so a raw `allTurns.get(promptId)` mis-binds — the cloud/
+ * post-restore turns would steal the harness/alpha turns' checkpoints. Use
+ * promptId only when it identifies exactly one turn; otherwise fall back to the
+ * event timestamp, which is monotonic across the whole run. Process in ts order
+ * so the latest checkpoint inside a turn's window wins.
+ */
+export function assignDeferredCheckpoints(b: ItemBuilder): void {
   const checkpointsByTs = [...b.pendingCheckpoints].sort((a, c) => a.ts - c.ts);
   for (const { checkpointId, promptId, ts } of checkpointsByTs) {
     // Checkpoints with no promptId are internal handoff snapshots (e.g. the
@@ -345,8 +362,6 @@ export function finalizeBuilder(
       targetTurn.context.lastCheckpointId = checkpointId;
     }
   }
-
-  markThoughtCompletion(b.items);
 }
 
 export function readLastTurnInfo(b: ItemBuilder): LastTurnInfo | null {

@@ -305,10 +305,24 @@ export const sessionStoreSetters = {
     }
     if (checkpointEventIdx === -1) return false;
 
+    // A new user turn starts either as a live `session/prompt` request or — after a
+    // reconnect has replayed events from the log — as a `user_message_chunk`
+    // session/update (the same two boundaries buildConversationItems groups on). The
+    // original scan matched only the former, so a SECOND consecutive restore (whose
+    // events were rebuilt by the prior restore's reconnect) found no boundary, left
+    // cutoff at events.length, and never trimmed the post-checkpoint turns from the
+    // live view until a reload rebuilt them from the (correctly truncated) cache.
     let cutoff = events.length;
     for (let i = checkpointEventIdx + 1; i < events.length; i++) {
       const msg = events[i].message;
-      if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
+      const isLivePrompt =
+        isJsonRpcRequest(msg) && msg.method === "session/prompt";
+      const isReplayedUserMessage =
+        isJsonRpcNotification(msg) &&
+        msg.method === "session/update" &&
+        (msg.params as { update?: { sessionUpdate?: string } } | undefined)
+          ?.update?.sessionUpdate === "user_message_chunk";
+      if (isLivePrompt || isReplayedUserMessage) {
         cutoff = i;
         break;
       }

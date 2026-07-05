@@ -3334,6 +3334,16 @@ export class SessionService {
     const modeOpt = getConfigOptionByCategory(persistedConfigOptions, "mode");
     const persistedMode =
       modeOpt?.type === "select" ? String(modeOpt.currentValue) : undefined;
+    // Spawn the resumed runtime WITH the persisted model, mirroring
+    // reconnectToLocalSession. Previously restore relied solely on the
+    // post-reconnect setConfigOption replay below, so the runtime first came up
+    // on the gateway default (claude-opus for Claude, gpt-5.5 for Codex) — which
+    // looked like the model "resetting" after a restore. If persistedModel is
+    // undefined here the model was already lost upstream (cloud roundtrip); the
+    // log line surfaces that.
+    const modelOpt = getConfigOptionByCategory(persistedConfigOptions, "model");
+    const persistedModel =
+      modelOpt?.type === "select" ? String(modelOpt.currentValue) : undefined;
     const { customInstructions } = this.d.settings;
 
     this.d.log.info(
@@ -3342,6 +3352,8 @@ export class SessionService {
         taskRunId,
         restoredSessionId,
         willResumeSession: !!restoredSessionId,
+        resolvedAdapter,
+        persistedModel: persistedModel ?? "(none — will use gateway default)",
       },
     );
 
@@ -3364,6 +3376,7 @@ export class SessionService {
         sessionId: restoredSessionId ?? undefined,
         adapter: resolvedAdapter,
         permissionMode: persistedMode,
+        model: persistedModel,
         customInstructions: customInstructions || undefined,
       });
 

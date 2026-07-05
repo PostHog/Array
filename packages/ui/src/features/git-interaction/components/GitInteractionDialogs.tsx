@@ -154,6 +154,13 @@ interface GitDialogProps {
   onSubmit: () => void;
   maxWidth?: string;
   hideCancel?: boolean;
+  /**
+   * When set, the dialog cannot be dismissed (Cancel, Escape, overlay click)
+   * while `isSubmitting` is true. Use for actions whose work can't be aborted
+   * once started — e.g. checkpoint restore commits a destructive git revert, so
+   * a "Cancel" mid-flight would falsely imply it stopped.
+   */
+  lockWhileSubmitting?: boolean;
 }
 
 export function GitDialog({
@@ -170,9 +177,19 @@ export function GitDialog({
   onSubmit,
   maxWidth = "400px",
   hideCancel,
+  lockWhileSubmitting,
 }: GitDialogProps) {
+  const locked = !!lockWhileSubmitting && isSubmitting;
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(next) => {
+        // Swallow dismiss attempts while locked so Escape / overlay click can't
+        // close the dialog mid-submit.
+        if (locked && !next) return;
+        onOpenChange(next);
+      }}
+    >
       <Dialog.Content maxWidth={maxWidth} size="1">
         <Flex direction="column" gap="3">
           <Flex align="center" gap="2">
@@ -185,13 +202,18 @@ export function GitDialog({
           {error && <ErrorContainer error={error} />}
 
           <Flex gap="2" justify="end">
-            {!hideCancel && (
-              <Dialog.Close>
-                <Button size="1" variant="soft" color="gray">
+            {!hideCancel &&
+              (locked ? (
+                <Button size="1" variant="soft" color="gray" disabled>
                   Cancel
                 </Button>
-              </Dialog.Close>
-            )}
+              ) : (
+                <Dialog.Close>
+                  <Button size="1" variant="soft" color="gray">
+                    Cancel
+                  </Button>
+                </Dialog.Close>
+              ))}
             <Button
               size="1"
               color={buttonColor}

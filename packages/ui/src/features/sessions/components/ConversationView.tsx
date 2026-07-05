@@ -147,6 +147,21 @@ export function ConversationView({
   }
   const firstUserMessageId = firstUserMessageIdRef.current;
 
+  // The turn the agent is actively answering: the last user message while a
+  // prompt is in flight. A turn's checkpoint is only captured on completion, so
+  // this turn legitimately has no `lastCheckpointId` yet — its restore icon
+  // needs a "still responding" reason rather than the generic (and misleading)
+  // "no checkpoint captured". Earlier completed turns remain restorable; only
+  // this one is disabled while the response is streaming.
+  const activeTurnUserMessageId = useMemo(() => {
+    if (!isPromptPending) return undefined;
+    for (let i = conversationItems.length - 1; i >= 0; i--) {
+      if (conversationItems[i].type === "user_message")
+        return conversationItems[i].id;
+    }
+    return undefined;
+  }, [conversationItems, isPromptPending]);
+
   const [initialItemIds] = useState(
     () =>
       new Set(
@@ -287,7 +302,9 @@ export function ConversationView({
                     : isReconnecting
                       ? "Reconnecting to the agent after your last restore, you can restore again in a moment."
                       : undefined
-                  : "No checkpoint was captured for this turn"
+                  : item.id === activeTurnUserMessageId
+                    ? "The agent is still responding to this turn — you can restore it once the response completes."
+                    : "No checkpoint was captured for this turn"
               }
             />
           );
@@ -327,6 +344,7 @@ export function ConversationView({
       restoreBusy,
       isHandingOff,
       isReconnecting,
+      activeTurnUserMessageId,
     ],
   );
 

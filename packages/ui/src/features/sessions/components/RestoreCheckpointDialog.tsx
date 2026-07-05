@@ -31,6 +31,7 @@ export function RestoreCheckpointDialog({
       buttonLabel="Restore"
       buttonColor="red"
       isSubmitting={isLoading}
+      lockWhileSubmitting
       onSubmit={onConfirm}
     >
       <Text color="gray" className="text-[13px]">
@@ -38,7 +39,7 @@ export function RestoreCheckpointDialog({
           ? "This will revert all file changes made after this point. You'll need to continue the task locally to resume from here."
           : `This will revert all file changes made after this point. This action cannot be undone.${
               isTurnInProgress
-                ? " The agent is still responding — restoring will stop the current response."
+                ? " The agent is still responding, restoring will stop the current response."
                 : ""
             }`}
       </Text>

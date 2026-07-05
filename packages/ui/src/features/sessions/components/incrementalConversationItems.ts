@@ -1,5 +1,6 @@
 import type { AcpMessage } from "@posthog/shared";
 import {
+  assignDeferredCheckpoints,
   type BuildConversationOptions,
   type BuildResult,
   buildConversationItems,
@@ -103,6 +104,13 @@ export function createIncrementalConversationBuilder() {
       turn.context.turnComplete = true;
     }
 
+    // Bind checkpoints to their turns on the live path too. `processEvent` only
+    // defers them into `pendingCheckpoints`; without this, PAST turns never get a
+    // `lastCheckpointId` while the current turn is streaming and their restore
+    // icons wrongly read "No checkpoint was captured". Cheap + idempotent, and it
+    // matches what `buildConversationItems` (the idle full rebuild) produces.
+    assignDeferredCheckpoints(builder);
+
     markThoughtCompletion(builder.items);
 
     return {
@@ -133,10 +141,14 @@ function assembleItems(
   // so pass them through by reference.
   const activeContext: TurnContext | null = turn
     ? {
+        // Spread the whole context so ALL fields carry through (notably
+        // lastCheckpointId — hand-picking fields dropped it, which both failed
+        // the TurnContext type and stopped a mid-stream checkpoint from lighting
+        // up the active turn's restore icon). Clone only the two Maps so the
+        // streamed turn's memoized views re-render off fresh identities.
+        ...turn.context,
         toolCalls: new Map(turn.context.toolCalls),
         childItems: new Map(turn.context.childItems),
-        turnCancelled: turn.context.turnCancelled,
-        turnComplete: turn.context.turnComplete,
       }
     : null;
 

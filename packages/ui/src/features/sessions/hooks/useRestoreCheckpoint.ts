@@ -63,16 +63,39 @@ export function useRestoreCheckpoint({
 
     setIsRestoring(true);
     try {
+      // If the agent is mid-response (restoring a PAST turn while the current one
+      // is still streaming), stop it first — restore rewinds the code and history
+      // to this checkpoint, so letting the in-flight turn keep streaming would
+      // race the restore and leak output past the restore point. Mirrors the stop
+      // button / Esc. Best-effort: the turn can finish between this check and the
+      // call, so a no-op/failed cancel must never block the restore.
+      if (taskId && session?.isPromptPending) {
+        await sessionService.cancelPrompt(taskId).catch(() => {});
+      }
       const restoreResult = await sessionService.restoreCheckpoint({
         checkpointId: pendingCheckpointId,
         repoPath,
         taskRunId,
       });
+      let liveViewStale = false;
       if (taskId) {
-        sessionStoreSetters.truncateEventsToCheckpoint(
+        // Trim the live in-memory transcript to the restored checkpoint. Returns
+        // false when the checkpoint's GIT_CHECKPOINT marker isn't present in the
+        // live events (can happen for some cloud-origin checkpoints whose marker
+        // only exists in the persisted log, not the in-memory stream). In that
+        // case there's nothing to trim in place — the backend log + local cache
+        // are still truncated correctly, so the view fully reconciles on the next
+        // reload. Surface it instead of silently leaving stale turns on screen.
+        liveViewStale = !sessionStoreSetters.truncateEventsToCheckpoint(
           taskId,
           pendingCheckpointId,
         );
+        if (liveViewStale) {
+          console.warn(
+            "[restore] live event trim skipped — checkpoint marker not in live events; view will reconcile on reload",
+            { taskId, checkpointId: pendingCheckpointId },
+          );
+        }
         // Reconnect the agent, resuming the same Codex/Claude session so the
         // agent has memory only up to the restored checkpoint.
         sessionService
@@ -87,6 +110,10 @@ export function useRestoreCheckpoint({
       if (restoreResult?.truncationFailed) {
         toast.warning(
           "Checkpoint restored, but trimming the agent's history failed — it may still remember messages after this point.",
+        );
+      } else if (liveViewStale) {
+        toast.info(
+          "Checkpoint restored. Reload the task to fully refresh the conversation view.",
         );
       } else {
         toast.success("Checkpoint restored successfully");
