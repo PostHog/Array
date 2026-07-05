@@ -15,6 +15,8 @@
  * Usage:
  *   node scripts/bench-memory-run.mjs [--port 9223] [--messages 2]
  *     [--label <label>] [--out results.jsonl] [--idle-only]
+ *     [--scenario thread|switch|longout]
+ *     [--thread-task-id <id>] [--thread-title <title>]
  *
  * Prints a JSON report; final line is `TOTAL_RSS_MB=<post-workflow median>`
  * (idle median with --idle-only) for predicate extraction via `tail -1`.
@@ -22,6 +24,13 @@
  * NOTE: workflow turns hit the real agent backend with trivial prompts
  * ("reply with exactly <token>") to keep token cost minimal while exercising
  * the real agent-session memory path.
+ *
+ * IMPORTANT: the `thread` and `longout` scenarios send turns into a dedicated
+ * throwaway task so benchmark chatter never lands in real work. The default
+ * --thread-task-id/--thread-title point at the original author's local bench
+ * task — in any other environment, create a scratch task once and pass its id
+ * and title explicitly, or the run aborts with "refusing to send benchmark
+ * turns".
  */
 
 import { execFileSync, spawn } from "node:child_process";
@@ -29,7 +38,10 @@ import { appendFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 
 const args = process.argv.slice(2);
 function arg(name, fallback) {
@@ -144,7 +156,8 @@ async function openBenchTask(page) {
     .catch(() => "");
   if (!header?.includes(title)) {
     throw new Error(
-      `refusing to send benchmark turns: open task is "${header}", expected "${title}"`,
+      `refusing to send benchmark turns: open task is "${header}", expected "${title}". ` +
+        `Create a throwaway task in your environment and pass --thread-task-id/--thread-title.`,
     );
   }
 }

@@ -82,6 +82,21 @@ describe("useUserPresence", () => {
     expect(result.current).toBe(false);
   });
 
+  it("stays present under a sub-throttle idle threshold while interacting", () => {
+    // idleMs below the 15s activity throttle: the throttle must scale down or
+    // active input would be dropped and the user pinned "away".
+    const { result } = renderHook(() => useUserPresence(10_000));
+
+    act(() => {
+      for (let i = 0; i < 20; i++) {
+        vi.advanceTimersByTime(4_000);
+        window.dispatchEvent(new Event("keydown"));
+      }
+    });
+
+    expect(result.current).toBe(true);
+  });
+
   it("removes listeners on unmount", () => {
     const removeSpy = vi.spyOn(window, "removeEventListener");
     const { unmount } = renderHook(() => useUserPresence());
@@ -90,7 +105,13 @@ describe("useUserPresence", () => {
 
     const removed = removeSpy.mock.calls.map(([event]) => event);
     expect(removed).toEqual(
-      expect.arrayContaining(["pointerdown", "keydown", "wheel", "focus"]),
+      expect.arrayContaining([
+        "pointerdown",
+        "pointermove",
+        "keydown",
+        "wheel",
+        "focus",
+      ]),
     );
   });
 });

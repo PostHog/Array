@@ -46,11 +46,15 @@ export function useUserPresence(
   useEffect(() => {
     let lastActivityAt = Date.now();
     let lastRecordedAt = lastActivityAt;
+    // Scale the throttle down for small idleMs (test knobs): a fixed 15s
+    // throttle with idleMs <= 15s would drop every input and pin the user
+    // "away" while they actively interact.
+    const throttleMs = Math.min(ACTIVITY_THROTTLE_MS, idleMs / 4);
 
     const onActivity = (event: Event) => {
       if (event.type !== "focus" && !document.hasFocus()) return;
       const now = Date.now();
-      if (now - lastRecordedAt < ACTIVITY_THROTTLE_MS) return;
+      if (now - lastRecordedAt < throttleMs) return;
       lastRecordedAt = now;
       lastActivityAt = now;
       setPresent(true);

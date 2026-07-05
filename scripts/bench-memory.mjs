@@ -122,7 +122,9 @@ async function rendererHeapMb() {
       signal: AbortSignal.timeout(2000),
     });
     const targets = await res.json();
-    const page = targets.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
+    const page = targets.find(
+      (t) => t.type === "page" && t.webSocketDebuggerUrl,
+    );
     if (!page) return null;
     const ws = new WebSocket(page.webSocketDebuggerUrl);
     const heap = await new Promise((resolve) => {
@@ -162,9 +164,7 @@ function median(values) {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2
-    ? sorted[mid]
-    : (sorted[mid - 1] + sorted[mid]) / 2;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 const rootPid = rootPidFromCdpPort();
@@ -198,7 +198,8 @@ const heapSamples = samples.map((s) => s.heapMb).filter((h) => h != null);
 const categories = {};
 for (const s of samples) {
   for (const [k, v] of Object.entries(s.byCategoryMb)) {
-    (categories[k] ??= []).push(v);
+    categories[k] ??= [];
+    categories[k].push(v);
   }
 }
 
