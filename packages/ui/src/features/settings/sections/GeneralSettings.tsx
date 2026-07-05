@@ -40,6 +40,9 @@ export function GeneralSettings() {
   const { data: serverPreventSleep } = useQuery(
     hostTRPC.sleep.getEnabled.queryOptions(),
   );
+  const { data: hasBuiltInBattery } = useQuery(
+    hostTRPC.sleep.hasBuiltInBattery.queryOptions(),
+  );
   const preventSleepMutation = useMutation(
     hostTRPC.sleep.setEnabled.mutationOptions(),
   );
@@ -434,7 +437,11 @@ export function GeneralSettings() {
 
       <SettingRow
         label="Keep awake while agents work"
-        description="Prevent your computer from sleeping while the agent is running a task"
+        description={
+          hasBuiltInBattery
+            ? "Prevent your computer from going to sleep on its own while the agent is running a task. Closing the lid will still put it to sleep."
+            : "Prevent your computer from going to sleep on its own while the agent is running a task"
+        }
         noBorder
       >
         <Switch

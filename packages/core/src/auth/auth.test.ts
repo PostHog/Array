@@ -27,6 +27,7 @@ vi.mock("@posthog/shared", async (importOriginal) => {
 const mockPowerManager = vi.hoisted(() => ({
   onResume: vi.fn(() => () => {}),
   preventSleep: vi.fn(() => () => {}),
+  hasBuiltInBattery: vi.fn(async () => false),
 }));
 
 function createSessionPort(): IAuthSessionStore {
