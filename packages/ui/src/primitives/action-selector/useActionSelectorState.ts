@@ -103,6 +103,12 @@ export function useActionSelectorState({
     isEditing && selectedOption && needsCustomInput(selectedOption);
   const canSubmitOrAdvance = checkedOptions.size > 0;
 
+  // Options can change while mounted (a consumer adding/removing a choice);
+  // clamp so the highlight and Enter never reference past the end of the list.
+  useEffect(() => {
+    setSelectedIndex((i) => Math.min(i, Math.max(0, numOptions - 1)));
+  }, [numOptions]);
+
   useEffect(() => {
     if (!isInteractiveElementInDifferentCell(containerRef)) {
       containerRef.current?.focus();

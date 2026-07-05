@@ -36,7 +36,10 @@ export function useStaleConversationGate(
   const contextUsage = useContextUsage(events);
   const { data: currentUser } = useMeQuery();
   const isStaff = currentUser?.is_staff === true;
-  const engagement = useStaleConversationGateStore((s) =>
+  const engaged = useStaleConversationGateStore((s) =>
+    s.engagedSessions.has(sessionId),
+  );
+  const engagedLastActivityAt = useStaleConversationGateStore((s) =>
     s.engagedSessions.get(sessionId),
   );
   const acknowledged = useStaleConversationGateStore((s) =>
@@ -67,11 +70,13 @@ export function useStaleConversationGate(
 
   return {
     // shouldEngage covers the first paint before the effect latches;
-    // engagement covers every render after (reconnect events flip
+    // engaged covers every render after (reconnect events flip
     // shouldEngage back off — see the hook doc).
-    active: shouldEngage || engagement !== undefined,
+    active: shouldEngage || engaged,
     usedTokens,
-    lastActivityAt: engagement ? engagement.lastActivityAt : liveLastActivityAt,
+    lastActivityAt: engaged
+      ? (engagedLastActivityAt ?? null)
+      : liveLastActivityAt,
     costUsd: contextUsage?.cost?.amount ?? null,
     onContinue,
   };

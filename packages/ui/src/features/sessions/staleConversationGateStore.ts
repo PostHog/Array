@@ -3,12 +3,13 @@ import { create } from "zustand";
 interface StaleConversationGateState {
   /**
    * Sessions where the gate engaged, keyed to the last-activity time observed
-   * at that moment. Latched because reconnecting to a stale session
-   * immediately appends freshly-stamped events (usage updates, handshakes)
-   * that would otherwise make the conversation look active again and dismiss
-   * the warning before the user has chosen.
+   * at that moment (null when no activity was observed). Latched because
+   * reconnecting to a stale session immediately appends freshly-stamped
+   * events (usage updates, handshakes) that would otherwise make the
+   * conversation look active again and dismiss the warning before the user
+   * has chosen.
    */
-  engagedSessions: Map<string, { lastActivityAt: number | null }>;
+  engagedSessions: Map<string, number | null>;
   /** Sessions where the user accepted the "large + idle = costly" warning. */
   acknowledgedSessions: Set<string>;
 }
@@ -40,7 +41,7 @@ export const useStaleConversationGateStore =
           return state;
         }
         const next = new Map(state.engagedSessions);
-        next.set(sessionId, { lastActivityAt });
+        next.set(sessionId, lastActivityAt);
         return { engagedSessions: next };
       }),
 
@@ -49,6 +50,9 @@ export const useStaleConversationGateStore =
         if (state.acknowledgedSessions.has(sessionId)) return state;
         const nextAcknowledged = new Set(state.acknowledgedSessions);
         nextAcknowledged.add(sessionId);
+        if (!state.engagedSessions.has(sessionId)) {
+          return { acknowledgedSessions: nextAcknowledged };
+        }
         const nextEngaged = new Map(state.engagedSessions);
         nextEngaged.delete(sessionId);
         return {

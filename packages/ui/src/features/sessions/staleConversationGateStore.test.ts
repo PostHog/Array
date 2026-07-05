@@ -20,14 +20,14 @@ describe("useStaleConversationGateStore", () => {
 
   it("engages a single session with its last-activity snapshot", () => {
     state().engage("s1", 1000);
-    expect(state().engagedSessions.get("s1")).toEqual({ lastActivityAt: 1000 });
+    expect(state().engagedSessions.get("s1")).toBe(1000);
     expect(engaged("s2")).toBe(false);
   });
 
   it("keeps the first engagement snapshot when engaged again", () => {
     state().engage("s1", 1000);
     state().engage("s1", 2000);
-    expect(state().engagedSessions.get("s1")).toEqual({ lastActivityAt: 1000 });
+    expect(state().engagedSessions.get("s1")).toBe(1000);
   });
 
   it("does not re-engage an acknowledged session", () => {
@@ -61,5 +61,12 @@ describe("useStaleConversationGateStore", () => {
     state().acknowledge("s1");
     const second = state().acknowledgedSessions;
     expect(second).toBe(first);
+  });
+
+  it("acknowledging a never-engaged session keeps the engaged Map reference", () => {
+    state().engage("s2", 1000);
+    const before = state().engagedSessions;
+    state().acknowledge("s1");
+    expect(state().engagedSessions).toBe(before);
   });
 });

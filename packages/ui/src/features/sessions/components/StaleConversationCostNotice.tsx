@@ -1,3 +1,4 @@
+import { formatUsd } from "@posthog/core/billing/spendAnalysisFormat";
 import { formatRelativeTimeLong } from "@posthog/shared";
 import { formatTokensCompact } from "@posthog/ui/features/sessions/contextColors";
 import { ActionSelector } from "@posthog/ui/primitives/ActionSelector";
@@ -40,7 +41,7 @@ export function StaleConversationCostNotice({
       ? `was last active ${formatRelativeTimeLong(lastActivityAt)}`
       : "has been idle";
   const spent =
-    costUsd !== null ? ` (≈$${costUsd.toFixed(2)} spent so far)` : "";
+    costUsd !== null ? ` (≈${formatUsd(costUsd)} spent so far)` : "";
   return (
     <ActionSelector
       title="Continue this large, idle conversation?"
