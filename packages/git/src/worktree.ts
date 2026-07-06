@@ -573,7 +573,6 @@ export class WorktreeManager {
     this.log.info("Waiting for repo write lock", {
       mainRepoPath: this.mainRepoPath,
     });
-    onOutput?.("Waiting for other git operations to finish...\n");
     return manager.executeWrite(this.mainRepoPath, async () => {
       this.log.info("Repo write lock acquired", {
         mainRepoPath: this.mainRepoPath,
