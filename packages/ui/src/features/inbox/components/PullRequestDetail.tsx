@@ -129,7 +129,12 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
     >
       <ReportTasksSection report={report} />
       <SuggestedReviewersSection report={report} />
-      <ReportActivitySection reportId={report.id} />
+      <ReportActivitySection
+        reportId={report.id}
+        // The main column already lists every changed file, so the
+        // per-commit diff toggle in the activity log is redundant here.
+        hideCommitDiffs={Boolean(prRef && report.implementation_pr_url)}
+      />
     </InboxDetailFrame>
   );
 }
