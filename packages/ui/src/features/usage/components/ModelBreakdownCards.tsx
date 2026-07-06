@@ -7,13 +7,6 @@ import type { SpendAnalysisModelRow } from "@posthog/core/billing/spendAnalysisT
 import { Flex, Text } from "@radix-ui/themes";
 import { UsageCard } from "./UsageCard";
 
-const DOT_COLORS = [
-  "var(--accent-9)",
-  "var(--blue-9)",
-  "var(--purple-9)",
-  "var(--amber-9)",
-];
-
 function ModelStat({ label, value }: { label: string; value: string }) {
   return (
     <Flex align="center" justify="between">
@@ -39,7 +32,7 @@ export function ModelBreakdownCards({
       title="Cost by model"
     >
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        {rows.map((row, index) => {
+        {rows.map((row) => {
           const share =
             scopedCostUsd > 0
               ? Math.round((row.cost_usd / scopedCostUsd) * 100)
@@ -53,12 +46,6 @@ export function ModelBreakdownCards({
               className="rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2)"
             >
               <Flex align="center" gap="2">
-                <span
-                  className="h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={{
-                    backgroundColor: DOT_COLORS[index % DOT_COLORS.length],
-                  }}
-                />
                 <Text className="truncate font-medium text-sm">
                   {row.model ?? "(unknown)"}
                 </Text>
