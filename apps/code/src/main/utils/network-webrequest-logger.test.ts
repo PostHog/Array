@@ -21,7 +21,7 @@ import type { ObservableWebRequest } from "./network-webrequest-logger";
 import { contentLengthFromHeaders } from "./network-webrequest-logger";
 
 type Listeners = {
-  onBeforeRequest: Parameters<ObservableWebRequest["onBeforeRequest"]>[1];
+  onSendHeaders: Parameters<ObservableWebRequest["onSendHeaders"]>[1];
   onCompleted: Parameters<ObservableWebRequest["onCompleted"]>[1];
   onErrorOccurred: Parameters<ObservableWebRequest["onErrorOccurred"]>[1];
 };
@@ -33,8 +33,8 @@ function fakeWebRequest(): { webRequest: ObservableWebRequest } & {
   return {
     listeners,
     webRequest: {
-      onBeforeRequest: (_filter, listener) => {
-        listeners.onBeforeRequest = listener;
+      onSendHeaders: (_filter, listener) => {
+        listeners.onSendHeaders = listener;
       },
       onCompleted: (_filter, listener) => {
         listeners.onCompleted = listener;
@@ -84,29 +84,20 @@ describe("contentLengthFromHeaders", () => {
 });
 
 describe("installRendererNetworkLogging", () => {
-  it("always invokes the onBeforeRequest callback", async () => {
-    const { listeners } = await installFresh();
-    const callback = vi.fn();
-
-    listeners.onBeforeRequest(
-      { id: 1, method: "GET", url: "https://example.com/" },
-      callback,
-    );
-
-    expect(callback).toHaveBeenCalledWith({});
-  });
-
   it("records a completed request and mirrors it to the dev toolbar", async () => {
     const { listeners, devNetwork, record } = await installFresh();
 
-    listeners.onBeforeRequest(
-      { id: 7, method: "GET", url: "https://us.posthog.com/api/" },
-      vi.fn(),
-    );
+    listeners.onSendHeaders({
+      id: 7,
+      method: "GET",
+      url: "https://us.posthog.com/api/",
+      timestamp: 1_000,
+    });
     listeners.onCompleted({
       id: 7,
       method: "GET",
       url: "https://us.posthog.com/api/",
+      timestamp: 1_290,
       statusCode: 200,
       responseHeaders: { "Content-Length": ["1834"] },
     });
@@ -116,7 +107,7 @@ describe("installRendererNetworkLogging", () => {
       method: "GET",
       url: "https://us.posthog.com/api/",
       status: 200,
-      durationMs: expect.any(Number),
+      durationMs: 290,
       bytes: 1834,
     });
     expect(devNetwork.recordExternal).toHaveBeenCalledWith(
@@ -124,6 +115,8 @@ describe("installRendererNetworkLogging", () => {
         origin: "renderer",
         status: 200,
         ok: true,
+        durationMs: 290,
+        startedAt: 1_000,
         bytes: 1834,
       }),
     );
@@ -132,14 +125,17 @@ describe("installRendererNetworkLogging", () => {
   it("records a failed request with the chromium error string", async () => {
     const { listeners, devNetwork, record } = await installFresh();
 
-    listeners.onBeforeRequest(
-      { id: 9, method: "POST", url: "https://example.com/x" },
-      vi.fn(),
-    );
+    listeners.onSendHeaders({
+      id: 9,
+      method: "POST",
+      url: "https://example.com/x",
+      timestamp: 5_000,
+    });
     listeners.onErrorOccurred({
       id: 9,
       method: "POST",
       url: "https://example.com/x",
+      timestamp: 5_120,
       error: "net::ERR_CONNECTION_RESET",
     });
 
@@ -148,13 +144,15 @@ describe("installRendererNetworkLogging", () => {
       method: "POST",
       url: "https://example.com/x",
       status: null,
-      durationMs: expect.any(Number),
+      durationMs: 120,
       bytes: null,
       error: "net::ERR_CONNECTION_RESET",
     });
     expect(devNetwork.recordExternal).toHaveBeenCalledWith(
       expect.objectContaining({
         ok: false,
+        durationMs: 120,
+        startedAt: 5_000,
         error: "net::ERR_CONNECTION_RESET",
       }),
     );
@@ -167,6 +165,7 @@ describe("installRendererNetworkLogging", () => {
       id: 3,
       method: "GET",
       url: "https://example.com/missing",
+      timestamp: 2_000,
       statusCode: 404,
     });
 
@@ -175,13 +174,14 @@ describe("installRendererNetworkLogging", () => {
     );
   });
 
-  it("still records completions whose start entry was evicted", async () => {
+  it("still records completions with no start entry (evicted or cache hit that skipped onSendHeaders)", async () => {
     const { listeners, record } = await installFresh();
 
     listeners.onCompleted({
       id: 999,
       method: "GET",
       url: "https://example.com/",
+      timestamp: 3_000,
       statusCode: 200,
     });
 

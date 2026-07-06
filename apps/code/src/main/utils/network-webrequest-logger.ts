@@ -9,6 +9,7 @@ interface RequestDetails {
   id: number;
   method: string;
   url: string;
+  timestamp: number;
 }
 
 interface CompletedDetails extends RequestDetails {
@@ -21,12 +22,9 @@ interface FailedDetails extends RequestDetails {
 }
 
 export interface ObservableWebRequest {
-  onBeforeRequest(
+  onSendHeaders(
     filter: WebRequestFilter,
-    listener: (
-      details: RequestDetails,
-      callback: (response: { cancel?: boolean }) => void,
-    ) => void,
+    listener: (details: RequestDetails) => void,
   ): void;
   onCompleted(
     filter: WebRequestFilter,
@@ -45,18 +43,18 @@ interface PendingRequest {
 const MAX_PENDING_REQUESTS = 2000;
 const pending = new Map<number, PendingRequest>();
 
-function trackPending(id: number): void {
+function trackPending(id: number, startedAt: number): void {
   if (pending.size >= MAX_PENDING_REQUESTS) {
     const oldest = pending.keys().next().value;
     if (oldest !== undefined) pending.delete(oldest);
   }
-  pending.set(id, { startedAt: Date.now() });
+  pending.set(id, { startedAt });
 }
 
-function takeDuration(id: number): number {
+function takeDuration(id: number, endedAt: number): number {
   const start = pending.get(id);
   pending.delete(id);
-  return start ? Date.now() - start.startedAt : 0;
+  return start ? endedAt - start.startedAt : 0;
 }
 
 export function contentLengthFromHeaders(
@@ -80,17 +78,12 @@ export function installRendererNetworkLogging(
 
   const filter: WebRequestFilter = { urls: ["http://*/*", "https://*/*"] };
 
-  webRequest.onBeforeRequest(filter, (details, callback) => {
-    // Chromium stalls the request forever if the callback never runs.
-    try {
-      trackPending(details.id);
-    } finally {
-      callback({});
-    }
+  webRequest.onSendHeaders(filter, (details) => {
+    trackPending(details.id, details.timestamp);
   });
 
   webRequest.onCompleted(filter, (details) => {
-    const durationMs = takeDuration(details.id);
+    const durationMs = takeDuration(details.id, details.timestamp);
     const bytes = contentLengthFromHeaders(details.responseHeaders);
     recordNetworkRequest({
       origin: "renderer",
@@ -107,13 +100,13 @@ export function installRendererNetworkLogging(
       status: details.statusCode,
       ok: details.statusCode >= 200 && details.statusCode < 300,
       durationMs,
-      startedAt: Date.now() - durationMs,
+      startedAt: details.timestamp - durationMs,
       bytes,
     });
   });
 
   webRequest.onErrorOccurred(filter, (details) => {
-    const durationMs = takeDuration(details.id);
+    const durationMs = takeDuration(details.id, details.timestamp);
     recordNetworkRequest({
       origin: "renderer",
       method: details.method,
@@ -130,7 +123,7 @@ export function installRendererNetworkLogging(
       status: null,
       ok: false,
       durationMs,
-      startedAt: Date.now() - durationMs,
+      startedAt: details.timestamp - durationMs,
       bytes: null,
       error: details.error,
     });
