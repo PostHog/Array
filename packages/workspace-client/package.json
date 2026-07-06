@@ -12,6 +12,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "clean": "node ../../scripts/rimraf.mjs .turbo"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "@trpc/tanstack-react-query": "catalog:",
     "@types/react": "catalog:",
     "react": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "^4.1.8"
   }
 }
