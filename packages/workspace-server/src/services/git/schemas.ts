@@ -475,6 +475,31 @@ export const mergePrOutput = z.object({
 
 export type MergePrOutput = z.infer<typeof mergePrOutput>;
 
+// CI check runs / commit statuses for a PR, via `gh pr checks`.
+// Mirrors `prCheckSchema` in `@posthog/core/git/router-schemas`.
+export const prCheckBucketSchema = z.enum([
+  "fail",
+  "cancel",
+  "pending",
+  "pass",
+  "skipping",
+]);
+export type PrCheckBucket = z.infer<typeof prCheckBucketSchema>;
+
+export const prCheckSchema = z.object({
+  name: z.string(),
+  bucket: prCheckBucketSchema,
+  link: z.string().nullable(),
+  workflow: z.string().nullable(),
+  description: z.string().nullable(),
+});
+export type PrCheck = z.infer<typeof prCheckSchema>;
+
+export const getPrChecksInput = z.object({ prUrl: z.string() });
+/** Null means the checks couldn't be fetched; [] means none reported. */
+export const getPrChecksOutput = z.array(prCheckSchema).nullable();
+export type GetPrChecksOutput = z.infer<typeof getPrChecksOutput>;
+
 export const getPrTemplateInput = directoryPathInput;
 
 export const getPrTemplateOutput = z.object({

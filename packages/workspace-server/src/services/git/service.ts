@@ -55,6 +55,7 @@ import type {
   DetectRepoResult,
   DiscardFileChangesOutput,
   GetCommitConventionsOutput,
+  GetPrChecksOutput,
   GetPrTemplateOutput,
   GhAuthTokenOutput,
   GhStatusOutput,
@@ -70,6 +71,8 @@ import type {
   MergePrOutput,
   OpenPrOutput,
   PrActionType,
+  PrCheck,
+  PrCheckBucket,
   PrDetailsByUrlOutput,
   PrDiffStats,
   PrInfoByUrlOutput,
@@ -136,6 +139,22 @@ function normalizeGraphqlPrState(
       return "closed";
     default:
       return "open";
+  }
+}
+
+/**
+ * Narrow `gh pr checks` bucket values to the schema enum. Unknown values fall
+ * back to "pending" so one odd bucket can never fail the whole checks list.
+ */
+function normalizeCheckBucket(bucket: string | undefined): PrCheckBucket {
+  switch (bucket) {
+    case "fail":
+    case "cancel":
+    case "pass":
+    case "skipping":
+      return bucket;
+    default:
+      return "pending";
   }
 }
 
@@ -1371,6 +1390,52 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         success: false,
         message: error instanceof Error ? error.message : "Unknown error",
       };
+    }
+  }
+
+  async getPrChecks(prUrl: string): Promise<GetPrChecksOutput> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return null;
+
+    try {
+      // `gh pr checks` exits non-zero when checks are failing (1) or pending
+      // (8), so the exit code alone doesn't distinguish "couldn't fetch" from
+      // "fetched, some red" — parse stdout instead.
+      const result = await execGh([
+        "pr",
+        "checks",
+        String(pr.number),
+        "--repo",
+        `${pr.owner}/${pr.repo}`,
+        "--json",
+        "name,bucket,link,workflow,description",
+      ]);
+
+      if (result.stdout.trim()) {
+        const checks = JSON.parse(result.stdout) as Array<{
+          name?: string;
+          bucket?: string;
+          link?: string;
+          workflow?: string;
+          description?: string;
+        }>;
+        return checks.map(
+          (check): PrCheck => ({
+            name: check.name ?? "",
+            bucket: normalizeCheckBucket(check.bucket),
+            link: check.link || null,
+            workflow: check.workflow || null,
+            description: check.description || null,
+          }),
+        );
+      }
+
+      if (result.exitCode === 0) return [];
+      // A PR with no CI configured is not an error state.
+      if ((result.stderr ?? "").includes("no checks reported")) return [];
+      return null;
+    } catch {
+      return null;
     }
   }
 

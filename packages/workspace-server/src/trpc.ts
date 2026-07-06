@@ -81,6 +81,8 @@ import {
   getHeadShaOutput,
   getLocalBranchChangedFilesInput,
   getPrChangedFilesInput,
+  getPrChecksInput,
+  getPrChecksOutput,
   getPrDetailsByUrlInput,
   getPrDetailsByUrlOutput,
   getPrDiffStatsBatchInput,
@@ -569,6 +571,11 @@ export function createAppRouter({
         .input(getPrInfoByUrlInput)
         .output(getPrInfoByUrlOutput.nullable())
         .query(({ input }) => gitService().getPrInfoByUrl(input.prUrl)),
+
+      getPrChecks: t.procedure
+        .input(getPrChecksInput)
+        .output(getPrChecksOutput)
+        .query(({ input }) => gitService().getPrChecks(input.prUrl)),
 
       getPrChangedFiles: t.procedure
         .input(getPrChangedFilesInput)

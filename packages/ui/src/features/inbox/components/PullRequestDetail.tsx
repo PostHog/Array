@@ -17,6 +17,7 @@ import { ReportTasksSection } from "@posthog/ui/features/inbox/components/Report
 import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components/SuggestedReviewersSection";
 import { ReportImplementationPrLink } from "@posthog/ui/features/inbox/components/utils/ReportImplementationPrLink";
 import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
+import { PrChecksSection } from "@posthog/ui/features/pr-review/PrChecksSection";
 import { PrFilesChangedSection } from "@posthog/ui/features/pr-review/PrFilesChangedSection";
 import { PrReviewActions } from "@posthog/ui/features/pr-review/PrReviewActions";
 import { Text } from "@radix-ui/themes";
@@ -117,6 +118,7 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
         prRef && report.implementation_pr_url ? (
           <>
             <PrFilesChangedSection prUrl={report.implementation_pr_url} />
+            <PrChecksSection prUrl={report.implementation_pr_url} />
             <PrReviewActions prUrl={report.implementation_pr_url} />
           </>
         ) : undefined

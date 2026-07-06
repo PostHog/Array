@@ -17,6 +17,7 @@ import { MarkdownRenderer } from "@posthog/ui/features/editor/components/Markdow
 import { DetailSection } from "@posthog/ui/features/inbox/components/DetailSection";
 import { useMemo } from "react";
 import { openExternalUrl } from "../../shell/openExternal";
+import { PrChecksSection } from "./PrChecksSection";
 import { PrFilesChangedSection } from "./PrFilesChangedSection";
 import { PrReviewActions } from "./PrReviewActions";
 import { usePrInfo } from "./usePrInfo";
@@ -126,6 +127,8 @@ export function PullRequestView({ prUrl }: PullRequestViewProps) {
         </DetailSection>
 
         <PrFilesChangedSection prUrl={prUrl} />
+
+        <PrChecksSection prUrl={prUrl} />
 
         <PrReviewActions prUrl={prUrl} />
       </div>
