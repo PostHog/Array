@@ -22,10 +22,11 @@ export class GitHubReleasesService {
     }
 
     // The fetch is version-agnostic, so any concurrent caller can share it.
-    if (this.inFlight === null) {
-      this.inFlight = this.fetchAndCacheReleases(now);
+    let promise = this.inFlight;
+    if (promise === null) {
+      promise = this.fetchAndCacheReleases();
+      this.inFlight = promise;
     }
-    const promise = this.inFlight!;
     try {
       const data = await promise;
       this.updateMissingVersionCooldown(normalizedVersion, now);
@@ -43,9 +44,7 @@ export class GitHubReleasesService {
     }
   }
 
-  private async fetchAndCacheReleases(
-    now: number,
-  ): Promise<ListReleasesOutput> {
+  private async fetchAndCacheReleases(): Promise<ListReleasesOutput> {
     const response = await fetch(RELEASES_URL, {
       headers: { Accept: "application/vnd.github+json" },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -70,7 +69,7 @@ export class GitHubReleasesService {
       }));
 
     const data: ListReleasesOutput = { releases };
-    this.cache = { fetchedAt: now, data };
+    this.cache = { fetchedAt: Date.now(), data };
     return data;
   }
 
