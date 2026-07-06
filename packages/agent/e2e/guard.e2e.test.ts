@@ -16,6 +16,21 @@ describe("live e2e preconditions", () => {
     ).toBe(true);
   });
 
+  // On CI the localhost default can never work, so an unset gateway URL means
+  // every model turn dies with ConnectionRefused — 8 scattered failures instead
+  // of this one clear one.
+  it("requires an explicit POSTHOG_CODE_E2E_GATEWAY_URL on CI when a token is set", () => {
+    if (!process.env.CI || !E2E.hasToken) return;
+    expect(
+      process.env.POSTHOG_CODE_E2E_GATEWAY_URL,
+      "POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY is set but " +
+        "POSTHOG_CODE_E2E_GATEWAY_URL is empty — on CI the suite would fall " +
+        "back to localhost:3308 (unreachable from a runner) and every model " +
+        "turn would fail with ConnectionRefused. Set the org variable to a " +
+        "runner-reachable gateway.",
+    ).toBeTruthy();
+  });
+
   // When a token is present, the codex arm must not skip silently — a missing
   // binary would let the run pass with zero codex coverage.
   it("requires the native codex binary when a token is set (else codex skips-to-green)", () => {
