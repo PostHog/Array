@@ -157,19 +157,19 @@ export function SidebarNavSection({
         <McpServersItem isActive={isMcpServersActive} onClick={goMcpServers} />
       </Box>
 
-      {usageEnabled && (
-        <Box>
-          <UsageItem isActive={isUsageActive} onClick={navigateToUsage} />
-        </Box>
-      )}
-
-      <Box mb="2">
+      <Box mb={usageEnabled ? undefined : "2"}>
         <CommandCenterItem
           isActive={isCommandCenterActive}
           onClick={goCommandCenter}
           activeCount={commandCenterActiveCount}
         />
       </Box>
+
+      {usageEnabled && (
+        <Box mb="2">
+          <UsageItem isActive={isUsageActive} onClick={navigateToUsage} />
+        </Box>
+      )}
     </Flex>
   );
 }
