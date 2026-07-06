@@ -57,36 +57,29 @@ function FakeConversation() {
   );
 }
 
-const TWO_HOURS_AGO = Date.now() - 2 * 60 * 60 * 1000;
-
 export const Default: Story = {
   args: {
     usedTokens: 481_000,
-    lastActivityAt: TWO_HOURS_AGO,
     costUsd: 12.34,
-    onContinue: () => {},
+    onDismiss: () => {},
     onCompact: () => {},
-    onNewSession: () => {},
   },
 };
 
-export const WithoutNewSessionOrCost: Story = {
+export const WithoutCost: Story = {
   args: {
     usedTokens: 128_000,
-    lastActivityAt: TWO_HOURS_AGO,
     costUsd: null,
-    onContinue: () => {},
+    onDismiss: () => {},
     onCompact: () => {},
   },
 };
 
-/** Compact is hidden while a permission is pending — two-option layout. */
+/** Compact is hidden while a permission is pending — dismiss only. */
 export const PermissionPending: Story = {
   args: {
     usedTokens: 481_000,
-    lastActivityAt: TWO_HOURS_AGO,
     costUsd: 12.34,
-    onContinue: () => {},
-    onNewSession: () => {},
+    onDismiss: () => {},
   },
 };

@@ -358,12 +358,19 @@ export function SessionView({
     staleGate.onContinue();
   };
 
-  const handleStaleNewSession = onNewSession
-    ? () => {
-        trackStaleGateChoice("new_session");
-        onNewSession();
-      }
-    : undefined;
+  // Non-blocking cost banner pinned above the composer. Rendered in both the
+  // pending-permission slot and the normal composer so a stale conversation is
+  // flagged either way; onCompact is omitted while a permission is pending (a
+  // queued /compact would land after answering it, paying the reload twice).
+  const staleNotice = (permissionPending: boolean) =>
+    staleGate.active ? (
+      <StaleConversationCostNotice
+        usedTokens={staleGate.usedTokens}
+        costUsd={staleGate.costUsd}
+        onDismiss={handleStaleContinue}
+        onCompact={permissionPending ? undefined : handleStaleCompact}
+      />
+    ) : null;
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
@@ -666,39 +673,9 @@ export function SessionView({
                       )}
                     </Flex>
                   </Flex>
-                ) : hideInput ? null : staleGate.active ? (
-                  // Replaces the composer (and any pending permission — answering
-                  // one also resumes the costly turn) until the user chooses.
-                  isRunning ? (
-                    <ComposerSlot compact={compact}>
-                      <StaleConversationCostNotice
-                        usedTokens={staleGate.usedTokens}
-                        lastActivityAt={staleGate.lastActivityAt}
-                        costUsd={staleGate.costUsd}
-                        onContinue={handleStaleContinue}
-                        onCompact={
-                          firstPendingPermission
-                            ? undefined
-                            : handleStaleCompact
-                        }
-                        onNewSession={handleStaleNewSession}
-                      />
-                    </ComposerSlot>
-                  ) : (
-                    // While reconnecting the gate still covers the composer
-                    // slot: handoff can leave pendingPermissions set, and the
-                    // choices must not fire into a half-connected session.
-                    <Flex
-                      align="center"
-                      justify="center"
-                      gap="2"
-                      className="min-h-[66px]"
-                    >
-                      <ConnectingToAgent />
-                    </Flex>
-                  )
-                ) : firstPendingPermission ? (
+                ) : hideInput ? null : firstPendingPermission ? (
                   <ComposerSlot compact={compact}>
+                    {staleNotice(true)}
                     <PermissionSelector
                       toolCall={firstPendingPermission.toolCall}
                       options={firstPendingPermission.options}
@@ -725,6 +702,7 @@ export function SessionView({
                       }`}
                     >
                       <ComposerWidth compact={compact}>
+                        {staleNotice(false)}
                         {taskId && <QueuedMessagesDock taskId={taskId} />}
                         <PromptInput
                           ref={editorRef}
