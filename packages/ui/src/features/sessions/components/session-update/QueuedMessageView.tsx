@@ -53,7 +53,7 @@ export function QueuedMessageView({
   return (
     <Box className="rounded-lg border border-gray-5 bg-card px-3 py-2">
       <Flex align="start" gap="2">
-        <Stack size={14} className="shrink-0 text-gray-9 mt-0.5" />
+        <Stack size={14} className="mt-0.5 shrink-0 text-gray-9" />
         <Box className="min-w-0 flex-1 font-medium text-[13px] text-gray-12 [&>*:last-child]:mb-0">
           <div
             ref={textRef}
@@ -73,6 +73,7 @@ export function QueuedMessageView({
           {isOverflowing && (
             <button
               type="button"
+              aria-expanded={isExpanded}
               onClick={() => setIsExpanded((v) => !v)}
               className="mt-1 flex items-center gap-0.5 text-muted-foreground text-xs hover:text-foreground"
             >
