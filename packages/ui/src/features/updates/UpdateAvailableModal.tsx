@@ -62,12 +62,14 @@ export function UpdateAvailableModal() {
   const downloadMutation = useMutation(
     hostTRPC.updates.download.mutationOptions(),
   );
+  const targetVersion = version ?? availableVersion;
   const { data: releasesData, isPending: isPendingReleases } = useQuery({
-    ...hostTRPC.githubReleases.list.queryOptions(),
+    ...hostTRPC.githubReleases.list.queryOptions(
+      targetVersion ? { expectVersion: targetVersion } : undefined,
+    ),
     enabled: isOpen,
   });
 
-  const targetVersion = version ?? availableVersion;
   const percent = Math.round(downloadPercent ?? 0);
   const sizeLabel = formatSize(downloadSizeBytes);
   const isDownloading = status === "downloading";

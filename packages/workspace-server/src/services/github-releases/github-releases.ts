@@ -4,14 +4,22 @@ import { githubReleasesApiResponse, type ListReleasesOutput } from "./schemas";
 const RELEASES_URL =
   "https://api.github.com/repos/PostHog/code/releases?per_page=30";
 const CACHE_TTL_MS = 10 * 60_000;
+const MISSING_VERSION_RETRY_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
 
 @injectable()
 export class GitHubReleasesService {
   private cache: { fetchedAt: number; data: ListReleasesOutput } | null = null;
+  private missingVersionRefetchNotBefore = 0;
 
-  async listReleases(): Promise<ListReleasesOutput> {
-    if (this.cache && Date.now() - this.cache.fetchedAt < CACHE_TTL_MS) {
+  async listReleases(expectVersion?: string): Promise<ListReleasesOutput> {
+    if (
+      this.cache &&
+      Date.now() - this.cache.fetchedAt < CACHE_TTL_MS &&
+      (expectVersion === undefined ||
+        this.cacheContains(expectVersion) ||
+        Date.now() < this.missingVersionRefetchNotBefore)
+    ) {
       return this.cache.data;
     }
 
@@ -41,12 +49,31 @@ export class GitHubReleasesService {
 
       const data: ListReleasesOutput = { releases };
       this.cache = { fetchedAt: Date.now(), data };
+      this.updateMissingVersionCooldown(expectVersion);
       return data;
     } catch (error) {
       if (this.cache) {
+        this.updateMissingVersionCooldown(expectVersion);
         return this.cache.data;
       }
       throw error;
+    }
+  }
+
+  private cacheContains(version: string): boolean {
+    return (
+      this.cache?.data.releases.some(
+        (release) => release.version === version,
+      ) ?? false
+    );
+  }
+
+  private updateMissingVersionCooldown(
+    expectVersion: string | undefined,
+  ): void {
+    if (expectVersion !== undefined && !this.cacheContains(expectVersion)) {
+      this.missingVersionRefetchNotBefore =
+        Date.now() + MISSING_VERSION_RETRY_MS;
     }
   }
 }

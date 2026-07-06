@@ -42,13 +42,15 @@ export function WhatsNewModal() {
   const isOpen = useWhatsNewStore((state) => state.isOpen);
   const close = useWhatsNewStore((state) => state.close);
   const hostTRPC = useHostTRPC();
-  const { data, isLoading, isError } = useQuery({
-    ...hostTRPC.githubReleases.list.queryOptions(),
-    enabled: isOpen,
-  });
   const { data: currentVersion } = useQuery(
     hostTRPC.os.getAppVersion.queryOptions(),
   );
+  const { data, isLoading, isError } = useQuery({
+    ...hostTRPC.githubReleases.list.queryOptions(
+      currentVersion ? { expectVersion: currentVersion } : undefined,
+    ),
+    enabled: isOpen && currentVersion !== undefined,
+  });
 
   const groups = groupReleases(data?.releases ?? []);
 
