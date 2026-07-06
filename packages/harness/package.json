@@ -30,6 +30,14 @@
     "./extensions/posthog-provider/*": {
       "types": "./dist/extensions/posthog-provider/*.d.ts",
       "import": "./dist/extensions/posthog-provider/*.js"
+    },
+    "./extensions/web-access": {
+      "types": "./dist/extensions/web-access/extension.d.ts",
+      "import": "./dist/extensions/web-access/extension.js"
+    },
+    "./extensions/web-access/*": {
+      "types": "./dist/extensions/web-access/*.d.ts",
+      "import": "./dist/extensions/web-access/*.js"
     }
   },
   "scripts": {
@@ -42,10 +50,14 @@
   "dependencies": {
     "@earendil-works/pi-ai": "0.80.3",
     "@earendil-works/pi-coding-agent": "0.80.3",
-    "@posthog/shared": "workspace:*"
+    "@posthog/shared": "workspace:*",
+    "lru-cache": "^11.1.0",
+    "pi-mcp-adapter": "2.10.0",
+    "turndown": "^7.2.4"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/turndown": "^5.0.6",
     "tsup": "^8.5.1",
     "typescript": "^5.5.0",
     "vitest": "^4.1.8"

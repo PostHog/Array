@@ -8,9 +8,18 @@ shape, so adding the Nth extension is mechanical.
 
 ```
 src/extensions/<extension-name>/
-  extension.ts     # REQUIRED — the pi entry point
+  extension.ts     # REQUIRED — the real implementation
+  index.ts         # REQUIRED — `export { default } from "./extension";`
   ...              # any supporting modules the extension needs
 ```
+
+`index.ts` is loaded (as `dist/extensions/<name>/index.js`) by `-e`, instead of
+`extension.js` directly, purely for display: pi's startup banner derives an
+extension's name from its file path, and drops a trailing `index.ts`/`index.js`
+segment in favor of the parent directory name. Loading `extension.js` directly
+would show up as `<name>/extension.js` (and collide with any other extension
+also named `extension.js`, backing off to even longer paths); loading
+`index.js` shows the clean `<name>`.
 
 `extension.ts` must:
 
@@ -48,8 +57,14 @@ const EXTENSIONS: HarnessExtension[] = [
 `registry.ts` is the single source of truth. Both entry paths consume it, so a registered extension
 is loaded everywhere with no further wiring:
 
-- **In-process CLI** (`src/cli.ts`) → `main(argv, { extensionFactories: harnessExtensions() })`
-- **Subprocess** (`src/spawn.ts`) → one `-e dist/extensions/<name>/extension.js` per extension
+- **In-process CLI** (`src/cli.ts`) → one `-e dist/extensions/<name>/index.js` per extension, passed
+  through argv (`main([...extensionArgs, ...args])`)
+- **Subprocess** (`src/spawn.ts`) → one `-e dist/extensions/<name>/index.js` per extension
 
-Both are real pi extension-loading paths, verified to register in every pi mode (interactive, print,
-rpc, json, and `--list-models`).
+Both load extensions by file path (not `extensionFactories`), so each one shows its real name in pi's
+startup banner instead of `<inline:N>`. `harnessExtensions()` (function factories, taking
+`HarnessExtensionOptions`) remains available for programmatic embedding — for example
+`session.ts`'s lean SDK path — where a caller needs to inject runtime options.
+
+Both `-e` paths are real pi extension-loading paths, verified to register in every pi mode
+(interactive, print, rpc, json, and `--list-models`).
