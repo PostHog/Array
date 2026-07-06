@@ -184,6 +184,16 @@ export function UsageView() {
               </>
             ) : null)}
 
+          {spendAnalysisEnabled && data && (
+            <>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <ToolBreakdownCard rows={data.by_tool.items} />
+                <ProductBreakdownCard rows={data.by_product.items} />
+              </div>
+              <SpendInsights data={data} />
+            </>
+          )}
+
           {billingEnabled && (
             <UsageCard
               icon={<CreditCard size={14} className="text-(--gray-9)" />}
@@ -228,16 +238,6 @@ export function UsageView() {
                 </Text>
               )}
             </UsageCard>
-          )}
-
-          {spendAnalysisEnabled && data && (
-            <>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <ToolBreakdownCard rows={data.by_tool.items} />
-                <ProductBreakdownCard rows={data.by_product.items} />
-              </div>
-              <SpendInsights data={data} />
-            </>
           )}
         </Flex>
       </Box>
