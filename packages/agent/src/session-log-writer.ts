@@ -145,6 +145,12 @@ export class SessionLogWriter {
       const message = JSON.parse(line);
       const timestamp = new Date().toISOString();
 
+      // Persisted empty thought chunks poison session resume: they rebuild
+      // into empty text blocks the API rejects with a 400.
+      if (this.isEmptyThoughtChunk(message)) {
+        return;
+      }
+
       // Check if this is an agent_message_chunk event
       if (this.isAgentMessageChunk(message)) {
         const text = this.extractChunkText(message);
@@ -437,6 +443,21 @@ export class SessionLogWriter {
 
   private isAgentMessageChunk(message: Record<string, unknown>): boolean {
     return this.getSessionUpdateType(message) === "agent_message_chunk";
+  }
+
+  private isEmptyThoughtChunk(message: Record<string, unknown>): boolean {
+    if (this.getSessionUpdateType(message) !== "agent_thought_chunk") {
+      return false;
+    }
+    const params = message.params as Record<string, unknown> | undefined;
+    const update = params?.update as Record<string, unknown> | undefined;
+    const content = update?.content as
+      | { type?: string; text?: string; thinking?: string }
+      | undefined;
+    if (!content) return true;
+    if (content.type === "text") return !content.text;
+    if (content.type === "thinking") return !content.thinking;
+    return false;
   }
 
   private extractChunkText(message: Record<string, unknown>): string {
