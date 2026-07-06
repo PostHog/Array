@@ -1,5 +1,6 @@
-import { ChartLine } from "@phosphor-icons/react";
+import { ChartLine, CreditCard, WarningCircle } from "@phosphor-icons/react";
 import {
+  fillSpendDays,
   type SpendAnalysisWindow,
   windowToDays,
 } from "@posthog/core/billing/spendAnalysisFormat";
@@ -21,15 +22,28 @@ import {
   Badge,
   Box,
   Button,
+  Callout,
   Flex,
   ScrollArea,
   Spinner,
   Text,
 } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
-import { SpendAnalysisSection } from "./components/SpendAnalysisSection";
+import { ModelBreakdownCards } from "./components/ModelBreakdownCards";
+import {
+  ProductBreakdownCard,
+  ToolBreakdownCard,
+} from "./components/SpendBreakdownTables";
+import { SpendInsights } from "./components/SpendInsights";
+import { SpendKpiStrip } from "./components/SpendKpiStrip";
+import { SpendOverTimeCard } from "./components/SpendOverTimeCard";
+import { UsageCard } from "./components/UsageCard";
+import { WindowSelector } from "./components/WindowSelector";
+import { useSpendAnalysis } from "./useSpendAnalysis";
 import { useSpendAnalysisEnabled } from "./useSpendAnalysisEnabled";
 import { useTrackUsageViewed } from "./useTrackUsageViewed";
+
+const PRODUCT_SCOPE = "posthog_code";
 
 export function UsageView() {
   const headerContent = useMemo(
@@ -57,6 +71,19 @@ export function UsageView() {
   });
 
   const [spendWindow, setSpendWindow] = useState<SpendAnalysisWindow>("30d");
+  const { data, isLoading, isFetching, error, refetch } = useSpendAnalysis({
+    window: spendWindow,
+    product: PRODUCT_SCOPE,
+  });
+
+  const filledDays = useMemo(() => {
+    if (!data?.by_day) return null;
+    return fillSpendDays(
+      data.by_day.items,
+      data.summary.date_from,
+      data.summary.date_to,
+    );
+  }, [data]);
 
   useTrackUsageViewed({
     isLoading: billingEnabled && (seatLoading || usageLoading),
@@ -87,39 +114,105 @@ export function UsageView() {
   return (
     <ScrollArea className="h-full w-full">
       <Box p="6" mx="auto" className="max-w-[960px]">
-        <Flex direction="column" gap="5">
+        <Flex direction="column" gap="4">
+          <Flex align="center" gap="3">
+            <Flex direction="column" gap="1" className="min-w-0">
+              <Text className="font-semibold text-xl tracking-tight">
+                Usage
+              </Text>
+              <Text className="text-(--gray-11) text-[13px]">
+                Token spend and plan limits for PostHog Code
+              </Text>
+            </Flex>
+            <Flex flexGrow="1" />
+            {spendAnalysisEnabled && (
+              <Flex align="center" gap="4">
+                <WindowSelector value={spendWindow} onChange={setSpendWindow} />
+                <Button
+                  size="1"
+                  variant="soft"
+                  disabled={isFetching}
+                  onClick={refetch}
+                >
+                  {isFetching && !isLoading ? <Spinner size="1" /> : "Refresh"}
+                </Button>
+              </Flex>
+            )}
+          </Flex>
+
+          {spendAnalysisEnabled &&
+            (error ? (
+              <Callout.Root color="red" size="1">
+                <Callout.Icon>
+                  <WarningCircle size={16} />
+                </Callout.Icon>
+                <Callout.Text>
+                  <Flex direction="column" gap="2">
+                    <Text className="text-sm">
+                      Couldn't load spend analysis
+                    </Text>
+                    <Text className="text-(--gray-11) text-[13px]">
+                      {error}
+                    </Text>
+                    <Button
+                      size="1"
+                      variant="outline"
+                      color="red"
+                      onClick={refetch}
+                      className="self-start"
+                    >
+                      Try again
+                    </Button>
+                  </Flex>
+                </Callout.Text>
+              </Callout.Root>
+            ) : isLoading ? (
+              <Flex
+                align="center"
+                justify="center"
+                p="6"
+                className="rounded-(--radius-3) border border-(--gray-5)"
+              >
+                <Spinner size="2" />
+              </Flex>
+            ) : data ? (
+              <>
+                <SpendKpiStrip data={data} filledDays={filledDays} />
+                {filledDays && <SpendOverTimeCard filledDays={filledDays} />}
+                <ModelBreakdownCards
+                  rows={data.by_model.items}
+                  scopedCostUsd={data.summary.scoped_cost_usd}
+                />
+              </>
+            ) : null)}
+
           {billingEnabled && (
-            <Flex direction="column" gap="3">
-              <Flex align="center" justify="between">
+            <UsageCard
+              icon={<CreditCard size={14} className="text-(--gray-9)" />}
+              title="Plan limits"
+              actions={
                 <Flex align="center" gap="2">
-                  <Text className="font-medium text-(--gray-9) text-sm">
-                    Plan usage
-                  </Text>
                   {seat !== null && (
                     <Badge variant="soft" radius="full">
                       {planLabel}
                     </Badge>
                   )}
+                  <Button
+                    size="1"
+                    variant="outline"
+                    onClick={() => openSettings("plan-usage")}
+                  >
+                    Manage plan
+                  </Button>
                 </Flex>
-                <Button
-                  size="1"
-                  variant="outline"
-                  onClick={() => openSettings("plan-usage")}
-                >
-                  Manage plan
-                </Button>
-              </Flex>
+              }
+            >
               {seatLoading || usageLoading ? (
-                <Flex
-                  align="center"
-                  justify="center"
-                  p="4"
-                  className="rounded-(--radius-3) border border-(--gray-5)"
-                >
+                <Flex align="center" justify="center" p="4">
                   <Spinner size="2" />
                 </Flex>
               ) : usage ? (
-                <Flex direction="column" gap="3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <UsageMeter
                     label="Monthly"
                     bucket={usage.sustained}
@@ -130,27 +223,23 @@ export function UsageView() {
                     bucket={usage.burst}
                     color={usage.burst.exceeded ? "red" : undefined}
                   />
-                </Flex>
+                </div>
               ) : (
-                <Flex
-                  direction="column"
-                  gap="3"
-                  p="4"
-                  className="rounded-(--radius-3) border border-(--gray-5)"
-                >
-                  <Text color="gray" className="text-sm">
-                    Unable to load usage data
-                  </Text>
-                </Flex>
+                <Text color="gray" className="text-sm">
+                  Unable to load usage data
+                </Text>
               )}
-            </Flex>
+            </UsageCard>
           )}
 
-          {spendAnalysisEnabled && (
-            <SpendAnalysisSection
-              window={spendWindow}
-              onWindowChange={setSpendWindow}
-            />
+          {spendAnalysisEnabled && data && (
+            <>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <ToolBreakdownCard rows={data.by_tool.items} />
+                <ProductBreakdownCard rows={data.by_product.items} />
+              </div>
+              <SpendInsights data={data} />
+            </>
           )}
         </Flex>
       </Box>
