@@ -159,12 +159,13 @@ jobs:
     # E2E_GATEWAY_URL points at a runner-reachable gateway. Drives cheap models
     # (claude-haiku-4-5 / gpt-5-mini), so a run is a handful of short turns.
     needs: [changes, unit-test, integration-test]
-    # Run on any packages/ change (or a change to this workflow), and skip on fork
-    # PRs — secrets (the gateway token) are withheld from forks, so the fail-loud
-    # token guard would red them spuriously. Same-repo PRs get the secret and
-    # enforce the guard. Depending on unit-test + integration-test means this only
-    # runs once both have already passed.
-    if: ${{ (needs.changes.outputs.packages == 'true' || needs.changes.outputs.workflow == 'true') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    # Run on any packages/ change (or a change to this workflow), once unit-test +
+    # integration-test have passed. Gated on vars.E2E_GATEWAY_URL so the job stays
+    # dormant (green) until the gateway is configured, then activates automatically
+    # once the URL var and E2E_GATEWAY_TOKEN secret are added — this avoids the
+    # fail-loud token guard redding every packages/ PR before the gateway exists.
+    # Also skipped on fork PRs, which never receive the gateway secret.
+    if: ${{ (needs.changes.outputs.packages == 'true' || needs.changes.outputs.workflow == 'true') && vars.E2E_GATEWAY_URL != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
