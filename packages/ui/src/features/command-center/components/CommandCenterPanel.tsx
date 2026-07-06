@@ -24,7 +24,13 @@ import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { secureRandomString } from "@posthog/ui/utils/random";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useFolders } from "../../folders/useFolders";
 import { useCloudPrUrl } from "../../git-interaction/useCloudPrUrl";
 import { useDraftStore } from "../../message-editor/draftStore";
@@ -291,6 +297,54 @@ function BrainrotCell({ cellIndex }: { cellIndex: number }) {
   );
 }
 
+// Shared chrome for every occupied command-center cell: a titled header with a
+// type icon, an optional badge slot, a remove button, and the cell body below.
+function CellFrame({
+  icon,
+  title,
+  headerExtra,
+  onRemove,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  headerExtra?: ReactNode;
+  onRemove: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Flex direction="column" height="100%">
+      <Flex
+        align="center"
+        gap="2"
+        px="2"
+        py="1"
+        className="shrink-0 border-gray-6 border-b"
+      >
+        {icon}
+        <Text
+          className="min-w-0 flex-1 truncate font-medium text-[12px]"
+          title={title}
+        >
+          {title}
+        </Text>
+        {headerExtra}
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+          title="Remove from grid"
+        >
+          <X size={12} />
+        </button>
+      </Flex>
+      <Flex direction="column" className="min-h-0 flex-1">
+        {children}
+      </Flex>
+    </Flex>
+  );
+}
+
 function TerminalCell({
   cellIndex,
   terminalId,
@@ -312,37 +366,21 @@ function TerminalCell({
   }, [stateKey, clearCell, cellIndex]);
 
   return (
-    <Flex direction="column" height="100%">
-      <Flex
-        align="center"
-        gap="2"
-        px="2"
-        py="1"
-        className="shrink-0 border-gray-6 border-b"
-      >
-        <Terminal size={12} className="shrink-0 text-gray-10" />
-        <Text className="min-w-0 flex-1 truncate font-medium text-[12px]">
-          Terminal
-        </Text>
-        {folderName && (
+    <CellFrame
+      icon={<Terminal size={12} className="shrink-0 text-gray-10" />}
+      title="Terminal"
+      headerExtra={
+        folderName ? (
           <span className="inline-flex items-center gap-0.5 rounded bg-gray-3 px-1 py-0.5 text-[10px] text-gray-10">
             <Folder size={10} />
             {folderName}
           </span>
-        )}
-        <button
-          type="button"
-          onClick={handleRemove}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
-          title="Remove from grid"
-        >
-          <X size={12} />
-        </button>
-      </Flex>
-      <Flex direction="column" className="min-h-0 flex-1">
-        <ShellTerminal cwd={cwd} stateKey={stateKey} />
-      </Flex>
-    </Flex>
+        ) : undefined
+      }
+      onRemove={handleRemove}
+    >
+      <ShellTerminal cwd={cwd} stateKey={stateKey} />
+    </CellFrame>
   );
 }
 
@@ -370,38 +408,17 @@ function BrowserCell({ cellIndex, url }: { cellIndex: number; url: string }) {
   );
 
   return (
-    <Flex direction="column" height="100%">
-      <Flex
-        align="center"
-        gap="2"
-        px="2"
-        py="1"
-        className="shrink-0 border-gray-6 border-b"
-      >
-        <Globe size={12} className="shrink-0 text-gray-10" />
-        <Text
-          className="min-w-0 flex-1 truncate font-medium text-[12px]"
-          title={label}
-        >
-          {label}
-        </Text>
-        <button
-          type="button"
-          onClick={() => clearCell(cellIndex)}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
-          title="Remove from grid"
-        >
-          <X size={12} />
-        </button>
-      </Flex>
-      <Flex direction="column" className="min-h-0 flex-1">
-        <BrowserPanel
-          url={url}
-          onUrlChange={onUrlChange}
-          onTitleChange={setTitle}
-        />
-      </Flex>
-    </Flex>
+    <CellFrame
+      icon={<Globe size={12} className="shrink-0 text-gray-10" />}
+      title={label}
+      onRemove={() => clearCell(cellIndex)}
+    >
+      <BrowserPanel
+        url={url}
+        onUrlChange={onUrlChange}
+        onTitleChange={setTitle}
+      />
+    </CellFrame>
   );
 }
 
