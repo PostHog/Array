@@ -17,6 +17,7 @@ import {
 } from "@posthog/quill";
 import { useState } from "react";
 import { useApprovePr } from "./useApprovePr";
+import { useMarkPrReady } from "./useMarkPrReady";
 import { useMergePr } from "./useMergePr";
 import { usePrInfo } from "./usePrInfo";
 
@@ -37,6 +38,7 @@ export function PrReviewActions({ prUrl }: PrReviewActionsProps) {
   const infoQuery = usePrInfo(prUrl);
   const approve = useApprovePr(prUrl);
   const merge = useMergePr(prUrl);
+  const markReady = useMarkPrReady(prUrl);
   const [method, setMethod] = useState<PrMergeMethod>("merge");
 
   const info = infoQuery.data;
@@ -121,9 +123,22 @@ export function PrReviewActions({ prUrl }: PrReviewActionsProps) {
         </DropdownMenu>
       </ButtonGroup>
       {draft && (
-        <span className="text-[11px] text-gray-10">
-          Draft pull requests can't be merged.
-        </span>
+        <>
+          <span className="text-[11px] text-gray-10">
+            Draft pull requests can't be merged.
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={markReady.isPending}
+            onClick={() => markReady.mutate({ prUrl, action: "ready" })}
+            className="gap-1.5"
+          >
+            {markReady.isPending && <Spinner />}
+            Ready for review
+          </Button>
+        </>
       )}
     </div>
   );

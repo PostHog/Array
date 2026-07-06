@@ -1,10 +1,9 @@
 import { CheckIcon, GitDiffIcon } from "@phosphor-icons/react";
-import { Spinner } from "@posthog/quill";
+import { Button, Spinner } from "@posthog/quill";
 import { PatchedFileDiff } from "@posthog/ui/features/code-review/components/PatchedFileDiff";
 import { useDiffOptions } from "@posthog/ui/features/code-review/reviewShellParts";
 import { usePrChangedFiles } from "@posthog/ui/features/git-interaction/useGitQueries";
 import { DetailSection } from "@posthog/ui/features/inbox/components/DetailSection";
-import { NestedButton } from "@posthog/ui/primitives/NestedButton";
 import { useMemo, useState } from "react";
 import {
   fileViewedFingerprint,
@@ -17,9 +16,9 @@ interface PrFilesChangedSectionProps {
 }
 
 /**
- * GitHub-style "Files changed" list for a PR: one collapsible diff per file
- * with a "Viewed" toggle. Viewed files default to collapsed; expanding or
- * collapsing by hand overrides that until the viewed state changes again.
+ * GitHub-style "Files changed" list for a PR: one collapsible diff per file,
+ * all collapsed by default. An expanded file gets a footer row with the
+ * "Viewed" toggle; marking a file viewed folds it back up.
  */
 export function PrFilesChangedSection({ prUrl }: PrFilesChangedSectionProps) {
   const filesQuery = usePrChangedFiles(prUrl);
@@ -28,6 +27,9 @@ export function PrFilesChangedSection({ prUrl }: PrFilesChangedSectionProps) {
   const markViewed = usePrViewedFilesStore((s) => s.markViewed);
   const unmarkViewed = usePrViewedFilesStore((s) => s.unmarkViewed);
 
+  // Per-file collapse overrides on top of a section-wide baseline, so
+  // expand/collapse-all is one state flip instead of a map rebuild.
+  const [baselineCollapsed, setBaselineCollapsed] = useState(true);
   const [collapseOverrides, setCollapseOverrides] = useState<
     Map<string, boolean>
   >(new Map());
@@ -70,20 +72,41 @@ export function PrFilesChangedSection({ prUrl }: PrFilesChangedSectionProps) {
     );
   }
 
+  const isCollapsed = (path: string) =>
+    collapseOverrides.get(path) ?? baselineCollapsed;
+  const allExpanded = files.every((file) => !isCollapsed(file.path));
+
+  const setAllCollapsed = (collapsed: boolean) => {
+    setBaselineCollapsed(collapsed);
+    setCollapseOverrides(new Map());
+  };
+
   return (
     <DetailSection
       Icon={GitDiffIcon}
       title={`Files changed (${files.length})`}
       rightSlot={
-        <span className="cursor-default select-none text-[11px] text-gray-10 tabular-nums">
-          {viewedCount} / {files.length} viewed
+        <span className="flex items-center gap-2">
+          <span className="cursor-default select-none text-[11px] text-gray-10 tabular-nums">
+            {viewedCount} / {files.length} viewed
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setAllCollapsed(allExpanded)}
+          >
+            {allExpanded ? "Collapse all" : "Expand all"}
+          </Button>
         </span>
       }
     >
       <div className="flex flex-col gap-3">
         {files.map((file) => {
           const viewed = isFileViewed(viewedByPr, prUrl, file);
-          const collapsed = collapseOverrides.get(file.path) ?? viewed;
+          const collapsed = isCollapsed(file.path);
+          const setCollapsed = (next: boolean) =>
+            setCollapseOverrides((prev) => new Map(prev).set(file.path, next));
           return (
             <div
               key={file.path}
@@ -94,39 +117,30 @@ export function PrFilesChangedSection({ prUrl }: PrFilesChangedSectionProps) {
                 taskId={prUrl}
                 options={diffOptions}
                 collapsed={collapsed}
-                onToggle={() =>
-                  setCollapseOverrides((prev) =>
-                    new Map(prev).set(file.path, !collapsed),
-                  )
-                }
+                onToggle={() => setCollapsed(!collapsed)}
                 externalUrl={`${prUrl}/files`}
                 prUrl={prUrl}
-                headerTrailing={
+              />
+              {!collapsed && (
+                <div className="flex items-center justify-end border-t border-t-(--gray-5) bg-(--gray-2) px-3 py-[4px]">
                   <ViewedToggle
                     viewed={viewed}
                     onChange={(next) => {
-                      // Drop the manual override so the new viewed state
-                      // decides the collapse (checked → fold, unchecked →
-                      // unfold), matching GitHub.
-                      setCollapseOverrides((prev) => {
-                        if (!prev.has(file.path)) return prev;
-                        const map = new Map(prev);
-                        map.delete(file.path);
-                        return map;
-                      });
                       if (next) {
                         markViewed(
                           prUrl,
                           file.path,
                           fileViewedFingerprint(file),
                         );
+                        // Fold the file away once it's read, like GitHub.
+                        setCollapsed(true);
                       } else {
                         unmarkViewed(prUrl, file.path);
                       }
                     }}
                   />
-                }
-              />
+                </div>
+              )}
             </div>
           );
         })}
@@ -143,11 +157,11 @@ function ViewedToggle({
   onChange: (viewed: boolean) => void;
 }) {
   return (
-    <NestedButton
-      aria-label={viewed ? "Mark as not viewed" : "Mark as viewed"}
+    <button
+      type="button"
       aria-pressed={viewed}
-      className="ml-[6px] inline-flex shrink-0 cursor-pointer items-center gap-[5px] rounded px-[6px] py-[2px] text-[11px] text-gray-11 hover:bg-gray-4"
-      onActivate={() => onChange(!viewed)}
+      onClick={() => onChange(!viewed)}
+      className="inline-flex shrink-0 cursor-pointer items-center gap-[5px] rounded border-0 bg-transparent px-[6px] py-[2px] text-[11px] text-gray-11 hover:bg-gray-4"
     >
       <span
         className={`inline-flex h-[13px] w-[13px] items-center justify-center rounded-[3px] border ${
@@ -159,6 +173,6 @@ function ViewedToggle({
         {viewed && <CheckIcon size={9} weight="bold" />}
       </span>
       Viewed
-    </NestedButton>
+    </button>
   );
 }

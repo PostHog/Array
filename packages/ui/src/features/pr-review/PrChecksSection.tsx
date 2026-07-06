@@ -1,6 +1,7 @@
 import {
   ArrowSquareOutIcon,
   CheckCircleIcon,
+  CheckIcon,
   ChecksIcon,
   CircleNotchIcon,
   MinusCircleIcon,
@@ -9,12 +10,24 @@ import {
 } from "@phosphor-icons/react";
 import type { PrCheck, PrCheckBucket } from "@posthog/core/git/router-schemas";
 import { Spinner } from "@posthog/quill";
+import { DetailSection } from "@posthog/ui/features/inbox/components/DetailSection";
 import { useMemo, useState } from "react";
 import { openExternalUrl } from "../../shell/openExternal";
-import { PrSectionHeader } from "./PrSectionHeader";
 import { usePrChecks } from "./usePrChecks";
 
 /** Display order: failed first, then running, then succeeded, skipped last. */
+const BUCKET_META: Array<{
+  bucket: PrCheckBucket;
+  label: string;
+  labelClass: string;
+}> = [
+  { bucket: "fail", label: "failed", labelClass: "text-(--red-11)" },
+  { bucket: "cancel", label: "cancelled", labelClass: "text-gray-11" },
+  { bucket: "pending", label: "running", labelClass: "text-(--amber-11)" },
+  { bucket: "pass", label: "successful", labelClass: "text-(--green-11)" },
+  { bucket: "skipping", label: "skipped", labelClass: "text-gray-10" },
+];
+
 const BUCKET_ORDER: Record<PrCheckBucket, number> = {
   fail: 0,
   cancel: 1,
@@ -23,20 +36,23 @@ const BUCKET_ORDER: Record<PrCheckBucket, number> = {
   skipping: 4,
 };
 
+/** Buckets that need attention — shown by default. */
+const DEFAULT_VISIBLE: PrCheckBucket[] = ["fail", "cancel", "pending"];
+
 interface PrChecksSectionProps {
   prUrl: string;
 }
 
 /**
- * Collapsible CI status list for a PR, styled after GitHub's merge-box checks.
- * The header always shows a per-bucket summary; the section starts collapsed
- * when everything is green and expanded when something needs attention.
+ * CI status list for a PR. The header carries one checkbox per status bucket
+ * (failed, running, successful, …) that filters the rows below; only the
+ * attention-worthy buckets (failed, running) are shown by default.
  */
 export function PrChecksSection({ prUrl }: PrChecksSectionProps) {
   const checksQuery = usePrChecks(prUrl);
   const checks = checksQuery.data;
-  const [collapsedOverride, setCollapsedOverride] = useState<boolean | null>(
-    null,
+  const [visibleBuckets, setVisibleBuckets] = useState<Set<PrCheckBucket>>(
+    () => new Set(DEFAULT_VISIBLE),
   );
 
   const sorted = useMemo(
@@ -63,50 +79,61 @@ export function PrChecksSection({ prUrl }: PrChecksSectionProps) {
 
   if (checksQuery.isLoading) {
     return (
-      <PrSectionHeader
-        Icon={ChecksIcon}
-        title="Checks"
-        collapsed
-        onToggle={() => {}}
-        summary={
-          <span className="inline-flex items-center gap-2 text-[11px] text-gray-10">
-            <Spinner />
-            Loading…
-          </span>
-        }
-      />
+      <DetailSection Icon={ChecksIcon} title="Checks">
+        <div className="flex items-center gap-2 py-1 text-[12px] text-gray-10">
+          <Spinner />
+          Loading checks…
+        </div>
+      </DetailSection>
     );
   }
 
-  // Couldn't fetch (null) or nothing reported ([]) — no useful section either
-  // way, but only the fetch failure is worth a line of copy.
-  if (!checks || checks.length === 0) {
-    if (checks === null) {
-      return (
-        <div className="text-[12px] text-gray-10">
+  if (!checks) {
+    return (
+      <DetailSection Icon={ChecksIcon} title="Checks">
+        <div className="py-1 text-[12px] text-gray-10">
           Couldn't load CI checks for this pull request.
         </div>
-      );
-    }
-    return null;
+      </DetailSection>
+    );
   }
 
-  const allQuiet =
-    counts.fail === 0 && counts.cancel === 0 && counts.pending === 0;
-  const collapsed = collapsedOverride ?? allQuiet;
+  if (checks.length === 0) return null;
+
+  const toggleBucket = (bucket: PrCheckBucket) => {
+    setVisibleBuckets((prev) => {
+      const next = new Set(prev);
+      if (next.has(bucket)) next.delete(bucket);
+      else next.add(bucket);
+      return next;
+    });
+  };
+
+  const visible = sorted.filter((check) => visibleBuckets.has(check.bucket));
 
   return (
-    <div className="flex flex-col gap-3">
-      <PrSectionHeader
-        Icon={ChecksIcon}
-        title="Checks"
-        collapsed={collapsed}
-        onToggle={() => setCollapsedOverride(!collapsed)}
-        summary={<ChecksSummary counts={counts} />}
-      />
-      {!collapsed && (
+    <DetailSection
+      Icon={ChecksIcon}
+      title="Checks"
+      rightSlot={
+        <span className="flex items-center gap-1">
+          {BUCKET_META.map(({ bucket, label, labelClass }) =>
+            counts[bucket] > 0 ? (
+              <BucketFilterCheckbox
+                key={bucket}
+                checked={visibleBuckets.has(bucket)}
+                onToggle={() => toggleBucket(bucket)}
+                labelClass={labelClass}
+                label={`${counts[bucket]} ${label}`}
+              />
+            ) : null,
+          )}
+        </span>
+      }
+    >
+      {visible.length > 0 && (
         <div className="overflow-hidden rounded-md border border-(--gray-5)">
-          {sorted.map((check, index) => (
+          {visible.map((check, index) => (
             <CheckRow
               key={`${check.workflow ?? ""}/${check.name}/${index}`}
               check={check}
@@ -114,36 +141,39 @@ export function PrChecksSection({ prUrl }: PrChecksSectionProps) {
           ))}
         </div>
       )}
-    </div>
+    </DetailSection>
   );
 }
 
-function ChecksSummary({ counts }: { counts: Record<PrCheckBucket, number> }) {
-  const parts: React.ReactNode[] = [];
-  const push = (count: number, label: string, className: string) => {
-    if (count === 0) return;
-    parts.push(
-      <span key={label} className={className}>
-        {count} {label}
-      </span>,
-    );
-  };
-  push(counts.fail, "failed", "text-(--red-11)");
-  push(counts.cancel, "cancelled", "text-gray-11");
-  push(counts.pending, "running", "text-(--amber-11)");
-  push(counts.pass, "successful", "text-(--green-11)");
-  push(counts.skipping, "skipped", "text-gray-10");
-
+function BucketFilterCheckbox({
+  checked,
+  onToggle,
+  label,
+  labelClass,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+  labelClass: string;
+}) {
   return (
-    <span className="flex items-center gap-1 text-[11px] tabular-nums">
-      {parts.map((part, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: static separator list
-        <span key={index} className="flex items-center gap-1">
-          {index > 0 && <span className="text-(--gray-8)">·</span>}
-          {part}
-        </span>
-      ))}
-    </span>
+    <button
+      type="button"
+      aria-pressed={checked}
+      onClick={onToggle}
+      className="inline-flex shrink-0 cursor-pointer items-center gap-[5px] rounded border-0 bg-transparent px-[5px] py-[2px] text-[11px] hover:bg-gray-4"
+    >
+      <span
+        className={`inline-flex h-[13px] w-[13px] items-center justify-center rounded-[3px] border ${
+          checked
+            ? "border-(--accent-9) bg-(--accent-9) text-white"
+            : "border-(--gray-7)"
+        }`}
+      >
+        {checked && <CheckIcon size={9} weight="bold" />}
+      </span>
+      <span className={`tabular-nums ${labelClass}`}>{label}</span>
+    </button>
   );
 }
 

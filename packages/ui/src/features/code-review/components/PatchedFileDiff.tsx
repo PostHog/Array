@@ -2,7 +2,7 @@ import { type FileDiffMetadata, processFile } from "@pierre/diffs";
 import type { PrCommentThread } from "@posthog/core/code-review/types";
 import { isBinaryFile } from "@posthog/shared";
 import type { ChangedFile } from "@posthog/shared/domain-types";
-import { type ReactNode, useMemo } from "react";
+import { useMemo } from "react";
 import { DeferredDiffPlaceholder, DiffFileHeader } from "../reviewShellParts";
 import type { DiffOptions } from "../types";
 import { InteractiveFileDiff } from "./InteractiveFileDiff";
@@ -17,8 +17,6 @@ interface PatchedFileDiffProps {
   externalUrl?: string;
   prUrl?: string | null;
   commentThreads?: Map<number, PrCommentThread>;
-  /** Extra controls in the file header row (e.g. a "Viewed" toggle). */
-  headerTrailing?: ReactNode;
 }
 
 export function PatchedFileDiff({
@@ -31,7 +29,6 @@ export function PatchedFileDiff({
   externalUrl,
   prUrl,
   commentThreads,
-  headerTrailing,
 }: PatchedFileDiffProps) {
   const fileDiff = useMemo((): FileDiffMetadata | undefined => {
     if (!file.patch) return undefined;
@@ -63,7 +60,6 @@ export function PatchedFileDiff({
         collapsed={collapsed}
         onToggle={onToggle}
         externalUrl={externalUrl}
-        headerTrailing={headerTrailing}
       />
     );
   }
@@ -78,7 +74,6 @@ export function PatchedFileDiff({
         collapsed={collapsed}
         onToggle={onToggle}
         externalUrl={externalUrl}
-        headerTrailing={headerTrailing}
       />
     );
   }
@@ -95,7 +90,6 @@ export function PatchedFileDiff({
           fileDiff={fd}
           collapsed={collapsed}
           onToggle={onToggle}
-          trailing={headerTrailing}
         />
       )}
     />
