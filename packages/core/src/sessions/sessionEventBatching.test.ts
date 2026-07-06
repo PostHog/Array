@@ -37,6 +37,7 @@ function createHarness() {
     [RUN_ID]: {
       taskRunId: RUN_ID,
       taskId: TASK_ID,
+      taskTitle: "Local Task",
       events: [],
       messageQueue: [],
       pendingPermissions: new Map(),
@@ -62,7 +63,7 @@ function createHarness() {
     },
     updateSession: (taskRunId: string, updates: Partial<AgentSession>) => {
       const session = sessions[taskRunId];
-      if (session) Object.assign(session, updates);
+      if (session) sessions[taskRunId] = { ...session, ...updates };
     },
     appendEvents,
     replaceOptimisticWithEvent: vi.fn(),
@@ -80,10 +81,11 @@ function createHarness() {
     debug: vi.fn(),
   };
 
+  const notifyPromptComplete = vi.fn();
   const deps = {
     store,
     log: noopLog,
-    notifyPromptComplete: vi.fn(),
+    notifyPromptComplete,
     notifyPermissionRequest: vi.fn(),
     taskViewedApi: { markActivity: vi.fn() },
     getPersistedConfigOptions: () => undefined,
@@ -120,9 +122,34 @@ function createHarness() {
   return {
     service,
     appendEvents,
+    notifyPromptComplete,
+    updateSession: store.updateSession,
     emit: (event: AcpMessage) => onEvent?.(event),
     events: () => sessions[RUN_ID].events,
   };
+}
+
+function promptEcho(id: number, ts: number): AcpMessage {
+  return {
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      id,
+      method: "session/prompt",
+      params: { sessionId: RUN_ID, prompt: [] },
+    },
+  } as unknown as AcpMessage;
+}
+
+function promptResponse(id: number, ts: number): AcpMessage {
+  return {
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      id,
+      result: { stopReason: "end_turn" },
+    },
+  } as unknown as AcpMessage;
 }
 
 describe("streamed event batching", () => {
@@ -163,5 +190,23 @@ describe("streamed event batching", () => {
     // The flush timer was cleared, so advancing does not re-apply anything.
     vi.advanceTimersByTime(FLUSH_MS);
     expect(h.events()).toHaveLength(2);
+  });
+
+  it("keeps the turn duration when the prompt mutation clears state before the response flushes", () => {
+    const h = createHarness();
+
+    h.emit(promptEcho(1, 1_000));
+    vi.advanceTimersByTime(FLUSH_MS);
+
+    h.emit(promptResponse(1, 6_000));
+    h.updateSession(RUN_ID, { isPromptPending: false, promptStartedAt: null });
+    vi.advanceTimersByTime(FLUSH_MS);
+
+    expect(h.notifyPromptComplete).toHaveBeenCalledWith(
+      "Local Task",
+      "end_turn",
+      TASK_ID,
+      5_000,
+    );
   });
 });
