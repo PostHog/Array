@@ -353,8 +353,8 @@ export function SessionView({
     onSendPrompt("/compact");
   };
 
-  const handleStaleContinue = () => {
-    trackStaleGateChoice("continue");
+  const handleStaleDismiss = () => {
+    trackStaleGateChoice("dismiss");
     staleGate.onContinue();
   };
 
@@ -367,7 +367,7 @@ export function SessionView({
       <StaleConversationCostNotice
         usedTokens={staleGate.usedTokens}
         costUsd={staleGate.costUsd}
-        onDismiss={handleStaleContinue}
+        onDismiss={handleStaleDismiss}
         onCompact={permissionPending ? undefined : handleStaleCompact}
       />
     ) : null;

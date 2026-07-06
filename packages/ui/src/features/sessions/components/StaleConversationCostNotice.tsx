@@ -2,7 +2,8 @@ import { Warning, X } from "@phosphor-icons/react";
 import { formatUsd } from "@posthog/core/billing/spendAnalysisFormat";
 import { Button } from "@posthog/quill";
 import { formatTokensCompact } from "@posthog/ui/features/sessions/contextColors";
-import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
+import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 
 interface StaleConversationCostNoticeProps {
   usedTokens: number;

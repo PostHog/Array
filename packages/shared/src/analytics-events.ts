@@ -136,7 +136,7 @@ export interface PromptSentProperties {
 }
 
 export interface StaleConversationGateChoiceProperties {
-  choice: "compact" | "continue" | "new_session";
+  choice: "compact" | "dismiss" | "new_session";
   used_tokens: number;
   cost_usd: number | null;
 }
