@@ -204,13 +204,13 @@ describe("rebuildConversation", () => {
     expect(turns[1].content[1]).toEqual({ type: "text", text: "answer" });
   });
 
-  it("drops empty text and thinking blocks from assistant content", () => {
+  it.each([
+    { kind: "text", block: { type: "text", text: "" } },
+    { kind: "thinking", block: { type: "thinking", thinking: "" } },
+  ])("drops empty $kind blocks from assistant content", ({ block }) => {
     const turns = rebuildConversation([
       entry("user_message", { content: { type: "text", text: "hi" } }),
-      entry("agent_thought_chunk", { content: { type: "text", text: "" } }),
-      entry("agent_thought_chunk", {
-        content: { type: "thinking", thinking: "" },
-      }),
+      entry("agent_thought_chunk", { content: block }),
       entry("agent_message_chunk", { content: { type: "text", text: "done" } }),
     ]);
 
@@ -615,18 +615,17 @@ describe("conversationTurnsToJsonlEntries", () => {
     expect(parsed.message.content).toEqual([{ type: "text", text: " " }]);
   });
 
-  it("drops empty text and thinking blocks from assistant lines", () => {
+  it.each([
+    { kind: "text", block: { type: "text", text: "" } },
+    { kind: "thinking", block: { type: "thinking", thinking: "" } },
+  ])("drops empty $kind blocks from assistant lines", ({ block }) => {
     const lines = conversationTurnsToJsonlEntries(
       [
         { role: "user", content: [{ type: "text", text: "hi" }] },
         {
           role: "assistant",
           content: [
-            { type: "text", text: "" },
-            { type: "thinking", thinking: "" } as unknown as {
-              type: "text";
-              text: string;
-            },
+            block as unknown as { type: "text"; text: string },
             { type: "text", text: "answer" },
           ],
         },
