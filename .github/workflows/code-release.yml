@@ -196,6 +196,16 @@ jobs:
             echo "OK: $bin"
           done
 
+          # The native codex CLI must ship as a sibling of codex-acp, or the
+          # app-server harness silently falls back to codex-acp in production.
+          for f in codex rg; do
+            if [[ ! -f "$RESOURCES/app.asar.unpacked/.vite/build/codex-acp/$f" ]]; then
+              echo "FAIL: codex-acp/$f missing in bundled binaries"
+              exit 1
+            fi
+            echo "OK: codex-acp/$f"
+          done
+
       - name: Install Playwright
         run: pnpm --filter code exec playwright install
 
