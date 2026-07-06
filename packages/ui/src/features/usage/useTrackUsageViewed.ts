@@ -7,17 +7,10 @@ export interface TrackUsageViewedInput {
   isPro: boolean;
   sustainedUsedPercent: number | null;
   burstUsedPercent: number | null;
-  spendAnalysisWindowDays: number;
 }
 
 export function useTrackUsageViewed(input: TrackUsageViewedInput): void {
-  const {
-    isLoading,
-    isPro,
-    sustainedUsedPercent,
-    burstUsedPercent,
-    spendAnalysisWindowDays,
-  } = input;
+  const { isLoading, isPro, sustainedUsedPercent, burstUsedPercent } = input;
 
   const firedRef = useRef(false);
   useEffect(() => {
@@ -29,13 +22,6 @@ export function useTrackUsageViewed(input: TrackUsageViewedInput): void {
       is_pro: isPro,
       sustained_used_percent: sustainedUsedPercent,
       burst_used_percent: burstUsedPercent,
-      spend_analysis_window_days: spendAnalysisWindowDays,
     });
-  }, [
-    isLoading,
-    isPro,
-    sustainedUsedPercent,
-    burstUsedPercent,
-    spendAnalysisWindowDays,
-  ]);
+  }, [isLoading, isPro, sustainedUsedPercent, burstUsedPercent]);
 }

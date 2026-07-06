@@ -632,7 +632,6 @@ export interface UsageViewedProperties {
   sustained_used_percent: number | null;
   /** Daily bucket percent (0-100), null when usage is unavailable. */
   burst_used_percent: number | null;
-  spend_analysis_window_days: number;
 }
 
 export interface SpendAnalysisTaskOpenedProperties {

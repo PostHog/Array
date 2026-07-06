@@ -17,7 +17,10 @@ export function WindowSelector({ value, onChange }: WindowSelectorProps) {
     <SegmentedControl.Root
       value={value}
       size="1"
-      onValueChange={(next) => onChange(next as SpendAnalysisWindow)}
+      onValueChange={(next) => {
+        const found = WINDOW_OPTIONS.find((option) => option.value === next);
+        if (found) onChange(found.value);
+      }}
       aria-label="Spend analysis window"
     >
       {WINDOW_OPTIONS.map((option) => (

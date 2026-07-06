@@ -2,7 +2,6 @@ import { ChartLine, CreditCard, WarningCircle } from "@phosphor-icons/react";
 import {
   fillSpendDays,
   type SpendAnalysisWindow,
-  windowToDays,
 } from "@posthog/core/billing/spendAnalysisFormat";
 import {
   Empty,
@@ -90,7 +89,6 @@ export function UsageView() {
     isPro,
     sustainedUsedPercent: usage?.sustained.used_percent ?? null,
     burstUsedPercent: usage?.burst.used_percent ?? null,
-    spendAnalysisWindowDays: windowToDays(spendWindow),
   });
 
   if (!billingEnabled && !spendAnalysisEnabled) {
