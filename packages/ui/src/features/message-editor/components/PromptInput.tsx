@@ -40,6 +40,14 @@ export interface PromptInputProps {
   modeOption?: SessionConfigOption;
   onModeChange?: (value: string) => void;
   allowBypassPermissions?: boolean;
+  /**
+   * When provided, the mode dropdown gains an "Autoresearch" toggle as its
+   * last item (new-task composer only). `active` drives its checkmark.
+   */
+  autoresearch?: {
+    active: boolean;
+    onToggle: () => void;
+  };
   // capabilities
   enableBashMode?: boolean;
   enableCommands?: boolean;
@@ -94,6 +102,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       modeOption,
       onModeChange,
       allowBypassPermissions = false,
+      autoresearch,
       enableBashMode = false,
       enableCommands = true,
       modelSelector,
@@ -395,6 +404,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
                       onChange={onModeChange}
                       allowBypassPermissions={allowBypassPermissions}
                       disabled={disabled}
+                      autoresearch={autoresearch}
                     />
                   )}
                   {modelSelector && <span>{modelSelector}</span>}

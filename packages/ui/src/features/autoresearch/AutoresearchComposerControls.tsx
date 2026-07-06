@@ -22,8 +22,11 @@ interface AutoresearchComposerControlsProps {
 }
 
 /**
- * Autoresearch settings rendered inside the composer box (its header addon)
- * while the mode is armed — one input view, not a widget attached under it.
+ * Autoresearch settings shown as a bar above the composer while the mode is
+ * armed. It reads as one sentence — "Optimize to maximize until it reaches N
+ * or after K iterations using <model>" — so each control explains itself in
+ * place; tooltips on the labels add the detail.
+ *
  * There is deliberately no metric or instructions field: the prompt IS the
  * optimization brief, and the agent names the metric in its reports.
  *
@@ -39,44 +42,63 @@ export function AutoresearchComposerControls({
   onExit,
 }: AutoresearchComposerControlsProps) {
   return (
-    <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
-      <span className="flex shrink-0 items-center gap-1 font-medium text-violet-11">
-        <ChartLineUp size={13} />
-        Autoresearch
+    <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-1.5 text-[12px]">
+      <Tooltip content="Runs an autonomous optimization loop: it measures a baseline from your brief, then edits the code and re-measures each round — keeping changes that move the metric and reverting the ones that don't. It stops when the metric reaches your target or hits the iteration cap, whichever comes first.">
+        <span className="flex shrink-0 cursor-help items-center gap-1 font-medium text-violet-11">
+          <ChartLineUp size={13} />
+          Autoresearch
+        </span>
+      </Tooltip>
+
+      {/* The goal: which way to push the metric the brief describes. */}
+      <span className="flex items-center gap-1.5 whitespace-nowrap text-(--gray-11)">
+        <Tooltip content="Whether the agent should drive the metric from your brief up or down.">
+          <span className="cursor-help">Optimize to</span>
+        </Tooltip>
+        <Select.Root
+          size="1"
+          value={draft.direction}
+          onValueChange={(value) =>
+            onChange({ direction: value as AutoresearchDirection })
+          }
+          disabled={disabled}
+        >
+          <Select.Trigger variant="soft" aria-label="Optimization direction" />
+          <Select.Content>
+            <Select.Item value="maximize">maximize</Select.Item>
+            <Select.Item value="minimize">minimize</Select.Item>
+          </Select.Content>
+        </Select.Root>
       </span>
-      <Select.Root
-        size="1"
-        value={draft.direction}
-        onValueChange={(value) =>
-          onChange({ direction: value as AutoresearchDirection })
-        }
-        disabled={disabled}
-      >
-        <Select.Trigger variant="soft" aria-label="Optimization direction" />
-        <Select.Content>
-          <Select.Item value="maximize">Maximize</Select.Item>
-          <Select.Item value="minimize">Minimize</Select.Item>
-        </Select.Content>
-      </Select.Root>
-      <TextField.Root
-        size="1"
-        className="w-24"
-        value={draft.targetValue === null ? "" : String(draft.targetValue)}
-        onChange={(event) => {
-          const raw = event.target.value.trim();
-          const numeric = Number(raw);
-          onChange({
-            targetValue:
-              raw === "" || !Number.isFinite(numeric) ? null : numeric,
-          });
-        }}
-        placeholder="Target"
-        inputMode="decimal"
-        aria-label="Target value (optional)"
-        disabled={disabled}
-      />
-      <span className="flex items-center gap-1 text-(--gray-11)">
-        ≤
+
+      {/* Two stop conditions, whichever comes first: the metric hits the
+          target value, or the run exhausts its iteration budget. Only the
+          label text is wrapped in a tooltip — never the input — so focusing
+          the field to type doesn't pop the tooltip open. */}
+      <span className="flex items-center gap-1.5 whitespace-nowrap text-(--gray-11)">
+        <Tooltip content="Finish early once the metric reaches this value. Leave blank to always run the full iteration budget.">
+          <span className="cursor-help">until it reaches</span>
+        </Tooltip>
+        <TextField.Root
+          size="1"
+          className="w-24"
+          value={draft.targetValue === null ? "" : String(draft.targetValue)}
+          onChange={(event) => {
+            const raw = event.target.value.trim();
+            const numeric = Number(raw);
+            onChange({
+              targetValue:
+                raw === "" || !Number.isFinite(numeric) ? null : numeric,
+            });
+          }}
+          placeholder="optional"
+          inputMode="decimal"
+          aria-label="Target metric value to stop at (optional)"
+          disabled={disabled}
+        />
+      </span>
+      <span className="flex items-center gap-1.5 whitespace-nowrap text-(--gray-11)">
+        or after
         <TextField.Root
           size="1"
           className="w-14"
@@ -89,18 +111,28 @@ export function AutoresearchComposerControls({
             })
           }
           inputMode="numeric"
-          aria-label="Iteration budget"
+          aria-label="Maximum iterations"
           disabled={disabled}
         />
-        iterations
+        <Tooltip content="Hard cap on build-and-measure rounds before the run stops.">
+          <span className="cursor-help">iterations</span>
+        </Tooltip>
       </span>
-      <StagesPopover
-        draft={draft}
-        modelOptions={modelOptions}
-        effortOptions={effortOptions}
-        disabled={disabled}
-        onChange={onChange}
-      />
+
+      {/* The engine: model + effort per stage. */}
+      <span className="flex items-center gap-1.5 whitespace-nowrap text-(--gray-11)">
+        <Tooltip content="Model and reasoning effort the loop runs on. Set the build and measure stages to different models to measure with a cheaper one.">
+          <span className="cursor-help">using</span>
+        </Tooltip>
+        <StagesPopover
+          draft={draft}
+          modelOptions={modelOptions}
+          effortOptions={effortOptions}
+          disabled={disabled}
+          onChange={onChange}
+        />
+      </span>
+
       <span className="ml-auto flex shrink-0 items-center">
         <Tooltip content="Exit autoresearch mode">
           <button

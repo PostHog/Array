@@ -1,4 +1,4 @@
-import { ChartLineUp, FileText, X } from "@phosphor-icons/react";
+import { FileText, X } from "@phosphor-icons/react";
 import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
 import { AUTORESEARCH_SERVICE } from "@posthog/core/autoresearch/identifiers";
 import { buildKickoffPreamble } from "@posthog/core/autoresearch/prompts";
@@ -15,7 +15,7 @@ import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detai
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
-import { Box, Button, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -686,7 +686,23 @@ export function TaskInput({
       implementEffort: currentReasoningLevel ?? null,
       measureEffort: currentReasoningLevel ?? null,
     });
-  }, [sessionId, currentModel, currentReasoningLevel]);
+    // The loop iterates unattended, so a permission prompt would stall it.
+    // Default to the most hands-off mode available: bypass when the user has
+    // enabled it, otherwise accept-edits.
+    const autonomousMode = allowBypassPermissions
+      ? "bypassPermissions"
+      : "acceptEdits";
+    if (modeOption && isValidConfigValue(modeOption, autonomousMode)) {
+      setConfigOption(modeOption.id, autonomousMode);
+    }
+  }, [
+    sessionId,
+    currentModel,
+    currentReasoningLevel,
+    allowBypassPermissions,
+    modeOption,
+    setConfigOption,
+  ]);
 
   // The preview config can still be loading when the user arms the mode;
   // backfill the stage fields once the composer's model/effort resolve so
@@ -1083,26 +1099,6 @@ export function TaskInput({
                     disabled={isCreatingTask}
                   />
                 )}
-                {autoresearchService && autoresearchEnabled && (
-                  <Tooltip
-                    content={
-                      autoresearchDraft
-                        ? "Exit autoresearch mode"
-                        : "Create this task in autoresearch mode: the prompt becomes the optimization brief"
-                    }
-                  >
-                    <Button
-                      size="1"
-                      variant={autoresearchDraft ? "soft" : "ghost"}
-                      color={autoresearchDraft ? undefined : "gray"}
-                      onClick={handleAutoresearchToggle}
-                      disabled={isCreatingTask}
-                    >
-                      <ChartLineUp size={14} />
-                      Autoresearch
-                    </Button>
-                  </Tooltip>
-                )}
                 {cloudRegion === "dev" && (
                   <Flex align="center" gap="1" className="shrink-0">
                     <span
@@ -1117,6 +1113,26 @@ export function TaskInput({
               </Flex>
 
               <Flex direction="column" gap="0">
+                {autoresearchDraft && (
+                  <div className="mb-2 rounded-md border border-violet-6 bg-violet-2 px-2.5 py-1.5">
+                    <AutoresearchComposerControls
+                      draft={autoresearchDraft}
+                      modelOptions={autoresearchModelOptions}
+                      effortOptions={autoresearchEffortOptions}
+                      disabled={isCreatingTask}
+                      onChange={(patch) =>
+                        useAutoresearchDraftStore
+                          .getState()
+                          .updateDraft(sessionId, patch)
+                      }
+                      onExit={() =>
+                        useAutoresearchDraftStore
+                          .getState()
+                          .clearDraft(sessionId)
+                      }
+                    />
+                  </div>
+                )}
                 <PromptInput
                   ref={editorRef}
                   sessionId={promptSessionId}
@@ -1124,26 +1140,6 @@ export function TaskInput({
                     autoresearchDraft
                       ? "What should the agent optimize? Describe the goal, how to measure it, and any constraints — it measures a baseline, then iterates."
                       : `What do you want to ship? ${hints}`
-                  }
-                  headerAddon={
-                    autoresearchDraft ? (
-                      <AutoresearchComposerControls
-                        draft={autoresearchDraft}
-                        modelOptions={autoresearchModelOptions}
-                        effortOptions={autoresearchEffortOptions}
-                        disabled={isCreatingTask}
-                        onChange={(patch) =>
-                          useAutoresearchDraftStore
-                            .getState()
-                            .updateDraft(sessionId, patch)
-                        }
-                        onExit={() =>
-                          useAutoresearchDraftStore
-                            .getState()
-                            .clearDraft(sessionId)
-                        }
-                      />
-                    ) : undefined
                   }
                   editorHeight="large"
                   disabled={isCreatingTask}
@@ -1161,6 +1157,14 @@ export function TaskInput({
                   modeOption={modeOption}
                   onModeChange={handleModeChange}
                   allowBypassPermissions={allowBypassPermissions}
+                  autoresearch={
+                    autoresearchService && autoresearchEnabled
+                      ? {
+                          active: !!autoresearchDraft,
+                          onToggle: handleAutoresearchToggle,
+                        }
+                      : undefined
+                  }
                   enableCommands
                   enableBashMode={false}
                   modelSelector={
