@@ -69,7 +69,7 @@ includes `src/**`). They are opt-in and cost a couple of short model turns.
 In CI they run as the **`e2e` job in `.github/workflows/test.yml`**, on pull
 requests only, after the unit + integration jobs pass. The job is opt-in and safe
 by default: it self-skips unless the repo variable `AGENT_E2E_ENABLED` is `true`
-with an `POSTHOG_CODE_E2E_PERSONAL_API_KEY` secret and an `POSTHOG_CODE_E2E_GATEWAY_URL` variable pointing at a
+with an `POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY` secret and an `POSTHOG_CODE_E2E_GATEWAY_URL` variable pointing at a
 gateway reachable from the runner, and it never runs for fork PRs (their secrets
 are withheld, which would otherwise red the fail-loud token guard). Off by
 default, so it costs nothing until explicitly enabled; the codex arm self-skips if
@@ -91,7 +91,7 @@ arm self-skips if it is missing).
 
 | Var | Default | Notes |
 | --- | --- | --- |
-| `POSTHOG_CODE_E2E_PERSONAL_API_KEY` | — | Required. A token the gateway accepts — the `llm_gateway` product takes a personal API key (no OAuth). Without it every arm skips. `run-e2e.sh` reads the local dev key. |
+| `POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY` | — | Required. A token the gateway accepts — the `llm_gateway` product takes a personal API key (no OAuth). Without it every arm skips. `run-e2e.sh` reads the local dev key. |
 | `POSTHOG_CODE_E2E_GATEWAY_URL` | `http://localhost:3308/llm_gateway` | Gateway base (codex appends `/v1`). `llm_gateway` accepts a personal API key; `posthog_code` is OAuth-only. |
 | `POSTHOG_CODE_E2E_CLAUDE_MODEL` | `claude-haiku-4-5` | Override if the gateway serves a different cheap Claude id. |
 | `POSTHOG_CODE_E2E_CODEX_MODEL` | `gpt-5-mini` | Cheapest codex id the local gateway serves; override if needed. |

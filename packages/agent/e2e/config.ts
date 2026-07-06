@@ -5,7 +5,7 @@ export type Adapter = "claude" | "codex";
 
 /**
  * Live e2e configuration, resolved entirely from the environment so no secret is
- * committed. Needs a local llm-gateway and a token in `POSTHOG_CODE_E2E_PERSONAL_API_KEY`; targets
+ * committed. Needs a local llm-gateway and a token in `POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY`; targets
  * the `llm_gateway` product, which accepts a personal API key (no OAuth mint,
  * unlike prod's `posthog_code`). Without the token every arm self-skips.
  */
@@ -13,7 +13,7 @@ export type Adapter = "claude" | "codex";
 const GATEWAY_URL =
   process.env.POSTHOG_CODE_E2E_GATEWAY_URL ||
   "http://localhost:3308/llm_gateway";
-const TOKEN = process.env.POSTHOG_CODE_E2E_PERSONAL_API_KEY ?? "";
+const TOKEN = process.env.POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY ?? "";
 
 // This checkout's bundled codex binaries, relative to packages/agent/e2e.
 const CODEX_RESOURCES_DIR = join(
@@ -74,7 +74,7 @@ export const E2E = {
 
   /** Null => runnable; a string => skip this arm with that reason (never silent). */
   skipReason(adapter: Adapter): string | null {
-    if (!TOKEN) return "POSTHOG_CODE_E2E_PERSONAL_API_KEY not set";
+    if (!TOKEN) return "POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY not set";
     if (adapter === "codex" && !existsSync(NATIVE_CODEX_BIN)) {
       return `native codex binary missing at ${NATIVE_CODEX_BIN}`;
     }

@@ -155,7 +155,7 @@ jobs:
     # Live-model e2e for the @posthog/agent adapters (claude + codex). Runs only
     # after the unit + integration jobs pass — a red tree never reaches the
     # gateway — and only when a packages/ file changed. Each arm still self-skips
-    # unless the POSTHOG_CODE_E2E_PERSONAL_API_KEY secret is present (fork PRs never
+    # unless the POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY secret is present (fork PRs never
     # see it) and POSTHOG_CODE_E2E_GATEWAY_URL points at a runner-reachable gateway.
     # Drives cheap models (claude-haiku-4-5 / gpt-5-mini), so a run is a handful of
     # short turns.
@@ -208,7 +208,7 @@ jobs:
         # (packages/agent/e2e/config.ts). The personal API key is an org secret; the
         # URL and model/environment overrides are org vars.
         env:
-          POSTHOG_CODE_E2E_PERSONAL_API_KEY: ${{ secrets.POSTHOG_CODE_E2E_PERSONAL_API_KEY }}
+          POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY: ${{ secrets.POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY }}
           POSTHOG_CODE_E2E_GATEWAY_URL: ${{ vars.POSTHOG_CODE_E2E_GATEWAY_URL }}
           POSTHOG_CODE_E2E_CLAUDE_MODEL: ${{ vars.POSTHOG_CODE_E2E_CLAUDE_MODEL }}
           POSTHOG_CODE_E2E_CODEX_MODEL: ${{ vars.POSTHOG_CODE_E2E_CODEX_MODEL }}
