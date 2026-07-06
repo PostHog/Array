@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  type ParsedBundle,
-  parseBundleInput,
-} from "../utils/parseBundleInput";
+import { type ParsedBundle, parseBundleInput } from "../utils/parseBundleInput";
 
 type Expected =
   | { ok: true; value: ParsedBundle }
