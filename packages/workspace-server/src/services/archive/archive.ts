@@ -287,6 +287,7 @@ export class ArchiveService {
               const manager = new WorktreeManager({
                 mainRepoPath: folderPath,
                 worktreeBasePath: this.workspaceSettings.getWorktreeLocation(),
+                logger: this.log,
               });
               await manager.deleteWorktree(worktreePath);
               const parentDir = path.dirname(worktreePath);
@@ -434,6 +435,7 @@ export class ArchiveService {
               const manager = new WorktreeManager({
                 mainRepoPath: folderPath,
                 worktreeBasePath: this.workspaceSettings.getWorktreeLocation(),
+                logger: this.log,
               });
               const worktreePath = await this.deriveWorktreePath(
                 folderPath,
@@ -638,6 +640,7 @@ export class ArchiveService {
       branchName: archive.branchName,
       checkpointId: archive.checkpointId,
       recreateBranch,
+      logger: this.log,
     });
 
     if (worktree) {

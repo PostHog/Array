@@ -1077,12 +1077,14 @@ export async function fetchRef(
   git: GitLike,
   remote: string,
   ref: string,
+  options?: { onError?: (message: string) => void },
 ): Promise<boolean> {
   try {
     // `--` keeps a ref beginning with `-` from being parsed as an option.
     await git.raw(["fetch", "--quiet", "--no-tags", remote, "--", ref]);
     return true;
-  } catch {
+  } catch (error) {
+    options?.onError?.(error instanceof Error ? error.message : String(error));
     return false;
   }
 }

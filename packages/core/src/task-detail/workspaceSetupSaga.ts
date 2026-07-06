@@ -39,8 +39,9 @@ export class WorkspaceSetupSaga {
       this.log.info("Workspace setup complete", { taskId, path });
       return { success: true };
     } catch (error) {
-      this.log.error("Failed to set up workspace", { error });
-      return { success: false, error: "Failed to set up workspace" };
+      this.log.error("Failed to set up workspace", { taskId, path, error });
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
     }
   }
 }

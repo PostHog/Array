@@ -99,6 +99,7 @@ export class FoldersService {
     return new WorktreeManager({
       mainRepoPath,
       worktreeBasePath: this.workspaceSettings.getWorktreeLocation(),
+      logger: this.log,
     });
   }
 
@@ -302,6 +303,7 @@ export class FoldersService {
             const manager = new WorktreeManager({
               mainRepoPath: repo.path,
               worktreeBasePath,
+              logger: this.log,
             });
             await manager.deleteWorktree(worktree.path);
           } catch (error) {

@@ -307,6 +307,7 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
     return new WorktreeManager({
       mainRepoPath: folderPath,
       worktreeBasePath: this.workspaceSettings.getWorktreeLocation(),
+      logger: this.log,
     });
   }
 
@@ -503,6 +504,7 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
       branchName,
       checkpointId,
       recreateBranch,
+      logger: this.log,
     });
 
     if (worktree) this.worktreeRepo.deleteByWorkspaceId(workspace.id);

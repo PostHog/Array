@@ -666,6 +666,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     const worktreeManager = new WorktreeManager({
       mainRepoPath,
       worktreeBasePath,
+      logger: this.log,
     });
     let worktree: WorktreeInfo;
 
@@ -676,8 +677,13 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       const selectedBranch = branch ?? defaultBranch;
       const isTrunkSelected = selectedBranch === defaultBranch;
 
+      // Renderer provisioning output is dropped when no view subscribes; mirror it into the main log.
       const onOutput = (data: string) => {
         this.provisioning.emitOutput(taskId, data);
+        const trimmed = data.trim();
+        if (trimmed) {
+          this.log.info(`[worktree:${taskId}] ${trimmed}`);
+        }
       };
 
       const existingWorktree = reuseExistingWorktree
@@ -779,7 +785,8 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       }
     } catch (error) {
       this.log.error(`Failed to create worktree for task ${taskId}:`, error);
-      throw new Error(`Failed to create worktree: ${String(error)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to create worktree: ${message}`);
     }
 
     const createdWorkspace = this.workspaceRepo.create({
@@ -1284,6 +1291,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     const worktreeManager = new WorktreeManager({
       mainRepoPath,
       worktreeBasePath,
+      logger: this.log,
     });
 
     let worktree: WorktreeInfo;
@@ -1309,7 +1317,8 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         `Failed to create worktree for promoted task ${taskId}:`,
         error,
       );
-      throw new Error(`Failed to promote task to worktree: ${String(error)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to promote task to worktree: ${message}`);
     }
 
     const workspace = this.workspaceRepo.findByTaskId(taskId);
