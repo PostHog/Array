@@ -53,7 +53,7 @@ export function WhatsNewModal() {
     ...hostTRPC.githubReleases.list.queryOptions(
       currentVersion ? { expectVersion: currentVersion } : undefined,
     ),
-    enabled: isOpen && currentVersion !== undefined,
+    enabled: isOpen && !!currentVersion,
   });
   const isError = isVersionError || isReleasesError;
 
@@ -83,12 +83,12 @@ export function WhatsNewModal() {
           </Dialog.Close>
         </Flex>
 
-        {isPending ? (
-          <ChangelogSkeleton />
-        ) : isError ? (
+        {isError ? (
           <Text color="gray" size="2">
             Could not load releases. Please try again later.
           </Text>
+        ) : isPending ? (
+          <ChangelogSkeleton />
         ) : groups.length === 0 ? (
           <Text color="gray" size="2">
             No releases found.
