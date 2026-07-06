@@ -2402,7 +2402,7 @@ export class SessionService {
     session: AgentSession,
     blocks: ContentBlock[],
     promptText: string,
-    options: { optimisticApplied?: boolean } = {},
+    options: { optimisticApplied?: boolean; isRecoveryResend?: boolean } = {},
   ): Promise<{ stopReason: string }> {
     if (!options.optimisticApplied) {
       this.applyOptimisticPrompt(session.taskRunId, blocks, promptText);
@@ -2444,14 +2444,33 @@ export class SessionService {
           errorMessage,
           errorDetails,
         });
-        this.startAutoRecoverLocalSession(
-          session.taskId,
-          session.taskRunId,
-          session.taskTitle,
-          errorDetails || errorMessage,
-          errorDetails ||
-            "Session connection lost. Please retry or start a new session.",
-        );
+        if (!options.isRecoveryResend) {
+          const resent = await this.recoverAndResendPrompt(
+            session,
+            blocks,
+            promptText,
+            errorDetails || errorMessage,
+          );
+          if (resent) {
+            return resent;
+          }
+        }
+        // Recovery failed (or this already was the post-recovery resend):
+        // surface the error state so the user can retry manually.
+        const latest = this.d.store.getSessionByTaskId(session.taskId);
+        if (
+          latest?.taskRunId === session.taskRunId &&
+          latest.status !== "error"
+        ) {
+          this.setErrorSession(
+            session.taskId,
+            session.taskRunId,
+            session.taskTitle,
+            errorDetails ||
+              "Session connection lost. Please retry or start a new session.",
+            "Connection lost",
+          );
+        }
       } else {
         this.d.store.updateSession(session.taskRunId, {
           isPromptPending: false,
@@ -2462,6 +2481,60 @@ export class SessionService {
 
       throw error;
     }
+  }
+
+  /**
+   * A fatal prompt failure (e.g. "Session not found") usually means the
+   * backend agent was idle-killed or the host process restarted while the
+   * renderer still shows the session as connected. Recover the session in
+   * place and resend the prompt once, so a reply to a stale session lands
+   * instead of erroring and losing the user's message.
+   *
+   * Returns the resend result, or null when recovery (or the refreshed
+   * session lookup) failed and the caller should surface the original error.
+   */
+  private async recoverAndResendPrompt(
+    session: AgentSession,
+    blocks: ContentBlock[],
+    promptText: string,
+    reason: string,
+  ): Promise<{ stopReason: string } | null> {
+    let recovered = false;
+    try {
+      recovered = await this.tryAutoRecoverLocalSession(
+        session.taskId,
+        session.taskRunId,
+        reason,
+      );
+    } catch (recoveryError) {
+      this.d.log.warn("Session recovery threw while resending prompt", {
+        taskId: session.taskId,
+        taskRunId: session.taskRunId,
+        error:
+          recoveryError instanceof Error
+            ? recoveryError.message
+            : String(recoveryError),
+      });
+      return null;
+    }
+    if (!recovered) return null;
+
+    const refreshed = this.d.store.getSessionByTaskId(session.taskId);
+    if (
+      !refreshed ||
+      refreshed.taskRunId !== session.taskRunId ||
+      refreshed.status !== "connected"
+    ) {
+      return null;
+    }
+
+    this.d.log.info("Resending prompt after session recovery", {
+      taskId: session.taskId,
+      taskRunId: session.taskRunId,
+    });
+    return this.sendLocalPrompt(refreshed, blocks, promptText, {
+      isRecoveryResend: true,
+    });
   }
 
   /**
