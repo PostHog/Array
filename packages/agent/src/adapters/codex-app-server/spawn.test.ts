@@ -46,6 +46,13 @@ describe("buildAppServerArgs", () => {
     },
   );
 
+  it("keeps codex credential stores on files so the bundled binary never triggers keychain prompts", () => {
+    const args = buildAppServerArgs({ binaryPath: "/bundle/codex" });
+
+    expect(args).toContain('cli_auth_credentials_store="file"');
+    expect(args).toContain('mcp_oauth_credentials_store="file"');
+  });
+
   it("renders configOverrides bare for numbers and quoted for strings", () => {
     const args = buildAppServerArgs({
       binaryPath: "/bundle/codex",

@@ -47,6 +47,16 @@ export function buildAppServerArgs(
   // servers PostHog injects, so disable the plugin system outright.
   args.push("-c", "features.plugins=false");
 
+  // Codex defaults to the OS keychain for CLI auth, MCP OAuth tokens, and its
+  // secrets encryption key — on macOS that means permission prompts for our
+  // bundled binary (keychain ACLs are signature-bound, so grants to a user's
+  // standalone codex don't cover ours and don't stick across releases). Model
+  // auth is injected via POSTHOG_GATEWAY_API_KEY, so codex's own credential
+  // stores are unused: keep them on plain files inside the private CODEX_HOME
+  // and never touch the keychain.
+  args.push("-c", `cli_auth_credentials_store="file"`);
+  args.push("-c", `mcp_oauth_credentials_store="file"`);
+
   // OS sandbox gated on platform (= availability): macOS Seatbelt → workspace-write
   // (keeps the sandbox engaged so a per-turn readOnly can tighten it and block
   // edits); linux/windows have no sandbox launcher and would panic, so
