@@ -71,7 +71,7 @@ export interface AgentSession {
   /**
    * Adapter's negotiated steering capability (`_meta.posthog.steering` from
    * initialize). "native" means a mid-turn message folds into the running turn
-   * (claude, codex app-server); "interrupt-resend" (codex-acp) or undefined
+   * (claude, codex); "interrupt-resend" (legacy) or undefined
    * means the host must cancel + resend. Drives the steer-vs-resend decision.
    */
   steering?: string;
@@ -195,7 +195,7 @@ export function resolveBypassRevertMode(
  * Whether a mid-turn message can be folded into the running turn (steered)
  * rather than interrupt-and-resent. Decided by the adapter's negotiated
  * `steering` capability: "native" folds (claude, codex app-server);
- * "interrupt-resend" (codex-acp) does not. Cloud runs never steer locally.
+ * "interrupt-resend" (legacy) does not. Cloud runs never steer locally.
  *
  * Fallback: if `steering` is unset (a start path that predates capability
  * plumbing), Claude is still treated as native — it has always steered — so the

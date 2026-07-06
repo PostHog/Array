@@ -19,7 +19,7 @@ export function useMessagingMode(taskId: string | undefined): MessagingMode {
  * Whether the task's session steers natively (folds a mid-turn message into the
  * running turn) versus falling back to interrupt-and-resend. Driven by the
  * adapter's negotiated `steering` capability — same decision as the host's
- * sendPrompt gate — so Claude and codex app-server steer, codex-acp and cloud
+ * sendPrompt gate — so Claude and codex steer, while cloud
  * resend. Drives the steer label/tooltip, not whether steer is allowed.
  */
 export function useSupportsNativeSteer(taskId: string | undefined): boolean {

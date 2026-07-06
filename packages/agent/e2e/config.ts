@@ -90,7 +90,6 @@ export const E2E = {
     }
     process.env.OPENAI_BASE_URL = openAiBase();
     process.env.OPENAI_API_KEY = TOKEN;
-    process.env.POSTHOG_CODEX_USE_APP_SERVER = "1";
   },
 
   /** The codexOptions the codex arm passes through `createAcpConnection`. */

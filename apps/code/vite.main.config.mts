@@ -565,7 +565,6 @@ function copyCodexAcpBinaries(): Plugin {
 
       const sourceDir = join(__dirname, "resources/codex-acp");
       const binaries = [
-        { name: "codex-acp", winName: "codex-acp.exe" },
         { name: "codex", winName: "codex.exe" },
         { name: "rg", winName: "rg.exe" },
       ];

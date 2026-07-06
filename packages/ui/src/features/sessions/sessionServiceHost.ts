@@ -37,7 +37,6 @@ import { WORKSPACE_QUERY_KEY } from "@posthog/ui/features/workspace/identifiers"
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   buildPermissionToolMetadata,
-  posthogFeatureFlags,
   track,
 } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { logger } from "../../shell/logger";
@@ -81,7 +80,6 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       );
     },
     buildPermissionToolMetadata,
-    featureFlags: posthogFeatureFlags,
     notifyPermissionRequest: (taskTitle, taskId) =>
       resolveService(NotificationBus).notifyPermissionRequest(
         taskTitle,
@@ -108,12 +106,6 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         useSessionAdapterStore.getState().getAdapter(taskRunId),
       setAdapter: (taskRunId, adapter) =>
         useSessionAdapterStore.getState().setAdapter(taskRunId, adapter),
-      setUseCodexAppServer: (taskRunId, useAppServer) =>
-        useSessionAdapterStore
-          .getState()
-          .setUseCodexAppServer(taskRunId, useAppServer),
-      getUseCodexAppServer: (taskRunId) =>
-        useSessionAdapterStore.getState().getUseCodexAppServer(taskRunId),
       removeAdapter: (taskRunId) =>
         useSessionAdapterStore.getState().removeAdapter(taskRunId),
     },

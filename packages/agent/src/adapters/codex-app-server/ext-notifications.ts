@@ -1,6 +1,6 @@
 /**
  * Pure builders for the PostHog `_posthog/*` ext-notification params the app-server
- * adapter emits, mirroring the codex-acp adapter so log consumers and the renderer
+ * adapter emits so log consumers and the renderer
  * see the same shapes. Param-only (no I/O) so each is unit-testable in isolation.
  */
 
@@ -60,7 +60,7 @@ export interface AccumulatedUsage {
 
 /**
  * `_posthog/turn_complete` — fired when a prompt turn finishes. `totalTokens` is the
- * sum of all four component counts, matching the codex-acp adapter.
+ * sum of all four component counts.
  */
 export function buildTurnCompleteParams(
   sessionId: string,

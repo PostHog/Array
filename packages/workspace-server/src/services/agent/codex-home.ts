@@ -43,7 +43,7 @@ export async function cleanupCodexHome(
  * load the bundled PostHog catalog and the user's `~/.claude/skills` — without
  * ever writing into the shared cross-agent `~/.agents/skills`.
  *
- * codex-acp scans `$CODEX_HOME/skills` plus `$HOME/.agents/skills`. By pointing
+ * codex scans `$CODEX_HOME/skills` plus `$HOME/.agents/skills`. By pointing
  * CODEX_HOME at this app-private dir we feed our skills through the former while
  * the user's own Codex skills still load from the latter (it is keyed off
  * `$HOME`, not `$CODEX_HOME`). The user's real `~/.codex/config.toml` is

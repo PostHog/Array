@@ -1,7 +1,7 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { CODEX_MODE_PRESETS, type CodexModePreset } from "@posthog/shared";
 import { type GatewayModel, isOpenAIModel } from "../../gateway-models";
-import { getReasoningEffortOptions } from "../codex/models";
+import { getReasoningEffortOptions } from "./models";
 
 /**
  * Session config + mode synthesis for the codex app-server adapter. The native

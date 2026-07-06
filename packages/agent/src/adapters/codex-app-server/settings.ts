@@ -77,7 +77,7 @@ export class CodexSettingsManager {
  * describes the `env` field of server `foo`, not a separate server, so it must
  * collapse to `foo`. Treating it as its own server emits
  * `mcp_servers.foo.env.enabled=false`, which sets a boolean on the string-typed
- * env map and makes codex-acp reject the whole config (it then crashes and the
+ * env map and makes codex reject the whole config (it then crashes and the
  * host silently falls back to Claude). Quoted segments (`"a.b"`) keep their dots.
  */
 function firstMcpServerName(sectionPath: string): string | null {

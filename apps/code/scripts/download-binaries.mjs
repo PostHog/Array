@@ -21,34 +21,6 @@ const DEST_DIR = join(__dirname, "..", "resources", "codex-acp");
 
 const BINARIES = [
   {
-    name: "codex-acp",
-    version: "0.14.0",
-    getUrl: (version, target) => {
-      const ext = target.includes("windows") ? "zip" : "tar.gz";
-      return `https://github.com/zed-industries/codex-acp/releases/download/v${version}/codex-acp-${version}-${target}.${ext}`;
-    },
-    getTarget: () => {
-      const { platform, arch } = process;
-      const targets = {
-        darwin: { arm64: "aarch64-apple-darwin", x64: "x86_64-apple-darwin" },
-        linux: {
-          arm64: "aarch64-unknown-linux-gnu",
-          x64: "x86_64-unknown-linux-gnu",
-        },
-        win32: {
-          arm64: "aarch64-pc-windows-msvc",
-          x64: "x86_64-pc-windows-msvc",
-        },
-      };
-      const platformTargets = targets[platform];
-      if (!platformTargets)
-        throw new Error(`Unsupported platform: ${platform}`);
-      const target = platformTargets[arch];
-      if (!target) throw new Error(`Unsupported arch: ${arch}`);
-      return target;
-    },
-  },
-  {
     name: "codex",
     version: "0.140.0",
     getUrl: (version, target) => {

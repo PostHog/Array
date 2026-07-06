@@ -260,13 +260,6 @@ export interface SessionServiceHelpers {
   ) => Promise<string[]>;
 }
 
-/**
- * PostHog flag gating the native codex app-server sub-adapter. When enabled for
- * the user, a codex session uses the app-server adapter instead of codex-acp.
- * Resolved at session start and passed to the agent as `useCodexAppServer`.
- */
-export const CODEX_APP_SERVER_FLAG = "codex-app-server";
-
 export interface SessionServiceDeps {
   trpc: SessionTrpc;
   store: ISessionStore;
@@ -282,12 +275,6 @@ export interface SessionServiceDeps {
     info: (msg: any, opts?: any) => unknown;
   };
   track: (event: string, props?: Record<string, unknown>) => void;
-  /**
-   * Evaluates a PostHog feature flag for the current user. Used to resolve
-   * {@link CODEX_APP_SERVER_FLAG} at session start. Optional so non-desktop
-   * hosts (stubbed web, tests) can omit it — absent is treated as "flag off".
-   */
-  featureFlags?: { isEnabled(flagKey: string): boolean };
   buildPermissionToolMetadata: (...args: any[]) => any;
   notifyPermissionRequest: (...args: any[]) => any;
   notifyPromptComplete: (...args: any[]) => any;
@@ -307,9 +294,6 @@ export interface SessionServiceDeps {
   adapterStore: {
     getAdapter(taskRunId: string): Adapter | undefined;
     setAdapter(taskRunId: string, adapter: Adapter): void;
-    /** Codex sub-adapter pin: true = app-server, null = resolved undefined at creation. */
-    setUseCodexAppServer(taskRunId: string, useAppServer: boolean | null): void;
-    getUseCodexAppServer(taskRunId: string): boolean | null | undefined;
     removeAdapter(taskRunId: string): void;
   };
   readonly settings: { customInstructions?: string | null };
@@ -938,25 +922,6 @@ export class SessionService {
       this.d.adapterStore.setAdapter(taskRunId, resolvedAdapter);
     }
 
-    // Reuse the codex sub-adapter pinned at session creation so a rollout-flag
-    // flip cannot resume an app-server thread through codex-acp (or vice
-    // versa). Sessions from before pinning existed resolve live once, then get
-    // backfilled so later reconnects stay stable.
-    const pinnedUseCodexAppServer =
-      resolvedAdapter === "codex"
-        ? this.d.adapterStore.getUseCodexAppServer(taskRunId)
-        : undefined;
-    const useCodexAppServer =
-      pinnedUseCodexAppServer === undefined
-        ? this.resolveUseCodexAppServer(resolvedAdapter)
-        : (pinnedUseCodexAppServer ?? undefined);
-    if (resolvedAdapter === "codex" && pinnedUseCodexAppServer === undefined) {
-      this.d.adapterStore.setUseCodexAppServer(
-        taskRunId,
-        useCodexAppServer ?? null,
-      );
-    }
-
     if (previous) {
       session.optimisticItems = previous.optimisticItems;
       session.messageQueue = previous.messageQueue;
@@ -1012,7 +977,6 @@ export class SessionService {
         logUrl,
         sessionId,
         adapter: resolvedAdapter,
-        useCodexAppServer,
         permissionMode: persistedMode,
         model: persistedModel,
         customInstructions: customInstructions || undefined,
@@ -1305,30 +1269,6 @@ export class SessionService {
     );
   }
 
-  /**
-   * Resolve the `codex-app-server` flag for a session. Only meaningful for the
-   * codex adapter (Claude ignores it), so returns undefined otherwise.
-   *
-   * One-way opt-in: when the flag is ON we force the app-server adapter (`true`).
-   * When off/unloaded (or no flags service on non-desktop hosts) we return
-   * `undefined` rather than `false`, so the agent falls through to its env
-   * override (`POSTHOG_CODEX_USE_APP_SERVER`) and then the codex-acp default —
-   * hard-passing `false` would shadow that env, since the host value has the
-   * highest precedence in resolveUseCodexAppServer.
-   *
-   * Consulted for NEW sessions (and once to backfill legacy ones); reconnects
-   * reuse the value pinned in the adapter store at creation, so a flag flip
-   * never resumes an existing thread through the other codex sub-adapter.
-   */
-  private resolveUseCodexAppServer(
-    adapter: "claude" | "codex" | undefined,
-  ): boolean | undefined {
-    if (adapter !== "codex") return undefined;
-    return this.d.featureFlags?.isEnabled(CODEX_APP_SERVER_FLAG)
-      ? true
-      : undefined;
-  }
-
   private async createNewLocalSession(
     taskId: string,
     taskTitle: string,
@@ -1353,7 +1293,6 @@ export class SessionService {
 
     const { customInstructions: startCustomInstructions } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
-    const useCodexAppServer = this.resolveUseCodexAppServer(adapter);
     const result = await this.d.trpc.agent.start.mutate({
       taskId,
       taskRunId: taskRun.id,
@@ -1362,7 +1301,6 @@ export class SessionService {
       projectId: auth.projectId,
       permissionMode: executionMode,
       adapter,
-      useCodexAppServer,
       customInstructions: startCustomInstructions || undefined,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
@@ -1408,16 +1346,9 @@ export class SessionService {
       this.d.setPersistedConfigOptions(taskRun.id, configOptions);
     }
 
-    // Persist the adapter, pinning the codex sub-adapter so reconnects keep
-    // using the one that created this thread even if the rollout flag flips.
+    // Persist the adapter so reconnects resume with the same one.
     if (adapter) {
       this.d.adapterStore.setAdapter(taskRun.id, adapter);
-      if (adapter === "codex") {
-        this.d.adapterStore.setUseCodexAppServer(
-          taskRun.id,
-          useCodexAppServer ?? null,
-        );
-      }
     }
 
     // Store the initial prompt on the session so retry/reset flows can
@@ -2258,10 +2189,10 @@ export class SessionService {
 
     // Steer: the user sent a message mid-turn and asked to fold it into the
     // running turn rather than queue it. Adapters that negotiated
-    // `steering: "native"` (Claude, codex app-server) inject at the next tool
-    // boundary; codex-acp ("interrupt-resend") and unknown adapters cancel and
-    // resend. Cloud has no real mid-turn steer (the backend only delivers
-    // messages between turns), so it falls through to the queue; compaction too.
+    // `steering: "native"` (Claude, codex) inject at the next tool boundary;
+    // unknown adapters cancel and resend. Cloud has no real mid-turn steer
+    // (the backend only delivers messages between turns), so it falls through
+    // to the queue; compaction too.
     if (
       options?.steer &&
       !session.isCloud &&

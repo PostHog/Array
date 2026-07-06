@@ -568,7 +568,7 @@ export function copyCodexAcpBinaries(): Plugin {
 
       const sourceDir = join(__dirname, "resources/codex-acp");
       const binaries = [
-        { name: "codex-acp", winName: "codex-acp.exe" },
+        { name: "codex", winName: "codex.exe" },
         // The native codex CLI must ship next to codex-acp: the app-server
         // sub-adapter resolves it as a sibling and silently falls back to
         // codex-acp when it's missing.

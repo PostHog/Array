@@ -115,9 +115,8 @@ export interface CodexAppServerAgentOptions {
 }
 
 /**
- * ACP Agent backed by the native Codex `app-server` JSON-RPC protocol. Presents the
- * same ACP surface to PostHog Code as the codex-acp adapter, without the Zed
- * translation layer, and stays at parity with it on the adapter surface.
+ * ACP Agent backed by the native Codex `app-server` JSON-RPC protocol,
+ * presenting the ACP surface PostHog Code expects.
  */
 export class CodexAppServerAgent extends BaseAcpAgent {
   readonly adapterName = "codex";
@@ -455,7 +454,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     return { configOptions: this.config.options };
   }
 
-  /** codex-acp emits current_mode_update on mode change; mirror it for the host's mode cache. */
+  /** Emit current_mode_update on mode change for the host's mode cache. */
   private emitCurrentMode(modeId: string): void {
     if (!this.sessionId) return;
     void this.client
@@ -781,7 +780,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       .catch(() => undefined);
   }
 
-  /** Mirror codex-acp's `_posthog/usage_update` so the host's token/cost UI fills. */
+  /** Emit `_posthog/usage_update` so the host's token/cost UI fills. */
   private emitUsageExtNotification(params: unknown): void {
     if (!this.sessionId) return;
     const update = this.usage.ingest(params);

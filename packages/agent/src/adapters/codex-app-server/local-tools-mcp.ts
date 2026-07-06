@@ -1,6 +1,6 @@
 /**
  * Builds the stdio local-tools MCP server config to inject into a Codex
- * app-server thread's `config.mcp_servers`, ported from the codex-acp adapter.
+ * app-server thread's `config.mcp_servers`.
  * Returns the ACP `McpServerStdio` shape so the existing translation layer stays
  * the single owner of the ACP→Codex map.
  */
@@ -33,7 +33,7 @@ function toMcpServerStdio(
   enabledNames: string[],
 ): McpServerStdio {
   const scriptPath = resolveBundledMcpScript(
-    "adapters/codex/local-tools-mcp-server.js",
+    "adapters/codex-app-server/local-tools-mcp-server.js",
   );
   const ctxBase64 = Buffer.from(JSON.stringify(ctx)).toString("base64");
   const env = [

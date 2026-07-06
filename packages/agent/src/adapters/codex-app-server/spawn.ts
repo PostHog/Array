@@ -5,7 +5,37 @@ import type { Readable, Writable } from "node:stream";
 import type { ProcessSpawnedCallback } from "../../types";
 import { Logger } from "../../utils/logger";
 import { stripElectronNodeShimFromPath } from "../../utils/spawn-env";
-import { CodexSettingsManager } from "../codex/settings";
+import { CodexSettingsManager } from "./settings";
+
+/**
+ * Host-facing codex options passed through `createAcpConnection`'s
+ * `codexOptions`. The connection layer maps these onto
+ * `CodexAppServerProcessOptions` plus the agent-level model settings.
+ */
+export interface CodexOptions {
+  cwd?: string;
+  apiBaseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  reasoningEffort?: string;
+  /** Guidance appended on top of Codex's base prompt via `developer_instructions`. */
+  developerInstructions?: string;
+  /**
+   * Bundled-binary hint: the native codex binary itself, or any file in the
+   * directory that contains it (see `nativeCodexBinaryPath`).
+   */
+  binaryPath?: string;
+  codexHome?: string;
+  /** Extra codex `-c key=value` config overrides. */
+  configOverrides?: Record<string, string | number>;
+  /**
+   * Additional writable roots. Currently only honored per-thread via prompt
+   * params; accepted here so hosts can pass it uniformly.
+   */
+  additionalDirectories?: string[];
+  logger?: Logger;
+  processCallbacks?: ProcessSpawnedCallback;
+}
 
 export interface CodexAppServerProcessOptions {
   /** Path to the native `codex` CLI binary (the one that exposes `app-server`). */

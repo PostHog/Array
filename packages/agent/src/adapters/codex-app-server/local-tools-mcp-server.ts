@@ -1,6 +1,6 @@
 /**
  * Standalone stdio MCP server exposing the general local tools to the Codex
- * adapter. Spawned by codex-acp as an MCP server process. Reads its context
+ * app-server adapter, which spawns it as an MCP server process. Reads its context
  * (cwd, taskId, token) from POSTHOG_LOCAL_TOOLS_CTX and the set of tools to
  * register from POSTHOG_LOCAL_TOOLS_ENABLED (both set by the parent, which has
  * already evaluated each tool's gate) — then registers those registry tools,
