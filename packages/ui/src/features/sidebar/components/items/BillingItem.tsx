@@ -11,7 +11,7 @@ export function BillingItem({ isActive, onClick }: BillingItemProps) {
     <SidebarItem
       depth={0}
       icon={<CreditCard size={16} weight={isActive ? "fill" : "regular"} />}
-      label="Billing & usage"
+      label="Plan & usage"
       isActive={isActive}
       onClick={onClick}
     />
