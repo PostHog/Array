@@ -30,7 +30,8 @@ export function StaleConversationCostNotice({
   onDismiss,
   onCompact,
 }: StaleConversationCostNoticeProps) {
-  const spent = costUsd !== null ? ` (≈${formatUsd(costUsd)} spent so far)` : "";
+  const spent =
+    costUsd !== null ? ` (≈${formatUsd(costUsd)} spent so far)` : "";
   return (
     <Box className="mb-1 rounded-lg border border-amber-6 bg-amber-2 px-3 py-2">
       <Flex align="center" gap="2">
