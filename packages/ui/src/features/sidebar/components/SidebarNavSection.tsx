@@ -1,7 +1,8 @@
-import { HOME_TAB_FLAG } from "@posthog/shared/constants";
+import { BILLING_FLAG, HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
+import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import {
@@ -22,6 +23,7 @@ import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
 import { AgentsItem } from "./items/AgentsItem";
+import { BillingItem } from "./items/BillingItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { HomeItem } from "./items/HomeItem";
 import { InboxItem } from "./items/InboxItem";
@@ -53,6 +55,7 @@ export function SidebarNavSection({
 }: SidebarNavSectionProps = {}) {
   const view = useAppView();
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
+  const billingEnabled = useFeatureFlag(BILLING_FLAG);
 
   // When this section renders inside the Channels space, the destinations that
   // have a /website mirror stay in that space; everything else (and the whole
@@ -68,6 +71,7 @@ export function SidebarNavSection({
   const goMcpServers = inChannels
     ? navigateToWebsiteMcpServers
     : navigateToMcpServers;
+  const goBilling = () => openSettings("plan-usage");
   const goCommandCenter = inChannels
     ? navigateToWebsiteCommandCenter
     : navigateToCommandCenter;
@@ -80,6 +84,11 @@ export function SidebarNavSection({
   const isInboxActive = view.type === "inbox";
   const isAgentsActive = view.type === "agents";
   const isCommandCenterActive = view.type === "command-center";
+  // Billing opens the Plan & usage settings page, which has no AppView of its
+  // own: derive the highlight straight from the settings route.
+  const isBillingActive = useRouterState({
+    select: (s) => s.location.pathname.startsWith("/settings/plan-usage"),
+  });
   const isSkillsActive = view.type === "skills";
   const isMcpServersActive = view.type === "mcp-servers";
 
@@ -159,6 +168,12 @@ export function SidebarNavSection({
           activeCount={commandCenterActiveCount}
         />
       </Box>
+
+      {billingEnabled && !inChannels && (
+        <Box>
+          <BillingItem isActive={isBillingActive} onClick={goBilling} />
+        </Box>
+      )}
     </Flex>
   );
 }
