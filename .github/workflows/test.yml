@@ -160,15 +160,13 @@ jobs:
     # Drives cheap models (claude-haiku-4-5 / gpt-5-mini), so a run is a handful of
     # short turns.
     needs: [changes, unit-test, integration-test]
-    # Run on any packages/ change (or a change to this workflow), once unit-test +
-    # integration-test have passed. Gated on vars.POSTHOG_CODE_E2E_GATEWAY_URL so
-    # the job stays dormant (green) until the gateway is configured, then activates
-    # automatically once that URL var and the POSTHOG_CODE_E2E_PERSONAL_API_KEY
-    # secret are added — this avoids the fail-loud token guard redding every packages/ PR
-    # before the gateway exists. The URL is a var (not a secret) because GitHub
-    # `if:` conditions can't read secrets. Also skipped on fork PRs, which never
-    # receive the gateway secret.
-    if: ${{ (needs.changes.outputs.packages == 'true' || needs.changes.outputs.workflow == 'true') && vars.POSTHOG_CODE_E2E_GATEWAY_URL != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    # Always run on any packages/ change (or a change to this workflow), once
+    # unit-test + integration-test have passed. There is intentionally NO gate on
+    # the gateway config being present: if the POSTHOG_CODE_E2E_* secret/vars are
+    # missing, the fail-loud guard (packages/agent/e2e/guard.e2e.test.ts) REDS the
+    # run rather than skipping to green. Only fork PRs are skipped, since they never
+    # receive the gateway secret and would red spuriously.
+    if: ${{ (needs.changes.outputs.packages == 'true' || needs.changes.outputs.workflow == 'true') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
