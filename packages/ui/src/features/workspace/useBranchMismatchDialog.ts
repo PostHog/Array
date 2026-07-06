@@ -74,7 +74,6 @@ export function useBranchMismatchDialog({
         if (message) onSendPromptRef.current(message);
         setPendingMessage(null);
         pendingMessageRef.current = null;
-        setSwitchError(null);
       },
       onError: (error) => {
         log.error("Failed to switch branch", error);
