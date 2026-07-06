@@ -53,7 +53,37 @@ export interface Task {
   json_schema?: Record<string, unknown> | null;
   signal_report?: string | null;
   internal?: boolean;
+  /** Backend channel (tasks product Channel UUID) this task is owned by. */
+  channel?: string | null;
   latest_run?: TaskRun;
+}
+
+/**
+ * A backend task channel — the shared feed a task is kicked off in. Distinct
+ * from the desktop file-system "channel" folders: those carry CONTEXT.md and
+ * artifacts, while this owns the task feed and threads. `personal` is the
+ * user's private "#me" channel.
+ */
+export interface TaskChannel {
+  id: string;
+  name: string;
+  channel_type: "public" | "personal";
+  created_at: string;
+  created_by?: UserBasic | null;
+}
+
+/**
+ * One human message in a task's thread. Thread messages never reach the agent
+ * unless the task author forwards one, which stamps the forwarded_* fields.
+ */
+export interface TaskThreadMessage {
+  id: string;
+  task: string;
+  content: string;
+  created_at: string;
+  author?: UserBasic | null;
+  forwarded_to_agent_at?: string | null;
+  forwarded_by?: UserBasic | null;
 }
 
 export type TaskRunStatus =

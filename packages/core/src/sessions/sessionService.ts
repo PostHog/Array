@@ -652,6 +652,16 @@ export class SessionService {
     return connectPromise;
   }
 
+  private stampRunConfig(session: AgentSession, params: ConnectParams): void {
+    session.adapter = params.adapter;
+    session.model = params.model;
+    session.executionMode = params.executionMode;
+    session.reasoningLevel = params.reasoningLevel;
+    if (params.initialPrompt?.length) {
+      session.initialPrompt = params.initialPrompt;
+    }
+  }
+
   private async doConnect(params: ConnectParams): Promise<void> {
     const {
       task,
@@ -693,9 +703,7 @@ export class SessionService {
         session.status = "error";
         session.errorMessage =
           "Authentication required. Please sign in to continue.";
-        if (initialPrompt?.length) {
-          session.initialPrompt = initialPrompt;
-        }
+        this.stampRunConfig(session, params);
         this.d.store.setSession(session);
         return;
       }
@@ -784,9 +792,7 @@ export class SessionService {
 
       const taskRunId = latestRun?.id ?? `error-${taskId}`;
       const session = createBaseSession(taskRunId, taskId, taskTitle);
-      if (initialPrompt?.length) {
-        session.initialPrompt = initialPrompt;
-      }
+      this.stampRunConfig(session, params);
       if (latestRun?.log_url) {
         try {
           const { rawEntries } = await this.fetchSessionLogs(

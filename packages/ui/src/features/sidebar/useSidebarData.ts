@@ -17,6 +17,7 @@ import { computeSummaryIds } from "@posthog/core/sidebar/summaryIds";
 import type { AppView } from "@posthog/ui/router/useAppView";
 import { useEffect, useMemo, useRef } from "react";
 import { useArchivedTaskIds } from "../archive/useArchivedTaskIds";
+import { useFolders } from "../folders/useFolders";
 import { useProvisioningStore } from "../provisioning/store";
 import { useSuspendedTaskIds } from "../suspension/useSuspendedTaskIds";
 import { useSlackTasks, useTaskSummaries, useTasks } from "../tasks/useTasks";
@@ -180,9 +181,16 @@ export function useSidebarData({
     [sortedUnpinnedTasks, organizeMode, historyVisibleCount],
   );
 
+  const { folders } = useFolders();
+
   const groupedTasks = useMemo(
-    () => groupByRepository(sortedUnpinnedTasks, folderOrder),
-    [sortedUnpinnedTasks, folderOrder],
+    () =>
+      groupByRepository(
+        sortedUnpinnedTasks,
+        folderOrder,
+        organizeMode === "by-project" ? folders : [],
+      ),
+    [sortedUnpinnedTasks, folderOrder, folders, organizeMode],
   );
 
   const groupIdsRef = useRef<string[]>([]);

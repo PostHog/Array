@@ -1,4 +1,4 @@
-import { Lightning, Plus } from "@phosphor-icons/react";
+import { Lightning, Plus, Terminal } from "@phosphor-icons/react";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { Popover } from "@radix-ui/themes";
 import { type ReactNode, useCallback } from "react";
@@ -11,6 +11,7 @@ interface TaskSelectorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onNewTask?: () => void;
+  onNewTerminal?: () => void;
   onBrainrot?: () => void;
   children: ReactNode;
 }
@@ -20,6 +21,7 @@ export function TaskSelector({
   open,
   onOpenChange,
   onNewTask,
+  onNewTerminal,
   onBrainrot,
   children,
 }: TaskSelectorProps) {
@@ -42,6 +44,11 @@ export function TaskSelector({
       openTaskInput();
     }
   }, [onOpenChange, onNewTask]);
+
+  const handleNewTerminal = useCallback(() => {
+    onOpenChange(false);
+    onNewTerminal?.();
+  }, [onOpenChange, onNewTerminal]);
 
   const handleBrainrot = useCallback(() => {
     onOpenChange(false);
@@ -93,6 +100,16 @@ export function TaskSelector({
                 <Plus size={11} weight="bold" />
                 New task
               </button>
+              {onNewTerminal && (
+                <button
+                  type="button"
+                  className="combobox-footer-button"
+                  onClick={handleNewTerminal}
+                >
+                  <Terminal size={11} weight="bold" />
+                  Terminal
+                </button>
+              )}
               {onBrainrot && (
                 <button
                   type="button"

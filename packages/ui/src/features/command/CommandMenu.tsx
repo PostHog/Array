@@ -1,4 +1,9 @@
-import { CaretLeftIcon, CaretRightIcon, HashIcon } from "@phosphor-icons/react";
+import {
+  CaretLeftIcon,
+  CaretRightIcon,
+  EnvelopeSimple,
+  HashIcon,
+} from "@phosphor-icons/react";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -42,6 +47,8 @@ import {
   goBackInHistory,
   goForwardInHistory,
   navigateToChannel,
+  navigateToCommandCenter,
+  navigateToInbox,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -53,6 +60,7 @@ import {
   FileTextIcon,
   GearIcon,
   HomeIcon,
+  LightningBoltIcon,
   MagnifyingGlassIcon,
   MoonIcon,
   ReloadIcon,
@@ -229,6 +237,29 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         action: "settings",
         shortcut: SHORTCUTS.SETTINGS,
         onRun: () => openSettingsDialog(),
+      },
+      {
+        id: "inbox",
+        label: "Inbox",
+        keywords: "reports pull requests agents notifications",
+        icon: <EnvelopeSimple size={12} className="text-gray-11" />,
+        action: "open-inbox",
+        shortcut: SHORTCUTS.INBOX,
+        onRun: () => {
+          closeSettingsDialog();
+          navigateToInbox();
+        },
+      },
+      {
+        id: "command-center",
+        label: "Command center",
+        keywords: "lightning grid tasks parallel dashboard",
+        icon: <LightningBoltIcon className="h-3 w-3 text-gray-11" />,
+        action: "open-command-center",
+        onRun: () => {
+          closeSettingsDialog();
+          navigateToCommandCenter();
+        },
       },
       {
         id: "go-back",

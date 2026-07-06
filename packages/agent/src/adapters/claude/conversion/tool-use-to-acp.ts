@@ -404,6 +404,17 @@ export function toolInfoFromToolUse(
         content: [],
       };
 
+    case "Skill": {
+      const skill = typeof input?.skill === "string" ? input.skill : undefined;
+      const skillArgs =
+        typeof input?.args === "string" ? input.args : undefined;
+      return {
+        title: skill ? `Skill: ${skill}` : "Skill",
+        kind: "other",
+        content: skillArgs ? toolContent().text(skillArgs).build() : [],
+      };
+    }
+
     case "ExitPlanMode":
       return {
         title: "Ready to code?",

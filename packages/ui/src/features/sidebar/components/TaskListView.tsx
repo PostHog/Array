@@ -2,14 +2,16 @@ import { PointerSensor } from "@dnd-kit/dom";
 import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { GitBranch } from "@phosphor-icons/react";
-import { groupTasksByRelativeDate } from "@posthog/core/sidebar/groupTasks";
+import {
+  folderGroupId,
+  groupTasksByRelativeDate,
+} from "@posthog/core/sidebar/groupTasks";
 import { mostRecentRunEnvironment } from "@posthog/core/sidebar/runEnvironment";
 import type {
   TaskData,
   TaskGroup,
 } from "@posthog/core/sidebar/sidebarData.types";
 import { MenuLabel } from "@posthog/quill";
-import { normalizeRepoKey } from "@posthog/shared";
 import { builderHog } from "@posthog/ui/assets/hedgehogs";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
@@ -47,6 +49,7 @@ interface TaskListViewProps {
     newTitle: string,
   ) => void;
   onTaskEditCancel: () => void;
+  onGroupContextMenu?: (groupId: string, e: React.MouseEvent) => void;
   hasMore: boolean;
 }
 
@@ -143,6 +146,7 @@ export function TaskListView({
   onTaskTogglePin,
   onTaskEditSubmit,
   onTaskEditCancel,
+  onGroupContextMenu,
   hasMore,
 }: TaskListViewProps) {
   const selectedIdSet = useMemo(
@@ -273,12 +277,7 @@ export function TaskListView({
           <Flex direction="column">
             {groupedTasks.map((group, index) => {
               const isExpanded = !collapsedSections.has(group.id);
-              const folder = folders.find(
-                (f) =>
-                  (f.remoteUrl &&
-                    normalizeRepoKey(f.remoteUrl).toLowerCase() === group.id) ||
-                  f.path === group.id,
-              );
+              const folder = folders.find((f) => folderGroupId(f) === group.id);
               const groupFolderId =
                 folder?.id ?? group.tasks.find((t) => t.folderId)?.folderId;
               return (
@@ -304,30 +303,41 @@ export function TaskListView({
                       }
                     }}
                     newTaskTooltip={`Start new task in ${folder?.name ?? group.name}`}
+                    onContextMenu={
+                      onGroupContextMenu
+                        ? (e) => onGroupContextMenu(group.id, e)
+                        : undefined
+                    }
                   >
-                    {group.tasks.map((task) => (
-                      <TaskRow
-                        key={task.id}
-                        task={task}
-                        isActive={activeTaskId === task.id}
-                        isSelected={selectedIdSet.has(task.id)}
-                        hideHoverActions={hasMultiSelection}
-                        isEditing={editingTaskId === task.id}
-                        onClick={(e) => onTaskClick(task.id, e)}
-                        onDoubleClick={() => onTaskDoubleClick(task.id)}
-                        onContextMenu={(e, isPinned) =>
-                          onTaskContextMenu(task.id, e, isPinned)
-                        }
-                        onArchive={() => onTaskArchive(task.id)}
-                        onTogglePin={() => onTaskTogglePin(task.id)}
-                        onEditSubmit={(newTitle) =>
-                          onTaskEditSubmit(task.id, task.title, newTitle)
-                        }
-                        onEditCancel={onTaskEditCancel}
-                        timestamp={task[timestampKey]}
-                        depth={1}
-                      />
-                    ))}
+                    {group.tasks.length === 0 ? (
+                      <p className="px-4 py-2 text-[12px] text-gray-9">
+                        No tasks yet
+                      </p>
+                    ) : (
+                      group.tasks.map((task) => (
+                        <TaskRow
+                          key={task.id}
+                          task={task}
+                          isActive={activeTaskId === task.id}
+                          isSelected={selectedIdSet.has(task.id)}
+                          hideHoverActions={hasMultiSelection}
+                          isEditing={editingTaskId === task.id}
+                          onClick={(e) => onTaskClick(task.id, e)}
+                          onDoubleClick={() => onTaskDoubleClick(task.id)}
+                          onContextMenu={(e, isPinned) =>
+                            onTaskContextMenu(task.id, e, isPinned)
+                          }
+                          onArchive={() => onTaskArchive(task.id)}
+                          onTogglePin={() => onTaskTogglePin(task.id)}
+                          onEditSubmit={(newTitle) =>
+                            onTaskEditSubmit(task.id, task.title, newTitle)
+                          }
+                          onEditCancel={onTaskEditCancel}
+                          timestamp={task[timestampKey]}
+                          depth={1}
+                        />
+                      ))
+                    )}
                   </SidebarSection>
                 </DraggableFolder>
               );

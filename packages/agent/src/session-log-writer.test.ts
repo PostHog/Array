@@ -159,6 +159,81 @@ describe("SessionLogWriter", () => {
     });
   });
 
+  describe("empty agent_thought_chunk filtering", () => {
+    it.each([
+      {
+        kind: "empty text content",
+        extra: { content: { type: "text", text: "" } },
+      },
+      {
+        kind: "empty thinking content",
+        extra: { content: { type: "thinking", thinking: "" } },
+      },
+      { kind: "no content", extra: {} },
+    ])("does not persist thought chunks with $kind", async ({ extra }) => {
+      const sessionId = "s1";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_thought_chunk", extra),
+      );
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_thought_chunk", {
+          content: { type: "thinking", thinking: "planning the fix" },
+        }),
+      );
+
+      await logWriter.flush(sessionId);
+
+      expect(mockAppendLog).toHaveBeenCalledTimes(1);
+      const entries: StoredNotification[] = mockAppendLog.mock.calls[0][2];
+      expect(entries).toHaveLength(1);
+      expect(entries[0].notification.params?.update).toEqual({
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "thinking", thinking: "planning the fix" },
+      });
+    });
+
+    it("keeps message chunks coalescing across an interleaved empty thought chunk", async () => {
+      const sessionId = "s1";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_message_chunk", {
+          content: { type: "text", text: "Hello " },
+        }),
+      );
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_thought_chunk", {
+          content: { type: "text", text: "" },
+        }),
+      );
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_message_chunk", {
+          content: { type: "text", text: "world" },
+        }),
+      );
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("tool_call", { toolCallId: "tc1" }),
+      );
+
+      await logWriter.flush(sessionId);
+
+      const entries: StoredNotification[] = mockAppendLog.mock.calls[0][2];
+      expect(entries).toHaveLength(2);
+      expect(entries[0].notification.params?.update).toEqual({
+        sessionUpdate: "agent_message",
+        content: { type: "text", text: "Hello world" },
+      });
+    });
+  });
+
   describe("_doFlush does not prematurely coalesce", () => {
     it("does not coalesce buffered chunks during a timed flush", async () => {
       const sessionId = "s1";

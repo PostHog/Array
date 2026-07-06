@@ -5,6 +5,7 @@ import { serializeError } from "@posthog/shared";
 import type { SessionContext } from "./otel-log-writer";
 import type { PostHogAPIClient } from "./posthog-api";
 import type { StoredNotification } from "./types";
+import { isEmptyContentBlock } from "./utils/acp-content";
 import { Logger } from "./utils/logger";
 
 export interface SessionLogWriterOptions {
@@ -144,6 +145,12 @@ export class SessionLogWriter {
     try {
       const message = JSON.parse(line);
       const timestamp = new Date().toISOString();
+
+      // Persisted empty thought chunks poison session resume: they rebuild
+      // into empty text blocks the API rejects with a 400.
+      if (this.isEmptyThoughtChunk(message)) {
+        return;
+      }
 
       // Check if this is an agent_message_chunk event
       if (this.isAgentMessageChunk(message)) {
@@ -331,13 +338,18 @@ export class SessionLogWriter {
     }
   }
 
+  private getUpdate(
+    message: Record<string, unknown>,
+  ): Record<string, unknown> | undefined {
+    const params = message.params as Record<string, unknown> | undefined;
+    return params?.update as Record<string, unknown> | undefined;
+  }
+
   private getSessionUpdateType(
     message: Record<string, unknown>,
   ): string | undefined {
     if (message.method !== "session/update") return undefined;
-    const params = message.params as Record<string, unknown> | undefined;
-    const update = params?.update as Record<string, unknown> | undefined;
-    return update?.sessionUpdate as string | undefined;
+    return this.getUpdate(message)?.sessionUpdate as string | undefined;
   }
 
   private isDirectAgentMessage(message: Record<string, unknown>): boolean {
@@ -350,8 +362,7 @@ export class SessionLogWriter {
     update: Record<string, unknown>;
   } | null {
     if (this.getSessionUpdateType(message) !== "tool_call_update") return null;
-    const params = message.params as Record<string, unknown> | undefined;
-    const update = params?.update as Record<string, unknown> | undefined;
+    const update = this.getUpdate(message);
     const toolCallId = update?.toolCallId;
     if (!update || typeof toolCallId !== "string") return null;
     const status = update.status;
@@ -439,10 +450,17 @@ export class SessionLogWriter {
     return this.getSessionUpdateType(message) === "agent_message_chunk";
   }
 
+  private isEmptyThoughtChunk(message: Record<string, unknown>): boolean {
+    if (this.getSessionUpdateType(message) !== "agent_thought_chunk") {
+      return false;
+    }
+    const content = this.getUpdate(message)?.content;
+    if (!content) return true;
+    return isEmptyContentBlock(content);
+  }
+
   private extractChunkText(message: Record<string, unknown>): string {
-    const params = message.params as Record<string, unknown> | undefined;
-    const update = params?.update as Record<string, unknown> | undefined;
-    const content = update?.content as
+    const content = this.getUpdate(message)?.content as
       | { type: string; text?: string }
       | undefined;
     if (content?.type === "text" && content.text) {
@@ -541,8 +559,7 @@ export class SessionLogWriter {
       return null;
     }
 
-    const params = message.params as Record<string, unknown> | undefined;
-    const update = params?.update as Record<string, unknown> | undefined;
+    const update = this.getUpdate(message);
     if (update?.sessionUpdate !== "agent_message") {
       return null;
     }

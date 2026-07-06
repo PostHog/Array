@@ -81,6 +81,11 @@ export class DevNetworkService extends TypedEventEmitter<DevNetworkEvents> {
     this.emit(DevNetworkEvent.Request, req);
   }
 
+  recordExternal(req: Omit<NetworkRequest, "id" | "host">): void {
+    if (!this.capturing()) return;
+    this.record({ ...req, id: this.nextId++, host: safeHost(req.url) });
+  }
+
   private wrapFetch(): void {
     const original = globalThis.fetch;
     if (!original) return;

@@ -70,6 +70,8 @@ interface UseTaskCreationOptions {
   signalReportId?: string;
   channelContext?: string;
   channelName?: string;
+  /** Backend channel UUID the created task is owned by (its feed home). */
+  channelId?: string;
   /**
    * Channels "generic chat box" mode: drop the repo/branch requirement so a
    * task can be submitted without picking a repo. The agent decides at runtime
@@ -156,6 +158,7 @@ export function useTaskCreation({
   signalReportId,
   channelContext,
   channelName,
+  channelId,
   allowNoRepo,
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
@@ -310,6 +313,7 @@ export function useTaskCreation({
           additionalDirectories,
           channelContext,
           channelName,
+          channelId,
           customInstructions: useSettingsStore.getState().customInstructions,
           allowNoRepo,
         });
@@ -468,6 +472,7 @@ export function useTaskCreation({
       additionalDirectories,
       channelContext,
       channelName,
+      channelId,
       allowNoRepo,
       clearTaskInputReportAssociation,
       invalidateTasks,

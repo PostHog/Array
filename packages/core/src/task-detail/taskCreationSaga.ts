@@ -645,6 +645,7 @@ export class TaskCreationSaga extends Saga<
               ? (input.reasoningLevel ?? null)
               : undefined,
           signal_report: input.signalReportId ?? undefined,
+          channel: input.channelId ?? undefined,
         });
         return result as unknown as Task;
       },

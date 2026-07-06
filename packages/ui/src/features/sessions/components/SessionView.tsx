@@ -5,7 +5,11 @@ import {
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
-import type { AcpMessage } from "@posthog/shared";
+import {
+  type AcpMessage,
+  ANALYTICS_EVENTS,
+  type StaleConversationGateChoiceProperties,
+} from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import {
@@ -29,6 +33,7 @@ import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/Que
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
+import { StaleConversationCostNotice } from "@posthog/ui/features/sessions/components/StaleConversationCostNotice";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
@@ -46,10 +51,12 @@ import {
 } from "@posthog/ui/features/sessions/sessionViewStore";
 import type { Plan } from "@posthog/ui/features/sessions/types";
 import { useSessionHandoffInProgress } from "@posthog/ui/features/sessions/useSession";
+import { useStaleConversationGate } from "@posthog/ui/features/sessions/useStaleConversationGate";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import {
   pendingTaskPromptStoreApi,
   usePendingTaskPrompt,
@@ -91,6 +98,54 @@ interface SessionViewProps {
 
 const DEFAULT_ERROR_MESSAGE =
   "Failed to resume this session. The working directory may have been deleted. Please start a new session.";
+
+function ConnectingToAgent() {
+  return (
+    <>
+      <Spinner size={28} className="animate-spin text-gray-9" />
+      <Text color="gray" className="text-base">
+        Connecting to agent...
+      </Text>
+    </>
+  );
+}
+
+/** Centers composer-slot content at the chat width (or compact padding). */
+function ComposerWidth({
+  compact,
+  children,
+}: {
+  compact: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Box
+      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
+      style={compact ? undefined : { maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+/**
+ * Input region replacing the composer: `shrink-0` keeps it from being
+ * compressed by the scroller above, and `min-h-0 overflow-y-auto` lets tall
+ * content scroll inside itself.
+ */
+function ComposerSlot({
+  compact,
+  children,
+}: {
+  compact: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Box className="min-h-0 shrink-0 overflow-y-auto">
+      <ComposerWidth compact={compact}>{children}</ComposerWidth>
+    </Box>
+  );
+}
 
 interface CloudStreamDisconnectedBannerProps {
   errorTitle?: string;
@@ -264,6 +319,43 @@ export function SessionView({
     },
     [isOnline, onBeforeSubmit],
   );
+
+  // Warn PostHog staff before continuing a large, idle conversation whose
+  // prompt cache has likely expired (see useStaleConversationGate).
+  const staleGate = useStaleConversationGate(sessionId, events);
+
+  // Plain functions, not useCallbacks: the notice isn't memoized, and the
+  // values they close over (usage, cost) change with every streamed event.
+  const trackStaleGateChoice = (
+    choice: StaleConversationGateChoiceProperties["choice"],
+  ) =>
+    track(ANALYTICS_EVENTS.STALE_CONVERSATION_GATE_CHOICE, {
+      choice,
+      used_tokens: staleGate.usedTokens,
+      cost_usd: staleGate.costUsd,
+    });
+
+  const handleStaleCompact = () => {
+    if (!isOnline) {
+      showOfflineToast();
+      return;
+    }
+    trackStaleGateChoice("compact");
+    staleGate.onContinue();
+    onSendPrompt("/compact");
+  };
+
+  const handleStaleContinue = () => {
+    trackStaleGateChoice("continue");
+    staleGate.onContinue();
+  };
+
+  const handleStaleNewSession = onNewSession
+    ? () => {
+        trackStaleGateChoice("new_session");
+        onNewSession();
+      }
+    : undefined;
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
@@ -566,27 +658,46 @@ export function SessionView({
                       )}
                     </Flex>
                   </Flex>
-                ) : hideInput ? null : firstPendingPermission ? (
-                  // This box replaces the composer while a permission is pending, so it's an input
-                  // region: `shrink-0` keeps it from being compressed by the scroller above, and
-                  // `min-h-0 overflow-y-auto` lets a tall permission prompt scroll inside itself.
-                  <Box className="min-h-0 shrink-0 overflow-y-auto">
-                    <Box
-                      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
-                      style={
-                        compact
-                          ? undefined
-                          : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
-                      }
-                    >
-                      <PermissionSelector
-                        toolCall={firstPendingPermission.toolCall}
-                        options={firstPendingPermission.options}
-                        onSelect={handlePermissionSelect}
-                        onCancel={handlePermissionCancel}
+                ) : hideInput ? null : staleGate.active ? (
+                  // Replaces the composer (and any pending permission — answering
+                  // one also resumes the costly turn) until the user chooses.
+                  isRunning ? (
+                    <ComposerSlot compact={compact}>
+                      <StaleConversationCostNotice
+                        usedTokens={staleGate.usedTokens}
+                        lastActivityAt={staleGate.lastActivityAt}
+                        costUsd={staleGate.costUsd}
+                        onContinue={handleStaleContinue}
+                        onCompact={
+                          firstPendingPermission
+                            ? undefined
+                            : handleStaleCompact
+                        }
+                        onNewSession={handleStaleNewSession}
                       />
-                    </Box>
-                  </Box>
+                    </ComposerSlot>
+                  ) : (
+                    // While reconnecting the gate still covers the composer
+                    // slot: handoff can leave pendingPermissions set, and the
+                    // choices must not fire into a half-connected session.
+                    <Flex
+                      align="center"
+                      justify="center"
+                      gap="2"
+                      className="min-h-[66px]"
+                    >
+                      <ConnectingToAgent />
+                    </Flex>
+                  )
+                ) : firstPendingPermission ? (
+                  <ComposerSlot compact={compact}>
+                    <PermissionSelector
+                      toolCall={firstPendingPermission.toolCall}
+                      options={firstPendingPermission.options}
+                      onSelect={handlePermissionSelect}
+                      onCancel={handlePermissionCancel}
+                    />
+                  </ComposerSlot>
                 ) : (
                   <Box className="relative">
                     <Box
@@ -596,10 +707,7 @@ export function SessionView({
                           : "opacity-100"
                       }`}
                     >
-                      <Spinner size={28} className="animate-spin text-gray-9" />
-                      <Text color="gray" className="text-base">
-                        Connecting to agent...
-                      </Text>
+                      <ConnectingToAgent />
                     </Box>
                     <Box
                       className={`transition-all duration-300 ease-out ${
@@ -608,14 +716,7 @@ export function SessionView({
                           : "pointer-events-none translate-y-4 opacity-0"
                       }`}
                     >
-                      <Box
-                        className={compact ? "p-1" : "mx-auto px-2 pb-3"}
-                        style={
-                          compact
-                            ? undefined
-                            : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
-                        }
-                      >
+                      <ComposerWidth compact={compact}>
                         {taskId && <QueuedMessagesDock taskId={taskId} />}
                         <PromptInput
                           ref={editorRef}
@@ -667,7 +768,7 @@ export function SessionView({
                           onBashCommand={onBashCommand}
                           onCancel={onCancelPrompt}
                         />
-                      </Box>
+                      </ComposerWidth>
                     </Box>
                   </Box>
                 )}
