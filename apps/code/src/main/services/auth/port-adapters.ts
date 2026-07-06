@@ -156,20 +156,37 @@ export class ConnectivityPortAdapter implements IAuthConnectivity {
   private isOnline = true;
   private readonly handlers = new Set<(status: ConnectivityStatus) => void>();
   private sub: { unsubscribe: () => void } | null = null;
+  private readonly onServerStatusChanged = ({
+    status,
+  }: {
+    status: WorkspaceServerStatus;
+  }): void => {
+    if (status === WorkspaceServerStatus.Ready) this.subscribe();
+  };
 
   constructor(
     @inject(WORKSPACE_CLIENT)
     private readonly workspace: WorkspaceClient,
     @inject(WORKSPACE_SERVER_SERVICE)
-    workspaceServer: WorkspaceServerService,
+    private readonly workspaceServer: WorkspaceServerService,
   ) {
     this.subscribe();
     // The workspace-server child respawns on a new port after a crash; the
     // old SSE subscription keeps retrying the dead port forever, so re-
     // establish it against the current connection once the server is healthy.
-    workspaceServer.on(WorkspaceServerEvent.StatusChanged, ({ status }) => {
-      if (status === WorkspaceServerStatus.Ready) this.subscribe();
-    });
+    this.workspaceServer.on(
+      WorkspaceServerEvent.StatusChanged,
+      this.onServerStatusChanged,
+    );
+  }
+
+  dispose(): void {
+    this.workspaceServer.off(
+      WorkspaceServerEvent.StatusChanged,
+      this.onServerStatusChanged,
+    );
+    this.sub?.unsubscribe();
+    this.sub = null;
   }
 
   private subscribe(): void {

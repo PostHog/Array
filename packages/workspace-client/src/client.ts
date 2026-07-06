@@ -54,6 +54,8 @@ export function createReconnectingWorkspaceClient(
 
   return new Proxy({} as WorkspaceClient, {
     get: (_target, prop) => Reflect.get(resolve() as object, prop),
+    has: (_target, prop) => Reflect.has(resolve() as object, prop),
+    getPrototypeOf: () => Reflect.getPrototypeOf(resolve() as object),
   });
 }
 
