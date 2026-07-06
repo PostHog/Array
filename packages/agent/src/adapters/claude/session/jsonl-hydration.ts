@@ -75,6 +75,15 @@ function isEmptyRecord(value: unknown): boolean {
   );
 }
 
+// The API rejects replayed history containing empty content blocks with a 400
+// ("text content blocks must be non-empty").
+function isEmptyAssistantBlock(block: ContentBlock): boolean {
+  const candidate = block as { type: string; text?: string; thinking?: string };
+  if (candidate.type === "text") return !candidate.text;
+  if (candidate.type === "thinking") return !candidate.thinking;
+  return false;
+}
+
 const MAX_PROJECT_KEY_LENGTH = 200;
 
 function hashString(s: string): string {
@@ -156,7 +165,11 @@ export function rebuildConversation(
         case "agent_message_chunk":
         case "agent_thought_chunk": {
           const content = update.content;
-          if (content && !Array.isArray(content)) {
+          if (
+            content &&
+            !Array.isArray(content) &&
+            !isEmptyAssistantBlock(content)
+          ) {
             if (
               content.type === "text" &&
               currentAssistantContent.length > 0 &&
@@ -477,7 +490,10 @@ export function conversationTurnsToJsonlEntries(
 
       for (const block of turn.content) {
         const blockType = (block as { type: string }).type;
-        if (blockType === "thinking" || blockType === "text") {
+        if (
+          (blockType === "thinking" || blockType === "text") &&
+          !isEmptyAssistantBlock(block)
+        ) {
           allBlocks.push(block);
         }
       }

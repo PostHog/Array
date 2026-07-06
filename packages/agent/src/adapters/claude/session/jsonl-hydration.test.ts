@@ -200,6 +200,20 @@ describe("rebuildConversation", () => {
     expect(turns[1].content[1]).toEqual({ type: "text", text: "answer" });
   });
 
+  it("drops empty text and thinking blocks from assistant content", () => {
+    const turns = rebuildConversation([
+      entry("user_message", { content: { type: "text", text: "hi" } }),
+      entry("agent_thought_chunk", { content: { type: "text", text: "" } }),
+      entry("agent_thought_chunk", {
+        content: { type: "thinking", thinking: "" },
+      }),
+      entry("agent_message_chunk", { content: { type: "text", text: "done" } }),
+    ]);
+
+    expect(turns).toHaveLength(2);
+    expect(turns[1].content).toEqual([{ type: "text", text: "done" }]);
+  });
+
   it("produces alternating user/assistant turns for multi-round conversation", () => {
     const turns = rebuildConversation([
       entry("user_message", { content: { type: "text", text: "q1" } }),
@@ -595,6 +609,65 @@ describe("conversationTurnsToJsonlEntries", () => {
 
     const [parsed] = parseConversationEntries(lines);
     expect(parsed.message.content).toEqual([{ type: "text", text: " " }]);
+  });
+
+  it("drops empty text and thinking blocks from assistant lines", () => {
+    const lines = conversationTurnsToJsonlEntries(
+      [
+        { role: "user", content: [{ type: "text", text: "hi" }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "" },
+            { type: "thinking", thinking: "" } as unknown as {
+              type: "text";
+              text: string;
+            },
+            { type: "text", text: "answer" },
+          ],
+        },
+      ],
+      config,
+    );
+
+    const conv = parseConversationEntries(lines);
+    expect(conv).toHaveLength(2);
+    expect(conv[1].message.content).toEqual([{ type: "text", text: "answer" }]);
+    expect(conv[1].message.stop_reason).toBe("end_turn");
+  });
+
+  it("emits no assistant lines when all blocks are empty and there are no tool calls", () => {
+    const lines = conversationTurnsToJsonlEntries(
+      [
+        { role: "user", content: [{ type: "text", text: "hi" }] },
+        { role: "assistant", content: [{ type: "text", text: "" }] },
+      ],
+      config,
+    );
+
+    const conv = parseConversationEntries(lines);
+    expect(conv).toHaveLength(1);
+    expect(conv[0].type).toBe("user");
+  });
+
+  it("produces no empty content blocks from logs containing empty thought chunks", () => {
+    const turns = rebuildConversation([
+      entry("user_message", { content: { type: "text", text: "fix the bug" } }),
+      entry("agent_thought_chunk", { content: { type: "text", text: "" } }),
+      entry("agent_message_chunk", {
+        content: { type: "text", text: "on it" },
+      }),
+    ]);
+    const lines = conversationTurnsToJsonlEntries(turns, config);
+
+    const conv = parseConversationEntries(lines);
+    expect(conv.length).toBeGreaterThan(0);
+    for (const parsed of conv) {
+      for (const block of parsed.message.content) {
+        if (block.type === "text") expect(block.text).not.toBe("");
+        if (block.type === "thinking") expect(block.thinking).not.toBe("");
+      }
+    }
   });
 
   it("uses custom model and version from config", () => {
