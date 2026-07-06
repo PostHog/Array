@@ -865,6 +865,20 @@ body {
   }
 }
 
+/* Resting opacity is 1, so a dropped/stalled animation can never leave the app invisible. */
+.app-fade-in {
+  animation: appFadeIn 0.5s ease-out forwards;
+}
+
+@keyframes appFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .tree-item-hover:hover {
   background-color: var(--gray-3);
 }
