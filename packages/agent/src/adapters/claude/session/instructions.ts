@@ -32,5 +32,16 @@ If an MCP tool call is explicitly denied with a message, relay that denial messa
 If an MCP tool call returns an error, treat it as a normal tool error — troubleshoot, retry, or inform the user about the specific error. Do NOT assume it is a permissions issue and do NOT direct the user to any settings page.
 `;
 
+const SHELL_EFFICIENCY = `
+# Shell Efficiency
+
+Optimize for the fewest shell round trips.
+
+- Batch related commands into one Bash invocation using \`&&\` (e.g. \`npm run typecheck && npm run lint && npm test\`).
+- Emit all independent tool calls in the same response.
+- Read multiple files at once.
+- Never rerun a command solely to reproduce output you already have.
+`;
+
 export const APPENDED_INSTRUCTIONS =
-  BRANCH_NAMING + PULL_REQUEST_LINKS + PLAN_MODE + MCP_TOOLS;
+  BRANCH_NAMING + PULL_REQUEST_LINKS + PLAN_MODE + MCP_TOOLS + SHELL_EFFICIENCY;
