@@ -11,6 +11,7 @@ const FETCH_TIMEOUT_MS = 10_000;
 export class GitHubReleasesService {
   private cache: { fetchedAt: number; data: ListReleasesOutput } | null = null;
   private missingVersionRefetchNotBefore = 0;
+  private inFlight: Promise<ListReleasesOutput> | null = null;
 
   async listReleases(expectVersion?: string): Promise<ListReleasesOutput> {
     const now = Date.now();
@@ -21,31 +22,8 @@ export class GitHubReleasesService {
     }
 
     try {
-      const response = await fetch(RELEASES_URL, {
-        headers: { Accept: "application/vnd.github+json" },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-      if (!response.ok) {
-        throw new Error(`GitHub releases fetch failed: ${response.status}`);
-      }
-
-      const parsed = githubReleasesApiResponse.parse(await response.json());
-      const releases = parsed
-        .filter((release) => !release.draft)
-        .map((release) => ({
-          version: release.tag_name.replace(/^v/, ""),
-          name:
-            release.name && release.name.length > 0
-              ? release.name
-              : release.tag_name,
-          notes: release.body ?? "",
-          date: release.published_at,
-          isPrerelease: release.prerelease,
-          htmlUrl: release.html_url,
-        }));
-
-      const data: ListReleasesOutput = { releases };
-      this.cache = { fetchedAt: now, data };
+      this.inFlight ??= this.fetchAndCacheReleases(now);
+      const data = await this.inFlight;
       this.updateMissingVersionCooldown(normalizedVersion, now);
       return data;
     } catch (error) {
@@ -54,7 +32,40 @@ export class GitHubReleasesService {
         return this.cache.data;
       }
       throw error;
+    } finally {
+      this.inFlight = null;
     }
+  }
+
+  private async fetchAndCacheReleases(
+    now: number,
+  ): Promise<ListReleasesOutput> {
+    const response = await fetch(RELEASES_URL, {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`GitHub releases fetch failed: ${response.status}`);
+    }
+
+    const parsed = githubReleasesApiResponse.parse(await response.json());
+    const releases = parsed
+      .filter((release) => !release.draft)
+      .map((release) => ({
+        version: release.tag_name.replace(/^v/, ""),
+        name:
+          release.name && release.name.length > 0
+            ? release.name
+            : release.tag_name,
+        notes: release.body ?? "",
+        date: release.published_at,
+        isPrerelease: release.prerelease,
+        htmlUrl: release.html_url,
+      }));
+
+    const data: ListReleasesOutput = { releases };
+    this.cache = { fetchedAt: now, data };
+    return data;
   }
 
   // The cooldown only ever matters within an already-valid TTL window:

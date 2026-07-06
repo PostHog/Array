@@ -111,6 +111,17 @@ describe("GitHubReleasesService", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("dedupes concurrent cache misses into a single fetch", async () => {
+    const service = new GitHubReleasesService();
+    const [first, second] = await Promise.all([
+      service.listReleases(),
+      service.listReleases("1.3.0"),
+    ]);
+
+    expect(first).toEqual(second);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("waits out a cooldown before refetching a still-missing version", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(0);
     const service = new GitHubReleasesService();
