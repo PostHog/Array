@@ -63,7 +63,9 @@ export function AddCustomServerForm({
   const [password, setPassword] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const canSubmit = canSubmitCustomServer({ name, url }) && !pending;
+  const canSubmit =
+    canSubmitCustomServer({ name, url, authType, username, password }) &&
+    !pending;
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {

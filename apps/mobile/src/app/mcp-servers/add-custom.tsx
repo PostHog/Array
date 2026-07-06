@@ -50,6 +50,12 @@ export default function AddCustomMcpServerScreen() {
     setError(null);
     if (!name.trim()) return setError("Name is required");
     if (!url.trim()) return setError("URL is required");
+    if (
+      authType === "basic" &&
+      Boolean(username.trim()) !== Boolean(password)
+    ) {
+      return setError("Username and password are both required");
+    }
 
     setSubmitting(true);
     try {

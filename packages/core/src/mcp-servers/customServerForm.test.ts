@@ -50,6 +50,38 @@ describe("canSubmitCustomServer", () => {
     );
     expect(canSubmitCustomServer({ name: "X", url: "nope" })).toBe(false);
   });
+
+  it.each([
+    ["both empty", "", "", true],
+    ["both present", "user", "pass", true],
+    ["username only", "user", "", false],
+    ["password only", "", "pass", false],
+  ])(
+    "for basic auth with %s, returns %s",
+    (_label, username, password, expected) => {
+      expect(
+        canSubmitCustomServer({
+          name: "X",
+          url: "https://x.com",
+          authType: "basic",
+          username,
+          password,
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  it("ignores username/password pairing for non-basic auth types", () => {
+    expect(
+      canSubmitCustomServer({
+        name: "X",
+        url: "https://x.com",
+        authType: "oauth",
+        username: "user",
+        password: "",
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("buildCustomServerRequest", () => {
@@ -91,27 +123,26 @@ describe("buildCustomServerRequest", () => {
     expect(apiKeyReq.client_secret).toBeUndefined();
   });
 
-  it("includes username/password only for basic auth when both are present", () => {
+  it("includes username/password for basic auth when both are present", () => {
     const req = buildCustomServerRequest(
       values({ authType: "basic", username: " user ", password: "pass" }),
     );
     expect(req.username).toBe("user");
     expect(req.password).toBe("pass");
-
-    expect(
-      buildCustomServerRequest(
-        values({ authType: "oauth", username: "user", password: "pass" }),
-      ).username,
-    ).toBeUndefined();
-    expect(
-      buildCustomServerRequest(
-        values({ authType: "basic", username: "", password: "pass" }),
-      ).username,
-    ).toBeUndefined();
-    expect(
-      buildCustomServerRequest(
-        values({ authType: "basic", username: "user", password: "" }),
-      ).password,
-    ).toBeUndefined();
   });
+
+  it.each([
+    ["oauth", "user", "pass"],
+    ["basic", "", "pass"],
+    ["basic", "user", ""],
+  ] as const)(
+    "excludes username/password when authType is %s with username=%j password=%j",
+    (authType, username, password) => {
+      const req = buildCustomServerRequest(
+        values({ authType, username, password }),
+      );
+      expect(req.username).toBeUndefined();
+      expect(req.password).toBeUndefined();
+    },
+  );
 });

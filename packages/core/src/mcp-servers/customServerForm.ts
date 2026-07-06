@@ -29,9 +29,16 @@ export function isValidMcpUrl(url: string): boolean {
 }
 
 export function canSubmitCustomServer(
-  values: Pick<CustomServerFormValues, "name" | "url">,
+  values: Pick<CustomServerFormValues, "name" | "url"> &
+    Partial<Pick<CustomServerFormValues, "authType" | "username" | "password">>,
 ): boolean {
-  return values.name.trim() !== "" && isValidMcpUrl(values.url);
+  if (values.name.trim() === "" || !isValidMcpUrl(values.url)) return false;
+  if (values.authType === "basic") {
+    const hasUsername = Boolean(values.username?.trim());
+    const hasPassword = Boolean(values.password);
+    if (hasUsername !== hasPassword) return false;
+  }
+  return true;
 }
 
 export function buildCustomServerRequest(
