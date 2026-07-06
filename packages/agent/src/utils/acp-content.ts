@@ -12,6 +12,18 @@ export function image(
   return { type: "image", data, mimeType, uri };
 }
 
+// The API rejects replayed history containing empty content blocks with a 400
+// ("text content blocks must be non-empty").
+export function isEmptyContentBlock(block: unknown): boolean {
+  const candidate = block as
+    | { type?: string; text?: string; thinking?: string }
+    | null
+    | undefined;
+  if (candidate?.type === "text") return !candidate.text;
+  if (candidate?.type === "thinking") return !candidate.thinking;
+  return false;
+}
+
 export function resourceLink(
   uri: string,
   name: string,

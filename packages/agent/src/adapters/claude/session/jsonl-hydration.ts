@@ -6,6 +6,7 @@ import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { DEFAULT_GATEWAY_MODEL } from "../../../gateway-models";
 import type { PostHogAPIClient } from "../../../posthog-api";
 import type { StoredEntry } from "../../../types";
+import { isEmptyContentBlock } from "../../../utils/acp-content";
 import { supports1MContext } from "./models";
 
 interface ConversationTurn {
@@ -73,15 +74,6 @@ function isEmptyRecord(value: unknown): boolean {
     !Array.isArray(value) &&
     Object.keys(value).length === 0
   );
-}
-
-// The API rejects replayed history containing empty content blocks with a 400
-// ("text content blocks must be non-empty").
-function isEmptyAssistantBlock(block: ContentBlock): boolean {
-  const candidate = block as { type: string; text?: string; thinking?: string };
-  if (candidate.type === "text") return !candidate.text;
-  if (candidate.type === "thinking") return !candidate.thinking;
-  return false;
 }
 
 const MAX_PROJECT_KEY_LENGTH = 200;
@@ -168,7 +160,7 @@ export function rebuildConversation(
           if (
             content &&
             !Array.isArray(content) &&
-            !isEmptyAssistantBlock(content)
+            !isEmptyContentBlock(content)
           ) {
             if (
               content.type === "text" &&
@@ -492,7 +484,7 @@ export function conversationTurnsToJsonlEntries(
         const blockType = (block as { type: string }).type;
         if (
           (blockType === "thinking" || blockType === "text") &&
-          !isEmptyAssistantBlock(block)
+          !isEmptyContentBlock(block)
         ) {
           allBlocks.push(block);
         }
@@ -608,7 +600,9 @@ export async function sanitizeSessionJsonl(
   jsonlPath: string,
 ): Promise<boolean> {
   let raw: string;
+  let statBefore: { mtimeMs: number; size: number };
   try {
+    statBefore = await fs.stat(jsonlPath);
     raw = await fs.readFile(jsonlPath, "utf8");
   } catch {
     return false;
@@ -625,9 +619,7 @@ export async function sanitizeSessionJsonl(
     }
     const message = parsed.message as { content?: unknown } | undefined;
     if (!message || !Array.isArray(message.content)) return line;
-    const kept = message.content.filter(
-      (block) => !isEmptyAssistantBlock(block as ContentBlock),
-    );
+    const kept = message.content.filter((block) => !isEmptyContentBlock(block));
     if (kept.length === message.content.length) return line;
     changed = true;
     message.content = kept.length > 0 ? kept : [{ type: "text", text: " " }];
@@ -637,9 +629,26 @@ export async function sanitizeSessionJsonl(
   if (!changed) return false;
 
   const tmpPath = `${jsonlPath}.tmp.${Date.now()}`;
-  await fs.writeFile(tmpPath, sanitized.join("\n"));
-  await fs.rename(tmpPath, jsonlPath);
-  return true;
+  let renamed = false;
+  try {
+    await fs.writeFile(tmpPath, sanitized.join("\n"));
+    // A concurrent writer may still own the file; abort rather than clobber
+    // lines appended since the read. The next resume retries.
+    const statNow = await fs.stat(jsonlPath);
+    if (
+      statNow.mtimeMs !== statBefore.mtimeMs ||
+      statNow.size !== statBefore.size
+    ) {
+      return false;
+    }
+    await fs.rename(tmpPath, jsonlPath);
+    renamed = true;
+    return true;
+  } finally {
+    if (!renamed) {
+      await fs.unlink(tmpPath).catch(() => {});
+    }
+  }
 }
 
 export async function hydrateSessionJsonl(params: {
@@ -666,6 +675,7 @@ export async function hydrateSessionJsonl(params: {
           });
         }
       } catch (err) {
+        // A sanitize failure must not block resuming from the existing file.
         log.warn("Failed to sanitize existing session JSONL", {
           jsonlPath,
           error: err instanceof Error ? err.message : String(err),
