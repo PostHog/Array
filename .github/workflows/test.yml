@@ -155,7 +155,7 @@ jobs:
     # Live-model e2e for the @posthog/agent adapters (claude + codex). Runs only
     # after the unit + integration jobs pass — a red tree never reaches the
     # gateway — and only when a packages/ file changed. Each arm still self-skips
-    # unless the POSTHOG_CODE_E2E_GATEWAY_TOKEN secret is present (fork PRs never
+    # unless the POSTHOG_CODE_E2E_PERSONAL_API_KEY secret is present (fork PRs never
     # see it) and POSTHOG_CODE_E2E_GATEWAY_URL points at a runner-reachable gateway.
     # Drives cheap models (claude-haiku-4-5 / gpt-5-mini), so a run is a handful of
     # short turns.
@@ -163,8 +163,8 @@ jobs:
     # Run on any packages/ change (or a change to this workflow), once unit-test +
     # integration-test have passed. Gated on vars.POSTHOG_CODE_E2E_GATEWAY_URL so
     # the job stays dormant (green) until the gateway is configured, then activates
-    # automatically once that URL var and the POSTHOG_CODE_E2E_GATEWAY_TOKEN secret
-    # are added — this avoids the fail-loud token guard redding every packages/ PR
+    # automatically once that URL var and the POSTHOG_CODE_E2E_PERSONAL_API_KEY
+    # secret are added — this avoids the fail-loud token guard redding every packages/ PR
     # before the gateway exists. The URL is a var (not a secret) because GitHub
     # `if:` conditions can't read secrets. Also skipped on fork PRs, which never
     # receive the gateway secret.
@@ -210,7 +210,7 @@ jobs:
         # reads (packages/agent/e2e/config.ts). The token is a secret; the URL and
         # model/environment overrides are vars.
         env:
-          E2E_GATEWAY_TOKEN: ${{ secrets.POSTHOG_CODE_E2E_GATEWAY_TOKEN }}
+          E2E_GATEWAY_TOKEN: ${{ secrets.POSTHOG_CODE_E2E_PERSONAL_API_KEY }}
           E2E_GATEWAY_URL: ${{ vars.POSTHOG_CODE_E2E_GATEWAY_URL }}
           E2E_CLAUDE_MODEL: ${{ vars.POSTHOG_CODE_E2E_CLAUDE_MODEL }}
           E2E_CODEX_MODEL: ${{ vars.POSTHOG_CODE_E2E_CODEX_MODEL }}
