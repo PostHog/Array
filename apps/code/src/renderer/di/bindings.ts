@@ -3,6 +3,16 @@ import {
   ARCHIVE_CLIENT,
   type ArchiveClient,
 } from "@posthog/core/archive/identifiers";
+import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
+import {
+  AUTORESEARCH_GATE,
+  AUTORESEARCH_SERVICE,
+  AUTORESEARCH_SESSION_CLIENT,
+  AUTORESEARCH_STORAGE_CLIENT,
+  type AutoresearchGate,
+  type AutoresearchSessionClient,
+  type AutoresearchStorageClient,
+} from "@posthog/core/autoresearch/identifiers";
 import {
   CODE_REVIEW_WORKSPACE_CLIENT,
   REVERT_HUNK_SERVICE,
@@ -297,6 +307,9 @@ export interface RendererBindings {
   [REPOSITORIES_SERVICE]: RepositoriesService;
   [HEDGEHOG_MODE_HOST]: HedgehogModeHost;
   [AGENT_PROMPT_SENDER]: AgentPromptSender;
+  [AUTORESEARCH_SESSION_CLIENT]: AutoresearchSessionClient;
+  [AUTORESEARCH_STORAGE_CLIENT]: AutoresearchStorageClient;
+  [AUTORESEARCH_GATE]: AutoresearchGate;
   [FILE_PATH_RESOLVER]: FilePathResolver;
   [NAVIGATION_TASK_BINDER]: NavigationTaskBinder;
   [ROOT_LOGGER]: RootLogger;
@@ -310,4 +323,5 @@ export interface RendererBindings {
 
   // --- desktop-contributions.ts ---
   [CONTRIBUTION]: Contribution;
+  [AUTORESEARCH_SERVICE]: AutoresearchService;
 }

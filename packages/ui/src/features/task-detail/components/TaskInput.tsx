@@ -1,7 +1,12 @@
-import { FileText, X } from "@phosphor-icons/react";
+import { ChartLineUp, FileText, X } from "@phosphor-icons/react";
+import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
+import { AUTORESEARCH_SERVICE } from "@posthog/core/autoresearch/identifiers";
+import { buildKickoffPreamble } from "@posthog/core/autoresearch/prompts";
 import { buildFileLineReferencePrompt } from "@posthog/core/code-review/reviewPrompts";
+import type { EditorContent } from "@posthog/core/message-editor/content";
 import { xmlToContent } from "@posthog/core/message-editor/content";
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
+import { useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
@@ -10,7 +15,7 @@ import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detai
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
-import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Button, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +25,13 @@ import { toast } from "../../../primitives/toast";
 import { useActiveRepoStore } from "../../../shell/activeRepoStore";
 import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
 import { useAuthStateValue } from "../../auth/store";
+import { AutoresearchComposerControls } from "../../autoresearch/AutoresearchComposerControls";
+import {
+  autoresearchPendingRun,
+  useAutoresearchDraftStore,
+} from "../../autoresearch/autoresearchDraftStore";
+import { toStageSelectOptions } from "../../autoresearch/stageModels";
+import { useAutoresearchEnabled } from "../../autoresearch/useAutoresearchEnabled";
 import { useFileSearchStore } from "../../command/fileSearchStore";
 import { NewTaskFilePreview } from "../../command/NewTaskFilePreview";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
@@ -45,11 +57,13 @@ import {
 import { skillToEditorCommand } from "../../message-editor/commands";
 import { PromptHistoryDialog } from "../../message-editor/components/PromptHistoryDialog";
 import { PromptInput } from "../../message-editor/components/PromptInput";
+import { contentToXml } from "../../message-editor/content";
 import { useDraftStore } from "../../message-editor/draftStore";
 import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryStore";
 import type { EditorHandle } from "../../message-editor/types";
 import { useAutoFocusOnTyping } from "../../message-editor/useAutoFocusOnTyping";
 import { resolveAndAttachDroppedFiles } from "../../message-editor/utils/persistFile";
+import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { DropZoneOverlay } from "../../sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
 import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
@@ -609,6 +623,24 @@ export function TaskInput({
   const currentReasoningLevel =
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
 
+  const autoresearchEnabled = useAutoresearchEnabled();
+  const armedAutoresearchDraft = useAutoresearchDraftStore(
+    (state) => state.drafts[sessionId] ?? null,
+  );
+  // Feature-flagged (staff-gated): with the flag off the draft is inert, so
+  // every armed surface (button state, header controls, submit wrapping,
+  // stage-model creation params) reads as unarmed.
+  const autoresearchDraft = autoresearchEnabled ? armedAutoresearchDraft : null;
+  // An armed autoresearch task is created on the measure stage: its first
+  // turn (the kickoff baseline) is a measurement, and the loop switches
+  // stages from there.
+  const effectiveModel = autoresearchDraft
+    ? (autoresearchDraft.measureModel ?? currentModel)
+    : currentModel;
+  const effectiveReasoningLevel = autoresearchDraft
+    ? (autoresearchDraft.measureEffort ?? currentReasoningLevel)
+    : currentReasoningLevel;
+
   useWarmTask({
     workspaceMode,
     selectedRepository: selectedCloudRepository,
@@ -616,14 +648,90 @@ export function TaskInput({
     branch: workspaceMode === "cloud" ? selectedBranch : null,
     editorIsEmpty,
     runtimeAdapter: adapter ?? null,
-    model: currentModel,
-    reasoningEffort: currentReasoningLevel,
+    model: effectiveModel,
+    reasoningEffort: effectiveReasoningLevel,
   });
 
   const branchForTaskCreation =
     effectiveWorkspaceMode === "worktree" || effectiveWorkspaceMode === "cloud"
       ? selectedBranch
       : null;
+
+  const autoresearchService =
+    useServiceOptional<AutoresearchService>(AUTORESEARCH_SERVICE);
+  const autoresearchModelOptions = useMemo(
+    () => toStageSelectOptions(modelOption),
+    [modelOption],
+  );
+  const autoresearchEffortOptions = useMemo(
+    () => toStageSelectOptions(thoughtOption),
+    [thoughtOption],
+  );
+
+  const handleAutoresearchToggle = useCallback(() => {
+    const store = useAutoresearchDraftStore.getState();
+    if (store.drafts[sessionId]) {
+      store.clearDraft(sessionId);
+      return;
+    }
+    // While armed the composer's own model/effort pickers are hidden, so the
+    // stage fields take over as the single source — seed them from whatever
+    // the composer had selected at arm time.
+    store.setDraft(sessionId, {
+      direction: "maximize",
+      targetValue: null,
+      maxIterations: 10,
+      implementModel: currentModel ?? null,
+      measureModel: currentModel ?? null,
+      implementEffort: currentReasoningLevel ?? null,
+      measureEffort: currentReasoningLevel ?? null,
+    });
+  }, [sessionId, currentModel, currentReasoningLevel]);
+
+  // The preview config can still be loading when the user arms the mode;
+  // backfill the stage fields once the composer's model/effort resolve so
+  // the popover shows concrete values instead of "task model".
+  useEffect(() => {
+    if (!autoresearchDraft) return;
+    const patch: Partial<typeof autoresearchDraft> = {};
+    if (autoresearchDraft.implementModel === null && currentModel) {
+      patch.implementModel = currentModel;
+    }
+    if (autoresearchDraft.measureModel === null && currentModel) {
+      patch.measureModel = currentModel;
+    }
+    if (autoresearchDraft.implementEffort === null && currentReasoningLevel) {
+      patch.implementEffort = currentReasoningLevel;
+    }
+    if (autoresearchDraft.measureEffort === null && currentReasoningLevel) {
+      patch.measureEffort = currentReasoningLevel;
+    }
+    if (Object.keys(patch).length > 0) {
+      useAutoresearchDraftStore.getState().updateDraft(sessionId, patch);
+    }
+  }, [autoresearchDraft, currentModel, currentReasoningLevel, sessionId]);
+
+  // Registers the run against the freshly created task and opens its
+  // dashboard tab; the kickoff itself rides the task's initial prompt.
+  const handleAutoresearchTaskCreated = useCallback(
+    (task: Task) => {
+      const pending = autoresearchPendingRun.consume();
+      if (!pending || !autoresearchService) return;
+      try {
+        autoresearchService.registerRun({ ...pending, taskId: task.id });
+        const layoutStore = usePanelLayoutStore.getState();
+        if (!layoutStore.getLayout(task.id)) {
+          layoutStore.initializeTask(task.id);
+        }
+        layoutStore.openAutoresearchTab(task.id);
+      } catch (error) {
+        toast.error("Autoresearch setup failed", {
+          description: error instanceof Error ? error.message : undefined,
+        });
+      }
+    },
+    [autoresearchService],
+  );
 
   const {
     isCreatingTask,
@@ -642,9 +750,10 @@ export function TaskInput({
     editorIsEmpty,
     adapter,
     executionMode: currentExecutionMode,
-    model: currentModel,
-    reasoningLevel: currentReasoningLevel,
+    model: effectiveModel,
+    reasoningLevel: effectiveReasoningLevel,
     onTaskCreated,
+    onTaskCreatedEffect: handleAutoresearchTaskCreated,
     environmentId: selectedEnvironment,
     sandboxEnvironmentId:
       effectiveWorkspaceMode === "cloud" && selectedCloudEnvId
@@ -655,6 +764,52 @@ export function TaskInput({
     channelName,
     allowNoRepo,
   });
+
+  // Wraps the prompt in the autoresearch kickoff: protocol preamble first,
+  // the user's composer content (chips intact) as the optimization brief.
+  const handleAutoresearchSubmit = useCallback(async (): Promise<boolean> => {
+    const editor = editorRef.current;
+    const draft = useAutoresearchDraftStore.getState().drafts[sessionId];
+    if (!editor || !draft) return handleSubmit();
+    if (!canSubmit) return false;
+
+    const content = editor.getContent();
+    const override: EditorContent = {
+      segments: [
+        { type: "text", text: `${buildKickoffPreamble(draft)}\n\n` },
+        ...content.segments,
+      ],
+      attachments: content.attachments,
+    };
+    // Stages ride through as configured; identical stages mean a single-turn
+    // loop, any difference makes the run split. Unresolved fields fall back
+    // to the composer's values so the recorded config is concrete.
+    autoresearchPendingRun.set({
+      ...draft,
+      implementModel: draft.implementModel ?? currentModel ?? null,
+      measureModel: draft.measureModel ?? currentModel ?? null,
+      implementEffort: draft.implementEffort ?? currentReasoningLevel ?? null,
+      measureEffort: draft.measureEffort ?? currentReasoningLevel ?? null,
+      instructions: contentToXml(content).trim(),
+    });
+    const submitted = await handleSubmit(override);
+    if (submitted) {
+      useAutoresearchDraftStore.getState().clearDraft(sessionId);
+      useDraftStore.getState().actions.setDraft(sessionId, null);
+      try {
+        editorRef.current?.clear();
+      } catch {
+        // Task creation can navigate away and tear down the editor first.
+      }
+    } else {
+      autoresearchPendingRun.clear();
+    }
+    return submitted;
+  }, [canSubmit, currentModel, currentReasoningLevel, handleSubmit, sessionId]);
+
+  const submitTask = autoresearchDraft
+    ? handleAutoresearchSubmit
+    : handleSubmit;
 
   const handleModeChange = useCallback(
     (value: string) => {
@@ -928,6 +1083,26 @@ export function TaskInput({
                     disabled={isCreatingTask}
                   />
                 )}
+                {autoresearchService && autoresearchEnabled && (
+                  <Tooltip
+                    content={
+                      autoresearchDraft
+                        ? "Exit autoresearch mode"
+                        : "Create this task in autoresearch mode: the prompt becomes the optimization brief"
+                    }
+                  >
+                    <Button
+                      size="1"
+                      variant={autoresearchDraft ? "soft" : "ghost"}
+                      color={autoresearchDraft ? undefined : "gray"}
+                      onClick={handleAutoresearchToggle}
+                      disabled={isCreatingTask}
+                    >
+                      <ChartLineUp size={14} />
+                      Autoresearch
+                    </Button>
+                  </Tooltip>
+                )}
                 {cloudRegion === "dev" && (
                   <Flex align="center" gap="1" className="shrink-0">
                     <span
@@ -945,7 +1120,31 @@ export function TaskInput({
                 <PromptInput
                   ref={editorRef}
                   sessionId={promptSessionId}
-                  placeholder={`What do you want to ship? ${hints}`}
+                  placeholder={
+                    autoresearchDraft
+                      ? "What should the agent optimize? Describe the goal, how to measure it, and any constraints — it measures a baseline, then iterates."
+                      : `What do you want to ship? ${hints}`
+                  }
+                  headerAddon={
+                    autoresearchDraft ? (
+                      <AutoresearchComposerControls
+                        draft={autoresearchDraft}
+                        modelOptions={autoresearchModelOptions}
+                        effortOptions={autoresearchEffortOptions}
+                        disabled={isCreatingTask}
+                        onChange={(patch) =>
+                          useAutoresearchDraftStore
+                            .getState()
+                            .updateDraft(sessionId, patch)
+                        }
+                        onExit={() =>
+                          useAutoresearchDraftStore
+                            .getState()
+                            .clearDraft(sessionId)
+                        }
+                      />
+                    ) : undefined
+                  }
                   editorHeight="large"
                   disabled={isCreatingTask}
                   isLoading={isCreatingTask}
@@ -965,14 +1164,16 @@ export function TaskInput({
                   enableCommands
                   enableBashMode={false}
                   modelSelector={
-                    <UnifiedModelSelector
-                      modelOption={modelOption}
-                      adapter={adapter ?? "claude"}
-                      onAdapterChange={setAdapter}
-                      disabled={isCreatingTask}
-                      isConnecting={isPreviewLoading}
-                      onModelChange={handleModelChange}
-                    />
+                    autoresearchDraft ? null : (
+                      <UnifiedModelSelector
+                        modelOption={modelOption}
+                        adapter={adapter ?? "claude"}
+                        onAdapterChange={setAdapter}
+                        disabled={isCreatingTask}
+                        isConnecting={isPreviewLoading}
+                        onModelChange={handleModelChange}
+                      />
+                    )
                   }
                   historyButton={
                     <PromptHistoryDialog
@@ -982,19 +1183,21 @@ export function TaskInput({
                     />
                   }
                   reasoningSelector={
-                    <ReasoningLevelSelector
-                      thoughtOption={thoughtOption}
-                      adapter={adapter}
-                      onChange={handleThoughtChange}
-                      disabled={isCreatingTask}
-                      isLoading={isPreviewLoading}
-                    />
+                    autoresearchDraft ? null : (
+                      <ReasoningLevelSelector
+                        thoughtOption={thoughtOption}
+                        adapter={adapter}
+                        onChange={handleThoughtChange}
+                        disabled={isCreatingTask}
+                        isLoading={isPreviewLoading}
+                      />
+                    )
                   }
                   getPromptHistory={getPromptHistory}
                   onEmptyChange={handleEditorEmptyChange}
-                  onSubmitClick={handleSubmit}
+                  onSubmitClick={() => void submitTask()}
                   onSubmit={() => {
-                    if (canSubmit) handleSubmit();
+                    if (canSubmit) void submitTask();
                   }}
                 />
                 {activeReportAssociation && (
