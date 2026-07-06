@@ -18,6 +18,7 @@ import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components
 import { ReportImplementationPrLink } from "@posthog/ui/features/inbox/components/utils/ReportImplementationPrLink";
 import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 import { PrChecksSection } from "@posthog/ui/features/pr-review/PrChecksSection";
+import { PrCommentsSection } from "@posthog/ui/features/pr-review/PrCommentsSection";
 import { PrFilesChangedSection } from "@posthog/ui/features/pr-review/PrFilesChangedSection";
 import { PrReviewActions } from "@posthog/ui/features/pr-review/PrReviewActions";
 import { Text } from "@radix-ui/themes";
@@ -118,6 +119,7 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
         prRef && report.implementation_pr_url ? (
           <>
             <PrFilesChangedSection prUrl={report.implementation_pr_url} />
+            <PrCommentsSection prUrl={report.implementation_pr_url} />
             <PrChecksSection prUrl={report.implementation_pr_url} />
             <PrReviewActions prUrl={report.implementation_pr_url} />
           </>

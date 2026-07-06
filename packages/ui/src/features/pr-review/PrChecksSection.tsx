@@ -1,6 +1,5 @@
 import {
   ArrowSquareOutIcon,
-  CaretDownIcon,
   CheckCircleIcon,
   ChecksIcon,
   CircleNotchIcon,
@@ -10,9 +9,9 @@ import {
 } from "@phosphor-icons/react";
 import type { PrCheck, PrCheckBucket } from "@posthog/core/git/router-schemas";
 import { Spinner } from "@posthog/quill";
-import { Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
 import { openExternalUrl } from "../../shell/openExternal";
+import { PrSectionHeader } from "./PrSectionHeader";
 import { usePrChecks } from "./usePrChecks";
 
 /** Display order: failed first, then running, then succeeded, skipped last. */
@@ -64,12 +63,18 @@ export function PrChecksSection({ prUrl }: PrChecksSectionProps) {
 
   if (checksQuery.isLoading) {
     return (
-      <ChecksFrame collapsed onToggle={() => {}}>
-        <span className="inline-flex items-center gap-2 text-[11px] text-gray-10">
-          <Spinner />
-          Loading…
-        </span>
-      </ChecksFrame>
+      <PrSectionHeader
+        Icon={ChecksIcon}
+        title="Checks"
+        collapsed
+        onToggle={() => {}}
+        summary={
+          <span className="inline-flex items-center gap-2 text-[11px] text-gray-10">
+            <Spinner />
+            Loading…
+          </span>
+        }
+      />
     );
   }
 
@@ -92,12 +97,13 @@ export function PrChecksSection({ prUrl }: PrChecksSectionProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      <ChecksFrame
+      <PrSectionHeader
+        Icon={ChecksIcon}
+        title="Checks"
         collapsed={collapsed}
         onToggle={() => setCollapsedOverride(!collapsed)}
-      >
-        <ChecksSummary counts={counts} />
-      </ChecksFrame>
+        summary={<ChecksSummary counts={counts} />}
+      />
       {!collapsed && (
         <div className="overflow-hidden rounded-md border border-(--gray-5)">
           {sorted.map((check, index) => (
@@ -109,44 +115,6 @@ export function PrChecksSection({ prUrl }: PrChecksSectionProps) {
         </div>
       )}
     </div>
-  );
-}
-
-/** Section header, matching the DetailSection chrome but clickable. */
-function ChecksFrame({
-  collapsed,
-  onToggle,
-  children,
-}: {
-  collapsed: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="flex w-full min-w-0 cursor-pointer items-center gap-3 border-0 bg-transparent p-0 text-left"
-    >
-      <span className="flex min-w-0 items-center gap-2">
-        <ChecksIcon size={15} weight="bold" className="shrink-0 text-gray-11" />
-        <Text className="truncate font-semibold text-[14px] text-gray-12 tracking-[-0.01em]">
-          Checks
-        </Text>
-      </span>
-      <div className="h-px min-w-4 flex-1 bg-(--gray-5)" />
-      <span className="flex shrink-0 items-center gap-2">
-        {children}
-        <CaretDownIcon
-          size={12}
-          className="text-(--gray-9)"
-          style={{
-            transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)",
-            transition: "transform 0.15s",
-          }}
-        />
-      </span>
-    </button>
   );
 }
 

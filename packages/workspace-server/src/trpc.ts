@@ -83,6 +83,8 @@ import {
   getPrChangedFilesInput,
   getPrChecksInput,
   getPrChecksOutput,
+  getPrCommentsInput,
+  getPrCommentsOutput,
   getPrDetailsByUrlInput,
   getPrDetailsByUrlOutput,
   getPrDiffStatsBatchInput,
@@ -576,6 +578,11 @@ export function createAppRouter({
         .input(getPrChecksInput)
         .output(getPrChecksOutput)
         .query(({ input }) => gitService().getPrChecks(input.prUrl)),
+
+      getPrComments: t.procedure
+        .input(getPrCommentsInput)
+        .output(getPrCommentsOutput)
+        .query(({ input }) => gitService().getPrComments(input.prUrl)),
 
       getPrChangedFiles: t.procedure
         .input(getPrChangedFilesInput)

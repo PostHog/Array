@@ -18,6 +18,7 @@ import { DetailSection } from "@posthog/ui/features/inbox/components/DetailSecti
 import { useMemo } from "react";
 import { openExternalUrl } from "../../shell/openExternal";
 import { PrChecksSection } from "./PrChecksSection";
+import { PrCommentsSection } from "./PrCommentsSection";
 import { PrFilesChangedSection } from "./PrFilesChangedSection";
 import { PrReviewActions } from "./PrReviewActions";
 import { usePrInfo } from "./usePrInfo";
@@ -127,6 +128,8 @@ export function PullRequestView({ prUrl }: PullRequestViewProps) {
         </DetailSection>
 
         <PrFilesChangedSection prUrl={prUrl} />
+
+        <PrCommentsSection prUrl={prUrl} />
 
         <PrChecksSection prUrl={prUrl} />
 

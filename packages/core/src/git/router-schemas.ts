@@ -506,6 +506,28 @@ export const getPrChecksInput = z.object({
 export const getPrChecksOutput = z.array(prCheckSchema).nullable();
 export type GetPrChecksOutput = z.infer<typeof getPrChecksOutput>;
 
+// getPrComments schemas — conversation (issue) comments on a PR. Inline
+// review comments live in `getPrReviewComments`. Mirrors workspace-server's
+// git schemas.
+export const prConversationCommentSchema = z.object({
+  id: z.number(),
+  author: z.string(),
+  avatarUrl: z.string().nullable(),
+  body: z.string(),
+  createdAt: z.string(),
+  url: z.string().nullable(),
+});
+export type PrConversationComment = z.infer<typeof prConversationCommentSchema>;
+
+export const getPrCommentsInput = z.object({
+  prUrl: z.string(),
+});
+/** Null means the comments couldn't be fetched; [] means none. */
+export const getPrCommentsOutput = z
+  .array(prConversationCommentSchema)
+  .nullable();
+export type GetPrCommentsOutput = z.infer<typeof getPrCommentsOutput>;
+
 export const getBranchChangedFilesInput = z.object({
   repo: z.string(),
   branch: z.string(),

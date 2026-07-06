@@ -56,6 +56,7 @@ import type {
   DiscardFileChangesOutput,
   GetCommitConventionsOutput,
   GetPrChecksOutput,
+  GetPrCommentsOutput,
   GetPrTemplateOutput,
   GhAuthTokenOutput,
   GhStatusOutput,
@@ -1434,6 +1435,45 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
       // A PR with no CI configured is not an error state.
       if ((result.stderr ?? "").includes("no checks reported")) return [];
       return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async getPrComments(prUrl: string): Promise<GetPrCommentsOutput> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return null;
+
+    try {
+      const result = await execGh([
+        "api",
+        `repos/${pr.owner}/${pr.repo}/issues/${pr.number}/comments`,
+        "--paginate",
+        "--slurp",
+      ]);
+
+      if (result.exitCode !== 0) {
+        return null;
+      }
+
+      const pages = JSON.parse(result.stdout) as Array<
+        Array<{
+          id: number;
+          body?: string;
+          created_at: string;
+          html_url?: string;
+          user?: { login?: string; avatar_url?: string };
+        }>
+      >;
+
+      return pages.flat().map((comment) => ({
+        id: comment.id,
+        author: comment.user?.login ?? "unknown",
+        avatarUrl: comment.user?.avatar_url ?? null,
+        body: comment.body ?? "",
+        createdAt: comment.created_at,
+        url: comment.html_url ?? null,
+      }));
     } catch {
       return null;
     }
