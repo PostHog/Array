@@ -204,16 +204,16 @@ jobs:
 
       - name: Run live e2e (both adapters)
         run: pnpm --filter agent run test:e2e
-        # Org-level POSTHOG_CODE_E2E_* config maps onto the E2E_* names the suite
-        # reads (packages/agent/e2e/config.ts). The token is a secret; the URL and
-        # model/environment overrides are vars.
+        # The suite reads these POSTHOG_CODE_E2E_* names directly
+        # (packages/agent/e2e/config.ts). The personal API key is an org secret; the
+        # URL and model/environment overrides are org vars.
         env:
-          E2E_GATEWAY_TOKEN: ${{ secrets.POSTHOG_CODE_E2E_PERSONAL_API_KEY }}
-          E2E_GATEWAY_URL: ${{ vars.POSTHOG_CODE_E2E_GATEWAY_URL }}
-          E2E_CLAUDE_MODEL: ${{ vars.POSTHOG_CODE_E2E_CLAUDE_MODEL }}
-          E2E_CODEX_MODEL: ${{ vars.POSTHOG_CODE_E2E_CODEX_MODEL }}
+          POSTHOG_CODE_E2E_PERSONAL_API_KEY: ${{ secrets.POSTHOG_CODE_E2E_PERSONAL_API_KEY }}
+          POSTHOG_CODE_E2E_GATEWAY_URL: ${{ vars.POSTHOG_CODE_E2E_GATEWAY_URL }}
+          POSTHOG_CODE_E2E_CLAUDE_MODEL: ${{ vars.POSTHOG_CODE_E2E_CLAUDE_MODEL }}
+          POSTHOG_CODE_E2E_CODEX_MODEL: ${{ vars.POSTHOG_CODE_E2E_CODEX_MODEL }}
           # Optional: set vars.POSTHOG_CODE_E2E_ENVIRONMENT=cloud to exercise the
           # cloud code path (sandbox/permission-profile gating). Unset = local. The
           # OS-sandbox enforcement test is macOS-gated, so it doesn't red this linux
           # runner.
-          E2E_ENVIRONMENT: ${{ vars.POSTHOG_CODE_E2E_ENVIRONMENT }}
+          POSTHOG_CODE_E2E_ENVIRONMENT: ${{ vars.POSTHOG_CODE_E2E_ENVIRONMENT }}

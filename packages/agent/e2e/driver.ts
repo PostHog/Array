@@ -207,7 +207,7 @@ export async function openSession(opts: {
     const newSession = await c.conn.newSession({
       cwd: opts.cwd,
       mcpServers: [],
-      // Inject E2E_ENVIRONMENT so the suite can run as a cloud session without threading it through every test's meta.
+      // Inject POSTHOG_CODE_E2E_ENVIRONMENT so the suite can run as a cloud session without threading it through every test's meta.
       _meta: {
         ...opts.meta,
         ...(E2E.environment ? { environment: E2E.environment } : {}),
