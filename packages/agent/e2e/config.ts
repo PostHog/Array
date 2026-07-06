@@ -11,7 +11,8 @@ export type Adapter = "claude" | "codex";
  */
 // `||` not `??`: CI sets unset vars to "" which should fall back to the default.
 const GATEWAY_URL =
-  process.env.POSTHOG_CODE_E2E_GATEWAY_URL || "http://localhost:3308/llm_gateway";
+  process.env.POSTHOG_CODE_E2E_GATEWAY_URL ||
+  "http://localhost:3308/llm_gateway";
 const TOKEN = process.env.POSTHOG_CODE_E2E_PERSONAL_API_KEY ?? "";
 
 // This checkout's bundled codex binaries, relative to packages/agent/e2e.
@@ -41,7 +42,10 @@ export const E2E = {
   codexResourcesDir: CODEX_RESOURCES_DIR,
   /** Deployment environment. `POSTHOG_CODE_E2E_ENVIRONMENT=cloud` exercises the cloud code path; undefined = local. */
   environment:
-    (process.env.POSTHOG_CODE_E2E_ENVIRONMENT as "local" | "cloud" | undefined) || undefined,
+    (process.env.POSTHOG_CODE_E2E_ENVIRONMENT as
+      | "local"
+      | "cloud"
+      | undefined) || undefined,
 
   /** Cheap model per adapter, overridable via `POSTHOG_CODE_E2E_CLAUDE_MODEL` / `POSTHOG_CODE_E2E_CODEX_MODEL`. */
   model(adapter: Adapter): string {
@@ -61,7 +65,9 @@ export const E2E = {
    */
   strongModel(adapter: Adapter): string {
     if (adapter === "claude") {
-      return process.env.POSTHOG_CODE_E2E_CLAUDE_STRONG_MODEL || "claude-sonnet-4-5";
+      return (
+        process.env.POSTHOG_CODE_E2E_CLAUDE_STRONG_MODEL || "claude-sonnet-4-5"
+      );
     }
     return process.env.POSTHOG_CODE_E2E_CODEX_STRONG_MODEL || "gpt-5.5";
   },
