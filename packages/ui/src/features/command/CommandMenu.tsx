@@ -4,6 +4,7 @@ import {
   ChartLine,
   EnvelopeSimple,
 } from "@phosphor-icons/react";
+import { workspaceIdSet } from "@posthog/core/command-center/eligibility";
 import { resolveService } from "@posthog/di/container";
 import {
   HOST_TRPC_CLIENT,
@@ -155,7 +156,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   );
   const { data: tasks = [] } = useTasks();
   const archivedTaskIds = useArchivedTaskIds();
-  const { data: workspaces } = useWorkspaces();
+  const { data: workspaces, isFetched: workspacesFetched } = useWorkspaces();
   const [query, setQuery] = useState("");
   const { repoPath } = useFileSearchContext();
   const canSearchFiles = !!repoPath;
@@ -451,8 +452,11 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   ]);
 
   const taskSections = useMemo<CommandSection[]>(() => {
+    const workspaceIds = workspaceIdSet(workspaces);
     const visibleTasks = tasks.filter(
-      (task) => !archivedTaskIds.has(task.id) && Boolean(workspaces?.[task.id]),
+      (task) =>
+        !archivedTaskIds.has(task.id) &&
+        (!workspacesFetched || workspaceIds.has(task.id)),
     );
     if (!visibleTasks.length) return [];
     return [
@@ -488,6 +492,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     tasks,
     archivedTaskIds,
     workspaces,
+    workspacesFetched,
     taskChannelMap,
     bluebirdEnabled,
     closeSettingsDialog,
