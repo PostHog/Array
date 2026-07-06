@@ -1,0 +1,57 @@
+{
+  "name": "@posthog/harness",
+  "version": "0.0.0-dev",
+  "description": "Spawn the pi.dev coding agent (CLI + SDK) against the PostHog LLM gateway with PostHog OAuth",
+  "type": "module",
+  "bin": {
+    "harness": "dist/cli.js"
+  },
+  "exports": {
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    },
+    "./session": {
+      "types": "./dist/session.d.ts",
+      "import": "./dist/session.js"
+    },
+    "./spawn": {
+      "types": "./dist/spawn.d.ts",
+      "import": "./dist/spawn.js"
+    },
+    "./extensions": {
+      "types": "./dist/extensions/registry.d.ts",
+      "import": "./dist/extensions/registry.js"
+    },
+    "./extensions/posthog-provider": {
+      "types": "./dist/extensions/posthog-provider/extension.d.ts",
+      "import": "./dist/extensions/posthog-provider/extension.js"
+    },
+    "./extensions/posthog-provider/*": {
+      "types": "./dist/extensions/posthog-provider/*.d.ts",
+      "import": "./dist/extensions/posthog-provider/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "node ../../scripts/rimraf.mjs dist .turbo"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.80.3",
+    "@earendil-works/pi-coding-agent": "0.80.3",
+    "@posthog/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.8"
+  },
+  "files": [
+    "dist/**/*",
+    "src/**/*"
+  ]
+}
