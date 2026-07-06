@@ -122,6 +122,22 @@ describe("GitHubReleasesService", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("concurrent callers both reject when the shared fetch fails, and inFlight is cleared so subsequent calls retry", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("network error"));
+    const service = new GitHubReleasesService();
+
+    const [result1, result2] = await Promise.allSettled([
+      service.listReleases(),
+      service.listReleases("1.2.0"),
+    ]);
+
+    expect(result1.status).toBe("rejected");
+    expect(result2.status).toBe("rejected");
+    // inFlight must be cleared so the next call retries rather than hanging
+    await service.listReleases();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("waits out a cooldown before refetching a still-missing version", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(0);
     const service = new GitHubReleasesService();

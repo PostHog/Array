@@ -21,9 +21,13 @@ export class GitHubReleasesService {
       return cached;
     }
 
+    // The fetch is version-agnostic, so any concurrent caller can share it.
+    if (this.inFlight === null) {
+      this.inFlight = this.fetchAndCacheReleases(now);
+    }
+    const promise = this.inFlight!;
     try {
-      this.inFlight ??= this.fetchAndCacheReleases(now);
-      const data = await this.inFlight;
+      const data = await promise;
       this.updateMissingVersionCooldown(normalizedVersion, now);
       return data;
     } catch (error) {
@@ -33,7 +37,9 @@ export class GitHubReleasesService {
       }
       throw error;
     } finally {
-      this.inFlight = null;
+      if (this.inFlight === promise) {
+        this.inFlight = null;
+      }
     }
   }
 
