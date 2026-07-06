@@ -13,10 +13,11 @@ export class GitHubReleasesService {
   private missingVersionRefetchNotBefore = 0;
 
   async listReleases(expectVersion?: string): Promise<ListReleasesOutput> {
+    const now = Date.now();
     const normalizedVersion = expectVersion?.replace(/^v/, "");
-    if (this.canServeFromCache(normalizedVersion)) {
-      // biome-ignore lint/style/noNonNullAssertion: cache is non-null when canServeFromCache returns true
-      return this.cache!.data;
+    const cached = this.cachedData(normalizedVersion, now);
+    if (cached !== null) {
+      return cached;
     }
 
     try {
@@ -44,12 +45,12 @@ export class GitHubReleasesService {
         }));
 
       const data: ListReleasesOutput = { releases };
-      this.cache = { fetchedAt: Date.now(), data };
-      this.updateMissingVersionCooldown(normalizedVersion);
+      this.cache = { fetchedAt: now, data };
+      this.updateMissingVersionCooldown(normalizedVersion, now);
       return data;
     } catch (error) {
       if (this.cache) {
-        this.updateMissingVersionCooldown(normalizedVersion);
+        this.updateMissingVersionCooldown(normalizedVersion, now);
         return this.cache.data;
       }
       throw error;
@@ -59,19 +60,22 @@ export class GitHubReleasesService {
   // The cooldown only ever matters within an already-valid TTL window:
   // once the cache expires the TTL check short-circuits first, so the
   // cooldown naturally resets on the next successful fetch.
-  private canServeFromCache(expectVersion?: string): boolean {
-    if (!this.cache || Date.now() - this.cache.fetchedAt >= CACHE_TTL_MS) {
-      return false;
+  private cachedData(
+    expectVersion: string | undefined,
+    now: number,
+  ): ListReleasesOutput | null {
+    if (!this.cache || now - this.cache.fetchedAt >= CACHE_TTL_MS) {
+      return null;
     }
     // No version requirement: any fresh cache is fine.
-    if (expectVersion === undefined) return true;
+    if (expectVersion === undefined) return this.cache.data;
     // Version present in cache: serve it.
-    if (this.cacheContains(expectVersion)) return true;
+    if (this.cacheContains(expectVersion)) return this.cache.data;
     // Version missing but cooldown active: suppress the refetch.
     // The cooldown is a single scalar (not keyed per version) — safe because
     // cacheContains already short-circuits above when the version is found,
     // so the cooldown is only consulted while the version is absent.
-    return Date.now() < this.missingVersionRefetchNotBefore;
+    return now < this.missingVersionRefetchNotBefore ? this.cache.data : null;
   }
 
   private cacheContains(version: string): boolean {
@@ -84,10 +88,10 @@ export class GitHubReleasesService {
 
   private updateMissingVersionCooldown(
     expectVersion: string | undefined,
+    now: number,
   ): void {
     if (expectVersion !== undefined && !this.cacheContains(expectVersion)) {
-      this.missingVersionRefetchNotBefore =
-        Date.now() + MISSING_VERSION_RETRY_MS;
+      this.missingVersionRefetchNotBefore = now + MISSING_VERSION_RETRY_MS;
     }
   }
 }
