@@ -1,9 +1,13 @@
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { StoredEntry } from "../../../types";
 import {
   conversationTurnsToJsonlEntries,
   getSessionJsonlPath,
   rebuildConversation,
+  sanitizeSessionJsonl,
   selectRecentTurns,
 } from "./jsonl-hydration";
 
@@ -1085,5 +1089,99 @@ describe("end-to-end: S3 log entries -> JSONL output", () => {
     const msg1 = conv[1].message as Record<string, unknown>;
     expect(msg1.id).toBe(msg2.id);
     expect(msg2.id).toBe(msg3.id);
+  });
+});
+
+describe("sanitizeSessionJsonl", () => {
+  async function writeJsonl(lines: unknown[]): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "jsonl-sanitize-"));
+    const file = path.join(dir, "sess.jsonl");
+    await fs.writeFile(
+      file,
+      `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`,
+    );
+    return file;
+  }
+
+  async function readJsonl(file: string): Promise<Record<string, unknown>[]> {
+    const raw = await fs.readFile(file, "utf8");
+    return raw
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l));
+  }
+
+  it("removes empty text and thinking blocks from existing files", async () => {
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: { role: "user", content: [{ type: "text", text: "hi" }] },
+      },
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: "u1",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "" },
+            { type: "text", text: "hello" },
+          ],
+        },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    expect(lines[0].message).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "hi" }],
+    });
+    const assistant = lines[1].message as { content: unknown };
+    expect(assistant.content).toEqual([{ type: "text", text: "hello" }]);
+    expect(lines[1].uuid).toBe("a1");
+    expect(lines[1].parentUuid).toBe("u1");
+  });
+
+  it("replaces all-empty content with a single space block", async () => {
+    const file = await writeJsonl([
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: null,
+        message: { role: "assistant", content: [{ type: "text", text: "" }] },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    const assistant = lines[0].message as { content: unknown };
+    expect(assistant.content).toEqual([{ type: "text", text: " " }]);
+  });
+
+  it("leaves clean files unchanged", async () => {
+    const file = await writeJsonl([
+      { type: "queue-operation", operation: "enqueue" },
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: null,
+        message: { role: "assistant", content: [{ type: "text", text: "ok" }] },
+      },
+    ]);
+    const before = await fs.readFile(file, "utf8");
+
+    expect(await sanitizeSessionJsonl(file)).toBe(false);
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+  });
+
+  it("returns false for missing files", async () => {
+    expect(await sanitizeSessionJsonl("/nonexistent/dir/sess.jsonl")).toBe(
+      false,
+    );
   });
 });
