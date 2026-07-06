@@ -17,6 +17,8 @@ import { ReportTasksSection } from "@posthog/ui/features/inbox/components/Report
 import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components/SuggestedReviewersSection";
 import { ReportImplementationPrLink } from "@posthog/ui/features/inbox/components/utils/ReportImplementationPrLink";
 import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
+import { PrFilesChangedSection } from "@posthog/ui/features/pr-review/PrFilesChangedSection";
+import { PrReviewActions } from "@posthog/ui/features/pr-review/PrReviewActions";
 import { Text } from "@radix-ui/themes";
 
 interface PullRequestDetailProps {
@@ -111,6 +113,14 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
         </>
       }
       summarySection={{ Icon: GitPullRequestIcon, title: "Summary" }}
+      belowSummary={
+        prRef && report.implementation_pr_url ? (
+          <>
+            <PrFilesChangedSection prUrl={report.implementation_pr_url} />
+            <PrReviewActions prUrl={report.implementation_pr_url} />
+          </>
+        ) : undefined
+      }
       evidenceSection={{ Icon: MagnifyingGlassIcon, title: "Evidence" }}
     >
       <ReportTasksSection report={report} />

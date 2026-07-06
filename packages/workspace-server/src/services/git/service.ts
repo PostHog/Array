@@ -48,6 +48,7 @@ import { TypedEventEmitter } from "@posthog/shared";
 import { injectable } from "inversify";
 import type { SidebarPrState } from "../workspace/schemas";
 import type {
+  ApprovePrOutput,
   ChangedFile,
   CloneProgressPayload,
   CommitOutput,
@@ -66,10 +67,13 @@ import type {
   GitStatusOutput,
   GitSyncStatus,
   HandoffLocalGitState,
+  MergePrOutput,
   OpenPrOutput,
   PrActionType,
   PrDetailsByUrlOutput,
   PrDiffStats,
+  PrInfoByUrlOutput,
+  PrMergeMethod,
   PrReviewComment,
   PrReviewThread,
   PrStatusOutput,
@@ -965,6 +969,28 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
     }
   }
 
+  async getPrInfoByUrl(prUrl: string): Promise<PrInfoByUrlOutput | null> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return null;
+
+    try {
+      const result = await execGh([
+        "api",
+        `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`,
+        "--jq",
+        '{number,title,body: (.body // ""),author: .user.login,state,merged,draft,mergeable,baseRefName: .base.ref,headRefName: .head.ref,additions,deletions,changedFiles: .changed_files}',
+      ]);
+
+      if (result.exitCode !== 0) {
+        return null;
+      }
+
+      return JSON.parse(result.stdout) as PrInfoByUrlOutput;
+    } catch {
+      return null;
+    }
+  }
+
   async getPrChangedFiles(prUrl: string): Promise<ChangedFile[]> {
     const pr = parseGithubUrl(prUrl);
     if (pr?.kind !== "pr") return [];
@@ -1264,6 +1290,70 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
 
       const result = await execGh([
         ...args,
+        "--repo",
+        `${pr.owner}/${pr.repo}`,
+      ]);
+
+      if (result.exitCode !== 0) {
+        return {
+          success: false,
+          message: result.stderr || result.error || "Unknown error",
+        };
+      }
+
+      return { success: true, message: result.stdout };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  async approvePr(prUrl: string): Promise<ApprovePrOutput> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") {
+      return { success: false, message: "Invalid PR URL" };
+    }
+
+    try {
+      const result = await execGh([
+        "pr",
+        "review",
+        String(pr.number),
+        "--approve",
+        "--repo",
+        `${pr.owner}/${pr.repo}`,
+      ]);
+
+      if (result.exitCode !== 0) {
+        return {
+          success: false,
+          message: result.stderr || result.error || "Unknown error",
+        };
+      }
+
+      return { success: true, message: result.stdout };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  async mergePr(prUrl: string, method: PrMergeMethod): Promise<MergePrOutput> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") {
+      return { success: false, message: "Invalid PR URL" };
+    }
+
+    try {
+      const result = await execGh([
+        "pr",
+        "merge",
+        String(pr.number),
+        `--${method}`,
         "--repo",
         `${pr.owner}/${pr.repo}`,
       ]);

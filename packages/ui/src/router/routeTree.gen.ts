@@ -24,6 +24,7 @@ import { Route as WebsiteHomeRouteImport } from './routes/website/home'
 import { Route as WebsiteCommandCenterRouteImport } from './routes/website/command-center'
 import { Route as SettingsCategoryRouteImport } from './routes/settings/$category'
 import { Route as FoldersFolderIdRouteImport } from './routes/folders/$folderId'
+import { Route as CodePrRouteImport } from './routes/code/pr'
 import { Route as CodeInboxRouteImport } from './routes/code/inbox'
 import { Route as CodeHomeRouteImport } from './routes/code/home'
 import { Route as CodeArchivedRouteImport } from './routes/code/archived'
@@ -147,6 +148,11 @@ const SettingsCategoryRoute = SettingsCategoryRouteImport.update({
 const FoldersFolderIdRoute = FoldersFolderIdRouteImport.update({
   id: '/folders/$folderId',
   path: '/folders/$folderId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodePrRoute = CodePrRouteImport.update({
+  id: '/code/pr',
+  path: '/code/pr',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CodeInboxRoute = CodeInboxRouteImport.update({
@@ -427,6 +433,7 @@ export interface FileRoutesByFullPath {
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
   '/code/inbox': typeof CodeInboxRouteWithChildren
+  '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
@@ -490,6 +497,7 @@ export interface FileRoutesByTo {
   '/skills': typeof SkillsRoute
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
+  '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
@@ -549,6 +557,7 @@ export interface FileRoutesById {
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
   '/code/inbox': typeof CodeInboxRouteWithChildren
+  '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
@@ -617,6 +626,7 @@ export interface FileRouteTypes {
     | '/code/archived'
     | '/code/home'
     | '/code/inbox'
+    | '/code/pr'
     | '/folders/$folderId'
     | '/settings/$category'
     | '/website/command-center'
@@ -680,6 +690,7 @@ export interface FileRouteTypes {
     | '/skills'
     | '/code/archived'
     | '/code/home'
+    | '/code/pr'
     | '/folders/$folderId'
     | '/settings/$category'
     | '/website/command-center'
@@ -738,6 +749,7 @@ export interface FileRouteTypes {
     | '/code/archived'
     | '/code/home'
     | '/code/inbox'
+    | '/code/pr'
     | '/folders/$folderId'
     | '/settings/$category'
     | '/website/command-center'
@@ -805,6 +817,7 @@ export interface RootRouteChildren {
   CodeArchivedRoute: typeof CodeArchivedRoute
   CodeHomeRoute: typeof CodeHomeRoute
   CodeInboxRoute: typeof CodeInboxRouteWithChildren
+  CodePrRoute: typeof CodePrRoute
   FoldersFolderIdRoute: typeof FoldersFolderIdRoute
   SettingsCategoryRoute: typeof SettingsCategoryRoute
   CodeIndexRoute: typeof CodeIndexRoute
@@ -918,6 +931,13 @@ declare module '@tanstack/react-router' {
       path: '/folders/$folderId'
       fullPath: '/folders/$folderId'
       preLoaderRoute: typeof FoldersFolderIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code/pr': {
+      id: '/code/pr'
+      path: '/code/pr'
+      fullPath: '/code/pr'
+      preLoaderRoute: typeof CodePrRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/code/inbox': {
@@ -1497,6 +1517,7 @@ const rootRouteChildren: RootRouteChildren = {
   CodeArchivedRoute: CodeArchivedRoute,
   CodeHomeRoute: CodeHomeRoute,
   CodeInboxRoute: CodeInboxRouteWithChildren,
+  CodePrRoute: CodePrRoute,
   FoldersFolderIdRoute: FoldersFolderIdRoute,
   SettingsCategoryRoute: SettingsCategoryRoute,
   CodeIndexRoute: CodeIndexRoute,

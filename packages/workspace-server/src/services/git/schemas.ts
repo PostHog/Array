@@ -428,6 +428,53 @@ export const updatePrByUrlOutput = z.object({
 
 export type UpdatePrByUrlOutput = z.infer<typeof updatePrByUrlOutput>;
 
+// Full PR overview (title/body/branches/stats) for the native in-app PR view.
+// Mirrors `getPrInfoByUrlOutput` in `@posthog/core/git/router-schemas`.
+export const getPrInfoByUrlInput = z.object({ prUrl: z.string() });
+
+export const getPrInfoByUrlOutput = z.object({
+  number: z.number(),
+  title: z.string(),
+  body: z.string(),
+  author: z.string().nullable(),
+  state: z.string(),
+  merged: z.boolean(),
+  draft: z.boolean(),
+  /** GitHub computes mergeability asynchronously; null until it settles. */
+  mergeable: z.boolean().nullable(),
+  baseRefName: z.string().nullable(),
+  headRefName: z.string().nullable(),
+  additions: z.number(),
+  deletions: z.number(),
+  changedFiles: z.number(),
+});
+
+export type PrInfoByUrlOutput = z.infer<typeof getPrInfoByUrlOutput>;
+
+export const approvePrInput = z.object({ prUrl: z.string() });
+
+export const approvePrOutput = z.object({
+  success: z.boolean(),
+  message: z.string(),
+});
+
+export type ApprovePrOutput = z.infer<typeof approvePrOutput>;
+
+export const prMergeMethod = z.enum(["merge", "squash", "rebase"]);
+export type PrMergeMethod = z.infer<typeof prMergeMethod>;
+
+export const mergePrInput = z.object({
+  prUrl: z.string(),
+  method: prMergeMethod,
+});
+
+export const mergePrOutput = z.object({
+  success: z.boolean(),
+  message: z.string(),
+});
+
+export type MergePrOutput = z.infer<typeof mergePrOutput>;
+
 export const getPrTemplateInput = directoryPathInput;
 
 export const getPrTemplateOutput = z.object({
