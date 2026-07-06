@@ -357,7 +357,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       },
     ];
 
-    const view: Command[] = [
+    const viewCommands: Command[] = [
       {
         id: "zoom-in",
         label: "Zoom in",
@@ -399,7 +399,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     const out: CommandSection[] = [
       { label: "Actions", items: actions },
       { label: "Navigation", items: navigation },
-      { label: "View", items: view },
+      { label: "View", items: viewCommands },
       { label: "Developer", items: developer },
     ];
 

@@ -73,6 +73,24 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     category: "general",
   },
   {
+    id: "zoom-in",
+    keys: SHORTCUTS.ZOOM_IN,
+    description: "Zoom in",
+    category: "general",
+  },
+  {
+    id: "zoom-out",
+    keys: SHORTCUTS.ZOOM_OUT,
+    description: "Zoom out",
+    category: "general",
+  },
+  {
+    id: "reset-zoom",
+    keys: SHORTCUTS.RESET_ZOOM,
+    description: "Reset zoom",
+    category: "general",
+  },
+  {
     id: "switch-messaging-mode",
     keys: SHORTCUTS.SWITCH_MESSAGING_MODE,
     description: "Switch Steer / Queue mode",
