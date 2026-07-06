@@ -9348,7 +9348,9 @@ export namespace Schemas {
     values?: (unknown | null) | undefined;
   };
   export type InsightsToolCall = { query: string; insight_type: InsightTypeEnum };
-  export type InstallCustomAuthTypeEnum = "api_key" | "oauth";
+  // TODO: hand-patched ahead of a real `pnpm typed-openapi` regen — the
+  // posthog/posthog backend PR adding "basic" hasn't deployed yet.
+  export type InstallCustomAuthTypeEnum = "api_key" | "oauth" | "basic";
   export type InstallSourceEnum = "posthog" | "posthog-code";
   export type InstallCustom = {
     name: string;
@@ -9358,6 +9360,8 @@ export namespace Schemas {
     description?: string | undefined;
     client_id?: string | undefined;
     client_secret?: string | undefined;
+    username?: string | undefined;
+    password?: string | undefined;
     install_source?: (InstallSourceEnum & unknown) | undefined;
     posthog_code_callback_url?: string | undefined;
   };
@@ -9706,7 +9710,9 @@ export namespace Schemas {
     created_by: UserBasic & unknown;
     updated_at: string | null;
   };
-  export type MCPAuthTypeEnum = "api_key" | "oauth";
+  // TODO: hand-patched ahead of a real `pnpm typed-openapi` regen — the
+  // posthog/posthog backend PR adding "basic" hasn't deployed yet.
+  export type MCPAuthTypeEnum = "api_key" | "oauth" | "basic";
   export type MCPServerInstallation = {
     id: string;
     template_id: string | null;

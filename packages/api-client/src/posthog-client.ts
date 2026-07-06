@@ -3884,6 +3884,8 @@ export class PostHogAPIClient {
     description?: string;
     client_id?: string;
     client_secret?: string;
+    username?: string;
+    password?: string;
     install_source?: "posthog" | "posthog-code";
     posthog_code_callback_url?: string;
   }): Promise<McpServerInstallation | Schemas.OAuthRedirectResponse> {

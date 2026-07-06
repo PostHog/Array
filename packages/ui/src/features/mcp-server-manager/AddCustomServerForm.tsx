@@ -25,6 +25,8 @@ interface AddCustomServerFormProps {
     api_key?: string;
     client_id?: string;
     client_secret?: string;
+    username?: string;
+    password?: string;
   }) => void;
   /** Prefill the form (e.g. the agent builder's connect_mcp punch-out supplies a
    *  suggested name/url). The user can still edit every field before connecting. */
@@ -57,6 +59,8 @@ export function AddCustomServerForm({
   const [apiKey, setApiKey] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const canSubmit = canSubmitCustomServer({ name, url }) && !pending;
@@ -74,6 +78,8 @@ export function AddCustomServerForm({
           apiKey,
           clientId,
           clientSecret,
+          username,
+          password,
         }),
       );
     },
@@ -86,6 +92,8 @@ export function AddCustomServerForm({
       apiKey,
       clientId,
       clientSecret,
+      username,
+      password,
       onSubmit,
     ],
   );
@@ -161,12 +169,17 @@ export function AddCustomServerForm({
               onValueChange={(val) => {
                 setAuthType(val as McpAuthType);
                 if (val !== "api_key") setApiKey("");
+                if (val !== "basic") {
+                  setUsername("");
+                  setPassword("");
+                }
               }}
             >
               <Select.Trigger />
               <Select.Content>
                 <Select.Item value="oauth">OAuth</Select.Item>
                 <Select.Item value="api_key">API key</Select.Item>
+                <Select.Item value="basic">Basic Auth</Select.Item>
               </Select.Content>
             </Select.Root>
           </Flex>
@@ -181,6 +194,29 @@ export function AddCustomServerForm({
                 type="password"
               />
             </Flex>
+          )}
+
+          {authType === "basic" && (
+            <>
+              <Flex direction="column" gap="1">
+                <Text className="font-medium text-sm">Username</Text>
+                <TextField.Root
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter username"
+                  spellCheck={false}
+                />
+              </Flex>
+              <Flex direction="column" gap="1">
+                <Text className="font-medium text-sm">Password</Text>
+                <TextField.Root
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  type="password"
+                />
+              </Flex>
+            </>
           )}
 
           {authType === "oauth" && (

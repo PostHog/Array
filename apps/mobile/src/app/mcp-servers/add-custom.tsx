@@ -25,6 +25,7 @@ const AUTH_OPTIONS: { value: McpAuthType; label: string }[] = [
   { value: "none", label: "None" },
   { value: "api_key", label: "API key" },
   { value: "oauth", label: "OAuth" },
+  { value: "basic", label: "Basic Auth" },
 ];
 
 export default function AddCustomMcpServerScreen() {
@@ -39,6 +40,8 @@ export default function AddCustomMcpServerScreen() {
   const [apiKey, setApiKey] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +66,9 @@ export default function AddCustomMcpServerScreen() {
           authType === "oauth" && clientSecret.trim()
             ? clientSecret.trim()
             : undefined,
+        username:
+          authType === "basic" && username.trim() ? username.trim() : undefined,
+        password: authType === "basic" && password ? password : undefined,
       });
       await installations.refetch();
       router.back();
@@ -171,6 +177,28 @@ export default function AddCustomMcpServerScreen() {
                 value={clientSecret}
                 onChangeText={setClientSecret}
                 placeholder="OAuth client secret"
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </>
+          ) : null}
+
+          {authType === "basic" ? (
+            <>
+              <FieldLabel>Username</FieldLabel>
+              <FieldInput
+                value={username}
+                onChangeText={setUsername}
+                placeholder="Enter username"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <FieldLabel>Password</FieldLabel>
+              <FieldInput
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Enter password"
                 secureTextEntry
                 autoCapitalize="none"
                 autoCorrect={false}

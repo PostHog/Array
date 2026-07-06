@@ -11,7 +11,7 @@ interface McpServerRowProps {
   title: string;
   subtitle?: string;
   description?: string;
-  authType?: "api_key" | "oauth" | "none";
+  authType?: "api_key" | "oauth" | "basic" | "none";
   badge?: ReactNode;
   isStdio?: boolean;
   needsReauth?: boolean;
@@ -20,9 +20,10 @@ interface McpServerRowProps {
   onPress: () => void;
 }
 
-function authBadge(auth?: "api_key" | "oauth" | "none") {
+function authBadge(auth?: "api_key" | "oauth" | "basic" | "none") {
   if (auth === "oauth") return "OAuth";
   if (auth === "api_key") return "API key";
+  if (auth === "basic") return "Basic Auth";
   return null;
 }
 

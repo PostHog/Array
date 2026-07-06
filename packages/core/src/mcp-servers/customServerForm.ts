@@ -8,6 +8,8 @@ export interface CustomServerFormValues {
   apiKey: string;
   clientId: string;
   clientSecret: string;
+  username: string;
+  password: string;
 }
 
 export interface CustomServerRequest {
@@ -18,6 +20,8 @@ export interface CustomServerRequest {
   api_key?: string;
   client_id?: string;
   client_secret?: string;
+  username?: string;
+  password?: string;
 }
 
 export function isValidMcpUrl(url: string): boolean {
@@ -46,6 +50,9 @@ export function buildCustomServerRequest(
       : {}),
     ...(values.authType === "oauth" && values.clientSecret.trim()
       ? { client_secret: values.clientSecret.trim() }
+      : {}),
+    ...(values.authType === "basic" && values.username.trim() && values.password
+      ? { username: values.username.trim(), password: values.password }
       : {}),
   };
 }

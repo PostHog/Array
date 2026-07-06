@@ -17,6 +17,8 @@ function values(
     apiKey: "",
     clientId: "",
     clientSecret: "",
+    username: "",
+    password: "",
     ...overrides,
   };
 }
@@ -87,5 +89,29 @@ describe("buildCustomServerRequest", () => {
     );
     expect(apiKeyReq.client_id).toBeUndefined();
     expect(apiKeyReq.client_secret).toBeUndefined();
+  });
+
+  it("includes username/password only for basic auth when both are present", () => {
+    const req = buildCustomServerRequest(
+      values({ authType: "basic", username: " user ", password: "pass" }),
+    );
+    expect(req.username).toBe("user");
+    expect(req.password).toBe("pass");
+
+    expect(
+      buildCustomServerRequest(
+        values({ authType: "oauth", username: "user", password: "pass" }),
+      ).username,
+    ).toBeUndefined();
+    expect(
+      buildCustomServerRequest(
+        values({ authType: "basic", username: "", password: "pass" }),
+      ).username,
+    ).toBeUndefined();
+    expect(
+      buildCustomServerRequest(
+        values({ authType: "basic", username: "user", password: "" }),
+      ).password,
+    ).toBeUndefined();
   });
 });

@@ -94,6 +94,35 @@ describe("installCustomWithOAuth", () => {
     });
     expect(result).toEqual({ error: "denied" });
   });
+
+  it("forwards username/password for basic auth", async () => {
+    const oauth = makeOAuth();
+    const client: InstallFlowClient = {
+      installMcpTemplate: vi.fn(),
+      installCustomMcpServer: vi.fn().mockResolvedValue(installedInstallation),
+      authorizeMcpInstallation: vi.fn(),
+    };
+
+    await installCustomWithOAuth(client, oauth, {
+      name: "N",
+      url: "https://x",
+      description: "d",
+      auth_type: "basic",
+      username: "user",
+      password: "pass",
+    });
+
+    expect(client.installCustomMcpServer).toHaveBeenCalledWith({
+      name: "N",
+      url: "https://x",
+      description: "d",
+      auth_type: "basic",
+      username: "user",
+      password: "pass",
+      install_source: "posthog-code",
+      posthog_code_callback_url: "cb://here",
+    });
+  });
 });
 
 describe("reauthorizeWithOAuth", () => {

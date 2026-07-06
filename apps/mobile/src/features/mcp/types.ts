@@ -1,7 +1,7 @@
 // Shared types for MCP server installations and marketplace templates.
 // Mirrors the PostHog cloud REST schema (see `apps/code/src/renderer/api/generated.ts`).
 
-export type McpAuthType = "api_key" | "oauth" | "none";
+export type McpAuthType = "api_key" | "oauth" | "basic" | "none";
 
 export type McpApprovalState = "approved" | "needs_approval" | "do_not_use";
 
@@ -81,6 +81,8 @@ export interface InstallCustomMcpServerOptions {
   description?: string;
   client_id?: string;
   client_secret?: string;
+  username?: string;
+  password?: string;
   install_source?: McpInstallSource;
   posthog_code_callback_url?: string;
 }
