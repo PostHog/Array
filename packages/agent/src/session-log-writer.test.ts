@@ -160,20 +160,28 @@ describe("SessionLogWriter", () => {
   });
 
   describe("empty agent_thought_chunk filtering", () => {
-    it("does not persist empty thought chunks", async () => {
+    it.each([
+      {
+        kind: "empty text content",
+        extra: { content: { type: "text", text: "" } },
+      },
+      {
+        kind: "empty thinking content",
+        extra: { content: { type: "thinking", thinking: "" } },
+      },
+      { kind: "no content", extra: {} },
+    ])("does not persist thought chunks with $kind", async ({ extra }) => {
       const sessionId = "s1";
       logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
 
       logWriter.appendRawLine(
         sessionId,
-        makeSessionUpdate("agent_thought_chunk", {
-          content: { type: "text", text: "" },
-        }),
+        makeSessionUpdate("agent_thought_chunk", extra),
       );
       logWriter.appendRawLine(
         sessionId,
         makeSessionUpdate("agent_thought_chunk", {
-          content: { type: "text", text: "planning the fix" },
+          content: { type: "thinking", thinking: "planning the fix" },
         }),
       );
 
@@ -184,7 +192,7 @@ describe("SessionLogWriter", () => {
       expect(entries).toHaveLength(1);
       expect(entries[0].notification.params?.update).toEqual({
         sessionUpdate: "agent_thought_chunk",
-        content: { type: "text", text: "planning the fix" },
+        content: { type: "thinking", thinking: "planning the fix" },
       });
     });
 

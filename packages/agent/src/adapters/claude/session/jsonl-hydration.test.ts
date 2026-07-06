@@ -1,11 +1,13 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PostHogAPIClient } from "../../../posthog-api";
 import type { StoredEntry } from "../../../types";
 import {
   conversationTurnsToJsonlEntries,
   getSessionJsonlPath,
+  hydrateSessionJsonl,
   rebuildConversation,
   sanitizeSessionJsonl,
   selectRecentTurns,
@@ -216,6 +218,21 @@ describe("rebuildConversation", () => {
 
     expect(turns).toHaveLength(2);
     expect(turns[1].content).toEqual([{ type: "text", text: "done" }]);
+  });
+
+  it("produces no assistant turn when every chunk is empty", () => {
+    const turns = rebuildConversation([
+      entry("user_message", { content: { type: "text", text: "q1" } }),
+      entry("agent_thought_chunk", { content: { type: "text", text: "" } }),
+      entry("user_message", { content: { type: "text", text: "q2" } }),
+    ]);
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0].role).toBe("user");
+    expect(turns[0].content).toEqual([
+      { type: "text", text: "q1" },
+      { type: "text", text: "q2" },
+    ]);
   });
 
   it("produces alternating user/assistant turns for multi-round conversation", () => {
@@ -637,6 +654,32 @@ describe("conversationTurnsToJsonlEntries", () => {
     expect(conv).toHaveLength(2);
     expect(conv[1].message.content).toEqual([{ type: "text", text: "answer" }]);
     expect(conv[1].message.stop_reason).toBe("end_turn");
+  });
+
+  it("emits only tool lines when all content blocks are empty", () => {
+    const lines = conversationTurnsToJsonlEntries(
+      [
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "" }],
+          toolCalls: [
+            {
+              toolCallId: "tc-1",
+              toolName: "Bash",
+              input: { command: "ls" },
+              result: "out",
+            },
+          ],
+        },
+      ],
+      config,
+    );
+
+    const conv = parseConversationEntries(lines);
+    expect(conv).toHaveLength(2);
+    expect(conv[0].message.content[0].type).toBe("tool_use");
+    expect(conv[0].message.stop_reason).toBe("tool_use");
+    expect(conv[1].message.content[0].type).toBe("tool_result");
   });
 
   it("emits no assistant lines when all blocks are empty and there are no tool calls", () => {
@@ -1092,12 +1135,21 @@ describe("end-to-end: S3 log entries -> JSONL output", () => {
 });
 
 describe("sanitizeSessionJsonl", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "jsonl-sanitize-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
   async function writeJsonl(lines: unknown[]): Promise<string> {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "jsonl-sanitize-"));
     const file = path.join(dir, "sess.jsonl");
     await fs.writeFile(
       file,
-      `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`,
+      `${lines.map((l) => (typeof l === "string" ? l : JSON.stringify(l))).join("\n")}\n`,
     );
     return file;
   }
@@ -1134,6 +1186,9 @@ describe("sanitizeSessionJsonl", () => {
 
     expect(await sanitizeSessionJsonl(file)).toBe(true);
 
+    const raw = await fs.readFile(file, "utf8");
+    expect(raw.endsWith("\n")).toBe(true);
+
     const lines = await readJsonl(file);
     expect(lines[0].message).toEqual({
       role: "user",
@@ -1162,6 +1217,90 @@ describe("sanitizeSessionJsonl", () => {
     expect(assistant.content).toEqual([{ type: "text", text: " " }]);
   });
 
+  it("keeps tool_use blocks while stripping empty siblings", async () => {
+    const file = await writeJsonl([
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: null,
+        message: {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "tc-1", name: "Bash", input: {} },
+            { type: "text", text: "" },
+          ],
+        },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    const assistant = lines[0].message as { content: unknown };
+    expect(assistant.content).toEqual([
+      { type: "tool_use", id: "tc-1", name: "Bash", input: {} },
+    ]);
+  });
+
+  it("sanitizes empty blocks in user lines too", async () => {
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "" },
+            { type: "text", text: "prompt" },
+          ],
+        },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    const user = lines[0].message as { content: unknown };
+    expect(user.content).toEqual([{ type: "text", text: "prompt" }]);
+  });
+
+  it("preserves unparseable lines while fixing valid ones", async () => {
+    const corruptLine = '{"type":"assistant","message":';
+    const file = await writeJsonl([
+      corruptLine,
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: null,
+        message: { role: "assistant", content: [{ type: "text", text: "" }] },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const raw = await fs.readFile(file, "utf8");
+    const rawLines = raw.split("\n").filter((l) => l.trim());
+    expect(rawLines[0]).toBe(corruptLine);
+    const assistant = JSON.parse(rawLines[1]).message as { content: unknown };
+    expect(assistant.content).toEqual([{ type: "text", text: " " }]);
+  });
+
+  it("passes through string message content", async () => {
+    const file = await writeJsonl([
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: null,
+        message: { role: "assistant", content: "" },
+      },
+    ]);
+    const before = await fs.readFile(file, "utf8");
+
+    expect(await sanitizeSessionJsonl(file)).toBe(false);
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+  });
+
   it("leaves clean files unchanged", async () => {
     const file = await writeJsonl([
       { type: "queue-operation", operation: "enqueue" },
@@ -1182,5 +1321,108 @@ describe("sanitizeSessionJsonl", () => {
     expect(await sanitizeSessionJsonl("/nonexistent/dir/sess.jsonl")).toBe(
       false,
     );
+  });
+});
+
+describe("hydrateSessionJsonl", () => {
+  let configDir: string;
+  let originalConfigDir: string | undefined;
+  const cwd = "/repo";
+  const sessionId = "sess-hydrate";
+
+  beforeEach(async () => {
+    originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+    configDir = await fs.mkdtemp(path.join(os.tmpdir(), "jsonl-hydrate-"));
+    process.env.CLAUDE_CONFIG_DIR = configDir;
+  });
+
+  afterEach(async () => {
+    if (originalConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
+    await fs
+      .chmod(path.dirname(getSessionJsonlPath(sessionId, cwd)), 0o755)
+      .catch(() => {});
+    await fs.rm(configDir, { recursive: true, force: true });
+  });
+
+  async function writeSessionFile(): Promise<string> {
+    process.env.CLAUDE_CONFIG_DIR = configDir;
+    const file = getSessionJsonlPath(sessionId, cwd);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const poisoned = {
+      type: "assistant",
+      uuid: "a1",
+      parentUuid: null,
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: "" },
+          { type: "text", text: "hello" },
+        ],
+      },
+    };
+    await fs.writeFile(file, `${JSON.stringify(poisoned)}\n`);
+    return file;
+  }
+
+  function makeDeps() {
+    return {
+      posthogAPI: { getTaskRun: vi.fn() } as unknown as PostHogAPIClient,
+      log: { info: vi.fn(), warn: vi.fn() },
+    };
+  }
+
+  it("sanitizes an existing file and skips S3 hydration", async () => {
+    const file = await writeSessionFile();
+    const { posthogAPI, log } = makeDeps();
+
+    const result = await hydrateSessionJsonl({
+      sessionId,
+      cwd,
+      taskId: "t1",
+      runId: "r1",
+      posthogAPI,
+      log,
+    });
+
+    expect(result).toBe(true);
+    expect(
+      (posthogAPI as unknown as { getTaskRun: ReturnType<typeof vi.fn> })
+        .getTaskRun,
+    ).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith(
+      "Removed empty content blocks from existing session JSONL",
+      expect.anything(),
+    );
+    expect(await fs.readFile(file, "utf8")).not.toContain('"text":""');
+  });
+
+  it("still resumes from the existing file when sanitize cannot write", async () => {
+    const file = await writeSessionFile();
+    const before = await fs.readFile(file, "utf8");
+    await fs.chmod(path.dirname(file), 0o555);
+    const { posthogAPI, log } = makeDeps();
+
+    const result = await hydrateSessionJsonl({
+      sessionId,
+      cwd,
+      taskId: "t1",
+      runId: "r1",
+      posthogAPI,
+      log,
+    });
+
+    expect(result).toBe(true);
+    expect(log.warn).toHaveBeenCalledWith(
+      "Failed to sanitize existing session JSONL",
+      expect.anything(),
+    );
+    expect(
+      (posthogAPI as unknown as { getTaskRun: ReturnType<typeof vi.fn> })
+        .getTaskRun,
+    ).not.toHaveBeenCalled();
+
+    await fs.chmod(path.dirname(file), 0o755);
+    expect(await fs.readFile(file, "utf8")).toBe(before);
   });
 });
