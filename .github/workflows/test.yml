@@ -15,6 +15,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       workflow: ${{ steps.filter.outputs.workflow }}
+      packages: ${{ steps.filter.outputs.packages }}
     steps:
       - name: Detect relevant changes
         id: filter
@@ -36,6 +37,8 @@ jobs:
               - "!.env.example"
             workflow:
               - ".github/workflows/test.yml"
+            packages:
+              - "packages/**"
 
   unit-test:
     needs: changes
@@ -151,16 +154,17 @@ jobs:
   e2e:
     # Live-model e2e for the @posthog/agent adapters (claude + codex). Runs only
     # after the unit + integration jobs pass — a red tree never reaches the
-    # gateway. Opt-in and safe by default: without vars.AGENT_E2E_ENABLED it is
-    # skipped, and even when enabled it self-skips every arm unless the
-    # E2E_GATEWAY_TOKEN secret is present (fork PRs never see it) and
+    # gateway — and only when a packages/ file changed. Each arm still self-skips
+    # unless the E2E_GATEWAY_TOKEN secret is present (fork PRs never see it) and
     # E2E_GATEWAY_URL points at a runner-reachable gateway. Drives cheap models
-    # (claude-haiku-4-5 / gpt-5-mini), so an enabled run is a handful of short turns.
-    needs: [unit-test, integration-test]
-    # Enabled at the org level, and skipped on fork PRs — secrets (the gateway
-    # token) are withheld from forks, so the fail-loud token guard would red them
-    # spuriously. Same-repo PRs get the secret and enforce the guard.
-    if: ${{ vars.AGENT_E2E_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    # (claude-haiku-4-5 / gpt-5-mini), so a run is a handful of short turns.
+    needs: [changes, unit-test, integration-test]
+    # Run on any packages/ change (or a change to this workflow), and skip on fork
+    # PRs — secrets (the gateway token) are withheld from forks, so the fail-loud
+    # token guard would red them spuriously. Same-repo PRs get the secret and
+    # enforce the guard. Depending on unit-test + integration-test means this only
+    # runs once both have already passed.
+    if: ${{ (needs.changes.outputs.packages == 'true' || needs.changes.outputs.workflow == 'true') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
