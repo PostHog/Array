@@ -23,6 +23,8 @@ export type DefaultReasoningEffort =
   | "max"
   | "last_used";
 
+export type DefaultModel = string | "last_used";
+
 export type SendMessagesWith = "enter" | "cmd+enter";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
 export type DiffOpenMode = "auto" | "split" | "same-pane" | "last-active-pane";
@@ -91,6 +93,7 @@ interface SettingsStore {
   // Mode last chosen when approving a plan; pre-selected on the next approval.
   lastPlanApprovalMode: ExecutionMode | null;
   defaultReasoningEffort: DefaultReasoningEffort;
+  defaultModels: Partial<Record<"claude" | "codex", DefaultModel>>;
   defaultMessagingMode: DefaultMessagingMode;
   setDefaultMessagingMode: (mode: DefaultMessagingMode) => void;
   setDefaultRunMode: (mode: DefaultRunMode) => void;
@@ -113,6 +116,7 @@ interface SettingsStore {
   setLastUsedInitialTaskMode: (mode: ExecutionMode) => void;
   setLastPlanApprovalMode: (mode: ExecutionMode) => void;
   setDefaultReasoningEffort: (effort: DefaultReasoningEffort) => void;
+  setDefaultModel: (adapter: "claude" | "codex", model: DefaultModel) => void;
 
   // Notifications
   desktopNotifications: boolean;
@@ -228,6 +232,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedInitialTaskMode: "plan",
       lastPlanApprovalMode: null,
       defaultReasoningEffort: "last_used",
+      defaultModels: {},
       defaultMessagingMode: "queue",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
       setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
@@ -261,6 +266,10 @@ export const useSettingsStore = create<SettingsStore>()(
       setLastPlanApprovalMode: (mode) => set({ lastPlanApprovalMode: mode }),
       setDefaultReasoningEffort: (effort) =>
         set({ defaultReasoningEffort: effort }),
+      setDefaultModel: (adapter, model) =>
+        set((state) => ({
+          defaultModels: { ...state.defaultModels, [adapter]: model },
+        })),
       setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
 
       // Notifications

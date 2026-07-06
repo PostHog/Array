@@ -7,11 +7,13 @@ import {
   COLLAPSE_MODE_OPTIONS,
   type CollapseMode,
 } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
+import { useAvailableModelOptions } from "@posthog/ui/features/sessions/hooks/useAvailableModelOptions";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import {
   type AutoConvertLongText,
   type DefaultInitialTaskMode,
   type DefaultMessagingMode,
+  type DefaultModel,
   type DefaultReasoningEffort,
   type DiffOpenMode,
   type SendMessagesWith,
@@ -71,6 +73,7 @@ export function GeneralSettings() {
     autoConvertLongText,
     defaultInitialTaskMode,
     defaultMessagingMode,
+    defaultModels,
     defaultReasoningEffort,
     diffOpenMode,
     sendMessagesWith,
@@ -81,6 +84,7 @@ export function GeneralSettings() {
     setAutoConvertLongText,
     setDefaultInitialTaskMode,
     setDefaultMessagingMode,
+    setDefaultModel,
     setDefaultReasoningEffort,
     setDiffOpenMode,
     setSendMessagesWith,
@@ -89,6 +93,9 @@ export function GeneralSettings() {
     setSlotMachineMode,
     setBrainrotMode,
   } = useSettingsStore();
+
+  const claudeModelOptions = useAvailableModelOptions("claude");
+  const codexModelOptions = useAvailableModelOptions("codex");
 
   // Appearance handlers
   const handleThemeChange = useCallback(
@@ -162,6 +169,18 @@ export function GeneralSettings() {
       setDefaultReasoningEffort(value);
     },
     [defaultReasoningEffort, setDefaultReasoningEffort],
+  );
+
+  const handleDefaultModelChange = useCallback(
+    (adapter: "claude" | "codex", value: DefaultModel) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "default_model",
+        new_value: value,
+        old_value: defaultModels[adapter] ?? "last_used",
+      });
+      setDefaultModel(adapter, value);
+    },
+    [defaultModels, setDefaultModel],
   );
 
   const handleConversationCollapseModeChange = useCallback(
@@ -310,6 +329,55 @@ export function GeneralSettings() {
           </Select.Content>
         </Select.Root>
       </SettingRow>
+
+      <SettingRow
+        label="Default Claude model"
+        description="Choose the default model for new Claude tasks, or remember your last-used model"
+      >
+        <Select.Root
+          value={defaultModels.claude ?? "last_used"}
+          onValueChange={(value) =>
+            handleDefaultModelChange("claude", value as DefaultModel)
+          }
+          size="1"
+          disabled={claudeModelOptions.length === 0}
+        >
+          <Select.Trigger className="min-w-[140px]" />
+          <Select.Content>
+            <Select.Item value="last_used">Last used</Select.Item>
+            {claudeModelOptions.map((opt) => (
+              <Select.Item key={opt.value} value={opt.value}>
+                {opt.name}
+              </Select.Item>
+            ))}
+          </Select.Content>
+        </Select.Root>
+      </SettingRow>
+
+      {codexModelOptions.length > 0 && (
+        <SettingRow
+          label="Default Codex model"
+          description="Choose the default model for new Codex tasks, or remember your last-used model"
+        >
+          <Select.Root
+            value={defaultModels.codex ?? "last_used"}
+            onValueChange={(value) =>
+              handleDefaultModelChange("codex", value as DefaultModel)
+            }
+            size="1"
+          >
+            <Select.Trigger className="min-w-[140px]" />
+            <Select.Content>
+              <Select.Item value="last_used">Last used</Select.Item>
+              {codexModelOptions.map((opt) => (
+                <Select.Item key={opt.value} value={opt.value}>
+                  {opt.name}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
+        </SettingRow>
+      )}
 
       <SettingRow
         label="Default effort level"

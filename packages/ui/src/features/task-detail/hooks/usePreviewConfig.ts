@@ -89,8 +89,10 @@ export function usePreviewConfig(
           lastUsedInitialTaskMode,
           defaultReasoningEffort,
           lastUsedReasoningEffort,
+          defaultModels,
           lastUsedModel,
         } = useSettingsStore.getState();
+        const defaultModel = defaultModels[adapter] ?? "last_used";
 
         let initial = deriveInitialConfig(
           options,
@@ -107,19 +109,22 @@ export function usePreviewConfig(
         // without this the user's last pick (e.g. fable) is lost on every
         // refetch/remount. Restore it through applyConfigChange so the dependent
         // effort options are recomputed for the restored model.
+        // If defaultModel is set (not "last_used"), prefer it over lastUsedModel.
+        const targetModel =
+          defaultModel !== "last_used" ? defaultModel : lastUsedModel;
         const modelOpt = getOptionByCategory(initial, "model");
         if (
-          lastUsedModel &&
+          targetModel &&
           modelOpt?.type === "select" &&
-          modelOpt.currentValue !== lastUsedModel &&
-          flattenConfigValues(modelOpt).includes(lastUsedModel)
+          modelOpt.currentValue !== targetModel &&
+          flattenConfigValues(modelOpt).includes(targetModel)
         ) {
           initial = applyConfigChange(initial, {
             adapter,
             configId: modelOpt.id,
-            value: lastUsedModel,
+            value: targetModel,
             effortOptions:
-              getReasoningEffortOptions(adapter, lastUsedModel) ?? undefined,
+              getReasoningEffortOptions(adapter, targetModel) ?? undefined,
             settings: {
               defaultInitialTaskMode: "",
               lastUsedInitialTaskMode: undefined,
