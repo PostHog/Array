@@ -8,7 +8,8 @@ import { useSupportsNativeSteer } from "@posthog/ui/features/sessions/hooks/useM
 import { useReturnQueuedMessageToEditor } from "@posthog/ui/features/sessions/hooks/useReturnQueuedMessageToEditor";
 import {
   sessionStoreSetters,
-  useSessionForTask,
+  useSessionIsCloud,
+  useSessionSelector,
 } from "@posthog/ui/features/sessions/sessionStore";
 import { useQueuedMessagesForTask } from "@posthog/ui/features/sessions/useSession";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -28,12 +29,17 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const supportsNativeSteer = useSupportsNativeSteer(taskId);
   const returnToEditor = useReturnQueuedMessageToEditor(taskId);
-  const session = useSessionForTask(taskId);
+  // Narrow reads (not the whole session) so the dock doesn't re-render on every
+  // streamed token while a turn is running.
+  const isCompacting = useSessionSelector(
+    taskId,
+    (s) => s?.isCompacting ?? false,
+  );
+  const isCloud = useSessionIsCloud(taskId);
   // Steer can't inject mid-compaction, so it would be a silent no-op; hide it.
   // Cloud has no real mid-turn steer either (it would just interrupt the turn),
   // so hide it there too — the message stays queued and lands next turn.
-  const canSteer =
-    !(session?.isCompacting ?? false) && !(session?.isCloud ?? false);
+  const canSteer = !isCompacting && !isCloud;
 
   if (queued.length === 0) return null;
 

@@ -2,7 +2,7 @@ import type { Task } from "@posthog/shared/domain-types";
 import { Box } from "@radix-ui/themes";
 import { useEffect } from "react";
 import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
-import { useSessionForTask } from "../../sessions/sessionStore";
+import { useSessionSelector } from "../../sessions/sessionStore";
 import { ShellTerminal } from "../../terminal/ShellTerminal";
 import { useTerminalStore } from "../../terminal/terminalStore";
 import { useShellProcessPoller } from "../../terminal/useShellProcessPoller";
@@ -22,7 +22,9 @@ export function TaskShellPanel({
   const stateKey = shellId ? `${taskId}-${shellId}` : taskId;
   const tabId = shellId || "shell";
 
-  const session = useSessionForTask(taskId);
+  // Only the connection status gates rendering here; reading it narrowly keeps
+  // the terminal panel from re-rendering on every streamed token.
+  const sessionStatus = useSessionSelector(taskId, (s) => s?.status);
   const workspace = useWorkspace(taskId);
   const workspacePath = workspace?.worktreePath ?? workspace?.folderPath;
 
@@ -39,7 +41,7 @@ export function TaskShellPanel({
     }
   }, [processName, taskId, tabId, updateTabLabel]);
 
-  if (!workspacePath || !session || session.status === "connecting") {
+  if (!workspacePath || !sessionStatus || sessionStatus === "connecting") {
     return null;
   }
 

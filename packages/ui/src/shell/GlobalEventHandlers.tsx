@@ -27,6 +27,7 @@ import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { logger } from "@posthog/ui/shell/logger";
+import { useRendererWindowFocusStore } from "@posthog/ui/shell/rendererWindowFocusStore";
 import { clearApplicationStorage } from "@posthog/ui/utils/clearStorage";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -272,6 +273,15 @@ export function GlobalEventHandlers({
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
   }, [loadFolders, sessionService]);
+
+  // Freeze perpetual CSS animations while the window is backgrounded (see the
+  // `.ph-window-blurred` rule in globals.css). Driven by the shared focus store
+  // so we don't add yet another blur/focus listener.
+  const windowFocused = useRendererWindowFocusStore((s) => s.focused);
+  useEffect(() => {
+    document.body.classList.toggle("ph-window-blurred", !windowFocused);
+    return () => document.body.classList.remove("ph-window-blurred");
+  }, [windowFocused]);
 
   // Check if current task's folder became invalid (e.g., moved while app was open)
   useEffect(() => {

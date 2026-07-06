@@ -88,6 +88,7 @@ export {
   useSessionForTask,
   useSessionHandoffInProgress,
   useSessionIsCloud,
+  useSessionSelector,
   useSessions,
   useThoughtLevelConfigOptionForTask,
 } from "./useSession";
