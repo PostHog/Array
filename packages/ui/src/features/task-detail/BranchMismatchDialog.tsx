@@ -55,7 +55,9 @@ export function BranchMismatchDialog({
     <AlertDialog.Root
       open={open}
       onOpenChange={(isOpen) => {
-        if (!isOpen) onCancel();
+        // While the checkout runs the dialog must stay up: onCancel discards
+        // the pending message the switch handler sends on success.
+        if (!isOpen && !isSwitching) onCancel();
       }}
     >
       <AlertDialog.Content maxWidth="420px" size="2">
@@ -116,16 +118,18 @@ export function BranchMismatchDialog({
             Continue anyway
           </Button>
 
-          <AlertDialog.Action>
-            <Button
-              variant="solid"
-              size="1"
-              onClick={onSwitch}
-              loading={isSwitching}
-            >
-              Switch branch
-            </Button>
-          </AlertDialog.Action>
+          {/* Not an AlertDialog.Action: Action closes the dialog on click,
+              which fires onOpenChange -> onCancel and discards the pending
+              message before the checkout finishes. The dialog closes (or
+              shows the error) when the mutation settles. */}
+          <Button
+            variant="solid"
+            size="1"
+            onClick={onSwitch}
+            loading={isSwitching}
+          >
+            Switch branch
+          </Button>
         </Flex>
       </AlertDialog.Content>
     </AlertDialog.Root>
