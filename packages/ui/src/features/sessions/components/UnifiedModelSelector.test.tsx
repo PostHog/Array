@@ -3,7 +3,7 @@ import type {
   SessionConfigSelectGroup,
 } from "@agentclientprotocol/sdk";
 import { Theme } from "@radix-ui/themes";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { UnifiedModelSelector } from "./UnifiedModelSelector";
@@ -105,7 +105,11 @@ describe("UnifiedModelSelector", () => {
       await screen.findByRole("menuitemradio", { name: "GPT-5.5 Codex" }),
     );
 
-    expect(onModelChange).toHaveBeenCalledExactlyOnceWith("gpt-5.5-codex");
+    // onModelChange is deferred until the menu-close animation completes, so
+    // wait for it rather than asserting synchronously after the click.
+    await waitFor(() =>
+      expect(onModelChange).toHaveBeenCalledExactlyOnceWith("gpt-5.5-codex"),
+    );
   });
 
   it("switches adapter via the 'Switch to Claude' item", async () => {
