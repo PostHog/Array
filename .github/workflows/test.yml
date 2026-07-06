@@ -147,3 +147,63 @@ jobs:
           name: playwright-report
           path: apps/code/playwright-report/
           retention-days: 7
+
+  e2e:
+    # Live-model e2e for the @posthog/agent adapters (claude + codex). Runs only
+    # after the unit + integration jobs pass — a red tree never reaches the
+    # gateway. Opt-in and safe by default: without vars.AGENT_E2E_ENABLED it is
+    # skipped, and even when enabled it self-skips every arm unless the
+    # E2E_GATEWAY_TOKEN secret is present (fork PRs never see it) and
+    # E2E_GATEWAY_URL points at a runner-reachable gateway. Drives cheap models
+    # (claude-haiku-4-5 / gpt-5-mini), so an enabled run is a handful of short turns.
+    needs: [unit-test, integration-test]
+    # Enabled at the org level, and skipped on fork PRs — secrets (the gateway
+    # token) are withheld from forks, so the fail-loud token guard would red them
+    # spuriously. Same-repo PRs get the secret and enforce the guard.
+    if: ${{ vars.AGENT_E2E_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build agent dependencies
+        run: |
+          pnpm --filter @posthog/shared run build
+          pnpm --filter @posthog/git run build
+          pnpm --filter @posthog/enricher run build
+
+      - name: Download native codex binary
+        # Non-fatal at the STEP so a failure surfaces as the fail-loud binary guard
+        # (guard.e2e.test.ts) with a clear message rather than an opaque download
+        # error. A missing binary then REDS the run (the guard fails when a token is
+        # set) instead of letting the codex arm silently skip to green.
+        run: node apps/code/scripts/download-binaries.mjs || echo "codex binary download failed; the binary guard test will red the run"
+
+      - name: Run live e2e (both adapters)
+        run: pnpm --filter agent run test:e2e
+        env:
+          E2E_GATEWAY_TOKEN: ${{ secrets.E2E_GATEWAY_TOKEN }}
+          E2E_GATEWAY_URL: ${{ vars.E2E_GATEWAY_URL }}
+          E2E_CLAUDE_MODEL: ${{ vars.E2E_CLAUDE_MODEL }}
+          E2E_CODEX_MODEL: ${{ vars.E2E_CODEX_MODEL }}
+          # Optional: set vars.E2E_ENVIRONMENT=cloud to exercise the cloud code
+          # path (sandbox/permission-profile gating). Unset = local. The OS-sandbox
+          # enforcement test is macOS-gated, so it doesn't red this linux runner.
+          E2E_ENVIRONMENT: ${{ vars.E2E_ENVIRONMENT }}

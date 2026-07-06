@@ -1,14 +1,11 @@
 import { Logger } from "../../utils/logger";
 import type { StreamPair } from "../../utils/streams";
-import type { JsonRpcMessage, JsonRpcResponse } from "./protocol";
+import type { JsonRpcMessage, JsonRpcResponse, RequestId } from "./protocol";
 
 export interface AppServerClientHandlers {
   /** Server-pushed notification (no id), e.g. `item/agentMessage/delta`. */
   onNotification?: (method: string, params: unknown) => void;
-  /**
-   * Server-initiated request (has an id), e.g. an approval. The resolved value
-   * is returned to the server as the JSON-RPC result.
-   */
+  /** Server-initiated request (has an id), e.g. an approval; the resolved value is returned as the JSON-RPC result. */
   onRequest?: (method: string, params: unknown) => Promise<unknown>;
   /** Fired once when the stream ends without an explicit close() (process exit). */
   onClose?: () => void;
@@ -28,17 +25,13 @@ export interface AppServerRpc {
 }
 
 /**
- * Bidirectional newline-delimited JSON-RPC client for the native Codex
- * `app-server` subprocess. Unlike the codex-acp adapter this speaks Codex's
- * own protocol rather than ACP, so it cannot reuse the ACP SDK connection.
- *
- * Transport-agnostic: it is given a {@link StreamPair} so tests can drive it
- * over in-memory streams without spawning a process.
+ * Bidirectional newline-delimited JSON-RPC client for the native Codex `app-server` subprocess.
+ * Transport-agnostic via a {@link StreamPair} so tests can drive it over in-memory streams.
  */
 export class AppServerClient implements AppServerRpc {
   private readonly writer: WritableStreamDefaultWriter<Uint8Array>;
   private readonly encoder = new TextEncoder();
-  private readonly pending = new Map<number, PendingCall>();
+  private readonly pending = new Map<RequestId, PendingCall>();
   private readonly handlers: AppServerClientHandlers;
   private readonly logger: Logger;
   private reader?: ReadableStreamDefaultReader<Uint8Array>;
@@ -56,6 +49,10 @@ export class AppServerClient implements AppServerRpc {
   }
 
   request<T = unknown>(method: string, params?: unknown): Promise<T> {
+    // The read loop is gone once closed, so a registered call could never settle.
+    if (this.closed) {
+      return Promise.reject(new Error("AppServerClient closed"));
+    }
     const id = this.nextId++;
     const promise = new Promise<T>((resolve, reject) => {
       this.pending.set(id, {
@@ -68,6 +65,7 @@ export class AppServerClient implements AppServerRpc {
   }
 
   notify(method: string, params?: unknown): void {
+    if (this.closed) return;
     this.send({ method, params });
   }
 
@@ -126,9 +124,7 @@ export class AppServerClient implements AppServerRpc {
         // lock already released by cancel()
       }
       if (!this.closed) {
-        // The stream ended without an explicit close() (the process exited).
-        // Fail in-flight calls and notify the owner so a pending turn does not
-        // hang forever.
+        // Stream ended without close() (process exited): fail in-flight calls so the turn doesn't hang.
         this.closed = true;
         for (const call of this.pending.values()) {
           call.reject(new Error("codex app-server stream closed"));
@@ -151,20 +147,22 @@ export class AppServerClient implements AppServerRpc {
     const id = (message as { id?: unknown }).id;
     const method = (message as { method?: unknown }).method;
     const params = (message as { params?: unknown }).params;
+    // Discriminate on id presence, not `typeof id === "number"` — RequestId is
+    // string|number, so a string-id server request must still be answered.
+    const hasId = id !== undefined && id !== null;
 
-    if (typeof method !== "string") {
-      if (typeof id === "number") {
-        this.handleResponse(message as JsonRpcResponse);
+    if (typeof method === "string") {
+      if (hasId) {
+        void this.handleIncomingRequest(id as RequestId, method, params);
+      } else {
+        this.handlers.onNotification?.(method, params);
       }
       return;
     }
 
-    if (typeof id === "number") {
-      void this.handleIncomingRequest(id, method, params);
-      return;
+    if (hasId) {
+      this.handleResponse(message as JsonRpcResponse);
     }
-
-    this.handlers.onNotification?.(method, params);
   }
 
   private handleResponse(message: JsonRpcResponse): void {
@@ -182,7 +180,7 @@ export class AppServerClient implements AppServerRpc {
   }
 
   private async handleIncomingRequest(
-    id: number,
+    id: RequestId,
     method: string,
     params: unknown,
   ): Promise<void> {

@@ -129,6 +129,7 @@ export class Agent {
       logger: this.logger,
       processCallbacks: options.processCallbacks,
       onStructuredOutput: options.onStructuredOutput,
+      useCodexAppServer: options.useCodexAppServer,
       allowedModelIds,
       posthogApiConfig: this.posthogApiConfig,
       enricherEnabled: this.enricherEnabled,

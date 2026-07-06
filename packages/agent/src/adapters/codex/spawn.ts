@@ -4,6 +4,7 @@ import { delimiter, dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import type { ProcessSpawnedCallback } from "../../types";
 import { Logger } from "../../utils/logger";
+import { stripElectronNodeShimFromPath } from "../../utils/spawn-env";
 import type { CodexSettings } from "./settings";
 
 export interface CodexProcessOptions {
@@ -25,6 +26,14 @@ export interface CodexProcessOptions {
   settings?: CodexSettings;
   /** Additional writable roots passed to Codex's workspace-write sandbox. */
   additionalDirectories?: string[];
+  /**
+   * Extra codex `-c key=value` config overrides (app-server sub-adapter only).
+   * An escape hatch for config the adapter doesn't model — e.g. the e2e sets
+   * `auto_compact_token_limit` low to force a compaction.
+   */
+  configOverrides?: Record<string, string | number>;
+  /** Deployment environment; "cloud" disables codex's own OS sandbox (the enclosing sandbox isolates). */
+  environment?: "local" | "cloud";
 }
 
 export interface CodexProcess {
@@ -38,6 +47,17 @@ function buildConfigArgs(options: CodexProcessOptions): string[] {
   const args: string[] = [];
 
   args.push("-c", `features.remote_models=false`);
+
+  // On cloud the agent already runs inside PostHog's isolated sandbox (docker/Modal
+  // with agentsh egress + filesystem controls), so Codex's own OS-level sandbox is
+  // redundant — and its `linux-sandbox` launcher is unavailable inside that
+  // sandbox, so the default workspace-write mode panics ("sandbox launcher
+  // unavailable" → require_escalated) and wedges the session. Run Codex with no
+  // nested sandbox there; the enclosing sandbox provides the isolation. Local
+  // desktop sessions keep codex's own sandbox as the OS-level backstop.
+  if (options.environment === "cloud") {
+    args.push("-c", `sandbox_mode="danger-full-access"`);
+  }
 
   // Disable the user's local MCPs one-by-one so Codex only uses the MCPs we
   // provide via ACP. We can't use `-c mcp_servers={}` because that makes Codex
@@ -129,6 +149,7 @@ export function spawnCodexProcess(options: CodexProcessOptions): CodexProcess {
 
   const { command, args } = findCodexBinary(options);
 
+  env.PATH = stripElectronNodeShimFromPath(env.PATH);
   if (options.binaryPath && existsSync(options.binaryPath)) {
     const binDir = dirname(options.binaryPath);
     env.PATH = `${binDir}${delimiter}${env.PATH ?? ""}`;

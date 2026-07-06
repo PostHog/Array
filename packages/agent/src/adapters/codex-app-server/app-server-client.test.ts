@@ -7,17 +7,14 @@ import {
 import { AppServerClient } from "./app-server-client";
 
 interface RpcMessage {
-  id?: number;
+  id?: number | string;
   method?: string;
   params?: unknown;
   result?: unknown;
   error?: { code: number; message: string };
 }
 
-/**
- * Drives the "server" end of a {@link StreamPair}: reads newline-delimited
- * JSON-RPC the client sent and writes framed responses/notifications back.
- */
+/** Drives the "server" end of a {@link StreamPair}: reads client JSON-RPC and writes framed replies back. */
 function makeFakeServer(transport: StreamPair) {
   const writer = transport.writable.getWriter();
   const reader = transport.readable.getReader();
@@ -142,6 +139,28 @@ describe("AppServerClient", () => {
     await client.close();
   });
 
+  it("answers a server request with a STRING id (RequestId is string|number)", async () => {
+    const streams = createBidirectionalStreams();
+    const onRequest = vi.fn(async () => ({ decision: "approved" }));
+    const client = new AppServerClient(streams.client, {
+      logger: silentLogger,
+      onRequest,
+    });
+    const server = makeFakeServer(streams.agent);
+
+    await server.send({
+      id: "req-abc",
+      method: "item/commandExecution/requestApproval",
+      params: {},
+    });
+
+    const response = await server.readMessage();
+    expect(onRequest).toHaveBeenCalledTimes(1);
+    expect(response.id).toBe("req-abc");
+    expect(response.result).toEqual({ decision: "approved" });
+    await client.close();
+  });
+
   it("rejects in-flight requests when closed", async () => {
     const streams = createBidirectionalStreams();
     const client = new AppServerClient(streams.client, {
@@ -152,5 +171,35 @@ describe("AppServerClient", () => {
     await client.close();
 
     await expect(pending).rejects.toThrow(/closed/i);
+  });
+
+  it("rejects new requests immediately once closed instead of registering them", async () => {
+    const streams = createBidirectionalStreams();
+    const client = new AppServerClient(streams.client, {
+      logger: silentLogger,
+    });
+
+    await client.close();
+
+    await expect(client.request("turn/interrupt", {})).rejects.toThrow(
+      /closed/i,
+    );
+    expect(() => client.notify("thread/archive", {})).not.toThrow();
+  });
+
+  it("rejects new requests after the stream ends without close (process exit)", async () => {
+    const streams = createBidirectionalStreams();
+    const onClose = vi.fn();
+    const client = new AppServerClient(streams.client, {
+      logger: silentLogger,
+      onClose,
+    });
+
+    await streams.agent.writable.getWriter().close();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+
+    await expect(client.request("turn/interrupt", {})).rejects.toThrow(
+      /closed/i,
+    );
   });
 });

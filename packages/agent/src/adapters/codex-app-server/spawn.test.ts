@@ -19,13 +19,55 @@ describe("buildAppServerArgs", () => {
     );
   });
 
-  it("passes guidance via developer_instructions, never the replacing key", () => {
+  it.each([
+    ["darwin", 'sandbox_mode="workspace-write"'],
+    ["linux", 'sandbox_mode="danger-full-access"'],
+    ["win32", 'sandbox_mode="danger-full-access"'],
+  ])(
+    "on %s spawns with %s (macOS keeps the sandbox engaged so read-only can restrict; cloud/linux avoids the linux-sandbox panic)",
+    (platform, expected) => {
+      const original = process.platform;
+      Object.defineProperty(process, "platform", {
+        value: platform,
+        configurable: true,
+      });
+      try {
+        const args = buildAppServerArgs({ binaryPath: "/bundle/codex" });
+        expect(args).toContain(expected);
+        expect(args.filter((a) => a.startsWith("sandbox_mode="))).toHaveLength(
+          1,
+        );
+      } finally {
+        Object.defineProperty(process, "platform", {
+          value: original,
+          configurable: true,
+        });
+      }
+    },
+  );
+
+  it("renders configOverrides bare for numbers and quoted for strings", () => {
+    const args = buildAppServerArgs({
+      binaryPath: "/bundle/codex",
+      configOverrides: {
+        auto_compact_token_limit: 16000,
+        model_verbosity: "low",
+      },
+    });
+
+    expect(args).toContain("auto_compact_token_limit=16000");
+    expect(args).toContain('model_verbosity="low"');
+  });
+
+  it("does not set instructions at spawn (developer_instructions are per-thread)", () => {
     const args = buildAppServerArgs({
       binaryPath: "/bundle/codex",
       developerInstructions: "Follow PostHog rules.",
     });
 
-    expect(args).toContain('developer_instructions="Follow PostHog rules."');
+    expect(args.some((arg) => arg.startsWith("developer_instructions="))).toBe(
+      false,
+    );
     expect(args.some((arg) => arg.startsWith("instructions="))).toBe(false);
   });
 });
