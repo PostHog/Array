@@ -39,13 +39,7 @@ import { Button } from "@posthog/ui/primitives/Button";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Flex, Select, Switch, Text } from "@radix-ui/themes";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentEnvKeys } from "../hooks/useAgentEnvKeys";
 import { useAgentRevision } from "../hooks/useAgentRevision";
@@ -2245,18 +2239,21 @@ function EditableMarkdownBody({
   const initial = file?.content ?? "";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(initial);
+  const [syncedInitial, setSyncedInitial] = useState(initial);
   const mutation = useUpdateAgentDraftBundleFile(
     editable.idOrSlug,
     editable.revisionId,
   );
 
-  // Pull in upstream content changes (initial bundle load, post-save refetch),
-  // but only while the user isn't actively editing — otherwise an unrelated
-  // refetch (e.g. a concurrent bulk import) would silently wipe their draft.
-  // File-switch resets are handled by `key={editable.path}` at the call site.
-  useEffect(() => {
-    if (!editing) setDraft(initial);
-  }, [initial, editing]);
+  // Pull in upstream content changes (initial bundle load, post-save refetch)
+  // during render rather than via an effect, but only while the user isn't
+  // actively editing — otherwise an unrelated refetch (e.g. a concurrent bulk
+  // import) would silently wipe their draft. File-switch resets are handled by
+  // `key={editable.path}` at the call site.
+  if (initial !== syncedInitial && !editing) {
+    setSyncedInitial(initial);
+    setDraft(initial);
+  }
 
   if (!editing) {
     return (
@@ -2285,6 +2282,7 @@ function EditableMarkdownBody({
   return (
     <Flex direction="column" gap="2">
       <textarea
+        aria-label={editable.path}
         value={draft}
         onChange={(e) => setDraft(e.currentTarget.value)}
         disabled={mutation.isPending}
