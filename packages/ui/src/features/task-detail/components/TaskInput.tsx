@@ -9,12 +9,14 @@ import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
+import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
@@ -695,6 +697,10 @@ export function TaskInput({
     if (modeOption && isValidConfigValue(modeOption, autonomousMode)) {
       setConfigOption(modeOption.id, autonomousMode);
     }
+    track(ANALYTICS_EVENTS.AUTORESEARCH_ARMED, {
+      default_mode: autonomousMode,
+      workspace_mode: workspaceMode,
+    });
   }, [
     sessionId,
     currentModel,
@@ -702,6 +708,7 @@ export function TaskInput({
     allowBypassPermissions,
     modeOption,
     setConfigOption,
+    workspaceMode,
   ]);
 
   // The preview config can still be loading when the user arms the mode;
@@ -800,16 +807,32 @@ export function TaskInput({
     // Stages ride through as configured; identical stages mean a single-turn
     // loop, any difference makes the run split. Unresolved fields fall back
     // to the composer's values so the recorded config is concrete.
-    autoresearchPendingRun.set({
+    const resolvedRun = {
       ...draft,
       implementModel: draft.implementModel ?? currentModel ?? null,
       measureModel: draft.measureModel ?? currentModel ?? null,
       implementEffort: draft.implementEffort ?? currentReasoningLevel ?? null,
       measureEffort: draft.measureEffort ?? currentReasoningLevel ?? null,
+    };
+    autoresearchPendingRun.set({
+      ...resolvedRun,
       instructions: contentToXml(content).trim(),
     });
     const submitted = await handleSubmit(override);
     if (submitted) {
+      track(ANALYTICS_EVENTS.AUTORESEARCH_RUN_STARTED, {
+        direction: resolvedRun.direction,
+        has_target: resolvedRun.targetValue !== null,
+        max_iterations: resolvedRun.maxIterations,
+        stages_split:
+          resolvedRun.implementModel !== resolvedRun.measureModel ||
+          resolvedRun.implementEffort !== resolvedRun.measureEffort,
+        implement_model: resolvedRun.implementModel ?? undefined,
+        measure_model: resolvedRun.measureModel ?? undefined,
+        implement_effort: resolvedRun.implementEffort ?? undefined,
+        measure_effort: resolvedRun.measureEffort ?? undefined,
+        workspace_mode: effectiveWorkspaceMode,
+      });
       useAutoresearchDraftStore.getState().clearDraft(sessionId);
       useDraftStore.getState().actions.setDraft(sessionId, null);
       try {
@@ -821,7 +844,14 @@ export function TaskInput({
       autoresearchPendingRun.clear();
     }
     return submitted;
-  }, [canSubmit, currentModel, currentReasoningLevel, handleSubmit, sessionId]);
+  }, [
+    canSubmit,
+    currentModel,
+    currentReasoningLevel,
+    effectiveWorkspaceMode,
+    handleSubmit,
+    sessionId,
+  ]);
 
   const submitTask = autoresearchDraft
     ? handleAutoresearchSubmit

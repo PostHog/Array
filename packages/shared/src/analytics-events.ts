@@ -993,6 +993,28 @@ export interface ClaudeSessionImportFailedProperties {
   failed_step?: string;
 }
 
+/** Fired when a user arms autoresearch mode on the new-task composer. */
+export interface AutoresearchArmedProperties {
+  /** Hands-off mode auto-applied on arm so the unattended loop isn't blocked on permission prompts. */
+  default_mode: "bypassPermissions" | "acceptEdits";
+  workspace_mode?: "local" | "worktree" | "cloud";
+}
+
+/** Fired when an armed autoresearch task is submitted and its run kicks off. */
+export interface AutoresearchRunStartedProperties {
+  direction: "maximize" | "minimize";
+  /** Whether the user set a target metric value to stop early at. */
+  has_target: boolean;
+  max_iterations: number;
+  /** Build and measure stages differ, so each iteration splits into a build turn and a measure turn. */
+  stages_split: boolean;
+  implement_model?: string;
+  measure_model?: string;
+  implement_effort?: string;
+  measure_effort?: string;
+  workspace_mode?: "local" | "worktree" | "cloud";
+}
+
 // Event names as constants
 export const ANALYTICS_EVENTS = {
   // App lifecycle
@@ -1150,6 +1172,10 @@ export const ANALYTICS_EVENTS = {
   DASHBOARD_ACTION: "Dashboard action",
   CANVAS_PROMPT_SENT: "Canvas prompt sent",
   CONTEXT_ACTION: "Context action",
+
+  // Autoresearch events
+  AUTORESEARCH_ARMED: "Autoresearch armed",
+  AUTORESEARCH_RUN_STARTED: "Autoresearch run started",
 } as const;
 
 // Event property mapping
@@ -1302,6 +1328,10 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.DASHBOARD_ACTION]: DashboardActionProperties;
   [ANALYTICS_EVENTS.CANVAS_PROMPT_SENT]: CanvasPromptSentProperties;
   [ANALYTICS_EVENTS.CONTEXT_ACTION]: ContextActionProperties;
+
+  // Autoresearch events
+  [ANALYTICS_EVENTS.AUTORESEARCH_ARMED]: AutoresearchArmedProperties;
+  [ANALYTICS_EVENTS.AUTORESEARCH_RUN_STARTED]: AutoresearchRunStartedProperties;
 };
 
 /**
