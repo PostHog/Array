@@ -1549,6 +1549,12 @@ export class AgentServer {
         ? this.getInitialPromptOverride(taskRun)
         : null;
       const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
+      // A prewarmed run gets its first message forwarded as a user_message
+      // signal on activation; building one from task.description here too
+      // would deliver it twice (and without the forwarded artifacts).
+      const prewarmed = !!(
+        taskRun?.state as Record<string, unknown> | undefined
+      )?.prewarmed;
       let initialPrompt: ContentBlock[] = [];
       let initialPromptMeta: Record<string, unknown> | undefined;
       if (pendingUserPrompt?.prompt.length) {
@@ -1556,12 +1562,16 @@ export class AgentServer {
         initialPromptMeta = pendingUserPrompt.meta;
       } else if (initialPromptOverride) {
         initialPrompt = [{ type: "text", text: initialPromptOverride }];
-      } else if (task.description) {
+      } else if (task.description && !prewarmed) {
         initialPrompt = [{ type: "text", text: task.description }];
       }
 
       if (initialPrompt.length === 0) {
-        this.logger.debug("Task has no description, skipping initial message");
+        this.logger.debug(
+          prewarmed
+            ? "Prewarmed run awaits its forwarded first message, skipping initial message"
+            : "Task has no description, skipping initial message",
+        );
         return;
       }
 

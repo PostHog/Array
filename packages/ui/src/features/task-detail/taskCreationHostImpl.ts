@@ -33,6 +33,7 @@ import { resolveLocalSkillPrompt } from "../message-editor/commands";
 import { DEFAULT_PANEL_IDS } from "../panels/panelConstants";
 import { usePanelLayoutStore } from "../panels/panelLayoutStore";
 import { useProvisioningStore } from "../provisioning/store";
+import { takeWarmTaskLease } from "./hooks/warmTaskLease";
 
 interface EnvironmentHostClient {
   environment: {
@@ -153,6 +154,16 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
         hostClient().skills.list.query(),
       )) ?? prompt
     );
+  }
+
+  takeWarmTaskLease(args: {
+    repository: string;
+    branch?: string | null;
+    runtimeAdapter?: string | null;
+    model?: string | null;
+    reasoningEffort?: string | null;
+  }): { taskId: string; runId: string } | null {
+    return takeWarmTaskLease(args);
   }
 
   uploadRunAttachments(

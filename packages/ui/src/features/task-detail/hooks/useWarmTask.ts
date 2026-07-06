@@ -6,6 +6,7 @@ import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authCl
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useEffect, useRef } from "react";
 import { logger } from "../../../shell/logger";
+import { buildWarmTaskLeaseKey, rememberWarmTaskLease } from "./warmTaskLease";
 
 const log = logger.scope("warm-task");
 
@@ -52,7 +53,13 @@ export function useWarmTask({
     !editorIsEmpty;
   const key =
     selectedRepository && githubIntegrationId !== undefined
-      ? `${githubIntegrationId}:${selectedRepository}:${normalizedBranch ?? ""}:${normalizedRuntimeAdapter ?? ""}:${normalizedModel ?? ""}:${normalizedReasoningEffort ?? ""}`
+      ? `${githubIntegrationId}:${buildWarmTaskLeaseKey({
+          repository: selectedRepository,
+          branch: normalizedBranch,
+          runtimeAdapter: normalizedRuntimeAdapter,
+          model: normalizedModel,
+          reasoningEffort: normalizedReasoningEffort,
+        })}`
       : null;
 
   useEffect(() => {
@@ -88,6 +95,20 @@ export function useWarmTask({
           runtime_adapter: warmRuntimeAdapter,
           model: warmModel,
           reasoning_effort: warmReasoningEffort,
+        })
+        .then((warm) => {
+          if (warm) {
+            rememberWarmTaskLease(
+              buildWarmTaskLeaseKey({
+                repository,
+                branch: warmBranch,
+                runtimeAdapter: warmRuntimeAdapter,
+                model: warmModel,
+                reasoningEffort: warmReasoningEffort,
+              }),
+              { taskId: warm.task_id, runId: warm.run_id },
+            );
+          }
         })
         .catch((error) => {
           lastWarmedKeyRef.current = null;
