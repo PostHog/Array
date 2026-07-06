@@ -74,6 +74,7 @@ import type {
   PrActionType,
   PrCheck,
   PrCheckBucket,
+  PrConversationComment,
   PrDetailsByUrlOutput,
   PrDiffStats,
   PrInfoByUrlOutput,
@@ -89,6 +90,7 @@ import type {
   SyncOutput,
   UpdatePrByUrlOutput,
 } from "./schemas";
+import { getPrInfoByUrlOutput, prConversationCommentSchema } from "./schemas";
 
 const FETCH_THROTTLE_MS = 30_000;
 /** Max PRs per GraphQL request – stays well under GitHub's complexity ceiling. */
@@ -1005,7 +1007,9 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         return null;
       }
 
-      return JSON.parse(result.stdout) as PrInfoByUrlOutput;
+      // Zod-parse rather than cast, so a GitHub response-shape change
+      // surfaces here (caught, -> null) instead of leaking bad data.
+      return getPrInfoByUrlOutput.parse(JSON.parse(result.stdout));
     } catch {
       return null;
     }
@@ -1444,39 +1448,45 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
     const pr = parseGithubUrl(prUrl);
     if (pr?.kind !== "pr") return null;
 
-    try {
-      const result = await execGh([
-        "api",
+    // GitHub's conversation tab is two feeds: issue comments and review
+    // summaries ("approved with a comment"). Inline code comments come from
+    // getPrReviewComments separately.
+    const [comments, reviewSummaries] = await Promise.all([
+      this.fetchPrCommentFeed(
         `repos/${pr.owner}/${pr.repo}/issues/${pr.number}/comments`,
-        "--paginate",
-        "--slurp",
-      ]);
+        '.[] | {id, author: (.user.login // "unknown"), avatarUrl: (.user.avatar_url // null), body: (.body // ""), createdAt: .created_at, url: (.html_url // null)}',
+      ),
+      this.fetchPrCommentFeed(
+        `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}/reviews`,
+        '.[] | select(.state != "PENDING") | select((.body // "") != "") | {id, author: (.user.login // "unknown"), avatarUrl: (.user.avatar_url // null), body, createdAt: (.submitted_at // ""), url: (.html_url // null)}',
+      ),
+    ]);
+    return [...comments, ...reviewSummaries];
+  }
 
-      if (result.exitCode !== 0) {
-        return null;
-      }
+  /**
+   * Fetch a paginated comment-shaped feed, slimmed to the schema fields in
+   * gh's jq (full comment objects are mostly boilerplate URLs and can blow
+   * past the exec buffer on busy PRs). `--jq` with `--paginate` emits one
+   * compact JSON object per line. Throws on failure so the renderer can show
+   * why (rate limit, auth, network) instead of a silent empty section.
+   */
+  private async fetchPrCommentFeed(
+    endpoint: string,
+    jq: string,
+  ): Promise<PrConversationComment[]> {
+    const result = await execGh(["api", endpoint, "--paginate", "--jq", jq]);
 
-      const pages = JSON.parse(result.stdout) as Array<
-        Array<{
-          id: number;
-          body?: string;
-          created_at: string;
-          html_url?: string;
-          user?: { login?: string; avatar_url?: string };
-        }>
-      >;
-
-      return pages.flat().map((comment) => ({
-        id: comment.id,
-        author: comment.user?.login ?? "unknown",
-        avatarUrl: comment.user?.avatar_url ?? null,
-        body: comment.body ?? "",
-        createdAt: comment.created_at,
-        url: comment.html_url ?? null,
-      }));
-    } catch {
-      return null;
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `Failed to fetch PR comments: ${result.stderr || result.error || "Unknown error"}`,
+      );
     }
+
+    return result.stdout
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => prConversationCommentSchema.parse(JSON.parse(line)));
   }
 
   async getPrReviewComments(prUrl: string): Promise<PrReviewThread[]> {

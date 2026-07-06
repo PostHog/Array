@@ -25,7 +25,16 @@ export interface GhExecOptions {
    * MCP tool awaiting it — indefinitely. Omit for no timeout.
    */
   timeoutMs?: number;
+  /**
+   * Max stdout/stderr bytes before the child is killed. Node's execFile
+   * default is 1 MiB, which paginated `gh api` calls (PR files, comments)
+   * blow past on busy PRs — the call then dies with "maxBuffer length
+   * exceeded" instead of returning data.
+   */
+  maxBuffer?: number;
 }
+
+const DEFAULT_MAX_BUFFER = 32 * 1024 * 1024;
 
 export function execGh(
   args: string[],
@@ -37,7 +46,12 @@ export function execGh(
     const child = childProcess.execFile(
       "gh",
       args,
-      { cwd: options.cwd, env, timeout: options.timeoutMs ?? 0 },
+      {
+        cwd: options.cwd,
+        env,
+        timeout: options.timeoutMs ?? 0,
+        maxBuffer: options.maxBuffer ?? DEFAULT_MAX_BUFFER,
+      },
       (error, stdout, stderr) => {
         if (!error) {
           resolve({ stdout, stderr, exitCode: 0 });

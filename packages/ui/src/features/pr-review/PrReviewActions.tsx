@@ -74,6 +74,9 @@ export function PrReviewActions({ prUrl }: PrReviewActionsProps) {
 
   const approved = approve.isSuccess && approve.data.success;
   const approveDisabled = !info || approve.isPending || approved;
+  // Failed fetch (null / error) means CI status is unknown — that must lock
+  // the merge too, or a transient gh error would silently unlock red checks.
+  const checksUnavailable = checksQuery.isError || checksQuery.data === null;
   // Same gate as github.com: red checks or conflicts lock the merge button.
   const mergeBlockedReason = draft
     ? null // the draft branch below renders its own note + CTA
@@ -81,9 +84,15 @@ export function PrReviewActions({ prUrl }: PrReviewActionsProps) {
       ? `${failedChecks} check${failedChecks === 1 ? " is" : "s are"} failing — merging is blocked until they pass.`
       : hasConflicts
         ? "This branch has conflicts that must be resolved before merging."
-        : null;
+        : checksUnavailable
+          ? "CI status couldn't be loaded — merging is blocked until checks are known."
+          : null;
   const mergeDisabled =
-    !info || draft || merge.isPending || mergeBlockedReason !== null;
+    !info ||
+    draft ||
+    merge.isPending ||
+    checksQuery.data == null ||
+    mergeBlockedReason !== null;
 
   return (
     <div className="flex flex-wrap items-center gap-2">

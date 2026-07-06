@@ -35,9 +35,11 @@ export function PrCommentsSection({ prUrl }: PrCommentsSectionProps) {
   const [collapsed, setCollapsed] = useState(true);
 
   const items = useMemo((): CommentItem[] => {
+    // Conversation items mix issue comments and review summaries, whose ids
+    // come from different GitHub id spaces — key on createdAt too.
     const conversation = (commentsQuery.data ?? []).map(
       (comment): CommentItem => ({
-        key: `issue-${comment.id}`,
+        key: `conv-${comment.id}-${comment.createdAt}`,
         author: comment.author,
         avatarUrl: comment.avatarUrl,
         body: comment.body,
@@ -91,9 +93,16 @@ export function PrCommentsSection({ prUrl }: PrCommentsSectionProps) {
     // A partial failure with nothing else to show must read as an error —
     // silently hiding the section here would look like "no comments".
     if (conversationFailed || threadsFailed) {
+      const detail =
+        (commentsQuery.error ?? threadsQuery.error)?.message ?? null;
       return (
         <div className="text-[12px] text-gray-10">
           Couldn't load comments for this pull request.
+          {detail && (
+            <span className="mt-0.5 block truncate text-(--gray-9) text-[11px]">
+              {detail}
+            </span>
+          )}
         </div>
       );
     }
