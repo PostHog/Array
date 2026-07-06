@@ -4,7 +4,7 @@ import { PatchedFileDiff } from "@posthog/ui/features/code-review/components/Pat
 import { useDiffOptions } from "@posthog/ui/features/code-review/reviewShellParts";
 import { usePrChangedFiles } from "@posthog/ui/features/git-interaction/useGitQueries";
 import { DetailSection } from "@posthog/ui/features/inbox/components/DetailSection";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   fileViewedFingerprint,
   isFileViewed,
@@ -33,6 +33,7 @@ export function PrFilesChangedSection({ prUrl }: PrFilesChangedSectionProps) {
   const [collapseOverrides, setCollapseOverrides] = useState<
     Map<string, boolean>
   >(new Map());
+  const fileContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const files = filesQuery.data;
 
@@ -110,6 +111,10 @@ export function PrFilesChangedSection({ prUrl }: PrFilesChangedSectionProps) {
           return (
             <div
               key={file.path}
+              ref={(el) => {
+                if (el) fileContainerRefs.current.set(file.path, el);
+                else fileContainerRefs.current.delete(file.path);
+              }}
               className="overflow-hidden rounded-md border border-(--gray-5)"
             >
               <PatchedFileDiff
@@ -134,6 +139,16 @@ export function PrFilesChangedSection({ prUrl }: PrFilesChangedSectionProps) {
                         );
                         // Fold the file away once it's read, like GitHub.
                         setCollapsed(true);
+                        // The click point was at the bottom of a diff that
+                        // just vanished, which would leave the viewport deep
+                        // in the content below — scroll the folded file back
+                        // into view. rAF runs after React commits the
+                        // collapse but before the browser paints.
+                        requestAnimationFrame(() => {
+                          fileContainerRefs.current
+                            .get(file.path)
+                            ?.scrollIntoView({ block: "nearest" });
+                        });
                       } else {
                         unmarkViewed(prUrl, file.path);
                       }

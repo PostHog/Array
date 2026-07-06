@@ -86,15 +86,19 @@ export function PrCommentsSection({ prUrl }: PrCommentsSectionProps) {
   const conversationFailed =
     commentsQuery.isError || commentsQuery.data === null;
   const threadsFailed = threadsQuery.isError;
-  if (conversationFailed && threadsFailed) {
-    return (
-      <div className="text-[12px] text-gray-10">
-        Couldn't load comments for this pull request.
-      </div>
-    );
-  }
 
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    // A partial failure with nothing else to show must read as an error —
+    // silently hiding the section here would look like "no comments".
+    if (conversationFailed || threadsFailed) {
+      return (
+        <div className="text-[12px] text-gray-10">
+          Couldn't load comments for this pull request.
+        </div>
+      );
+    }
+    return null;
+  }
 
   return (
     <div className="flex flex-col gap-3">
