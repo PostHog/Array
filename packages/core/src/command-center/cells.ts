@@ -1,9 +1,11 @@
 import type { AgentSession, WorkspaceMode } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import {
+  getBrowserCellUrl,
   getTerminalCellCwd,
   getTerminalCellId,
   isBrainrotCell,
+  isBrowserCell,
   isTerminalCell,
 } from "./grid";
 import { type CellStatus, deriveStatus, getRepoName } from "./status";
@@ -21,6 +23,7 @@ export interface CommandCenterCellData {
   // Standalone terminal slot, independent of any agent run.
   terminalId: string | null;
   terminalCwd: string | null;
+  browserUrl: string | null;
 }
 
 export interface BuildCellsInput {
@@ -39,6 +42,7 @@ const EMPTY_CELL_DATA = {
   isBrainrot: false,
   terminalId: null,
   terminalCwd: null,
+  browserUrl: null,
 };
 
 export function buildCommandCenterCells(
@@ -57,6 +61,14 @@ export function buildCommandCenterCells(
         cellIndex,
         terminalId: getTerminalCellId(cellValue),
         terminalCwd: getTerminalCellCwd(cellValue),
+      };
+    }
+
+    if (isBrowserCell(cellValue)) {
+      return {
+        ...EMPTY_CELL_DATA,
+        cellIndex,
+        browserUrl: getBrowserCellUrl(cellValue),
       };
     }
 

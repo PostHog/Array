@@ -49,6 +49,23 @@ export function getTerminalCellCwd(value: string | null): string | null {
   return colon === -1 ? null : decodeURIComponent(rest.slice(colon + 1));
 }
 
+// Reserved prefix for standalone browser cells; the whole remainder is the
+// url, so urls containing ":" or the prefix text are safe. Never collides with
+// task ids (uuids), BRAINROT_CELL, or terminal cells.
+export const BROWSER_CELL_PREFIX = "__browser__:";
+
+export function isBrowserCell(value: string | null): value is string {
+  return value?.startsWith(BROWSER_CELL_PREFIX) ?? false;
+}
+
+export function makeBrowserCellValue(url: string): string {
+  return `${BROWSER_CELL_PREFIX}${url}`;
+}
+
+export function getBrowserCellUrl(value: string | null): string | null {
+  return isBrowserCell(value) ? value.slice(BROWSER_CELL_PREFIX.length) : null;
+}
+
 export function getGridDimensions(preset: LayoutPreset): GridDimensions {
   const [cols, rows] = preset.split("x").map(Number);
   return { cols, rows };

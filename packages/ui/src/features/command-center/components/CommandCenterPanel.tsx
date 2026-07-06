@@ -4,6 +4,7 @@ import {
   Desktop,
   Folder,
   GitFork,
+  Globe,
   Lightning,
   Plus,
   Terminal,
@@ -12,6 +13,10 @@ import {
 import { isBrainrotCell } from "@posthog/core/command-center/grid";
 import { ANALYTICS_EVENTS, type WorkspaceMode } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
+import {
+  BrowserPanel,
+  useBrowserEnabled,
+} from "@posthog/ui/features/browser/BrowserPanel";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { destroyShellTerminal } from "@posthog/ui/features/terminal/destroyShellTerminal";
 import { ShellTerminal } from "@posthog/ui/features/terminal/ShellTerminal";
@@ -116,11 +121,13 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
   const assignTask = useCommandCenterStore((s) => s.assignTask);
   const setBrainrotCell = useCommandCenterStore((s) => s.setBrainrotCell);
   const setTerminalCell = useCommandCenterStore((s) => s.setTerminalCell);
+  const setBrowserCell = useCommandCenterStore((s) => s.setBrowserCell);
   const startCreating = useCommandCenterStore((s) => s.startCreating);
   const stopCreating = useCommandCenterStore((s) => s.stopCreating);
   const layout = useCommandCenterStore((s) => s.layout);
   const cells = useCommandCenterStore((s) => s.cells);
   const brainrotMode = useSettingsStore((s) => s.brainrotMode);
+  const browserEnabled = useBrowserEnabled();
   const clearDraft = useDraftStore((s) => s.actions.setDraft);
 
   const sessionId = getCellSessionId(cellIndex);
@@ -139,6 +146,10 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
     },
     [setTerminalCell, cellIndex],
   );
+
+  const handleNewBrowser = useCallback(() => {
+    setBrowserCell(cellIndex, "about:blank");
+  }, [setBrowserCell, cellIndex]);
 
   const handleTaskCreated = useCallback(
     (task: Task) => {
@@ -199,6 +210,7 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
           onOpenChange={setSelectorOpen}
           onNewTask={() => startCreating(cellIndex)}
           onNewTerminal={handleNewTerminal}
+          onNewBrowser={browserEnabled ? handleNewBrowser : undefined}
           onBrainrot={brainrotMode ? handleBrainrot : undefined}
         >
           <button
@@ -334,6 +346,65 @@ function TerminalCell({
   );
 }
 
+function hostnameOf(url: string): string | null {
+  try {
+    return new URL(url).hostname || null;
+  } catch {
+    return null;
+  }
+}
+
+function BrowserCell({ cellIndex, url }: { cellIndex: number; url: string }) {
+  const clearCell = useCommandCenterStore((s) => s.clearCell);
+  const updateBrowserCellUrl = useCommandCenterStore(
+    (s) => s.updateBrowserCellUrl,
+  );
+  // Page title once loaded; before that (e.g. a just-restored cell) the
+  // persisted url's hostname beats a bare "Browser".
+  const [title, setTitle] = useState<string | null>(null);
+  const label = title ?? hostnameOf(url) ?? "Browser";
+
+  const onUrlChange = useCallback(
+    (next: string) => updateBrowserCellUrl(cellIndex, next),
+    [updateBrowserCellUrl, cellIndex],
+  );
+
+  return (
+    <Flex direction="column" height="100%">
+      <Flex
+        align="center"
+        gap="2"
+        px="2"
+        py="1"
+        className="shrink-0 border-gray-6 border-b"
+      >
+        <Globe size={12} className="shrink-0 text-gray-10" />
+        <Text
+          className="min-w-0 flex-1 truncate font-medium text-[12px]"
+          title={label}
+        >
+          {label}
+        </Text>
+        <button
+          type="button"
+          onClick={() => clearCell(cellIndex)}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+          title="Remove from grid"
+        >
+          <X size={12} />
+        </button>
+      </Flex>
+      <Flex direction="column" className="min-h-0 flex-1">
+        <BrowserPanel
+          url={url}
+          onUrlChange={onUrlChange}
+          onTitleChange={setTitle}
+        />
+      </Flex>
+    </Flex>
+  );
+}
+
 function PopulatedCell({
   cell,
   isActiveSession,
@@ -424,6 +495,11 @@ export function CommandCenterPanel({
         terminalCwd={cell.terminalCwd}
       />
     );
+  }
+
+  // Empty-string url is a valid (blank) browser cell, so check against null.
+  if (cell.browserUrl !== null) {
+    return <BrowserCell cellIndex={cell.cellIndex} url={cell.browserUrl} />;
   }
 
   if (!cell.taskId || !cell.task) {
