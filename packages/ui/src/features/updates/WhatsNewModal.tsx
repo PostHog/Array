@@ -42,19 +42,20 @@ export function WhatsNewModal() {
   const isOpen = useWhatsNewStore((state) => state.isOpen);
   const close = useWhatsNewStore((state) => state.close);
   const hostTRPC = useHostTRPC();
-  const { data: currentVersion } = useQuery(
+  const { data: currentVersion, isError: isVersionError } = useQuery(
     hostTRPC.os.getAppVersion.queryOptions(),
   );
   const {
     data,
-    isPending: isLoading,
-    isError,
+    isPending,
+    isError: isReleasesError,
   } = useQuery({
     ...hostTRPC.githubReleases.list.queryOptions(
       currentVersion ? { expectVersion: currentVersion } : undefined,
     ),
     enabled: isOpen && currentVersion !== undefined,
   });
+  const isError = isVersionError || isReleasesError;
 
   const groups = groupReleases(data?.releases ?? []);
 
@@ -82,7 +83,7 @@ export function WhatsNewModal() {
           </Dialog.Close>
         </Flex>
 
-        {isLoading ? (
+        {isPending ? (
           <ChangelogSkeleton />
         ) : isError ? (
           <Text color="gray" size="2">
