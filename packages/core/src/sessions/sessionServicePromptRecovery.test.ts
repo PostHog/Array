@@ -77,6 +77,8 @@ function createHarness() {
   return { service, sessions, store, promptMutate, recoverSpy };
 }
 
+type RecoverSpy = ReturnType<typeof createHarness>["recoverSpy"];
+
 describe("SessionService prompt recovery on fatal session errors", () => {
   it("recovers the session and resends the prompt once", async () => {
     const { service, promptMutate, recoverSpy } = createHarness();
@@ -92,46 +94,40 @@ describe("SessionService prompt recovery on fatal session errors", () => {
     expect(promptMutate).toHaveBeenCalledTimes(2);
   });
 
-  it("surfaces the error state when recovery fails", async () => {
-    const { service, store, promptMutate, recoverSpy } = createHarness();
-    promptMutate.mockRejectedValue(
-      new Error(`Session not found: ${TASK_RUN_ID}`),
-    );
-    recoverSpy.mockResolvedValue(false);
+  it.each([
+    {
+      case: "recovery fails",
+      setupRecovery: (spy: RecoverSpy) => spy.mockResolvedValue(false),
+      expectedPromptCalls: 1,
+    },
+    {
+      case: "the resend hits another fatal error",
+      setupRecovery: (spy: RecoverSpy) => spy.mockResolvedValue(true),
+      expectedPromptCalls: 2,
+    },
+    {
+      case: "recovery throws",
+      setupRecovery: (spy: RecoverSpy) =>
+        spy.mockRejectedValue(new Error("auth restoring")),
+      expectedPromptCalls: 1,
+    },
+  ])(
+    "surfaces the error state and rethrows when $case",
+    async ({ setupRecovery, expectedPromptCalls }) => {
+      const { service, store, promptMutate, recoverSpy } = createHarness();
+      promptMutate.mockRejectedValue(
+        new Error(`Session not found: ${TASK_RUN_ID}`),
+      );
+      setupRecovery(recoverSpy);
 
-    await expect(service.sendPrompt(TASK_ID, "hello again")).rejects.toThrow(
-      "Session not found",
-    );
-    expect(promptMutate).toHaveBeenCalledTimes(1);
-    expect(store.setSession).toHaveBeenCalledWith(
-      expect.objectContaining({ taskRunId: TASK_RUN_ID, status: "error" }),
-    );
-  });
-
-  it("does not loop when the resend hits another fatal error", async () => {
-    const { service, promptMutate, recoverSpy } = createHarness();
-    promptMutate.mockRejectedValue(
-      new Error(`Session not found: ${TASK_RUN_ID}`),
-    );
-    recoverSpy.mockResolvedValue(true);
-
-    await expect(service.sendPrompt(TASK_ID, "hello again")).rejects.toThrow(
-      "Session not found",
-    );
-    expect(recoverSpy).toHaveBeenCalledTimes(1);
-    expect(promptMutate).toHaveBeenCalledTimes(2);
-  });
-
-  it("swallows recovery exceptions and rethrows the original error", async () => {
-    const { service, promptMutate, recoverSpy } = createHarness();
-    promptMutate.mockRejectedValue(
-      new Error(`Session not found: ${TASK_RUN_ID}`),
-    );
-    recoverSpy.mockRejectedValue(new Error("auth restoring"));
-
-    await expect(service.sendPrompt(TASK_ID, "hello again")).rejects.toThrow(
-      "Session not found",
-    );
-    expect(promptMutate).toHaveBeenCalledTimes(1);
-  });
+      await expect(service.sendPrompt(TASK_ID, "hello again")).rejects.toThrow(
+        "Session not found",
+      );
+      expect(recoverSpy).toHaveBeenCalledTimes(1);
+      expect(promptMutate).toHaveBeenCalledTimes(expectedPromptCalls);
+      expect(store.setSession).toHaveBeenCalledWith(
+        expect.objectContaining({ taskRunId: TASK_RUN_ID, status: "error" }),
+      );
+    },
+  );
 });
