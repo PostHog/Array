@@ -12,6 +12,16 @@ export function formatTokens(n: number): string {
   return n.toString();
 }
 
+export type SpendAnalysisWindow = "7d" | "30d" | "90d";
+
+export function windowToDateFrom(window: SpendAnalysisWindow): string {
+  return `-${window}`;
+}
+
+export function windowToDays(window: SpendAnalysisWindow): number {
+  return Number.parseInt(window, 10);
+}
+
 export function windowDays(fromIso: string, toIso: string): number {
   const fromMs = new Date(fromIso).getTime();
   const toMs = new Date(toIso).getTime();

@@ -626,6 +626,15 @@ export interface InboxReportScrolledProperties {
   time_since_open_ms: number;
 }
 
+export interface UsageViewedProperties {
+  is_pro: boolean;
+  /** Monthly bucket percent (0-100), null when usage is unavailable. */
+  sustained_used_percent: number | null;
+  /** Daily bucket percent (0-100), null when usage is unavailable. */
+  burst_used_percent: number | null;
+  spend_analysis_window_days: number;
+}
+
 export interface SpendAnalysisTaskOpenedProperties {
   /** Total LLM spend in USD across all products for the analysed window. */
   total_cost_usd: number;
@@ -1130,7 +1139,8 @@ export const ANALYTICS_EVENTS = {
   SCOUT_CHAT_STARTED: "Scout chat started",
   SCOUT_ACTION: "Scout action",
 
-  // Spend analysis events
+  // Usage and spend analysis events
+  USAGE_VIEWED: "Usage viewed",
   SPEND_ANALYSIS_TASK_OPENED: "Spend analysis task opened",
 
   // Prompt history events
@@ -1282,7 +1292,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SCOUT_CHAT_STARTED]: ScoutChatStartedProperties;
   [ANALYTICS_EVENTS.SCOUT_ACTION]: ScoutActionProperties;
 
-  // Spend analysis events
+  // Usage and spend analysis events
+  [ANALYTICS_EVENTS.USAGE_VIEWED]: UsageViewedProperties;
   [ANALYTICS_EVENTS.SPEND_ANALYSIS_TASK_OPENED]: SpendAnalysisTaskOpenedProperties;
 
   // Prompt history events

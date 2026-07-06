@@ -4,20 +4,18 @@ import {
   Info,
   WarningCircle,
 } from "@phosphor-icons/react";
-import {
-  formatResetTime,
-  PRO_USAGE_MULTIPLIER,
-} from "@posthog/core/billing/usageDisplay";
-import type { UsageBucket } from "@posthog/core/usage/schemas";
+import { PRO_USAGE_MULTIPLIER } from "@posthog/core/billing/usageDisplay";
 import { PLAN_PRO_ALPHA } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useSwitchOrgMutation } from "@posthog/ui/features/auth/useAuthMutations";
 import { useSeatStore } from "@posthog/ui/features/billing/seatStore";
-import { TokenSpendAnalysisBanner } from "@posthog/ui/features/billing/TokenSpendAnalysisBanner";
+import { UsageMeter } from "@posthog/ui/features/billing/UsageMeter";
 import { useSeat } from "@posthog/ui/features/billing/useSeat";
 import { useUsage } from "@posthog/ui/features/billing/useUsage";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
+import { navigateToUsage } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
 import { getBillingUrl, getPostHogUrl } from "@posthog/ui/utils/urls";
@@ -27,15 +25,12 @@ import {
   Callout,
   Dialog,
   Flex,
-  Progress,
   Spinner,
   Text,
 } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
 
 const log = logger.scope("plan-usage");
-
-const SPEND_ANALYSIS_FLAG = "posthog-code-spend-analysis";
 
 export function PlanUsageSettings() {
   const {
@@ -85,8 +80,7 @@ export function PlanUsageSettings() {
     ? (getPostHogUrl(redirectUrl, cloudRegion) ?? billingUrl)
     : null;
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
-  const spendAnalysisEnabled =
-    useFeatureFlag(SPEND_ANALYSIS_FLAG) || import.meta.env.DEV;
+  const spendAnalysisEnabled = useSpendAnalysisEnabled();
 
   const isAlpha = orgSeat?.plan_key === PLAN_PRO_ALPHA;
   const {
@@ -184,8 +178,6 @@ export function PlanUsageSettings() {
           </Callout.Text>
         </Callout.Root>
       )}
-
-      {spendAnalysisEnabled && <TokenSpendAnalysisBanner />}
 
       {hasBetterPlanElsewhere && seat?.organization_name && (
         <Callout.Root color="blue" size="1">
@@ -330,7 +322,22 @@ export function PlanUsageSettings() {
       )}
 
       <Flex direction="column" gap="3">
-        <Text className="font-medium text-(--gray-9) text-sm">Usage</Text>
+        <Flex align="center" justify="between">
+          <Text className="font-medium text-(--gray-9) text-sm">Usage</Text>
+          {spendAnalysisEnabled && (
+            <Button
+              size="1"
+              variant="ghost"
+              onClick={() => {
+                // Leave settings first so back from /usage skips the settings route.
+                closeSettings();
+                navigateToUsage();
+              }}
+            >
+              View usage & spend analysis
+            </Button>
+          )}
+        </Flex>
         {usageLoading ? (
           <Flex
             align="center"
@@ -444,43 +451,6 @@ export function PlanUsageSettings() {
           </Flex>
         </Dialog.Content>
       </Dialog.Root>
-    </Flex>
-  );
-}
-
-interface UsageMeterProps {
-  label: string;
-  bucket: UsageBucket;
-  color?: "red";
-}
-
-function UsageMeter({ label, bucket, color }: UsageMeterProps) {
-  const percentage = bucket.used_percent;
-
-  const borderColor = color === "red" ? "var(--red-7)" : "var(--gray-5)";
-
-  return (
-    <Flex
-      direction="column"
-      gap="3"
-      p="4"
-      style={{
-        border: `1px solid ${borderColor}`,
-      }}
-      className="rounded-(--radius-3)"
-    >
-      <Flex align="center" justify="between">
-        <Text className="font-medium text-sm">{label}</Text>
-        <Text className="font-medium text-sm">{percentage.toFixed(2)}%</Text>
-      </Flex>
-      <Progress
-        value={percentage}
-        size="2"
-        color={color === "red" ? "red" : undefined}
-      />
-      <Text className="text-(--gray-9) text-[13px]">
-        {`${bucket.exceeded ? "Limit exceeded. " : ""}${formatResetTime(bucket.reset_at)}`}
-      </Text>
     </Flex>
   );
 }

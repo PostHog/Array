@@ -174,6 +174,10 @@ export function navigateToMcpServers(): void {
   void getRouterOrNull()?.navigate({ to: "/mcp-servers" });
 }
 
+export function navigateToUsage(): void {
+  void getRouterOrNull()?.navigate({ to: "/usage" });
+}
+
 // Channels-space mirrors. These render the same shared views as their /code (or
 // top-level) counterparts but under /website, so navigating from the channels
 // sidebar keeps the channels chrome instead of switching back to Code. The

@@ -1,4 +1,5 @@
 export const BILLING_FLAG = "posthog-code-billing";
+export const SPEND_ANALYSIS_FLAG = "posthog-code-spend-analysis";
 export const EXPERIMENT_SUGGESTIONS_FLAG =
   "posthog-code-experiment-suggestions";
 export const SYNC_CLOUD_TASKS_FLAG = "posthog-code-sync-cloud-tasks";

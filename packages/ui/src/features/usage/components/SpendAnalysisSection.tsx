@@ -1,5 +1,4 @@
 import {
-  ArrowSquareOut,
   ChartLine,
   Lightning,
   Sparkle,
@@ -9,6 +8,7 @@ import {
   formatTokens,
   formatUsd,
   formatWindow,
+  type SpendAnalysisWindow,
   windowDays,
 } from "@posthog/core/billing/spendAnalysisFormat";
 import { buildAnalysisPrompt } from "@posthog/core/billing/spendAnalysisPrompt";
@@ -20,13 +20,14 @@ import type {
 } from "@posthog/core/billing/spendAnalysisTypes";
 import { deriveSpendSuggestions } from "@posthog/core/billing/spendSuggestions";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import { useSpendAnalysis } from "@posthog/ui/features/billing/useSpendAnalysis";
-import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { Button, Callout, Flex, Spinner, Table, Text } from "@radix-ui/themes";
+import { useSpendAnalysis } from "../useSpendAnalysis";
+import { WindowSelector } from "./WindowSelector";
 
 const DOCS_URL = "https://posthog.com/docs/ai-observability";
+const PRODUCT_SCOPE = "posthog_code";
 
 function SummaryRow({ data }: { data: SpendAnalysisResponse }) {
   const { summary } = data;
@@ -186,10 +187,6 @@ function FooterLinks({ data }: { data: SpendAnalysisResponse }) {
       tool_row_count: Math.min(data.by_tool.items.length, 10),
       model_row_count: data.by_model.items.length,
     });
-    // This banner lives inside the Settings dialog (modal). `navigateToTaskInput`
-    // changes the underlying view but the dialog stays mounted on top, so the user
-    // doesn't see the prefilled task input. Close the dialog first.
-    closeSettings();
     openTaskInput({
       initialPrompt: buildAnalysisPrompt(data),
     });
@@ -222,118 +219,106 @@ function FooterLinks({ data }: { data: SpendAnalysisResponse }) {
   );
 }
 
-export function TokenSpendAnalysisBanner() {
-  const { data, isLoading, error, run } = useSpendAnalysis();
-  const triggerRun = (): void => {
-    void run({ dateFrom: "-30d", product: "posthog_code" });
-  };
-
-  if (data) {
-    const suggestions = deriveSpendSuggestions(data);
-    return (
-      <Flex direction="column" gap="4">
-        <Flex
-          align="center"
-          gap="2"
-          p="3"
-          className="rounded-(--radius-3) border border-(--accent-7) bg-(--accent-2)"
-        >
-          <ChartLine size={16} className="text-(--accent-9)" />
-          <Text className="font-medium text-sm">
-            Your PostHog Code token spend (last 30 days)
+function SpendAnalysisResults({ data }: { data: SpendAnalysisResponse }) {
+  const suggestions = deriveSpendSuggestions(data);
+  return (
+    <>
+      <SummaryRow data={data} />
+      <ProductTable rows={data.by_product.items} />
+      <ToolTable rows={data.by_tool.items} />
+      <ModelTable rows={data.by_model.items} />
+      <Flex
+        direction="column"
+        gap="2"
+        p="3"
+        className="rounded-(--radius-3) border border-(--gray-5)"
+      >
+        <Flex align="center" gap="2">
+          <Lightning size={14} className="text-(--accent-9)" />
+          <Text className="font-medium text-sm">Where to look</Text>
+        </Flex>
+        {suggestions.map((s) => (
+          <Text key={s} className="text-(--gray-11) text-[13px]">
+            {s}
           </Text>
-          <Flex flexGrow="1" />
-          <Button
-            size="1"
-            variant="ghost"
-            disabled={isLoading}
-            onClick={() => {
-              triggerRun();
-            }}
-          >
-            {isLoading ? <Spinner size="1" /> : "Refresh"}
-          </Button>
-        </Flex>
-        <SummaryRow data={data} />
-        <ProductTable rows={data.by_product.items} />
-        <ToolTable rows={data.by_tool.items} />
-        <ModelTable rows={data.by_model.items} />
-        <Flex
-          direction="column"
-          gap="2"
-          p="3"
-          className="rounded-(--radius-3) border border-(--gray-5)"
-        >
-          <Flex align="center" gap="2">
-            <Lightning size={14} className="text-(--accent-9)" />
-            <Text className="font-medium text-sm">Where to look</Text>
-          </Flex>
-          {suggestions.map((s) => (
-            <Text key={s} className="text-(--gray-11) text-[13px]">
-              {s}
-            </Text>
-          ))}
-        </Flex>
-        <FooterLinks data={data} />
+        ))}
       </Flex>
-    );
-  }
+      <FooterLinks data={data} />
+    </>
+  );
+}
 
-  if (error) {
-    return (
-      <Callout.Root color="red" size="1">
-        <Callout.Icon>
-          <WarningCircle size={16} />
-        </Callout.Icon>
-        <Callout.Text>
-          <Flex direction="column" gap="2">
-            <Text className="text-sm">Couldn't load spend analysis</Text>
-            <Text className="text-(--gray-11) text-[13px]">{error}</Text>
-            <Button
-              size="1"
-              variant="outline"
-              color="red"
-              onClick={() => {
-                triggerRun();
-              }}
-              className="self-start"
-            >
-              Try again
-            </Button>
-          </Flex>
-        </Callout.Text>
-      </Callout.Root>
-    );
-  }
+interface SpendAnalysisSectionProps {
+  window: SpendAnalysisWindow;
+  onWindowChange: (window: SpendAnalysisWindow) => void;
+}
+
+export function SpendAnalysisSection({
+  window,
+  onWindowChange,
+}: SpendAnalysisSectionProps) {
+  const { data, isLoading, isFetching, error, refetch } = useSpendAnalysis({
+    window,
+    product: PRODUCT_SCOPE,
+  });
 
   return (
-    <Callout.Root color="blue" size="1">
-      <Callout.Icon>
-        <ChartLine size={16} />
-      </Callout.Icon>
-      <Callout.Text>
-        <Flex direction="column" gap="2">
-          <Text className="font-medium text-sm">
-            Analyse your token usage with PostHog AI observability
-          </Text>
-          <Text className="text-(--gray-11) text-[13px]">
-            See where your spend goes — by product, tool, and model — over the
-            last 30 days, and get tips on where to optimise.
-          </Text>
-          <Button
-            size="1"
-            variant="solid"
-            disabled={isLoading}
-            onClick={() => {
-              triggerRun();
-            }}
-            className="self-start"
-          >
-            {isLoading ? <Spinner size="1" /> : "Analyse my spend"}
-            {!isLoading && <ArrowSquareOut size={12} />}
-          </Button>
+    <Flex direction="column" gap="4">
+      <Flex
+        align="center"
+        gap="2"
+        p="3"
+        className="rounded-(--radius-3) border border-(--accent-7) bg-(--accent-2)"
+      >
+        <ChartLine size={16} className="text-(--accent-9)" />
+        <Text className="font-medium text-sm">
+          Your PostHog Code token spend
+        </Text>
+        <Flex flexGrow="1" />
+        <WindowSelector value={window} onChange={onWindowChange} />
+        <Button
+          size="1"
+          variant="ghost"
+          disabled={isFetching}
+          onClick={refetch}
+        >
+          {isFetching && !isLoading ? <Spinner size="1" /> : "Refresh"}
+        </Button>
+      </Flex>
+
+      {error ? (
+        <Callout.Root color="red" size="1">
+          <Callout.Icon>
+            <WarningCircle size={16} />
+          </Callout.Icon>
+          <Callout.Text>
+            <Flex direction="column" gap="2">
+              <Text className="text-sm">Couldn't load spend analysis</Text>
+              <Text className="text-(--gray-11) text-[13px]">{error}</Text>
+              <Button
+                size="1"
+                variant="outline"
+                color="red"
+                onClick={refetch}
+                className="self-start"
+              >
+                Try again
+              </Button>
+            </Flex>
+          </Callout.Text>
+        </Callout.Root>
+      ) : isLoading ? (
+        <Flex
+          align="center"
+          justify="center"
+          p="6"
+          className="rounded-(--radius-3) border border-(--gray-5)"
+        >
+          <Spinner size="2" />
         </Flex>
-      </Callout.Text>
-    </Callout.Root>
+      ) : data ? (
+        <SpendAnalysisResults data={data} />
+      ) : null}
+    </Flex>
   );
 }
