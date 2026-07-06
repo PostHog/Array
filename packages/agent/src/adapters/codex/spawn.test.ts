@@ -39,6 +39,40 @@ describe("spawnCodexProcess MCP disable args", () => {
   });
 });
 
+describe("spawnCodexProcess sandbox mode", () => {
+  it("disables codex's own sandbox only on cloud", () => {
+    spawnMock.mockClear();
+    spawnMock.mockReturnValue(makeFakeChild());
+
+    spawnCodexProcess({
+      logger: new Logger({ debug: false }),
+      environment: "cloud",
+    });
+
+    const args: string[] = spawnMock.mock.calls[0][1];
+    expect(args).toContain('sandbox_mode="danger-full-access"');
+  });
+
+  it.each([
+    ["local", "local" as const],
+    ["unset", undefined],
+  ])(
+    "keeps codex's own sandbox as the OS-level backstop when environment is %s",
+    (_label, environment) => {
+      spawnMock.mockClear();
+      spawnMock.mockReturnValue(makeFakeChild());
+
+      spawnCodexProcess({
+        logger: new Logger({ debug: false }),
+        environment,
+      });
+
+      const args: string[] = spawnMock.mock.calls[0][1];
+      expect(args.some((arg) => arg.includes("sandbox_mode"))).toBe(false);
+    },
+  );
+});
+
 describe("spawnCodexProcess developer instructions", () => {
   it("passes guidance via developer_instructions to preserve the base prompt", () => {
     spawnMock.mockClear();

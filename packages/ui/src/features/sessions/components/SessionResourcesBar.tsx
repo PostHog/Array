@@ -41,7 +41,6 @@ const PRODUCT_ICON: Record<PostHogProductId, ComponentType<IconProps>> = {
   logs: FileTextIcon,
   apm: GaugeIcon,
   sql: TableIcon,
-  posthog: SparkleIcon,
 };
 
 /**
@@ -63,7 +62,6 @@ const PRODUCT_DOC_URL: Partial<Record<PostHogProductId, string>> = {
   cdp: "https://posthog.com/docs/cdp",
   logs: "https://posthog.com/docs/logs",
   sql: "https://posthog.com/docs/sql",
-  posthog: "https://posthog.com/docs",
 };
 
 interface SessionResourcesBarProps {

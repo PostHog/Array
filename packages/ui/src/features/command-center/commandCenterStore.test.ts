@@ -1,4 +1,7 @@
-import { BRAINROT_CELL } from "@posthog/core/command-center/grid";
+import {
+  BRAINROT_CELL,
+  makeTerminalCellValue,
+} from "@posthog/core/command-center/grid";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@posthog/ui/shell/rendererStorage", () => ({
@@ -123,6 +126,39 @@ describe("commandCenterStore", () => {
 
     it("ignores out-of-range indices", () => {
       useCommandCenterStore.getState().setBrainrotCell(9);
+      expect(useCommandCenterStore.getState().cells).toEqual([
+        null,
+        null,
+        null,
+        null,
+      ]);
+    });
+  });
+
+  describe("setTerminalCell", () => {
+    it("stores the terminal cell value without disturbing others", () => {
+      useCommandCenterStore.setState({ cells: ["t1", null, null, null] });
+      useCommandCenterStore.getState().setTerminalCell(2, "term-1");
+      expect(useCommandCenterStore.getState().cells).toEqual([
+        "t1",
+        null,
+        makeTerminalCellValue("term-1"),
+        null,
+      ]);
+    });
+
+    it("focuses the cell, clears its creating state, and marks the grid curated", () => {
+      useCommandCenterStore.setState({ creatingCells: [3] });
+      useCommandCenterStore.getState().setTerminalCell(3, "term-1");
+      const state = useCommandCenterStore.getState();
+      expect(state.activeCellIndex).toBe(3);
+      expect(state.activeTaskId).toBeNull();
+      expect(state.creatingCells).toEqual([]);
+      expect(state.hasAutofilled).toBe(true);
+    });
+
+    it("ignores out-of-range indices", () => {
+      useCommandCenterStore.getState().setTerminalCell(9, "term-1");
       expect(useCommandCenterStore.getState().cells).toEqual([
         null,
         null,

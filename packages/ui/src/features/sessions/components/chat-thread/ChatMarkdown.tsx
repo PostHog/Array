@@ -9,8 +9,12 @@ import {
   TableRow,
   Text,
 } from "@posthog/quill";
+import {
+  parseOpenFence,
+  splitMarkdownBlocks,
+} from "@posthog/ui/features/editor/components/splitMarkdownBlocks";
 import { HighlightedCode } from "@posthog/ui/primitives/HighlightedCode";
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import Markdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -116,6 +120,47 @@ export const ChatMarkdown = memo(function ChatMarkdown({
       >
         {content}
       </Markdown>
+    </div>
+  );
+});
+
+/**
+ * Streaming variant of {@link ChatMarkdown}: splits the message into top-level blocks so completed
+ * blocks keep a stable string and their memoized parse is reused — each streamed frame re-parses
+ * only the growing tail block, O(last block) instead of O(message).
+ *
+ * While the tail sits inside an unterminated code fence it renders as plain monospace in the same
+ * `pre` box the finished block will use — no per-frame Shiki highlight, no layout shift when the
+ * fence closes. Completed messages should render through {@link ChatMarkdown} directly for a
+ * single, fully-correct parse.
+ */
+export const ChatStreamingMarkdown = memo(function ChatStreamingMarkdown({
+  content,
+}: {
+  content: string;
+}) {
+  const blocks = useMemo(() => splitMarkdownBlocks(content), [content]);
+  const lastIndex = blocks.length - 1;
+
+  return (
+    <div className="flex flex-col gap-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+      {blocks.map((block, index) => {
+        const key = `b${index}`;
+        const openFence = index === lastIndex ? parseOpenFence(block) : null;
+        if (openFence) {
+          return (
+            <div key={key} className="flex flex-col gap-3">
+              {openFence.before.trim() ? (
+                <ChatMarkdown content={openFence.before} />
+              ) : null}
+              <pre className="overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 text-sm leading-[1.5]">
+                <code className="font-mono text-xs">{openFence.code}</code>
+              </pre>
+            </div>
+          );
+        }
+        return <ChatMarkdown key={key} content={block} />;
+      })}
     </div>
   );
 });

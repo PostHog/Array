@@ -1,13 +1,12 @@
 import { Button, cn } from "@posthog/quill";
+import { CHANNEL_SECTIONS } from "@posthog/ui/features/canvas/channelSections";
 import { ChannelPinnedMenu } from "@posthog/ui/features/canvas/components/ChannelPinnedMenu";
 import { Link, useRouterState } from "@tanstack/react-router";
 
-const TABS = [
-  { label: "Inbox", to: "/website/$channelId/inbox" },
-  { label: "Artifacts", to: "/website/$channelId/artifacts" },
-  { label: "Recents", to: "/website/$channelId/history" },
-  { label: "CONTEXT.md", to: "/website/$channelId/context" },
-] as const;
+const TABS = CHANNEL_SECTIONS.map((s) => ({
+  label: s.label,
+  to: `/website/$channelId/${s.key}` as const,
+}));
 
 // Home / History / Artifacts tab switcher shown in the channel header bar, with
 // a Pinned quick-access menu alongside. Pathname-driven active state (the

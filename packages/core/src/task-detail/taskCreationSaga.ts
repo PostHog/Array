@@ -62,6 +62,10 @@ export class TaskCreationSaga extends Saga<
         )
       : await this.createTask(input);
 
+    // Session reconcile auto-recovers run-less local tasks; mark this one as
+    // mid-creation so the recovery doesn't race the agent_session step below.
+    this.deps.sessionService.markTaskCreationInFlight(task.id);
+
     if (importedClaude && input.repoPath) {
       await this.recordClaudeImport(input, importedClaude, task.id);
     }
@@ -157,6 +161,8 @@ export class TaskCreationSaga extends Saga<
           error,
         });
         this.deps.host.clearProvisioning(task.id);
+        // The in-flight mark is left to TTL-expire on purpose: this state has
+        // its own retry-prompt UX, and auto-recovery would race the retry.
         return { task, workspace: null, provisioningError };
       }
     } else if (workspaceMode === "cloud") {
@@ -639,6 +645,7 @@ export class TaskCreationSaga extends Saga<
               ? (input.reasoningLevel ?? null)
               : undefined,
           signal_report: input.signalReportId ?? undefined,
+          channel: input.channelId ?? undefined,
         });
         return result as unknown as Task;
       },

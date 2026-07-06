@@ -180,7 +180,16 @@ function assembleItems(
 
   for (let i = activeStart; i < b.items.length; i++) {
     const item = b.items[i];
-    if (item.type === "session_update" && activeContext) {
+    // Only rows of the active turn get the fresh context. A prompt can open
+    // its turn *before* a trailing progress card from the previous turn (see
+    // `handlePromptRequest`), so the active range may hold older-turn rows —
+    // those keep their own (frozen) context, matching a full rebuild.
+    if (
+      item.type === "session_update" &&
+      activeContext &&
+      turn &&
+      item.turnContext === turn.context
+    ) {
       out.push({ ...item, turnContext: activeContext });
     } else {
       out.push(item);

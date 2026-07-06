@@ -9,8 +9,6 @@
  * - System prompt injection
  */
 
-import { existsSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
 import {
   type AgentSideConnection,
   type AuthenticateRequest,
@@ -61,6 +59,7 @@ import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../../types";
 import { isCloudRun } from "../../utils/common";
 import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
+import { resolveBundledMcpScript } from "../../utils/resolve-bundled-script";
 import {
   nodeReadableToWebReadable,
   nodeWritableToWebWritable,
@@ -302,24 +301,7 @@ const STRUCTURED_OUTPUT_INSTRUCTIONS = `\n\nWhen you have completed the task, ca
  * Builds the stdio MCP server config that exposes the `create_output` tool.
  * The child process validates tool input against the JSON schema with AJV.
  * We pass the schema as a base64-encoded env var to avoid shell escaping.
- *
- * Path resolves relative to the compiled adapter location. When bundled into
- * different entry points (dist/agent.js, dist/server/bin.cjs, dist/server/
- * harness/bin.js, etc), `import.meta.dirname` sits at different depths. Walk
- * up until we find the script so each bundle locates the shared dist asset.
  */
-function resolveBundledMcpScript(rel: string): string {
-  let dir = import.meta.dirname ?? __dirname;
-  for (let i = 0; i < 5; i++) {
-    const candidate = resolvePath(dir, rel);
-    if (existsSync(candidate)) return candidate;
-    dir = resolvePath(dir, "..");
-  }
-  throw new Error(
-    `Could not locate ${rel} relative to ${import.meta.dirname ?? __dirname}.`,
-  );
-}
-
 function buildStructuredOutputMcpServer(
   jsonSchema: Record<string, unknown>,
 ): McpServerStdio {

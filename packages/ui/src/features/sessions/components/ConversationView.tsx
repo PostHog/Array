@@ -101,6 +101,10 @@ export function ConversationView({
     () => ({
       workerFactory: () => diffWorkerFactory(),
       totalASTLRUCacheSize: 200,
+      // Each pooled highlighter worker is a full V8 isolate with shiki
+      // grammars loaded (~40MB RSS); the library default of 8 costs hundreds
+      // of MB for parallelism conversation diffs don't need.
+      poolSize: 2,
     }),
     [diffWorkerFactory],
   );

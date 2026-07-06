@@ -196,6 +196,16 @@ jobs:
             echo "OK: $bin"
           done
 
+          # The native codex CLI must ship as a sibling of codex-acp, or the
+          # app-server harness silently falls back to codex-acp in production.
+          for f in codex rg; do
+            if [[ ! -f "$RESOURCES/app.asar.unpacked/.vite/build/codex-acp/$f" ]]; then
+              echo "FAIL: codex-acp/$f missing in bundled binaries"
+              exit 1
+            fi
+            echo "OK: codex-acp/$f"
+          done
+
       - name: Install Playwright
         run: pnpm --filter code exec playwright install
 
@@ -222,6 +232,21 @@ jobs:
             apps/code/out/*.dmg \
             apps/code/out/*-mac.zip \
             apps/code/out/*.blockmap
+
+      # Hash the same files uploaded above; finalize-release turns these into
+      # the download tables in the release notes.
+      - name: Compute artifact checksums
+        env:
+          MATRIX_ARCH: ${{ matrix.arch }}
+        working-directory: apps/code/out
+        run: shasum -a 256 *.dmg *-mac.zip *.blockmap > "checksums-macos-$MATRIX_ARCH.txt"
+
+      - name: Upload checksums artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: checksums-macos-${{ matrix.arch }}
+          path: apps/code/out/checksums-macos-${{ matrix.arch }}.txt
+          retention-days: 1
 
       - name: Upload mac manifest artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -331,6 +356,20 @@ jobs:
           $items += Get-ChildItem $out -File -Filter "*.blockmap"
           $files = $items | Select-Object -ExpandProperty FullName
           gh release upload "v$env:APP_VERSION" --repo PostHog/code --clobber @files
+
+      # Hash the same files uploaded above (minus latest.yml); finalize-release
+      # turns these into the download tables in the release notes.
+      - name: Compute artifact checksums
+        shell: bash
+        working-directory: apps/code/out
+        run: sha256sum *.exe *.blockmap > checksums-windows-x64.txt
+
+      - name: Upload checksums artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: checksums-windows-x64
+          path: apps/code/out/checksums-windows-x64.txt
+          retention-days: 1
 
   publish-linux:
     needs: [prepare-release]
@@ -444,6 +483,21 @@ jobs:
             apps/code/out/*.deb \
             apps/code/out/*.rpm
 
+      # Hash the same files uploaded above; finalize-release turns these into
+      # the download tables in the release notes.
+      - name: Compute artifact checksums
+        env:
+          MATRIX_ARCH: ${{ matrix.arch }}
+        working-directory: apps/code/out
+        run: sha256sum *.AppImage *.deb *.rpm > "checksums-linux-$MATRIX_ARCH.txt"
+
+      - name: Upload checksums artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: checksums-linux-${{ matrix.arch }}
+          path: apps/code/out/checksums-linux-${{ matrix.arch }}.txt
+          retention-days: 1
+
   finalize-release:
     needs: [publish-macos, publish-windows, publish-linux]
     # Publish only when every platform built successfully. Without an `if:` override
@@ -471,6 +525,7 @@ jobs:
         with:
           sparse-checkout: |
             apps/code/scripts/merge-mac-manifests.mjs
+            apps/code/scripts/generate-release-download-tables.mjs
           sparse-checkout-cone-mode: false
 
       - name: Setup Node.js
@@ -508,10 +563,19 @@ jobs:
         run: |
           gh release upload "v$APP_VERSION" --repo PostHog/code --clobber /tmp/latest-mac.yml
 
+      - name: Download checksum artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: checksums-*
+          merge-multiple: true
+          path: /tmp/checksums
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           gh api repos/PostHog/code/releases/generate-notes -f tag_name="v$APP_VERSION" --jq '.body' > /tmp/release-notes.md
+          printf '\n' >> /tmp/release-notes.md
+          node apps/code/scripts/generate-release-download-tables.mjs "$APP_VERSION" /tmp/checksums >> /tmp/release-notes.md
           gh release edit "v$APP_VERSION" --repo PostHog/code --draft=false --notes-file /tmp/release-notes.md

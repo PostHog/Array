@@ -5,6 +5,11 @@ import { hostClient } from "../hostClient";
 
 const log = logger.scope("freeform-edit-store");
 
+// Edit-history retention: each version keeps a full copy of the canvas source
+// plus context, so unbounded history grows by whole-document copies. Oldest
+// versions fall off past this cap.
+const MAX_VERSIONS = 50;
+
 // Working copy of a freeform canvas's source + edit history. Generation no
 // longer streams in-process — it runs as a dedicated task that publishes the
 // result into the canvas's saved record (see useGenerateFreeformCanvas). This
@@ -206,9 +211,11 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         // Drop any redo tail before appending (linear history, as with code edits).
         const base =
           headIdx === -1 ? t.versions : t.versions.slice(0, headIdx + 1);
+        const capped =
+          base.length >= MAX_VERSIONS ? base.slice(-(MAX_VERSIONS - 1)) : base;
         patch(threadId, (prev) => ({
           ...prev,
-          versions: [...base, version],
+          versions: [...capped, version],
           currentVersionId: version.id,
         }));
       }

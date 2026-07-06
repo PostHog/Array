@@ -36,7 +36,7 @@ export function SearchToolView({
         hasResults ? <ContentPre>{searchResults}</ContentPre> : undefined
       }
     >
-      <ToolTitle className="min-w-0 truncate">
+      <ToolTitle className="min-w-0 shrink truncate">
         <span className="font-mono">{title || "Search"}</span>
       </ToolTitle>
       {hasResults && (

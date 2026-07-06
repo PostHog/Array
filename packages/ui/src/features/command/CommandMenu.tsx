@@ -1,4 +1,9 @@
-import { CaretLeftIcon, CaretRightIcon, HashIcon } from "@phosphor-icons/react";
+import {
+  CaretLeftIcon,
+  CaretRightIcon,
+  EnvelopeSimple,
+  HashIcon,
+} from "@phosphor-icons/react";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -22,10 +27,12 @@ import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
+import { useFileSearchStore } from "@posthog/ui/features/command/fileSearchStore";
 import {
   formatHotkeyParts,
   SHORTCUTS,
 } from "@posthog/ui/features/command/keyboard-shortcuts";
+import { useFileSearchContext } from "@posthog/ui/features/command/useFileSearchContext";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import {
@@ -40,6 +47,8 @@ import {
   goBackInHistory,
   goForwardInHistory,
   navigateToChannel,
+  navigateToCommandCenter,
+  navigateToInbox,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -51,6 +60,8 @@ import {
   FileTextIcon,
   GearIcon,
   HomeIcon,
+  LightningBoltIcon,
+  MagnifyingGlassIcon,
   MoonIcon,
   ReloadIcon,
   SunIcon,
@@ -133,6 +144,9 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   );
   const { data: tasks = [] } = useTasks();
   const [query, setQuery] = useState("");
+  const { repoPath } = useFileSearchContext();
+  const canSearchFiles = !!repoPath;
+  const openFilePicker = useFileSearchStore((state) => state.openPicker);
   const [systemPrefersDark, setSystemPrefersDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
   );
@@ -225,6 +239,29 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         onRun: () => openSettingsDialog(),
       },
       {
+        id: "inbox",
+        label: "Inbox",
+        keywords: "reports pull requests agents notifications",
+        icon: <EnvelopeSimple size={12} className="text-gray-11" />,
+        action: "open-inbox",
+        shortcut: SHORTCUTS.INBOX,
+        onRun: () => {
+          closeSettingsDialog();
+          navigateToInbox();
+        },
+      },
+      {
+        id: "command-center",
+        label: "Command center",
+        keywords: "lightning grid tasks parallel dashboard",
+        icon: <LightningBoltIcon className="h-3 w-3 text-gray-11" />,
+        action: "open-command-center",
+        onRun: () => {
+          closeSettingsDialog();
+          navigateToCommandCenter();
+        },
+      },
+      {
         id: "go-back",
         label: "Go back",
         keywords: "navigate history previous",
@@ -282,6 +319,17 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       },
     ];
 
+    if (canSearchFiles) {
+      actions.push({
+        id: "search-files",
+        label: "Search files",
+        keywords: "file find open",
+        icon: <MagnifyingGlassIcon className="h-3 w-3 text-gray-11" />,
+        action: "search-files",
+        onRun: openFilePicker,
+      });
+    }
+
     const developer: Command[] = [
       {
         id: "show-log-folder",
@@ -334,6 +382,8 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     toggleLeftSidebar,
     openReviewPanel,
     reviewTaskId,
+    canSearchFiles,
+    openFilePicker,
   ]);
 
   const taskSections = useMemo<CommandSection[]>(() => {
@@ -426,6 +476,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           items={sections}
           value={query}
           autoHighlight="always"
+          keepHighlight
           onValueChange={(val, eventDetails) => {
             if (eventDetails.reason !== "input-change") return;
             if (typeof val === "string") {

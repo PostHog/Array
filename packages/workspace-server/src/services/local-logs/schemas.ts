@@ -6,6 +6,16 @@ export const fetchS3LogsOutput = z.string().nullable();
 export const readLocalLogsInput = z.object({ taskRunId: z.string().min(1) });
 export const readLocalLogsOutput = z.string().nullable();
 
+export const readLocalLogsCollapsedInput = z.object({
+  taskRunId: z.string().min(1),
+});
+export const readLocalLogsCollapsedOutput = z
+  .object({
+    content: z.string(),
+    totalLineCount: z.number().int().nonnegative(),
+  })
+  .nullable();
+
 export const readLocalLogsTailInput = z.object({
   taskRunId: z.string().min(1),
   maxBytes: z.number().int().positive(),

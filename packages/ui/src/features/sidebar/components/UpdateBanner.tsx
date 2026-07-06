@@ -1,4 +1,5 @@
 import { ArrowsClockwise, Gift, Spinner, X } from "@phosphor-icons/react";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useUpdateBannerStore } from "@posthog/ui/features/updates/updateBannerStore";
 import { useUpdateModalStore } from "@posthog/ui/features/updates/updateModalStore";
 import {
@@ -7,7 +8,6 @@ import {
 } from "@posthog/ui/features/updates/updateStore";
 import { Box } from "@radix-ui/themes";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect } from "react";
 
 interface UpdateBannerProps {
   variant?: "sidebar" | "compact";
@@ -18,20 +18,16 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
     useUpdateView();
   const installUpdate = useInstallUpdate();
   const openModal = useUpdateModalStore((state) => state.open);
+  const canDismiss = useSettingsStore(
+    (state) => state.dismissibleUpdateBanners,
+  );
   const dismissedVersion = useUpdateBannerStore(
     (state) => state.dismissedVersion,
   );
   const dismissBanner = useUpdateBannerStore((state) => state.dismiss);
-  const resetDismissal = useUpdateBannerStore((state) => state.reset);
 
-  useEffect(() => {
-    if (status === "available" || status === "downloading") {
-      resetDismissal();
-    }
-  }, [status, resetDismissal]);
-
-  const versionKey = version ?? "unknown";
-  const isDismissed = status === "ready" && dismissedVersion === versionKey;
+  const dismissKey = version ?? availableVersion ?? "unknown";
+  const isDismissed = canDismiss && dismissedVersion === dismissKey;
 
   const isVisible =
     isEnabled &&
@@ -54,14 +50,19 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
             transition={{ duration: 0.2, ease: "easeOut" }}
           >
             {status === "available" && (
-              <button
-                type="button"
-                className="flex items-center gap-1.5 rounded-2 border border-(--green-a5) bg-(--green-a3) px-2.5 py-1 font-medium text-(--green-11) text-[13px] transition-colors hover:bg-(--green-a4)"
-                onClick={openModal}
-              >
-                <Gift size={14} weight="duotone" />
-                <span>Update available</span>
-              </button>
+              <div className="group flex items-center gap-1">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 rounded-2 border border-(--green-a5) bg-(--green-a3) px-2.5 py-1 font-medium text-(--green-11) text-[13px] transition-colors hover:bg-(--green-a4)"
+                  onClick={openModal}
+                >
+                  <Gift size={14} weight="duotone" />
+                  <span>Update available</span>
+                </button>
+                {canDismiss && (
+                  <DismissButton onClick={() => dismissBanner(dismissKey)} />
+                )}
+              </div>
             )}
 
             {status === "downloading" && (
@@ -76,7 +77,7 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
             )}
 
             {status === "ready" && (
-              <div className="flex items-center gap-1">
+              <div className="group flex items-center gap-1">
                 <button
                   type="button"
                   className="flex items-center gap-1.5 rounded-2 border border-(--green-a5) bg-(--green-a3) px-2.5 py-1 font-medium text-(--green-11) text-[13px] transition-colors hover:bg-(--green-a4)"
@@ -87,15 +88,9 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
                     {version ? `${version} ready` : "Update ready"} — Restart
                   </span>
                 </button>
-                <button
-                  type="button"
-                  aria-label="Dismiss until next session"
-                  title="Dismiss until next session"
-                  className="rounded-2 p-1 text-(--green-a11) transition-colors hover:bg-(--green-a4) hover:text-(--green-11)"
-                  onClick={() => dismissBanner(versionKey)}
-                >
-                  <X size={12} weight="bold" />
-                </button>
+                {canDismiss && (
+                  <DismissButton onClick={() => dismissBanner(dismissKey)} />
+                )}
               </div>
             )}
 
@@ -124,7 +119,7 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
           <AnimatePresence mode="wait">
             {status === "available" && (
               <BannerCard key="available">
-                <div className="flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
+                <div className="group relative flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
                   <Gift size={20} weight="duotone" className="shrink-0" />
                   <button
                     type="button"
@@ -147,6 +142,12 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
                   >
                     View
                   </button>
+                  {canDismiss && (
+                    <DismissButton
+                      variant="overlay"
+                      onClick={() => dismissBanner(dismissKey)}
+                    />
+                  )}
                 </div>
               </BannerCard>
             )}
@@ -176,49 +177,44 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
 
             {status === "ready" && (
               <BannerCard key="ready">
-                <div className="flex w-full flex-col gap-2 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
-                  <div className="flex w-full items-center gap-3">
-                    <motion.div
-                      className="shrink-0"
-                      animate={{ rotate: [0, -12, 12, -8, 8, -4, 0] }}
-                      transition={{
-                        duration: 0.6,
-                        repeat: Infinity,
-                        repeatDelay: 4,
-                        ease: "easeInOut",
-                      }}
-                    >
-                      <Gift size={20} weight="duotone" />
-                    </motion.div>
-                    <button
-                      type="button"
-                      onClick={openModal}
-                      className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
-                    >
-                      <span className="truncate font-medium">
-                        {version ? `${version} ready` : "Update ready"}
-                      </span>
-                      <span className="truncate text-[11px] text-[var(--green-a11)]">
-                        Restart to apply
-                      </span>
-                    </button>
-                  </div>
-                  <div className="flex w-full items-center justify-end gap-1">
-                    <button
-                      type="button"
-                      className="shrink-0 rounded-2 px-2 py-1 font-medium text-[12px] text-[var(--green-a11)] transition-colors hover:bg-[var(--green-a4)] hover:text-[var(--green-11)]"
-                      onClick={() => dismissBanner(versionKey)}
-                    >
-                      Later
-                    </button>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded-2 bg-[var(--green-a4)] px-2 py-1 font-medium text-[12px] text-[var(--green-11)] transition-colors hover:bg-[var(--green-a5)]"
-                      onClick={() => void installUpdate()}
-                    >
-                      Restart
-                    </button>
-                  </div>
+                <div className="group relative flex w-full items-center gap-3 rounded-md border border-[var(--green-a5)] bg-[var(--green-a3)] px-3 py-2.5 text-[13px] text-[var(--green-11)]">
+                  <motion.div
+                    className="shrink-0"
+                    animate={{ rotate: [0, -12, 12, -8, 8, -4, 0] }}
+                    transition={{
+                      duration: 0.6,
+                      repeat: Infinity,
+                      repeatDelay: 4,
+                      ease: "easeInOut",
+                    }}
+                  >
+                    <Gift size={20} weight="duotone" />
+                  </motion.div>
+                  <button
+                    type="button"
+                    onClick={openModal}
+                    className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
+                  >
+                    <span className="font-medium">
+                      {version ? `${version} ready` : "Update ready"}
+                    </span>
+                    <span className="text-[11px] text-[var(--green-a11)]">
+                      Restart to apply
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-2 bg-[var(--green-a4)] px-2 py-1 font-medium text-[12px] text-[var(--green-11)] transition-colors hover:bg-[var(--green-a5)]"
+                    onClick={() => void installUpdate()}
+                  >
+                    Restart
+                  </button>
+                  {canDismiss && (
+                    <DismissButton
+                      variant="overlay"
+                      onClick={() => dismissBanner(dismissKey)}
+                    />
+                  )}
                 </div>
               </BannerCard>
             )}
@@ -238,6 +234,31 @@ export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+function DismissButton({
+  onClick,
+  variant = "inline",
+}: {
+  onClick: () => void;
+  variant?: "inline" | "overlay";
+}) {
+  const className =
+    variant === "overlay"
+      ? "absolute -top-1.5 -right-1.5 rounded-full border border-(--green-a5) bg-(--gray-2) p-1 text-(--green-11) opacity-0 transition-all focus-visible:opacity-100 group-hover:opacity-100 hover:bg-(--green-a4)"
+      : "shrink-0 rounded-2 p-1 text-(--green-a11) opacity-0 transition-all focus-visible:opacity-100 group-hover:opacity-100 hover:bg-(--green-a4) hover:text-(--green-11)";
+
+  return (
+    <button
+      type="button"
+      aria-label="Dismiss update banner"
+      title="Dismiss"
+      className={className}
+      onClick={onClick}
+    >
+      <X size={variant === "overlay" ? 10 : 12} weight="bold" />
+    </button>
   );
 }
 

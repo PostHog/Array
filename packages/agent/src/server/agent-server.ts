@@ -412,7 +412,14 @@ export class AgentServer {
   }
 
   private shouldRelayPermissionToClient(mode: PermissionMode): boolean {
-    return mode === "default" || mode === "auto" || mode === "read-only";
+    // "plan" relays like "read-only" (look-don't-touch): escalations need a human
+    // veto, not silent auto-approval.
+    return (
+      mode === "default" ||
+      mode === "auto" ||
+      mode === "read-only" ||
+      mode === "plan"
+    );
   }
 
   private createApp(): Hono {
@@ -1196,6 +1203,11 @@ export class AgentServer {
               cwd: this.config.repositoryPath ?? "/tmp/workspace",
               apiBaseUrl: gatewayEnv.openaiBaseUrl,
               apiKey: this.config.apiKey,
+              // Path to the bundled codex-acp binary; the native app-server
+              // adapter derives `codex` from the same directory. Set in the
+              // sandbox image (POSTHOG_CODEX_BINARY_PATH); when unset the
+              // adapter falls back to npx codex-acp.
+              binaryPath: process.env.POSTHOG_CODEX_BINARY_PATH,
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
               developerInstructions: codexInstructions,
@@ -3036,9 +3048,13 @@ ${signedCommitInstructions}
             isQuestion ||
             this.shouldRelayPermissionToClient(sessionPermissionMode);
 
+          // A background run has no human to answer a relayed approval
+          // (hasDesktopConnected is true from the event-relay reader), so
+          // auto-approve rather than hang on it.
           if (
-            isPlanApproval ||
-            (needsDesktopApproval && this.session?.hasDesktopConnected)
+            mode !== "background" &&
+            (isPlanApproval ||
+              (needsDesktopApproval && this.session?.hasDesktopConnected))
           ) {
             this.logger.debug("Relaying permission request", {
               kind: params.toolCall?.kind,

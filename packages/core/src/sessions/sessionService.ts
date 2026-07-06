@@ -26,7 +26,9 @@ import {
   type OptimisticItem,
   type PermissionRequest,
   type QueuedMessage,
+  resolveBypassRevertMode,
   type StoredLogEntry,
+  sessionSupportsNativeSteer,
   type TaskRunStatus,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -169,6 +171,12 @@ export interface SessionTrpc {
   };
   logs: {
     readLocalLogs: TrpcQuery;
+    /** Optional: merges superseded tool_call_update snapshots server-side so
+     * a tool-heavy log doesn't ship its full redundant history over IPC.
+     * Presence can't be trusted on proxy-based hosts (a tRPC client fabricates
+     * a query for any path), so callers fall back to `readLocalLogs` when the
+     * call itself fails. */
+    readLocalLogsCollapsed?: TrpcQuery;
     /** Optional: only the Electron host exposes the tail read. Core feature-
      * detects and falls back to a full read when it's absent. */
     readLocalLogsTail?: TrpcQuery;
@@ -252,6 +260,13 @@ export interface SessionServiceHelpers {
   ) => Promise<string[]>;
 }
 
+/**
+ * PostHog flag gating the native codex app-server sub-adapter. When enabled for
+ * the user, a codex session uses the app-server adapter instead of codex-acp.
+ * Resolved at session start and passed to the agent as `useCodexAppServer`.
+ */
+export const CODEX_APP_SERVER_FLAG = "codex-app-server";
+
 export interface SessionServiceDeps {
   trpc: SessionTrpc;
   store: ISessionStore;
@@ -267,6 +282,12 @@ export interface SessionServiceDeps {
     info: (msg: any, opts?: any) => unknown;
   };
   track: (event: string, props?: Record<string, unknown>) => void;
+  /**
+   * Evaluates a PostHog feature flag for the current user. Used to resolve
+   * {@link CODEX_APP_SERVER_FLAG} at session start. Optional so non-desktop
+   * hosts (stubbed web, tests) can omit it — absent is treated as "flag off".
+   */
+  featureFlags?: { isEnabled(flagKey: string): boolean };
   buildPermissionToolMetadata: (...args: any[]) => any;
   notifyPermissionRequest: (...args: any[]) => any;
   notifyPromptComplete: (...args: any[]) => any;
@@ -286,6 +307,9 @@ export interface SessionServiceDeps {
   adapterStore: {
     getAdapter(taskRunId: string): Adapter | undefined;
     setAdapter(taskRunId: string, adapter: Adapter): void;
+    /** Codex sub-adapter pin: true = app-server, null = resolved undefined at creation. */
+    setUseCodexAppServer(taskRunId: string, useAppServer: boolean | null): void;
+    getUseCodexAppServer(taskRunId: string): boolean | null | undefined;
     removeAdapter(taskRunId: string): void;
   };
   readonly settings: { customInstructions?: string | null };
@@ -483,6 +507,11 @@ export function isPermissionRequestAlreadySurfaced(
   );
 }
 
+/** The steering capability on a loosely-typed agent start/reconnect result. */
+function readSteering(result: unknown): string | undefined {
+  return (result as { steering?: string } | undefined)?.steering;
+}
+
 function classifyTurnEventKind(
   msg: AcpMessage["message"],
 ): "text" | "output" | "other" {
@@ -508,6 +537,9 @@ function classifyTurnEventKind(
 export class SessionService {
   private connectingTasks = new Map<string, Promise<void>>();
   private reconcilingTasks = new Set<string>();
+  private reconcileSkipLogged = new Set<string>();
+  private taskCreationMarks = new Map<string, number>();
+  private static readonly TASK_CREATION_IN_FLIGHT_TTL_MS = 10 * 60 * 1000;
   private activityHeartbeats = new Map<
     string,
     ReturnType<typeof setInterval>
@@ -612,6 +644,7 @@ export class SessionService {
   async connectToTask(params: ConnectParams): Promise<void> {
     const { task } = params;
     const taskId = task.id;
+    this.taskCreationMarks.delete(taskId);
     this.localRepoPaths.set(taskId, params.repoPath);
     this.sessionLastUsedAt.set(taskId, Date.now());
     void this.evictIdleSessions(taskId);
@@ -640,6 +673,16 @@ export class SessionService {
     this.connectingTasks.set(taskId, connectPromise);
 
     return connectPromise;
+  }
+
+  private stampRunConfig(session: AgentSession, params: ConnectParams): void {
+    session.adapter = params.adapter;
+    session.model = params.model;
+    session.executionMode = params.executionMode;
+    session.reasoningLevel = params.reasoningLevel;
+    if (params.initialPrompt?.length) {
+      session.initialPrompt = params.initialPrompt;
+    }
   }
 
   private async doConnect(params: ConnectParams): Promise<void> {
@@ -683,9 +726,7 @@ export class SessionService {
         session.status = "error";
         session.errorMessage =
           "Authentication required. Please sign in to continue.";
-        if (initialPrompt?.length) {
-          session.initialPrompt = initialPrompt;
-        }
+        this.stampRunConfig(session, params);
         this.d.store.setSession(session);
         return;
       }
@@ -774,9 +815,7 @@ export class SessionService {
 
       const taskRunId = latestRun?.id ?? `error-${taskId}`;
       const session = createBaseSession(taskRunId, taskId, taskTitle);
-      if (initialPrompt?.length) {
-        session.initialPrompt = initialPrompt;
-      }
+      this.stampRunConfig(session, params);
       if (latestRun?.log_url) {
         try {
           const { rawEntries } = await this.fetchSessionLogs(
@@ -899,6 +938,25 @@ export class SessionService {
       this.d.adapterStore.setAdapter(taskRunId, resolvedAdapter);
     }
 
+    // Reuse the codex sub-adapter pinned at session creation so a rollout-flag
+    // flip cannot resume an app-server thread through codex-acp (or vice
+    // versa). Sessions from before pinning existed resolve live once, then get
+    // backfilled so later reconnects stay stable.
+    const pinnedUseCodexAppServer =
+      resolvedAdapter === "codex"
+        ? this.d.adapterStore.getUseCodexAppServer(taskRunId)
+        : undefined;
+    const useCodexAppServer =
+      pinnedUseCodexAppServer === undefined
+        ? this.resolveUseCodexAppServer(resolvedAdapter)
+        : (pinnedUseCodexAppServer ?? undefined);
+    if (resolvedAdapter === "codex" && pinnedUseCodexAppServer === undefined) {
+      this.d.adapterStore.setUseCodexAppServer(
+        taskRunId,
+        useCodexAppServer ?? null,
+      );
+    }
+
     if (previous) {
       session.optimisticItems = previous.optimisticItems;
       session.messageQueue = previous.messageQueue;
@@ -954,6 +1012,7 @@ export class SessionService {
         logUrl,
         sessionId,
         adapter: resolvedAdapter,
+        useCodexAppServer,
         permissionMode: persistedMode,
         model: persistedModel,
         customInstructions: customInstructions || undefined,
@@ -978,6 +1037,7 @@ export class SessionService {
         this.d.store.updateSession(taskRunId, {
           status: "connected",
           configOptions,
+          steering: readSteering(result),
         });
 
         // Persist the merged config options
@@ -1245,6 +1305,30 @@ export class SessionService {
     );
   }
 
+  /**
+   * Resolve the `codex-app-server` flag for a session. Only meaningful for the
+   * codex adapter (Claude ignores it), so returns undefined otherwise.
+   *
+   * One-way opt-in: when the flag is ON we force the app-server adapter (`true`).
+   * When off/unloaded (or no flags service on non-desktop hosts) we return
+   * `undefined` rather than `false`, so the agent falls through to its env
+   * override (`POSTHOG_CODEX_USE_APP_SERVER`) and then the codex-acp default —
+   * hard-passing `false` would shadow that env, since the host value has the
+   * highest precedence in resolveUseCodexAppServer.
+   *
+   * Consulted for NEW sessions (and once to backfill legacy ones); reconnects
+   * reuse the value pinned in the adapter store at creation, so a flag flip
+   * never resumes an existing thread through the other codex sub-adapter.
+   */
+  private resolveUseCodexAppServer(
+    adapter: "claude" | "codex" | undefined,
+  ): boolean | undefined {
+    if (adapter !== "codex") return undefined;
+    return this.d.featureFlags?.isEnabled(CODEX_APP_SERVER_FLAG)
+      ? true
+      : undefined;
+  }
+
   private async createNewLocalSession(
     taskId: string,
     taskTitle: string,
@@ -1269,6 +1353,7 @@ export class SessionService {
 
     const { customInstructions: startCustomInstructions } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
+    const useCodexAppServer = this.resolveUseCodexAppServer(adapter);
     const result = await this.d.trpc.agent.start.mutate({
       taskId,
       taskRunId: taskRun.id,
@@ -1277,6 +1362,7 @@ export class SessionService {
       projectId: auth.projectId,
       permissionMode: executionMode,
       adapter,
+      useCodexAppServer,
       customInstructions: startCustomInstructions || undefined,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
@@ -1289,6 +1375,9 @@ export class SessionService {
     session.channel = result.channel;
     session.status = "connected";
     session.adapter = adapter;
+    session.model = model;
+    session.executionMode = executionMode;
+    session.reasoningLevel = reasoningLevel;
 
     // An imported CLI session had its history replayed during agent.start;
     // the replay is already in the local run log, so load it for the UI.
@@ -1312,15 +1401,23 @@ export class SessionService {
       | SessionConfigOption[]
       | undefined;
     session.configOptions = configOptions;
+    session.steering = readSteering(result);
 
     // Persist the config options
     if (configOptions) {
       this.d.setPersistedConfigOptions(taskRun.id, configOptions);
     }
 
-    // Persist the adapter
+    // Persist the adapter, pinning the codex sub-adapter so reconnects keep
+    // using the one that created this thread even if the rollout flag flips.
     if (adapter) {
       this.d.adapterStore.setAdapter(taskRun.id, adapter);
+      if (adapter === "codex") {
+        this.d.adapterStore.setUseCodexAppServer(
+          taskRun.id,
+          useCodexAppServer ?? null,
+        );
+      }
     }
 
     // Store the initial prompt on the session so retry/reset flows can
@@ -1656,6 +1753,8 @@ export class SessionService {
     this.connectingTasks.clear();
     this.localRepoPaths.clear();
     this.localRecoveryAttempts.clear();
+    this.reconcileSkipLogged.clear();
+    this.taskCreationMarks.clear();
     this.sessionLastUsedAt.clear();
     this.cloudPermissionRequestIds.clear();
     this.liveTurnContent.clear();
@@ -1781,6 +1880,9 @@ export class SessionService {
         // above. Cloud sessions never see that response.
         const session = this.getSessionByRunId(taskRunId);
         if (session?.isCloud) {
+          const turnStartedAtTs =
+            this.liveTurnContent.get(taskRunId)?.startedAtTs ??
+            session.promptStartedAt;
           this.d.store.updateSession(taskRunId, {
             isPromptPending: false,
             promptStartedAt: null,
@@ -1793,9 +1895,7 @@ export class SessionService {
                 session.taskTitle,
                 "end_turn",
                 session.taskId,
-                session.promptStartedAt
-                  ? acpMsg.ts - session.promptStartedAt
-                  : undefined,
+                turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
               );
             }
             this.d.taskViewedApi.markActivity(session.taskId);
@@ -1886,6 +1986,9 @@ export class SessionService {
     } else {
       this.d.store.appendEvents(taskRunId, [acpMsg]);
     }
+    const turnStartedAtTs =
+      this.liveTurnContent.get(taskRunId)?.startedAtTs ??
+      session.promptStartedAt;
     this.updatePromptStateFromEvents(taskRunId, [acpMsg], { isLive: true });
 
     const msg = acpMsg.message;
@@ -1917,9 +2020,7 @@ export class SessionService {
           session.taskTitle,
           stopReason,
           session.taskId,
-          session.promptStartedAt
-            ? acpMsg.ts - session.promptStartedAt
-            : undefined,
+          turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
         );
       }
 
@@ -2156,22 +2257,18 @@ export class SessionService {
     }
 
     // Steer: the user sent a message mid-turn and asked to fold it into the
-    // running turn rather than queue it. Native (Claude, local) injects at the
-    // next tool boundary; local Codex interrupts the turn and resends below as
-    // a fresh prompt.
-    //
-    // Cloud has no real mid-turn steer: the backend only delivers user messages
-    // between turns, so a cloud "steer" would cancel the running turn for no
-    // gain (the message lands next turn either way) while surfacing a jarring
-    // interruption. Until the backend supports true steering, cloud steer falls
-    // through to the queue like a normal message. Compaction also falls through.
+    // running turn rather than queue it. Adapters that negotiated
+    // `steering: "native"` (Claude, codex app-server) inject at the next tool
+    // boundary; codex-acp ("interrupt-resend") and unknown adapters cancel and
+    // resend. Cloud has no real mid-turn steer (the backend only delivers
+    // messages between turns), so it falls through to the queue; compaction too.
     if (
       options?.steer &&
       !session.isCloud &&
       session.isPromptPending &&
       !session.isCompacting
     ) {
-      if (session.adapter === "claude") {
+      if (sessionSupportsNativeSteer(session)) {
         return this.sendSteerPrompt(session, prompt);
       }
       await this.cancelPrompt(taskId);
@@ -3377,7 +3474,14 @@ export class SessionService {
     this.localRepoPaths.set(taskId, repoPath);
     const session = this.d.store.getSessionByTaskId(taskId);
     if (session?.initialPrompt?.length) {
-      const { taskTitle, initialPrompt } = session;
+      const {
+        taskTitle,
+        initialPrompt,
+        executionMode,
+        adapter,
+        model,
+        reasoningLevel,
+      } = session;
       await this.teardownSession(session.taskRunId);
       const authStatus = await this.getAuthCredentialsStatus();
       if (authStatus.kind === "restoring") {
@@ -3394,6 +3498,10 @@ export class SessionService {
         repoPath,
         authStatus.auth,
         initialPrompt,
+        executionMode,
+        adapter,
+        model,
+        reasoningLevel,
       );
       return;
     }
@@ -4365,8 +4473,42 @@ export class SessionService {
       });
     }
 
+    this.logReconcileSkipOnce(task.id, "no-workspace-path", {
+      hasRun: !!task.latest_run?.id,
+    });
     this.loadLogsOnlyIfDisconnected(task, session);
     return () => {};
+  }
+
+  private logReconcileSkipOnce(
+    taskId: string,
+    reason: string,
+    context: Record<string, unknown> = {},
+  ): void {
+    const key = `${taskId}:${reason}`;
+    if (this.reconcileSkipLogged.has(key)) return;
+    this.reconcileSkipLogged.add(key);
+    this.d.log.info("Skipping local session reconcile", {
+      taskId,
+      reason,
+      ...context,
+    });
+  }
+
+  public markTaskCreationInFlight(taskId: string): void {
+    this.taskCreationMarks.set(taskId, Date.now());
+  }
+
+  private isTaskCreationInFlight(taskId: string): boolean {
+    const markedAt = this.taskCreationMarks.get(taskId);
+    if (markedAt === undefined) return false;
+    const expired =
+      Date.now() - markedAt > SessionService.TASK_CREATION_IN_FLIGHT_TTL_MS;
+    if (expired) {
+      this.taskCreationMarks.delete(taskId);
+      return false;
+    }
+    return true;
   }
 
   private reconcileCloudConnection(
@@ -4456,10 +4598,31 @@ export class SessionService {
       return () => {};
     }
 
-    if (!task.latest_run?.id) return () => {};
+    const connectParams: ConnectParams = { task, repoPath };
+
+    // A local task with no run means creation was interrupted before its
+    // first run started (e.g. the app quit for an update mid-setup). Connect
+    // fresh and deliver the prompt persisted as the task description, unless
+    // a creation saga is actively working on this task right now. Recovery
+    // replays the description as literal text; original attachments are gone.
+    if (!task.latest_run?.id) {
+      if (this.isTaskCreationInFlight(taskId)) {
+        this.logReconcileSkipOnce(taskId, "creation-in-flight");
+        return () => {};
+      }
+      this.d.log.info("Recovering local task with no run", {
+        taskId,
+        hasDescription: !!task.description,
+      });
+      if (task.description) {
+        connectParams.initialPrompt = [
+          { type: "text", text: task.description },
+        ];
+      }
+    }
 
     this.reconcilingTasks.add(taskId);
-    this.connectToTask({ task, repoPath }).finally(() => {
+    this.connectToTask(connectParams).finally(() => {
       this.reconcilingTasks.delete(taskId);
     });
 
@@ -4547,6 +4710,7 @@ export class SessionService {
       isCloud: boolean;
       allowBypassPermissions: boolean;
       currentModeId: string | boolean | undefined;
+      modeOption: SessionConfigOption | undefined;
     },
   ): void {
     if (options.allowBypassPermissions) return;
@@ -4555,7 +4719,9 @@ export class SessionService {
       options.currentModeId === "bypassPermissions" ||
       options.currentModeId === "full-access";
     if (!isBypass || !taskId) return;
-    this.setSessionConfigOptionByCategory(taskId, "mode", "default");
+    const target = resolveBypassRevertMode(options.modeOption);
+    if (!target) return;
+    this.setSessionConfigOptionByCategory(taskId, "mode", target);
   }
 
   /**
@@ -4908,6 +5074,40 @@ export class SessionService {
     }
   }
 
+  /**
+   * Read the local log, preferring the collapsed read (superseded
+   * tool_call_update snapshots merged server-side, so a tool-heavy log
+   * doesn't cross the transport at full size). `originalLineCount` is the
+   * pre-collapse line count when the collapsed read served the content.
+   *
+   * A tRPC proxy client fabricates a query object for any path, so a host
+   * whose router lacks the procedure only fails at call time — fall back to
+   * the plain read then, instead of misreporting the local log as unreadable.
+   */
+  private async readLocalLogsPreferCollapsed(
+    taskRunId: string,
+  ): Promise<{ content: string | null; originalLineCount?: number }> {
+    const collapsedQuery = this.d.trpc.logs.readLocalLogsCollapsed;
+    if (collapsedQuery) {
+      try {
+        const res = (await collapsedQuery.query({ taskRunId })) as {
+          content: string;
+          totalLineCount: number;
+        } | null;
+        return {
+          content: res?.content ?? null,
+          originalLineCount: res?.totalLineCount,
+        };
+      } catch {
+        this.d.log.warn("Collapsed local log read failed, using plain read", {
+          taskRunId,
+        });
+      }
+    }
+    const content = await this.d.trpc.logs.readLocalLogs.query({ taskRunId });
+    return { content };
+  }
+
   private async fetchSessionLogs(
     logUrl: string | undefined,
     taskRunId?: string,
@@ -4923,11 +5123,16 @@ export class SessionService {
 
     if (taskRunId) {
       try {
-        const localContent = await this.d.trpc.logs.readLocalLogs.query({
-          taskRunId,
-        });
-        if (localContent?.trim()) {
-          localResult = this.parseLogContent(localContent);
+        const { content, originalLineCount } =
+          await this.readLocalLogsPreferCollapsed(taskRunId);
+        if (content?.trim()) {
+          const parsed = this.parseLogContent(content);
+          // Collapsed content has fewer lines than the file, so keep the
+          // server's original line count for resume/gap tracking.
+          localResult =
+            originalLineCount === undefined
+              ? parsed
+              : { ...parsed, totalLineCount: originalLineCount };
           if (
             !options.minEntryCount ||
             localResult.totalLineCount >= options.minEntryCount

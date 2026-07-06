@@ -50,7 +50,7 @@ function tiptapJsonToEditorContent(json: JSONContent): EditorContent {
   return { segments };
 }
 
-function editorContentToTiptapJson(content: EditorContent): JSONContent {
+export function editorContentToTiptapJson(content: EditorContent): JSONContent {
   const paragraphs: JSONContent[] = [];
   let currentParagraphContent: JSONContent[] = [];
 
@@ -125,6 +125,9 @@ export function useDraftSync(
   const pendingContent = useDraftStore(
     (s) => s.pendingContent[sessionId] ?? null,
   );
+  const pendingInsert = useDraftStore(
+    (s) => s.pendingInsert[sessionId] ?? null,
+  );
   const hasHydrated = useDraftStore((s) => s._hasHydrated);
 
   // Reset restoration flag when sessionId changes (e.g., navigating between tasks)
@@ -172,6 +175,16 @@ export function useDraftSync(
     editor.commands.focus("end", { scrollIntoView: false });
     draftActions.clearPendingContent(sessionId);
   }, [editor, pendingContent, sessionId, draftActions]);
+
+  useLayoutEffect(() => {
+    if (!editor || !pendingInsert) return;
+
+    editor.commands.focus("end");
+    editor.commands.insertContent(
+      editorContentToTiptapJson(pendingInsert).content ?? [],
+    );
+    draftActions.clearPendingInsert(sessionId);
+  }, [editor, pendingInsert, sessionId, draftActions]);
 
   // Extract restored attachments from draft on first restore
   const [restoredAttachments, setRestoredAttachments] = useState<

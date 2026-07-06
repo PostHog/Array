@@ -6,16 +6,21 @@ import {
   GitFork,
   Lightning,
   Plus,
+  Terminal,
   X,
 } from "@phosphor-icons/react";
 import { isBrainrotCell } from "@posthog/core/command-center/grid";
 import { ANALYTICS_EVENTS, type WorkspaceMode } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import { destroyShellTerminal } from "@posthog/ui/features/terminal/destroyShellTerminal";
+import { ShellTerminal } from "@posthog/ui/features/terminal/ShellTerminal";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
+import { secureRandomString } from "@posthog/ui/utils/random";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useFolders } from "../../folders/useFolders";
 import { useCloudPrUrl } from "../../git-interaction/useCloudPrUrl";
 import { useDraftStore } from "../../message-editor/draftStore";
 import { EmbeddedSessionView } from "../../sessions/components/EmbeddedSessionView";
@@ -28,6 +33,7 @@ import type {
   CommandCenterCellData,
 } from "../hooks/useCommandCenterData";
 import { useElementOrientation } from "../hooks/useElementOrientation";
+import { getTerminalCellStateKey } from "../terminalCells";
 import { CommandCenterPRButton } from "./CommandCenterPRButton";
 import { TaskSelector } from "./TaskSelector";
 
@@ -109,6 +115,7 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
   );
   const assignTask = useCommandCenterStore((s) => s.assignTask);
   const setBrainrotCell = useCommandCenterStore((s) => s.setBrainrotCell);
+  const setTerminalCell = useCommandCenterStore((s) => s.setTerminalCell);
   const startCreating = useCommandCenterStore((s) => s.startCreating);
   const stopCreating = useCommandCenterStore((s) => s.stopCreating);
   const layout = useCommandCenterStore((s) => s.layout);
@@ -125,6 +132,10 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
     });
     setBrainrotCell(cellIndex);
   }, [layout, cells, setBrainrotCell, cellIndex]);
+
+  const handleNewTerminal = useCallback(() => {
+    setTerminalCell(cellIndex, secureRandomString(8));
+  }, [setTerminalCell, cellIndex]);
 
   const handleTaskCreated = useCallback(
     (task: Task) => {
@@ -184,6 +195,7 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
           open={selectorOpen}
           onOpenChange={setSelectorOpen}
           onNewTask={() => startCreating(cellIndex)}
+          onNewTerminal={handleNewTerminal}
           onBrainrot={brainrotMode ? handleBrainrot : undefined}
         >
           <button
@@ -209,7 +221,7 @@ const BRAINROT_PORTRAIT_URL =
   "https://res.cloudinary.com/dmukukwp6/video/upload/brainrot_portrait_0f14096e6a.mp4";
 
 function BrainrotCell({ cellIndex }: { cellIndex: number }) {
-  const removeTask = useCommandCenterStore((s) => s.removeTask);
+  const clearCell = useCommandCenterStore((s) => s.clearCell);
   const stageRef = useRef<HTMLDivElement>(null);
   const orientation = useElementOrientation(stageRef);
   const src =
@@ -231,7 +243,7 @@ function BrainrotCell({ cellIndex }: { cellIndex: number }) {
         </Text>
         <button
           type="button"
-          onClick={() => removeTask(cellIndex)}
+          onClick={() => clearCell(cellIndex)}
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
           title="Remove from grid"
         >
@@ -264,6 +276,59 @@ function BrainrotCell({ cellIndex }: { cellIndex: number }) {
   );
 }
 
+function TerminalCell({
+  cellIndex,
+  terminalId,
+}: {
+  cellIndex: number;
+  terminalId: string;
+}) {
+  const clearCell = useCommandCenterStore((s) => s.clearCell);
+  const { getRecentFolders, getFolderDisplayName } = useFolders();
+  const cwd = getRecentFolders(1)[0]?.path;
+  const folderName = cwd ? getFolderDisplayName(cwd) : null;
+  const stateKey = getTerminalCellStateKey(terminalId);
+
+  const handleRemove = useCallback(() => {
+    destroyShellTerminal(stateKey);
+    clearCell(cellIndex);
+  }, [stateKey, clearCell, cellIndex]);
+
+  return (
+    <Flex direction="column" height="100%">
+      <Flex
+        align="center"
+        gap="2"
+        px="2"
+        py="1"
+        className="shrink-0 border-gray-6 border-b"
+      >
+        <Terminal size={12} className="shrink-0 text-gray-10" />
+        <Text className="min-w-0 flex-1 truncate font-medium text-[12px]">
+          Terminal
+        </Text>
+        {folderName && (
+          <span className="inline-flex items-center gap-0.5 rounded bg-gray-3 px-1 py-0.5 text-[10px] text-gray-10">
+            <Folder size={10} />
+            {folderName}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={handleRemove}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+          title="Remove from grid"
+        >
+          <X size={12} />
+        </button>
+      </Flex>
+      <Flex direction="column" className="min-h-0 flex-1">
+        <ShellTerminal cwd={cwd} stateKey={stateKey} />
+      </Flex>
+    </Flex>
+  );
+}
+
 function PopulatedCell({
   cell,
   isActiveSession,
@@ -271,15 +336,15 @@ function PopulatedCell({
   cell: CommandCenterCellData & { task: Task };
   isActiveSession: boolean;
 }) {
-  const removeTask = useCommandCenterStore((s) => s.removeTask);
+  const clearCell = useCommandCenterStore((s) => s.clearCell);
 
   const handleExpand = useCallback(() => {
     void openTask(cell.task);
   }, [cell.task]);
 
   const handleRemove = useCallback(() => {
-    removeTask(cell.cellIndex);
-  }, [removeTask, cell.cellIndex]);
+    clearCell(cell.cellIndex);
+  }, [clearCell, cell.cellIndex]);
 
   return (
     <Flex direction="column" height="100%">
@@ -344,6 +409,12 @@ export function CommandCenterPanel({
 }: CommandCenterPanelProps) {
   if (cell.isBrainrot) {
     return <BrainrotCell cellIndex={cell.cellIndex} />;
+  }
+
+  if (cell.terminalId) {
+    return (
+      <TerminalCell cellIndex={cell.cellIndex} terminalId={cell.terminalId} />
+    );
   }
 
   if (!cell.taskId || !cell.task) {

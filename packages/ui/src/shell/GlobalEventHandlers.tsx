@@ -161,6 +161,10 @@ export function GlobalEventHandlers({
   useHotkeys(SHORTCUTS.SETTINGS, handleOpenSettings, globalOptions);
   useHotkeys(SHORTCUTS.GO_BACK, goBack, globalOptions);
   useHotkeys(SHORTCUTS.GO_FORWARD, goForward, globalOptions);
+  // mod+left/right means jump to line start/end inside inputs and editors, so
+  // the arrow variants skip enableOnFormTags/enableOnContentEditable.
+  useHotkeys(SHORTCUTS.GO_BACK_ALT, goBack, { preventDefault: true });
+  useHotkeys(SHORTCUTS.GO_FORWARD_ALT, goForward, { preventDefault: true });
   const handleToggleReview = useCallback(() => {
     if (!currentTaskId) return;
     const mode = getReviewMode(currentTaskId);

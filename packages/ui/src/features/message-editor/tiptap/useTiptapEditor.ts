@@ -1,5 +1,6 @@
 import {
   contentToXml,
+  type EditorContent,
   type FileAttachment,
   isContentEmpty,
   type MentionChip,
@@ -28,7 +29,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getGithubIssue, getGithubPullRequest } from "../hostApi";
 import { usePromptHistoryStore } from "../promptHistoryStore";
 import { getEditorExtensions } from "../tiptap/extensions";
-import { type DraftContext, useDraftSync } from "../tiptap/useDraftSync";
+import {
+  type DraftContext,
+  editorContentToTiptapJson,
+  useDraftSync,
+} from "../tiptap/useDraftSync";
 import { htmlToMarkdown } from "../utils/htmlToMarkdown";
 import {
   persistImageFile,
@@ -637,6 +642,18 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     },
     [editor, draft, attachments],
   );
+  const insertEditorContent = useCallback(
+    (content: EditorContent) => {
+      if (!editor) return;
+      editor.commands.focus("end");
+      // Paragraphs, not the doc wrapper, so it appends rather than replaces.
+      editor.commands.insertContent(
+        editorContentToTiptapJson(content).content ?? [],
+      );
+      draft.saveDraft(editor, attachments);
+    },
+    [editor, draft, attachments],
+  );
   const insertChip = useCallback(
     (chip: MentionChip) => {
       if (!editor) return;
@@ -707,6 +724,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     getText,
     getContent: draft.getContent,
     setContent,
+    insertEditorContent,
     insertChip,
     removeChipById,
     replaceChipAttrs,

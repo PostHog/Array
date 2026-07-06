@@ -52,6 +52,12 @@ export const startSessionInput = z.object({
   autoProgress: z.boolean().optional(),
   runMode: z.enum(["local", "cloud"]).optional(),
   adapter: z.enum(["claude", "codex"]).optional(),
+  /**
+   * Resolved value of the `codex-app-server` PostHog flag (evaluated host-side
+   * for the current user). When true and adapter is "codex", the agent uses the
+   * native app-server sub-adapter instead of codex-acp. Ignored for Claude.
+   */
+  useCodexAppServer: z.boolean().optional(),
   additionalDirectories: z.array(z.string()).optional(),
   customInstructions: z.string().max(2000).optional(),
   /**
@@ -136,6 +142,11 @@ export const sessionResponseSchema = z.object({
   sessionId: z.string(),
   channel: z.string(),
   configOptions: z.array(sessionConfigOptionSchema).optional(),
+  // The adapter's negotiated steering capability from initialize
+  // (`_meta.posthog.steering`): "native" folds a mid-turn message into the
+  // running turn; "interrupt-resend" (codex-acp) or absent means the host must
+  // cancel + resend instead. Drives the host's steer-vs-resend decision.
+  steering: z.string().optional(),
 });
 
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
@@ -194,6 +205,8 @@ export const reconnectSessionInput = z.object({
   logUrl: z.string().optional(),
   sessionId: z.string().optional(),
   adapter: z.enum(["claude", "codex"]).optional(),
+  /** See startSessionInput.useCodexAppServer — re-resolved on reconnect. */
+  useCodexAppServer: z.boolean().optional(),
   /** Additional directories Claude can access beyond cwd (for worktree support) */
   additionalDirectories: z.array(z.string()).optional(),
   permissionMode: z.string().optional(),

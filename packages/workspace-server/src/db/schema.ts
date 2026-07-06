@@ -62,6 +62,24 @@ export const taskMetadata = sqliteTable("task_metadata", {
   updatedAt: updatedAt(),
 });
 
+// Autoresearch runs, persisted so the optimization loop survives app
+// restarts. `data` is the core AutoresearchRun serialized as JSON — the
+// schema lives in @posthog/core; this table only indexes it. `endedAt` is
+// null while a run is still open (running / paused / interrupted), which is
+// what boot-time restore queries on.
+export const autoresearchRuns = sqliteTable(
+  "autoresearch_runs",
+  {
+    id: text().primaryKey(),
+    taskId: text().notNull(),
+    endedAt: text(),
+    data: text().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("autoresearch_runs_task_id_idx").on(t.taskId)],
+);
+
 export const worktrees = sqliteTable("worktrees", {
   id: id(),
   workspaceId: text()

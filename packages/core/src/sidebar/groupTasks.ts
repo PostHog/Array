@@ -50,9 +50,20 @@ export function getRepositoryInfo(
   return null;
 }
 
+export function folderGroupId(folder: {
+  path: string;
+  remoteUrl: string | null;
+}): string {
+  if (folder.remoteUrl) {
+    return normalizeRepoKey(folder.remoteUrl).toLowerCase();
+  }
+  return folder.path;
+}
+
 export function groupByRepository<T extends GroupableTask>(
   tasks: T[],
   folderOrder: string[],
+  allFolders: { path: string; remoteUrl: string | null; name: string }[] = [],
 ): TaskGroup<T>[] {
   const groupMap = new Map<string, TaskGroup<T>>();
 
@@ -68,6 +79,13 @@ export function groupByRepository<T extends GroupableTask>(
     }
 
     group.tasks.push(task);
+  }
+
+  for (const folder of allFolders) {
+    const groupId = folderGroupId(folder);
+    if (!groupMap.has(groupId)) {
+      groupMap.set(groupId, { id: groupId, name: folder.name, tasks: [] });
+    }
   }
 
   const groups = Array.from(groupMap.values());

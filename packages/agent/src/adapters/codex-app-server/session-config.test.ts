@@ -1,0 +1,166 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildConfigOptions,
+  CODEX_MODES,
+  collaborationModeFor,
+  DEFAULT_EFFORTS,
+  modeApprovalPolicy,
+  sandboxPolicyFor,
+} from "./session-config";
+
+describe("modeApprovalPolicy", () => {
+  it.each([
+    ["read-only", "untrusted"],
+    ["auto", "on-request"],
+    ["full-access", "never"],
+  ])("maps mode %s to approval policy %s", (mode, policy) => {
+    expect(modeApprovalPolicy(mode)).toBe(policy);
+  });
+
+  it("returns undefined for an unknown mode", () => {
+    expect(modeApprovalPolicy("nonsense")).toBeUndefined();
+    expect(modeApprovalPolicy(undefined)).toBeUndefined();
+  });
+
+  it("every CODEX_MODES entry has a resolvable policy", () => {
+    for (const mode of CODEX_MODES) {
+      expect(modeApprovalPolicy(mode.id)).toBe(mode.approvalPolicy);
+    }
+  });
+});
+
+describe("sandboxPolicyFor", () => {
+  it("restricts plan + read-only to a read-only sandbox", () => {
+    expect(sandboxPolicyFor("plan")).toEqual({
+      type: "readOnly",
+      networkAccess: true,
+    });
+    expect(sandboxPolicyFor("read-only")).toEqual({
+      type: "readOnly",
+      networkAccess: true,
+    });
+  });
+
+  it("leaves auto + full-access at the spawned full-access sandbox (no override)", () => {
+    expect(sandboxPolicyFor("auto")).toBeUndefined();
+    expect(sandboxPolicyFor("full-access")).toBeUndefined();
+  });
+
+  it("returns undefined for unknown ids", () => {
+    expect(sandboxPolicyFor("bypassPermissions")).toBeUndefined();
+    expect(sandboxPolicyFor(undefined)).toBeUndefined();
+  });
+});
+
+describe("collaborationModeFor", () => {
+  it("maps only Plan to codex's plan collaboration; everything else is default", () => {
+    expect(collaborationModeFor("plan")).toBe("plan");
+    expect(collaborationModeFor("read-only")).toBe("default");
+    expect(collaborationModeFor("auto")).toBe("default");
+    expect(collaborationModeFor("full-access")).toBe("default");
+    expect(collaborationModeFor(undefined)).toBe("default");
+  });
+});
+
+describe("buildConfigOptions", () => {
+  const byCategory = (
+    opts: ReturnType<typeof buildConfigOptions>,
+    category: string,
+  ) =>
+    opts.find((o) => (o as { category: string }).category === category) as {
+      currentValue: string;
+      options: Array<{ value: string; name: string }>;
+    };
+
+  it("emits mode + model + thought_level selectors from the live lists", () => {
+    const opts = buildConfigOptions({
+      mode: "auto",
+      model: "gpt-5.5",
+      effort: "high",
+      models: [
+        { id: "gpt-5.5", name: "GPT-5.5" },
+        { id: "gpt-5-mini", name: "GPT-5 mini" },
+      ],
+      efforts: ["low", "high"],
+    });
+    expect(opts.map((o) => (o as { category: string }).category)).toEqual([
+      "mode",
+      "model",
+      "thought_level",
+    ]);
+    const model = byCategory(opts, "model");
+    expect(model.currentValue).toBe("gpt-5.5");
+    expect(model.options.map((o) => o.value)).toEqual([
+      "gpt-5.5",
+      "gpt-5-mini",
+    ]);
+  });
+
+  it("surfaces the flattened codex presets (incl. Plan) with the current mode selected", () => {
+    const mode = byCategory(
+      buildConfigOptions({
+        mode: "plan",
+        model: "gpt-5.5",
+        models: [],
+        efforts: [],
+      }),
+      "mode",
+    );
+    expect(mode.currentValue).toBe("plan");
+    expect(mode.options.map((o) => o.value)).toEqual([
+      "plan",
+      "read-only",
+      "auto",
+      "full-access",
+    ]);
+  });
+
+  it("keeps the active model/effort selectable even if the lists omit them", () => {
+    const opts = buildConfigOptions({
+      mode: "auto",
+      model: "gpt-5.5",
+      effort: "max",
+      models: [{ id: "gpt-5-mini", name: "GPT-5 mini" }],
+      efforts: ["low", "high"],
+    });
+    const model = byCategory(opts, "model");
+    const effort = byCategory(opts, "thought_level");
+    expect(model.currentValue).toBe("gpt-5.5");
+    expect(model.options.map((o) => o.value)).toContain("gpt-5.5");
+    expect(effort.currentValue).toBe("max");
+    expect(effort.options.map((o) => o.value)).toContain("max");
+  });
+
+  it("humanizes reasoning-effort labels (Title case) while keeping raw values", () => {
+    const effort = byCategory(
+      buildConfigOptions({
+        mode: "auto",
+        model: "gpt-5.5",
+        effort: "high",
+        models: [],
+        efforts: ["low", "medium", "high"],
+      }),
+      "thought_level",
+    );
+    expect(effort.options).toEqual([
+      { name: "Low", value: "low" },
+      { name: "Medium", value: "medium" },
+      { name: "High", value: "high" },
+    ]);
+  });
+
+  it("falls back to the single current model and DEFAULT_EFFORTS when lists are empty", () => {
+    const opts = buildConfigOptions({
+      mode: "auto",
+      model: "gpt-5.5",
+      models: [],
+      efforts: [],
+    });
+    expect(byCategory(opts, "model").options).toEqual([
+      { name: "gpt-5.5", value: "gpt-5.5" },
+    ]);
+    expect(
+      byCategory(opts, "thought_level").options.map((o) => o.value),
+    ).toEqual(DEFAULT_EFFORTS);
+  });
+});

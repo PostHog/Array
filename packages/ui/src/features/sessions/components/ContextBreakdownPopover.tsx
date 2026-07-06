@@ -15,6 +15,9 @@ export function ContextBreakdownPopover({
 }: ContextBreakdownPopoverProps) {
   const { used, size, percentage, breakdown } = usage;
   const fillColor = getOverallUsageColor(percentage);
+  // The context window can be unknown (size 0) — show just the token count
+  // rather than a misleading "~X / 0 tokens · 0% full".
+  const hasSize = size > 0;
 
   return (
     <Flex direction="column" gap="3" className="min-w-[280px]">
@@ -23,13 +26,17 @@ export function ContextBreakdownPopover({
           Context
         </Text>
         <Text className="text-(--gray-10) text-[12px] tabular-nums">
-          ~{formatTokensCompact(used)} / {formatTokensCompact(size)} tokens
+          {hasSize
+            ? `~${formatTokensCompact(used)} / ${formatTokensCompact(size)} tokens`
+            : `~${formatTokensCompact(used)} tokens`}
         </Text>
       </Flex>
 
-      <Text className="font-semibold text-(--gray-12) text-[15px]">
-        {percentage}% full
-      </Text>
+      {hasSize && (
+        <Text className="font-semibold text-(--gray-12) text-[15px]">
+          {percentage}% full
+        </Text>
+      )}
 
       {breakdown ? (
         <SegmentedBar breakdown={breakdown} size={size} fallback={fillColor} />

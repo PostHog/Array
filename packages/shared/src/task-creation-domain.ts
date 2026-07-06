@@ -46,6 +46,8 @@ export interface TaskCreationInput {
   channelContext?: string;
   /** Display name of that channel, embedded in the context block for the UI. */
   channelName?: string;
+  /** Backend channel UUID the created task is owned by (its feed home). */
+  channelId?: string;
   /**
    * The user's saved personalization (Settings → Personalization custom
    * instructions). Cloud-only: local tasks already receive these through the

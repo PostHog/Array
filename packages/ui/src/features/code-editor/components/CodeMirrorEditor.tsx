@@ -1,12 +1,49 @@
 import { openSearchPanel } from "@codemirror/search";
-import { EditorView } from "@codemirror/view";
+import { RangeSetBuilder, StateField } from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import type { SerializedEnrichment } from "@posthog/shared";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { setEnrichmentEffect } from "../extensions/postHogEnrichment";
 import { useCodeMirror } from "../hooks/useCodeMirror";
 import { useEditorExtensions } from "../hooks/useEditorExtensions";
 import { usePendingScrollStore } from "../pendingScrollStore";
+
+const selectedLineDecoration = Decoration.line({ class: "cm-selected-lines" });
+const selectedLinesField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(_value, tr) {
+    const sel = tr.state.selection.main;
+    if (sel.empty) return Decoration.none;
+    const builder = new RangeSetBuilder<Decoration>();
+    const from = tr.state.doc.lineAt(sel.from).number;
+    const to = tr.state.doc.lineAt(sel.to).number;
+    for (let n = from; n <= to; n++) {
+      const pos = tr.state.doc.line(n).from;
+      builder.add(pos, pos, selectedLineDecoration);
+    }
+    return builder.finish();
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+const selectedLinesTheme = EditorView.theme({
+  ".cm-selected-lines": {
+    backgroundColor: "var(--accent-a3)",
+    boxShadow: "inset 2px 0 0 0 var(--accent-8)",
+  },
+  "& .cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+    background: "transparent !important",
+  },
+});
+
+export interface EditorSelection {
+  text: string;
+  /** 1-based line numbers. */
+  fromLine: number;
+  toLine: number;
+  /** Viewport pixel anchor below the selection, or null when off-screen. */
+  anchor: { top: number; left: number } | null;
+}
 
 interface CodeMirrorEditorProps {
   content: string;
@@ -14,6 +51,10 @@ interface CodeMirrorEditorProps {
   relativePath?: string;
   readOnly?: boolean;
   enrichment?: SerializedEnrichment | null;
+  /** Fires on every selection (or doc) change with the current selection. */
+  onSelectionChange?: (selection: EditorSelection) => void;
+  /** Highlight the active selection as full lines (code-review style). */
+  highlightSelectedLines?: boolean;
 }
 
 export function CodeMirrorEditor({
@@ -22,9 +63,66 @@ export function CodeMirrorEditor({
   relativePath,
   readOnly = false,
   enrichment,
+  onSelectionChange,
+  highlightSelectedLines = false,
 }: CodeMirrorEditorProps) {
   const enrichmentEnabled = enrichment !== undefined;
-  const extensions = useEditorExtensions(filePath, readOnly, enrichmentEnabled);
+  const baseExtensions = useEditorExtensions(
+    filePath,
+    readOnly,
+    enrichmentEnabled,
+  );
+
+  // Ref-stable listener: a changing extension would tear down the editor.
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  onSelectionChangeRef.current = onSelectionChange;
+  const selectionExtension = useMemo(
+    () =>
+      EditorView.updateListener.of((update) => {
+        const cb = onSelectionChangeRef.current;
+        if (!cb) return;
+        const changed = update.selectionSet || update.docChanged;
+        // Also refire on scroll/resize so the anchor tracks the selection.
+        const moved = update.viewportChanged || update.geometryChanged;
+        if (!changed && !moved) return;
+        const sel = update.state.selection.main;
+        const doc = update.state.doc;
+        if (sel.empty) {
+          // No coords for an empty caret — just notify so consumers can hide.
+          if (changed) {
+            cb({
+              text: "",
+              fromLine: doc.lineAt(sel.from).number,
+              toLine: doc.lineAt(sel.to).number,
+              anchor: null,
+            });
+          }
+          return;
+        }
+        const endRect = update.view.coordsAtPos(sel.to);
+        const startRect = update.view.coordsAtPos(doc.lineAt(sel.to).from);
+        cb({
+          text: doc.sliceString(sel.from, sel.to),
+          fromLine: doc.lineAt(sel.from).number,
+          toLine: doc.lineAt(sel.to).number,
+          anchor: endRect
+            ? { top: endRect.bottom, left: (startRect ?? endRect).left }
+            : null,
+        });
+      }),
+    [],
+  );
+  const extensions = useMemo(
+    () => [
+      ...baseExtensions,
+      selectionExtension,
+      ...(highlightSelectedLines
+        ? [selectedLinesField, selectedLinesTheme]
+        : []),
+    ],
+    [baseExtensions, selectionExtension, highlightSelectedLines],
+  );
+
   const options = useMemo(
     () => ({ doc: content, extensions, filePath }),
     [content, extensions, filePath],

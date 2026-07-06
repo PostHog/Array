@@ -1,3 +1,4 @@
+import { CODEX_MODE_PRESETS } from "@posthog/shared";
 import { ALLOW_BYPASS } from "./utils/common";
 
 export interface ModeInfo {
@@ -73,29 +74,10 @@ export function isCodexNativeMode(mode: string): mode is CodexNativeMode {
   return (CODEX_NATIVE_MODES as readonly string[]).includes(mode);
 }
 
-const codexModes: ModeInfo[] = [
-  {
-    id: "read-only",
-    name: "Read Only",
-    description: "Read-only access, no file modifications",
-  },
-  {
-    id: "auto",
-    name: "Auto",
-    description: "Standard behavior, prompts for dangerous operations",
-  },
-];
-
-if (ALLOW_BYPASS) {
-  codexModes.push({
-    id: "full-access",
-    name: "Full Access",
-    description: "Auto-accept all permission requests",
-  });
-}
-
+// The preset literals live in @posthog/shared (one copy for every picker and
+// the app-server adapter's CODEX_MODES); this module only owns the gating.
 export function getAvailableCodexModes(): ModeInfo[] {
   return ALLOW_BYPASS
-    ? codexModes
-    : codexModes.filter((m) => m.id !== "full-access");
+    ? [...CODEX_MODE_PRESETS]
+    : CODEX_MODE_PRESETS.filter((m) => m.id !== "full-access");
 }

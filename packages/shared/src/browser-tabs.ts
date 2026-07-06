@@ -82,7 +82,7 @@ export type TabTarget = {
  * Everything that identifies a tab's contents: a canvas, a task, or a channel
  * sub-section (channel + section). Two tabs with the same identity are the same
  * page, so dedup and in-tab-nav comparisons key on all four — a channel's
- * `inbox` and `artifacts`, or two channels' inboxes, are distinct pages.
+ * `history` and `artifacts`, or two channels' artifacts, are distinct pages.
  */
 export type TabIdentity = {
   dashboardId: string | null;

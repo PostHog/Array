@@ -18,6 +18,7 @@ function createDeps(preventSleepInitially = true) {
   const powerManager: IPowerManager = {
     onResume: vi.fn(() => () => {}),
     preventSleep: vi.fn(() => release),
+    hasBuiltInBattery: vi.fn(async () => false),
   };
 
   let stored = preventSleepInitially;

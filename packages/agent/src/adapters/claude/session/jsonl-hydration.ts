@@ -6,6 +6,7 @@ import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { DEFAULT_GATEWAY_MODEL } from "../../../gateway-models";
 import type { PostHogAPIClient } from "../../../posthog-api";
 import type { StoredEntry } from "../../../types";
+import { isEmptyContentBlock } from "../../../utils/acp-content";
 import { supports1MContext } from "./models";
 
 interface ConversationTurn {
@@ -156,7 +157,11 @@ export function rebuildConversation(
         case "agent_message_chunk":
         case "agent_thought_chunk": {
           const content = update.content;
-          if (content && !Array.isArray(content)) {
+          if (
+            content &&
+            !Array.isArray(content) &&
+            !isEmptyContentBlock(content)
+          ) {
             if (
               content.type === "text" &&
               currentAssistantContent.length > 0 &&
@@ -477,7 +482,10 @@ export function conversationTurnsToJsonlEntries(
 
       for (const block of turn.content) {
         const blockType = (block as { type: string }).type;
-        if (blockType === "thinking" || blockType === "text") {
+        if (
+          (blockType === "thinking" || blockType === "text") &&
+          !isEmptyContentBlock(block)
+        ) {
           allBlocks.push(block);
         }
       }
@@ -586,6 +594,63 @@ interface HydrationLog {
   warn: (msg: string, data?: unknown) => void;
 }
 
+// Heals JSONL files written before the empty-block filters existed; without
+// this an already-poisoned transcript keeps 400ing on every resume.
+export async function sanitizeSessionJsonl(
+  jsonlPath: string,
+): Promise<boolean> {
+  let raw: string;
+  let statBefore: { mtimeMs: number; size: number };
+  try {
+    statBefore = await fs.stat(jsonlPath);
+    raw = await fs.readFile(jsonlPath, "utf8");
+  } catch {
+    return false;
+  }
+
+  let changed = false;
+  const sanitized = raw.split("\n").map((line) => {
+    if (!line.trim()) return line;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      return line;
+    }
+    const message = parsed.message as { content?: unknown } | undefined;
+    if (!message || !Array.isArray(message.content)) return line;
+    const kept = message.content.filter((block) => !isEmptyContentBlock(block));
+    if (kept.length === message.content.length) return line;
+    changed = true;
+    message.content = kept.length > 0 ? kept : [{ type: "text", text: " " }];
+    return JSON.stringify(parsed);
+  });
+
+  if (!changed) return false;
+
+  const tmpPath = `${jsonlPath}.tmp.${Date.now()}`;
+  let renamed = false;
+  try {
+    await fs.writeFile(tmpPath, sanitized.join("\n"));
+    // A concurrent writer may still own the file; abort rather than clobber
+    // lines appended since the read. The next resume retries.
+    const statNow = await fs.stat(jsonlPath);
+    if (
+      statNow.mtimeMs !== statBefore.mtimeMs ||
+      statNow.size !== statBefore.size
+    ) {
+      return false;
+    }
+    await fs.rename(tmpPath, jsonlPath);
+    renamed = true;
+    return true;
+  } finally {
+    if (!renamed) {
+      await fs.unlink(tmpPath).catch(() => {});
+    }
+  }
+}
+
 export async function hydrateSessionJsonl(params: {
   sessionId: string;
   cwd: string;
@@ -603,6 +668,19 @@ export async function hydrateSessionJsonl(params: {
     const jsonlPath = getSessionJsonlPath(params.sessionId, params.cwd);
     try {
       await fs.access(jsonlPath);
+      try {
+        if (await sanitizeSessionJsonl(jsonlPath)) {
+          log.info("Removed empty content blocks from existing session JSONL", {
+            jsonlPath,
+          });
+        }
+      } catch (err) {
+        // A sanitize failure must not block resuming from the existing file.
+        log.warn("Failed to sanitize existing session JSONL", {
+          jsonlPath,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       return true;
     } catch {
       // File doesn't exist, proceed with hydration

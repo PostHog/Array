@@ -244,6 +244,10 @@ vi.mock("@posthog/ui/features/sidebar/taskMetaApi", () => ({
 vi.mock("@posthog/ui/shell/posthogAnalyticsImpl", () => ({
   track: vi.fn(),
   buildPermissionToolMetadata: vi.fn(() => ({})),
+  posthogFeatureFlags: {
+    isEnabled: vi.fn(() => undefined),
+    onFlagsLoaded: vi.fn(),
+  },
 }));
 vi.mock("../../shell/logger", () => ({
   logger: {
@@ -899,6 +903,7 @@ describe("SessionService", () => {
               id: "mode",
               currentValue: "full-access",
               options: [
+                expect.objectContaining({ value: "plan" }),
                 expect.objectContaining({ value: "read-only" }),
                 expect.objectContaining({ value: "auto" }),
                 expect.objectContaining({ value: "full-access" }),

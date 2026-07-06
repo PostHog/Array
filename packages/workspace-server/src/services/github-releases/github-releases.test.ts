@@ -69,11 +69,102 @@ describe("GitHubReleasesService", () => {
     });
   });
 
-  it("caches results within the TTL", async () => {
+  it.each([
+    { expectVersion: undefined, expectedFetches: 1 },
+    { expectVersion: "1.2.0", expectedFetches: 1 },
+    { expectVersion: "1.3.0", expectedFetches: 2 },
+  ])(
+    "a fresh cache is a hit for expectVersion $expectVersion only when it contains it ($expectedFetches fetches)",
+    async ({ expectVersion, expectedFetches }) => {
+      const service = new GitHubReleasesService();
+      await service.listReleases();
+      await service.listReleases(expectVersion);
+      expect(fetchMock).toHaveBeenCalledTimes(expectedFetches);
+    },
+  );
+
+  it("caches the refetched list once it contains the expected version", async () => {
     const service = new GitHubReleasesService();
     await service.listReleases();
-    await service.listReleases();
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [
+        {
+          tag_name: "v1.3.0",
+          name: "v1.3.0",
+          body: "new",
+          draft: false,
+          prerelease: false,
+          published_at: "2026-06-30T00:00:00Z",
+          html_url: "https://github.com/PostHog/code/releases/tag/v1.3.0",
+        },
+        ...sampleReleases,
+      ],
+    });
+    const second = await service.listReleases("1.3.0");
+    expect(second.releases[0].version).toBe("1.3.0");
+
+    const third = await service.listReleases("1.3.0");
+    expect(third).toEqual(second);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("dedupes concurrent cache misses into a single fetch", async () => {
+    const service = new GitHubReleasesService();
+    const [first, second] = await Promise.all([
+      service.listReleases(),
+      service.listReleases("1.3.0"),
+    ]);
+
+    expect(first).toEqual(second);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("concurrent callers both reject when the shared fetch fails, and inFlight is cleared so subsequent calls retry", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("network error"));
+    const service = new GitHubReleasesService();
+
+    const [result1, result2] = await Promise.allSettled([
+      service.listReleases(),
+      service.listReleases("1.2.0"),
+    ]);
+
+    expect(result1.status).toBe("rejected");
+    expect(result2.status).toBe("rejected");
+    // inFlight must be cleared so the next call retries rather than hanging
+    await service.listReleases();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits out a cooldown before refetching a still-missing version", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(0);
+    const service = new GitHubReleasesService();
+    await service.listReleases("9.9.9");
+    await service.listReleases("9.9.9");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    nowSpy.mockReturnValue(61_000);
+    await service.listReleases("9.9.9");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    nowSpy.mockRestore();
+  });
+
+  it("serves stale cache when a version-miss refetch fails, without retrying within the cooldown", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(0);
+    const service = new GitHubReleasesService();
+    const first = await service.listReleases();
+
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
+    const second = await service.listReleases("1.3.0");
+    expect(second).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const third = await service.listReleases("1.3.0");
+    expect(third).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    nowSpy.mockRestore();
   });
 
   it("throws on non-ok responses", async () => {

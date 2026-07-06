@@ -5,7 +5,10 @@ import {
   getCellCount,
   getCellSessionId,
   getGridDimensions,
+  getTerminalCellId,
   isBrainrotCell,
+  isTerminalCell,
+  makeTerminalCellValue,
   resizeCells,
 } from "./grid";
 
@@ -60,6 +63,23 @@ describe("isBrainrotCell", () => {
     { value: null, expected: false },
   ])("$value -> $expected", ({ value, expected }) => {
     expect(isBrainrotCell(value)).toBe(expected);
+  });
+});
+
+describe("terminal cells", () => {
+  it("round-trips a terminal id through the cell value", () => {
+    const value = makeTerminalCellValue("abc123");
+    expect(isTerminalCell(value)).toBe(true);
+    expect(getTerminalCellId(value)).toBe("abc123");
+  });
+
+  it.each([
+    { value: "some-task-uuid", expected: false },
+    { value: BRAINROT_CELL, expected: false },
+    { value: null, expected: false },
+  ])("isTerminalCell($value) -> $expected", ({ value, expected }) => {
+    expect(isTerminalCell(value)).toBe(expected);
+    expect(getTerminalCellId(value)).toBeNull();
   });
 });
 

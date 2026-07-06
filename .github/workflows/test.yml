@@ -15,6 +15,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       workflow: ${{ steps.filter.outputs.workflow }}
+      packages: ${{ steps.filter.outputs.packages }}
     steps:
       - name: Detect relevant changes
         id: filter
@@ -36,6 +37,8 @@ jobs:
               - "!.env.example"
             workflow:
               - ".github/workflows/test.yml"
+            packages:
+              - "packages/**"
 
   unit-test:
     needs: changes
@@ -172,3 +175,72 @@ jobs:
           name: playwright-report
           path: apps/code/playwright-report/
           retention-days: 7
+
+  e2e:
+    # Live-model e2e for the @posthog/agent adapters (claude + codex). Runs only
+    # after the unit + integration jobs pass — a red tree never reaches the
+    # gateway — and only when a packages/ file changed. Each arm still self-skips
+    # unless the POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY secret is present (fork PRs never
+    # see it) and POSTHOG_CODE_E2E_GATEWAY_URL points at a runner-reachable gateway.
+    # Drives cheap models (claude-haiku-4-5 / gpt-5-mini), so a run is a handful of
+    # short turns.
+    needs: [changes, unit-test, integration-test]
+    # Always run on any packages/ change (or a change to this workflow), once
+    # unit-test + integration-test have passed. There is intentionally NO gate on
+    # the gateway config being present: if the POSTHOG_CODE_E2E_* secret/vars are
+    # missing, the fail-loud guard (packages/agent/e2e/guard.e2e.test.ts) REDS the
+    # run rather than skipping to green. Only fork PRs are skipped, since they never
+    # receive the gateway secret and would red spuriously.
+    if: ${{ (needs.changes.outputs.packages == 'true' || needs.changes.outputs.workflow == 'true') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build agent dependencies
+        run: |
+          pnpm --filter @posthog/shared run build
+          pnpm --filter @posthog/git run build
+          pnpm --filter @posthog/enricher run build
+
+      - name: Download native codex binary
+        # Non-fatal at the STEP so a failure surfaces as the fail-loud binary guard
+        # (guard.e2e.test.ts) with a clear message rather than an opaque download
+        # error. A missing binary then REDS the run (the guard fails when a token is
+        # set) instead of letting the codex arm silently skip to green.
+        run: node apps/code/scripts/download-binaries.mjs || echo "codex binary download failed; the binary guard test will red the run"
+
+      - name: Run live e2e (both adapters)
+        run: pnpm --filter agent run test:e2e
+        # The suite reads these POSTHOG_CODE_E2E_* names directly
+        # (packages/agent/e2e/config.ts). The personal API key is an org secret; the
+        # URL and model/environment overrides are org vars.
+        env:
+          POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY: ${{ secrets.POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY }}
+          # Accept the URL from either an org var or an org secret — it has ended
+          # up in both places, and vars.* can't see secrets.
+          POSTHOG_CODE_E2E_GATEWAY_URL: ${{ vars.POSTHOG_CODE_E2E_GATEWAY_URL || secrets.POSTHOG_CODE_E2E_GATEWAY_URL }}
+          POSTHOG_CODE_E2E_CLAUDE_MODEL: ${{ vars.POSTHOG_CODE_E2E_CLAUDE_MODEL }}
+          POSTHOG_CODE_E2E_CODEX_MODEL: ${{ vars.POSTHOG_CODE_E2E_CODEX_MODEL }}
+          # Optional: set vars.POSTHOG_CODE_E2E_ENVIRONMENT=cloud to exercise the
+          # cloud code path (sandbox/permission-profile gating). Unset = local. The
+          # OS-sandbox enforcement test is macOS-gated, so it doesn't red this linux
+          # runner.
+          POSTHOG_CODE_E2E_ENVIRONMENT: ${{ vars.POSTHOG_CODE_E2E_ENVIRONMENT }}

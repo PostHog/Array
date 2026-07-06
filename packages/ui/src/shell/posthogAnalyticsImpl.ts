@@ -72,6 +72,13 @@ export function initializePostHog(sessionId?: string) {
     // and rely on explicit instrumentation instead.
     capture_pageview: false,
     disable_session_recording: false,
+    // Never let the project's remote canvasRecording config apply here: our
+    // canvases are xterm terminals (secrets show up as pixels, bypassing text
+    // masking) and decorative WebGL (hedgehog, confetti). Capturing them costs
+    // an image encode per canvas at canvasFps for the whole app lifetime.
+    session_recording: {
+      captureCanvas: { recordCanvas: false },
+    },
     session_idle_timeout_seconds: SESSION_IDLE_TIMEOUT_SECONDS,
     ...(sessionId ? { bootstrap: { sessionID: sessionId } } : {}),
     capture_exceptions: import.meta.env.DEV

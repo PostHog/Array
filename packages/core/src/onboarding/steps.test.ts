@@ -3,8 +3,10 @@ import {
   computeActiveSteps,
   isFirstStep,
   isLastStep,
+  nearestActiveStep,
   nextStep,
   ONBOARDING_STEPS,
+  type OnboardingStep,
   previousStep,
   stepDirection,
 } from "./steps";
@@ -22,6 +24,39 @@ describe("computeActiveSteps", () => {
 
   it("drops import-config when there is no importable config", () => {
     expect(computeActiveSteps(false, false)).not.toContain("import-config");
+  });
+});
+
+describe("nearestActiveStep", () => {
+  const withoutConditionals = computeActiveSteps(true, false);
+
+  it("returns the step itself while it is still active", () => {
+    expect(nearestActiveStep(ONBOARDING_STEPS, "import-config")).toBe(
+      "import-config",
+    );
+  });
+
+  it.each<{ removed: OnboardingStep; expected: OnboardingStep }>([
+    // import-config vanished under the user: continue forward to select-repo,
+    // not back to welcome (the regression that reset onboarding mid-flow).
+    { removed: "import-config", expected: "select-repo" },
+    { removed: "invite-code", expected: "connect-github" },
+  ])(
+    "moves forward to $expected when $removed drops out",
+    ({ removed, expected }) => {
+      expect(nearestActiveStep(withoutConditionals, removed)).toBe(expected);
+    },
+  );
+
+  it("falls back to the closest earlier step when nothing follows", () => {
+    const onlyEarlySteps: OnboardingStep[] = ["welcome", "project-select"];
+    expect(nearestActiveStep(onlyEarlySteps, "import-config")).toBe(
+      "project-select",
+    );
+  });
+
+  it("returns the step itself when no steps are active", () => {
+    expect(nearestActiveStep([], "import-config")).toBe("import-config");
   });
 });
 

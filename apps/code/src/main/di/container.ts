@@ -727,6 +727,8 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
     },
     readLocalLogs: (taskRunId: string) =>
       ws.localLogs.read.query({ taskRunId }),
+    readLocalLogsCollapsed: (taskRunId: string) =>
+      ws.localLogs.readCollapsed.query({ taskRunId }),
     readLocalLogsTail: (taskRunId: string, maxBytes: number) =>
       ws.localLogs.readTail.query({ taskRunId, maxBytes }),
     writeLocalLogs: (taskRunId: string, content: string) =>

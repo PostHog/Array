@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { makeAttachmentUri } from "./promptContent";
 import {
+  collapseSupersededToolCallUpdates,
   convertStoredEntriesToEvents,
   extractUserPromptsFromEvents,
   hasSessionPromptEvent,
@@ -286,5 +287,138 @@ describe("promptReferencesAbsoluteFolder", () => {
 
   it("returns false when no folder tag is present", () => {
     expect(promptReferencesAbsoluteFolder("just text")).toBe(false);
+  });
+});
+
+describe("collapseSupersededToolCallUpdates", () => {
+  const toolUpdateFields = (
+    toolCallId: string,
+    fields: Record<string, unknown>,
+  ): AcpMessage =>
+    ({
+      type: "acp_message",
+      ts: 1,
+      message: {
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            ...fields,
+          },
+        },
+      },
+    }) as unknown as AcpMessage;
+
+  const toolUpdate = (toolCallId: string, text: string): AcpMessage =>
+    toolUpdateFields(toolCallId, { content: text });
+
+  const other = (text: string): AcpMessage =>
+    ({
+      type: "acp_message",
+      ts: 1,
+      message: {
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text },
+          },
+        },
+      },
+    }) as unknown as AcpMessage;
+
+  // biome-ignore lint/suspicious/noExplicitAny: test introspection
+  const sessionUpdate = (e: AcpMessage) => (e.message as any).params.update;
+
+  it("collapses to one update per toolCallId, at the last update's position", () => {
+    const events = [
+      toolUpdate("a", "a1"),
+      toolUpdate("a", "a2"),
+      other("hi"),
+      toolUpdate("a", "a3"),
+    ];
+    const collapsed = collapseSupersededToolCallUpdates(events);
+    expect(collapsed).toHaveLength(2);
+    expect(sessionUpdate(collapsed[0]).sessionUpdate).toBe(
+      "agent_message_chunk",
+    );
+    expect(sessionUpdate(collapsed[1]).content).toBe("a3");
+  });
+
+  it("collapses each distinct toolCallId independently", () => {
+    const events = [
+      toolUpdate("a", "a1"),
+      toolUpdate("b", "b1"),
+      toolUpdate("a", "a2"),
+      toolUpdate("b", "b2"),
+    ];
+    const collapsed = collapseSupersededToolCallUpdates(events);
+    expect(collapsed.map((e) => sessionUpdate(e).content)).toEqual([
+      "a2",
+      "b2",
+    ]);
+  });
+
+  it("leaves transcripts without tool updates untouched", () => {
+    const events = [other("one"), other("two")];
+    expect(collapseSupersededToolCallUpdates(events)).toBe(events);
+  });
+
+  it("merges fields across updates so nothing a replay would keep is lost", () => {
+    // Mirrors the real emission shape: streamed rawInput snapshots, then an
+    // input-complete update with title/content, then a terminal update that
+    // carries only status/rawOutput.
+    const events = [
+      toolUpdateFields("a", { rawInput: { command: "ls" } }),
+      toolUpdateFields("a", {
+        rawInput: { command: "ls -la" },
+        title: "List files",
+        content: "input-derived",
+      }),
+      toolUpdateFields("a", { status: "completed", rawOutput: "done" }),
+    ];
+    const collapsed = collapseSupersededToolCallUpdates(events);
+    expect(collapsed).toHaveLength(1);
+    expect(sessionUpdate(collapsed[0])).toEqual({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "a",
+      rawInput: { command: "ls -la" },
+      title: "List files",
+      content: "input-derived",
+      status: "completed",
+      rawOutput: "done",
+    });
+  });
+
+  it("later fields win when re-sent (matching the reducer's Object.assign)", () => {
+    const events = [
+      toolUpdateFields("a", { content: "stale", status: "in_progress" }),
+      toolUpdateFields("a", { content: "fresh", status: "completed" }),
+    ];
+    const collapsed = collapseSupersededToolCallUpdates(events);
+    expect(collapsed).toHaveLength(1);
+    expect(sessionUpdate(collapsed[0]).content).toBe("fresh");
+    expect(sessionUpdate(collapsed[0]).status).toBe("completed");
+  });
+
+  it("keeps a single-update call by reference, no synthetic clone", () => {
+    const only = toolUpdate("a", "a1");
+    const events = [other("hi"), only];
+    const collapsed = collapseSupersededToolCallUpdates(events);
+    expect(collapsed).toHaveLength(2);
+    expect(collapsed[1]).toBe(only);
+  });
+
+  it("does not mutate the original (frozen) events when merging", () => {
+    const first = toolUpdateFields("a", { rawInput: { command: "ls" } });
+    const last = toolUpdateFields("a", { status: "completed" });
+    Object.freeze(first);
+    Object.freeze(last);
+    const collapsed = collapseSupersededToolCallUpdates([first, last]);
+    expect(sessionUpdate(first)).not.toHaveProperty("status");
+    expect(sessionUpdate(last)).not.toHaveProperty("rawInput");
+    expect(sessionUpdate(collapsed[0])).toHaveProperty("rawInput");
+    expect(sessionUpdate(collapsed[0]).status).toBe("completed");
   });
 });

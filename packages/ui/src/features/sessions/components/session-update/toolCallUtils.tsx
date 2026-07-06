@@ -15,6 +15,7 @@ import {
   Trash,
   Wrench,
 } from "@phosphor-icons/react";
+import { cn } from "@posthog/quill";
 import { DotsCircleSpinner } from "@posthog/ui/primitives/DotsCircleSpinner";
 import { Box, Text } from "@radix-ui/themes";
 import type { CodeToolKind, ToolCall, ToolCallContent } from "../../types";
@@ -66,11 +67,7 @@ export function ToolTitle({
   const base = chatChrome
     ? "text-sm text-muted-foreground truncate shrink-0 max-w-[calc(100%-1.5rem)]"
     : "text-[13px] text-gray-11";
-  return (
-    <Text className={`${base}${className ? ` ${className}` : ""}`}>
-      {children}
-    </Text>
-  );
+  return <Text className={cn(base, className)}>{children}</Text>;
 }
 
 export function StatusIndicators({
@@ -82,9 +79,15 @@ export function StatusIndicators({
 }) {
   return (
     <>
-      {isFailed && <Text className="text-[13px] text-gray-10">(Failed)</Text>}
+      {isFailed && (
+        <Text className="shrink-0 whitespace-nowrap text-[13px] text-gray-10">
+          (Failed)
+        </Text>
+      )}
       {wasCancelled && (
-        <Text className="text-[13px] text-gray-10">(Cancelled)</Text>
+        <Text className="shrink-0 whitespace-nowrap text-[13px] text-gray-10">
+          (Cancelled)
+        </Text>
       )}
     </>
   );

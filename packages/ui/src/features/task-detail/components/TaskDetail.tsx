@@ -11,7 +11,7 @@ import {
   LazyReviewPage as ReviewPage,
 } from "../../code-review/components/LazyReviewPages";
 import { useReviewNavigationStore } from "../../code-review/reviewNavigationStore";
-import { FilePicker } from "../../command/FilePicker";
+import { useFileSearchStore } from "../../command/fileSearchStore";
 import { useRepoFileWatcher } from "../../file-watcher/useRepoFileWatcher";
 import { clearGitReviewQueries } from "../../git-interaction/gitCacheKeys";
 import { PanelLayout } from "../../panels/components/PanelLayout";
@@ -75,7 +75,7 @@ export function TaskDetail({
       ? [effectiveRepoPath, activeRelativePath].join("/").replace(/\/+/g, "/")
       : effectiveRepoPath;
 
-  const [filePickerOpen, setFilePickerOpen] = useState(false);
+  const openFilePicker = useFileSearchStore((state) => state.openPicker);
 
   const { enableScope, disableScope } = useHotkeysContext();
 
@@ -86,7 +86,7 @@ export function TaskDetail({
     };
   }, [enableScope, disableScope]);
 
-  useHotkeys("mod+p", () => setFilePickerOpen(true), {
+  useHotkeys("mod+p", () => openFilePicker(), {
     enableOnContentEditable: true,
     enableOnFormTags: true,
     preventDefault: true,
@@ -277,12 +277,6 @@ export function TaskDetail({
           </Box>
         )}
       </Flex>
-      <FilePicker
-        open={filePickerOpen}
-        onOpenChange={setFilePickerOpen}
-        taskId={taskId}
-        repoPath={effectiveRepoPath}
-      />
     </Box>
   );
 }

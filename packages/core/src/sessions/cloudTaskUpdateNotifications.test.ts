@@ -6,9 +6,10 @@ import { SessionService, type SessionServiceDeps } from "./sessionService";
 const TASK_ID = "task-1";
 const RUN_ID = "run-1";
 
-function turnComplete(): StoredLogEntry {
+function turnComplete(timestamp?: string): StoredLogEntry {
   return {
     type: "notification",
+    timestamp,
     notification: {
       method: "_posthog/turn_complete",
       params: { sessionId: RUN_ID, stopReason: "end_turn" },
@@ -19,9 +20,10 @@ function turnComplete(): StoredLogEntry {
 // The `session/prompt` request that opens a turn. Its arrival is what arms the
 // turn's single completion notification, so realistic sequences pair it with a
 // later `turn_complete`.
-function sessionPrompt(id: number): StoredLogEntry {
+function sessionPrompt(id: number, timestamp?: string): StoredLogEntry {
   return {
     type: "notification",
+    timestamp,
     notification: {
       id,
       method: "session/prompt",
@@ -233,15 +235,23 @@ describe("cloud task update notifications", () => {
     },
   );
 
-  it("notifies with the task title and stop reason, and marks activity", () => {
+  it("notifies with the task title, stop reason and turn duration, and marks activity", () => {
     const harness = createHarness();
-    harness.sendUpdate(logsUpdate([sessionPrompt(1), turnComplete()], 2));
+    harness.sendUpdate(
+      logsUpdate(
+        [
+          sessionPrompt(1, "2026-01-01T00:00:00Z"),
+          turnComplete("2026-01-01T00:00:45Z"),
+        ],
+        2,
+      ),
+    );
 
     expect(harness.notifyPromptComplete).toHaveBeenCalledWith(
       "Cloud Task",
       "end_turn",
       TASK_ID,
-      undefined,
+      45_000,
     );
     expect(harness.markActivity).toHaveBeenCalledTimes(1);
   });

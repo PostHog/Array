@@ -70,6 +70,8 @@ interface UseTaskCreationOptions {
   signalReportId?: string;
   channelContext?: string;
   channelName?: string;
+  /** Backend channel UUID the created task is owned by (its feed home). */
+  channelId?: string;
   /**
    * Channels "generic chat box" mode: drop the repo/branch requirement so a
    * task can be submitted without picking a repo. The agent decides at runtime
@@ -77,6 +79,12 @@ interface UseTaskCreationOptions {
    */
   allowNoRepo?: boolean;
   onTaskCreated?: (task: Task) => void;
+  /**
+   * Side effect run with the created task in addition to (not instead of)
+   * the default open/navigation behavior — unlike onTaskCreated, providing
+   * this does not suppress the pending-task view.
+   */
+  onTaskCreatedEffect?: (task: Task) => void;
 }
 
 interface UseTaskCreationReturn {
@@ -156,8 +164,10 @@ export function useTaskCreation({
   signalReportId,
   channelContext,
   channelName,
+  channelId,
   allowNoRepo,
   onTaskCreated,
+  onTaskCreatedEffect,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const hostClient = useHostTRPCClient();
@@ -310,6 +320,7 @@ export function useTaskCreation({
           additionalDirectories,
           channelContext,
           channelName,
+          channelId,
           customInstructions: useSettingsStore.getState().customInstructions,
           allowNoRepo,
         });
@@ -354,6 +365,7 @@ export function useTaskCreation({
             if (!pendingTaskKey && !contentOverride) {
               editor.clear();
             }
+            onTaskCreatedEffect?.(output.task);
             if (onTaskCreated) {
               onTaskCreated(output.task);
             } else {
@@ -468,10 +480,12 @@ export function useTaskCreation({
       additionalDirectories,
       channelContext,
       channelName,
+      channelId,
       allowNoRepo,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
+      onTaskCreatedEffect,
       hostClient,
       trpc,
       queryClient,

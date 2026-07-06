@@ -3,6 +3,7 @@ import {
   DotsThreeIcon,
   FileTextIcon,
   HashIcon,
+  LockSimpleIcon,
   PencilSimpleIcon,
   PlusIcon,
   StarIcon,
@@ -50,6 +51,10 @@ import {
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import {
+  PERSONAL_CHANNEL_NAME,
+  useTaskChannels,
+} from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
@@ -467,14 +472,68 @@ function ChannelSection({ channel }: { channel: Channel }) {
   );
 }
 
-// The channel list — the Channels space sidebar body. Starred channels surface
-// in their own section at the top so the ones you use most stay in reach; the
-// rest sit under a "Channels" label with the "New" channel button.
+// The user's private "#me" channel, pinned above the shared channel list.
+// The feed and task ownership live on the per-user backend personal channel;
+// the "me" folder is the bridge that keeps the folder-keyed surfaces
+// (CONTEXT.md, artifacts) routable, created lazily on first open.
+function PersonalChannelRow() {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { channels } = useChannels();
+  const { createChannel, isCreating } = useChannelMutations();
+  // Listing backend channels lazily provisions the personal channel server-side.
+  useTaskChannels();
+
+  const meFolder = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
+  const isActive =
+    !!meFolder &&
+    (pathname === `/website/${meFolder.id}` ||
+      pathname.startsWith(`/website/${meFolder.id}/`));
+
+  const open = async () => {
+    try {
+      const folder = meFolder ?? (await createChannel(PERSONAL_CHANNEL_NAME));
+      void navigate({
+        to: "/website/$channelId",
+        params: { channelId: folder.id },
+      });
+    } catch (error) {
+      toast.error("Couldn't open #me", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  return (
+    <Button
+      variant="default"
+      size="default"
+      left
+      data-selected={isActive || undefined}
+      disabled={isCreating}
+      onClick={() => void open()}
+      className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
+    >
+      <HashIcon size={14} className="shrink-0 text-gray-9" />
+      <span className="truncate font-medium text-[13px] text-gray-12">
+        {PERSONAL_CHANNEL_NAME}
+      </span>
+      <LockSimpleIcon size={12} className="ml-auto shrink-0 text-gray-9" />
+    </Button>
+  );
+}
+
+// The channel list — the Channels space sidebar body. The private "#me"
+// channel is pinned at the top; starred channels surface in their own section
+// so the ones you use most stay in reach; the rest sit under a "Channels"
+// label with the "New" channel button.
 export function ChannelsList() {
-  const { channels, isLoading } = useChannels();
+  const { channels: allChannels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
   const [modalOpen, setModalOpen] = useState(false);
 
+  // The "me" folder renders as the pinned personal row, not a shared channel.
+  const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
   const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
   const others = channels.filter((c) => !starredRefToShortcutId.has(c.path));
 
@@ -499,6 +558,8 @@ export function ChannelsList() {
         <Box className="py-1.5">
           <Separator className="bg-border" />
         </Box>
+
+        <PersonalChannelRow />
 
         {starred.length > 0 && (
           <>

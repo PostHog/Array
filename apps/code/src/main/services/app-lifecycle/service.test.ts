@@ -8,10 +8,13 @@ const {
   mockSuspensionService,
   mockWatcherRegistry,
   mockProcessTracking,
+  mockWorkspaceService,
   mockTrackAppEvent,
   mockShutdownPostHog,
   mockShutdownOtelTransport,
   mockProcessExit,
+  mockGetFullScreenState,
+  mockSetRestoreFullScreenOnNextLaunch,
 } = vi.hoisted(() => {
   const mockDatabaseService = {
     close: vi.fn(),
@@ -22,6 +25,10 @@ const {
     },
     mockWatcherRegistry: {
       shutdownAll: vi.fn(() => Promise.resolve()),
+    },
+    mockWorkspaceService: {
+      pendingCreationCount: 0,
+      waitForPendingCreations: vi.fn(() => Promise.resolve()),
     },
     mockProcessTracking: {
       getSnapshot: vi.fn(() =>
@@ -44,8 +51,15 @@ const {
     mockShutdownPostHog: vi.fn(() => Promise.resolve()),
     mockShutdownOtelTransport: vi.fn(() => Promise.resolve()),
     mockProcessExit: vi.fn() as unknown as (code?: number) => never,
+    mockGetFullScreenState: vi.fn(() => false),
+    mockSetRestoreFullScreenOnNextLaunch: vi.fn(),
   };
 });
+
+vi.mock("../../utils/store.js", () => ({
+  getFullScreenState: mockGetFullScreenState,
+  setRestoreFullScreenOnNextLaunch: mockSetRestoreFullScreenOnNextLaunch,
+}));
 
 vi.mock("../../utils/logger.js", () => ({
   logger: {
@@ -83,12 +97,14 @@ describe("AppLifecycleService", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     process.exit = mockProcessExit;
+    mockWorkspaceService.pendingCreationCount = 0;
     service = new AppLifecycleService(
       mockAppLifecycle as unknown as IAppLifecycle,
       mockDatabaseService as never,
       mockSuspensionService as never,
       mockWatcherRegistry as never,
       mockProcessTracking as never,
+      mockWorkspaceService as never,
     );
   });
 
@@ -111,6 +127,26 @@ describe("AppLifecycleService", () => {
       service.setQuittingForUpdate();
       service.clearQuittingForUpdate();
       expect(service.isQuittingForUpdate).toBe(false);
+    });
+
+    it.each([[true], [false]])(
+      "schedules restore-fullscreen=%s on update-quit",
+      (isFullScreen) => {
+        mockGetFullScreenState.mockReturnValue(isFullScreen);
+        service.setQuittingForUpdate();
+        expect(mockSetRestoreFullScreenOnNextLaunch).toHaveBeenCalledWith(
+          isFullScreen,
+        );
+      },
+    );
+
+    it("clears the fullscreen-restore flag when the update handoff is aborted", () => {
+      mockGetFullScreenState.mockReturnValue(true);
+      service.setQuittingForUpdate();
+      service.clearQuittingForUpdate();
+      expect(mockSetRestoreFullScreenOnNextLaunch).toHaveBeenLastCalledWith(
+        false,
+      );
     });
   });
 
@@ -202,6 +238,50 @@ describe("AppLifecycleService", () => {
       await promise;
 
       expect(mockProcessExit).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe("shutdownWithoutContainer", () => {
+    it("skips the wait when no creations are pending", async () => {
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(
+        mockWorkspaceService.waitForPendingCreations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("waits for in-flight workspace creations before teardown", async () => {
+      mockWorkspaceService.pendingCreationCount = 1;
+      const callOrder: string[] = [];
+      mockWorkspaceService.waitForPendingCreations.mockImplementation(
+        async () => {
+          callOrder.push("waitForCreations");
+        },
+      );
+      mockWatcherRegistry.shutdownAll.mockImplementation(async () => {
+        callOrder.push("teardown");
+      });
+
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(callOrder).toEqual(["waitForCreations", "teardown"]);
+    });
+
+    it("proceeds with teardown when creations do not settle in time", async () => {
+      mockWorkspaceService.pendingCreationCount = 1;
+      mockWorkspaceService.waitForPendingCreations.mockReturnValue(
+        new Promise(() => {}),
+      );
+
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockProcessTracking.getSnapshot).toHaveBeenCalled();
     });
   });
 

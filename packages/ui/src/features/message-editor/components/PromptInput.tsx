@@ -48,6 +48,12 @@ export interface PromptInputProps {
   reasoningSelector?: React.ReactElement | null | false;
   messagingModeToggle?: React.ReactNode;
   historyButton?: React.ReactNode;
+  /**
+   * Rendered inside the composer box, above the editor — for mode chrome
+   * that must read as part of the input itself (e.g. autoresearch controls)
+   * rather than a separate widget attached outside it.
+   */
+  headerAddon?: React.ReactNode;
   // Render an empty toolbar (no attach/mode/model/reasoning/history/submit).
   // Submission falls back to the Enter key. Used by surfaces that want the
   // editor chrome without any controls yet (e.g. the canvas composer).
@@ -94,6 +100,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       reasoningSelector,
       messagingModeToggle,
       historyButton,
+      headerAddon,
       hideDefaultToolbar = false,
       getPromptHistory,
       onBeforeSubmit,
@@ -130,6 +137,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       getText,
       getContent,
       setContent,
+      insertEditorContent,
       insertChip,
       removeChipById,
       replaceChipAttrs,
@@ -170,6 +178,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         getContent,
         getText,
         setContent,
+        insertEditorContent,
         insertChip,
         removeChipById,
         replaceChipAttrs,
@@ -184,6 +193,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         getContent,
         getText,
         setContent,
+        insertEditorContent,
         insertChip,
         removeChipById,
         replaceChipAttrs,
@@ -346,6 +356,11 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
               "data-tour-ready": !isEmpty ? "true" : undefined,
             })}
           >
+            {headerAddon && (
+              <InputGroupAddon align="block-start">
+                {headerAddon}
+              </InputGroupAddon>
+            )}
             {attachments.length > 0 && (
               <InputGroupAddon align="block-start">
                 <AttachmentsBar

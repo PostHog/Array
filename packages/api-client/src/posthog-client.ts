@@ -71,8 +71,10 @@ import type {
   SuggestedReviewersArtefact,
   SuggestedReviewerWriteEntry,
   Task,
+  TaskChannel,
   TaskRun,
   TaskRunArtefact,
+  TaskThreadMessage,
   UserBasic,
 } from "@posthog/shared/domain-types";
 import {
@@ -121,6 +123,8 @@ export type UsageLimitType = "burst" | "sustained" | null;
 
 // Stable message so callers recognize this after a saga reduces the error to a string.
 export const CLOUD_USAGE_LIMIT_ERROR_MESSAGE = "Cloud usage limit reached";
+
+export const SESSION_LOGS_MAX_PAGE_SIZE = 5000;
 
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
 export class CloudUsageLimitError extends Error {
@@ -2118,6 +2122,7 @@ export class PostHogAPIClient {
     createdBy?: number;
     originProduct?: string;
     internal?: boolean;
+    channel?: string;
   }) {
     const teamId = await this.getTeamId();
     const params: Record<string, string | number | boolean> = {
@@ -2138,6 +2143,10 @@ export class PostHogAPIClient {
 
     if (options?.internal) {
       params.internal = true;
+    }
+
+    if (options?.channel) {
+      params.channel = options.channel;
     }
 
     const data = await this.api.get(`/api/projects/{project_id}/tasks/`, {
@@ -2208,6 +2217,7 @@ export class PostHogAPIClient {
         runtime_adapter?: string | null;
         model?: string | null;
         reasoning_effort?: string | null;
+        channel?: string | null;
       },
   ) {
     const teamId = await this.getTeamId();
@@ -2255,6 +2265,121 @@ export class PostHogAPIClient {
       github_integration: task.github_integration,
       github_user_integration: task.github_user_integration,
     });
+  }
+
+  // Task channels + threads. Not in the generated OpenAPI client yet, so these
+  // go through the raw fetcher like the desktop file-system endpoints above.
+
+  // List backend task channels: all public channels plus the requester's
+  // personal "#me" channel (provisioned lazily server-side on first list).
+  async getTaskChannels(): Promise<TaskChannel[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task channels: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskChannel[];
+  }
+
+  // Resolve-or-create a public channel by name (idempotent server-side).
+  async resolveTaskChannel(name: string): Promise<TaskChannel> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({ name }) },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to resolve task channel: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskChannel;
+  }
+
+  async getTaskThreadMessages(taskId: string): Promise<TaskThreadMessage[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch thread messages: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as TaskThreadMessage[];
+  }
+
+  async createTaskThreadMessage(
+    taskId: string,
+    content: string,
+  ): Promise<TaskThreadMessage> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({ content }) },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to post thread message: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskThreadMessage;
+  }
+
+  async deleteTaskThreadMessage(
+    taskId: string,
+    messageId: string,
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/${encodeURIComponent(messageId)}/`;
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to delete thread message: ${response.statusText}`,
+      );
+    }
+  }
+
+  // Forward a thread message into the task's live run. Task author only; the
+  // backend rejects with 400/403 otherwise (surfaced via the error body detail).
+  async sendTaskThreadMessageToAgent(
+    taskId: string,
+    messageId: string,
+  ): Promise<TaskThreadMessage> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/${encodeURIComponent(messageId)}/send_to_agent/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({}) },
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      let message = `Failed to send message to agent: ${response.statusText}`;
+      try {
+        const parsed = JSON.parse(errorText) as { detail?: string };
+        if (parsed.detail) message = parsed.detail;
+      } catch {
+        if (errorText) message = errorText;
+      }
+      throw new Error(message);
+    }
+    return (await response.json()) as TaskThreadMessage;
   }
 
   async sendRunCommand(
@@ -2699,32 +2824,51 @@ export class PostHogAPIClient {
     runId: string,
     options?: { limit?: number; after?: string },
   ): Promise<StoredLogEntry[]> {
+    const maxEntries = options?.limit ?? SESSION_LOGS_MAX_PAGE_SIZE;
+    const entries: StoredLogEntry[] = [];
     try {
       const teamId = await this.getTeamId();
-      const url = new URL(
-        `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`,
-      );
-      url.searchParams.set("limit", String(options?.limit ?? 5000));
-      if (options?.after) {
-        url.searchParams.set("after", options.after);
-      }
-      const response = await this.api.fetcher.fetch({
-        method: "get",
-        url,
-        path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`,
-      });
-
-      if (!response.ok) {
-        log.warn(
-          `Failed to fetch session logs: ${response.status} ${response.statusText}`,
+      const path = `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`;
+      let offset = 0;
+      while (entries.length < maxEntries) {
+        const url = new URL(`${this.api.baseUrl}${path}`);
+        url.searchParams.set(
+          "limit",
+          String(
+            Math.min(SESSION_LOGS_MAX_PAGE_SIZE, maxEntries - entries.length),
+          ),
         );
-        return [];
-      }
+        if (offset > 0) {
+          url.searchParams.set("offset", String(offset));
+        }
+        if (options?.after) {
+          url.searchParams.set("after", options.after);
+        }
+        const response = await this.api.fetcher.fetch({
+          method: "get",
+          url,
+          path,
+        });
 
-      return (await response.json()) as StoredLogEntry[];
+        if (!response.ok) {
+          log.warn(
+            `Failed to fetch session logs page at offset ${offset}: ${response.status} ${response.statusText}`,
+          );
+          break;
+        }
+
+        const page = (await response.json()) as StoredLogEntry[];
+        entries.push(...page);
+        const hasMore = response.headers.get("X-Has-More") === "true";
+        if (!hasMore || page.length === 0) {
+          break;
+        }
+        offset += page.length;
+      }
+      return entries;
     } catch (err) {
       log.warn("Failed to fetch task run session logs", err);
-      return [];
+      return entries;
     }
   }
 
