@@ -209,8 +209,6 @@ All merges into `main` go through the Trunk merge queue. Never run `gh pr merge`
 - Queue progress is the `Trunk Merge Queue (main)` check run on the PR's head commit. On failure the Trunk bot comments with links to the failing workflows; fix, push, and re-enqueue.
 - Never force-push a branch while it is in the queue -- it removes the PR from the queue.
 
-See [docs/merge-queue.md](./docs/merge-queue.md) for the full workflow and admin setup.
-
 ## Code Style
 
 - Prefer local code over new dependencies for simple fixes.
