@@ -28,6 +28,7 @@ import {
   type CommandMenuAction,
 } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
+import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
@@ -48,6 +49,7 @@ import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import {
   goBackInHistory,
   goForwardInHistory,
@@ -152,6 +154,8 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     (state) => state.getReviewMode,
   );
   const { data: tasks = [] } = useTasks();
+  const archivedTaskIds = useArchivedTaskIds();
+  const { data: workspaces } = useWorkspaces();
   const [query, setQuery] = useState("");
   const { repoPath } = useFileSearchContext();
   const canSearchFiles = !!repoPath;
@@ -447,11 +451,14 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   ]);
 
   const taskSections = useMemo<CommandSection[]>(() => {
-    if (tasks.length === 0) return [];
+    const visibleTasks = tasks.filter(
+      (task) => !archivedTaskIds.has(task.id) && Boolean(workspaces?.[task.id]),
+    );
+    if (!visibleTasks.length) return [];
     return [
       {
         label: "Tasks",
-        items: tasks.map((task) => {
+        items: visibleTasks.map((task) => {
           const channel = taskChannelMap.get(task.id);
           return {
             id: `task-${task.id}`,
@@ -477,7 +484,14 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         }),
       },
     ];
-  }, [tasks, taskChannelMap, bluebirdEnabled, closeSettingsDialog]);
+  }, [
+    tasks,
+    archivedTaskIds,
+    workspaces,
+    taskChannelMap,
+    bluebirdEnabled,
+    closeSettingsDialog,
+  ]);
 
   const channelSections = useMemo<CommandSection[]>(() => {
     if (channels.length === 0) return [];
