@@ -6,13 +6,9 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HARNESS_EXTENSION_NAMES } from "./extensions/registry";
+import { piCliInvocation, resolvePiCliEntry } from "./pi-cli";
 
-export function resolvePiCli(): string {
-  const mainEntry = fileURLToPath(
-    import.meta.resolve("@earendil-works/pi-coding-agent"),
-  );
-  return join(dirname(mainEntry), "cli.js");
-}
+export { resolvePiCliEntry as resolvePiCli };
 
 /**
  * `pi-mcp-adapter` ships raw TypeScript with no compiled entry point or
@@ -51,9 +47,13 @@ export function spawnPiCli(
   const extensionArgs = extensions
     ? harnessExtensionFiles().flatMap((file) => ["-e", file])
     : [];
-  return spawn(process.execPath, [resolvePiCli(), ...extensionArgs, ...args], {
+  const invocation = piCliInvocation([...extensionArgs, ...args], {
+    ...process.env,
+    ...env,
+  });
+  return spawn(invocation.command, invocation.args, {
     stdio,
     ...rest,
-    env: { ...process.env, ...env },
+    env: invocation.env,
   });
 }

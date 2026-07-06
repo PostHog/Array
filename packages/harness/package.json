@@ -23,6 +23,14 @@
       "types": "./dist/extensions/registry.d.ts",
       "import": "./dist/extensions/registry.js"
     },
+    "./extensions/hog-branding": {
+      "types": "./dist/extensions/hog-branding/extension.d.ts",
+      "import": "./dist/extensions/hog-branding/extension.js"
+    },
+    "./extensions/hog-branding/*": {
+      "types": "./dist/extensions/hog-branding/*.d.ts",
+      "import": "./dist/extensions/hog-branding/*.js"
+    },
     "./extensions/posthog-provider": {
       "types": "./dist/extensions/posthog-provider/extension.d.ts",
       "import": "./dist/extensions/posthog-provider/extension.js"
@@ -38,6 +46,14 @@
     "./extensions/web-access/*": {
       "types": "./dist/extensions/web-access/*.d.ts",
       "import": "./dist/extensions/web-access/*.js"
+    },
+    "./extensions/subagent": {
+      "types": "./dist/extensions/subagent/extension.d.ts",
+      "import": "./dist/extensions/subagent/extension.js"
+    },
+    "./extensions/subagent/*": {
+      "types": "./dist/extensions/subagent/*.d.ts",
+      "import": "./dist/extensions/subagent/*.js"
     }
   },
   "scripts": {
@@ -50,6 +66,7 @@
   "dependencies": {
     "@earendil-works/pi-ai": "0.80.3",
     "@earendil-works/pi-coding-agent": "0.80.3",
+    "@earendil-works/pi-tui": "0.80.3",
     "@posthog/shared": "workspace:*",
     "lru-cache": "^11.1.0",
     "pi-mcp-adapter": "2.10.0",

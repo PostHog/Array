@@ -106,6 +106,7 @@ token) for headless use.
 | `@posthog/harness/spawn` | `spawnPiCli()` — spawn pi as a subprocess |
 | `@posthog/harness/session` | `createHarnessSession()` — pi SDK `AgentSession` |
 | `@posthog/harness/extensions` | extension registry |
+| `@posthog/harness/extensions/hog-branding` | startup header rebrand — `createHogBrandingExtension()` |
 | `@posthog/harness/extensions/posthog-provider` | default pi extension — `createPosthogProviderExtension()` |
 | `@posthog/harness/extensions/posthog-provider/provider` | `POSTHOG_PROVIDER_NAME`, `buildPosthogProvider()`, `resolvePosthogProvider()` |
 | `@posthog/harness/extensions/posthog-provider/oauth` | `loginPosthog()`, `refreshPosthog()`, `buildAuthorizeUrl()`, `getRedirectUri()`, `getCallbackPort()` |

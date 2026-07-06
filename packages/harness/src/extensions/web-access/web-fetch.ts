@@ -7,6 +7,7 @@ import {
   tryResolveGatewayAuth,
 } from "../posthog-provider/gateway-auth";
 import type { PosthogProviderOptions } from "../posthog-provider/provider";
+import { renderWebFetchCall } from "./render";
 
 const MAX_URL_LENGTH = 2000;
 const MAX_CONTENT_LENGTH = 10 * 1024 * 1024;
@@ -16,6 +17,11 @@ const MAX_REDIRECTS = 10;
 const SUMMARIZATION_MODEL = "claude-haiku-4-5";
 
 const turndown = new TurndownService();
+// Strip non-content elements before conversion. Without this, <head> boilerplate
+// (inline fonts as base64, <style>/<script> blocks) gets converted to markdown
+// text and can push real page content past MAX_MARKDOWN_LENGTH truncation,
+// leaving the summarizer with nothing but CSS/font junk.
+turndown.remove(["script", "style", "noscript", "head", "link", "meta", "svg"]);
 
 export function validateUrl(
   url: string,
@@ -204,6 +210,9 @@ export function createWebFetchTool(options: PosthogProviderOptions = {}) {
         description: "What information to extract from the page content",
       }),
     }),
+    renderCall(args, theme) {
+      return renderWebFetchCall(args, theme);
+    },
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const validation = validateUrl(params.url);
       if (!validation.valid) {

@@ -2,6 +2,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { resolveGatewayAuth } from "../posthog-provider/gateway-auth";
 import type { PosthogProviderOptions } from "../posthog-provider/provider";
+import { renderWebSearchCall } from "./render";
 
 const SEARCH_MODEL = "gpt-5.5";
 
@@ -90,6 +91,9 @@ export function createWebSearchTool(options: PosthogProviderOptions = {}) {
         }),
       ),
     }),
+    renderCall(args, theme) {
+      return renderWebSearchCall(args, theme);
+    },
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const { baseUrl, apiKey } = await resolveGatewayAuth(options, ctx);
       const contextSize = parseSearchContextSize(params.search_context_size);
