@@ -19,6 +19,7 @@ import { useState } from "react";
 import { useApprovePr } from "./useApprovePr";
 import { useMarkPrReady } from "./useMarkPrReady";
 import { useMergePr } from "./useMergePr";
+import { usePrChecks } from "./usePrChecks";
 import { usePrInfo } from "./usePrInfo";
 
 const MERGE_METHODS: PrMergeMethod[] = ["merge", "squash", "rebase"];
@@ -36,6 +37,9 @@ interface PrReviewActionsProps {
 /** Approve + merge controls for a GitHub PR, mirroring the github.com merge box. */
 export function PrReviewActions({ prUrl }: PrReviewActionsProps) {
   const infoQuery = usePrInfo(prUrl);
+  // Shares the checks section's polling query, so the merge gate follows CI
+  // live: it locks as soon as a check goes red and unlocks on a green rerun.
+  const checksQuery = usePrChecks(prUrl);
   const approve = useApprovePr(prUrl);
   const merge = useMergePr(prUrl);
   const markReady = useMarkPrReady(prUrl);
@@ -45,6 +49,10 @@ export function PrReviewActions({ prUrl }: PrReviewActionsProps) {
   const merged = info?.merged ?? false;
   const closed = !merged && info?.state?.toLowerCase() === "closed";
   const draft = info?.draft ?? false;
+  const failedChecks = (checksQuery.data ?? []).filter(
+    (check) => check.bucket === "fail",
+  ).length;
+  const hasConflicts = info?.mergeable === false;
 
   if (merged || closed) {
     return (
@@ -66,7 +74,16 @@ export function PrReviewActions({ prUrl }: PrReviewActionsProps) {
 
   const approved = approve.isSuccess && approve.data.success;
   const approveDisabled = !info || approve.isPending || approved;
-  const mergeDisabled = !info || draft || merge.isPending;
+  // Same gate as github.com: red checks or conflicts lock the merge button.
+  const mergeBlockedReason = draft
+    ? null // the draft branch below renders its own note + CTA
+    : failedChecks > 0
+      ? `${failedChecks} check${failedChecks === 1 ? " is" : "s are"} failing — merging is blocked until they pass.`
+      : hasConflicts
+        ? "This branch has conflicts that must be resolved before merging."
+        : null;
+  const mergeDisabled =
+    !info || draft || merge.isPending || mergeBlockedReason !== null;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -139,6 +156,11 @@ export function PrReviewActions({ prUrl }: PrReviewActionsProps) {
             Ready for review
           </Button>
         </>
+      )}
+      {mergeBlockedReason && (
+        <span className="text-(--red-11) text-[11px]">
+          {mergeBlockedReason}
+        </span>
       )}
     </div>
   );
