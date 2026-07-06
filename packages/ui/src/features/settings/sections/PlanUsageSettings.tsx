@@ -479,7 +479,9 @@ function UsageMeter({ label, bucket, color }: UsageMeterProps) {
         color={color === "red" ? "red" : undefined}
       />
       <Text className="text-(--gray-9) text-[13px]">
-        {bucket.exceeded ? "Limit exceeded" : formatResetTime(bucket.reset_at)}
+        {bucket.exceeded
+          ? `Limit exceeded. ${formatResetTime(bucket.reset_at)}`
+          : formatResetTime(bucket.reset_at)}
       </Text>
     </Flex>
   );
