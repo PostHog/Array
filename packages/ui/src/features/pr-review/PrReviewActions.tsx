@@ -21,6 +21,7 @@ import { useMarkPrReady } from "./useMarkPrReady";
 import { useMergePr } from "./useMergePr";
 import { usePrChecks } from "./usePrChecks";
 import { usePrInfo } from "./usePrInfo";
+import { useReopenPr } from "./useReopenPr";
 
 const MERGE_METHODS: PrMergeMethod[] = ["merge", "squash", "rebase"];
 
@@ -43,6 +44,7 @@ export function PrReviewActions({ prUrl }: PrReviewActionsProps) {
   const approve = useApprovePr(prUrl);
   const merge = useMergePr(prUrl);
   const markReady = useMarkPrReady(prUrl);
+  const reopen = useReopenPr(prUrl);
   const [method, setMethod] = useState<PrMergeMethod>("merge");
 
   const info = infoQuery.data;
@@ -66,6 +68,17 @@ export function PrReviewActions({ prUrl }: PrReviewActionsProps) {
           <>
             <XCircleIcon size={14} className="text-(--red-9)" />
             This pull request is closed.
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={reopen.isPending}
+              onClick={() => reopen.mutate({ prUrl, action: "reopen" })}
+              className="ml-auto gap-1.5"
+            >
+              {reopen.isPending && <Spinner />}
+              Reopen
+            </Button>
           </>
         )}
       </div>
@@ -77,16 +90,26 @@ export function PrReviewActions({ prUrl }: PrReviewActionsProps) {
   // Failed fetch (null / error) means CI status is unknown — that must lock
   // the merge too, or a transient gh error would silently unlock red checks.
   const checksUnavailable = checksQuery.isError || checksQuery.data === null;
-  // Same gate as github.com: red checks or conflicts lock the merge button.
+  // Branch protection ("blocked") is viewer-aware: it covers repos that
+  // require an approving review — including the PR author, who can't approve
+  // their own PR. Repos without such rules report "clean"/"unstable".
+  const blockedByProtection = info?.mergeStateStatus === "blocked";
+  const behindBase = info?.mergeStateStatus === "behind";
+  // Same gate as github.com: red checks, conflicts, or branch protection
+  // lock the merge button.
   const mergeBlockedReason = draft
     ? null // the draft branch below renders its own note + CTA
     : failedChecks > 0
       ? `${failedChecks} check${failedChecks === 1 ? " is" : "s are"} failing — merging is blocked until they pass.`
       : hasConflicts
         ? "This branch has conflicts that must be resolved before merging."
-        : checksUnavailable
-          ? "CI status couldn't be loaded — merging is blocked until checks are known."
-          : null;
+        : blockedByProtection
+          ? "Branch protection blocks this merge — an approving review from another user may be required."
+          : behindBase
+            ? "This branch is out of date with the base branch and must be updated before merging."
+            : checksUnavailable
+              ? "CI status couldn't be loaded — merging is blocked until checks are known."
+              : null;
   const mergeDisabled =
     !info ||
     draft ||

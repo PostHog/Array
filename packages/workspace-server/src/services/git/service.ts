@@ -1000,7 +1000,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         "api",
         `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`,
         "--jq",
-        '{number,title,body: (.body // ""),author: .user.login,state,merged,draft,mergeable,baseRefName: .base.ref,headRefName: .head.ref,additions,deletions,changedFiles: .changed_files}',
+        '{number,title,body: (.body // ""),author: .user.login,state,merged,draft,mergeable,mergeStateStatus: (.mergeable_state // "unknown"),baseRefName: .base.ref,headRefName: .head.ref,additions,deletions,changedFiles: .changed_files}',
       ]);
 
       if (result.exitCode !== 0) {

@@ -434,99 +434,36 @@ export const updatePrByUrlOutput = z.object({
 });
 export type UpdatePrByUrlOutput = z.infer<typeof updatePrByUrlOutput>;
 
-// getPrInfoByUrl schemas — full PR overview (title/body/branches/stats) for
-// the native in-app PR view. Mirrors workspace-server's git schemas.
-export const getPrInfoByUrlInput = z.object({
-  prUrl: z.string(),
-});
-export const getPrInfoByUrlOutput = z.object({
-  number: z.number(),
-  title: z.string(),
-  body: z.string(),
-  author: z.string().nullable(),
-  state: z.string(),
-  merged: z.boolean(),
-  draft: z.boolean(),
-  /** GitHub computes mergeability asynchronously; null until it settles. */
-  mergeable: z.boolean().nullable(),
-  baseRefName: z.string().nullable(),
-  headRefName: z.string().nullable(),
-  additions: z.number(),
-  deletions: z.number(),
-  changedFiles: z.number(),
-});
-export type PrInfoByUrlOutput = z.infer<typeof getPrInfoByUrlOutput>;
-
-export const approvePrInput = z.object({
-  prUrl: z.string(),
-});
-export const approvePrOutput = z.object({
-  success: z.boolean(),
-  message: z.string(),
-});
-export type ApprovePrOutput = z.infer<typeof approvePrOutput>;
-
-export const prMergeMethodSchema = z.enum(["merge", "squash", "rebase"]);
-export type PrMergeMethod = z.infer<typeof prMergeMethodSchema>;
-
-export const mergePrInput = z.object({
-  prUrl: z.string(),
-  method: prMergeMethodSchema,
-});
-export const mergePrOutput = z.object({
-  success: z.boolean(),
-  message: z.string(),
-});
-export type MergePrOutput = z.infer<typeof mergePrOutput>;
-
-// getPrChecks schemas — CI check runs / commit statuses for a PR, via
-// `gh pr checks`. Mirrors workspace-server's git schemas.
-export const prCheckBucketSchema = z.enum([
-  "fail",
-  "cancel",
-  "pending",
-  "pass",
-  "skipping",
-]);
-export type PrCheckBucket = z.infer<typeof prCheckBucketSchema>;
-
-export const prCheckSchema = z.object({
-  name: z.string(),
-  bucket: prCheckBucketSchema,
-  link: z.string().nullable(),
-  workflow: z.string().nullable(),
-  description: z.string().nullable(),
-});
-export type PrCheck = z.infer<typeof prCheckSchema>;
-
-export const getPrChecksInput = z.object({
-  prUrl: z.string(),
-});
-/** Null means the checks couldn't be fetched; [] means none reported. */
-export const getPrChecksOutput = z.array(prCheckSchema).nullable();
-export type GetPrChecksOutput = z.infer<typeof getPrChecksOutput>;
-
-// getPrComments schemas — conversation (issue) comments on a PR. Inline
-// review comments live in `getPrReviewComments`. Mirrors workspace-server's
-// git schemas.
-export const prConversationCommentSchema = z.object({
-  id: z.number(),
-  author: z.string(),
-  avatarUrl: z.string().nullable(),
-  body: z.string(),
-  createdAt: z.string(),
-  url: z.string().nullable(),
-});
-export type PrConversationComment = z.infer<typeof prConversationCommentSchema>;
-
-export const getPrCommentsInput = z.object({
-  prUrl: z.string(),
-});
-/** Null means the comments couldn't be fetched; [] means none. */
-export const getPrCommentsOutput = z
-  .array(prConversationCommentSchema)
-  .nullable();
-export type GetPrCommentsOutput = z.infer<typeof getPrCommentsOutput>;
+export type {
+  ApprovePrOutput,
+  GetPrChecksOutput,
+  GetPrCommentsOutput,
+  MergePrOutput,
+  PrCheck,
+  PrCheckBucket,
+  PrConversationComment,
+  PrInfoByUrlOutput,
+  PrMergeMethod,
+} from "@posthog/shared";
+// Native PR review schemas (PR overview, approve/merge, CI checks,
+// conversation comments) are defined once in `@posthog/shared`'s git domain
+// and re-exported here for the host router and UI.
+export {
+  approvePrInput,
+  approvePrOutput,
+  getPrChecksInput,
+  getPrChecksOutput,
+  getPrCommentsInput,
+  getPrCommentsOutput,
+  getPrInfoByUrlInput,
+  getPrInfoByUrlOutput,
+  mergePrInput,
+  mergePrOutput,
+  prCheckBucketSchema,
+  prCheckSchema,
+  prConversationCommentSchema,
+  prMergeMethodSchema,
+} from "@posthog/shared";
 
 export const getBranchChangedFilesInput = z.object({
   repo: z.string(),
