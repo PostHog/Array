@@ -107,6 +107,7 @@ export function CloudGitInteractionHeader({
   };
 
   if (!cloudHandoffEnabled) return null;
+  if (task.origin_product === "image_builder") return null;
 
   const inProgress = session?.handoffInProgress ?? false;
 

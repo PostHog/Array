@@ -229,6 +229,9 @@ export function TaskInput({
   const [selectedCloudEnvId, setSelectedCloudEnvId] = useState<string | null>(
     null,
   );
+  const [selectedCustomImageId, setSelectedCustomImageId] = useState<
+    string | null
+  >(null);
   const [activeReportAssociation, setActiveReportAssociation] = useState(
     reportAssociation ?? null,
   );
@@ -782,6 +785,10 @@ export function TaskInput({
       effectiveWorkspaceMode === "cloud" && selectedCloudEnvId
         ? selectedCloudEnvId
         : undefined,
+    customImageId:
+      effectiveWorkspaceMode === "cloud" && selectedCustomImageId
+        ? selectedCustomImageId
+        : undefined,
     signalReportId: activeReportAssociation?.reportId,
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
@@ -1017,6 +1024,8 @@ export function TaskInput({
                   onChange={setWorkspaceMode}
                   selectedCloudEnvironmentId={selectedCloudEnvId}
                   onCloudEnvironmentChange={setSelectedCloudEnvId}
+                  selectedCustomImageId={selectedCustomImageId}
+                  onCustomImageChange={setSelectedCustomImageId}
                   size="1"
                 />
                 {!allowNoRepo && workspaceMode === "worktree" && (

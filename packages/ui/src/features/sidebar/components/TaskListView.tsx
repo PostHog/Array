@@ -1,7 +1,7 @@
 import { PointerSensor } from "@dnd-kit/dom";
 import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
-import { GitBranch } from "@phosphor-icons/react";
+import { GitBranch, Wrench } from "@phosphor-icons/react";
 import {
   folderGroupId,
   groupTasksByRelativeDate,
@@ -285,7 +285,13 @@ export function TaskListView({
                   <SidebarSection
                     id={group.id}
                     label={folder?.name ?? group.name}
-                    icon={<GitBranch size={14} className="text-gray-10" />}
+                    icon={
+                      group.id === "custom-images" ? (
+                        <Wrench size={14} className="text-gray-10" />
+                      ) : (
+                        <GitBranch size={14} className="text-gray-10" />
+                      )
+                    }
                     isExpanded={isExpanded}
                     onToggle={() => toggleSection(group.id)}
                     addSpacingBefore={false}

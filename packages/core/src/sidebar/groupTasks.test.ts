@@ -220,6 +220,37 @@ describe("groupByRepository", () => {
     expect(groups[0]?.name).toBe("Other");
   });
 
+  it("routes image-builder tasks to a pinned 'Custom images' group above 'Other'", () => {
+    const tasks: TestTask[] = [
+      { id: "t1", repository: null, originProduct: "image_builder" },
+      {
+        id: "t2",
+        repository: {
+          fullPath: "posthog/code",
+          name: "code",
+          organization: "PostHog",
+        },
+        originProduct: "image_builder",
+      },
+      task("t3"),
+      task("t4", {
+        fullPath: "posthog/posthog",
+        name: "posthog",
+        organization: "PostHog",
+      }),
+    ];
+
+    const groups = groupByRepository(tasks, []);
+
+    expect(groups.map((g) => g.id)).toEqual([
+      "posthog/posthog",
+      "custom-images",
+      "other",
+    ]);
+    expect(groups[1]?.name).toBe("Custom images");
+    expect(groups[1]?.tasks.map((t) => t.id)).toEqual(["t1", "t2"]);
+  });
+
   it("keeps the bare name for a group without an organization when others collide", () => {
     const tasks: TestTask[] = [
       task("t1", {

@@ -183,7 +183,9 @@ function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
     }),
     ...(gateway?.openaiBaseUrl && { OPENAI_BASE_URL: gateway.openaiBaseUrl }),
     ...(gateway?.openaiApiKey && { OPENAI_API_KEY: gateway.openaiApiKey }),
-    ELECTRON_RUN_AS_NODE: "1",
+    ...((process.versions.electron || process.env.ELECTRON_RUN_AS_NODE) && {
+      ELECTRON_RUN_AS_NODE: "1",
+    }),
     CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL: "true",
     // Offload all MCP tools by default
     ENABLE_TOOL_SEARCH: "auto:0",

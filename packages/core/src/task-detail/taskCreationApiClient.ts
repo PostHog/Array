@@ -13,6 +13,7 @@ export interface CreateTaskRunClientOptions {
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
   autoPublish?: boolean;
   runSource?: CloudRunSource;

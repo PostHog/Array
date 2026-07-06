@@ -400,6 +400,7 @@ export class TaskCreationSaga extends Saga<
             model: input.model,
             reasoningLevel: input.reasoningLevel,
             sandboxEnvironmentId: input.sandboxEnvironmentId,
+            customImageId: input.customImageId,
             prAuthorshipMode,
             autoPublish: input.cloudAutoPublish,
             runSource: input.cloudRunSource ?? "manual",
