@@ -209,7 +209,9 @@ jobs:
         # URL and model/environment overrides are org vars.
         env:
           POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY: ${{ secrets.POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY }}
-          POSTHOG_CODE_E2E_GATEWAY_URL: ${{ vars.POSTHOG_CODE_E2E_GATEWAY_URL }}
+          # Accept the URL from either an org var or an org secret — it has ended
+          # up in both places, and vars.* can't see secrets.
+          POSTHOG_CODE_E2E_GATEWAY_URL: ${{ vars.POSTHOG_CODE_E2E_GATEWAY_URL || secrets.POSTHOG_CODE_E2E_GATEWAY_URL }}
           POSTHOG_CODE_E2E_CLAUDE_MODEL: ${{ vars.POSTHOG_CODE_E2E_CLAUDE_MODEL }}
           POSTHOG_CODE_E2E_CODEX_MODEL: ${{ vars.POSTHOG_CODE_E2E_CODEX_MODEL }}
           # Optional: set vars.POSTHOG_CODE_E2E_ENVIRONMENT=cloud to exercise the
