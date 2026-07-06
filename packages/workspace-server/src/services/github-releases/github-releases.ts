@@ -13,14 +13,10 @@ export class GitHubReleasesService {
   private missingVersionRefetchNotBefore = 0;
 
   async listReleases(expectVersion?: string): Promise<ListReleasesOutput> {
-    if (
-      this.cache &&
-      Date.now() - this.cache.fetchedAt < CACHE_TTL_MS &&
-      (expectVersion === undefined ||
-        this.cacheContains(expectVersion) ||
-        Date.now() < this.missingVersionRefetchNotBefore)
-    ) {
-      return this.cache.data;
+    const normalizedVersion = expectVersion?.replace(/^v/, "");
+    if (this.canServeFromCache(normalizedVersion)) {
+      // biome-ignore lint/style/noNonNullAssertion: cache is non-null when canServeFromCache returns true
+      return this.cache!.data;
     }
 
     try {
@@ -49,15 +45,33 @@ export class GitHubReleasesService {
 
       const data: ListReleasesOutput = { releases };
       this.cache = { fetchedAt: Date.now(), data };
-      this.updateMissingVersionCooldown(expectVersion);
+      this.updateMissingVersionCooldown(normalizedVersion);
       return data;
     } catch (error) {
       if (this.cache) {
-        this.updateMissingVersionCooldown(expectVersion);
+        this.updateMissingVersionCooldown(normalizedVersion);
         return this.cache.data;
       }
       throw error;
     }
+  }
+
+  // The cooldown only ever matters within an already-valid TTL window:
+  // once the cache expires the TTL check short-circuits first, so the
+  // cooldown naturally resets on the next successful fetch.
+  private canServeFromCache(expectVersion?: string): boolean {
+    if (!this.cache || Date.now() - this.cache.fetchedAt >= CACHE_TTL_MS) {
+      return false;
+    }
+    // No version requirement: any fresh cache is fine.
+    if (expectVersion === undefined) return true;
+    // Version present in cache: serve it.
+    if (this.cacheContains(expectVersion)) return true;
+    // Version missing but cooldown active: suppress the refetch.
+    // The cooldown is a single scalar (not keyed per version) — safe because
+    // cacheContains already short-circuits above when the version is found,
+    // so the cooldown is only consulted while the version is absent.
+    return Date.now() < this.missingVersionRefetchNotBefore;
   }
 
   private cacheContains(version: string): boolean {

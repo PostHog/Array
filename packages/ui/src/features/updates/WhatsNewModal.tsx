@@ -45,7 +45,11 @@ export function WhatsNewModal() {
   const { data: currentVersion } = useQuery(
     hostTRPC.os.getAppVersion.queryOptions(),
   );
-  const { data, isLoading, isError } = useQuery({
+  const {
+    data,
+    isPending: isLoading,
+    isError,
+  } = useQuery({
     ...hostTRPC.githubReleases.list.queryOptions(
       currentVersion ? { expectVersion: currentVersion } : undefined,
     ),
