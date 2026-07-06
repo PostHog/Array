@@ -1,4 +1,4 @@
-import type { AgentSession } from "@posthog/shared";
+import type { AcpMessage, AgentSession } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -6,6 +6,32 @@ import {
   SessionService,
   type SessionServiceDeps,
 } from "./sessionService";
+
+const PROMPT_ECHO_EVENT: AcpMessage = {
+  type: "acp_message",
+  ts: 1,
+  message: {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "session/prompt",
+    params: { prompt: [{ type: "text", text: "Ship the fix" }] },
+  } as AcpMessage["message"],
+};
+
+const AGENT_MESSAGE_EVENT: AcpMessage = {
+  type: "acp_message",
+  ts: 2,
+  message: {
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Working on it" },
+      },
+    },
+  } as AcpMessage["message"],
+};
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
@@ -66,8 +92,28 @@ function createHarness(session: AgentSession) {
       "createNewLocalSession",
     )
     .mockResolvedValue(undefined);
+  const reconnectInPlace = vi
+    .spyOn(
+      service as unknown as {
+        reconnectInPlace: (...args: unknown[]) => Promise<boolean>;
+      },
+      "reconnectInPlace",
+    )
+    .mockResolvedValue(true);
+  const fetchSessionLogs = vi
+    .spyOn(
+      service as unknown as {
+        fetchSessionLogs: (...args: unknown[]) => Promise<unknown>;
+      },
+      "fetchSessionLogs",
+    )
+    .mockResolvedValue({
+      rawEntries: [],
+      totalLineCount: 0,
+      parseFailureCount: 0,
+    });
 
-  return { service, createNewLocalSession };
+  return { service, createNewLocalSession, reconnectInPlace, fetchSessionLogs };
 }
 
 describe("SessionService.clearSessionError retry config", () => {
@@ -93,6 +139,56 @@ describe("SessionService.clearSessionError retry config", () => {
       "claude-fable-5", // model
       "high", // reasoningLevel
     );
+  });
+
+  it("reconnects in place instead of recreating when the transcript has agent events", async () => {
+    const session = makeSession({
+      events: [PROMPT_ECHO_EVENT, AGENT_MESSAGE_EVENT],
+    });
+    const { service, createNewLocalSession, reconnectInPlace } =
+      createHarness(session);
+
+    await service.clearSessionError("task-1", "/repo");
+
+    expect(createNewLocalSession).not.toHaveBeenCalled();
+    expect(reconnectInPlace).toHaveBeenCalledWith("task-1", "/repo");
+  });
+
+  it("reconnects in place when the run log has history even if in-memory events are empty", async () => {
+    const session = makeSession({ events: [] });
+    const {
+      service,
+      createNewLocalSession,
+      reconnectInPlace,
+      fetchSessionLogs,
+    } = createHarness(session);
+    fetchSessionLogs.mockResolvedValue({
+      rawEntries: [
+        {
+          type: "notification",
+          timestamp: "2026-07-06T00:00:00.000Z",
+          notification: AGENT_MESSAGE_EVENT.message,
+        },
+      ],
+      totalLineCount: 1,
+      parseFailureCount: 0,
+    });
+
+    await service.clearSessionError("task-1", "/repo");
+
+    expect(createNewLocalSession).not.toHaveBeenCalled();
+    expect(reconnectInPlace).toHaveBeenCalledWith("task-1", "/repo");
+  });
+
+  it("recreates when the transcript holds only the user's prompt echo", async () => {
+    const session = makeSession({ events: [PROMPT_ECHO_EVENT] });
+    const { service, createNewLocalSession, reconnectInPlace } =
+      createHarness(session);
+
+    await service.clearSessionError("task-1", "/repo");
+
+    expect(createNewLocalSession).toHaveBeenCalled();
+    expect(reconnectInPlace).not.toHaveBeenCalled();
   });
 });
 

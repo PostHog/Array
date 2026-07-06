@@ -22,6 +22,7 @@ import {
   isJsonRpcRequest,
   isJsonRpcResponse,
   isRateLimitError,
+  isTransientUpstreamError,
   mergeConfigOptions,
   type OptimisticItem,
   type PermissionRequest,
@@ -903,7 +904,11 @@ export class SessionService {
     const previous = this.d.store.getSessions()[taskRunId];
 
     const session = createBaseSession(taskRunId, taskId, taskTitle);
-    session.events = events;
+    // Repainting from the log must not blank a transcript we already hold:
+    // fetchSessionLogs swallows read errors and returns empty, so keep the
+    // previous in-memory events when the log read produced nothing.
+    session.events =
+      events.length === 0 && previous?.events.length ? previous.events : events;
     if (logUrl) {
       session.logUrl = logUrl;
     }
@@ -2460,6 +2465,21 @@ export class SessionService {
         });
       }
 
+      // A provider request that timed out or dropped leaves the session
+      // healthy — no recovery ran above — so tell the user to just re-send
+      // instead of surfacing the raw "Internal error: API Error: …" text.
+      if (isTransientUpstreamError(errorMessage, errorDetails)) {
+        this.d.log.warn("Transient upstream provider failure during prompt", {
+          taskRunId: session.taskRunId,
+          errorMessage,
+          errorDetails,
+        });
+        throw new Error(
+          "The AI provider timed out or dropped the connection. Your session is unaffected — please send the message again.",
+          { cause: error },
+        );
+      }
+
       throw error;
     }
   }
@@ -3392,14 +3412,17 @@ export class SessionService {
    * effect loop.
    *
    * If the session failed before any conversation started (has an
-   * initialPrompt saved from the original creation attempt), creates
-   * a fresh session and re-sends the prompt instead of reconnecting
-   * to an empty session.
+   * initialPrompt saved from the original creation attempt, and no
+   * conversation in memory or in the run log), creates a fresh session
+   * and re-sends the prompt instead of reconnecting to an empty session.
    */
   async clearSessionError(taskId: string, repoPath: string): Promise<void> {
     this.localRepoPaths.set(taskId, repoPath);
     const session = this.d.store.getSessionByTaskId(taskId);
-    if (session?.initialPrompt?.length) {
+    if (
+      session?.initialPrompt?.length &&
+      !(await this.runHasConversationHistory(session))
+    ) {
       const {
         taskTitle,
         initialPrompt,
@@ -3432,6 +3455,34 @@ export class SessionService {
       return;
     }
     await this.reconnectInPlace(taskId, repoPath);
+  }
+
+  /**
+   * Whether the run already holds conversation beyond the user's prompt
+   * echoes. A set `initialPrompt` alone doesn't prove the conversation never
+   * started: it is only cleared when a live agent event arrives, so it
+   * survives when the event subscription drops before the first agent event
+   * while the agent keeps working and logging, and error sessions carry it
+   * forward. Recreating the run in that state orphans the populated run log
+   * behind a fresh latest_run — the task's entire history disappears — so
+   * check the in-memory transcript first and fall back to the persisted log.
+   */
+  private async runHasConversationHistory(
+    session: AgentSession,
+  ): Promise<boolean> {
+    const isPromptEcho = (event: AcpMessage): boolean =>
+      isJsonRpcRequest(event.message) &&
+      event.message.method === "session/prompt";
+    if (session.events.some((event) => !isPromptEcho(event))) {
+      return true;
+    }
+    const { rawEntries } = await this.fetchSessionLogs(
+      session.logUrl,
+      session.taskRunId,
+    );
+    return convertStoredEntriesToEvents(rawEntries).some(
+      (event) => !isPromptEcho(event),
+    );
   }
 
   /**

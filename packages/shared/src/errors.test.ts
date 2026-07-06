@@ -5,6 +5,7 @@ import {
   isFatalSessionError,
   isNotAuthenticatedError,
   isRateLimitError,
+  isTransientUpstreamError,
   NotAuthenticatedError,
   serializeError,
 } from "./errors";
@@ -102,6 +103,56 @@ describe("isFatalSessionError", () => {
 
   it("returns false for ordinary recoverable errors", () => {
     expect(isFatalSessionError("temporary network blip")).toBe(false);
+  });
+
+  it.each([
+    "Internal error: API Error: the operation timed out",
+    "Internal error: API Error: Request timeout",
+    "Internal error: API Error: terminated",
+    "Internal error: API Error: Connection error",
+    "Internal error: API Error: 529 overloaded_error",
+  ])("does not treat the transient upstream failure %j as fatal", (message) => {
+    expect(isFatalSessionError(message)).toBe(false);
+  });
+
+  it("does not treat a transient upstream failure in the details as fatal", () => {
+    expect(
+      isFatalSessionError(
+        "internal error",
+        "API Error: the operation timed out",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isTransientUpstreamError", () => {
+  it.each([
+    "API Error: the operation timed out",
+    "API Error: terminated",
+    "API Error: Connection error",
+    "API Error: 500 internal server error",
+    "API Error: 529 overloaded_error",
+    "Internal error: API Error: request timed out",
+  ])("recognises %j", (message) => {
+    expect(isTransientUpstreamError(message)).toBe(true);
+  });
+
+  it("matches against the details when the message is generic", () => {
+    expect(
+      isTransientUpstreamError(
+        "Internal error",
+        "API Error: the operation timed out",
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    "process exited",
+    "session not found",
+    "the operation timed out", // no "API Error:" marker — not an upstream turn failure
+    "API Error: 400 invalid_request_error",
+  ])("does not match %j", (message) => {
+    expect(isTransientUpstreamError(message)).toBe(false);
   });
 });
 

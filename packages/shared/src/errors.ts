@@ -82,6 +82,22 @@ const FATAL_SESSION_ERROR_PATTERNS = [
   "session not found",
 ] as const;
 
+/**
+ * Transient upstream provider failures, as surfaced by agent adapters in
+ * "API Error: …" result strings (kept in sync with classifyAgentError in
+ * @posthog/agent). The agent process and session are healthy — a single
+ * provider request timed out, dropped, or returned a retryable status — so
+ * these must not count as fatal session errors: the fix is re-sending the
+ * prompt, never tearing the session down. Checked before the fatal patterns
+ * because the ACP layer wraps them as "Internal error: API Error: …".
+ */
+const UPSTREAM_TRANSIENT_ERROR_REGEXES = [
+  /API Error:\s*terminated\b/i,
+  /API Error:\s*Connection error\b/i,
+  /API Error:.*\b(?:timed out|timeout)\b/i,
+  /API Error:\s*(?:429|5\d\d)\b/i,
+] as const;
+
 function includesAny(
   value: string | undefined,
   patterns: readonly string[],
@@ -101,11 +117,22 @@ export function isRateLimitError(
   );
 }
 
+export function isTransientUpstreamError(
+  errorMessage: string,
+  errorDetails?: string,
+): boolean {
+  return UPSTREAM_TRANSIENT_ERROR_REGEXES.some(
+    (regex) =>
+      regex.test(errorMessage) || (!!errorDetails && regex.test(errorDetails)),
+  );
+}
+
 export function isFatalSessionError(
   errorMessage: string,
   errorDetails?: string,
 ): boolean {
   if (isRateLimitError(errorMessage, errorDetails)) return false;
+  if (isTransientUpstreamError(errorMessage, errorDetails)) return false;
   return (
     includesAny(errorMessage, FATAL_SESSION_ERROR_PATTERNS) ||
     includesAny(errorDetails, FATAL_SESSION_ERROR_PATTERNS)
