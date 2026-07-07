@@ -185,8 +185,8 @@ export function navigateToMcpServers(): void {
   void getRouterOrNull()?.navigate({ to: "/mcp-servers" });
 }
 
-export function navigateToUsage(): void {
-  void getRouterOrNull()?.navigate({ to: "/usage" });
+export function navigateToUsage(options?: { replace?: boolean }): void {
+  void getRouterOrNull()?.navigate({ to: "/usage", replace: options?.replace });
 }
 
 // Channels-space mirrors. These render the same shared views as their /code (or
