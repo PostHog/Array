@@ -2,6 +2,7 @@ import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type { PermissionMode } from "@posthog/agent/execution-mode";
 import type {
+  CloudMcpServerImport,
   CloudRunSource,
   PrAuthorshipMode,
   SeatData,
@@ -482,6 +483,11 @@ interface CloudRunOptions {
   signalReportId?: string;
   initialPermissionMode?: PermissionMode;
   homeQuickAction?: string;
+  /**
+   * Local url-based MCP servers to make available inside the sandbox. The
+   * backend merges these into the agent server's `--mcpServers` at spawn.
+   */
+  importedMcpServers?: CloudMcpServerImport[];
 }
 
 interface CreateTaskRunOptions extends CloudRunOptions {
@@ -562,6 +568,9 @@ function buildCloudRunRequestBody(
   }
   if (options?.homeQuickAction) {
     body.home_quick_action = options.homeQuickAction;
+  }
+  if (options?.importedMcpServers?.length) {
+    body.imported_mcp_servers = options.importedMcpServers;
   }
 
   return body;

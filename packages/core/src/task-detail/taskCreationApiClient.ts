@@ -1,4 +1,8 @@
-import type { CloudRunSource, PrAuthorshipMode } from "@posthog/shared";
+import type {
+  CloudMcpServerImport,
+  CloudRunSource,
+  PrAuthorshipMode,
+} from "@posthog/shared";
 import type { Task, TaskRun } from "@posthog/shared/domain-types";
 
 export interface CreateTaskRunClientOptions {
@@ -14,6 +18,7 @@ export interface CreateTaskRunClientOptions {
   signalReportId?: string;
   initialPermissionMode?: string;
   homeQuickAction?: string;
+  importedMcpServers?: CloudMcpServerImport[];
 }
 
 export interface StartTaskRunClientOptions {

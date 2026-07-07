@@ -404,6 +404,7 @@ export class TaskCreationSaga extends Saga<
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
             homeQuickAction: input.homeQuickActionLabel,
+            importedMcpServers: input.importedMcpServers,
             initialPermissionMode:
               input.executionMode ??
               (cloudAdapter === "codex" ? "auto" : "plan"),
