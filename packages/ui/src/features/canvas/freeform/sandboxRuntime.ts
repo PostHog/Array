@@ -269,6 +269,40 @@ export function buildSandboxDocument(
       ),
     );
 
+    // JSX text and attribute strings never process \\uXXXX escapes (they render
+    // verbatim, e.g. "\\u00b7" instead of "·"), but generated canvases still
+    // contain them despite the prompt rules — decode at transpile time so both
+    // new and already-saved canvases render the real characters. Escapes inside
+    // JS string/template literals are untouched (Babel already decoded those).
+    const decodeUnicodeEscapes = (value) =>
+      value.replace(
+        /\\\\u\\{([0-9a-fA-F]{1,6})\\}|\\\\u([0-9a-fA-F]{4})/g,
+        (match, braced, plain) => {
+          try {
+            return String.fromCodePoint(parseInt(braced || plain, 16));
+          } catch {
+            return match;
+          }
+        },
+      );
+    const jsxUnicodeEscapesPlugin = () => ({
+      visitor: {
+        JSXText(path) {
+          path.node.value = decodeUnicodeEscapes(path.node.value);
+        },
+        JSXAttribute(path) {
+          const v = path.node.value;
+          if (v && v.type === "StringLiteral") {
+            const decoded = decodeUnicodeEscapes(v.value);
+            if (decoded !== v.value) {
+              v.value = decoded;
+              v.extra = undefined; // drop stale raw so the decoded value is emitted
+            }
+          }
+        },
+      },
+    });
+
     let root = null;
     // mount() is async and is called once per streamed code snapshot, so several
     // runs overlap on their awaits. Without ordering, a slower EARLIER (partial,
@@ -282,6 +316,7 @@ export function buildSandboxDocument(
       try {
         const out = Babel.transform(code, {
           filename: "canvas.tsx",
+          plugins: [jsxUnicodeEscapesPlugin],
           presets: [
             ["react", { runtime: "automatic" }],
             ["typescript", { isTSX: true, allExtensions: true, onlyRemoveTypeImports: true }],
