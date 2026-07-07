@@ -1,64 +1,38 @@
-import { mentionsUser } from "@posthog/shared";
-import type {
-  Task,
-  TaskThreadMessage,
-  UserBasic,
-} from "@posthog/shared/domain-types";
+import type { TaskMention, UserBasic } from "@posthog/shared/domain-types";
 
 /**
- * Derives the Activity feed — thread messages that @-mention the current user
- * — from data every client already has: channel task lists and their thread
- * messages. Mentions live inline in message content (see `@posthog/shared`
- * mentions), so no dedicated notifications backend is involved.
+ * The Activity feed — thread messages that @-mention the current user — as
+ * served by the backend mentions index (`getTaskMentions`). Mentions are
+ * extracted server-side at write time, so the client only maps DTOs to items.
  */
-
-/** A channel task paired with the channel context the feed needs. */
-export interface MentionActivityTaskRef {
-  task: Task;
-  /** Backend channel name, for the "#channel" label. */
-  channelName: string;
-  /** Desktop folder channel id (the /website route param); null when unmapped. */
-  folderChannelId: string | null;
-}
 
 export interface MentionActivityItem {
   messageId: string;
   taskId: string;
   taskTitle: string;
-  channelName: string;
-  folderChannelId: string | null;
+  /** Backend channel (tasks product Channel UUID); null for channel-less tasks. */
+  channelId: string | null;
+  /** Backend channel name, for the "#channel" label. */
+  channelName: string | null;
   author: UserBasic | null;
   content: string;
   createdAt: string;
 }
 
-/** Mentions of the current user across channel threads, newest first. */
-export function buildMentionActivity(
-  currentUserEmail: string | null | undefined,
-  tasks: MentionActivityTaskRef[],
-  threadsByTaskId: ReadonlyMap<string, TaskThreadMessage[]>,
+/** Map mention DTOs (already newest-first from the backend) to feed items. */
+export function toMentionActivityItems(
+  mentions: readonly TaskMention[],
 ): MentionActivityItem[] {
-  if (!currentUserEmail) return [];
-  const self = currentUserEmail.toLowerCase();
-  const items: MentionActivityItem[] = [];
-  for (const { task, channelName, folderChannelId } of tasks) {
-    for (const message of threadsByTaskId.get(task.id) ?? []) {
-      // Self-mentions aren't notifications.
-      if (message.author?.email?.toLowerCase() === self) continue;
-      if (!mentionsUser(message.content, self)) continue;
-      items.push({
-        messageId: message.id,
-        taskId: task.id,
-        taskTitle: task.title || "Untitled task",
-        channelName,
-        folderChannelId,
-        author: message.author ?? null,
-        content: message.content,
-        createdAt: message.created_at,
-      });
-    }
-  }
-  return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return mentions.map((mention) => ({
+    messageId: mention.message_id,
+    taskId: mention.task_id,
+    taskTitle: mention.task_title || "Untitled task",
+    channelId: mention.channel_id ?? null,
+    channelName: mention.channel_name ?? null,
+    author: mention.author ?? null,
+    content: mention.content,
+    createdAt: mention.created_at,
+  }));
 }
 
 /** How many items arrived after the viewer last opened the Activity page. */
@@ -68,4 +42,27 @@ export function countUnseenActivity(
 ): number {
   if (!lastSeenAt) return items.length;
   return items.filter((item) => item.createdAt > lastSeenAt).length;
+}
+
+// Bounds the cache so a long-running session's accumulated feed can't grow
+// without limit.
+const MAX_CACHED_MENTIONS = 300;
+
+/**
+ * Fold a page of freshly-fetched mentions into the previously cached set —
+ * dedupe by message, keep newest first. Lets repolls fetch only what's new
+ * (via `since`) instead of re-fetching the whole top page every time.
+ */
+export function mergeTaskMentions(
+  previous: readonly TaskMention[],
+  incoming: readonly TaskMention[],
+): TaskMention[] {
+  if (incoming.length === 0) return [...previous];
+  const byMessageId = new Map(
+    previous.map((mention) => [mention.message_id, mention]),
+  );
+  for (const mention of incoming) byMessageId.set(mention.message_id, mention);
+  return Array.from(byMessageId.values())
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .slice(0, MAX_CACHED_MENTIONS);
 }

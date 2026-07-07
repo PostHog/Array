@@ -73,6 +73,7 @@ import type {
   SuggestedReviewerWriteEntry,
   Task,
   TaskChannel,
+  TaskMention,
   TaskRun,
   TaskRunArtefact,
   TaskThreadMessage,
@@ -2303,6 +2304,25 @@ export class PostHogAPIClient {
       throw new Error(`Failed to resolve task channel: ${response.statusText}`);
     }
     return (await response.json()) as TaskChannel;
+  }
+
+  // Mentions of the current user across task threads, newest first.
+  async getTaskMentions(options?: { since?: string }): Promise<TaskMention[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_mentions/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options?.since) {
+      url.searchParams.set("since", options.since);
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task mentions: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskMention[];
   }
 
   async getTaskThreadMessages(taskId: string): Promise<TaskThreadMessage[]> {

@@ -1,21 +1,11 @@
-import { formatMention } from "@posthog/shared";
-import type {
-  Task,
-  TaskThreadMessage,
-  UserBasic,
-} from "@posthog/shared/domain-types";
+import type { TaskMention, UserBasic } from "@posthog/shared/domain-types";
 import { describe, expect, it } from "vitest";
 import {
-  buildMentionActivity,
   countUnseenActivity,
-  type MentionActivityTaskRef,
+  mergeTaskMentions,
+  toMentionActivityItems,
 } from "./mentionActivity";
 
-const me: UserBasic = {
-  id: 1,
-  uuid: "me-uuid",
-  email: "me@posthog.com",
-};
 const ann: UserBasic = {
   id: 2,
   uuid: "ann-uuid",
@@ -23,129 +13,60 @@ const ann: UserBasic = {
   first_name: "Ann",
 };
 
-function task(id: string, title = `Task ${id}`): Task {
-  return { id, title } as Task;
-}
-
-function message(
-  id: string,
-  author: UserBasic | null,
-  content: string,
-  createdAt: string,
-): TaskThreadMessage {
+function mention(overrides: Partial<TaskMention> = {}): TaskMention {
   return {
-    id,
-    task: "t1",
-    content,
-    created_at: createdAt,
-    author,
+    id: "mention-1",
+    message_id: "m1",
+    task_id: "t1",
+    task_title: "Task t1",
+    channel_id: "c1",
+    channel_name: "general",
+    author: ann,
+    content: "ping @[Me](me@posthog.com)",
+    created_at: "2026-07-01T10:00:00Z",
+    ...overrides,
   };
 }
 
-const meToken = formatMention("Me", me.email);
-
-function refs(...tasks: Task[]): MentionActivityTaskRef[] {
-  return tasks.map((t) => ({
-    task: t,
-    channelName: "general",
-    folderChannelId: "folder-1",
-  }));
-}
-
-describe("buildMentionActivity", () => {
-  it("returns messages from others that mention me, newest first", () => {
-    const threads = new Map([
-      [
-        "t1",
-        [
-          message("m1", ann, `ping ${meToken}`, "2026-07-01T10:00:00Z"),
-          message("m2", ann, "no mention", "2026-07-01T11:00:00Z"),
-        ],
-      ],
-      ["t2", [message("m3", ann, `also ${meToken}`, "2026-07-02T09:00:00Z")]],
+describe("toMentionActivityItems", () => {
+  it("maps mention DTOs to feed items", () => {
+    expect(toMentionActivityItems([mention()])).toEqual([
+      {
+        messageId: "m1",
+        taskId: "t1",
+        taskTitle: "Task t1",
+        channelId: "c1",
+        channelName: "general",
+        author: ann,
+        content: "ping @[Me](me@posthog.com)",
+        createdAt: "2026-07-01T10:00:00Z",
+      },
     ]);
-    const items = buildMentionActivity(
-      me.email,
-      refs(task("t1"), task("t2")),
-      threads,
-    );
-    expect(items.map((i) => i.messageId)).toEqual(["m3", "m1"]);
-    expect(items[1]).toMatchObject({
-      taskId: "t1",
-      taskTitle: "Task t1",
-      channelName: "general",
-      folderChannelId: "folder-1",
-      author: ann,
+  });
+
+  it("labels untitled tasks and tolerates missing channel and author", () => {
+    const items = toMentionActivityItems([
+      mention({
+        task_title: "",
+        channel_id: null,
+        channel_name: null,
+        author: null,
+      }),
+    ]);
+    expect(items[0]).toMatchObject({
+      taskTitle: "Untitled task",
+      channelId: null,
+      channelName: null,
+      author: null,
     });
-  });
-
-  it("matches the mention email case-insensitively", () => {
-    const threads = new Map([
-      [
-        "t1",
-        [
-          message(
-            "m1",
-            ann,
-            "hi @[Me](ME@PostHog.com)",
-            "2026-07-01T10:00:00Z",
-          ),
-        ],
-      ],
-    ]);
-    expect(
-      buildMentionActivity(me.email, refs(task("t1")), threads),
-    ).toHaveLength(1);
-  });
-
-  it("skips my own messages even when they mention me", () => {
-    const threads = new Map([
-      [
-        "t1",
-        [message("m1", me, `note to self ${meToken}`, "2026-07-01T10:00:00Z")],
-      ],
-    ]);
-    expect(buildMentionActivity(me.email, refs(task("t1")), threads)).toEqual(
-      [],
-    );
-  });
-
-  it("includes authorless messages that mention me", () => {
-    const threads = new Map([
-      ["t1", [message("m1", null, meToken, "2026-07-01T10:00:00Z")]],
-    ]);
-    expect(
-      buildMentionActivity(me.email, refs(task("t1")), threads),
-    ).toHaveLength(1);
-  });
-
-  it("returns nothing without a current user email", () => {
-    const threads = new Map([
-      ["t1", [message("m1", ann, meToken, "2026-07-01T10:00:00Z")]],
-    ]);
-    expect(buildMentionActivity(null, refs(task("t1")), threads)).toEqual([]);
-  });
-
-  it("labels untitled tasks", () => {
-    const threads = new Map([
-      ["t1", [message("m1", ann, meToken, "2026-07-01T10:00:00Z")]],
-    ]);
-    const items = buildMentionActivity(me.email, refs(task("t1", "")), threads);
-    expect(items[0]?.taskTitle).toBe("Untitled task");
   });
 });
 
 describe("countUnseenActivity", () => {
-  const threads = new Map([
-    [
-      "t1",
-      [
-        message("m1", ann, meToken, "2026-07-01T10:00:00Z"),
-        message("m2", ann, meToken, "2026-07-03T10:00:00Z"),
-      ],
-    ],
+  const items = toMentionActivityItems([
+    mention({ message_id: "m2", created_at: "2026-07-03T10:00:00Z" }),
+    mention({ message_id: "m1", created_at: "2026-07-01T10:00:00Z" }),
   ]);
-  const items = buildMentionActivity(me.email, refs(task("t1")), threads);
 
   it("counts everything when never seen", () => {
     expect(countUnseenActivity(items, null)).toBe(2);
@@ -154,5 +75,61 @@ describe("countUnseenActivity", () => {
   it("counts only items after the last-seen timestamp", () => {
     expect(countUnseenActivity(items, "2026-07-02T00:00:00Z")).toBe(1);
     expect(countUnseenActivity(items, "2026-07-04T00:00:00Z")).toBe(0);
+  });
+});
+
+describe("mergeTaskMentions", () => {
+  it("prepends newly-fetched mentions ahead of the previous page", () => {
+    const previous = [
+      mention({ message_id: "m1", created_at: "2026-07-01T10:00:00Z" }),
+    ];
+    const incoming = [
+      mention({ message_id: "m2", created_at: "2026-07-02T10:00:00Z" }),
+    ];
+    expect(
+      mergeTaskMentions(previous, incoming).map((m) => m.message_id),
+    ).toEqual(["m2", "m1"]);
+  });
+
+  it("replaces a mention that was re-fetched instead of duplicating it", () => {
+    const previous = [
+      mention({
+        message_id: "m1",
+        content: "old",
+        created_at: "2026-07-01T10:00:00Z",
+      }),
+    ];
+    const incoming = [
+      mention({
+        message_id: "m1",
+        content: "edited",
+        created_at: "2026-07-01T10:00:00Z",
+      }),
+    ];
+    const merged = mergeTaskMentions(previous, incoming);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].content).toBe("edited");
+  });
+
+  it("returns the previous page unchanged when there is nothing new", () => {
+    const previous = [
+      mention({ message_id: "m1", created_at: "2026-07-01T10:00:00Z" }),
+    ];
+    expect(mergeTaskMentions(previous, [])).toEqual(previous);
+  });
+
+  it("caps the merged result so a long session can't grow it unbounded", () => {
+    const previous = Array.from({ length: 300 }, (_, i) =>
+      mention({
+        message_id: `old-${i}`,
+        created_at: `2026-06-01T${String(i % 24).padStart(2, "0")}:00:00Z`,
+      }),
+    );
+    const incoming = [
+      mention({ message_id: "newest", created_at: "2026-07-05T10:00:00Z" }),
+    ];
+    const merged = mergeTaskMentions(previous, incoming);
+    expect(merged).toHaveLength(300);
+    expect(merged[0].message_id).toBe("newest");
   });
 });

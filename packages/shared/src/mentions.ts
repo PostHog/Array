@@ -3,8 +3,9 @@
  *
  * Mentions are stored inline as `@[Display Name](email)` so the plain string
  * survives every transport/storage layer unchanged, older clients degrade to
- * readable text, and any client can both render mentions as chips and answer
- * "does this message mention me?" without a backend round-trip.
+ * readable text, and any client can render mentions as chips from the content
+ * alone. The backend indexes the same tokens at write time to serve the
+ * mentions feed (`getTaskMentions`).
  */
 
 // `@` is excluded on both sides of the separator so the match point is
@@ -58,25 +59,6 @@ export function splitMentionSegments(content: string): MentionSegment[] {
     segments.push({ type: "text", text: content.slice(lastIndex) });
   }
   return segments;
-}
-
-/** Emails mentioned in the content, lowercased and deduped. */
-export function extractMentionEmails(content: string): string[] {
-  const emails = new Set<string>();
-  for (const segment of splitMentionSegments(content)) {
-    if (segment.type === "mention") emails.add(segment.email.toLowerCase());
-  }
-  return [...emails];
-}
-
-/** Whether the content mentions the given user (by email, case-insensitive). */
-export function mentionsUser(
-  content: string,
-  email: string | null | undefined,
-): boolean {
-  if (!email) return false;
-  const needle = email.toLowerCase();
-  return extractMentionEmails(content).includes(needle);
 }
 
 /** Content with mention tokens flattened to `@Display Name` for plain surfaces. */

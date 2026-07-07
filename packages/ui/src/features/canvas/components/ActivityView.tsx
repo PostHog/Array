@@ -17,7 +17,9 @@ import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authCl
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useMentionActivity } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
+import { normalizeChannelName } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useActivitySeenStore } from "@posthog/ui/features/canvas/stores/activitySeenStore";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
@@ -27,14 +29,17 @@ import {
 } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 function ActivityRow({
   item,
+  folderChannelId,
   isNew,
   currentUserEmail,
 }: {
   item: MentionActivityItem;
+  /** Desktop folder channel id (the /website route param); null when unmapped. */
+  folderChannelId: string | null;
   /** Arrived since the viewer last opened this page. */
   isNew: boolean;
   currentUserEmail?: string | null;
@@ -43,13 +48,13 @@ function ActivityRow({
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "open_mention",
       surface: "activity",
-      channel_id: item.folderChannelId ?? undefined,
+      channel_id: folderChannelId ?? undefined,
       task_id: item.taskId,
     });
     // The channel thread route is the deep-link target; tasks whose channel
     // folder is gone fall back to the plain task view.
-    if (item.folderChannelId) {
-      navigateToChannelTask(item.folderChannelId, item.taskId);
+    if (folderChannelId) {
+      navigateToChannelTask(folderChannelId, item.taskId);
     } else {
       navigateToTaskDetail(item.taskId);
     }
@@ -79,10 +84,15 @@ function ActivityRow({
               <Text as="span" size="1" weight="medium">
                 {userDisplayName(item.author)}
               </Text>{" "}
-              mentioned you in{" "}
-              <Text as="span" size="1" weight="medium">
-                #{item.channelName}
-              </Text>
+              mentioned you
+              {item.channelName && (
+                <>
+                  {" in "}
+                  <Text as="span" size="1" weight="medium">
+                    #{item.channelName}
+                  </Text>
+                </>
+              )}
             </Text>
             <Text size="1" className="shrink-0 text-muted-foreground">
               {formatRelativeTimeShort(item.createdAt)}
@@ -98,15 +108,14 @@ function ActivityRow({
           />
         </span>
       </button>
-      {item.folderChannelId && (
+      {folderChannelId && (
         <Button
           variant="default"
           size="icon-xs"
           aria-label="Copy thread link"
           className="absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100"
           onClick={() =>
-            item.folderChannelId &&
-            void copyChannelLink(item.folderChannelId, "activity", item.taskId)
+            void copyChannelLink(folderChannelId, "activity", item.taskId)
           }
         >
           <LinkIcon size={14} />
@@ -122,6 +131,24 @@ export function ActivityView() {
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
   const { items, isLoading } = useMentionActivity();
+  // Items carry backend channel names only; the desktop folder-channel id
+  // (needed for /website navigation and copy-link) is resolved here, where
+  // the single useChannels subscription lives.
+  const { channels: folderChannels } = useChannels();
+  const folderIdByName = useMemo(
+    () =>
+      new Map(
+        folderChannels.map((folder) => [
+          normalizeChannelName(folder.name),
+          folder.id,
+        ]),
+      ),
+    [folderChannels],
+  );
+  const folderChannelIdFor = (channelName: string | null): string | null =>
+    channelName
+      ? (folderIdByName.get(normalizeChannelName(channelName)) ?? null)
+      : null;
   const markSeen = useActivitySeenStore((s) => s.markSeen);
   // Snapshot before marking seen so rows that were new on arrival keep their
   // dot for this visit.
@@ -175,6 +202,7 @@ export function ActivityView() {
                 <ActivityRow
                   key={item.messageId}
                   item={item}
+                  folderChannelId={folderChannelIdFor(item.channelName)}
                   isNew={!seenAtOpen || item.createdAt > seenAtOpen}
                   currentUserEmail={currentUser?.email}
                 />

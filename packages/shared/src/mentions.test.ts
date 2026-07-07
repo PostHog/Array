@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  extractMentionEmails,
   formatMention,
   mentionsToPlainText,
-  mentionsUser,
   splitMentionSegments,
 } from "./mentions";
 
@@ -89,23 +87,6 @@ describe("splitMentionSegments", () => {
     const segments = splitMentionSegments(content);
     expect(performance.now() - start).toBeLessThan(500);
     expect(segments).toEqual([{ type: "text", text: content }]);
-  });
-});
-
-describe("extractMentionEmails / mentionsUser", () => {
-  const content = "cc @[Ann](Ann@PostHog.com) and @[Bob](bob@posthog.com)";
-
-  it("lowercases and dedupes emails", () => {
-    expect(
-      extractMentionEmails(`${content} again @[Ann](ann@posthog.com)`),
-    ).toEqual(["ann@posthog.com", "bob@posthog.com"]);
-  });
-
-  it("matches the mentioned user case-insensitively", () => {
-    expect(mentionsUser(content, "ann@posthog.com")).toBe(true);
-    expect(mentionsUser(content, "ANN@posthog.com")).toBe(true);
-    expect(mentionsUser(content, "carol@posthog.com")).toBe(false);
-    expect(mentionsUser(content, null)).toBe(false);
   });
 });
 

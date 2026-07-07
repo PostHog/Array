@@ -57,7 +57,7 @@ const NON_CANVAS_WEBSITE_PREFIXES = [
 ];
 
 // The Activity nav row with its unread-mentions dot. Its own component so the
-// mention fan-out queries only mount once here.
+// mentions query only mounts once here.
 function ActivityNavItem({ isActive }: { isActive: boolean }) {
   const { items } = useMentionActivity();
   const lastSeenAt = useActivitySeenStore((s) => s.lastSeenAt);

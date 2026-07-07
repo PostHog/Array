@@ -92,6 +92,22 @@ export interface TaskThreadMessage {
   forwarded_by?: UserBasic | null;
 }
 
+/**
+ * One @-mention of the current user in a task's thread, from the backend
+ * mentions index (`/task_mentions/`). Mirrors `TaskMentionDTO`.
+ */
+export interface TaskMention {
+  id: string;
+  message_id: string;
+  task_id: string;
+  task_title: string;
+  channel_id?: string | null;
+  channel_name?: string | null;
+  author?: UserBasic | null;
+  content: string;
+  created_at: string;
+}
+
 export type TaskRunStatus =
   | "not_started"
   | "queued"

@@ -120,11 +120,9 @@ export { buildDiscussReportPrompt } from "./inbox-prompts";
 export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
 export {
-  extractMentionEmails,
   formatMention,
   type MentionSegment,
   mentionsToPlainText,
-  mentionsUser,
   splitMentionSegments,
 } from "./mentions";
 export {
