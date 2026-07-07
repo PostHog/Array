@@ -62,6 +62,14 @@ import type { RepositoriesService } from "@posthog/core/integrations/repositorie
 import { LLM_GATEWAY_SERVICE } from "@posthog/core/llm-gateway/identifiers";
 import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
 import {
+  LOCAL_MCP_IMPORT_SERVICE,
+  LOCAL_MCP_WORKSPACE_CLIENT,
+} from "@posthog/core/local-mcp/identifiers";
+import type {
+  LocalMcpImportService,
+  LocalMcpWorkspaceClient,
+} from "@posthog/core/local-mcp/localMcpImport";
+import {
   GITHUB_CONNECT_CLIENT,
   type GithubConnectClient,
 } from "@posthog/core/onboarding/identifiers";
@@ -288,6 +296,8 @@ export interface RendererBindings {
   [CODE_REVIEW_WORKSPACE_CLIENT]: CodeReviewWorkspaceClient;
   [REVERT_HUNK_SERVICE]: RevertHunkService;
   [SKILLS_WORKSPACE_CLIENT]: SkillsWorkspaceClient;
+  [LOCAL_MCP_WORKSPACE_CLIENT]: LocalMcpWorkspaceClient;
+  [LOCAL_MCP_IMPORT_SERVICE]: LocalMcpImportService;
   [CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL]: BundleLocalSkill;
   [CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES]: ResolveSkillBundleDependencies;
   [CLOUD_ARTIFACT_READ_FILE_AS_BASE64]: ReadFileAsBase64;

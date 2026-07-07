@@ -177,6 +177,7 @@ import {
 import type { HandoffGitGateway } from "@posthog/workspace-server/services/handoff/ports";
 import { HandoffHostService } from "@posthog/workspace-server/services/handoff/service";
 import { LOGS_SERVICE } from "@posthog/workspace-server/services/local-logs/identifiers";
+import { localMcpModule } from "@posthog/workspace-server/services/local-mcp/local-mcp.module";
 import { mcpCallbackModule } from "@posthog/workspace-server/services/mcp-callback/mcp-callback.module";
 import { MCP_PROXY_AUTH } from "@posthog/workspace-server/services/mcp-proxy/identifiers";
 import { mcpProxyModule } from "@posthog/workspace-server/services/mcp-proxy/mcp-proxy.module";
@@ -612,6 +613,7 @@ container.load(skillsModule);
 container.load(skillsMarketplaceModule);
 container.load(githubReleasesModule);
 container.load(onboardingImportModule);
+container.load(localMcpModule);
 container.load(claudeCliSessionsModule);
 container.load(additionalDirectoriesModule);
 container.bind(MAIN_SLEEP_SERVICE).to(SleepService);

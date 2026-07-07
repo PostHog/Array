@@ -5,18 +5,32 @@ import type { NewSessionRequest } from "@agentclientprotocol/sdk";
 import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "../../../utils/logger";
 
-export function loadUserClaudeJsonMcpServers(
-  cwd: string,
+export type ClaudeJsonMcpScope = "user" | "project";
+
+export interface ClaudeJsonMcpServerEntry {
+  name: string;
+  scope: ClaudeJsonMcpScope;
+  config: McpServerConfig;
+}
+
+/**
+ * Reads the user's MCP servers from ~/.claude.json: the top-level `mcpServers`
+ * section plus, when `cwd` is given, the `projects[cwd].mcpServers` section. A
+ * project-scoped server replaces a user-scoped one with the same name,
+ * matching how Claude Code merges the two sections.
+ */
+export function loadUserClaudeJsonMcpServerEntries(
+  cwd?: string,
   logger?: Logger,
   homeDir: string = os.homedir(),
-): Record<string, McpServerConfig> {
+): ClaudeJsonMcpServerEntry[] {
   const claudeJsonPath = path.join(homeDir, ".claude.json");
 
   let raw: string;
   try {
     raw = fs.readFileSync(claudeJsonPath, "utf8");
   } catch {
-    return {};
+    return [];
   }
 
   let cfg: {
@@ -29,21 +43,43 @@ export function loadUserClaudeJsonMcpServers(
     logger?.warn("Failed to parse ~/.claude.json", {
       error: err instanceof Error ? err.message : String(err),
     });
-    return {};
+    return [];
   }
 
-  const topLevel =
-    cfg.mcpServers && typeof cfg.mcpServers === "object"
-      ? (cfg.mcpServers as Record<string, McpServerConfig>)
-      : {};
+  const sections: Array<{ scope: ClaudeJsonMcpScope; servers: unknown }> = [
+    { scope: "user", servers: cfg.mcpServers },
+    {
+      scope: "project",
+      servers: cwd ? cfg.projects?.[cwd]?.mcpServers : undefined,
+    },
+  ];
 
-  const project = cfg.projects?.[cwd];
-  const projectScoped =
-    project?.mcpServers && typeof project.mcpServers === "object"
-      ? (project.mcpServers as Record<string, McpServerConfig>)
-      : {};
+  const byName = new Map<string, ClaudeJsonMcpServerEntry>();
+  for (const { scope, servers } of sections) {
+    if (!servers || typeof servers !== "object") continue;
+    for (const [name, config] of Object.entries(
+      servers as Record<string, McpServerConfig>,
+    )) {
+      byName.set(name, { name, scope, config });
+    }
+  }
+  return [...byName.values()];
+}
 
-  return { ...topLevel, ...projectScoped };
+export function loadUserClaudeJsonMcpServers(
+  cwd: string,
+  logger?: Logger,
+  homeDir: string = os.homedir(),
+): Record<string, McpServerConfig> {
+  const servers: Record<string, McpServerConfig> = {};
+  for (const entry of loadUserClaudeJsonMcpServerEntries(
+    cwd,
+    logger,
+    homeDir,
+  )) {
+    servers[entry.name] = entry.config;
+  }
+  return servers;
 }
 
 export function parseMcpServers(

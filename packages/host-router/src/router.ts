@@ -27,6 +27,7 @@ import { githubReleasesRouter } from "./routers/github-releases.router";
 import { handoffRouter } from "./routers/handoff.router";
 import { linearIntegrationRouter } from "./routers/linear-integration.router";
 import { llmGatewayRouter } from "./routers/llm-gateway.router";
+import { localMcpRouter } from "./routers/local-mcp.router";
 import { logsRouter } from "./routers/logs.router";
 import { mcpAppsRouter } from "./routers/mcp-apps.router";
 import { mcpCallbackRouter } from "./routers/mcp-callback.router";
@@ -76,6 +77,7 @@ export const hostRouter = router({
   githubReleases: githubReleasesRouter,
   linearIntegration: linearIntegrationRouter,
   llmGateway: llmGatewayRouter,
+  localMcp: localMcpRouter,
   logs: logsRouter,
   mcpApps: mcpAppsRouter,
   mcpCallback: mcpCallbackRouter,
