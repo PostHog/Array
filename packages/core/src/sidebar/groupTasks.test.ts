@@ -1,6 +1,7 @@
 import type { Task } from "@posthog/shared/domain-types";
 import { describe, expect, it } from "vitest";
 import {
+  findGroupFolder,
   type GroupableTask,
   getRepositoryInfo,
   groupByRepository,
@@ -349,5 +350,44 @@ describe("groupByRepository", () => {
       "posthog/code",
       "other",
     ]);
+  });
+});
+
+describe("findGroupFolder", () => {
+  const mainClone = {
+    path: "/repos/code",
+    remoteUrl: "posthog/code",
+    mainRepoPath: null,
+  };
+  const worktree = {
+    path: "/repos/code-wt",
+    remoteUrl: "posthog/code",
+    mainRepoPath: "/repos/code",
+  };
+  const unrelated = {
+    path: "/repos/other",
+    remoteUrl: "acme/other",
+    mainRepoPath: null,
+  };
+
+  it("prefers the main clone when a worktree of the same repo was added first", () => {
+    expect(
+      findGroupFolder([worktree, mainClone, unrelated], "posthog/code"),
+    ).toBe(mainClone);
+  });
+
+  it("falls back to the worktree when only it is registered", () => {
+    expect(findGroupFolder([worktree, unrelated], "posthog/code")).toBe(
+      worktree,
+    );
+  });
+
+  it("matches folders without a remote by path", () => {
+    const local = { path: "/repos/local", remoteUrl: null };
+    expect(findGroupFolder([local], "/repos/local")).toBe(local);
+  });
+
+  it("returns undefined when nothing matches", () => {
+    expect(findGroupFolder([unrelated], "posthog/code")).toBeUndefined();
   });
 });

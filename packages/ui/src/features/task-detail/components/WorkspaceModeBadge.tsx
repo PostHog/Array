@@ -23,11 +23,27 @@ const MODE_META: Record<
   },
 };
 
-export function WorkspaceModeBadge({ mode }: { mode?: WorkspaceMode }) {
+export function WorkspaceModeBadge({
+  mode,
+  checkoutPath,
+}: {
+  mode?: WorkspaceMode;
+  /** Directory the task runs in, appended to the tooltip for local/worktree tasks. */
+  checkoutPath?: string | null;
+}) {
   if (!mode) return null;
   const { Icon, label, color } = MODE_META[mode];
+  const content =
+    mode !== "cloud" && checkoutPath ? (
+      <span className="flex flex-col">
+        <span>{label}</span>
+        <span className="text-gray-10">{checkoutPath}</span>
+      </span>
+    ) : (
+      label
+    );
   return (
-    <Tooltip content={label} side="bottom" delayDuration={300}>
+    <Tooltip content={content} side="bottom" delayDuration={300}>
       <span className="no-drag flex shrink-0 items-center justify-center">
         <Icon size={13} weight="fill" color={color} />
       </span>

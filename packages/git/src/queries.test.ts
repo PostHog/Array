@@ -1,4 +1,4 @@
-import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { devNull, tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -12,6 +12,7 @@ import {
   getBranchDiffPatchesByPath,
   getChangedFilesDetailed,
   getGitBusyState,
+  getLinkedWorktreeMainPath,
   remoteBranchExists,
   splitUnifiedDiffByFile,
 } from "./queries";
@@ -539,5 +540,60 @@ describe("anyBranchRefExists", () => {
     { branch: "feat/tag-only", expected: false },
   ])("returns $expected for '$branch'", async ({ branch, expected }) => {
     expect(await anyBranchRefExists(repoDir, branch)).toBe(expected);
+  });
+});
+
+describe("getLinkedWorktreeMainPath", () => {
+  // The `.git` layouts are fabricated with plain fs (no git binary needed):
+  // a linked worktree is just a `.git` *file* whose `gitdir:` line points at
+  // `<main>/.git/worktrees/<name>`.
+  let baseDir: string;
+  let repoDir: string;
+  let worktreeDir: string;
+
+  beforeEach(async () => {
+    baseDir = await mkdtemp(path.join(tmpdir(), "posthog-code-wt-"));
+    repoDir = path.join(baseDir, "main-repo");
+    worktreeDir = path.join(baseDir, "my-worktree");
+    await mkdir(path.join(repoDir, ".git", "worktrees", "my-worktree"), {
+      recursive: true,
+    });
+    await mkdir(worktreeDir, { recursive: true });
+    await writeFile(
+      path.join(worktreeDir, ".git"),
+      `gitdir: ${path.join(repoDir, ".git", "worktrees", "my-worktree")}\n`,
+    );
+  });
+
+  afterEach(async () => {
+    await rm(baseDir, { recursive: true, force: true });
+  });
+
+  it("returns the main checkout path for a linked worktree", () => {
+    expect(getLinkedWorktreeMainPath(worktreeDir)).toBe(repoDir);
+  });
+
+  it("resolves a relative gitdir against the worktree", async () => {
+    await writeFile(
+      path.join(worktreeDir, ".git"),
+      "gitdir: ../main-repo/.git/worktrees/my-worktree\n",
+    );
+    expect(getLinkedWorktreeMainPath(worktreeDir)).toBe(repoDir);
+  });
+
+  it("returns null for the main checkout (.git is a directory)", () => {
+    expect(getLinkedWorktreeMainPath(repoDir)).toBeNull();
+  });
+
+  it("returns null for a directory that is not a repository", () => {
+    expect(getLinkedWorktreeMainPath(baseDir)).toBeNull();
+  });
+
+  it("returns null for a submodule-style .git file", async () => {
+    await writeFile(
+      path.join(worktreeDir, ".git"),
+      "gitdir: ../main-repo/.git/modules/child\n",
+    );
+    expect(getLinkedWorktreeMainPath(worktreeDir)).toBeNull();
   });
 });

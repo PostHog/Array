@@ -564,6 +564,7 @@ export function TaskInput({
 
   useInitialRepoSelectionFromFolderId({
     folderId: view.folderId,
+    requestId: view.taskInputRequestId,
     folders,
     repositories,
     reposLoaded: areReposReady({
