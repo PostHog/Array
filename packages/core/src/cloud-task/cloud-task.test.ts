@@ -135,6 +135,62 @@ describe("CloudTaskService", () => {
     vi.unstubAllGlobals();
   });
 
+  it("emits a replayed permission_request frame only once", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    mockNetFetch
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: "build",
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      )
+      .mockResolvedValue(
+        createJsonResponse([], 200, { "X-Has-More": "false" }),
+      );
+
+    const frame =
+      'id: 5\ndata: {"type":"permission_request","requestId":"req-1","toolCall":{"toolCallId":"tool-1"},"options":[]}\n\n';
+    const trailingEntry =
+      'id: 6\ndata: {"type":"notification","timestamp":"2026-01-01T00:00:02Z","notification":{"jsonrpc":"2.0","method":"_posthog/console","params":{"sessionId":"run-1","level":"info","message":"after replay"}}}\n\n';
+    // The durable stream re-sends the tail on reconnect/replay — the same
+    // frame arriving twice must not re-surface the question a second time.
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(frame + frame + trailingEntry),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() =>
+      updates.some((u) => (u as { kind?: string }).kind === "logs"),
+    );
+
+    const permissionUpdates = updates.filter(
+      (u) => (u as { kind?: string }).kind === "permission_request",
+    );
+    expect(permissionUpdates).toEqual([
+      {
+        taskId: "task-1",
+        runId: "run-1",
+        kind: "permission_request",
+        requestId: "req-1",
+        toolCall: { toolCallId: "tool-1" },
+        options: [],
+      },
+    ]);
+  });
+
   it("bootstraps paged backlog for active runs and drains deduped live SSE entries", async () => {
     const updates: unknown[] = [];
     service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));

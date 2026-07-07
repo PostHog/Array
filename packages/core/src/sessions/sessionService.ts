@@ -98,6 +98,7 @@ const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
 const AUTH_RESTORE_MAX_RETRY_WAITS = 6;
 const MAX_SUPERSEDED_RUN_IDS = 100;
+const MAX_RESPONDED_PERMISSION_REQUEST_IDS = 500;
 /**
  * Streamed events are buffered and flushed on this cadence so a burst of tokens
  * coalesces into one processing pass (and roughly one render) instead of one
@@ -607,6 +608,13 @@ export class SessionService {
   private cloudLogGapReconciler: CloudLogGapReconciler;
   /** Maps toolCallId → cloud requestId for routing permission responses */
   private cloudPermissionRequestIds = new Map<string, string>();
+  /**
+   * Cloud permission requestIds the user has already responded to this app
+   * session. A stale snapshot (a resolved marker not yet flushed to storage)
+   * or a replayed stream frame can re-deliver an answered request; without
+   * this guard it would re-surface as a fresh pending card.
+   */
+  private respondedCloudPermissionRequestIds = new Set<string>();
   private liveTurnContent = new Map<
     string,
     { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
@@ -2167,6 +2175,15 @@ export class SessionService {
       return;
     }
 
+    if (this.respondedCloudPermissionRequestIds.has(update.requestId)) {
+      this.d.log.debug("Skipping already-answered cloud permission request", {
+        taskRunId,
+        requestId: update.requestId,
+        toolCallId: update.toolCall.toolCallId,
+      });
+      return;
+    }
+
     if (
       isPermissionRequestAlreadySurfaced(
         session.pendingPermissions,
@@ -3179,6 +3196,7 @@ export class SessionService {
     session: AgentSession,
     permission: PermissionRequest | undefined,
     toolCallId: string,
+    requestId: string | undefined,
     optionId: string,
     customInput?: string,
     answers?: Record<string, string>,
@@ -3191,23 +3209,88 @@ export class SessionService {
       customInput,
       answers,
     );
-    if (!answerPrompt) {
+    if (answerPrompt) {
+      await this.sendCloudPrompt(
+        { ...session, cloudStatus: cloudStatus ?? session.cloudStatus },
+        answerPrompt,
+      );
+      this.d.log.info("Permission answer resumed terminal cloud run", {
+        taskId: session.taskId,
+        toolCallId,
+        optionId,
+      });
+    } else {
       this.d.log.info("Dropped permission response for terminal cloud run", {
         taskId: session.taskId,
         toolCallId,
         optionId,
       });
-      return;
     }
-    await this.sendCloudPrompt(
-      { ...session, cloudStatus: cloudStatus ?? session.cloudStatus },
-      answerPrompt,
-    );
-    this.d.log.info("Permission answer resumed terminal cloud run", {
-      taskId: session.taskId,
+    await this.persistCloudPermissionResolution(
+      session.taskId,
+      permission?.taskRunId ?? session.taskRunId,
       toolCallId,
+      requestId,
       optionId,
-    });
+    );
+  }
+
+  /**
+   * Record a response to a permission request whose sandbox is gone. A live
+   * sandbox writes `_posthog/permission_resolved` to the run log when it
+   * resolves a request, but a request answered after its run terminalized has
+   * no sandbox left to do that — without this record the request stays
+   * pending in the persisted log forever, and every future derivation (app
+   * restart, another device, a session rebuild) re-surfaces the
+   * already-answered question as a fresh card.
+   */
+  private async persistCloudPermissionResolution(
+    taskId: string,
+    taskRunId: string,
+    toolCallId: string,
+    requestId: string | undefined,
+    optionId: string,
+  ): Promise<void> {
+    if (!requestId) return;
+    this.markCloudPermissionResponded(requestId);
+
+    const client = await this.d.getAuthenticatedClient();
+    if (!client) return;
+    try {
+      await client.appendTaskRunLog(taskId, taskRunId, [
+        {
+          type: "notification",
+          timestamp: new Date().toISOString(),
+          notification: {
+            method: POSTHOG_NOTIFICATIONS.PERMISSION_RESOLVED,
+            params: { requestId, toolCallId, optionId },
+          },
+        },
+      ]);
+    } catch (error) {
+      this.d.log.warn("Failed to persist permission resolution to run log", {
+        taskId,
+        taskRunId,
+        toolCallId,
+        error,
+      });
+    }
+  }
+
+  private markCloudPermissionResponded(requestId: string): void {
+    this.respondedCloudPermissionRequestIds.add(requestId);
+    // add() grows the set by at most one, so one eviction restores the cap.
+    if (
+      this.respondedCloudPermissionRequestIds.size >
+      MAX_RESPONDED_PERMISSION_REQUEST_IDS
+    ) {
+      const oldest = this.respondedCloudPermissionRequestIds
+        .values()
+        .next().value;
+      if (oldest !== undefined) {
+        this.respondedCloudPermissionRequestIds.delete(oldest);
+      }
+    }
   }
 
   // --- Permissions ---
@@ -3269,6 +3352,7 @@ export class SessionService {
           session,
           permission,
           toolCallId,
+          cloudRequestId,
           optionId,
           customInput,
           answers,
@@ -3292,6 +3376,7 @@ export class SessionService {
               session,
               permission,
               toolCallId,
+              cloudRequestId,
               optionId,
               customInput,
               answers,
@@ -3301,6 +3386,10 @@ export class SessionService {
           }
           throw error;
         }
+        // The live sandbox persists its own resolved marker; remember the
+        // response locally so a snapshot fetched before that marker flushes
+        // to storage cannot re-surface the question.
+        this.markCloudPermissionResponded(cloudRequestId);
       } else {
         await this.d.trpc.agent.respondToPermission.mutate({
           taskRunId: session.taskRunId,
@@ -3352,8 +3441,16 @@ export class SessionService {
     try {
       if (session.isCloud && isTerminalStatus(session.cloudStatus)) {
         // The run is over — the card was resolved locally above and there is no
-        // live permission promise left to reject.
+        // live permission promise left to reject. Persist the dismissal so the
+        // request is not re-derived as pending from the run log later.
         this.cloudPermissionRequestIds.delete(toolCallId);
+        await this.persistCloudPermissionResolution(
+          session.taskId,
+          permission?.taskRunId ?? session.taskRunId,
+          toolCallId,
+          cloudRequestId,
+          "cancelled",
+        );
         return;
       }
       if (session.isCloud && cloudRequestId) {
@@ -3363,6 +3460,7 @@ export class SessionService {
           optionId: "reject_with_feedback",
           customInput: "User cancelled the permission request.",
         });
+        this.markCloudPermissionResponded(cloudRequestId);
       } else {
         await this.d.trpc.agent.cancelPermission.mutate({
           taskRunId: session.taskRunId,

@@ -1138,6 +1138,22 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return null;
     }
 
+    // Drop a re-delivered event by its stream id. The durable stream re-sends
+    // the tail on reconnect/replay: each re-sent log entry would otherwise be
+    // counted as a new entry (advancing totalEntryCount past the renderer's
+    // processedLineCount guard) and emitted again — the root cause of duplicate
+    // transcript entries and back-to-back completion notifications — and a
+    // re-sent permission_request frame would re-surface an already-answered
+    // question as a fresh pending card. Events without an id (legacy servers)
+    // fall through and are handled downstream.
+    const eventId = event.id;
+    if (eventId !== undefined) {
+      if (watcher.seenEventIds.has(eventId)) {
+        return null;
+      }
+      watcher.seenEventIds.add(eventId);
+    }
+
     if (isPermissionRequestEvent(event.data)) {
       this.emit(CloudTaskEvent.Update, {
         taskId: watcher.taskId,
@@ -1148,20 +1164,6 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         options: event.data.options,
       });
       return null;
-    }
-
-    // Drop a re-delivered log entry by its stream id. The durable stream
-    // re-sends the tail on reconnect/replay, and each resend would otherwise be
-    // counted as a new entry (advancing totalEntryCount past the renderer's
-    // processedLineCount guard) and emitted again — the root cause of duplicate
-    // transcript entries and back-to-back completion notifications. Entries
-    // without an id (legacy servers) fall through and are handled downstream.
-    const eventId = event.id;
-    if (eventId !== undefined) {
-      if (watcher.seenEventIds.has(eventId)) {
-        return null;
-      }
-      watcher.seenEventIds.add(eventId);
     }
 
     watcher.pendingLogEntries.push(event.data as StoredLogEntry);

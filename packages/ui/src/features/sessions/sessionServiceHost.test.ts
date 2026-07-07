@@ -5076,6 +5076,71 @@ describe("SessionService", () => {
     });
   });
 
+  // Surfaces a cloud question through the live watcher update path so the
+  // service tracks its cloud requestId, mirroring how real question cards
+  // arrive. Returns the session (with the surfaced permission attached) and
+  // the update feeder for replay scenarios.
+  const surfaceCloudQuestion = (
+    service: ReturnType<typeof getSessionService>,
+  ) => {
+    const session = createMockSession({
+      isCloud: true,
+      cloudStatus: "in_progress",
+      events: [
+        {
+          type: "acp_message",
+          ts: 1700000000,
+          message: {
+            jsonrpc: "2.0",
+            method: "session/update",
+            params: { update: { sessionUpdate: "tool_call" } },
+          },
+        } as AcpMessage,
+      ],
+      processedLineCount: 3,
+    });
+    mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+    mockSessionStoreSetters.getSessions.mockReturnValue({ "run-123": session });
+
+    service.watchCloudTask(
+      "task-123",
+      "run-123",
+      "https://api.example.com",
+      123,
+      undefined,
+      "https://logs.example.com/run-123",
+      undefined,
+      "claude",
+    );
+
+    const onData = mockTrpcCloudTask.onUpdate.subscribe.mock.calls[0]?.[1]
+      ?.onData as (update: unknown) => void;
+    const requestUpdate = {
+      kind: "permission_request",
+      taskId: "task-123",
+      runId: "run-123",
+      requestId: "request-1",
+      toolCall: {
+        toolCallId: "tool-1",
+        title: "Which license should I use?",
+        kind: "other",
+        _meta: {
+          codeToolKind: "question",
+          questions: [{ question: "Which license should I use?" }],
+        },
+      },
+      options: [{ optionId: "option_0", name: "MIT", kind: "allow_once" }],
+    };
+    onData(requestUpdate);
+
+    const surfaced =
+      mockSessionStoreSetters.setPendingPermissions.mock.calls.at(
+        -1,
+      )?.[1] as AgentSession["pendingPermissions"];
+    session.pendingPermissions = surfaced;
+    return { session, onData, requestUpdate };
+  };
+
   describe("respondToPermission", () => {
     it("does nothing if no session exists", async () => {
       const service = getSessionService();
@@ -5286,6 +5351,65 @@ describe("SessionService", () => {
       expect(mockTrpcAgent.respondToPermission.mutate).not.toHaveBeenCalled();
       expect(mockAuthenticatedClient.runTaskInCloud).not.toHaveBeenCalled();
     });
+
+    it("persists a durable resolved marker when answering a question on a terminal cloud run", async () => {
+      const service = getSessionService();
+      surfaceCloudQuestion(service);
+      mockTerminalCloudRun();
+
+      await service.respondToPermission(
+        "task-123",
+        "tool-1",
+        "option_0",
+        undefined,
+        { "Which license should I use?": "MIT" },
+      );
+
+      // The answer resumed the run as a prompt; without a resolved marker the
+      // request would be re-derived as pending from the log forever.
+      expect(mockAuthenticatedClient.runTaskInCloud).toHaveBeenCalled();
+      expect(mockAuthenticatedClient.appendTaskRunLog).toHaveBeenCalledWith(
+        "task-123",
+        "run-123",
+        [
+          expect.objectContaining({
+            type: "notification",
+            notification: expect.objectContaining({
+              method: "_posthog/permission_resolved",
+              params: {
+                requestId: "request-1",
+                toolCallId: "tool-1",
+                optionId: "option_0",
+              },
+            }),
+          }),
+        ],
+      );
+    });
+
+    it("does not re-surface a question the user already answered when the stream re-delivers it", async () => {
+      const service = getSessionService();
+      const { session, onData, requestUpdate } = surfaceCloudQuestion(service);
+      mockTerminalCloudRun();
+
+      await service.respondToPermission(
+        "task-123",
+        "tool-1",
+        "option_0",
+        undefined,
+        { "Which license should I use?": "MIT" },
+      );
+
+      session.pendingPermissions = new Map();
+      mockSessionStoreSetters.setPendingPermissions.mockClear();
+
+      // The durable stream re-sends the tail on reconnect/replay.
+      onData(requestUpdate);
+
+      expect(
+        mockSessionStoreSetters.setPendingPermissions,
+      ).not.toHaveBeenCalled();
+    });
   });
 
   describe("cancelPermission", () => {
@@ -5296,6 +5420,35 @@ describe("SessionService", () => {
       await service.cancelPermission("task-123", "tool-1");
 
       expect(mockTrpcAgent.cancelPermission.mutate).not.toHaveBeenCalled();
+    });
+
+    it("persists a dismissal marker when cancelling a question on a terminal cloud run", async () => {
+      const service = getSessionService();
+      const { session } = surfaceCloudQuestion(service);
+      session.cloudStatus = "completed";
+
+      await service.cancelPermission("task-123", "tool-1");
+
+      // The dead run can't receive a permission_response; record the
+      // dismissal so the request is not re-derived as pending from the log.
+      expect(mockTrpcCloudTask.sendCommand.mutate).not.toHaveBeenCalled();
+      expect(mockAuthenticatedClient.appendTaskRunLog).toHaveBeenCalledWith(
+        "task-123",
+        "run-123",
+        [
+          expect.objectContaining({
+            type: "notification",
+            notification: expect.objectContaining({
+              method: "_posthog/permission_resolved",
+              params: {
+                requestId: "request-1",
+                toolCallId: "tool-1",
+                optionId: "cancelled",
+              },
+            }),
+          }),
+        ],
+      );
     });
 
     it("removes permission from UI and cancels", async () => {
