@@ -5,6 +5,7 @@ import {
   groupReleases,
   mergeReleaseNotes,
 } from "@posthog/ui/features/updates/releaseNotes";
+import { useHasActiveUpdate } from "@posthog/ui/features/updates/updateStore";
 import { useWhatsNewStore } from "@posthog/ui/features/updates/whatsNewStore";
 import {
   Badge,
@@ -41,6 +42,7 @@ function ChangelogSkeleton() {
 export function WhatsNewModal() {
   const isOpen = useWhatsNewStore((state) => state.isOpen);
   const close = useWhatsNewStore((state) => state.close);
+  const prefetchForActiveUpdate = useHasActiveUpdate();
   const hostTRPC = useHostTRPC();
   const { data: currentVersion, isError: isVersionError } = useQuery(
     hostTRPC.os.getAppVersion.queryOptions(),
@@ -53,7 +55,7 @@ export function WhatsNewModal() {
     ...hostTRPC.githubReleases.list.queryOptions(
       currentVersion ? { expectVersion: currentVersion } : undefined,
     ),
-    enabled: isOpen && !!currentVersion,
+    enabled: (isOpen || prefetchForActiveUpdate) && !!currentVersion,
   });
   const isError = isVersionError || isReleasesError;
 
