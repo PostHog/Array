@@ -30,6 +30,7 @@ import {
   hydrateSessionJsonl,
 } from "../adapters/claude/session/jsonl-hydration";
 import type { GatewayEnv } from "../adapters/claude/session/options";
+import { hasCodexThreadState } from "../adapters/codex-app-server/thread-state";
 import {
   type AgentErrorClassification,
   classifyAgentError,
@@ -672,8 +673,6 @@ export class AgentServer {
     cwd: string,
     permissionMode: PermissionMode,
   ): Promise<{ sessionId: string; warm: boolean } | null> {
-    if (runtimeAdapter !== "claude") return null;
-
     const resumeRunId = this.getResumeRunId(preTaskRun);
     if (!resumeRunId) return null;
 
@@ -687,6 +686,22 @@ export class AgentServer {
         resumeRunId,
       });
       return null;
+    }
+
+    if (runtimeAdapter === "codex") {
+      // Codex owns thread persistence in CODEX_HOME (the ACP sessionId is the
+      // codex thread id). The rollout only survives a snapshot restart — there
+      // is no cold hydration equivalent, so a fresh sandbox keeps the summary
+      // fallback while a warm one resumes the thread natively via thread/resume.
+      if (!(await hasCodexThreadState(priorSessionId))) {
+        this.logger.debug(
+          "No codex thread state on disk; using summary resume fallback",
+          { resumeRunId, priorSessionId },
+        );
+        return null;
+      }
+      this.logger.debug("Native codex resume prepared", { priorSessionId });
+      return { sessionId: priorSessionId, warm: true };
     }
 
     let warm = false;
@@ -1309,22 +1324,32 @@ export class AgentServer {
       initialPermissionMode,
     );
 
-    let acpSessionId: string;
+    let acpSessionId: string | null = null;
     if (nativeResume) {
-      await clientConnection.resumeSession({
-        sessionId: nativeResume.sessionId,
-        cwd: sessionCwd,
-        mcpServers: this.config.mcpServers ?? [],
-        _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
-      });
-      acpSessionId = nativeResume.sessionId;
-      this.nativeResume = nativeResume;
-      this.logger.debug("ACP session resumed", {
-        acpSessionId,
-        runId: payload.run_id,
-        warm: nativeResume.warm,
-      });
-    } else {
+      try {
+        await clientConnection.resumeSession({
+          sessionId: nativeResume.sessionId,
+          cwd: sessionCwd,
+          mcpServers: this.config.mcpServers ?? [],
+          _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
+        });
+        acpSessionId = nativeResume.sessionId;
+        this.nativeResume = nativeResume;
+        this.logger.debug("ACP session resumed", {
+          acpSessionId,
+          runId: payload.run_id,
+          warm: nativeResume.warm,
+        });
+      } catch (error) {
+        // resumeState is still loaded, so the summary resume path takes over
+        // on the fresh session below.
+        this.logger.warn("Native resume failed; starting a fresh session", {
+          sessionId: nativeResume.sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (!acpSessionId) {
       const sessionResponse = await clientConnection.newSession({
         cwd: sessionCwd,
         mcpServers: this.config.mcpServers ?? [],
