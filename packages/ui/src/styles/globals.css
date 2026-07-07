@@ -870,6 +870,11 @@ body {
   animation: appFadeIn 0.5s ease-out forwards;
 }
 
+/* The window-blur freeze above pauses every keyframe animation; let this one-shot entrance finish anyway, or a blur mid-fade would strand the app invisible. */
+body.ph-window-blurred .app-fade-in {
+  animation-play-state: running !important;
+}
+
 @keyframes appFadeIn {
   from {
     opacity: 0;
