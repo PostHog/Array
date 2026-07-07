@@ -144,6 +144,23 @@ describe("AgentServer.configureEnvironment", () => {
     expect(env.anthropicBaseUrl).toBe("https://gateway.us.posthog.com/signals");
   });
 
+  it.each([{ isInternal: true }, { isInternal: false }] as const)(
+    "tags as conversations when origin_product is 'support_reply' (isInternal=$isInternal)",
+    ({ isInternal }) => {
+      const env = buildServer("background").configureEnvironment({
+        isInternal,
+        originProduct: "support_reply",
+      });
+
+      expect(env.anthropicBaseUrl).toBe(
+        "https://gateway.us.posthog.com/conversations",
+      );
+      expect(env.openaiBaseUrl).toBe(
+        "https://gateway.us.posthog.com/conversations/v1",
+      );
+    },
+  );
+
   it("forwards task metadata as anthropicCustomHeaders", () => {
     const env = buildServer("background").configureEnvironment({
       isInternal: true,
