@@ -71,6 +71,7 @@ import {
 } from "@posthog/ui/features/sessions/useSessionTaskId";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
+import { useCopy } from "@posthog/ui/primitives/useCopy";
 import {
   DIFF_WORKER_FACTORY,
   type DiffWorkerFactory,
@@ -548,13 +549,7 @@ const AgentProse = memo(function AgentProse({
   isStreaming?: boolean;
 }) {
   const smoothed = useSmoothedText(text);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [text]);
+  const { copied, copy } = useCopy();
 
   return (
     <ChatMessage align="start" className="group/msg">
@@ -575,7 +570,7 @@ const AgentProse = memo(function AgentProse({
                 size="1"
                 variant="ghost"
                 color={copied ? "green" : "gray"}
-                onClick={handleCopy}
+                onClick={() => copy(text)}
                 className="cursor-pointer"
                 aria-label="Copy message"
               >

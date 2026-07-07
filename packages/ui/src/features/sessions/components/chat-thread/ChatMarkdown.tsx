@@ -15,8 +15,9 @@ import {
   splitMarkdownBlocks,
 } from "@posthog/ui/features/editor/components/splitMarkdownBlocks";
 import { HighlightedCode } from "@posthog/ui/primitives/HighlightedCode";
+import { useCopy } from "@posthog/ui/primitives/useCopy";
 import { IconButton } from "@radix-ui/themes";
-import { memo, type ReactNode, useCallback, useMemo, useState } from "react";
+import { memo, type ReactNode, useMemo } from "react";
 import Markdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -28,13 +29,7 @@ function ChatCodeBlock({
   code: string;
   children: ReactNode;
 }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [code]);
+  const { copied, copy } = useCopy();
 
   return (
     <div className="group relative">
@@ -45,7 +40,7 @@ function ChatCodeBlock({
         size="1"
         variant="ghost"
         color={copied ? "green" : "gray"}
-        onClick={handleCopy}
+        onClick={() => copy(code)}
         className="absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
         aria-label="Copy code"
       >
