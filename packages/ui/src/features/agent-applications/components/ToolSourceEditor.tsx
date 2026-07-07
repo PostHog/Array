@@ -29,21 +29,13 @@ export function ToolSourceEditor({
   argsSchema: Record<string, unknown>;
 }) {
   const save = useSaveRevisionTool(idOrSlug, revisionId);
-  const [draft, setDraft] = useState(source);
+  // The textarea is uncontrolled (seeded from `source` via defaultValue); the
+  // parent keys this component by revision+tool, so switching either remounts it
+  // with a fresh buffer. We track only whether it diverges from `source`.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [dirty, setDirty] = useState(false);
   const [errors, setErrors] = useState<ToolCompileError[] | null>(null);
   const [justSaved, setJustSaved] = useState(false);
-
-  // Reconcile local edits when the persisted source changes underneath us (a
-  // revision switch, or the post-save bundle refetch) — done during render so
-  // the textarea reflects the new baseline before paint.
-  const [baseline, setBaseline] = useState(source);
-  if (source !== baseline) {
-    setBaseline(source);
-    setDraft(source);
-    setErrors(null);
-  }
-
-  const dirty = draft !== source;
 
   // Clear the transient "saved" tick on unmount (or before the next save) so a
   // stale timer can't fire setState after the component is gone.
@@ -56,6 +48,7 @@ export function ToolSourceEditor({
   );
 
   function onSave() {
+    const draft = textareaRef.current?.value ?? source;
     setJustSaved(false);
     if (savedTimer.current) clearTimeout(savedTimer.current);
     save.mutate(
@@ -66,7 +59,9 @@ export function ToolSourceEditor({
       {
         onSuccess: (result) => {
           if (result.ok) {
+            // Persisted — the buffer now matches the saved source.
             setErrors(null);
+            setDirty(false);
             setJustSaved(true);
             savedTimer.current = setTimeout(() => setJustSaved(false), 2000);
           } else {
@@ -78,12 +73,19 @@ export function ToolSourceEditor({
     );
   }
 
+  function onRevert() {
+    if (textareaRef.current) textareaRef.current.value = source;
+    setDirty(false);
+    setErrors(null);
+  }
+
   return (
     <Flex direction="column" gap="2" className="mt-1.5">
       <TextArea
-        value={draft}
+        ref={textareaRef}
+        defaultValue={source}
         onChange={(e) => {
-          setDraft(e.target.value);
+          setDirty(e.target.value !== source);
           if (justSaved) setJustSaved(false);
         }}
         rows={16}
@@ -101,10 +103,9 @@ export function ToolSourceEditor({
             </Text>
           </Flex>
           <Flex direction="column" gap="1.5" className="mt-2">
-            {errors.map((err, i) => (
+            {errors.map((err) => (
               <div
-                // biome-ignore lint/suspicious/noArrayIndexKey: diagnostics have no stable id; order is stable per compile
-                key={i}
+                key={`${err.kind}:${err.line ?? ""}:${err.column ?? ""}:${err.message}`}
                 className="rounded-(--radius-1) border border-border bg-(--color-panel-solid) px-2 py-1.5"
               >
                 <Flex align="baseline" gap="2">
@@ -144,15 +145,7 @@ export function ToolSourceEditor({
           {save.isPending ? "Compiling…" : "Save"}
         </Button>
         {dirty && !save.isPending ? (
-          <Button
-            size="1"
-            variant="soft"
-            color="gray"
-            onClick={() => {
-              setDraft(source);
-              setErrors(null);
-            }}
-          >
+          <Button size="1" variant="soft" color="gray" onClick={onRevert}>
             Revert
           </Button>
         ) : null}

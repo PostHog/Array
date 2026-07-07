@@ -9,10 +9,12 @@ import type { DryRunToolResult } from "@posthog/shared/agent-platform-types";
 import { Button } from "@posthog/ui/primitives/Button";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
 import { Flex, IconButton, Text, TextArea, TextField } from "@radix-ui/themes";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { useDryRunRevisionTool } from "../hooks/useDryRunRevisionTool";
 
 interface SecretRow {
+  /** Stable per-row id so React keys survive reordering/removal. */
+  id: number;
   name: string;
   value: string;
 }
@@ -38,6 +40,7 @@ export function ToolDryRunPanel({
   const [argsError, setArgsError] = useState<string | null>(null);
   const [secrets, setSecrets] = useState<SecretRow[]>([]);
   const [result, setResult] = useState<DryRunToolResult | null>(null);
+  const nextSecretId = useRef(0);
 
   function run() {
     let args: unknown;
@@ -99,7 +102,12 @@ export function ToolDryRunPanel({
           size="1"
           variant="ghost"
           color="gray"
-          onClick={() => setSecrets((s) => [...s, { name: "", value: "" }])}
+          onClick={() =>
+            setSecrets((s) => [
+              ...s,
+              { id: nextSecretId.current++, name: "", value: "" },
+            ])
+          }
         >
           <PlusIcon size={12} />
           Add
@@ -115,13 +123,8 @@ export function ToolDryRunPanel({
         </Text>
       ) : (
         <Flex direction="column" gap="1.5">
-          {secrets.map((row, i) => (
-            <Flex
-              // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional; names may be blank/duplicate while editing
-              key={i}
-              align="center"
-              gap="2"
-            >
+          {secrets.map((row) => (
+            <Flex key={row.id} align="center" gap="2">
               <TextField.Root
                 value={row.name}
                 placeholder="SECRET_NAME"
@@ -129,8 +132,8 @@ export function ToolDryRunPanel({
                 className="flex-1 text-[12px] [font-family:var(--font-mono)]"
                 onChange={(e) =>
                   setSecrets((s) =>
-                    s.map((r, j) =>
-                      j === i ? { ...r, name: e.target.value } : r,
+                    s.map((r) =>
+                      r.id === row.id ? { ...r, name: e.target.value } : r,
                     ),
                   )
                 }
@@ -142,8 +145,8 @@ export function ToolDryRunPanel({
                 className="flex-1 text-[12px] [font-family:var(--font-mono)]"
                 onChange={(e) =>
                   setSecrets((s) =>
-                    s.map((r, j) =>
-                      j === i ? { ...r, value: e.target.value } : r,
+                    s.map((r) =>
+                      r.id === row.id ? { ...r, value: e.target.value } : r,
                     ),
                   )
                 }
@@ -153,7 +156,9 @@ export function ToolDryRunPanel({
                 variant="ghost"
                 color="gray"
                 aria-label="Remove secret"
-                onClick={() => setSecrets((s) => s.filter((_, j) => j !== i))}
+                onClick={() =>
+                  setSecrets((s) => s.filter((r) => r.id !== row.id))
+                }
               >
                 <TrashIcon size={12} />
               </IconButton>

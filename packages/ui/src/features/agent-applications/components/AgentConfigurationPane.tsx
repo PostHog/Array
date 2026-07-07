@@ -1306,6 +1306,9 @@ function ToolBody({
           <Subhead>source · {source.path}</Subhead>
           {canAuthor ? (
             <ToolSourceEditor
+              // Remount on revision/tool switch so the editable buffer reseeds
+              // from the new source (the editor does no in-render reconcile).
+              key={`${ctx.revisionId}:${id}`}
               idOrSlug={ctx.idOrSlug}
               revisionId={ctx.revisionId}
               toolId={id}
