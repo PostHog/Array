@@ -153,4 +153,36 @@ describe("ShellService.createSession workspace env", () => {
     expect(mockPty.spawn).toHaveBeenCalledTimes(1);
     expect(spawnedEnv().POSTHOG_CODE_WORKSPACE_PATH).toBeUndefined();
   });
+
+  it("strips the internal-child markers the workspace-server runs with", async () => {
+    // The workspace-server inherits both vars from apps/code (service.ts); a
+    // user terminal must inherit neither. ELECTRON_RUN_AS_NODE would make
+    // Electron CLIs run as node; POSTHOG_CODE_INTERNAL_CHILD would trip the
+    // bootstrap guard so a direct app-binary launch exits(1).
+    const saved = {
+      runAsNode: process.env.ELECTRON_RUN_AS_NODE,
+      internalChild: process.env.POSTHOG_CODE_INTERNAL_CHILD,
+    };
+    process.env.ELECTRON_RUN_AS_NODE = "1";
+    process.env.POSTHOG_CODE_INTERNAL_CHILD = "1";
+    try {
+      const { service } = createWorktreeTaskService("/does/not/exist");
+
+      await service.createSession({ sessionId: "session-1", taskId: "task-1" });
+
+      expect(spawnedEnv().ELECTRON_RUN_AS_NODE).toBeUndefined();
+      expect(spawnedEnv().POSTHOG_CODE_INTERNAL_CHILD).toBeUndefined();
+    } finally {
+      restoreEnv("ELECTRON_RUN_AS_NODE", saved.runAsNode);
+      restoreEnv("POSTHOG_CODE_INTERNAL_CHILD", saved.internalChild);
+    }
+  });
 });
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
+}
