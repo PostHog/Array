@@ -8,6 +8,7 @@ import { Button } from "@posthog/quill";
 import { Box, Flex, IconButton, Tooltip } from "@radix-ui/themes";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import type { QueuedMessage } from "../../sessionStore";
+import { CollapsibleMessageContent } from "./CollapsibleMessageContent";
 import { hasFileMentions, parseFileMentions } from "./parseFileMentions";
 
 interface QueuedMessageViewProps {
@@ -33,13 +34,17 @@ export function QueuedMessageView({
     <Box className="rounded-lg border border-gray-5 bg-card px-3 py-2">
       <Flex align="center" gap="2">
         <Stack size={14} className="shrink-0 text-gray-9" />
-        <Box className="min-w-0 flex-1 font-medium text-[13px] text-gray-12 [&>*:last-child]:mb-0">
+        <CollapsibleMessageContent
+          className="min-w-0 flex-1"
+          contentClassName="text-gray-12"
+          fadeColor="var(--card)"
+        >
           {hasFileMentions(message.content) ? (
             parseFileMentions(message.content)
           ) : (
             <MarkdownRenderer content={message.content} />
           )}
-        </Box>
+        </CollapsibleMessageContent>
         <Flex align="center" gap="1" className="shrink-0">
           {onSteer && (
             <Tooltip content={steerTooltip}>

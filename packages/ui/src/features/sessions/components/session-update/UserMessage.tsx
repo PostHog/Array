@@ -1,6 +1,4 @@
 import {
-  CaretDown,
-  CaretUp,
   Check,
   Copy,
   File,
@@ -17,6 +15,7 @@ import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import { useFeatureFlag } from "../../../feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "../../../panels/panelLayoutStore";
 import type { UserMessageAttachment } from "../../userMessageTypes";
+import { CollapsibleMessageContent } from "./CollapsibleMessageContent";
 import { extractCanvasInstructions } from "./canvasInstructions";
 import { extractChannelContext } from "./channelContext";
 import { extractCustomInstructions } from "./customInstructions";
@@ -25,8 +24,6 @@ import {
   MentionChip,
   parseFileMentions,
 } from "./parseFileMentions";
-
-const COLLAPSED_MAX_HEIGHT = 160;
 
 interface UserMessageProps {
   content: string;
@@ -108,16 +105,6 @@ export const UserMessage = memo(function UserMessage({
   const containsFileMentions = hasFileMentions(displayContent);
   const showAttachmentChips = attachments.length > 0 && !containsFileMentions;
   const [copied, setCopied] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isOverflowing, setIsOverflowing] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = contentRef.current;
-    if (el) {
-      setIsOverflowing(el.scrollHeight > COLLAPSED_MAX_HEIGHT);
-    }
-  }, []);
 
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -142,15 +129,7 @@ export const UserMessage = memo(function UserMessage({
         className="group/msg relative border-l-2 bg-gray-2 py-2 pl-3"
         style={{ borderColor: "var(--accent-9)" }}
       >
-        <Box
-          ref={contentRef}
-          className="relative overflow-hidden font-medium text-[13px] [&>*:last-child]:mb-0 [&_p]:leading-[1.9]"
-          style={
-            !isExpanded && isOverflowing
-              ? { maxHeight: COLLAPSED_MAX_HEIGHT }
-              : undefined
-          }
-        >
+        <CollapsibleMessageContent contentClassName="[&_p]:leading-[1.9]">
           {containsFileMentions ? (
             parseFileMentions(displayContent)
           ) : (
@@ -212,34 +191,7 @@ export const UserMessage = memo(function UserMessage({
               ))}
             </Flex>
           )}
-          {!isExpanded && isOverflowing && (
-            <Box
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-12"
-              style={{
-                background: "linear-gradient(transparent, var(--gray-2))",
-              }}
-            />
-          )}
-        </Box>
-        {isOverflowing && (
-          <button
-            type="button"
-            onClick={() => setIsExpanded((prev) => !prev)}
-            className="mt-1 inline-flex items-center gap-1 text-[12px] text-accent-11 hover:text-accent-12"
-          >
-            {isExpanded ? (
-              <>
-                <CaretUp size={12} />
-                Show less
-              </>
-            ) : (
-              <>
-                <CaretDown size={12} />
-                Show more
-              </>
-            )}
-          </button>
-        )}
+        </CollapsibleMessageContent>
         {sourceUrl && (
           <a
             href={sourceUrl}
