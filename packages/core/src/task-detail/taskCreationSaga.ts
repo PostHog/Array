@@ -401,6 +401,7 @@ export class TaskCreationSaga extends Saga<
             reasoningLevel: input.reasoningLevel,
             sandboxEnvironmentId: input.sandboxEnvironmentId,
             prAuthorshipMode,
+            autoPublish: input.cloudAutoPublish,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
             homeQuickAction: input.homeQuickActionLabel,

@@ -2557,12 +2557,16 @@ export class AgentServer {
   }
 
   /**
-   * Automated-origin cloud runs auto-publish by default. Every other origin is
-   * review-first unless the user explicitly asks, and createPr=false always
-   * disables publishing.
+   * Automated-origin cloud runs auto-publish by default, and manual runs
+   * auto-publish when the user opted in (Settings → Advanced, sent as
+   * autoPublish). Every other run is review-first unless the user explicitly
+   * asks, and createPr=false always disables publishing.
    */
   private shouldAutoPublishCloudChanges(): boolean {
-    return this.isAutomatedOrigin() && this.config.createPr !== false;
+    return (
+      (this.isAutomatedOrigin() || this.config.autoPublish === true) &&
+      this.config.createPr !== false
+    );
   }
 
   private buildDetectedPrContext(prUrl: string): string {
@@ -2725,6 +2729,12 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
 
     if (!this.config.repositoryPath) {
+      const publishTiming = shouldAutoCreatePr
+        ? `- After completing code changes in a cloned repository, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone without waiting to be asked.`
+        : `- If the user explicitly asks you to open or update a pull request, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone.`;
+      const publishClosing = shouldAutoCreatePr
+        ? `- Always create the PR as a draft. Do not ask for confirmation before publishing completed code changes`
+        : `- Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
       const publishInstructions =
         this.config.createPr === false
           ? `
@@ -2732,15 +2742,15 @@ When the user asks for code changes:
 - You may clone a repository and make local edits in that clone
 - Do NOT create branches, commits, push changes, or open pull requests in this run`
           : `
-When the user explicitly asks to clone or work in a GitHub repository:
+When the user ${shouldAutoCreatePr ? "asks" : "explicitly asks"} to clone or work in a GitHub repository:
 - Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
 - Work from inside that cloned repository for follow-up code changes
-- If the user explicitly asks you to open or update a pull request, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
+${publishTiming} Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
 - Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
 ${whyContextInstruction.trimStart()}
 ${publicRepoSafetyInstruction.trimStart()}
 - End the PR description with a horizontal rule followed by this footer line: ${prFooter}
-- Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
+${publishClosing}`;
 
       return `${identityInstructions}
 # Cloud Task Execution — No Repository Mode

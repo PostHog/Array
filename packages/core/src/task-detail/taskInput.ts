@@ -23,6 +23,7 @@ export interface PrepareTaskInputOptions {
   channelName?: string;
   channelId?: string;
   customInstructions?: string;
+  autoPublishCloudRuns?: boolean;
   allowNoRepo?: boolean;
 }
 
@@ -56,6 +57,7 @@ export function prepareTaskInput(
       options.signalReportId && isCloud ? "user" : undefined,
     cloudRunSource:
       options.signalReportId && isCloud ? "signal_report" : undefined,
+    cloudAutoPublish: isCloud ? options.autoPublishCloudRuns : undefined,
     signalReportId: options.signalReportId,
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,

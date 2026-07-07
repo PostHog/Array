@@ -152,6 +152,7 @@ describe("TaskCreationSaga", () => {
       adapter: "codex",
       model: "gpt-5.4",
       reasoningLevel: "high",
+      cloudAutoPublish: true,
     });
 
     expect(result.success).toBe(true);
@@ -168,6 +169,7 @@ describe("TaskCreationSaga", () => {
       reasoningLevel: "high",
       sandboxEnvironmentId: undefined,
       prAuthorshipMode: "user",
+      autoPublish: true,
       runSource: "manual",
       signalReportId: undefined,
       initialPermissionMode: "auto",

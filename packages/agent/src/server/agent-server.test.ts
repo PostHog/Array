@@ -1990,6 +1990,32 @@ describe("AgentServer HTTP Mode", () => {
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
 
+    it("returns auto-PR prompt for manual runs when the user opted into auto-publish", () => {
+      const s = createServer({ autoPublish: true });
+      const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt();
+      expect(prompt).toContain("gh pr create --draft");
+      expect(prompt).not.toContain("stop with local changes ready for review");
+      // Manual runs keep the PostHog Code attribution.
+      expect(prompt).toContain(
+        "Created with [PostHog Code](https://posthog.com/code?ref=pr)",
+      );
+    });
+
+    it("keeps review-first prompt when auto-publish is on but createPr is false", () => {
+      const s = createServer({ autoPublish: true, createPr: false });
+      const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt();
+      expect(prompt).toContain("stop with local changes ready for review");
+      expect(prompt).not.toContain("gh pr create --draft");
+    });
+
+    it("auto-publishes in no-repository mode when the user opted in", () => {
+      const s = createServer({ repositoryPath: undefined, autoPublish: true });
+      const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt();
+      expect(prompt).toContain("Cloud Task Execution — No Repository Mode");
+      expect(prompt).toContain("without waiting to be asked");
+      expect(prompt).not.toContain("unless the user explicitly asks for that");
+    });
+
     it.each([
       { label: "Slack", origin: "slack" },
       { label: "signal_report", origin: "signal_report" },

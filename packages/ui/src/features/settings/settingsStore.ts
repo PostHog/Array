@@ -150,9 +150,13 @@ interface SettingsStore {
   allowBypassPermissions: boolean;
   preventSleepWhileRunning: boolean;
   debugLogsCloudRuns: boolean;
+  // When on, cloud runs push their work and open a draft PR on completion
+  // without waiting for an explicit ask.
+  autoPublishCloudRuns: boolean;
   setAllowBypassPermissions: (enabled: boolean) => void;
   setPreventSleepWhileRunning: (enabled: boolean) => void;
   setDebugLogsCloudRuns: (enabled: boolean) => void;
+  setAutoPublishCloudRuns: (enabled: boolean) => void;
 
   // Terminal
   terminalFont: TerminalFont;
@@ -319,11 +323,14 @@ export const useSettingsStore = create<SettingsStore>()(
       allowBypassPermissions: false,
       preventSleepWhileRunning: false,
       debugLogsCloudRuns: false,
+      autoPublishCloudRuns: true,
       setAllowBypassPermissions: (enabled) =>
         set({ allowBypassPermissions: enabled }),
       setPreventSleepWhileRunning: (enabled) =>
         set({ preventSleepWhileRunning: enabled }),
       setDebugLogsCloudRuns: (enabled) => set({ debugLogsCloudRuns: enabled }),
+      setAutoPublishCloudRuns: (enabled) =>
+        set({ autoPublishCloudRuns: enabled }),
 
       // Terminal
       terminalFont: "berkeley-mono",
@@ -436,6 +443,7 @@ export const useSettingsStore = create<SettingsStore>()(
         allowBypassPermissions: state.allowBypassPermissions,
         preventSleepWhileRunning: state.preventSleepWhileRunning,
         debugLogsCloudRuns: state.debugLogsCloudRuns,
+        autoPublishCloudRuns: state.autoPublishCloudRuns,
 
         // Terminal
         terminalFont: state.terminalFont,

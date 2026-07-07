@@ -478,6 +478,7 @@ interface CloudRunOptions {
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
+  autoPublish?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: PermissionMode;
@@ -550,6 +551,9 @@ function buildCloudRunRequestBody(
   }
   if (options?.prAuthorshipMode) {
     body.pr_authorship_mode = options.prAuthorshipMode;
+  }
+  if (options?.autoPublish) {
+    body.auto_publish = true;
   }
   if (options?.runSource) {
     body.run_source = options.runSource;

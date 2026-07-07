@@ -322,6 +322,8 @@ export function useTaskCreation({
           channelName,
           channelId,
           customInstructions: useSettingsStore.getState().customInstructions,
+          autoPublishCloudRuns:
+            useSettingsStore.getState().autoPublishCloudRuns,
           allowNoRepo,
         });
 

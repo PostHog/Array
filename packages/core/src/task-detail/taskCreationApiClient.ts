@@ -10,6 +10,7 @@ export interface CreateTaskRunClientOptions {
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
+  autoPublish?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: string;

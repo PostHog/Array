@@ -36,6 +36,11 @@ export interface TaskCreationInput {
   sandboxEnvironmentId?: string;
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
+  /**
+   * When true, the cloud run agent pushes its work and opens a draft PR on
+   * completion without waiting for an explicit ask (Settings → Advanced).
+   */
+  cloudAutoPublish?: boolean;
   signalReportId?: string;
   additionalDirectories?: string[];
   /**
