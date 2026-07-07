@@ -53,7 +53,7 @@ export class TaskPrStatusService {
     const row = this.workspaceRepo.findByTaskId(taskId);
     this.workspaceService.emit("taskPrInfoChanged", {
       taskId,
-      prUrl: row?.prUrl ?? null,
+      prUrl,
       prUrls: this.workspaceRepo.getPrUrls(taskId),
       prState: row?.prState ?? null,
     });

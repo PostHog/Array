@@ -213,3 +213,32 @@ describe("TaskPrStatusService revalidation PR detection", () => {
     },
   );
 });
+
+describe("TaskPrStatusService.setPrimaryPrUrl", () => {
+  it("emits the promoted url as prUrl even though the row column is stale", () => {
+    const PR_OLD = "https://github.com/acme/repo/pull/1";
+    const PR_NEW = "https://github.com/acme/repo/pull/2";
+    const gitService = {} as unknown as GitService;
+    const workspaceService = { emit: vi.fn() };
+    const workspaceRepo = {
+      promotePrUrl: vi.fn(),
+      findByTaskId: vi.fn().mockReturnValue({ prUrl: PR_OLD, prState: "open" }),
+      getPrUrls: vi.fn().mockReturnValue([PR_NEW, PR_OLD]),
+    };
+    const service = new TaskPrStatusService(
+      gitService,
+      workspaceRepo as unknown as IWorkspaceRepository,
+      workspaceService as unknown as WorkspaceService,
+    );
+
+    service.setPrimaryPrUrl("task-1", PR_NEW);
+
+    expect(workspaceRepo.promotePrUrl).toHaveBeenCalledWith("task-1", PR_NEW);
+    expect(workspaceService.emit).toHaveBeenCalledWith("taskPrInfoChanged", {
+      taskId: "task-1",
+      prUrl: PR_NEW,
+      prUrls: [PR_NEW, PR_OLD],
+      prState: "open",
+    });
+  });
+});

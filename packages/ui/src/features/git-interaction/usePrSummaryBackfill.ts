@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { taskKeys } from "../tasks/taskKeys";
 import { backfillPrSummaries } from "./gitInteractionAdapter";
 
@@ -10,12 +10,19 @@ export function usePrSummaryBackfill(
   summaries: Record<string, string>,
 ): void {
   const queryClient = useQueryClient();
+  const summariesRef = useRef(summaries);
+  summariesRef.current = summaries;
+  const urlsKey = cloudUrls.join("\n");
   useEffect(() => {
-    if (!hasOtherPrs || cloudUrls.length === 0) return;
-    void backfillPrSummaries(taskId, cloudUrls, summaries).then((wrote) => {
+    if (!hasOtherPrs || !urlsKey) return;
+    void backfillPrSummaries(
+      taskId,
+      urlsKey.split("\n"),
+      summariesRef.current,
+    ).then((wrote) => {
       if (wrote) {
         void queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
       }
     });
-  }, [taskId, cloudUrls, hasOtherPrs, summaries, queryClient]);
+  }, [taskId, urlsKey, hasOtherPrs, queryClient]);
 }
