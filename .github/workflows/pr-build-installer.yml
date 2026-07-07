@@ -114,9 +114,12 @@ jobs:
           if-no-files-found: error
 
   comment:
-    # Post the download link once the build finishes. Skipped when build-macos
-    # is skipped (no label / fork), since `needs` requires its success.
+    # Update the sticky comment once the build finishes, on success OR failure,
+    # so a failed re-run replaces a prior "ready" comment instead of leaving it
+    # pointing at stale artifacts. Skipped only when build-macos itself was
+    # skipped (no label / fork), where there is nothing to report.
     needs: build-macos
+    if: ${{ !cancelled() && (needs.build-macos.result == 'success' || needs.build-macos.result == 'failure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -124,29 +127,43 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - name: Post download link on the PR
+      - name: Post build status on the PR
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          BUILD_RESULT: ${{ needs.build-macos.result }}
         run: |
           set -euo pipefail
           MARKER="<!-- pr-installer-build -->"
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          {
-            echo "$MARKER"
-            echo "### 🖥️ macOS test build (Apple Silicon)"
-            echo ""
-            echo "A signed macOS build for this PR is ready to download and run."
-            echo ""
-            echo "**[⬇️ Open this run and download the \`code-macos-arm64\` artifact](${RUN_URL}#artifacts)** (Apple Silicon / M-series)."
-            echo ""
-            echo "Unzip it, then open the \`.dmg\` (or the \`.app\` inside the \`-mac.zip\`)."
-            echo ""
-            echo "> ℹ️ The build is **signed but not notarized**, so macOS may warn on first launch."
-            echo "> Right-click the app → **Open**, or run \`xattr -dr com.apple.quarantine \"PostHog Code.app\"\`."
-            echo ""
-            echo "<sub>Built from ${GITHUB_SHA} · rebuilds on each push while the \`build-installer\` label is present. Downloading requires being signed in to GitHub with repo access.</sub>"
-          } > comment-body.md
+          if [ "${BUILD_RESULT}" = "success" ]; then
+            {
+              echo "$MARKER"
+              echo "### 🖥️ macOS test build (Apple Silicon)"
+              echo ""
+              echo "A signed macOS build for this PR is ready to download and run."
+              echo ""
+              echo "**[⬇️ Open this run and download the \`code-macos-arm64\` artifact](${RUN_URL}#artifacts)** (Apple Silicon / M-series)."
+              echo ""
+              echo "Unzip it, then open the \`.dmg\` (or the \`.app\` inside the \`-mac.zip\`)."
+              echo ""
+              echo "> ℹ️ The build is **signed but not notarized**, so macOS may warn on first launch."
+              echo "> Right-click the app → **Open**, or run \`xattr -dr com.apple.quarantine \"PostHog Code.app\"\`."
+              echo ""
+              echo "<sub>Built from ${GITHUB_SHA} · rebuilds on each push while the \`build-installer\` label is present. Downloading requires being signed in to GitHub with repo access.</sub>"
+            } > comment-body.md
+          else
+            {
+              echo "$MARKER"
+              echo "### 🖥️ macOS test build failed"
+              echo ""
+              echo "The macOS build for this PR **failed**, so there is no downloadable artifact for the latest commit."
+              echo ""
+              echo "**[🔎 View the failed run](${RUN_URL})** for logs."
+              echo ""
+              echo "<sub>Failed on ${GITHUB_SHA} · rebuilds on each push while the \`build-installer\` label is present.</sub>"
+            } > comment-body.md
+          fi
 
           COMMENT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
             --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | head -n1 || true)
