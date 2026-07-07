@@ -16,7 +16,7 @@ export async function hasCodexThreadState(threadId: string): Promise<boolean> {
   try {
     const entries = await readdir(sessionsDir, { recursive: true });
     return entries.some((entry) => {
-      const name = path.basename(entry.toString());
+      const name = path.basename(entry);
       return name.startsWith("rollout-") && name.endsWith(suffix);
     });
   } catch {

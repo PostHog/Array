@@ -28,25 +28,17 @@ describe("hasCodexThreadState", () => {
     );
   };
 
-  it("finds a persisted rollout for the thread id", async () => {
+  it.each([
+    [true, "the persisted thread id", THREAD_ID],
+    [false, "a different thread id", "11111111-2222-3333-4444-555555555555"],
+    [false, "an empty thread id", ""],
+  ])("returns %s querying %s", async (expected, _case, queriedId) => {
     await writeRollout(THREAD_ID);
-    await expect(hasCodexThreadState(THREAD_ID)).resolves.toBe(true);
-  });
-
-  it("returns false when only a different thread's rollout exists", async () => {
-    await writeRollout(THREAD_ID);
-    await expect(
-      hasCodexThreadState("11111111-2222-3333-4444-555555555555"),
-    ).resolves.toBe(false);
+    await expect(hasCodexThreadState(queriedId)).resolves.toBe(expected);
   });
 
   it("returns false when there is no sessions directory", async () => {
     await expect(hasCodexThreadState(THREAD_ID)).resolves.toBe(false);
-  });
-
-  it("returns false for an empty thread id", async () => {
-    await writeRollout(THREAD_ID);
-    await expect(hasCodexThreadState("")).resolves.toBe(false);
   });
 
   it("ignores files that are not rollouts", async () => {

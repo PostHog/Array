@@ -1830,12 +1830,11 @@ describe("AgentServer HTTP Mode", () => {
         });
       });
 
-      it("falls back to summary resume when the thread state is gone", async () => {
-        await expect(prepare(codexServer(THREAD_ID))).resolves.toBeNull();
-      });
-
-      it("falls back to summary resume without a prior session id", async () => {
-        await expect(prepare(codexServer(null))).resolves.toBeNull();
+      it.each([
+        ["the thread state is gone", THREAD_ID],
+        ["there is no prior session id", null],
+      ])("falls back to summary resume when %s", async (_case, sessionId) => {
+        await expect(prepare(codexServer(sessionId))).resolves.toBeNull();
       });
     });
   });
