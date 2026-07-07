@@ -97,7 +97,9 @@ describe("applyMention", () => {
     expect(result.text).toBe(
       "hey @[Raquel Smith](raquel@posthog.com) can you look",
     );
-    expect(result.caret).toBe("hey @[Raquel Smith](raquel@posthog.com) ".length);
+    expect(result.caret).toBe(
+      "hey @[Raquel Smith](raquel@posthog.com) ".length,
+    );
   });
 
   it("consumes the rest of the @word when the caret moved backward", () => {
