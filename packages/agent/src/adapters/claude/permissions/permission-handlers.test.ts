@@ -6,14 +6,9 @@ import {
 import { canUseTool } from "./permission-handlers";
 
 function createClient(response: Record<string, unknown>) {
-  const requestPermission = vi.fn().mockResolvedValue(response);
   return {
     sessionUpdate: vi.fn().mockResolvedValue(undefined),
-    requestPermission,
-    // Delegate so assertions keep one target.
-    request: vi.fn((_method: string, params: unknown) =>
-      requestPermission(params),
-    ),
+    requestPermission: vi.fn().mockResolvedValue(response),
   };
 }
 

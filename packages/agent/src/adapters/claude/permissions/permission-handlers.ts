@@ -1,8 +1,7 @@
-import {
-  type AgentSideConnection,
-  methods,
-  type RequestPermissionRequest,
-  type RequestPermissionResponse,
+import type {
+  AgentSideConnection,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
 import type {
   PermissionRuleValue,
@@ -129,11 +128,7 @@ async function requestPermissionFromClient(
 ): Promise<RequestPermissionResponse> {
   await ensureToolCallEmitted(context);
   try {
-    return await context.client.request(
-      methods.client.session.requestPermission,
-      params,
-      { cancellationSignal: context.signal },
-    );
+    return await context.client.requestPermission(params);
   } catch (error) {
     if (context.signal?.aborted) {
       throw new Error("Tool use aborted", { cause: error });
