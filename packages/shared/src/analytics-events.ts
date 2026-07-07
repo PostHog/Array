@@ -832,7 +832,8 @@ export type ChannelsSurface =
   | "dashboards_grid"
   | "canvas"
   | "context"
-  | "thread_panel";
+  | "thread_panel"
+  | "activity";
 
 export type ChannelActionType =
   | "enter_space"
@@ -860,7 +861,10 @@ export type ChannelActionType =
   | "open_task"
   | "collapse_thread"
   | "expand_thread"
-  | "copy_link";
+  | "copy_link"
+  | "mention_member"
+  | "view_activity"
+  | "open_mention";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
@@ -871,8 +875,10 @@ export interface ChannelActionProperties {
   task_id?: string;
   /** For file_task: destination channel when different from `channel_id`. */
   target_channel_id?: string;
-  /** For nav_click: which destination ("home"|"inbox"|"canvas"|"agents"|"files"|"settings"). */
+  /** For nav_click: which destination ("home"|"activity"|"inbox"|"canvas"|"agents"|"files"|"settings"). */
   nav_target?: string;
+  /** For mention_member: the tagged teammate's user uuid. */
+  mentioned_user_id?: string;
   /** For new_task_suggestion: the starter-prompt card label. */
   suggestion_label?: string;
   /** Whether the underlying mutation resolved successfully. */

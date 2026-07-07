@@ -1,0 +1,86 @@
+/**
+ * @-mention tokens embedded in channel thread message content.
+ *
+ * Mentions are stored inline as `@[Display Name](email)` so the plain string
+ * survives every transport/storage layer unchanged, older clients degrade to
+ * readable text, and any client can both render mentions as chips and answer
+ * "does this message mention me?" without a backend round-trip.
+ */
+
+const MENTION_PATTERN = /@\[([^\][\n]+)\]\(([^\s()]+@[^\s()]+)\)/g;
+
+export interface MentionTextSegment {
+  type: "text";
+  text: string;
+}
+
+export interface MentionUserSegment {
+  type: "mention";
+  /** The raw token as it appears in the content. */
+  text: string;
+  name: string;
+  email: string;
+}
+
+export type MentionSegment = MentionTextSegment | MentionUserSegment;
+
+/** Serialize a user reference into the inline mention token. */
+export function formatMention(name: string, email: string): string {
+  // Brackets and newlines would break token parsing; email is the identity so
+  // it falls back to the local part when the display name is unusable.
+  const safeName =
+    name.replace(/[[\]\n]/g, " ").trim() || email.split("@")[0] || email;
+  return `@[${safeName}](${email})`;
+}
+
+/** Split content into text and mention segments, in document order. */
+export function splitMentionSegments(content: string): MentionSegment[] {
+  const segments: MentionSegment[] = [];
+  let lastIndex = 0;
+  MENTION_PATTERN.lastIndex = 0;
+  for (const match of content.matchAll(MENTION_PATTERN)) {
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      segments.push({ type: "text", text: content.slice(lastIndex, index) });
+    }
+    segments.push({
+      type: "mention",
+      text: match[0],
+      name: match[1] ?? "",
+      email: match[2] ?? "",
+    });
+    lastIndex = index + match[0].length;
+  }
+  if (lastIndex < content.length) {
+    segments.push({ type: "text", text: content.slice(lastIndex) });
+  }
+  return segments;
+}
+
+/** Emails mentioned in the content, lowercased and deduped. */
+export function extractMentionEmails(content: string): string[] {
+  const emails = new Set<string>();
+  for (const segment of splitMentionSegments(content)) {
+    if (segment.type === "mention") emails.add(segment.email.toLowerCase());
+  }
+  return [...emails];
+}
+
+/** Whether the content mentions the given user (by email, case-insensitive). */
+export function mentionsUser(
+  content: string,
+  email: string | null | undefined,
+): boolean {
+  if (!email) return false;
+  const needle = email.toLowerCase();
+  return extractMentionEmails(content).includes(needle);
+}
+
+/** Content with mention tokens flattened to `@Display Name` for plain surfaces. */
+export function mentionsToPlainText(content: string): string {
+  return splitMentionSegments(content)
+    .map((segment) =>
+      segment.type === "mention" ? `@${segment.name}` : segment.text,
+    )
+    .join("");
+}

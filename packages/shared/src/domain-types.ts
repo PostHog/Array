@@ -36,6 +36,12 @@ export interface UserBasic {
   is_email_verified?: boolean | null;
 }
 
+/** One row from the org members list; trimmed to what mention pickers need. */
+export interface OrganizationMemberBasic {
+  id: string;
+  user: UserBasic;
+}
+
 export interface Task {
   id: string;
   task_number: number | null;

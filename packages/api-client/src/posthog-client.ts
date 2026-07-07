@@ -49,6 +49,7 @@ import type {
   DismissalArtefact,
   LineReferenceArtefact,
   NoteArtefact,
+  OrganizationMemberBasic,
   PriorityJudgmentArtefact,
   RepoSelectionArtefact,
   SafetyJudgmentArtefact,
@@ -2382,6 +2383,40 @@ export class PostHogAPIClient {
       throw new Error(message);
     }
     return (await response.json()) as TaskThreadMessage;
+  }
+
+  // Everyone in the current organization — the pool of taggable teammates for
+  // thread @-mentions. Membership churn is slow, so callers cache aggressively.
+  async listOrganizationMembers(): Promise<OrganizationMemberBasic[]> {
+    const ORG_MEMBERS_MAX_PAGES = 20;
+    const ORG_MEMBERS_PAGE_SIZE = 200;
+    const all: OrganizationMemberBasic[] = [];
+    let urlPath = `/api/organizations/@current/members/?limit=${ORG_MEMBERS_PAGE_SIZE}`;
+    for (let i = 0; i < ORG_MEMBERS_MAX_PAGES; i++) {
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url: new URL(`${this.api.baseUrl}${urlPath}`),
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch organization members: ${response.statusText}`,
+        );
+      }
+      const page = (await response.json()) as {
+        results: OrganizationMemberBasic[];
+        next: string | null;
+      };
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `listOrganizationMembers hit MAX_PAGES (${ORG_MEMBERS_MAX_PAGES}); returning partial results`,
+      { returned: all.length },
+    );
+    return all;
   }
 
   async sendRunCommand(

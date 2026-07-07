@@ -1,4 +1,5 @@
 import {
+  BellIcon,
   BrainIcon,
   GearSixIcon,
   HouseIcon,
@@ -6,17 +7,22 @@ import {
   SquaresFourIcon,
   TrayIcon,
 } from "@phosphor-icons/react";
+import { countUnseenActivity } from "@posthog/core/canvas/mentionActivity";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
+import { useMentionActivity } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
+import { useActivitySeenStore } from "@posthog/ui/features/canvas/stores/activitySeenStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { SidebarCountBadge } from "@posthog/ui/features/sidebar/components/items/SidebarCountBadge";
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import {
+  navigateToActivity,
   navigateToAgents,
   navigateToCanvas,
   navigateToInbox,
@@ -27,6 +33,7 @@ import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
+import { useMemo } from "react";
 
 // Fire a nav_click event, then run the destination's navigation.
 function trackNav(navTarget: string, navigate: () => void) {
@@ -43,10 +50,39 @@ function trackNav(navTarget: string, navigate: () => void) {
 // dashboard) so the Canvas nav item highlights only there.
 const NON_CANVAS_WEBSITE_PREFIXES = [
   "/website/home",
+  "/website/activity",
   "/website/skills",
   "/website/mcp-servers",
   "/website/command-center",
 ];
+
+// The Activity nav row with its unread-mentions dot. Its own component so the
+// mention fan-out queries only mount once here.
+function ActivityNavItem({ isActive }: { isActive: boolean }) {
+  const { items } = useMentionActivity();
+  const lastSeenAt = useActivitySeenStore((s) => s.lastSeenAt);
+  const unseen = useMemo(
+    () => countUnseenActivity(items, lastSeenAt),
+    [items, lastSeenAt],
+  );
+  return (
+    <SidebarItem
+      depth={0}
+      icon={<BellIcon size={16} weight={isActive ? "fill" : "regular"} />}
+      label={
+        <span className="flex min-w-0 items-center">
+          Activity
+          <SidebarCountBadge
+            count={unseen}
+            title={`${unseen} new ${unseen === 1 ? "mention" : "mentions"}`}
+          />
+        </span>
+      }
+      isActive={isActive}
+      onClick={() => trackNav("activity", navigateToActivity)}
+    />
+  );
+}
 
 // The global nav brought over from the Code app — a single icon+label row each,
 // no rail. Home points at the /website/home mirror so it stays in the Channels
@@ -83,6 +119,7 @@ function ChannelsNav() {
           onClick={() => trackNav("home", navigateToWebsiteHome)}
         />
       )}
+      <ActivityNavItem isActive={view.type === "activity"} />
       <SidebarItem
         depth={0}
         icon={

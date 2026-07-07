@@ -12,6 +12,7 @@ export type AppViewType =
   | "task-input"
   | "folder-settings"
   | "home"
+  | "activity"
   | "inbox"
   | "agents"
   | "archived"
@@ -66,6 +67,8 @@ function deriveFromMatches(matches: Match[]): AppView {
     // active-state highlighting works identically in either space.
     case "/website/home":
       return { type: "home" };
+    case "/website/activity":
+      return { type: "activity" };
     case "/code/inbox":
       return { type: "inbox" };
     case "/code/agents":
