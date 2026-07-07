@@ -134,13 +134,6 @@
       "when": 1783430845937,
       "tag": "0018_add_pr_urls",
       "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "6",
-      "when": 1783430858636,
-      "tag": "0019_reset_pr_urls",
-      "breakpoints": true
     }
   ]
 }
