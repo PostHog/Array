@@ -51,7 +51,6 @@ import { CloudLogGapReconciler } from "./cloudLogGapReconciler";
 import { CloudRunIdleTracker } from "./cloudRunIdleTracker";
 import {
   type CloudRuntimeOptions,
-  getCloudAutoPublish,
   getCloudPrAuthorshipMode,
   getCloudRunSource,
   getCloudRuntimeOptions,
@@ -2928,7 +2927,7 @@ export class SessionService {
           pendingUserArtifactIds:
             artifactIds.length > 0 ? artifactIds : undefined,
           prAuthorshipMode,
-          autoPublish: getCloudAutoPublish(previousState),
+          autoPublish: previousState.auto_publish === true || undefined,
           runSource: getCloudRunSource(previousState),
           signalReportId:
             typeof previousState.signal_report_id === "string"

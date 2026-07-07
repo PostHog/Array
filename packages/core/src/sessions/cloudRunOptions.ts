@@ -31,12 +31,6 @@ export function getCloudRunSource(
   return state.run_source === "signal_report" ? "signal_report" : "manual";
 }
 
-export function getCloudAutoPublish(
-  state: Record<string, unknown>,
-): boolean | undefined {
-  return state.auto_publish === true ? true : undefined;
-}
-
 export interface CloudRuntimeOptions {
   adapter?: Adapter;
   model?: string;

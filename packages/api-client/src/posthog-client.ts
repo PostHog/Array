@@ -553,7 +553,7 @@ function buildCloudRunRequestBody(
     body.pr_authorship_mode = options.prAuthorshipMode;
   }
   if (options?.autoPublish) {
-    body.auto_publish = true;
+    body.auto_publish = options.autoPublish;
   }
   if (options?.runSource) {
     body.run_source = options.runSource;
