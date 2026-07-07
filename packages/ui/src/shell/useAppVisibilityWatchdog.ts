@@ -15,9 +15,8 @@ export function useAppVisibilityWatchdog(
     const timer = setTimeout(() => {
       const element = ref.current;
       if (!element) return;
-      const opacity = Number.parseFloat(
-        getComputedStyle(element).opacity || "1",
-      );
+      const computedOpacity = getComputedStyle(element).opacity;
+      const opacity = computedOpacity ? Number.parseFloat(computedOpacity) : 1;
       const rect = element.getBoundingClientRect();
       if (opacity >= 0.01 && rect.width > 0 && rect.height > 0) return;
       const detail = {
