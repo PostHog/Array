@@ -2016,6 +2016,86 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).not.toContain("unless the user explicitly asks for that");
     });
 
+    // Prewarmed runs boot before the user's choice exists; the upgrade is
+    // resolved from run state when the first message arrives.
+    type WarmTestable = {
+      prewarmedRun: boolean;
+      session: { payload: { task_id: string; run_id: string } } | null;
+      posthogAPI: { getTaskRun: ReturnType<typeof vi.fn> };
+      resolveWarmAutoPublishUpgrade(): Promise<string | null>;
+      buildCloudSystemPrompt(): string;
+    };
+    const makeWarmServer = (
+      state: Record<string, unknown> | Error,
+      overrides: Partial<ConstructorParameters<typeof AgentServer>[0]> = {},
+    ): WarmTestable => {
+      const t = createServer(overrides) as unknown as WarmTestable;
+      t.prewarmedRun = true;
+      t.session = {
+        payload: { task_id: "test-task-id", run_id: "test-run-id" },
+      };
+      t.posthogAPI = {
+        getTaskRun:
+          state instanceof Error
+            ? vi.fn(async () => {
+                throw state;
+              })
+            : vi.fn(async () => ({ state })),
+      };
+      return t;
+    };
+
+    it("upgrades a prewarmed run to auto-publish from run state on the first message", async () => {
+      const t = makeWarmServer({ prewarmed: true, auto_publish: true });
+
+      const override = await t.resolveWarmAutoPublishUpgrade();
+      expect(override).toContain("OVERRIDE PREVIOUS INSTRUCTIONS");
+      expect(override).toContain("gh pr create --draft");
+      // The flip persists for the rest of the session...
+      expect(t.buildCloudSystemPrompt()).toContain("gh pr create --draft");
+      // ...and the override is injected only once.
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.posthogAPI.getTaskRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps a prewarmed run review-first when run state has no auto_publish", async () => {
+      const t = makeWarmServer({ prewarmed: true });
+
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.buildCloudSystemPrompt()).toContain(
+        "stop with local changes ready for review",
+      );
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.posthogAPI.getTaskRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("never upgrades a prewarmed run when createPr is false", async () => {
+      // PostHog AI warm runs launch with createPr=false; auto-publish must not
+      // override that even if auto_publish somehow lands in state.
+      const t = makeWarmServer(
+        { prewarmed: true, auto_publish: true },
+        { createPr: false },
+      );
+
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.posthogAPI.getTaskRun).not.toHaveBeenCalled();
+      expect(t.buildCloudSystemPrompt()).toContain(
+        "stop with local changes ready for review",
+      );
+    });
+
+    it("retries the state fetch on a later message when it fails", async () => {
+      const t = makeWarmServer(new Error("fetch failed"));
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+
+      t.posthogAPI.getTaskRun = vi.fn(async () => ({
+        state: { prewarmed: true, auto_publish: true },
+      }));
+      expect(await t.resolveWarmAutoPublishUpgrade()).toContain(
+        "gh pr create --draft",
+      );
+    });
+
     it.each([
       { label: "Slack", origin: "slack" },
       { label: "signal_report", origin: "signal_report" },
