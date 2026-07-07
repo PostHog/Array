@@ -1,4 +1,5 @@
 import {
+  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -85,8 +86,14 @@ export function ErrorDetailsDialog() {
         </div>
         <DialogFooter>
           {import.meta.env.DEV && (
-            <Button variant="outline" size="sm" onClick={handleCreateTask}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCreateTask}
+              className="gap-2 sm:mr-auto"
+            >
               Create task from error
+              <Badge variant="warning">Dev</Badge>
             </Button>
           )}
           <Button variant="outline" size="sm" onClick={handleDownload}>

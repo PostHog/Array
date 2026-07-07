@@ -1271,6 +1271,23 @@ button,
 }
 
 /*
+ * @posthog/quill toast — the description carries error summaries which can be
+ * long, unbroken JSON strings (e.g. `{"type":"validation_error",...}`) with no
+ * spaces to wrap at. Quill's `.quill-toast-card__description` sets no
+ * overflow-wrap, so such a token blows past the fixed 360px card. Break
+ * anywhere and clamp to a few lines — the toast is only a summary; the full
+ * payload lives behind the "Details" action.
+ */
+.quill-toast-card__description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/*
  * @posthog/quill Dialog — make the backdrop visible against this app's
  * dark theme (Quill defaults to opacity-20/dark:opacity-70 which barely
  * shows), and center the popup vertically (Quill anchors to ~10vh).
