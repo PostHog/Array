@@ -4,9 +4,11 @@ import {
   MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
+import type { WorkspaceMode } from "@posthog/shared";
 import {
   Button,
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -24,6 +26,12 @@ import { logger } from "@posthog/ui/shell/logger";
 import { useState } from "react";
 
 const log = logger.scope("tasks-header");
+
+const TASK_TYPE_OPTIONS: { value: WorkspaceMode; label: string }[] = [
+  { value: "worktree", label: "Worktree" },
+  { value: "local", label: "Local" },
+  { value: "cloud", label: "Cloud" },
+];
 
 function AddFolderButton() {
   const trpcClient = useHostTRPCClient();
@@ -82,6 +90,8 @@ function TaskFilterMenu() {
   const setSortMode = useSidebarStore((state) => state.setSortMode);
   const setShowAllUsers = useSidebarStore((state) => state.setShowAllUsers);
   const setShowInternal = useSidebarStore((state) => state.setShowInternal);
+  const taskTypeFilter = useSidebarStore((state) => state.taskTypeFilter);
+  const toggleTaskType = useSidebarStore((state) => state.toggleTaskType);
   const { data: currentUser } = useMeQuery();
   const isStaff = currentUser?.is_staff === true;
 
@@ -125,6 +135,20 @@ function TaskFilterMenu() {
           <DropdownMenuRadioItem value="created">Created</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="updated">Updated</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
+
+        <DropdownMenuSeparator />
+
+        <MenuLabel>Task type</MenuLabel>
+        {TASK_TYPE_OPTIONS.map((option) => (
+          <DropdownMenuCheckboxItem
+            key={option.value}
+            checked={taskTypeFilter.includes(option.value)}
+            closeOnClick={false}
+            onCheckedChange={() => toggleTaskType(option.value)}
+          >
+            {option.label}
+          </DropdownMenuCheckboxItem>
+        ))}
 
         {import.meta.env.DEV && (
           <>

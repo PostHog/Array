@@ -1,3 +1,4 @@
+import type { WorkspaceMode } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { getRepositoryInfo } from "./groupTasks";
 import type { TaskData } from "./sidebarData.types";
@@ -116,6 +117,7 @@ export interface TaskWorkspace {
   folderPath?: string | null;
   branchName?: string | null;
   linkedBranch?: string | null;
+  mode?: WorkspaceMode;
 }
 
 export interface TaskTimestamp {
@@ -174,6 +176,9 @@ export function deriveTaskData(
     folderId: workspace?.folderId || undefined,
     taskRunStatus: session?.cloudStatus ?? task.latest_run?.status ?? undefined,
     taskRunEnvironment: task.latest_run?.environment ?? undefined,
+    workspaceMode:
+      workspace?.mode ??
+      (task.latest_run?.environment === "cloud" ? "cloud" : undefined),
     originProduct,
     slackThreadUrl,
     folderPath: workspace?.folderPath ?? null,
@@ -181,6 +186,27 @@ export function deriveTaskData(
     branchName: workspace?.branchName ?? null,
     linkedBranch: workspace?.linkedBranch ?? null,
   };
+}
+
+export const ALL_WORKSPACE_MODES: readonly WorkspaceMode[] = [
+  "worktree",
+  "local",
+  "cloud",
+];
+
+/**
+ * Keeps tasks whose workspace mode is in `enabledModes`. Tasks without a known
+ * mode always pass so an unclassified task never silently disappears.
+ */
+export function filterByWorkspaceMode(
+  tasks: TaskData[],
+  enabledModes: readonly WorkspaceMode[],
+): TaskData[] {
+  if (enabledModes.length >= ALL_WORKSPACE_MODES.length) return tasks;
+  return tasks.filter(
+    (task) =>
+      task.workspaceMode == null || enabledModes.includes(task.workspaceMode),
+  );
 }
 
 function getSortValue(task: TaskData, sortMode: SortMode): number {
