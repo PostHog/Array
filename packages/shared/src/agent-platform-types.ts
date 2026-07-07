@@ -287,7 +287,7 @@ export interface DryRunToolEnvelope {
  */
 export type DryRunToolResult =
   | { outcome: "completed"; envelope: DryRunToolEnvelope }
-  | { outcome: "throttled"; max_concurrent: number }
+  | { outcome: "throttled"; max_concurrent?: number }
   | { outcome: "unavailable" };
 
 // `…/revisions/{id}/slack_manifest/` derives the Slack app manifest from the

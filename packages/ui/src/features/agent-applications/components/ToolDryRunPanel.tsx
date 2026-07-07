@@ -190,9 +190,9 @@ function DryRunResult({ result }: { result: DryRunToolResult }) {
     return (
       <Attn tone="warn">
         <Text className="text-[12px] text-gray-12">
-          Dry-run is busy — {result.max_concurrent} run
-          {result.max_concurrent === 1 ? "" : "s"} already in flight. Try again
-          in a moment.
+          {result.max_concurrent != null
+            ? `Dry-run is busy — the ${result.max_concurrent}-run limit is already in flight. Try again in a moment.`
+            : "Dry-run is busy — too many runs in flight. Try again in a moment."}
         </Text>
       </Attn>
     );

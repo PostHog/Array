@@ -1408,6 +1408,21 @@ describe("PostHogAPIClient", () => {
         ).resolves.toEqual({ outcome: "throttled", max_concurrent: 2 });
       });
 
+      it("throttles without a count when max_concurrent is absent", async () => {
+        const fetch = vi
+          .fn()
+          .mockRejectedValue(failWith(429, { error: "dry_run_throttled" }));
+        const client = makeClient(fetch);
+
+        const result = await client.dryRunRevisionTool("agent", "rev-1", "t1", {
+          args: {},
+        });
+        expect(result).toEqual({ outcome: "throttled" });
+        expect(
+          (result as { max_concurrent?: number }).max_concurrent,
+        ).toBeUndefined();
+      });
+
       it("returns an unavailable outcome on 503", async () => {
         const fetch = vi
           .fn()

@@ -5203,9 +5203,11 @@ export class PostHogAPIClient {
         const max = isObjectRecord(failure.body)
           ? failure.body.max_concurrent
           : undefined;
+        // Omit rather than default to 0 — "0 runs in flight" would be a
+        // misleading count for a throttle.
         return {
           outcome: "throttled",
-          max_concurrent: typeof max === "number" ? max : 0,
+          max_concurrent: typeof max === "number" ? max : undefined,
         };
       }
       if (failure?.status === 503) {

@@ -2,7 +2,7 @@ import { CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import type { ToolCompileError } from "@posthog/shared/agent-platform-types";
 import { Button } from "@posthog/ui/primitives/Button";
 import { Flex, Text, TextArea } from "@radix-ui/themes";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSaveRevisionTool } from "../hooks/useSaveRevisionTool";
 
 /**
@@ -45,8 +45,19 @@ export function ToolSourceEditor({
 
   const dirty = draft !== source;
 
+  // Clear the transient "saved" tick on unmount (or before the next save) so a
+  // stale timer can't fire setState after the component is gone.
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+    },
+    [],
+  );
+
   function onSave() {
     setJustSaved(false);
+    if (savedTimer.current) clearTimeout(savedTimer.current);
     save.mutate(
       {
         toolId,
@@ -57,7 +68,7 @@ export function ToolSourceEditor({
           if (result.ok) {
             setErrors(null);
             setJustSaved(true);
-            setTimeout(() => setJustSaved(false), 2000);
+            savedTimer.current = setTimeout(() => setJustSaved(false), 2000);
           } else {
             // Compile failed — nothing persisted; surface the diagnostics.
             setErrors(result.errors);
