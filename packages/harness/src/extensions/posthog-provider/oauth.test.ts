@@ -61,6 +61,22 @@ function hitCallback(port: number, query: string): Promise<void> {
   return hitPath(port, `/callback${query}`);
 }
 
+function hitCallbackBody(port: number, query: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const req = http.get(
+      { host: "localhost", port, path: `/callback${query}` },
+      (res) => {
+        let body = "";
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => resolve(body));
+      },
+    );
+    req.on("error", reject);
+  });
+}
+
 describe("buildAuthorizeUrl", () => {
   it("targets the same authorize endpoint and client as PostHog Code", () => {
     const url = buildAuthorizeUrl("us", "challenge123", getRedirectUri(8237));
@@ -342,7 +358,8 @@ describe("loginPosthog", () => {
     expect(spawn).toHaveBeenCalled();
 
     const state = new URL(authUrl).searchParams.get("state") ?? "";
-    await hitCallback(port, `?code=abc123&state=${state}`);
+    const body = await hitCallbackBody(port, `?code=abc123&state=${state}`);
+    expect(body).toContain("Authentication complete");
 
     const credentials = await loginPromise;
     expect(credentials.access).toBe("access-1");
@@ -359,36 +376,42 @@ describe("loginPosthog", () => {
     );
   });
 
-  it("rejects when the callback reports an OAuth error", async () => {
+  it("rejects when the callback reports an OAuth error, and serves the failure page, not the success page", async () => {
     const callbacks = fakeCallbacks();
     const loginPromise = loginPosthog(callbacks, "us");
     const assertion =
       expect(loginPromise).rejects.toThrow(/PostHog OAuth error/);
 
     await vi.waitFor(() => expect(callbacks.onAuth).toHaveBeenCalled());
-    await hitCallback(port, "?error=access_denied");
+    const body = await hitCallbackBody(port, "?error=access_denied");
+    expect(body).toContain("Authentication failed");
+    expect(body).not.toContain("Authentication complete");
 
     await assertion;
   });
 
-  it("rejects when the callback is missing a code", async () => {
+  it("rejects when the callback is missing a code, and serves the failure page", async () => {
     const callbacks = fakeCallbacks();
     const loginPromise = loginPosthog(callbacks, "us");
     const assertion = expect(loginPromise).rejects.toThrow(/missing code/);
 
     await vi.waitFor(() => expect(callbacks.onAuth).toHaveBeenCalled());
-    await hitCallback(port, "?state=whatever");
+    const body = await hitCallbackBody(port, "?state=whatever");
+    expect(body).toContain("Authentication failed");
+    expect(body).not.toContain("Authentication complete");
 
     await assertion;
   });
 
-  it("rejects on a state mismatch", async () => {
+  it("rejects on a state mismatch, and serves the failure page", async () => {
     const callbacks = fakeCallbacks();
     const loginPromise = loginPosthog(callbacks, "us");
     const assertion = expect(loginPromise).rejects.toThrow(/state mismatch/);
 
     await vi.waitFor(() => expect(callbacks.onAuth).toHaveBeenCalled());
-    await hitCallback(port, "?code=abc123&state=wrong-state");
+    const body = await hitCallbackBody(port, "?code=abc123&state=wrong-state");
+    expect(body).toContain("Authentication failed");
+    expect(body).not.toContain("Authentication complete");
 
     await assertion;
   });

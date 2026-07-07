@@ -37,6 +37,7 @@ export default defineConfig({
     "src/extensions/subagent/supervisor.ts",
     "src/extensions/subagent/render.ts",
     "src/extensions/subagent/rpc.ts",
+    "src/extensions/subagent/text-truncate.ts",
     "src/extensions/subagent/format.ts",
     "src/pi-cli.ts",
   ],

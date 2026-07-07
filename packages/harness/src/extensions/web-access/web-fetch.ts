@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { LRUCache } from "lru-cache";
 import TurndownService from "turndown";
@@ -23,6 +24,78 @@ const turndown = new TurndownService();
 // leaving the summarizer with nothing but CSS/font junk.
 turndown.remove(["script", "style", "noscript", "head", "link", "meta", "svg"]);
 
+function ipv4Octets(hostname: string): number[] | undefined {
+  if (isIP(hostname) !== 4) return undefined;
+  const octets = hostname.split(".").map(Number);
+  return octets.length === 4 ? octets : undefined;
+}
+
+function hexGroupToBytes(group: string): [number, number] {
+  const value = Number.parseInt(group, 16);
+  return [(value >> 8) & 0xff, value & 0xff];
+}
+
+/**
+ * `URL#hostname` normalizes an IPv4-mapped IPv6 literal's embedded address
+ * into hex groups (`::ffff:127.0.0.1` becomes `::ffff:7f00:1`), so recovering
+ * the embedded IPv4 address means decoding those two hex groups back into
+ * bytes rather than pattern-matching a dotted-quad that will never appear.
+ */
+function ipv4MappedAddress(normalized: string): string | undefined {
+  const hexMatch = normalized.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hexMatch) {
+    const [b0, b1] = hexGroupToBytes(hexMatch[1]);
+    const [b2, b3] = hexGroupToBytes(hexMatch[2]);
+    return `${b0}.${b1}.${b2}.${b3}`;
+  }
+  const dottedMatch = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  return dottedMatch?.[1];
+}
+
+/**
+ * Blocks loopback, private, link-local, and other non-public IPv4/IPv6
+ * literal addresses — the classic SSRF-to-internal-services vector (e.g. the
+ * AWS/GCP metadata endpoint at 169.254.169.254, or a private-network service
+ * at 10.x/172.16-31.x/192.168.x). This is a *literal-address* check only: it
+ * does not resolve hostnames, so it does not protect against DNS rebinding
+ * (a public hostname whose DNS record later resolves to a private address).
+ * That would require enforcing the check at connection time, not URL-parse
+ * time — out of scope here, but worth remembering as a residual gap.
+ */
+function isBlockedHost(rawHostname: string): boolean {
+  // `URL#hostname` keeps IPv6 literals bracketed ("[::1]"); `net.isIP`/our
+  // own parsing need the bracket-free form.
+  const hostname = rawHostname.replace(/^\[|\]$/g, "");
+  const lower = hostname.toLowerCase();
+  if (lower === "localhost" || lower.endsWith(".localhost")) return true;
+
+  const v4 = ipv4Octets(hostname);
+  if (v4) {
+    const [a, b] = v4;
+    if (a === 127) return true; // loopback (127.0.0.0/8)
+    if (a === 10) return true; // private (10.0.0.0/8)
+    if (a === 0) return true; // "this network" (0.0.0.0/8)
+    if (a === 169 && b === 254) return true; // link-local incl. cloud metadata (169.254.0.0/16)
+    if (a === 172 && b >= 16 && b <= 31) return true; // private (172.16.0.0/12)
+    if (a === 192 && b === 168) return true; // private (192.168.0.0/16)
+    if (a === 100 && b >= 64 && b <= 127) return true; // carrier-grade NAT (100.64.0.0/10)
+    if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking (198.18.0.0/15)
+    return false;
+  }
+
+  if (isIP(hostname) === 6) {
+    if (lower === "::1") return true; // loopback
+    if (lower === "::" || lower === "::0") return true; // unspecified
+    if (lower.startsWith("fe80:")) return true; // link-local (fe80::/10)
+    if (/^f[cd][0-9a-f]{2}:/.test(lower)) return true; // unique local (fc00::/7)
+    const mapped = ipv4MappedAddress(lower);
+    if (mapped && isBlockedHost(mapped)) return true;
+    return false;
+  }
+
+  return false;
+}
+
 export function validateUrl(
   url: string,
 ): { valid: true; url: URL } | { valid: false; reason: string } {
@@ -47,8 +120,17 @@ export function validateUrl(
     };
   }
 
-  const parts = parsed.hostname.split(".");
-  if (parts.length < 2) {
+  if (isBlockedHost(parsed.hostname)) {
+    return {
+      valid: false,
+      reason:
+        "URL must have a public hostname (loopback, private, and link-local addresses are not supported)",
+    };
+  }
+
+  const bareHostname = parsed.hostname.replace(/^\[|\]$/g, "");
+  const parts = bareHostname.split(".");
+  if (isIP(bareHostname) === 0 && parts.length < 2) {
     return { valid: false, reason: "URL must have a public hostname" };
   }
 
@@ -82,6 +164,50 @@ export function isPermittedRedirect(
   } catch {
     return false;
   }
+}
+
+/**
+ * Reads a response body up to `maxBytes`, enforcing the cap while streaming
+ * rather than trusting `content-length` (which is absent for chunked/streamed
+ * responses, letting a server stream indefinitely and exhaust memory before
+ * any header-based check ever runs). Falls back to `response.text()` with a
+ * post-hoc size check when `response.body` isn't a stream (defensive; real
+ * `fetch()` responses always expose one, but some test doubles don't).
+ */
+async function readBodyWithLimit(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  if (!response.body) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf-8") > maxBytes) {
+      throw new Error(`Content too large (exceeded ${maxBytes} bytes)`);
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel("content too large").catch(() => {});
+        throw new Error(`Content too large (exceeded ${maxBytes} bytes)`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString(
+    "utf-8",
+  );
 }
 
 async function fetchWithRedirects(
@@ -293,6 +419,9 @@ export function createWebFetchTool(options: PosthogProviderOptions = {}) {
           );
         }
 
+        // Fast-fail on an honest content-length header before reading anything,
+        // then enforce the same cap while streaming as the real backstop — a
+        // server that omits (or lies about) content-length can't bypass it.
         const contentLengthHeader = response.headers.get("content-length");
         const contentLength = contentLengthHeader
           ? Number(contentLengthHeader)
@@ -303,7 +432,7 @@ export function createWebFetchTool(options: PosthogProviderOptions = {}) {
           );
         }
 
-        const rawText = await response.text();
+        const rawText = await readBodyWithLimit(response, MAX_CONTENT_LENGTH);
         const contentType = response.headers.get("content-type") ?? "";
 
         let markdown: string;

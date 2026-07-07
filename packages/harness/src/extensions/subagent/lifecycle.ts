@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { truncateUtf8 } from "./text-truncate";
 
 export const LIFECYCLE_ARTIFACT_VERSION = 1;
 
@@ -159,18 +160,15 @@ export function writeTranscript(
   const filePath = transcriptPath(runId);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
-  const byteLength = Buffer.byteLength(markdown, "utf-8");
-  if (byteLength <= maxBytes) {
+  const { text, omittedBytes } = truncateUtf8(markdown, maxBytes);
+  if (omittedBytes === 0) {
     fs.writeFileSync(filePath, markdown);
     return;
   }
 
-  let truncated = markdown.slice(0, maxBytes);
-  while (Buffer.byteLength(truncated, "utf-8") > maxBytes)
-    truncated = truncated.slice(0, -1);
   fs.writeFileSync(
     filePath,
-    `${truncated}\n\n[transcript truncated: exceeded ${maxBytes} bytes; ${byteLength - Buffer.byteLength(truncated, "utf-8")} bytes omitted]\n`,
+    `${text}\n\n[transcript truncated: exceeded ${maxBytes} bytes; ${omittedBytes} bytes omitted]\n`,
   );
 }
 

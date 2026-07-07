@@ -106,6 +106,7 @@ function openBrowser(url: string): void {
 }
 
 const SUCCESS_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>PostHog</title></head><body style="font-family:system-ui;text-align:center;padding-top:20vh"><h1>Authentication complete</h1><p>You can close this window and return to your terminal.</p></body></html>`;
+const ERROR_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>PostHog</title></head><body style="font-family:system-ui;text-align:center;padding-top:20vh"><h1>Authentication failed</h1><p>Please return to your terminal and try again.</p></body></html>`;
 
 function waitForCallbackCode(options: {
   port: number;
@@ -125,17 +126,24 @@ function waitForCallbackCode(options: {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
       const error = url.searchParams.get("error");
+      // Determine success/failure before responding, so the browser never
+      // shows "Authentication complete" on a path we're about to reject (an
+      // OAuth error, a missing code, or a state mismatch).
+      const failureReason = error
+        ? `PostHog OAuth error: ${error}`
+        : !code
+          ? "PostHog OAuth callback missing code"
+          : expectedState && state !== expectedState
+            ? "PostHog OAuth state mismatch"
+            : undefined;
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(SUCCESS_PAGE);
+      res.end(failureReason ? ERROR_PAGE : SUCCESS_PAGE);
       cleanup();
-      if (error) {
-        reject(new Error(`PostHog OAuth error: ${error}`));
-      } else if (!code) {
-        reject(new Error("PostHog OAuth callback missing code"));
-      } else if (expectedState && state !== expectedState) {
-        reject(new Error("PostHog OAuth state mismatch"));
+      if (failureReason) {
+        reject(new Error(failureReason));
       } else {
-        resolve(code);
+        // `code` is guaranteed non-null here: `failureReason` covers the `!code` case above.
+        resolve(code as string);
       }
     });
 

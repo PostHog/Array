@@ -25,10 +25,45 @@ describe("validateUrl", () => {
     ["https://user@example.com/page", "credentials"],
     ["https://user:pass@example.com/page", "credentials"],
     ["https://localhost/page", "public hostname"],
+    ["https://sub.localhost/page", "public hostname"],
   ])("rejects %s with reason containing '%s'", (url, reason) => {
     const result = validateUrl(url);
     expect(result.valid).toBe(false);
     if (!result.valid) expect(result.reason).toContain(reason);
+  });
+
+  it.each([
+    "http://127.0.0.1/",
+    "http://127.1.2.3/",
+    "http://0.0.0.0/",
+    "http://10.0.0.5/",
+    "http://172.16.0.1/",
+    "http://172.31.255.255/",
+    "http://192.168.1.1/",
+    "http://169.254.169.254/latest/meta-data/",
+    "http://100.64.0.1/",
+    "http://198.18.0.1/",
+    "http://[::1]/",
+    "http://[fe80::1]/",
+    "http://[fc00::1]/",
+    "http://[::ffff:127.0.0.1]/",
+  ])("rejects SSRF-prone literal address %s", (url) => {
+    const result = validateUrl(url);
+    expect(result.valid).toBe(false);
+    if (!result.valid) expect(result.reason).toContain("public hostname");
+  });
+
+  it.each([
+    "http://172.15.255.255/", // just outside 172.16.0.0/12
+    "http://172.32.0.0/", // just outside 172.16.0.0/12
+    "http://11.0.0.1/", // outside 10.0.0.0/8
+    "http://8.8.8.8/", // public DNS, not private
+  ])("accepts public-looking IPv4 literal %s", (url) => {
+    expect(validateUrl(url).valid).toBe(true);
+  });
+
+  it("accepts a public IPv6 literal", () => {
+    expect(validateUrl("http://[2001:db8::1]/").valid).toBe(true);
   });
 
   it("boundary: accepts at exactly 2000 chars, rejects at 2001", () => {
@@ -227,6 +262,67 @@ describe("createWebFetchTool", () => {
     });
     expect(result.details).toMatchObject({
       redirectUrl: "https://evil.com/other",
+    });
+  });
+
+  it("rejects an oversized body even when content-length is absent (streamed/chunked response)", async () => {
+    const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
+    const CHUNK_COUNT = 6; // 12MB total, over the 10MB cap, without ever declaring content-length
+    const chunk = new Uint8Array(CHUNK_SIZE).fill(97); // 'a'
+
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        for (let i = 0; i < CHUNK_COUNT; i++) controller.enqueue(chunk);
+        controller.close();
+      },
+    });
+
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/html" }, // deliberately no content-length
+      }),
+    ) as unknown as typeof fetch;
+
+    const tool = createWebFetchTool({ region: "us" });
+    await expect(
+      tool.execute(
+        "call-1",
+        { url: "https://example.com/huge-page", prompt: "summarize" },
+        undefined,
+        undefined,
+        fakeCtx(undefined),
+      ),
+    ).rejects.toThrow(/Content too large/);
+  });
+
+  it("accepts a streamed response under the cap with no content-length header", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("<h1>Small page</h1>"));
+        controller.close();
+      },
+    });
+
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    ) as unknown as typeof fetch;
+
+    const tool = createWebFetchTool({ region: "us" });
+    const result = await tool.execute(
+      "call-1",
+      { url: "https://example.com/small-streamed-page", prompt: "summarize" },
+      undefined,
+      undefined,
+      fakeCtx(undefined),
+    );
+
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("Small page"),
     });
   });
 });

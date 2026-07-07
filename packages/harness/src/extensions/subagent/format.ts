@@ -4,6 +4,7 @@
  */
 import type { Message } from "@earendil-works/pi-ai";
 import { isFailedResult, type SingleRunResult } from "./run-agent";
+import { truncateUtf8 } from "./text-truncate";
 
 const PER_TASK_OUTPUT_CAP = 50 * 1024;
 
@@ -35,12 +36,9 @@ export function truncateForModel(
   output: string,
   cap: number = PER_TASK_OUTPUT_CAP,
 ): string {
-  const byteLength = Buffer.byteLength(output, "utf8");
-  if (byteLength <= cap) return output;
-  let truncated = output.slice(0, cap);
-  while (Buffer.byteLength(truncated, "utf8") > cap)
-    truncated = truncated.slice(0, -1);
-  return `${truncated}\n\n[Output truncated: ${byteLength - Buffer.byteLength(truncated, "utf8")} bytes omitted.]`;
+  const { text, omittedBytes } = truncateUtf8(output, cap);
+  if (omittedBytes === 0) return output;
+  return `${text}\n\n[Output truncated: ${omittedBytes} bytes omitted.]`;
 }
 
 export function aggregateUsage(results: SingleRunResult[]): {
