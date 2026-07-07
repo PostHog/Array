@@ -11,7 +11,7 @@ import {
   resolveSoundUrl,
 } from "@posthog/ui/utils/sounds";
 import { inject, injectable } from "inversify";
-import { summarizeError, useErrorDetailsStore } from "./errorDetails";
+import { showErrorDetails, summarizeError } from "./errorDetails";
 import {
   ACTIVE_VIEW_PROVIDER,
   type IActiveView,
@@ -169,14 +169,11 @@ export class NotificationBus {
     // Inspecting the payload beats navigation on error toasts: the error is
     // the thing the user needs, and it never fits in the toast.
     if (descriptor.error !== undefined) {
-      const detail = {
-        title: descriptor.title ?? descriptor.body,
-        error: descriptor.error,
-        occurredAt: Date.now(),
-      };
+      const title = descriptor.title ?? descriptor.body;
+      const error = descriptor.error;
       return {
         label: "Details",
-        onClick: () => useErrorDetailsStore.getState().show(detail),
+        onClick: () => showErrorDetails(title, error),
       };
     }
     const target = descriptor.target;

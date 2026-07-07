@@ -1,3 +1,4 @@
+import { toast } from "@posthog/ui/primitives/toast";
 import { create } from "zustand";
 
 // The error behind an error-level toast, captured so the details dialog can
@@ -8,11 +9,34 @@ export interface ErrorDetail {
   occurredAt: number;
 }
 
+// API error messages routinely arrive as a string with a JSON payload embedded
+// in them (e.g. `Failed request: [400] {"detail":"..."}`). Pull that payload
+// out and pretty-print it so the details dialog is readable rather than one
+// unwrapped line. Returns the string untouched when there's no parseable JSON.
+function prettifyErrorString(message: string): string {
+  const start = message.indexOf("{");
+  const end = message.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    const candidate = message.slice(start, end + 1);
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      const prefix = message.slice(0, start).trim();
+      const pretty = JSON.stringify(parsed, null, 2);
+      return prefix ? `${prefix}\n${pretty}` : pretty;
+    } catch {
+      // Not JSON after all — fall through to the raw string.
+    }
+  }
+  return message;
+}
+
 // Pretty-printed JSON of an arbitrary error payload that never throws:
 // Error instances become plain objects (keeping message, stack, and any
 // enumerable extras like `code`), circular references are elided, and
 // non-JSON values fall back to String().
 export function serializeError(error: unknown): string {
+  // Strings are already human-readable; only reflow an embedded JSON payload.
+  if (typeof error === "string") return prettifyErrorString(error);
   const seen = new WeakSet<object>();
   try {
     const json = JSON.stringify(
@@ -82,3 +106,37 @@ export const useErrorDetailsStore = create<ErrorDetailsState>((set) => ({
   show: (detail) => set({ detail }),
   close: () => set({ detail: null }),
 }));
+
+// Open the error details dialog for a given error. Shared by the notification
+// bus's error toasts and the standalone `toastError` helper so both land on the
+// same inspectable dialog.
+export function showErrorDetails(title: string, error: unknown): void {
+  useErrorDetailsStore.getState().show({
+    title,
+    error,
+    occurredAt: Date.now(),
+  });
+}
+
+// Fire an error toast whose payload stays inspectable: a one-line summary in
+// the toast body plus a "Details" action that opens the full pretty-printed
+// error (and its logs) in the dialog. Use this instead of a bare
+// `toast.error(title, { description: someRawError })` — that overflows the
+// toast and can't be opened. This is the lightweight, synchronous path for
+// errors raised by a user action; task-lifecycle notifications that need
+// focus-aware routing and sound still go through `NotificationBus.notifyError`.
+export function toastError(
+  title: string,
+  error: unknown,
+  options?: { id?: string; duration?: number },
+): void {
+  toast.error(title, {
+    id: options?.id,
+    duration: options?.duration,
+    description: summarizeError(error),
+    action: {
+      label: "Details",
+      onClick: () => showErrorDetails(title, error),
+    },
+  });
+}

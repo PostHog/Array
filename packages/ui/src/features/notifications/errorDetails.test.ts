@@ -1,11 +1,36 @@
-import { describe, expect, it } from "vitest";
-import { serializeError, summarizeError } from "./errorDetails";
+import { describe, expect, it, vi } from "vitest";
+
+const toastMock = vi.hoisted(() => ({ error: vi.fn() }));
+vi.mock("@posthog/ui/primitives/toast", () => ({ toast: toastMock }));
+
+import {
+  serializeError,
+  summarizeError,
+  toastError,
+  useErrorDetailsStore,
+} from "./errorDetails";
 
 describe("serializeError", () => {
   it("pretty-prints plain objects", () => {
     expect(serializeError({ code: 500, message: "boom" })).toBe(
       JSON.stringify({ code: 500, message: "boom" }, null, 2),
     );
+  });
+
+  it("reflows the JSON payload embedded in an API error string", () => {
+    const message =
+      'Failed request: [400] {"type":"validation_error","attr":"model"}';
+    expect(serializeError(message)).toBe(
+      `Failed request: [400]\n${JSON.stringify(
+        { type: "validation_error", attr: "model" },
+        null,
+        2,
+      )}`,
+    );
+  });
+
+  it("returns a plain string unchanged when there's no JSON to reflow", () => {
+    expect(serializeError("Not authenticated")).toBe("Not authenticated");
   });
 
   it("expands Error instances with message, stack, and enumerable extras", () => {
@@ -51,5 +76,32 @@ describe("summarizeError", () => {
 
   it("never returns an empty summary", () => {
     expect(summarizeError("   ")).toBe("Unknown error");
+  });
+});
+
+describe("toastError", () => {
+  const rawError =
+    'Failed request: [400] {"detail":"This field is required.","attr":"model"}';
+
+  it("shows a summary in the toast, not the raw payload, with a Details action", () => {
+    toastMock.error.mockClear();
+    useErrorDetailsStore.getState().close();
+
+    toastError("Couldn't start generation", rawError);
+
+    const [title, options] = toastMock.error.mock.calls[0] as [
+      string,
+      { description: string; action: { label: string; onClick: () => void } },
+    ];
+    expect(title).toBe("Couldn't start generation");
+    expect(options.description).toBe(summarizeError(rawError));
+    expect(options.description.length).toBeLessThanOrEqual(141);
+
+    expect(options.action.label).toBe("Details");
+    options.action.onClick();
+    const detail = useErrorDetailsStore.getState().detail;
+    expect(detail?.title).toBe("Couldn't start generation");
+    expect(detail?.error).toBe(rawError);
+    useErrorDetailsStore.getState().close();
   });
 });
