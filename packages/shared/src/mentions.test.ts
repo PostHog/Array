@@ -73,11 +73,22 @@ describe("splitMentionSegments", () => {
       "@[unclosed](a@x.com",
       "@[](a@x.com)",
       "@[spaced email](a b@x.com)",
+      "@[double at](a@@x.com)",
     ]) {
       expect(
         splitMentionSegments(content).every((s) => s.type === "text"),
       ).toBe(true);
     }
+  });
+
+  it("scans adversarial unterminated tokens in linear time", () => {
+    // Regression for CodeQL js/polynomial-redos: with `@` allowed around the
+    // email separator this input backtracked quadratically.
+    const content = `@[Z](${"!@".repeat(50_000)}`;
+    const start = performance.now();
+    const segments = splitMentionSegments(content);
+    expect(performance.now() - start).toBeLessThan(500);
+    expect(segments).toEqual([{ type: "text", text: content }]);
   });
 });
 

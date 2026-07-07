@@ -7,7 +7,10 @@
  * "does this message mention me?" without a backend round-trip.
  */
 
-const MENTION_PATTERN = /@\[([^\][\n]+)\]\(([^\s()]+@[^\s()]+)\)/g;
+// `@` is excluded on both sides of the separator so the match point is
+// unambiguous — with it allowed, adversarial input backtracks quadratically
+// (CodeQL js/polynomial-redos). Real emails carry exactly one `@` anyway.
+const MENTION_PATTERN = /@\[([^\][\n]+)\]\(([^\s()@]+@[^\s()@]+)\)/g;
 
 export interface MentionTextSegment {
   type: "text";
