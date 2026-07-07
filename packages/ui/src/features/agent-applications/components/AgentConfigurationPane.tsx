@@ -57,8 +57,7 @@ import { CronFireButton } from "./CronFireButton";
 import { FileExplorer, type FileTreeNode } from "./FileExplorer";
 import { SecretEditor } from "./SecretEditor";
 import { SlackSetupCard } from "./SlackSetupCard";
-import { ToolDryRunPanel } from "./ToolDryRunPanel";
-import { ToolSourceEditor } from "./ToolSourceEditor";
+import { ToolSourcePanel } from "./ToolSourcePanel";
 
 // Value readers — spec items are loosely typed on the wire.
 function rec(v: unknown): Record<string, unknown> {
@@ -1302,31 +1301,18 @@ function ToolBody({
         <IdentityLink provider={identity} spec={spec} ctx={ctx} />
       ) : null}
       {source ? (
-        <div className="mt-2">
-          <Subhead>source · {source.path}</Subhead>
-          {canAuthor ? (
-            <ToolSourceEditor
-              // Remount on revision/tool switch so the editable buffer reseeds
-              // from the new source (the editor does no in-render reconcile).
-              key={`${ctx.revisionId}:${id}`}
-              idOrSlug={ctx.idOrSlug}
-              revisionId={ctx.revisionId}
-              toolId={id}
-              source={source.content}
-              description={schema.description}
-              argsSchema={schema.args_schema}
-            />
-          ) : (
-            <BundleFileBody file={source} />
-          )}
-          {authoringEnabled && isCustom ? (
-            <ToolDryRunPanel
-              idOrSlug={ctx.idOrSlug}
-              revisionId={ctx.revisionId}
-              toolId={id}
-            />
-          ) : null}
-        </div>
+        <ToolSourcePanel
+          // Remount on revision/tool switch so the buffer + toggles reset.
+          key={`${ctx.revisionId}:${id}`}
+          idOrSlug={ctx.idOrSlug}
+          revisionId={ctx.revisionId}
+          toolId={id}
+          source={source}
+          description={schema.description}
+          argsSchema={schema.args_schema}
+          canEdit={canAuthor}
+          canDryRun={authoringEnabled && isCustom}
+        />
       ) : null}
     </Flex>
   );
