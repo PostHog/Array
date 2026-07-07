@@ -108,8 +108,12 @@ export function QuestionPermission({
   onSelect,
   onCancel,
 }: BasePermissionProps) {
-  const meta = parseQuestionMeta(toolCall._meta);
-  const allQuestions = meta?.questions ?? [];
+  // Memoized so the hooks depending on allQuestions keep a stable identity
+  // instead of re-parsing the meta (and re-allocating) on every render.
+  const allQuestions = useMemo(
+    () => parseQuestionMeta(toolCall._meta)?.questions ?? [],
+    [toolCall._meta],
+  );
   const totalQuestions = allQuestions.length;
   const toolCallId = toolCall.toolCallId;
 
