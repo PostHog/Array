@@ -1,3 +1,4 @@
+import { readPrUrls } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { getRepositoryInfo } from "./groupTasks";
 import type { TaskData } from "./sidebarData.types";
@@ -150,9 +151,9 @@ export function deriveTaskData(
     taskLastViewedAt != null && lastActivityAt > taskLastViewedAt;
 
   const cloudPrUrl =
-    typeof task.latest_run?.output?.pr_url === "string"
-      ? task.latest_run.output.pr_url
-      : ((session?.cloudOutput?.pr_url as string | undefined) ?? null);
+    readPrUrls(task.latest_run?.output)[0] ??
+    readPrUrls(session?.cloudOutput)[0] ??
+    null;
 
   const originProduct =
     task.origin_product ??

@@ -34,6 +34,7 @@ import {
   markViewedInput,
   reconcileCloudWorkspacesInput,
   reconcileCloudWorkspacesOutput,
+  setPrimaryPrUrlInput,
   taskPrStatusInput,
   taskPrStatusOutput,
   togglePinInput,
@@ -238,6 +239,12 @@ export const workspaceRouter = router({
     .output(cachedPrUrlOutput)
     .query(({ ctx, input }) =>
       getGitService(ctx.container).getCachedPrUrl(input.taskId),
+    ),
+
+  setPrimaryPrUrl: publicProcedure
+    .input(setPrimaryPrUrlInput)
+    .mutation(({ ctx, input }) =>
+      getGitService(ctx.container).setPrimaryPrUrl(input.taskId, input.prUrl),
     ),
 
   onError: subscribe(WorkspaceServiceEvent.Error),

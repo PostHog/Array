@@ -29,6 +29,8 @@ import {
   discardFileChangesOutput,
   generateCommitMessageInput,
   generateCommitMessageOutput,
+  generatePrShortSummaryInput,
+  generatePrShortSummaryOutput,
   generatePrTitleAndBodyInput,
   generatePrTitleAndBodyOutput,
   getAllBranchesInput,
@@ -525,6 +527,7 @@ export const gitRouter = router({
           merged: false,
           draft: false,
           headRefName: null,
+          title: null,
         }
       );
     }),
@@ -653,6 +656,16 @@ export const gitRouter = router({
       getGitPrService(ctx.container).generatePrTitleAndBody(
         input.directoryPath,
         input.conversationContext,
+      ),
+    ),
+
+  generatePrShortSummary: publicProcedure
+    .input(generatePrShortSummaryInput)
+    .output(generatePrShortSummaryOutput)
+    .mutation(({ ctx, input }) =>
+      getGitPrService(ctx.container).generatePrShortSummary(
+        input.conversationContext,
+        input.prTitle,
       ),
     ),
 

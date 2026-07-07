@@ -128,6 +128,7 @@ export const linkedBranchChangedPayload = z.object({
 export const taskPrInfoChangedPayload = z.object({
   taskId: z.string(),
   prUrl: z.string().nullable(),
+  prUrls: z.array(z.string()).optional(),
   prState: z.enum(["merged", "open", "draft", "closed"]).nullable(),
 });
 
@@ -277,6 +278,12 @@ export const cachedPrUrlInput = z.object({
 
 export const cachedPrUrlOutput = z.object({
   prUrl: z.string().nullable(),
+  prUrls: z.array(z.string()),
+});
+
+export const setPrimaryPrUrlInput = z.object({
+  taskId: z.string(),
+  prUrl: z.string(),
 });
 
 export const sidebarPrStateSchema = z

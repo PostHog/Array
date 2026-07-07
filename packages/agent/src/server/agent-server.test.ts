@@ -1866,7 +1866,10 @@ describe("AgentServer HTTP Mode", () => {
       ): void;
       fetchPrCreatedAt(url: string): Promise<string | null>;
       detectedPrUrl: string | null;
-      posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+      posthogAPI: {
+        getTaskRun: ReturnType<typeof vi.fn>;
+        updateTaskRun: ReturnType<typeof vi.fn>;
+      };
     };
 
     const justNow = () => new Date().toISOString();
@@ -1875,7 +1878,20 @@ describe("AgentServer HTTP Mode", () => {
     const setup = (prCreatedAt: string | null): PrTestServer => {
       const s = createServer() as unknown as PrTestServer;
       s.fetchPrCreatedAt = vi.fn(async () => prCreatedAt);
-      s.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      let storedOutput: Record<string, unknown> | null = null;
+      s.posthogAPI = {
+        getTaskRun: vi.fn(async () => ({ output: storedOutput })),
+        updateTaskRun: vi.fn(
+          async (
+            _taskId: string,
+            _runId: string,
+            updates: { output: Record<string, unknown> },
+          ) => {
+            storedOutput = updates.output;
+            return {};
+          },
+        ),
+      };
       return s;
     };
 
@@ -1886,7 +1902,7 @@ describe("AgentServer HTTP Mode", () => {
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
-        output: { pr_url: PR_URL },
+        output: { pr_url: PR_URL, pr_urls: [PR_URL] },
       });
       expect(s.detectedPrUrl).toBe(PR_URL);
     });
@@ -1917,8 +1933,7 @@ describe("AgentServer HTTP Mode", () => {
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
 
-    it("attributes the most recent PR when a run opens several, in detection order", async () => {
-      // output.pr_url holds one value; the latest PR the run created is the useful one.
+    it("accumulates every PR a run opens, keeping the first as primary", async () => {
       const s = setup(justNow());
       const second = "https://github.com/PostHog/posthog.com/pull/17765";
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
@@ -1926,7 +1941,7 @@ describe("AgentServer HTTP Mode", () => {
       await flush();
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith("t", "r", {
-        output: { pr_url: second },
+        output: { pr_url: PR_URL, pr_urls: [PR_URL, second] },
       });
       expect(s.detectedPrUrl).toBe(second);
     });

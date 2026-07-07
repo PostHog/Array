@@ -38,7 +38,7 @@ import {
   isOpenAIModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
-import { findPrUrl, wasCreatedRecently } from "@posthog/agent/pr-url-detector";
+import { findPrUrls, wasCreatedRecently } from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
@@ -317,9 +317,11 @@ interface ManagedSession {
   mcpToolApprovals: McpToolApprovals;
   /** Maps tool keys to their installation for backend approval updates */
   toolInstallations: McpToolInstallations;
-  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
-  prAttributed: boolean;
+  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL;
+  // `prAttachChain` serializes attach writes so concurrent fetch-merge-patch
+  // cycles can't drop each other's URLs from the accumulated list.
   evaluatedPrUrls: Set<string>;
+  prAttachChain: Promise<void>;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -1090,8 +1092,8 @@ If a repository IS genuinely required, attach one in this priority order:
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
-        prAttributed: false,
         evaluatedPrUrls: new Set(),
+        prAttachChain: Promise.resolve(),
       };
 
       this.sessions.set(taskRunId, session);
@@ -2052,11 +2054,14 @@ For git operations while detached:
     session: ManagedSession | undefined,
     update: unknown,
   ): void {
-    if (!session || session.prAttributed) return;
-    const prUrl = findPrUrl(JSON.stringify(update));
-    if (!prUrl || session.evaluatedPrUrls.has(prUrl)) return;
-    session.evaluatedPrUrls.add(prUrl);
-    void this.attachPrIfCreatedThisRun(taskRunId, session, prUrl);
+    if (!session) return;
+    for (const prUrl of findPrUrls(JSON.stringify(update))) {
+      if (session.evaluatedPrUrls.has(prUrl)) continue;
+      session.evaluatedPrUrls.add(prUrl);
+      session.prAttachChain = session.prAttachChain
+        .catch(() => {})
+        .then(() => this.attachPrIfCreatedThisRun(taskRunId, session, prUrl));
+    }
   }
 
   private async attachPrIfCreatedThisRun(
@@ -2064,33 +2069,26 @@ For git operations while detached:
     session: ManagedSession,
     prUrl: string,
   ): Promise<void> {
-    if (session.prAttributed) return;
-
     const createdAt = await this.fetchPrCreatedAt(session.repoPath, prUrl);
     if (!wasCreatedRecently(createdAt, Date.now())) return;
-    // Re-check after the await: another URL may have attributed while we waited.
-    if (session.prAttributed) return;
 
-    session.prAttributed = true;
     this.log.info("Detected PR URL created during run", { taskRunId, prUrl });
 
-    session.agent
-      .attachPullRequestToTask(session.taskId, prUrl)
-      .then(() => {
-        this.log.info("PR URL attached to task", {
-          taskRunId,
-          taskId: session.taskId,
-          prUrl,
-        });
-      })
-      .catch((err) => {
-        this.log.error("Failed to attach PR URL to task", {
-          taskRunId,
-          taskId: session.taskId,
-          prUrl,
-          error: err,
-        });
+    try {
+      await session.agent.attachPullRequestToTask(session.taskId, prUrl);
+      this.log.info("PR URL attached to task", {
+        taskRunId,
+        taskId: session.taskId,
+        prUrl,
       });
+    } catch (err) {
+      this.log.error("Failed to attach PR URL to task", {
+        taskRunId,
+        taskId: session.taskId,
+        prUrl,
+        error: err,
+      });
+    }
 
     // The user-initiated PR-creation flow links the current branch to the
     // workspace atomically (see GitService.createPr). PRs created via bash —

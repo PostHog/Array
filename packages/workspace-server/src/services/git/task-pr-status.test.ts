@@ -68,6 +68,7 @@ describe("TaskPrStatusService revalidation PR detection", () => {
   let workspaceRepo: {
     findByTaskId: ReturnType<typeof vi.fn>;
     updatePrCache: ReturnType<typeof vi.fn>;
+    getPrUrls: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -83,6 +84,9 @@ describe("TaskPrStatusService revalidation PR detection", () => {
     workspaceRepo = {
       findByTaskId: vi.fn().mockReturnValue({ prUrl: null, prState: null }),
       updatePrCache: vi.fn(),
+      getPrUrls: vi
+        .fn()
+        .mockReturnValue(["https://github.com/acme/repo/pull/7"]),
     };
     service = new TaskPrStatusService(
       gitService as unknown as GitService,
@@ -109,9 +113,35 @@ describe("TaskPrStatusService revalidation PR detection", () => {
       expectedCache: {
         prUrl: "https://github.com/acme/repo/pull/7",
         prState: "open",
+        accumulate: false,
       },
       expectedEmit: {
         prUrl: "https://github.com/acme/repo/pull/7",
+        prUrls: ["https://github.com/acme/repo/pull/7"],
+        prState: "open",
+      },
+    },
+    {
+      name: "accumulates a PR detected on a task's dedicated worktree",
+      taskId: "task-wt",
+      workspace: { mode: "worktree", worktreePath: "/wt", folderPath: null },
+      prStatus: {
+        prExists: true,
+        prState: "open",
+        prUrl: "https://github.com/acme/repo/pull/7",
+        isDraft: false,
+      },
+      diffStats: { filesChanged: 0 },
+      expectedRepoPath: "/wt",
+      expectDiffStatsCalled: true,
+      expectedCache: {
+        prUrl: "https://github.com/acme/repo/pull/7",
+        prState: "open",
+        accumulate: true,
+      },
+      expectedEmit: {
+        prUrl: "https://github.com/acme/repo/pull/7",
+        prUrls: ["https://github.com/acme/repo/pull/7"],
         prState: "open",
       },
     },
@@ -123,7 +153,7 @@ describe("TaskPrStatusService revalidation PR detection", () => {
       diffStats: { filesChanged: 0 },
       expectedRepoPath: "/repo",
       expectDiffStatsCalled: false,
-      expectedCache: { prUrl: null, prState: null },
+      expectedCache: { prUrl: null, prState: null, accumulate: false },
       expectedEmit: null,
     },
     {
@@ -134,7 +164,7 @@ describe("TaskPrStatusService revalidation PR detection", () => {
       diffStats: { filesChanged: 3 },
       expectedRepoPath: "/wt",
       expectDiffStatsCalled: true,
-      expectedCache: { prUrl: null, prState: null },
+      expectedCache: { prUrl: null, prState: null, accumulate: false },
       expectedEmit: null,
     },
   ])(

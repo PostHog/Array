@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findPrUrl, wasCreatedRecently } from "./pr-url-detector";
+import { findPrUrl, findPrUrls, wasCreatedRecently } from "./pr-url-detector";
 
 const PR_URL = "https://github.com/PostHog/posthog.com/pull/17764";
 
@@ -30,6 +30,25 @@ describe("findPrUrl", () => {
     expect(
       findPrUrl("see https://github.com/PostHog/posthog/issues/42"),
     ).toBeNull();
+  });
+});
+
+describe("findPrUrls", () => {
+  const OTHER = "https://github.com/PostHog/posthog/pull/99";
+
+  it("finds every PR URL in one chunk, in order", () => {
+    expect(findPrUrls(`Opened ${PR_URL} and ${OTHER} today`)).toEqual([
+      PR_URL,
+      OTHER,
+    ]);
+  });
+
+  it("dedupes repeated mentions of the same PR", () => {
+    expect(findPrUrls(`${PR_URL} again: ${PR_URL}`)).toEqual([PR_URL]);
+  });
+
+  it("returns an empty array when there is no PR URL", () => {
+    expect(findPrUrls("nothing here")).toEqual([]);
   });
 });
 

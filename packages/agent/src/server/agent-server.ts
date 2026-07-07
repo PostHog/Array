@@ -16,7 +16,12 @@ import {
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
-import type { Adapter } from "@posthog/shared";
+import {
+  type Adapter,
+  buildPrOutput,
+  mergePrUrls,
+  readPrUrls,
+} from "@posthog/shared";
 import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -45,7 +50,7 @@ import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { PostHogAPIClient } from "../posthog-api";
-import { findPrUrl, wasCreatedRecently } from "../pr-url-detector";
+import { findPrUrls, wasCreatedRecently } from "../pr-url-detector";
 import {
   formatConversationForResume,
   type ResumeState,
@@ -3355,13 +3360,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     update: Record<string, unknown> | undefined,
   ): void {
     if (!update) return;
-    const prUrl = findPrUrl(JSON.stringify(update));
-    if (!prUrl || this.evaluatedPrUrls.has(prUrl)) return;
-    this.evaluatedPrUrls.add(prUrl);
-    // Chain so attributions run in detection order; later PRs overwrite earlier ones.
-    this.prAttributionChain = this.prAttributionChain
-      .catch(() => {})
-      .then(() => this.attachPrIfCreatedThisRun(payload, prUrl));
+    for (const prUrl of findPrUrls(JSON.stringify(update))) {
+      if (this.evaluatedPrUrls.has(prUrl)) continue;
+      this.evaluatedPrUrls.add(prUrl);
+      // Chain so attributions run in detection order; later PRs append after earlier ones.
+      this.prAttributionChain = this.prAttributionChain
+        .catch(() => {})
+        .then(() => this.attachPrIfCreatedThisRun(payload, prUrl));
+    }
   }
 
   private async attachPrIfCreatedThisRun(
@@ -3389,8 +3395,13 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     this.detectedPrUrl = prUrl;
 
     try {
+      const freshOutput = await this.posthogAPI
+        .getTaskRun(payload.task_id, payload.run_id)
+        .then((run) => run.output)
+        .catch(() => null);
+      const urls = mergePrUrls(readPrUrls(freshOutput), [prUrl]);
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
-        output: { pr_url: prUrl },
+        output: buildPrOutput(freshOutput, urls),
       });
       this.logger.debug("Attributed created PR to task run", {
         taskId: payload.task_id,
