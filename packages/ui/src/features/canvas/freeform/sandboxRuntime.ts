@@ -127,6 +127,22 @@ const TAILWIND_V3 = `<script src="https://cdn.tailwindcss.com"></script>
   } } };
 </script>`;
 
+// Decodes literal \uXXXX / \u{...} escape sequences in a string. Exported for
+// tests; its source is interpolated into the sandbox bootstrap below so the
+// iframe runs this exact implementation.
+export function decodeJsxUnicodeEscapes(value: string): string {
+  return value.replace(
+    /\\u\{([0-9a-fA-F]{1,6})\}|\\u([0-9a-fA-F]{4})/g,
+    (match, braced, plain) => {
+      try {
+        return String.fromCodePoint(Number.parseInt(braced || plain, 16));
+      } catch {
+        return match;
+      }
+    },
+  );
+}
+
 export function buildSandboxDocument(
   mode: SandboxMode,
   // The PostHog host, when in-iframe analytics/replay is enabled. Opens CSP for
@@ -274,21 +290,14 @@ export function buildSandboxDocument(
     // contain them despite the prompt rules — decode at transpile time so both
     // new and already-saved canvases render the real characters. Escapes inside
     // JS string/template literals are untouched (Babel already decoded those).
-    const decodeUnicodeEscapes = (value) =>
-      value.replace(
-        /\\\\u\\{([0-9a-fA-F]{1,6})\\}|\\\\u([0-9a-fA-F]{4})/g,
-        (match, braced, plain) => {
-          try {
-            return String.fromCodePoint(parseInt(braced || plain, 16));
-          } catch {
-            return match;
-          }
-        },
-      );
+    const decodeUnicodeEscapes = ${decodeJsxUnicodeEscapes.toString()};
     const jsxUnicodeEscapesPlugin = () => ({
       visitor: {
         JSXText(path) {
-          path.node.value = decodeUnicodeEscapes(path.node.value);
+          const decoded = decodeUnicodeEscapes(path.node.value);
+          if (decoded !== path.node.value) {
+            path.node.value = decoded;
+          }
         },
         JSXAttribute(path) {
           const v = path.node.value;
