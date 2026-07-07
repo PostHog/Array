@@ -3,7 +3,8 @@ export type GatewayProduct =
   | "background_agents"
   | "signals"
   | "slack_app"
-  | "posthog_ai";
+  | "posthog_ai"
+  | "conversations";
 
 export function resolveGatewayProduct({
   isInternal,
@@ -20,6 +21,9 @@ export function resolveGatewayProduct({
   }
   if (originProduct === "signal_report" || originProduct === "signals_scout") {
     return "signals";
+  }
+  if (originProduct === "support_reply") {
+    return "conversations";
   }
   if (isInternal) {
     return "background_agents";
