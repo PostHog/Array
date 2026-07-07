@@ -2665,6 +2665,14 @@ When you mention a pull request in any reply or summary, always hyperlink it to 
 (e.g. a Markdown link like [#123](https://github.com/org/repo/pull/123)) rather than plain
 text, so readers can open it directly.`;
 
+    const shellEfficiencyInstructions = `
+## Shell efficiency
+Optimize for the fewest shell round trips.
+- Batch related commands into one Bash invocation using \`&&\` (e.g. \`npm run typecheck && npm run lint && npm test\`).
+- Emit all independent tool calls in the same response.
+- Read multiple files at once.
+- Never rerun a command solely to reproduce output you already have.`;
+
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
     const publicRepoSafetyInstruction = `   - **Public-repo safety.** Treat the target repository as public-readable unless you have verified otherwise. The PR title, description, and commit messages must not contain private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, the contents of Slack threads (do not quote or paraphrase what was said), or unreleased roadmap details. Linking to the originating Slack thread is fine and encouraged — Slack links are auth-gated and useful as context — as are channel references like "raised in #team-foo". Describe findings qualitatively ("present on nearly all X events, absent from Y") rather than with quantitative figures pulled from analytics queries — the reasoning that uses those numbers can stay in the thread; the PR copy cannot.`;
     // Slack- and inbox-originated PRs are attributed to PostHog, not the
@@ -2691,7 +2699,7 @@ Do the requested work, but stop with local changes ready for review.
 Important:
 - Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.
 - Do NOT create a new branch or a new pull request.
-${signedCommitInstructions}${prLinkInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
       }
 
@@ -2712,7 +2720,7 @@ After completing the requested changes:
 Important:
 - Do NOT create a new branch or a new pull request.
 - Do NOT push fixes for review comments without replying to and resolving each related thread.
-${signedCommitInstructions}${prLinkInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
     }
 
@@ -2751,7 +2759,7 @@ ${publishInstructions}
 
 Important:
 - Prefer using MCP tools to answer questions with real data over giving generic advice.
-${signedCommitInstructions}${prLinkInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
     }
 
@@ -2763,7 +2771,7 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create a branch, commit, push, or open a pull request unless the user explicitly asks.
-${signedCommitInstructions}${prLinkInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
     }
 
@@ -2790,7 +2798,7 @@ ${prFooter}
 
 Important:
 - Always create the PR as a draft. Do not ask for confirmation.
-${signedCommitInstructions}${prLinkInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
   }
 

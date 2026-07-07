@@ -605,7 +605,14 @@ When creating pull requests, add the following footer at the end of the PR descr
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
 \`\`\`
 
-When you mention a pull request in any reply or summary, always hyperlink it to its full URL (e.g. a Markdown link like [#123](https://github.com/org/repo/pull/123)) rather than plain text, so readers can open it directly.`;
+When you mention a pull request in any reply or summary, always hyperlink it to its full URL (e.g. a Markdown link like [#123](https://github.com/org/repo/pull/123)) rather than plain text, so readers can open it directly.
+
+## Shell efficiency
+Optimize for the fewest shell round trips.
+- Batch related commands into one Bash invocation using \`&&\` (e.g. \`npm run typecheck && npm run lint && npm test\`).
+- Emit all independent tool calls in the same response.
+- Read multiple files at once.
+- Never rerun a command solely to reproduce output you already have.`;
 
     if (channelMode) {
       const localFolders = (knownLocalFolders ?? []).filter(
