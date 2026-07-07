@@ -14,14 +14,7 @@ import {
 } from "@posthog/ui/features/canvas/utils/mentionComposer";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { Text } from "@radix-ui/themes";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 
 interface MentionComposerProps {
   value: string;
@@ -73,21 +66,28 @@ export function MentionComposer({
   const open =
     !!active && active.start !== dismissedStart && suggestions.length > 0;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset selection per query
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [active?.start, active?.query]);
-
-  useEffect(() => {
+  // Render-time adjustments (ref-guarded, same idiom as SuggestionList): when
+  // the parent clears the draft the mention context goes with it, and a new
+  // query restarts keyboard selection at the top.
+  const prevValueRef = useRef(value);
+  if (prevValueRef.current !== value) {
+    prevValueRef.current = value;
     if (!value) {
       setActive(null);
       setDismissedStart(null);
     }
-  }, [value]);
-
-  useEffect(() => {
-    itemRefs.current[selectedIndex]?.scrollIntoView({ block: "nearest" });
-  }, [selectedIndex]);
+  }
+  const activeKey = active ? `${active.start}:${active.query}` : "";
+  const prevActiveKeyRef = useRef(activeKey);
+  if (prevActiveKeyRef.current !== activeKey) {
+    prevActiveKeyRef.current = activeKey;
+    if (selectedIndex !== 0) setSelectedIndex(0);
+  }
+  // The list can shrink while a lower row is selected (members filter down).
+  const highlightedIndex = Math.min(
+    selectedIndex,
+    Math.max(0, suggestions.length - 1),
+  );
 
   const insert = useCallback(
     (member: UserBasic) => {
@@ -111,12 +111,14 @@ export function MentionComposer({
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         const delta = event.key === "ArrowDown" ? 1 : suggestions.length - 1;
-        setSelectedIndex((i) => (i + delta) % suggestions.length);
+        const next = (highlightedIndex + delta) % suggestions.length;
+        setSelectedIndex(next);
+        itemRefs.current[next]?.scrollIntoView({ block: "nearest" });
         return;
       }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
-        const member = suggestions[selectedIndex];
+        const member = suggestions[highlightedIndex];
         if (member) insert(member);
         return;
       }
@@ -145,7 +147,7 @@ export function MentionComposer({
               <button
                 type="button"
                 role="option"
-                aria-selected={index === selectedIndex}
+                aria-selected={index === highlightedIndex}
                 key={member.uuid}
                 ref={(el) => {
                   itemRefs.current[index] = el;
@@ -155,7 +157,7 @@ export function MentionComposer({
                 onClick={() => insert(member)}
                 onMouseEnter={() => setSelectedIndex(index)}
                 className={`flex w-full items-center gap-2 border-none px-2 py-1 text-left ${
-                  index === selectedIndex ? "bg-[var(--accent-a4)]" : ""
+                  index === highlightedIndex ? "bg-[var(--accent-a4)]" : ""
                 }`}
               >
                 <Avatar size="xs" className="shrink-0">

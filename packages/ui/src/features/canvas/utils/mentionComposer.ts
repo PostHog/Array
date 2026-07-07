@@ -56,15 +56,27 @@ export function filterMentionCandidates(
     .map((entry) => entry.member);
 }
 
-/** Replace the active `@query` with the member's mention token. */
+/**
+ * Replace the active `@query` with the member's mention token, leaving the
+ * caret right after it (past any space that already follows).
+ */
 export function applyMention(
   text: string,
   active: ActiveMentionQuery,
   caret: number,
   member: UserBasic,
 ): { text: string; caret: number } {
-  const token = `${formatMention(userDisplayName(member), member.email)} `;
+  // The replacement spans the whole @word: when the caret moved back inside
+  // the query, the characters typed after it are still mention text.
+  let end = caret;
+  while (end < text.length && !/\s/.test(text[end] ?? "")) end++;
+  const tail = text.slice(end);
+  const token = formatMention(userDisplayName(member), member.email);
   const before = text.slice(0, active.start);
-  const next = before + token + text.slice(caret);
-  return { text: next, caret: before.length + token.length };
+  // Reuse an existing following space rather than doubling it up.
+  const inserted = tail.startsWith(" ") ? token : `${token} `;
+  return {
+    text: before + inserted + tail,
+    caret: before.length + inserted.length + (tail.startsWith(" ") ? 1 : 0),
+  };
 }

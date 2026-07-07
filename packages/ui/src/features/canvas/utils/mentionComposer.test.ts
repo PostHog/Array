@@ -90,16 +90,37 @@ describe("filterMentionCandidates", () => {
 });
 
 describe("applyMention", () => {
-  it("replaces the active query with a token and trailing space", () => {
+  it("replaces the active query, reusing the existing following space", () => {
     const text = "hey @raq can you look";
     const active = { start: 4, query: "raq" };
     const result = applyMention(text, active, 8, raquel);
     expect(result.text).toBe(
-      "hey @[Raquel Smith](raquel@posthog.com)  can you look",
+      "hey @[Raquel Smith](raquel@posthog.com) can you look",
     );
-    expect(result.caret).toBe(
-      "hey @[Raquel Smith](raquel@posthog.com) ".length,
+    expect(result.caret).toBe("hey @[Raquel Smith](raquel@posthog.com) ".length);
+  });
+
+  it("consumes the rest of the @word when the caret moved backward", () => {
+    // "hey @raq" with the caret between "ra" and "q": the trailing "q" is
+    // still query text and must not leak into the message.
+    const result = applyMention(
+      "hey @raq",
+      { start: 4, query: "ra" },
+      7,
+      raquel,
     );
+    expect(result.text).toBe("hey @[Raquel Smith](raquel@posthog.com) ");
+    expect(result.caret).toBe(result.text.length);
+  });
+
+  it("does not consume text beyond the @word", () => {
+    const result = applyMention(
+      "@ra world",
+      { start: 0, query: "ra" },
+      3,
+      raquel,
+    );
+    expect(result.text).toBe("@[Raquel Smith](raquel@posthog.com) world");
   });
 
   it("works at the end of the text", () => {
