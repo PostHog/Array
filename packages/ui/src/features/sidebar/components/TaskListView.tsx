@@ -12,6 +12,7 @@ import type {
   TaskGroup,
 } from "@posthog/core/sidebar/sidebarData.types";
 import { MenuLabel } from "@posthog/quill";
+import { getFileName } from "@posthog/shared";
 import { builderHog } from "@posthog/ui/assets/hedgehogs";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
@@ -100,10 +101,7 @@ function TaskRow({
   const worktreeCheckout = useMemo(() => {
     if (workspace?.worktreePath) {
       return {
-        name:
-          workspace.worktreeName ??
-          workspace.worktreePath.split("/").pop() ??
-          workspace.worktreePath,
+        name: workspace.worktreeName ?? getFileName(workspace.worktreePath),
         path: workspace.worktreePath,
       };
     }
@@ -111,7 +109,7 @@ function TaskRow({
       const folder = folders.find((f) => f.path === workspace.folderPath);
       if (folder?.mainRepoPath) {
         return {
-          name: workspace.folderPath.split("/").pop() ?? workspace.folderPath,
+          name: getFileName(workspace.folderPath),
           path: workspace.folderPath,
         };
       }

@@ -21,6 +21,7 @@ import {
   InputGroupAddon,
   InputGroupButton,
 } from "@posthog/quill";
+import { getFileName } from "@posthog/shared";
 import type {
   GitBusyOperation,
   GitBusyState,
@@ -196,6 +197,11 @@ export function BranchSelector({
       ? busyOperationLabel
       : (displayedBranch ?? "No branch");
 
+  // Which checkout the branch applies to. With several checkouts of the same
+  // repo registered (main clone + worktrees), a bare branch name is ambiguous
+  // — in local mode picking one runs a real checkout in this directory.
+  const checkoutName = !isCloudMode && repoPath ? getFileName(repoPath) : null;
+
   const showSpinner =
     effectiveLoading || (isCloudMode && open && cloudBranchesFetchingMore);
 
@@ -295,7 +301,17 @@ export function BranchSelector({
       filter={isCloudMode ? null : undefined}
     >
       <Tooltip
-        content={disabledReason ?? displayedBranch ?? "Switch branch"}
+        content={
+          disabledReason ??
+          (checkoutName && repoPath ? (
+            <span className="flex flex-col">
+              <span>{displayedBranch ?? "Switch branch"}</span>
+              <span className="text-gray-10">in {repoPath}</span>
+            </span>
+          ) : (
+            (displayedBranch ?? "Switch branch")
+          ))
+        }
         side="bottom"
         open={hovered && !open && !effectiveLoading}
       >
@@ -404,6 +420,16 @@ export function BranchSelector({
             ) : null}
           </InputGroupAddon>
         </ComboboxInput>
+
+        {checkoutName ? (
+          <div
+            className="truncate border-border border-b px-2 py-1.5 text-muted-foreground text-xs"
+            title={repoPath ?? undefined}
+          >
+            {isSelectionOnly ? "Base branch for " : "Branch in "}
+            <span className="font-medium">{checkoutName}</span>
+          </div>
+        ) : null}
 
         {isCloudMode && cloudBranchesFetchingMore ? (
           <LoadingRow label={`Loading more (${branches.length})…`} />
