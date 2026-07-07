@@ -1,4 +1,4 @@
-// In-memory ring buffer of recent renderer log lines, teed off the shell
+// In-memory capped buffer of recent renderer log lines, teed off the shell
 // logger. Exists so error surfaces (the error details dialog) can bundle the
 // logs that led up to a failure without any host round trip — the host's own
 // transports (file, console) are unaffected.
@@ -63,7 +63,7 @@ export function recordLog(
 // Plain-text dump of the most recent captured lines, newest last.
 export function formatCapturedLogs(options?: { maxEntries?: number }): string {
   const max = options?.maxEntries ?? entries.length;
-  const slice = entries.slice(-max);
+  const slice = max <= 0 ? [] : entries.slice(-max);
   if (slice.length === 0) return "(no logs captured this session)";
   return slice
     .map(
