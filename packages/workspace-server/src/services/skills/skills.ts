@@ -538,7 +538,8 @@ export class SkillsService {
     const MAX_RESOLVED_SKILLS = 50;
 
     while (queue.length > 0) {
-      const ref = queue.shift()!;
+      const ref = queue.shift();
+      if (!ref) break;
       const key = `${ref.source}:${ref.path}`;
       if (seen.has(key)) continue;
       if (resolved.length >= MAX_RESOLVED_SKILLS) {
