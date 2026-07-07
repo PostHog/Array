@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   destroy: vi.fn(),
   captureException: vi.fn(),
   contextLost: false,
+  onContextLost: undefined as (() => void) | undefined,
 }));
 
 const settingsState = vi.hoisted(() => ({
@@ -42,29 +43,40 @@ vi.mock("./logger", () => ({
 }));
 
 import { HedgehogMode } from "./HedgehogMode";
+import { useRendererWindowFocusStore } from "./rendererWindowFocusStore";
 
-function mountGameInto(container: HTMLDivElement) {
+function mountGameInto(
+  container: HTMLDivElement,
+  options: { onContextLost?: () => void },
+) {
   const canvas = document.createElement("canvas");
-  canvas.getContext = (() => ({
-    isContextLost: () => mocks.contextLost,
-  })) as unknown as HTMLCanvasElement["getContext"];
   container.appendChild(canvas);
+  mocks.onContextLost = options.onContextLost;
   mocks.destroy.mockImplementation(() => canvas.remove());
-  return Promise.resolve({ destroy: mocks.destroy });
+  return Promise.resolve({
+    destroy: mocks.destroy,
+    isContextLost: () => mocks.contextLost,
+  });
 }
 
-async function loseContext(overlay: HTMLDivElement) {
-  const canvas = overlay.querySelector("canvas");
-  expect(canvas).not.toBeNull();
+async function loseContext() {
+  mocks.contextLost = true;
   await act(async () => {
-    canvas?.dispatchEvent(new Event("webglcontextlost"));
+    mocks.onContextLost?.();
   });
 }
 
 async function renderHedgehogMode() {
   const view = render(<HedgehogMode />);
   await act(async () => {});
-  return view.container.firstElementChild as HTMLDivElement;
+  return { view, overlay: view.container.firstElementChild as HTMLDivElement };
+}
+
+async function remountAfterDelay() {
+  mocks.contextLost = false;
+  await act(async () => {
+    vi.advanceTimersByTime(2000);
+  });
 }
 
 beforeEach(() => {
@@ -83,17 +95,17 @@ afterEach(() => {
 
 describe("HedgehogMode", () => {
   it("mounts the game into the overlay container", async () => {
-    const overlay = await renderHedgehogMode();
+    const { overlay } = await renderHedgehogMode();
 
     expect(mocks.mount).toHaveBeenCalledTimes(1);
     expect(overlay.querySelector("canvas")).not.toBeNull();
     expect(overlay.style.visibility).toBe("visible");
   });
 
-  it("destroys the game and reports when the WebGL context is lost", async () => {
-    const overlay = await renderHedgehogMode();
+  it("destroys the game and reports when the context loss callback fires", async () => {
+    const { overlay } = await renderHedgehogMode();
 
-    await loseContext(overlay);
+    await loseContext();
 
     expect(mocks.destroy).toHaveBeenCalledTimes(1);
     expect(overlay.querySelector("canvas")).toBeNull();
@@ -103,8 +115,8 @@ describe("HedgehogMode", () => {
     );
   });
 
-  it("tears down when polling detects a lost context without an event", async () => {
-    const overlay = await renderHedgehogMode();
+  it("tears down when polling detects a lost context without a callback", async () => {
+    const { overlay } = await renderHedgehogMode();
 
     mocks.contextLost = true;
     await act(async () => {
@@ -117,11 +129,11 @@ describe("HedgehogMode", () => {
   });
 
   it("tears down when a lost context is detected on window focus", async () => {
-    const overlay = await renderHedgehogMode();
+    const { overlay } = await renderHedgehogMode();
 
     mocks.contextLost = true;
     await act(async () => {
-      window.dispatchEvent(new Event("focus"));
+      useRendererWindowFocusStore.setState({ focused: true });
     });
 
     expect(mocks.destroy).toHaveBeenCalledTimes(1);
@@ -129,12 +141,10 @@ describe("HedgehogMode", () => {
   });
 
   it("remounts the game after the context loss delay", async () => {
-    const overlay = await renderHedgehogMode();
+    const { overlay } = await renderHedgehogMode();
 
-    await loseContext(overlay);
-    await act(async () => {
-      vi.advanceTimersByTime(2000);
-    });
+    await loseContext();
+    await remountAfterDelay();
 
     expect(mocks.mount).toHaveBeenCalledTimes(2);
     expect(overlay.querySelector("canvas")).not.toBeNull();
@@ -142,13 +152,11 @@ describe("HedgehogMode", () => {
   });
 
   it("hides the overlay after repeated context losses", async () => {
-    const overlay = await renderHedgehogMode();
+    const { overlay } = await renderHedgehogMode();
 
     for (let loss = 0; loss < 4; loss += 1) {
-      await loseContext(overlay);
-      await act(async () => {
-        vi.advanceTimersByTime(2000);
-      });
+      await loseContext();
+      await remountAfterDelay();
     }
 
     expect(mocks.mount).toHaveBeenCalledTimes(4);
@@ -162,10 +170,8 @@ describe("HedgehogMode", () => {
   });
 
   it("destroys the game on toggle off and remounts armed on re-enable", async () => {
-    const view = render(<HedgehogMode />);
-    await act(async () => {});
+    const { view, overlay } = await renderHedgehogMode();
     expect(mocks.mount).toHaveBeenCalledTimes(1);
-    const overlay = view.container.firstElementChild as HTMLDivElement;
 
     settingsState.hedgehogMode = false;
     view.rerender(<HedgehogMode />);
@@ -178,14 +184,13 @@ describe("HedgehogMode", () => {
     await act(async () => {});
     expect(mocks.mount).toHaveBeenCalledTimes(2);
 
-    await loseContext(overlay);
+    await loseContext();
     expect(mocks.captureException).toHaveBeenCalledTimes(1);
     expect(overlay.querySelector("canvas")).toBeNull();
   });
 
   it("destroys the game on unmount", async () => {
-    const view = render(<HedgehogMode />);
-    await act(async () => {});
+    const { view } = await renderHedgehogMode();
 
     view.unmount();
 
