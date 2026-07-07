@@ -104,6 +104,7 @@ function App({ devToolbar }: AppProps) {
   };
 
   const mainRef = useRef<HTMLDivElement>(null);
+  // Mirrors the "main" branch of renderContent() below; keep the two in sync.
   const showingMainApp =
     isBootstrapped &&
     isAuthenticated &&

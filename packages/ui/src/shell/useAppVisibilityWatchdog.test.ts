@@ -81,4 +81,38 @@ describe("useAppVisibilityWatchdog", () => {
 
     expect(captureException).not.toHaveBeenCalled();
   });
+
+  it("does not report after unmounting before the deadline", () => {
+    const ref = { current: mountElement("0", 1200, 800) };
+    const { unmount } = renderHook(() => useAppVisibilityWatchdog(ref, true));
+
+    unmount();
+    vi.advanceTimersByTime(3000);
+
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("arms when active flips from false to true", () => {
+    const ref = { current: mountElement("0", 1200, 800) };
+    const { rerender } = renderHook(
+      ({ active }) => useAppVisibilityWatchdog(ref, active),
+      { initialProps: { active: false } },
+    );
+
+    vi.advanceTimersByTime(3000);
+    expect(captureException).not.toHaveBeenCalled();
+
+    rerender({ active: true });
+    vi.advanceTimersByTime(3000);
+    expect(captureException).toHaveBeenCalledOnce();
+  });
+
+  it("does nothing when the ref never attaches", () => {
+    const ref = { current: null };
+    renderHook(() => useAppVisibilityWatchdog(ref, true));
+
+    vi.advanceTimersByTime(3000);
+
+    expect(captureException).not.toHaveBeenCalled();
+  });
 });
