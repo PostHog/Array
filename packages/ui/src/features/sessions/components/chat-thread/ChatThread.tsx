@@ -1,4 +1,11 @@
-import { CaretDown, ChatCircle, FileText, Scroll } from "@phosphor-icons/react";
+import {
+  CaretDown,
+  ChatCircle,
+  Check,
+  Copy,
+  FileText,
+  Scroll,
+} from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
 import {
@@ -68,6 +75,7 @@ import {
   DIFF_WORKER_FACTORY,
   type DiffWorkerFactory,
 } from "@posthog/ui/shell/diffWorkerHost";
+import { IconButton, Tooltip } from "@radix-ui/themes";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   memo,
@@ -540,8 +548,16 @@ const AgentProse = memo(function AgentProse({
   isStreaming?: boolean;
 }) {
   const smoothed = useSmoothedText(text);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [text]);
+
   return (
-    <ChatMessage align="start">
+    <ChatMessage align="start" className="group/msg">
       <ChatMessageContent className="gap-1">
         <ChatBubble variant="ghost">
           <ChatBubbleContent>
@@ -552,6 +568,22 @@ const AgentProse = memo(function AgentProse({
             )}
           </ChatBubbleContent>
         </ChatBubble>
+        {isStreaming ? null : (
+          <ChatMessageFooter className="opacity-0 transition-opacity group-hover/msg:opacity-100">
+            <Tooltip content={copied ? "Copied!" : "Copy message"}>
+              <IconButton
+                size="1"
+                variant="ghost"
+                color={copied ? "green" : "gray"}
+                onClick={handleCopy}
+                className="cursor-pointer"
+                aria-label="Copy message"
+              >
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+              </IconButton>
+            </Tooltip>
+          </ChatMessageFooter>
+        )}
       </ChatMessageContent>
     </ChatMessage>
   );
