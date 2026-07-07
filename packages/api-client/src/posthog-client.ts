@@ -2224,6 +2224,7 @@ export class PostHogAPIClient {
         channel?: string | null;
         pending_user_message?: string;
         pending_user_artifact_ids?: string[];
+        auto_publish?: boolean;
       },
   ) {
     const teamId = await this.getTeamId();

@@ -557,6 +557,7 @@ describe("TaskCreationSaga", () => {
       repository: "posthog/posthog",
       workspaceMode: "cloud",
       branch: "main",
+      cloudAutoPublish: true,
     });
 
     expect(result.success).toBe(true);
@@ -580,6 +581,8 @@ describe("TaskCreationSaga", () => {
         branch: "main",
         pending_user_message: "/my-skill do it",
         pending_user_artifact_ids: ["skill-artifact-1"],
+        // Warm activation skips run creation, so the choice must ride along here.
+        auto_publish: true,
       }),
     );
     // Warm-activated at create time: no fresh run is created or started.
