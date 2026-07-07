@@ -21,8 +21,9 @@ function prettifyErrorString(message: string): string {
     try {
       const parsed: unknown = JSON.parse(candidate);
       const prefix = message.slice(0, start).trim();
+      const suffix = message.slice(end + 1).trim();
       const pretty = JSON.stringify(parsed, null, 2);
-      return prefix ? `${prefix}\n${pretty}` : pretty;
+      return [prefix, pretty, suffix].filter(Boolean).join("\n");
     } catch {
       // Not JSON after all — fall through to the raw string.
     }
@@ -31,8 +32,8 @@ function prettifyErrorString(message: string): string {
 }
 
 // Pretty-printed JSON of an arbitrary error payload that never throws:
-// Error instances become plain objects (keeping message, stack, and any
-// enumerable extras like `code`), circular references are elided, and
+// Error instances become plain objects (keeping message, stack, cause, and
+// any enumerable extras like `code`), circular references are elided, and
 // non-JSON values fall back to String().
 export function serializeError(error: unknown): string {
   // Strings are already human-readable; only reflow an embedded JSON payload.
@@ -42,17 +43,18 @@ export function serializeError(error: unknown): string {
     const json = JSON.stringify(
       error,
       (_key, value: unknown) => {
+        if (typeof value === "object" && value !== null) {
+          if (seen.has(value)) return "[circular]";
+          seen.add(value);
+        }
         if (value instanceof Error) {
           return {
             name: value.name,
             message: value.message,
             stack: value.stack,
+            cause: value.cause,
             ...Object.fromEntries(Object.entries(value)),
           };
-        }
-        if (typeof value === "object" && value !== null) {
-          if (seen.has(value)) return "[circular]";
-          seen.add(value);
         }
         if (typeof value === "bigint" || typeof value === "function") {
           return String(value);

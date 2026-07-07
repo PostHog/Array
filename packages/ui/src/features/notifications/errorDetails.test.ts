@@ -29,8 +29,19 @@ describe("serializeError", () => {
     );
   });
 
+  it("keeps text after the embedded JSON payload", () => {
+    const message = 'Failed: {"detail":"nope"} (request id abc123)';
+    expect(serializeError(message)).toBe(
+      `Failed:\n${JSON.stringify({ detail: "nope" }, null, 2)}\n(request id abc123)`,
+    );
+  });
+
   it("returns a plain string unchanged when there's no JSON to reflow", () => {
     expect(serializeError("Not authenticated")).toBe("Not authenticated");
+  });
+
+  it("returns a string with non-JSON braces unchanged", () => {
+    expect(serializeError("Error: {oops}")).toBe("Error: {oops}");
   });
 
   it("expands Error instances with message, stack, and enumerable extras", () => {
@@ -42,11 +53,34 @@ describe("serializeError", () => {
     expect(typeof parsed.stack).toBe("string");
   });
 
+  it("keeps the cause chain of Error instances", () => {
+    const err = new Error("outer", {
+      cause: new Error("inner", { cause: "root" }),
+    });
+    const parsed = JSON.parse(serializeError(err));
+    expect(parsed.cause.message).toBe("inner");
+    expect(parsed.cause.cause).toBe("root");
+  });
+
   it("elides circular references instead of throwing", () => {
     const obj: Record<string, unknown> = { a: 1 };
     obj.self = obj;
     const parsed = JSON.parse(serializeError(obj));
     expect(parsed.self).toBe("[circular]");
+  });
+
+  it("elides self-referencing Errors instead of degrading to String()", () => {
+    const err = new Error("loop");
+    Object.assign(err, { self: err });
+    const parsed = JSON.parse(serializeError(err));
+    expect(parsed.message).toBe("loop");
+    expect(parsed.self).toBe("[circular]");
+  });
+
+  it("coerces bigints instead of degrading the whole payload", () => {
+    const parsed = JSON.parse(serializeError({ id: 10n, note: "x" }));
+    expect(parsed.id).toBe("10");
+    expect(parsed.note).toBe("x");
   });
 
   it("falls back to String() for values JSON cannot represent", () => {
