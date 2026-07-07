@@ -5,6 +5,12 @@ const mocks = vi.hoisted(() => ({
   mount: vi.fn(),
   destroy: vi.fn(),
   captureException: vi.fn(),
+  contextLost: false,
+}));
+
+const settingsState = vi.hoisted(() => ({
+  hedgehogMode: true,
+  setHedgehogMode: () => {},
 }));
 
 vi.mock("@posthog/di/react", () => ({
@@ -17,7 +23,7 @@ vi.mock("../features/auth/useMeQuery", () => ({
 
 vi.mock("../features/settings/settingsStore", () => ({
   useSettingsStore: (selector: (state: unknown) => unknown) =>
-    selector({ hedgehogMode: true, setHedgehogMode: vi.fn() }),
+    selector(settingsState),
 }));
 
 vi.mock("./analytics", () => ({
@@ -39,6 +45,9 @@ import { HedgehogMode } from "./HedgehogMode";
 
 function mountGameInto(container: HTMLDivElement) {
   const canvas = document.createElement("canvas");
+  canvas.getContext = (() => ({
+    isContextLost: () => mocks.contextLost,
+  })) as unknown as HTMLCanvasElement["getContext"];
   container.appendChild(canvas);
   mocks.destroy.mockImplementation(() => canvas.remove());
   return Promise.resolve({ destroy: mocks.destroy });
@@ -61,6 +70,8 @@ async function renderHedgehogMode() {
 beforeEach(() => {
   vi.useFakeTimers();
   mocks.mount.mockImplementation(mountGameInto);
+  mocks.contextLost = false;
+  settingsState.hedgehogMode = true;
 });
 
 afterEach(() => {
@@ -92,6 +103,31 @@ describe("HedgehogMode", () => {
     );
   });
 
+  it("tears down when polling detects a lost context without an event", async () => {
+    const overlay = await renderHedgehogMode();
+
+    mocks.contextLost = true;
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(mocks.destroy).toHaveBeenCalledTimes(1);
+    expect(overlay.querySelector("canvas")).toBeNull();
+    expect(mocks.captureException).toHaveBeenCalledTimes(1);
+  });
+
+  it("tears down when a lost context is detected on window focus", async () => {
+    const overlay = await renderHedgehogMode();
+
+    mocks.contextLost = true;
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(mocks.destroy).toHaveBeenCalledTimes(1);
+    expect(overlay.querySelector("canvas")).toBeNull();
+  });
+
   it("remounts the game after the context loss delay", async () => {
     const overlay = await renderHedgehogMode();
 
@@ -120,9 +156,31 @@ describe("HedgehogMode", () => {
     expect(overlay.style.visibility).toBe("hidden");
 
     await act(async () => {
-      vi.advanceTimersByTime(10000);
+      vi.advanceTimersByTime(10_000);
     });
     expect(mocks.mount).toHaveBeenCalledTimes(4);
+  });
+
+  it("destroys the game on toggle off and remounts armed on re-enable", async () => {
+    const view = render(<HedgehogMode />);
+    await act(async () => {});
+    expect(mocks.mount).toHaveBeenCalledTimes(1);
+    const overlay = view.container.firstElementChild as HTMLDivElement;
+
+    settingsState.hedgehogMode = false;
+    view.rerender(<HedgehogMode />);
+    expect(mocks.destroy).toHaveBeenCalledTimes(1);
+    expect(overlay.querySelector("canvas")).toBeNull();
+    expect(overlay.style.visibility).toBe("hidden");
+
+    settingsState.hedgehogMode = true;
+    view.rerender(<HedgehogMode />);
+    await act(async () => {});
+    expect(mocks.mount).toHaveBeenCalledTimes(2);
+
+    await loseContext(overlay);
+    expect(mocks.captureException).toHaveBeenCalledTimes(1);
+    expect(overlay.querySelector("canvas")).toBeNull();
   });
 
   it("destroys the game on unmount", async () => {

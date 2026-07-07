@@ -13,6 +13,7 @@ import { logger } from "./logger";
 const log = logger.scope("hedgehog-mode");
 const MAX_CONTEXT_LOSS_REMOUNTS = 3;
 const REMOUNT_DELAY_MS = 2000;
+const CONTEXT_CHECK_INTERVAL_MS = 10_000;
 
 function destroyGame(
   handleRef: RefObject<HedgehogModeHandle | null>,
@@ -34,31 +35,35 @@ export function HedgehogMode() {
   const host = useService<HedgehogModeHost>(HEDGEHOG_MODE_HOST);
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<HedgehogModeHandle | null>(null);
-  const contextLossesRef = useRef(0);
-  const remountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [remountAttempt, setRemountAttempt] = useState(0);
   const [gameDead, setGameDead] = useState(false);
 
   useEffect(() => {
     if (hedgehogMode) return;
-    contextLossesRef.current = 0;
     setGameDead(false);
   }, [hedgehogMode]);
 
   useEffect(() => {
-    if (!hedgehogMode || gameDead || !containerRef.current || handleRef.current)
-      return;
-    if (!host) return;
+    if (!hedgehogMode || gameDead || !containerRef.current || !host) return;
 
     let cancelled = false;
+    let lost = false;
+    let losses = 0;
     let canvas: HTMLCanvasElement | null = null;
+    let remountTimer: ReturnType<typeof setTimeout> | null = null;
     const container = containerRef.current;
+
+    const hedgehogConfig = user?.hedgehog_config as Record<
+      string,
+      unknown
+    > | null;
+    const actorOptions = hedgehogConfig?.actor_options;
 
     // A game whose WebGL context died composites its full-window canvas as an
     // opaque sheet over the whole app, so it must leave the DOM immediately.
     const handleContextLost = () => {
-      contextLossesRef.current += 1;
-      const losses = contextLossesRef.current;
+      if (lost) return;
+      lost = true;
+      losses += 1;
       log.error("Hedgehog mode WebGL context lost", { losses });
       captureException(new Error("Hedgehog mode WebGL context lost"), {
         source: "hedgehog-mode",
@@ -69,64 +74,72 @@ export function HedgehogMode() {
         setGameDead(true);
         return;
       }
-      remountTimerRef.current = setTimeout(() => {
-        setRemountAttempt(losses);
-      }, REMOUNT_DELAY_MS);
+      remountTimer = setTimeout(mountGame, REMOUNT_DELAY_MS);
     };
 
-    if (remountAttempt > 0) {
-      log.warn("Remounting hedgehog mode after WebGL context loss", {
-        attempt: remountAttempt,
-      });
-    }
+    const isCanvasContextLost = () => {
+      if (!canvas) return false;
+      const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+      return gl?.isContextLost() ?? false;
+    };
 
-    const hedgehogConfig = user?.hedgehog_config as Record<
-      string,
-      unknown
-    > | null;
-    const actorOptions = hedgehogConfig?.actor_options;
+    // Backup for a missed webglcontextlost event (e.g. swallowed across
+    // sleep/wake), so a dead canvas can never linger on screen undetected.
+    const checkContext = () => {
+      if (!lost && isCanvasContextLost()) {
+        handleContextLost();
+      }
+    };
 
-    host
-      .mount(container, {
-        actorOptions,
-        onQuit: () => setHedgehogMode(false),
-      })
-      .then((handle) => {
-        if (cancelled) {
-          handle.destroy();
-          return;
-        }
-        handleRef.current = handle;
-        canvas = container.querySelector("canvas");
-        canvas?.addEventListener("webglcontextlost", handleContextLost, {
-          once: true,
+    const mountGame = () => {
+      if (cancelled || handleRef.current) return;
+      if (losses > 0) {
+        log.warn("Remounting hedgehog mode after WebGL context loss", {
+          attempt: losses,
         });
-      })
-      .catch((err) => {
-        log.error("Failed to mount hedgehog mode", err);
-      });
+      }
+      host
+        .mount(container, {
+          actorOptions,
+          onQuit: () => setHedgehogMode(false),
+        })
+        .then((handle) => {
+          if (cancelled) {
+            handle.destroy();
+            return;
+          }
+          handleRef.current = handle;
+          lost = false;
+          canvas = container.querySelector("canvas");
+          canvas?.addEventListener("webglcontextlost", handleContextLost, {
+            once: true,
+          });
+        })
+        .catch((err) => {
+          log.error("Failed to mount hedgehog mode", err);
+        });
+    };
+
+    mountGame();
+    const contextCheckInterval = setInterval(
+      checkContext,
+      CONTEXT_CHECK_INTERVAL_MS,
+    );
+    window.addEventListener("focus", checkContext);
+    document.addEventListener("visibilitychange", checkContext);
 
     return () => {
       cancelled = true;
-      canvas?.removeEventListener("webglcontextlost", handleContextLost);
-    };
-  }, [
-    hedgehogMode,
-    gameDead,
-    remountAttempt,
-    user?.hedgehog_config,
-    setHedgehogMode,
-    host,
-  ]);
-
-  useEffect(() => {
-    return () => {
-      if (remountTimerRef.current) {
-        clearTimeout(remountTimerRef.current);
+      clearInterval(contextCheckInterval);
+      window.removeEventListener("focus", checkContext);
+      document.removeEventListener("visibilitychange", checkContext);
+      if (remountTimer) {
+        clearTimeout(remountTimer);
       }
-      destroyGame(handleRef, containerRef.current);
+      canvas?.removeEventListener("webglcontextlost", handleContextLost);
+      destroyGame(handleRef, container);
     };
-  }, []);
+  }, [hedgehogMode, gameDead, user?.hedgehog_config, setHedgehogMode, host]);
 
   return (
     <div
