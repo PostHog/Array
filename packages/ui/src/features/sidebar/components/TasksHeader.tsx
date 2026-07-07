@@ -4,7 +4,6 @@ import {
   MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
-import type { WorkspaceMode } from "@posthog/shared";
 import {
   Button,
   DropdownMenu,
@@ -16,6 +15,7 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import type { WorkspaceMode } from "@posthog/shared";
 import { useMeQuery } from "@posthog/ui/features/auth/useMeQuery";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";

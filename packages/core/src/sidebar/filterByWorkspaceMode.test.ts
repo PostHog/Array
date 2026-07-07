@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  ALL_WORKSPACE_MODES,
-  filterByWorkspaceMode,
-} from "./buildSidebarData";
+import { ALL_WORKSPACE_MODES, filterByWorkspaceMode } from "./buildSidebarData";
 import type { TaskData } from "./sidebarData.types";
 
 const task = (overrides: Partial<TaskData>): TaskData => ({

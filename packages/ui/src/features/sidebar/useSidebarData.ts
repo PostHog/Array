@@ -1,7 +1,7 @@
 import {
   deriveTaskData,
-  filterByWorkspaceMode,
   type FullTask,
+  filterByWorkspaceMode,
   filterVisibleTasks,
   narrowFullTask,
   partitionAndSortTasks,
