@@ -20,6 +20,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import type { TaskCreationApiClient } from "./taskCreationApiClient";
 import type {
+  CloudPromptTransport,
   ImportedClaudeCliSession,
   ITaskCreationHost,
 } from "./taskCreationHost";
@@ -30,6 +31,41 @@ export interface TaskCreationDeps {
   sessionService: SessionService;
   onTaskReady?: (output: TaskCreationOutput) => void;
   track: (event: string, props?: Record<string, unknown>) => void;
+}
+
+interface WarmActivationPayload {
+  transport: CloudPromptTransport;
+  pendingUserMessage?: string;
+  pendingUserArtifactIds?: string[];
+  suppressWarmReuse: boolean;
+  augmented: boolean;
+}
+
+// The local connect path appends channel CONTEXT.md to initialPrompt and gets
+// the user's personalization via the workspace-server system prompt; cloud
+// sends its first message as text and has no client-side system-prompt seam,
+// so fold both blocks into the first message here. Order: user's message, then
+// personalization (user-level), then channel context (workspace-level).
+// Personalization is folded only when there is message text to augment.
+function buildCloudFirstMessage(
+  messageText: string | undefined,
+  input: TaskCreationInput,
+): { pendingUserMessage?: string; augmented: boolean } {
+  const customInstructionsText = messageText
+    ? buildCustomInstructionsText(input.customInstructions)
+    : null;
+  const channelContextText = buildChannelContextText(
+    input.channelContext,
+    input.channelName,
+  );
+  const pendingUserMessage =
+    [messageText, customInstructionsText, channelContextText]
+      .filter((part): part is string => !!part)
+      .join("\n\n") || undefined;
+  return {
+    pendingUserMessage,
+    augmented: !!(customInstructionsText || channelContextText),
+  };
 }
 
 export class TaskCreationSaga extends Saga<
@@ -56,11 +92,16 @@ export class TaskCreationSaga extends Saga<
 
     const importedClaude = await this.importClaudeSession(input);
 
+    const warmPayload =
+      !taskId && input.workspaceMode === "cloud"
+        ? await this.prepareWarmActivation(input)
+        : null;
+
     let task = taskId
       ? await this.readOnlyStep("fetch_task", () =>
           this.deps.posthogClient.getTask(taskId),
         )
-      : await this.createTask(input);
+      : await this.createTask(input, warmPayload);
 
     // Session reconcile auto-recovers run-less local tasks; mark this one as
     // mid-creation so the recovery doesn't race the agent_session step below.
@@ -243,6 +284,23 @@ export class TaskCreationSaga extends Saga<
 
     const shouldStartCloudRun = workspaceMode === "cloud" && !task.latest_run;
 
+    // Warm-activated at create time: the backend already forwarded the first
+    // message (with any uploaded artifacts) to the pre-warmed run.
+    if (!taskId && warmPayload && task.latest_run) {
+      if (warmPayload.augmented && warmPayload.pendingUserMessage) {
+        this.deps.sessionService.rememberInitialCloudPrompt(
+          task.id,
+          warmPayload.pendingUserMessage,
+        );
+      }
+      this.deps.track(ANALYTICS_EVENTS.PROMPT_SENT, {
+        task_id: task.id,
+        is_initial: true,
+        execution_type: "cloud",
+        prompt_length_chars: warmPayload.transport.messageText?.length ?? 0,
+      });
+    }
+
     // Channels "generic chat box": a repo-less local/worktree task still starts
     // an agent, in a per-task scratch dir. Provision it before signalling the
     // task is ready so the task view resolves the scratch dir as its cwd (a
@@ -292,54 +350,39 @@ export class TaskCreationSaga extends Saga<
           // bundle is collected and uploaded with the very first cloud message.
           // Without this a first-message `/my-skill` reaches the sandbox with no
           // bundle and is rejected as an unknown command (only a follow-up,
-          // which already resolves, would work).
-          const resolvedContent = input.content
-            ? await this.deps.host.resolveLocalSkillCommandPrompt(input.content)
-            : input.content;
+          // which already resolves, would work). prepareWarmActivation already
+          // did this for fresh cloud creations; reuse its transport.
+          const buildTransport =
+            async (): Promise<CloudPromptTransport | null> => {
+              if (
+                !(input.content || input.filePaths?.length) ||
+                workspaceMode !== "cloud"
+              ) {
+                return null;
+              }
+              const resolvedContent = input.content
+                ? await this.deps.host.resolveLocalSkillCommandPrompt(
+                    input.content,
+                  )
+                : "";
+              return this.deps.host.getCloudPromptTransport(
+                resolvedContent,
+                input.filePaths,
+              );
+            };
+          const transport = warmPayload
+            ? warmPayload.transport
+            : await buildTransport();
 
-          const transport =
-            (input.content || input.filePaths?.length) &&
-            workspaceMode === "cloud"
-              ? this.deps.host.getCloudPromptTransport(
-                  resolvedContent ?? "",
-                  input.filePaths,
-                )
-              : null;
-
-          // The local connect path appends channel CONTEXT.md to initialPrompt
-          // and gets the user's personalization via the workspace-server system
-          // prompt; cloud sends its first message as text and has no client-side
-          // system-prompt seam, so fold both blocks into pendingUserMessage here.
-          // The conversation UI parses them identically. Order: user's message,
-          // then personalization (user-level), then channel context (workspace-
-          // level background).
-          const messageText = transport?.messageText;
-          // Personalization augments the user's first message — fold it in only
-          // when there is message text to augment. A file-only upload with no
-          // typed text has nothing to personalize, and a block-only message
-          // would strip to an empty bubble in the UI and get deduped against the
-          // sandbox echo, leaving a blank placeholder. Channel context renders as
-          // a chip even alone, so it isn't gated this way.
-          const customInstructionsText = messageText
-            ? buildCustomInstructionsText(input.customInstructions)
-            : null;
-          const channelContextText = buildChannelContextText(
-            input.channelContext,
-            input.channelName,
-          );
-          const pendingUserMessage =
-            [messageText, customInstructionsText, channelContextText]
-              .filter((part): part is string => !!part)
-              .join("\n\n") || undefined;
+          const { pendingUserMessage, augmented } = warmPayload
+            ? warmPayload
+            : buildCloudFirstMessage(transport?.messageText, input);
 
           // The sandbox echoes pendingUserMessage back once it boots; until then
           // the optimistic placeholder would show the bare task description with
           // no CONTEXT.md / personalization chip. Hand the augmented message to
           // the session service so it seeds the placeholder right away.
-          if (
-            (channelContextText || customInstructionsText) &&
-            pendingUserMessage
-          ) {
+          if (augmented && pendingUserMessage) {
             this.deps.sessionService.rememberInitialCloudPrompt(
               task.id,
               pendingUserMessage,
@@ -595,7 +638,82 @@ export class TaskCreationSaga extends Saga<
       });
   }
 
-  private async createTask(input: TaskCreationInput): Promise<Task> {
+  // Resolve the first message and pre-upload its attachments (skill bundles,
+  // files) to the pre-warmed run before createTask, so the backend's warm
+  // activation can forward them with the message. When attachments exist but
+  // no warm lease is known, warm reuse is suppressed (branch omitted) and the
+  // cold path uploads to the real run instead — a warm activation must never
+  // deliver the first message without its attachments.
+  private async prepareWarmActivation(
+    input: TaskCreationInput,
+  ): Promise<WarmActivationPayload | null> {
+    if (!input.content && !input.filePaths?.length) {
+      return null;
+    }
+
+    const resolvedContent = input.content
+      ? await this.deps.host.resolveLocalSkillCommandPrompt(input.content)
+      : "";
+    const transport = this.deps.host.getCloudPromptTransport(
+      resolvedContent,
+      input.filePaths,
+    );
+    const { pendingUserMessage, augmented } = buildCloudFirstMessage(
+      transport.messageText,
+      input,
+    );
+    const base: WarmActivationPayload = {
+      transport,
+      pendingUserMessage,
+      suppressWarmReuse: false,
+      augmented,
+    };
+
+    const lease = input.repository
+      ? this.deps.host.takeWarmTaskLease({
+          repository: input.repository,
+          branch: input.branch ?? null,
+          runtimeAdapter: input.adapter ?? null,
+          model: input.model ?? null,
+          reasoningEffort: input.reasoningLevel ?? null,
+        })
+      : null;
+
+    const needsAttachments =
+      transport.filePaths.length > 0 || transport.skillBundles.length > 0;
+    if (!needsAttachments) {
+      return base;
+    }
+    if (!lease) {
+      return { ...base, suppressWarmReuse: true };
+    }
+
+    try {
+      const artifactIds = await this.deps.host.uploadRunAttachments(
+        this.deps.posthogClient,
+        lease.taskId,
+        lease.runId,
+        transport.filePaths,
+        transport.skillBundles,
+      );
+      return {
+        ...base,
+        pendingUserArtifactIds:
+          artifactIds.length > 0 ? artifactIds : undefined,
+      };
+    } catch (error) {
+      this.log.warn(
+        "Failed to upload attachments to warm run; falling back to cold creation",
+        { taskId: lease.taskId, runId: lease.runId, error },
+      );
+      return { ...base, suppressWarmReuse: true };
+    }
+  }
+
+  private async createTask(
+    input: TaskCreationInput,
+    warmPayload: WarmActivationPayload | null,
+  ): Promise<Task> {
     let repository = input.repository;
 
     const repoPathForDetection = input.repoPath;
@@ -631,7 +749,7 @@ export class TaskCreationSaga extends Saga<
           // The server associates the task with the report and records the implementation
           // task_run artefact — no relationship label is sent (associations are unlabelled).
           branch:
-            input.workspaceMode === "cloud"
+            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
               ? (input.branch ?? null)
               : undefined,
           runtime_adapter:
@@ -646,6 +764,8 @@ export class TaskCreationSaga extends Saga<
               : undefined,
           signal_report: input.signalReportId ?? undefined,
           channel: input.channelId ?? undefined,
+          pending_user_message: warmPayload?.pendingUserMessage,
+          pending_user_artifact_ids: warmPayload?.pendingUserArtifactIds,
         });
         return result as unknown as Task;
       },

@@ -21,6 +21,10 @@ export const releaseItem = z.object({
   htmlUrl: z.string(),
 });
 
+export const listReleasesInput = z
+  .object({ expectVersion: z.string().optional() })
+  .optional();
+
 export const listReleasesOutput = z.object({
   releases: z.array(releaseItem),
 });

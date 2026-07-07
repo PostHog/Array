@@ -40,11 +40,11 @@ function ChannelTaskDetailRoute() {
     markAsViewed(taskId);
   }, [taskId, markAsViewed]);
 
-  // Opening a task shows its thread docked on the right (collapsible). The
-  // panel follows the task being viewed.
+  // Opening a task shows its thread docked on the right, keeping the user's
+  // collapse preference. The panel follows the task being viewed.
   const openThread = useThreadPanelStore((s) => s.openThread);
   useEffect(() => {
-    openThread(taskId);
+    openThread(taskId, { expand: false });
   }, [openThread, taskId]);
 
   const { data: fetched } = useQuery({

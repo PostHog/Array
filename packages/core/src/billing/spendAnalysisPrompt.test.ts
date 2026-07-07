@@ -188,7 +188,7 @@ describe("buildAnalysisPrompt", () => {
   it("instructs the agent not to query external data", () => {
     const prompt = buildAnalysisPrompt(makeResponse());
     expect(prompt).toContain(
-      "do **not** try to query PostHog AI observability or any external data source",
+      "Do **not** try to query PostHog AI observability or any external data source",
     );
   });
 });

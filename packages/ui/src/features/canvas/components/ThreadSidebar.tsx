@@ -1,7 +1,9 @@
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { ThreadPanel } from "@posthog/ui/features/canvas/components/ThreadPanel";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
+import { track } from "@posthog/ui/shell/analytics";
 import { useState } from "react";
 
 // The right-hand dock hosting a task's ThreadPanel: a thin rail when
@@ -24,13 +26,22 @@ export function ThreadSidebar({
   const setCollapsed = useThreadPanelStore((s) => s.setCollapsed);
   const [isResizing, setIsResizing] = useState(false);
 
+  const toggleCollapsed = (next: boolean) => {
+    setCollapsed(next);
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: next ? "collapse_thread" : "expand_thread",
+      surface: "thread_panel",
+      task_id: taskId,
+    });
+  };
+
   if (collapsed) {
     return (
       <ThreadPanel
         taskId={taskId}
         task={task}
         collapsed
-        onToggleCollapsed={() => setCollapsed(false)}
+        onToggleCollapsed={() => toggleCollapsed(false)}
       />
     );
   }
@@ -48,7 +59,7 @@ export function ThreadSidebar({
         taskId={taskId}
         task={task}
         onClose={onClose}
-        onToggleCollapsed={() => setCollapsed(true)}
+        onToggleCollapsed={() => toggleCollapsed(true)}
       />
     </ResizableSidebar>
   );

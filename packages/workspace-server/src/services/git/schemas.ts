@@ -428,6 +428,37 @@ export const updatePrByUrlOutput = z.object({
 
 export type UpdatePrByUrlOutput = z.infer<typeof updatePrByUrlOutput>;
 
+export type {
+  ApprovePrOutput,
+  GetPrChecksOutput,
+  GetPrCommentsOutput,
+  MergePrOutput,
+  PrCheck,
+  PrCheckBucket,
+  PrConversationComment,
+  PrInfoByUrlOutput,
+  PrMergeMethod,
+} from "@posthog/shared";
+// Native PR review schemas (PR overview, approve/merge, CI checks,
+// conversation comments) are defined once in `@posthog/shared`'s git domain
+// and re-exported here for the tRPC procedure definitions and GitService.
+export {
+  approvePrInput,
+  approvePrOutput,
+  getPrChecksInput,
+  getPrChecksOutput,
+  getPrCommentsInput,
+  getPrCommentsOutput,
+  getPrInfoByUrlInput,
+  getPrInfoByUrlOutput,
+  mergePrInput,
+  mergePrOutput,
+  prCheckBucketSchema,
+  prCheckSchema,
+  prConversationCommentSchema,
+  prMergeMethodSchema,
+} from "@posthog/shared";
+
 export const getPrTemplateInput = directoryPathInput;
 
 export const getPrTemplateOutput = z.object({

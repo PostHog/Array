@@ -1,4 +1,5 @@
 import { useServiceOptional } from "@posthog/di/react";
+import { readAgentToolName, readMcpToolName } from "@posthog/shared";
 import { DeleteToolView } from "@posthog/ui/features/sessions/components/session-update/DeleteToolView";
 import { EditToolView } from "@posthog/ui/features/sessions/components/session-update/EditToolView";
 import { ExecuteToolView } from "@posthog/ui/features/sessions/components/session-update/ExecuteToolView";
@@ -36,10 +37,8 @@ export function ToolCallBlock({
   const McpToolBlock = useServiceOptional<McpToolBlockComponent>(
     MCP_TOOL_BLOCK_COMPONENT,
   );
-  const meta = toolCall._meta as
-    | { claudeCode?: { toolName?: string } }
-    | undefined;
-  const toolName = meta?.claudeCode?.toolName;
+  const toolName = readAgentToolName(toolCall._meta);
+  const mcpToolName = readMcpToolName(toolCall._meta);
   const chatChrome = useChatThreadChrome();
 
   if (toolName === "EnterPlanMode") {
@@ -70,13 +69,13 @@ export function ToolCallBlock({
     );
   }
 
-  if (toolName?.startsWith("mcp__")) {
+  if (mcpToolName) {
     return (
       <Box className={chatChrome ? "" : "pl-3"}>
         {McpToolBlock ? (
-          <McpToolBlock {...props} mcpToolName={toolName} />
+          <McpToolBlock {...props} mcpToolName={mcpToolName} />
         ) : (
-          <ToolCallView {...props} agentToolName={toolName} />
+          <ToolCallView {...props} agentToolName={mcpToolName} />
         )}
       </Box>
     );

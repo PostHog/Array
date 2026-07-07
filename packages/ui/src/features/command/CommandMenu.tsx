@@ -4,6 +4,11 @@ import {
   EnvelopeSimple,
   HashIcon,
 } from "@phosphor-icons/react";
+import { resolveService } from "@posthog/di/container";
+import {
+  HOST_TRPC_CLIENT,
+  type HostTrpcClient,
+} from "@posthog/host-router/client";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -66,6 +71,8 @@ import {
   ReloadIcon,
   SunIcon,
   ViewVerticalIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
 } from "@radix-ui/react-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -350,9 +357,49 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       },
     ];
 
+    const viewCommands: Command[] = [
+      {
+        id: "zoom-in",
+        label: "Zoom in",
+        keywords: "zoom increase larger",
+        icon: <ZoomInIcon className="h-3 w-3 text-gray-11" />,
+        action: "zoom-in",
+        shortcut: SHORTCUTS.ZOOM_IN,
+        onRun: () =>
+          void resolveService<HostTrpcClient>(
+            HOST_TRPC_CLIENT,
+          ).os.zoomIn.mutate(),
+      },
+      {
+        id: "zoom-out",
+        label: "Zoom out",
+        keywords: "zoom decrease smaller",
+        icon: <ZoomOutIcon className="h-3 w-3 text-gray-11" />,
+        action: "zoom-out",
+        shortcut: SHORTCUTS.ZOOM_OUT,
+        onRun: () =>
+          void resolveService<HostTrpcClient>(
+            HOST_TRPC_CLIENT,
+          ).os.zoomOut.mutate(),
+      },
+      {
+        id: "zoom-reset",
+        label: "Reset zoom",
+        keywords: "zoom actual size default",
+        icon: <MagnifyingGlassIcon className="h-3 w-3 text-gray-11" />,
+        action: "zoom-reset",
+        shortcut: SHORTCUTS.RESET_ZOOM,
+        onRun: () =>
+          void resolveService<HostTrpcClient>(
+            HOST_TRPC_CLIENT,
+          ).os.resetZoom.mutate(),
+      },
+    ];
+
     const out: CommandSection[] = [
       { label: "Actions", items: actions },
       { label: "Navigation", items: navigation },
+      { label: "View", items: viewCommands },
       { label: "Developer", items: developer },
     ];
 

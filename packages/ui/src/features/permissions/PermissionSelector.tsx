@@ -1,4 +1,5 @@
 import type { PermissionOption } from "@agentclientprotocol/sdk";
+import { readMcpToolName } from "@posthog/shared";
 import { DefaultPermission } from "./DefaultPermission";
 import { DeletePermission } from "./DeletePermission";
 import { EditPermission } from "./EditPermission";
@@ -31,11 +32,8 @@ export function PermissionSelector({
   onCancel,
 }: PermissionSelectorProps) {
   const props = { toolCall, options, onSelect, onCancel };
-  const meta = toolCall._meta as
-    | { codeToolKind?: string; claudeCode?: { toolName?: string } }
-    | undefined;
-  const agentToolName = meta?.claudeCode?.toolName;
-  if (agentToolName?.startsWith("mcp__")) {
+  const meta = toolCall._meta as { codeToolKind?: string } | undefined;
+  if (readMcpToolName(toolCall._meta)) {
     return <McpPermission {...props} />;
   }
   const kind = meta?.codeToolKind ?? (toolCall.kind as string);

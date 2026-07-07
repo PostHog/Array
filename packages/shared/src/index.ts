@@ -80,6 +80,10 @@ export {
   serializeError,
 } from "./errors";
 export type { ExecutionMode } from "./exec-types";
+export {
+  CODEX_MODE_PRESETS,
+  type CodexModePreset,
+} from "./execution-modes";
 export * from "./flags";
 export * from "./git-domain";
 export type {
@@ -185,7 +189,9 @@ export {
   type OptimisticItem,
   type PermissionRequest,
   type QueuedMessage,
+  resolveBypassRevertMode,
   type SessionStatus,
+  sessionSupportsNativeSteer,
 } from "./sessions";
 export type {
   SignalReportOrderingField,
@@ -218,6 +224,15 @@ export {
   formatRelativeTimeShort,
   getRelativeDateGroup,
 } from "./time";
+export {
+  mcpToolKey,
+  type PosthogToolMeta,
+  parseMcpToolName,
+  posthogToolMeta,
+  readAgentToolName,
+  readMcpToolDescriptor,
+  readMcpToolName,
+} from "./tool-meta";
 export { TypedEventEmitter } from "./typed-event-emitter";
 export { isSafeExternalUrl } from "./url";
 export { getCloudUrlFromRegion } from "./urls";

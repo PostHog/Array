@@ -21,3 +21,6 @@ export const OPEN_TARGET_LINK_SERVICE = Symbol.for(
   "posthog.core.openTargetLinkService",
 );
 export const CANVAS_LINK_SERVICE = Symbol.for("posthog.core.canvasLinkService");
+export const CHANNEL_LINK_SERVICE = Symbol.for(
+  "posthog.core.channelLinkService",
+);

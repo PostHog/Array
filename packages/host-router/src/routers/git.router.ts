@@ -10,6 +10,8 @@ import {
   GIT_WORKSPACE_CLIENT,
 } from "@posthog/core/git/identifiers";
 import {
+  approvePrInput,
+  approvePrOutput,
   checkoutBranchInput,
   checkoutBranchOutput,
   cloneRepositoryInput,
@@ -58,10 +60,16 @@ import {
   getLocalBranchChangedFilesOutput,
   getPrChangedFilesInput,
   getPrChangedFilesOutput,
+  getPrChecksInput,
+  getPrChecksOutput,
+  getPrCommentsInput,
+  getPrCommentsOutput,
   getPrDetailsByUrlInput,
   getPrDetailsByUrlOutput,
   getPrDiffStatsBatchInput,
   getPrDiffStatsBatchOutput,
+  getPrInfoByUrlInput,
+  getPrInfoByUrlOutput,
   getPrReviewCommentsInput,
   getPrReviewCommentsOutput,
   getPrTemplateInput,
@@ -72,6 +80,8 @@ import {
   ghStatusOutput,
   gitStateSnapshotSchema,
   gitStatusOutput,
+  mergePrInput,
+  mergePrOutput,
   openPrInput,
   openPrOutput,
   prStatusInput,
@@ -526,6 +536,52 @@ export const gitRouter = router({
       getWorkspaceClient(ctx.container).git.updatePrByUrl.mutate({
         prUrl: input.prUrl,
         action: input.action,
+      }),
+    ),
+
+  getPrInfoByUrl: publicProcedure
+    .input(getPrInfoByUrlInput)
+    .output(getPrInfoByUrlOutput.nullable())
+    .query(({ ctx, input }) =>
+      getWorkspaceClient(ctx.container).git.getPrInfoByUrl.query({
+        prUrl: input.prUrl,
+      }),
+    ),
+
+  getPrChecks: publicProcedure
+    .input(getPrChecksInput)
+    .output(getPrChecksOutput)
+    .query(({ ctx, input }) =>
+      getWorkspaceClient(ctx.container).git.getPrChecks.query({
+        prUrl: input.prUrl,
+      }),
+    ),
+
+  getPrComments: publicProcedure
+    .input(getPrCommentsInput)
+    .output(getPrCommentsOutput)
+    .query(({ ctx, input }) =>
+      getWorkspaceClient(ctx.container).git.getPrComments.query({
+        prUrl: input.prUrl,
+      }),
+    ),
+
+  approvePr: publicProcedure
+    .input(approvePrInput)
+    .output(approvePrOutput)
+    .mutation(({ ctx, input }) =>
+      getWorkspaceClient(ctx.container).git.approvePr.mutate({
+        prUrl: input.prUrl,
+      }),
+    ),
+
+  mergePr: publicProcedure
+    .input(mergePrInput)
+    .output(mergePrOutput)
+    .mutation(({ ctx, input }) =>
+      getWorkspaceClient(ctx.container).git.mergePr.mutate({
+        prUrl: input.prUrl,
+        method: input.method,
       }),
     ),
 

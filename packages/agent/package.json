@@ -108,6 +108,7 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "typecheck": "pnpm exec tsc --noEmit",
     "prepublishOnly": "pnpm run build",
     "clean": "node ../../scripts/rimraf.mjs dist .turbo"
@@ -132,6 +133,7 @@
     "@anthropic-ai/claude-agent-sdk": "0.3.170",
     "@anthropic-ai/sdk": "0.104.1",
     "@hono/node-server": "^1.19.9",
+    "@openai/codex": "0.140.0",
     "@opentelemetry/api-logs": "^0.208.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.208.0",
     "@opentelemetry/resources": "^2.0.0",

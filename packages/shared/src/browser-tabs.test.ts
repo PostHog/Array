@@ -74,16 +74,16 @@ describe("openOrFocusTab", () => {
   });
 
   it("treats a channel's sections as distinct tabs but dedups the same one", () => {
-    const inbox = openOrFocusTab(snapshot(), {
+    const history = openOrFocusTab(snapshot(), {
       windowId: "w1",
       dashboardId: null,
       taskId: null,
       channelId: "c1",
-      channelSection: "inbox",
+      channelSection: "history",
       makeId,
       now,
     });
-    const artifacts = openOrFocusTab(inbox.snapshot, {
+    const artifacts = openOrFocusTab(history.snapshot, {
       windowId: "w1",
       dashboardId: null,
       taskId: null,
@@ -94,17 +94,17 @@ describe("openOrFocusTab", () => {
     });
     expect(artifacts.opened).toBe(true);
     expect(artifacts.snapshot.tabs).toHaveLength(2);
-    const inboxAgain = openOrFocusTab(artifacts.snapshot, {
+    const historyAgain = openOrFocusTab(artifacts.snapshot, {
       windowId: "w1",
       dashboardId: null,
       taskId: null,
       channelId: "c1",
-      channelSection: "inbox",
+      channelSection: "history",
       makeId,
       now,
     });
-    expect(inboxAgain.opened).toBe(false);
-    expect(inboxAgain.tabId).toBe(inbox.tabId);
+    expect(historyAgain.opened).toBe(false);
+    expect(historyAgain.tabId).toBe(history.tabId);
   });
 
   it("appends new tabs after existing ones", () => {
@@ -314,7 +314,7 @@ describe("decideTabNavigation", () => {
   });
 
   it("replaces the active tab when navigating between channel sections", () => {
-    // In-tab nav from a channel's inbox to its artifacts: same tab, new section.
+    // In-tab nav from a channel's history to its artifacts: same tab, new section.
     expect(
       decideTabNavigation({
         ...base,
@@ -324,7 +324,7 @@ describe("decideTabNavigation", () => {
           dashboardId: null,
           taskId: null,
           channelId: "c1",
-          channelSection: "inbox",
+          channelSection: "history",
         },
         routeChannelId: "c1",
         routeChannelSection: "artifacts",
@@ -345,14 +345,14 @@ describe("decideTabNavigation", () => {
       decideTabNavigation({
         ...base,
         routeChannelId: "c1",
-        routeChannelSection: "inbox",
+        routeChannelSection: "history",
       }),
     ).toEqual({
       type: "open",
       dashboardId: null,
       taskId: null,
       channelId: "c1",
-      channelSection: "inbox",
+      channelSection: "history",
       stampTabId: null,
     });
   });
@@ -367,10 +367,10 @@ describe("decideTabNavigation", () => {
           dashboardId: null,
           taskId: null,
           channelId: "c1",
-          channelSection: "inbox",
+          channelSection: "history",
         },
         routeChannelId: "c1",
-        routeChannelSection: "inbox",
+        routeChannelSection: "history",
       }),
     ).toEqual({ type: "stamp", stampTabId: "tab-a" });
   });

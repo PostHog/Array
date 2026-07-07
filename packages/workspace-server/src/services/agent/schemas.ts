@@ -136,6 +136,11 @@ export const sessionResponseSchema = z.object({
   sessionId: z.string(),
   channel: z.string(),
   configOptions: z.array(sessionConfigOptionSchema).optional(),
+  // The adapter's negotiated steering capability from initialize
+  // (`_meta.posthog.steering`): "native" folds a mid-turn message into the
+  // running turn; "interrupt-resend" (legacy) or absent means the host must
+  // cancel + resend instead. Drives the host's steer-vs-resend decision.
+  steering: z.string().optional(),
 });
 
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;

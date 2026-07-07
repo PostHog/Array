@@ -13,6 +13,8 @@ const {
   mockShutdownPostHog,
   mockShutdownOtelTransport,
   mockProcessExit,
+  mockGetFullScreenState,
+  mockSetRestoreFullScreenOnNextLaunch,
 } = vi.hoisted(() => {
   const mockDatabaseService = {
     close: vi.fn(),
@@ -49,8 +51,15 @@ const {
     mockShutdownPostHog: vi.fn(() => Promise.resolve()),
     mockShutdownOtelTransport: vi.fn(() => Promise.resolve()),
     mockProcessExit: vi.fn() as unknown as (code?: number) => never,
+    mockGetFullScreenState: vi.fn(() => false),
+    mockSetRestoreFullScreenOnNextLaunch: vi.fn(),
   };
 });
+
+vi.mock("../../utils/store.js", () => ({
+  getFullScreenState: mockGetFullScreenState,
+  setRestoreFullScreenOnNextLaunch: mockSetRestoreFullScreenOnNextLaunch,
+}));
 
 vi.mock("../../utils/logger.js", () => ({
   logger: {
@@ -118,6 +127,26 @@ describe("AppLifecycleService", () => {
       service.setQuittingForUpdate();
       service.clearQuittingForUpdate();
       expect(service.isQuittingForUpdate).toBe(false);
+    });
+
+    it.each([[true], [false]])(
+      "schedules restore-fullscreen=%s on update-quit",
+      (isFullScreen) => {
+        mockGetFullScreenState.mockReturnValue(isFullScreen);
+        service.setQuittingForUpdate();
+        expect(mockSetRestoreFullScreenOnNextLaunch).toHaveBeenCalledWith(
+          isFullScreen,
+        );
+      },
+    );
+
+    it("clears the fullscreen-restore flag when the update handoff is aborted", () => {
+      mockGetFullScreenState.mockReturnValue(true);
+      service.setQuittingForUpdate();
+      service.clearQuittingForUpdate();
+      expect(mockSetRestoreFullScreenOnNextLaunch).toHaveBeenLastCalledWith(
+        false,
+      );
     });
   });
 

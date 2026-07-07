@@ -24,7 +24,9 @@ import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import {
+  saveFullScreenState,
   saveZoomLevel,
+  setRestoreFullScreenOnNextLaunch,
   type WindowStateSchema,
   windowStateStore,
 } from "./utils/store";
@@ -54,6 +56,11 @@ function getSavedWindowState(): WindowStateSchema {
     height: windowStateStore.get("height", 600),
     isMaximized: windowStateStore.get("isMaximized", true),
     zoomLevel: windowStateStore.get("zoomLevel", 0),
+    isFullScreen: windowStateStore.get("isFullScreen", false),
+    restoreFullScreenOnNextLaunch: windowStateStore.get(
+      "restoreFullScreenOnNextLaunch",
+      false,
+    ),
   };
 
   // Validate position is still on a connected display
@@ -73,7 +80,7 @@ export function saveWindowState(window: BrowserWindow): void {
 
   // Only save bounds when not maximized, so restoring from maximized
   // gives the user their previous windowed size/position
-  if (!isMaximized) {
+  if (!isMaximized && !window.isFullScreen()) {
     const bounds = window.getBounds();
     windowStateStore.set("x", bounds.x);
     windowStateStore.set("y", bounds.y);
@@ -158,6 +165,14 @@ function setupEditableContextMenu(window: BrowserWindow): void {
 export function createWindow(): void {
   const isDev = isDevBuild();
   const savedState = getSavedWindowState();
+
+  // Read the one-shot fullscreen-restore flag and clear it immediately, so it
+  // only ever affects the single launch that follows an update restart.
+  const restoreFullScreen = savedState.restoreFullScreenOnNextLaunch;
+  if (restoreFullScreen) {
+    setRestoreFullScreenOnNextLaunch(false);
+  }
+
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const scheduleSaveWindowState = (window: BrowserWindow): void => {
@@ -232,7 +247,9 @@ export function createWindow(): void {
     if (windowShown) return;
     windowShown = true;
     clearTimeout(showFallback);
-    if (savedState.isMaximized) {
+    if (restoreFullScreen) {
+      mainWindow?.setFullScreen(true);
+    } else if (savedState.isMaximized) {
       mainWindow?.maximize();
     }
     mainWindow?.show();
@@ -272,6 +289,10 @@ export function createWindow(): void {
   mainWindow.on("maximize", () => mainWindow && saveWindowState(mainWindow));
   mainWindow.on("unmaximize", () => mainWindow && saveWindowState(mainWindow));
   mainWindow.on("close", () => mainWindow && saveWindowState(mainWindow));
+
+  // Live-track fullscreen so the update-quit path can read the current state.
+  mainWindow.on("enter-full-screen", () => saveFullScreenState(true));
+  mainWindow.on("leave-full-screen", () => saveFullScreenState(false));
 
   container
     .get<ElectronMainWindow>(MAIN_WINDOW_SERVICE)

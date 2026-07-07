@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
@@ -1765,6 +1765,77 @@ describe("AgentServer HTTP Mode", () => {
           process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
         }
       }
+    });
+
+    describe("codex", () => {
+      const THREAD_ID = "0199a5c3-2f60-7b21-9c39-1d2e3f4a5b6c";
+      let codexHome: string;
+
+      const payload: JwtPayload = {
+        task_id: "test-task-id",
+        run_id: "test-run-id",
+        team_id: 1,
+        user_id: 1,
+        distinct_id: "test-distinct-id",
+        mode: "interactive",
+      };
+
+      const codexServer = (sessionId: string | null) => {
+        const s = createServer() as unknown as NativeResumeTestServer;
+        s.resumeState = {
+          conversation: [
+            { role: "user", content: [{ type: "text", text: "continue" }] },
+          ],
+          latestGitCheckpoint: null,
+          interrupted: false,
+          logEntryCount: 1,
+          sessionId,
+        };
+        return s;
+      };
+
+      const prepare = (s: NativeResumeTestServer) =>
+        s.prepareNativeResume(
+          payload,
+          createMockApiClient(),
+          createTaskRun({
+            id: "test-run-id",
+            state: { resume_from_run_id: "previous-run" },
+          }),
+          "codex",
+          repo.path,
+          "auto",
+        );
+
+      beforeEach(() => {
+        codexHome = join(repo.path, ".codex-test");
+        vi.stubEnv("CODEX_HOME", codexHome);
+      });
+
+      afterEach(() => {
+        vi.unstubAllEnvs();
+      });
+
+      it("resumes natively when the thread rollout survived in CODEX_HOME", async () => {
+        const dir = join(codexHome, "sessions", "2026", "07", "07");
+        await mkdir(dir, { recursive: true });
+        await writeFile(
+          join(dir, `rollout-2026-07-07T10-00-00-${THREAD_ID}.jsonl`),
+          "",
+        );
+
+        await expect(prepare(codexServer(THREAD_ID))).resolves.toEqual({
+          sessionId: THREAD_ID,
+          warm: true,
+        });
+      });
+
+      it.each([
+        ["the thread state is gone", THREAD_ID],
+        ["there is no prior session id", null],
+      ])("falls back to summary resume when %s", async (_case, sessionId) => {
+        await expect(prepare(codexServer(sessionId))).resolves.toBeNull();
+      });
     });
   });
 

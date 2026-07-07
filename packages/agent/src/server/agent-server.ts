@@ -30,6 +30,7 @@ import {
   hydrateSessionJsonl,
 } from "../adapters/claude/session/jsonl-hydration";
 import type { GatewayEnv } from "../adapters/claude/session/options";
+import { hasCodexThreadState } from "../adapters/codex-app-server/thread-state";
 import {
   type AgentErrorClassification,
   classifyAgentError,
@@ -412,7 +413,14 @@ export class AgentServer {
   }
 
   private shouldRelayPermissionToClient(mode: PermissionMode): boolean {
-    return mode === "default" || mode === "auto" || mode === "read-only";
+    // "plan" relays like "read-only" (look-don't-touch): escalations need a human
+    // veto, not silent auto-approval.
+    return (
+      mode === "default" ||
+      mode === "auto" ||
+      mode === "read-only" ||
+      mode === "plan"
+    );
   }
 
   private createApp(): Hono {
@@ -665,8 +673,6 @@ export class AgentServer {
     cwd: string,
     permissionMode: PermissionMode,
   ): Promise<{ sessionId: string; warm: boolean } | null> {
-    if (runtimeAdapter !== "claude") return null;
-
     const resumeRunId = this.getResumeRunId(preTaskRun);
     if (!resumeRunId) return null;
 
@@ -680,6 +686,22 @@ export class AgentServer {
         resumeRunId,
       });
       return null;
+    }
+
+    if (runtimeAdapter === "codex") {
+      // Codex owns thread persistence in CODEX_HOME (the ACP sessionId is the
+      // codex thread id). The rollout only survives a snapshot restart — there
+      // is no cold hydration equivalent, so a fresh sandbox keeps the summary
+      // fallback while a warm one resumes the thread natively via thread/resume.
+      if (!(await hasCodexThreadState(priorSessionId))) {
+        this.logger.debug(
+          "No codex thread state on disk; using summary resume fallback",
+          { resumeRunId, priorSessionId },
+        );
+        return null;
+      }
+      this.logger.debug("Native codex resume prepared", { priorSessionId });
+      return { sessionId: priorSessionId, warm: true };
     }
 
     let warm = false;
@@ -1196,6 +1218,11 @@ export class AgentServer {
               cwd: this.config.repositoryPath ?? "/tmp/workspace",
               apiBaseUrl: gatewayEnv.openaiBaseUrl,
               apiKey: this.config.apiKey,
+              // Bundled-binary hint for the native codex CLI: the codex
+              // binary itself, or any file in its directory. Set in the
+              // sandbox image (POSTHOG_CODEX_BINARY_PATH); when unset the
+              // adapter uses the @openai/codex vendored binary.
+              binaryPath: process.env.POSTHOG_CODEX_BINARY_PATH,
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
               developerInstructions: codexInstructions,
@@ -1297,22 +1324,32 @@ export class AgentServer {
       initialPermissionMode,
     );
 
-    let acpSessionId: string;
+    let acpSessionId: string | null = null;
     if (nativeResume) {
-      await clientConnection.resumeSession({
-        sessionId: nativeResume.sessionId,
-        cwd: sessionCwd,
-        mcpServers: this.config.mcpServers ?? [],
-        _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
-      });
-      acpSessionId = nativeResume.sessionId;
-      this.nativeResume = nativeResume;
-      this.logger.debug("ACP session resumed", {
-        acpSessionId,
-        runId: payload.run_id,
-        warm: nativeResume.warm,
-      });
-    } else {
+      try {
+        await clientConnection.resumeSession({
+          sessionId: nativeResume.sessionId,
+          cwd: sessionCwd,
+          mcpServers: this.config.mcpServers ?? [],
+          _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
+        });
+        acpSessionId = nativeResume.sessionId;
+        this.nativeResume = nativeResume;
+        this.logger.debug("ACP session resumed", {
+          acpSessionId,
+          runId: payload.run_id,
+          warm: nativeResume.warm,
+        });
+      } catch (error) {
+        // resumeState is still loaded, so the summary resume path takes over
+        // on the fresh session below.
+        this.logger.warn("Native resume failed; starting a fresh session", {
+          sessionId: nativeResume.sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (!acpSessionId) {
       const sessionResponse = await clientConnection.newSession({
         cwd: sessionCwd,
         mcpServers: this.config.mcpServers ?? [],
@@ -1549,6 +1586,12 @@ export class AgentServer {
         ? this.getInitialPromptOverride(taskRun)
         : null;
       const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
+      // A prewarmed run gets its first message forwarded as a user_message
+      // signal on activation; building one from task.description here too
+      // would deliver it twice (and without the forwarded artifacts).
+      const prewarmed = !!(
+        taskRun?.state as Record<string, unknown> | undefined
+      )?.prewarmed;
       let initialPrompt: ContentBlock[] = [];
       let initialPromptMeta: Record<string, unknown> | undefined;
       if (pendingUserPrompt?.prompt.length) {
@@ -1556,12 +1599,16 @@ export class AgentServer {
         initialPromptMeta = pendingUserPrompt.meta;
       } else if (initialPromptOverride) {
         initialPrompt = [{ type: "text", text: initialPromptOverride }];
-      } else if (task.description) {
+      } else if (task.description && !prewarmed) {
         initialPrompt = [{ type: "text", text: task.description }];
       }
 
       if (initialPrompt.length === 0) {
-        this.logger.debug("Task has no description, skipping initial message");
+        this.logger.debug(
+          prewarmed
+            ? "Prewarmed run awaits its forwarded first message, skipping initial message"
+            : "Task has no description, skipping initial message",
+        );
         return;
       }
 
@@ -2637,6 +2684,20 @@ we want:
   Generated-By: PostHog Code
   Task-Id: ${taskId}`;
 
+    const prLinkInstructions = `
+## Referencing pull requests
+When you mention a pull request in any reply or summary, always hyperlink it to its full URL
+(e.g. a Markdown link like [#123](https://github.com/org/repo/pull/123)) rather than plain
+text, so readers can open it directly.`;
+
+    const shellEfficiencyInstructions = `
+## Shell efficiency
+Optimize for the fewest shell round trips.
+- Batch related commands into one Bash invocation using \`&&\` (e.g. \`npm run typecheck && npm run lint && npm test\`).
+- Emit all independent tool calls in the same response.
+- Read multiple files at once.
+- Never rerun a command solely to reproduce output you already have.`;
+
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
     const publicRepoSafetyInstruction = `   - **Public-repo safety.** Treat the target repository as public-readable unless you have verified otherwise. The PR title, description, and commit messages must not contain private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, the contents of Slack threads (do not quote or paraphrase what was said), or unreleased roadmap details. Linking to the originating Slack thread is fine and encouraged — Slack links are auth-gated and useful as context — as are channel references like "raised in #team-foo". Describe findings qualitatively ("present on nearly all X events, absent from Y") rather than with quantitative figures pulled from analytics queries — the reasoning that uses those numbers can stay in the thread; the PR copy cannot.`;
     // Slack- and inbox-originated PRs are attributed to PostHog, not the
@@ -2663,7 +2724,7 @@ Do the requested work, but stop with local changes ready for review.
 Important:
 - Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.
 - Do NOT create a new branch or a new pull request.
-${signedCommitInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
       }
 
@@ -2684,7 +2745,7 @@ After completing the requested changes:
 Important:
 - Do NOT create a new branch or a new pull request.
 - Do NOT push fixes for review comments without replying to and resolving each related thread.
-${signedCommitInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
     }
 
@@ -2723,7 +2784,7 @@ ${publishInstructions}
 
 Important:
 - Prefer using MCP tools to answer questions with real data over giving generic advice.
-${signedCommitInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
     }
 
@@ -2735,7 +2796,7 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create a branch, commit, push, or open a pull request unless the user explicitly asks.
-${signedCommitInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
     }
 
@@ -2762,7 +2823,7 @@ ${prFooter}
 
 Important:
 - Always create the PR as a draft. Do not ask for confirmation.
-${signedCommitInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
   }
 
@@ -3036,9 +3097,13 @@ ${signedCommitInstructions}
             isQuestion ||
             this.shouldRelayPermissionToClient(sessionPermissionMode);
 
+          // A background run has no human to answer a relayed approval
+          // (hasDesktopConnected is true from the event-relay reader), so
+          // auto-approve rather than hang on it.
           if (
-            isPlanApproval ||
-            (needsDesktopApproval && this.session?.hasDesktopConnected)
+            mode !== "background" &&
+            (isPlanApproval ||
+              (needsDesktopApproval && this.session?.hasDesktopConnected))
           ) {
             this.logger.debug("Relaying permission request", {
               kind: params.toolCall?.kind,

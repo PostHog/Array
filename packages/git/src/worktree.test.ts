@@ -1,4 +1,13 @@
-import { mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -219,6 +228,104 @@ describe("WorktreeManager lifecycle (add / exists / list / remove / prune)", () 
     expect(deleted).toContain(info.worktreePath);
     expect(await dirExists(info.worktreePath)).toBe(false);
     expect(await manager.listWorktrees()).toEqual([]);
+  });
+});
+
+describe("WorktreeManager worktree link/include processing", () => {
+  let remoteDir: string;
+  let localDir: string;
+  let worktreeBaseDir: string;
+
+  beforeEach(async () => {
+    remoteDir = await initBareRemote();
+
+    const seedDir = await mkdtemp(path.join(tmpdir(), "posthog-code-seed-"));
+    const seedGit = createGitClient(seedDir);
+    await seedGit.init(["--initial-branch", "main"]);
+    await seedGit.addConfig("user.name", "Test");
+    await seedGit.addConfig("user.email", "test@example.com");
+    await seedGit.addConfig("commit.gpgsign", "false");
+    await writeFile(
+      path.join(seedDir, ".gitignore"),
+      ".env\n.envrc\nnode_modules/\n",
+    );
+    await writeFile(path.join(seedDir, ".worktreelink"), "# secrets\n.envrc\n");
+    await writeFile(path.join(seedDir, ".worktreeinclude"), ".env\n");
+    await seedGit.add([".gitignore", ".worktreelink", ".worktreeinclude"]);
+    await seedGit.commit("add worktree config");
+    await seedGit.addRemote("origin", remoteDir);
+    await seedGit.push(["origin", "main"]);
+    await rm(seedDir, { recursive: true, force: true });
+
+    localDir = await realpath(await initLocalClone(remoteDir));
+    worktreeBaseDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), "posthog-code-wts-")),
+    );
+
+    await writeFile(path.join(localDir, ".env"), "secret\n");
+    await writeFile(path.join(localDir, ".envrc"), "export FOO=1\n");
+    await mkdir(path.join(localDir, "node_modules", "dep"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(localDir, "node_modules", "dep", ".env"),
+      "dep\n",
+    );
+    await writeFile(
+      path.join(localDir, "node_modules", "dep", ".envrc"),
+      "dep\n",
+    );
+  });
+
+  afterEach(async () => {
+    for (const d of [remoteDir, localDir, worktreeBaseDir]) {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  it("links and copies matching gitignored files but never reaches into standard-ignored trees", async () => {
+    const manager = new WorktreeManager({
+      mainRepoPath: localDir,
+      worktreeBasePath: worktreeBaseDir,
+    });
+
+    const info = await manager.createWorktree({ baseBranch: "main" });
+
+    const linked = await lstat(path.join(info.worktreePath, ".envrc"));
+    expect(linked.isSymbolicLink()).toBe(true);
+
+    const copied = await readFile(
+      path.join(info.worktreePath, ".env"),
+      "utf-8",
+    );
+    expect(copied).toBe("secret\n");
+
+    // Regression: matches buried in node_modules used to be copied, which both
+    // walked the whole ignored tree and pre-created node_modules/ in the fresh
+    // worktree (defeating repos' own post-checkout bootstrap checks).
+    expect(await dirExists(path.join(info.worktreePath, "node_modules"))).toBe(
+      false,
+    );
+  });
+});
+
+describe("WorktreeManager.sweepTrash", () => {
+  it("removes trashed worktrees left behind by interrupted deletes", async () => {
+    const worktreeBaseDir = await mkdtemp(
+      path.join(tmpdir(), "posthog-code-wts-"),
+    );
+    const trashDir = path.join(worktreeBaseDir, ".trash");
+    await mkdir(path.join(trashDir, "stale-worktree"), { recursive: true });
+    await writeFile(path.join(trashDir, "stale-worktree", "file.txt"), "x\n");
+
+    const manager = new WorktreeManager({
+      mainRepoPath: "/nonexistent-main-repo",
+      worktreeBasePath: worktreeBaseDir,
+    });
+    await manager.sweepTrash();
+
+    expect(await dirExists(trashDir)).toBe(false);
+    await rm(worktreeBaseDir, { recursive: true, force: true });
   });
 });
 

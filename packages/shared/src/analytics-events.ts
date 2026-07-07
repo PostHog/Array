@@ -56,7 +56,10 @@ export type CommandMenuAction =
   | "search-files"
   | "open-file"
   | "reload-window"
-  | "show-log-folder";
+  | "show-log-folder"
+  | "zoom-in"
+  | "zoom-out"
+  | "zoom-reset";
 
 // Event property interfaces
 export interface TaskListViewProperties {
@@ -135,12 +138,6 @@ export interface PromptSentProperties {
   prompt_length_chars: number;
 }
 
-export interface StaleConversationGateChoiceProperties {
-  choice: "compact" | "continue" | "new_session";
-  used_tokens: number;
-  cost_usd: number | null;
-}
-
 // Git operations
 export interface GitActionExecutedProperties {
   action_type: GitActionType;
@@ -166,8 +163,9 @@ export interface AgentFileActivityProperties {
   branch_name: string | null;
 }
 
-// Branch link events
-type BranchLinkSource = "agent" | "user" | "unknown";
+// Branch link events. "auto" marks self-healing unlinks of branches that no
+// longer exist anywhere (e.g. deleted after a PR merge).
+type BranchLinkSource = "agent" | "user" | "auto" | "unknown";
 
 export interface BranchLinkedProperties {
   task_id: string;
@@ -365,6 +363,12 @@ export interface DeepLinkIssueFailedProperties {
 export interface DeepLinkCanvasProperties {
   channel_id: string;
   dashboard_id: string;
+}
+
+export interface DeepLinkChannelProperties {
+  channel_id: string;
+  /** Present when the link targets a thread inside the channel. */
+  task_id?: string;
 }
 
 // Feedback events
@@ -626,6 +630,14 @@ export interface InboxReportScrolledProperties {
   time_since_open_ms: number;
 }
 
+export interface UsageViewedProperties {
+  is_pro: boolean;
+  /** Monthly bucket percent (0-100), null when usage is unavailable. */
+  sustained_used_percent: number | null;
+  /** Daily bucket percent (0-100), null when usage is unavailable. */
+  burst_used_percent: number | null;
+}
+
 export interface SpendAnalysisTaskOpenedProperties {
   /** Total LLM spend in USD across all products for the analysed window. */
   total_cost_usd: number;
@@ -816,11 +828,11 @@ export type ChannelsSurface =
   | "channel_home"
   | "channel_history"
   | "channel_artifacts"
-  | "channel_inbox"
   | "pinned"
   | "dashboards_grid"
   | "canvas"
-  | "context";
+  | "context"
+  | "thread_panel";
 
 export type ChannelActionType =
   | "enter_space"
@@ -841,19 +853,21 @@ export type ChannelActionType =
   | "view_context"
   | "view_history"
   | "view_artifacts"
-  | "view_inbox"
   | "open_artifact"
   | "file_task"
   | "unfile_task"
   | "archive_task"
-  | "open_task";
+  | "open_task"
+  | "collapse_thread"
+  | "expand_thread"
+  | "copy_link";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
   surface: ChannelsSurface;
   /** The channel acted on, when one is in scope. */
   channel_id?: string;
-  /** For file/unfile/archive/open task actions. */
+  /** For file/unfile/archive/open task actions; for copy_link of a thread. */
   task_id?: string;
   /** For file_task: destination channel when different from `channel_id`. */
   target_channel_id?: string;
@@ -992,6 +1006,28 @@ export interface ClaudeSessionImportFailedProperties {
   failed_step?: string;
 }
 
+/** Fired when a user arms autoresearch mode on the new-task composer. */
+export interface AutoresearchArmedProperties {
+  /** Hands-off mode auto-applied on arm so the unattended loop isn't blocked on permission prompts. */
+  default_mode: "bypassPermissions" | "acceptEdits";
+  workspace_mode?: "local" | "worktree" | "cloud";
+}
+
+/** Fired when an armed autoresearch task is submitted and its run kicks off. */
+export interface AutoresearchRunStartedProperties {
+  direction: "maximize" | "minimize";
+  /** Whether the user set a target metric value to stop early at. */
+  has_target: boolean;
+  max_iterations: number;
+  /** Build and measure stages differ, so each iteration splits into a build turn and a measure turn. */
+  stages_split: boolean;
+  implement_model?: string;
+  measure_model?: string;
+  implement_effort?: string;
+  measure_effort?: string;
+  workspace_mode?: "local" | "worktree" | "cloud";
+}
+
 // Event names as constants
 export const ANALYTICS_EVENTS = {
   // App lifecycle
@@ -1011,7 +1047,6 @@ export const ANALYTICS_EVENTS = {
   TASK_RUN_COMPLETED: "Task run completed",
   TASK_RUN_CANCELLED: "Task run cancelled",
   PROMPT_SENT: "Prompt sent",
-  STALE_CONVERSATION_GATE_CHOICE: "Stale conversation gate choice",
 
   // Claude Code session import
   CLAUDE_SESSIONS_SHOWN: "Claude Code sessions shown",
@@ -1104,6 +1139,7 @@ export const ANALYTICS_EVENTS = {
   DEEP_LINK_ISSUE: "Deep link issue",
   DEEP_LINK_ISSUE_FAILED: "Deep link issue failed",
   DEEP_LINK_CANVAS: "Deep link canvas",
+  DEEP_LINK_CHANNEL: "Deep link channel",
 
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
@@ -1129,7 +1165,8 @@ export const ANALYTICS_EVENTS = {
   SCOUT_CHAT_STARTED: "Scout chat started",
   SCOUT_ACTION: "Scout action",
 
-  // Spend analysis events
+  // Usage and spend analysis events
+  USAGE_VIEWED: "Usage viewed",
   SPEND_ANALYSIS_TASK_OPENED: "Spend analysis task opened",
 
   // Prompt history events
@@ -1149,6 +1186,10 @@ export const ANALYTICS_EVENTS = {
   DASHBOARD_ACTION: "Dashboard action",
   CANVAS_PROMPT_SENT: "Canvas prompt sent",
   CONTEXT_ACTION: "Context action",
+
+  // Autoresearch events
+  AUTORESEARCH_ARMED: "Autoresearch armed",
+  AUTORESEARCH_RUN_STARTED: "Autoresearch run started",
 } as const;
 
 // Event property mapping
@@ -1166,7 +1207,6 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.TASK_RUN_COMPLETED]: TaskRunCompletedProperties;
   [ANALYTICS_EVENTS.TASK_RUN_CANCELLED]: TaskRunCancelledProperties;
   [ANALYTICS_EVENTS.PROMPT_SENT]: PromptSentProperties;
-  [ANALYTICS_EVENTS.STALE_CONVERSATION_GATE_CHOICE]: StaleConversationGateChoiceProperties;
 
   // Claude Code session import
   [ANALYTICS_EVENTS.CLAUDE_SESSIONS_SHOWN]: ClaudeSessionsShownProperties;
@@ -1256,6 +1296,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.DEEP_LINK_ISSUE]: DeepLinkIssueProperties;
   [ANALYTICS_EVENTS.DEEP_LINK_ISSUE_FAILED]: DeepLinkIssueFailedProperties;
   [ANALYTICS_EVENTS.DEEP_LINK_CANVAS]: DeepLinkCanvasProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_CHANNEL]: DeepLinkChannelProperties;
 
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;
@@ -1281,7 +1322,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SCOUT_CHAT_STARTED]: ScoutChatStartedProperties;
   [ANALYTICS_EVENTS.SCOUT_ACTION]: ScoutActionProperties;
 
-  // Spend analysis events
+  // Usage and spend analysis events
+  [ANALYTICS_EVENTS.USAGE_VIEWED]: UsageViewedProperties;
   [ANALYTICS_EVENTS.SPEND_ANALYSIS_TASK_OPENED]: SpendAnalysisTaskOpenedProperties;
 
   // Prompt history events
@@ -1301,6 +1343,10 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.DASHBOARD_ACTION]: DashboardActionProperties;
   [ANALYTICS_EVENTS.CANVAS_PROMPT_SENT]: CanvasPromptSentProperties;
   [ANALYTICS_EVENTS.CONTEXT_ACTION]: ContextActionProperties;
+
+  // Autoresearch events
+  [ANALYTICS_EVENTS.AUTORESEARCH_ARMED]: AutoresearchArmedProperties;
+  [ANALYTICS_EVENTS.AUTORESEARCH_RUN_STARTED]: AutoresearchRunStartedProperties;
 };
 
 /**

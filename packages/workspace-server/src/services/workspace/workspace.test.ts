@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { RootLogger } from "@posthog/di/logger";
 import {
+  anyBranchRefExists,
   branchExists,
   getCurrentBranch,
   getDefaultBranch,
@@ -35,6 +36,7 @@ vi.mock("@posthog/git/queries", async (importOriginal) => {
     getDefaultBranch: vi.fn(),
     getCurrentBranch: vi.fn(),
     branchExists: vi.fn(),
+    anyBranchRefExists: vi.fn(),
     remoteBranchExists: vi.fn(),
     hasTrackedFiles: vi.fn(),
   };
@@ -255,6 +257,93 @@ describe("WorkspaceService", () => {
         ANALYTICS_EVENTS.BRANCH_UNLINKED,
         expect.objectContaining({ task_id: "task-1", source: "user" }),
       );
+    });
+  });
+
+  describe("getWorkspace (stale linked branch healing)", () => {
+    const tempDirs: string[] = [];
+
+    beforeEach(() => {
+      vi.mocked(anyBranchRefExists).mockReset();
+    });
+
+    afterEach(() => {
+      for (const dir of tempDirs.splice(0)) {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    /** A fake worktree checkout whose HEAD points at `branch`. */
+    function mkWorktreeOn(branch: string): string {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stale-link-"));
+      tempDirs.push(dir);
+      fs.mkdirSync(path.join(dir, ".git"));
+      fs.writeFileSync(
+        path.join(dir, ".git", "HEAD"),
+        `ref: refs/heads/${branch}\n`,
+      );
+      return dir;
+    }
+
+    function seedLinkedTask(linkedBranch: string, currentBranch = "main") {
+      seedWorktreeTask(mocks, {
+        taskId: "t1",
+        repoPath: "/code/myrepo",
+        name: "wt",
+        worktreePath: mkWorktreeOn(currentBranch),
+      });
+      service.linkBranch("t1", linkedBranch, "user");
+      vi.mocked(mocks.analytics.track).mockClear();
+    }
+
+    it.each([
+      { branch: "feat/gone", refExists: false, expected: null },
+      { branch: "feat/alive", refExists: true, expected: "feat/alive" },
+    ])(
+      "linkedBranch is $expected when refExists=$refExists",
+      async ({ branch, refExists, expected }) => {
+        seedLinkedTask(branch);
+        vi.mocked(anyBranchRefExists).mockResolvedValue(refExists);
+
+        const workspace = await service.getWorkspace("t1");
+
+        expect(workspace?.linkedBranch).toBe(expected);
+      },
+    );
+
+    it("emits, tracks, and persists the unlink when refs are gone", async () => {
+      seedLinkedTask("feat/gone");
+      vi.mocked(anyBranchRefExists).mockResolvedValue(false);
+      const emitted = vi.fn();
+      service.on(WorkspaceServiceEvent.LinkedBranchChanged, emitted);
+
+      await service.getWorkspace("t1");
+
+      expect(emitted).toHaveBeenCalledWith({ taskId: "t1", branchName: null });
+      expect(mocks.analytics.track).toHaveBeenCalledWith(
+        ANALYTICS_EVENTS.BRANCH_UNLINKED,
+        expect.objectContaining({ task_id: "t1", source: "auto" }),
+      );
+      expect(mocks.workspaceRepo.findByTaskId("t1")?.linkedBranch).toBeNull();
+    });
+
+    it("skips the check when on the linked branch", async () => {
+      seedLinkedTask("main", "main");
+
+      const workspace = await service.getWorkspace("t1");
+
+      expect(workspace?.linkedBranch).toBe("main");
+      expect(anyBranchRefExists).not.toHaveBeenCalled();
+    });
+
+    it("keeps the link when the staleness check fails", async () => {
+      seedLinkedTask("feat/unknown");
+      vi.mocked(anyBranchRefExists).mockRejectedValue(new Error("git broke"));
+
+      const workspace = await service.getWorkspace("t1");
+
+      expect(workspace?.linkedBranch).toBe("feat/unknown");
+      expect(mocks.analytics.track).not.toHaveBeenCalled();
     });
   });
 

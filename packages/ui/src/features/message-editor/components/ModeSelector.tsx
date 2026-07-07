@@ -1,11 +1,13 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { CaretDown } from "@phosphor-icons/react";
+import { CaretDown, ChartLineUp } from "@phosphor-icons/react";
 import {
   Button,
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
@@ -19,6 +21,16 @@ interface ModeSelectorProps {
   onChange: (value: string) => void;
   allowBypassPermissions: boolean;
   disabled?: boolean;
+  /**
+   * When provided, an "Autoresearch" toggle renders as the last item of the
+   * menu (new-task composer only). It arms/disarms the autonomous iteration
+   * loop; `active` drives its checkmark. Applied after the menu closes, like a
+   * mode change, so the composer doesn't relayout under the closing menu.
+   */
+  autoresearch?: {
+    active: boolean;
+    onToggle: () => void;
+  };
 }
 
 export function ModeSelector({
@@ -26,9 +38,11 @@ export function ModeSelector({
   onChange,
   allowBypassPermissions,
   disabled,
+  autoresearch,
 }: ModeSelectorProps) {
   const [open, setOpen] = useState(false);
   const pendingValueRef = useRef<string | null>(null);
+  const pendingAutoresearchRef = useRef(false);
   const displayOption = useRetainedConfigOption(modeOption);
 
   if (!displayOption || displayOption.type !== "select") return null;
@@ -58,9 +72,14 @@ export function ModeSelector({
       open={open}
       onOpenChange={setOpen}
       onOpenChangeComplete={(isOpen) => {
-        if (!isOpen && pendingValueRef.current !== null) {
+        if (isOpen) return;
+        if (pendingValueRef.current !== null) {
           onChange(pendingValueRef.current);
           pendingValueRef.current = null;
+        }
+        if (pendingAutoresearchRef.current) {
+          pendingAutoresearchRef.current = false;
+          autoresearch?.onToggle();
         }
       }}
     >
@@ -107,6 +126,23 @@ export function ModeSelector({
             );
           })}
         </DropdownMenuRadioGroup>
+        {autoresearch && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={autoresearch.active}
+              onCheckedChange={() => {
+                pendingAutoresearchRef.current = true;
+                setOpen(false);
+              }}
+            >
+              <span className="text-violet-11">
+                <ChartLineUp size={12} />
+              </span>
+              <span className="whitespace-nowrap">Autoresearch</span>
+            </DropdownMenuCheckboxItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

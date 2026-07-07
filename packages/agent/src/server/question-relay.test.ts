@@ -629,6 +629,38 @@ describe("Question relay", () => {
       });
     });
 
+    it("does not build a description prompt for a prewarmed run awaiting its forwarded message", async () => {
+      vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
+        id: "test-task-id",
+        title: "t",
+        description: "/millie readme this skill",
+      } as unknown as Task);
+      vi.spyOn(server.posthogAPI, "getTaskRun").mockResolvedValue({
+        id: "test-run-id",
+        task: "test-task-id",
+        state: { prewarmed: true },
+      } as unknown as TaskRun);
+
+      const promptSpy = vi.fn().mockResolvedValue({ stopReason: "end_turn" });
+      server.session = {
+        payload: TEST_PAYLOAD,
+        acpSessionId: "acp-session",
+        clientConnection: { prompt: promptSpy },
+        logWriter: {
+          flushAll: vi.fn().mockResolvedValue(undefined),
+          getFullAgentResponse: vi.fn().mockReturnValue(null),
+          resetTurnMessages: vi.fn(),
+          appendRawLine: vi.fn(),
+          flush: vi.fn().mockResolvedValue(undefined),
+          isRegistered: vi.fn().mockReturnValue(true),
+        },
+      };
+
+      await server.sendInitialTaskMessage(TEST_PAYLOAD);
+
+      expect(promptSpy).not.toHaveBeenCalled();
+    });
+
     it("does not replay a transient upstream termination before any session activity", async () => {
       vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
         id: "test-task-id",

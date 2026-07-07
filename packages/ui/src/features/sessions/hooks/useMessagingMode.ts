@@ -1,3 +1,4 @@
+import { sessionSupportsNativeSteer } from "@posthog/shared";
 import {
   type MessagingMode,
   useMessagingModeStore,
@@ -15,9 +16,11 @@ export function useMessagingMode(taskId: string | undefined): MessagingMode {
 }
 
 /**
- * Whether the task's session steers natively (Claude, local) versus falling
- * back to interrupt-and-resend (Codex, cloud). Drives the steer label/tooltip,
- * not whether steer is allowed: every adapter supports steer in some form.
+ * Whether the task's session steers natively (folds a mid-turn message into the
+ * running turn) versus falling back to interrupt-and-resend. Driven by the
+ * adapter's negotiated `steering` capability — same decision as the host's
+ * sendPrompt gate — so Claude and codex steer, while cloud
+ * resend. Drives the steer label/tooltip, not whether steer is allowed.
  */
 export function useSupportsNativeSteer(taskId: string | undefined): boolean {
   return useSessionStore((s) => {
@@ -25,6 +28,6 @@ export function useSupportsNativeSteer(taskId: string | undefined): boolean {
     const taskRunId = s.taskIdIndex[taskId];
     if (!taskRunId) return false;
     const session = s.sessions[taskRunId];
-    return !!session && !session.isCloud && session.adapter === "claude";
+    return !!session && sessionSupportsNativeSteer(session);
   });
 }

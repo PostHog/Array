@@ -225,6 +225,34 @@ export async function branchExists(
 }
 
 /**
+ * True when the branch exists as a local branch or as a remote-tracking
+ * ref on any remote. Unlike `branchExists`, a tag or raw commit-ish with
+ * the same name does not count, and nothing reaches the network — a
+ * remote branch only counts once it has been fetched.
+ */
+export async function anyBranchRefExists(
+  baseDir: string,
+  branchName: string,
+  options?: CreateGitClientOptions,
+): Promise<boolean> {
+  const manager = getGitOperationManager();
+  return manager.executeRead(
+    baseDir,
+    async (git) => {
+      const refs = await git.raw([
+        "for-each-ref",
+        "--count=1",
+        "--format=%(refname)",
+        `refs/heads/${branchName}`,
+        `refs/remotes/*/${branchName}`,
+      ]);
+      return refs.trim().length > 0;
+    },
+    { signal: options?.abortSignal },
+  );
+}
+
+/**
  * Checks whether a branch exists on the remote without fetching it.
  * Uses `git ls-remote --heads`, which is read-only and reaches the remote.
  */
@@ -1077,12 +1105,14 @@ export async function fetchRef(
   git: GitLike,
   remote: string,
   ref: string,
+  options?: { onError?: (message: string) => void },
 ): Promise<boolean> {
   try {
     // `--` keeps a ref beginning with `-` from being parsed as an option.
     await git.raw(["fetch", "--quiet", "--no-tags", remote, "--", ref]);
     return true;
-  } catch {
+  } catch (error) {
+    options?.onError?.(error instanceof Error ? error.message : String(error));
     return false;
   }
 }

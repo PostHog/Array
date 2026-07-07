@@ -29,7 +29,9 @@ export const useSessionAdapterStore = create<SessionAdapterState>()(
     {
       name: "session-adapter-storage",
       storage: electronStorage,
-      partialize: (state) => ({ adaptersByRunId: state.adaptersByRunId }),
+      partialize: (state) => ({
+        adaptersByRunId: state.adaptersByRunId,
+      }),
     },
   ),
 );

@@ -1,4 +1,5 @@
 import type { Icon } from "@phosphor-icons/react";
+import { readAgentToolName, readMcpToolDescriptor } from "@posthog/shared";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import {
   buildDoneLabel,
@@ -66,16 +67,13 @@ export interface ThreadGrouping {
 }
 
 function getToolName(update: { _meta?: unknown }): string | undefined {
-  const meta = update._meta as
-    | { claudeCode?: { toolName?: string } }
-    | undefined;
-  return meta?.claudeCode?.toolName;
+  return readAgentToolName(update._meta);
 }
 
 function isMcpToolItem(item: ConversationItem): boolean {
   if (item.type !== "session_update") return false;
   if (item.update.sessionUpdate !== "tool_call") return false;
-  return getToolName(item.update)?.startsWith("mcp__") ?? false;
+  return readMcpToolDescriptor(item.update._meta) !== undefined;
 }
 
 function isAlwaysVisibleItem(item: ConversationItem): boolean {
@@ -162,7 +160,7 @@ function summarize(items: ConversationItem[]): GroupSummary {
       if (name && grouping.subagentToolNames.has(name)) {
         counts.subagents++;
         addIcon(SUBAGENT_ICON, "subagent");
-      } else if (name?.startsWith("mcp__")) {
+      } else if (readMcpToolDescriptor(update._meta)) {
         counts.other++;
         addIcon(MCP_ICON, "mcp");
       } else {

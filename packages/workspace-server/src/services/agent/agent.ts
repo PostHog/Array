@@ -284,6 +284,16 @@ interface SessionConfig {
   importedSessionId?: string;
 }
 
+/** Pull the adapter's `agentCapabilities._meta.posthog.steering` from initialize. */
+function extractSteeringCapability(init: unknown): string | undefined {
+  const steering = (
+    init as {
+      agentCapabilities?: { _meta?: { posthog?: { steering?: unknown } } };
+    }
+  )?.agentCapabilities?._meta?.posthog?.steering;
+  return typeof steering === "string" ? steering : undefined;
+}
+
 interface ManagedSession {
   taskRunId: string;
   taskId: string;
@@ -298,6 +308,8 @@ interface ManagedSession {
   promptPending: boolean;
   pendingContext?: string;
   configOptions?: SessionConfigOption[];
+  /** Adapter's negotiated steering capability from initialize (`_meta.posthog.steering`). */
+  steering?: string;
   /** Tracks in-flight MCP tool calls (toolCallId → toolKey) for cancellation */
   inFlightMcpToolCalls: Map<string, string>;
   /** MCP tool approval states fetched at session start */
@@ -414,7 +426,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   }
 
   private getCodexBinaryPath(): string {
-    const binary = process.platform === "win32" ? "codex-acp.exe" : "codex-acp";
+    const binary = process.platform === "win32" ? "codex.exe" : "codex";
     return this.bundledResources.resolve(`.vite/build/codex-acp/${binary}`);
   }
 
@@ -591,7 +603,16 @@ When creating pull requests, add the following footer at the end of the PR descr
 \`\`\`
 ---
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
-\`\`\``;
+\`\`\`
+
+When you mention a pull request in any reply or summary, always hyperlink it to its full URL (e.g. a Markdown link like [#123](https://github.com/org/repo/pull/123)) rather than plain text, so readers can open it directly.
+
+## Shell efficiency
+Optimize for the fewest shell round trips.
+- Batch related commands into one Bash invocation using \`&&\` (e.g. \`npm run typecheck && npm run lint && npm test\`).
+- Emit all independent tool calls in the same response.
+- Read multiple files at once.
+- Never rerun a command solely to reproduce output you already have.`;
 
     if (channelMode) {
       const localFolders = (knownLocalFolders ?? []).filter(
@@ -844,7 +865,7 @@ If a repository IS genuinely required, attach one in this priority order:
         clientStreams,
       );
 
-      await connection.initialize({
+      const initResult = await connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: {
           fs: {
@@ -854,6 +875,11 @@ If a repository IS genuinely required, attach one in this priority order:
           terminal: true,
         },
       });
+      // The adapter advertises whether mid-turn steering folds natively into the
+      // running turn (`steering: "native"`) vs needs cancel+resend. Surface it so
+      // the host gates steer-vs-resend on the negotiated capability, not on a
+      // hardcoded adapter name (codex-acp advertises "interrupt-resend").
+      const steering = extractSteeringCapability(initResult);
 
       const {
         servers: mcpServers,
@@ -1059,6 +1085,7 @@ If a repository IS genuinely required, attach one in this priority order:
         config,
         promptPending: false,
         configOptions,
+        steering,
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
@@ -1972,6 +1999,7 @@ For git operations while detached:
       sessionId: session.taskRunId,
       channel: session.channel,
       configOptions: session.configOptions,
+      steering: session.steering,
     };
   }
 

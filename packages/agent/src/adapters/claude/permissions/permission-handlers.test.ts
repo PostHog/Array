@@ -345,3 +345,50 @@ describe("canUseTool MCP approval enforcement", () => {
     );
   });
 });
+
+describe("canUseTool auto mode hands-off approval", () => {
+  beforeEach(() => {
+    clearMcpToolMetadataCache();
+  });
+
+  // Auto mode advertises hands-off approval; it must not prompt for the write
+  // and shell tools that drive every real task.
+  it.each(["Bash", "BashOutput", "KillShell", "Edit", "Write", "NotebookEdit"])(
+    "auto-allows %s in auto mode without prompting",
+    async (toolName) => {
+      const context = createContext(toolName, {
+        session: {
+          permissionMode: "auto",
+          settingsManager: {
+            getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          },
+        },
+      });
+
+      const result = await canUseTool(context);
+
+      expect(result.behavior).toBe("allow");
+      expect(context.client.requestPermission).not.toHaveBeenCalled();
+    },
+  );
+
+  // Guard against the fix leaking into default mode, where these tools should
+  // still go through the manual permission prompt.
+  it.each(["Bash", "Edit", "Write"])(
+    "still prompts for %s in default mode",
+    async (toolName) => {
+      const context = createContext(toolName, {
+        session: {
+          permissionMode: "default",
+          settingsManager: {
+            getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          },
+        },
+      });
+
+      await canUseTool(context);
+
+      expect(context.client.requestPermission).toHaveBeenCalled();
+    },
+  );
+});

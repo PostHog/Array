@@ -92,7 +92,7 @@ export function BrowserTabStrip() {
 
   const { channels } = useChannels();
 
-  // The active channel sub-section (inbox/artifacts/history/context) is the
+  // The active channel sub-section (artifacts/history/context) is the
   // route segment after the channelId. Null when on the channel home or a
   // non-section route (canvas/task), so a channel-home tab labels by name.
   const routeChannelSection = useMemo(() => {
@@ -318,7 +318,7 @@ export function BrowserTabStrip() {
             pinned,
           };
         }
-        // A channel tab: a sub-section (Inbox/Artifacts/…) or the channel home.
+        // A channel tab: a sub-section (Artifacts/Recents/…) or the channel home.
         // The section drives the label; the channel name carries the `#` hover
         // context. Home has no section, so it labels by the channel name.
         if (channelId) {
@@ -371,21 +371,17 @@ export function BrowserTabStrip() {
       });
     } else if (tab.channelId) {
       const params = { channelId: tab.channelId };
-      switch (tab.channelSection) {
-        case "inbox":
-          navigate({ to: "/website/$channelId/inbox", params, state });
-          break;
-        case "artifacts":
-          navigate({ to: "/website/$channelId/artifacts", params, state });
-          break;
-        case "history":
-          navigate({ to: "/website/$channelId/history", params, state });
-          break;
-        case "context":
-          navigate({ to: "/website/$channelId/context", params, state });
-          break;
-        default:
-          navigate({ to: "/website/$channelId", params, state });
+      // Section keys are the route segments; unknown/stale sections (e.g. from
+      // a since-removed tab type) fall back to the channel home.
+      const section = channelSectionFor(tab.channelSection);
+      if (section) {
+        navigate({
+          to: `/website/$channelId/${section.key}` as const,
+          params,
+          state,
+        });
+      } else {
+        navigate({ to: "/website/$channelId", params, state });
       }
     } else {
       navigate({ to: "/website", state });

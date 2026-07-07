@@ -213,6 +213,10 @@ vi.mock("@posthog/ui/features/sidebar/taskMetaApi", () => ({
 vi.mock("@posthog/ui/shell/posthogAnalyticsImpl", () => ({
   track: vi.fn(),
   buildPermissionToolMetadata: vi.fn(() => ({})),
+  posthogFeatureFlags: {
+    isEnabled: vi.fn(() => undefined),
+    onFlagsLoaded: vi.fn(),
+  },
 }));
 vi.mock("../../shell/logger", () => ({
   logger: {

@@ -2218,6 +2218,8 @@ export class PostHogAPIClient {
         model?: string | null;
         reasoning_effort?: string | null;
         channel?: string | null;
+        pending_user_message?: string;
+        pending_user_artifact_ids?: string[];
       },
   ) {
     const teamId = await this.getTeamId();

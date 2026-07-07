@@ -9,8 +9,9 @@ import {
 } from "../utils/streams";
 import { ClaudeAcpAgent } from "./claude/claude-agent";
 import type { GatewayEnv } from "./claude/session/options";
-import { CodexAcpAgent } from "./codex/codex-agent";
-import type { CodexProcessOptions } from "./codex/spawn";
+import { nativeCodexBinaryPath } from "./codex-app-server/binary-path";
+import { CodexAppServerAgent } from "./codex-app-server/codex-app-server-agent";
+import type { CodexOptions } from "./codex-app-server/spawn";
 
 type AgentAdapter = "claude" | "codex";
 
@@ -23,7 +24,7 @@ export type AcpConnectionConfig = {
   deviceType?: "local" | "cloud";
   logger?: Logger;
   processCallbacks?: ProcessSpawnedCallback;
-  codexOptions?: CodexProcessOptions;
+  codexOptions?: CodexOptions;
   allowedModelIds?: Set<string>;
   /** Callback invoked when the agent calls the create_output tool for structured output */
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
@@ -150,11 +151,9 @@ function createClaudeConnection(config: AcpConnectionConfig): AcpConnection {
 }
 
 /**
- * Creates an ACP connection to codex-acp via an in-process proxy agent.
- *
- * The CodexAcpAgent implements the ACP Agent interface and delegates to
- * the codex-acp binary over a ClientSideConnection. This replaces the
- * previous raw stream transform approach and gives us proper interception
+ * Creates an ACP connection to the native codex app-server via an in-process
+ * proxy agent. CodexAppServerAgent implements the ACP Agent interface and
+ * delegates to `codex app-server` over JSON-RPC, giving us interception
  * points for PostHog-specific features.
  */
 function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
@@ -203,14 +202,37 @@ function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
 
   const agentStream = ndJsonStream(agentWritable, streams.agent.readable);
 
-  let agent: CodexAcpAgent | null = null;
+  let agent: CodexAppServerAgent | null = null;
   const agentConnection = new AgentSideConnection((client) => {
-    agent = new CodexAcpAgent(client, {
-      codexProcessOptions: config.codexOptions ?? {},
+    const codexOptions = config.codexOptions ?? {};
+    const nativeBinary = nativeCodexBinaryPath(codexOptions.binaryPath);
+
+    // The native app-server is the only codex harness. A missing binary is a
+    // packaging bug — fail loudly instead of degrading.
+    if (!nativeBinary) {
+      throw new Error(
+        "native codex binary not found (looked next to " +
+          `${codexOptions.binaryPath ?? "<no binaryPath>"} and in @openai/codex). ` +
+          "Bundle the codex binary or install the @openai/codex dependency.",
+      );
+    }
+    logger.info("Codex app-server selected", { nativeBinary });
+
+    agent = new CodexAppServerAgent(client, {
+      processOptions: {
+        binaryPath: nativeBinary,
+        cwd: codexOptions.cwd,
+        apiBaseUrl: codexOptions.apiBaseUrl,
+        apiKey: codexOptions.apiKey,
+        codexHome: codexOptions.codexHome,
+        developerInstructions: codexOptions.developerInstructions,
+        configOverrides: codexOptions.configOverrides,
+      },
+      model: codexOptions.model,
+      reasoningEffort: codexOptions.reasoningEffort,
       processCallbacks: config.processCallbacks,
-      posthogApiConfig: resolveEnricherApiConfig(config),
       onStructuredOutput: config.onStructuredOutput,
-      logger: config.logger?.child("CodexAcpAgent"),
+      logger: config.logger?.child("CodexAppServerAgent"),
     });
     return agent;
   }, agentStream);

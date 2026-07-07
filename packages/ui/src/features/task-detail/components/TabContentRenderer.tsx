@@ -1,4 +1,5 @@
 import type { Task } from "@posthog/shared/domain-types";
+import { AutoresearchPanel } from "../../autoresearch/AutoresearchPanel";
 import { CodeEditorPanel } from "../../code-editor/components/CodeEditorPanel";
 import {
   LazyCloudReviewPage as CloudReviewPage,
@@ -71,6 +72,9 @@ export function TabContentRenderer({
 
     case "canvas-instructions":
       return <CanvasInstructionsTab body={data.body} />;
+
+    case "autoresearch":
+      return <AutoresearchPanel taskId={taskId} />;
 
     case "other":
       switch (tab.id) {

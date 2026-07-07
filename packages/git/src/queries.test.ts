@@ -1,9 +1,10 @@
 import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createGitClient } from "./client";
 import {
+  anyBranchRefExists,
   type ChangedFileInfo,
   computeDiffStatsFromFiles,
   detectDefaultBranch,
@@ -503,5 +504,40 @@ describe("remoteBranchExists", () => {
       "/nonexistent/path/to/remote",
     ]);
     expect(await remoteBranchExists(repoDir, "main")).toBe(false);
+  });
+});
+
+describe("anyBranchRefExists", () => {
+  let repoDir: string;
+
+  // Builds refs via plumbing (commit-tree + update-ref) so the fixture also
+  // works in sandboxes where `git commit` is unavailable.
+  beforeEach(async () => {
+    repoDir = await mkdtemp(path.join(tmpdir(), "posthog-code-refs-"));
+    const git = createGitClient(repoDir);
+    await git.init(["--initial-branch", "main"]);
+    await git.addConfig("user.name", "Test");
+    await git.addConfig("user.email", "test@example.com");
+    const tree = (
+      await git.raw(["hash-object", "-w", "-t", "tree", devNull])
+    ).trim();
+    const sha = (await git.raw(["commit-tree", tree, "-m", "seed"])).trim();
+    await git.raw(["update-ref", "refs/heads/feat/local", sha]);
+    await git.raw(["update-ref", "refs/remotes/upstream/feat/remote", sha]);
+    await git.raw(["update-ref", "refs/tags/feat/tag-only", sha]);
+  });
+
+  afterEach(async () => {
+    await rm(repoDir, { recursive: true, force: true });
+  });
+
+  it.each([
+    { branch: "feat/local", expected: true },
+    { branch: "feat/remote", expected: true },
+    { branch: "feat/gone", expected: false },
+    // A tag with the name does not resurrect a deleted branch.
+    { branch: "feat/tag-only", expected: false },
+  ])("returns $expected for '$branch'", async ({ branch, expected }) => {
+    expect(await anyBranchRefExists(repoDir, branch)).toBe(expected);
   });
 });

@@ -26,7 +26,9 @@ import {
   type OptimisticItem,
   type PermissionRequest,
   type QueuedMessage,
+  resolveBypassRevertMode,
   type StoredLogEntry,
+  sessionSupportsNativeSteer,
   type TaskRunStatus,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -487,6 +489,11 @@ export function isPermissionRequestAlreadySurfaced(
     trackedRequestId === update.requestId &&
     pendingPermissions.has(update.toolCall.toolCallId)
   );
+}
+
+/** The steering capability on a loosely-typed agent start/reconnect result. */
+function readSteering(result: unknown): string | undefined {
+  return (result as { steering?: string } | undefined)?.steering;
 }
 
 function classifyTurnEventKind(
@@ -994,6 +1001,7 @@ export class SessionService {
         this.d.store.updateSession(taskRunId, {
           status: "connected",
           configOptions,
+          steering: readSteering(result),
         });
 
         // Persist the merged config options
@@ -1331,13 +1339,14 @@ export class SessionService {
       | SessionConfigOption[]
       | undefined;
     session.configOptions = configOptions;
+    session.steering = readSteering(result);
 
     // Persist the config options
     if (configOptions) {
       this.d.setPersistedConfigOptions(taskRun.id, configOptions);
     }
 
-    // Persist the adapter
+    // Persist the adapter so reconnects resume with the same one.
     if (adapter) {
       this.d.adapterStore.setAdapter(taskRun.id, adapter);
     }
@@ -2179,22 +2188,18 @@ export class SessionService {
     }
 
     // Steer: the user sent a message mid-turn and asked to fold it into the
-    // running turn rather than queue it. Native (Claude, local) injects at the
-    // next tool boundary; local Codex interrupts the turn and resends below as
-    // a fresh prompt.
-    //
-    // Cloud has no real mid-turn steer: the backend only delivers user messages
-    // between turns, so a cloud "steer" would cancel the running turn for no
-    // gain (the message lands next turn either way) while surfacing a jarring
-    // interruption. Until the backend supports true steering, cloud steer falls
-    // through to the queue like a normal message. Compaction also falls through.
+    // running turn rather than queue it. Adapters that negotiated
+    // `steering: "native"` (Claude, codex) inject at the next tool boundary;
+    // unknown adapters cancel and resend. Cloud has no real mid-turn steer
+    // (the backend only delivers messages between turns), so it falls through
+    // to the queue; compaction too.
     if (
       options?.steer &&
       !session.isCloud &&
       session.isPromptPending &&
       !session.isCompacting
     ) {
-      if (session.adapter === "claude") {
+      if (sessionSupportsNativeSteer(session)) {
         return this.sendSteerPrompt(session, prompt);
       }
       await this.cancelPrompt(taskId);
@@ -4636,6 +4641,7 @@ export class SessionService {
       isCloud: boolean;
       allowBypassPermissions: boolean;
       currentModeId: string | boolean | undefined;
+      modeOption: SessionConfigOption | undefined;
     },
   ): void {
     if (options.allowBypassPermissions) return;
@@ -4644,7 +4650,9 @@ export class SessionService {
       options.currentModeId === "bypassPermissions" ||
       options.currentModeId === "full-access";
     if (!isBypass || !taskId) return;
-    this.setSessionConfigOptionByCategory(taskId, "mode", "default");
+    const target = resolveBypassRevertMode(options.modeOption);
+    if (!target) return;
+    this.setSessionConfigOptionByCategory(taskId, "mode", target);
   }
 
   /**

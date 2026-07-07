@@ -29,7 +29,7 @@ export {
 
 const STICKY_HEADER_CSS = `[data-diffs-header] { position: sticky; top: 0; z-index: 1; background: var(--gray-2); }`;
 
-function useDiffOptions() {
+export function useDiffOptions() {
   const viewMode = useDiffViewerStore((s) => s.viewMode);
   const wordWrap = useDiffViewerStore((s) => s.wordWrap);
   const loadFullFiles = useDiffViewerStore((s) => s.loadFullFiles);
@@ -209,6 +209,7 @@ export function DiffFileHeader({
   onDiscard,
   onStage,
   staged,
+  trailing,
 }: {
   fileDiff: FileDiffMetadata;
   collapsed: boolean;
@@ -217,6 +218,8 @@ export function DiffFileHeader({
   onDiscard?: () => void;
   onStage?: () => void;
   staged?: boolean;
+  /** Extra controls rendered after the action buttons (e.g. a "Viewed" toggle). */
+  trailing?: ReactNode;
 }) {
   const fullPath =
     fileDiff.prevName && fileDiff.prevName !== fileDiff.name
@@ -234,7 +237,7 @@ export function DiffFileHeader({
       collapsed={collapsed}
       onToggle={onToggle}
       trailing={
-        (onStage || onDiscard || onOpenFile) && (
+        (onStage || onDiscard || onOpenFile || trailing) && (
           <span className="ml-auto inline-flex items-center gap-[2px]">
             {onStage && (
               <Tooltip content={staged ? "Unstage" : "Stage"}>
@@ -278,6 +281,7 @@ export function DiffFileHeader({
                 </button>
               </Tooltip>
             )}
+            {trailing}
           </span>
         )
       }
@@ -294,6 +298,7 @@ export function DeferredDiffPlaceholder({
   onToggle,
   onShow,
   externalUrl,
+  headerTrailing,
 }: {
   filePath: string;
   linesAdded: number;
@@ -303,6 +308,8 @@ export function DeferredDiffPlaceholder({
   onToggle: () => void;
   onShow?: () => void;
   externalUrl?: string;
+  /** Extra controls in the header row (e.g. a "Viewed" toggle). */
+  headerTrailing?: ReactNode;
 }) {
   const { dirPath, fileName } = splitFilePath(filePath);
 
@@ -315,6 +322,13 @@ export function DeferredDiffPlaceholder({
         deletions={linesRemoved}
         collapsed={collapsed}
         onToggle={onToggle}
+        trailing={
+          headerTrailing && (
+            <span className="ml-auto inline-flex items-center">
+              {headerTrailing}
+            </span>
+          )
+        }
       />
       {!collapsed && (
         <div className="w-full border-b border-b-(--gray-5) bg-(--gray-2) p-[16px] text-center text-(--gray-9) text-xs">

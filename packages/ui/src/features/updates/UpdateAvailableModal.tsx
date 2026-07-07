@@ -4,6 +4,7 @@ import { ReleaseNotesSections } from "@posthog/ui/features/updates/ReleaseNotesS
 import { parseReleaseNotes } from "@posthog/ui/features/updates/releaseNotes";
 import { useUpdateModalStore } from "@posthog/ui/features/updates/updateModalStore";
 import {
+  useHasActiveUpdate,
   useInstallUpdate,
   useUpdateView,
 } from "@posthog/ui/features/updates/updateStore";
@@ -62,12 +63,15 @@ export function UpdateAvailableModal() {
   const downloadMutation = useMutation(
     hostTRPC.updates.download.mutationOptions(),
   );
+  const prefetchForActiveUpdate = useHasActiveUpdate();
+  const targetVersion = version ?? availableVersion;
   const { data: releasesData, isPending: isPendingReleases } = useQuery({
-    ...hostTRPC.githubReleases.list.queryOptions(),
-    enabled: isOpen,
+    ...hostTRPC.githubReleases.list.queryOptions(
+      targetVersion ? { expectVersion: targetVersion } : undefined,
+    ),
+    enabled: isOpen || prefetchForActiveUpdate,
   });
 
-  const targetVersion = version ?? availableVersion;
   const percent = Math.round(downloadPercent ?? 0);
   const sizeLabel = formatSize(downloadSizeBytes);
   const isDownloading = status === "downloading";

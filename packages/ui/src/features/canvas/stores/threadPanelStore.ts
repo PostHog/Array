@@ -13,7 +13,8 @@ interface ThreadPanelState {
   taskId: string | null;
   collapsed: boolean;
   width: number;
-  openThread: (taskId: string) => void;
+  /** Points the panel at a task; expands it unless `expand: false`. */
+  openThread: (taskId: string, opts?: { expand?: boolean }) => void;
   closeThread: () => void;
   setCollapsed: (collapsed: boolean) => void;
   setWidth: (width: number) => void;
@@ -25,7 +26,8 @@ export const useThreadPanelStore = create<ThreadPanelState>()(
       taskId: null,
       collapsed: false,
       width: DEFAULT_PANEL_WIDTH,
-      openThread: (taskId) => set({ taskId, collapsed: false }),
+      openThread: (taskId, opts) =>
+        set(opts?.expand === false ? { taskId } : { taskId, collapsed: false }),
       closeThread: () => set({ taskId: null }),
       setCollapsed: (collapsed) => set({ collapsed }),
       setWidth: (width) => set({ width }),

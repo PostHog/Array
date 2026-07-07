@@ -1,5 +1,5 @@
 import { getEffortOptions as getClaudeEffortOptions } from "./claude/session/models";
-import { getReasoningEffortOptions as getCodexReasoningEffortOptions } from "./codex/models";
+import { getReasoningEffortOptions as getCodexReasoningEffortOptions } from "./codex-app-server/models";
 
 export type RuntimeAdapter = "claude" | "codex";
 

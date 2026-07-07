@@ -50,7 +50,9 @@ export function WorkspaceSetupPrompt({
 
       const result = await setupSaga.setupWorkspace(executor, taskId, path);
       if (!result.success) {
-        toast.error("Failed to set up workspace. Please try again.");
+        toast.error("Failed to set up workspace", {
+          description: result.error,
+        });
       }
 
       setSelectedPath("");

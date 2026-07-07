@@ -46,9 +46,11 @@ import type {
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
 import type { ApprovalLinkService } from "@posthog/core/links/approval-link";
 import type { CanvasLinkService } from "@posthog/core/links/canvas-link";
+import type { ChannelLinkService } from "@posthog/core/links/channel-link";
 import type {
   APPROVAL_LINK_SERVICE,
   CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   OPEN_TARGET_LINK_SERVICE,
@@ -256,6 +258,7 @@ import type {
   AUTH_SERVICE as MAIN_AUTH_SERVICE,
   AUTH_SESSION_REPOSITORY as MAIN_AUTH_SESSION_REPOSITORY,
   CANVAS_LINK_SERVICE as MAIN_CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE as MAIN_CHANNEL_LINK_SERVICE,
   CLOUD_TASK_SERVICE as MAIN_CLOUD_TASK_SERVICE,
   CONTEXT_MENU_SERVICE as MAIN_CONTEXT_MENU_SERVICE,
   DATABASE_SERVICE as MAIN_DATABASE_SERVICE,
@@ -431,6 +434,7 @@ export interface MainBindings {
   [MAIN_APPROVAL_LINK_SERVICE]: ApprovalLinkService;
   [MAIN_OPEN_TARGET_LINK_SERVICE]: OpenTargetLinkService;
   [MAIN_CANVAS_LINK_SERVICE]: CanvasLinkService;
+  [MAIN_CHANNEL_LINK_SERVICE]: ChannelLinkService;
   [TASK_LINK_SERVICE]: TaskLinkService;
   [INBOX_LINK_SERVICE]: InboxLinkService;
   [SCOUT_LINK_SERVICE]: ScoutLinkService;
@@ -438,6 +442,7 @@ export interface MainBindings {
   [APPROVAL_LINK_SERVICE]: ApprovalLinkService;
   [OPEN_TARGET_LINK_SERVICE]: OpenTargetLinkService;
   [CANVAS_LINK_SERVICE]: CanvasLinkService;
+  [CHANNEL_LINK_SERVICE]: ChannelLinkService;
 
   // Watcher registry
   [MAIN_WATCHER_REGISTRY_SERVICE]: WatcherRegistryService;

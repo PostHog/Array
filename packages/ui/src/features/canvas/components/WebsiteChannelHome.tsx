@@ -108,15 +108,16 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     [channelId, fileTask, invalidateFeed, queryClient],
   );
 
+  // The task route's mount effect points the panel at the task, so navigating
+  // is enough here.
   const handleOpenTask = useCallback(
     (task: Task) => {
-      openThread(task.id);
       void navigate({
         to: "/website/$channelId/tasks/$taskId",
         params: { channelId, taskId: task.id },
       });
     },
-    [channelId, navigate, openThread],
+    [channelId, navigate],
   );
 
   const handleOpenThread = useCallback(

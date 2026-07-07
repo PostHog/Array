@@ -6,6 +6,7 @@ import { useBlurOnEscape } from "../../../hooks/useBlurOnEscape";
 import { useSetHeaderContent } from "../../../hooks/useSetHeaderContent";
 import { logger } from "../../../shell/logger";
 import { ChannelBreadcrumb } from "../../canvas/components/ChannelBreadcrumb";
+import { CopyThreadLinkButton } from "../../canvas/components/CopyThreadLinkButton";
 import {
   LazyCloudReviewPage as CloudReviewPage,
   LazyReviewPage as ReviewPage,
@@ -120,9 +121,20 @@ export function TaskDetail({
   const handleTitleEditCancel = useCallback(() => {
     setIsEditingTitle(false);
   }, []);
-  const trailing = openTargetPath ? (
-    <ExternalAppsOpener targetPath={openTargetPath} />
-  ) : null;
+  // Inside a channel the thread also gets a "copy link" share affordance.
+  // Memoized so the headerContent memo below isn't busted by unrelated renders.
+  const trailing = useMemo(
+    () =>
+      channelId || openTargetPath ? (
+        <Flex align="center" gap="2">
+          {channelId && (
+            <CopyThreadLinkButton channelId={channelId} taskId={taskId} />
+          )}
+          {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
+        </Flex>
+      ) : null,
+    [channelId, taskId, openTargetPath],
+  );
   const workspace = useWorkspace(taskId);
   const workspaceMode = workspace?.mode;
   const headerContent = useMemo(

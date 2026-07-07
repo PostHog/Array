@@ -26,6 +26,7 @@ import { BootstrapFallback } from "@posthog/ui/shell/BootstrapFallback";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
+import { useAppVisibilityWatchdog } from "@posthog/ui/shell/useAppVisibilityWatchdog";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { RouterProvider } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
@@ -102,6 +103,17 @@ function App({ devToolbar }: AppProps) {
     setShowTransition(false);
   };
 
+  const mainRef = useRef<HTMLDivElement>(null);
+  // Mirrors the "main" branch of renderContent() below; keep the two in sync.
+  const showingMainApp =
+    isBootstrapped &&
+    isAuthenticated &&
+    hasCompletedOnboarding &&
+    !isCheckingAccess &&
+    !needsInviteCode &&
+    !needsAiApproval;
+  useAppVisibilityWatchdog(mainRef, showingMainApp);
+
   if (!isBootstrapped) {
     return <BootstrapFallback />;
   }
@@ -176,13 +188,7 @@ function App({ devToolbar }: AppProps) {
     }
 
     return (
-      <motion.div
-        key="main"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, delay: showTransition ? 0.5 : 0 }}
-        className="h-full"
-      >
+      <motion.div key="main" ref={mainRef} className="app-fade-in h-full">
         <RouterProvider router={router} />
         {/* Surfaces a toast when a backgrounded canvas generation finishes,
             from anywhere in the app. Sibling of the router so it stays mounted

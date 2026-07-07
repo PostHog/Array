@@ -17,6 +17,10 @@ import { posthogNodeAnalytics } from "../../platform-adapters/posthog-analytics"
 import { withTimeout } from "../../utils/async";
 import { logger } from "../../utils/logger";
 import { shutdownOtelTransport } from "../../utils/otel-log-transport";
+import {
+  getFullScreenState,
+  setRestoreFullScreenOnNextLaunch,
+} from "../../utils/store";
 
 const log = logger.scope("app-lifecycle");
 
@@ -53,10 +57,14 @@ export class AppLifecycleService {
 
   setQuittingForUpdate(): void {
     this._isQuittingForUpdate = true;
+    // Remember fullscreen state so the post-update relaunch restores it.
+    setRestoreFullScreenOnNextLaunch(getFullScreenState());
   }
 
   clearQuittingForUpdate(): void {
     this._isQuittingForUpdate = false;
+    // The install handoff was aborted.
+    setRestoreFullScreenOnNextLaunch(false);
   }
 
   /**

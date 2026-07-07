@@ -43,7 +43,13 @@ const BASE_ALLOWED_TOOLS = [
 ];
 
 const AUTO_ALLOWED_TOOLS: Record<string, Set<string>> = {
-  auto: new Set(BASE_ALLOWED_TOOLS),
+  // Auto mode is hands-off: it auto-approves file edits and shell commands on
+  // top of the base read/search/web/agent tools. Without WRITE_TOOLS and
+  // BASH_TOOLS here, Edit/Write/Bash fall through to a manual prompt on every
+  // call, which contradicts what the mode advertises. MCP tools are still gated
+  // separately (do_not_use is denied, needs_approval still prompts) in
+  // canUseTool, so auto stays narrower than bypassPermissions.
+  auto: new Set([...BASE_ALLOWED_TOOLS, ...WRITE_TOOLS, ...BASH_TOOLS]),
   default: new Set(BASE_ALLOWED_TOOLS),
   acceptEdits: new Set([...BASE_ALLOWED_TOOLS, ...WRITE_TOOLS]),
   plan: new Set(BASE_ALLOWED_TOOLS),

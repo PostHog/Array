@@ -28,6 +28,7 @@ const mockWorktreeRepo = vi.hoisted(() => ({
 const mockWorktreeManager = vi.hoisted(() => ({
   deleteWorktree: vi.fn(),
   cleanupOrphanedWorktrees: vi.fn(),
+  sweepTrash: vi.fn(),
 }));
 const mockInitRepositorySaga = vi.hoisted(() => ({
   run: vi.fn(),
@@ -52,6 +53,7 @@ vi.mock("@posthog/git/worktree", () => ({
   WorktreeManager: class MockWorktreeManager {
     deleteWorktree = mockWorktreeManager.deleteWorktree;
     cleanupOrphanedWorktrees = mockWorktreeManager.cleanupOrphanedWorktrees;
+    sweepTrash = mockWorktreeManager.sweepTrash;
   },
 }));
 

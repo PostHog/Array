@@ -4,6 +4,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import {
   navigateToAgents,
   navigateToCommandCenter,
@@ -11,6 +12,7 @@ import {
   navigateToInbox,
   navigateToMcpServers,
   navigateToSkills,
+  navigateToUsage,
   navigateToWebsiteCommandCenter,
   navigateToWebsiteHome,
   navigateToWebsiteMcpServers,
@@ -29,6 +31,7 @@ import { McpServersItem } from "./items/McpServersItem";
 import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
+import { UsageItem } from "./items/UsageItem";
 
 const SIDEBAR_INBOX_REFETCH_INTERVAL_MS = 60_000;
 
@@ -46,18 +49,19 @@ interface SidebarNavSectionProps {
 // state, badge count, and click handler is wired here — so it can be dropped
 // into either layout. In the Channels space, destinations with a /website
 // mirror (Home, Skills, MCP servers, Command Center) stay in that space;
-// Inbox, Agents and New task have no mirror yet and jump back to Code. Search
-// opens the command menu in place.
+// Inbox, Agents, Usage and New task have no mirror yet and jump back to Code.
+// Search opens the command menu in place.
 export function SidebarNavSection({
   commandCenterActiveCount: providedActiveCount,
 }: SidebarNavSectionProps = {}) {
   const view = useAppView();
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
+  const usageEnabled = useSpendAnalysisEnabled();
 
   // When this section renders inside the Channels space, the destinations that
   // have a /website mirror stay in that space; everything else (and the whole
-  // section in the Code space) uses the canonical routes. Inbox, Agents and New
-  // task have no mirror yet, so they intentionally jump back to Code.
+  // section in the Code space) uses the canonical routes. Inbox, Agents, Usage
+  // and New task have no mirror yet, so they intentionally jump back to Code.
   const inChannels = useRouterState({
     select: (s) => s.location.pathname.startsWith("/website"),
   });
@@ -82,6 +86,7 @@ export function SidebarNavSection({
   const isCommandCenterActive = view.type === "command-center";
   const isSkillsActive = view.type === "skills";
   const isMcpServersActive = view.type === "mcp-servers";
+  const isUsageActive = view.type === "usage";
 
   // Open pull requests in the inbox — the main CTA, and the same count the inbox
   // Pull requests tab shows, so the badge and the tab always agree.
@@ -152,13 +157,19 @@ export function SidebarNavSection({
         <McpServersItem isActive={isMcpServersActive} onClick={goMcpServers} />
       </Box>
 
-      <Box mb="2">
+      <Box mb={usageEnabled ? undefined : "2"}>
         <CommandCenterItem
           isActive={isCommandCenterActive}
           onClick={goCommandCenter}
           activeCount={commandCenterActiveCount}
         />
       </Box>
+
+      {usageEnabled && (
+        <Box mb="2">
+          <UsageItem isActive={isUsageActive} onClick={navigateToUsage} />
+        </Box>
+      )}
     </Flex>
   );
 }

@@ -79,6 +79,12 @@ interface UseTaskCreationOptions {
    */
   allowNoRepo?: boolean;
   onTaskCreated?: (task: Task) => void;
+  /**
+   * Side effect run with the created task in addition to (not instead of)
+   * the default open/navigation behavior — unlike onTaskCreated, providing
+   * this does not suppress the pending-task view.
+   */
+  onTaskCreatedEffect?: (task: Task) => void;
 }
 
 interface UseTaskCreationReturn {
@@ -161,6 +167,7 @@ export function useTaskCreation({
   channelId,
   allowNoRepo,
   onTaskCreated,
+  onTaskCreatedEffect,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const hostClient = useHostTRPCClient();
@@ -358,6 +365,7 @@ export function useTaskCreation({
             if (!pendingTaskKey && !contentOverride) {
               editor.clear();
             }
+            onTaskCreatedEffect?.(output.task);
             if (onTaskCreated) {
               onTaskCreated(output.task);
             } else {
@@ -477,6 +485,7 @@ export function useTaskCreation({
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
+      onTaskCreatedEffect,
       hostClient,
       trpc,
       queryClient,

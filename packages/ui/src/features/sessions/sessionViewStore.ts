@@ -10,6 +10,12 @@ interface SessionViewState {
    * global collapse mode. Not persisted; wiped when the global mode changes.
    */
   groupOverrides: Record<string, boolean>;
+  /**
+   * Ephemeral per-task collapse of the queued-messages dock, keyed by taskId.
+   * `true` = collapsed; absent/`false` = expanded (the default). Not persisted;
+   * resets to expanded on app restart.
+   */
+  queueCollapsedByTaskId: Record<string, boolean>;
 }
 
 interface SessionViewActions {
@@ -18,6 +24,7 @@ interface SessionViewActions {
   toggleSearch: () => void;
   setGroupOverride: (id: string, expanded: boolean) => void;
   clearGroupOverrides: () => void;
+  setQueueCollapsed: (taskId: string, collapsed: boolean) => void;
 }
 
 type SessionViewStore = SessionViewState & { actions: SessionViewActions };
@@ -27,6 +34,7 @@ const useStore = create<SessionViewStore>((set) => ({
   searchQuery: "",
   showSearch: false,
   groupOverrides: {},
+  queueCollapsedByTaskId: {},
   actions: {
     setShowRawLogs: (show) => set({ showRawLogs: show }),
     setSearchQuery: (query) => set({ searchQuery: query }),
@@ -45,6 +53,13 @@ const useStore = create<SessionViewStore>((set) => ({
           ? state
           : { groupOverrides: {} },
       ),
+    setQueueCollapsed: (taskId, collapsed) =>
+      set((state) => ({
+        queueCollapsedByTaskId: {
+          ...state.queueCollapsedByTaskId,
+          [taskId]: collapsed,
+        },
+      })),
   },
 }));
 
@@ -52,4 +67,6 @@ export const useShowRawLogs = () => useStore((s) => s.showRawLogs);
 export const useSearchQuery = () => useStore((s) => s.searchQuery);
 export const useShowSearch = () => useStore((s) => s.showSearch);
 export const useGroupOverrides = () => useStore((s) => s.groupOverrides);
+export const useQueueCollapsed = (taskId: string) =>
+  useStore((s) => s.queueCollapsedByTaskId[taskId] ?? false);
 export const useSessionViewActions = () => useStore((s) => s.actions);

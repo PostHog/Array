@@ -48,9 +48,11 @@ import { HANDOFF_HOST } from "@posthog/core/handoff/identifiers";
 import { integrationsModule } from "@posthog/core/integrations/integrations.module";
 import { ApprovalLinkService } from "@posthog/core/links/approval-link";
 import { CanvasLinkService } from "@posthog/core/links/canvas-link";
+import { ChannelLinkService } from "@posthog/core/links/channel-link";
 import {
   APPROVAL_LINK_SERVICE,
   CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   OPEN_TARGET_LINK_SERVICE,
@@ -269,6 +271,7 @@ import {
   AUTH_SERVICE as MAIN_AUTH_SERVICE,
   AUTH_SESSION_REPOSITORY as MAIN_AUTH_SESSION_REPOSITORY,
   CANVAS_LINK_SERVICE as MAIN_CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE as MAIN_CHANNEL_LINK_SERVICE,
   CLOUD_TASK_SERVICE as MAIN_CLOUD_TASK_SERVICE,
   CONTEXT_MENU_SERVICE as MAIN_CONTEXT_MENU_SERVICE,
   DATABASE_SERVICE as MAIN_DATABASE_SERVICE,
@@ -654,6 +657,8 @@ container
   .toService(MAIN_OPEN_TARGET_LINK_SERVICE);
 container.bind(MAIN_CANVAS_LINK_SERVICE).to(CanvasLinkService);
 container.bind(CANVAS_LINK_SERVICE).toService(MAIN_CANVAS_LINK_SERVICE);
+container.bind(MAIN_CHANNEL_LINK_SERVICE).to(ChannelLinkService);
+container.bind(CHANNEL_LINK_SERVICE).toService(MAIN_CHANNEL_LINK_SERVICE);
 container.load(watcherRegistryModule);
 container
   .bind(MAIN_WATCHER_REGISTRY_SERVICE)

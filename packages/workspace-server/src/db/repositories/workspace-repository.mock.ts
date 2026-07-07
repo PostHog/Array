@@ -109,7 +109,15 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
         workspaces.delete(id);
       }
     },
-    updateLinkedBranch: () => {},
+    updateLinkedBranch: (taskId, linkedBranch) => {
+      const w = findLiveByTaskId(taskId);
+      if (!w) return;
+      workspaces.set(w.id, {
+        ...w,
+        linkedBranch,
+        updatedAt: new Date().toISOString(),
+      });
+    },
     updatePinnedAt: () => {},
     updateLastViewedAt: () => {},
     updateLastActivityAt: () => {},

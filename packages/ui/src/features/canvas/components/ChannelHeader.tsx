@@ -9,7 +9,7 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 // item — it routes to the channel home (`/website/$channelId`, like the sidebar
 // channel row) and highlights `bg-fill-selected` while you're there, the same
 // pathname-driven active state the rest of the channel tab strip uses. Followed
-// by that strip (Inbox / Artifacts / Recents / CONTEXT.md), rendered into the
+// by that strip (Artifacts / Recents / CONTEXT.md), rendered into the
 // header bar by every channel view so the tabs stay in view.
 export function ChannelHeader({ channelId }: { channelId: string }) {
   const navigate = useNavigate();

@@ -37,6 +37,17 @@ export function useUpdateView(): UpdateView {
   }));
 }
 
+export function useHasActiveUpdate(): boolean {
+  return useStore(
+    updateStore,
+    (state) =>
+      state.status === "available" ||
+      state.status === "downloading" ||
+      state.status === "ready" ||
+      state.status === "installing",
+  );
+}
+
 export function useInstallUpdate(): () => Promise<void> {
   const client = useService<UpdatesClient>(UPDATES_CLIENT);
 

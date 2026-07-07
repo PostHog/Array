@@ -20,7 +20,7 @@ export const browserTabSchema = z.object({
   taskId: z.string().nullable().default(null),
   channelId: z.string().nullable().default(null),
   /**
-   * Channel sub-section this tab fronts (`inbox` / `artifacts` / `history` /
+   * Channel sub-section this tab fronts (`artifacts` / `history` /
    * `context`). Null = the channel home, or a non-channel tab (canvas / task /
    * blank). Pairs with `channelId`: the two together identify a channel tab.
    */
