@@ -9,8 +9,14 @@ import {
   type CanvasLinkService,
 } from "@posthog/core/links/canvas-link";
 import {
+  ChannelLinkEvent,
+  type ChannelLinkPayload,
+  type ChannelLinkService,
+} from "@posthog/core/links/channel-link";
+import {
   APPROVAL_LINK_SERVICE,
   CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   OPEN_TARGET_LINK_SERVICE,
@@ -178,6 +184,25 @@ export const deepLinkRouter = router({
     ({ ctx }): CanvasLinkPayload | null => {
       return ctx.container
         .get<CanvasLinkService>(CANVAS_LINK_SERVICE)
+        .consumePendingDeepLink();
+    },
+  ),
+
+  onOpenChannel: publicProcedure.subscription(async function* (opts) {
+    const service =
+      opts.ctx.container.get<ChannelLinkService>(CHANNEL_LINK_SERVICE);
+    const iterable = service.toIterable(ChannelLinkEvent.OpenChannel, {
+      signal: opts.signal,
+    });
+    for await (const data of iterable) {
+      yield data;
+    }
+  }),
+
+  getPendingChannelLink: publicProcedure.query(
+    ({ ctx }): ChannelLinkPayload | null => {
+      return ctx.container
+        .get<ChannelLinkService>(CHANNEL_LINK_SERVICE)
         .consumePendingDeepLink();
     },
   ),

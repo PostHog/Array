@@ -3,6 +3,7 @@ import {
   DotsThreeIcon,
   FileTextIcon,
   HashIcon,
+  LinkIcon,
   LockSimpleIcon,
   PencilSimpleIcon,
   PlusIcon,
@@ -55,6 +56,7 @@ import {
   PERSONAL_CHANNEL_NAME,
   useTaskChannels,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
@@ -75,7 +77,7 @@ type ChannelActionItem = {
   separatorBefore?: boolean;
 };
 
-// The channel actions (star, edit context, rename, delete) plus the rename-modal
+// The channel actions (star, copy link, rename, delete) plus the rename-modal
 // state they drive. Single source of truth so the dropdown and context menus
 // stay in lockstep — add an action here and both surfaces pick it up.
 function useChannelActions(channel: Channel): {
@@ -157,6 +159,12 @@ function useChannelActions(channel: Channel): {
         });
         toggleStar();
       },
+    },
+    {
+      key: "copy-link",
+      label: "Copy link",
+      icon: <LinkIcon size={14} />,
+      onSelect: () => void copyChannelLink(channel.id, "sidebar"),
     },
     {
       key: "rename",

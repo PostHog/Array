@@ -10,7 +10,7 @@ PostHog Code registers custom URL schemes so the desktop app can be opened with 
 | Development | `posthog-code-dev://` |
 | Legacy (production only) | `twig://`, `array://` |
 
-All schemes route through the same dispatcher. The host portion of the URL selects the handler (`task`, `inbox`, `scout`, `approval`, `canvas`, `new`, `plan`, `issue`, `callback`, `integration`, `slack-integration`, `mcp-oauth-complete`).
+All schemes route through the same dispatcher. The host portion of the URL selects the handler (`task`, `inbox`, `scout`, `approval`, `canvas`, `channel`, `new`, `plan`, `issue`, `callback`, `integration`, `slack-integration`, `mcp-oauth-complete`).
 
 If the app is not running, the OS launches it and the link is queued until the renderer is ready. If the app is minimised, it is restored and focused before the link is handled.
 
@@ -149,6 +149,26 @@ whether or not they have the app.
 posthog-code://canvas/019ebc38-d862-77f2-9e56-c5ec42965758/dash_abc123
 ```
 
+### `posthog-code://channel/<channelId>[/tasks/<taskId>]`
+
+Open a Channels-space channel — or a thread (channel-filed task) inside it —
+straight in the desktop app. Gated on the `project-bluebird` flag. Like canvas
+links, users don't share this scheme link directly — the "Copy link" affordances
+on a channel and on a thread copy an **https** link
+(`<instance>/code/channel/<channelId>[/tasks/<taskId>]`) that resolves to a web
+interstitial in PostHog Cloud, which fires this scheme (or offers the
+desktop-app download).
+
+| Segment | Required | Description |
+|---|---|---|
+| `<channelId>` | Yes | Channel (folder) row id. Stable, rename-proof desktop file-system row id. |
+| `tasks/<taskId>` | No | Thread (task filed to the channel) to open inside it. |
+
+```
+posthog-code://channel/019ebc38-d862-77f2-9e56-c5ec42965758
+posthog-code://channel/019ebc38-d862-77f2-9e56-c5ec42965758/tasks/task_abc123
+```
+
 ## OAuth callback links
 
 These are issued by external services and consumed by the app. You should not need to construct them yourself, but they are documented for completeness.
@@ -215,6 +235,7 @@ In development the same payload is delivered to `http://localhost:8238/mcp-oauth
 | `scout` | [packages/core/src/links/scout-link.ts](../packages/core/src/links/scout-link.ts) |
 | `approval` | [packages/core/src/links/approval-link.ts](../packages/core/src/links/approval-link.ts) |
 | `canvas` | [packages/core/src/links/canvas-link.ts](../packages/core/src/links/canvas-link.ts) |
+| `channel` | [packages/core/src/links/channel-link.ts](../packages/core/src/links/channel-link.ts) |
 | `new`, `plan`, `issue` | [packages/core/src/links/new-task-link.ts](../packages/core/src/links/new-task-link.ts) |
 | `callback` | [packages/core/src/oauth/oauth.ts](../packages/core/src/oauth/oauth.ts) |
 | `integration` | [packages/core/src/integrations/github.ts](../packages/core/src/integrations/github.ts) |
