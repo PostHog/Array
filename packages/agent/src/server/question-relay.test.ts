@@ -17,8 +17,8 @@ interface TestableAgentServer {
       options: unknown[];
       toolCall: unknown;
     }) => Promise<{
-      outcome: { outcome: string };
-      _meta?: { message?: string };
+      outcome: { outcome: string; optionId?: string };
+      _meta?: { message?: string; answers?: Record<string, string> };
     }>;
   };
   questionRelayedToSlack: boolean;
@@ -281,15 +281,84 @@ describe("Question relay", () => {
         delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
       });
 
-      it("auto-approves question tools (no Slack relay)", async () => {
-        const client = server.createCloudClient(TEST_PAYLOAD);
+      it.each([
+        [
+          "no client can receive them",
+          { eventStreamActive: false, mode: "interactive" },
+        ],
+        [
+          "the run is in background mode even with the event stream active",
+          { eventStreamActive: true, mode: "background" },
+        ],
+      ])("parks question tools when %s", async (_label, config) => {
+        const srv = server as TestableAgentServer & {
+          eventStreamSender: { enqueue: ReturnType<typeof vi.fn> } | null;
+        };
+        if (config.eventStreamActive) {
+          srv.eventStreamSender = { enqueue: vi.fn() };
+        }
 
+        const client = srv.createCloudClient({
+          ...TEST_PAYLOAD,
+          mode: config.mode,
+        });
         const result = await client.requestPermission({
           options: ALLOW_OPTIONS,
           toolCall: { _meta: QUESTION_META },
         });
 
+        expect(result.outcome.outcome).toBe("cancelled");
+        expect(result._meta?.message).toContain(
+          "Do NOT pick an answer yourself",
+        );
+      });
+
+      it("relays question tools when the durable event stream is active", async () => {
+        const appendRawLine = vi.fn();
+        const enqueue = vi.fn();
+        const srv = server as TestableAgentServer & {
+          eventStreamSender: { enqueue: typeof enqueue } | null;
+          resolvePermission: (
+            requestId: string,
+            optionId: string,
+            customInput?: string,
+            answers?: Record<string, string>,
+          ) => boolean;
+        };
+        srv.session = {
+          payload: TEST_PAYLOAD,
+          sseController: null,
+          hasDesktopConnected: false,
+          logWriter: { appendRawLine },
+        };
+        srv.eventStreamSender = { enqueue };
+
+        const client = srv.createCloudClient(TEST_PAYLOAD);
+        const pending = client.requestPermission({
+          options: ALLOW_OPTIONS,
+          toolCall: { toolCallId: "question-1", _meta: QUESTION_META },
+        });
+
+        const request = appendRawLine.mock.calls
+          .map(([, line]) => JSON.parse(line))
+          .find((n) => n?.method === "_posthog/permission_request");
+        expect(request).toBeDefined();
+        expect(enqueue).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "permission_request" }),
+        );
+
+        srv.resolvePermission(
+          request.params.requestId as string,
+          "option_0",
+          undefined,
+          { "Which license should I use?": "MIT" },
+        );
+
+        const result = await pending;
         expect(result.outcome.outcome).toBe("selected");
+        expect(result._meta?.answers).toEqual({
+          "Which license should I use?": "MIT",
+        });
       });
 
       it("keeps auto-approving permissions after SSE send failures", async () => {

@@ -392,3 +392,44 @@ describe("canUseTool auto mode hands-off approval", () => {
     },
   );
 });
+
+describe("AskUserQuestion cancelled outcomes", () => {
+  const QUESTION_INPUT = {
+    question: "Which license should I use?",
+    options: [{ label: "MIT" }, { label: "Apache 2.0" }],
+  };
+
+  it("denies with the parked-question message when cancelled carries one", async () => {
+    const context = createContext("AskUserQuestion", {
+      toolInput: QUESTION_INPUT,
+      client: {
+        sessionUpdate: vi.fn().mockResolvedValue(undefined),
+        requestPermission: vi.fn().mockResolvedValue({
+          outcome: { outcome: "cancelled" },
+          _meta: { message: "Waiting for the user to answer." },
+        }),
+      },
+    });
+
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("deny");
+    if (result.behavior === "deny") {
+      expect(result.message).toBe("Waiting for the user to answer.");
+    }
+  });
+
+  it("aborts the tool use on a bare cancelled outcome", async () => {
+    const context = createContext("AskUserQuestion", {
+      toolInput: QUESTION_INPUT,
+      client: {
+        sessionUpdate: vi.fn().mockResolvedValue(undefined),
+        requestPermission: vi.fn().mockResolvedValue({
+          outcome: { outcome: "cancelled" },
+        }),
+      },
+    });
+
+    await expect(canUseTool(context)).rejects.toThrow("Tool use aborted");
+  });
+});

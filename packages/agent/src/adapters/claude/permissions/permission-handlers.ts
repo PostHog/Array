@@ -305,14 +305,28 @@ async function handleAskUserQuestionTool(
     },
   });
 
+  // A cancelled outcome carrying a message is a deliberate "park the
+  // question" response (Slack relay, unattended cloud run) — deliver it to
+  // the model as a denial so it knows to wait for the user instead of
+  // deciding on its own. A bare cancel remains a tool-use abort.
+  const customMessage = (response._meta as Record<string, unknown> | undefined)
+    ?.message;
+  if (
+    !context.signal?.aborted &&
+    response.outcome?.outcome === "cancelled" &&
+    typeof customMessage === "string"
+  ) {
+    return {
+      behavior: "deny",
+      message: customMessage,
+    };
+  }
+
   if (context.signal?.aborted || response.outcome?.outcome === "cancelled") {
     throw new Error("Tool use aborted");
   }
 
   if (response.outcome?.outcome !== "selected") {
-    const customMessage = (
-      response._meta as Record<string, unknown> | undefined
-    )?.message;
     return {
       behavior: "deny",
       message:

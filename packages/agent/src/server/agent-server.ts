@@ -3083,35 +3083,67 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
           }
         }
 
-        // Relay permission requests to the desktop app when:
+        // Relay permission requests to the connected client when:
         // - Plan approvals: always relay because they gate autonomy changes
         //   that require human confirmation (buffered until desktop connects)
-        // - Questions: relay when desktop is connected
+        // - Questions: relay when any client can receive and answer them
         // - Edit/bash in "default" mode: relay for manual approval
         // Other modes auto-approve. No client connected → auto-approve
-        // (except plan approvals, which wait for a desktop).
+        // (except plan approvals, which wait for a desktop, and questions,
+        // which are parked for the user instead of being answered blindly).
         {
           const isQuestion = codeToolKind === "question";
           const sessionPermissionMode = this.getSessionPermissionMode();
-          const needsDesktopApproval =
-            isQuestion ||
-            this.shouldRelayPermissionToClient(sessionPermissionMode);
+          const needsDesktopApproval = this.shouldRelayPermissionToClient(
+            sessionPermissionMode,
+          );
+
+          // With durable event ingest nothing connects to GET /events, so
+          // hasDesktopConnected stays false even while the web/desktop task
+          // views follow the run through the agent-proxy stream. Those views
+          // render permission_request frames and answer via
+          // permission_response, so an active event stream counts as a
+          // reachable client for questions.
+          const hasReachableClient =
+            Boolean(this.session?.hasDesktopConnected) ||
+            this.eventStreamSender !== null;
 
           // A background run has no human to answer a relayed approval
           // (hasDesktopConnected is true from the event-relay reader), so
-          // auto-approve rather than hang on it.
+          // auto-approve non-question permissions rather than hang on them.
+          // Questions are parked (cancelled with message) below so the model
+          // does not pick an answer on the user's behalf.
           if (
             mode !== "background" &&
             (isPlanApproval ||
+              (isQuestion && hasReachableClient) ||
               (needsDesktopApproval && this.session?.hasDesktopConnected))
           ) {
             this.logger.debug("Relaying permission request", {
               kind: params.toolCall?.kind,
               isQuestion,
               hasDesktopConnected: this.session?.hasDesktopConnected ?? false,
+              hasReachableClient,
               sessionPermissionMode,
             });
             return this.relayPermissionToClient(params);
+          }
+
+          // A question that cannot be relayed must never fall through to
+          // auto-approve: the auto-selected option carries no answers, so the
+          // tool would fail with "User did not provide answers" and the model
+          // would answer on the user's behalf. Park it for the user instead.
+          if (isQuestion) {
+            return {
+              outcome: { outcome: "cancelled" as const },
+              _meta: {
+                message:
+                  "No user is available to answer this question right now. " +
+                  "Do NOT pick an answer yourself and do NOT re-ask via this tool. " +
+                  "Restate the question and its options in your response, then end " +
+                  "your turn so the user can answer when they are back.",
+              },
+            };
           }
         }
 
