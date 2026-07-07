@@ -63,7 +63,7 @@ export function ErrorDetailsDialog() {
         `Investigate this error from the PostHog Code app: ${detail.title}`,
         "",
         "## Error",
-        "```json",
+        "```",
         prettyError,
         "```",
         "",

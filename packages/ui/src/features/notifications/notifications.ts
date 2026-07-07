@@ -145,11 +145,12 @@ export class NotificationBus {
     error: unknown,
     target?: NotificationTarget,
   ): void {
+    const summary = summarizeError(error);
     this.notify({
       title,
-      body: summarizeError(error),
+      body: summary,
       target,
-      toast: { level: "error", description: summarizeError(error) },
+      toast: { level: "error", description: summary },
       error,
     });
   }
