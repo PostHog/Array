@@ -1864,7 +1864,10 @@ describe("AgentServer HTTP Mode", () => {
         p: JwtPayload,
         u: Record<string, unknown> | undefined,
       ): void;
-      fetchPrCreatedAt(url: string): Promise<string | null>;
+      fetchPrAttribution(
+        url: string,
+      ): Promise<{ createdAt: string | null; author: string | null }>;
+      fetchGhLogin(): Promise<string | null>;
       detectedPrUrl: string | null;
       posthogAPI: {
         getTaskRun: ReturnType<typeof vi.fn>;
@@ -1874,10 +1877,18 @@ describe("AgentServer HTTP Mode", () => {
 
     const justNow = () => new Date().toISOString();
     const longAgo = "2020-01-01T00:00:00Z";
+    const GH_LOGIN = "run-owner";
 
-    const setup = (prCreatedAt: string | null): PrTestServer => {
+    const setup = (
+      prCreatedAt: string | null,
+      prAuthor: string | null = GH_LOGIN,
+    ): PrTestServer => {
       const s = createServer() as unknown as PrTestServer;
-      s.fetchPrCreatedAt = vi.fn(async () => prCreatedAt);
+      s.fetchPrAttribution = vi.fn(async () => ({
+        createdAt: prCreatedAt,
+        author: prAuthor,
+      }));
+      s.fetchGhLogin = vi.fn(async () => GH_LOGIN);
       let storedOutput: Record<string, unknown> | null = null;
       s.posthogAPI = {
         getTaskRun: vi.fn(async () => ({ output: storedOutput })),
@@ -1919,7 +1930,7 @@ describe("AgentServer HTTP Mode", () => {
       const s = setup(justNow());
       s.maybeAttachCreatedPr(payload, { sessionUpdate: "agent_thought_chunk" });
       await flush();
-      expect(s.fetchPrCreatedAt).not.toHaveBeenCalled();
+      expect(s.fetchPrAttribution).not.toHaveBeenCalled();
       expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
 
@@ -1929,7 +1940,7 @@ describe("AgentServer HTTP Mode", () => {
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
-      expect(s.fetchPrCreatedAt).toHaveBeenCalledTimes(1);
+      expect(s.fetchPrAttribution).toHaveBeenCalledTimes(1);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
 
@@ -1950,14 +1961,31 @@ describe("AgentServer HTTP Mode", () => {
       const viewed = "https://github.com/PostHog/posthog.com/pull/1";
       // The created PR reads as recent; the later, merely-viewed PR reads as old.
       const s = setup(justNow());
-      s.fetchPrCreatedAt = vi.fn(async (url: string) =>
-        url === PR_URL ? justNow() : longAgo,
-      );
+      s.fetchPrAttribution = vi.fn(async (url: string) => ({
+        createdAt: url === PR_URL ? justNow() : longAgo,
+        author: GH_LOGIN,
+      }));
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(viewed));
       await flush();
       expect(s.detectedPrUrl).toBe(PR_URL);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not attribute a fresh PR authored by someone else (merely viewed)", async () => {
+      const s = setup(justNow(), "someone-else");
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+      expect(s.detectedPrUrl).toBeNull();
+    });
+
+    it("fails closed when the run's GitHub identity cannot be resolved", async () => {
+      const s = setup(justNow());
+      s.fetchGhLogin = vi.fn(async () => null);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
   });
 

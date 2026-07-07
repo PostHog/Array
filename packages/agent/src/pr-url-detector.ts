@@ -13,6 +13,15 @@ export function findPrUrls(text: string): string[] {
 }
 
 // Fails closed on missing/invalid input so we never attribute on uncertainty.
+export function wasCreatedByLogin(
+  author: string | null | undefined,
+  login: string | null | undefined,
+): boolean {
+  if (!author || !login) return false;
+  return author.toLowerCase() === login.toLowerCase();
+}
+
+// Fails closed on missing/invalid input so we never attribute on uncertainty.
 export function wasCreatedRecently(
   createdAtIso: string | null | undefined,
   nowMs: number,

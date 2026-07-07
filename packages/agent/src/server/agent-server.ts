@@ -50,7 +50,11 @@ import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { PostHogAPIClient } from "../posthog-api";
-import { findPrUrls, wasCreatedRecently } from "../pr-url-detector";
+import {
+  findPrUrls,
+  wasCreatedByLogin,
+  wasCreatedRecently,
+} from "../pr-url-detector";
 import {
   formatConversationForResume,
   type ResumeState,
@@ -3377,9 +3381,13 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     // Already the attributed PR (e.g. seeded from a Slack notification, or re-detected).
     if (prUrl === this.detectedPrUrl) return;
 
-    let createdAt: string | null;
+    let attribution: { createdAt: string | null; author: string | null };
+    let ghLogin: string | null;
     try {
-      createdAt = await this.fetchPrCreatedAt(prUrl);
+      [attribution, ghLogin] = await Promise.all([
+        this.fetchPrAttribution(prUrl),
+        this.fetchGhLogin(),
+      ]);
     } catch (err) {
       this.logger.debug("PR attribution lookup failed", {
         runId: payload.run_id,
@@ -3389,8 +3397,10 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       return;
     }
 
-    // Only attribute PRs created during this run, not ones the agent merely viewed.
-    if (!wasCreatedRecently(createdAt, Date.now())) return;
+    // Only attribute PRs created during this run by this run's own GitHub
+    // identity — not ones the agent merely viewed.
+    if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
+    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
 
     this.detectedPrUrl = prUrl;
 
@@ -3418,19 +3428,48 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
   }
 
-  private async fetchPrCreatedAt(prUrl: string): Promise<string | null> {
-    const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
+  private async fetchPrAttribution(
+    prUrl: string,
+  ): Promise<{ createdAt: string | null; author: string | null }> {
+    const res = await execGh(
+      ["pr", "view", prUrl, "--json", "createdAt,author"],
+      {
+        cwd: this.config.repositoryPath,
+        timeoutMs: 10_000,
+      },
+    );
+    if (res.exitCode !== 0) return { createdAt: null, author: null };
+    try {
+      const data = JSON.parse(res.stdout) as {
+        createdAt?: string;
+        author?: { login?: string };
+      };
+      return {
+        createdAt: data.createdAt ?? null,
+        author: data.author?.login ?? null,
+      };
+    } catch {
+      return { createdAt: null, author: null };
+    }
+  }
+
+  private ghLoginPromise: Promise<string | null> | null = null;
+
+  private fetchGhLogin(): Promise<string | null> {
+    this.ghLoginPromise ??= execGh(["api", "user", "--jq", ".login"], {
       cwd: this.config.repositoryPath,
       timeoutMs: 10_000,
-    });
-    if (res.exitCode !== 0) return null;
-    try {
-      return (
-        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
-      );
-    } catch {
-      return null;
-    }
+    })
+      .then((res) => {
+        const login = res.exitCode === 0 ? res.stdout.trim() : "";
+        if (!login) this.ghLoginPromise = null;
+        return login || null;
+      })
+      .catch(() => {
+        this.ghLoginPromise = null;
+        return null;
+      });
+    return this.ghLoginPromise;
   }
 
   private async cleanupSession({

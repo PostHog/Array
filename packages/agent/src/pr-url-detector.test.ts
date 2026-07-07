@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { findPrUrl, findPrUrls, wasCreatedRecently } from "./pr-url-detector";
+import {
+  findPrUrl,
+  findPrUrls,
+  wasCreatedByLogin,
+  wasCreatedRecently,
+} from "./pr-url-detector";
 
 const PR_URL = "https://github.com/PostHog/posthog.com/pull/17764";
 
@@ -49,6 +54,19 @@ describe("findPrUrls", () => {
 
   it("returns an empty array when there is no PR URL", () => {
     expect(findPrUrls("nothing here")).toEqual([]);
+  });
+});
+
+describe("wasCreatedByLogin", () => {
+  it.each([
+    ["run-owner", "run-owner", true],
+    ["Run-Owner", "run-owner", true],
+    ["someone-else", "run-owner", false],
+    [null, "run-owner", false],
+    ["run-owner", null, false],
+    ["", "", false],
+  ] as const)("author=%s login=%s -> %s", (author, login, expected) => {
+    expect(wasCreatedByLogin(author, login)).toBe(expected);
   });
 });
 

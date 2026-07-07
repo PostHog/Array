@@ -38,7 +38,11 @@ import {
   isOpenAIModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
-import { findPrUrls, wasCreatedRecently } from "@posthog/agent/pr-url-detector";
+import {
+  findPrUrls,
+  wasCreatedByLogin,
+  wasCreatedRecently,
+} from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
@@ -2069,8 +2073,12 @@ For git operations while detached:
     session: ManagedSession,
     prUrl: string,
   ): Promise<void> {
-    const createdAt = await this.fetchPrCreatedAt(session.repoPath, prUrl);
-    if (!wasCreatedRecently(createdAt, Date.now())) return;
+    const [attribution, ghLogin] = await Promise.all([
+      this.fetchPrAttribution(session.repoPath, prUrl),
+      this.fetchGhLogin(session.repoPath),
+    ]);
+    if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
+    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
 
     this.log.info("Detected PR URL created during run", { taskRunId, prUrl });
 
@@ -2103,24 +2111,51 @@ For git operations while detached:
     });
   }
 
-  /** PR `createdAt` (ISO) via the GitHub CLI, or null if it can't be resolved. */
-  private async fetchPrCreatedAt(
+  /** PR `createdAt` (ISO) and author login via the GitHub CLI; nulls if unresolvable. */
+  private async fetchPrAttribution(
     cwd: string,
     prUrl: string,
-  ): Promise<string | null> {
+  ): Promise<{ createdAt: string | null; author: string | null }> {
     try {
-      const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
-        cwd,
-        timeoutMs: 10_000,
-      });
-      if (res.exitCode !== 0) return null;
-      return (
-        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
+      const res = await execGh(
+        ["pr", "view", prUrl, "--json", "createdAt,author"],
+        {
+          cwd,
+          timeoutMs: 10_000,
+        },
       );
+      if (res.exitCode !== 0) return { createdAt: null, author: null };
+      const data = JSON.parse(res.stdout) as {
+        createdAt?: string;
+        author?: { login?: string };
+      };
+      return {
+        createdAt: data.createdAt ?? null,
+        author: data.author?.login ?? null,
+      };
     } catch (err) {
-      this.log.debug("Failed to resolve PR createdAt", { prUrl, error: err });
-      return null;
+      this.log.debug("Failed to resolve PR attribution", { prUrl, error: err });
+      return { createdAt: null, author: null };
     }
+  }
+
+  private ghLoginPromise: Promise<string | null> | null = null;
+
+  private fetchGhLogin(cwd: string): Promise<string | null> {
+    this.ghLoginPromise ??= execGh(["api", "user", "--jq", ".login"], {
+      cwd,
+      timeoutMs: 10_000,
+    })
+      .then((res) => {
+        const login = res.exitCode === 0 ? res.stdout.trim() : "";
+        if (!login) this.ghLoginPromise = null;
+        return login || null;
+      })
+      .catch(() => {
+        this.ghLoginPromise = null;
+        return null;
+      });
+    return this.ghLoginPromise;
   }
 
   /**
