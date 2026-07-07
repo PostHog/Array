@@ -6,12 +6,13 @@ import type {
   SessionConfigSelectOption,
   SessionConfigSelectOptions,
 } from "@agentclientprotocol/sdk";
+import type { Adapter } from "./adapter";
 import type { SkillButtonId } from "./analytics-events";
 import type { ExecutionMode } from "./exec-types";
 import type { AcpMessage } from "./session-events";
 import type { TaskRunStatus } from "./task";
 
-export type Adapter = "claude" | "codex";
+export type { Adapter };
 
 export type PermissionRequest = Omit<RequestPermissionRequest, "sessionId"> & {
   taskRunId: string;

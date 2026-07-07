@@ -1,5 +1,7 @@
 // Analytics event types and properties
 
+import type { Adapter } from "./adapter";
+
 export interface PromptHistoryOpenedProperties {
   entry_count: number;
 }
@@ -85,7 +87,7 @@ export interface TaskCreateProperties {
   uses_worktree_link?: boolean;
   /** Worktree mode: repo has a non-empty .worktreeinclude file */
   uses_worktree_include?: boolean;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
 }
 
 export interface TaskViewProperties {

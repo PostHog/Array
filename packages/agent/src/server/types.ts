@@ -1,3 +1,4 @@
+import type { Adapter } from "@posthog/shared";
 import type { AgentMode } from "../types";
 import type { RemoteMcpServer } from "./schemas";
 
@@ -30,7 +31,7 @@ export interface AgentServerConfig {
   baseBranch?: string;
   claudeCode?: ClaudeCodeConfig;
   allowedDomains?: string[];
-  runtimeAdapter?: "claude" | "codex";
+  runtimeAdapter?: Adapter;
   model?: string;
   reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
 }

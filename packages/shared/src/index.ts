@@ -1,3 +1,4 @@
+export * from "./adapter";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
@@ -178,7 +179,6 @@ export {
   type UserShellExecuteResult,
 } from "./session-events";
 export {
-  type Adapter,
   type AgentSession,
   cycleModeOption,
   flattenSelectOptions,

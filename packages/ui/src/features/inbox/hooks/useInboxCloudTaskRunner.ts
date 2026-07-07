@@ -10,7 +10,11 @@ import {
   type TaskService,
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
-import { ANALYTICS_EVENTS, getCloudUrlFromRegion } from "@posthog/shared";
+import {
+  type Adapter,
+  ANALYTICS_EVENTS,
+  getCloudUrlFromRegion,
+} from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDefaultModel";
@@ -59,7 +63,7 @@ export interface InboxCloudTaskInputContext {
   cloudRepository: string | null;
   /** Null alongside a null `cloudRepository` (repo-less run). */
   githubUserIntegrationId: string | null;
-  adapter: "claude" | "codex";
+  adapter: Adapter;
   model: string;
   reasoningLevel?: string;
 }

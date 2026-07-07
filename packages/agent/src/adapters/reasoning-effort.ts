@@ -1,7 +1,6 @@
+import type { Adapter } from "@posthog/shared";
 import { getEffortOptions as getClaudeEffortOptions } from "./claude/session/models";
 import { getReasoningEffortOptions as getCodexReasoningEffortOptions } from "./codex-app-server/models";
-
-export type RuntimeAdapter = "claude" | "codex";
 
 export type SupportedReasoningEffort =
   | "low"
@@ -16,7 +15,7 @@ export interface ReasoningEffortOption {
 }
 
 export function getReasoningEffortOptions(
-  adapter: RuntimeAdapter,
+  adapter: Adapter,
   modelId: string,
 ): ReasoningEffortOption[] | null {
   const options =
@@ -28,7 +27,7 @@ export function getReasoningEffortOptions(
 }
 
 export function isSupportedReasoningEffort(
-  adapter: RuntimeAdapter,
+  adapter: Adapter,
   modelId: string,
   value: string,
 ): value is SupportedReasoningEffort {

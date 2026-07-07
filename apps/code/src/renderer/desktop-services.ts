@@ -49,7 +49,11 @@ import {
   NOTIFICATIONS_SERVICE,
   type NotificationTarget,
 } from "@posthog/platform/notifications";
-import { AUTORESEARCH_FLAG, type CloudRegion } from "@posthog/shared";
+import {
+  type Adapter,
+  AUTORESEARCH_FLAG,
+  type CloudRegion,
+} from "@posthog/shared";
 import {
   AUTH_SIDE_EFFECTS,
   type IAuthSideEffects,
@@ -116,7 +120,7 @@ const reportModelResolverLog = logger.scope("report-model-resolver");
 container.bind<ReportModelResolver>(REPORT_MODEL_RESOLVER).toConstantValue({
   async resolveDefaultModel(
     apiHost: string,
-    adapter: "claude" | "codex",
+    adapter: Adapter,
     preferredModel?: string | null,
   ): Promise<string | undefined> {
     try {

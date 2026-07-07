@@ -1,4 +1,5 @@
 import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
+import type { Adapter } from "@posthog/shared";
 import type { SessionLogWriter } from "../session-log-writer";
 import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../types";
 import { Logger } from "../utils/logger";
@@ -13,10 +14,8 @@ import { nativeCodexBinaryPath } from "./codex-app-server/binary-path";
 import { CodexAppServerAgent } from "./codex-app-server/codex-app-server-agent";
 import type { CodexOptions } from "./codex-app-server/spawn";
 
-type AgentAdapter = "claude" | "codex";
-
 export type AcpConnectionConfig = {
-  adapter?: AgentAdapter;
+  adapter?: Adapter;
   logWriter?: SessionLogWriter;
   taskRunId?: string;
   taskId?: string;

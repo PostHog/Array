@@ -11,6 +11,7 @@ import { useService } from "@posthog/di/react";
 import type { HostTrpcClient } from "@posthog/host-router/client";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
+  type Adapter,
   ANALYTICS_EVENTS,
   type TaskCreationInput,
   type WorkspaceMode,
@@ -62,7 +63,7 @@ interface UseTaskCreationOptions {
   branch?: string | null;
   editorIsEmpty: boolean;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;

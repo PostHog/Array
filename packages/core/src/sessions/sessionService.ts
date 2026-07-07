@@ -328,7 +328,7 @@ export interface ConnectParams {
   repoPath: string;
   initialPrompt?: ContentBlock[];
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   /**
@@ -1276,7 +1276,7 @@ export class SessionService {
     auth: AuthCredentials,
     initialPrompt?: ContentBlock[],
     executionMode?: ExecutionMode,
-    adapter?: "claude" | "codex",
+    adapter?: Adapter,
     model?: string,
     reasoningLevel?: string,
     importedSessionId?: string,

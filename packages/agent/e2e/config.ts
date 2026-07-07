@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { Adapter } from "@posthog/shared";
 
-export type Adapter = "claude" | "codex";
+export type { Adapter };
 
 /**
  * Live e2e configuration, resolved entirely from the environment so no secret is

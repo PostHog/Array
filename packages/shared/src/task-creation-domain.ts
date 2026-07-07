@@ -1,3 +1,4 @@
+import type { Adapter } from "./adapter";
 import type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 import type { Task } from "./domain-types";
 import type { ExecutionMode } from "./exec-types";
@@ -29,7 +30,7 @@ export interface TaskCreationInput {
   githubIntegrationId?: number;
   githubUserIntegrationId?: string;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string;

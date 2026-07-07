@@ -1,5 +1,5 @@
 import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
-import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
+import type { Adapter, ExecutionMode, WorkspaceMode } from "@posthog/shared";
 import {
   COLLAPSE_MODE_DEFAULT,
   type CollapseMode,
@@ -12,7 +12,7 @@ import { persist } from "zustand/middleware";
 
 export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
-export type AgentAdapter = "claude" | "codex";
+export type AgentAdapter = Adapter;
 export type DefaultInitialTaskMode = "plan" | "last_used";
 export type DefaultMessagingMode = "queue" | "steer";
 export type DefaultReasoningEffort =

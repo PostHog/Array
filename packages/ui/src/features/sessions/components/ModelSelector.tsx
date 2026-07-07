@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
-import { GLM_MODEL_FLAG } from "@posthog/shared";
+import { type Adapter, GLM_MODEL_FLAG } from "@posthog/shared";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import {
@@ -28,7 +28,7 @@ interface ModelSelectorProps {
   taskId?: string;
   disabled?: boolean;
   onModelChange?: (modelId: string) => void;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
 }
 
 export function ModelSelector({

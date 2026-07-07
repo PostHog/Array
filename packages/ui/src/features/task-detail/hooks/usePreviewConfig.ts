@@ -6,7 +6,11 @@ import {
   deriveInitialConfig,
 } from "@posthog/core/task-detail/previewConfig";
 import { useHostTRPCClient } from "@posthog/host-router/react";
-import { GLM_MODEL_FLAG, getCloudUrlFromRegion } from "@posthog/shared";
+import {
+  type Adapter,
+  GLM_MODEL_FLAG,
+  getCloudUrlFromRegion,
+} from "@posthog/shared";
 import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logger } from "../../../shell/logger";
@@ -40,9 +44,7 @@ function getOptionByCategory(
  *
  * Returns config options as local state with a setter for local updates.
  */
-export function usePreviewConfig(
-  adapter: "claude" | "codex",
-): PreviewConfigResult {
+export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
   const hostClient = useHostTRPCClient();
   const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);

@@ -16,6 +16,7 @@ import {
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
+import type { Adapter } from "@posthog/shared";
 import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -396,7 +397,7 @@ export class AgentServer {
     this.app = this.createApp();
   }
 
-  private getRuntimeAdapter(): "claude" | "codex" {
+  private getRuntimeAdapter(): Adapter {
     return this.config.runtimeAdapter ?? "claude";
   }
 
@@ -669,7 +670,7 @@ export class AgentServer {
     payload: JwtPayload,
     posthogAPI: PostHogAPIClient,
     preTaskRun: TaskRun | null,
-    runtimeAdapter: "claude" | "codex",
+    runtimeAdapter: Adapter,
     cwd: string,
     permissionMode: PermissionMode,
   ): Promise<{ sessionId: string; warm: boolean } | null> {
@@ -2543,7 +2544,7 @@ export class AgentServer {
    * it cannot sit behind a plugins guard.
    */
   private buildClaudeCodeSessionMeta(
-    runtimeAdapter: "claude" | "codex",
+    runtimeAdapter: Adapter,
   ): { claudeCode: { options: Record<string, unknown> } } | undefined {
     const plugins = this.config.claudeCode?.plugins;
     const effort =

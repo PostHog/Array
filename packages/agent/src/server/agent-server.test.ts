@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type { Adapter } from "@posthog/shared";
 import { zipSync } from "fflate";
 import jwt from "jsonwebtoken";
 import { type SetupServerApi, setupServer } from "msw/node";
@@ -228,9 +229,9 @@ interface TestableServer {
     inboxReportUrl?: string | null,
   ): string | { append: string };
   buildCodexInstructions(systemPrompt: string | { append: string }): string;
-  getRuntimeAdapter(): "claude" | "codex";
+  getRuntimeAdapter(): Adapter;
   buildClaudeCodeSessionMeta(
-    runtimeAdapter: "claude" | "codex",
+    runtimeAdapter: Adapter,
   ): { claudeCode: { options: Record<string, unknown> } } | undefined;
 }
 
@@ -240,7 +241,7 @@ interface NativeResumeTestServer {
     payload: JwtPayload,
     posthogAPI: PostHogAPIClient,
     preTaskRun: TaskRun | null,
-    runtimeAdapter: "claude" | "codex",
+    runtimeAdapter: Adapter,
     cwd: string,
     permissionMode: PermissionMode,
   ): Promise<{ sessionId: string; warm: boolean } | null>;

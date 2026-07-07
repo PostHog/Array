@@ -1,5 +1,9 @@
 import { buildCloudTaskDescription } from "@posthog/core/editor/cloud-prompt";
-import type { TaskCreationInput, WorkspaceMode } from "@posthog/shared";
+import type {
+  Adapter,
+  TaskCreationInput,
+  WorkspaceMode,
+} from "@posthog/shared";
 import type { ExecutionMode } from "@posthog/shared/domain-types";
 
 export interface PrepareTaskInputOptions {
@@ -12,7 +16,7 @@ export interface PrepareTaskInputOptions {
   allowRemoteBranchCheckout?: boolean;
   reuseExistingWorktree?: boolean;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Adapter } from "./adapter";
 import type { DismissalReasonOptionValue } from "./dismissal-reasons";
 import type { StoredLogEntry } from "./session-events";
 
@@ -118,7 +119,7 @@ export interface TaskRun {
   task: string; // Task ID
   team: number;
   branch: string | null;
-  runtime_adapter?: "claude" | "codex" | null;
+  runtime_adapter?: Adapter | null;
   model?: string | null;
   reasoning_effort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
   stage?: string | null; // Current stage (e.g., 'research', 'plan', 'build')

@@ -1,7 +1,6 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { flattenConfigValues } from "@posthog/core/task-detail/configOptions";
-
-export type PreviewAdapter = "claude" | "codex";
+import type { Adapter } from "@posthog/shared";
 
 export interface PreviewSettingsSnapshot {
   defaultInitialTaskMode: string;
@@ -51,7 +50,7 @@ export function clampEffortToAvailable(
 export function deriveInitialConfig(
   options: SessionConfigOption[],
   settings: PreviewSettingsSnapshot,
-  adapter: PreviewAdapter,
+  adapter: Adapter,
 ): SessionConfigOption[] {
   const {
     defaultInitialTaskMode,
@@ -112,7 +111,7 @@ export function deriveInitialConfig(
 }
 
 export interface ApplyConfigChangeArgs {
-  adapter: PreviewAdapter;
+  adapter: Adapter;
   configId: string;
   value: string;
   effortOptions: EffortOption[] | undefined;

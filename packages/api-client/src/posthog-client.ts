@@ -2,6 +2,7 @@ import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type { PermissionMode } from "@posthog/agent/execution-mode";
 import type {
+  Adapter,
   CloudRunSource,
   PrAuthorshipMode,
   SeatData,
@@ -470,10 +471,8 @@ export interface FinalizedTaskArtifactUpload {
   uploaded_at?: string;
 }
 
-type CloudRuntimeAdapter = "claude" | "codex";
-
 interface CloudRunOptions {
-  adapter?: CloudRuntimeAdapter;
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;

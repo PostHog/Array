@@ -1,3 +1,4 @@
+import type { Adapter } from "@posthog/shared";
 import { fetch } from "expo/fetch";
 import {
   authedFetch,
@@ -421,7 +422,7 @@ export interface RunTaskInCloudOptions {
   pendingUserMessage?: string;
   mode?: "interactive" | "background";
   /** Adapter to use on the cloud runner. Currently only "claude" on mobile. */
-  runtimeAdapter?: "claude" | "codex";
+  runtimeAdapter?: Adapter;
   /** Gateway model ID, e.g. "claude-opus-4-8". */
   model?: string;
   /** Reasoning effort: "low" | "medium" | "high" (model-dependent). */

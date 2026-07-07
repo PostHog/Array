@@ -61,6 +61,7 @@ import {
 } from "@posthog/platform/workspace-settings";
 import {
   type AcpMessage,
+  type Adapter,
   isAuthError,
   serializeError,
   TypedEventEmitter,
@@ -261,7 +262,7 @@ interface SessionConfig {
   logUrl?: string;
   /** The agent's session ID (for resume - SDK session ID for Claude, Codex's session ID for Codex) */
   sessionId?: string;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   /** Permission mode to use for the session */
   permissionMode?: string;
   /** Custom instructions injected into the system prompt */
@@ -1891,7 +1892,7 @@ For git operations while detached:
           } = params as {
             taskRunId: string;
             sessionId: string;
-            adapter: "claude" | "codex";
+            adapter: Adapter;
           };
           const session = this.sessions.get(notifTaskRunId);
           if (session) {
@@ -2205,7 +2206,7 @@ For git operations while detached:
 
   async getPreviewConfigOptions(
     apiHost: string,
-    adapter: "claude" | "codex" = "claude",
+    adapter: Adapter = "claude",
   ): Promise<SessionConfigOption[]> {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
     const gatewayModels = await fetchGatewayModels({ gatewayUrl });
