@@ -215,14 +215,15 @@ describe("TaskPrStatusService revalidation PR detection", () => {
 });
 
 describe("TaskPrStatusService.setPrimaryPrUrl", () => {
-  it("emits the promoted url as prUrl even though the row column is stale", () => {
-    const PR_OLD = "https://github.com/acme/repo/pull/1";
-    const PR_NEW = "https://github.com/acme/repo/pull/2";
-    const gitService = {} as unknown as GitService;
+  const PR_OLD = "https://github.com/acme/repo/pull/1";
+  const PR_NEW = "https://github.com/acme/repo/pull/2";
+
+  function makeService(getPrDetailsByUrl: ReturnType<typeof vi.fn>) {
+    const gitService = { getPrDetailsByUrl } as unknown as GitService;
     const workspaceService = { emit: vi.fn() };
     const workspaceRepo = {
       promotePrUrl: vi.fn(),
-      findByTaskId: vi.fn().mockReturnValue({ prUrl: PR_OLD, prState: "open" }),
+      updatePrCache: vi.fn(),
       getPrUrls: vi.fn().mockReturnValue([PR_NEW, PR_OLD]),
     };
     const service = new TaskPrStatusService(
@@ -230,15 +231,50 @@ describe("TaskPrStatusService.setPrimaryPrUrl", () => {
       workspaceRepo as unknown as IWorkspaceRepository,
       workspaceService as unknown as WorkspaceService,
     );
+    return { service, workspaceService, workspaceRepo };
+  }
 
-    service.setPrimaryPrUrl("task-1", PR_NEW);
+  it("recomputes and emits the promoted PR's live state, not the stale cache", async () => {
+    const getPrDetailsByUrl = vi
+      .fn()
+      .mockResolvedValue({ state: "open", merged: false, draft: false });
+    const { service, workspaceService, workspaceRepo } =
+      makeService(getPrDetailsByUrl);
+
+    await service.setPrimaryPrUrl("task-1", PR_NEW);
 
     expect(workspaceRepo.promotePrUrl).toHaveBeenCalledWith("task-1", PR_NEW);
+    expect(getPrDetailsByUrl).toHaveBeenCalledWith(PR_NEW);
+    expect(workspaceRepo.updatePrCache).toHaveBeenCalledWith("task-1", {
+      prUrl: PR_NEW,
+      prState: "open",
+      accumulate: false,
+    });
     expect(workspaceService.emit).toHaveBeenCalledWith("taskPrInfoChanged", {
       taskId: "task-1",
       prUrl: PR_NEW,
       prUrls: [PR_NEW, PR_OLD],
       prState: "open",
+    });
+  });
+
+  it("emits a null state when the promoted PR's details are unavailable", async () => {
+    const getPrDetailsByUrl = vi.fn().mockResolvedValue(null);
+    const { service, workspaceService, workspaceRepo } =
+      makeService(getPrDetailsByUrl);
+
+    await service.setPrimaryPrUrl("task-1", PR_NEW);
+
+    expect(workspaceRepo.updatePrCache).toHaveBeenCalledWith("task-1", {
+      prUrl: PR_NEW,
+      prState: null,
+      accumulate: false,
+    });
+    expect(workspaceService.emit).toHaveBeenCalledWith("taskPrInfoChanged", {
+      taskId: "task-1",
+      prUrl: PR_NEW,
+      prUrls: [PR_NEW, PR_OLD],
+      prState: null,
     });
   });
 });
