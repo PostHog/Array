@@ -484,7 +484,6 @@ function handleNotification(
   if (msg.method === "session/update") {
     const update = (msg.params as SessionNotification)?.update;
     if (!update) return;
-    ensureImplicitTurn(b, ts);
     processSessionUpdate(b, update, ts);
     return;
   }
@@ -827,12 +826,14 @@ function processSessionUpdate(
       if (parentId) {
         appendTextChunkToChildren(b, parentId, update);
       } else {
+        ensureImplicitTurn(b, ts);
         appendTextChunk(b, update, ts);
       }
       break;
     }
 
     case "tool_call": {
+      ensureImplicitTurn(b, ts);
       const turn = b.currentTurn;
       if (!turn) break;
       const existing = turn.toolCalls.get(update.toolCallId);
@@ -889,6 +890,7 @@ function processSessionUpdate(
       };
       if (customUpdate.sessionUpdate === "agent_message") {
         if (customUpdate.content?.type === "text") {
+          ensureImplicitTurn(b, ts);
           appendTextChunk(
             b,
             {
@@ -902,6 +904,7 @@ function processSessionUpdate(
         customUpdate.sessionUpdate === "status" ||
         customUpdate.sessionUpdate === "error"
       ) {
+        ensureImplicitTurn(b, ts);
         pushItem(b, customUpdate as unknown as SessionUpdate, ts);
       }
       break;

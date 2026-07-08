@@ -121,6 +121,20 @@ function resourcesUsedMsg(
   };
 }
 
+function usageUpdateMsg(ts: number): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        update: { sessionUpdate: "usage_update", used: 100, size: 200_000 },
+      },
+    },
+  };
+}
+
 function statusMsg(
   ts: number,
   status: string,
@@ -906,6 +920,25 @@ describe("buildConversationItems", () => {
         turnCompleteMsg(3),
         agentMessageMsg(10, "ping 1 received."),
         backgroundTurnCompleteMsg(35),
+      ];
+
+      const { lastTurnInfo } = buildConversationItems(events, true);
+
+      expect(lastTurnInfo?.isComplete).toBe(true);
+      expect(lastTurnInfo?.durationMs).toBeGreaterThan(0);
+    });
+
+    it("does not spawn a phantom turn for a silent trailing update like usage_update", () => {
+      // A usage_update (or any other content-less session/update) commonly
+      // trails the final background reply. It must not reopen a turn on its
+      // own and clobber the real reply's duration.
+      const events = [
+        userPromptMsg(1, 1, "use a monitor"),
+        agentMessageMsg(2, "Monitor is running."),
+        turnCompleteMsg(3),
+        agentMessageMsg(10, "ping 1 received."),
+        backgroundTurnCompleteMsg(35),
+        usageUpdateMsg(50),
       ];
 
       const { lastTurnInfo } = buildConversationItems(events, true);
