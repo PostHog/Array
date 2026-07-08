@@ -63,6 +63,24 @@ export function folderGroupId(folder: {
   return folder.path;
 }
 
+/**
+ * Resolves the folder that represents a sidebar group. Several registered
+ * folders can share one group (a main clone plus linked worktrees of the same
+ * repo all have the same remote); the group is labeled by the main checkout,
+ * so prefer a folder that is not a linked worktree (`mainRepoPath` is set only
+ * on linked worktrees).
+ */
+export function findGroupFolder<
+  F extends {
+    path: string;
+    remoteUrl: string | null;
+    mainRepoPath?: string | null;
+  },
+>(folders: F[], groupId: string): F | undefined {
+  const matches = folders.filter((f) => folderGroupId(f) === groupId);
+  return matches.find((f) => !f.mainRepoPath) ?? matches[0];
+}
+
 export function groupByRepository<T extends GroupableTask>(
   tasks: T[],
   folderOrder: string[],

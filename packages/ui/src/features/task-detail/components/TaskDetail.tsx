@@ -148,7 +148,10 @@ export function TaskDetail({
           channelId={channelId}
           leafIcon={
             workspaceMode ? (
-              <WorkspaceModeBadge mode={workspaceMode} />
+              <WorkspaceModeBadge
+                mode={workspaceMode}
+                checkoutPath={effectiveRepoPath}
+              />
             ) : undefined
           }
           leafLabel={task.title}
@@ -165,7 +168,10 @@ export function TaskDetail({
             />
           ) : (
             <Flex align="center" gap="2" minWidth="0">
-              <WorkspaceModeBadge mode={workspaceMode} />
+              <WorkspaceModeBadge
+                mode={workspaceMode}
+                checkoutPath={effectiveRepoPath}
+              />
               <Tooltip content={task.title} side="bottom" delayDuration={300}>
                 <Text
                   truncate
@@ -187,6 +193,7 @@ export function TaskDetail({
       trailing,
       isEditingTitle,
       workspaceMode,
+      effectiveRepoPath,
       handleTitleEditSubmit,
       handleTitleEditCancel,
     ],

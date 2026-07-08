@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync, statSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { isBinaryFile } from "@posthog/shared";
@@ -378,6 +378,36 @@ export async function isGitRepository(
     },
     { signal: options?.abortSignal },
   );
+}
+
+/**
+ * Detects whether `dirPath` is a linked git worktree (created with
+ * `git worktree add`) and returns the root of the main checkout it belongs
+ * to, or null when it isn't one. Works without spawning git: in a linked
+ * worktree `.git` is a file containing `gitdir: <main>/.git/worktrees/<name>`,
+ * while a main checkout has a `.git` directory.
+ */
+export function getLinkedWorktreeMainPath(dirPath: string): string | null {
+  try {
+    const dotGit = path.join(dirPath, ".git");
+    if (!statSync(dotGit).isFile()) return null;
+    const match = readFileSync(dotGit, "utf8").match(/^gitdir:\s*(.+?)\s*$/m);
+    if (!match) return null;
+    const gitDir = path.resolve(dirPath, match[1]);
+    // Expect <main>/.git/worktrees/<name>; anything else (e.g. a submodule's
+    // `.git` file pointing into the parent's modules dir) is not a worktree.
+    const worktreesDir = path.dirname(gitDir);
+    const dotGitDir = path.dirname(worktreesDir);
+    if (
+      path.basename(worktreesDir) !== "worktrees" ||
+      path.basename(dotGitDir) !== ".git"
+    ) {
+      return null;
+    }
+    return path.dirname(dotGitDir);
+  } catch {
+    return null;
+  }
 }
 
 export async function getChangedFiles(

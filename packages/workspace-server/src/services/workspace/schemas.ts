@@ -215,6 +215,17 @@ export const gitWorktreeEntrySchema = z.object({
 
 export const listGitWorktreesOutput = z.array(gitWorktreeEntrySchema);
 
+export const listRepoCheckoutsInput = z.object({
+  repoPath: z.string(),
+});
+
+export const repoCheckoutSchema = z.object({
+  path: z.string(),
+  branch: z.string().nullable(),
+});
+
+export const listRepoCheckoutsOutput = z.array(repoCheckoutSchema);
+
 export const getWorktreeSizeInput = z.object({
   worktreePath: z.string(),
 });
@@ -324,6 +335,8 @@ export type DeleteWorkspaceInput = z.infer<typeof deleteWorkspaceInput>;
 export type VerifyWorkspaceInput = z.infer<typeof verifyWorkspaceInput>;
 export type GetWorkspaceInfoInput = z.infer<typeof getWorkspaceInfoInput>;
 export type ListGitWorktreesInput = z.infer<typeof listGitWorktreesInput>;
+export type ListRepoCheckoutsInput = z.infer<typeof listRepoCheckoutsInput>;
+export type RepoCheckout = z.infer<typeof repoCheckoutSchema>;
 export type GetWorktreeSizeInput = z.infer<typeof getWorktreeSizeInput>;
 export type DeleteWorktreeInput = z.infer<typeof deleteWorktreeInput>;
 export type WorkspaceErrorPayload = z.infer<typeof workspaceErrorPayload>;

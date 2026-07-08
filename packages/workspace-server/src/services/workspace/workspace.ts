@@ -1459,6 +1459,19 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     }));
   }
 
+  /**
+   * Every other checkout of the repo `repoPath` belongs to — the main clone
+   * and all linked worktrees (app-managed or user-created), each with its
+   * checked-out branch. Unlike listGitWorktrees this is plain
+   * `git worktree list` scope, minus `repoPath` itself.
+   */
+  async listRepoCheckouts(
+    repoPath: string,
+  ): Promise<Array<{ path: string; branch: string | null }>> {
+    const others = await listLinkedWorktrees(repoPath);
+    return others.map((wt) => ({ path: wt.worktreePath, branch: wt.branch }));
+  }
+
   async deleteWorktree(
     mainRepoPath: string,
     worktreePath: string,

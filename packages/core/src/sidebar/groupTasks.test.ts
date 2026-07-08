@@ -1,6 +1,7 @@
 import type { Task } from "@posthog/shared/domain-types";
 import { describe, expect, it } from "vitest";
 import {
+  findGroupFolder,
   type GroupableTask,
   getRepositoryInfo,
   groupByRepository,
@@ -380,5 +381,64 @@ describe("groupByRepository", () => {
       "posthog/code",
       "other",
     ]);
+  });
+});
+
+describe("findGroupFolder", () => {
+  interface GroupFolder {
+    path: string;
+    remoteUrl: string | null;
+    mainRepoPath?: string | null;
+  }
+
+  const mainClone: GroupFolder = {
+    path: "/repos/code",
+    remoteUrl: "posthog/code",
+    mainRepoPath: null,
+  };
+  const worktree: GroupFolder = {
+    path: "/repos/code-wt",
+    remoteUrl: "posthog/code",
+    mainRepoPath: "/repos/code",
+  };
+  const unrelated: GroupFolder = {
+    path: "/repos/other",
+    remoteUrl: "acme/other",
+    mainRepoPath: null,
+  };
+  const local: GroupFolder = { path: "/repos/local", remoteUrl: null };
+
+  it.each<{
+    name: string;
+    folders: GroupFolder[];
+    groupId: string;
+    expected: GroupFolder | undefined;
+  }>([
+    {
+      name: "prefers the main clone when a worktree of the same repo was added first",
+      folders: [worktree, mainClone, unrelated],
+      groupId: "posthog/code",
+      expected: mainClone,
+    },
+    {
+      name: "falls back to the worktree when only it is registered",
+      folders: [worktree, unrelated],
+      groupId: "posthog/code",
+      expected: worktree,
+    },
+    {
+      name: "matches folders without a remote by path",
+      folders: [local],
+      groupId: "/repos/local",
+      expected: local,
+    },
+    {
+      name: "returns undefined when nothing matches",
+      folders: [unrelated],
+      groupId: "posthog/code",
+      expected: undefined,
+    },
+  ])("$name", ({ folders, groupId, expected }) => {
+    expect(findGroupFolder(folders, groupId)).toBe(expected);
   });
 });
