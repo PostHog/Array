@@ -176,6 +176,9 @@ export function deriveTaskData(
     folderId: workspace?.folderId || undefined,
     taskRunStatus: session?.cloudStatus ?? task.latest_run?.status ?? undefined,
     taskRunEnvironment: task.latest_run?.environment ?? undefined,
+    // The `latest_run` fallback only matters in the `showAllUsers` view: the
+    // default view's `filterVisibleTasks` already restricts to tasks with a
+    // local `workspace`, so a pure-cloud task without one only shows up there.
     workspaceMode:
       workspace?.mode ??
       (task.latest_run?.environment === "cloud" ? "cloud" : undefined),
@@ -188,11 +191,18 @@ export function deriveTaskData(
   };
 }
 
-export const ALL_WORKSPACE_MODES: readonly WorkspaceMode[] = [
-  "worktree",
-  "local",
-  "cloud",
-];
+// A Record keyed by the full `WorkspaceMode` union, so adding a mode to the
+// schema forces a compile error here instead of silently falling out of sync
+// with `ALL_WORKSPACE_MODES` (and the filter's "all enabled" short-circuit).
+const WORKSPACE_MODE_MEMBERSHIP: Record<WorkspaceMode, true> = {
+  worktree: true,
+  local: true,
+  cloud: true,
+};
+
+export const ALL_WORKSPACE_MODES: readonly WorkspaceMode[] = Object.keys(
+  WORKSPACE_MODE_MEMBERSHIP,
+) as WorkspaceMode[];
 
 /**
  * Keeps tasks whose workspace mode is in `enabledModes`. Tasks without a known

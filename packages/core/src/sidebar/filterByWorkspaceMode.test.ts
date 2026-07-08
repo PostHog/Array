@@ -1,3 +1,4 @@
+import type { WorkspaceMode } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import { ALL_WORKSPACE_MODES, filterByWorkspaceMode } from "./buildSidebarData";
 import type { TaskData } from "./sidebarData.types";
@@ -27,23 +28,32 @@ describe("filterByWorkspaceMode", () => {
   const unknown = task({ id: "u", workspaceMode: undefined });
   const tasks = [worktree, local, cloud, unknown];
 
-  it("returns all tasks when every mode is enabled", () => {
-    expect(filterByWorkspaceMode(tasks, ALL_WORKSPACE_MODES)).toEqual(tasks);
-  });
-
-  it("keeps only tasks whose mode is enabled, plus unknown-mode tasks", () => {
-    expect(filterByWorkspaceMode(tasks, ["local"])).toEqual([local, unknown]);
-  });
-
-  it("keeps multiple enabled modes", () => {
-    expect(filterByWorkspaceMode(tasks, ["worktree", "cloud"])).toEqual([
-      worktree,
-      cloud,
-      unknown,
-    ]);
-  });
-
-  it("keeps only unknown-mode tasks when nothing is enabled", () => {
-    expect(filterByWorkspaceMode(tasks, [])).toEqual([unknown]);
+  it.each<{
+    name: string;
+    enabledModes: readonly WorkspaceMode[];
+    expected: TaskData[];
+  }>([
+    {
+      name: "returns all tasks when every mode is enabled",
+      enabledModes: ALL_WORKSPACE_MODES,
+      expected: tasks,
+    },
+    {
+      name: "keeps only tasks whose mode is enabled, plus unknown-mode tasks",
+      enabledModes: ["local"],
+      expected: [local, unknown],
+    },
+    {
+      name: "keeps multiple enabled modes",
+      enabledModes: ["worktree", "cloud"],
+      expected: [worktree, cloud, unknown],
+    },
+    {
+      name: "keeps only unknown-mode tasks when nothing is enabled",
+      enabledModes: [],
+      expected: [unknown],
+    },
+  ])("$name", ({ enabledModes, expected }) => {
+    expect(filterByWorkspaceMode(tasks, enabledModes)).toEqual(expected);
   });
 });

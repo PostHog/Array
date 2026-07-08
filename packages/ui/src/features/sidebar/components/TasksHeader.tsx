@@ -3,6 +3,7 @@ import {
   FunnelSimple as FunnelSimpleIcon,
   MagnifyingGlass,
 } from "@phosphor-icons/react";
+import { ALL_WORKSPACE_MODES } from "@posthog/core/sidebar/buildSidebarData";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import {
   Button,
@@ -27,11 +28,19 @@ import { useState } from "react";
 
 const log = logger.scope("tasks-header");
 
-const TASK_TYPE_OPTIONS: { value: WorkspaceMode; label: string }[] = [
-  { value: "worktree", label: "Worktree" },
-  { value: "local", label: "Local" },
-  { value: "cloud", label: "Cloud" },
-];
+// Record (not a hand-maintained array) so adding a WorkspaceMode forces a
+// compile error here instead of silently missing a checkbox.
+const TASK_TYPE_LABELS: Record<WorkspaceMode, string> = {
+  worktree: "Worktree",
+  local: "Local",
+  cloud: "Cloud",
+};
+
+const TASK_TYPE_OPTIONS: { value: WorkspaceMode; label: string }[] =
+  ALL_WORKSPACE_MODES.map((mode) => ({
+    value: mode,
+    label: TASK_TYPE_LABELS[mode],
+  }));
 
 function AddFolderButton() {
   const trpcClient = useHostTRPCClient();
