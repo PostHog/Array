@@ -42,6 +42,41 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
+      - name: Check labeler is on Team PostHog Code
+        id: labeler
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          LABELER=$(gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/events" --paginate \
+            --jq '.[] | select(.event == "labeled" and (.label.name | ascii_downcase) == "create release") | .actor.login' | tail -1)
+
+          if [ -z "$LABELER" ]; then
+            echo "Could not determine who added the 'Create release' label. Skipping auto-release."
+            echo "authorized=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if MEMBERSHIP=$(gh api "orgs/PostHog/teams/team-posthog-code/memberships/${LABELER}" 2>&1); then
+            STATE=$(echo "$MEMBERSHIP" | jq -r '.state')
+            if [ "$STATE" = "active" ]; then
+              echo "'Create release' was added by ${LABELER}, an active member of team-posthog-code."
+              echo "authorized=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "'Create release' was added by ${LABELER} with membership state '${STATE}'. Skipping auto-release; the next scheduled release will pick this up."
+              echo "authorized=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif echo "$MEMBERSHIP" | grep -q "HTTP 404"; then
+            echo "'Create release' was added by ${LABELER}, who is not on team-posthog-code. Skipping auto-release; the next scheduled release will pick this up."
+            echo "authorized=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Team membership check for ${LABELER} failed unexpectedly:"
+            echo "$MEMBERSHIP"
+            exit 1
+          fi
+
       - name: Check quiet period
         id: quiet
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.quiet_retries != '0')
@@ -75,7 +110,7 @@ jobs:
           echo "proceed=false" >> "$GITHUB_OUTPUT"
 
       - name: Compute version and create tag
-        if: steps.quiet.outputs.proceed != 'false'
+        if: steps.quiet.outputs.proceed != 'false' && steps.labeler.outputs.authorized != 'false'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPOSITORY: ${{ github.repository }}
