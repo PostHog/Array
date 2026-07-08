@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
@@ -139,6 +140,88 @@ describe("buildSessionOptions", () => {
     );
 
     expect(healSpy).not.toHaveBeenCalled();
+  });
+
+  describe("rtk and signed-commit guard ordering", () => {
+    const originalRtk = process.env.POSTHOG_RTK;
+    let dir: string;
+    let binary: string;
+
+    beforeEach(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "rtk-order-"));
+      binary = path.join(dir, "rtk");
+      fs.writeFileSync(binary, "#!/bin/sh\n");
+      process.env.POSTHOG_RTK = binary;
+    });
+
+    afterEach(() => {
+      if (originalRtk === undefined) {
+        delete process.env.POSTHOG_RTK;
+      } else {
+        process.env.POSTHOG_RTK = originalRtk;
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    const bashInput = (command: string): HookInput =>
+      ({
+        ...(GIT_COMMIT_HOOK_INPUT as object),
+        tool_input: { command },
+      }) as HookInput;
+
+    type PreToolUseOutput = {
+      hookSpecificOutput?: {
+        permissionDecision?: string;
+        updatedInput?: { command?: string };
+      };
+    };
+
+    it("registers the signed-commit guard before the rtk rewrite so the guard evaluates raw commands (cloud)", async () => {
+      const options = buildSessionOptions({
+        ...makeParams(),
+        cloudMode: true,
+      });
+      const hooks = (options.hooks?.PreToolUse ?? []).flatMap(
+        (entry) => entry.hooks ?? [],
+      );
+      const opts = { signal: new AbortController().signal };
+
+      // Identify each hook behaviorally: the guard denies `git commit`, the
+      // rtk hook rewrites `git status`. Their registration order is the
+      // defense-in-depth guarantee that the guard always sees the raw command.
+      let guardIndex = -1;
+      let rtkIndex = -1;
+      for (const [index, hook] of hooks.entries()) {
+        const denyResult = (await hook(
+          bashInput("git commit -m x"),
+          undefined,
+          opts,
+        )) as PreToolUseOutput;
+        if (
+          guardIndex === -1 &&
+          denyResult.hookSpecificOutput?.permissionDecision === "deny"
+        ) {
+          guardIndex = index;
+        }
+
+        const rewriteResult = (await hook(
+          bashInput("git status"),
+          undefined,
+          opts,
+        )) as PreToolUseOutput;
+        if (
+          rtkIndex === -1 &&
+          rewriteResult.hookSpecificOutput?.updatedInput?.command ===
+            `${binary} git status`
+        ) {
+          rtkIndex = index;
+        }
+      }
+
+      expect(guardIndex).toBeGreaterThanOrEqual(0);
+      expect(rtkIndex).toBeGreaterThanOrEqual(0);
+      expect(guardIndex).toBeLessThan(rtkIndex);
+    });
   });
 
   describe("CLAUDE_CODE_EXECUTABLE", () => {

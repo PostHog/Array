@@ -719,8 +719,18 @@ export class TaskCreationSaga extends Saga<
 
     const repoPathForDetection = input.repoPath;
     if (!repository && repoPathForDetection) {
+      // Detection only fills the org/repo metadata on the task; a transient
+      // failure (e.g. the workspace-server transport dropping mid-call) must
+      // not abort task creation, so degrade to an untagged task instead.
       const detected = await this.readOnlyStep("repo_detection", () =>
-        this.deps.host.detectRepo({ directoryPath: repoPathForDetection }),
+        this.deps.host
+          .detectRepo({ directoryPath: repoPathForDetection })
+          .catch((error) => {
+            this.log.warn("Repo detection failed; creating task without one", {
+              error,
+            });
+            return null;
+          }),
       );
       if (detected) {
         repository = `${detected.organization}/${detected.repository}`;
