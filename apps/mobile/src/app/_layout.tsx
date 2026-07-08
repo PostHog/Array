@@ -157,6 +157,25 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
         }}
       />
       <Stack.Screen
+        name="loop/create"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          title: "Create loop",
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
+      <Stack.Screen
+        name="loop/[id]"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
+      <Stack.Screen
         name="pr-diff"
         options={{
           presentation: "modal",

@@ -11,7 +11,7 @@ import { useThemeColors } from "@/lib/theme";
 const EDGE_SWIPE_HIT_WIDTH = 22;
 
 const HOME_ROUTE = "/tasks";
-const TAB_ROUTES = new Set(["/tasks", "/inbox", "/automations"]);
+const TAB_ROUTES = new Set(["/tasks", "/inbox", "/automations", "/loops"]);
 
 export default function TabsLayout() {
   const themeColors = useThemeColors();
@@ -76,6 +76,7 @@ export default function TabsLayout() {
         <Stack.Screen name="tasks" />
         <Stack.Screen name="inbox" />
         <Stack.Screen name="automations" />
+        <Stack.Screen name="loops" />
       </Stack>
       {/* Invisible left-edge strip that captures the open-drawer gesture. */}
       <View

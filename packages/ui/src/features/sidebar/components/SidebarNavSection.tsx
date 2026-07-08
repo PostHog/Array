@@ -14,6 +14,7 @@ import {
   navigateToCommandCenter,
   navigateToHome,
   navigateToInbox,
+  navigateToLoops,
   navigateToWebsiteCommandCenter,
   navigateToWebsiteHome,
 } from "@posthog/ui/router/navigationBridge";
@@ -28,6 +29,7 @@ import { CommandCenterItem } from "./items/CommandCenterItem";
 import { ConfigureItem } from "./items/ConfigureItem";
 import { HomeItem } from "./items/HomeItem";
 import { InboxItem } from "./items/InboxItem";
+import { LoopsItem } from "./items/LoopsItem";
 import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
 
@@ -85,6 +87,7 @@ export function SidebarNavSection({
   const isHomeViewActive = view.type === "home";
   const isActivityActive = view.type === "activity";
   const isInboxActive = view.type === "inbox";
+  const isLoopsActive = view.type === "loops";
   const isCommandCenterActive = view.type === "command-center";
 
   // Open pull requests in the inbox — the main CTA, and the same count the inbox
@@ -146,6 +149,10 @@ export function SidebarNavSection({
 
       <Box>
         <ConfigureItem onClick={() => openSettings("agents")} />
+      </Box>
+
+      <Box>
+        <LoopsItem isActive={isLoopsActive} onClick={navigateToLoops} />
       </Box>
 
       <Box mb={bluebirdEnabled ? undefined : "2"}>

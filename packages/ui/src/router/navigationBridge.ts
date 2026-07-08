@@ -155,6 +155,28 @@ export function navigateToScoutFindings(): void {
   void getRouterOrNull()?.navigate({ to: "/code/agents/scouts/findings" });
 }
 
+export function navigateToLoops(): void {
+  void getRouterOrNull()?.navigate({ to: "/code/loops" });
+}
+
+export function navigateToNewLoop(): void {
+  void getRouterOrNull()?.navigate({ to: "/code/loops/new" });
+}
+
+export function navigateToLoopDetail(loopId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/loops/$loopId",
+    params: { loopId },
+  });
+}
+
+export function navigateToEditLoop(loopId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/loops/$loopId/edit",
+    params: { loopId },
+  });
+}
+
 export function navigateToApproval(requestId: string): void {
   void getRouterOrNull()?.navigate({
     to: "/code/agents/applications/approvals",
