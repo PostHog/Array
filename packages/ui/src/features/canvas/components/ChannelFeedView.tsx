@@ -24,6 +24,7 @@ import {
   ChatMessageScrollerItem,
   ChatMessageScrollerProvider,
   ChatMessageScrollerViewport,
+  cn,
   Spinner,
   Tooltip,
   TooltipContent,
@@ -41,8 +42,12 @@ import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { xmlToPlainText } from "@posthog/ui/features/message-editor/content";
 import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
 import { getOriginProductMeta } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
+import {
+  type SidebarPrState,
+  useTaskPrStatus,
+} from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { Text } from "@radix-ui/themes";
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 
 // Feed rows poll their reply counts slower than the open thread panel — the
 // shared query key means an open panel naturally speeds the row up too.
@@ -52,9 +57,25 @@ const STATUS_LABELS: Record<TaskRunStatus, string> = {
   not_started: "Not started",
   queued: "Queued",
   in_progress: "In progress",
-  completed: "Completed",
+  // "Ready", not "Completed": the agent has finished its work and the task is
+  // ready to look at, but the change itself isn't necessarily shipped/done.
+  completed: "Ready",
   failed: "Failed",
   cancelled: "Cancelled",
+};
+
+// Once a PR exists its GitHub state is the truest top-line status — more
+// accurate than the run status, which routinely lingers on "in_progress"
+// (or a stale cloud status) after the agent opens the PR. Mirrors the PR
+// states the sidebar's TaskIcon already renders.
+const PR_STATE_LABELS: Record<
+  Exclude<SidebarPrState, null>,
+  { label: string; variant: "success" | "info" | "default" | "destructive" }
+> = {
+  merged: { label: "Merged", variant: "success" },
+  open: { label: "PR ready", variant: "info" },
+  draft: { label: "Draft PR", variant: "default" },
+  closed: { label: "Closed", variant: "destructive" },
 };
 
 function statusBadge(status: TaskRunStatus) {
@@ -74,30 +95,112 @@ function statusBadge(status: TaskRunStatus) {
   );
 }
 
+interface TaskStatusDisplay {
+  // The run/environment badge ("Local", "Completed", "In progress", …).
+  base: ReactNode;
+  // The PR's GitHub state, shown alongside the run badge when a PR exists.
+  prState: Exclude<SidebarPrState, null> | null;
+  // Whether the PR has merged — the card lifts this to a purple border + tint.
+  isMerged: boolean;
+}
+
 // Live status for the card, derived the same way the sidebar's TaskIcon does
 // (via useChannelTaskData: local session + workspace + cloud run). The raw
 // `latest_run.status` alone is wrong for local runs — the backend row often
 // stays "queued" while the agent runs on the creator's machine — so it is
 // only trusted for cloud runs and terminal states (which imply a sync).
-function TaskStatusBadge({ task }: { task: Task }) {
+//
+// Once a PR exists its state ("PR ready", "Merged", …) is the sole top-line
+// status — it replaces the run badge rather than sitting next to it, so a
+// shipped task never reads "Ready + Merged" or a stale "In progress + PR
+// ready". A failed/cancelled run suppresses the PR badge instead — that is a
+// deliberate end state we should not soften with a PR.
+function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
   const data = useChannelTaskData(task);
-  if (data?.needsPermission)
-    return <Badge variant="warning">Needs input</Badge>;
-  if (data?.isGenerating) {
-    return (
+  const { prState } = useTaskPrStatus({
+    id: task.id,
+    cloudPrUrl: data?.cloudPrUrl ?? null,
+    taskRunEnvironment: data?.taskRunEnvironment ?? null,
+  });
+  const status = data?.taskRunStatus ?? task.latest_run?.status;
+  const environment = data?.taskRunEnvironment ?? task.latest_run?.environment;
+  // `prState` is resolved async from git/`gh` and is routinely null for cloud
+  // tasks (the details fetch hasn't landed, or there's no cached row). But the
+  // PR URL itself is a hard signal a PR exists — the card's "PR" link keys off
+  // exactly this. Fall back to it so the badge and the link never disagree; a
+  // known URL with no resolved state is shown as the neutral "open" ("PR
+  // ready"), never something stronger like "merged".
+  const hasPrUrl =
+    typeof (data?.cloudPrUrl ?? task.latest_run?.output?.pr_url) === "string";
+  const effectivePrState: Exclude<SidebarPrState, null> | null =
+    prState ?? (hasPrUrl ? "open" : null);
+  const showPrState =
+    !!effectivePrState && status !== "failed" && status !== "cancelled";
+
+  let base: ReactNode;
+  if (data?.needsPermission) {
+    // Live, actionable states still win over the PR badge — the agent is
+    // waiting on the user right now, which matters more than a PR existing.
+    base = <Badge variant="warning">Needs input</Badge>;
+  } else if (data?.isGenerating) {
+    base = (
       <Badge variant="info">
         <Spinner className="size-2.5" />
         In progress
       </Badge>
     );
+  } else if (showPrState) {
+    // Otherwise the PR badge is the whole story once a PR exists; skip the run
+    // badge so we never show "Ready + Merged" or a stale "In progress".
+    base = null;
+  } else if (!status) {
+    base = <Badge>Draft</Badge>;
+  } else if (environment === "cloud" || isTerminalStatus(status)) {
+    base = statusBadge(status);
+  } else {
+    // Local, non-terminal: the run status is unreliable (the backend row stays
+    // "queued" while the agent runs on the creator's machine), and the
+    // environment already shows in the card's meta row ("· Local"), so we
+    // render no status badge here rather than a redundant "Local" pill.
+    base = null;
   }
-  const status = data?.taskRunStatus ?? task.latest_run?.status;
-  const environment = data?.taskRunEnvironment ?? task.latest_run?.environment;
-  if (!status) return <Badge>Draft</Badge>;
-  if (environment === "cloud" || isTerminalStatus(status)) {
-    return statusBadge(status);
+
+  return {
+    base,
+    prState: showPrState ? effectivePrState : null,
+    isMerged: showPrState && effectivePrState === "merged",
+  };
+}
+
+// The merged badge borrows the purple GitHub-merge accent (matching the
+// sidebar's TaskIcon merge glyph). Quill has no purple variant, so we tint a
+// neutral badge with the Radix purple scale — allowed inline because the
+// values are CSS variables, not hardcoded colors.
+function PrStateBadge({ prState }: { prState: Exclude<SidebarPrState, null> }) {
+  const { label, variant } = PR_STATE_LABELS[prState];
+  if (prState === "merged") {
+    return (
+      <Badge
+        variant="default"
+        style={{
+          backgroundColor: "var(--purple-a3)",
+          color: "var(--purple-11)",
+        }}
+      >
+        {label}
+      </Badge>
+    );
   }
-  return <Badge>Local</Badge>;
+  return <Badge variant={variant}>{label}</Badge>;
+}
+
+function TaskStatusBadge({ display }: { display: TaskStatusDisplay }) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      {display.base}
+      {display.prState && <PrStateBadge prState={display.prState} />}
+    </div>
+  );
 }
 
 // The prompt as the user typed it: drop the channel CONTEXT.md block the saga
@@ -130,28 +233,39 @@ function TaskCardOrigin({ task }: { task: Task }) {
 // The task the message kicked off, as a card everyone in the channel sees:
 // origin + status up top, bold title, then run metadata.
 function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
+  const statusDisplay = useTaskStatusDisplay(task);
   const prUrl =
     typeof task.latest_run?.output?.pr_url === "string"
       ? task.latest_run.output.pr_url
       : undefined;
   // The repository renders separately with its icon; `meta` is the plain-text
   // remainder of the row.
+  const environment = task.latest_run?.environment;
   const meta = [
     task.slug || null,
     task.latest_run?.stage ?? null,
-    task.latest_run?.environment === "cloud" ? "Cloud" : null,
+    environment === "cloud"
+      ? "Cloud"
+      : environment === "local"
+        ? "Local"
+        : null,
   ].filter(Boolean) as string[];
 
   return (
     <Card
       size="sm"
-      className="mt-1.5 w-full cursor-pointer transition-colors hover:border-border-primary"
+      className={cn(
+        "mt-1.5 w-full cursor-pointer py-0 transition-colors hover:bg-fill-hover",
+        statusDisplay.isMerged
+          ? "border-transparent bg-(--purple-a1) shadow-[0_0_0_1px_var(--purple-8)]"
+          : "hover:border-border-primary",
+      )}
       onClick={onOpen}
     >
       <CardContent className="flex flex-col gap-1 py-2.5">
         <div className="flex items-center justify-between gap-2">
           <TaskCardOrigin task={task} />
-          <TaskStatusBadge task={task} />
+          <TaskStatusBadge display={statusDisplay} />
         </div>
         <div className="flex min-w-0 items-center gap-1.5">
           {/* Same live status icon as the code side nav, so the card and the
