@@ -16,8 +16,7 @@ export function CopyButton({ text, size = 14, label }: CopyButtonProps) {
   const { copied, copy } = useCopy();
 
   const handlePress = useCallback(() => {
-    copy(text);
-    Haptics.selectionAsync();
+    copy(text, () => Haptics.selectionAsync());
   }, [copy, text]);
 
   return (

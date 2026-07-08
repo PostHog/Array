@@ -49,14 +49,23 @@ describe("useCopy", () => {
     expect(state.current.copied).toBe(false);
   });
 
-  it("stays false when the clipboard write rejects", async () => {
+  it("runs onSuccess only after a successful write", async () => {
     setStringAsync.mockRejectedValueOnce(new Error("denied"));
+    const onSuccess = vi.fn();
     const state = renderUseCopy();
 
     await act(async () => {
-      state.current.copy("nope");
+      state.current.copy("nope", onSuccess);
     });
 
     expect(state.current.copied).toBe(false);
+    expect(onSuccess).not.toHaveBeenCalled();
+
+    await act(async () => {
+      state.current.copy("yep", onSuccess);
+    });
+
+    expect(state.current.copied).toBe(true);
+    expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 });
