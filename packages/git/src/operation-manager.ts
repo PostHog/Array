@@ -7,9 +7,10 @@ import { AsyncReaderWriterLock } from "./rw-lock";
  * child processes spawned by git hooks (e.g. biome via lint-staged) don't
  * crash trying to initialise GPU subsystems.
  *
- * The agent service symlinks `node → Electron binary` and prepends it to
- * PATH. If ELECTRON_RUN_AS_NODE is missing, that binary starts as a full
- * Chromium browser (GPU init → SIGTRAP crash). We strip most ELECTRON_/
+ * The agent service puts a `node` shim for the Electron binary on PATH (a
+ * wrapper script that sets ELECTRON_RUN_AS_NODE itself on POSIX, a symlink
+ * on win32). If the var is missing when the raw binary runs, it starts as a
+ * full Chromium browser (GPU init → SIGTRAP crash). We strip most ELECTRON_/
  * CHROME_ vars but explicitly keep ELECTRON_RUN_AS_NODE=1 so any such
  * shim still behaves as plain Node.js.
  *

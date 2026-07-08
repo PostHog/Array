@@ -59,7 +59,7 @@ describe("buildLocalToolsServer", () => {
     expect(envNames).toContain("GH_TOKEN");
     expect(envNames).toContain("GITHUB_TOKEN");
     // Codex strips ELECTRON_RUN_AS_NODE from its own env, and process.execPath
-    // is the app binary in packaged installs — without this the server boots
+    // is the app binary in packaged installs; without this the server boots
     // the full desktop app instead of running the script.
     expect(server?.env).toContainEqual({
       name: "ELECTRON_RUN_AS_NODE",
