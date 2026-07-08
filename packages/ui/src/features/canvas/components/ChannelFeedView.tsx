@@ -77,7 +77,7 @@ const PR_STATE_LABELS: Record<
   Exclude<SidebarPrState, null>,
   { label: string; variant: "success" | "info" | "default" | "destructive" }
 > = {
-  merged: { label: "Merged" },
+  merged: { label: "Merged", variant: "default" },
   open: { label: "PR ready", variant: "info" },
   draft: { label: "Draft PR", variant: "default" },
   closed: { label: "Closed", variant: "destructive" },
