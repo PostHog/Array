@@ -34,7 +34,11 @@ interface CommandCenterStoreActions {
   setActiveCell: (cellIndex: number | null) => void;
   assignTask: (cellIndex: number, taskId: string) => void;
   setBrainrotCell: (cellIndex: number) => void;
-  setTerminalCell: (cellIndex: number, terminalId: string, cwd?: string) => void;
+  setTerminalCell: (
+    cellIndex: number,
+    terminalId: string,
+    cwd?: string,
+  ) => void;
   autofillCells: (taskIds: string[]) => void;
   clearCell: (cellIndex: number) => void;
   removeTaskById: (taskId: string) => void;
