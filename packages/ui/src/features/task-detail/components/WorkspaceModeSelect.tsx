@@ -24,9 +24,9 @@ import {
 import type { WorkspaceMode } from "@posthog/shared";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { useCallback, useMemo, useState } from "react";
-import { useFeatureFlag } from "../../feature-flags/useFeatureFlag";
 import { useSandboxCustomImages } from "../../settings/sections/environments/useSandboxCustomImages";
 import { useSandboxEnvironments } from "../../settings/sections/environments/useSandboxEnvironments";
+import { useCloudModeEnabled } from "../hooks/useCloudModeEnabled";
 
 export type { WorkspaceMode };
 
@@ -74,8 +74,7 @@ export function WorkspaceModeSelect({
   selectedCustomImageId,
   onCustomImageChange,
 }: WorkspaceModeSelectProps) {
-  const cloudModeEnabled =
-    useFeatureFlag("twig-cloud-mode-toggle") || import.meta.env.DEV;
+  const cloudModeEnabled = useCloudModeEnabled();
 
   const { environments } = useSandboxEnvironments();
   const { images, customImagesEnabled } = useSandboxCustomImages();

@@ -221,7 +221,7 @@ export const useSettingsStore = create<SettingsStore>()(
       defaultRunMode: "last_used",
       lastUsedRunMode: "local",
       lastUsedLocalWorkspaceMode: "local",
-      lastUsedWorkspaceMode: "local",
+      lastUsedWorkspaceMode: "cloud",
       lastUsedAdapter: "claude",
       lastUsedModel: null,
       lastUsedReasoningEffort: null,

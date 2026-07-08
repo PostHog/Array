@@ -75,6 +75,7 @@ import {
   useSettingsStore,
 } from "../../settings/settingsStore";
 import { useSkills } from "../../skills/useSkills";
+import { useCloudModeEnabled } from "../hooks/useCloudModeEnabled";
 import {
   areReposReady,
   useInitialRepoSelectionFromFolderId,
@@ -313,19 +314,45 @@ export function TaskInput({
     hasGithubIntegration,
   } = useUserRepositoryIntegration();
 
+  const cloudModeEnabled = useCloudModeEnabled();
+  const reposReady = areReposReady({
+    isLoadingRepos,
+    repositoriesCount: repositories.length,
+    hasGithubIntegration,
+  });
+
+  // Cloud is the default, but only when it works out of the box: with the flag
+  // off or GitHub not connected, fall back to the last local mode instead of
+  // stranding the user behind a connect-GitHub prompt.
+  const resolveWorkspaceModePreference = useCallback(
+    (mode: WorkspaceMode): WorkspaceMode =>
+      mode === "cloud" && (!cloudModeEnabled || !hasGithubIntegration)
+        ? lastUsedLocalWorkspaceMode
+        : mode,
+    [cloudModeEnabled, hasGithubIntegration, lastUsedLocalWorkspaceMode],
+  );
+
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
-    return lastUsedWorkspaceMode || "local";
+    return resolveWorkspaceModePreference(lastUsedWorkspaceMode || "cloud");
   });
 
   const didResolveWorkspaceModeRef = useRef(false);
   useEffect(() => {
     if (didResolveWorkspaceModeRef.current) return;
-    if (!settingsHydrated) return;
+    if (!settingsHydrated || !reposReady) return;
     didResolveWorkspaceModeRef.current = true;
     if (initialCloudRepository) return;
-    setWorkspaceModeState(lastUsedWorkspaceMode || "local");
-  }, [settingsHydrated, lastUsedWorkspaceMode, initialCloudRepository]);
+    setWorkspaceModeState(
+      resolveWorkspaceModePreference(lastUsedWorkspaceMode || "cloud"),
+    );
+  }, [
+    settingsHydrated,
+    reposReady,
+    lastUsedWorkspaceMode,
+    initialCloudRepository,
+    resolveWorkspaceModePreference,
+  ]);
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {
     didResolveWorkspaceModeRef.current = true;
@@ -570,11 +597,7 @@ export function TaskInput({
     requestId: view.taskInputRequestId,
     folders,
     repositories,
-    reposLoaded: areReposReady({
-      isLoadingRepos,
-      repositoriesCount: repositories.length,
-      hasGithubIntegration,
-    }),
+    reposLoaded: reposReady,
     currentMode: workspaceMode,
     lastUsedLocalMode: lastUsedLocalWorkspaceMode,
     mostRecentEnvironment: view.folderRunEnvironment,
