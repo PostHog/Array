@@ -39,21 +39,16 @@ describe("runTaskInCloud", () => {
     );
   });
 
-  it("includes auto_publish when enabled", async () => {
-    await runTaskInCloud("task-1", { autoPublish: true });
+  it.each([true, false])(
+    "forwards auto_publish=%s to the payload",
+    async (flag) => {
+      await runTaskInCloud("task-1", { autoPublish: flag });
 
-    expect(bodyOf(mockFetch.mock.calls[0])).toMatchObject({
-      auto_publish: true,
-    });
-  });
-
-  it("sends auto_publish false when disabled", async () => {
-    await runTaskInCloud("task-1", { autoPublish: false });
-
-    expect(bodyOf(mockFetch.mock.calls[0])).toMatchObject({
-      auto_publish: false,
-    });
-  });
+      expect(bodyOf(mockFetch.mock.calls[0])).toMatchObject({
+        auto_publish: flag,
+      });
+    },
+  );
 
   it("omits auto_publish when not provided", async () => {
     await runTaskInCloud("task-1", { model: "claude-opus-4-8" });
