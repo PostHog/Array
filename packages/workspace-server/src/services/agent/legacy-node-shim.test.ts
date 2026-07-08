@@ -8,8 +8,16 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { removeLegacyNodeShimDirs } from "./legacy-node-shim";
+
+const rmSyncSpy = vi.hoisted(() => vi.fn());
+
+vi.mock("node:fs", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs")>();
+  rmSyncSpy.mockImplementation(original.rmSync);
+  return { ...original, rmSync: rmSyncSpy };
+});
 
 describe("removeLegacyNodeShimDirs", () => {
   const roots: string[] = [];
@@ -41,11 +49,51 @@ describe("removeLegacyNodeShimDirs", () => {
       writeFileSync(shim, "#!/bin/sh\n");
     }
 
-    expect(removeLegacyNodeShimDirs(root)).toEqual([dir]);
+    expect(removeLegacyNodeShimDirs(root)).toEqual({
+      removed: [dir],
+      failed: [],
+    });
     expect(existsSync(dir)).toBe(false);
   });
 
-  it("returns an empty list when nothing is left to clean", () => {
-    expect(removeLegacyNodeShimDirs(makeRoot())).toEqual([]);
+  it("reports a failed removal and still cleans the other dir", () => {
+    const root = makeRoot();
+    const dev = join(root, "agent-node-dev");
+    const prod = join(root, "agent-node-prod");
+    mkdirSync(dev, { recursive: true });
+    mkdirSync(prod, { recursive: true });
+    rmSyncSpy.mockImplementationOnce(() => {
+      throw new Error("EACCES");
+    });
+
+    expect(removeLegacyNodeShimDirs(root)).toEqual({
+      removed: [prod],
+      failed: [dev],
+    });
+    expect(existsSync(dev)).toBe(true);
+    expect(existsSync(prod)).toBe(false);
+  });
+
+  it("removes a shim dir that is itself a symlink without touching its target", () => {
+    const root = makeRoot();
+    const target = makeRoot();
+    const marker = join(target, "keep-me");
+    writeFileSync(marker, "");
+    const link = join(root, "agent-node-dev");
+    symlinkSync(target, link);
+
+    expect(removeLegacyNodeShimDirs(root)).toEqual({
+      removed: [link],
+      failed: [],
+    });
+    expect(existsSync(link)).toBe(false);
+    expect(existsSync(marker)).toBe(true);
+  });
+
+  it("returns empty lists when nothing is left to clean", () => {
+    expect(removeLegacyNodeShimDirs(makeRoot())).toEqual({
+      removed: [],
+      failed: [],
+    });
   });
 });

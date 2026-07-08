@@ -54,9 +54,15 @@ if (!sharedSecret || !Number.isInteger(port) || port <= 0 || port > 65_535) {
   process.exit(2);
 }
 
-for (const dir of removeLegacyNodeShimDirs()) {
+const shimCleanup = removeLegacyNodeShimDirs();
+for (const dir of shimCleanup.removed) {
   process.stdout.write(
     `[workspace-server] removed legacy node shim dir ${dir}\n`,
+  );
+}
+for (const dir of shimCleanup.failed) {
+  process.stderr.write(
+    `[workspace-server] failed to remove legacy node shim dir ${dir}\n`,
   );
 }
 
