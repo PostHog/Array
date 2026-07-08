@@ -193,6 +193,12 @@ export default function SettingsScreen() {
   const setDefaultReasoningEffort = usePreferencesStore(
     (s) => s.setDefaultReasoningEffort,
   );
+  const autoPublishCloudRuns = usePreferencesStore(
+    (s) => s.autoPublishCloudRuns,
+  );
+  const setAutoPublishCloudRuns = usePreferencesStore(
+    (s) => s.setAutoPublishCloudRuns,
+  );
   const defaultMessagingMode = useMessagingModeStore((s) => s.defaultMode);
   const setDefaultMessagingMode = useMessagingModeStore(
     (s) => s.setDefaultMode,
@@ -409,7 +415,6 @@ export default function SettingsScreen() {
             label="Messaging mode"
             description="What happens when you send while a turn is running"
             onPress={() => setMessagingModeSheetOpen(true)}
-            showDivider={false}
             rightSlot={
               <>
                 <Text className="text-[14px] text-gray-11">
@@ -417,6 +422,17 @@ export default function SettingsScreen() {
                 </Text>
                 <CaretRight size={14} color={themeColors.gray[10]} />
               </>
+            }
+          />
+          <SettingsRow
+            label="Always create pull requests for cloud runs"
+            description="Cloud runs push their changes and open a draft pull request when they finish, without waiting for you to ask"
+            showDivider={false}
+            rightSlot={
+              <Switch
+                value={autoPublishCloudRuns}
+                onValueChange={setAutoPublishCloudRuns}
+              />
             }
           />
         </SettingsSection>
