@@ -1156,9 +1156,37 @@ describe("AuthService", () => {
       expect(sessionPort.getCurrent()?.selectedProjectId).toBe(84);
     });
 
-    it("does not attempt recovery when the token grants no scoped organizations", async () => {
-      const fetchState = { succeeds: true, orgCalls: 0 };
-      stubOrgFetch(fetchState);
+    it("does not attempt recovery when the user has no organization at all", async () => {
+      // Truly orgless: token has no scoped orgs AND /api/users/@me/ has no
+      // organization. Contrast with team-scoped tokens (empty scoped_organizations
+      // but @me returns a current org id), where we DO fetch that org.
+      let orgCalls = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: null,
+              }),
+            } as unknown as Response;
+          }
+          if (/\/api\/organizations\/[^/]+\/$/.test(url)) {
+            orgCalls++;
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({ name: "Org 1", teams: [] }),
+            } as unknown as Response;
+          }
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ has_access: true }),
+          } as unknown as Response;
+        }) as unknown as typeof fetch,
+      );
       oauthFlow.startFlow.mockResolvedValue(
         mockTokenResponse({ scopedOrgs: [] }),
       );
@@ -1174,8 +1202,37 @@ describe("AuthService", () => {
       emitStatus(true);
       await new Promise((r) => setTimeout(r, 10));
 
-      expect(fetchState.orgCalls).toBe(0);
+      expect(orgCalls).toBe(0);
       expect(service.getState().currentProjectId).toBeNull();
+    });
+
+    it("falls back to the @me current org when the token has no scoped organizations", async () => {
+      // Team-scoped tokens (required_access_level=project) arrive with empty
+      // scoped_organizations on some backends. Without the fallback, the picker
+      // is stranded on "No projects" even though the user has a current org.
+      const fetchState = { succeeds: true, orgCalls: 0 };
+      stubOrgFetch(fetchState);
+      oauthFlow.startFlow.mockResolvedValue(
+        mockTokenResponse({ scopedOrgs: [] }),
+      );
+
+      await service.login("us");
+
+      expect(fetchState.orgCalls).toBe(1);
+      expect(service.getState()).toMatchObject({
+        status: "authenticated",
+        currentOrgId: "org-1",
+        currentProjectId: 42,
+        orgProjectsMap: {
+          "org-1": {
+            orgName: "Org 1",
+            projects: [
+              { id: 42, name: "Project 42" },
+              { id: 84, name: "Project 84" },
+            ],
+          },
+        },
+      });
     });
   });
 
