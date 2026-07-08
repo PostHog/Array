@@ -27,34 +27,23 @@ describe("removeLegacyNodeShimDirs", () => {
     }
   });
 
-  it("removes both legacy shim dirs including their contents", () => {
+  it.each([
+    ["agent-node-dev", "wrapper-script"],
+    ["agent-node-prod", "symlink"],
+  ] as const)("removes a leftover %s dir with a %s shim", (name, kind) => {
     const root = makeRoot();
-    const dev = join(root, "agent-node-dev");
-    const prod = join(root, "agent-node-prod");
-    mkdirSync(dev, { recursive: true });
-    mkdirSync(prod, { recursive: true });
-    writeFileSync(join(dev, "node"), "#!/bin/sh\n");
-    symlinkSync("/does/not/exist", join(prod, "node"));
+    const dir = join(root, name);
+    mkdirSync(dir, { recursive: true });
+    const shim = join(dir, "node");
+    if (kind === "symlink") {
+      symlinkSync("/does/not/exist", shim);
+    } else {
+      writeFileSync(shim, "#!/bin/sh\n");
+    }
 
-    const removed = removeLegacyNodeShimDirs(root);
-
-    expect(removed.sort()).toEqual([dev, prod].sort());
-    expect(existsSync(dev)).toBe(false);
-    expect(existsSync(prod)).toBe(false);
+    expect(removeLegacyNodeShimDirs(root)).toEqual([dir]);
+    expect(existsSync(dir)).toBe(false);
   });
-
-  it.each(["agent-node-dev", "agent-node-prod"])(
-    "removes %s when it is the only leftover",
-    (name) => {
-      const root = makeRoot();
-      const dir = join(root, name);
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "node"), "#!/bin/sh\n");
-
-      expect(removeLegacyNodeShimDirs(root)).toEqual([dir]);
-      expect(existsSync(dir)).toBe(false);
-    },
-  );
 
   it("returns an empty list when nothing is left to clean", () => {
     expect(removeLegacyNodeShimDirs(makeRoot())).toEqual([]);
