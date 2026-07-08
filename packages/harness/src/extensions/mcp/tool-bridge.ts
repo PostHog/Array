@@ -218,6 +218,10 @@ export class ToolBridge {
 
     const previous = this.serverToolNames.get(serverName) ?? new Set<string>();
     const current = new Set<string>();
+    // First MCP tool name to claim each pi name, so a collision report shows
+    // both sides of the conflict, not just the tool that won the shadowing.
+    const firstClaimant = new Map<string, string>();
+    const reportedClaimant = new Set<string>();
     const collisions: ToolCollision[] = [];
 
     for (const tool of tools) {
@@ -226,14 +230,26 @@ export class ToolBridge {
         serverName,
         tool.name,
       );
-      if (current.has(piName)) {
+      const claimant = firstClaimant.get(piName);
+      if (claimant !== undefined) {
         // Two MCP tools sanitize to the same pi name (e.g. "a-b" vs "a_b").
-        // The later definition wins; recorded for /mcp <name> diagnostics.
+        // The later definition wins; both names are recorded for /mcp
+        // <name> diagnostics so the shadowed tool isn't invisible.
+        if (!reportedClaimant.has(piName)) {
+          reportedClaimant.add(piName);
+          collisions.push({
+            serverName,
+            mcpToolName: claimant,
+            piToolName: piName,
+          });
+        }
         collisions.push({
           serverName,
           mcpToolName: tool.name,
           piToolName: piName,
         });
+      } else {
+        firstClaimant.set(piName, tool.name);
       }
       current.add(piName);
       this.registerTool(piName, serverName, tool, client, timeoutMs);

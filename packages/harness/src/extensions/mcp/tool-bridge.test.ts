@@ -245,7 +245,15 @@ describe("ToolBridge", () => {
         ],
       }),
     );
+    // Both sides of the conflict are recorded — the shadowed first tool
+    // ("my-tool") as well as the one that wins ("my_tool") — so a user
+    // debugging a missing tool can see what happened to it.
     expect(bridge.getCollisions("demo")).toEqual([
+      {
+        serverName: "demo",
+        mcpToolName: "my-tool",
+        piToolName: "mcp_demo_my_tool",
+      },
       {
         serverName: "demo",
         mcpToolName: "my_tool",
@@ -260,6 +268,39 @@ describe("ToolBridge", () => {
       fakeClient({ tools: [{ name: "my_tool", inputSchema: {} }] }),
     );
     expect(bridge.getCollisions("demo")).toEqual([]);
+  });
+
+  it("reports the shadowed claimant only once for a three-way collision", async () => {
+    const { host } = fakeHost();
+    const bridge = new ToolBridge(settings, host);
+
+    await bridge.refreshTools(
+      "demo",
+      fakeClient({
+        tools: [
+          { name: "my-tool", inputSchema: {} },
+          { name: "my_tool", inputSchema: {} },
+          { name: "my.tool", inputSchema: {} },
+        ],
+      }),
+    );
+    expect(bridge.getCollisions("demo")).toEqual([
+      {
+        serverName: "demo",
+        mcpToolName: "my-tool",
+        piToolName: "mcp_demo_my_tool",
+      },
+      {
+        serverName: "demo",
+        mcpToolName: "my_tool",
+        piToolName: "mcp_demo_my_tool",
+      },
+      {
+        serverName: "demo",
+        mcpToolName: "my.tool",
+        piToolName: "mcp_demo_my_tool",
+      },
+    ]);
   });
 
   it("deactivateServer removes only that server's tools", async () => {

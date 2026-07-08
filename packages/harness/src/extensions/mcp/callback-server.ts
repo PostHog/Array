@@ -246,14 +246,15 @@ export class CallbackServer {
 
     const code = url.searchParams.get("code");
     if (!code) {
+      // Known state but neither `error` nor `code`: a malformed redirect.
+      // Reject the waiter now instead of leaving it to hang until the
+      // 5-minute timeout with an unresponsive terminal.
+      const message = "Authorization redirect missing code parameter.";
       res.writeHead(400, { "Content-Type": "text/html" });
-      res.end(
-        page(
-          "Authorization failed",
-          "Authorization failed",
-          "No authorization code provided.",
-        ),
-      );
+      res.end(page("Authorization failed", "Authorization failed", message));
+      this.pending.delete(state);
+      clearTimeout(pending.timer);
+      pending.reject(new McpError(message, "<oauth>", "connection"));
       return;
     }
 

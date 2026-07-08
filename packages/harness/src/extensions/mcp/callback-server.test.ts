@@ -143,16 +143,21 @@ describe("CallbackServer", () => {
     await expectation;
   });
 
-  it("returns 400 when the code is missing", async () => {
+  it("returns 400 and rejects the waiter when the code is missing", async () => {
+    // A malformed redirect (known state, no `code` and no `error`) must
+    // reject the pending waiter immediately, not leave it hanging until
+    // the 5-minute timeout with an unresponsive terminal.
     const server = makeServer();
     const { redirectUrl } = await server.ensureStarted();
     const waiter = server.waitForCallback("state-1", 5_000);
+    // Attach the expectation before the redirect lands so the rejection is
+    // never observed as unhandled.
+    const expectation = expect(waiter).rejects.toThrowError(/code/);
 
     const res = await fetch(`${redirectUrl}?state=state-1`);
     expect(res.status).toBe(400);
 
-    server.cancel("state-1");
-    await expect(waiter).rejects.toThrowError(/cancelled/);
+    await expectation;
   });
 
   it("404s on other paths", async () => {

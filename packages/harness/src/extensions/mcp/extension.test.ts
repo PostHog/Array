@@ -1,7 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -141,6 +140,20 @@ const ECHO_TOOL = {
     content: [{ type: "text", text: `echo: ${String(args.text)}` }],
   }),
 };
+
+/** Deep-clones a value with every object's key insertion order reversed. */
+function reverseKeyOrder(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reverseKeyOrder);
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    const reordered: Record<string, unknown> = {};
+    for (const [key, v] of entries.reverse()) {
+      reordered[key] = reverseKeyOrder(v);
+    }
+    return reordered;
+  }
+  return value;
+}
 
 function setup(options: {
   mock: MockMcpServer;
@@ -857,6 +870,26 @@ describe("createMcpExtension", () => {
     expect(mock.connectionCount()).toBe(1);
 
     // Identical config on resume: no teardown, no reconnect.
+    await emit("session_start", { reason: "resume" }, ctx);
+    expect(mock.connectionCount()).toBe(1);
+
+    await emit("session_shutdown", { reason: "quit" }, ctx);
+    await mock.close();
+  });
+
+  it("does not restart servers when config keys are merely reordered", async () => {
+    // Zod preserves source key order, so a plain JSON.stringify comparison
+    // would treat a config file with reordered (but unchanged) fields as a
+    // change and needlessly tear down/rebuild the runtime on every resume.
+    const mock = createMockMcpServer([ECHO_TOOL]);
+    const { emit, configLoader, config } = setup({ mock });
+    const { ctx } = fakeCtx();
+
+    await emit("session_start", { reason: "startup" }, ctx);
+    expect(mock.connectionCount()).toBe(1);
+
+    configLoader.mockResolvedValue(reverseKeyOrder(config) as typeof config);
+
     await emit("session_start", { reason: "resume" }, ctx);
     expect(mock.connectionCount()).toBe(1);
 

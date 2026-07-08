@@ -67,6 +67,34 @@ export async function openBrowser(
   }
 }
 
+/**
+ * Structural equality for parsed config objects. Zod's output preserves the
+ * source JSON's key order, so a `JSON.stringify` comparison would treat a
+ * config file whose fields were merely reordered (no value changes) as a
+ * change and trigger a needless full teardown/rebuild on session resume.
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || !a || !b) {
+    return false;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+      return false;
+    }
+    return a.every((value, i) => deepEqual(value, b[i]));
+  }
+  const aKeys = Object.keys(a as Record<string, unknown>);
+  const bKeys = Object.keys(b as Record<string, unknown>);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((key) =>
+    deepEqual(
+      (a as Record<string, unknown>)[key],
+      (b as Record<string, unknown>)[key],
+    ),
+  );
+}
+
 function isAuthRequiredError(message: string): boolean {
   return /unauthorized|401|invalid_token|authentication required/i.test(
     message,
@@ -196,7 +224,7 @@ export function createMcpExtension(
       if (manager === null) {
         if (Object.keys(nextConfig.mcpServers).length === 0) return;
         buildRuntime(nextConfig);
-      } else if (JSON.stringify(nextConfig) !== JSON.stringify(config)) {
+      } else if (!deepEqual(nextConfig, config)) {
         // Config changed (e.g. resumed into a different project): tear down
         // the old runtime and rebuild from the new config.
         await teardown();
