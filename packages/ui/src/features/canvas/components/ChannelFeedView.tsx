@@ -447,16 +447,11 @@ const FeedItem = memo(function FeedItem({
       <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
         <ThreadItemAction
           label="Reply in thread"
-          tooltipSide="left"
           onClick={() => onOpenThread(task)}
         >
           <ChatCircleIcon size={15} />
         </ThreadItemAction>
-        <ThreadItemAction
-          label="Open task"
-          tooltipSide="left"
-          onClick={() => onOpenTask(task)}
-        >
+        <ThreadItemAction label="Open task" onClick={() => onOpenTask(task)}>
           <ArrowSquareOutIcon size={15} />
         </ThreadItemAction>
       </ThreadItemActions>
