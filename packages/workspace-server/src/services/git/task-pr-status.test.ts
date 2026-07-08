@@ -234,47 +234,43 @@ describe("TaskPrStatusService.setPrimaryPrUrl", () => {
     return { service, workspaceService, workspaceRepo };
   }
 
-  it("recomputes and emits the promoted PR's live state, not the stale cache", async () => {
-    const getPrDetailsByUrl = vi
-      .fn()
-      .mockResolvedValue({ state: "open", merged: false, draft: false });
-    const { service, workspaceService, workspaceRepo } =
-      makeService(getPrDetailsByUrl);
+  it.each([
+    {
+      name: "recomputes and emits the promoted PR's live state, not the stale cache",
+      details: vi.fn().mockResolvedValue({
+        state: "open",
+        merged: false,
+        draft: false,
+      }),
+      expectedPrState: "open",
+    },
+    {
+      name: "emits a null state when the promoted PR's details are unavailable",
+      details: vi.fn().mockResolvedValue(null),
+      expectedPrState: null,
+    },
+    {
+      name: "falls back to a null state when the details fetch rejects",
+      details: vi.fn().mockRejectedValue(new Error("network down")),
+      expectedPrState: null,
+    },
+  ])("$name", async ({ details, expectedPrState }) => {
+    const { service, workspaceService, workspaceRepo } = makeService(details);
 
     await service.setPrimaryPrUrl("task-1", PR_NEW);
 
     expect(workspaceRepo.promotePrUrl).toHaveBeenCalledWith("task-1", PR_NEW);
-    expect(getPrDetailsByUrl).toHaveBeenCalledWith(PR_NEW);
+    expect(details).toHaveBeenCalledWith(PR_NEW);
     expect(workspaceRepo.updatePrCache).toHaveBeenCalledWith("task-1", {
       prUrl: PR_NEW,
-      prState: "open",
+      prState: expectedPrState,
       accumulate: false,
     });
     expect(workspaceService.emit).toHaveBeenCalledWith("taskPrInfoChanged", {
       taskId: "task-1",
       prUrl: PR_NEW,
       prUrls: [PR_NEW, PR_OLD],
-      prState: "open",
-    });
-  });
-
-  it("emits a null state when the promoted PR's details are unavailable", async () => {
-    const getPrDetailsByUrl = vi.fn().mockResolvedValue(null);
-    const { service, workspaceService, workspaceRepo } =
-      makeService(getPrDetailsByUrl);
-
-    await service.setPrimaryPrUrl("task-1", PR_NEW);
-
-    expect(workspaceRepo.updatePrCache).toHaveBeenCalledWith("task-1", {
-      prUrl: PR_NEW,
-      prState: null,
-      accumulate: false,
-    });
-    expect(workspaceService.emit).toHaveBeenCalledWith("taskPrInfoChanged", {
-      taskId: "task-1",
-      prUrl: PR_NEW,
-      prUrls: [PR_NEW, PR_OLD],
-      prState: null,
+      prState: expectedPrState,
     });
   });
 });

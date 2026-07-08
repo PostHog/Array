@@ -50,7 +50,9 @@ export class TaskPrStatusService {
 
   async setPrimaryPrUrl(taskId: string, prUrl: string): Promise<void> {
     this.workspaceRepo.promotePrUrl(taskId, prUrl);
-    const details = await this.gitService.getPrDetailsByUrl(prUrl);
+    const details = await this.gitService
+      .getPrDetailsByUrl(prUrl)
+      .catch(() => null);
     const prState: SidebarPrState = details
       ? mapPrState(details.state, details.merged, details.draft)
       : null;
