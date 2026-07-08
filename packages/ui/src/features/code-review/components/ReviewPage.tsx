@@ -428,13 +428,23 @@ function RemoteReviewPage({
   const taskId = task.id;
   const isBranch = effectiveSource === "branch";
 
-  const { data: branchFiles = EMPTY_CHANGED_FILES, isLoading: branchLoading } =
-    useLocalBranchChangedFiles(
-      isBranch && isReviewOpen ? repoPath : null,
-      isBranch && isReviewOpen ? branch : null,
-    );
-  const { data: prFiles = EMPTY_CHANGED_FILES, isLoading: prLoading } =
-    usePrChangedFiles(!isBranch && isReviewOpen ? prUrl : null);
+  const {
+    data: branchFiles = EMPTY_CHANGED_FILES,
+    isLoading: branchLoading,
+    refetch: refetchBranch,
+  } = useLocalBranchChangedFiles(
+    isBranch && isReviewOpen ? repoPath : null,
+    isBranch && isReviewOpen ? branch : null,
+  );
+  const {
+    data: prFiles = EMPTY_CHANGED_FILES,
+    isLoading: prLoading,
+    refetch: refetchPr,
+  } = usePrChangedFiles(!isBranch && isReviewOpen ? prUrl : null);
+
+  const onRefresh = useCallback(() => {
+    void (isBranch ? refetchBranch() : refetchPr());
+  }, [isBranch, refetchBranch, refetchPr]);
 
   const files = isBranch ? branchFiles : prFiles;
   const isLoading = isBranch
@@ -479,6 +489,7 @@ function RemoteReviewPage({
       onExpandAll={reviewState.expandAll}
       onCollapseAll={reviewState.collapseAll}
       onUncollapseFile={reviewState.uncollapseFile}
+      onRefresh={onRefresh}
       effectiveSource={effectiveSource}
       branchSourceAvailable={branchSourceAvailable}
       prSourceAvailable={prSourceAvailable}
