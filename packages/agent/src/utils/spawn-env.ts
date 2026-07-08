@@ -1,14 +1,11 @@
-import { readlinkSync } from "node:fs";
+import { lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { buildNodeShimScript } from "@posthog/shared/node-shim";
 
-/**
- * Removes PATH entries that alias `node` to the current executable. The desktop
- * host prepends a shim dir whose `node` symlinks to Electron so claude-code
- * children (which inherit ELECTRON_RUN_AS_NODE=1) can resolve a node binary.
- * Codex children have ELECTRON_RUN_AS_NODE deleted, so anything they spawn via
- * that shim boots a full Electron app that never exits — wedging codex's
- * plugin hooks (and with them every turn) until its 10-minute timeout.
- */
+// Removes PATH entries that alias `node` to the current executable, whether a
+// legacy symlink or the wrapper script written by ensureNodeShim. Codex
+// children must not resolve `node` to Electron's bundled runtime: native
+// modules they install target the real node ABI.
 export function stripElectronNodeShimFromPath(
   pathValue: string | undefined,
   execPath: string = process.execPath,
@@ -16,13 +13,18 @@ export function stripElectronNodeShimFromPath(
   if (!pathValue) return pathValue;
   return pathValue
     .split(delimiter)
-    .filter((dir) => {
-      if (!dir) return false;
-      try {
-        return readlinkSync(join(dir, "node")) !== execPath;
-      } catch {
-        return true;
-      }
-    })
+    .filter((dir) => dir && !isElectronNodeShimDir(dir, execPath))
     .join(delimiter);
+}
+
+function isElectronNodeShimDir(dir: string, execPath: string): boolean {
+  const shimPath = join(dir, "node");
+  try {
+    if (lstatSync(shimPath).isSymbolicLink()) {
+      return readlinkSync(shimPath) === execPath;
+    }
+    return readFileSync(shimPath, "utf-8") === buildNodeShimScript(execPath);
+  } catch {
+    return false;
+  }
 }
