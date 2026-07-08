@@ -5,6 +5,7 @@ import {
   getCellCount,
   getCellSessionId,
   getGridDimensions,
+  getTerminalCellCwd,
   getTerminalCellId,
   isBrainrotCell,
   isTerminalCell,
@@ -71,6 +72,14 @@ describe("terminal cells", () => {
     const value = makeTerminalCellValue("abc123");
     expect(isTerminalCell(value)).toBe(true);
     expect(getTerminalCellId(value)).toBe("abc123");
+    expect(getTerminalCellCwd(value)).toBeNull();
+  });
+
+  it("round-trips a terminal id and cwd through the cell value", () => {
+    const value = makeTerminalCellValue("abc123", "/Users/me/my:repo");
+    expect(isTerminalCell(value)).toBe(true);
+    expect(getTerminalCellId(value)).toBe("abc123");
+    expect(getTerminalCellCwd(value)).toBe("/Users/me/my:repo");
   });
 
   it.each([

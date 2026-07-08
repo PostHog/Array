@@ -25,14 +25,28 @@ export function isTerminalCell(value: string | null): value is string {
   return value?.startsWith(TERMINAL_CELL_PREFIX) ?? false;
 }
 
-export function makeTerminalCellValue(terminalId: string): string {
-  return `${TERMINAL_CELL_PREFIX}${terminalId}`;
+// terminalId is a base36 random string (no colon), so an optional cwd can be
+// appended after a colon. cwd is URI-encoded, so it never contains a colon.
+export function makeTerminalCellValue(
+  terminalId: string,
+  cwd?: string,
+): string {
+  const base = `${TERMINAL_CELL_PREFIX}${terminalId}`;
+  return cwd ? `${base}:${encodeURIComponent(cwd)}` : base;
 }
 
 export function getTerminalCellId(value: string | null): string | null {
-  return isTerminalCell(value)
-    ? value.slice(TERMINAL_CELL_PREFIX.length)
-    : null;
+  if (!isTerminalCell(value)) return null;
+  const rest = value.slice(TERMINAL_CELL_PREFIX.length);
+  const colon = rest.indexOf(":");
+  return colon === -1 ? rest : rest.slice(0, colon);
+}
+
+export function getTerminalCellCwd(value: string | null): string | null {
+  if (!isTerminalCell(value)) return null;
+  const rest = value.slice(TERMINAL_CELL_PREFIX.length);
+  const colon = rest.indexOf(":");
+  return colon === -1 ? null : decodeURIComponent(rest.slice(colon + 1));
 }
 
 export function getGridDimensions(preset: LayoutPreset): GridDimensions {
