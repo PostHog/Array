@@ -425,9 +425,7 @@ function completePromptTurn(
   if (turn.isComplete) return;
 
   turn.isComplete = true;
-  if (turn.promptId !== -1) {
-    turn.durationMs += ts;
-  }
+  turn.durationMs += ts;
 
   turn.stopReason = result?.stopReason;
   turn.interruptReason = result?.interruptReason;
@@ -495,7 +493,10 @@ function handleNotification(
   // products are surfaced as a persistent, de-duplicated bar above the composer
   // (see accumulateSessionResources / SessionResourcesBar).
 
-  if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)) {
+  if (
+    isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE) ||
+    isNotification(msg.method, POSTHOG_NOTIFICATIONS.BACKGROUND_TURN_COMPLETE)
+  ) {
     const params = msg.params as { stopReason?: string } | undefined;
     if (!b.currentTurn) return;
     completePromptTurn(b, b.currentTurn, ts, {
@@ -715,7 +716,7 @@ function ensureImplicitTurn(b: ItemBuilder, ts: number) {
     id: turnId,
     promptId: -1,
     isComplete: false,
-    durationMs: 0,
+    durationMs: -ts,
     toolCalls,
     context,
     gitAction: { isGitAction: false, actionType: null, prompt: "" },

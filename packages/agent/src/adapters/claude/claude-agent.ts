@@ -1072,7 +1072,15 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 }),
                 ...(lastRefusalCategory && { category: lastRefusalCategory }),
               });
-              if (!isTaskNotification) {
+              if (isTaskNotification) {
+                // Background work never activates a turn, so there is no
+                // settle path to broadcast completion — send it directly so
+                // the UI still closes this reply out as its own turn.
+                await this.client.extNotification(
+                  POSTHOG_NOTIFICATIONS.BACKGROUND_TURN_COMPLETE,
+                  { sessionId, stopReason: "refusal" },
+                );
+              } else {
                 stopReason = "refusal";
                 settleActive({ stopReason: "refusal", usage: sessionUsage() });
               }
@@ -1116,7 +1124,16 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
             // Settle at the terminal result rather than the trailing idle,
             // which can lag behind background work.
-            if (!isTaskNotification) {
+            if (isTaskNotification) {
+              // Background work never activates a turn, so there is no
+              // settle path to broadcast completion — send it directly so
+              // the UI still closes this reply out as its own turn instead
+              // of merging the next one into it.
+              await this.client.extNotification(
+                POSTHOG_NOTIFICATIONS.BACKGROUND_TURN_COMPLETE,
+                { sessionId, stopReason: result.stopReason ?? "end_turn" },
+              );
+            } else {
               stopReason = result.stopReason ?? "end_turn";
               settleActive({ stopReason, usage: sessionUsage() });
             }
