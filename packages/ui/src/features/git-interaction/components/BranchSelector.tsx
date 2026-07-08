@@ -27,7 +27,7 @@ import type {
   GitBusyState,
 } from "@posthog/shared/domain-types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { Tooltip } from "../../../primitives/Tooltip";
 import { toast } from "../../../primitives/toast";
 import { invalidateGitBranchQueries } from "../gitCacheKeys";
@@ -154,6 +154,26 @@ export function BranchSelector({
       enabled: !isCloudMode && !!repoPath,
       staleTime: 60_000,
     });
+
+  // Branches already checked out in another checkout of this repo (main clone
+  // or worktree). Git refuses to check those out here, and for worktree mode
+  // it tells the user where a branch already lives.
+  const { data: repoCheckouts = [] } = useQuery({
+    ...trpc.workspace.listRepoCheckouts.queryOptions({
+      repoPath: repoPath as string,
+    }),
+    enabled: open && !isCloudMode && !!repoPath,
+    staleTime: 60_000,
+  });
+  const checkedOutElsewhere = useMemo(() => {
+    const byBranch = new Map<string, string>();
+    for (const checkout of repoCheckouts) {
+      if (checkout.branch) {
+        byBranch.set(checkout.branch, getFileName(checkout.path));
+      }
+    }
+    return byBranch;
+  }, [repoCheckouts]);
 
   const branches = isCloudMode ? (cloudBranches ?? []) : localBranches;
   const effectiveLoading = loading || (isCloudMode && cloudBranchesLoading);
@@ -478,14 +498,22 @@ export function BranchSelector({
               }
               return useInputItem;
             }
+            const elsewhere = checkedOutElsewhere.get(item);
             return (
               <ComboboxItem
                 key={item}
                 value={item}
-                title={item}
+                title={
+                  elsewhere ? `${item} — checked out in ${elsewhere}` : item
+                }
                 className="relative"
               >
-                {item}
+                <span className="min-w-0 flex-1 truncate">{item}</span>
+                {elsewhere ? (
+                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                    in {elsewhere}
+                  </span>
+                ) : null}
               </ComboboxItem>
             );
           }}

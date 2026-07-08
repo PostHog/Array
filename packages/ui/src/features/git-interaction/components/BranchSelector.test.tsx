@@ -21,6 +21,9 @@ vi.mock("@posthog/host-router/react", () => ({
       getAllBranches: { queryOptions: () => ({}) },
       checkoutBranch: { mutationOptions: () => ({}) },
     },
+    workspace: {
+      listRepoCheckouts: { queryOptions: () => ({}) },
+    },
   }),
 }));
 
