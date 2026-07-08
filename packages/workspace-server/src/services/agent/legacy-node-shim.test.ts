@@ -43,6 +43,19 @@ describe("removeLegacyNodeShimDirs", () => {
     expect(existsSync(prod)).toBe(false);
   });
 
+  it.each(["agent-node-dev", "agent-node-prod"])(
+    "removes %s when it is the only leftover",
+    (name) => {
+      const root = makeRoot();
+      const dir = join(root, name);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "node"), "#!/bin/sh\n");
+
+      expect(removeLegacyNodeShimDirs(root)).toEqual([dir]);
+      expect(existsSync(dir)).toBe(false);
+    },
+  );
+
   it("returns an empty list when nothing is left to clean", () => {
     expect(removeLegacyNodeShimDirs(makeRoot())).toEqual([]);
   });
