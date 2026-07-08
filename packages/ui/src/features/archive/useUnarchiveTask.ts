@@ -32,7 +32,7 @@ export function useUnarchiveTask(): UseUnarchiveTask {
   const trpc = useHostTRPC();
   const queryClient = useQueryClient();
 
-  const invalidateArchiveQueries = useCallback(async () => {
+  const invalidateTaskListCaches = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: WORKSPACE_QUERY_KEY }),
       queryClient.invalidateQueries(trpc.archive.pathFilter()),
@@ -48,22 +48,22 @@ export function useUnarchiveTask(): UseUnarchiveTask {
     ) => {
       const outcome = await controller.restore(taskId, hasTask, options);
       if (outcome.kind === "restored") {
-        await invalidateArchiveQueries();
+        await invalidateTaskListCaches();
       }
       return outcome;
     },
-    [controller, invalidateArchiveQueries],
+    [controller, invalidateTaskListCaches],
   );
 
   const remove = useCallback(
     async (taskId: string) => {
       const outcome = await controller.remove(taskId);
       if (outcome.kind === "deleted") {
-        await invalidateArchiveQueries();
+        await invalidateTaskListCaches();
       }
       return outcome;
     },
-    [controller, invalidateArchiveQueries],
+    [controller, invalidateTaskListCaches],
   );
 
   const runContextMenuAction = useCallback(
@@ -74,16 +74,16 @@ export function useUnarchiveTask(): UseUnarchiveTask {
         hasTask,
       );
       if (outcome.kind === "restore" && outcome.outcome.kind === "restored") {
-        await invalidateArchiveQueries();
+        await invalidateTaskListCaches();
       } else if (
         outcome.kind === "delete" &&
         outcome.outcome.kind === "deleted"
       ) {
-        await invalidateArchiveQueries();
+        await invalidateTaskListCaches();
       }
       return outcome;
     },
-    [controller, invalidateArchiveQueries],
+    [controller, invalidateTaskListCaches],
   );
 
   return { restore, remove, runContextMenuAction };
