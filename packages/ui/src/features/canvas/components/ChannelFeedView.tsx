@@ -10,14 +10,8 @@ import {
   AvatarFallback,
   AvatarGroup,
   Badge,
-  Button,
-  ButtonGroup,
   Card,
   CardContent,
-  ChatMessage,
-  ChatMessageAvatar,
-  ChatMessageContent,
-  ChatMessageHeader,
   ChatMessageScroller,
   ChatMessageScrollerButton,
   ChatMessageScrollerContent,
@@ -26,10 +20,18 @@ import {
   ChatMessageScrollerViewport,
   cn,
   Spinner,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
+  ThreadItem,
+  ThreadItemAction,
+  ThreadItemActions,
+  ThreadItemAuthor,
+  ThreadItemBody,
+  ThreadItemContent,
+  ThreadItemGutter,
+  ThreadItemHeader,
+  ThreadItemReplies,
+  ThreadItemRepliesLabel,
+  ThreadItemRepliesMeta,
+  ThreadItemTimestamp,
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
@@ -255,9 +257,9 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
     <Card
       size="sm"
       className={cn(
-        "mt-1.5 w-full cursor-pointer py-0 transition-colors hover:bg-fill-hover",
+        "mt-1.5 w-full max-w-[820px] cursor-pointer rounded-sm py-0 transition-none hover:bg-fill-hover",
         statusDisplay.isMerged
-          ? "border-transparent bg-(--purple-a1) shadow-[0_0_0_1px_var(--purple-8)]"
+          ? "border-transparent bg-(--purple-a2) shadow-[0_0_0_1px_var(--purple-8)] hover:bg-(--purple-a3) dark:bg-(--purple-a1) dark:hover:bg-(--purple-a2)"
           : "hover:border-border-primary",
       )}
       onClick={onOpen}
@@ -328,11 +330,7 @@ function RepliesRow({
   const last = messages[messages.length - 1];
 
   return (
-    <button
-      type="button"
-      onClick={onOpenThread}
-      className="mt-1 flex w-fit items-center gap-2 rounded-md px-1.5 py-1 hover:bg-fill-secondary"
-    >
+    <ThreadItemReplies onClick={onOpenThread} className="mt-1">
       <AvatarGroup size="xs" stacked>
         {authors.map((author, index) => (
           <Avatar key={author?.uuid ?? index} size="xs">
@@ -340,13 +338,13 @@ function RepliesRow({
           </Avatar>
         ))}
       </AvatarGroup>
-      <Text size="1" weight="medium" className="text-accent-11">
+      <ThreadItemRepliesLabel>
         {messages.length} {messages.length === 1 ? "reply" : "replies"}
-      </Text>
-      <Text size="1" className="text-muted-foreground">
+      </ThreadItemRepliesLabel>
+      <ThreadItemRepliesMeta>
         Last reply {formatRelativeTimeShort(last.created_at)}
-      </Text>
-    </button>
+      </ThreadItemRepliesMeta>
+    </ThreadItemReplies>
   );
 }
 
@@ -363,11 +361,8 @@ function FeedItem({
   const isAgent = !task.created_by || task.origin_product !== "user_created";
 
   return (
-    <ChatMessage className="group relative rounded-md px-3 py-2 hover:bg-fill-secondary/50">
-      {/* Quill's avatar slot bottom-aligns for bubble chats; a Slack feed
-          anchors it beside the name row. The slot draws its own circle, so
-          drop its background and let the inner Avatar render. */}
-      <ChatMessageAvatar className="self-start bg-transparent">
+    <ThreadItem className="py-4 pr-8 hover:bg-fill-hover/10">
+      <ThreadItemGutter>
         <Avatar>
           <AvatarFallback>
             {isAgent && !task.created_by ? (
@@ -377,64 +372,49 @@ function FeedItem({
             )}
           </AvatarFallback>
         </Avatar>
-      </ChatMessageAvatar>
-      <ChatMessageContent className="min-w-0 gap-0.5">
-        <ChatMessageHeader className="items-baseline gap-2 px-0">
-          <Text size="2" weight="bold" className="truncate">
-            {task.created_by ? userDisplayName(task.created_by) : "Agent"}
-          </Text>
-          {isAgent && <Badge variant="info">Agent</Badge>}
-          <Text size="1" className="shrink-0 text-muted-foreground">
-            {formatRelativeTimeShort(task.created_at)}
-          </Text>
-        </ChatMessageHeader>
+      </ThreadItemGutter>
 
-        <Text size="2" className="line-clamp-4 whitespace-pre-wrap break-words">
+      <ThreadItemContent className="min-w-0">
+        <ThreadItemHeader>
+          <ThreadItemAuthor>
+            {task.created_by ? userDisplayName(task.created_by) : "Agent"}
+          </ThreadItemAuthor>
+          {isAgent && <Badge variant="info">Agent</Badge>}
+          <ThreadItemTimestamp
+            dateTime={new Date(task.created_at).toISOString()}
+          >
+            {formatRelativeTimeShort(task.created_at)}
+          </ThreadItemTimestamp>
+        </ThreadItemHeader>
+
+        <ThreadItemBody className="wrap-break-word line-clamp-4 whitespace-pre-wrap">
           {prompt}
-        </Text>
+        </ThreadItemBody>
 
         <TaskCard task={task} onOpen={() => onOpenTask(task)} />
         <RepliesRow taskId={task.id} onOpenThread={() => onOpenThread(task)} />
-      </ChatMessageContent>
+      </ThreadItemContent>
 
-      {/* Hover toolbar, storybook-style: floats top-right of the row. */}
-      <div className="absolute top-1 right-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-        <TooltipProvider delay={400}>
-          <ButtonGroup className="rounded-md border border-border bg-surface shadow-sm">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="default"
-                    size="icon-sm"
-                    aria-label="Reply in thread"
-                    onClick={() => onOpenThread(task)}
-                  >
-                    <ChatCircleIcon size={15} />
-                  </Button>
-                }
-              />
-              <TooltipContent side="top">Reply in thread</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="default"
-                    size="icon-sm"
-                    aria-label="Open task"
-                    onClick={() => onOpenTask(task)}
-                  >
-                    <ArrowSquareOutIcon size={15} />
-                  </Button>
-                }
-              />
-              <TooltipContent side="top">Open task</TooltipContent>
-            </Tooltip>
-          </ButtonGroup>
-        </TooltipProvider>
-      </div>
-    </ChatMessage>
+      {/* Actions anchor to the row's top-right corner; a top tooltip there
+          overhangs the panel edge and gets clipped by the scroll container, so
+          open tooltips toward the content instead. */}
+      <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
+        <ThreadItemAction
+          label="Reply in thread"
+          tooltipSide="left"
+          onClick={() => onOpenThread(task)}
+        >
+          <ChatCircleIcon size={15} />
+        </ThreadItemAction>
+        <ThreadItemAction
+          label="Open task"
+          tooltipSide="left"
+          onClick={() => onOpenTask(task)}
+        >
+          <ArrowSquareOutIcon size={15} />
+        </ThreadItemAction>
+      </ThreadItemActions>
+    </ThreadItem>
   );
 }
 
@@ -470,9 +450,22 @@ export function ChannelFeedView({
     <ChatMessageScrollerProvider defaultScrollPosition="end">
       <ChatMessageScroller className="min-h-0 flex-1">
         <ChatMessageScrollerViewport>
-          <ChatMessageScrollerContent className="mx-auto w-full max-w-[820px] px-1 py-3">
+          {/* Horizontal padding is load-bearing: ThreadItem's actions float at
+              the row's top-right corner (absolute, past the row edge). Without a
+              gutter they hug the scroll container and get clipped. */}
+          <ChatMessageScrollerContent className="mx-auto w-full gap-0 py-4">
             {tasks.map((task) => (
-              <ChatMessageScrollerItem key={task.id} messageId={task.id}>
+              <ChatMessageScrollerItem
+                key={task.id}
+                messageId={task.id}
+                // Rows already get `content-visibility:auto` from quill, but its
+                // default `contain-intrinsic-size` (10rem) under-reserves a feed
+                // row (message + task card + replies ≈ 13rem), so off-screen
+                // rows collapse too small and the scrollbar jumps as they paint
+                // in. A closer estimate keeps scrolling stable; `auto` still
+                // remembers each row's real height after its first render.
+                className="[contain-intrinsic-size:auto_13rem] hover:bg-fill-hover/50"
+              >
                 <FeedItem
                   task={task}
                   onOpenTask={onOpenTask}
