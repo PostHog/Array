@@ -1,5 +1,25 @@
-import { describe, expect, it } from "vitest";
-import { buildAppServerArgs } from "./spawn";
+import { delimiter, dirname } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import type { Logger } from "../../utils/logger";
+import { buildAppServerArgs, spawnCodexAppServerProcess } from "./spawn";
+
+const BINARY_PATH = "/bundle/codex";
+
+const mockSpawn = vi.hoisted(() => vi.fn());
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:child_process")>();
+  return { ...original, spawn: mockSpawn };
+});
+
+vi.mock("node:fs", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...original,
+    existsSync: (path: unknown) =>
+      path === "/bundle/codex" || original.existsSync(path as string),
+  };
+});
 
 describe("buildAppServerArgs", () => {
   it("launches the app-server subcommand routed through the PostHog gateway", () => {
@@ -78,3 +98,58 @@ describe("buildAppServerArgs", () => {
     expect(args.some((arg) => arg.startsWith("instructions="))).toBe(false);
   });
 });
+
+describe("spawnCodexAppServerProcess", () => {
+  const silentLogger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  } as unknown as Logger;
+
+  function fakeChild() {
+    return {
+      pid: 4242,
+      stdin: { destroy: vi.fn() },
+      stdout: { destroy: vi.fn() },
+      stderr: { on: vi.fn(), destroy: vi.fn() },
+      on: vi.fn(),
+      kill: vi.fn(),
+    };
+  }
+
+  it("prefixes the binary dir onto an otherwise untouched PATH and scrubs electron vars", () => {
+    const saved = {
+      runAsNode: process.env.ELECTRON_RUN_AS_NODE,
+      noAsar: process.env.ELECTRON_NO_ASAR,
+      path: process.env.PATH,
+    };
+    process.env.ELECTRON_RUN_AS_NODE = "1";
+    process.env.ELECTRON_NO_ASAR = "1";
+    mockSpawn.mockReturnValue(fakeChild() as never);
+    try {
+      spawnCodexAppServerProcess({
+        binaryPath: BINARY_PATH,
+        logger: silentLogger,
+      });
+
+      const env = mockSpawn.mock.calls[0][2].env as NodeJS.ProcessEnv;
+      expect(env.PATH).toBe(
+        `${dirname(BINARY_PATH)}${delimiter}${saved.path ?? ""}`,
+      );
+      expect(env.ELECTRON_RUN_AS_NODE).toBeUndefined();
+      expect(env.ELECTRON_NO_ASAR).toBeUndefined();
+    } finally {
+      restoreEnv("ELECTRON_RUN_AS_NODE", saved.runAsNode);
+      restoreEnv("ELECTRON_NO_ASAR", saved.noAsar);
+      restoreEnv("PATH", saved.path);
+    }
+  });
+});
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
+}
