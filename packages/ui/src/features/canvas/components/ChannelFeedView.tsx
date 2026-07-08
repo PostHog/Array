@@ -12,6 +12,8 @@ import {
   Badge,
   Card,
   CardContent,
+  ChatMarker,
+  ChatMarkerContent,
   ChatMessageScroller,
   ChatMessageScrollerButton,
   ChatMessageScrollerContent,
@@ -48,8 +50,9 @@ import {
   type SidebarPrState,
   useTaskPrStatus,
 } from "@posthog/ui/features/sidebar/useTaskPrStatus";
+import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { Text } from "@radix-ui/themes";
-import { type ReactNode, useMemo } from "react";
+import { Fragment, memo, type ReactNode, useMemo } from "react";
 
 // Feed rows poll their reply counts slower than the open thread panel — the
 // shared query key means an open panel naturally speeds the row up too.
@@ -95,6 +98,39 @@ function statusBadge(status: TaskRunStatus) {
       {STATUS_LABELS[status]}
     </Badge>
   );
+}
+
+// Local calendar-day identity, so tasks created on the same day share a heading
+// regardless of time. Uses local getters (not the UTC ISO) so the split lands
+// on the viewer's midnight.
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function ordinal(n: number): string {
+  const suffix = ["th", "st", "nd", "rd"];
+  const rem = n % 100;
+  return `${n}${suffix[(rem - 20) % 10] ?? suffix[rem] ?? suffix[0]}`;
+}
+
+// The day-separator label: "Today" / "Yesterday" for the recent days, then a
+// weekday + ordinal ("Monday 5th") within the week, adding the month (and the
+// year when it differs) further back so older separators stay unambiguous.
+function dayLabel(iso: string, now: Date): string {
+  const date = new Date(iso);
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  const weekday = date.toLocaleDateString(undefined, { weekday: "long" });
+  const day = ordinal(date.getDate());
+  if (days < 7) return `${weekday} ${day}`;
+  const month = date.toLocaleDateString(undefined, { month: "long" });
+  const year =
+    date.getFullYear() === now.getFullYear() ? "" : `, ${date.getFullYear()}`;
+  return `${weekday}, ${month} ${day}${year}`;
 }
 
 interface TaskStatusDisplay {
@@ -331,7 +367,7 @@ function RepliesRow({
 
   return (
     <ThreadItemReplies onClick={onOpenThread} className="mt-1">
-      <AvatarGroup size="xs" stacked>
+      <AvatarGroup size="xs">
         {authors.map((author, index) => (
           <Avatar key={author?.uuid ?? index} size="xs">
             <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
@@ -348,12 +384,14 @@ function RepliesRow({
   );
 }
 
-function FeedItem({
+const FeedItem = memo(function FeedItem({
   task,
+  inView,
   onOpenTask,
   onOpenThread,
 }: {
   task: Task;
+  inView: boolean;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
@@ -361,7 +399,7 @@ function FeedItem({
   const isAgent = !task.created_by || task.origin_product !== "user_created";
 
   return (
-    <ThreadItem className="py-4 pr-8 hover:bg-fill-hover/10">
+    <ThreadItem className="rounded-none py-4 pr-8 hover:bg-fill-hover/50">
       <ThreadItemGutter>
         <Avatar>
           <AvatarFallback>
@@ -392,7 +430,15 @@ function FeedItem({
         </ThreadItemBody>
 
         <TaskCard task={task} onOpen={() => onOpenTask(task)} />
-        <RepliesRow taskId={task.id} onOpenThread={() => onOpenThread(task)} />
+        {/* Off-screen rows drop the reply teaser so a long feed isn't running a
+            15s poll timer per row; the wide inView margin mounts it well before
+            the row scrolls into view, so nothing pops in. */}
+        {inView && (
+          <RepliesRow
+            taskId={task.id}
+            onOpenThread={() => onOpenThread(task)}
+          />
+        )}
       </ThreadItemContent>
 
       {/* Actions anchor to the row's top-right corner; a top tooltip there
@@ -415,6 +461,40 @@ function FeedItem({
         </ThreadItemAction>
       </ThreadItemActions>
     </ThreadItem>
+  );
+});
+
+// One feed row: owns the scroller item (the `content-visibility` boundary, so
+// its box is always laid out and safe to observe) and reports whether it is
+// near the viewport, letting `FeedItem` shed off-screen polling.
+function FeedRow({
+  task,
+  onOpenTask,
+  onOpenThread,
+}: {
+  task: Task;
+  onOpenTask: (task: Task) => void;
+  onOpenThread: (task: Task) => void;
+}) {
+  const [ref, inView] = useInView<HTMLDivElement>({ rootMargin: "1200px 0px" });
+  return (
+    <ChatMessageScrollerItem
+      ref={ref}
+      messageId={task.id}
+      // Rows already get `content-visibility:auto` from quill, but its default
+      // `contain-intrinsic-size` (10rem) under-reserves a feed row (message +
+      // task card + replies ≈ 13rem), so off-screen rows collapse too small and
+      // the scrollbar jumps as they paint in. A closer estimate keeps scrolling
+      // stable; `auto` still remembers each row's real height after first paint.
+      className="[contain-intrinsic-size:auto_13rem]"
+    >
+      <FeedItem
+        task={task}
+        inView={inView}
+        onOpenTask={onOpenTask}
+        onOpenThread={onOpenThread}
+      />
+    </ChatMessageScrollerItem>
   );
 }
 
@@ -446,6 +526,8 @@ export function ChannelFeedView({
     return <div className="flex-1 overflow-y-auto">{emptyState}</div>;
   }
 
+  const now = new Date();
+
   return (
     <ChatMessageScrollerProvider defaultScrollPosition="end">
       <ChatMessageScroller className="min-h-0 flex-1">
@@ -454,25 +536,28 @@ export function ChannelFeedView({
               the row's top-right corner (absolute, past the row edge). Without a
               gutter they hug the scroll container and get clipped. */}
           <ChatMessageScrollerContent className="mx-auto w-full gap-0 py-4">
-            {tasks.map((task) => (
-              <ChatMessageScrollerItem
-                key={task.id}
-                messageId={task.id}
-                // Rows already get `content-visibility:auto` from quill, but its
-                // default `contain-intrinsic-size` (10rem) under-reserves a feed
-                // row (message + task card + replies ≈ 13rem), so off-screen
-                // rows collapse too small and the scrollbar jumps as they paint
-                // in. A closer estimate keeps scrolling stable; `auto` still
-                // remembers each row's real height after its first render.
-                className="[contain-intrinsic-size:auto_13rem] hover:bg-fill-hover/50"
-              >
-                <FeedItem
-                  task={task}
-                  onOpenTask={onOpenTask}
-                  onOpenThread={onOpenThread}
-                />
-              </ChatMessageScrollerItem>
-            ))}
+            {tasks.map((task, index) => {
+              const previous = tasks[index - 1];
+              const showDayMarker =
+                !previous ||
+                dayKey(previous.created_at) !== dayKey(task.created_at);
+              return (
+                <Fragment key={task.id}>
+                  {showDayMarker && (
+                    <ChatMarker variant="separator">
+                      <ChatMarkerContent>
+                        {dayLabel(task.created_at, now)}
+                      </ChatMarkerContent>
+                    </ChatMarker>
+                  )}
+                  <FeedRow
+                    task={task}
+                    onOpenTask={onOpenTask}
+                    onOpenThread={onOpenThread}
+                  />
+                </Fragment>
+              );
+            })}
           </ChatMessageScrollerContent>
         </ChatMessageScrollerViewport>
         <ChatMessageScrollerButton />
