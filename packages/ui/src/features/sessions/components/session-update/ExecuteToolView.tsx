@@ -52,8 +52,6 @@ export function ExecuteToolView({
   );
   const hasOutput = output.trim().length > 0;
 
-  // Full command in a wrapping mono block so a truncated row still surfaces
-  // exactly what ran on hover, however long it is.
   const commandTooltip = (
     <span className="block max-w-md whitespace-pre-wrap break-all font-mono text-xs">
       {command}
