@@ -4,6 +4,7 @@ import {
   GitBranchIcon,
   InfoIcon,
 } from "@phosphor-icons/react";
+import { GITHUB_CONNECT_TIMEOUT_MESSAGE } from "@posthog/core/integrations/connectErrors";
 import { summarizeReposByOwner } from "@posthog/core/settings/githubRepoSummary";
 import { Button } from "@posthog/quill";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -129,7 +130,7 @@ export function GitHubIntegrationSection({
                 : hasConnectError
                   ? describeGithubConnectError(connectError)
                   : timedOut
-                    ? "We didn't hear back from GitHub. Try again."
+                    ? GITHUB_CONNECT_TIMEOUT_MESSAGE
                     : "Required for the Inbox pipeline to work"}
             </Text>
           )}

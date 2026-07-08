@@ -1,3 +1,4 @@
+import { GITHUB_CONNECT_TIMEOUT_MESSAGE } from "../integrations/connectErrors";
 import { POSTHOG_GITHUB_APP_URL } from "../integrations/githubApp";
 
 export interface GithubPanelMessageOptions {
@@ -12,7 +13,7 @@ export function getGithubPanelMessage(
 ): string {
   if (options.hasConnectError) return options.connectErrorMessage;
   if (options.timedOut) {
-    return "We didn't hear back from GitHub. If the browser tab was closed, click Connect again.";
+    return GITHUB_CONNECT_TIMEOUT_MESSAGE;
   }
   if (options.isConnecting) return "Waiting for GitHub...";
   return "Unlocks cloud runs, branch pushes, and PR review on this account.";
