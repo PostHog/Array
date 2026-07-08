@@ -128,9 +128,10 @@ function installFakeSession(
     },
     sessionResources: new Set(),
     configOptions: [],
-    promptRunning: false,
-    pendingMessages: new Map(),
-    nextPendingOrder: 0,
+    turnQueue: [],
+    activeTurn: null,
+    pendingOrphanResults: 0,
+    queryGeneration: 0,
     cwd: "/tmp/repo",
     notificationHistory: [{ foo: "bar" }],
     taskRunId: "run-1",
@@ -201,7 +202,9 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
   it("rejects refresh while a prompt is in flight", async () => {
     const agent = makeAgent();
     const { session } = installFakeSession(agent, "s-1");
-    (session as unknown as { promptRunning: boolean }).promptRunning = true;
+    (session as unknown as { turnQueue: unknown[] }).turnQueue = [
+      { promptUuid: "u-1", settled: false },
+    ];
 
     await expect(
       agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {

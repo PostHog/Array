@@ -17,6 +17,7 @@ import { homeKeys } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
 import { useQuickActionStore } from "@posthog/ui/features/home/stores/quickActionStore";
 import { insertOptimisticTask } from "@posthog/ui/features/home/utils/optimisticTask";
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
+import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
@@ -170,16 +171,14 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
             });
             return;
           }
-          toast.error("Failed to start task", { description: result.error });
+          toastError("Failed to start task", result.error);
           log.error("Quick action task creation failed", {
             failedStep: result.failedStep,
             error: result.error,
           });
           fallbackToTaskInput();
         } catch (error) {
-          const description =
-            error instanceof Error ? error.message : "Unknown error";
-          toast.error("Failed to start task", { description });
+          toastError("Failed to start task", error);
           log.error("Quick action task creation threw", { error });
           fallbackToTaskInput();
         } finally {

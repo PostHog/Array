@@ -1864,18 +1864,45 @@ describe("AgentServer HTTP Mode", () => {
         p: JwtPayload,
         u: Record<string, unknown> | undefined,
       ): void;
-      fetchPrCreatedAt(url: string): Promise<string | null>;
+      fetchPrAttribution(
+        url: string,
+      ): Promise<{ createdAt: string | null; author: string | null }>;
+      fetchGhLogin(): Promise<string | null>;
       detectedPrUrl: string | null;
-      posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+      posthogAPI: {
+        getTaskRun: ReturnType<typeof vi.fn>;
+        updateTaskRun: ReturnType<typeof vi.fn>;
+      };
     };
 
     const justNow = () => new Date().toISOString();
     const longAgo = "2020-01-01T00:00:00Z";
+    const GH_LOGIN = "run-owner";
 
-    const setup = (prCreatedAt: string | null): PrTestServer => {
+    const setup = (
+      prCreatedAt: string | null,
+      prAuthor: string | null = GH_LOGIN,
+    ): PrTestServer => {
       const s = createServer() as unknown as PrTestServer;
-      s.fetchPrCreatedAt = vi.fn(async () => prCreatedAt);
-      s.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      s.fetchPrAttribution = vi.fn(async () => ({
+        createdAt: prCreatedAt,
+        author: prAuthor,
+      }));
+      s.fetchGhLogin = vi.fn(async () => GH_LOGIN);
+      let storedOutput: Record<string, unknown> | null = null;
+      s.posthogAPI = {
+        getTaskRun: vi.fn(async () => ({ output: storedOutput })),
+        updateTaskRun: vi.fn(
+          async (
+            _taskId: string,
+            _runId: string,
+            updates: { output: Record<string, unknown> },
+          ) => {
+            storedOutput = updates.output;
+            return {};
+          },
+        ),
+      };
       return s;
     };
 
@@ -1886,7 +1913,7 @@ describe("AgentServer HTTP Mode", () => {
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
-        output: { pr_url: PR_URL },
+        output: { pr_url: PR_URL, pr_urls: [PR_URL] },
       });
       expect(s.detectedPrUrl).toBe(PR_URL);
     });
@@ -1903,7 +1930,7 @@ describe("AgentServer HTTP Mode", () => {
       const s = setup(justNow());
       s.maybeAttachCreatedPr(payload, { sessionUpdate: "agent_thought_chunk" });
       await flush();
-      expect(s.fetchPrCreatedAt).not.toHaveBeenCalled();
+      expect(s.fetchPrAttribution).not.toHaveBeenCalled();
       expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
 
@@ -1913,12 +1940,11 @@ describe("AgentServer HTTP Mode", () => {
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
-      expect(s.fetchPrCreatedAt).toHaveBeenCalledTimes(1);
+      expect(s.fetchPrAttribution).toHaveBeenCalledTimes(1);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
 
-    it("attributes the most recent PR when a run opens several, in detection order", async () => {
-      // output.pr_url holds one value; the latest PR the run created is the useful one.
+    it("accumulates every PR a run opens, keeping the first as primary", async () => {
       const s = setup(justNow());
       const second = "https://github.com/PostHog/posthog.com/pull/17765";
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
@@ -1926,7 +1952,7 @@ describe("AgentServer HTTP Mode", () => {
       await flush();
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith("t", "r", {
-        output: { pr_url: second },
+        output: { pr_url: PR_URL, pr_urls: [PR_URL, second] },
       });
       expect(s.detectedPrUrl).toBe(second);
     });
@@ -1935,14 +1961,31 @@ describe("AgentServer HTTP Mode", () => {
       const viewed = "https://github.com/PostHog/posthog.com/pull/1";
       // The created PR reads as recent; the later, merely-viewed PR reads as old.
       const s = setup(justNow());
-      s.fetchPrCreatedAt = vi.fn(async (url: string) =>
-        url === PR_URL ? justNow() : longAgo,
-      );
+      s.fetchPrAttribution = vi.fn(async (url: string) => ({
+        createdAt: url === PR_URL ? justNow() : longAgo,
+        author: GH_LOGIN,
+      }));
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(viewed));
       await flush();
       expect(s.detectedPrUrl).toBe(PR_URL);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not attribute a fresh PR authored by someone else (merely viewed)", async () => {
+      const s = setup(justNow(), "someone-else");
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+      expect(s.detectedPrUrl).toBeNull();
+    });
+
+    it("fails closed when the run's GitHub identity cannot be resolved", async () => {
+      const s = setup(justNow());
+      s.fetchGhLogin = vi.fn(async () => null);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
   });
 
@@ -1973,6 +2016,17 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("Generated-By: PostHog Code");
       expect(prompt).toContain("Task-Id: test-task-id");
       expect(prompt).not.toContain("gh pr create --draft");
+      // If the user does explicitly ask for a PR in this review-first mode,
+      // the agent must still use the PostHog Code footer, not Claude Code's default.
+      expect(prompt).toContain(
+        "If the user explicitly asks you to open a pull request",
+      );
+      expect(prompt).toContain(
+        "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
+      );
+      expect(prompt).toContain(".github/pull_request_template.md");
+      expect(prompt).toContain("gh issue list --search");
+      expect(prompt).toContain("Closes #<n>");
     });
 
     it("returns default prompt when prUrl is null", () => {

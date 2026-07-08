@@ -14,6 +14,7 @@ import { useAuthSession } from "@posthog/ui/features/auth/useAuthSession";
 import { useIsOrgAdmin } from "@posthog/ui/features/auth/useOrgRole";
 import { CanvasGenerationToaster } from "@posthog/ui/features/canvas/freeform/useCanvasGenerationToasts";
 import { AddDirectoryDialog } from "@posthog/ui/features/folder-picker/AddDirectoryDialog";
+import { ErrorDetailsDialog } from "@posthog/ui/features/notifications/ErrorDetailsDialog";
 import { OnboardingFlow } from "@posthog/ui/features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import { SettingsDialog } from "@posthog/ui/features/settings/SettingsDialog";
@@ -222,6 +223,7 @@ function App({ devToolbar }: AppProps) {
             />
             <ScopeReauthPrompt />
             <AddDirectoryDialog />
+            <ErrorDetailsDialog />
           </div>
           {devToolbar}
         </div>

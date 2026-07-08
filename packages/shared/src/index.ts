@@ -76,6 +76,7 @@ export {
   isFatalSessionError,
   isNotAuthenticatedError,
   isRateLimitError,
+  isTransientUpstreamError,
   NotAuthenticatedError,
   type SerializedError,
   serializeError,
@@ -145,6 +146,13 @@ export {
   pathToFileUri,
   toRelativePath,
 } from "./path";
+export {
+  buildPrOutput,
+  mergePrUrls,
+  promotePrUrl,
+  readPrSummaries,
+  readPrUrls,
+} from "./pr-urls";
 export {
   type CloudRegion,
   formatRegionBadge,

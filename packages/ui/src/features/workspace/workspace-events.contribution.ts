@@ -64,7 +64,7 @@ export class WorkspaceEventsContribution implements Contribution {
       queryClient: this.queryClient,
     });
     this.hostClient.workspace.onTaskPrInfoChanged.subscribe(undefined, {
-      onData: ({ taskId, prUrl, prState }) => {
+      onData: ({ taskId, prUrl, prUrls, prState }) => {
         this.queryClient.setQueriesData<{
           prState: typeof prState;
           hasDiff: boolean;
@@ -83,7 +83,7 @@ export class WorkspaceEventsContribution implements Contribution {
         );
         this.queryClient.setQueryData(
           options.workspace.getCachedPrUrl.queryKey({ taskId }),
-          { prUrl },
+          { prUrl, prUrls: prUrls ?? [] },
         );
       },
     });

@@ -233,6 +233,40 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
     };
   }
 
+  async generatePrShortSummary(
+    conversationContext?: string,
+    prTitle?: string,
+  ): Promise<{ summary: string }> {
+    if (!conversationContext && !prTitle) return { summary: "" };
+
+    const system = `You generate ultra-short labels for pull requests. Given context about a PR, output a label of 15-20 characters that captures what the PR does.
+
+Rules:
+- 15-20 characters total, never more than 24
+- Plain words, no punctuation, no quotes, no trailing period
+- Imperative mood ("Fix login loop" not "Fixed login loop")
+- Output only the label, nothing else`;
+
+    const parts: string[] = [];
+    if (prTitle) parts.push(`PR title: ${prTitle}`);
+    if (conversationContext) {
+      parts.push(`Conversation context:\n${conversationContext}`);
+    }
+
+    const response = await this.llm.prompt(
+      [{ role: "user", content: parts.join("\n\n") }],
+      {
+        system,
+        maxTokens: 30,
+        model: HELPER_GATEWAY_MODEL,
+        posthogProperties: { $ai_span_name: "pr_short_summary" },
+      },
+    );
+
+    const summary = response.content.trim().replace(/^["']|["']$/g, "");
+    return { summary: summary.length > 24 ? summary.slice(0, 24) : summary };
+  }
+
   /**
    * Orchestrate branch -> commit -> push -> PR creation as a saga. Host git/gh
    * operations come through `host`; commit-message and PR-description generation

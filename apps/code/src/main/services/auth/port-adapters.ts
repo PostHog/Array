@@ -26,8 +26,14 @@ import {
   AUTH_PREFERENCE_REPOSITORY,
   AUTH_SESSION_REPOSITORY,
   WORKSPACE_CLIENT,
+  WORKSPACE_SERVER_SERVICE,
 } from "../../di/tokens";
 import { decrypt, encrypt } from "../../utils/encryption";
+import {
+  WorkspaceServerEvent,
+  type WorkspaceServerService,
+  WorkspaceServerStatus,
+} from "../workspace-server/service";
 
 @injectable()
 export class TokenCipherPortAdapter implements IAuthTokenCipher {
@@ -149,12 +155,43 @@ export class AuthPreferencePortAdapter implements IAuthPreferenceStore {
 export class ConnectivityPortAdapter implements IAuthConnectivity {
   private isOnline = true;
   private readonly handlers = new Set<(status: ConnectivityStatus) => void>();
+  private sub: { unsubscribe: () => void } | null = null;
+  private readonly onServerStatusChanged = ({
+    status,
+  }: {
+    status: WorkspaceServerStatus;
+  }): void => {
+    if (status === WorkspaceServerStatus.Ready) this.subscribe();
+  };
 
   constructor(
     @inject(WORKSPACE_CLIENT)
     private readonly workspace: WorkspaceClient,
+    @inject(WORKSPACE_SERVER_SERVICE)
+    private readonly workspaceServer: WorkspaceServerService,
   ) {
-    this.workspace.connectivity.onStatusChange.subscribe(undefined, {
+    this.subscribe();
+    // The workspace-server child respawns on a new port after a crash; the
+    // old SSE subscription keeps retrying the dead port forever, so re-
+    // establish it against the current connection once the server is healthy.
+    this.workspaceServer.on(
+      WorkspaceServerEvent.StatusChanged,
+      this.onServerStatusChanged,
+    );
+  }
+
+  dispose(): void {
+    this.workspaceServer.off(
+      WorkspaceServerEvent.StatusChanged,
+      this.onServerStatusChanged,
+    );
+    this.sub?.unsubscribe();
+    this.sub = null;
+  }
+
+  private subscribe(): void {
+    this.sub?.unsubscribe();
+    this.sub = this.workspace.connectivity.onStatusChange.subscribe(undefined, {
       onData: (status) => {
         this.isOnline = status.isOnline;
         for (const handler of this.handlers) {

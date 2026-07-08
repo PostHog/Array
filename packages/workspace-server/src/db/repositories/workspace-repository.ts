@@ -1,4 +1,4 @@
-import type { WorkspaceMode } from "@posthog/shared";
+import { mergePrUrls, promotePrUrl, type WorkspaceMode } from "@posthog/shared";
 import { eq, isNotNull } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { DATABASE_SERVICE } from "../identifiers";
@@ -20,6 +20,7 @@ export interface CreateWorkspaceData {
 export interface PrCacheUpdate {
   prUrl: string | null;
   prState: CachedPrState | null;
+  accumulate: boolean;
 }
 
 export interface IWorkspaceRepository {
@@ -46,10 +47,12 @@ export interface IWorkspaceRepository {
   addAdditionalDirectory(taskId: string, path: string): void;
   removeAdditionalDirectory(taskId: string, path: string): void;
   updatePrCache(taskId: string, update: PrCacheUpdate): void;
+  getPrUrls(taskId: string): string[];
+  promotePrUrl(taskId: string, prUrl: string): void;
   deleteAll(): void;
 }
 
-export function parseDirectories(value: string | null | undefined): string[] {
+export function parseStringArray(value: string | null | undefined): string[] {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value);
@@ -199,7 +202,7 @@ export class WorkspaceRepository implements IWorkspaceRepository {
 
   getAdditionalDirectories(taskId: string): string[] {
     const workspace = this.findByTaskId(taskId);
-    return parseDirectories(workspace?.additionalDirectories);
+    return parseStringArray(workspace?.additionalDirectories);
   }
 
   private updateDirectories(
@@ -232,13 +235,32 @@ export class WorkspaceRepository implements IWorkspaceRepository {
   }
 
   updatePrCache(taskId: string, update: PrCacheUpdate): void {
+    const existing = parseStringArray(this.findByTaskId(taskId)?.prUrls);
+    const prUrls =
+      update.prUrl && update.accumulate
+        ? mergePrUrls(existing, [update.prUrl])
+        : existing;
     this.db
       .update(workspaces)
       .set({
         prUrl: update.prUrl,
         prState: update.prState,
+        prUrls: JSON.stringify(prUrls),
         updatedAt: now(),
       })
+      .where(byTaskId(taskId))
+      .run();
+  }
+
+  getPrUrls(taskId: string): string[] {
+    return parseStringArray(this.findByTaskId(taskId)?.prUrls);
+  }
+
+  promotePrUrl(taskId: string, prUrl: string): void {
+    const prUrls = promotePrUrl(this.getPrUrls(taskId), prUrl);
+    this.db
+      .update(workspaces)
+      .set({ prUrls: JSON.stringify(prUrls), updatedAt: now() })
       .where(byTaskId(taskId))
       .run();
   }

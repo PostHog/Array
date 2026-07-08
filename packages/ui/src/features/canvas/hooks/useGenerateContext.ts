@@ -8,8 +8,8 @@ import type { WorkspaceMode } from "@posthog/shared";
 import { buildContextGenerationPrompt } from "@posthog/ui/features/canvas/contextPrompt";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderGenerationTaskMutation } from "@posthog/ui/features/canvas/hooks/useFolderGenerationTask";
+import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
-import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
@@ -47,9 +47,7 @@ export function useGenerateContext(channelId: string, channelName: string) {
         );
 
         if (!result.success) {
-          toast.error("Couldn't start CONTEXT.md generation", {
-            description: result.error,
-          });
+          toastError("Couldn't start CONTEXT.md generation", result.error);
           return null;
         }
 

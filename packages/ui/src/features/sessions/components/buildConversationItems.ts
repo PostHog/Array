@@ -425,9 +425,7 @@ function completePromptTurn(
   if (turn.isComplete) return;
 
   turn.isComplete = true;
-  if (turn.promptId !== -1) {
-    turn.durationMs += ts;
-  }
+  turn.durationMs += ts;
 
   turn.stopReason = result?.stopReason;
   turn.interruptReason = result?.interruptReason;
@@ -486,9 +484,6 @@ function handleNotification(
   if (msg.method === "session/update") {
     const update = (msg.params as SessionNotification)?.update;
     if (!update) return;
-    if (!b.currentTurn) {
-      ensureImplicitTurn(b, ts);
-    }
     processSessionUpdate(b, update, ts);
     return;
   }
@@ -497,7 +492,10 @@ function handleNotification(
   // products are surfaced as a persistent, de-duplicated bar above the composer
   // (see accumulateSessionResources / SessionResourcesBar).
 
-  if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)) {
+  if (
+    isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE) ||
+    isNotification(msg.method, POSTHOG_NOTIFICATIONS.BACKGROUND_TURN_COMPLETE)
+  ) {
     const params = msg.params as { stopReason?: string } | undefined;
     if (!b.currentTurn) return;
     completePromptTurn(b, b.currentTurn, ts, {
@@ -511,7 +509,7 @@ function handleNotification(
     if (!params?.message) return;
     const level = params.level ?? "info";
     if (level === "debug" && !options?.showDebugLogs) return;
-    if (!b.currentTurn) ensureImplicitTurn(b, ts);
+    ensureImplicitTurn(b, ts);
     pushItem(b, {
       sessionUpdate: "console",
       level,
@@ -542,7 +540,7 @@ function handleNotification(
   }
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.COMPACT_BOUNDARY)) {
-    if (!b.currentTurn) ensureImplicitTurn(b, ts);
+    ensureImplicitTurn(b, ts);
     const params = msg.params as {
       trigger: "manual" | "auto";
       preTokens: number;
@@ -559,7 +557,7 @@ function handleNotification(
   }
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.STATUS)) {
-    if (!b.currentTurn) ensureImplicitTurn(b, ts);
+    ensureImplicitTurn(b, ts);
     const params = msg.params as {
       status: string;
       isComplete?: boolean;
@@ -614,7 +612,7 @@ function ensureProgressCardForGroup(
   const existing = b.progressCards.get(group);
   if (existing) return existing;
 
-  if (!b.currentTurn) ensureImplicitTurn(b, ts);
+  ensureImplicitTurn(b, ts);
   if (!b.currentTurn) return null;
 
   const renderItem = {
@@ -700,7 +698,7 @@ function markCompactingStatusComplete(b: ItemBuilder) {
 }
 
 function ensureImplicitTurn(b: ItemBuilder, ts: number) {
-  if (b.currentTurn) return;
+  if (b.currentTurn && !b.currentTurn.isComplete) return;
 
   b.currentTurnStartIndex = b.items.length;
   const turnId = `turn-${ts}-implicit`;
@@ -717,7 +715,7 @@ function ensureImplicitTurn(b: ItemBuilder, ts: number) {
     id: turnId,
     promptId: -1,
     isComplete: false,
-    durationMs: 0,
+    durationMs: -ts,
     toolCalls,
     context,
     gitAction: { isGitAction: false, actionType: null, prompt: "" },
@@ -828,12 +826,14 @@ function processSessionUpdate(
       if (parentId) {
         appendTextChunkToChildren(b, parentId, update);
       } else {
+        ensureImplicitTurn(b, ts);
         appendTextChunk(b, update, ts);
       }
       break;
     }
 
     case "tool_call": {
+      ensureImplicitTurn(b, ts);
       const turn = b.currentTurn;
       if (!turn) break;
       const existing = turn.toolCalls.get(update.toolCallId);
@@ -890,6 +890,7 @@ function processSessionUpdate(
       };
       if (customUpdate.sessionUpdate === "agent_message") {
         if (customUpdate.content?.type === "text") {
+          ensureImplicitTurn(b, ts);
           appendTextChunk(
             b,
             {
@@ -903,6 +904,7 @@ function processSessionUpdate(
         customUpdate.sessionUpdate === "status" ||
         customUpdate.sessionUpdate === "error"
       ) {
+        ensureImplicitTurn(b, ts);
         pushItem(b, customUpdate as unknown as SessionUpdate, ts);
       }
       break;
@@ -922,6 +924,7 @@ function appendTextChunk(
   const lastItem = b.items[b.items.length - 1];
   if (
     lastItem?.type === "session_update" &&
+    lastItem.turnContext === b.currentTurn?.context &&
     lastItem.update.sessionUpdate === update.sessionUpdate &&
     "content" in lastItem.update &&
     lastItem.update.content.type === "text"

@@ -8,7 +8,6 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { PosthogProviderOptions } from "../posthog-provider/provider";
 import type { AgentConfig } from "./agents";
-import { backgroundRuns } from "./background-runner";
 import { runChain } from "./chain";
 import {
   type AgentScope,
@@ -16,16 +15,12 @@ import {
   gateProjectAgents,
 } from "./discovery";
 import {
-  aggregateUsage,
   formatParallelSummary,
   getFinalOutput,
   getResultOutput,
-  truncateForModel,
 } from "./format";
-import { listRuns, transcriptPath } from "./lifecycle";
 import { runPool } from "./process/pool";
 import { renderSubagentCall, renderSubagentResult } from "./render";
-import { registerSubagentRpc } from "./rpc";
 import { isFailedResult, runAgent, type SingleRunResult } from "./run-agent";
 
 export type SubagentOptions = PosthogProviderOptions;
@@ -96,13 +91,6 @@ const SubagentParams = Type.Object({
       default: true,
     }),
   ),
-  background: Type.Optional(
-    Type.Boolean({
-      description:
-        "Run detached and return immediately with a runId instead of waiting for completion. Check progress with /subagents-fleet.",
-      default: false,
-    }),
-  ),
   cwd: Type.Optional(
     Type.String({
       description: "Working directory for the agent process (single mode)",
@@ -113,7 +101,6 @@ const SubagentParams = Type.Object({
 interface SubagentToolDetails {
   mode: "single" | "parallel" | "chain";
   results: SingleRunResult[];
-  runId?: string;
 }
 
 type SubagentToolResult = {
@@ -133,17 +120,11 @@ function errorResult(
   };
 }
 
-function resultText(result: SubagentToolResult): string {
-  return result.content[0]?.text ?? "";
-}
-
 export function createSubagentExtension(
   options: SubagentOptions = {},
 ): ExtensionFactory {
   return (pi: ExtensionAPI) => {
     void options;
-
-    registerSubagentRpc(pi);
 
     // Saved orchestration shortcuts (/parallel-review, /scout-and-plan,
     // /implement-and-review) that just call the `subagent` tool in the
@@ -162,7 +143,6 @@ export function createSubagentExtension(
           "Modes: single ({agent, task}), parallel ({tasks:[...]}, max 8 tasks / 4 concurrent), chain ({chain:[...]}, sequential with a {previous} placeholder for the prior step's output, max 8 steps).",
           "Bundled agents: scout (fast read-only recon), planner (implementation plan, no edits), reviewer (reviews a diff/change, can apply small fixes), worker (general-purpose implementation), oracle (second opinion, no edits).",
           'Set agentScope: "both" to also allow project-local .pi/agents/*.md (gated by trust + confirmation).',
-          "Set background: true to start the run detached and check on it later with /subagents-fleet.",
         ].join(" "),
         promptSnippet:
           "Delegate a task to a focused subagent (scout, planner, reviewer, worker, oracle)",
@@ -170,7 +150,6 @@ export function createSubagentExtension(
           "Use subagent to delegate scoped work (recon, planning, review, a second opinion) to an isolated context instead of doing it inline.",
           "Use subagent's parallel mode to run several independent scouts/reviewers concurrently rather than sequentially.",
           "Use subagent's chain mode for a fixed pipeline (e.g. scout -> planner -> worker) where each step needs the previous step's output.",
-          "Use subagent's background mode for long-running work you don't need to block on; check it later with /subagents-fleet.",
           "Always pass subagent's context field with file paths already found, decisions already made, and constraints — a subagent otherwise only sees its bare task text plus a small auto-generated digest of recent turns.",
           "Subagents cannot themselves call subagent; keep orchestration in the parent session.",
         ],
@@ -267,26 +246,9 @@ export function createSubagentExtension(
 
           type UpdateFn = typeof onUpdate;
 
-          // Live human-in-the-loop only: background runs have no UI once the
-          // tool call has already returned, so they don't get this callback
-          // and their `contact_supervisor` calls simply time out.
-          const onSupervisorRequest = ctx.hasUI
-            ? async (request: { reason: string; message: string }) => {
-                const reply = await ctx.ui.input(
-                  `Subagent needs input (${request.reason})`,
-                  request.message,
-                );
-                return (
-                  reply ??
-                  "(the supervisor didn't respond; proceed using your best judgment)"
-                );
-              }
-            : undefined;
-
           const runDispatch = async (
             dispatchSignal: AbortSignal | undefined,
             dispatchOnUpdate: UpdateFn,
-            live: boolean,
           ): Promise<SubagentToolResult> => {
             if (hasChain && params.chain) {
               const outcome = await runChain({
@@ -294,7 +256,6 @@ export function createSubagentExtension(
                 steps: params.chain,
                 findAgent,
                 signal: dispatchSignal,
-                onSupervisorRequest: live ? onSupervisorRequest : undefined,
                 onUpdate: (results) =>
                   dispatchOnUpdate?.({
                     content: [
@@ -356,7 +317,6 @@ export function createSubagentExtension(
                     cwd: t.cwd,
                     context: t.context,
                     signal: taskSignal,
-                    onSupervisorRequest: live ? onSupervisorRequest : undefined,
                   });
                 },
               );
@@ -377,7 +337,6 @@ export function createSubagentExtension(
               cwd: params.cwd,
               context: params.context,
               signal: dispatchSignal,
-              onSupervisorRequest: live ? onSupervisorRequest : undefined,
               onUpdate: (partial) =>
                 dispatchOnUpdate?.({
                   content: [
@@ -414,81 +373,10 @@ export function createSubagentExtension(
             };
           };
 
-          if (params.background) {
-            const handle = backgroundRuns.start(
-              { mode, agents: Array.from(requestedNames) },
-              async (bgSignal) => {
-                const result = await runDispatch(bgSignal, undefined, false);
-                const usage = aggregateUsage(result.details.results);
-                return {
-                  model: result.details.results[0]?.model,
-                  totalTokens: usage.totalTokens,
-                  totalCost: usage.totalCost,
-                  resultSummary: truncateForModel(resultText(result), 2000),
-                  childRunIds: result.details.results.map((r) => r.runId),
-                };
-              },
-            );
-
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Started in background as run ${handle.runId}. Check progress with /subagents-fleet.`,
-                },
-              ],
-              details: { mode, results: [], runId: handle.runId },
-            };
-          }
-
-          return runDispatch(signal, onUpdate, true);
+          return runDispatch(signal, onUpdate);
         },
       }),
     );
-
-    pi.registerCommand("subagents-fleet", {
-      description:
-        "List subagent runs (background and recently completed) and their state",
-      handler: async (args, ctx) => {
-        const [action, runId] = args.trim().split(/\s+/, 2);
-
-        if (action === "interrupt" && runId) {
-          const interrupted = backgroundRuns.interrupt(runId);
-          ctx.ui.notify(
-            interrupted
-              ? `Interrupt requested for run ${runId}.`
-              : `No active in-memory run found for ${runId}.`,
-            "info",
-          );
-          return;
-        }
-
-        const runs = listRuns();
-        if (runs.length === 0) {
-          ctx.ui.notify("No subagent runs recorded yet.", "info");
-          return;
-        }
-
-        const lines = runs.slice(0, 20).map((run) => {
-          const inMemory = backgroundRuns.get(run.runId);
-          const liveTag = inMemory?.isRunning() ? " [interruptible]" : "";
-          const duration = run.durationMs
-            ? `${Math.round(run.durationMs / 1000)}s`
-            : "running";
-          const header = `${run.state.padEnd(9)} ${run.runId.slice(0, 8)} ${run.mode.padEnd(8)} ${run.agents.join(",")} ${duration}${liveTag}`;
-          // Job-level records (background dispatch of parallel/chain/single)
-          // don't have their own transcript — each `childRunIds` entry does.
-          if (run.childRunIds && run.childRunIds.length > 0) {
-            const children = run.childRunIds
-              .map((id) => `    ${id.slice(0, 8)}: ${transcriptPath(id)}`)
-              .join("\n");
-            return `${header}\n  children:\n${children}`;
-          }
-          return `${header}\n  transcript: ${transcriptPath(run.runId)}`;
-        });
-        ctx.ui.notify(lines.join("\n"), "info");
-      },
-    });
   };
 }
 

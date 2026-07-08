@@ -32,6 +32,7 @@ import {
   useRepositoryIntegration,
   useUserRepositoryIntegration,
 } from "@posthog/ui/features/integrations/useIntegrations";
+import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { ScoutsFleetSection } from "@posthog/ui/features/scouts/components/ScoutsFleetSection";
 import { GitHubIntegrationSection } from "@posthog/ui/features/settings/sections/GitHubIntegrationSection";
 import { SlackInboxNotificationsSettings } from "@posthog/ui/features/settings/sections/SlackInboxNotificationsSettings";
@@ -365,9 +366,7 @@ function SetupTaskSection() {
           adapter,
         });
       } else {
-        toast.error("Failed to start Self-driving setup", {
-          description: result.error,
-        });
+        toastError("Failed to start Self-driving setup", result.error);
         log.error("Self-driving setup task creation failed", {
           failedStep: result.failedStep,
           error: result.error,
@@ -380,9 +379,7 @@ function SetupTaskSection() {
         action_type: "run_setup_agent",
         success: false,
       });
-      const description =
-        error instanceof Error ? error.message : "Unknown error";
-      toast.error("Failed to start Self-driving setup", { description });
+      toastError("Failed to start Self-driving setup", error);
       log.error("Unexpected error during Self-driving setup task creation", {
         error,
         repository: setupRepository,

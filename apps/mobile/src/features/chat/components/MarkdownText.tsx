@@ -7,6 +7,7 @@ import { openExternalUrl } from "@/lib/openExternalUrl";
 import { type ParsePostHogUrlOptions, parsePostHogUrl } from "@/lib/posthogUrl";
 import { getColorForClass, highlightCode } from "@/lib/syntax-highlight";
 import { useThemeColors } from "@/lib/theme";
+import { CopyButton } from "./CopyButton";
 import { GithubRefChip } from "./GithubRefChip";
 import { MarkdownImage } from "./MarkdownImage";
 import { PostHogRefChip } from "./PostHogRefChip";
@@ -441,13 +442,16 @@ export function MarkdownText({ content }: MarkdownTextProps) {
                 key={key}
                 className="rounded-md border border-gray-6 bg-gray-3"
               >
-                {block.language && (
-                  <View className="border-gray-6 border-b px-3 py-1">
-                    <Text className="font-mono text-[10px] text-gray-9">
-                      {block.language}
-                    </Text>
-                  </View>
-                )}
+                <View className="flex-row items-center justify-between border-gray-6 border-b px-3 py-1">
+                  <Text className="font-mono text-[10px] text-gray-9">
+                    {block.language}
+                  </Text>
+                  <CopyButton
+                    text={block.content}
+                    size={13}
+                    label="Copy code"
+                  />
+                </View>
                 <View className="px-3 py-2">
                   {block.language ? (
                     <HighlightedCode

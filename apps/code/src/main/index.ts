@@ -2,7 +2,7 @@ import "reflect-metadata";
 import os from "node:os";
 import { TypedEventEmitter } from "@posthog/shared";
 import type { WorkspaceClient } from "@posthog/workspace-client/client";
-import { createWorkspaceClient } from "@posthog/workspace-client/client";
+import { createReconnectingWorkspaceClient } from "@posthog/workspace-client/client";
 import type { FileWatcherEvent } from "@posthog/workspace-client/types";
 import { app, BrowserWindow, dialog, session } from "electron";
 import log from "electron-log/main";
@@ -82,7 +82,11 @@ import {
   focusSessionStore,
   focusWorktreePaths,
 } from "./services/focus/desktop-adapters";
-import type { WorkspaceServerService } from "./services/workspace-server/service";
+import {
+  WorkspaceServerEvent,
+  type WorkspaceServerService,
+  WorkspaceServerStatus,
+} from "./services/workspace-server/service";
 import {
   collectMemorySnapshot,
   flattenMemorySnapshot,
@@ -129,6 +133,19 @@ export class FileWatcherBridge extends TypedEventEmitter<FileWatcherEventsByKind
     if (!sub) return;
     sub.unsubscribe();
     this.subs.delete(repoPath);
+  }
+
+  /**
+   * Tear down and re-create every active watch. The workspace-server child
+   * respawns on a new port after a crash; the old SSE subscriptions keep
+   * retrying the dead port forever, so the boot wiring calls this when the
+   * server reports ready again.
+   */
+  resubscribeAll(): void {
+    for (const repoPath of [...this.subs.keys()]) {
+      this.stopWatching(repoPath);
+      this.startWatching(repoPath);
+    }
   }
 }
 
@@ -353,13 +370,25 @@ app.whenReady().then(async () => {
   const wsServer = container.get<WorkspaceServerService>(
     WORKSPACE_SERVER_SERVICE,
   );
-  const connection = await wsServer.start();
-  const workspaceClient = createWorkspaceClient(connection);
+  await wsServer.start();
+  // The workspace-server child respawns on a new port/secret after a crash;
+  // a reconnecting client follows the current connection so main-process
+  // callers don't keep hitting the dead port for the rest of the session.
+  const workspaceClient = createReconnectingWorkspaceClient(() =>
+    wsServer.getConnection(),
+  );
   container.bind(WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(GIT_WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(CONNECTIVITY_CLIENT).toConstantValue(workspaceClient);
   container.bind(ENVIRONMENT_CLIENT).toConstantValue(workspaceClient);
   const fileWatcherBridge = new FileWatcherBridge(workspaceClient);
+  // Re-establish live watches after a workspace-server respawn — the old SSE
+  // subscriptions keep retrying the dead port and never recover on their own.
+  wsServer.on(WorkspaceServerEvent.StatusChanged, ({ status }) => {
+    if (status === WorkspaceServerStatus.Ready) {
+      fileWatcherBridge.resubscribeAll();
+    }
+  });
   container.bind(FILE_WATCHER_SERVICE).toConstantValue(fileWatcherBridge);
   container.bind(FILE_WATCHER_CONTROL).toConstantValue(fileWatcherBridge);
   container.bind(FOCUS_WORKSPACE_CLIENT).toConstantValue(workspaceClient);

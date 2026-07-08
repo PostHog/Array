@@ -16,7 +16,12 @@ import {
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
-import type { Adapter } from "@posthog/shared";
+import {
+  type Adapter,
+  buildPrOutput,
+  mergePrUrls,
+  readPrUrls,
+} from "@posthog/shared";
 import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -45,7 +50,11 @@ import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { PostHogAPIClient } from "../posthog-api";
-import { findPrUrl, wasCreatedRecently } from "../pr-url-detector";
+import {
+  findPrUrls,
+  wasCreatedByLogin,
+  wasCreatedRecently,
+} from "../pr-url-detector";
 import {
   formatConversationForResume,
   type ResumeState,
@@ -2883,6 +2892,11 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create a branch, commit, push, or open a pull request unless the user explicitly asks.
+- If the user explicitly asks you to open a pull request: pick a new branch name prefixed with \`posthog-code/\`, stage your changes with \`git add\`, and call the \`git_signed_commit\` tool with \`branch\` set to that name and a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). Before opening the PR, check the repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links. Keep the description brief overall — summarize only the most important changes.
+${whyContextInstruction.trimStart()}
+${publicRepoSafetyInstruction.trimStart()}
+- End the PR description with a horizontal rule followed by this footer line: ${prFooter}
+- Always create the PR as a draft.
 ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
     }
@@ -3438,13 +3452,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     update: Record<string, unknown> | undefined,
   ): void {
     if (!update) return;
-    const prUrl = findPrUrl(JSON.stringify(update));
-    if (!prUrl || this.evaluatedPrUrls.has(prUrl)) return;
-    this.evaluatedPrUrls.add(prUrl);
-    // Chain so attributions run in detection order; later PRs overwrite earlier ones.
-    this.prAttributionChain = this.prAttributionChain
-      .catch(() => {})
-      .then(() => this.attachPrIfCreatedThisRun(payload, prUrl));
+    for (const prUrl of findPrUrls(JSON.stringify(update))) {
+      if (this.evaluatedPrUrls.has(prUrl)) continue;
+      this.evaluatedPrUrls.add(prUrl);
+      // Chain so attributions run in detection order; later PRs append after earlier ones.
+      this.prAttributionChain = this.prAttributionChain
+        .catch(() => {})
+        .then(() => this.attachPrIfCreatedThisRun(payload, prUrl));
+    }
   }
 
   private async attachPrIfCreatedThisRun(
@@ -3454,9 +3469,13 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     // Already the attributed PR (e.g. seeded from a Slack notification, or re-detected).
     if (prUrl === this.detectedPrUrl) return;
 
-    let createdAt: string | null;
+    let attribution: { createdAt: string | null; author: string | null };
+    let ghLogin: string | null;
     try {
-      createdAt = await this.fetchPrCreatedAt(prUrl);
+      [attribution, ghLogin] = await Promise.all([
+        this.fetchPrAttribution(prUrl),
+        this.fetchGhLogin(),
+      ]);
     } catch (err) {
       this.logger.debug("PR attribution lookup failed", {
         runId: payload.run_id,
@@ -3466,14 +3485,21 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       return;
     }
 
-    // Only attribute PRs created during this run, not ones the agent merely viewed.
-    if (!wasCreatedRecently(createdAt, Date.now())) return;
+    // Only attribute PRs created during this run by this run's own GitHub
+    // identity — not ones the agent merely viewed.
+    if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
+    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
 
     this.detectedPrUrl = prUrl;
 
     try {
+      const freshOutput = await this.posthogAPI
+        .getTaskRun(payload.task_id, payload.run_id)
+        .then((run) => run.output)
+        .catch(() => null);
+      const urls = mergePrUrls(readPrUrls(freshOutput), [prUrl]);
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
-        output: { pr_url: prUrl },
+        output: buildPrOutput(freshOutput, urls),
       });
       this.logger.debug("Attributed created PR to task run", {
         taskId: payload.task_id,
@@ -3490,19 +3516,48 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
   }
 
-  private async fetchPrCreatedAt(prUrl: string): Promise<string | null> {
-    const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
+  private async fetchPrAttribution(
+    prUrl: string,
+  ): Promise<{ createdAt: string | null; author: string | null }> {
+    const res = await execGh(
+      ["pr", "view", prUrl, "--json", "createdAt,author"],
+      {
+        cwd: this.config.repositoryPath,
+        timeoutMs: 10_000,
+      },
+    );
+    if (res.exitCode !== 0) return { createdAt: null, author: null };
+    try {
+      const data = JSON.parse(res.stdout) as {
+        createdAt?: string;
+        author?: { login?: string };
+      };
+      return {
+        createdAt: data.createdAt ?? null,
+        author: data.author?.login ?? null,
+      };
+    } catch {
+      return { createdAt: null, author: null };
+    }
+  }
+
+  private ghLoginPromise: Promise<string | null> | null = null;
+
+  private fetchGhLogin(): Promise<string | null> {
+    this.ghLoginPromise ??= execGh(["api", "user", "--jq", ".login"], {
       cwd: this.config.repositoryPath,
       timeoutMs: 10_000,
-    });
-    if (res.exitCode !== 0) return null;
-    try {
-      return (
-        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
-      );
-    } catch {
-      return null;
-    }
+    })
+      .then((res) => {
+        const login = res.exitCode === 0 ? res.stdout.trim() : "";
+        if (!login) this.ghLoginPromise = null;
+        return login || null;
+      })
+      .catch(() => {
+        this.ghLoginPromise = null;
+        return null;
+      });
+    return this.ghLoginPromise;
   }
 
   private async cleanupSession({

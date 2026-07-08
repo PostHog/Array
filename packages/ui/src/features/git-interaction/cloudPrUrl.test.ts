@@ -1,7 +1,7 @@
 import type { Task } from "@posthog/shared/domain-types";
 import type { AgentSession } from "@posthog/ui/features/sessions/sessionStore";
 import { describe, expect, it } from "vitest";
-import { resolveCloudPrUrl } from "./cloudPrUrl";
+import { resolveCloudPrUrl, resolveCloudPrUrls } from "./cloudPrUrl";
 
 function makeTask(prUrl?: unknown): Task {
   return {
@@ -56,5 +56,68 @@ describe("resolveCloudPrUrl", () => {
     expect(resolveCloudPrUrl(makeTask(""), session)).toBe(
       "https://github.com/org/repo/pull/3",
     );
+  });
+
+  it("returns the first entry of pr_urls as the primary", () => {
+    const task = {
+      id: "task-1",
+      latest_run: {
+        output: {
+          pr_url: "https://github.com/org/repo/pull/1",
+          pr_urls: [
+            "https://github.com/org/repo/pull/1",
+            "https://github.com/org/repo/pull/2",
+          ],
+        },
+      },
+    } as unknown as Task;
+    expect(resolveCloudPrUrl(task, undefined)).toBe(
+      "https://github.com/org/repo/pull/1",
+    );
+  });
+});
+
+describe("resolveCloudPrUrls", () => {
+  it("returns an empty list when both sources are undefined", () => {
+    expect(resolveCloudPrUrls(undefined, undefined)).toEqual([]);
+  });
+
+  it("unions task and session URLs with task order winning", () => {
+    const task = {
+      id: "task-1",
+      latest_run: {
+        output: {
+          pr_url: "https://github.com/org/repo/pull/1",
+          pr_urls: [
+            "https://github.com/org/repo/pull/1",
+            "https://github.com/org/repo/pull/2",
+          ],
+        },
+      },
+    } as unknown as Task;
+    const session = {
+      cloudOutput: { pr_url: "https://github.com/org/repo/pull/3" },
+    } as unknown as AgentSession;
+    expect(resolveCloudPrUrls(task, session)).toEqual([
+      "https://github.com/org/repo/pull/1",
+      "https://github.com/org/repo/pull/2",
+      "https://github.com/org/repo/pull/3",
+    ]);
+  });
+
+  it("appends a diverging legacy pr_url after the listed ones", () => {
+    const task = {
+      id: "task-1",
+      latest_run: {
+        output: {
+          pr_url: "https://github.com/org/repo/pull/9",
+          pr_urls: ["https://github.com/org/repo/pull/1"],
+        },
+      },
+    } as unknown as Task;
+    expect(resolveCloudPrUrls(task, undefined)).toEqual([
+      "https://github.com/org/repo/pull/1",
+      "https://github.com/org/repo/pull/9",
+    ]);
   });
 });

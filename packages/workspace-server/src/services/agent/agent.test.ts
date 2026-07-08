@@ -98,6 +98,12 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
+const mockNodeShim = vi.hoisted(() => ({
+  ensureNodeShim: vi.fn(),
+}));
+
+vi.mock("./node-shim", () => mockNodeShim);
+
 // --- Import after mocks ---
 import type { RegisteredFolder } from "../folders/schemas";
 import { AgentService, buildAutoApproveOutcome } from "./agent";
@@ -344,6 +350,30 @@ describe("AgentService", () => {
           reasoningEffort: "xhigh",
         }),
       );
+    });
+  });
+
+  describe("node shim setup", () => {
+    it("writes the shim once per service and retries after a failure", async () => {
+      mockNodeShim.ensureNodeShim.mockImplementationOnce(() => {
+        throw new Error("read-only fs");
+      });
+
+      await service.startSession({ ...baseSessionParams, adapter: "codex" });
+      await service.startSession({
+        ...baseSessionParams,
+        taskId: "task-2",
+        taskRunId: "run-2",
+        adapter: "codex",
+      });
+      await service.startSession({
+        ...baseSessionParams,
+        taskId: "task-3",
+        taskRunId: "run-3",
+        adapter: "codex",
+      });
+
+      expect(mockNodeShim.ensureNodeShim).toHaveBeenCalledTimes(2);
     });
   });
 

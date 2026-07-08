@@ -13,8 +13,27 @@ vi.mock("./process/child-process", () => ({
 }));
 
 import type { AgentConfig } from "./agents";
-import { readStatus, readTranscript } from "./lifecycle";
+import type { RunStatus } from "./lifecycle";
+import { runDirectory, transcriptPath } from "./lifecycle";
 import { runAgent } from "./run-agent";
+
+function readStatus(runId: string): RunStatus | undefined {
+  try {
+    return JSON.parse(
+      fs.readFileSync(path.join(runDirectory(runId), "status.json"), "utf-8"),
+    ) as RunStatus;
+  } catch {
+    return undefined;
+  }
+}
+
+function readTranscript(runId: string): string | undefined {
+  try {
+    return fs.readFileSync(transcriptPath(runId), "utf-8");
+  } catch {
+    return undefined;
+  }
+}
 
 function makeModel(): Model<Api> {
   return {
