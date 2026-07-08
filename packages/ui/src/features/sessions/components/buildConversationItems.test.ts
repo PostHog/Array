@@ -804,6 +804,57 @@ describe("buildConversationItems", () => {
       expect(item?.timestamp).toBe(4);
     });
   });
+
+  describe("turn boundaries after completion", () => {
+    function isTextChunk(item: ConversationItem): item is Extract<
+      ConversationItem,
+      { type: "session_update" }
+    > & {
+      update: {
+        sessionUpdate: "agent_message_chunk";
+        content: { type: "text"; text: string };
+      };
+    } {
+      return (
+        item.type === "session_update" &&
+        item.update.sessionUpdate === "agent_message_chunk" &&
+        item.update.content.type === "text"
+      );
+    }
+
+    it("does not merge untracked content into an already-completed turn", () => {
+      // Mirrors a scheduled wakeup: it resumes the session outside of
+      // session/prompt, so this chunk arrives with no queued turn behind it.
+      const events = [
+        userPromptMsg(1, 1, "hi"),
+        agentMessageMsg(2, "you'll get a ping shortly."),
+        turnCompleteMsg(3),
+        agentMessageMsg(4, "ping"),
+      ];
+
+      const items = buildConversationItems(events, true).items;
+      const chunks = items.filter(isTextChunk);
+
+      expect(chunks.map((c) => c.update.content.text)).toEqual([
+        "you'll get a ping shortly.",
+        "ping",
+      ]);
+      expect(chunks[0].turnContext).not.toBe(chunks[1].turnContext);
+    });
+
+    it("still merges consecutive chunks within the same open turn", () => {
+      const events = [
+        userPromptMsg(1, 1, "hi"),
+        agentMessageMsg(2, "Hello"),
+        agentMessageMsg(3, " there"),
+      ];
+
+      const items = buildConversationItems(events, true).items;
+      const chunks = items.filter(isTextChunk);
+
+      expect(chunks.map((c) => c.update.content.text)).toEqual(["Hello there"]);
+    });
+  });
 });
 
 // Local alias kept intentionally narrow to the shape we care about in tests.

@@ -486,9 +486,7 @@ function handleNotification(
   if (msg.method === "session/update") {
     const update = (msg.params as SessionNotification)?.update;
     if (!update) return;
-    if (!b.currentTurn) {
-      ensureImplicitTurn(b, ts);
-    }
+    ensureImplicitTurn(b, ts);
     processSessionUpdate(b, update, ts);
     return;
   }
@@ -511,7 +509,7 @@ function handleNotification(
     if (!params?.message) return;
     const level = params.level ?? "info";
     if (level === "debug" && !options?.showDebugLogs) return;
-    if (!b.currentTurn) ensureImplicitTurn(b, ts);
+    ensureImplicitTurn(b, ts);
     pushItem(b, {
       sessionUpdate: "console",
       level,
@@ -542,7 +540,7 @@ function handleNotification(
   }
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.COMPACT_BOUNDARY)) {
-    if (!b.currentTurn) ensureImplicitTurn(b, ts);
+    ensureImplicitTurn(b, ts);
     const params = msg.params as {
       trigger: "manual" | "auto";
       preTokens: number;
@@ -559,7 +557,7 @@ function handleNotification(
   }
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.STATUS)) {
-    if (!b.currentTurn) ensureImplicitTurn(b, ts);
+    ensureImplicitTurn(b, ts);
     const params = msg.params as {
       status: string;
       isComplete?: boolean;
@@ -614,7 +612,7 @@ function ensureProgressCardForGroup(
   const existing = b.progressCards.get(group);
   if (existing) return existing;
 
-  if (!b.currentTurn) ensureImplicitTurn(b, ts);
+  ensureImplicitTurn(b, ts);
   if (!b.currentTurn) return null;
 
   const renderItem = {
@@ -700,7 +698,7 @@ function markCompactingStatusComplete(b: ItemBuilder) {
 }
 
 function ensureImplicitTurn(b: ItemBuilder, ts: number) {
-  if (b.currentTurn) return;
+  if (b.currentTurn && !b.currentTurn.isComplete) return;
 
   b.currentTurnStartIndex = b.items.length;
   const turnId = `turn-${ts}-implicit`;
@@ -922,6 +920,7 @@ function appendTextChunk(
   const lastItem = b.items[b.items.length - 1];
   if (
     lastItem?.type === "session_update" &&
+    lastItem.turnContext === b.currentTurn?.context &&
     lastItem.update.sessionUpdate === update.sessionUpdate &&
     "content" in lastItem.update &&
     lastItem.update.content.type === "text"
