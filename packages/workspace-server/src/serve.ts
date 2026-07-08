@@ -14,6 +14,7 @@ import {
   LOCAL_LOGS_SERVICE,
   WATCHER_SERVICE,
 } from "./di/tokens";
+import { removeLegacyNodeShimDirs } from "./services/agent/legacy-node-shim";
 import type { ConnectivityService } from "./services/connectivity/service";
 import type { EnvironmentService } from "./services/environment/service";
 import type { FocusService } from "./services/focus/service";
@@ -51,6 +52,12 @@ if (!sharedSecret || !Number.isInteger(port) || port <= 0 || port > 65_535) {
     "[workspace-server] missing or invalid WORKSPACE_SERVER_SECRET / WORKSPACE_SERVER_PORT\n",
   );
   process.exit(2);
+}
+
+for (const dir of removeLegacyNodeShimDirs()) {
+  process.stdout.write(
+    `[workspace-server] removed legacy node shim dir ${dir}\n`,
+  );
 }
 
 const router = createAppRouter({

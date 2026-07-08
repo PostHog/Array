@@ -4,7 +4,6 @@ import { delimiter, dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import type { ProcessSpawnedCallback } from "../../types";
 import { Logger } from "../../utils/logger";
-import { stripElectronNodeShimFromPath } from "../../utils/spawn-env";
 import { CodexSettingsManager } from "./settings";
 
 /**
@@ -154,7 +153,7 @@ export function spawnCodexAppServerProcess(
   if (options.codexHome) {
     env.CODEX_HOME = options.codexHome;
   }
-  env.PATH = `${dirname(options.binaryPath)}${delimiter}${stripElectronNodeShimFromPath(env.PATH) ?? ""}`;
+  env.PATH = `${dirname(options.binaryPath)}${delimiter}${env.PATH ?? ""}`;
 
   const args = buildAppServerArgs(options);
 

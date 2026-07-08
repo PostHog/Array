@@ -92,7 +92,6 @@ import {
   AGENT_REPO_FILES,
   AGENT_SLEEP_COORDINATOR,
 } from "./identifiers";
-import { ensureNodeShim } from "./node-shim";
 import type {
   AgentLogger,
   AgentMcpApps,
@@ -116,13 +115,6 @@ export type { InterruptReason };
 
 function isDevBuild(): boolean {
   return process.env.POSTHOG_CODE_IS_DEV === "true";
-}
-
-const MOCK_NODE_DIR_PREFIX = "agent-node";
-
-function getMockNodeDir(): string {
-  const suffix = isDevBuild() ? "dev" : "prod";
-  return join(tmpdir(), `${MOCK_NODE_DIR_PREFIX}-${suffix}`);
 }
 
 /** Mark all content blocks as hidden so the renderer doesn't show a duplicate user message on retry */
@@ -369,7 +361,6 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
 
   private sessions = new Map<string, ManagedSession>();
   private pendingPermissions = new Map<string, PendingPermission>();
-  private mockNodeReady = false;
   private idleTimeouts = new Map<
     string,
     { handle: ReturnType<typeof setTimeout>; deadline: number }
@@ -761,13 +752,11 @@ If a repository IS genuinely required, attach one in this priority order:
     }
 
     const channel = `agent-event:${taskRunId}`;
-    const mockNodeDir = this.setupMockNodeEnvironment();
     const proxyUrl = await this.agentAuthAdapter.ensureGatewayProxy(
       credentials.apiHost,
     );
     await this.agentAuthAdapter.configureProcessEnv({
       credentials,
-      mockNodeDir,
       proxyUrl,
       claudeCliPath: this.getClaudeCliPath(),
     });
@@ -1594,19 +1583,6 @@ For git operations while detached:
     }
 
     this.log.info("All agent sessions cleaned up");
-  }
-
-  private setupMockNodeEnvironment(): string {
-    const mockNodeDir = getMockNodeDir();
-    if (!this.mockNodeReady) {
-      try {
-        ensureNodeShim(mockNodeDir, process.execPath);
-        this.mockNodeReady = true;
-      } catch (err) {
-        this.log.warn("Failed to setup mock node environment", err);
-      }
-    }
-    return mockNodeDir;
   }
 
   private cancelInFlightMcpToolCalls(session: ManagedSession): void {

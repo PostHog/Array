@@ -40,10 +40,6 @@
       "types": "./dist/mcp-sandbox-proxy.d.ts",
       "import": "./dist/mcp-sandbox-proxy.js"
     },
-    "./node-shim": {
-      "types": "./dist/node-shim.d.ts",
-      "import": "./dist/node-shim.js"
-    },
     "./posthog-property-headers": {
       "types": "./dist/posthog-property-headers.d.ts",
       "import": "./dist/posthog-property-headers.js"

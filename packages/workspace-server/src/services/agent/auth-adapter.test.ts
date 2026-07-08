@@ -231,7 +231,6 @@ describe("AgentAuthAdapter", () => {
   it("configures environment using the gateway proxy and current token", async () => {
     await adapter.configureProcessEnv({
       credentials: baseCredentials,
-      mockNodeDir: "/mock/node",
       proxyUrl: "http://127.0.0.1:9999",
       claudeCliPath: "/mock/claude-cli.js",
     });
