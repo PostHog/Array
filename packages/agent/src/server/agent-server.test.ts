@@ -2016,6 +2016,17 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("Generated-By: PostHog Code");
       expect(prompt).toContain("Task-Id: test-task-id");
       expect(prompt).not.toContain("gh pr create --draft");
+      // If the user does explicitly ask for a PR in this review-first mode,
+      // the agent must still use the PostHog Code footer, not Claude Code's default.
+      expect(prompt).toContain(
+        "If the user explicitly asks you to open a pull request",
+      );
+      expect(prompt).toContain(
+        "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
+      );
+      expect(prompt).toContain(".github/pull_request_template.md");
+      expect(prompt).toContain("gh issue list --search");
+      expect(prompt).toContain("Closes #<n>");
     });
 
     it("returns default prompt when prUrl is null", () => {
