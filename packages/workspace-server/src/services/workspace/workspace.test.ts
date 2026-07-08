@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockRepositoryRepository } from "../../db/repositories/repository-repository.mock";
 import { createMockWorkspaceRepository } from "../../db/repositories/workspace-repository.mock";
 import { createMockWorktreeRepository } from "../../db/repositories/worktree-repository.mock";
+import type { DatabaseService } from "../../db/service";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import type { SuspensionService } from "../suspension/suspension";
 import { listLinkedWorktrees } from "../worktree-query/worktree-query";
@@ -74,6 +75,9 @@ vi.mock("@posthog/git/worktree", () => ({
 }));
 
 function createMocks() {
+  const databaseService = {
+    isInitialized: vi.fn(() => true),
+  } as unknown as DatabaseService;
   const agent = {
     cancelSessionsByTaskId: vi.fn(async () => {}),
     onAgentFileActivity: vi.fn(),
@@ -115,6 +119,7 @@ function createMocks() {
   };
 
   return {
+    databaseService,
     agent,
     processTracking,
     repositoryRepo,
@@ -155,6 +160,7 @@ function seedWorktreeTask(
 
 function makeService(mocks: ReturnType<typeof createMocks>): WorkspaceService {
   return new WorkspaceService(
+    mocks.databaseService,
     mocks.agent,
     mocks.processTracking,
     mocks.repositoryRepo,
@@ -380,6 +386,20 @@ describe("WorkspaceService", () => {
       expect(mocks.fileWatcher.onGitStateChanged).toHaveBeenCalledTimes(1);
       expect(mocks.focus.onBranchRenamed).toHaveBeenCalledTimes(1);
       expect(mocks.agent.onAgentFileActivity).toHaveBeenCalledTimes(1);
+    });
+
+    it("agent file activity bails without touching the db when it is not initialized", async () => {
+      vi.mocked(mocks.databaseService.isInitialized).mockReturnValue(false);
+      const findByTaskId = vi.spyOn(mocks.workspaceRepo, "findByTaskId");
+      service.initBranchWatcher();
+      const handler = vi.mocked(mocks.agent.onAgentFileActivity).mock
+        .calls[0][0];
+
+      await (handler({
+        taskId: "task-1",
+        branchName: "feature/x",
+      }) as unknown as Promise<void>);
+      expect(findByTaskId).not.toHaveBeenCalled();
     });
   });
 

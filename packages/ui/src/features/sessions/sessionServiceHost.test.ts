@@ -4726,6 +4726,34 @@ describe("SessionService", () => {
         }),
       );
     });
+
+    it("does not run session recovery for a transient upstream API timeout", async () => {
+      const service = getSessionService();
+      const mockSession = createMockSession();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(mockSession);
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": mockSession,
+      });
+      mockTrpcAgent.prompt.mutate.mockRejectedValue(
+        new Error("Internal error: API Error: the operation timed out"),
+      );
+
+      await expect(service.sendPrompt("task-123", "Hello")).rejects.toThrow(
+        /provider timed out/,
+      );
+
+      // The session stays as-is: no recovery reconnect, no error overlay —
+      // only the pending-prompt state is cleared so the user can re-send.
+      expect(mockTrpcAgent.reconnect.mutate).not.toHaveBeenCalled();
+      expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalledWith(
+        "run-123",
+        expect.objectContaining({ status: "disconnected" }),
+      );
+      expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+        "run-123",
+        expect.objectContaining({ isPromptPending: false }),
+      );
+    });
   });
 
   describe("local turn_complete + JSON-RPC response ordering", () => {
@@ -5763,6 +5791,56 @@ describe("SessionService", () => {
       expect(mockSessionStoreSetters.removeSession).not.toHaveBeenCalled();
       // Should attempt reconnect in place
       expect(mockTrpcAgent.reconnect.mutate).toHaveBeenCalled();
+    });
+
+    it("keeps the in-memory transcript when the log read returns nothing", async () => {
+      const service = getSessionService();
+      const previousEvents = [
+        {
+          type: "acp_message" as const,
+          ts: 1,
+          message: {
+            jsonrpc: "2.0",
+            method: "session/update",
+            params: {
+              update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "Working on it" },
+              },
+            },
+          },
+        },
+      ];
+      const mockSession = createMockSession({
+        status: "error",
+        logUrl: "https://logs.example.com/run-123",
+        events: previousEvents as AgentSession["events"],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(mockSession);
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": mockSession,
+      });
+      mockTrpcAgent.reconnect.mutate.mockResolvedValue({
+        sessionId: "run-123",
+        channel: "agent-event:run-123",
+        configOptions: [],
+      });
+      mockTrpcAgent.onSessionEvent.subscribe.mockReturnValue({
+        unsubscribe: vi.fn(),
+      });
+      mockTrpcAgent.onPermissionRequest.subscribe.mockReturnValue({
+        unsubscribe: vi.fn(),
+      });
+      mockTrpcWorkspace.verify.query.mockResolvedValue({ exists: true });
+      // Both the local cache and S3 reads come back empty (e.g. unreadable
+      // log after an agent crash) — the repaint must not blank the transcript.
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
+
+      await service.clearSessionError("task-123", "/repo");
+
+      const stored = mockSessionStoreSetters.setSession.mock.calls.at(-1)?.[0];
+      expect(stored.events).toBe(previousEvents);
     });
 
     it("creates fresh session when initialPrompt is set (prompt never delivered)", async () => {

@@ -1,4 +1,8 @@
 import {
+  isContentEmpty,
+  xmlToContent,
+} from "@posthog/core/message-editor/content";
+import {
   combineQueuedCloudPrompts,
   promptToQueuedEditorContent,
 } from "@posthog/core/sessions/cloudPrompt";
@@ -106,6 +110,13 @@ export function useSessionCallbacks({
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to send message";
+        // The composer clears optimistically on submit, so a failed send
+        // would otherwise lose the typed prompt. Restore it — unless the
+        // user has already started typing a new message.
+        if (isContentEmpty(useDraftStore.getState().drafts[taskId] ?? null)) {
+          setPendingContent(taskId, xmlToContent(text));
+          requestFocus(taskId);
+        }
         toast.error(message);
         log.error("Failed to send prompt", error);
       }
@@ -119,6 +130,8 @@ export function useSessionCallbacks({
       sessionService,
       hostClient,
       messagingMode,
+      setPendingContent,
+      requestFocus,
     ],
   );
 

@@ -2892,6 +2892,11 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create a branch, commit, push, or open a pull request unless the user explicitly asks.
+- If the user explicitly asks you to open a pull request: pick a new branch name prefixed with \`posthog-code/\`, stage your changes with \`git add\`, and call the \`git_signed_commit\` tool with \`branch\` set to that name and a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). Before opening the PR, check the repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links. Keep the description brief overall — summarize only the most important changes.
+${whyContextInstruction.trimStart()}
+${publicRepoSafetyInstruction.trimStart()}
+- End the PR description with a horizontal rule followed by this footer line: ${prFooter}
+- Always create the PR as a draft.
 ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
     }

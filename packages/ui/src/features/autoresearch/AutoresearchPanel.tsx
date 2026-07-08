@@ -14,7 +14,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import { MetricCard, useChartTheme } from "@posthog/quill-charts";
+import { MetricCard } from "@posthog/quill-charts";
 import { Badge, Button, Callout, Flex, Select, Text } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -377,47 +377,30 @@ function PendingPermissionNotice({
 
 export function RunStats({ run }: { run: AutoresearchRun }) {
   const summary = useMemo(() => summarizeRun(run), [run]);
-  const theme = useChartTheme();
   const unit = run.metricUnit;
-  const iterations = run.iterations;
-  const labels = useMemo(
-    () => iterations.map((iteration) => `iter ${iteration.index}`),
-    [iterations],
-  );
   const formatMetricValue = (value: number) =>
     Number.isNaN(value)
       ? "—"
       : withMetricUnit(metricNumberFormat.format(value), unit);
+  const cardClassName = "rounded-md border border-(--gray-5) p-3";
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       <MetricCard
         title="Best"
         value={summary.best?.value ?? Number.NaN}
-        data={
-          iterations.length > 0
-            ? iterations.map((iteration) => iteration.bestValue)
-            : undefined
-        }
-        labels={labels}
-        theme={theme}
         formatValue={formatMetricValue}
         change={null}
         subtitle={summary.best ? `iter ${summary.best.index}` : undefined}
+        className={cardClassName}
         dataAttr="autoresearch-stat-best"
       />
       <MetricCard
         title="Last"
         value={summary.last?.value ?? Number.NaN}
-        data={
-          iterations.length > 0
-            ? iterations.map((iteration) => iteration.value)
-            : undefined
-        }
-        labels={labels}
-        theme={theme}
         formatValue={formatMetricValue}
         change={null}
+        className={cardClassName}
         dataAttr="autoresearch-stat-last"
       />
       <MetricCard
@@ -425,6 +408,7 @@ export function RunStats({ run }: { run: AutoresearchRun }) {
         value={summary.iterationCount}
         formatValue={(value) => `${value} / ${run.config.maxIterations}`}
         change={null}
+        className={cardClassName}
         dataAttr="autoresearch-stat-iterations"
       />
       <MetricCard
@@ -432,6 +416,7 @@ export function RunStats({ run }: { run: AutoresearchRun }) {
         value={run.config.targetValue ?? Number.NaN}
         formatValue={formatMetricValue}
         change={null}
+        className={cardClassName}
         dataAttr="autoresearch-stat-target"
       />
     </div>

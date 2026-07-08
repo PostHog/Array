@@ -945,6 +945,25 @@ describe("TaskCreationSaga", () => {
     );
   });
 
+  it("creates the task without a repository when repo detection fails", async () => {
+    const createTaskMock = vi.fn().mockResolvedValue(createTask());
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockRejectedValue(new TypeError("fetch failed"));
+
+    const saga = makeSaga({ createTask: createTaskMock });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ repository: undefined }),
+    );
+  });
+
   it("rolls back the import snapshot and tracking row when a later step fails", async () => {
     const createdTask = createTask();
     const createTaskMock = vi.fn().mockResolvedValue(createdTask);
