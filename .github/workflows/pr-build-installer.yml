@@ -6,8 +6,10 @@ name: PR Build Installer
 # download the artifact and run the app locally.
 #
 # This deliberately does NOT publish a GitHub release or notarize the build. It
-# signs (so the app launches after a right-click → Open) but skips notarization,
-# which lives in the real release pipeline (code-release.yml, on v* tags).
+# signs but skips notarization (which lives in the real release pipeline,
+# code-release.yml, on v* tags). Because the build is unnotarized, macOS
+# quarantines the downloaded app and Gatekeeper reports it as "damaged"; the PR
+# comment tells testers to clear the flag with `xattr -dr com.apple.quarantine`.
 #
 # Gating: only same-repo PRs run — fork PRs never receive the signing/AWS
 # secrets, so building them would red spuriously.
@@ -48,9 +50,11 @@ jobs:
       CSC_LINK: ${{ secrets.APPLE_CODESIGN_CERT_BASE64 }}
       CSC_KEY_PASSWORD: ${{ secrets.APPLE_CODESIGN_CERT_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      # Sign but do not notarize: a signed-but-unnotarized app launches for a
-      # tester after a right-click → Open. Notarization runs only in the tag
-      # release (code-release.yml).
+      # Sign but do not notarize: keeps the build fast. macOS quarantines the
+      # downloaded app, and Gatekeeper blocks a quarantined, unnotarized build as
+      # "damaged", so testers clear the flag with `xattr -dr com.apple.quarantine`
+      # (see the PR comment). Notarization runs only in the tag release
+      # (code-release.yml).
       SKIP_NOTARIZE: "1"
     steps:
       - name: Checkout
@@ -144,10 +148,15 @@ jobs:
               echo ""
               echo "**[⬇️ Open this run and download the \`code-macos-arm64\` artifact](${RUN_URL}#artifacts)** (Apple Silicon / M-series)."
               echo ""
-              echo "Unzip it, then open the \`.dmg\` (or the \`.app\` inside the \`-mac.zip\`)."
+              echo "Unzip it to get the \`.dmg\`, open it, and drag **PostHog Code** into **Applications**."
               echo ""
-              echo "> ℹ️ The build is **signed but not notarized**, so macOS may warn on first launch."
-              echo "> Right-click the app → **Open**, or run \`xattr -dr com.apple.quarantine \"PostHog Code.app\"\`."
+              echo "This build is **signed but not notarized**, so macOS quarantines it on download and Gatekeeper reports *\"PostHog Code is damaged and can't be opened\"*. That is the missing notarization, not a corrupt file — clear the quarantine flag once and it launches:"
+              echo ""
+              echo "\`\`\`sh"
+              echo "xattr -dr com.apple.quarantine \"/Applications/PostHog Code.app\""
+              echo "\`\`\`"
+              echo ""
+              echo "Then open **PostHog Code** normally. (Fully notarized, double-click-to-run builds ship only from the tagged release pipeline.)"
               echo ""
               echo "<sub>Built from ${GITHUB_SHA} · rebuilds on each push while the \`build-installer\` label is present. Downloading requires being signed in to GitHub with repo access.</sub>"
             } > comment-body.md
