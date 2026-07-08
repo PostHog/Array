@@ -6,12 +6,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "./agents";
 import { getFinalOutput } from "./format";
-import {
-  isFailedResult,
-  type OnSupervisorRequest,
-  runAgent,
-  type SingleRunResult,
-} from "./run-agent";
+import { isFailedResult, runAgent, type SingleRunResult } from "./run-agent";
 
 export interface ChainStep {
   agent: string;
@@ -26,7 +21,6 @@ export interface RunChainOptions {
   findAgent: (name: string) => AgentConfig | undefined;
   signal?: AbortSignal;
   onUpdate?: (results: SingleRunResult[]) => void;
-  onSupervisorRequest?: OnSupervisorRequest;
 }
 
 export interface ChainRunOutcome {
@@ -40,8 +34,7 @@ export interface ChainRunOutcome {
 export async function runChain(
   options: RunChainOptions,
 ): Promise<ChainRunOutcome> {
-  const { ctx, steps, findAgent, signal, onUpdate, onSupervisorRequest } =
-    options;
+  const { ctx, steps, findAgent, signal, onUpdate } = options;
   const results: SingleRunResult[] = [];
   let previousOutput = "";
 
@@ -69,7 +62,6 @@ export async function runChain(
       step: i + 1,
       signal,
       onUpdate: (partial) => onUpdate?.([...results, partial]),
-      onSupervisorRequest,
     });
     results.push(result);
 

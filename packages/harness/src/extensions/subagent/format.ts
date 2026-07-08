@@ -41,19 +41,6 @@ export function truncateForModel(
   return `${text}\n\n[Output truncated: ${omittedBytes} bytes omitted.]`;
 }
 
-export function aggregateUsage(results: SingleRunResult[]): {
-  totalTokens: number;
-  totalCost: number;
-} {
-  let totalTokens = 0;
-  let totalCost = 0;
-  for (const r of results) {
-    totalTokens += r.usage.contextTokens || r.usage.input + r.usage.output;
-    totalCost += r.usage.cost;
-  }
-  return { totalTokens, totalCost };
-}
-
 function truncateInline(text: string, maxLen = 400): string {
   const trimmed = text.trim();
   return trimmed.length > maxLen ? `${trimmed.slice(0, maxLen)}...` : trimmed;
