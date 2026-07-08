@@ -15,7 +15,7 @@ import { sessionStateColor } from "../utils/format";
 import { RefreshIndicator } from "./RefreshIndicator";
 
 /**
- * Cross-agent in-flight sessions, surfaced on the Applications landing. Lists
+ * Cross-agent in-flight sessions, surfaced on the Fleet landing. Lists
  * non-terminal sessions across the fleet with state, agent, trigger, turn count
  * and started-ago; clicking a row navigates to the per-agent session detail.
  * Polls aggressively (see {@link useAgentFleetLiveSessions}) so the panel feels
