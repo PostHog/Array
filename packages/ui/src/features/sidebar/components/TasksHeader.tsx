@@ -1,6 +1,10 @@
 import {
+  Cloud,
+  Desktop,
   FolderPlus,
   FunnelSimple as FunnelSimpleIcon,
+  GitBranch,
+  type Icon,
   MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { ALL_WORKSPACE_MODES } from "@posthog/core/sidebar/buildSidebarData";
@@ -13,6 +17,9 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
@@ -30,17 +37,11 @@ const log = logger.scope("tasks-header");
 
 // Record (not a hand-maintained array) so adding a WorkspaceMode forces a
 // compile error here instead of silently missing a checkbox.
-const TASK_TYPE_LABELS: Record<WorkspaceMode, string> = {
-  worktree: "Worktree",
-  local: "Local",
-  cloud: "Cloud",
+const ENVIRONMENT_META: Record<WorkspaceMode, { label: string; icon: Icon }> = {
+  worktree: { label: "Worktree", icon: GitBranch },
+  local: { label: "Local", icon: Desktop },
+  cloud: { label: "Cloud", icon: Cloud },
 };
-
-const TASK_TYPE_OPTIONS: { value: WorkspaceMode; label: string }[] =
-  ALL_WORKSPACE_MODES.map((mode) => ({
-    value: mode,
-    label: TASK_TYPE_LABELS[mode],
-  }));
 
 function AddFolderButton() {
   const trpcClient = useHostTRPCClient();
@@ -145,20 +146,6 @@ function TaskFilterMenu() {
           <DropdownMenuRadioItem value="updated">Updated</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
 
-        <DropdownMenuSeparator />
-
-        <MenuLabel>Task type</MenuLabel>
-        {TASK_TYPE_OPTIONS.map((option) => (
-          <DropdownMenuCheckboxItem
-            key={option.value}
-            checked={taskTypeFilter.includes(option.value)}
-            closeOnClick={false}
-            onCheckedChange={() => toggleTaskType(option.value)}
-          >
-            {option.label}
-          </DropdownMenuCheckboxItem>
-        ))}
-
         {import.meta.env.DEV && (
           <>
             <DropdownMenuSeparator />
@@ -196,6 +183,28 @@ function TaskFilterMenu() {
             </DropdownMenuRadioGroup>
           </>
         )}
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Environment</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent side="right" sideOffset={4}>
+            {ALL_WORKSPACE_MODES.map((mode) => {
+              const { label, icon: Icon } = ENVIRONMENT_META[mode];
+              return (
+                <DropdownMenuCheckboxItem
+                  key={mode}
+                  checked={taskTypeFilter.includes(mode)}
+                  closeOnClick={false}
+                  onCheckedChange={() => toggleTaskType(mode)}
+                >
+                  <Icon size={14} />
+                  {label}
+                </DropdownMenuCheckboxItem>
+              );
+            })}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
       </DropdownMenuContent>
     </DropdownMenu>
   );
