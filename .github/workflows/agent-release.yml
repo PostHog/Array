@@ -68,3 +68,29 @@ jobs:
         run: pnpm publish --access public --no-git-checks
         env:
           NPM_CONFIG_PROVENANCE: true
+
+  rebuild-sandbox-images:
+    name: Rebuild tasks sandbox base images
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Mint posthog/posthog workflow dispatch token
+        id: dispatch-token
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        with:
+          app-id: ${{ secrets.GH_APP_POSTHOG_WORKFLOW_TRIGGER_APP_ID }}
+          private-key: ${{ secrets.GH_APP_POSTHOG_WORKFLOW_TRIGGER_PRIVATE_KEY }}
+          owner: PostHog
+          repositories: posthog
+
+      - name: Dispatch posthog/posthog sandbox image rebuild
+        env:
+          GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
+        run: |
+          echo "Dispatching sandbox base image rebuild for $GITHUB_REF_NAME"
+          gh workflow run cd-sandbox-base-image.yml \
+            --repo PostHog/posthog \
+            --ref master
