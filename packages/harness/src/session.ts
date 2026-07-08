@@ -12,7 +12,6 @@ import {
   type PosthogProviderOptions,
   resolvePosthogProvider,
 } from "./extensions/posthog-provider/provider";
-import { mcpAdapterExtensionFile } from "./spawn";
 
 export interface HarnessSessionOptions extends PosthogProviderOptions {
   cwd?: string;
@@ -39,11 +38,10 @@ export async function createHarnessSession(
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir: getAgentDir(),
+    // The bundled MCP extension owns long-lived server processes and
+    // interactive OAuth flows, so it is only loaded by the CLI/TUI extension
+    // registry and not by embedded SDK sessions.
     extensionFactories: [],
-    // `pi-mcp-adapter` ships raw TypeScript with no compiled entry point, so
-    // it must be loaded by file path (see mcpAdapterExtensionFile) rather
-    // than as an extension factory.
-    additionalExtensionPaths: [mcpAdapterExtensionFile()],
   });
   await resourceLoader.reload();
 

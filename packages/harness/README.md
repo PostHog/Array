@@ -98,6 +98,37 @@ await session.prompt("What files are in the current directory?");
 The SDK reuses whatever credential `harness /login` stored, or accepts a static `apiKey` (a `pha_`
 token) for headless use.
 
+## MCP servers
+
+The bundled `mcp` extension (see [`src/extensions/mcp/README.md`](./src/extensions/mcp/README.md))
+connects pi to [Model Context Protocol](https://modelcontextprotocol.io) servers and registers
+their tools as pi tools named `mcp_<server>_<tool>`.
+
+Servers are configured in `mcp.json` — global (`~/.pi/agent/mcp.json`) and/or project-local
+(`.pi/mcp.json`, honored only for trusted projects; project entries override global ones per key):
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+    },
+    "linear": {
+      "transport": "streamable-http",
+      "url": "https://mcp.linear.app/mcp",
+      "auth": { "type": "oauth" }
+    }
+  }
+}
+```
+
+Supports stdio, streamable-http, and SSE transports; eager/lazy startup; automatic reconnect;
+live tool refresh on `tools/list_changed`; static header auth; and full OAuth
+(authorization-code + PKCE with discovery, dynamic client registration, silent token refresh, and
+credentials stored under `~/.pi/agent/mcp-auth/`). Commands: `/mcp` (status), `/mcp:start`,
+`/mcp:stop`, `/mcp:auth [server] [reset]` (browser flow).
+
 ## Entry points
 
 | Import | What |
@@ -112,3 +143,6 @@ token) for headless use.
 | `@posthog/harness/extensions/posthog-provider/oauth` | `loginPosthog()`, `refreshPosthog()`, `buildAuthorizeUrl()`, `getRedirectUri()`, `getCallbackPort()` |
 | `@posthog/harness/extensions/posthog-provider/gateway` | `getGatewayBaseUrl()`, `getLlmGatewayUrl()`, `resolveRegion()`, `GATEWAY_PRODUCT` |
 | `@posthog/harness/extensions/posthog-provider/models` | `resolveModelConfigs()`, `fallbackModelConfigs()`, `DEFAULT_MODEL`, `GatewayModel` |
+| `@posthog/harness/extensions/web-access` | web search + fetch tools — `createWebAccessExtension()` |
+| `@posthog/harness/extensions/subagent` | subagent orchestration — `createSubagentExtension()` |
+| `@posthog/harness/extensions/mcp` | MCP client extension — `createMcpExtension()` |
