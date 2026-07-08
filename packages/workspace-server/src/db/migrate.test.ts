@@ -8,6 +8,8 @@ import { runMigrations } from "./migrate";
 
 const MIGRATIONS_FOLDER = path.resolve(__dirname, "migrations");
 
+const MID_HISTORY_ADD_COLUMN_TIMESTAMP = 1782781314961;
+
 let sqlite: InstanceType<typeof Database>;
 
 beforeEach(() => {
@@ -24,6 +26,18 @@ function ledgerMax(db: InstanceType<typeof Database>): number | null {
     .prepare("SELECT MAX(created_at) AS max FROM __drizzle_migrations")
     .get() as { max: number | null };
   return row.max;
+}
+
+function ledgerHas(
+  db: InstanceType<typeof Database>,
+  timestamp: number,
+): boolean {
+  const row = db
+    .prepare(
+      "SELECT COUNT(*) AS count FROM __drizzle_migrations WHERE created_at = ?",
+    )
+    .get(timestamp) as { count: number };
+  return row.count > 0;
 }
 
 function hasColumn(
@@ -67,34 +81,53 @@ describe("runMigrations", () => {
     expect(ledgerMax(sqlite)).toBe(latest);
   });
 
-  it("propagates errors that are not benign schema conflicts", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "migrate-test-"));
-    try {
-      mkdirSync(path.join(dir, "meta"), { recursive: true });
-      writeFileSync(
-        path.join(dir, "meta", "_journal.json"),
-        JSON.stringify({
-          version: "7",
-          dialect: "sqlite",
-          entries: [
-            {
-              idx: 0,
-              version: "6",
-              when: 1,
-              tag: "0000_broken",
-              breakpoints: true,
-            },
-          ],
-        }),
-      );
-      writeFileSync(
-        path.join(dir, "0000_broken.sql"),
-        "DROP TABLE `table_that_does_not_exist`;",
-      );
+  it("re-applies a missing mid-history ledger entry", () => {
+    runMigrations(sqlite, MIGRATIONS_FOLDER);
 
+    sqlite
+      .prepare("DELETE FROM __drizzle_migrations WHERE created_at = ?")
+      .run(MID_HISTORY_ADD_COLUMN_TIMESTAMP);
+    expect(ledgerHas(sqlite, MID_HISTORY_ADD_COLUMN_TIMESTAMP)).toBe(false);
+
+    expect(() => runMigrations(sqlite, MIGRATIONS_FOLDER)).not.toThrow();
+    expect(ledgerHas(sqlite, MID_HISTORY_ADD_COLUMN_TIMESTAMP)).toBe(true);
+  });
+
+  it("propagates errors other than duplicate-column conflicts", () => {
+    const dir = writeTempMigration("DROP TABLE `table_that_does_not_exist`;");
+    try {
       expect(() => runMigrations(sqlite, dir)).toThrow(/no such table/i);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("does not swallow an 'already exists' conflict from a new migration", () => {
+    sqlite.exec("CREATE TABLE existing_table (id text)");
+    const dir = writeTempMigration(
+      "CREATE TABLE `existing_table` (`id` text);",
+    );
+    try {
+      expect(() => runMigrations(sqlite, dir)).toThrow(/already exists/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
+
+function writeTempMigration(sql: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), "migrate-test-"));
+  mkdirSync(path.join(dir, "meta"), { recursive: true });
+  writeFileSync(
+    path.join(dir, "meta", "_journal.json"),
+    JSON.stringify({
+      version: "7",
+      dialect: "sqlite",
+      entries: [
+        { idx: 0, version: "6", when: 1, tag: "0000_temp", breakpoints: true },
+      ],
+    }),
+  );
+  writeFileSync(path.join(dir, "0000_temp.sql"), sql);
+  return dir;
+}
