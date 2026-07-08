@@ -21,13 +21,12 @@ import os from "node:os";
 import path from "node:path";
 import { app, crashReporter, protocol } from "electron";
 import { fixPath } from "./utils/fixPath";
+import { shouldRefuseInternalChildBoot } from "./utils/internal-child-guard";
 
-// The workspace-server tree runs with a `node -> app binary` PATH shim that
-// relies on ELECTRON_RUN_AS_NODE. If a descendant strips that var and runs
-// `node` (or process.execPath), this binary boots as a full app: it races the
-// single-instance lock and, whenever the lock is free, opens phantom windows.
-// POSTHOG_CODE_INTERNAL_CHILD marks that tree so we can refuse to boot here.
-if (app.isPackaged && process.env.POSTHOG_CODE_INTERNAL_CHILD) {
+// The internal-child marker means a workspace-server descendant stripped
+// ELECTRON_RUN_AS_NODE and ran `node` or process.execPath; booting a full app
+// here would race the single-instance lock and open phantom windows.
+if (shouldRefuseInternalChildBoot(app.isPackaged, process.env)) {
   process.stderr.write(
     "[posthog-code] Refusing to start the desktop app from inside its own " +
       "child process tree (expected ELECTRON_RUN_AS_NODE=1).\n",
