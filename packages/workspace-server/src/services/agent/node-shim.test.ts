@@ -11,8 +11,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildNodeShimScript } from "@posthog/shared/node-shim";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildNodeShimScript, ensureNodeShim } from "./node-shim";
+import { ensureNodeShim } from "./node-shim";
 
 const EXEC_PATH = "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code";
 
@@ -42,12 +43,6 @@ describe("ensureNodeShim", () => {
     expect(content).toContain("export ELECTRON_RUN_AS_NODE=1");
     expect(content).toContain(`exec "${EXEC_PATH}" "$@"`);
     expect(statSync(shim).mode & 0o111).not.toBe(0);
-  });
-
-  it("escapes shell-special characters in the binary path", () => {
-    expect(buildNodeShimScript('/odd/pa"th/$app`bin\\x')).toContain(
-      'exec "/odd/pa\\"th/\\$app\\`bin\\\\x" "$@"',
-    );
   });
 
   it("replaces a legacy symlink shim with the wrapper script", () => {
@@ -105,5 +100,14 @@ describe("ensureNodeShim", () => {
     const shim = join(dir, "node");
     expect(lstatSync(shim).isSymbolicLink()).toBe(true);
     expect(readlinkSync(shim)).toBe(EXEC_PATH);
+  });
+
+  it("retargets the win32 symlink when the binary path changes", () => {
+    const dir = makeDir();
+    ensureNodeShim(dir, "/old/location/App.exe", "win32");
+
+    ensureNodeShim(dir, EXEC_PATH, "win32");
+
+    expect(readlinkSync(join(dir, "node"))).toBe(EXEC_PATH);
   });
 });
