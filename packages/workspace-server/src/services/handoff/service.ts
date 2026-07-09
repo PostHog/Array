@@ -239,6 +239,13 @@ export class HandoffHostService implements HandoffHost {
           ts: event.timestamp
             ? new Date(event.timestamp).getTime()
             : Date.now(),
+          // The true turn boundary stamped at cloud capture. Lets the desktop bind
+          // the restore icon by turn instead of the async-late `ts` / turn-index
+          // `promptId`. undefined for pre-fix cloud runs (legacy ts-binding).
+          turnCompletedAt:
+            typeof event.turnCompletedAt === "string"
+              ? event.turnCompletedAt
+              : undefined,
         });
       } catch {
         // Non-fatal: a single checkpoint failing to materialize shouldn't abort

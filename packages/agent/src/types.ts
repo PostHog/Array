@@ -135,6 +135,14 @@ export interface GitCheckpointEvent extends GitCheckpoint {
    * the checkpoint with the correct conversation boundary for log truncation.
    */
   promptId?: number;
+  /**
+   * ISO-8601 time the TURN completed (stamped at TURN_COMPLETE, before the
+   * fire-and-forget capture whose own timestamp lands async-late). The true turn
+   * boundary the desktop binds the checkpoint to — immune to the async-late
+   * marker timestamp and the turn-index `promptId`. Absent on the handoff
+   * pre-flight snapshot and pre-fix cloud runs (consumers fall back to `ts`).
+   */
+  turnCompletedAt?: string;
 }
 
 /**

@@ -48,6 +48,11 @@ export class CaptureCheckpointSaga extends GitSaga<
 > {
   readonly sagaName = "CaptureCheckpointSaga";
 
+  // Non-destructive (temp index + a unique checkpoint ref), so it runs concurrently
+  // and never blocks — or queues behind — an exclusive op like restore/handoff. This
+  // decouples snapshot latency (slow on big repos) from restore responsiveness.
+  protected readonly runsConcurrently = true;
+
   protected async executeGitOperations(
     input: CaptureCheckpointInput,
   ): Promise<CaptureCheckpointOutput> {

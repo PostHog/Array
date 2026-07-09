@@ -1,4 +1,10 @@
-import { CaretDown, ChatCircle, FileText, Scroll } from "@phosphor-icons/react";
+import {
+  ArrowCounterClockwise,
+  CaretDown,
+  ChatCircle,
+  FileText,
+  Scroll,
+} from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
 import {
@@ -40,6 +46,7 @@ import {
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
+import { RestoreCheckpointDialog } from "@posthog/ui/features/sessions/components/RestoreCheckpointDialog";
 import { extractCanvasInstructions } from "@posthog/ui/features/sessions/components/session-update/canvasInstructions";
 import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
 import { extractCustomInstructions } from "@posthog/ui/features/sessions/components/session-update/customInstructions";
@@ -53,8 +60,10 @@ import { UserShellExecuteView } from "@posthog/ui/features/sessions/components/s
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
+import { useRestoreCheckpoint } from "@posthog/ui/features/sessions/hooks/useRestoreCheckpoint";
 import {
   useOptimisticItemsForTask,
+  useSessionForTask,
   useSessionIsCloud,
 } from "@posthog/ui/features/sessions/sessionStore";
 import type { UserMessageAttachment } from "@posthog/ui/features/sessions/userMessageTypes";
@@ -64,6 +73,7 @@ import {
 } from "@posthog/ui/features/sessions/useSessionTaskId";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import {
   DIFF_WORKER_FACTORY,
   type DiffWorkerFactory,
@@ -94,6 +104,19 @@ type AgentTurn = { type: "agent_turn"; id: string; items: ThreadItem[] };
 type TurnRow = ThreadItem | AgentTurn;
 
 type SessionUpdateItem = Extract<ConversationItem, { type: "session_update" }>;
+
+type UserMessageItem = Extract<ConversationItem, { type: "user_message" }>;
+
+/**
+ * Per-turn checkpoint-restore wiring for a user message. The parent thread resolves this from the
+ * item's `turnContext.lastCheckpointId` plus the live runtime state (handoff / reconnect / streaming),
+ * mirroring the legacy `ConversationView`. `onRestoreCheckpoint` is present only when the turn is
+ * actually restorable; otherwise `restoreDisabledReason` explains why the control is disabled.
+ */
+type UserRestoreResolver = (item: UserMessageItem) => {
+  onRestoreCheckpoint?: () => void;
+  restoreDisabledReason?: string;
+};
 
 function isToolCallItem(item: ConversationItem): item is SessionUpdateItem {
   return (
@@ -248,15 +271,64 @@ function RowTimestamp({ timestamp }: { timestamp?: number }) {
  * (along with the always-on personalization block) so the raw XML never leaks for flag-off viewers.
  * The send timestamp sits in a `ChatMessageFooter` revealed on hover.
  */
+/**
+ * Hover-revealed restore control shown on a user turn, matching the legacy `ConversationView`
+ * affordance. Enabled only when the turn captured a checkpoint and the runtime is idle; otherwise it
+ * stays visible but disabled, with `restoreDisabledReason` explaining why (still responding / handing
+ * off / reconnecting / no checkpoint). The `span` wrapper keeps the tooltip hoverable while the
+ * button is disabled (a disabled button swallows pointer events).
+ */
+function RestoreCheckpointButton({
+  onRestoreCheckpoint,
+  restoreDisabledReason,
+}: {
+  onRestoreCheckpoint?: () => void;
+  restoreDisabledReason?: string;
+}) {
+  return (
+    <Tooltip
+      content={
+        onRestoreCheckpoint
+          ? "Restore checkpoint"
+          : (restoreDisabledReason ?? "No checkpoint for this turn")
+      }
+    >
+      <span className="inline-flex">
+        <Button
+          type="button"
+          variant="link-muted"
+          size="icon-xs"
+          onClick={onRestoreCheckpoint}
+          disabled={!onRestoreCheckpoint}
+          aria-label="Restore checkpoint"
+          // Ghost-style: subtle rounded background on hover (disabled buttons get
+          // pointer-events-none, so no hover bg when there's no checkpoint).
+          className="rounded-md transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ArrowCounterClockwise size={12} />
+        </Button>
+      </span>
+    </Tooltip>
+  );
+}
+
 function UserBubble({
   content,
   timestamp,
   attachments = [],
+  onRestoreCheckpoint,
+  restoreDisabledReason,
 }: {
   content: string;
   timestamp?: number;
   attachments?: UserMessageAttachment[];
+  onRestoreCheckpoint?: () => void;
+  restoreDisabledReason?: string;
 }) {
+  // A user turn always carries a restore affordance (enabled, or disabled with a reason), so the
+  // hover footer renders whenever either the restore control or a timestamp is present.
+  const hasRestore =
+    onRestoreCheckpoint !== undefined || restoreDisabledReason !== undefined;
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
@@ -400,9 +472,17 @@ function UserBubble({
             )}
           </ChatBubbleContent>
         </ChatBubble>
-        {timestamp != null && (
-          <ChatMessageFooter className="opacity-0 transition-opacity group-hover:opacity-100">
-            {formatTimestamp(timestamp)}
+        {(timestamp != null || hasRestore) && (
+          <ChatMessageFooter className="items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            {hasRestore && (
+              <RestoreCheckpointButton
+                onRestoreCheckpoint={onRestoreCheckpoint}
+                restoreDisabledReason={restoreDisabledReason}
+              />
+            )}
+            {timestamp != null && (
+              <span className="leading-none">{formatTimestamp(timestamp)}</span>
+            )}
           </ChatMessageFooter>
         )}
       </ChatMessageContent>
@@ -564,10 +644,12 @@ function ThreadItemBody({
   item,
   renderItem,
   isTrailing = false,
+  userRestore,
 }: {
   item: ThreadItem;
   renderItem: (item: ConversationItem) => ReactNode;
   isTrailing?: boolean;
+  userRestore?: UserRestoreResolver;
 }) {
   if (item.type === "tool_group") {
     const context = item.tools[0]?.turnContext;
@@ -581,11 +663,14 @@ function ThreadItemBody({
     );
   }
   if (item.type === "user_message") {
+    const restore = userRestore?.(item);
     return (
       <UserBubble
         content={item.content}
         timestamp={item.timestamp}
         attachments={item.attachments}
+        onRestoreCheckpoint={restore?.onRestoreCheckpoint}
+        restoreDisabledReason={restore?.restoreDisabledReason}
       />
     );
   }
@@ -617,9 +702,11 @@ function completedTurnTimestamp(turn: AgentTurn): number | undefined {
 const ThreadRow = memo(function ThreadRow({
   item,
   renderItem,
+  userRestore,
 }: {
   item: TurnRow;
   renderItem: (item: ConversationItem) => ReactNode;
+  userRestore?: UserRestoreResolver;
 }) {
   if (item.type === "agent_turn") {
     return (
@@ -644,6 +731,7 @@ const ThreadRow = memo(function ThreadRow({
                 item={sub}
                 renderItem={renderItem}
                 isTrailing={i === item.items.length - 1}
+                userRestore={userRestore}
               />
             </div>
           ))}
@@ -659,7 +747,11 @@ const ThreadRow = memo(function ThreadRow({
       className="mx-auto w-full px-2.5 py-1 empty:hidden"
       style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
-      <ThreadItemBody item={item} renderItem={renderItem} />
+      <ThreadItemBody
+        item={item}
+        renderItem={renderItem}
+        userRestore={userRestore}
+      />
     </ChatMessageScrollerItem>
   );
 });
@@ -736,12 +828,14 @@ function ThreadScrollBody({
   rows,
   renderItem,
   footer,
+  userRestore,
 }: {
   items: ConversationItem[];
   rows: TurnRow[];
   renderItem: (item: ConversationItem) => ReactNode;
   /** Status row (duration / context usage) pinned as the last item in the thread. */
   footer?: ReactNode;
+  userRestore?: UserRestoreResolver;
 }) {
   const keyedRows = useMemo(() => {
     let userTurn = 0;
@@ -763,7 +857,12 @@ function ThreadScrollBody({
           density="default"
         >
           {keyedRows.map(({ item, key }) => (
-            <ThreadRow key={key} item={item} renderItem={renderItem} />
+            <ThreadRow
+              key={key}
+              item={item}
+              renderItem={renderItem}
+              userRestore={userRestore}
+            />
           ))}
           {footer && (
             <div
@@ -830,6 +929,63 @@ export function ChatThread({
   const rows = useMemo<TurnRow[]>(
     () => groupIntoTurns(groupToolRuns(items)),
     [items],
+  );
+
+  // --- Checkpoint restore (per-turn) ---------------------------------------------------------
+  // Mirrors the legacy `ConversationView`: each user turn gets a hover restore control bound to its
+  // `turnContext.lastCheckpointId`, gated on the live runtime state.
+  const session = useSessionForTask(taskId);
+  const isReconnecting = session?.isReconnecting ?? false;
+  const isHandingOff = session?.handoffInProgress ?? false;
+  // Restore is unavailable while the runtime is in flux — during a handoff (the agent is being moved
+  // between local/cloud) or while the post-restore reconnect is still respawning the agent.
+  const restoreBusy = isReconnecting || isHandingOff;
+
+  const restore = useRestoreCheckpoint({
+    repoPath: repoPath ?? undefined,
+    taskId,
+    taskRunId: session?.taskRunId,
+  });
+
+  // The turn the agent is actively answering: the last user message while a prompt is in flight. Its
+  // checkpoint is only captured on completion, so it legitimately has no `lastCheckpointId` yet and
+  // needs a "still responding" reason rather than the generic "no checkpoint". Earlier completed turns
+  // stay restorable. Derived from `items`, but the value is a stable id string, so it doesn't churn on
+  // every streamed token append (only when the active turn or prompt state actually changes).
+  const activeTurnUserMessageId = useMemo(() => {
+    if (!isPromptPending) return undefined;
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].type === "user_message") return items[i].id;
+    }
+    return undefined;
+  }, [items, isPromptPending]);
+
+  const resolveUserRestore = useCallback<UserRestoreResolver>(
+    (item) => {
+      const checkpointId = item.turnContext?.lastCheckpointId;
+      return {
+        onRestoreCheckpoint:
+          !restoreBusy && checkpointId
+            ? () => restore.requestRestore(checkpointId)
+            : undefined,
+        restoreDisabledReason: checkpointId
+          ? isHandingOff
+            ? "Handing off the session — you can restore once the agent reconnects."
+            : isReconnecting
+              ? "Reconnecting to the agent after your last restore, you can restore again in a moment."
+              : undefined
+          : item.id === activeTurnUserMessageId
+            ? "The agent is still responding to this turn — you can restore it once the response completes."
+            : "No checkpoint was captured for this turn",
+      };
+    },
+    [
+      restoreBusy,
+      isHandingOff,
+      isReconnecting,
+      activeTurnUserMessageId,
+      restore.requestRestore,
+    ],
   );
 
   const renderItem = useCallback(
@@ -916,6 +1072,7 @@ export function ChatThread({
               items={items}
               rows={rows}
               renderItem={renderItem}
+              userRestore={resolveUserRestore}
               footer={
                 <ChatThreadFooter
                   events={events}
@@ -928,6 +1085,14 @@ export function ChatThread({
             />
           </ChatMessageScrollerProvider>
         </ChatThreadChromeProvider>
+        <RestoreCheckpointDialog
+          open={restore.dialogOpen}
+          onOpenChange={restore.setDialogOpen}
+          onConfirm={restore.confirmRestore}
+          isLoading={restore.isRestoring}
+          isTurnInProgress={!!isPromptPending}
+          isCloud={isCloud}
+        />
       </SessionTaskIdProvider>
     </WorkerPoolContextProvider>
   );

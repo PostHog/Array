@@ -135,6 +135,12 @@ export interface ItemBuilder {
     checkpointId: string;
     promptId: number | undefined;
     ts: number;
+    /** ISO-8601 turn-completion time from the marker params, when present. The
+     *  true turn boundary — used to bind the checkpoint to its turn robustly.
+     *  Unlike `ts` (capture-completion time, which lands late for slow snapshots)
+     *  and `promptId` (collides/renumbers across a handoff), it uniquely places
+     *  the checkpoint on its turn even when both of those are ambiguous. */
+    turnCompletedAt?: string;
   }>;
   shellExecutes: Map<string, { item: UserShellExecute; index: number }>;
   isCompacting: boolean;
@@ -338,25 +344,55 @@ export function finalizeBuilder(
  * so the latest checkpoint inside a turn's window wins.
  */
 export function assignDeferredCheckpoints(b: ItemBuilder): void {
-  const checkpointsByTs = [...b.pendingCheckpoints].sort((a, c) => a.ts - c.ts);
-  for (const { checkpointId, promptId, ts } of checkpointsByTs) {
+  // The binding boundary: the checkpoint's TRUE turn-completion time when the
+  // marker carries it, else the (capture-completion) event ts. turnCompletedAt is
+  // authoritative — captures are async and land late, so ts can fall inside a
+  // LATER turn's window, and promptId collides/renumbers across a handoff. Using
+  // the boundary places the checkpoint on the turn that was active when its turn
+  // completed, which is stable through both.
+  const boundaryOf = (c: { ts: number; turnCompletedAt?: string }): number => {
+    if (c.turnCompletedAt) {
+      const parsed = Date.parse(c.turnCompletedAt);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+    return c.ts;
+  };
+  const checkpointsByTs = [...b.pendingCheckpoints].sort(
+    (a, c) => boundaryOf(a) - boundaryOf(c),
+  );
+  for (const cp of checkpointsByTs) {
+    const { checkpointId, promptId } = cp;
     // Checkpoints with no promptId are internal handoff snapshots (e.g. the
     // local pre-flight capture), not user-turn restore points — don't bind them
     // to a turn's restore button.
     if (promptId === undefined) continue;
 
-    const candidates = b.allTurnsList.filter((t) => t.promptId === promptId);
     let targetTurn: TurnState | null;
-    if (candidates.length === 1) {
-      targetTurn = candidates[0];
-    } else {
-      // 0 (cloud promptId with no local twin) or >1 (handoff collision): bind to
-      // the latest turn that started at or before this checkpoint.
+    if (cp.turnCompletedAt) {
+      // Robust primary path: bind to the latest turn that had started by the
+      // real turn boundary. Immune to async-late capture ts and to promptId
+      // collisions after a handoff (e.g. Turn2, a post-restore turn, and a cloud
+      // turn all reusing promptId 5 — each still lands on its own turn by time).
       targetTurn = null;
+      const boundary = boundaryOf(cp);
       for (const turn of b.allTurnsList) {
-        if (turn.ts <= ts) targetTurn = turn;
+        if (turn.ts <= boundary) targetTurn = turn;
       }
       targetTurn = targetTurn ?? b.currentTurn;
+    } else {
+      // Legacy path for markers without a turn boundary (pre-fix logs, cloud-
+      // registered checkpoints): promptId when it identifies exactly one turn,
+      // else the latest turn that started at or before the event ts.
+      const candidates = b.allTurnsList.filter((t) => t.promptId === promptId);
+      if (candidates.length === 1) {
+        targetTurn = candidates[0];
+      } else {
+        targetTurn = null;
+        for (const turn of b.allTurnsList) {
+          if (turn.ts <= cp.ts) targetTurn = turn;
+        }
+        targetTurn = targetTurn ?? b.currentTurn;
+      }
     }
 
     if (targetTurn) {
@@ -683,15 +719,21 @@ function handleNotification(
   }
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT)) {
-    const params = msg.params as { checkpointId?: string; promptId?: number };
+    const params = msg.params as {
+      checkpointId?: string;
+      promptId?: number;
+      turnCompletedAt?: string;
+    };
     if (!params?.checkpointId) return;
     // Defer until after all turns are built so the association pass sees every
     // turn, even if this notification arrives before the session/prompt events
-    // (e.g. after a reconnect replay). ts disambiguates colliding promptIds.
+    // (e.g. after a reconnect replay). turnCompletedAt (the true turn boundary),
+    // then ts, disambiguates colliding/renumbered promptIds.
     b.pendingCheckpoints.push({
       checkpointId: params.checkpointId,
       promptId: params.promptId,
       ts,
+      turnCompletedAt: params.turnCompletedAt,
     });
     return;
   }

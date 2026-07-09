@@ -14,6 +14,7 @@ const completeContext: TurnContext = {
   childItems: new Map(),
   turnCancelled: false,
   turnComplete: true,
+  lastCheckpointId: null,
 };
 
 const activeContext: TurnContext = {
@@ -21,6 +22,7 @@ const activeContext: TurnContext = {
   childItems: new Map(),
   turnCancelled: false,
   turnComplete: false,
+  lastCheckpointId: null,
 };
 
 function userMessage(id: string): ConversationItem {

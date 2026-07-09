@@ -358,7 +358,20 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   /** Checkpoint notifications captured per taskRunId, in capture order. Survives session reconnect. */
   private sessionCheckpoints = new Map<
     string,
-    Array<{ checkpointId: string; ts: number; promptId: number | undefined }>
+    Array<{
+      checkpointId: string;
+      ts: number;
+      promptId: number | undefined;
+      /**
+       * ISO-8601 time the TURN completed (when TURN_COMPLETE fired), NOT when the
+       * async git snapshot finished. The snapshot can take minutes on a large repo,
+       * so `ts`/the emitted-marker timestamp land well after later turns' prompts —
+       * making them useless as a truncation boundary. This is the true turn boundary
+       * used to trim the restore-truncated log. Optional: cloud-registered checkpoints
+       * and pre-fix logs don't carry it (callers fall back to the marker timestamp).
+       */
+      turnCompletedAt?: string;
+    }>
   >();
   private mockNodeReady = false;
   private idleTimeouts = new Map<
@@ -1432,7 +1445,7 @@ If a repository IS genuinely required, attach one in this priority order:
       count: checkpoints.length,
     });
 
-    for (const { checkpointId, ts, promptId } of checkpoints) {
+    for (const { checkpointId, ts, promptId, turnCompletedAt } of checkpoints) {
       this.emit(AgentServiceEvent.SessionEvent, {
         taskRunId,
         payload: {
@@ -1442,7 +1455,7 @@ If a repository IS genuinely required, attach one in this priority order:
             jsonrpc: "2.0" as const,
             method: POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
             // Mark as replay so renderer doesn't re-sync to S3
-            params: { checkpointId, promptId, replay: true },
+            params: { checkpointId, promptId, turnCompletedAt, replay: true },
           },
         },
       });
@@ -1478,6 +1491,22 @@ If a repository IS genuinely required, attach one in this priority order:
   }
 
   /**
+   * The turn-completion timestamp for a checkpoint (see the sessionCheckpoints
+   * map). Used when re-appending the restored checkpoint's marker after a restore
+   * so it carries the true turn boundary (the S3 truncate drops the original
+   * marker), which the re-seeded-cache trim uses. Undefined for pre-fix or
+   * cloud-registered checkpoints.
+   */
+  getCheckpointTurnCompletedAt(
+    taskRunId: string,
+    checkpointId: string,
+  ): string | undefined {
+    const checkpoints = this.sessionCheckpoints.get(taskRunId) ?? [];
+    const cp = checkpoints.find((c) => c.checkpointId === checkpointId);
+    return cp?.turnCompletedAt;
+  }
+
+  /**
    * Read-only: the checkpoint IDs that SURVIVE a restore to keepUpToCheckpointId
    * (everything up to and including the target). Used as a deletion whitelist so
    * orphan-ref cleanup never removes a surviving checkpoint's git ref. Returns []
@@ -1491,6 +1520,35 @@ If a repository IS genuinely required, attach one in this priority order:
     const cps = this.sessionCheckpoints.get(taskRunId) ?? [];
     const idx = cps.findIndex((c) => c.checkpointId === keepUpToCheckpointId);
     return idx === -1 ? [] : cps.slice(0, idx + 1).map((c) => c.checkpointId);
+  }
+
+  /**
+   * Read-only: the FULL surviving checkpoint entries (id + promptId +
+   * turnCompletedAt) up to and including keepUpToCheckpointId, in capture order.
+   * Used by the restore to re-append survivor markers that a position-based S3
+   * truncate dropped — an EARLIER turn's async-late capture can land in the log
+   * after the restore target's marker, so truncating at the target's position cuts
+   * that survivor too, leaving it with a "no checkpoint captured" icon. The map is
+   * the authoritative source for the true `turnCompletedAt` (the S3 marker may be
+   * gone). Returns [] when the target isn't in the map (e.g. after a restart).
+   */
+  getSurvivingCheckpointEntries(
+    taskRunId: string,
+    keepUpToCheckpointId: string,
+  ): Array<{
+    checkpointId: string;
+    promptId: number | undefined;
+    turnCompletedAt?: string;
+  }> {
+    const cps = this.sessionCheckpoints.get(taskRunId) ?? [];
+    const idx = cps.findIndex((c) => c.checkpointId === keepUpToCheckpointId);
+    return idx === -1
+      ? []
+      : cps.slice(0, idx + 1).map((c) => ({
+          checkpointId: c.checkpointId,
+          promptId: c.promptId,
+          turnCompletedAt: c.turnCompletedAt,
+        }));
   }
 
   /**
@@ -1524,7 +1582,15 @@ If a repository IS genuinely required, attach one in this priority order:
    */
   registerCloudCheckpoint(
     taskRunId: string,
-    entry: { checkpointId: string; promptId: number | undefined; ts: number },
+    entry: {
+      checkpointId: string;
+      promptId: number | undefined;
+      ts: number;
+      // True turn boundary from the cloud capture (marker params). When present the
+      // desktop binds the restore icon by it instead of the async-late `ts` /
+      // turn-index `promptId`; replayCheckpoints re-emits it to the renderer.
+      turnCompletedAt?: string;
+    },
   ): void {
     const existing = this.sessionCheckpoints.get(taskRunId) ?? [];
     // Deduplicate: don't add the same checkpoint twice (e.g. if handoff is
@@ -1543,6 +1609,7 @@ If a repository IS genuinely required, attach one in this priority order:
       taskRunId,
       checkpointId: entry.checkpointId,
       promptId: entry.promptId,
+      turnCompletedAt: entry.turnCompletedAt,
       totalStored: existing.length,
     });
 
@@ -1559,6 +1626,9 @@ If a repository IS genuinely required, attach one in this priority order:
           params: {
             checkpointId: entry.checkpointId,
             promptId: entry.promptId,
+            // Bind the icon to the right turn immediately (not just after a later
+            // replayCheckpoints), same key the replay path emits.
+            turnCompletedAt: entry.turnCompletedAt,
           },
         },
       },
@@ -1920,7 +1990,10 @@ For git operations while detached:
       const raw = message as { method?: string; id?: number };
       if (raw.method === "session/prompt" && raw.id !== undefined) {
         latestPromptId = raw.id;
-        this.log.debug("Tracked session/prompt id", { taskRunId, promptId: raw.id });
+        this.log.debug("Tracked session/prompt id", {
+          taskRunId,
+          promptId: raw.id,
+        });
       }
 
       // Inspect tool call updates for PR URLs and file activity
@@ -2436,9 +2509,12 @@ For git operations while detached:
 
     const session = this.sessions.get(taskRunId);
     if (!session?.config.repoPath) {
-      this.log.debug("TURN_COMPLETE in stream — no repoPath, skipping checkpoint", {
-        taskRunId,
-      });
+      this.log.debug(
+        "TURN_COMPLETE in stream — no repoPath, skipping checkpoint",
+        {
+          taskRunId,
+        },
+      );
       return;
     }
 
@@ -2448,11 +2524,18 @@ For git operations while detached:
       promptId,
     });
 
+    // Stamp the turn boundary NOW, before the async snapshot. The snapshot can
+    // take minutes on a large repo, so if we used the capture-completion time the
+    // marker would sort after later turns' prompts and the restore-truncation
+    // boundary would keep them (stale turns after restore).
+    const turnCompletedAt = new Date().toISOString();
+
     this.captureLocalCheckpoint(
       taskRunId,
       session.config.repoPath,
       session.config.sessionId,
       promptId,
+      turnCompletedAt,
       emitToRenderer,
     ).catch((err) => {
       this.log.warn("Local checkpoint capture failed", {
@@ -2472,33 +2555,58 @@ For git operations while detached:
     repoPath: string,
     sessionId: string | undefined,
     promptId: number | undefined,
+    turnCompletedAt: string,
     emitToRenderer: (payload: unknown) => void,
   ): Promise<void> {
-    this.log.info("Capturing local checkpoint after turn", { taskRunId, repoPath });
+    this.log.info("Capturing local checkpoint after turn", {
+      taskRunId,
+      repoPath,
+    });
 
+    const captureStart = Date.now();
     const saga = new CaptureCheckpointSaga();
     const sagaResult = await saga.run({ baseDir: repoPath });
+    const captureMs = Date.now() - captureStart;
     if (!sagaResult.success) {
-      this.log.warn("CaptureCheckpointSaga failed — no checkpoint for this turn", {
-        taskRunId,
-        error: sagaResult.error,
-      });
+      this.log.warn(
+        "CaptureCheckpointSaga failed — no checkpoint for this turn",
+        {
+          taskRunId,
+          error: sagaResult.error,
+          captureMs,
+        },
+      );
       return;
     }
 
     const result = sagaResult.data;
+    // The saga's git ops are ~seconds; a much larger captureMs usually means it
+    // queued behind another git write on this repo (the per-repo write lock).
+    // Flagged so a slow capture (which can delay a concurrent restore) is obvious.
+    if (captureMs > 10_000) {
+      this.log.warn("Local checkpoint capture was slow", {
+        taskRunId,
+        captureMs,
+      });
+    }
     this.log.info("Local checkpoint captured", {
       taskRunId,
       checkpointId: result.checkpointId,
       commit: result.commit,
       branch: result.branch,
+      captureMs,
     });
 
     // Persist mapping so we can re-inject on reconnect, with promptId for
     // correct turn association regardless of when the notification arrives.
     const ts = Date.now();
     const existing = this.sessionCheckpoints.get(taskRunId) ?? [];
-    existing.push({ checkpointId: result.checkpointId, ts, promptId });
+    existing.push({
+      checkpointId: result.checkpointId,
+      ts,
+      promptId,
+      turnCompletedAt,
+    });
     this.sessionCheckpoints.set(taskRunId, existing);
     this.log.info("Stored checkpoint for reconnect replay", {
       taskRunId,
@@ -2510,7 +2618,9 @@ For git operations while detached:
     const notification = {
       jsonrpc: "2.0" as const,
       method: POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
-      params: { checkpointId: result.checkpointId, promptId },
+      // turnCompletedAt rides in params so it survives the S3 round-trip (the
+      // restore truncation reads it back from the re-seeded log).
+      params: { checkpointId: result.checkpointId, promptId, turnCompletedAt },
     };
 
     // Emit to renderer so the restore button activates on the completed turn
@@ -2564,7 +2674,10 @@ For git operations while detached:
       await fsPromises.mkdir(sessionDir, { recursive: true });
       const entry = {
         type: "notification" as const,
-        timestamp: new Date().toISOString(),
+        // Turn-completion time, not append time — see captureLocalCheckpoint's
+        // turnCompletedAt. Keeps this cache entry's timestamp on the true turn
+        // boundary so a cold-load trim cuts correctly.
+        timestamp: turnCompletedAt,
         notification,
       };
       await fsPromises.appendFile(

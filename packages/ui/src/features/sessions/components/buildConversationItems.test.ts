@@ -79,6 +79,7 @@ function gitCheckpointMsg(
   ts: number,
   checkpointId: string,
   promptId?: number,
+  turnCompletedAt?: string,
 ): AcpMessage {
   return {
     type: "acp_message",
@@ -86,7 +87,7 @@ function gitCheckpointMsg(
     message: {
       jsonrpc: "2.0",
       method: POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
-      params: { checkpointId, promptId },
+      params: { checkpointId, promptId, turnCompletedAt },
     },
   };
 }
@@ -257,6 +258,45 @@ describe("buildConversationItems", () => {
     expect(checkpointIds).not.toContain("cp-preflight");
   });
 
+  // Regression (run A): after a handoff, promptId collides even within one local
+  // session — Turn2's checkpoint and a post-restore turn's checkpoint both reuse
+  // promptId 5. Captures are async and land LATE, so the marker's EVENT ts falls
+  // inside the LATER turn's window; a ts-only fallback then binds Turn2's
+  // checkpoint to the post-restore turn, leaving Turn2 with a disabled "no
+  // checkpoint" icon (even though the checkpoint is restorable). Binding by the
+  // marker's turnCompletedAt (the true turn boundary) keeps each on its own turn.
+  it("binds colliding promptIds to the right turn via turnCompletedAt despite late capture ts", () => {
+    const base = Date.parse("2026-07-08T06:12:00.000Z");
+    const iso = (offsetMs: number) => new Date(base + offsetMs).toISOString();
+
+    const result = buildConversationItems(
+      [
+        userPromptMsg(base + 1_000, 5, "beta"),
+        promptResponseMsg(base + 1_500, 5),
+        turnCompleteMsg(base + 2_000),
+        userPromptMsg(base + 200_000, 5, "gamma"), // post-restore reuses promptId 5
+        promptResponseMsg(base + 200_500, 5),
+        turnCompleteMsg(base + 201_000),
+        // Both markers arrive late (after gamma's prompt) and share promptId 5,
+        // but each carries its own true turn boundary.
+        gitCheckpointMsg(base + 250_000, "cp-beta", 5, iso(2_000)),
+        gitCheckpointMsg(base + 260_000, "cp-gamma", 5, iso(201_000)),
+      ],
+      null,
+    );
+
+    const checkpointIds = result.items
+      .filter((i) => i.type === "user_message")
+      .map((i) =>
+        i.type === "user_message"
+          ? (i.turnContext?.lastCheckpointId ?? null)
+          : null,
+      );
+
+    // beta keeps cp-beta (not stolen by the later gamma turn); gamma keeps cp-gamma.
+    expect(checkpointIds).toEqual(["cp-beta", "cp-gamma"]);
+  });
+
   it("extracts cloud prompt attachments into user messages", () => {
     const uri = makeAttachmentUri("/tmp/hello world.txt");
 
@@ -299,6 +339,13 @@ describe("buildConversationItems", () => {
             label: "hello world.txt",
           },
         ],
+        turnContext: {
+          toolCalls: new Map(),
+          childItems: new Map(),
+          turnCancelled: false,
+          turnComplete: false,
+          lastCheckpointId: null,
+        },
       },
     ]);
   });
@@ -459,6 +506,13 @@ describe("buildConversationItems", () => {
             label: "test.txt",
           },
         ],
+        turnContext: {
+          toolCalls: new Map(),
+          childItems: new Map(),
+          turnCancelled: false,
+          turnComplete: false,
+          lastCheckpointId: null,
+        },
       },
     ]);
   });
@@ -502,6 +556,13 @@ describe("buildConversationItems", () => {
             label: "Receipt-2264-0277.pdf",
           },
         ],
+        turnContext: {
+          toolCalls: new Map(),
+          childItems: new Map(),
+          turnCancelled: false,
+          turnComplete: false,
+          lastCheckpointId: null,
+        },
       },
     ]);
   });

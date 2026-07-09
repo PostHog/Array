@@ -2298,7 +2298,11 @@ export class SessionService {
       throw new Error(`Session is not ready (status: ${session.status})`);
     }
 
-    if (session.isPromptPending || session.isCompacting || session.isReconnecting) {
+    if (
+      session.isPromptPending ||
+      session.isCompacting ||
+      session.isReconnecting
+    ) {
       const promptText = extractPromptText(prompt);
       this.d.store.enqueueMessage(taskId, promptText);
       this.d.log.info("Message queued", {
@@ -3598,9 +3602,38 @@ export class SessionService {
     this.unsubscribeFromChannel(taskRunId);
     this.subscribeToChannel(taskRunId);
 
-    // Do NOT call replayCheckpoints here — truncateEventsToCheckpoint already
-    // preserved the surviving checkpoints in session.events. Replaying would
-    // duplicate them.
+    // Reconcile the live transcript from the restore-truncated local cache.
+    // The caller's optimistic in-place trim (truncateEventsToCheckpoint) is
+    // marker-POSITION based, which leaves one stale turn on screen after a reload:
+    // a checkpoint is captured asynchronously (git snapshot), so its GIT_CHECKPOINT
+    // marker is persisted ~one turn late and, on a reloaded transcript, sits INSIDE
+    // the next turn — a position cut then keeps that turn (e.g. restoring to the
+    // harness turn left the following "alpha" turn on screen until another reload).
+    // runRestore has already written the correctly (timestamp-)trimmed logs.ndjson
+    // cache, and fetchSessionLogs reads that local cache first, so re-seeding
+    // session.events from it — exactly what a reload does — is the authoritative fix.
+    // The trimmed cache still carries every surviving GIT_CHECKPOINT marker, so this
+    // also stands in for replayCheckpoints (calling that here would duplicate them).
+    // Best-effort: on failure the optimistic in-place trim remains as the fallback.
+    try {
+      const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
+        logUrl,
+        taskRunId,
+      );
+      const current = this.d.store.getSessionByTaskId(taskId);
+      if (current?.taskRunId === taskRunId && rawEntries.length > 0) {
+        this.d.store.restoreEvents(
+          taskRunId,
+          convertStoredEntriesToEvents(rawEntries),
+          totalLineCount,
+        );
+      }
+    } catch (error) {
+      this.d.log.warn(
+        "restoreCheckpointReconnect: failed to reconcile transcript from truncated cache; live view may show a stale turn until reload",
+        { taskId, error },
+      );
+    }
 
     const authStatus = await this.getAuthCredentialsStatus();
     if (authStatus.kind !== "ready") {
@@ -4299,6 +4332,30 @@ export class SessionService {
         preflight.localGitState,
       );
       this.transitionToLocalSession(runId);
+      // Replay persisted config (esp. the model) to the reconnected local
+      // runtime. The handoff saga spawns the agent with the adapter but not the
+      // model/mode, so without this the gateway falls back to its default Claude
+      // model and a codex task fails the first post-handoff turn with an
+      // auth/credit error. Mirrors reconnectToLocalSession / restoreCheckpointReconnect.
+      const persistedConfigOptions = this.d.getPersistedConfigOptions(runId);
+      if (persistedConfigOptions) {
+        await Promise.all(
+          persistedConfigOptions.map((opt) =>
+            this.d.trpc.agent.setConfigOption
+              .mutate({
+                sessionId: runId,
+                configId: opt.id,
+                value: String(opt.currentValue),
+              })
+              .catch((error) => {
+                this.d.log.warn(
+                  "Failed to restore persisted config option after handoff",
+                  { taskId, configId: opt.id, error },
+                );
+              }),
+          ),
+        );
+      }
       this.subscribeToChannel(runId);
       await Promise.all([
         this.d.queryClient.refetchQueries({ queryKey: ["tasks"] }),
@@ -4498,6 +4555,22 @@ export class SessionService {
       apiHost: auth.apiHost,
       teamId: auth.projectId,
       localGitState,
+      // Carry the task's adapter through the handoff so the saga's spawn_agent
+      // reconnects with codex/claude to match the run. Without it reconnectSession
+      // gets adapter=undefined and the host defaults to the Claude adapter, so a
+      // codex task comes back as claude-opus-4-8 and fails the first post-handoff
+      // turn (auth/credit error). Model/mode are replayed separately below.
+      //
+      // Precedence mirrors restoreCheckpointReconnect: the persisted adapterStore
+      // is authoritative for tasks handed off FROM local (whose renderer
+      // session.adapter can be a stale "claude"), but it's never populated for a
+      // cloud-NATIVE task (born in cloud, no local SDK_SESSION/reconnect ever
+      // ran). Fall back to session.adapter — set from runtime_adapter by
+      // watchCloudTask — so a cloud-native codex run hands off as codex, not
+      // Claude (which 401s the first post-handoff turn and fails the model replay).
+      adapter:
+        this.d.adapterStore.getAdapter(runId) ??
+        this.d.store.getSessionByTaskId(taskId)?.adapter,
     });
     if (!result.success) {
       throw new Error(result.error ?? "Handoff failed");

@@ -3379,6 +3379,7 @@ ${signedCommitInstructions}
   private async captureCheckpointState(
     localGitState?: HandoffLocalGitState,
     promptId?: number,
+    turnCompletedAt?: string,
   ): Promise<void> {
     if (!this.session || !this.config.repositoryPath) {
       return;
@@ -3410,6 +3411,13 @@ ${signedCommitInstructions}
       ...checkpoint,
       device: this.session.deviceInfo,
       ...(promptId != null ? { promptId } : {}),
+      // The true turn boundary, stamped by broadcastTurnComplete BEFORE this
+      // fire-and-forget capture ran. Rides in the marker params so it survives the
+      // S3 round-trip; the desktop uses it to bind the cloud checkpoint to the
+      // correct turn (the async-late capture `timestamp` and the turn-index
+      // `promptId` both mis-bind — mirrors the local capture at
+      // workspace-server/agent.ts). Absent for the handoff pre-flight snapshot.
+      ...(turnCompletedAt != null ? { turnCompletedAt } : {}),
     };
 
     this.logger.info("Cloud checkpoint captured", {
@@ -3448,6 +3456,9 @@ ${signedCommitInstructions}
 
     this.session.turnIndex += 1;
     const turnIndex = this.session.turnIndex;
+    // Capture the turn boundary NOW, before the fire-and-forget checkpoint below
+    // whose own timestamp lands async-late (after later turns' prompts).
+    const turnCompletedAt = new Date().toISOString();
 
     this.logger.debug("broadcastTurnComplete", {
       runId: this.session.payload.run_id,
@@ -3486,7 +3497,11 @@ ${signedCommitInstructions}
 
     // Capture a per-turn git checkpoint so every cloud turn gets a restore point.
     // Fire-and-forget — don't block the turn response on S3 upload.
-    void this.captureCheckpointState(undefined, turnIndex).catch((err) => {
+    void this.captureCheckpointState(
+      undefined,
+      turnIndex,
+      turnCompletedAt,
+    ).catch((err) => {
       this.logger.warn("Per-turn cloud checkpoint capture failed (non-fatal)", {
         runId: this.session?.payload.run_id,
         turnIndex,
