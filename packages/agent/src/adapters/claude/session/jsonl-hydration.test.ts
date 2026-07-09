@@ -548,6 +548,30 @@ describe("conversationTurnsToJsonlEntries", () => {
     expect(conv[2].parentUuid).toBe(conv[1].uuid);
   });
 
+  it.each([undefined, null])(
+    "emits input: {} for tool calls whose input is %s",
+    (missingInput) => {
+      const lines = conversationTurnsToJsonlEntries(
+        [
+          {
+            role: "assistant",
+            content: [],
+            toolCalls: [
+              { toolCallId: "tc-1", toolName: "Bash", input: missingInput },
+            ],
+          },
+        ],
+        config,
+      );
+
+      const conv = parseConversationEntries(lines);
+      expect(conv).toHaveLength(1);
+      expect(conv[0].message.content).toEqual([
+        { type: "tool_use", id: "tc-1", name: "Bash", input: {} },
+      ]);
+    },
+  );
+
   it("sets stop_reason only on last block, null on intermediate", () => {
     const lines = conversationTurnsToJsonlEntries(
       [
@@ -1132,6 +1156,29 @@ describe("end-to-end: S3 log entries -> JSONL output", () => {
     expect(msg1.id).toBe(msg2.id);
     expect(msg2.id).toBe(msg3.id);
   });
+
+  it("emits input: {} when the tool input never reached the logs", () => {
+    const s3Logs: StoredEntry[] = [
+      s3Entry("user_message", {
+        content: { type: "text", text: "run the tests" },
+      }),
+      s3Entry("tool_call", {
+        toolCallId: "tc-lost",
+        _meta: { claudeCode: { toolName: "Bash" } },
+      }),
+    ];
+
+    const turns = rebuildConversation(s3Logs);
+    const lines = conversationTurnsToJsonlEntries(turns, config);
+    const conv = filterConv(lines.map((l) => JSON.parse(l)));
+
+    const toolUseLine = conv.find((e) => e.type === "assistant");
+    expect(toolUseLine).toBeDefined();
+    const content = (toolUseLine?.message as { content: unknown[] }).content;
+    expect(content).toEqual([
+      { type: "tool_use", id: "tc-lost", name: "Bash", input: {} },
+    ]);
+  });
 });
 
 describe("sanitizeSessionJsonl", () => {
@@ -1238,6 +1285,32 @@ describe("sanitizeSessionJsonl", () => {
     const lines = await readJsonl(file);
     const assistant = lines[0].message as { content: unknown };
     expect(assistant.content).toEqual([
+      { type: "tool_use", id: "tc-1", name: "Bash", input: {} },
+    ]);
+  });
+
+  it.each([
+    ["a missing", { type: "tool_use", id: "tc-1", name: "Bash" }],
+    ["a null", { type: "tool_use", id: "tc-1", name: "Bash", input: null }],
+  ])("adds input: {} to tool_use blocks with %s input", async (_, block) => {
+    const file = await writeJsonl([
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: null,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "running" }, block],
+        },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    const assistant = lines[0].message as { content: unknown };
+    expect(assistant.content).toEqual([
+      { type: "text", text: "running" },
       { type: "tool_use", id: "tc-1", name: "Bash", input: {} },
     ]);
   });
