@@ -303,6 +303,7 @@ function UserBubble({
   );
 
   const containsFileMentions = hasFileMentions(displayContent);
+  const { copied, copy } = useCopy();
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
@@ -325,7 +326,7 @@ function UserBubble({
 
   return (
     <ChatMessage align="end" className="group">
-      <ChatMessageContent className="gap-1">
+      <ChatMessageContent className="gap-1 pr-9">
         {showHeaderChips && (
           <ChatMessageHeader className="flex-wrap gap-1">
             {showChannelContextTag && channelContext && (
@@ -415,6 +416,18 @@ function UserBubble({
           </ChatMessageFooter>
         )}
       </ChatMessageContent>
+      <Tooltip content={copied ? "Copied!" : "Copy message"}>
+        <IconButton
+          size="1"
+          variant="ghost"
+          color={copied ? "green" : "gray"}
+          onClick={() => copy(displayContent)}
+          className="absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+          aria-label="Copy message"
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </IconButton>
+      </Tooltip>
     </ChatMessage>
   );
 }
@@ -553,7 +566,7 @@ const AgentProse = memo(function AgentProse({
 
   return (
     <ChatMessage align="start" className="group/msg">
-      <ChatMessageContent className="gap-1">
+      <ChatMessageContent className="gap-1 pr-9">
         <ChatBubble variant="ghost">
           <ChatBubbleContent>
             {isStreaming ? (
@@ -563,23 +576,21 @@ const AgentProse = memo(function AgentProse({
             )}
           </ChatBubbleContent>
         </ChatBubble>
-        {isStreaming ? null : (
-          <ChatMessageFooter className="opacity-0 transition-opacity group-hover/msg:opacity-100">
-            <Tooltip content={copied ? "Copied!" : "Copy message"}>
-              <IconButton
-                size="1"
-                variant="ghost"
-                color={copied ? "green" : "gray"}
-                onClick={() => copy(text)}
-                className="cursor-pointer"
-                aria-label="Copy message"
-              >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-              </IconButton>
-            </Tooltip>
-          </ChatMessageFooter>
-        )}
       </ChatMessageContent>
+      {isStreaming ? null : (
+        <Tooltip content={copied ? "Copied!" : "Copy message"}>
+          <IconButton
+            size="1"
+            variant="ghost"
+            color={copied ? "green" : "gray"}
+            onClick={() => copy(text)}
+            className="absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity group-hover/msg:opacity-100"
+            aria-label="Copy message"
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+          </IconButton>
+        </Tooltip>
+      )}
     </ChatMessage>
   );
 });
