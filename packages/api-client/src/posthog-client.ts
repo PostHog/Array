@@ -1,6 +1,9 @@
 import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
-import type { PermissionMode } from "@posthog/agent/execution-mode";
+import {
+  type PermissionMode,
+  resolveCloudInitialPermissionMode,
+} from "@posthog/agent/execution-mode";
 import type {
   Adapter,
   CloudRunSource,
@@ -575,7 +578,10 @@ function buildCloudRunRequestBody(
     body.signal_report_id = options.signalReportId;
   }
   if (options?.initialPermissionMode) {
-    body.initial_permission_mode = options.initialPermissionMode;
+    body.initial_permission_mode = resolveCloudInitialPermissionMode(
+      options.adapter,
+      options.initialPermissionMode,
+    );
   }
   if (options?.homeQuickAction) {
     body.home_quick_action = options.homeQuickAction;
