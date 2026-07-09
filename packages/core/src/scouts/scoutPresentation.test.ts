@@ -1,6 +1,7 @@
 import type { ScoutConfig, ScoutRun } from "@posthog/api-client/posthog-client";
 import { describe, expect, it } from "vitest";
 import {
+  buildScoutCreatorIndex,
   computeFleetSummary,
   computeScoutRollups,
   deriveRunFailureKind,
@@ -10,6 +11,7 @@ import {
   formatRunIntervalShort,
   getScoutOrigin,
   isRunStuck,
+  isScoutCreatedByUser,
   normalizeRunStatus,
   prettifyScoutSkillName,
   runDurationSeconds,
@@ -327,5 +329,80 @@ describe("intervals and ordering", () => {
       "signals-scout-surveys",
       "signals-scout-logs",
     ]);
+  });
+});
+
+describe("creators", () => {
+  it("indexes latest authored skills and skips canonical seeds", () => {
+    const index = buildScoutCreatorIndex([
+      {
+        name: "signals-scout-ad-spend",
+        created_by: { id: 7, email: "paul@example.com" },
+        is_latest: true,
+      },
+      // Canonical seeds carry no author.
+      {
+        name: "signals-scout-error-tracking",
+        created_by: null,
+        is_latest: true,
+      },
+      // Superseded versions must not shadow the latest author.
+      {
+        name: "signals-scout-ad-spend",
+        created_by: { id: 9, email: "someone@example.com" },
+        is_latest: false,
+      },
+    ]);
+    expect(index.get("signals-scout-ad-spend")).toEqual({
+      id: 7,
+      email: "paul@example.com",
+    });
+    expect(index.has("signals-scout-error-tracking")).toBe(false);
+  });
+
+  it.each<{
+    label: string;
+    creator: Parameters<typeof isScoutCreatedByUser>[0];
+    user: Parameters<typeof isScoutCreatedByUser>[1];
+    expected: boolean;
+  }>([
+    {
+      label: "matches on numeric id",
+      creator: { id: 7, email: "old@example.com" },
+      user: { id: 7, email: "new@example.com" },
+      expected: true,
+    },
+    {
+      label: "rejects a different id even when emails collide",
+      creator: { id: 7, email: "shared@example.com" },
+      user: { id: 8, email: "shared@example.com" },
+      expected: false,
+    },
+    {
+      label: "falls back to case-insensitive email when the id is absent",
+      creator: { email: "Paul@Example.com" },
+      user: { id: 7, email: "paul@example.com" },
+      expected: true,
+    },
+    {
+      label: "never matches an unauthored scout",
+      creator: undefined,
+      user: { id: 7, email: "paul@example.com" },
+      expected: false,
+    },
+    {
+      label: "never matches without a user",
+      creator: { id: 7 },
+      user: null,
+      expected: false,
+    },
+    {
+      label: "never matches on missing emails",
+      creator: { email: null },
+      user: { email: "" },
+      expected: false,
+    },
+  ])("$label", ({ creator, user, expected }) => {
+    expect(isScoutCreatedByUser(creator, user)).toBe(expected);
   });
 });

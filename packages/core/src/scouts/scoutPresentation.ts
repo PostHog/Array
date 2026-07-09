@@ -1,4 +1,9 @@
-import type { ScoutConfig, ScoutRun } from "@posthog/api-client/posthog-client";
+import type {
+  LlmSkillCreatedBy,
+  LlmSkillListItem,
+  ScoutConfig,
+  ScoutRun,
+} from "@posthog/api-client/posthog-client";
 
 // Single source of truth lives in `@posthog/shared` so `buildScoutDeeplink`
 // (which cannot import core) and the UI share one slug implementation.
@@ -25,6 +30,39 @@ export function prettifyScoutSkillName(skillName: string): string {
     .trim();
   if (!cleaned) return skillName;
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+/** Skill name → author of the backing `signals-scout-*` skill's latest version. */
+export type ScoutCreatorIndex = Map<string, LlmSkillCreatedBy>;
+
+/**
+ * The configs endpoint carries no creator, so authorship comes from the
+ * backing skill (the scout IS the skill). Canonical seeds are created with no
+ * `created_by`, so absence from the index means "not hand-authored by anyone".
+ */
+export function buildScoutCreatorIndex(
+  skills: Pick<LlmSkillListItem, "name" | "created_by" | "is_latest">[],
+): ScoutCreatorIndex {
+  const index: ScoutCreatorIndex = new Map();
+  for (const skill of skills) {
+    if (!skill.is_latest || !skill.created_by) continue;
+    index.set(skill.name, skill.created_by);
+  }
+  return index;
+}
+
+export function isScoutCreatedByUser(
+  creator: LlmSkillCreatedBy | null | undefined,
+  user: { id?: number; email?: string | null } | null | undefined,
+): boolean {
+  if (!creator || !user) return false;
+  if (creator.id !== undefined && user.id !== undefined) {
+    return creator.id === user.id;
+  }
+  // Older payloads may omit the numeric id; emails are unique per instance.
+  const creatorEmail = creator.email?.trim().toLowerCase();
+  const userEmail = user.email?.trim().toLowerCase();
+  return !!creatorEmail && creatorEmail === userEmail;
 }
 
 export type ScoutRunStatus =

@@ -10,6 +10,7 @@ import {
   computeFleetSummary,
   computeScoutRollups,
   getScoutOrigin,
+  isScoutCreatedByUser,
   sortConfigsForDisplay,
 } from "@posthog/core/scouts/scoutPresentation";
 import {
@@ -27,10 +28,12 @@ import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useMeQuery } from "../../auth/useMeQuery";
 import { useScoutChatTask } from "../hooks/useScoutChatTask";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
+import { useScoutSkillCreators } from "../hooks/useScoutSkillCreators";
 import { FleetFindingsCallout } from "./FleetFindingsCallout";
 import { FleetMemoryCallout } from "./FleetMemoryCallout";
 import { ScoutAlphaBanner } from "./ScoutAlphaBanner";
@@ -154,6 +157,9 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
   const { data: runsWindow } = useScoutRuns();
   const { updateConfig } = useScoutConfigMutations();
   const [hideDisabled, setHideDisabled] = useState(false);
+  const [createdByMe, setCreatedByMe] = useState(false);
+  const { data: creators } = useScoutSkillCreators();
+  const { data: currentUser } = useMeQuery();
   useTrackFleetViewed(configs);
 
   const runs = runsWindow?.runs;
@@ -162,10 +168,28 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
     () => computeFleetSummary(configs, rollups),
     [configs, rollups],
   );
+  // Null creators = the skills API is gated for this org, so authorship is
+  // unknowable; skip the affordance instead of offering an always-empty filter.
+  const canFilterByCreator = !!creators && !!currentUser;
   const visibleConfigs = useMemo(() => {
-    const sorted = sortConfigsForDisplay(configs);
-    return hideDisabled ? sorted.filter((config) => config.enabled) : sorted;
-  }, [configs, hideDisabled]);
+    let sorted = sortConfigsForDisplay(configs);
+    if (hideDisabled) {
+      sorted = sorted.filter((config) => config.enabled);
+    }
+    if (createdByMe && canFilterByCreator) {
+      sorted = sorted.filter((config) =>
+        isScoutCreatedByUser(creators?.get(config.skill_name), currentUser),
+      );
+    }
+    return sorted;
+  }, [
+    configs,
+    hideDisabled,
+    createdByMe,
+    canFilterByCreator,
+    creators,
+    currentUser,
+  ]);
 
   return (
     <Flex direction="column" gap="3">
@@ -187,6 +211,36 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
           </span>
         </Text>
         <span className="flex-1" />
+        {canFilterByCreator ? (
+          <button
+            type="button"
+            aria-pressed={createdByMe}
+            onClick={() => {
+              const next = !createdByMe;
+              setCreatedByMe(next);
+              track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+                action_type: "toggle_created_by_me",
+                surface: "fleet_list",
+                created_by_me: next,
+                filter_match_count: next
+                  ? configs.filter((config) =>
+                      isScoutCreatedByUser(
+                        creators?.get(config.skill_name),
+                        currentUser,
+                      ),
+                    ).length
+                  : undefined,
+              });
+            }}
+            className={`rounded px-1.5 py-0.5 text-[12px] transition-colors ${
+              createdByMe
+                ? "bg-(--gray-4) text-gray-12"
+                : "text-gray-10 hover:bg-gray-3 hover:text-gray-12"
+            }`}
+          >
+            Created by me
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => {
@@ -238,14 +292,22 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
       {/* Bounded to roughly 10 rows; larger fleets scroll within the section. */}
       <div className="max-h-[710px] overflow-y-auto">
         <Flex direction="column" gap="2">
-          {visibleConfigs.map((config) => (
-            <ScoutRowCard
-              key={config.id}
-              config={config}
-              rollup={rollups.get(config.skill_name)}
-              onUpdate={updateConfig}
-            />
-          ))}
+          {visibleConfigs.length === 0 ? (
+            <Text className="px-1 py-2 text-[12.5px] text-gray-10">
+              {createdByMe
+                ? "No scouts created by you match the current filters."
+                : "No scouts match the current filters."}
+            </Text>
+          ) : (
+            visibleConfigs.map((config) => (
+              <ScoutRowCard
+                key={config.id}
+                config={config}
+                rollup={rollups.get(config.skill_name)}
+                onUpdate={updateConfig}
+              />
+            ))
+          )}
         </Flex>
       </div>
 

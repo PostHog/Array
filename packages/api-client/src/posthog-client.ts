@@ -4698,11 +4698,18 @@ export class PostHogAPIClient {
    * Lists the team's LLM skills (latest versions, no bodies).
    * Returns null when the feature is unavailable for this org (the
    * llm-analytics-skills flag gates the endpoint server-side with a 403).
+   * `category` narrows to one exact server-owned category (e.g. "scout"
+   * for Signals scouts); omit it to list every category.
    */
-  async listLlmSkills(): Promise<LlmSkillListItem[] | null> {
+  async listLlmSkills(
+    options: { category?: string } = {},
+  ): Promise<LlmSkillListItem[] | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/environments/${teamId}/llm_skills/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options.category !== undefined) {
+      url.searchParams.set("category", options.category);
+    }
     const response = await this.api.fetcher.fetch({
       method: "get",
       url,
