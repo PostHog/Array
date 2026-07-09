@@ -1,5 +1,5 @@
 import type { Task } from "@posthog/shared/domain-types";
-import { LoadingScreen } from "@posthog/ui/primitives/LoadingScreen";
+import { DotsCircleSpinner } from "@posthog/ui/primitives/DotsCircleSpinner";
 import { lazy, type ReactNode, Suspense } from "react";
 
 // The code-review surface (ReviewShell, diff rows, comment UI, review hooks) is
@@ -13,7 +13,11 @@ const CloudReviewPageLazy = lazy(() =>
 );
 
 function ReviewFallback(): ReactNode {
-  return <LoadingScreen logoSize={64} />;
+  return (
+    <div className="flex h-full items-center justify-center">
+      <DotsCircleSpinner />
+    </div>
+  );
 }
 
 export function LazyReviewPage({ task }: { task: Task }): ReactNode {
