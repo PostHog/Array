@@ -716,7 +716,7 @@ export type ScoutActionType =
   | "show_more_emitted_runs"
   | "filter_runs"
   | "toggle_hide_disabled"
-  | "toggle_created_by_me"
+  | "filter_created_by"
   | "open_settings"
   | "close_settings"
   | "open_findings"

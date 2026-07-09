@@ -51,9 +51,17 @@ export function buildScoutCreatorIndex(
   return index;
 }
 
+/** The slice of the current user the creator filter needs. */
+export interface ScoutCreatorUser {
+  id?: number;
+  email?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+}
+
 export function isScoutCreatedByUser(
   creator: LlmSkillCreatedBy | null | undefined,
-  user: { id?: number; email?: string | null } | null | undefined,
+  user: ScoutCreatorUser | null | undefined,
 ): boolean {
   if (!creator || !user) return false;
   if (creator.id !== undefined && user.id !== undefined) {
@@ -63,6 +71,76 @@ export function isScoutCreatedByUser(
   const creatorEmail = creator.email?.trim().toLowerCase();
   const userEmail = user.email?.trim().toLowerCase();
   return !!creatorEmail && creatorEmail === userEmail;
+}
+
+export function scoutCreatorDisplayName(
+  creator: Pick<LlmSkillCreatedBy, "first_name" | "last_name" | "email">,
+): string {
+  const name = [creator.first_name, creator.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return name || creator.email?.trim() || "Unknown user";
+}
+
+/**
+ * Stable identity for a creator across the option list and the per-config
+ * lookup: the numeric user id when present, else the lowercased email.
+ */
+export function scoutCreatorKey(
+  creator: Pick<LlmSkillCreatedBy, "id" | "email"> | null | undefined,
+): string | null {
+  if (!creator) return null;
+  if (typeof creator.id === "number") return `id:${creator.id}`;
+  const email = creator.email?.trim().toLowerCase();
+  return email ? `email:${email}` : null;
+}
+
+export interface ScoutCreatorOption {
+  key: string;
+  label: string;
+  isCurrentUser: boolean;
+}
+
+/**
+ * Distinct authors across the fleet for a "Created by" picker: the current
+ * user pinned first (offered even with nothing authored yet, so "just mine"
+ * is always selectable), then the other authors A–Z. Canonical seeds carry no
+ * author, so they never contribute an option.
+ */
+export function listScoutCreatorOptions(
+  index: ScoutCreatorIndex,
+  currentUser: ScoutCreatorUser | null | undefined,
+): ScoutCreatorOption[] {
+  const byKey = new Map<string, ScoutCreatorOption>();
+  for (const creator of index.values()) {
+    const key = scoutCreatorKey(creator);
+    if (!key || byKey.has(key)) continue;
+    const isCurrentUser = isScoutCreatedByUser(creator, currentUser);
+    byKey.set(key, {
+      key,
+      label: isCurrentUser
+        ? `${scoutCreatorDisplayName(creator)} (you)`
+        : scoutCreatorDisplayName(creator),
+      isCurrentUser,
+    });
+  }
+  const options = [...byKey.values()];
+  if (currentUser && !options.some((option) => option.isCurrentUser)) {
+    const key = scoutCreatorKey(currentUser);
+    if (key) {
+      options.push({
+        key,
+        label: `${scoutCreatorDisplayName(currentUser)} (you)`,
+        isCurrentUser: true,
+      });
+    }
+  }
+  options.sort((a, b) => {
+    if (a.isCurrentUser !== b.isCurrentUser) return a.isCurrentUser ? -1 : 1;
+    return a.label.localeCompare(b.label);
+  });
+  return options;
 }
 
 export type ScoutRunStatus =
