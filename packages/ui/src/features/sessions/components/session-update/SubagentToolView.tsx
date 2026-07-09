@@ -9,6 +9,7 @@ import {
   type ToolViewProps,
   useToolCallStatus,
 } from "@posthog/ui/features/sessions/components/session-update/toolCallUtils";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import type { ConversationItem, TurnContext } from "../buildConversationItems";
@@ -68,11 +69,15 @@ export function SubagentToolView({
           className="flex w-full cursor-pointer items-center justify-between border-none bg-transparent px-3 py-2"
         >
           <Flex align="center" gap="2">
-            <LoadingIcon
-              icon={Robot}
-              isLoading={isLoading}
-              className="text-gray-10"
-            />
+            <Tooltip content="Delegated to a subagent">
+              <span className="flex items-center">
+                <LoadingIcon
+                  icon={Robot}
+                  isLoading={isLoading}
+                  className="text-gray-10"
+                />
+              </span>
+            </Tooltip>
             <Text className="text-[13px] text-gray-10">
               {title || "Subagent"}
             </Text>
@@ -106,7 +111,13 @@ export function SubagentToolView({
   return (
     <div>
       <ToolRow
-        icon={Robot}
+        leading={
+          <Tooltip content="Delegated to a subagent">
+            <span className="flex items-center">
+              <LoadingIcon icon={Robot} isLoading={isLoading} />
+            </span>
+          </Tooltip>
+        }
         isLoading={isLoading}
         isFailed={isFailed}
         wasCancelled={wasCancelled}
