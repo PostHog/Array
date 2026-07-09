@@ -201,7 +201,7 @@ export function createWindow(): void {
         ? {
             titleBarStyle: "hidden" as const,
             titleBarOverlay: {
-              color: "#0a0a0a",
+              color: "#131316",
               symbolColor: "#ffffff",
               height: 36,
             },
@@ -223,7 +223,9 @@ export function createWindow(): void {
     height: savedState.height,
     minWidth: 800,
     minHeight: 600,
-    backgroundColor: "#0a0a0a",
+    // Matches --color-background (dark) so the pre-render window, the boot
+    // loading screen and the app are one continuous color.
+    backgroundColor: "#131316",
     ...(windowIcon ? { icon: windowIcon } : {}),
     ...platformWindowConfig,
     show: false,

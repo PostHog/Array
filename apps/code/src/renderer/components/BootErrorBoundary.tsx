@@ -15,7 +15,7 @@ const screenStyle: React.CSSProperties = {
   justifyContent: "center",
   gap: 16,
   padding: 24,
-  backgroundColor: "#0a0a0a",
+  backgroundColor: "#131316",
   color: "#fafafa",
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -39,7 +39,7 @@ const buttonStyle: React.CSSProperties = {
   padding: "6px 16px",
   fontSize: 13,
   fontWeight: 500,
-  color: "#0a0a0a",
+  color: "#131316",
   backgroundColor: "#fafafa",
   border: "none",
   borderRadius: 6,
