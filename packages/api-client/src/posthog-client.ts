@@ -549,6 +549,14 @@ function buildCloudRunRequestBody(
       }
       body.reasoning_effort = options.reasoningLevel;
     }
+    // The API rejects initial_permission_mode unless runtime_adapter is set,
+    // and the mode enum is validated per adapter.
+    if (options.initialPermissionMode) {
+      body.initial_permission_mode = resolveCloudInitialPermissionMode(
+        options.adapter,
+        options.initialPermissionMode,
+      );
+    }
   }
   if (options?.resumeFromRunId) {
     body.resume_from_run_id = options.resumeFromRunId;
@@ -576,12 +584,6 @@ function buildCloudRunRequestBody(
   }
   if (options?.signalReportId) {
     body.signal_report_id = options.signalReportId;
-  }
-  if (options?.initialPermissionMode) {
-    body.initial_permission_mode = resolveCloudInitialPermissionMode(
-      options.adapter,
-      options.initialPermissionMode,
-    );
   }
   if (options?.homeQuickAction) {
     body.home_quick_action = options.homeQuickAction;

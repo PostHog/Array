@@ -42,8 +42,6 @@ describe("resolveCloudInitialPermissionMode", () => {
     ["claude", "auto", "auto"],
     ["claude", "read-only", "plan"],
     ["claude", "full-access", "bypassPermissions"],
-    [undefined, "plan", "plan"],
-    [undefined, "read-only", "read-only"],
   ] as const)(
     "resolves %s adapter mode %s to %s",
     (adapter, mode, expected) => {

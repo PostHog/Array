@@ -105,14 +105,11 @@ const CLAUDE_CLOUD_MODE_FALLBACKS: Record<
 };
 
 export function resolveCloudInitialPermissionMode(
-  adapter: Adapter | undefined,
+  adapter: Adapter,
   mode: PermissionMode,
 ): PermissionMode {
   if (adapter === "codex") {
     return isCodexNativeMode(mode) ? mode : CODEX_CLOUD_MODE_FALLBACKS[mode];
   }
-  if (adapter === "claude") {
-    return isCodeExecutionMode(mode) ? mode : CLAUDE_CLOUD_MODE_FALLBACKS[mode];
-  }
-  return mode;
+  return isCodeExecutionMode(mode) ? mode : CLAUDE_CLOUD_MODE_FALLBACKS[mode];
 }
