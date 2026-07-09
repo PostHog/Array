@@ -54,7 +54,7 @@ export function ExecuteToolView({
 
   const commandTooltip = (
     <span className="block max-w-md whitespace-pre-wrap break-all font-mono text-xs">
-      {command}
+      {compactHomePath(command)}
     </span>
   );
 
