@@ -9,8 +9,8 @@ import type { TaskService } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
 import {
   ANALYTICS_EVENTS,
+  defaultEligibleModel,
   getCloudUrlFromRegion,
-  isModelExcludedFromDefault,
   type TaskCreationInput,
 } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -103,14 +103,11 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
           // then the adapter's server default. The preferred candidate is only
           // honoured if the gateway still offers it (the resolver validates it),
           // so a stale persisted/pinned id can't reach the run and 403. A
-          // premium last-used model (e.g. fable) is skipped — only an explicit
-          // action pin may select it; it is never the implicit default.
+          // premium last-used model is skipped (see defaultEligibleModel);
+          // only an explicit action pin may select it.
           const adapter = action.adapter ?? lastUsedAdapter;
           const preferredModel =
-            action.model ??
-            (isModelExcludedFromDefault(lastUsedModel)
-              ? undefined
-              : (lastUsedModel ?? undefined));
+            action.model ?? defaultEligibleModel(lastUsedModel);
           let model = preferredModel;
           if (cloudRegion) {
             // The resolver swallows transient failures and returns undefined; fall

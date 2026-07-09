@@ -13,8 +13,8 @@ import { useService } from "@posthog/di/react";
 import {
   type Adapter,
   ANALYTICS_EVENTS,
+  defaultEligibleModel,
   getCloudUrlFromRegion,
-  isModelExcludedFromDefault,
 } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
@@ -171,11 +171,8 @@ export function useInboxCloudTaskRunner({
     // resolver keeps it only if the gateway still offers it, otherwise it falls
     // back to the server default. A stale id (e.g. one later de-listed for the
     // org) would otherwise be sent here and fail the run with a gateway 403.
-    // A premium last-used model (e.g. fable) is dropped entirely — it must be
-    // an explicit per-task pick, never the implicit default for a one-click run.
-    const preferredModel = isModelExcludedFromDefault(settings.lastUsedModel)
-      ? null
-      : settings.lastUsedModel;
+    // Premium last-used models are dropped (see defaultEligibleModel).
+    const preferredModel = defaultEligibleModel(settings.lastUsedModel);
     const resolvedModel = await resolveDefaultModel(
       queryClient,
       apiHost,

@@ -13,8 +13,8 @@ import { useService } from "@posthog/di/react";
 import { Button } from "@posthog/quill";
 import {
   ANALYTICS_EVENTS,
+  defaultEligibleModel,
   getCloudUrlFromRegion,
-  isModelExcludedFromDefault,
 } from "@posthog/shared";
 import { SELF_DRIVING_SETUP_TASK_FLAG } from "@posthog/shared/constants";
 import { useTrackAgentsViewed } from "@posthog/ui/features/agents/hooks/useTrackAgentsViewed";
@@ -306,11 +306,8 @@ function SetupTaskSection() {
       const settings = useSettingsStore.getState();
       const adapter = settings.lastUsedAdapter ?? "claude";
       const apiHost = getCloudUrlFromRegion(cloudRegion);
-      // A premium last-used model (e.g. fable) is dropped — it must be an
-      // explicit per-task pick, never the implicit default for a setup run.
-      const preferredModel = isModelExcludedFromDefault(settings.lastUsedModel)
-        ? null
-        : settings.lastUsedModel;
+      // Premium last-used models are dropped (see defaultEligibleModel).
+      const preferredModel = defaultEligibleModel(settings.lastUsedModel);
       const resolvedModel = await resolveDefaultModel(
         queryClient,
         apiHost,

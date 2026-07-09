@@ -8,9 +8,9 @@ import {
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
+  defaultEligibleModel,
   GLM_MODEL_FLAG,
   getCloudUrlFromRegion,
-  isModelExcludedFromDefault,
 } from "@posthog/shared";
 import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -109,24 +109,23 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
         // The server always returns its default model as the current value, so
         // without this the user's last pick is lost on every refetch/remount.
         // Restore it through applyConfigChange so the dependent effort options
-        // are recomputed for the restored model. Premium models (e.g. fable)
-        // are deliberately NOT restored: picking one applies to that task only,
-        // and the next composer falls back to the server default so nobody
-        // keeps paying the premium price tier by inertia.
+        // are recomputed for the restored model. Premium picks are not
+        // restored (see defaultEligibleModel) — the composer falls back to
+        // the server default.
         const modelOpt = getOptionByCategory(initial, "model");
+        const restorableModel = defaultEligibleModel(lastUsedModel);
         if (
-          lastUsedModel &&
-          !isModelExcludedFromDefault(lastUsedModel) &&
+          restorableModel &&
           modelOpt?.type === "select" &&
-          modelOpt.currentValue !== lastUsedModel &&
-          flattenConfigValues(modelOpt).includes(lastUsedModel)
+          modelOpt.currentValue !== restorableModel &&
+          flattenConfigValues(modelOpt).includes(restorableModel)
         ) {
           initial = applyConfigChange(initial, {
             adapter,
             configId: modelOpt.id,
-            value: lastUsedModel,
+            value: restorableModel,
             effortOptions:
-              getReasoningEffortOptions(adapter, lastUsedModel) ?? undefined,
+              getReasoningEffortOptions(adapter, restorableModel) ?? undefined,
             settings: {
               defaultInitialTaskMode: "",
               lastUsedInitialTaskMode: undefined,
