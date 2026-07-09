@@ -6,7 +6,11 @@ description: Install, configure, authenticate, and troubleshoot MCP (Model Conte
 # MCP servers
 
 This agent has a built-in MCP client. Servers are declared in `mcp.json`; their tools
-appear as `mcp_<server>_<tool>` once connected.
+appear as `mcp_<server>_<tool>` once connected. The model can also always find and call
+MCP tools via a single `mcp` proxy tool (`mcp({ search: "..." })` / `mcp({ tool: "...", args }`)
+without their schemas ever being loaded into context, and without a `lifecycle: "lazy"`
+server being connected until one of its tools is actually needed — see "Context window
+control" below.
 
 ## Config files
 
@@ -30,7 +34,8 @@ You cannot run `/reload` yourself.
   "settings": {
     "toolPrefix": "mcp",
     "requestTimeoutMs": 30000,
-    "maxRetries": 3
+    "maxRetries": 3,
+    "searchResultLimit": 15
   },
   "mcpServers": {
     "<server-name>": { ... }
@@ -106,9 +111,35 @@ of tool names.
 
 ### Other per-server options
 
-- `lifecycle`: `"eager"` (default, starts at session start) or `"lazy"` (started
-  manually with `/mcp:start <name>`). Use lazy for rarely-used or slow servers.
+- `lifecycle`: `"lazy"` (default — starts on first use of one of its tools via the `mcp`
+  proxy tool, or manually with `/mcp:start <name>`) or `"eager"` (starts at session
+  start). Use eager only for a server you want connected from the very first turn.
 - `requestTimeoutMs`, `healthCheckIntervalMs`: numeric overrides, rarely needed.
+- `idleTimeoutMs`: `lifecycle: "lazy"` only — auto-disconnect this many ms after the
+  server's last tool call. Good for servers used in bursts, e.g. `600000` (10 min).
+- `description`: one-line summary shown by `mcp` search before this server has ever
+  connected (its real tool list isn't known yet). Set this on lazy servers so the model
+  can find them via search before the first connection.
+- `directTools`: `false` (default — all tools stay searchable-only via `mcp`), `true`
+  (all tools load straight into context), or an array of MCP-side tool names to keep
+  direct while the rest stay proxy-only. Set `true` (or list specific names) only for a
+  small server used on nearly every turn, where a `search` round-trip isn't worth it.
+
+## Context window control (the `mcp` proxy tool)
+
+A single `mcp` tool is always available, independent of `mcp.json`:
+
+- `mcp({ search: "keywords" })` — finds relevant tools/servers by keyword, including
+  ones that are not currently connected (their cached or configured `description`
+  metadata is searched instead of connecting).
+- `mcp({ tool: "<name>", args: '{"key":"value"}' })` — calls a tool by its exact name
+  (from search), starting its server automatically if needed. Passing a bare server
+  name instead of a tool name connects that server and lists its tools without calling
+  anything.
+
+You do not need to do anything for this to work — it's automatic for every configured
+server. Only mention `directTools`/`idleTimeoutMs`/`description` to the user if they
+ask about reducing context usage or about servers not starting immediately.
 
 ## Workflow for "install X MCP server"
 

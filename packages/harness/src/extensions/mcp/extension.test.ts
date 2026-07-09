@@ -58,7 +58,16 @@ function fakePi() {
     },
     registerTool: (tool: unknown) => {
       const t = tool as RegisteredTool;
+      // Matches real pi (`agent-session.js` `_refreshToolRegistry`): a
+      // brand-new tool name is auto-activated the instant it's registered;
+      // re-registering an already-known name is not. Extensions that want
+      // an inactive-by-default tool must explicitly deactivate it after.
+      const isNew = !tools.has(t.name);
       tools.set(t.name, t);
+      if (isNew && !active.includes(t.name)) {
+        active = [...active, t.name];
+        activeHistory.push([...active]);
+      }
     },
     getActiveTools: () => [...active],
     setActiveTools: (names: string[]) => {
@@ -164,7 +173,9 @@ function setup(options: {
   const config = parseConfig(
     {
       settings: options.settings ?? {},
-      mcpServers: options.servers ?? { demo: { command: "unused" } },
+      mcpServers: options.servers ?? {
+        demo: { command: "unused", lifecycle: "eager", directTools: true },
+      },
     },
     "test",
   );
@@ -192,6 +203,82 @@ describe("createMcpExtension", () => {
 
     await emit("session_shutdown", { reason: "quit" }, ctx);
     expect(getActive()).not.toContain("mcp_demo_echo");
+    await mock.close();
+  });
+
+  it("registers the mcp proxy tool even with no servers configured", async () => {
+    const { pi, emit, tools } = fakePi();
+    createMcpExtension({
+      configLoader: vi.fn().mockResolvedValue(parseConfig({}, "test")),
+    })(pi);
+    const { ctx } = fakeCtx();
+    await emit("session_start", { reason: "startup" }, ctx);
+
+    expect(tools.has("mcp")).toBe(true);
+    const result = await tools.get("mcp")?.execute("id-1", { search: "x" });
+    expect(result?.content[0]?.text).toMatch(/no MCP servers configured/);
+  });
+
+  it("mcp proxy tool starts a lazy server on demand and calls its tool", async () => {
+    const mock = createMockMcpServer([ECHO_TOOL]);
+    const { emit, tools, getActive } = setup({
+      mock,
+      servers: { demo: { command: "unused", lifecycle: "lazy" } },
+    });
+    const { ctx } = fakeCtx();
+    await emit("session_start", { reason: "startup" }, ctx);
+    expect(mock.connectionCount()).toBe(0);
+
+    // First use of a never-before-connected lazy server: connect by server
+    // name. This must never dump the discovered catalog into context (a
+    // real server can expose hundreds of tools) — just a count + a nudge
+    // to use search.
+    const discover = await tools.get("mcp")?.execute("id-1", { tool: "demo" });
+    expect(discover?.content[0]).toMatchObject({
+      text: expect.stringContaining("1 tool discovered"),
+    });
+    expect(discover?.content[0]).not.toMatchObject({
+      text: expect.stringContaining("mcp_demo_echo"),
+    });
+    expect(mock.connectionCount()).toBe(1);
+
+    const result = await tools
+      .get("mcp")
+      ?.execute("id-2", { tool: "mcp_demo_echo", args: '{"text":"hi"}' });
+    expect(result?.content).toEqual([{ type: "text", text: "echo: hi" }]);
+    // directTools defaults to false: calling through the proxy tool never
+    // puts the tool's schema in context — the model only sees the result.
+    expect(getActive()).not.toContain("mcp_demo_echo");
+
+    await emit("session_shutdown", { reason: "quit" }, ctx);
+    await mock.close();
+  });
+
+  it("directTools: false keeps a server's tools out of context until the proxy tool activates them", async () => {
+    const mock = createMockMcpServer([ECHO_TOOL]);
+    const { emit, tools, getActive } = setup({
+      mock,
+      servers: {
+        demo: { command: "unused", lifecycle: "eager", directTools: false },
+      },
+    });
+    const { ctx } = fakeCtx();
+    await emit("session_start", { reason: "startup" }, ctx);
+
+    // Connected (eager), but not activated: schema stays out of context.
+    expect(getActive()).not.toContain("mcp_demo_echo");
+
+    const searchResult = await tools
+      .get("mcp")
+      ?.execute("id-1", { search: "echo" });
+    expect(searchResult?.content[0]?.text).toContain("mcp_demo_echo");
+
+    const callResult = await tools
+      .get("mcp")
+      ?.execute("id-2", { tool: "mcp_demo_echo", args: '{"text":"hi"}' });
+    expect(callResult?.content).toEqual([{ type: "text", text: "echo: hi" }]);
+
+    await emit("session_shutdown", { reason: "quit" }, ctx);
     await mock.close();
   });
 
@@ -239,7 +326,7 @@ describe("createMcpExtension", () => {
     const config = parseConfig(
       {
         settings: { maxRetries: 0 },
-        mcpServers: { broken: { command: "unused" } },
+        mcpServers: { broken: { command: "unused", lifecycle: "eager" } },
       },
       "test",
     );
@@ -310,7 +397,9 @@ describe("createMcpExtension", () => {
       const mock = createMockMcpServer([ECHO_TOOL]);
       const { emit, commands, getActive } = setup({
         mock,
-        servers: { demo: { command: "unused", lifecycle: "lazy" } },
+        servers: {
+          demo: { command: "unused", lifecycle: "lazy", directTools: true },
+        },
       });
       const { ctx, notify } = fakeCtx();
       await emit("session_start", { reason: "startup" }, ctx);
@@ -376,11 +465,20 @@ describe("createMcpExtension", () => {
     const mock = createMockMcpServer([ECHO_TOOL]);
     const { pi, emit, commands, getActive, activeHistory } = fakePi();
     createMcpExtension({
-      configLoader: vi
-        .fn()
-        .mockResolvedValue(
-          parseConfig({ mcpServers: { demo: { command: "unused" } } }, "test"),
+      configLoader: vi.fn().mockResolvedValue(
+        parseConfig(
+          {
+            mcpServers: {
+              demo: {
+                command: "unused",
+                lifecycle: "eager",
+                directTools: true,
+              },
+            },
+          },
+          "test",
         ),
+      ),
       // No-op close: stopping the server must not kill the gated in-flight
       // tools/list, so the refresh deterministically COMPLETES after stop
       // and exercises the re-activation guard (instead of just erroring).
@@ -436,6 +534,7 @@ describe("createMcpExtension", () => {
         transport: "streamable-http",
         url: "https://mcp.example.com/mcp",
         lifecycle: "lazy",
+        directTools: true,
         auth: { type: "oauth" },
       },
     };
@@ -715,6 +814,7 @@ describe("createMcpExtension", () => {
           demo: {
             transport: "streamable-http",
             url: "https://mcp.example.com/mcp",
+            lifecycle: "eager",
             auth: { type: "oauth" },
           },
         },
@@ -798,6 +898,7 @@ describe("createMcpExtension", () => {
           demo: {
             transport: "streamable-http",
             url: "https://mcp.example.com/mcp",
+            lifecycle: "eager",
             auth: { type: "oauth" },
           },
         },
@@ -919,11 +1020,19 @@ describe("createMcpExtension", () => {
     const mockB = createMockMcpServer([{ ...ECHO_TOOL, name: "other" }]);
     const { pi, emit, getActive } = fakePi();
     const configA = parseConfig(
-      { mcpServers: { demo: { command: "unused" } } },
+      {
+        mcpServers: {
+          demo: { command: "unused", lifecycle: "eager", directTools: true },
+        },
+      },
       "test",
     );
     const configB = parseConfig(
-      { mcpServers: { second: { command: "unused" } } },
+      {
+        mcpServers: {
+          second: { command: "unused", lifecycle: "eager", directTools: true },
+        },
+      },
       "test",
     );
     const configLoader = vi

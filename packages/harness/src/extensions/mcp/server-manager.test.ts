@@ -387,6 +387,91 @@ describe("ServerManager", () => {
     });
   });
 
+  describe("idle timeout", () => {
+    it("disconnects a lazy server that has been idle past idleTimeoutMs", async () => {
+      const mock = createMockMcpServer([ECHO_TOOL]);
+      const manager = new ServerManager(
+        makeConfig({
+          mcpServers: {
+            demo: {
+              command: "unused",
+              lifecycle: "lazy",
+              idleTimeoutMs: 20,
+            },
+          },
+        }),
+        { transportFactory: mock.transportFactory },
+      );
+
+      await manager.startServer("demo", "/workspace");
+      expect(manager.getServer("demo")?.state).toBe("ready");
+
+      await vi.waitFor(
+        () => {
+          expect(manager.getServer("demo")?.state).toBe("stopped");
+        },
+        { timeout: 2_000 },
+      );
+      // Idle disconnect must not schedule a reconnect (unlike a crash).
+      await sleep(50);
+      expect(mock.connectionCount()).toBe(1);
+      await mock.close();
+    });
+
+    it("touch() resets the idle countdown", async () => {
+      const mock = createMockMcpServer([ECHO_TOOL]);
+      const manager = new ServerManager(
+        makeConfig({
+          mcpServers: {
+            demo: {
+              command: "unused",
+              lifecycle: "lazy",
+              idleTimeoutMs: 30,
+            },
+          },
+        }),
+        { transportFactory: mock.transportFactory },
+      );
+
+      await manager.startServer("demo", "/workspace");
+      const touchInterval = setInterval(() => manager.touch("demo"), 10);
+      await sleep(80);
+      clearInterval(touchInterval);
+      expect(manager.getServer("demo")?.state).toBe("ready");
+
+      await vi.waitFor(
+        () => {
+          expect(manager.getServer("demo")?.state).toBe("stopped");
+        },
+        { timeout: 2_000 },
+      );
+      await mock.close();
+    });
+
+    it("never applies to eager servers", async () => {
+      const mock = createMockMcpServer([ECHO_TOOL]);
+      const manager = new ServerManager(
+        makeConfig({
+          mcpServers: {
+            demo: {
+              command: "unused",
+              lifecycle: "eager",
+              idleTimeoutMs: 15,
+            },
+          },
+        }),
+        { transportFactory: mock.transportFactory },
+      );
+
+      await manager.startServer("demo", "/workspace");
+      await sleep(60);
+      expect(manager.getServer("demo")?.state).toBe("ready");
+
+      await manager.shutdownAll();
+      await mock.close();
+    });
+  });
+
   it("closes the orphan client when stop races a succeeding connect", async () => {
     const mock = createMockMcpServer([ECHO_TOOL]);
     let release!: () => void;

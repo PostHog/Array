@@ -63,14 +63,37 @@ const serverConfigSchema = z
      */
     auth: authConfigSchema.optional(),
     /**
-     * "eager" — start at session_start (default).
-     * "lazy"  — start manually via /mcp:start.
+     * "eager" — start at session_start.
+     * "lazy"  — start on first use of one of its tools (via the `mcp`
+     *           proxy tool) or manually via /mcp:start (default).
      */
-    lifecycle: z.enum(["eager", "lazy"]).default("eager"),
+    lifecycle: z.enum(["eager", "lazy"]).default("lazy"),
     /** Per-request timeout in ms. Overrides the global setting. */
     requestTimeoutMs: z.number().positive().optional(),
     /** Opt-in heartbeat (ping) interval in ms. Default: disabled. */
     healthCheckIntervalMs: z.number().positive().optional(),
+    /**
+     * Auto-disconnect a `lifecycle: "lazy"` server this many ms after its
+     * last tool call (metadata stays cached so search keeps working; the
+     * next call reconnects transparently). Ignored for eager servers.
+     */
+    idleTimeoutMs: z.number().positive().optional(),
+    /**
+     * One-line summary shown by the `mcp` proxy tool's search results
+     * before the server has ever connected (its real tool list isn't known
+     * yet). Ignored once tools are cached/discovered.
+     */
+    description: z.string().optional(),
+    /**
+     * Which of this server's tools are registered directly as first-class
+     * pi tools (always in the model's context) versus left searchable only
+     * through the `mcp` proxy tool (`mcp({ search / tool })`), which keeps
+     * their schemas out of context until requested.
+     *   `true`      — all tools direct.
+     *   `false`     — no tools direct; all proxy-only (default).
+     *   `string[]`  — only the named (MCP-side) tool names are direct.
+     */
+    directTools: z.union([z.boolean(), z.array(z.string())]).default(false),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.transport === "stdio" && cfg.command === undefined) {
@@ -106,6 +129,8 @@ const settingsSchema = z.object({
   requestTimeoutMs: z.number().positive().default(30_000),
   /** Maximum retry attempts when a server fails to connect. Default: 3. */
   maxRetries: z.number().int().min(0).max(10).default(3),
+  /** Max results returned by the `mcp` proxy tool's search. Default: 15. */
+  searchResultLimit: z.number().int().positive().default(15),
 });
 
 const mcpConfigSchema = z.object({

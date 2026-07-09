@@ -15,12 +15,14 @@ describe("parseConfig", () => {
       toolPrefix: "mcp",
       requestTimeoutMs: 30_000,
       maxRetries: 3,
+      searchResultLimit: 15,
     });
     expect(config.mcpServers.demo).toMatchObject({
       command: "node",
       args: [],
       transport: "stdio",
-      lifecycle: "eager",
+      lifecycle: "lazy",
+      directTools: false,
     });
   });
 

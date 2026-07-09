@@ -32,9 +32,11 @@ import { CallbackServer } from "./callback-server";
 import type { ConfigLoader, McpConfig } from "./config";
 import { emptyConfig, loadConfig } from "./config";
 import { describeError } from "./errors";
+import { createMcpProxyTool } from "./proxy-tool";
 import type { TransportFactory } from "./server-manager";
 import { ServerManager } from "./server-manager";
 import { ToolBridge } from "./tool-bridge";
+import { McpToolCache } from "./tool-cache";
 
 export interface McpExtensionOptions {
   /** Override config loading (tests). Default: read mcp.json files. */
@@ -43,6 +45,8 @@ export interface McpExtensionOptions {
   transportFactory?: TransportFactory;
   /** Override OAuth credential storage (tests). */
   authStorage?: McpAuthStorage;
+  /** Override the on-disk tool metadata cache (tests). */
+  toolCache?: McpToolCache;
   /** Override the interactive OAuth flow (tests). */
   oauthFlow?: OAuthFlowRunner;
 }
@@ -126,6 +130,10 @@ export function createMcpExtension(
     let bridge: ToolBridge | null = null;
     // Constructed lazily so the factory does no filesystem work.
     let authStorage: McpAuthStorage | null = options.authStorage ?? null;
+    let toolCache: McpToolCache | null = options.toolCache ?? null;
+    // Updated on every session_start; read by the `mcp` proxy tool so it can
+    // start a lazy server on demand with the right workspace root.
+    let currentCwd = process.cwd();
     const callbackServer = new CallbackServer();
     /** Servers with an interactive OAuth flow currently in progress. */
     const authFlowsInFlight = new Set<string>();
@@ -133,6 +141,11 @@ export function createMcpExtension(
     function getAuthStorage(): McpAuthStorage {
       authStorage ??= new McpAuthStorage();
       return authStorage;
+    }
+
+    function getToolCache(): McpToolCache {
+      toolCache ??= new McpToolCache();
+      return toolCache;
     }
 
     function buildRuntime(nextConfig: McpConfig): void {
@@ -143,14 +156,18 @@ export function createMcpExtension(
           ? { transportFactory: options.transportFactory }
           : {}),
       });
-      bridge = new ToolBridge(nextConfig.settings, pi);
       const activeManager = manager;
+      bridge = new ToolBridge(nextConfig.settings, pi, {
+        toolCache: getToolCache(),
+        onToolUsed: (serverName) => activeManager.touch(serverName),
+      });
       const activeBridge = bridge;
       manager.setToolRefreshCallback(async (serverName, client) => {
         await activeBridge.refreshTools(
           serverName,
           client,
           activeManager.getRequestTimeoutMs(serverName),
+          activeManager.getServer(serverName)?.config,
         );
         // A refresh that was in flight when the server was stopped would
         // otherwise re-activate tools whose execute closures hold a closed
@@ -220,6 +237,8 @@ export function createMcpExtension(
         }
         return;
       }
+
+      currentCwd = ctx.cwd;
 
       if (manager === null) {
         if (Object.keys(nextConfig.mcpServers).length === 0) return;
@@ -363,6 +382,22 @@ export function createMcpExtension(
         .filter((item) => item.value.startsWith(prefix));
       return items.length > 0 ? items : null;
     };
+
+    // Search + call MCP tools without every server's schema catalog sitting
+    // in context, and without every lazy server needing to be connected up
+    // front (see ToolBridge's `directTools` gating and ServerManager's
+    // on-demand start). Registered unconditionally like `mcp_auth` below —
+    // config may not have loaded (or may add servers) yet.
+    pi.registerTool(
+      createMcpProxyTool({
+        getManager: () => manager,
+        getBridge: () => bridge,
+        getToolCache: () => getToolCache(),
+        getSettings: () => (manager ? config.settings : null),
+        getCwd: () => currentCwd,
+        authHint,
+      }),
+    );
 
     // Commands can't be invoked by the model. This tool lets the agent
     // start the browser OAuth flow when the user asks ("log in to X for
