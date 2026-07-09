@@ -20,7 +20,6 @@ import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingSt
 import { SettingsDialog } from "@posthog/ui/features/settings/SettingsDialog";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
 import { PendingPromptRecovery } from "@posthog/ui/features/task-detail/components/PendingPromptRecovery";
-import { ensureTaskDetailCached } from "@posthog/ui/features/tasks/queries";
 import { router } from "@posthog/ui/router/router";
 import { AppLoadingScreen } from "@posthog/ui/shell/AppLoadingScreen";
 import { track } from "@posthog/ui/shell/analytics";
@@ -35,10 +34,6 @@ interface AppProps {
   /** Host-provided dev diagnostics toolbar, docked below the app content. */
   devToolbar?: ReactNode;
 }
-
-// Cap on how long the boot gate waits for the restored task to fetch, so a
-// slow or hung request can never block app startup.
-const BOOT_WARMUP_MAX_MS = 5_000;
 
 function App({ devToolbar }: AppProps) {
   const { isBootstrapped } = useAuthSession();
@@ -94,28 +89,18 @@ function App({ devToolbar }: AppProps) {
     !needsInviteCode &&
     !needsAiApproval;
 
-  // Run the initial route's loaders and warm its task data before the router
-  // ever mounts, so the boot loading screen holds until the app is ready and
-  // no route spinner flashes.
+  // Run the initial route's loaders before the router ever mounts, so the boot
+  // loading screen holds until the route is ready.
   const [initialRouteLoaded, setInitialRouteLoaded] = useState(false);
   useEffect(() => {
     if (initialRouteLoaded || !readyForMainApp) return;
     let cancelled = false;
-    const holdWhileLoading = async () => {
-      await router.load().catch(() => undefined);
-      const taskId = router.state.matches
-        .map((match) => (match.params as { taskId?: string }).taskId)
-        .find(Boolean);
-      if (taskId) {
-        await Promise.race([
-          ensureTaskDetailCached(taskId),
-          new Promise((resolve) => setTimeout(resolve, BOOT_WARMUP_MAX_MS)),
-        ]);
-      }
-    };
-    void holdWhileLoading().finally(() => {
-      if (!cancelled) setInitialRouteLoaded(true);
-    });
+    void router
+      .load()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setInitialRouteLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
