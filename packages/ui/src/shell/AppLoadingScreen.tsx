@@ -5,11 +5,11 @@ import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { Flex, Text } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
 
-// Sits above the core bootstrap deadline so this only shows once boot has truly given up.
-const STALL_TIMEOUT_MS = 25_000;
+// The gate spans bootstrap (20s deadline in core auth), the access check and
+// the initial route load, so this sits well above all three combined before
+// declaring boot stuck.
+const STALL_TIMEOUT_MS = 30_000;
 
-// The single full-app loading screen, gated in one place (App.tsx) for every
-// state where the whole app is still loading.
 export function AppLoadingScreen(): React.ReactNode {
   const [stalled, setStalled] = useState(false);
 
