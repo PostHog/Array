@@ -286,7 +286,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
         <SummaryRow label="Repository">
           {loop.repositories.length > 0
             ? loop.repositories.map((repo) => repo.full_name).join(", ")
-            : "None — connector-only loop"}
+            : "None (connector-only loop)"}
         </SummaryRow>
 
         <SummaryRow label="Triggers">

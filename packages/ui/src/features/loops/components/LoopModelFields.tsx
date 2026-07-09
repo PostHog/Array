@@ -1,7 +1,9 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { useModelCatalog } from "@posthog/ui/features/agent-applications/hooks/useModelCatalog";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
-import { Flex, Text, TextField } from "@radix-ui/themes";
+import { Flex } from "@radix-ui/themes";
+import { useMemo } from "react";
+import { Field } from "./LoopFormPrimitives";
 
 const ADAPTER_OPTIONS: {
   value: LoopSchemas.LoopRuntimeAdapterEnum;
@@ -25,8 +27,6 @@ const REASONING_EFFORT_OPTIONS: {
   { value: "max", label: "Max" },
 ];
 
-const MODEL_DATALIST_ID = "loop-model-suggestions";
-
 interface LoopModelFieldsProps {
   adapter: LoopSchemas.LoopRuntimeAdapterEnum;
   model: string;
@@ -40,13 +40,12 @@ interface LoopModelFieldsProps {
 }
 
 /**
- * Static model configuration for a loop: adapter, model id, and reasoning
- * effort. Loops have no live agent session, so the interactive
+ * Static model configuration for a loop: model, adapter, and reasoning effort.
+ * Loops have no live agent session, so the interactive
  * `UnifiedModelSelector`/`ReasoningLevelSelector` (which read a session's
- * `SessionConfigOption`) don't apply here — this mirrors their fields
- * against the Loop schema instead. The model catalog (also used by
- * `AgentModelConfig`) seeds suggestions; the server validates the final
- * value against the model catalog in `process_task/utils.py`.
+ * `SessionConfigOption`) don't apply here, so this presents the same choices
+ * as a dropdown against the served model catalog instead. The server validates
+ * the final value against the catalog in `process_task/utils.py`.
  */
 export function LoopModelFields({
   adapter,
@@ -59,11 +58,48 @@ export function LoopModelFields({
 }: LoopModelFieldsProps) {
   const { catalog } = useModelCatalog();
 
+  // Prefer the served catalog; fall back to the known level models while it
+  // loads or if the endpoint is down. Always keep the current value selectable
+  // so an existing loop's model never drops out of the list.
+  const modelOptions = useMemo(() => {
+    const ids = new Set<string>();
+    for (const entry of catalog.models) {
+      ids.add(entry.model);
+    }
+    if (ids.size === 0) {
+      for (const level of Object.values(catalog.levels)) {
+        for (const id of level) {
+          ids.add(id);
+        }
+      }
+    }
+    if (model) {
+      ids.add(model);
+    }
+    return Array.from(ids)
+      .sort((a, b) => a.localeCompare(b))
+      .map((id) => ({ value: id, label: id }));
+  }, [catalog, model]);
+
   return (
-    <Flex direction="column" gap="3">
-      <Flex gap="3" wrap="wrap">
-        <Flex direction="column" gap="1" className="min-w-[180px] flex-1">
-          <Text className="text-[12px] text-gray-10">Adapter</Text>
+    <Flex direction="column" gap="4">
+      <Field
+        label="Model"
+        required
+        hint="Validated against the available model catalog when the loop runs."
+      >
+        <SettingsOptionSelect
+          value={model}
+          options={modelOptions}
+          placeholder="Select a model"
+          onValueChange={onModelChange}
+          disabled={disabled}
+          ariaLabel="Model"
+        />
+      </Field>
+
+      <Flex gap="4" wrap="wrap">
+        <Field label="Adapter" className="min-w-[180px] flex-1">
           <SettingsOptionSelect
             value={adapter}
             options={ADAPTER_OPTIONS}
@@ -73,10 +109,9 @@ export function LoopModelFields({
             disabled={disabled}
             ariaLabel="Adapter"
           />
-        </Flex>
+        </Field>
 
-        <Flex direction="column" gap="1" className="min-w-[180px] flex-1">
-          <Text className="text-[12px] text-gray-10">Reasoning effort</Text>
+        <Field label="Reasoning effort" className="min-w-[180px] flex-1">
           <SettingsOptionSelect
             value={reasoningEffort ?? AUTO_REASONING_VALUE}
             options={REASONING_EFFORT_OPTIONS}
@@ -90,24 +125,7 @@ export function LoopModelFields({
             disabled={disabled}
             ariaLabel="Reasoning effort"
           />
-        </Flex>
-      </Flex>
-
-      <Flex direction="column" gap="1">
-        <Text className="text-[12px] text-gray-10">Model</Text>
-        <TextField.Root
-          size="2"
-          value={model}
-          onChange={(e) => onModelChange(e.target.value)}
-          placeholder="anthropic/claude-sonnet-4.6"
-          disabled={disabled}
-          list={MODEL_DATALIST_ID}
-        />
-        <datalist id={MODEL_DATALIST_ID}>
-          {catalog.models.map((entry) => (
-            <option key={entry.model} value={entry.model} />
-          ))}
-        </datalist>
+        </Field>
       </Flex>
     </Flex>
   );

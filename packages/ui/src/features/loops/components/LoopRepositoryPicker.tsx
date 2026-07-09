@@ -12,7 +12,7 @@ interface LoopRepositoryPickerProps {
  * Loops run against the team's connected GitHub App installations, not the
  * viewer's personal repo list, so this uses `useRepositoryIntegration`
  * (team-scoped) rather than `useUserRepositoryIntegration` (used by the task
- * composer). A repo without a resolvable integration id is ignored — that
+ * composer). A repo without a resolvable integration id is ignored, which
  * only happens mid-refresh, before the repository map has caught up.
  */
 export function LoopRepositoryPicker({
