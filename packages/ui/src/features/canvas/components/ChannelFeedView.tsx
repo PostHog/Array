@@ -44,6 +44,7 @@ import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannel
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { xmlToPlainText } from "@posthog/ui/features/message-editor/content";
+import { CollapsibleMessageContent } from "@posthog/ui/features/sessions/components/session-update/CollapsibleMessageContent";
 import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
 import { getOriginProductMeta } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 import {
@@ -425,8 +426,13 @@ const FeedItem = memo(function FeedItem({
           </ThreadItemTimestamp>
         </ThreadItemHeader>
 
-        <ThreadItemBody className="wrap-break-word line-clamp-4 whitespace-pre-wrap">
-          {prompt}
+        <ThreadItemBody>
+          <CollapsibleMessageContent
+            contentClassName="wrap-break-word whitespace-pre-wrap"
+            fadeColor="var(--gray-1)"
+          >
+            {prompt}
+          </CollapsibleMessageContent>
         </ThreadItemBody>
 
         <TaskCard task={task} onOpen={() => onOpenTask(task)} />

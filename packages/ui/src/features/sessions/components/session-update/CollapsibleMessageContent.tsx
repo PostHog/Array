@@ -33,16 +33,26 @@ export function CollapsibleMessageContent({
 
   useEffect(() => {
     const el = contentRef.current;
-    if (el) {
+    if (!el) return;
+    // A ResizeObserver rather than a one-shot measure: feed rows mount inside a
+    // `content-visibility: auto` container that lays out lazily, so an on-mount
+    // read misses their real height until they scroll into view. The observer
+    // also keeps the toggle in sync when content reflows (wrap changes, late
+    // markdown). scrollHeight is the true content height regardless of the
+    // collapsed max-height, so the check holds in both states.
+    const measure = () =>
       setIsOverflowing(el.scrollHeight > COLLAPSED_MAX_HEIGHT);
-    }
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   return (
     <Box className={className} style={style}>
       <Box
         ref={contentRef}
-        className={`relative overflow-hidden font-medium text-[13px] [&>*:last-child]:mb-0 ${contentClassName ?? ""}`}
+        className={`relative overflow-hidden [&>*:last-child]:mb-0 ${contentClassName ?? ""}`}
         style={
           !isExpanded && isOverflowing
             ? { maxHeight: COLLAPSED_MAX_HEIGHT }
