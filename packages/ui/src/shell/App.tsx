@@ -90,10 +90,16 @@ function App({ devToolbar }: AppProps) {
     !needsAiApproval;
 
   // Run the initial route's loaders before the router ever mounts, so the boot
-  // loading screen holds until the route is ready.
+  // loading screen holds until the route is ready. Loader errors still open
+  // the app; the router renders its route error UI on mount. Resets when the
+  // user leaves the main app (logout, gates) so re-entry loads fresh.
   const [initialRouteLoaded, setInitialRouteLoaded] = useState(false);
   useEffect(() => {
-    if (initialRouteLoaded || !readyForMainApp) return;
+    if (!readyForMainApp) {
+      setInitialRouteLoaded(false);
+      return;
+    }
+    if (initialRouteLoaded) return;
     let cancelled = false;
     void router
       .load()
