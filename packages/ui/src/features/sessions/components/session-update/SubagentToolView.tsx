@@ -3,13 +3,13 @@ import {
   ArrowsOutSimple as ArrowsOutSimpleIcon,
   Robot,
 } from "@phosphor-icons/react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@posthog/quill";
 import {
   LoadingIcon,
   StatusIndicators,
   type ToolViewProps,
   useToolCallStatus,
 } from "@posthog/ui/features/sessions/components/session-update/toolCallUtils";
-import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import type { ConversationItem, TurnContext } from "../buildConversationItems";
@@ -69,14 +69,21 @@ export function SubagentToolView({
           className="flex w-full cursor-pointer items-center justify-between border-none bg-transparent px-3 py-2"
         >
           <Flex align="center" gap="2">
-            <Tooltip content="Delegated to a subagent">
-              <span className="flex items-center">
-                <LoadingIcon
-                  icon={Robot}
-                  isLoading={isLoading}
-                  className="text-gray-10"
-                />
-              </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span className="flex items-center">
+                    <LoadingIcon
+                      icon={Robot}
+                      isLoading={isLoading}
+                      className="text-gray-10"
+                    />
+                  </span>
+                }
+              />
+              <TooltipContent side="top">
+                Delegated to a subagent
+              </TooltipContent>
             </Tooltip>
             <Text className="text-[13px] text-gray-10">
               {title || "Subagent"}
@@ -112,10 +119,15 @@ export function SubagentToolView({
     <div>
       <ToolRow
         leading={
-          <Tooltip content="Delegated to a subagent">
-            <span className="flex items-center">
-              <LoadingIcon icon={Robot} isLoading={isLoading} />
-            </span>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className="flex items-center">
+                  <LoadingIcon icon={Robot} isLoading={isLoading} />
+                </span>
+              }
+            />
+            <TooltipContent side="top">Delegated to a subagent</TooltipContent>
           </Tooltip>
         }
         isLoading={isLoading}
