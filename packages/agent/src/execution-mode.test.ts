@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  getAvailableCodexModes,
-  getAvailableModes,
-  resolveCloudInitialPermissionMode,
-} from "./execution-mode";
+import { getAvailableCodexModes, getAvailableModes } from "./execution-mode";
 
 describe("execution modes", () => {
   it("includes auto-accept permissions for claude sessions", () => {
@@ -24,28 +20,4 @@ describe("execution modes", () => {
       "full-access",
     ]);
   });
-});
-
-describe("resolveCloudInitialPermissionMode", () => {
-  it.each([
-    ["codex", "auto", "auto"],
-    ["codex", "read-only", "read-only"],
-    ["codex", "full-access", "full-access"],
-    ["codex", "plan", "read-only"],
-    ["codex", "default", "auto"],
-    ["codex", "acceptEdits", "auto"],
-    ["codex", "bypassPermissions", "full-access"],
-    ["claude", "default", "default"],
-    ["claude", "acceptEdits", "acceptEdits"],
-    ["claude", "plan", "plan"],
-    ["claude", "bypassPermissions", "bypassPermissions"],
-    ["claude", "auto", "auto"],
-    ["claude", "read-only", "plan"],
-    ["claude", "full-access", "bypassPermissions"],
-  ] as const)(
-    "resolves %s adapter mode %s to %s",
-    (adapter, mode, expected) => {
-      expect(resolveCloudInitialPermissionMode(adapter, mode)).toBe(expected);
-    },
-  );
 });

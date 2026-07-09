@@ -1,12 +1,9 @@
 import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
-import {
-  type PermissionMode,
-  resolveCloudInitialPermissionMode,
-} from "@posthog/agent/execution-mode";
 import type {
   Adapter,
   CloudRunSource,
+  ExecutionMode,
   PrAuthorshipMode,
   SeatData,
   StoredLogEntry,
@@ -15,6 +12,7 @@ import type {
 import {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
+  resolveCloudInitialPermissionMode,
   SEAT_PRODUCT_KEY,
 } from "@posthog/shared";
 import type {
@@ -494,7 +492,7 @@ interface CloudRunOptions {
   autoPublish?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
-  initialPermissionMode?: PermissionMode;
+  initialPermissionMode?: ExecutionMode;
   homeQuickAction?: string;
 }
 
@@ -549,8 +547,7 @@ function buildCloudRunRequestBody(
       }
       body.reasoning_effort = options.reasoningLevel;
     }
-    // The API rejects initial_permission_mode unless runtime_adapter is set,
-    // and the mode enum is validated per adapter.
+    // The API rejects initial_permission_mode without runtime_adapter and validates it per adapter.
     if (options.initialPermissionMode) {
       body.initial_permission_mode = resolveCloudInitialPermissionMode(
         options.adapter,
