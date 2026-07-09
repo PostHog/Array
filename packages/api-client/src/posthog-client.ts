@@ -250,6 +250,7 @@ export interface SignalSourceConfig {
     | "llm_analytics"
     | "github"
     | "linear"
+    | "jira"
     | "zendesk"
     | "conversations"
     | "error_tracking"
@@ -400,6 +401,86 @@ export interface ExternalDataSource {
   // The generated `ExternalDataSourceSerializers` types this as `string`,
   // but the actual API returns an array of schema objects
   schemas?: ExternalDataSourceSchema[] | string;
+}
+
+/**
+ * Field-config variants for an external data source's connect form, as served
+ * by the `external_data_sources/wizard/` endpoint. Mirrors PostHog Cloud's
+ * `SourceFieldConfig` union (`posthog/schema.py`). The backend is the single
+ * source of truth for which credential fields a source needs, so forms can be
+ * rendered generically instead of hardcoded per source.
+ */
+export interface SourceFieldInputConfig {
+  type:
+    | "text"
+    | "email"
+    | "search"
+    | "url"
+    | "password"
+    | "time"
+    | "number"
+    | "textarea";
+  name: string;
+  label: string;
+  required: boolean;
+  placeholder?: string;
+  caption?: string | null;
+  /** Redacted from API responses; render as a password field. */
+  secret?: boolean;
+}
+
+export interface SourceFieldOauthConfig {
+  type: "oauth";
+  name: string;
+  label: string;
+  kind: string;
+  required: boolean;
+  requiredScopes?: string;
+}
+
+export interface SourceFieldSelectConfigOption {
+  label: string;
+  value: string;
+  fields?: SourceFieldConfig[];
+}
+
+export interface SourceFieldSelectConfig {
+  type: "select";
+  name: string;
+  label: string;
+  required: boolean;
+  defaultValue?: string;
+  options: SourceFieldSelectConfigOption[];
+}
+
+export interface SourceFieldSwitchGroupConfig {
+  type: "switch-group";
+  name: string;
+  label: string;
+  caption?: string;
+  default?: boolean;
+  fields: SourceFieldConfig[];
+}
+
+/** Field types the generic renderer does not (yet) handle inline. */
+export interface SourceFieldUnsupportedConfig {
+  type: "ssh-tunnel" | "file-upload";
+  name: string;
+  label: string;
+}
+
+export type SourceFieldConfig =
+  | SourceFieldInputConfig
+  | SourceFieldOauthConfig
+  | SourceFieldSelectConfig
+  | SourceFieldSwitchGroupConfig
+  | SourceFieldUnsupportedConfig;
+
+export interface SourceConfig {
+  name: string;
+  label?: string;
+  caption?: string;
+  fields: SourceFieldConfig[];
 }
 
 export interface FolderInstructionsUser {
@@ -2106,6 +2187,30 @@ export class PostHogAPIClient {
       );
     }
     return response.data as unknown as ExternalDataSource;
+  }
+
+  /**
+   * Fetch the connect-form field schema for external data source types from the
+   * warehouse wizard endpoint. Pass `sourceType` (e.g. `"Jira"`) to scope to one
+   * source; omit to fetch every source's config. Returns a map keyed by the
+   * capitalized source type string.
+   */
+  async getExternalDataSourceConfigs(
+    projectId: number,
+    sourceType?: string,
+  ): Promise<Record<string, SourceConfig>> {
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${projectId}/external_data_sources/wizard/`,
+    );
+    if (sourceType) {
+      url.searchParams.set("source_type", sourceType);
+    }
+    const path = `/api/environments/${projectId}/external_data_sources/wizard/`;
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch source configs: ${response.statusText}`);
+    }
+    return (await response.json()) as Record<string, SourceConfig>;
   }
 
   async updateExternalDataSchema(
