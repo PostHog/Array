@@ -39,6 +39,7 @@ import type {
   SelectedAttachment,
   UserAgentInstructions,
 } from "./schemas";
+import { USER_AGENT_INSTRUCTIONS_MAX_LENGTH } from "./schemas";
 
 const fsPromises = fs.promises;
 
@@ -48,9 +49,6 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const CLIPBOARD_TEMP_DIR = path.join(os.tmpdir(), "posthog-code-clipboard");
 const claudeSettingsPath = path.join(os.homedir(), ".claude", "settings.json");
 
-// Personalization synced from a file can be much larger than hand-typed
-// instructions, but the prompt it lands in must stay bounded.
-const USER_AGENT_INSTRUCTIONS_MAX_LENGTH = 20_000;
 // User-level agent instruction files, most-preferred first: AGENTS.md (the
 // cross-agent convention) from any of its conventional homes wins over Claude
 // Code's CLAUDE.md.

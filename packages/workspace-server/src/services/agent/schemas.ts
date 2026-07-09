@@ -4,6 +4,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { effortLevelSchema } from "@posthog/shared/domain-types";
 import { z } from "zod";
+import { USER_AGENT_INSTRUCTIONS_MAX_LENGTH } from "../os/schemas";
 
 export { effortLevelSchema };
 export type { EffortLevel } from "@posthog/shared/domain-types";
@@ -54,8 +55,13 @@ export const startSessionInput = z.object({
   adapter: z.enum(["claude", "codex"]).optional(),
   additionalDirectories: z.array(z.string()).optional(),
   // Sized for personalization synced from an AGENTS.md/CLAUDE.md file, which
-  // can be far larger than the 2000-char hand-typed settings field.
-  customInstructions: z.string().max(20_000).optional(),
+  // can be far larger than the 2000-char hand-typed settings field. Kept
+  // equal to OsService's truncation length (USER_AGENT_INSTRUCTIONS_MAX_LENGTH)
+  // or a synced file gets truncated to fit but still fails this check.
+  customInstructions: z
+    .string()
+    .max(USER_AGENT_INSTRUCTIONS_MAX_LENGTH)
+    .optional(),
   /**
    * Replaces the PostHog system prompt entirely for this session. Used by
    * constrained, single-purpose surfaces (e.g. the canvas generator) that drive
@@ -206,8 +212,13 @@ export const reconnectSessionInput = z.object({
   permissionMode: z.string().optional(),
   model: z.string().optional(),
   // Sized for personalization synced from an AGENTS.md/CLAUDE.md file, which
-  // can be far larger than the 2000-char hand-typed settings field.
-  customInstructions: z.string().max(20_000).optional(),
+  // can be far larger than the 2000-char hand-typed settings field. Kept
+  // equal to OsService's truncation length (USER_AGENT_INSTRUCTIONS_MAX_LENGTH)
+  // or a synced file gets truncated to fit but still fails this check.
+  customInstructions: z
+    .string()
+    .max(USER_AGENT_INSTRUCTIONS_MAX_LENGTH)
+    .optional(),
   effort: effortLevelSchema.optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
 });
