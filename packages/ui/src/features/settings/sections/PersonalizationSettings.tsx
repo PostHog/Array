@@ -106,14 +106,11 @@ export function PersonalizationSettings() {
   );
   const synced = useSettingsStore((s) => s.syncedCustomInstructions);
 
-  const [localInstructions, setLocalInstructions] =
-    useState(customInstructions);
-  const debouncedInstructions = useDebounce(localInstructions, 500);
-
-  // Sync local state when store changes externally
-  useEffect(() => {
-    setLocalInstructions(customInstructions);
-  }, [customInstructions]);
+  // The draft renders over the store value only while edits are pending
+  // (null = none), instead of copying the store into state and mirroring it
+  // back with an effect.
+  const [draft, setDraft] = useState<string | null>(null);
+  const debouncedDraft = useDebounce(draft, 500);
 
   const saveInstructions = useCallback(
     (value: string) => {
@@ -129,12 +126,18 @@ export function PersonalizationSettings() {
   );
 
   useEffect(() => {
-    saveInstructions(debouncedInstructions);
-  }, [debouncedInstructions, saveInstructions]);
+    if (debouncedDraft === null) return;
+    saveInstructions(debouncedDraft);
+    // Release the draft once saved so external store changes render again —
+    // unless the user typed since this debounce tick.
+    setDraft((current) => (current === debouncedDraft ? null : current));
+  }, [debouncedDraft, saveInstructions]);
 
   const handleInstructionsBlur = useCallback(() => {
-    saveInstructions(localInstructions);
-  }, [localInstructions, saveInstructions]);
+    if (draft === null) return;
+    saveInstructions(draft);
+    setDraft(null);
+  }, [draft, saveInstructions]);
 
   const handleSyncToggle = useCallback(
     (checked: boolean) => {
@@ -149,8 +152,8 @@ export function PersonalizationSettings() {
 
   return (
     <PersonalizationSettingsView
-      instructions={localInstructions}
-      onInstructionsChange={setLocalInstructions}
+      instructions={draft ?? customInstructions}
+      onInstructionsChange={setDraft}
       onInstructionsBlur={handleInstructionsBlur}
       syncFromFile={syncFromFile}
       onSyncToggle={handleSyncToggle}
