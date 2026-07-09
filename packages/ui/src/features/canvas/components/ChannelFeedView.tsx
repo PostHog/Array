@@ -340,18 +340,27 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   );
 }
 
-// Slack-style thread teaser under the card: reply-author facepile, count, and
-// last-reply time. Only renders once the thread has messages; starting a
-// thread lives in the row's hover toolbar.
-function RepliesRow({
+// The reply row under the card, always present at a constant height: the
+// Slack-style teaser (author facepile, count, last-reply time) once the thread
+// has messages, and a quiet "Reply" affordance otherwise. Keeping the row
+// mounted at a fixed height means the teaser swaps in after the thread fetch
+// lands without shifting the feed — and it surfaces an always-visible way into
+// the thread instead of hiding it in the hover toolbar.
+//
+// The fetch/poll only runs for near-viewport rows (`inView`); off-screen rows
+// render the static affordance and idle, so a long feed isn't polling per row.
+function ReplyFooter({
   taskId,
+  inView,
   onOpenThread,
 }: {
   taskId: string;
+  inView: boolean;
   onOpenThread: () => void;
 }) {
   const { messages } = useTaskThread(taskId, {
     pollIntervalMs: FEED_REPLIES_POLL_INTERVAL_MS,
+    enabled: inView,
   });
   const authors = useMemo(() => {
     const seen = new Map<string, (typeof messages)[number]["author"]>();
@@ -362,9 +371,24 @@ function RepliesRow({
     return [...seen.values()].slice(0, 4);
   }, [messages]);
 
-  if (messages.length === 0) return null;
-  const last = messages[messages.length - 1];
+  if (messages.length === 0) {
+    // A single avatar-sized slot keeps this row the exact height of the
+    // populated teaser, so swapping to it after the fetch never shifts the feed.
+    return (
+      <ThreadItemReplies onClick={onOpenThread} className="mt-1">
+        <AvatarGroup size="xs">
+          <Avatar size="xs">
+            <AvatarFallback>
+              <ChatCircleIcon size={12} />
+            </AvatarFallback>
+          </Avatar>
+        </AvatarGroup>
+        <ThreadItemRepliesLabel>Reply</ThreadItemRepliesLabel>
+      </ThreadItemReplies>
+    );
+  }
 
+  const last = messages[messages.length - 1];
   return (
     <ThreadItemReplies onClick={onOpenThread} className="mt-1">
       <AvatarGroup size="xs">
@@ -430,15 +454,11 @@ const FeedItem = memo(function FeedItem({
         </ThreadItemBody>
 
         <TaskCard task={task} onOpen={() => onOpenTask(task)} />
-        {/* Off-screen rows drop the reply teaser so a long feed isn't running a
-            15s poll timer per row; the wide inView margin mounts it well before
-            the row scrolls into view, so nothing pops in. */}
-        {inView && (
-          <RepliesRow
-            taskId={task.id}
-            onOpenThread={() => onOpenThread(task)}
-          />
-        )}
+        <ReplyFooter
+          taskId={task.id}
+          inView={inView}
+          onOpenThread={() => onOpenThread(task)}
+        />
       </ThreadItemContent>
 
       {/* Actions anchor to the row's top-right corner; a top tooltip there
