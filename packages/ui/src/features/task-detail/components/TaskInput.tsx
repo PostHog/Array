@@ -37,6 +37,7 @@ import { useAutoresearchEnabled } from "../../autoresearch/useAutoresearchEnable
 import { useFileSearchStore } from "../../command/fileSearchStore";
 import { NewTaskFilePreview } from "../../command/NewTaskFilePreview";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
+import { useFeatureFlagsLoaded } from "../../feature-flags/useFeatureFlagsLoaded";
 import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
 import { GitHubRepoPicker } from "../../folder-picker/GitHubRepoPicker";
@@ -72,6 +73,7 @@ import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSele
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
 import {
   type AgentAdapter,
+  DEFAULT_WORKSPACE_MODE,
   useSettingsStore,
 } from "../../settings/settingsStore";
 import { useSkills } from "../../skills/useSkills";
@@ -83,6 +85,7 @@ import {
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { useWarmTask } from "../hooks/useWarmTask";
+import { resolveWorkspaceModePreference } from "../hooks/workspaceModePreference";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { NewTaskSuggestions } from "./ContinueCliSessions";
 import {
@@ -315,43 +318,57 @@ export function TaskInput({
   } = useUserRepositoryIntegration();
 
   const cloudModeEnabled = useCloudModeEnabled();
+  const flagsLoaded = useFeatureFlagsLoaded();
   const reposReady = areReposReady({
     isLoadingRepos,
     repositoriesCount: repositories.length,
     hasGithubIntegration,
   });
 
-  // Cloud is the default, but only when it works out of the box: with the flag
-  // off or GitHub not connected, fall back to the last local mode instead of
-  // stranding the user behind a connect-GitHub prompt.
-  const resolveWorkspaceModePreference = useCallback(
-    (mode: WorkspaceMode): WorkspaceMode =>
-      mode === "cloud" && (!cloudModeEnabled || !hasGithubIntegration)
-        ? lastUsedLocalWorkspaceMode
-        : mode,
-    [cloudModeEnabled, hasGithubIntegration, lastUsedLocalWorkspaceMode],
-  );
-
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
-    return resolveWorkspaceModePreference(lastUsedWorkspaceMode || "cloud");
+    return resolveWorkspaceModePreference({
+      preferredMode: lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE,
+      cloudModeEnabled,
+      hasGithubIntegration,
+      lastUsedLocalWorkspaceMode,
+    });
   });
+
+  // A positive flag or integration signal is final, but a negative one may
+  // just mean the async flag fetch or integrations query hasn't landed yet, so
+  // a cloud preference only resolves once each negative signal is settled.
+  const cloudSignalsSettled =
+    (cloudModeEnabled || flagsLoaded) &&
+    (hasGithubIntegration || !isLoadingRepos);
 
   const didResolveWorkspaceModeRef = useRef(false);
   useEffect(() => {
     if (didResolveWorkspaceModeRef.current) return;
-    if (!settingsHydrated || !reposReady) return;
+    if (!settingsHydrated) return;
+    if (initialCloudRepository) {
+      didResolveWorkspaceModeRef.current = true;
+      return;
+    }
+    const preferredMode = lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE;
+    if (preferredMode === "cloud" && !cloudSignalsSettled) return;
     didResolveWorkspaceModeRef.current = true;
-    if (initialCloudRepository) return;
     setWorkspaceModeState(
-      resolveWorkspaceModePreference(lastUsedWorkspaceMode || "cloud"),
+      resolveWorkspaceModePreference({
+        preferredMode,
+        cloudModeEnabled,
+        hasGithubIntegration,
+        lastUsedLocalWorkspaceMode,
+      }),
     );
   }, [
     settingsHydrated,
-    reposReady,
     lastUsedWorkspaceMode,
     initialCloudRepository,
-    resolveWorkspaceModePreference,
+    cloudSignalsSettled,
+    cloudModeEnabled,
+    hasGithubIntegration,
+    lastUsedLocalWorkspaceMode,
   ]);
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {
