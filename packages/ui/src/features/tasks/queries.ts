@@ -43,3 +43,12 @@ export function getCachedTaskDetail(taskId: string): Task | undefined {
     IMPERATIVE_QUERY_CLIENT,
   ).getQueryData<Task>(taskDetailQuery(taskId).queryKey);
 }
+
+// Warms the task-detail cache so a task route's first render finds its task
+// instead of flashing the route spinner (used by the boot loading gate).
+export async function ensureTaskDetailCached(taskId: string): Promise<void> {
+  if (getCachedTaskDetail(taskId) ?? getCachedTask(taskId)) return;
+  await resolveService<ImperativeQueryClient>(IMPERATIVE_QUERY_CLIENT)
+    .ensureQueryData(taskDetailQuery(taskId))
+    .catch(() => undefined);
+}

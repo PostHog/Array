@@ -11,7 +11,7 @@ export function LoadingScreen({
 }: LoadingScreenProps) {
   return (
     <div
-      className={`flex h-full w-full items-center justify-center ${className ?? ""}`}
+      className={`flex h-full w-full items-center justify-center bg-(--color-background) ${className ?? ""}`}
     >
       <AnimatedLogo size={logoSize} />
     </div>

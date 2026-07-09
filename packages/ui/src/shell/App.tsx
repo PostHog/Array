@@ -20,13 +20,12 @@ import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingSt
 import { SettingsDialog } from "@posthog/ui/features/settings/SettingsDialog";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
 import { PendingPromptRecovery } from "@posthog/ui/features/task-detail/components/PendingPromptRecovery";
-import { LoginTransition } from "@posthog/ui/primitives/LoginTransition";
+import { ensureTaskDetailCached } from "@posthog/ui/features/tasks/queries";
 import { router } from "@posthog/ui/router/router";
 import { AppLoadingScreen } from "@posthog/ui/shell/AppLoadingScreen";
 import { track } from "@posthog/ui/shell/analytics";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
-import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import { useAppVisibilityWatchdog } from "@posthog/ui/shell/useAppVisibilityWatchdog";
 import { RouterProvider } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
@@ -37,6 +36,10 @@ interface AppProps {
   devToolbar?: ReactNode;
 }
 
+// Cap on how long the boot gate waits for the restored task to fetch, so a
+// slow or hung request can never block app startup.
+const BOOT_WARMUP_MAX_MS = 5_000;
+
 function App({ devToolbar }: AppProps) {
   const { isBootstrapped } = useAuthSession();
   const authState = useAuthStateValue((state) => state);
@@ -45,10 +48,6 @@ function App({ devToolbar }: AppProps) {
   );
   const isAuthenticated = authState.status === "authenticated";
   const hasCodeAccess = authState.hasCodeAccess;
-  const isDarkMode = useThemeStore((state) => state.isDarkMode);
-  const [showTransition, setShowTransition] = useState(false);
-  const wasInMainApp = useRef(isAuthenticated && hasCompletedOnboarding);
-
   // Analytics init + dev inbox console moved to host CONTRIBUTIONs
   // (AnalyticsBootContribution / InboxDemoDevContribution), started by
   // boot at boot.
@@ -79,18 +78,6 @@ function App({ devToolbar }: AppProps) {
   const { isAdmin: isOrgAdmin } = useIsOrgAdmin();
   const isAdmin = isOrgAdmin === true;
 
-  // Handle transition into main app — only show the dark overlay if dark mode is active
-  useEffect(() => {
-    const isInMainApp = isAuthenticated && hasCompletedOnboarding;
-    if (!wasInMainApp.current && isInMainApp && isDarkMode) {
-      setShowTransition(true);
-    }
-    if (!isAuthenticated) {
-      setShowTransition(false);
-    }
-    wasInMainApp.current = isInMainApp;
-  }, [isAuthenticated, hasCompletedOnboarding, isDarkMode]);
-
   const wasShowingAiGateRef = useRef(false);
   useEffect(() => {
     if (wasShowingAiGateRef.current && !needsAiApproval && currentOrg != null) {
@@ -99,23 +86,52 @@ function App({ devToolbar }: AppProps) {
     wasShowingAiGateRef.current = needsAiApproval;
   }, [needsAiApproval, currentOrg]);
 
-  const handleTransitionComplete = () => {
-    setShowTransition(false);
-  };
-
-  const mainRef = useRef<HTMLDivElement>(null);
-  // Mirrors the "main" branch of renderContent() below; keep the two in sync.
-  const showingMainApp =
+  const readyForMainApp =
     isBootstrapped &&
     isAuthenticated &&
     hasCompletedOnboarding &&
     !isCheckingAccess &&
     !needsInviteCode &&
     !needsAiApproval;
+
+  // Run the initial route's loaders and warm its task data before the router
+  // ever mounts, so the boot loading screen holds until the app is ready and
+  // no route spinner flashes.
+  const [initialRouteLoaded, setInitialRouteLoaded] = useState(false);
+  useEffect(() => {
+    if (initialRouteLoaded || !readyForMainApp) return;
+    let cancelled = false;
+    const holdWhileLoading = async () => {
+      await router.load().catch(() => undefined);
+      const taskId = router.state.matches
+        .map((match) => (match.params as { taskId?: string }).taskId)
+        .find(Boolean);
+      if (taskId) {
+        await Promise.race([
+          ensureTaskDetailCached(taskId),
+          new Promise((resolve) => setTimeout(resolve, BOOT_WARMUP_MAX_MS)),
+        ]);
+      }
+    };
+    void holdWhileLoading().finally(() => {
+      if (!cancelled) setInitialRouteLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [readyForMainApp, initialRouteLoaded]);
+
+  const mainRef = useRef<HTMLDivElement>(null);
+  // Mirrors the "main" branch of renderContent() below; keep the two in sync.
+  const showingMainApp = readyForMainApp && initialRouteLoaded;
   useAppVisibilityWatchdog(mainRef, showingMainApp);
 
   // Single gate for every state where the whole app is still loading.
-  if (!isBootstrapped || isCheckingAccess) {
+  if (
+    !isBootstrapped ||
+    isCheckingAccess ||
+    (readyForMainApp && !initialRouteLoaded)
+  ) {
     return <AppLoadingScreen />;
   }
 
@@ -199,11 +215,6 @@ function App({ devToolbar }: AppProps) {
             ) : (
               content
             )}
-            <LoginTransition
-              isAnimating={showTransition}
-              isDarkMode={isDarkMode}
-              onComplete={handleTransitionComplete}
-            />
             <ScopeReauthPrompt />
             <AddDirectoryDialog />
             <ErrorDetailsDialog />
