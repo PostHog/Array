@@ -17,6 +17,14 @@ const log = logger.scope("custom-instructions-sync");
  */
 @injectable()
 export class CustomInstructionsSyncContribution implements Contribution {
+  /**
+   * Bumped by every reconcile so an in-flight read that a newer toggle flip
+   * has superseded cannot land its (now stale) snapshot in the store. The
+   * read is a host round-trip, so on slower transports rapid toggling can
+   * genuinely have two reads in flight resolving out of order.
+   */
+  private generation = 0;
+
   constructor(
     @inject(HOST_TRPC_CLIENT)
     private readonly hostClient: HostTrpcClient,
@@ -39,6 +47,7 @@ export class CustomInstructionsSyncContribution implements Contribution {
   }
 
   private async reconcile(enabled: boolean): Promise<void> {
+    const generation = ++this.generation;
     if (!enabled) {
       useSettingsStore.getState().setSyncedCustomInstructions(null);
       return;
@@ -50,6 +59,9 @@ export class CustomInstructionsSyncContribution implements Contribution {
     useSettingsStore.getState().setSyncedCustomInstructions(null);
     try {
       const file = await this.hostClient.os.getUserAgentInstructions.query();
+      // A newer toggle flip started its own reconcile while this read was in
+      // flight; its outcome owns the store now.
+      if (generation !== this.generation) return;
       useSettingsStore.getState().setSyncedCustomInstructions(file);
     } catch (err) {
       // The snapshot was already cleared above, so a transient read failure
