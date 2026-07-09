@@ -3,7 +3,7 @@ import { Box } from "@radix-ui/themes";
 import {
   type CSSProperties,
   type ReactNode,
-  useEffect,
+  useCallback,
   useRef,
   useState,
 } from "react";
@@ -29,29 +29,31 @@ export function CollapsibleMessageContent({
 }: CollapsibleMessageContentProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<ResizeObserver | null>(null);
 
-  useEffect(() => {
-    const el = contentRef.current;
+  // Measure via a callback ref (React's recommended way to read a DOM node into
+  // state) rather than a mount effect, so it runs before paint — no flash of
+  // unclamped content. The ResizeObserver keeps the check correct when content
+  // reflows or, for feed rows inside a `content-visibility: auto` container,
+  // lays out lazily only once scrolled into view. scrollHeight is the true
+  // content height regardless of the collapsed max-height, so the check holds
+  // in both the collapsed and expanded states.
+  const measureRef = useCallback((el: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
     if (!el) return;
-    // A ResizeObserver rather than a one-shot measure: feed rows mount inside a
-    // `content-visibility: auto` container that lays out lazily, so an on-mount
-    // read misses their real height until they scroll into view. The observer
-    // also keeps the toggle in sync when content reflows (wrap changes, late
-    // markdown). scrollHeight is the true content height regardless of the
-    // collapsed max-height, so the check holds in both states.
     const measure = () =>
       setIsOverflowing(el.scrollHeight > COLLAPSED_MAX_HEIGHT);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
-    return () => observer.disconnect();
+    observerRef.current = observer;
   }, []);
 
   return (
     <Box className={className} style={style}>
       <Box
-        ref={contentRef}
+        ref={measureRef}
         className={`relative overflow-hidden [&>*:last-child]:mb-0 ${contentClassName ?? ""}`}
         style={
           !isExpanded && isOverflowing
