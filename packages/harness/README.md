@@ -18,8 +18,9 @@ gateway results are identical as well.
 ## Models
 
 The model list is fetched from the gateway's `/{product}/v1/models` at startup, so harness exposes
-whatever models the gateway currently serves — including OpenAI + codex (`gpt-5.5`, `gpt-5.4`,
-`gpt-5.3-codex`, …) and GLM (`@cf/zai-org/glm-5.2`). Each model is routed by owner:
+whatever models the gateway currently serves — including OpenAI + codex (`gpt-5.6-sol`,
+`gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.3-codex`, …) and GLM
+(`@cf/zai-org/glm-5.2`). Each model is routed by owner:
 
 - Anthropic + Cloudflare/GLM models → pi's `anthropic-messages` API on `<gateway>/posthog_code`
 - OpenAI + codex models → pi's `openai-responses` API on `<gateway>/posthog_code/v1`

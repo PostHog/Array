@@ -24,6 +24,16 @@ describe("getReasoningEffortOptions", () => {
     },
   );
 
+  it.each([
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "openai/gpt-5.6-sol",
+    "GPT-5.6-SOL",
+  ])("offers Extra High for the gpt-5.6 family (%s)", (modelId) => {
+    expect(values(modelId)).toEqual(["low", "medium", "high", "xhigh"]);
+  });
+
   it.each(["gpt-5.3-codex", "gpt-5.1", "o3"])(
     "caps at High for other models (%s)",
     (modelId) => {
