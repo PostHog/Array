@@ -1,4 +1,7 @@
-import { registerRendererStateStorage } from "@posthog/ui/shell/rendererStorage";
+import {
+  flushRendererStateWrites,
+  registerRendererStateStorage,
+} from "@posthog/ui/shell/rendererStorage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type CompletionSound,
@@ -26,6 +29,9 @@ describe("feature settingsStore defaults", () => {
 
 describe("feature settingsStore cloud selections", () => {
   beforeEach(() => {
+    // Land any coalesced write from the previous test on the old mocks so a
+    // pending value cannot leak into this test's reads or assertions.
+    flushRendererStateWrites();
     getItem.mockReset();
     setItem.mockReset();
     removeItem.mockReset();
@@ -44,6 +50,7 @@ describe("feature settingsStore cloud selections", () => {
     useSettingsStore.getState().setLastUsedCloudRepository("posthog/posthog");
 
     await vi.waitFor(() => {
+      flushRendererStateWrites();
       expect(setItem).toHaveBeenCalled();
     });
 
@@ -83,6 +90,7 @@ describe("feature settingsStore cloud selections", () => {
     });
 
     await vi.waitFor(() => {
+      flushRendererStateWrites();
       expect(setItem).toHaveBeenCalled();
     });
 
@@ -171,6 +179,9 @@ describe("feature settingsStore cloud selections", () => {
 
 describe("feature settingsStore custom sounds", () => {
   beforeEach(() => {
+    // Land any coalesced write from the previous test on the old mocks so a
+    // pending value cannot leak into this test's reads or assertions.
+    flushRendererStateWrites();
     getItem.mockReset();
     setItem.mockReset();
     removeItem.mockReset();
@@ -240,6 +251,7 @@ describe("feature settingsStore custom sounds", () => {
     useSettingsStore.getState().addCustomSound(sound);
 
     await vi.waitFor(() => {
+      flushRendererStateWrites();
       expect(setItem).toHaveBeenCalled();
     });
 
@@ -285,6 +297,9 @@ describe("feature settingsStore custom sounds", () => {
 
 describe("feature settingsStore terminal font", () => {
   beforeEach(() => {
+    // Land any coalesced write from the previous test on the old mocks so a
+    // pending value cannot leak into this test's reads or assertions.
+    flushRendererStateWrites();
     getItem.mockReset();
     setItem.mockReset();
     removeItem.mockReset();
@@ -308,6 +323,7 @@ describe("feature settingsStore terminal font", () => {
     useSettingsStore.getState().setTerminalCustomFontFamily("Fira Code");
 
     await vi.waitFor(() => {
+      flushRendererStateWrites();
       expect(setItem).toHaveBeenCalled();
     });
 
