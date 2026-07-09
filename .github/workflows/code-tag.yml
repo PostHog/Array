@@ -27,6 +27,8 @@ jobs:
     permissions:
       contents: write
       actions: write
+      pull-requests: write
+      issues: write
     runs-on: ubuntu-latest
     steps:
       - name: Get app token
@@ -42,39 +44,39 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Check labeler is on Team PostHog Code
+      - name: Check labeler is a member of team-posthog-code
         id: labeler
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          COMMENT_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          TEAM_SLUG: team-posthog-code
         run: |
+          skip() {
+            echo "$1 Skipping auto-release; the next scheduled release will pick this up."
+            echo "authorized=false" >> "$GITHUB_OUTPUT"
+            GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+              --body "$1 Auto-release is limited to Team PostHog Code members, so this will ship with the next scheduled release instead." || true
+          }
+
           LABELER=$(gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/events" --paginate \
-            --jq '.[] | select(.event == "labeled" and (.label.name | ascii_downcase) == "create release") | .actor.login' | tail -1)
+            --jq '.[] | select(.event == "labeled" and (.label.name | ascii_downcase) == "create release") | "\(.id) \(.actor.login)"' \
+            | sort -n | tail -1 | cut -d" " -f2)
 
           if [ -z "$LABELER" ]; then
-            echo "Could not determine who added the 'Create release' label. Skipping auto-release."
-            echo "authorized=false" >> "$GITHUB_OUTPUT"
+            skip "Could not determine who added the 'Create release' label."
             exit 0
           fi
 
-          if MEMBERSHIP=$(gh api "orgs/PostHog/teams/team-posthog-code/memberships/${LABELER}" 2>&1); then
-            STATE=$(echo "$MEMBERSHIP" | jq -r '.state')
-            if [ "$STATE" = "active" ]; then
-              echo "'Create release' was added by ${LABELER}, an active member of team-posthog-code."
-              echo "authorized=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "'Create release' was added by ${LABELER} with membership state '${STATE}'. Skipping auto-release; the next scheduled release will pick this up."
-              echo "authorized=false" >> "$GITHUB_OUTPUT"
-            fi
-          elif echo "$MEMBERSHIP" | grep -q "HTTP 404"; then
-            echo "'Create release' was added by ${LABELER}, who is not on team-posthog-code. Skipping auto-release; the next scheduled release will pick this up."
-            echo "authorized=false" >> "$GITHUB_OUTPUT"
+          MEMBERS=$(gh api "orgs/${REPOSITORY%%/*}/teams/${TEAM_SLUG}/members" --paginate --jq '.[].login')
+
+          if echo "$MEMBERS" | grep -qixF "$LABELER"; then
+            echo "'Create release' was added by ${LABELER}, a member of ${TEAM_SLUG}."
+            echo "authorized=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Team membership check for ${LABELER} failed unexpectedly:"
-            echo "$MEMBERSHIP"
-            exit 1
+            skip "'Create release' was added by @${LABELER}, who is not on ${TEAM_SLUG}."
           fi
 
       - name: Check quiet period
