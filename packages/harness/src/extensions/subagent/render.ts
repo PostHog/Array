@@ -2,7 +2,8 @@
  * Custom `renderCall`/`renderResult` for the `subagent` tool: collapsed
  * (default) and expanded (Ctrl+O) views, live progress for running parallel
  * tasks, and per-run usage stats. Purely presentational over `format.ts`'s
- * pure data — no behavior change to any other module.
+ * pure data — no behavior change to any other module. Modes: `single` and
+ * `parallel` only — there is no chain mode.
  */
 
 import type {
@@ -51,7 +52,7 @@ function statusIcon(theme: Theme, result: SingleRunResult): string {
 }
 
 interface SubagentRenderDetails {
-  mode: "single" | "parallel" | "chain";
+  mode: "single" | "parallel";
   results: SingleRunResult[];
 }
 
@@ -60,21 +61,9 @@ export function renderSubagentCall(
     agent?: string;
     task?: string;
     tasks?: Array<{ agent: string; task: string }>;
-    chain?: Array<{ agent: string; task: string }>;
   },
   theme: Theme,
 ): InstanceType<typeof Text> {
-  if (args.chain && args.chain.length > 0) {
-    let text =
-      theme.fg("toolTitle", theme.bold("subagent ")) +
-      theme.fg("accent", `chain (${args.chain.length} steps)`);
-    for (const [i, step] of args.chain.slice(0, 3).entries()) {
-      const preview = step.task.replace(/\{previous\}/g, "").trim();
-      text += `\n  ${theme.fg("muted", `${i + 1}.`)} ${theme.fg("accent", step.agent)} ${theme.fg("dim", preview.slice(0, 40))}`;
-    }
-    return new Text(text, 0, 0);
-  }
-
   if (args.tasks && args.tasks.length > 0) {
     let text =
       theme.fg("toolTitle", theme.bold("subagent ")) +
@@ -177,7 +166,7 @@ export function renderSubagentResult(
     return renderSingle(details.results[0], theme, options.expanded);
   }
 
-  const label = details.mode === "chain" ? "chain" : "parallel";
+  const label = "parallel";
   const successCount = details.results.filter(
     (r) => !isFailedResult(r) && r.exitCode !== -1,
   ).length;

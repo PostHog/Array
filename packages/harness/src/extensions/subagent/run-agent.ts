@@ -252,7 +252,11 @@ export async function runAgent(
         effectiveAgent.systemPrompt,
       );
       tmpPromptDir = tmp.dir;
-      args.push("--append-system-prompt", tmp.filePath);
+      // Agent definitions (bundled `bundled-agents/*.md` or project-local
+      // `.pi/agents/*.md`) are standalone personas, not an addendum to pi's
+      // default coding-agent system prompt — `--system-prompt` replaces it
+      // outright rather than appending to it.
+      args.push("--system-prompt", tmp.filePath);
     }
 
     const forwardedContext = resolveContext(ctx, options.context);

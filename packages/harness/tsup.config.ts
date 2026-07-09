@@ -31,7 +31,6 @@ export default defineConfig({
     "src/extensions/subagent/process/child-process.ts",
     "src/extensions/subagent/run-agent.ts",
     "src/extensions/subagent/process/pool.ts",
-    "src/extensions/subagent/chain.ts",
     "src/extensions/subagent/lifecycle.ts",
     "src/extensions/subagent/render.ts",
     "src/extensions/subagent/text-truncate.ts",
@@ -58,20 +57,20 @@ export default defineConfig({
   outDir: "dist",
   target: "node20",
   async onSuccess() {
-    // Prompt templates and the bundled skill are static data (no compilation
-    // needed), but they must land next to the compiled subagent extension so
-    // `resources_discover`'s `import.meta.url`-relative paths find them at
-    // runtime.
+    // The bundled skill and the bundled agent definitions are static data (no
+    // compilation needed), but they must land next to the compiled subagent
+    // extension so `resources_discover`'s and `agents.ts`'s
+    // `import.meta.url`-relative paths find them at runtime.
     await cp(
-      "src/extensions/subagent/prompts",
-      "dist/extensions/subagent/prompts",
+      "src/extensions/subagent/skills",
+      "dist/extensions/subagent/skills",
       {
         recursive: true,
       },
     );
     await cp(
-      "src/extensions/subagent/skills",
-      "dist/extensions/subagent/skills",
+      "src/extensions/subagent/bundled-agents",
+      "dist/extensions/subagent/bundled-agents",
       {
         recursive: true,
       },
