@@ -28,11 +28,11 @@ export class CustomInstructionsSyncContribution implements Contribution {
       void this.reconcile(initial.syncCustomInstructionsFromFile);
     }
     useSettingsStore.subscribe((state, prev) => {
-      const becameHydrated = !prev._hasHydrated;
+      const wasUnhydrated = !prev._hasHydrated;
       const toggleFlipped =
         state.syncCustomInstructionsFromFile !==
         prev.syncCustomInstructionsFromFile;
-      if (state._hasHydrated && (becameHydrated || toggleFlipped)) {
+      if (state._hasHydrated && (wasUnhydrated || toggleFlipped)) {
         void this.reconcile(state.syncCustomInstructionsFromFile);
       }
     });
