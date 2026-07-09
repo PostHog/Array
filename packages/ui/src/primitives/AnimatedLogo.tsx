@@ -1,4 +1,7 @@
+import { cn } from "@posthog/quill";
 import logoLoading from "@posthog/ui/assets/images/logo-loading.gif";
+import logoStatic from "@posthog/ui/assets/images/logo-static.png";
+import { useReducedMotion } from "framer-motion";
 
 interface AnimatedLogoProps {
   size?: number;
@@ -6,14 +9,16 @@ interface AnimatedLogoProps {
 }
 
 export function AnimatedLogo({ size = 96, className }: AnimatedLogoProps) {
+  const reducedMotion = useReducedMotion();
   return (
     <img
-      src={logoLoading}
+      src={reducedMotion ? logoStatic : logoLoading}
       alt=""
+      data-testid="app-loading-logo"
       width={size}
       height={size}
       draggable={false}
-      className={`pointer-events-none select-none ${className ?? ""}`}
+      className={cn("pointer-events-none select-none", className)}
     />
   );
 }

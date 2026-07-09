@@ -1,3 +1,4 @@
+import { cn } from "@posthog/quill";
 import { AnimatedLogo } from "@posthog/ui/primitives/AnimatedLogo";
 
 interface LoadingScreenProps {
@@ -11,7 +12,10 @@ export function LoadingScreen({
 }: LoadingScreenProps) {
   return (
     <div
-      className={`flex h-full w-full items-center justify-center bg-(--color-background) ${className ?? ""}`}
+      className={cn(
+        "flex h-full w-full items-center justify-center bg-(--color-background)",
+        className,
+      )}
     >
       <AnimatedLogo size={logoSize} />
     </div>
