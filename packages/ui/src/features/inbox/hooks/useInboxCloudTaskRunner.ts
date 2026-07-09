@@ -14,6 +14,7 @@ import {
   type Adapter,
   ANALYTICS_EVENTS,
   getCloudUrlFromRegion,
+  isModelExcludedFromDefault,
 } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
@@ -170,16 +171,21 @@ export function useInboxCloudTaskRunner({
     // resolver keeps it only if the gateway still offers it, otherwise it falls
     // back to the server default. A stale id (e.g. one later de-listed for the
     // org) would otherwise be sent here and fail the run with a gateway 403.
+    // A premium last-used model (e.g. fable) is dropped entirely — it must be
+    // an explicit per-task pick, never the implicit default for a one-click run.
+    const preferredModel = isModelExcludedFromDefault(settings.lastUsedModel)
+      ? null
+      : settings.lastUsedModel;
     const resolvedModel = await resolveDefaultModel(
       queryClient,
       apiHost,
       adapter,
       modelResolver,
-      settings.lastUsedModel,
+      preferredModel,
     );
     // The resolver returns undefined on a transient failure; fall back to the
     // persisted id so a gateway outage degrades gracefully rather than blocking.
-    const model = resolvedModel ?? settings.lastUsedModel;
+    const model = resolvedModel ?? preferredModel;
 
     if (!model) {
       toast.dismiss(toastId);

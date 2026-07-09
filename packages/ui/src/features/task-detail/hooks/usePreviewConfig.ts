@@ -10,6 +10,7 @@ import {
   type Adapter,
   GLM_MODEL_FLAG,
   getCloudUrlFromRegion,
+  isModelExcludedFromDefault,
 } from "@posthog/shared";
 import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -106,12 +107,16 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
         );
 
         // The server always returns its default model as the current value, so
-        // without this the user's last pick (e.g. fable) is lost on every
-        // refetch/remount. Restore it through applyConfigChange so the dependent
-        // effort options are recomputed for the restored model.
+        // without this the user's last pick is lost on every refetch/remount.
+        // Restore it through applyConfigChange so the dependent effort options
+        // are recomputed for the restored model. Premium models (e.g. fable)
+        // are deliberately NOT restored: picking one applies to that task only,
+        // and the next composer falls back to the server default so nobody
+        // keeps paying the premium price tier by inertia.
         const modelOpt = getOptionByCategory(initial, "model");
         if (
           lastUsedModel &&
+          !isModelExcludedFromDefault(lastUsedModel) &&
           modelOpt?.type === "select" &&
           modelOpt.currentValue !== lastUsedModel &&
           flattenConfigValues(modelOpt).includes(lastUsedModel)
