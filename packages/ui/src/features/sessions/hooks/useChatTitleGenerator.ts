@@ -18,7 +18,10 @@ import {
   sessionStoreSetters,
   useSessionStore,
 } from "@posthog/ui/features/sessions/sessionStore";
-import { titleGenerationStoreApi } from "@posthog/ui/features/sessions/titleGenerationStore";
+import {
+  type TitleGenerationEntry,
+  titleGenerationStoreApi,
+} from "@posthog/ui/features/sessions/titleGenerationStore";
 import { taskKeys } from "@posthog/ui/features/tasks/taskKeys";
 import { logger } from "@posthog/ui/shell/logger";
 import { titleAttachmentStoreApi } from "@posthog/ui/shell/titleAttachmentStore";
@@ -60,32 +63,22 @@ export function useChatTitleGenerator(task: Task): void {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    // Bookkeeping lives in a shared store rather than refs so that remounting
-    // a chat view does not re-fire generation for a conversation whose title
-    // and summary are already current, and so that simultaneously mounted
-    // views of the same task share one in-flight guard.
     const bookkeeping = titleGenerationStoreApi.get(taskId);
     if (bookkeeping.inFlight) return;
 
     const state = useSessionStore.getState();
     const taskRunId = state.taskIdIndex[taskId];
     const session = taskRunId ? state.sessions[taskRunId] : undefined;
+    const isTitleLocked = () =>
+      isAutoTitleLocked(getCachedTask(queryClient, taskId) ?? task);
 
     const { shouldGenerateFromPrompts, shouldGenerateFromTaskDescription } =
       decideTitleGeneration({
         promptCount,
-        // A newer task run can restart the event log with fewer prompts than
-        // the recorded count; clamping keeps the regeneration interval from
-        // stretching by the difference.
-        lastGeneratedAtCount: Math.min(
-          bookkeeping.lastGeneratedAtCount,
-          promptCount,
-        ),
+        lastGeneratedAtCount: bookkeeping.lastGeneratedAtCount,
         initialDescriptionHandled: bookkeeping.initialDescriptionHandled,
         task,
-        titleLocked: isAutoTitleLocked(
-          getCachedTask(queryClient, taskId) ?? task,
-        ),
+        isTitleLocked,
         hasSummary: !!session?.conversationSummary,
       });
 
@@ -124,11 +117,8 @@ export function useChatTitleGenerator(task: Task): void {
           // up and try again with the file contents.
           titleAttachmentStoreApi.clear(taskId);
           const { title, summary } = result;
-          const titleLocked = isAutoTitleLocked(
-            getCachedTask(queryClient, taskId) ?? task,
-          );
 
-          if (title && titleLocked) {
+          if (title && isTitleLocked()) {
             log.debug("Skipping auto-title, user renamed task", { taskId });
           } else if (title) {
             if (client) {
@@ -172,15 +162,14 @@ export function useChatTitleGenerator(task: Task): void {
       } catch (error) {
         log.error("Failed to update task title", { taskId, error });
       } finally {
-        titleGenerationStoreApi.update(taskId, {
-          ...(shouldGenerateFromPrompts
-            ? { lastGeneratedAtCount: promptCount }
-            : {}),
-          ...(shouldGenerateFromTaskDescription
-            ? { initialDescriptionHandled: true }
-            : {}),
-          inFlight: false,
-        });
+        const patch: Partial<TitleGenerationEntry> = { inFlight: false };
+        if (shouldGenerateFromPrompts) {
+          patch.lastGeneratedAtCount = promptCount;
+        }
+        if (shouldGenerateFromTaskDescription) {
+          patch.initialDescriptionHandled = true;
+        }
+        titleGenerationStoreApi.update(taskId, patch);
       }
     };
 

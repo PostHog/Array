@@ -174,7 +174,7 @@ describe("decideTitleGeneration", () => {
         lastGeneratedAtCount,
         initialDescriptionHandled,
         task: { title: "Custom", description: "d" },
-        titleLocked,
+        isTitleLocked: () => titleLocked,
         hasSummary,
       });
       expect(decision.shouldGenerateFromPrompts).toBe(expected);

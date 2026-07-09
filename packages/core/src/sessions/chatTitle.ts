@@ -37,9 +37,7 @@ export function decideTitleGeneration(input: {
   lastGeneratedAtCount: number;
   initialDescriptionHandled: boolean;
   task: Pick<Task, "title" | "description">;
-  /** The user renamed the task, so a generated title would be discarded. */
-  titleLocked?: boolean;
-  /** A conversation summary is already stored for the session. */
+  isTitleLocked?: () => boolean;
   hasSummary?: boolean;
 }): TitleGenerationDecision {
   const {
@@ -47,22 +45,23 @@ export function decideTitleGeneration(input: {
     lastGeneratedAtCount,
     initialDescriptionHandled,
     task,
-    titleLocked = false,
+    isTitleLocked,
     hasSummary = false,
   } = input;
 
-  // A first fire on a conversation that is already several prompts deep is a
-  // catch-up (e.g. after an app restart), not an organic trigger. When the
-  // title is locked and a summary is already stored, the generated title would
-  // be discarded and the summary merely re-derived, so skip the LLM call.
-  // Organic triggers (first prompt, or REGENERATE_INTERVAL new prompts) still
-  // run while locked: the summary must stay current.
-  const isCatchUpFire =
-    promptCount > 1 && lastGeneratedAtCount === 0 && !initialDescriptionHandled;
-  const isDeadGeneration = isCatchUpFire && titleLocked && hasSummary;
+  // A first fire on an already-long conversation whose title the user renamed
+  // and whose summary is already stored would produce nothing usable. Organic
+  // triggers (first prompt, every REGENERATE_INTERVAL prompts) still run while
+  // renamed so the summary stays current.
+  const skipStaleFire =
+    promptCount > 1 &&
+    lastGeneratedAtCount === 0 &&
+    !initialDescriptionHandled &&
+    hasSummary &&
+    (isTitleLocked?.() ?? false);
 
   const shouldGenerateFromPrompts =
-    !isDeadGeneration &&
+    !skipStaleFire &&
     ((promptCount === 1 &&
       lastGeneratedAtCount === 0 &&
       !initialDescriptionHandled) ||

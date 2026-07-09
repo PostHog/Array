@@ -99,7 +99,7 @@ vi.mock("@posthog/ui/features/sessions/sessionStore", () => {
   };
 });
 
-import { titleGenerationStoreApi } from "@posthog/ui/features/sessions/titleGenerationStore";
+import { useTitleGenerationStore } from "@posthog/ui/features/sessions/titleGenerationStore";
 import { useChatTitleGenerator } from "./useChatTitleGenerator";
 
 const TASK_ID = "task-1";
@@ -132,7 +132,7 @@ interface TitleAndSummaryResult {
 describe("useChatTitleGenerator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    titleGenerationStoreApi.reset();
+    useTitleGenerationStore.setState({ byTaskId: {} });
     mockIsAuthenticated.value = true;
     mockPrompts.value = [];
     mockSessionSummary.value = undefined;
