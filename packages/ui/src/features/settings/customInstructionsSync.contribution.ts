@@ -43,12 +43,18 @@ export class CustomInstructionsSyncContribution implements Contribution {
       useSettingsStore.getState().setSyncedCustomInstructions(null);
       return;
     }
+    // Drop any prior snapshot before the re-read resolves. Without this, a
+    // session created while sync is being re-enabled (e.g. off then back on
+    // after editing the file) would inject the stale snapshot from before the
+    // toggle flip instead of nothing.
+    useSettingsStore.getState().setSyncedCustomInstructions(null);
     try {
       const file = await this.hostClient.os.getUserAgentInstructions.query();
       useSettingsStore.getState().setSyncedCustomInstructions(file);
     } catch (err) {
-      // Keep the last snapshot rather than blanking personalization on a
-      // transient read failure.
+      // The snapshot was already cleared above, so a transient read failure
+      // here just leaves personalization empty rather than reviving stale
+      // content.
       log.warn("Failed to read user agent instructions file", err);
     }
   }
