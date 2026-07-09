@@ -55,7 +55,7 @@ export function ToolBreakdownCard({ rows }: { rows: SpendAnalysisToolRow[] }) {
       >
         {rows.slice(0, 10).map((r) => (
           <Table.Row key={r.tool ?? "(null)"}>
-            <Table.Cell>{r.tool ?? "(no tool)"}</Table.Cell>
+            <Table.Cell>{r.tool ?? "Text response"}</Table.Cell>
             <Table.Cell>{r.generation_count.toLocaleString()}</Table.Cell>
             <Table.Cell>{formatTokens(r.avg_input_tokens)}</Table.Cell>
             <Table.Cell>{formatUsd(r.cost_usd)}</Table.Cell>
