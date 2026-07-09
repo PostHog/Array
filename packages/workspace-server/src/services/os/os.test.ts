@@ -199,6 +199,21 @@ describe("OsService.getUserAgentInstructions", () => {
     });
   });
 
+  it("prefers ~/.agents/AGENTS.md over ~/.codex/AGENTS.md", async () => {
+    const { service } = createService();
+    givenFiles({
+      [agentsPath]: "agents instructions",
+      [codexPath]: "codex instructions",
+    });
+
+    expect(await service.getUserAgentInstructions()).toEqual({
+      path: agentsPath,
+      displayPath: "~/.agents/AGENTS.md",
+      content: "agents instructions",
+      truncated: false,
+    });
+  });
+
   it("falls back to the user CLAUDE.md when no AGENTS.md exists", async () => {
     const { service } = createService();
     givenFiles({ [claudePath]: "claude instructions" });
