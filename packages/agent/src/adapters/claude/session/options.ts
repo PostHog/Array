@@ -50,6 +50,13 @@ export type GatewayEnv = {
   openaiApiKey: string;
   /** Task-specific custom headers forwarded to the gateway (e.g. task_id, run_id). */
   anthropicCustomHeaders?: string;
+  /**
+   * Same task-metadata attribution headers as {@link anthropicCustomHeaders},
+   * in record form for the codex/OpenAI path (which sets provider
+   * `http_headers` rather than `ANTHROPIC_CUSTOM_HEADERS`). Includes `team_id`,
+   * which the Claude path instead appends in {@link buildEnvironment}.
+   */
+  openaiCustomHeaders?: Record<string, string>;
   /** PostHog project ID for per-team attribution headers. */
   posthogProjectId?: string;
 };

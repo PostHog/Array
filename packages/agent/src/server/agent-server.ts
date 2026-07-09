@@ -74,6 +74,7 @@ import type {
 import { resourceLink } from "../utils/acp-content";
 import { AsyncMutex } from "../utils/async-mutex";
 import {
+  buildGatewayPropertyHeaderRecord,
   buildGatewayPropertyHeaders,
   resolveGatewayProduct,
   resolveLlmGatewayUrl,
@@ -1254,6 +1255,7 @@ export class AgentServer {
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
               developerInstructions: codexInstructions,
+              httpHeaders: gatewayEnv.openaiCustomHeaders,
             }
           : undefined,
       onStructuredOutput: async (output) => {
@@ -3060,12 +3062,11 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       ? gatewayUrl
       : `${gatewayUrl}/v1`;
     // Forward task metadata as `x-posthog-property-*` headers so the gateway
-    // lifts them onto the $ai_generation event. Routes through the Anthropic
-    // SDK's ANTHROPIC_CUSTOM_HEADERS env var; the OpenAI/codex path has no
-    // equivalent today. (The `team_id` attribution header is added downstream
-    // in the Claude session builder from POSTHOG_PROJECT_ID — see
-    // adapters/claude/session/options.ts.)
-    const customHeaders = buildGatewayPropertyHeaders({
+    // lifts them onto the $ai_generation event. The Claude path routes these
+    // through the Anthropic SDK's ANTHROPIC_CUSTOM_HEADERS env var; the codex
+    // path sets them as `model_providers.posthog.http_headers` instead, so we
+    // also expose the record form below.
+    const gatewayProperties = {
       task_origin_product: originProduct,
       task_internal: isInternal,
       signal_report_id: signalReportId,
@@ -3074,6 +3075,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       task_run_id: taskRunId,
       task_user_id: taskUserId,
       task_title: taskTitle,
+    };
+    const customHeaders = buildGatewayPropertyHeaders(gatewayProperties);
+    // The Claude path appends `team_id` in buildEnvironment from
+    // POSTHOG_PROJECT_ID; the codex path has no such hook, so fold it into the
+    // record here to keep team attribution working for both adapters.
+    const openaiCustomHeaders = buildGatewayPropertyHeaderRecord({
+      ...gatewayProperties,
+      team_id: projectId,
     });
 
     // Server-level constants that don't vary per task — safe to keep in
@@ -3096,6 +3105,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       openaiBaseUrl,
       openaiApiKey: apiKey,
       anthropicCustomHeaders: customHeaders,
+      openaiCustomHeaders,
       posthogProjectId: String(projectId),
     };
   }
