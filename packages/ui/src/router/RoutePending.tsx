@@ -1,5 +1,4 @@
-import { AnimatedLogo } from "@posthog/ui/primitives/AnimatedLogo";
-import { Flex } from "@radix-ui/themes";
+import { LoadingScreen } from "@posthog/ui/primitives/LoadingScreen";
 
 // Default per-route pending UI. TanStack Router renders a route's
 // `pendingComponent` (falling back to this) the moment its loader is pending,
@@ -11,9 +10,5 @@ import { Flex } from "@radix-ui/themes";
 // inset-0`: the Outlet's container isn't positioned, so an absolute overlay
 // would escape to the viewport and flash over the sidebar/header.
 export function RoutePending() {
-  return (
-    <Flex align="center" justify="center" height="100%" width="100%">
-      <AnimatedLogo size={64} />
-    </Flex>
-  );
+  return <LoadingScreen logoSize={64} />;
 }

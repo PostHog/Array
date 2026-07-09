@@ -1,6 +1,6 @@
 import { EXTERNAL_LINKS } from "@posthog/shared";
-import { AnimatedLogo } from "@posthog/ui/primitives/AnimatedLogo";
 import { Button } from "@posthog/ui/primitives/Button";
+import { LoadingScreen } from "@posthog/ui/primitives/LoadingScreen";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { Flex, Text } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
@@ -19,11 +19,7 @@ export function AppLoadingScreen(): React.ReactNode {
   }, []);
 
   if (!stalled) {
-    return (
-      <Flex align="center" justify="center" minHeight="100vh">
-        <AnimatedLogo />
-      </Flex>
-    );
+    return <LoadingScreen className="min-h-screen" />;
   }
 
   return (

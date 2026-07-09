@@ -1,5 +1,5 @@
 import type { Task } from "@posthog/shared/domain-types";
-import { AnimatedLogo } from "@posthog/ui/primitives/AnimatedLogo";
+import { LoadingScreen } from "@posthog/ui/primitives/LoadingScreen";
 import { lazy, type ReactNode, Suspense } from "react";
 
 // The code-review surface (ReviewShell, diff rows, comment UI, review hooks) is
@@ -13,11 +13,7 @@ const CloudReviewPageLazy = lazy(() =>
 );
 
 function ReviewFallback(): ReactNode {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <AnimatedLogo size={64} />
-    </div>
-  );
+  return <LoadingScreen logoSize={64} />;
 }
 
 export function LazyReviewPage({ task }: { task: Task }): ReactNode {
