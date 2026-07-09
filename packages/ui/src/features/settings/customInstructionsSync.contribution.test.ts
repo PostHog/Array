@@ -92,6 +92,19 @@ describe("CustomInstructionsSyncContribution", () => {
     expect(useSettingsStore.getState().syncedCustomInstructions).toBeNull();
   });
 
+  it("leaves personalization empty when the read fails, never a stale snapshot", async () => {
+    // Seed a leftover snapshot directly: the failed-read semantics are
+    // "clear first, so a rejected read leaves empty", and only a pre-seeded
+    // snapshot can catch a refactor reverting that to keep-last-snapshot.
+    useSettingsStore.setState({ syncedCustomInstructions: staleFile });
+    query.mockRejectedValueOnce(new Error("read failed"));
+
+    setSyncEnabled(true);
+    await flush();
+
+    expect(useSettingsStore.getState().syncedCustomInstructions).toBeNull();
+  });
+
   it("keeps the newest read when re-enable reads resolve out of order", async () => {
     const firstRead = deferred<typeof staleFile>();
     const secondRead = deferred<typeof freshFile>();
