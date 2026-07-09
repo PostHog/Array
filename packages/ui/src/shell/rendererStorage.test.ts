@@ -1,15 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-
-// Debounce constants mirrored from rendererStorage.ts.
-const WRITE_DEBOUNCE_MS = 1_000;
+import { WRITE_DEBOUNCE_MS } from "./rendererStorage";
 
 type RendererStorageModule = typeof import("./rendererStorage");
 
 async function importFreshRendererStorage(): Promise<RendererStorageModule> {
   vi.resetModules();
   return await import("./rendererStorage");
+}
+
+/** Fresh module with fake timers and a backend already registered. */
+async function setupRegisteredBackend(data: Record<string, string> = {}) {
+  vi.useFakeTimers();
+  const module = await importFreshRendererStorage();
+  const backend = fakeBackend(data);
+  module.registerRendererStateStorage(backend);
+  return { module, storage: jsonStorageOf(module), backend };
 }
 
 function fakeBackend(data: Record<string, string>) {
@@ -211,8 +218,8 @@ describe("rendererStorage", () => {
     });
 
     useStore.setState({ defaultInitialTaskMode: "plan" });
-    await vi.waitFor(() => {
-      module.flushRendererStateWrites();
+    await vi.waitFor(async () => {
+      await module.flushRendererStateWrites();
       expect(backend.setItem).toHaveBeenCalled();
     });
     const persisted = JSON.parse(
@@ -222,11 +229,7 @@ describe("rendererStorage", () => {
   });
 
   it("coalesces a burst of writes into one backend write with the latest value", async () => {
-    vi.useFakeTimers();
-    const module = await importFreshRendererStorage();
-    const storage = jsonStorageOf(module);
-    const backend = fakeBackend({});
-    module.registerRendererStateStorage(backend);
+    const { storage, backend } = await setupRegisteredBackend();
 
     await storage.setItem("drafts", { state: { value: 1 }, version: 0 });
     await storage.setItem("drafts", { state: { value: 2 }, version: 0 });
@@ -240,11 +243,7 @@ describe("rendererStorage", () => {
   });
 
   it("flushes at the max-wait bound during sustained writes", async () => {
-    vi.useFakeTimers();
-    const module = await importFreshRendererStorage();
-    const storage = jsonStorageOf(module);
-    const backend = fakeBackend({});
-    module.registerRendererStateStorage(backend);
+    const { storage, backend } = await setupRegisteredBackend();
 
     // Write every 500ms for 6s: a plain trailing debounce would never fire,
     // the max-wait bound forces a flush mid-burst.
@@ -260,13 +259,9 @@ describe("rendererStorage", () => {
   });
 
   it("lands the pending coalesced write before serving a read", async () => {
-    vi.useFakeTimers();
-    const module = await importFreshRendererStorage();
-    const storage = jsonStorageOf(module);
-    const backend = fakeBackend({
+    const { storage, backend } = await setupRegisteredBackend({
       drafts: JSON.stringify({ state: { value: "stale" }, version: 0 }),
     });
-    module.registerRendererStateStorage(backend);
 
     await storage.setItem("drafts", { state: { value: "fresh" }, version: 0 });
 
@@ -282,11 +277,7 @@ describe("rendererStorage", () => {
   });
 
   it("cancels a pending write when the key is removed", async () => {
-    vi.useFakeTimers();
-    const module = await importFreshRendererStorage();
-    const storage = jsonStorageOf(module);
-    const backend = fakeBackend({});
-    module.registerRendererStateStorage(backend);
+    const { storage, backend } = await setupRegisteredBackend();
 
     await storage.setItem("drafts", { state: { value: 1 }, version: 0 });
     await storage.removeItem("drafts");
@@ -297,15 +288,10 @@ describe("rendererStorage", () => {
   });
 
   it("flushRendererStateWrites persists pending state immediately", async () => {
-    vi.useFakeTimers();
-    const module = await importFreshRendererStorage();
-    const storage = jsonStorageOf(module);
-    const backend = fakeBackend({});
-    module.registerRendererStateStorage(backend);
+    const { module, storage, backend } = await setupRegisteredBackend();
 
     await storage.setItem("drafts", { state: { value: 1 }, version: 0 });
-    module.flushRendererStateWrites();
-    await vi.advanceTimersByTimeAsync(0);
+    await module.flushRendererStateWrites();
     expect(backend.setItem).toHaveBeenCalledTimes(1);
 
     // The debounce timer was cancelled by the flush; no duplicate write.

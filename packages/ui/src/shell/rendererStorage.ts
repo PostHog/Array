@@ -16,6 +16,10 @@ function deferred<T>() {
 let hostStorage: RendererStateStorage | null = null;
 const hostStorageReady = deferred<RendererStateStorage>();
 
+// Re-registration replaces `hostStorage` for new calls, while the promise
+// keeps settling waiters against the first registration.
+const resolveHostStorage = () => hostStorage ?? hostStorageReady.promise;
+
 const pendingFirstReads = new Set<string>();
 const settledFirstReads = new Set<string>();
 
@@ -25,8 +29,8 @@ const settledFirstReads = new Set<string>();
 // the main process. Only the latest value per key matters, so bursts fold
 // into one write after WRITE_DEBOUNCE_MS of quiet, with WRITE_MAX_WAIT_MS
 // bounding how stale the persisted copy can get during sustained typing.
-const WRITE_DEBOUNCE_MS = 1_000;
-const WRITE_MAX_WAIT_MS = 5_000;
+export const WRITE_DEBOUNCE_MS = 1_000;
+export const WRITE_MAX_WAIT_MS = 5_000;
 
 interface PendingWrite {
   value: string;
@@ -36,17 +40,25 @@ interface PendingWrite {
 
 const pendingWrites = new Map<string, PendingWrite>();
 
-async function flushPendingWrite(key: string): Promise<void> {
+/** Detach and return the pending write for a key, cancelling its timer. */
+function takePendingWrite(key: string): PendingWrite | undefined {
   const pending = pendingWrites.get(key);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingWrites.delete(key);
+  }
+  return pending;
+}
+
+async function flushPendingWrite(key: string): Promise<void> {
+  // Detach before awaiting so a write landing mid-flush queues a fresh entry
+  // instead of mutating one that is already on its way out.
+  const pending = takePendingWrite(key);
   if (!pending) {
     return;
   }
-  clearTimeout(pending.timer);
-  // Delete before awaiting so a write landing mid-flush queues a fresh entry
-  // instead of mutating one that is already on its way out.
-  pendingWrites.delete(key);
   try {
-    const storage = hostStorage ?? (await hostStorageReady.promise);
+    const storage = await resolveHostStorage();
     await storage.setItem(key, pending.value);
   } catch (error) {
     // zustand persist fires writes without awaiting them; a rejection here
@@ -57,37 +69,35 @@ async function flushPendingWrite(key: string): Promise<void> {
 
 function queuePendingWrite(key: string, value: string): void {
   const existing = pendingWrites.get(key);
-  if (!existing) {
-    pendingWrites.set(key, {
-      value,
-      firstQueuedAt: Date.now(),
-      timer: setTimeout(() => void flushPendingWrite(key), WRITE_DEBOUNCE_MS),
-    });
-    return;
+  if (existing) {
+    clearTimeout(existing.timer);
   }
-  existing.value = value;
-  clearTimeout(existing.timer);
-  const elapsed = Date.now() - existing.firstQueuedAt;
+  const firstQueuedAt = existing?.firstQueuedAt ?? Date.now();
   const delay = Math.max(
     0,
-    Math.min(WRITE_DEBOUNCE_MS, WRITE_MAX_WAIT_MS - elapsed),
+    Math.min(WRITE_DEBOUNCE_MS, firstQueuedAt + WRITE_MAX_WAIT_MS - Date.now()),
   );
-  existing.timer = setTimeout(() => void flushPendingWrite(key), delay);
+  pendingWrites.set(key, {
+    value,
+    firstQueuedAt,
+    timer: setTimeout(() => void flushPendingWrite(key), delay),
+  });
 }
 
 /**
- * Push every coalesced write to the host immediately. Wired to `pagehide` so
- * pending state (e.g. a draft mid-keystroke) lands before the window goes
- * away; hosts with an explicit shutdown seam can call it too.
+ * Push every coalesced write to the host immediately. Wired to `pagehide` as
+ * a best-effort flush so pending state (e.g. a draft mid-keystroke) lands
+ * before the window goes away; hosts with an explicit shutdown seam can
+ * await it for a guaranteed flush.
  */
-export function flushRendererStateWrites(): void {
-  for (const key of [...pendingWrites.keys()]) {
-    void flushPendingWrite(key);
-  }
+export async function flushRendererStateWrites(): Promise<void> {
+  await Promise.all(
+    Array.from(pendingWrites.keys(), (key) => flushPendingWrite(key)),
+  );
 }
 
 if (typeof window !== "undefined") {
-  window.addEventListener("pagehide", flushRendererStateWrites);
+  window.addEventListener("pagehide", () => void flushRendererStateWrites());
 }
 
 /**
@@ -115,18 +125,19 @@ const deferredHostStorage: StateStorage = {
     // write also means the key is past hydration, so the first-read
     // bookkeeping below (which must run synchronously to catch racing
     // writes) does not apply.
-    if (pendingWrites.has(key)) {
+    const hadPendingWrite = pendingWrites.has(key);
+    if (hadPendingWrite) {
       await flushPendingWrite(key);
-      const storage = hostStorage ?? (await hostStorageReady.promise);
-      return await storage.getItem(key);
     }
     const isFirstRead =
-      !settledFirstReads.has(key) && !pendingFirstReads.has(key);
+      !hadPendingWrite &&
+      !settledFirstReads.has(key) &&
+      !pendingFirstReads.has(key);
     if (isFirstRead) {
       pendingFirstReads.add(key);
     }
     try {
-      const storage = hostStorage ?? (await hostStorageReady.promise);
+      const storage = await resolveHostStorage();
       return await storage.getItem(key);
     } finally {
       if (isFirstRead) {
@@ -149,13 +160,9 @@ const deferredHostStorage: StateStorage = {
     // Removal is explicit intent rather than a stale state snapshot, so it is
     // not dropped while the initial read is in flight. A coalesced write for
     // the key is cancelled so it cannot resurrect the state afterwards.
-    const pending = pendingWrites.get(key);
-    if (pending) {
-      clearTimeout(pending.timer);
-      pendingWrites.delete(key);
-    }
+    takePendingWrite(key);
     try {
-      const storage = hostStorage ?? (await hostStorageReady.promise);
+      const storage = await resolveHostStorage();
       await storage.removeItem(key);
     } catch (error) {
       log.error("Failed to remove persisted state", { key, error });
