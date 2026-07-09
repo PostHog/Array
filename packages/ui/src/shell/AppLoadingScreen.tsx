@@ -1,13 +1,16 @@
 import { EXTERNAL_LINKS } from "@posthog/shared";
+import { AnimatedLogo } from "@posthog/ui/primitives/AnimatedLogo";
 import { Button } from "@posthog/ui/primitives/Button";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
-import { Flex, Spinner, Text } from "@radix-ui/themes";
+import { Flex, Text } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
 
 // Sits above the core bootstrap deadline so this only shows once boot has truly given up.
 const STALL_TIMEOUT_MS = 25_000;
 
-export function BootstrapFallback(): React.ReactNode {
+// The single full-app loading screen, gated in one place (App.tsx) for every
+// state where the whole app is still loading.
+export function AppLoadingScreen(): React.ReactNode {
   const [stalled, setStalled] = useState(false);
 
   useEffect(() => {
@@ -18,10 +21,7 @@ export function BootstrapFallback(): React.ReactNode {
   if (!stalled) {
     return (
       <Flex align="center" justify="center" minHeight="100vh">
-        <Flex align="center" gap="3">
-          <Spinner size="3" />
-          <Text color="gray">Loading...</Text>
-        </Flex>
+        <AnimatedLogo />
       </Flex>
     );
   }

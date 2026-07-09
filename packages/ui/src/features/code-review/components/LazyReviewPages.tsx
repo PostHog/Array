@@ -1,5 +1,5 @@
 import type { Task } from "@posthog/shared/domain-types";
-import { DotsCircleSpinner } from "@posthog/ui/primitives/DotsCircleSpinner";
+import { AnimatedLogo } from "@posthog/ui/primitives/AnimatedLogo";
 import { lazy, type ReactNode, Suspense } from "react";
 
 // The code-review surface (ReviewShell, diff rows, comment UI, review hooks) is
@@ -15,7 +15,7 @@ const CloudReviewPageLazy = lazy(() =>
 function ReviewFallback(): ReactNode {
   return (
     <div className="flex h-full items-center justify-center">
-      <DotsCircleSpinner />
+      <AnimatedLogo size={64} />
     </div>
   );
 }

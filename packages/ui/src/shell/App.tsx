@@ -22,13 +22,12 @@ import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBann
 import { PendingPromptRecovery } from "@posthog/ui/features/task-detail/components/PendingPromptRecovery";
 import { LoginTransition } from "@posthog/ui/primitives/LoginTransition";
 import { router } from "@posthog/ui/router/router";
+import { AppLoadingScreen } from "@posthog/ui/shell/AppLoadingScreen";
 import { track } from "@posthog/ui/shell/analytics";
-import { BootstrapFallback } from "@posthog/ui/shell/BootstrapFallback";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import { useAppVisibilityWatchdog } from "@posthog/ui/shell/useAppVisibilityWatchdog";
-import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { RouterProvider } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -115,8 +114,9 @@ function App({ devToolbar }: AppProps) {
     !needsAiApproval;
   useAppVisibilityWatchdog(mainRef, showingMainApp);
 
-  if (!isBootstrapped) {
-    return <BootstrapFallback />;
+  // Single gate for every state where the whole app is still loading.
+  if (!isBootstrapped || isCheckingAccess) {
+    return <AppLoadingScreen />;
   }
 
   // Rendering: onboarding (includes auth + invite code gate) → main app
@@ -137,23 +137,6 @@ function App({ devToolbar }: AppProps) {
       return (
         <motion.div key="auth" initial={{ opacity: 1 }} className="h-full">
           <AuthScreen />
-        </motion.div>
-      );
-    }
-
-    if (isCheckingAccess) {
-      return (
-        <motion.div
-          key="access-check"
-          initial={{ opacity: 1 }}
-          className="h-full"
-        >
-          <Flex align="center" justify="center" height="100%">
-            <Flex align="center" gap="3">
-              <Spinner size="3" />
-              <Text color="gray">Checking access...</Text>
-            </Flex>
-          </Flex>
         </motion.div>
       );
     }
