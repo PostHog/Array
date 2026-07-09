@@ -23,8 +23,20 @@ const staleFile = {
 };
 const freshFile = { ...staleFile, content: "fresh" };
 
-/** Runs queued microtasks so a resolved read's continuation lands. */
+/**
+ * Waits one macrotask turn so a resolved read's await continuation (and any
+ * chained microtasks) lands before asserting.
+ */
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/** A promise plus its resolve handle, for settling a mocked read on cue. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
 const setSyncEnabled = (enabled: boolean) =>
   useSettingsStore.getState().setSyncCustomInstructionsFromFile(enabled);
@@ -69,42 +81,30 @@ describe("CustomInstructionsSyncContribution", () => {
   });
 
   it("discards a read that resolves after sync was toggled off", async () => {
-    let resolveRead: (file: typeof staleFile) => void = () => {};
-    query.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveRead = resolve;
-      }),
-    );
+    const read = deferred<typeof staleFile>();
+    query.mockReturnValueOnce(read.promise);
 
     setSyncEnabled(true);
     setSyncEnabled(false);
-    resolveRead(staleFile);
+    read.resolve(staleFile);
     await flush();
 
     expect(useSettingsStore.getState().syncedCustomInstructions).toBeNull();
   });
 
   it("keeps the newest read when re-enable reads resolve out of order", async () => {
-    let resolveFirst: (file: typeof staleFile) => void = () => {};
-    let resolveSecond: (file: typeof freshFile) => void = () => {};
+    const firstRead = deferred<typeof staleFile>();
+    const secondRead = deferred<typeof freshFile>();
     query
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          resolveFirst = resolve;
-        }),
-      )
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          resolveSecond = resolve;
-        }),
-      );
+      .mockReturnValueOnce(firstRead.promise)
+      .mockReturnValueOnce(secondRead.promise);
 
     setSyncEnabled(true);
     setSyncEnabled(false);
     setSyncEnabled(true);
-    resolveSecond(freshFile);
+    secondRead.resolve(freshFile);
     await flush();
-    resolveFirst(staleFile);
+    firstRead.resolve(staleFile);
     await flush();
 
     expect(useSettingsStore.getState().syncedCustomInstructions).toEqual(
