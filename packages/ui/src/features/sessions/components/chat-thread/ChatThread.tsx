@@ -563,23 +563,21 @@ const AgentProse = memo(function AgentProse({
             )}
           </ChatBubbleContent>
         </ChatBubble>
-        {isStreaming ? null : (
-          <ChatMessageFooter className="opacity-0 transition-opacity group-hover/msg:opacity-100">
-            <Tooltip content={copied ? "Copied!" : "Copy message"}>
-              <IconButton
-                size="1"
-                variant="ghost"
-                color={copied ? "green" : "gray"}
-                onClick={() => copy(text)}
-                className="cursor-pointer"
-                aria-label="Copy message"
-              >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-              </IconButton>
-            </Tooltip>
-          </ChatMessageFooter>
-        )}
       </ChatMessageContent>
+      {isStreaming ? null : (
+        <Tooltip content={copied ? "Copied!" : "Copy message"}>
+          <IconButton
+            size="1"
+            variant="ghost"
+            color={copied ? "green" : "gray"}
+            onClick={() => copy(text)}
+            className="absolute top-0 right-0 cursor-pointer opacity-0 transition-opacity group-hover/msg:opacity-100"
+            aria-label="Copy message"
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+          </IconButton>
+        </Tooltip>
+      )}
     </ChatMessage>
   );
 });
