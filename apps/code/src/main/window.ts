@@ -76,17 +76,25 @@ function getSavedWindowState(): WindowStateSchema {
 }
 
 export function saveWindowState(window: BrowserWindow): void {
-  const isMaximized = window.isMaximized();
-  windowStateStore.set("isMaximized", isMaximized);
+  // electron-store writes synchronously and throws on failure (e.g. ENOSPC on a
+  // full disk). This runs inside window-event and setTimeout callbacks, where an
+  // uncaught throw would crash the main process. Window-state persistence is
+  // non-critical, so swallow and log the error instead.
+  try {
+    const isMaximized = window.isMaximized();
+    windowStateStore.set("isMaximized", isMaximized);
 
-  // Only save bounds when not maximized, so restoring from maximized
-  // gives the user their previous windowed size/position
-  if (!isMaximized && !window.isFullScreen()) {
-    const bounds = window.getBounds();
-    windowStateStore.set("x", bounds.x);
-    windowStateStore.set("y", bounds.y);
-    windowStateStore.set("width", bounds.width);
-    windowStateStore.set("height", bounds.height);
+    // Only save bounds when not maximized, so restoring from maximized
+    // gives the user their previous windowed size/position
+    if (!isMaximized && !window.isFullScreen()) {
+      const bounds = window.getBounds();
+      windowStateStore.set("x", bounds.x);
+      windowStateStore.set("y", bounds.y);
+      windowStateStore.set("width", bounds.width);
+      windowStateStore.set("height", bounds.height);
+    }
+  } catch (error) {
+    log.warn("Failed to persist window state", { error });
   }
 }
 

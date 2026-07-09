@@ -685,6 +685,139 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
 
+    function createUsageTestServer() {
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: { payload: JwtPayload } | null;
+        posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+        recordTurnUsage(usage: unknown): void;
+      };
+      testServer.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      testServer.session = {
+        payload: {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+      };
+      return testServer;
+    }
+
+    it("reports cumulative run token usage into TaskRun.state after each settled turn", () => {
+      const testServer = createUsageTestServer();
+      const turnUsage = {
+        inputTokens: 100,
+        outputTokens: 50,
+        cachedReadTokens: 10,
+        cachedWriteTokens: 5,
+        totalTokens: 165,
+      };
+
+      testServer.recordTurnUsage(turnUsage);
+      testServer.recordTurnUsage(turnUsage);
+
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenNthCalledWith(
+        1,
+        "task-1",
+        "run-1",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_read_tokens: 10,
+              cache_write_tokens: 5,
+              thought_tokens: 0,
+              total_tokens: 165,
+              turns: 1,
+            },
+          },
+        },
+      );
+      // The second report carries run-cumulative totals, not per-turn figures.
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith(
+        "task-1",
+        "run-1",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 200,
+              output_tokens: 100,
+              cache_read_tokens: 20,
+              cache_write_tokens: 10,
+              thought_tokens: 0,
+              total_tokens: 330,
+              turns: 2,
+            },
+          },
+        },
+      );
+    });
+
+    it("does not report anything when a turn settles without usage", () => {
+      const testServer = createUsageTestServer();
+
+      testServer.recordTurnUsage(undefined);
+
+      expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+    });
+
+    it("resets run usage on session cleanup so a later run starts from zero", async () => {
+      const testServer = createUsageTestServer();
+      const turnUsage = {
+        inputTokens: 100,
+        outputTokens: 50,
+        totalTokens: 150,
+      };
+      testServer.recordTurnUsage(turnUsage);
+
+      const cleanupServer = stubSessionCleanup(testServer);
+      await cleanupServer.cleanupSession();
+
+      testServer.session = {
+        payload: {
+          run_id: "run-2",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+      };
+      testServer.recordTurnUsage(turnUsage);
+
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith(
+        "task-1",
+        "run-2",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_read_tokens: 0,
+              cache_write_tokens: 0,
+              thought_tokens: 0,
+              total_tokens: 150,
+              turns: 1,
+            },
+          },
+        },
+      );
+    });
+
     function createFailureTestServer() {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({
@@ -1980,8 +2113,22 @@ describe("AgentServer HTTP Mode", () => {
       expect(s.detectedPrUrl).toBeNull();
     });
 
-    it("fails closed when the run's GitHub identity cannot be resolved", async () => {
-      const s = setup(justNow());
+    it("attributes a recent PR when the identity is a GitHub App installation (gh api user unavailable)", async () => {
+      // Cloud runs authenticate with a GitHub App installation token, for which
+      // `gh api user` returns 403 → ghLogin is null. The PR is authored by the
+      // app bot (e.g. "app/posthog"); recency alone must carry attribution.
+      const s = setup(justNow(), "app/posthog");
+      s.fetchGhLogin = vi.fn(async () => null);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
+        output: { pr_url: PR_URL, pr_urls: [PR_URL] },
+      });
+      expect(s.detectedPrUrl).toBe(PR_URL);
+    });
+
+    it("still rejects an old PR when the identity cannot be resolved (recency guards)", async () => {
+      const s = setup(longAgo, "app/posthog");
       s.fetchGhLogin = vi.fn(async () => null);
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
