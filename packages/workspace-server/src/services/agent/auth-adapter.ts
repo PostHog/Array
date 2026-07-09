@@ -1,4 +1,3 @@
-import { delimiter } from "node:path";
 import {
   type McpToolApprovalState,
   type McpToolApprovals,
@@ -48,7 +47,6 @@ export type McpToolInstallations = Record<string, McpToolInstallationRef>;
 
 interface ConfigureProcessEnvInput {
   credentials: Credentials;
-  mockNodeDir: string;
   proxyUrl: string;
   claudeCliPath: string;
 }
@@ -140,16 +138,10 @@ export class AgentAuthAdapter {
 
   async configureProcessEnv({
     credentials,
-    mockNodeDir,
     proxyUrl,
     claudeCliPath,
   }: ConfigureProcessEnvInput): Promise<void> {
     await this.getValidToken();
-
-    const currentPath = process.env.PATH || "";
-    if (!currentPath.split(delimiter).includes(mockNodeDir)) {
-      process.env.PATH = `${mockNodeDir}${delimiter}${currentPath}`;
-    }
 
     process.env.LLM_GATEWAY_URL = proxyUrl;
     process.env.CLAUDE_CODE_EXECUTABLE = claudeCliPath;

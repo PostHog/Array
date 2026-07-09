@@ -1,9 +1,9 @@
 import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
-import type { PermissionMode } from "@posthog/agent/execution-mode";
 import type {
   Adapter,
   CloudRunSource,
+  ExecutionMode,
   PrAuthorshipMode,
   SeatData,
   StoredLogEntry,
@@ -12,6 +12,7 @@ import type {
 import {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
+  resolveCloudInitialPermissionMode,
   SEAT_PRODUCT_KEY,
 } from "@posthog/shared";
 import type {
@@ -61,6 +62,7 @@ import type {
   PriorityJudgmentArtefact,
   RepoSelectionArtefact,
   SafetyJudgmentArtefact,
+  SandboxCustomImage,
   SandboxEnvironment,
   SandboxEnvironmentInput,
   Signal,
@@ -126,6 +128,13 @@ export class SeatPaymentFailedError extends Error {
   constructor(message?: string) {
     super(message ?? "Payment failed");
     this.name = "SeatPaymentFailedError";
+  }
+}
+
+export class SandboxCustomImagesDisabledError extends Error {
+  constructor(message?: string) {
+    super(message ?? "Custom sandbox images are not enabled");
+    this.name = "SandboxCustomImagesDisabledError";
   }
 }
 
@@ -485,10 +494,12 @@ interface CloudRunOptions {
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
+  autoPublish?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
-  initialPermissionMode?: PermissionMode;
+  initialPermissionMode?: ExecutionMode;
   homeQuickAction?: string;
 }
 
@@ -543,6 +554,13 @@ function buildCloudRunRequestBody(
       }
       body.reasoning_effort = options.reasoningLevel;
     }
+    // The API rejects initial_permission_mode without runtime_adapter and validates it per adapter.
+    if (options.initialPermissionMode) {
+      body.initial_permission_mode = resolveCloudInitialPermissionMode(
+        options.adapter,
+        options.initialPermissionMode,
+      );
+    }
   }
   if (options?.resumeFromRunId) {
     body.resume_from_run_id = options.resumeFromRunId;
@@ -556,17 +574,20 @@ function buildCloudRunRequestBody(
   if (options?.sandboxEnvironmentId) {
     body.sandbox_environment_id = options.sandboxEnvironmentId;
   }
+  if (options?.customImageId) {
+    body.custom_image_id = options.customImageId;
+  }
   if (options?.prAuthorshipMode) {
     body.pr_authorship_mode = options.prAuthorshipMode;
+  }
+  if (options?.autoPublish) {
+    body.auto_publish = options.autoPublish;
   }
   if (options?.runSource) {
     body.run_source = options.runSource;
   }
   if (options?.signalReportId) {
     body.signal_report_id = options.signalReportId;
-  }
-  if (options?.initialPermissionMode) {
-    body.initial_permission_mode = options.initialPermissionMode;
   }
   if (options?.homeQuickAction) {
     body.home_quick_action = options.homeQuickAction;
@@ -2251,6 +2272,7 @@ export class PostHogAPIClient {
         channel?: string | null;
         pending_user_message?: string;
         pending_user_artifact_ids?: string[];
+        auto_publish?: boolean;
       },
   ) {
     const teamId = await this.getTeamId();
@@ -4488,6 +4510,155 @@ export class PostHogAPIClient {
     }
   }
 
+  async listSandboxCustomImages(): Promise<SandboxCustomImage[]> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/`,
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        const errorData = (await response.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        throw new SandboxCustomImagesDisabledError(errorData.detail);
+      }
+      throw new Error(
+        `Failed to fetch sandbox custom images: ${response.statusText}`,
+      );
+    }
+    const data = (await response.json()) as {
+      results?: SandboxCustomImage[];
+    };
+    return data.results ?? [];
+  }
+
+  async createSandboxCustomImage(input: {
+    name: string;
+    description?: string;
+    repository?: string | null;
+    private?: boolean;
+  }): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/`,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to create sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async getSandboxCustomImage(id: string): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async ensureSandboxCustomImageBuilderTask(
+    id: string,
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/builder_task/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/builder_task/`,
+      overrides: {
+        body: JSON.stringify({}),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to open image builder session: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async buildSandboxCustomImage(
+    id: string,
+    specYaml?: string | null,
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/build/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/build/`,
+      overrides: {
+        body: JSON.stringify(
+          specYaml === undefined ? {} : { spec_yaml: specYaml },
+        ),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to build sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async deleteSandboxCustomImage(id: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to delete sandbox custom image: ${response.statusText}`,
+      );
+    }
+  }
+
   /** Find an exported asset by session recording ID. */
   async findExportBySessionRecordingId(
     projectId: number,
@@ -4562,11 +4733,18 @@ export class PostHogAPIClient {
    * Lists the team's LLM skills (latest versions, no bodies).
    * Returns null when the feature is unavailable for this org (the
    * llm-analytics-skills flag gates the endpoint server-side with a 403).
+   * `category` narrows to one exact server-owned category (e.g. "scout"
+   * for Signals scouts); omit it to list every category.
    */
-  async listLlmSkills(): Promise<LlmSkillListItem[] | null> {
+  async listLlmSkills(
+    options: { category?: string } = {},
+  ): Promise<LlmSkillListItem[] | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/environments/${teamId}/llm_skills/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options.category !== undefined) {
+      url.searchParams.set("category", options.category);
+    }
     const response = await this.api.fetcher.fetch({
       method: "get",
       url,
@@ -5014,6 +5192,60 @@ export class PostHogAPIClient {
       method: "post",
       url,
       path,
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
+  /**
+   * Write a single bundle file on a draft revision. The server accepts
+   * `agent.md` and `skills/<id>/SKILL.md` paths only — tool source / schema
+   * stay read-only this round. Ready / live / archived revisions return 409.
+   */
+  async updateAgentDraftBundleFile(
+    idOrSlug: string,
+    revisionId: string,
+    filePath: string,
+    content: string,
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/bundle/file/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "put",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({ path: filePath, content }),
+      },
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
+  /**
+   * Bulk-import a set of `.md` files into a draft revision's bundle — the
+   * migration hatch for porting an existing multi-file agent in one paste.
+   * Sets `agent_md` if present and merges `skills[]` by id (adds new ids,
+   * overwrites bodies for existing ids; skills not mentioned are left alone).
+   * Draft-only; ready / live / archived return 409.
+   */
+  async importAgentDraftBundle(
+    idOrSlug: string,
+    revisionId: string,
+    body: {
+      agent_md?: string;
+      skills?: { id: string; description?: string; body: string }[];
+    },
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/bundle/import/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify(body),
+      },
     });
     return (await response.json()) as AgentRevision;
   }

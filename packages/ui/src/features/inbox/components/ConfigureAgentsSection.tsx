@@ -11,7 +11,11 @@ import {
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
 import { Button } from "@posthog/quill";
-import { ANALYTICS_EVENTS, getCloudUrlFromRegion } from "@posthog/shared";
+import {
+  ANALYTICS_EVENTS,
+  defaultEligibleModel,
+  getCloudUrlFromRegion,
+} from "@posthog/shared";
 import { SELF_DRIVING_SETUP_TASK_FLAG } from "@posthog/shared/constants";
 import { useTrackAgentsViewed } from "@posthog/ui/features/agents/hooks/useTrackAgentsViewed";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -32,6 +36,7 @@ import {
   useRepositoryIntegration,
   useUserRepositoryIntegration,
 } from "@posthog/ui/features/integrations/useIntegrations";
+import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { ScoutsFleetSection } from "@posthog/ui/features/scouts/components/ScoutsFleetSection";
 import { GitHubIntegrationSection } from "@posthog/ui/features/settings/sections/GitHubIntegrationSection";
 import { SlackInboxNotificationsSettings } from "@posthog/ui/features/settings/sections/SlackInboxNotificationsSettings";
@@ -301,17 +306,18 @@ function SetupTaskSection() {
       const settings = useSettingsStore.getState();
       const adapter = settings.lastUsedAdapter ?? "claude";
       const apiHost = getCloudUrlFromRegion(cloudRegion);
+      const preferredModel = defaultEligibleModel(settings.lastUsedModel);
       const resolvedModel = await resolveDefaultModel(
         queryClient,
         apiHost,
         adapter,
         modelResolver,
-        settings.lastUsedModel,
+        preferredModel,
       );
       // The resolver returns undefined on a transient failure; fall back to the
       // persisted id so a gateway outage degrades gracefully rather than blocking
       // setup for a user whose persisted model was valid.
-      const model = resolvedModel ?? settings.lastUsedModel;
+      const model = resolvedModel ?? preferredModel;
 
       if (!model) {
         toast.dismiss(toastId);
@@ -365,9 +371,7 @@ function SetupTaskSection() {
           adapter,
         });
       } else {
-        toast.error("Failed to start Self-driving setup", {
-          description: result.error,
-        });
+        toastError("Failed to start Self-driving setup", result.error);
         log.error("Self-driving setup task creation failed", {
           failedStep: result.failedStep,
           error: result.error,
@@ -380,9 +384,7 @@ function SetupTaskSection() {
         action_type: "run_setup_agent",
         success: false,
       });
-      const description =
-        error instanceof Error ? error.message : "Unknown error";
-      toast.error("Failed to start Self-driving setup", { description });
+      toastError("Failed to start Self-driving setup", error);
       log.error("Unexpected error during Self-driving setup task creation", {
         error,
         repository: setupRepository,

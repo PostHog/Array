@@ -13,7 +13,7 @@ import { useSeatStore } from "@posthog/ui/features/billing/seatStore";
 import { UsageMeter } from "@posthog/ui/features/billing/UsageMeter";
 import { useSeat } from "@posthog/ui/features/billing/useSeat";
 import { useUsage } from "@posthog/ui/features/billing/useUsage";
-import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
 import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import { navigateToUsage } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
@@ -329,9 +329,9 @@ export function PlanUsageSettings() {
               size="1"
               variant="ghost"
               onClick={() => {
-                // Leave settings first so back from /usage skips the settings route.
-                closeSettings();
-                navigateToUsage();
+                // Replace the settings route so back from /usage skips it.
+                useSettingsPageStore.getState().reset();
+                navigateToUsage({ replace: true });
               }}
             >
               View usage & spend analysis

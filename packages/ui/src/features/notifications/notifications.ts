@@ -11,6 +11,7 @@ import {
   resolveSoundUrl,
 } from "@posthog/ui/utils/sounds";
 import { inject, injectable } from "inversify";
+import { showErrorDetails, summarizeError } from "./errorDetails";
 import {
   ACTIVE_VIEW_PROVIDER,
   type IActiveView,
@@ -41,6 +42,11 @@ export interface NotificationDescriptor {
   // How long the task took, in ms. When the user enables sound scaling, this
   // drives the completion sound's playback rate (fast task -> faster/higher).
   soundDurationMs?: number;
+  // Raw error payload behind an error-level notification. Never rendered into
+  // the toast itself (it doesn't fit); the toast instead gets a "Details"
+  // action that opens the error details dialog — pretty-printed payload,
+  // downloadable error+logs bundle, and a dev-only create-task shortcut.
+  error?: unknown;
 }
 
 // The single channel every app notification flows through. Reads focus + the
@@ -132,18 +138,46 @@ export class NotificationBus {
     });
   }
 
+  // Error entry point: the toast carries a one-line summary; the raw payload
+  // rides along on `error` and stays inspectable behind the Details action.
+  notifyError(
+    title: string,
+    error: unknown,
+    target?: NotificationTarget,
+  ): void {
+    const summary = summarizeError(error);
+    this.notify({
+      title,
+      body: summary,
+      target,
+      toast: { level: "error", description: summary },
+      error,
+    });
+  }
+
   private showToast(descriptor: NotificationDescriptor): void {
     const level = descriptor.toast?.level ?? "success";
     toast[level](descriptor.title ?? descriptor.body, {
       description: descriptor.toast?.description,
       duration: descriptor.toast?.duration,
-      action: this.deriveAction(descriptor.target),
+      action: this.deriveAction(descriptor),
     });
   }
 
   private deriveAction(
-    target: NotificationTarget | undefined,
+    descriptor: NotificationDescriptor,
   ): { label: string; onClick: () => void } | undefined {
+    // Inspecting the payload beats navigation on error toasts: the error is
+    // the thing the user needs, and it never fits in the toast.
+    if (descriptor.error !== undefined) {
+      const title = descriptor.title ?? descriptor.body;
+      const error = descriptor.error;
+      return {
+        label: "Details",
+        onClick: () => showErrorDetails(title, error),
+      };
+    }
+    const target = descriptor.target;
     if (!target) return undefined;
     // Route through the shared open-target handler so the toast click lands on
     // the same place a native notification click would — channel-aware for

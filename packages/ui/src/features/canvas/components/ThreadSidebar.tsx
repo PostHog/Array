@@ -14,11 +14,14 @@ export function ThreadSidebar({
   taskId,
   task,
   onClose,
+  showTaskTitle,
 }: {
   taskId: string;
   /** The thread's task when the caller already has it; fetched otherwise. */
   task?: Task;
   onClose?: () => void;
+  /** Forwarded to ThreadPanel; hidden in the task detail view. */
+  showTaskTitle?: boolean;
 }) {
   const collapsed = useThreadPanelStore((s) => s.collapsed);
   const width = useThreadPanelStore((s) => s.width);
@@ -60,6 +63,7 @@ export function ThreadSidebar({
         task={task}
         onClose={onClose}
         onToggleCollapsed={() => toggleCollapsed(true)}
+        showTaskTitle={showTaskTitle}
       />
     </ResizableSidebar>
   );

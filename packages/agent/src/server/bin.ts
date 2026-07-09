@@ -106,6 +106,10 @@ program
     "MCP servers config as JSON array (ACP McpServer[] format)",
   )
   .option("--createPr <boolean>", "Whether this run may publish changes")
+  .option(
+    "--autoPublish <boolean>",
+    "Whether this run should push and open a draft PR on completion without an explicit ask",
+  )
   .option("--baseBranch <branch>", "Base branch for PR creation")
   .option(
     "--claudeCodeConfig <json>",
@@ -130,6 +134,10 @@ program
 
     const mode = options.mode === "background" ? "background" : "interactive";
     const createPr = parseBooleanOption(options.createPr, "--createPr");
+    const autoPublish = parseBooleanOption(
+      options.autoPublish,
+      "--autoPublish",
+    );
 
     const mcpServers = parseJsonOption(
       options.mcpServers,
@@ -182,6 +190,7 @@ program
       taskId: options.taskId,
       runId: options.runId,
       createPr,
+      autoPublish,
       mcpServers,
       baseBranch: options.baseBranch,
       claudeCode,

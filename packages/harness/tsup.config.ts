@@ -33,12 +33,21 @@ export default defineConfig({
     "src/extensions/subagent/process/pool.ts",
     "src/extensions/subagent/chain.ts",
     "src/extensions/subagent/lifecycle.ts",
-    "src/extensions/subagent/background-runner.ts",
-    "src/extensions/subagent/supervisor.ts",
     "src/extensions/subagent/render.ts",
-    "src/extensions/subagent/rpc.ts",
     "src/extensions/subagent/text-truncate.ts",
     "src/extensions/subagent/format.ts",
+    "src/extensions/mcp/extension.ts",
+    "src/extensions/mcp/index.ts",
+    "src/extensions/mcp/config.ts",
+    "src/extensions/mcp/errors.ts",
+    "src/extensions/mcp/schema.ts",
+    "src/extensions/mcp/server-manager.ts",
+    "src/extensions/mcp/tool-bridge.ts",
+    "src/extensions/mcp/auth-storage.ts",
+    "src/extensions/mcp/oauth-provider.ts",
+    "src/extensions/mcp/callback-server.ts",
+    "src/extensions/mcp/auth-flow.ts",
+    "src/extensions/mcp/render.ts",
     "src/pi-cli.ts",
   ],
   format: ["esm"],
@@ -67,5 +76,8 @@ export default defineConfig({
         recursive: true,
       },
     );
+    await cp("src/extensions/mcp/skills", "dist/extensions/mcp/skills", {
+      recursive: true,
+    });
   },
 });

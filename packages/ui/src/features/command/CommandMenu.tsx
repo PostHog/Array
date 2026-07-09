@@ -1,6 +1,7 @@
 import {
   CaretLeftIcon,
   CaretRightIcon,
+  ChartLine,
   EnvelopeSimple,
   HashIcon,
 } from "@phosphor-icons/react";
@@ -54,6 +55,7 @@ import {
   navigateToChannel,
   navigateToCommandCenter,
   navigateToInbox,
+  navigateToUsage,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -266,6 +268,17 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         onRun: () => {
           closeSettingsDialog();
           navigateToCommandCenter();
+        },
+      },
+      {
+        id: "usage",
+        label: "Usage",
+        keywords: "billing spend cost credits",
+        icon: <ChartLine size={12} className="text-gray-11" />,
+        action: "open-usage",
+        onRun: () => {
+          closeSettingsDialog();
+          navigateToUsage();
         },
       },
       {

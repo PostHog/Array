@@ -1,6 +1,13 @@
-import { registerRendererStateStorage } from "@posthog/ui/shell/rendererStorage";
+import {
+  flushRendererStateWrites,
+  registerRendererStateStorage,
+} from "@posthog/ui/shell/rendererStorage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type CompletionSound, useSettingsStore } from "./settingsStore";
+import {
+  type CompletionSound,
+  DEFAULT_WORKSPACE_MODE,
+  useSettingsStore,
+} from "./settingsStore";
 
 const getItem = vi.fn();
 const setItem = vi.fn();
@@ -8,14 +15,43 @@ const removeItem = vi.fn();
 
 registerRendererStateStorage({ getItem, setItem, removeItem });
 
+// Lands any coalesced write from the previous test on the old mocks (so a
+// pending value cannot leak into this test's reads or assertions), then
+// resets them.
+async function resetPersistenceMocks() {
+  await flushRendererStateWrites();
+  getItem.mockReset();
+  setItem.mockReset();
+  removeItem.mockReset();
+  getItem.mockResolvedValue(null);
+  setItem.mockResolvedValue(undefined);
+  removeItem.mockResolvedValue(undefined);
+}
+
+// Persisted writes are debounced; flush while polling so the assertion sees
+// the coalesced write as soon as the store has queued it.
+async function waitForPersistedWrite() {
+  await vi.waitFor(async () => {
+    await flushRendererStateWrites();
+    expect(setItem).toHaveBeenCalled();
+  });
+}
+
+// Runs before any test mutates the store singleton, so getState() still
+// reflects the initial values.
+describe("feature settingsStore defaults", () => {
+  it("defaults the workspace mode to cloud with a local fallback", () => {
+    expect(DEFAULT_WORKSPACE_MODE).toBe("cloud");
+    expect(useSettingsStore.getState().lastUsedWorkspaceMode).toBe("cloud");
+    expect(useSettingsStore.getState().lastUsedLocalWorkspaceMode).toBe(
+      "local",
+    );
+  });
+});
+
 describe("feature settingsStore cloud selections", () => {
-  beforeEach(() => {
-    getItem.mockReset();
-    setItem.mockReset();
-    removeItem.mockReset();
-    getItem.mockResolvedValue(null);
-    setItem.mockResolvedValue(undefined);
-    removeItem.mockResolvedValue(undefined);
+  beforeEach(async () => {
+    await resetPersistenceMocks();
 
     useSettingsStore.setState({
       allowBypassPermissions: false,
@@ -27,9 +63,7 @@ describe("feature settingsStore cloud selections", () => {
   it("persists the last used cloud repository", async () => {
     useSettingsStore.getState().setLastUsedCloudRepository("posthog/posthog");
 
-    await vi.waitFor(() => {
-      expect(setItem).toHaveBeenCalled();
-    });
+    await waitForPersistedWrite();
 
     const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
     const persisted = JSON.parse(lastCall[1]);
@@ -66,9 +100,7 @@ describe("feature settingsStore cloud selections", () => {
       },
     });
 
-    await vi.waitFor(() => {
-      expect(setItem).toHaveBeenCalled();
-    });
+    await waitForPersistedWrite();
 
     const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
     const persisted = JSON.parse(lastCall[1]);
@@ -154,13 +186,8 @@ describe("feature settingsStore cloud selections", () => {
 });
 
 describe("feature settingsStore custom sounds", () => {
-  beforeEach(() => {
-    getItem.mockReset();
-    setItem.mockReset();
-    removeItem.mockReset();
-    getItem.mockResolvedValue(null);
-    setItem.mockResolvedValue(undefined);
-    removeItem.mockResolvedValue(undefined);
+  beforeEach(async () => {
+    await resetPersistenceMocks();
 
     useSettingsStore.setState({ customSounds: [], completionSound: "none" });
   });
@@ -223,9 +250,7 @@ describe("feature settingsStore custom sounds", () => {
   it("persists custom sounds", async () => {
     useSettingsStore.getState().addCustomSound(sound);
 
-    await vi.waitFor(() => {
-      expect(setItem).toHaveBeenCalled();
-    });
+    await waitForPersistedWrite();
 
     const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
     const persisted = JSON.parse(lastCall[1]);
@@ -268,13 +293,8 @@ describe("feature settingsStore custom sounds", () => {
 });
 
 describe("feature settingsStore terminal font", () => {
-  beforeEach(() => {
-    getItem.mockReset();
-    setItem.mockReset();
-    removeItem.mockReset();
-    getItem.mockResolvedValue(null);
-    setItem.mockResolvedValue(undefined);
-    removeItem.mockResolvedValue(undefined);
+  beforeEach(async () => {
+    await resetPersistenceMocks();
 
     useSettingsStore.setState({
       terminalFont: "berkeley-mono",
@@ -291,9 +311,7 @@ describe("feature settingsStore terminal font", () => {
     useSettingsStore.getState().setTerminalFont("custom");
     useSettingsStore.getState().setTerminalCustomFontFamily("Fira Code");
 
-    await vi.waitFor(() => {
-      expect(setItem).toHaveBeenCalled();
-    });
+    await waitForPersistedWrite();
 
     const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
     const persisted = JSON.parse(lastCall[1]);

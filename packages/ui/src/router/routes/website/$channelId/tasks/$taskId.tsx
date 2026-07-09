@@ -68,7 +68,7 @@ function ChannelTaskDetailRoute() {
           channelId={channelId}
         />
       </div>
-      <ThreadSidebar taskId={taskId} task={task} />
+      <ThreadSidebar taskId={taskId} task={task} showTaskTitle={false} />
     </div>
   );
 }

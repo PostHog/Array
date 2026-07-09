@@ -1,3 +1,6 @@
+import type { Adapter } from "./adapter";
+import type { ExecutionMode } from "./exec-types";
+
 export interface CodexModePreset {
   id: "plan" | "read-only" | "auto" | "full-access";
   name: string;
@@ -32,3 +35,63 @@ export const CODEX_MODE_PRESETS: readonly CodexModePreset[] = [
     description: "Auto-approves all operations",
   },
 ];
+
+const CLAUDE_CLOUD_PERMISSION_MODES = [
+  "default",
+  "acceptEdits",
+  "plan",
+  "bypassPermissions",
+  "auto",
+] as const;
+
+const CODEX_CLOUD_PERMISSION_MODES = [
+  "auto",
+  "read-only",
+  "full-access",
+] as const;
+
+type ClaudeCloudPermissionMode = (typeof CLAUDE_CLOUD_PERMISSION_MODES)[number];
+type CodexCloudPermissionMode = (typeof CODEX_CLOUD_PERMISSION_MODES)[number];
+
+function isClaudeCloudPermissionMode(
+  mode: ExecutionMode,
+): mode is ClaudeCloudPermissionMode {
+  return (CLAUDE_CLOUD_PERMISSION_MODES as readonly string[]).includes(mode);
+}
+
+function isCodexCloudPermissionMode(
+  mode: ExecutionMode,
+): mode is CodexCloudPermissionMode {
+  return (CODEX_CLOUD_PERMISSION_MODES as readonly string[]).includes(mode);
+}
+
+// The cloud API's per-adapter mode enums are narrower than the local presets (no "plan" for codex); degrade to the nearest permission ceiling.
+const CODEX_CLOUD_MODE_FALLBACKS: Record<
+  Exclude<ClaudeCloudPermissionMode, "auto">,
+  CodexCloudPermissionMode
+> = {
+  default: "auto",
+  acceptEdits: "auto",
+  plan: "read-only",
+  bypassPermissions: "full-access",
+};
+
+const CLAUDE_CLOUD_MODE_FALLBACKS: Record<
+  Exclude<CodexCloudPermissionMode, "auto">,
+  ClaudeCloudPermissionMode
+> = {
+  "read-only": "plan",
+  "full-access": "bypassPermissions",
+};
+
+export function resolveCloudInitialPermissionMode(
+  adapter: Adapter,
+  mode: ExecutionMode,
+): ExecutionMode {
+  if (adapter === "codex") {
+    if (isCodexCloudPermissionMode(mode)) return mode;
+    return CODEX_CLOUD_MODE_FALLBACKS[mode] ?? "auto";
+  }
+  if (isClaudeCloudPermissionMode(mode)) return mode;
+  return CLAUDE_CLOUD_MODE_FALLBACKS[mode] ?? "default";
+}

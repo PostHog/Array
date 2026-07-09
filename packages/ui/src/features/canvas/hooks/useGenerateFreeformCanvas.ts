@@ -20,6 +20,7 @@ import {
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import { useCanvasGenerationTrackerStore } from "@posthog/ui/features/canvas/stores/canvasGenerationTrackerStore";
+import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -123,9 +124,7 @@ export function useGenerateFreeformCanvas(args: {
         );
 
         if (!result.success) {
-          toast.error("Couldn't start canvas generation", {
-            description: result.error,
-          });
+          toastError("Couldn't start canvas generation", result.error);
           return null;
         }
 

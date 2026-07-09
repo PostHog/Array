@@ -16,7 +16,7 @@ test.describe("Smoke Tests", () => {
     await window.waitForSelector("#root > *", { timeout: 30000 });
 
     await window
-      .locator("text=Loading")
+      .locator('[data-testid="app-loading-logo"]')
       .waitFor({ state: "hidden", timeout: 30000 })
       .catch(() => {});
 

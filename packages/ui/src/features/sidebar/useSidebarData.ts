@@ -1,6 +1,7 @@
 import {
   deriveTaskData,
   type FullTask,
+  filterByWorkspaceMode,
   filterVisibleTasks,
   narrowFullTask,
   partitionAndSortTasks,
@@ -51,6 +52,7 @@ export function useSidebarData({
   const organizeMode = useSidebarStore((state) => state.organizeMode);
   const sortMode = useSidebarStore((state) => state.sortMode);
   const folderOrder = useSidebarStore((state) => state.folderOrder);
+  const taskTypeFilter = useSidebarStore((state) => state.taskTypeFilter);
 
   const summaryIds = useMemo(
     () =>
@@ -166,9 +168,14 @@ export function useSidebarData({
     ],
   );
 
+  const filteredTaskData = useMemo(
+    () => filterByWorkspaceMode(taskData, taskTypeFilter),
+    [taskData, taskTypeFilter],
+  );
+
   const { pinnedTasks, sortedUnpinnedTasks, totalCount } = useMemo(
-    () => partitionAndSortTasks(taskData, sortMode),
-    [taskData, sortMode],
+    () => partitionAndSortTasks(filteredTaskData, sortMode),
+    [filteredTaskData, sortMode],
   );
 
   const { flatTasks, hasMore } = useMemo(

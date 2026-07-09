@@ -5,7 +5,11 @@ import {
   type RootLogger,
   type ScopedLogger,
 } from "@posthog/di/logger";
-import { getRemoteUrl, isGitRepository } from "@posthog/git/queries";
+import {
+  getLinkedWorktreeMainPath,
+  getRemoteUrl,
+  isGitRepository,
+} from "@posthog/git/queries";
 import { InitRepositorySaga } from "@posthog/git/sagas/init";
 import { parseGithubUrl } from "@posthog/git/utils";
 import { WorktreeManager } from "@posthog/git/worktree";
@@ -128,6 +132,7 @@ export class FoldersService {
         remoteUrl: r.remoteUrl ?? null,
         lastAccessed: r.lastAccessedAt ?? r.createdAt,
         createdAt: r.createdAt,
+        mainRepoPath: getLinkedWorktreeMainPath(r.path),
         exists: fs.existsSync(r.path),
       }));
   }
@@ -209,6 +214,7 @@ export class FoldersService {
       remoteUrl: repo.remoteUrl ?? null,
       lastAccessed: repo.lastAccessedAt ?? repo.createdAt,
       createdAt: repo.createdAt,
+      mainRepoPath: getLinkedWorktreeMainPath(repo.path),
       exists: true,
     };
   }

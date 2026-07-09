@@ -25,6 +25,11 @@ export const POSTHOG_NOTIFICATIONS = {
   /** Agent finished processing a turn (prompt returned, waiting for next input) */
   TURN_COMPLETE: "_posthog/turn_complete",
 
+  /** Background/task-notification-triggered reply finished. Same rendering
+   * effect as TURN_COMPLETE (closes out the current turn) without touching
+   * the tracked prompt lifecycle that TURN_COMPLETE drives on the agent side. */
+  BACKGROUND_TURN_COMPLETE: "_posthog/background_turn_complete",
+
   /** Error occurred during task execution */
   ERROR: "_posthog/error",
 

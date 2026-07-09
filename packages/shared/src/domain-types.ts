@@ -168,6 +168,9 @@ export interface SandboxEnvironment {
   has_environment_variables: boolean;
   private: boolean;
   effective_domains: string[];
+  custom_image_id: string | null;
+  custom_image_name: string | null;
+  custom_image_status: string | null;
   created_by?: UserBasic | null;
   created_at: string;
   updated_at: string;
@@ -181,6 +184,54 @@ export interface SandboxEnvironmentInput {
   repositories?: string[];
   environment_variables?: Record<string, string>;
   private?: boolean;
+  custom_image_id?: string | null;
+}
+
+export type SandboxCustomImageStatus =
+  | "draft"
+  | "scanning"
+  | "scan_failed"
+  | "building"
+  | "build_failed"
+  | "ready"
+  | "archived";
+
+export function isImageBuildInProgress(
+  status: SandboxCustomImageStatus,
+): boolean {
+  return status === "scanning" || status === "building";
+}
+
+export function isImageBuildFailed(status: SandboxCustomImageStatus): boolean {
+  return status === "scan_failed" || status === "build_failed";
+}
+
+export interface SandboxCustomImageScanFinding {
+  severity: string;
+  detail: string;
+}
+
+export interface SandboxCustomImage {
+  id: string;
+  name: string;
+  description: string;
+  status: SandboxCustomImageStatus;
+  version: number;
+  modal_image_name: string;
+  repository: string;
+  private: boolean;
+  spec: Record<string, unknown>;
+  spec_yaml: string;
+  scan_result: {
+    passed?: boolean;
+    findings?: SandboxCustomImageScanFinding[];
+  };
+  error: string;
+  build_log: string;
+  builder_task_id: string | null;
+  created_by?: UserBasic | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface CloudTaskUpdateBase {

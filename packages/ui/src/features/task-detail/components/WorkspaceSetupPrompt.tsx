@@ -10,9 +10,9 @@ import { getTaskRepository } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { Box, Button, Code, Flex, Spinner, Text } from "@radix-ui/themes";
 import { useCallback, useMemo, useState } from "react";
-import { toast } from "../../../primitives/toast";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
 import { useFolders } from "../../folders/useFolders";
+import { toastError } from "../../notifications/errorDetails";
 import { useEnsureWorkspace } from "../../workspace/useWorkspaceMutations";
 
 interface WorkspaceSetupPromptProps {
@@ -50,9 +50,7 @@ export function WorkspaceSetupPrompt({
 
       const result = await setupSaga.setupWorkspace(executor, taskId, path);
       if (!result.success) {
-        toast.error("Failed to set up workspace", {
-          description: result.error,
-        });
+        toastError("Failed to set up workspace", result.error);
       }
 
       setSelectedPath("");

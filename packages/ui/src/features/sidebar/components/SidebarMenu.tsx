@@ -1,4 +1,4 @@
-import { folderGroupId } from "@posthog/core/sidebar/groupTasks";
+import { findGroupFolder } from "@posthog/core/sidebar/groupTasks";
 import { isTaskActivelyRunning } from "@posthog/core/sidebar/taskRunning";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { Separator } from "@posthog/quill";
@@ -227,7 +227,7 @@ function SidebarMenuComponent() {
     async (groupId: string, e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      const folder = folders.find((f) => folderGroupId(f) === groupId);
+      const folder = findGroupFolder(folders, groupId);
       if (!folder) return;
       try {
         const result =

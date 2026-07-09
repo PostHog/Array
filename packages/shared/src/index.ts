@@ -76,6 +76,7 @@ export {
   isFatalSessionError,
   isNotAuthenticatedError,
   isRateLimitError,
+  isTransientUpstreamError,
   NotAuthenticatedError,
   type SerializedError,
   serializeError,
@@ -84,6 +85,7 @@ export type { ExecutionMode } from "./exec-types";
 export {
   CODEX_MODE_PRESETS,
   type CodexModePreset,
+  resolveCloudInitialPermissionMode,
 } from "./execution-modes";
 export * from "./flags";
 export * from "./git-domain";
@@ -126,6 +128,7 @@ export {
   mentionsToPlainText,
   splitMentionSegments,
 } from "./mentions";
+export { defaultEligibleModel } from "./models";
 export {
   getOauthClientIdFromRegion,
   OAUTH_SCOPE_VERSION,
@@ -145,6 +148,13 @@ export {
   pathToFileUri,
   toRelativePath,
 } from "./path";
+export {
+  buildPrOutput,
+  mergePrUrls,
+  promotePrUrl,
+  readPrSummaries,
+  readPrUrls,
+} from "./pr-urls";
 export {
   type CloudRegion,
   formatRegionBadge,

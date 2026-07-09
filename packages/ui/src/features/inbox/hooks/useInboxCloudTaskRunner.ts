@@ -13,12 +13,14 @@ import { useService } from "@posthog/di/react";
 import {
   type Adapter,
   ANALYTICS_EVENTS,
+  defaultEligibleModel,
   getCloudUrlFromRegion,
 } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDefaultModel";
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
+import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
@@ -169,16 +171,17 @@ export function useInboxCloudTaskRunner({
     // resolver keeps it only if the gateway still offers it, otherwise it falls
     // back to the server default. A stale id (e.g. one later de-listed for the
     // org) would otherwise be sent here and fail the run with a gateway 403.
+    const preferredModel = defaultEligibleModel(settings.lastUsedModel);
     const resolvedModel = await resolveDefaultModel(
       queryClient,
       apiHost,
       adapter,
       modelResolver,
-      settings.lastUsedModel,
+      preferredModel,
     );
     // The resolver returns undefined on a transient failure; fall back to the
     // persisted id so a gateway outage degrades gracefully rather than blocking.
-    const model = resolvedModel ?? settings.lastUsedModel;
+    const model = resolvedModel ?? preferredModel;
 
     if (!model) {
       toast.dismiss(toastId);
@@ -262,7 +265,7 @@ export function useInboxCloudTaskRunner({
         toast.dismiss(toastId);
         // Usage-limit blocks already show the upgrade modal; don't double-toast.
         if (!isUsageLimitResult(result)) {
-          toast.error(copy.errorTitle, { description: result.error });
+          toastError(copy.errorTitle, result.error);
           log.error("Cloud-task creation failed", {
             failedStep: result.failedStep,
             error: result.error,
@@ -273,9 +276,7 @@ export function useInboxCloudTaskRunner({
       }
     } catch (error) {
       toast.dismiss(toastId);
-      const description =
-        error instanceof Error ? error.message : "Unknown error";
-      toast.error(copy.errorTitle, { description });
+      toastError(copy.errorTitle, error);
       log.error("Unexpected error during cloud-task creation", {
         error,
         reportId,

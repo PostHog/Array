@@ -74,6 +74,21 @@ function turnCompleteMsg(ts: number, stopReason = "end_turn"): AcpMessage {
   };
 }
 
+function backgroundTurnCompleteMsg(
+  ts: number,
+  stopReason = "end_turn",
+): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "_posthog/background_turn_complete",
+      params: { sessionId: "session-1", stopReason },
+    },
+  };
+}
+
 function agentMessageMsg(ts: number, text: string): AcpMessage {
   return {
     type: "acp_message",
@@ -102,6 +117,20 @@ function resourcesUsedMsg(
       jsonrpc: "2.0",
       method: "_posthog/resources_used",
       params: { sessionId: "session-1", products },
+    },
+  };
+}
+
+function usageUpdateMsg(ts: number): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        update: { sessionUpdate: "usage_update", used: 100, size: 200_000 },
+      },
     },
   };
 }
@@ -802,6 +831,120 @@ describe("buildConversationItems", () => {
       );
       expect(item?.update.sessionUpdate).toBe("tool_call");
       expect(item?.timestamp).toBe(4);
+    });
+  });
+
+  describe("turn boundaries after completion", () => {
+    function isTextChunk(item: ConversationItem): item is Extract<
+      ConversationItem,
+      { type: "session_update" }
+    > & {
+      update: {
+        sessionUpdate: "agent_message_chunk";
+        content: { type: "text"; text: string };
+      };
+    } {
+      return (
+        item.type === "session_update" &&
+        item.update.sessionUpdate === "agent_message_chunk" &&
+        item.update.content.type === "text"
+      );
+    }
+
+    it("does not merge untracked content into an already-completed turn", () => {
+      // Mirrors a scheduled wakeup: it resumes the session outside of
+      // session/prompt, so this chunk arrives with no queued turn behind it.
+      const events = [
+        userPromptMsg(1, 1, "hi"),
+        agentMessageMsg(2, "you'll get a ping shortly."),
+        turnCompleteMsg(3),
+        agentMessageMsg(4, "ping"),
+      ];
+
+      const items = buildConversationItems(events, true).items;
+      const chunks = items.filter(isTextChunk);
+
+      expect(chunks.map((c) => c.update.content.text)).toEqual([
+        "you'll get a ping shortly.",
+        "ping",
+      ]);
+      expect(chunks[0].turnContext).not.toBe(chunks[1].turnContext);
+    });
+
+    it("still merges consecutive chunks within the same open turn", () => {
+      const events = [
+        userPromptMsg(1, 1, "hi"),
+        agentMessageMsg(2, "Hello"),
+        agentMessageMsg(3, " there"),
+      ];
+
+      const items = buildConversationItems(events, true).items;
+      const chunks = items.filter(isTextChunk);
+
+      expect(chunks.map((c) => c.update.content.text)).toEqual(["Hello there"]);
+    });
+
+    it("separates consecutive background replies with no queued turn behind either", () => {
+      // Mirrors a Monitor tool streaming several background events in a
+      // row: each reply resumes the session outside of session/prompt, so
+      // none of them ever gets a real user turn in between to reset on.
+      const events = [
+        userPromptMsg(1, 1, "use a monitor"),
+        agentMessageMsg(2, "Monitor is running."),
+        turnCompleteMsg(3),
+        agentMessageMsg(10, "ping 1 received."),
+        backgroundTurnCompleteMsg(11),
+        agentMessageMsg(20, "ping 2 received."),
+        backgroundTurnCompleteMsg(21),
+        agentMessageMsg(30, "ping 3 received."),
+        backgroundTurnCompleteMsg(31),
+      ];
+
+      const items = buildConversationItems(events, true).items;
+      const chunks = items.filter(isTextChunk);
+
+      expect(chunks.map((c) => c.update.content.text)).toEqual([
+        "Monitor is running.",
+        "ping 1 received.",
+        "ping 2 received.",
+        "ping 3 received.",
+      ]);
+      const distinctContexts = new Set(chunks.map((c) => c.turnContext));
+      expect(distinctContexts.size).toBe(4);
+    });
+
+    it("computes a real duration for an implicit turn once a background reply completes it", () => {
+      const events = [
+        userPromptMsg(1, 1, "use a monitor"),
+        agentMessageMsg(2, "Monitor is running."),
+        turnCompleteMsg(3),
+        agentMessageMsg(10, "ping 1 received."),
+        backgroundTurnCompleteMsg(35),
+      ];
+
+      const { lastTurnInfo } = buildConversationItems(events, true);
+
+      expect(lastTurnInfo?.isComplete).toBe(true);
+      expect(lastTurnInfo?.durationMs).toBeGreaterThan(0);
+    });
+
+    it("does not spawn a phantom turn for a silent trailing update like usage_update", () => {
+      // A usage_update (or any other content-less session/update) commonly
+      // trails the final background reply. It must not reopen a turn on its
+      // own and clobber the real reply's duration.
+      const events = [
+        userPromptMsg(1, 1, "use a monitor"),
+        agentMessageMsg(2, "Monitor is running."),
+        turnCompleteMsg(3),
+        agentMessageMsg(10, "ping 1 received."),
+        backgroundTurnCompleteMsg(35),
+        usageUpdateMsg(50),
+      ];
+
+      const { lastTurnInfo } = buildConversationItems(events, true);
+
+      expect(lastTurnInfo?.isComplete).toBe(true);
+      expect(lastTurnInfo?.durationMs).toBeGreaterThan(0);
     });
   });
 });

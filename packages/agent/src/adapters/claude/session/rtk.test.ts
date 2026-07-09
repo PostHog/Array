@@ -31,6 +31,17 @@ describe("rewriteBashForRtk", () => {
     ["git commit -m wip"],
     ["git push origin main"],
     ["git checkout -b feature"],
+    // The cloud signed-commit flow instructs the model to run these raw:
+    // staging before git_signed_commit, and the stale-checkout / rebase
+    // recovery sequence. They must never enter the compressible allowlist.
+    ["git add -A"],
+    ["git stash --include-untracked"],
+    ["git stash pop"],
+    ["git fetch origin main"],
+    ["git reset --hard origin/main"],
+    ["git rebase --continue"],
+    ["git merge origin/master"],
+    ["git cherry-pick abc123"],
     // Commands RTK isn't wrapping in this cut.
     ["npm test"],
     ["cat file.ts"],

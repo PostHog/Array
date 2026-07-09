@@ -1,4 +1,4 @@
-import { CODEX_MODE_PRESETS } from "@posthog/shared";
+import { CODEX_MODE_PRESETS, type ExecutionMode } from "@posthog/shared";
 import { ALLOW_BYPASS } from "./utils/common";
 
 export interface ModeInfo {
@@ -68,7 +68,7 @@ export const CODEX_NATIVE_MODES = ["auto", "read-only", "full-access"] as const;
 export type CodexNativeMode = (typeof CODEX_NATIVE_MODES)[number];
 
 /** Union of all permission mode IDs across adapters */
-export type PermissionMode = CodeExecutionMode | CodexNativeMode;
+export type PermissionMode = ExecutionMode;
 
 export function isCodexNativeMode(mode: string): mode is CodexNativeMode {
   return (CODEX_NATIVE_MODES as readonly string[]).includes(mode);

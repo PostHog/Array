@@ -685,6 +685,139 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
 
+    function createUsageTestServer() {
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: { payload: JwtPayload } | null;
+        posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+        recordTurnUsage(usage: unknown): void;
+      };
+      testServer.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      testServer.session = {
+        payload: {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+      };
+      return testServer;
+    }
+
+    it("reports cumulative run token usage into TaskRun.state after each settled turn", () => {
+      const testServer = createUsageTestServer();
+      const turnUsage = {
+        inputTokens: 100,
+        outputTokens: 50,
+        cachedReadTokens: 10,
+        cachedWriteTokens: 5,
+        totalTokens: 165,
+      };
+
+      testServer.recordTurnUsage(turnUsage);
+      testServer.recordTurnUsage(turnUsage);
+
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenNthCalledWith(
+        1,
+        "task-1",
+        "run-1",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_read_tokens: 10,
+              cache_write_tokens: 5,
+              thought_tokens: 0,
+              total_tokens: 165,
+              turns: 1,
+            },
+          },
+        },
+      );
+      // The second report carries run-cumulative totals, not per-turn figures.
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith(
+        "task-1",
+        "run-1",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 200,
+              output_tokens: 100,
+              cache_read_tokens: 20,
+              cache_write_tokens: 10,
+              thought_tokens: 0,
+              total_tokens: 330,
+              turns: 2,
+            },
+          },
+        },
+      );
+    });
+
+    it("does not report anything when a turn settles without usage", () => {
+      const testServer = createUsageTestServer();
+
+      testServer.recordTurnUsage(undefined);
+
+      expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+    });
+
+    it("resets run usage on session cleanup so a later run starts from zero", async () => {
+      const testServer = createUsageTestServer();
+      const turnUsage = {
+        inputTokens: 100,
+        outputTokens: 50,
+        totalTokens: 150,
+      };
+      testServer.recordTurnUsage(turnUsage);
+
+      const cleanupServer = stubSessionCleanup(testServer);
+      await cleanupServer.cleanupSession();
+
+      testServer.session = {
+        payload: {
+          run_id: "run-2",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+      };
+      testServer.recordTurnUsage(turnUsage);
+
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith(
+        "task-1",
+        "run-2",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_read_tokens: 0,
+              cache_write_tokens: 0,
+              thought_tokens: 0,
+              total_tokens: 150,
+              turns: 1,
+            },
+          },
+        },
+      );
+    });
+
     function createFailureTestServer() {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({
@@ -1864,18 +1997,45 @@ describe("AgentServer HTTP Mode", () => {
         p: JwtPayload,
         u: Record<string, unknown> | undefined,
       ): void;
-      fetchPrCreatedAt(url: string): Promise<string | null>;
+      fetchPrAttribution(
+        url: string,
+      ): Promise<{ createdAt: string | null; author: string | null }>;
+      fetchGhLogin(): Promise<string | null>;
       detectedPrUrl: string | null;
-      posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+      posthogAPI: {
+        getTaskRun: ReturnType<typeof vi.fn>;
+        updateTaskRun: ReturnType<typeof vi.fn>;
+      };
     };
 
     const justNow = () => new Date().toISOString();
     const longAgo = "2020-01-01T00:00:00Z";
+    const GH_LOGIN = "run-owner";
 
-    const setup = (prCreatedAt: string | null): PrTestServer => {
+    const setup = (
+      prCreatedAt: string | null,
+      prAuthor: string | null = GH_LOGIN,
+    ): PrTestServer => {
       const s = createServer() as unknown as PrTestServer;
-      s.fetchPrCreatedAt = vi.fn(async () => prCreatedAt);
-      s.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      s.fetchPrAttribution = vi.fn(async () => ({
+        createdAt: prCreatedAt,
+        author: prAuthor,
+      }));
+      s.fetchGhLogin = vi.fn(async () => GH_LOGIN);
+      let storedOutput: Record<string, unknown> | null = null;
+      s.posthogAPI = {
+        getTaskRun: vi.fn(async () => ({ output: storedOutput })),
+        updateTaskRun: vi.fn(
+          async (
+            _taskId: string,
+            _runId: string,
+            updates: { output: Record<string, unknown> },
+          ) => {
+            storedOutput = updates.output;
+            return {};
+          },
+        ),
+      };
       return s;
     };
 
@@ -1886,7 +2046,7 @@ describe("AgentServer HTTP Mode", () => {
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
-        output: { pr_url: PR_URL },
+        output: { pr_url: PR_URL, pr_urls: [PR_URL] },
       });
       expect(s.detectedPrUrl).toBe(PR_URL);
     });
@@ -1903,7 +2063,7 @@ describe("AgentServer HTTP Mode", () => {
       const s = setup(justNow());
       s.maybeAttachCreatedPr(payload, { sessionUpdate: "agent_thought_chunk" });
       await flush();
-      expect(s.fetchPrCreatedAt).not.toHaveBeenCalled();
+      expect(s.fetchPrAttribution).not.toHaveBeenCalled();
       expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
 
@@ -1913,12 +2073,11 @@ describe("AgentServer HTTP Mode", () => {
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
-      expect(s.fetchPrCreatedAt).toHaveBeenCalledTimes(1);
+      expect(s.fetchPrAttribution).toHaveBeenCalledTimes(1);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
 
-    it("attributes the most recent PR when a run opens several, in detection order", async () => {
-      // output.pr_url holds one value; the latest PR the run created is the useful one.
+    it("accumulates every PR a run opens, keeping the first as primary", async () => {
       const s = setup(justNow());
       const second = "https://github.com/PostHog/posthog.com/pull/17765";
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
@@ -1926,7 +2085,7 @@ describe("AgentServer HTTP Mode", () => {
       await flush();
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith("t", "r", {
-        output: { pr_url: second },
+        output: { pr_url: PR_URL, pr_urls: [PR_URL, second] },
       });
       expect(s.detectedPrUrl).toBe(second);
     });
@@ -1935,14 +2094,45 @@ describe("AgentServer HTTP Mode", () => {
       const viewed = "https://github.com/PostHog/posthog.com/pull/1";
       // The created PR reads as recent; the later, merely-viewed PR reads as old.
       const s = setup(justNow());
-      s.fetchPrCreatedAt = vi.fn(async (url: string) =>
-        url === PR_URL ? justNow() : longAgo,
-      );
+      s.fetchPrAttribution = vi.fn(async (url: string) => ({
+        createdAt: url === PR_URL ? justNow() : longAgo,
+        author: GH_LOGIN,
+      }));
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(viewed));
       await flush();
       expect(s.detectedPrUrl).toBe(PR_URL);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not attribute a fresh PR authored by someone else (merely viewed)", async () => {
+      const s = setup(justNow(), "someone-else");
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+      expect(s.detectedPrUrl).toBeNull();
+    });
+
+    it("attributes a recent PR when the identity is a GitHub App installation (gh api user unavailable)", async () => {
+      // Cloud runs authenticate with a GitHub App installation token, for which
+      // `gh api user` returns 403 → ghLogin is null. The PR is authored by the
+      // app bot (e.g. "app/posthog"); recency alone must carry attribution.
+      const s = setup(justNow(), "app/posthog");
+      s.fetchGhLogin = vi.fn(async () => null);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
+        output: { pr_url: PR_URL, pr_urls: [PR_URL] },
+      });
+      expect(s.detectedPrUrl).toBe(PR_URL);
+    });
+
+    it("still rejects an old PR when the identity cannot be resolved (recency guards)", async () => {
+      const s = setup(longAgo, "app/posthog");
+      s.fetchGhLogin = vi.fn(async () => null);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
   });
 
@@ -1973,6 +2163,17 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("Generated-By: PostHog Code");
       expect(prompt).toContain("Task-Id: test-task-id");
       expect(prompt).not.toContain("gh pr create --draft");
+      // If the user does explicitly ask for a PR in this review-first mode,
+      // the agent must still use the PostHog Code footer, not Claude Code's default.
+      expect(prompt).toContain(
+        "If the user explicitly asks you to open a pull request",
+      );
+      expect(prompt).toContain(
+        "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
+      );
+      expect(prompt).toContain(".github/pull_request_template.md");
+      expect(prompt).toContain("gh issue list --search");
+      expect(prompt).toContain("Closes #<n>");
     });
 
     it("returns default prompt when prUrl is null", () => {
@@ -2060,6 +2261,112 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("Create a draft pull request");
       expect(prompt).toContain("gh pr create --draft");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+    });
+
+    it("returns auto-PR prompt for manual runs when the user opted into auto-publish", () => {
+      const s = createServer({ autoPublish: true });
+      const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt();
+      expect(prompt).toContain("gh pr create --draft");
+      expect(prompt).not.toContain("stop with local changes ready for review");
+      // Manual runs keep the PostHog Code attribution.
+      expect(prompt).toContain(
+        "Created with [PostHog Code](https://posthog.com/code?ref=pr)",
+      );
+    });
+
+    it("keeps review-first prompt when auto-publish is on but createPr is false", () => {
+      const s = createServer({ autoPublish: true, createPr: false });
+      const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt();
+      expect(prompt).toContain("stop with local changes ready for review");
+      expect(prompt).not.toContain("gh pr create --draft");
+    });
+
+    it("auto-publishes in no-repository mode when the user opted in", () => {
+      const s = createServer({ repositoryPath: undefined, autoPublish: true });
+      const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt();
+      expect(prompt).toContain("Cloud Task Execution — No Repository Mode");
+      expect(prompt).toContain("without waiting to be asked");
+      expect(prompt).not.toContain("unless the user explicitly asks for that");
+    });
+
+    // Prewarmed runs boot before the user's choice exists; the upgrade is
+    // resolved from run state when the first message arrives.
+    type WarmTestable = {
+      prewarmedRun: boolean;
+      session: { payload: { task_id: string; run_id: string } } | null;
+      posthogAPI: { getTaskRun: ReturnType<typeof vi.fn> };
+      resolveWarmAutoPublishUpgrade(): Promise<string | null>;
+      buildCloudSystemPrompt(): string;
+    };
+    const makeWarmServer = (
+      state: Record<string, unknown> | Error,
+      overrides: Partial<ConstructorParameters<typeof AgentServer>[0]> = {},
+    ): WarmTestable => {
+      const t = createServer(overrides) as unknown as WarmTestable;
+      t.prewarmedRun = true;
+      t.session = {
+        payload: { task_id: "test-task-id", run_id: "test-run-id" },
+      };
+      t.posthogAPI = {
+        getTaskRun:
+          state instanceof Error
+            ? vi.fn(async () => {
+                throw state;
+              })
+            : vi.fn(async () => ({ state })),
+      };
+      return t;
+    };
+
+    it("upgrades a prewarmed run to auto-publish from run state on the first message", async () => {
+      const t = makeWarmServer({ prewarmed: true, auto_publish: true });
+
+      const override = await t.resolveWarmAutoPublishUpgrade();
+      expect(override).toContain("OVERRIDE PREVIOUS INSTRUCTIONS");
+      expect(override).toContain("gh pr create --draft");
+      // The flip persists for the rest of the session...
+      expect(t.buildCloudSystemPrompt()).toContain("gh pr create --draft");
+      // ...and the override is injected only once.
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.posthogAPI.getTaskRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps a prewarmed run review-first when run state has no auto_publish", async () => {
+      const t = makeWarmServer({ prewarmed: true });
+
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.buildCloudSystemPrompt()).toContain(
+        "stop with local changes ready for review",
+      );
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.posthogAPI.getTaskRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("never upgrades a prewarmed run when createPr is false", async () => {
+      // PostHog AI warm runs launch with createPr=false; auto-publish must not
+      // override that even if auto_publish somehow lands in state.
+      const t = makeWarmServer(
+        { prewarmed: true, auto_publish: true },
+        { createPr: false },
+      );
+
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.posthogAPI.getTaskRun).not.toHaveBeenCalled();
+      expect(t.buildCloudSystemPrompt()).toContain(
+        "stop with local changes ready for review",
+      );
+    });
+
+    it("retries the state fetch on a later message when it fails", async () => {
+      const t = makeWarmServer(new Error("fetch failed"));
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+
+      t.posthogAPI.getTaskRun = vi.fn(async () => ({
+        state: { prewarmed: true, auto_publish: true },
+      }));
+      expect(await t.resolveWarmAutoPublishUpgrade()).toContain(
+        "gh pr create --draft",
+      );
     });
 
     it.each([

@@ -26,6 +26,9 @@ export interface AgentServerConfig {
   taskId: string;
   runId: string;
   createPr?: boolean;
+  // User-opted auto-publish: push and open a draft PR on completion even for
+  // manual (non-automated-origin) cloud runs. createPr=false still wins.
+  autoPublish?: boolean;
   version?: string;
   mcpServers?: RemoteMcpServer[];
   baseBranch?: string;

@@ -44,6 +44,7 @@ interface UseActionSelectorStateProps {
   currentStep: number;
   steps: ActionSelectorProps["steps"];
   initialSelections?: string[];
+  initialCustomInput?: string;
   onSelect: ActionSelectorProps["onSelect"];
   onMultiSelect: ActionSelectorProps["onMultiSelect"];
   onStepChange: ActionSelectorProps["onStepChange"];
@@ -58,6 +59,7 @@ export function useActionSelectorState({
   currentStep,
   steps,
   initialSelections,
+  initialCustomInput,
   onSelect,
   onMultiSelect,
   onStepChange,
@@ -68,7 +70,7 @@ export function useActionSelectorState({
   const [checkedOptions, setCheckedOptions] = useState<Set<string>>(() =>
     initialSelections?.length ? new Set(initialSelections) : new Set(),
   );
-  const [customInput, setCustomInput] = useState("");
+  const [customInput, setCustomInput] = useState(initialCustomInput ?? "");
   const [isEditing, setIsEditing] = useState(false);
   const [internalStep, setInternalStep] = useState(currentStep);
   const [stepAnswers, setStepAnswers] = useState<Map<number, StepAnswer>>(
@@ -148,9 +150,9 @@ export function useActionSelectorState({
       if (saved) {
         setCheckedOptions(new Set(saved.selectedIds));
         setCustomInput(saved.customInput);
-      } else if (initialSelections?.length) {
-        setCheckedOptions(new Set(initialSelections));
-        setCustomInput("");
+      } else if (initialSelections?.length || initialCustomInput) {
+        setCheckedOptions(new Set(initialSelections ?? []));
+        setCustomInput(initialCustomInput ?? "");
       } else {
         setCheckedOptions(new Set());
         setCustomInput("");
@@ -161,7 +163,7 @@ export function useActionSelectorState({
         containerRef.current?.focus();
       }
     },
-    [initialSelections, stepAnswers],
+    [initialSelections, initialCustomInput, stepAnswers],
   );
 
   useEffect(() => {

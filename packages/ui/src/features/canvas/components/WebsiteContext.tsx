@@ -415,7 +415,7 @@ function EmptyState({
         <EmptyTitle>No CONTEXT.md yet</EmptyTitle>
         <EmptyDescription>
           CONTEXT.md tells agents the specific details they need to know when
-          working in <strong>{channelName}</strong> — conventions, gotchas, key
+          working in <strong>#{channelName}</strong> — conventions, gotchas, key
           files, and anything else that isn't obvious from the code.
         </EmptyDescription>
       </EmptyHeader>

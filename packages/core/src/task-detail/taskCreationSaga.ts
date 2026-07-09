@@ -400,7 +400,9 @@ export class TaskCreationSaga extends Saga<
             model: input.model,
             reasoningLevel: input.reasoningLevel,
             sandboxEnvironmentId: input.sandboxEnvironmentId,
+            customImageId: input.customImageId,
             prAuthorshipMode,
+            autoPublish: input.cloudAutoPublish,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
             homeQuickAction: input.homeQuickActionLabel,
@@ -718,8 +720,18 @@ export class TaskCreationSaga extends Saga<
 
     const repoPathForDetection = input.repoPath;
     if (!repository && repoPathForDetection) {
+      // Detection only fills the org/repo metadata on the task; a transient
+      // failure (e.g. the workspace-server transport dropping mid-call) must
+      // not abort task creation, so degrade to an untagged task instead.
       const detected = await this.readOnlyStep("repo_detection", () =>
-        this.deps.host.detectRepo({ directoryPath: repoPathForDetection }),
+        this.deps.host
+          .detectRepo({ directoryPath: repoPathForDetection })
+          .catch((error) => {
+            this.log.warn("Repo detection failed; creating task without one", {
+              error,
+            });
+            return null;
+          }),
       );
       if (detected) {
         repository = `${detected.organization}/${detected.repository}`;
@@ -766,6 +778,12 @@ export class TaskCreationSaga extends Saga<
           channel: input.channelId ?? undefined,
           pending_user_message: warmPayload?.pendingUserMessage,
           pending_user_artifact_ids: warmPayload?.pendingUserArtifactIds,
+          // If creation activates a pre-warmed run, this is the only request
+          // that can carry the choice — the saga skips run creation entirely.
+          auto_publish:
+            input.workspaceMode === "cloud" && input.cloudAutoPublish
+              ? true
+              : undefined,
         });
         return result as unknown as Task;
       },

@@ -229,9 +229,10 @@ describe("AgentAuthAdapter", () => {
   });
 
   it("configures environment using the gateway proxy and current token", async () => {
+    const pathBefore = process.env.PATH;
+
     await adapter.configureProcessEnv({
       credentials: baseCredentials,
-      mockNodeDir: "/mock/node",
       proxyUrl: "http://127.0.0.1:9999",
       claudeCliPath: "/mock/claude-cli.js",
     });
@@ -241,5 +242,7 @@ describe("AgentAuthAdapter", () => {
     expect(process.env.LLM_GATEWAY_URL).toBe("http://127.0.0.1:9999");
     expect(process.env.CLAUDE_CODE_EXECUTABLE).toBe("/mock/claude-cli.js");
     expect(process.env.POSTHOG_PROJECT_ID).toBe("1");
+    // The node-shim era prepended a shim dir here; PATH must stay untouched.
+    expect(process.env.PATH).toBe(pathBefore);
   });
 });

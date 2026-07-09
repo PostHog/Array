@@ -23,10 +23,24 @@ export function AdvancedSettings() {
   );
   const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
   const setUseNewChatThread = useSettingsStore((s) => s.setUseNewChatThread);
+  const autoPublishCloudRuns = useSettingsStore((s) => s.autoPublishCloudRuns);
+  const setAutoPublishCloudRuns = useSettingsStore(
+    (s) => s.setAutoPublishCloudRuns,
+  );
   const devModeClient = useServiceOptional<DevModeClient>(DEV_MODE_CLIENT);
 
   return (
     <Flex direction="column">
+      <SettingRow
+        label="Always create pull requests for cloud runs"
+        description="Cloud runs push their changes and open a draft pull request when they finish, without waiting for you to ask"
+      >
+        <Switch
+          checked={autoPublishCloudRuns}
+          onCheckedChange={setAutoPublishCloudRuns}
+          size="1"
+        />
+      </SettingRow>
       <SettingRow
         label="Reset onboarding and tours"
         description="Re-run the onboarding tutorial and product tours on next app restart"

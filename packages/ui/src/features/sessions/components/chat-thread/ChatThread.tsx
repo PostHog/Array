@@ -1,4 +1,11 @@
-import { CaretDown, ChatCircle, FileText, Scroll } from "@phosphor-icons/react";
+import {
+  CaretDown,
+  ChatCircle,
+  Check,
+  Copy,
+  FileText,
+  Scroll,
+} from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
 import {
@@ -64,10 +71,12 @@ import {
 } from "@posthog/ui/features/sessions/useSessionTaskId";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
+import { useCopy } from "@posthog/ui/primitives/useCopy";
 import {
   DIFF_WORKER_FACTORY,
   type DiffWorkerFactory,
 } from "@posthog/ui/shell/diffWorkerHost";
+import { IconButton, Tooltip } from "@radix-ui/themes";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   memo,
@@ -316,7 +325,7 @@ function UserBubble({
 
   return (
     <ChatMessage align="end" className="group">
-      <ChatMessageContent className="gap-1">
+      <ChatMessageContent className="gap-1 pr-9">
         {showHeaderChips && (
           <ChatMessageHeader className="flex-wrap gap-1">
             {showChannelContextTag && channelContext && (
@@ -406,7 +415,43 @@ function UserBubble({
           </ChatMessageFooter>
         )}
       </ChatMessageContent>
+      <MessageCopyButton
+        value={displayContent}
+        revealClassName="group-hover:opacity-100"
+      />
     </ChatMessage>
+  );
+}
+
+/**
+ * Copy icon that floats into a message's right rail on hover. The hover-group qualifier differs by
+ * message type (`group` for user bubbles, `group/msg` for agent prose), so callers pass their own
+ * `revealClassName` (the `group-hover*:opacity-100` utility).
+ */
+function MessageCopyButton({
+  value,
+  revealClassName,
+}: {
+  value: string;
+  revealClassName: string;
+}) {
+  const { copied, copy } = useCopy();
+  return (
+    <Tooltip content={copied ? "Copied!" : "Copy message"}>
+      <IconButton
+        size="1"
+        variant="ghost"
+        color={copied ? "green" : "gray"}
+        onClick={() => copy(value)}
+        className={cn(
+          "absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity",
+          revealClassName,
+        )}
+        aria-label="Copy message"
+      >
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+      </IconButton>
+    </Tooltip>
   );
 }
 
@@ -540,9 +585,10 @@ const AgentProse = memo(function AgentProse({
   isStreaming?: boolean;
 }) {
   const smoothed = useSmoothedText(text);
+
   return (
-    <ChatMessage align="start">
-      <ChatMessageContent className="gap-1">
+    <ChatMessage align="start" className="group/msg">
+      <ChatMessageContent className="gap-1 pr-9">
         <ChatBubble variant="ghost">
           <ChatBubbleContent>
             {isStreaming ? (
@@ -553,6 +599,12 @@ const AgentProse = memo(function AgentProse({
           </ChatBubbleContent>
         </ChatBubble>
       </ChatMessageContent>
+      {isStreaming ? null : (
+        <MessageCopyButton
+          value={text}
+          revealClassName="group-hover/msg:opacity-100"
+        />
+      )}
     </ChatMessage>
   );
 });
