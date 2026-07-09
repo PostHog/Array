@@ -1980,8 +1980,22 @@ describe("AgentServer HTTP Mode", () => {
       expect(s.detectedPrUrl).toBeNull();
     });
 
-    it("fails closed when the run's GitHub identity cannot be resolved", async () => {
-      const s = setup(justNow());
+    it("attributes a recent PR when the identity is a GitHub App installation (gh api user unavailable)", async () => {
+      // Cloud runs authenticate with a GitHub App installation token, for which
+      // `gh api user` returns 403 → ghLogin is null. The PR is authored by the
+      // app bot (e.g. "app/posthog"); recency alone must carry attribution.
+      const s = setup(justNow(), "app/posthog");
+      s.fetchGhLogin = vi.fn(async () => null);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
+        output: { pr_url: PR_URL, pr_urls: [PR_URL] },
+      });
+      expect(s.detectedPrUrl).toBe(PR_URL);
+    });
+
+    it("still rejects an old PR when the identity cannot be resolved (recency guards)", async () => {
+      const s = setup(longAgo, "app/posthog");
       s.fetchGhLogin = vi.fn(async () => null);
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();

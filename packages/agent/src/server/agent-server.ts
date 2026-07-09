@@ -3495,10 +3495,13 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       return;
     }
 
-    // Only attribute PRs created during this run by this run's own GitHub
-    // identity — not ones the agent merely viewed.
+    // Only attribute PRs created during this run — not ones the agent merely
+    // viewed. GitHub App installation tokens (all cloud runs) can't read
+    // `gh api user`, so ghLogin is null there; enforce the author match only when
+    // we resolved our own identity, otherwise the recency gate alone scopes
+    // attribution to PRs created during this run.
     if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
-    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
+    if (ghLogin && !wasCreatedByLogin(attribution.author, ghLogin)) return;
 
     this.detectedPrUrl = prUrl;
 
