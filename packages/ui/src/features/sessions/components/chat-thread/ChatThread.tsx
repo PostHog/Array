@@ -303,6 +303,7 @@ function UserBubble({
   );
 
   const containsFileMentions = hasFileMentions(displayContent);
+  const { copied, copy } = useCopy();
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
@@ -415,6 +416,18 @@ function UserBubble({
           </ChatMessageFooter>
         )}
       </ChatMessageContent>
+      <Tooltip content={copied ? "Copied!" : "Copy message"}>
+        <IconButton
+          size="1"
+          variant="ghost"
+          color={copied ? "green" : "gray"}
+          onClick={() => copy(displayContent)}
+          className="absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+          aria-label="Copy message"
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </IconButton>
+      </Tooltip>
     </ChatMessage>
   );
 }
@@ -571,7 +584,7 @@ const AgentProse = memo(function AgentProse({
             variant="ghost"
             color={copied ? "green" : "gray"}
             onClick={() => copy(text)}
-            className="absolute top-0 right-0 cursor-pointer opacity-0 transition-opacity group-hover/msg:opacity-100"
+            className="absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity group-hover/msg:opacity-100"
             aria-label="Copy message"
           >
             {copied ? <Check size={14} /> : <Copy size={14} />}
