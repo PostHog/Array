@@ -87,6 +87,7 @@ import {
 } from "./cloud-prompt";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
+import { RunUsageAccumulator } from "./run-usage";
 import {
   handoffLocalGitStateSchema,
   jsonRpcRequestSchema,
@@ -318,6 +319,7 @@ export class AgentServer {
   private eventStreamSender: TaskRunEventStreamSender | null = null;
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
+  private runUsage = new RunUsageAccumulator();
   private detectedPrUrl: string | null = null;
   // Reset per session. `evaluatedPrUrls` dedupes per URL; `prAttributionChain` serializes
   // attributions so the most recently created PR in a run wins.
@@ -957,6 +959,7 @@ export class AgentServer {
           void this.syncCloudBranchMetadata(this.session.payload);
         }
 
+        this.recordTurnUsage(result.usage);
         this.broadcastTurnComplete(result.stopReason);
 
         if (result.stopReason === "end_turn") {
@@ -1670,6 +1673,7 @@ export class AgentServer {
         void this.syncCloudBranchMetadata(payload);
       }
 
+      this.recordTurnUsage(result.usage);
       this.broadcastTurnComplete(result.stopReason);
 
       if (result.stopReason === "end_turn") {
@@ -1821,6 +1825,7 @@ export class AgentServer {
         void this.syncCloudBranchMetadata(payload);
       }
 
+      this.recordTurnUsage(result.usage);
       this.broadcastTurnComplete(result.stopReason);
 
       if (result.stopReason === "end_turn") {
@@ -3619,6 +3624,9 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 
     this.pendingEvents = [];
     this.lastReportedBranch = null;
+    // Run usage is per run: a later session on this instance (e.g. a resume
+    // with a different run_id) must not inherit the previous run's totals.
+    this.runUsage = new RunUsageAccumulator();
     this.session = null;
   }
 
@@ -3674,6 +3682,24 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   ): HandoffLocalGitState | null {
     const result = handoffLocalGitStateSchema.safeParse(params.localGitState);
     return result.success ? result.data : null;
+  }
+
+  /**
+   * Accumulates a settled turn's token usage into the run total and reports it
+   * to the backend, merged into `TaskRun.state.token_usage`. Best-effort: a
+   * reporting failure must never affect the turn outcome.
+   */
+  private recordTurnUsage(usage: PromptResponse["usage"]): void {
+    if (!this.runUsage.add(usage)) return;
+    const payload = this.session?.payload;
+    if (!payload) return;
+    void this.posthogAPI
+      .updateTaskRun(payload.task_id, payload.run_id, {
+        state: { token_usage: this.runUsage.snapshot() },
+      })
+      .catch((error) => {
+        this.logger.warn("Failed to report run token usage", error);
+      });
   }
 
   private broadcastTurnComplete(stopReason: string): void {
