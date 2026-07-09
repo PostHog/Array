@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseConfig } from "./config";
 import { createMcpProxyTool, type ProxyToolDeps } from "./proxy-tool";
 import { ServerManager } from "./server-manager";
@@ -354,6 +354,88 @@ describe("mcp proxy tool", () => {
     const result = await text(tool, { tool: "mcp_demo_missing" });
     expect(result).toMatch(/no tool or server named "mcp_demo_missing"/);
     await mock.close();
+  });
+
+  it("reads the tool cache file once per search, not once per non-ready server (regression)", async () => {
+    const mock = createMockMcpServer([ECHO_TOOL]);
+    const { tool, toolCache } = await setup({
+      servers: {
+        one: { command: "unused", lifecycle: "lazy" },
+        two: { command: "unused", lifecycle: "lazy" },
+        three: { command: "unused", lifecycle: "lazy" },
+      },
+      mock,
+      cacheDir,
+    });
+    for (const name of ["one", "two", "three"]) {
+      await toolCache.set(name, {
+        configHash: "irrelevant-for-search",
+        tools: [
+          { name: `mcp_${name}_echo`, mcpName: "echo", description: "Echo" },
+        ],
+      });
+    }
+
+    const allSpy = vi.spyOn(McpToolCache.prototype, "all");
+    const getSpy = vi.spyOn(McpToolCache.prototype, "get");
+    try {
+      const result = await text(tool, { search: "echo" });
+      expect(result).toContain("mcp_one_echo");
+      expect(result).toContain("mcp_two_echo");
+      expect(result).toContain("mcp_three_echo");
+      // One read for the whole search, regardless of how many non-ready
+      // servers had a cached entry to check — not the previous N-reads-for-
+      // N-servers behavior via a per-server `get()`.
+      expect(allSpy).toHaveBeenCalledTimes(1);
+      expect(getSpy).not.toHaveBeenCalled();
+    } finally {
+      allSpy.mockRestore();
+      getSpy.mockRestore();
+    }
+    await mock.close();
+  });
+
+  it('reports a timeout, not "unknown error", when waiting for an already-starting server exceeds the deadline (regression)', async () => {
+    // `lastError` is null while a server is merely still starting (it
+    // hasn't failed) — falling through to `lastError?.message ?? "unknown
+    // error"` on a timeout used to surface a meaningless message instead of
+    // saying what actually happened.
+    const config = parseConfig(
+      { mcpServers: { demo: { command: "unused" } } },
+      "test",
+    );
+    const manager = new ServerManager(config, {
+      // Never resolves: connect() sets state to "starting" synchronously,
+      // then hangs here forever, so the server never reaches "ready".
+      transportFactory: () => new Promise(() => {}),
+    });
+    const { host } = fakeHost();
+    const bridge = new ToolBridge(config.settings, host);
+    const deps: ProxyToolDeps = {
+      getManager: () => manager,
+      getBridge: () => bridge,
+      getToolCache: () => null,
+      getSettings: () => config.settings,
+      getCwd: () => "/workspace",
+      authHint: () => "",
+    };
+    const tool = createMcpProxyTool(deps);
+
+    // Fire the real start (unawaited): synchronously flips state to
+    // "starting" before this function yields control back here.
+    void manager.startServer("demo", "/workspace");
+    expect(manager.getServer("demo")?.state).toBe("starting");
+
+    vi.useFakeTimers();
+    try {
+      const resultPromise = text(tool, { tool: "demo" });
+      await vi.advanceTimersByTimeAsync(30_100);
+      const result = await resultPromise;
+      expect(result).toMatch(/timed out waiting for server to start/);
+      expect(result).not.toMatch(/unknown error/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("surfaces the /mcp:auth hint when a lazy OAuth server fails to start", async () => {

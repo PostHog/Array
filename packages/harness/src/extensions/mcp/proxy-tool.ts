@@ -103,9 +103,14 @@ async function search(
   }
 
   const servers: ManagedServer[] = manager.getAllServers();
+  // One read of the whole cache file up front, not one per non-ready
+  // server — `McpToolCache.get` re-reads the entire file from disk each
+  // call, so looping `get()` here would issue N redundant reads of the
+  // exact same file for N non-ready servers.
+  const cachedAll = toolCache ? await toolCache.all() : {};
   for (const server of servers) {
     if (server.state === "ready") continue; // already covered by `live` above
-    const cached = toolCache ? await toolCache.get(server.name) : undefined;
+    const cached = cachedAll[server.name];
     if (cached) {
       for (const tool of cached.tools) {
         if (hits.has(tool.name)) continue;
@@ -166,17 +171,24 @@ function formatHits(hits: Hit[]): string {
     .join("\n");
 }
 
-/** Poll until a server currently `starting` settles (started elsewhere, e.g. a racing call). */
+/**
+ * Poll until a server currently `starting` settles (started elsewhere, e.g.
+ * a racing call). Returns `false` if it's still `starting` when `timeoutMs`
+ * elapses, so callers can distinguish "timed out" from "settled" instead of
+ * re-deriving that from state + `lastError`, which is null while a server
+ * simply hasn't finished starting yet.
+ */
 async function waitWhileStarting(
   manager: ServerManager,
   serverName: string,
   timeoutMs = 30_000,
-): Promise<void> {
+): Promise<boolean> {
   const start = Date.now();
   while (manager.getServer(serverName)?.state === "starting") {
-    if (Date.now() - start > timeoutMs) return;
+    if (Date.now() - start > timeoutMs) return false;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  return true;
 }
 
 /** Ensure a server is connected, starting it on demand. Returns an error message, or `null` on success. */
@@ -187,14 +199,17 @@ async function ensureStarted(
 ): Promise<string | null> {
   const server = manager.getServer(serverName);
   if (!server) return `mcp: no server named "${serverName}"`;
+  let timedOut = false;
   if (server.state === "stopped") {
     await manager.startServer(serverName, deps.getCwd());
   } else if (server.state === "starting") {
-    await waitWhileStarting(manager, serverName);
+    timedOut = !(await waitWhileStarting(manager, serverName));
   }
   const after = manager.getServer(serverName);
   if (after?.state !== "ready") {
-    const message = after?.lastError?.message ?? "unknown error";
+    const message = timedOut
+      ? "timed out waiting for server to start"
+      : (after?.lastError?.message ?? "unknown error");
     const hint = after?.config.auth ? deps.authHint(serverName, message) : "";
     return `mcp: failed to start "${serverName}" — ${message}${hint}`;
   }
@@ -208,9 +223,12 @@ async function findCachedOwner(
   piName: string,
 ): Promise<string | undefined> {
   if (!toolCache) return undefined;
+  // Same reasoning as `search()` above: read the cache file once, not once
+  // per non-ready server.
+  const cachedAll = await toolCache.all();
   for (const server of manager.getAllServers()) {
     if (server.state === "ready") continue;
-    const cached = await toolCache.get(server.name);
+    const cached = cachedAll[server.name];
     if (cached?.tools.some((t) => t.name === piName)) return server.name;
   }
   return undefined;
