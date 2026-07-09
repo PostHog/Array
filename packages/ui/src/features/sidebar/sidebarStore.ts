@@ -1,3 +1,5 @@
+import { ALL_WORKSPACE_MODES } from "@posthog/core/sidebar/buildSidebarData";
+import type { WorkspaceMode } from "@posthog/shared";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { SIDEBAR_MIN_WIDTH } from "./constants";
@@ -14,6 +16,7 @@ interface SidebarStoreState {
   sortMode: "updated" | "created";
   showAllUsers: boolean;
   showInternal: boolean;
+  taskTypeFilter: WorkspaceMode[];
 }
 
 interface SidebarStoreActions {
@@ -32,6 +35,7 @@ interface SidebarStoreActions {
   setSortMode: (mode: SidebarStoreState["sortMode"]) => void;
   setShowAllUsers: (showAllUsers: boolean) => void;
   setShowInternal: (showInternal: boolean) => void;
+  toggleTaskType: (mode: WorkspaceMode) => void;
 }
 
 type SidebarStore = SidebarStoreState & SidebarStoreActions;
@@ -50,6 +54,7 @@ export const useSidebarStore = create<SidebarStore>()(
       sortMode: "updated",
       showAllUsers: false,
       showInternal: false,
+      taskTypeFilter: [...ALL_WORKSPACE_MODES],
       setOpen: (open) => set({ open, hasUserSetOpen: true }),
       setOpenAuto: (open) =>
         set((state) => (state.hasUserSetOpen ? state : { open })),
@@ -100,6 +105,12 @@ export const useSidebarStore = create<SidebarStore>()(
       setSortMode: (sortMode) => set({ sortMode }),
       setShowAllUsers: (showAllUsers) => set({ showAllUsers }),
       setShowInternal: (showInternal) => set({ showInternal }),
+      toggleTaskType: (mode) =>
+        set((state) => ({
+          taskTypeFilter: state.taskTypeFilter.includes(mode)
+            ? state.taskTypeFilter.filter((m) => m !== mode)
+            : [...state.taskTypeFilter, mode],
+        })),
     }),
     {
       name: "sidebar-storage",
@@ -114,6 +125,7 @@ export const useSidebarStore = create<SidebarStore>()(
         sortMode: state.sortMode,
         showAllUsers: state.showAllUsers,
         showInternal: state.showInternal,
+        taskTypeFilter: state.taskTypeFilter,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as {
@@ -127,6 +139,7 @@ export const useSidebarStore = create<SidebarStore>()(
           sortMode?: SidebarStoreState["sortMode"];
           showAllUsers?: boolean;
           showInternal?: boolean;
+          taskTypeFilter?: WorkspaceMode[];
         };
         return {
           ...current,
@@ -145,6 +158,8 @@ export const useSidebarStore = create<SidebarStore>()(
           sortMode: persistedState.sortMode ?? current.sortMode,
           showAllUsers: persistedState.showAllUsers ?? current.showAllUsers,
           showInternal: persistedState.showInternal ?? current.showInternal,
+          taskTypeFilter:
+            persistedState.taskTypeFilter ?? current.taskTypeFilter,
         };
       },
     },

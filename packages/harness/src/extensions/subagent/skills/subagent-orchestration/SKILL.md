@@ -62,11 +62,6 @@ re-discovering things you already know.
 - **chain** — `chain: [...]`, sequential steps where each step's task can reference
   `{previous}` (the prior step's final output). Use for a fixed pipeline like
   scout → planner → worker.
-- **background: true** — any of the above, but returns immediately with a `runId`
-  instead of waiting. Check on it later with `/subagents-fleet`, or ask "check run
-  `<id>`" / "interrupt run `<id>`". Only use this for genuinely long-running work you
-  don't need to block on — you cannot answer the child's `contact_supervisor`
-  questions once it's running in the background.
 
 ## Recommended pattern
 
@@ -79,14 +74,5 @@ steps. For small changes, `worker` alone (or `worker` then one `reviewer`) is en
 
 ## Observability
 
-- `/subagents-fleet` lists recent and in-progress runs (state, duration, agents).
-- `/subagents-fleet interrupt <runId>` aborts a background run.
-- Every run writes `status.json`, `events.jsonl`, and a full `transcript.md` to
-  `~/.pi/agent/subagent-runs/<runId>/` for later inspection.
-
-## If a subagent contacts you
-
-A running subagent (foreground/parallel/chain, not background) may pause and ask you a
-question via `contact_supervisor` if it's blocked or needs a decision it isn't confident
-making on its own. When this happens you'll be prompted for a reply inline — answer
-directly; there's no special syntax needed.
+Every run writes `status.json`, `events.jsonl`, and a full `transcript.md` to
+`~/.pi/agent/subagent-runs/<runId>/` for later inspection.

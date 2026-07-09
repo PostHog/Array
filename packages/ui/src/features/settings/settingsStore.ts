@@ -12,6 +12,8 @@ import { persist } from "zustand/middleware";
 
 export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
+
+export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "cloud";
 export type AgentAdapter = Adapter;
 export type DefaultInitialTaskMode = "plan" | "last_used";
 export type DefaultMessagingMode = "queue" | "steer";
@@ -221,7 +223,7 @@ export const useSettingsStore = create<SettingsStore>()(
       defaultRunMode: "last_used",
       lastUsedRunMode: "local",
       lastUsedLocalWorkspaceMode: "local",
-      lastUsedWorkspaceMode: "local",
+      lastUsedWorkspaceMode: DEFAULT_WORKSPACE_MODE,
       lastUsedAdapter: "claude",
       lastUsedModel: null,
       lastUsedReasoningEffort: null,

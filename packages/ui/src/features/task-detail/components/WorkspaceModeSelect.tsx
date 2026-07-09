@@ -2,6 +2,7 @@ import {
   ArrowsSplit,
   CaretDown,
   Cloud,
+  Cube,
   Laptop,
   Plus,
 } from "@phosphor-icons/react";
@@ -23,8 +24,9 @@ import {
 import type { WorkspaceMode } from "@posthog/shared";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { useCallback, useMemo, useState } from "react";
-import { useFeatureFlag } from "../../feature-flags/useFeatureFlag";
+import { useSandboxCustomImages } from "../../settings/sections/environments/useSandboxCustomImages";
 import { useSandboxEnvironments } from "../../settings/sections/environments/useSandboxEnvironments";
+import { useCloudModeEnabled } from "../hooks/useCloudModeEnabled";
 
 export type { WorkspaceMode };
 
@@ -36,6 +38,8 @@ interface WorkspaceModeSelectProps {
   overrideModes?: WorkspaceMode[];
   selectedCloudEnvironmentId?: string | null;
   onCloudEnvironmentChange?: (envId: string | null) => void;
+  selectedCustomImageId?: string | null;
+  onCustomImageChange?: (imageId: string | null) => void;
 }
 
 const LOCAL_MODES: {
@@ -67,12 +71,19 @@ export function WorkspaceModeSelect({
   overrideModes,
   selectedCloudEnvironmentId,
   onCloudEnvironmentChange,
+  selectedCustomImageId,
+  onCustomImageChange,
 }: WorkspaceModeSelectProps) {
-  const cloudModeEnabled =
-    useFeatureFlag("twig-cloud-mode-toggle") || import.meta.env.DEV;
+  const cloudModeEnabled = useCloudModeEnabled();
 
   const { environments } = useSandboxEnvironments();
+  const { images, customImagesEnabled } = useSandboxCustomImages();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const readyImages = useMemo(
+    () => images.filter((image) => image.status === "ready"),
+    [images],
+  );
 
   const handleAddEnvironment = useCallback(() => {
     setMenuOpen(false);
@@ -96,12 +107,19 @@ export function WorkspaceModeSelect({
     return environments.find((e) => e.id === selectedCloudEnvironmentId)?.name;
   }, [value, selectedCloudEnvironmentId, environments]);
 
+  const selectedImageName = useMemo(() => {
+    if (value !== "cloud" || !selectedCustomImageId) return null;
+    return images.find((img) => img.id === selectedCustomImageId)?.name;
+  }, [value, selectedCustomImageId, images]);
+
   const triggerLabel = useMemo(() => {
     if (value === "cloud") {
-      return selectedEnvName ? `Cloud · ${selectedEnvName}` : "Cloud";
+      return ["Cloud", selectedEnvName, selectedImageName]
+        .filter(Boolean)
+        .join(" · ");
     }
     return LOCAL_MODES.find((m) => m.mode === value)?.label ?? "Worktree";
-  }, [value, selectedEnvName]);
+  }, [value, selectedEnvName, selectedImageName]);
 
   const triggerIcon = useMemo(() => {
     if (value === "cloud") return CLOUD_ICON;
@@ -144,6 +162,7 @@ export function WorkspaceModeSelect({
               onClick={() => {
                 onChange(item.mode);
                 onCloudEnvironmentChange?.(null);
+                onCustomImageChange?.(null);
               }}
               render={
                 <ItemMenuItem size="xs" className="w-full">
@@ -240,6 +259,66 @@ export function WorkspaceModeSelect({
                             : env.network_access_level === "trusted"
                               ? "Trusted sources only"
                               : `${env.allowed_domains.length} allowed domain${env.allowed_domains.length !== 1 ? "s" : ""}`}
+                        </ItemDescription>
+                      </ItemContent>
+                    </ItemMenuItem>
+                  }
+                />
+              ))}
+            </DropdownMenuGroup>
+          </>
+        )}
+
+        {showCloud && customImagesEnabled && readyImages.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <div className="flex items-center justify-between px-2 py-1">
+              <MenuLabel className="p-0">Base image</MenuLabel>
+            </div>
+
+            <DropdownMenuGroup>
+              <DropdownMenuItem
+                onClick={() => {
+                  onChange("cloud");
+                  onCustomImageChange?.(null);
+                }}
+                render={
+                  <ItemMenuItem size="xs" className="w-full">
+                    <ItemMedia variant="icon" className="mt-2 ml-2">
+                      <span>
+                        <Cube size={14} weight="regular" />
+                      </span>
+                    </ItemMedia>
+                    <ItemContent variant="menuItem">
+                      <ItemTitle>Default</ItemTitle>
+                      <ItemDescription className="whitespace-nowrap leading-none">
+                        Standard sandbox image
+                      </ItemDescription>
+                    </ItemContent>
+                  </ItemMenuItem>
+                }
+              />
+
+              {readyImages.map((image) => (
+                <DropdownMenuItem
+                  key={`custom-image-${image.id}`}
+                  onClick={() => {
+                    onChange("cloud");
+                    onCustomImageChange?.(image.id);
+                  }}
+                  render={
+                    <ItemMenuItem size="xs" className="w-full">
+                      <ItemMedia variant="icon" className="mt-2 ml-2">
+                        <span>
+                          <Cube size={14} weight="regular" />
+                        </span>
+                      </ItemMedia>
+                      <ItemContent variant="menuItem">
+                        <ItemTitle>{image.name}</ItemTitle>
+                        <ItemDescription className="whitespace-nowrap leading-none">
+                          {image.version > 0
+                            ? `Custom image · v${image.version}`
+                            : "Custom image"}
                         </ItemDescription>
                       </ItemContent>
                     </ItemMenuItem>

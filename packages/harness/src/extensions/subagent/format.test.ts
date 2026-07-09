@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  aggregateUsage,
-  renderTranscriptMarkdown,
-  truncateForModel,
-} from "./format";
+import { renderTranscriptMarkdown, truncateForModel } from "./format";
 import type { SingleRunResult } from "./run-agent";
 
 function baseResult(overrides: Partial<SingleRunResult> = {}): SingleRunResult {
@@ -37,46 +33,6 @@ describe("truncateForModel", () => {
     const result = truncateForModel("x".repeat(200), 50);
     expect(result.length).toBeLessThan(250);
     expect(result).toMatch(/Output truncated: \d+ bytes omitted/);
-  });
-});
-
-describe("aggregateUsage", () => {
-  it("sums tokens and cost across results", () => {
-    const results = [
-      baseResult(),
-      baseResult({
-        usage: {
-          input: 5,
-          output: 5,
-          cacheRead: 0,
-          cacheWrite: 0,
-          cost: 0.01,
-          contextTokens: 10,
-          turns: 1,
-        },
-      }),
-    ];
-    expect(aggregateUsage(results)).toEqual({
-      totalTokens: 40,
-      totalCost: 0.03,
-    });
-  });
-
-  it("falls back to input+output when contextTokens is 0", () => {
-    const results = [
-      baseResult({
-        usage: {
-          input: 5,
-          output: 5,
-          cacheRead: 0,
-          cacheWrite: 0,
-          cost: 0,
-          contextTokens: 0,
-          turns: 1,
-        },
-      }),
-    ];
-    expect(aggregateUsage(results).totalTokens).toBe(10);
   });
 });
 

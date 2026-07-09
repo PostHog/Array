@@ -1,12 +1,28 @@
 import { registerRendererStateStorage } from "@posthog/ui/shell/rendererStorage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type CompletionSound, useSettingsStore } from "./settingsStore";
+import {
+  type CompletionSound,
+  DEFAULT_WORKSPACE_MODE,
+  useSettingsStore,
+} from "./settingsStore";
 
 const getItem = vi.fn();
 const setItem = vi.fn();
 const removeItem = vi.fn();
 
 registerRendererStateStorage({ getItem, setItem, removeItem });
+
+// Runs before any test mutates the store singleton, so getState() still
+// reflects the initial values.
+describe("feature settingsStore defaults", () => {
+  it("defaults the workspace mode to cloud with a local fallback", () => {
+    expect(DEFAULT_WORKSPACE_MODE).toBe("cloud");
+    expect(useSettingsStore.getState().lastUsedWorkspaceMode).toBe("cloud");
+    expect(useSettingsStore.getState().lastUsedLocalWorkspaceMode).toBe(
+      "local",
+    );
+  });
+});
 
 describe("feature settingsStore cloud selections", () => {
   beforeEach(() => {

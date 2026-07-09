@@ -433,6 +433,9 @@ export interface RunTaskInCloudOptions {
   runSource?: "manual" | "signal_report";
   /** Signal report ID when run_source is "signal_report". */
   signalReportId?: string;
+  /** When true, the cloud run pushes its changes and opens a draft PR on
+   *  completion without waiting for an explicit ask. */
+  autoPublish?: boolean;
 }
 
 export async function runTaskInCloud(
@@ -456,7 +459,8 @@ export async function runTaskInCloud(
       options.reasoningEffort !== undefined ||
       options.initialPermissionMode !== undefined ||
       options.runSource !== undefined ||
-      options.signalReportId !== undefined);
+      options.signalReportId !== undefined ||
+      options.autoPublish !== undefined);
 
   let body: string | undefined;
   if (hasOptions) {
@@ -483,6 +487,9 @@ export async function runTaskInCloud(
     if (options?.runSource) payload.run_source = options.runSource;
     if (options?.signalReportId)
       payload.signal_report_id = options.signalReportId;
+    if (options?.autoPublish !== undefined) {
+      payload.auto_publish = options.autoPublish;
+    }
     body = JSON.stringify(payload);
   }
 

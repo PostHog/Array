@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
+import { useUserRepositoryIntegration } from "../../integrations/useIntegrations";
 import { PromptInput } from "../../message-editor/components/PromptInput";
 import { useDraftStore } from "../../message-editor/draftStore";
 import type { EditorHandle } from "../../message-editor/types";
@@ -22,8 +23,10 @@ import {
   type WorkspaceMode,
   WorkspaceModeSelect,
 } from "../../task-detail/components/WorkspaceModeSelect";
+import { useCloudModeEnabled } from "../../task-detail/hooks/useCloudModeEnabled";
 import { usePreviewConfig } from "../../task-detail/hooks/usePreviewConfig";
 import { useTaskCreation } from "../../task-detail/hooks/useTaskCreation";
+import { resolveWorkspaceModePreference } from "../../task-detail/hooks/workspaceModePreference";
 
 export interface ChannelHomeComposerHandle {
   /** Drop a starter prompt into the editor and apply its mode, if any. */
@@ -77,10 +80,18 @@ export const ChannelHomeComposer = forwardRef<
     [setLastUsedAdapter],
   );
 
+  const cloudModeEnabled = useCloudModeEnabled();
+  const { hasGithubIntegration } = useUserRepositoryIntegration();
+
   // Repo-less channel tasks only run local or cloud (worktree needs a repo), so
   // collapse any lingering worktree preference down to local for the initial pick.
-  const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(
-    lastUsedWorkspaceMode === "cloud" ? "cloud" : "local",
+  const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() =>
+    resolveWorkspaceModePreference({
+      preferredMode: lastUsedWorkspaceMode === "cloud" ? "cloud" : "local",
+      cloudModeEnabled,
+      hasGithubIntegration,
+      lastUsedLocalWorkspaceMode: "local",
+    }),
   );
   const [selectedCloudEnvId, setSelectedCloudEnvId] = useState<string | null>(
     null,

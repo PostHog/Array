@@ -35,6 +35,7 @@ export interface TaskCreationInput {
   reasoningLevel?: string;
   environmentId?: string;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
   /**

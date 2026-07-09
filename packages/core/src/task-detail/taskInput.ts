@@ -21,6 +21,7 @@ export interface PrepareTaskInputOptions {
   reasoningLevel?: string;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   signalReportId?: string;
   additionalDirectories?: string[];
   channelContext?: string;
@@ -57,6 +58,7 @@ export function prepareTaskInput(
     reasoningLevel: options.reasoningLevel,
     environmentId: options.environmentId ?? undefined,
     sandboxEnvironmentId: options.sandboxEnvironmentId,
+    customImageId: options.customImageId,
     cloudPrAuthorshipMode:
       options.signalReportId && isCloud ? "user" : undefined,
     cloudRunSource:

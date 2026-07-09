@@ -284,6 +284,7 @@ describe("areReposReady", () => {
 
 type HookArgs = {
   folderId: string | undefined;
+  requestId?: string;
   folders: RegisteredFolder[];
   repositories: string[];
   reposLoaded: boolean;
@@ -299,6 +300,7 @@ function renderRepoSelectionHook(initial: HookArgs) {
     (props: HookArgs) =>
       useInitialRepoSelectionFromFolderId({
         folderId: props.folderId,
+        requestId: props.requestId,
         folders: props.folders,
         repositories: props.repositories,
         reposLoaded: props.reposLoaded,
@@ -560,5 +562,43 @@ describe("useInitialRepoSelectionFromFolderId", () => {
       currentMode: "local",
     });
     expect(setWorkspaceMode).not.toHaveBeenCalled();
+  });
+
+  it("re-syncs the same folderId when a new requestId arrives (repeat '+' click)", () => {
+    const folders = [folder("a", "/repos/a", "posthog/a")];
+    const repositories = ["posthog/a"];
+    const { rerender, setSelectedDirectory } = renderRepoSelectionHook({
+      folderId: "a",
+      requestId: "req-1",
+      folders,
+      repositories,
+      reposLoaded: true,
+      currentMode: "local",
+    });
+    expect(setSelectedDirectory).toHaveBeenCalledExactlyOnceWith("/repos/a");
+
+    // Same request re-rendering must not re-apply (user edits stay intact)...
+    rerender({
+      folderId: "a",
+      requestId: "req-1",
+      folders,
+      repositories,
+      reposLoaded: true,
+      currentMode: "local",
+    });
+    expect(setSelectedDirectory).toHaveBeenCalledTimes(1);
+
+    // ...but a fresh click on the same group's "+" issues a new requestId and
+    // must re-select the folder's directory.
+    rerender({
+      folderId: "a",
+      requestId: "req-2",
+      folders,
+      repositories,
+      reposLoaded: true,
+      currentMode: "local",
+    });
+    expect(setSelectedDirectory).toHaveBeenCalledTimes(2);
+    expect(setSelectedDirectory).toHaveBeenLastCalledWith("/repos/a");
   });
 });

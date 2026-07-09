@@ -69,6 +69,7 @@ interface UseTaskCreationOptions {
   reasoningLevel?: string;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   signalReportId?: string;
   channelContext?: string;
   channelName?: string;
@@ -163,6 +164,7 @@ export function useTaskCreation({
   reasoningLevel,
   environmentId,
   sandboxEnvironmentId,
+  customImageId,
   signalReportId,
   channelContext,
   channelName,
@@ -319,6 +321,7 @@ export function useTaskCreation({
           reasoningLevel,
           environmentId,
           sandboxEnvironmentId,
+          customImageId,
           signalReportId,
           additionalDirectories,
           channelContext,
@@ -479,6 +482,7 @@ export function useTaskCreation({
       reasoningLevel,
       environmentId,
       sandboxEnvironmentId,
+      customImageId,
       signalReportId,
       additionalDirectories,
       channelContext,
