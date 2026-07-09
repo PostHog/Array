@@ -107,11 +107,9 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
         );
 
         // The server always returns its default model as the current value, so
-        // without this the user's last pick is lost on every refetch/remount.
-        // Restore it through applyConfigChange so the dependent effort options
-        // are recomputed for the restored model. Premium picks are not
-        // restored (see defaultEligibleModel) — the composer falls back to
-        // the server default.
+        // without this the user's last (default-eligible) pick is lost on every
+        // refetch/remount. Restore it through applyConfigChange so the
+        // dependent effort options are recomputed for the restored model.
         const modelOpt = getOptionByCategory(initial, "model");
         const restorableModel = defaultEligibleModel(lastUsedModel);
         if (

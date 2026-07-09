@@ -171,7 +171,6 @@ export function useInboxCloudTaskRunner({
     // resolver keeps it only if the gateway still offers it, otherwise it falls
     // back to the server default. A stale id (e.g. one later de-listed for the
     // org) would otherwise be sent here and fail the run with a gateway 403.
-    // Premium last-used models are dropped (see defaultEligibleModel).
     const preferredModel = defaultEligibleModel(settings.lastUsedModel);
     const resolvedModel = await resolveDefaultModel(
       queryClient,

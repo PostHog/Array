@@ -102,9 +102,7 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
           // The cloud runtime requires a model: action-pinned, then last-used,
           // then the adapter's server default. The preferred candidate is only
           // honoured if the gateway still offers it (the resolver validates it),
-          // so a stale persisted/pinned id can't reach the run and 403. A
-          // premium last-used model is skipped (see defaultEligibleModel);
-          // only an explicit action pin may select it.
+          // so a stale persisted/pinned id can't reach the run and 403.
           const adapter = action.adapter ?? lastUsedAdapter;
           const preferredModel =
             action.model ?? defaultEligibleModel(lastUsedModel);

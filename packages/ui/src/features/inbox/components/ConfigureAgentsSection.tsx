@@ -306,7 +306,6 @@ function SetupTaskSection() {
       const settings = useSettingsStore.getState();
       const adapter = settings.lastUsedAdapter ?? "claude";
       const apiHost = getCloudUrlFromRegion(cloudRegion);
-      // Premium last-used models are dropped (see defaultEligibleModel).
       const preferredModel = defaultEligibleModel(settings.lastUsedModel);
       const resolvedModel = await resolveDefaultModel(
         queryClient,
