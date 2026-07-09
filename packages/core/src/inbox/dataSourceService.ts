@@ -39,12 +39,6 @@ export interface GithubDataSourceParams {
   githubIntegrationId: number;
 }
 
-export interface JiraDataSourceParams {
-  subdomain: string;
-  email: string;
-  apiToken: string;
-}
-
 export interface ZendeskDataSourceParams {
   subdomain: string;
   apiKey: string;
@@ -91,22 +85,6 @@ export class DataSourceService {
       payload: {
         linear_integration_id: linearIntegrationId,
         schemas: schemasPayload("linear"),
-      },
-    });
-  }
-
-  async createJiraDataSource(
-    client: PostHogAPIClient,
-    projectId: number,
-    params: JiraDataSourceParams,
-  ): Promise<void> {
-    await client.createExternalDataSource(projectId, {
-      source_type: "Jira",
-      payload: {
-        subdomain: params.subdomain,
-        email: params.email,
-        api_token: params.apiToken,
-        schemas: schemasPayload("jira"),
       },
     });
   }

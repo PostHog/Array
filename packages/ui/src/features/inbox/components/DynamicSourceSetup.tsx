@@ -8,7 +8,15 @@ import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useSourceConfig } from "@posthog/ui/features/inbox/hooks/useSourceConfig";
 import { toast } from "@posthog/ui/primitives/toast";
-import { Box, Flex, Select, Switch, Text, TextField } from "@radix-ui/themes";
+import {
+  Box,
+  Flex,
+  Select,
+  Switch,
+  Text,
+  TextArea,
+  TextField,
+} from "@radix-ui/themes";
 import { useCallback, useMemo, useState } from "react";
 
 interface SchemaPayload {
@@ -60,29 +68,38 @@ function isUnsupportedField(field: SourceFieldConfig): boolean {
 }
 
 /**
- * Collect the required text-input field names that are currently active, so we
- * can gate the submit button and validate before posting.
+ * Walk the currently active fields and collect the names of required inputs and
+ * selects that are not yet satisfied, so we can gate the submit button and
+ * validate before posting. A select with a `defaultValue` is always satisfied,
+ * because the control renders that value pre-selected.
  */
-function requiredInputNames(
+function missingRequiredFields(
   config: SourceConfig,
   values: FieldValues,
 ): string[] {
-  const names: string[] = [];
+  const missing: string[] = [];
   const walk = (fields: SourceFieldConfig[]) => {
     for (const field of fields) {
       if (field.type === "switch-group") {
         if (values[field.name]) walk(field.fields);
       } else if (field.type === "select") {
-        const selected = values[field.name];
+        const selected =
+          (values[field.name] as string) ?? field.defaultValue ?? "";
+        if (field.required && selected.trim().length === 0) {
+          missing.push(field.name);
+        }
         const option = field.options.find((o) => o.value === selected);
         if (option?.fields) walk(option.fields);
       } else if (isInputField(field) && field.required) {
-        names.push(field.name);
+        const value = values[field.name];
+        if (typeof value !== "string" || value.trim().length === 0) {
+          missing.push(field.name);
+        }
       }
     }
   };
   walk(config.fields);
-  return names;
+  return missing;
 }
 
 /**
@@ -140,10 +157,7 @@ export function DynamicSourceSetup({
 
   const canSubmit = useMemo(() => {
     if (!config || hasUnsupportedField) return false;
-    return requiredInputNames(config, values).every((name) => {
-      const value = values[name];
-      return typeof value === "string" && value.trim().length > 0;
-    });
+    return missingRequiredFields(config, values).length === 0;
   }, [config, values, hasUnsupportedField]);
 
   const handleSubmit = useCallback(async () => {
@@ -295,15 +309,24 @@ function SourceField({
 
   if (isInputField(field)) {
     const isSecret = field.type === "password" || field.secret === true;
-    const inputType = field.type === "textarea" ? "text" : field.type;
     return (
       <Flex direction="column" gap="1">
-        <TextField.Root
-          type={isSecret ? "password" : inputType}
-          placeholder={field.placeholder || field.label}
-          value={(values[field.name] as string) ?? ""}
-          onChange={(e) => setValue(field.name, e.target.value)}
-        />
+        <Text className="text-gray-12 text-sm">{field.label}</Text>
+        {field.type === "textarea" ? (
+          <TextArea
+            rows={4}
+            placeholder={field.placeholder || field.label}
+            value={(values[field.name] as string) ?? ""}
+            onChange={(e) => setValue(field.name, e.target.value)}
+          />
+        ) : (
+          <TextField.Root
+            type={isSecret ? "password" : field.type}
+            placeholder={field.placeholder || field.label}
+            value={(values[field.name] as string) ?? ""}
+            onChange={(e) => setValue(field.name, e.target.value)}
+          />
+        )}
         {field.caption && (
           <Text className="text-[13px] text-gray-11">{field.caption}</Text>
         )}
