@@ -1,10 +1,10 @@
 import { ArrowSquareOutIcon, InfoIcon } from "@phosphor-icons/react";
-import { GITHUB_CONNECT_TIMEOUT_MESSAGE } from "@posthog/core/integrations/connectErrors";
-import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import {
   describeGithubConnectError,
-  useGithubConnect,
-} from "@posthog/ui/features/integrations/useGithubUserConnect";
+  GITHUB_CONNECT_TIMEOUT_MESSAGE,
+} from "@posthog/core/integrations/connectErrors";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { useGithubConnect } from "@posthog/ui/features/integrations/useGithubUserConnect";
 import { useRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 

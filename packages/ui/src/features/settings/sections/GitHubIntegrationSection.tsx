@@ -4,14 +4,14 @@ import {
   GitBranchIcon,
   InfoIcon,
 } from "@phosphor-icons/react";
-import { GITHUB_CONNECT_TIMEOUT_MESSAGE } from "@posthog/core/integrations/connectErrors";
+import {
+  describeGithubConnectError,
+  GITHUB_CONNECT_TIMEOUT_MESSAGE,
+} from "@posthog/core/integrations/connectErrors";
 import { summarizeReposByOwner } from "@posthog/core/settings/githubRepoSummary";
 import { Button } from "@posthog/quill";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
-import {
-  describeGithubConnectError,
-  useGithubConnect,
-} from "@posthog/ui/features/integrations/useGithubUserConnect";
+import { useGithubConnect } from "@posthog/ui/features/integrations/useGithubUserConnect";
 import { useRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { Box, Flex, Spinner, Text, Tooltip } from "@radix-ui/themes";
 import { useMemo } from "react";
