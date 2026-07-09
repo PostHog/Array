@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createIPCHandler } from "@posthog/electron-trpc/main";
 import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
+import { DARK_APP_BACKGROUND_COLOR } from "@posthog/shared/constants";
 import {
   app,
   BrowserWindow,
@@ -201,7 +202,7 @@ export function createWindow(): void {
         ? {
             titleBarStyle: "hidden" as const,
             titleBarOverlay: {
-              color: "#131316",
+              color: DARK_APP_BACKGROUND_COLOR,
               symbolColor: "#ffffff",
               height: 36,
             },
@@ -223,9 +224,7 @@ export function createWindow(): void {
     height: savedState.height,
     minWidth: 800,
     minHeight: 600,
-    // Matches --color-background (dark) so the pre-render window, the boot
-    // loading screen and the app are one continuous color.
-    backgroundColor: "#131316",
+    backgroundColor: DARK_APP_BACKGROUND_COLOR,
     ...(windowIcon ? { icon: windowIcon } : {}),
     ...platformWindowConfig,
     show: false,
