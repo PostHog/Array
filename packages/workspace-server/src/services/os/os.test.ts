@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockReadFile = vi.hoisted(() => vi.fn());
@@ -166,6 +168,71 @@ describe("OsService simple delegations", () => {
     expect(urlLauncher.launch).toHaveBeenCalledWith(
       expect.stringMatching(/^file:\/\//),
     );
+  });
+});
+
+describe("OsService.getUserAgentInstructions", () => {
+  const home = os.homedir();
+  const agentsPath = path.join(home, ".agents", "AGENTS.md");
+  const codexPath = path.join(home, ".codex", "AGENTS.md");
+  const claudePath = path.join(home, ".claude", "CLAUDE.md");
+
+  function givenFiles(files: Record<string, string>) {
+    mockReadFile.mockImplementation(async (filePath: string) => {
+      if (filePath in files) return files[filePath];
+      throw new Error("ENOENT");
+    });
+  }
+
+  it("prefers an AGENTS.md over the user CLAUDE.md", async () => {
+    const { service } = createService();
+    givenFiles({
+      [codexPath]: "codex instructions",
+      [claudePath]: "claude instructions",
+    });
+
+    expect(await service.getUserAgentInstructions()).toEqual({
+      path: codexPath,
+      displayPath: "~/.codex/AGENTS.md",
+      content: "codex instructions",
+      truncated: false,
+    });
+  });
+
+  it("falls back to the user CLAUDE.md when no AGENTS.md exists", async () => {
+    const { service } = createService();
+    givenFiles({ [claudePath]: "claude instructions" });
+
+    expect(await service.getUserAgentInstructions()).toEqual({
+      path: claudePath,
+      displayPath: "~/.claude/CLAUDE.md",
+      content: "claude instructions",
+      truncated: false,
+    });
+  });
+
+  it("skips whitespace-only files", async () => {
+    const { service } = createService();
+    givenFiles({ [agentsPath]: "  \n\t", [claudePath]: "real instructions" });
+
+    const result = await service.getUserAgentInstructions();
+    expect(result?.path).toBe(claudePath);
+  });
+
+  it("returns null when no candidate file exists", async () => {
+    const { service } = createService();
+    givenFiles({});
+
+    expect(await service.getUserAgentInstructions()).toBeNull();
+  });
+
+  it("truncates oversized files and flags the truncation", async () => {
+    const { service } = createService();
+    givenFiles({ [claudePath]: "x".repeat(25_000) });
+
+    const result = await service.getUserAgentInstructions();
+    expect(result?.content).toHaveLength(20_000);
+    expect(result?.truncated).toBe(true);
   });
 });
 

@@ -53,7 +53,9 @@ export const startSessionInput = z.object({
   runMode: z.enum(["local", "cloud"]).optional(),
   adapter: z.enum(["claude", "codex"]).optional(),
   additionalDirectories: z.array(z.string()).optional(),
-  customInstructions: z.string().max(2000).optional(),
+  // Sized for personalization synced from an AGENTS.md/CLAUDE.md file, which
+  // can be far larger than the 2000-char hand-typed settings field.
+  customInstructions: z.string().max(20_000).optional(),
   /**
    * Replaces the PostHog system prompt entirely for this session. Used by
    * constrained, single-purpose surfaces (e.g. the canvas generator) that drive
@@ -203,7 +205,9 @@ export const reconnectSessionInput = z.object({
   additionalDirectories: z.array(z.string()).optional(),
   permissionMode: z.string().optional(),
   model: z.string().optional(),
-  customInstructions: z.string().max(2000).optional(),
+  // Sized for personalization synced from an AGENTS.md/CLAUDE.md file, which
+  // can be far larger than the 2000-char hand-typed settings field.
+  customInstructions: z.string().max(20_000).optional(),
   effort: effortLevelSchema.optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
 });

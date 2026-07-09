@@ -7,6 +7,17 @@ export const claudePermissionsOutput = z.object({
 });
 export type ClaudePermissions = z.infer<typeof claudePermissionsOutput>;
 
+export const userAgentInstructionsSchema = z.object({
+  path: z.string(),
+  /** Home-relative form of `path` (e.g. `~/.claude/CLAUDE.md`), for display. */
+  displayPath: z.string(),
+  content: z.string(),
+  truncated: z.boolean(),
+});
+export const userAgentInstructionsOutput =
+  userAgentInstructionsSchema.nullable();
+export type UserAgentInstructions = z.infer<typeof userAgentInstructionsSchema>;
+
 export const selectAttachmentsInput = z.object({
   mode: z.enum(["files", "directories", "both"]).default("both"),
 });

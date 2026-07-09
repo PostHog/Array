@@ -37,6 +37,7 @@ import type {
   SavedAttachment,
   SelectAttachmentsMode,
   SelectedAttachment,
+  UserAgentInstructions,
 } from "./schemas";
 
 const fsPromises = fs.promises;
@@ -46,6 +47,19 @@ const JPEG_QUALITY = 85;
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const CLIPBOARD_TEMP_DIR = path.join(os.tmpdir(), "posthog-code-clipboard");
 const claudeSettingsPath = path.join(os.homedir(), ".claude", "settings.json");
+
+// Personalization synced from a file can be much larger than hand-typed
+// instructions, but the prompt it lands in must stay bounded.
+const USER_AGENT_INSTRUCTIONS_MAX_LENGTH = 20_000;
+// User-level agent instruction files, most-preferred first: AGENTS.md (the
+// cross-agent convention) from any of its conventional homes wins over Claude
+// Code's CLAUDE.md.
+const USER_AGENT_INSTRUCTIONS_CANDIDATES: ReadonlyArray<[string, string]> = [
+  [".agents", "AGENTS.md"],
+  [".codex", "AGENTS.md"],
+  [".claude", "AGENTS.md"],
+  [".claude", "CLAUDE.md"],
+];
 
 @injectable()
 export class OsService {
@@ -79,6 +93,34 @@ export class OsService {
     } catch {
       return { allow: [], deny: [] };
     }
+  }
+
+  /**
+   * The user-level agent instructions file to mirror into personalization:
+   * the first non-empty AGENTS.md across its conventional homes, else the
+   * user's CLAUDE.md. Null when none exists.
+   */
+  async getUserAgentInstructions(): Promise<UserAgentInstructions | null> {
+    for (const [dir, file] of USER_AGENT_INSTRUCTIONS_CANDIDATES) {
+      const filePath = path.join(os.homedir(), dir, file);
+      let content: string;
+      try {
+        content = await fsPromises.readFile(filePath, "utf-8");
+      } catch {
+        continue;
+      }
+      if (!content.trim()) continue;
+      const truncated = content.length > USER_AGENT_INSTRUCTIONS_MAX_LENGTH;
+      return {
+        path: filePath,
+        displayPath: `~/${dir}/${file}`,
+        content: truncated
+          ? content.slice(0, USER_AGENT_INSTRUCTIONS_MAX_LENGTH)
+          : content,
+        truncated,
+      };
+    }
+    return null;
   }
 
   async selectDirectory(): Promise<string | null> {

@@ -18,6 +18,7 @@ import { fileWatcherUiModule } from "@posthog/ui/features/file-watcher/file-watc
 import { focusUiModule } from "@posthog/ui/features/focus/focus.module";
 import { notificationsUiModule } from "@posthog/ui/features/notifications/notifications.module";
 import { provisioningUiModule } from "@posthog/ui/features/provisioning/provisioning.module";
+import { settingsUiModule } from "@posthog/ui/features/settings/settings.module";
 import { setupUiModule } from "@posthog/ui/features/setup/setup.module";
 import { workspaceUiModule } from "@posthog/ui/features/workspace/workspace.module";
 import {
@@ -45,6 +46,7 @@ export function registerDesktopContributions(): void {
     notificationsUiModule,
     onboardingModule,
     provisioningUiModule,
+    settingsUiModule,
     setupCoreModule,
     setupUiModule,
     skillsCoreModule,

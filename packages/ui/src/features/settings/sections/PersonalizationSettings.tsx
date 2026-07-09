@@ -1,8 +1,9 @@
 import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useDebounce } from "@posthog/ui/primitives/hooks/useDebounce";
 import { track } from "@posthog/ui/shell/analytics";
-import { Flex, Text, TextArea } from "@radix-ui/themes";
+import { Callout, Flex, Switch, Text, TextArea } from "@radix-ui/themes";
 import { useCallback, useEffect, useState } from "react";
 
 const MAX_INSTRUCTIONS_LENGTH = 2000;
@@ -12,6 +13,13 @@ export function PersonalizationSettings() {
   const setCustomInstructions = useSettingsStore(
     (s) => s.setCustomInstructions,
   );
+  const syncFromFile = useSettingsStore(
+    (s) => s.syncCustomInstructionsFromFile,
+  );
+  const setSyncFromFile = useSettingsStore(
+    (s) => s.setSyncCustomInstructionsFromFile,
+  );
+  const synced = useSettingsStore((s) => s.syncedCustomInstructions);
 
   const [localInstructions, setLocalInstructions] =
     useState(customInstructions);
@@ -43,28 +51,82 @@ export function PersonalizationSettings() {
     saveInstructions(localInstructions);
   }, [localInstructions, saveInstructions]);
 
+  const handleSyncToggle = useCallback(
+    (checked: boolean) => {
+      setSyncFromFile(checked);
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "sync_custom_instructions_from_file",
+        new_value: checked,
+      });
+    },
+    [setSyncFromFile],
+  );
+
   return (
-    <Flex direction="column" gap="1" py="4">
-      <Flex direction="column" gap="1" className="mb-2">
-        <Text className="font-medium text-sm">Custom instructions</Text>
-        <Text color="gray" className="text-[13px]">
-          Instructions included in every agent session
-        </Text>
+    <Flex direction="column">
+      <SettingRow
+        label="Sync from AGENTS.md / CLAUDE.md"
+        description="On start, read your user-level AGENTS.md (or CLAUDE.md if you have no AGENTS.md) and use it as your custom instructions, so they only live in one place"
+      >
+        <Switch
+          checked={syncFromFile}
+          onCheckedChange={handleSyncToggle}
+          size="1"
+        />
+      </SettingRow>
+
+      <Flex direction="column" gap="1" py="4">
+        <Flex direction="column" gap="1" className="mb-2">
+          <Text className="font-medium text-sm">Custom instructions</Text>
+          <Text color="gray" className="text-[13px]">
+            Instructions included in every agent session
+          </Text>
+        </Flex>
+
+        {syncFromFile && !synced && (
+          <Callout.Root size="1" color="amber" mb="2">
+            <Callout.Text>
+              No AGENTS.md or CLAUDE.md found in ~/.agents, ~/.codex or
+              ~/.claude — the instructions below are used instead.
+            </Callout.Text>
+          </Callout.Root>
+        )}
+
+        {syncFromFile && synced ? (
+          <>
+            <TextArea
+              value={synced.content}
+              readOnly
+              rows={6}
+              size="1"
+              resize="vertical"
+              className="w-full opacity-80"
+            />
+            <Text color="gray" align="right" className="text-[13px]">
+              Synced from {synced.displayPath}
+              {synced.truncated ? " (truncated)" : ""} — edit that file to
+              change these instructions
+            </Text>
+          </>
+        ) : (
+          <>
+            <TextArea
+              value={localInstructions}
+              onChange={(e) => setLocalInstructions(e.target.value)}
+              onBlur={handleInstructionsBlur}
+              maxLength={MAX_INSTRUCTIONS_LENGTH}
+              placeholder="e.g. Always write tests for new code. Prefer functional patterns."
+              rows={6}
+              size="1"
+              resize="vertical"
+              className="w-full"
+            />
+            <Text color="gray" align="right" className="text-[13px]">
+              {localInstructions.length}/{MAX_INSTRUCTIONS_LENGTH}
+            </Text>
+          </>
+        )}
       </Flex>
-      <TextArea
-        value={localInstructions}
-        onChange={(e) => setLocalInstructions(e.target.value)}
-        onBlur={handleInstructionsBlur}
-        maxLength={MAX_INSTRUCTIONS_LENGTH}
-        placeholder="e.g. Always write tests for new code. Prefer functional patterns."
-        rows={6}
-        size="1"
-        resize="vertical"
-        className="w-full"
-      />
-      <Text color="gray" align="right" className="text-[13px]">
-        {localInstructions.length}/{MAX_INSTRUCTIONS_LENGTH}
-      </Text>
     </Flex>
   );
 }

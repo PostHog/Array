@@ -31,7 +31,10 @@ import {
   updatePersistedConfigOptionValue,
 } from "@posthog/ui/features/sessions/sessionConfigStore";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
-import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import {
+  getEffectiveCustomInstructions,
+  useSettingsStore,
+} from "@posthog/ui/features/settings/settingsStore";
 import { taskViewedApi } from "@posthog/ui/features/sidebar/taskMetaApi";
 import { WORKSPACE_QUERY_KEY } from "@posthog/ui/features/workspace/identifiers";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -110,7 +113,11 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         useSessionAdapterStore.getState().removeAdapter(taskRunId),
     },
     get settings() {
-      return useSettingsStore.getState();
+      const state = useSettingsStore.getState();
+      return {
+        ...state,
+        customInstructions: getEffectiveCustomInstructions(state),
+      };
     },
     usageLimit: {
       show: (...args) => useUsageLimitStore.getState().show(...args),

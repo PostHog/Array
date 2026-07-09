@@ -19,6 +19,7 @@ import {
   selectAttachmentsOutput,
   selectFilesOutput,
   showMessageBoxInput,
+  userAgentInstructionsOutput,
 } from "@posthog/workspace-server/services/os/schemas";
 
 export const osRouter = router({
@@ -26,6 +27,12 @@ export const osRouter = router({
     .output(claudePermissionsOutput)
     .query(({ ctx }) =>
       ctx.container.get<OsService>(OS_SERVICE).getClaudePermissions(),
+    ),
+
+  getUserAgentInstructions: publicProcedure
+    .output(userAgentInstructionsOutput)
+    .query(({ ctx }) =>
+      ctx.container.get<OsService>(OS_SERVICE).getUserAgentInstructions(),
     ),
 
   selectDirectory: publicProcedure.query(({ ctx }) =>
