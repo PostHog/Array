@@ -524,9 +524,9 @@ export const useSettingsStore = create<SettingsStore>()(
 );
 
 /**
- * The personalization to inject into sessions: the synced AGENTS.md/CLAUDE.md
- * snapshot when file sync is on and a non-empty file was found, else the
- * hand-typed custom instructions.
+ * The personalization to inject into sessions. Strictly either/or: while file
+ * sync is on, only the synced AGENTS.md/CLAUDE.md snapshot applies (empty when
+ * no file was found) and the hand-typed custom instructions are ignored.
  */
 export function getEffectiveCustomInstructions(
   state: Pick<
@@ -536,11 +536,9 @@ export function getEffectiveCustomInstructions(
     | "syncedCustomInstructions"
   >,
 ): string {
-  if (
-    state.syncCustomInstructionsFromFile &&
-    state.syncedCustomInstructions?.content.trim()
-  ) {
-    return state.syncedCustomInstructions.content;
+  if (state.syncCustomInstructionsFromFile) {
+    const content = state.syncedCustomInstructions?.content ?? "";
+    return content.trim() ? content : "";
   }
   return state.customInstructions;
 }

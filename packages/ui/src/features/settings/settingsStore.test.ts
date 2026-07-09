@@ -306,16 +306,16 @@ describe("getEffectiveCustomInstructions", () => {
       expected: "from file",
     },
     {
-      label: "typed instructions when sync is on but no file was found",
+      label: "nothing when sync is on but no file was found",
       sync: true,
       syncedValue: null,
-      expected: "typed",
+      expected: "",
     },
     {
-      label: "typed instructions when the synced file is whitespace",
+      label: "nothing when the synced file is whitespace",
       sync: true,
       syncedValue: { ...synced, content: " \n" },
-      expected: "typed",
+      expected: "",
     },
   ])("returns $label", ({ sync, syncedValue, expected }) => {
     expect(

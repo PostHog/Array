@@ -47,8 +47,8 @@ export class CustomInstructionsSyncContribution implements Contribution {
       const file = await this.hostClient.os.getUserAgentInstructions.query();
       useSettingsStore.getState().setSyncedCustomInstructions(file);
     } catch (err) {
-      // Keep the last snapshot; sessions fall back to the hand-typed
-      // instructions when none exists.
+      // Keep the last snapshot rather than blanking personalization on a
+      // transient read failure.
       log.warn("Failed to read user agent instructions file", err);
     }
   }

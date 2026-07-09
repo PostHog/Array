@@ -66,7 +66,7 @@ export function PersonalizationSettings() {
     <Flex direction="column">
       <SettingRow
         label="Sync from AGENTS.md / CLAUDE.md"
-        description="On start, read your user-level AGENTS.md (or CLAUDE.md if you have no AGENTS.md) and use it as your custom instructions, so they only live in one place"
+        description="On start, read your user-level AGENTS.md (or CLAUDE.md if you have no AGENTS.md) and use it instead of the custom instructions below, so they only live in one place"
       >
         <Switch
           checked={syncFromFile}
@@ -87,44 +87,36 @@ export function PersonalizationSettings() {
           <Callout.Root size="1" color="amber" mb="2">
             <Callout.Text>
               No AGENTS.md or CLAUDE.md found in ~/.agents, ~/.codex or
-              ~/.claude — the instructions below are used instead.
+              ~/.claude. Nothing is synced — add one of those files, or turn
+              sync off to use the instructions below.
             </Callout.Text>
           </Callout.Root>
         )}
 
-        {syncFromFile && synced ? (
-          <>
-            <TextArea
-              value={synced.content}
-              readOnly
-              rows={6}
-              size="1"
-              resize="vertical"
-              className="w-full opacity-80"
-            />
+        <TextArea
+          value={localInstructions}
+          onChange={(e) => setLocalInstructions(e.target.value)}
+          onBlur={handleInstructionsBlur}
+          maxLength={MAX_INSTRUCTIONS_LENGTH}
+          placeholder="e.g. Always write tests for new code. Prefer functional patterns."
+          rows={6}
+          size="1"
+          resize="vertical"
+          className="w-full"
+          disabled={syncFromFile}
+        />
+        {syncFromFile ? (
+          synced && (
             <Text color="gray" align="right" className="text-[13px]">
-              Synced from {synced.displayPath}
+              Using {synced.displayPath}
               {synced.truncated ? " (truncated)" : ""} — edit that file to
-              change these instructions
+              change your personalization
             </Text>
-          </>
+          )
         ) : (
-          <>
-            <TextArea
-              value={localInstructions}
-              onChange={(e) => setLocalInstructions(e.target.value)}
-              onBlur={handleInstructionsBlur}
-              maxLength={MAX_INSTRUCTIONS_LENGTH}
-              placeholder="e.g. Always write tests for new code. Prefer functional patterns."
-              rows={6}
-              size="1"
-              resize="vertical"
-              className="w-full"
-            />
-            <Text color="gray" align="right" className="text-[13px]">
-              {localInstructions.length}/{MAX_INSTRUCTIONS_LENGTH}
-            </Text>
-          </>
+          <Text color="gray" align="right" className="text-[13px]">
+            {localInstructions.length}/{MAX_INSTRUCTIONS_LENGTH}
+          </Text>
         )}
       </Flex>
     </Flex>
