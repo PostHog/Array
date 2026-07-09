@@ -184,44 +184,46 @@ describe("OsService.getUserAgentInstructions", () => {
     });
   }
 
-  it("prefers an AGENTS.md over the user CLAUDE.md", async () => {
+  it.each([
+    {
+      label: "prefers an AGENTS.md over the user CLAUDE.md",
+      files: {
+        [codexPath]: "codex instructions",
+        [claudePath]: "claude instructions",
+      },
+      winner: {
+        path: codexPath,
+        displayPath: "~/.codex/AGENTS.md",
+        content: "codex instructions",
+      },
+    },
+    {
+      label: "prefers ~/.agents/AGENTS.md over ~/.codex/AGENTS.md",
+      files: {
+        [agentsPath]: "agents instructions",
+        [codexPath]: "codex instructions",
+      },
+      winner: {
+        path: agentsPath,
+        displayPath: "~/.agents/AGENTS.md",
+        content: "agents instructions",
+      },
+    },
+    {
+      label: "falls back to the user CLAUDE.md when no AGENTS.md exists",
+      files: { [claudePath]: "claude instructions" },
+      winner: {
+        path: claudePath,
+        displayPath: "~/.claude/CLAUDE.md",
+        content: "claude instructions",
+      },
+    },
+  ])("$label", async ({ files, winner }) => {
     const { service } = createService();
-    givenFiles({
-      [codexPath]: "codex instructions",
-      [claudePath]: "claude instructions",
-    });
+    givenFiles(files);
 
     expect(await service.getUserAgentInstructions()).toEqual({
-      path: codexPath,
-      displayPath: "~/.codex/AGENTS.md",
-      content: "codex instructions",
-      truncated: false,
-    });
-  });
-
-  it("prefers ~/.agents/AGENTS.md over ~/.codex/AGENTS.md", async () => {
-    const { service } = createService();
-    givenFiles({
-      [agentsPath]: "agents instructions",
-      [codexPath]: "codex instructions",
-    });
-
-    expect(await service.getUserAgentInstructions()).toEqual({
-      path: agentsPath,
-      displayPath: "~/.agents/AGENTS.md",
-      content: "agents instructions",
-      truncated: false,
-    });
-  });
-
-  it("falls back to the user CLAUDE.md when no AGENTS.md exists", async () => {
-    const { service } = createService();
-    givenFiles({ [claudePath]: "claude instructions" });
-
-    expect(await service.getUserAgentInstructions()).toEqual({
-      path: claudePath,
-      displayPath: "~/.claude/CLAUDE.md",
-      content: "claude instructions",
+      ...winner,
       truncated: false,
     });
   });
