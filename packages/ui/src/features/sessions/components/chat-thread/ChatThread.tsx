@@ -303,7 +303,6 @@ function UserBubble({
   );
 
   const containsFileMentions = hasFileMentions(displayContent);
-  const { copied, copy } = useCopy();
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
@@ -416,19 +415,43 @@ function UserBubble({
           </ChatMessageFooter>
         )}
       </ChatMessageContent>
-      <Tooltip content={copied ? "Copied!" : "Copy message"}>
-        <IconButton
-          size="1"
-          variant="ghost"
-          color={copied ? "green" : "gray"}
-          onClick={() => copy(displayContent)}
-          className="absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
-          aria-label="Copy message"
-        >
-          {copied ? <Check size={14} /> : <Copy size={14} />}
-        </IconButton>
-      </Tooltip>
+      <MessageCopyButton
+        value={displayContent}
+        revealClassName="group-hover:opacity-100"
+      />
     </ChatMessage>
+  );
+}
+
+/**
+ * Copy icon that floats into a message's right rail on hover. The hover-group qualifier differs by
+ * message type (`group` for user bubbles, `group/msg` for agent prose), so callers pass their own
+ * `revealClassName` (the `group-hover*:opacity-100` utility).
+ */
+function MessageCopyButton({
+  value,
+  revealClassName,
+}: {
+  value: string;
+  revealClassName: string;
+}) {
+  const { copied, copy } = useCopy();
+  return (
+    <Tooltip content={copied ? "Copied!" : "Copy message"}>
+      <IconButton
+        size="1"
+        variant="ghost"
+        color={copied ? "green" : "gray"}
+        onClick={() => copy(value)}
+        className={cn(
+          "absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity",
+          revealClassName,
+        )}
+        aria-label="Copy message"
+      >
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+      </IconButton>
+    </Tooltip>
   );
 }
 
@@ -562,7 +585,6 @@ const AgentProse = memo(function AgentProse({
   isStreaming?: boolean;
 }) {
   const smoothed = useSmoothedText(text);
-  const { copied, copy } = useCopy();
 
   return (
     <ChatMessage align="start" className="group/msg">
@@ -578,18 +600,10 @@ const AgentProse = memo(function AgentProse({
         </ChatBubble>
       </ChatMessageContent>
       {isStreaming ? null : (
-        <Tooltip content={copied ? "Copied!" : "Copy message"}>
-          <IconButton
-            size="1"
-            variant="ghost"
-            color={copied ? "green" : "gray"}
-            onClick={() => copy(text)}
-            className="absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity group-hover/msg:opacity-100"
-            aria-label="Copy message"
-          >
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-          </IconButton>
-        </Tooltip>
+        <MessageCopyButton
+          value={text}
+          revealClassName="group-hover/msg:opacity-100"
+        />
       )}
     </ChatMessage>
   );
