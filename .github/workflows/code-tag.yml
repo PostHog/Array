@@ -70,7 +70,10 @@ jobs:
             exit 0
           fi
 
-          MEMBERS=$(gh api "orgs/${REPOSITORY%%/*}/teams/${TEAM_SLUG}/members" --paginate --jq '.[].login')
+          if ! MEMBERS=$(gh api "orgs/${REPOSITORY%%/*}/teams/${TEAM_SLUG}/members" --paginate --jq '.[].login'); then
+            skip "Could not verify ${TEAM_SLUG} membership (GitHub API error)."
+            exit 0
+          fi
 
           if echo "$MEMBERS" | grep -qixF "$LABELER"; then
             echo "'Create release' was added by ${LABELER}, a member of ${TEAM_SLUG}."
