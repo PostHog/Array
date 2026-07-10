@@ -831,6 +831,7 @@ export type ChannelsSurface =
   | "sidebar"
   | "command_menu"
   | "new_task"
+  | "task_input"
   | "channel_home"
   | "channel_history"
   | "channel_artifacts"

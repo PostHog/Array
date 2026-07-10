@@ -13,10 +13,16 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
   ANALYTICS_EVENTS,
+  PROJECT_BLUEBIRD_FLAG,
   type TaskCreationInput,
   type WorkspaceMode,
 } from "@posthog/shared";
 import type { ExecutionMode, Task } from "@posthog/shared/domain-types";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
+import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToTaskPending } from "@posthog/ui/router/navigationBridge";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -201,6 +207,54 @@ export function useTaskCreation({
   // Used to name the task occupying a branch's worktree when reuse is blocked.
   const { data: tasks } = useTasks();
 
+  // Tasks created without a channel default into the private #me channel so
+  // they still surface in the Channels space instead of staying unfiled.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const apiClient = useOptionalAuthenticatedClient();
+  const { createChannel } = useChannelMutations();
+  const { fileTask } = useChannelTaskMutations();
+
+  const fileToPersonalChannel = useCallback(
+    async (task: Task) => {
+      if (!apiClient) return;
+      let meFolderId: string | undefined;
+      try {
+        // List fresh rather than trusting the polled channels cache — a stale
+        // miss here would create a duplicate "me" folder.
+        const rows = await apiClient.getDesktopFileSystemChannels();
+        const existing = rows.find(
+          (fs) =>
+            fs.type === "folder" &&
+            fs.path.replace(/^\/+/, "") === PERSONAL_CHANNEL_NAME,
+        );
+        meFolderId =
+          existing?.id ?? (await createChannel(PERSONAL_CHANNEL_NAME)).id;
+        await fileTask(meFolderId, task.id, task.title);
+        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+          action_type: "file_task",
+          surface: "task_input",
+          channel_id: meFolderId,
+          task_id: task.id,
+          success: true,
+        });
+      } catch (error) {
+        // Best-effort: on failure the task just stays unfiled, as before.
+        log.warn("Failed to default-file task to #me", { error });
+        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+          action_type: "file_task",
+          surface: "task_input",
+          channel_id: meFolderId,
+          task_id: task.id,
+          success: false,
+        });
+      }
+    },
+    [apiClient, createChannel, fileTask],
+  );
+
   const hasRequiredPath = allowNoRepo
     ? true
     : workspaceMode === "cloud"
@@ -376,6 +430,9 @@ export function useTaskCreation({
             if (!pendingTaskKey && !contentOverride) {
               editor.clear();
             }
+            if (bluebirdEnabled && !channelId && !channelName) {
+              void fileToPersonalChannel(output.task);
+            }
             onTaskCreatedEffect?.(output.task);
             if (onTaskCreated) {
               onTaskCreated(output.task);
@@ -493,6 +550,8 @@ export function useTaskCreation({
       channelName,
       channelId,
       allowNoRepo,
+      bluebirdEnabled,
+      fileToPersonalChannel,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
