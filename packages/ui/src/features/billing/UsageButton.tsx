@@ -15,10 +15,14 @@ import {
   ANALYTICS_EVENTS,
   type UpgradePromptClickedSurface,
 } from "@posthog/shared/analytics-events";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { track } from "../../shell/analytics";
 import { useFeatureFlag } from "../feature-flags/useFeatureFlag";
-import { openSettings } from "../settings/hooks/useOpenSettings";
+import {
+  openSettings,
+  prepareSettingsPage,
+} from "../settings/hooks/useOpenSettings";
 import { useFreeUsage } from "./useFreeUsage";
 
 // Title-bar usage entry point (replaces the old sidebar usage bar): a compact
@@ -75,6 +79,16 @@ export function UsageButton() {
     openSettings("plan-usage");
   };
 
+  // The trigger is a real <Link> (render={<Link/>} per convention), so the
+  // router owns the navigation; this click handler carries the side effects
+  // openSettings would have done — tracking, closing the card, and resetting
+  // the settings-page store so no stale context/one-shot action leaks in.
+  const handleTriggerClick = () => {
+    track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, { surface: "titlebar" });
+    setOpen(false);
+    prepareSettingsPage();
+  };
+
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
@@ -85,7 +99,13 @@ export function UsageButton() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => handleOpenPlan("titlebar")}
+            render={
+              <Link
+                to="/settings/$category"
+                params={{ category: "plan-usage" }}
+                onClick={handleTriggerClick}
+              />
+            }
           >
             {exceeded ? "Usage: limit reached" : `Usage: ${usagePercent}%`}
           </Button>
