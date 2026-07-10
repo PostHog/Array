@@ -53,8 +53,9 @@ export function ModeSelector({
 }: ModeSelectorProps) {
   const [open, setOpen] = useState(false);
   const pendingValueRef = useRef<string | null>(null);
-  const pendingAutoresearchRef = useRef(false);
-  const pendingCanvasRef = useRef(false);
+  // A toggle picked from the menu, applied after the menu closes (like a mode
+  // change) so the composer doesn't relayout under the closing menu.
+  const pendingToggleRef = useRef<(() => void) | null>(null);
   const displayOption = useRetainedConfigOption(modeOption);
 
   if (!displayOption || displayOption.type !== "select") return null;
@@ -84,6 +85,30 @@ export function ModeSelector({
     : (allOptions.find((opt) => opt.value === currentValue)?.name ??
       currentValue);
 
+  const toggles: Array<{
+    label: string;
+    active: boolean;
+    onToggle: () => void;
+    icon: React.ReactNode;
+    className: string;
+  }> = [];
+  if (canvas) {
+    toggles.push({
+      label: "Canvas",
+      ...canvas,
+      icon: <Shapes size={12} weight="fill" />,
+      className: "text-teal-11",
+    });
+  }
+  if (autoresearch) {
+    toggles.push({
+      label: "Autoresearch",
+      ...autoresearch,
+      icon: <ChartLineUp size={12} />,
+      className: "text-violet-11",
+    });
+  }
+
   return (
     <DropdownMenu
       open={open}
@@ -96,14 +121,9 @@ export function ModeSelector({
           // Picking a plain mode leaves canvas mode; the two are exclusive.
           if (canvasActive) canvas?.onToggle();
         }
-        if (pendingAutoresearchRef.current) {
-          pendingAutoresearchRef.current = false;
-          autoresearch?.onToggle();
-        }
-        if (pendingCanvasRef.current) {
-          pendingCanvasRef.current = false;
-          canvas?.onToggle();
-        }
+        const pendingToggle = pendingToggleRef.current;
+        pendingToggleRef.current = null;
+        pendingToggle?.();
       }}
     >
       <DropdownMenuTrigger
@@ -151,35 +171,20 @@ export function ModeSelector({
             );
           })}
         </DropdownMenuRadioGroup>
-        {(autoresearch || canvas) && <DropdownMenuSeparator />}
-        {canvas && (
+        {toggles.length > 0 && <DropdownMenuSeparator />}
+        {toggles.map((toggle) => (
           <DropdownMenuCheckboxItem
-            checked={canvas.active}
+            key={toggle.label}
+            checked={toggle.active}
             onCheckedChange={() => {
-              pendingCanvasRef.current = true;
+              pendingToggleRef.current = toggle.onToggle;
               setOpen(false);
             }}
           >
-            <span className="text-teal-11">
-              <Shapes size={12} weight="fill" />
-            </span>
-            <span className="whitespace-nowrap">Canvas</span>
+            <span className={toggle.className}>{toggle.icon}</span>
+            <span className="whitespace-nowrap">{toggle.label}</span>
           </DropdownMenuCheckboxItem>
-        )}
-        {autoresearch && (
-          <DropdownMenuCheckboxItem
-            checked={autoresearch.active}
-            onCheckedChange={() => {
-              pendingAutoresearchRef.current = true;
-              setOpen(false);
-            }}
-          >
-            <span className="text-violet-11">
-              <ChartLineUp size={12} />
-            </span>
-            <span className="whitespace-nowrap">Autoresearch</span>
-          </DropdownMenuCheckboxItem>
-        )}
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -37,6 +37,13 @@ import { useCallback, useState } from "react";
 export function useGenerateFreeformCanvas(args: {
   channelId: string;
   channelName: string;
+  /**
+   * The channel's CONTEXT.md, when the surface already fetched it (the channel
+   * composer receives it as a prop). Passing the property — even with an
+   * undefined value — marks the caller as its owner and skips this hook's own
+   * fetch; omit it entirely to let the hook fetch.
+   */
+  channelContext?: string;
 }) {
   const { channelId, channelName } = args;
   const taskService = useService<TaskService>(TASK_SERVICE);
@@ -52,8 +59,13 @@ export function useGenerateFreeformCanvas(args: {
   const { setGenerationTask, renameDashboard } = useDashboardMutations();
   // The channel's CONTEXT.md, passed to the agent as optional background so the
   // generated canvas starts with the shared context. Absent/empty is fine.
-  const { data: instructions } = useFolderInstructions(channelId);
-  const channelContext = instructions?.content;
+  const callerOwnsContext = "channelContext" in args;
+  const { data: instructions } = useFolderInstructions(channelId, {
+    enabled: !callerOwnsContext,
+  });
+  const channelContext = callerOwnsContext
+    ? args.channelContext
+    : instructions?.content;
   const [isStarting, setIsStarting] = useState(false);
 
   const generate = useCallback(
@@ -72,15 +84,21 @@ export function useGenerateFreeformCanvas(args: {
       // always runs in the cloud — see the default below.
       workspaceMode?: WorkspaceMode;
     }): Promise<string | null> => {
-      const { dashboardId, name, templateId } = opts;
-      setIsStarting(true);
-      try {
+      const {
+        dashboardId,
+        name,
+        templateId,
+        instruction,
+        currentCode,
+        useStarter,
         // Defaults to a cloud run — canvas generation should never tie up (or
         // depend on) the local machine, and it's never the sticky last-used
         // workspace mode. The dev-only picker can override to "local" to test a
         // local build of these features before merging.
-        const workspaceMode = opts.workspaceMode ?? "cloud";
-
+        workspaceMode = "cloud",
+      } = opts;
+      setIsStarting(true);
+      try {
         // A cloud run requires an explicit adapter + model (the API rejects a
         // cloud runtime without a model). Canvas has no model picker, so resolve
         // the adapter's server default the same way the inbox one-click flows do
@@ -109,9 +127,9 @@ export function useGenerateFreeformCanvas(args: {
               name,
               channelName,
               templateId,
-              instruction: opts.instruction,
-              currentCode: opts.currentCode,
-              useStarter: opts.useStarter,
+              instruction,
+              currentCode,
+              useStarter,
             }),
             taskDescription: `Generate canvas "${name}"`,
             // Unattended generation: run in auto mode so it doesn't stall on edit-approval prompts.
@@ -151,7 +169,7 @@ export function useGenerateFreeformCanvas(args: {
         // who already named the canvas) leaves the existing title untouched.
         if (isPlaceholderCanvasName(name)) {
           void titleGenerator
-            .generateCanvasName(opts.instruction)
+            .generateCanvasName(instruction)
             .then(async (generated) => {
               const title = generated?.trim();
               if (title) {

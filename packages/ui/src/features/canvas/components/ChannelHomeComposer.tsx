@@ -10,12 +10,12 @@ import {
   useState,
 } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
-import { toast } from "../../../primitives/toast";
 import { track } from "../../../shell/analytics";
 import { useUserRepositoryIntegration } from "../../integrations/useIntegrations";
 import { PromptInput } from "../../message-editor/components/PromptInput";
 import { useDraftStore } from "../../message-editor/draftStore";
 import type { EditorHandle } from "../../message-editor/types";
+import { toastError } from "../../notifications/errorDetails";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
 import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
@@ -36,6 +36,7 @@ import {
   useDashboardMutations,
 } from "../hooks/useDashboards";
 import { useGenerateFreeformCanvas } from "../hooks/useGenerateFreeformCanvas";
+import { trackAndCreateCanvas } from "./NewCanvasMenu";
 
 export interface ChannelHomeComposerHandle {
   /** Drop a starter prompt into the editor and apply its mode, if any. */
@@ -79,40 +80,37 @@ export const ChannelHomeComposer = forwardRef<
   const [canvasArmed, setCanvasArmed] = useState(false);
   const { createDashboard } = useDashboardMutations();
   const { generate: generateCanvas, isStarting: isStartingCanvas } =
-    useGenerateFreeformCanvas({ channelId, channelName: channelName ?? "" });
+    useGenerateFreeformCanvas({
+      channelId,
+      channelName: channelName ?? "",
+      // The parent already fetches the channel CONTEXT.md; passing it keeps
+      // the hook from running its own duplicate fetch.
+      channelContext,
+    });
 
   const toggleCanvasMode = useCallback(() => {
-    setCanvasArmed((armed) => {
-      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "canvas_mode_toggle",
-        surface: "channel_home",
-        channel_id: channelId,
-        armed: !armed,
-      });
-      return !armed;
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: "canvas_mode_toggle",
+      surface: "channel_home",
+      channel_id: channelId,
+      armed: !canvasArmed,
     });
-  }, [channelId]);
+    setCanvasArmed(!canvasArmed);
+  }, [channelId, canvasArmed]);
 
   const handleCanvasSubmit = useCallback(async () => {
     const instruction = editorRef.current?.getText().trim();
     if (!instruction || isStartingCanvas) return;
-    track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-      action_type: "create",
-      surface: "channel_home",
-      channel_id: channelId,
-      template_id: "freeform",
-    });
     let record: { id: string; name: string };
     try {
-      record = await createDashboard(
+      record = await trackAndCreateCanvas(
         channelId,
-        UNTITLED_CANVAS_NAME,
         "freeform",
+        "channel_home",
+        () => createDashboard(channelId, UNTITLED_CANVAS_NAME, "freeform"),
       );
     } catch (error) {
-      toast.error("Couldn't create canvas", {
-        description: error instanceof Error ? error.message : String(error),
-      });
+      toastError("Couldn't create canvas", error);
       return;
     }
     // generate() surfaces its own failure toasts; on success it files the task
@@ -260,6 +258,7 @@ export const ChannelHomeComposer = forwardRef<
 
   const hints = ["@ to add files", "/ for skills"].join(", ");
   const isBusy = isCreatingTask || isStartingCanvas;
+  const submitComposer = canvasArmed ? handleCanvasSubmit : handleSubmit;
 
   return (
     <div className="flex w-full flex-col">
@@ -328,13 +327,9 @@ export const ChannelHomeComposer = forwardRef<
           )
         }
         onEmptyChange={setEditorIsEmpty}
-        onSubmitClick={() => {
-          if (canvasArmed) void handleCanvasSubmit();
-          else handleSubmit();
-        }}
+        onSubmitClick={() => void submitComposer()}
         onSubmit={() => {
-          if (canvasArmed) void handleCanvasSubmit();
-          else if (canSubmit) handleSubmit();
+          if (canvasArmed || canSubmit) void submitComposer();
         }}
       />
     </div>

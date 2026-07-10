@@ -15,23 +15,25 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useState } from "react";
 
 // Where a canvas create was triggered from, for analytics.
-export type CreateSurface = "dashboards_grid" | "sidebar";
+export type CreateSurface = "dashboards_grid" | "sidebar" | "channel_home";
 
 // Fire the "create" DASHBOARD_ACTION, then create + open the canvas. Exported so
-// other entry points (the sidebar "+" dropdown) report creation the same way.
-export function trackAndCreateCanvas(
+// other entry points (the sidebar "+" dropdown, the channel composer's canvas
+// mode) report creation the same way. Returns `create`'s result so callers that
+// need the created record can await it.
+export function trackAndCreateCanvas<T>(
   channelId: string | undefined,
   templateId: string | undefined,
   surface: CreateSurface,
-  create: () => void,
-) {
+  create: () => T,
+): T {
   track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
     action_type: "create",
     surface,
     channel_id: channelId,
     template_id: templateId,
   });
-  create();
+  return create();
 }
 
 // The list of template options shared by the canvas-create surfaces (the
