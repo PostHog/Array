@@ -1,5 +1,6 @@
 import { Terminal } from "@phosphor-icons/react";
 import { compactHomePath } from "@posthog/shared";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
 import { ToolRow } from "./ToolRow";
 import {
@@ -51,6 +52,12 @@ export function ExecuteToolView({
   );
   const hasOutput = output.trim().length > 0;
 
+  const commandTooltip = (
+    <span className="block max-w-md whitespace-pre-wrap break-all font-mono text-xs">
+      {compactHomePath(command)}
+    </span>
+  );
+
   return (
     <ToolRow
       icon={Terminal}
@@ -64,18 +71,19 @@ export function ExecuteToolView({
       {command &&
         (chatChrome ? (
           <ToolTitle className="min-w-0 shrink truncate font-mono">
-            <span className="block truncate" title={command}>
-              {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
-            </span>
+            <Tooltip content={commandTooltip}>
+              <span className="block truncate">
+                {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
+              </span>
+            </Tooltip>
           </ToolTitle>
         ) : (
           <ToolTitle className="min-w-0 shrink truncate">
-            <span
-              className="block truncate border border-border bg-gray-5 font-mono"
-              title={command}
-            >
-              {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
-            </span>
+            <Tooltip content={commandTooltip}>
+              <span className="block truncate border border-border bg-gray-5 font-mono">
+                {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
+              </span>
+            </Tooltip>
           </ToolTitle>
         ))}
     </ToolRow>

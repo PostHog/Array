@@ -886,7 +886,10 @@ describe("AuthService", () => {
   });
 
   describe("project-less recovery", () => {
-    function stubOrgFetch(state: { succeeds: boolean; orgCalls: number }) {
+    function stubOrgFetch(
+      state: { succeeds: boolean; orgCalls: number },
+      options: { orgless?: boolean } = {},
+    ) {
       vi.stubGlobal(
         "fetch",
         vi.fn(async (input: string | Request) => {
@@ -897,7 +900,7 @@ describe("AuthService", () => {
               ok: true,
               json: vi.fn().mockResolvedValue({
                 uuid: "user-1",
-                organization: { id: "org-1" },
+                organization: options.orgless ? null : { id: "org-1" },
               }),
             } as unknown as Response;
           }
@@ -1156,27 +1159,63 @@ describe("AuthService", () => {
       expect(sessionPort.getCurrent()?.selectedProjectId).toBe(84);
     });
 
-    it("does not attempt recovery when the token grants no scoped organizations", async () => {
-      const fetchState = { succeeds: true, orgCalls: 0 };
-      stubOrgFetch(fetchState);
-      oauthFlow.startFlow.mockResolvedValue(
-        mockTokenResponse({ scopedOrgs: [] }),
-      );
+    // Team-scoped tokens (required_access_level=project) arrive with empty
+    // scoped_organizations on some backends. When @me carries a current org,
+    // we fetch it so the picker isn't stranded on "No projects". When @me has
+    // no org either (truly orgless user), there's nothing to fetch and the
+    // recovery loop must not spin — that was the concern from #2655.
+    it.each([
+      {
+        when: "the user has no organization at all",
+        orgless: true,
+        expectedOrgCalls: 0,
+        expectedState: {
+          status: "authenticated",
+          currentProjectId: null,
+          orgProjectsMap: {},
+        },
+      },
+      {
+        when: "the @me current org is used as a fallback",
+        orgless: false,
+        expectedOrgCalls: 1,
+        expectedState: {
+          status: "authenticated",
+          currentOrgId: "org-1",
+          currentProjectId: 42,
+          orgProjectsMap: {
+            "org-1": {
+              orgName: "Org 1",
+              projects: [
+                { id: 42, name: "Project 42" },
+                { id: 84, name: "Project 84" },
+              ],
+            },
+          },
+        },
+      },
+    ])(
+      "with empty scoped_organizations: $when",
+      async ({ orgless, expectedOrgCalls, expectedState }) => {
+        const fetchState = { succeeds: true, orgCalls: 0 };
+        stubOrgFetch(fetchState, { orgless });
+        oauthFlow.startFlow.mockResolvedValue(
+          mockTokenResponse({ scopedOrgs: [] }),
+        );
 
-      await service.login("us");
+        await service.login("us");
 
-      expect(service.getState()).toMatchObject({
-        status: "authenticated",
-        currentProjectId: null,
-        orgProjectsMap: {},
-      });
+        expect(fetchState.orgCalls).toBe(expectedOrgCalls);
+        expect(service.getState()).toMatchObject(expectedState);
 
-      emitStatus(true);
-      await new Promise((r) => setTimeout(r, 10));
-
-      expect(fetchState.orgCalls).toBe(0);
-      expect(service.getState().currentProjectId).toBeNull();
-    });
+        // Emitting connectivity should not trigger extra work: the map is
+        // complete (or empty by design) and the recovery loop must not spin.
+        emitStatus(true);
+        await new Promise((r) => setTimeout(r, 10));
+        expect(fetchState.orgCalls).toBe(expectedOrgCalls);
+        expect(service.getState()).toMatchObject(expectedState);
+      },
+    );
   });
 
   describe("switchOrg", () => {

@@ -8,6 +8,7 @@ import {
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
+  defaultEligibleModel,
   GLM_MODEL_FLAG,
   getCloudUrlFromRegion,
 } from "@posthog/shared";
@@ -106,22 +107,23 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
         );
 
         // The server always returns its default model as the current value, so
-        // without this the user's last pick (e.g. fable) is lost on every
-        // refetch/remount. Restore it through applyConfigChange so the dependent
-        // effort options are recomputed for the restored model.
+        // without this the user's last (default-eligible) pick is lost on every
+        // refetch/remount. Restore it through applyConfigChange so the
+        // dependent effort options are recomputed for the restored model.
         const modelOpt = getOptionByCategory(initial, "model");
+        const restorableModel = defaultEligibleModel(lastUsedModel);
         if (
-          lastUsedModel &&
+          restorableModel &&
           modelOpt?.type === "select" &&
-          modelOpt.currentValue !== lastUsedModel &&
-          flattenConfigValues(modelOpt).includes(lastUsedModel)
+          modelOpt.currentValue !== restorableModel &&
+          flattenConfigValues(modelOpt).includes(restorableModel)
         ) {
           initial = applyConfigChange(initial, {
             adapter,
             configId: modelOpt.id,
-            value: lastUsedModel,
+            value: restorableModel,
             effortOptions:
-              getReasoningEffortOptions(adapter, lastUsedModel) ?? undefined,
+              getReasoningEffortOptions(adapter, restorableModel) ?? undefined,
             settings: {
               defaultInitialTaskMode: "",
               lastUsedInitialTaskMode: undefined,

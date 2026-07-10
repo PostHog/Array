@@ -15,8 +15,20 @@ describe("isSupportedReasoningEffort", () => {
     );
   });
 
+  it("accepts xhigh but not max for the codex gpt-5.6 family", () => {
+    expect(isSupportedReasoningEffort("codex", "gpt-5.6-luna", "xhigh")).toBe(
+      true,
+    );
+    expect(isSupportedReasoningEffort("codex", "gpt-5.6-sol", "max")).toBe(
+      false,
+    );
+  });
+
   it("rejects unknown effort values", () => {
     expect(isSupportedReasoningEffort("codex", "gpt-5.5", "ultra")).toBe(false);
+    expect(isSupportedReasoningEffort("codex", "gpt-5.6-sol", "ultra")).toBe(
+      false,
+    );
   });
 
   it("gates xhigh on Claude models by id", () => {

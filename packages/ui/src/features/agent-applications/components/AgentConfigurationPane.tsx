@@ -30,6 +30,7 @@ import type {
   BundleFile,
 } from "@posthog/shared/agent-platform-types";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { AddCustomServerDialog } from "@posthog/ui/features/mcp-server-manager/AddCustomServerDialog";
 import { useMcpConnect } from "@posthog/ui/features/mcp-server-manager/useMcpConnect";
 import { ToolPermissionList } from "@posthog/ui/features/mcp-servers/components/parts/ToolPermissionList";
@@ -40,6 +41,7 @@ import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Flex, Select, Switch, Text } from "@radix-ui/themes";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { AGENT_PLATFORM_FLAG } from "../featureFlag";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentEnvKeys } from "../hooks/useAgentEnvKeys";
 import { useAgentRevision } from "../hooks/useAgentRevision";
@@ -56,6 +58,7 @@ import { CronFireButton } from "./CronFireButton";
 import { FileExplorer, type FileTreeNode } from "./FileExplorer";
 import { SecretEditor } from "./SecretEditor";
 import { SlackSetupCard } from "./SlackSetupCard";
+import { ToolSourcePanel } from "./ToolSourcePanel";
 
 // Value readers — spec items are loosely typed on the wire.
 function rec(v: unknown): Record<string, unknown> {
@@ -1239,6 +1242,33 @@ function ToolsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   );
 }
 
+/** Read `{ description, args_schema }` from a tool's schema.json bundle file,
+ *  falling back to the spec description. v0 tool edits change source only, so we
+ *  round-trip these unchanged on save. */
+function parseToolSchema(
+  content: string | undefined,
+  fallbackDescription: string | undefined,
+): { description: string; args_schema: Record<string, unknown> } {
+  if (content) {
+    try {
+      const parsed = JSON.parse(content) as {
+        description?: unknown;
+        args_schema?: unknown;
+      };
+      return {
+        description: str(parsed.description) ?? fallbackDescription ?? "",
+        args_schema:
+          parsed.args_schema && typeof parsed.args_schema === "object"
+            ? (parsed.args_schema as Record<string, unknown>)
+            : {},
+      };
+    } catch {
+      // Malformed schema.json — fall back below rather than block editing.
+    }
+  }
+  return { description: fallbackDescription ?? "", args_schema: {} };
+}
+
 function ToolBody({
   tool,
   files,
@@ -1256,6 +1286,18 @@ function ToolBody({
   const kind = str(r.kind);
   const identity = toolRequiresIdentity(tool);
   const source = byPath(files, `tools/${id}/source.ts`);
+  const schemaFile = byPath(files, `tools/${id}/schema.json`);
+  const specDescription = str(r.description);
+  // Authoring (edit/save/dry-run) lives behind the same flag as the rest of the
+  // surface; custom tools are the only ones with editable source.
+  const authoringEnabled = useFeatureFlag(AGENT_PLATFORM_FLAG);
+  const isCustom = kind === "custom" || !!source;
+  const isDraft = ctx.revisionState === "draft";
+  const canAuthor = authoringEnabled && isCustom && isDraft;
+  const schema = useMemo(
+    () => parseToolSchema(schemaFile?.content, specDescription),
+    [schemaFile?.content, specDescription],
+  );
   return (
     <Flex direction="column" gap="2">
       <Row label="id" value={id} mono />
@@ -1268,19 +1310,27 @@ function ToolBody({
             : "not gated"
         }
       />
-      {str(r.description) ? (
+      {specDescription ? (
         <Text className="text-[12.5px] text-gray-11 leading-snug">
-          {str(r.description)}
+          {specDescription}
         </Text>
       ) : null}
       {identity ? (
         <IdentityLink provider={identity} spec={spec} ctx={ctx} />
       ) : null}
       {source ? (
-        <div className="mt-2">
-          <Subhead>source · {source.path}</Subhead>
-          <BundleFileBody file={source} />
-        </div>
+        <ToolSourcePanel
+          // Remount on revision/tool switch so the buffer + toggles reset.
+          key={`${ctx.revisionId}:${id}`}
+          idOrSlug={ctx.idOrSlug}
+          revisionId={ctx.revisionId}
+          toolId={id}
+          source={source}
+          description={schema.description}
+          argsSchema={schema.args_schema}
+          canEdit={canAuthor}
+          canDryRun={authoringEnabled && isCustom}
+        />
       ) : null}
     </Flex>
   );

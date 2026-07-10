@@ -135,6 +135,7 @@ export function ThreadPanel({
   onClose,
   collapsed,
   onToggleCollapsed,
+  showTaskTitle = true,
 }: {
   taskId: string;
   /** The thread's task when the caller already has it; fetched otherwise. */
@@ -142,6 +143,11 @@ export function ThreadPanel({
   onClose?: () => void;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
+  /**
+   * Show the task title under the "Thread" heading. Hidden in the task detail
+   * view, where the TaskDetail header already names the task.
+   */
+  showTaskTitle?: boolean;
 }) {
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
@@ -240,7 +246,7 @@ export function ThreadPanel({
           <Text size="2" weight="medium" className="block">
             Thread
           </Text>
-          {task && (
+          {showTaskTitle && task && (
             <Text size="1" className="block truncate text-muted-foreground">
               {task.title || "Untitled task"}
             </Text>

@@ -3,6 +3,7 @@ import {
   ArrowsOutSimple as ArrowsOutSimpleIcon,
   Robot,
 } from "@phosphor-icons/react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@posthog/quill";
 import {
   LoadingIcon,
   StatusIndicators,
@@ -68,11 +69,22 @@ export function SubagentToolView({
           className="flex w-full cursor-pointer items-center justify-between border-none bg-transparent px-3 py-2"
         >
           <Flex align="center" gap="2">
-            <LoadingIcon
-              icon={Robot}
-              isLoading={isLoading}
-              className="text-gray-10"
-            />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span className="flex items-center">
+                    <LoadingIcon
+                      icon={Robot}
+                      isLoading={isLoading}
+                      className="text-gray-10"
+                    />
+                  </span>
+                }
+              />
+              <TooltipContent side="top">
+                Delegated to a subagent
+              </TooltipContent>
+            </Tooltip>
             <Text className="text-[13px] text-gray-10">
               {title || "Subagent"}
             </Text>
@@ -106,7 +118,18 @@ export function SubagentToolView({
   return (
     <div>
       <ToolRow
-        icon={Robot}
+        leading={
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className="flex items-center">
+                  <LoadingIcon icon={Robot} isLoading={isLoading} />
+                </span>
+              }
+            />
+            <TooltipContent side="top">Delegated to a subagent</TooltipContent>
+          </Tooltip>
+        }
         isLoading={isLoading}
         isFailed={isFailed}
         wasCancelled={wasCancelled}

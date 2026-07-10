@@ -16,6 +16,7 @@ export interface CreateTaskRunClientOptions {
   customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
   autoPublish?: boolean;
+  rtkEnabled?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: string;

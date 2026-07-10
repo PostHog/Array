@@ -39,6 +39,43 @@ describe("buildAppServerArgs", () => {
     );
   });
 
+  it("forwards http headers as a quoted TOML inline table on the posthog provider", () => {
+    const args = buildAppServerArgs({
+      binaryPath: "/bundle/codex",
+      apiBaseUrl: "https://gateway.example/v1",
+      httpHeaders: {
+        "x-posthog-property-ai_stage": "research",
+        "x-posthog-property-team_id": "42",
+      },
+    });
+
+    expect(args).toContain(
+      'model_providers.posthog.http_headers={ "x-posthog-property-ai_stage" = "research", "x-posthog-property-team_id" = "42" }',
+    );
+  });
+
+  it("omits http_headers when none are provided or the provider is unset", () => {
+    const withoutHeaders = buildAppServerArgs({
+      binaryPath: "/bundle/codex",
+      apiBaseUrl: "https://gateway.example/v1",
+    });
+    const withoutProvider = buildAppServerArgs({
+      binaryPath: "/bundle/codex",
+      httpHeaders: { "x-posthog-property-ai_stage": "research" },
+    });
+
+    expect(
+      withoutHeaders.some((arg) =>
+        arg.startsWith("model_providers.posthog.http_headers="),
+      ),
+    ).toBe(false);
+    expect(
+      withoutProvider.some((arg) =>
+        arg.startsWith("model_providers.posthog.http_headers="),
+      ),
+    ).toBe(false);
+  });
+
   it.each([
     ["darwin", 'sandbox_mode="workspace-write"'],
     ["linux", 'sandbox_mode="danger-full-access"'],

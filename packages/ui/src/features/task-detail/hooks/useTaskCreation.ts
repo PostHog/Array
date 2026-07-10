@@ -332,6 +332,7 @@ export function useTaskCreation({
           channelId,
           customInstructions: getEffectiveCustomInstructions(settings),
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
+          rtkEnabledCloud: settings.rtkEnabledCloud,
           allowNoRepo,
         });
 

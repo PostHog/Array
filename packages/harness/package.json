@@ -54,6 +54,14 @@
     "./extensions/subagent/*": {
       "types": "./dist/extensions/subagent/*.d.ts",
       "import": "./dist/extensions/subagent/*.js"
+    },
+    "./extensions/mcp": {
+      "types": "./dist/extensions/mcp/extension.d.ts",
+      "import": "./dist/extensions/mcp/extension.js"
+    },
+    "./extensions/mcp/*": {
+      "types": "./dist/extensions/mcp/*.d.ts",
+      "import": "./dist/extensions/mcp/*.js"
     }
   },
   "scripts": {
@@ -67,10 +75,11 @@
     "@earendil-works/pi-ai": "0.80.3",
     "@earendil-works/pi-coding-agent": "0.80.3",
     "@earendil-works/pi-tui": "0.80.3",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@posthog/shared": "workspace:*",
     "lru-cache": "^11.1.0",
-    "pi-mcp-adapter": "2.10.0",
-    "turndown": "^7.2.4"
+    "turndown": "^7.2.4",
+    "zod": "^4.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -595,11 +595,21 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       tokenResponse.access_token,
       options.cloudRegion,
     );
+    // Team-scoped tokens (required_access_level=project) can arrive with an
+    // empty scoped_organizations list — the server only populates scoped_teams.
+    // Fall back to the current org from /api/users/@me/ so the picker isn't
+    // empty; without this the user is stranded on "No projects".
+    const orgIdsToFetch =
+      scopedOrgIds.length > 0
+        ? scopedOrgIds
+        : currentOrgId
+          ? [currentOrgId]
+          : [];
     const { map: orgProjectsMap, incomplete: orgProjectsIncomplete } =
       await this.buildOrgProjectsMap(
         tokenResponse.access_token,
         options.cloudRegion,
-        scopedOrgIds,
+        orgIdsToFetch,
         this.session?.orgProjectsMap ?? {},
       );
     const lastPrefs = accountKey

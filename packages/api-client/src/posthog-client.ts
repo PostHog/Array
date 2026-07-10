@@ -1,9 +1,9 @@
 import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
-import type { PermissionMode } from "@posthog/agent/execution-mode";
 import type {
   Adapter,
   CloudRunSource,
+  ExecutionMode,
   PrAuthorshipMode,
   SeatData,
   StoredLogEntry,
@@ -12,6 +12,7 @@ import type {
 import {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
+  resolveCloudInitialPermissionMode,
   SEAT_PRODUCT_KEY,
 } from "@posthog/shared";
 import type {
@@ -38,7 +39,14 @@ import type {
   AgentUsersListResponse,
   BundleFile,
   DecideApprovalRequest,
+  DryRunToolEnvelope,
+  DryRunToolRequest,
+  DryRunToolResult,
   ModelCatalog,
+  ToolCapabilities,
+  ToolCompileError,
+  WriteToolRequest,
+  WriteToolResult,
 } from "@posthog/shared/agent-platform-types";
 import type {
   ActionabilityJudgmentArtefact,
@@ -489,9 +497,11 @@ interface CloudRunOptions {
   customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
   autoPublish?: boolean;
+  /** Only false is sent: opts the run out of rtk command-output compression. */
+  rtkEnabled?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
-  initialPermissionMode?: PermissionMode;
+  initialPermissionMode?: ExecutionMode;
   homeQuickAction?: string;
 }
 
@@ -546,6 +556,13 @@ function buildCloudRunRequestBody(
       }
       body.reasoning_effort = options.reasoningLevel;
     }
+    // The API rejects initial_permission_mode without runtime_adapter and validates it per adapter.
+    if (options.initialPermissionMode) {
+      body.initial_permission_mode = resolveCloudInitialPermissionMode(
+        options.adapter,
+        options.initialPermissionMode,
+      );
+    }
   }
   if (options?.resumeFromRunId) {
     body.resume_from_run_id = options.resumeFromRunId;
@@ -568,14 +585,14 @@ function buildCloudRunRequestBody(
   if (options?.autoPublish) {
     body.auto_publish = options.autoPublish;
   }
+  if (options?.rtkEnabled === false) {
+    body.rtk_enabled = false;
+  }
   if (options?.runSource) {
     body.run_source = options.runSource;
   }
   if (options?.signalReportId) {
     body.signal_report_id = options.signalReportId;
-  }
-  if (options?.initialPermissionMode) {
-    body.initial_permission_mode = options.initialPermissionMode;
   }
   if (options?.homeQuickAction) {
     body.home_quick_action = options.homeQuickAction;
@@ -609,6 +626,29 @@ function extractRequestErrorMessage(error: unknown, fallback: string): string {
     // Non-JSON body — fall through to the status-based fallback.
   }
   return `${fallback} (HTTP ${match[1]})`;
+}
+
+/**
+ * Parse the shared fetcher's `Failed request: [<status>] <json-body>` throw back
+ * into its status + parsed JSON body, so status-specific responses (422, 429,
+ * 500, 503) can be handled as data instead of a generic error. Returns null when
+ * the error isn't that shape (e.g. a network failure).
+ */
+function parseFailedRequest(
+  error: unknown,
+): { status: number; body: unknown } | null {
+  const raw = error instanceof Error ? error.message : String(error);
+  const match = raw.match(/^Failed request: \[(\d+)\] (.*)$/s);
+  if (!match) {
+    return null;
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(match[2]);
+  } catch {
+    body = match[2];
+  }
+  return { status: Number(match[1]), body };
 }
 
 type AnyArtefact =
@@ -4698,11 +4738,18 @@ export class PostHogAPIClient {
    * Lists the team's LLM skills (latest versions, no bodies).
    * Returns null when the feature is unavailable for this org (the
    * llm-analytics-skills flag gates the endpoint server-side with a 403).
+   * `category` narrows to one exact server-owned category (e.g. "scout"
+   * for Signals scouts); omit it to list every category.
    */
-  async listLlmSkills(): Promise<LlmSkillListItem[] | null> {
+  async listLlmSkills(
+    options: { category?: string } = {},
+  ): Promise<LlmSkillListItem[] | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/environments/${teamId}/llm_skills/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options.category !== undefined) {
+      url.searchParams.set("category", options.category);
+    }
     const response = await this.api.fetcher.fetch({
       method: "get",
       url,
@@ -5268,6 +5315,143 @@ export class PostHogAPIClient {
     }
     out.sort((a, b) => a.path.localeCompare(b.path));
     return out;
+  }
+
+  /**
+   * Author/compile one custom tool on a draft revision (PUT). Draft-only —
+   * ready/live/archived bundles are sealed and the server returns a conflict.
+   * A compile failure (HTTP 422) is returned as a typed `{ ok: false }` result
+   * carrying `errors`, so the caller renders diagnostics inline against the
+   * source rather than surfacing a generic failure; other non-2xx (400
+   * invalid_request, 409 sealed revision, …) still throw.
+   */
+  async putRevisionTool(
+    idOrSlug: string,
+    revisionId: string,
+    toolId: string,
+    body: WriteToolRequest,
+  ): Promise<WriteToolResult> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/tools/${encodeURIComponent(toolId)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "put",
+        url,
+        path,
+        overrides: { body: JSON.stringify(body) },
+      });
+      const data = (await response.json()) as {
+        tool_id: string;
+        capabilities: ToolCapabilities;
+      };
+      return {
+        ok: true,
+        tool_id: data.tool_id,
+        capabilities: data.capabilities,
+      };
+    } catch (error) {
+      const failure = parseFailedRequest(error);
+      if (
+        failure?.status === 422 &&
+        isObjectRecord(failure.body) &&
+        failure.body.error === "tool_compile_failed"
+      ) {
+        return {
+          ok: false,
+          error: "tool_compile_failed",
+          tool_id: optionalString(failure.body.tool_id) ?? toolId,
+          errors: Array.isArray(failure.body.errors)
+            ? (failure.body.errors as ToolCompileError[])
+            : [],
+        };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Remove one custom tool from a draft revision (draft-only). A 404
+   * (tool_not_found) is treated as success — the tool is already gone, which is
+   * the desired end state.
+   */
+  async deleteRevisionTool(
+    idOrSlug: string,
+    revisionId: string,
+    toolId: string,
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/tools/${encodeURIComponent(toolId)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    try {
+      await this.api.fetcher.fetch({ method: "delete", url, path });
+    } catch (error) {
+      const failure = parseFailedRequest(error);
+      if (failure?.status === 404) {
+        return;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Execute a persisted tool once in a sandbox (POST …/dry_run). The envelope's
+   * `ok` is authoritative: a tool-side failure is HTTP 200 with `ok: false`, so
+   * both 2xx and 500 return `{ outcome: "completed", envelope }` and the caller
+   * reads `error.code`/`message` from the body. Throttling (429) and an
+   * unconfigured backend (503) are returned as distinct outcomes — never thrown,
+   * never retried, since dry-run is interactive and process-capped.
+   */
+  async dryRunRevisionTool(
+    idOrSlug: string,
+    revisionId: string,
+    toolId: string,
+    body: DryRunToolRequest,
+  ): Promise<DryRunToolResult> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/tools/${encodeURIComponent(toolId)}/dry_run/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "post",
+        url,
+        path,
+        overrides: { body: JSON.stringify(body) },
+      });
+      return {
+        outcome: "completed",
+        envelope: (await response.json()) as DryRunToolEnvelope,
+      };
+    } catch (error) {
+      const failure = parseFailedRequest(error);
+      // A 500 still carries the envelope (ok:false + error.code/duration_ms) —
+      // surface it as completed so infra failures read like any tool failure.
+      if (
+        failure?.status === 500 &&
+        isObjectRecord(failure.body) &&
+        "ok" in failure.body
+      ) {
+        return {
+          outcome: "completed",
+          envelope: failure.body as unknown as DryRunToolEnvelope,
+        };
+      }
+      if (failure?.status === 429) {
+        const max = isObjectRecord(failure.body)
+          ? failure.body.max_concurrent
+          : undefined;
+        // Omit rather than default to 0 — "0 runs in flight" would be a
+        // misleading count for a throttle.
+        return {
+          outcome: "throttled",
+          max_concurrent: typeof max === "number" ? max : undefined,
+        };
+      }
+      if (failure?.status === 503) {
+        return { outcome: "unavailable" };
+      }
+      throw error;
+    }
   }
 
   /**

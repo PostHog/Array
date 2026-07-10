@@ -74,6 +74,7 @@ import type {
 import { resourceLink } from "../utils/acp-content";
 import { AsyncMutex } from "../utils/async-mutex";
 import {
+  buildGatewayPropertyHeaderRecord,
   buildGatewayPropertyHeaders,
   resolveGatewayProduct,
   resolveLlmGatewayUrl,
@@ -86,6 +87,7 @@ import {
 } from "./cloud-prompt";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
+import { RunUsageAccumulator } from "./run-usage";
 import {
   handoffLocalGitStateSchema,
   jsonRpcRequestSchema,
@@ -317,6 +319,7 @@ export class AgentServer {
   private eventStreamSender: TaskRunEventStreamSender | null = null;
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
+  private runUsage = new RunUsageAccumulator();
   private detectedPrUrl: string | null = null;
   // Reset per session. `evaluatedPrUrls` dedupes per URL; `prAttributionChain` serializes
   // attributions so the most recently created PR in a run wins.
@@ -956,6 +959,7 @@ export class AgentServer {
           void this.syncCloudBranchMetadata(this.session.payload);
         }
 
+        this.recordTurnUsage(result.usage);
         this.broadcastTurnComplete(result.stopReason);
 
         if (result.stopReason === "end_turn") {
@@ -1254,6 +1258,7 @@ export class AgentServer {
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
               developerInstructions: codexInstructions,
+              httpHeaders: gatewayEnv.openaiCustomHeaders,
             }
           : undefined,
       onStructuredOutput: async (output) => {
@@ -1668,6 +1673,7 @@ export class AgentServer {
         void this.syncCloudBranchMetadata(payload);
       }
 
+      this.recordTurnUsage(result.usage);
       this.broadcastTurnComplete(result.stopReason);
 
       if (result.stopReason === "end_turn") {
@@ -1819,6 +1825,7 @@ export class AgentServer {
         void this.syncCloudBranchMetadata(payload);
       }
 
+      this.recordTurnUsage(result.usage);
       this.broadcastTurnComplete(result.stopReason);
 
       if (result.stopReason === "end_turn") {
@@ -3060,12 +3067,11 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       ? gatewayUrl
       : `${gatewayUrl}/v1`;
     // Forward task metadata as `x-posthog-property-*` headers so the gateway
-    // lifts them onto the $ai_generation event. Routes through the Anthropic
-    // SDK's ANTHROPIC_CUSTOM_HEADERS env var; the OpenAI/codex path has no
-    // equivalent today. (The `team_id` attribution header is added downstream
-    // in the Claude session builder from POSTHOG_PROJECT_ID — see
-    // adapters/claude/session/options.ts.)
-    const customHeaders = buildGatewayPropertyHeaders({
+    // lifts them onto the $ai_generation event. The Claude path routes these
+    // through the Anthropic SDK's ANTHROPIC_CUSTOM_HEADERS env var; the codex
+    // path sets them as `model_providers.posthog.http_headers` instead, so we
+    // also expose the record form below.
+    const gatewayProperties = {
       task_origin_product: originProduct,
       task_internal: isInternal,
       signal_report_id: signalReportId,
@@ -3074,6 +3080,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       task_run_id: taskRunId,
       task_user_id: taskUserId,
       task_title: taskTitle,
+    };
+    const customHeaders = buildGatewayPropertyHeaders(gatewayProperties);
+    // The Claude path appends `team_id` in buildEnvironment from
+    // POSTHOG_PROJECT_ID; the codex path has no such hook, so fold it into the
+    // record here to keep team attribution working for both adapters.
+    const openaiCustomHeaders = buildGatewayPropertyHeaderRecord({
+      ...gatewayProperties,
+      team_id: projectId,
     });
 
     // Server-level constants that don't vary per task — safe to keep in
@@ -3096,6 +3110,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       openaiBaseUrl,
       openaiApiKey: apiKey,
       anthropicCustomHeaders: customHeaders,
+      openaiCustomHeaders,
       posthogProjectId: String(projectId),
     };
   }
@@ -3485,10 +3500,13 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       return;
     }
 
-    // Only attribute PRs created during this run by this run's own GitHub
-    // identity — not ones the agent merely viewed.
+    // Only attribute PRs created during this run — not ones the agent merely
+    // viewed. GitHub App installation tokens (all cloud runs) can't read
+    // `gh api user`, so ghLogin is null there; enforce the author match only when
+    // we resolved our own identity, otherwise the recency gate alone scopes
+    // attribution to PRs created during this run.
     if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
-    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
+    if (ghLogin && !wasCreatedByLogin(attribution.author, ghLogin)) return;
 
     this.detectedPrUrl = prUrl;
 
@@ -3609,6 +3627,9 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 
     this.pendingEvents = [];
     this.lastReportedBranch = null;
+    // Run usage is per run: a later session on this instance (e.g. a resume
+    // with a different run_id) must not inherit the previous run's totals.
+    this.runUsage = new RunUsageAccumulator();
     this.session = null;
   }
 
@@ -3664,6 +3685,24 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   ): HandoffLocalGitState | null {
     const result = handoffLocalGitStateSchema.safeParse(params.localGitState);
     return result.success ? result.data : null;
+  }
+
+  /**
+   * Accumulates a settled turn's token usage into the run total and reports it
+   * to the backend, merged into `TaskRun.state.token_usage`. Best-effort: a
+   * reporting failure must never affect the turn outcome.
+   */
+  private recordTurnUsage(usage: PromptResponse["usage"]): void {
+    if (!this.runUsage.add(usage)) return;
+    const payload = this.session?.payload;
+    if (!payload) return;
+    void this.posthogAPI
+      .updateTaskRun(payload.task_id, payload.run_id, {
+        state: { token_usage: this.runUsage.snapshot() },
+      })
+      .catch((error) => {
+        this.logger.warn("Failed to report run token usage", error);
+      });
   }
 
   private broadcastTurnComplete(stopReason: string): void {
