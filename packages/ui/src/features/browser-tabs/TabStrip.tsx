@@ -85,11 +85,14 @@ export function TabStrip({
   return (
     <TooltipProvider delay={400}>
       {/* overflow-hidden: incompressible pinned pills must clip within the
-          strip rather than overlap the title bar's right-side controls. */}
+          strip rather than overlap the title bar's right-side controls.
+          The container inherits the title bar's `drag` region so the empty
+          space right of the pills moves the window; each interactive child
+          opts out with `no-drag` individually. */}
       <Flex
         align="center"
         gap="1"
-        className="no-drag h-6 min-w-0 flex-1 overflow-hidden pt-px pr-2"
+        className="h-6 min-w-0 flex-1 overflow-hidden pt-px pr-2"
         role="tablist"
       >
         {tabs.map((tab, index) => (
@@ -113,7 +116,7 @@ export function TabStrip({
               <Button
                 size="icon-sm"
                 aria-label="New tab"
-                className="shrink-0"
+                className="no-drag shrink-0"
                 onClick={onNewTab}
               >
                 <PlusIcon size={14} />
@@ -171,8 +174,8 @@ function SortableTabPill({
       ref={ref}
       className={
         tab.pinned
-          ? "flex shrink-0 items-center"
-          : "group relative flex min-w-0 max-w-[200px] flex-1 basis-[200px] items-center overflow-hidden"
+          ? "no-drag flex shrink-0 items-center"
+          : "no-drag group relative flex min-w-0 max-w-[200px] flex-1 basis-[200px] items-center overflow-hidden"
       }
     >
       <Button

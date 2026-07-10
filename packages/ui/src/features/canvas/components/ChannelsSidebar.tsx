@@ -2,7 +2,6 @@ import { ArchiveIcon } from "@phosphor-icons/react";
 import { Separator } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
-import { SidebarUsageBar } from "@posthog/ui/features/billing/SidebarUsageBar";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -93,7 +92,6 @@ export function ChannelsSidebar() {
         )}
 
         <UpdateBanner />
-        <SidebarUsageBar />
 
         {/* Archived is a task-list affordance — hidden while channels are on,
             since the body then shows the channel tree, not tasks. */}

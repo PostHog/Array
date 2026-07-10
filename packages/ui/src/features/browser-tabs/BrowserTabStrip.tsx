@@ -59,7 +59,12 @@ import { usePinnedTabsStore } from "./pinnedTabsStore";
 import { TabStrip, type TabView } from "./TabStrip";
 import { TaskTabIcon } from "./TaskTabIcon";
 import { useTabReorderStore } from "./tabReorderStore";
-import { applyLocalTransform, persistWrite, readMirror } from "./tabsSync";
+import {
+  applyLocalTransform,
+  persistWrite,
+  readMirror,
+  reseedMirror,
+} from "./tabsSync";
 import { useTabsSnapshot } from "./useBrowserTabs";
 
 /** The active tab id is carried in router history state so back/forward replay
@@ -750,16 +755,36 @@ export function BrowserTabStrip() {
   // mirror and navigate in the same tick (no IPC wait), then persist with the
   // same id so the durable state matches. The service is idempotent on the
   // minted id, so a replay can't append a duplicate.
-  const handleNewTab = () => {
-    if (!windowId) return;
+  const createBlankTab = (targetWindowId: string) => {
     const tabId = crypto.randomUUID();
     applyLocalTransform(
       (s) =>
-        newBlankTabLocal(s, { windowId, makeId: () => tabId, now: Date.now })
-          .snapshot,
+        newBlankTabLocal(s, {
+          windowId: targetWindowId,
+          makeId: () => tabId,
+          now: Date.now,
+        }).snapshot,
     );
     landOnDefault(tabId);
-    void persistWrite(() => newBlankTab.mutateAsync({ windowId, tabId }));
+    void persistWrite(() =>
+      newBlankTab.mutateAsync({ windowId: targetWindowId, tabId }),
+    );
+  };
+
+  const handleNewTab = () => {
+    if (windowId) {
+      createBlankTab(windowId);
+      return;
+    }
+    // No window means the mirror never seeded (the boot fetch raced or
+    // failed) — the click must not die. Re-pull the authoritative snapshot
+    // (the server always has a primary window) and append into it.
+    void reseedMirror()
+      .then(() => {
+        const win = primaryWindow(readMirror());
+        if (win) createBlankTab(win.id);
+      })
+      .catch(() => undefined);
   };
 
   // Cmd/Ctrl+T opens a new browser tab. Bound here (not globally) so it only

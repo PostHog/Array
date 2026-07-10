@@ -70,7 +70,7 @@ export class BrowserTabsService
     super();
     this.setMaxListeners(0);
     const loaded = this.repo.load();
-    const seeded = this.ensurePrimaryWindow(loaded);
+    const seeded = this.ensureAtLeastOneTab(this.ensurePrimaryWindow(loaded));
     if (seeded !== loaded) this.repo.save(seeded);
     this.snapshot = seeded;
   }
@@ -85,6 +85,24 @@ export class BrowserTabsService
       activeTabId: null,
     };
     return { ...snapshot, windows: [primary, ...snapshot.windows] };
+  }
+
+  /** The strip must never boot empty: seed a blank tab when none survived. */
+  private ensureAtLeastOneTab(snapshot: TabsSnapshot): TabsSnapshot {
+    if (snapshot.tabs.length > 0) return snapshot;
+    const primary = snapshot.windows.find((w) => w.isPrimary);
+    if (!primary) return snapshot;
+    return newBlankTab(snapshot, { windowId: primary.id, makeId, now })
+      .snapshot;
+  }
+
+  /** Creation targets heal a stale window id (a mirror seeded before a schema
+   * repair, or another window's since-closed id) to the primary window rather
+   * than appending into a window that doesn't exist. */
+  private resolveWindowId(windowId: string): string {
+    return this.snapshot.windows.some((w) => w.id === windowId)
+      ? windowId
+      : this.getPrimaryWindowId();
   }
 
   getSnapshot(): TabsSnapshot {
@@ -113,6 +131,7 @@ export class BrowserTabsService
     const providedId = input.tabId;
     const { snapshot } = openOrFocusTab(this.snapshot, {
       ...input,
+      windowId: this.resolveWindowId(input.windowId),
       makeId: providedId ? () => providedId : makeId,
       now,
     });
@@ -127,7 +146,7 @@ export class BrowserTabsService
       return this.snapshot;
     }
     const { snapshot } = newBlankTab(this.snapshot, {
-      windowId: input.windowId,
+      windowId: this.resolveWindowId(input.windowId),
       makeId: providedId ? () => providedId : makeId,
       now,
     });

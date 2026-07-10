@@ -16,6 +16,7 @@ import { isContentlessTask } from "@posthog/shared/domain-types";
 import { DeepLinkApprovalModal } from "@posthog/ui/features/agent-applications/components/DeepLinkApprovalModal";
 import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { UsageButton } from "@posthog/ui/features/billing/UsageButton";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { BlankTabView } from "@posthog/ui/features/browser-tabs/BlankTabView";
 import { BrowserTabStrip } from "@posthog/ui/features/browser-tabs/BrowserTabStrip";
@@ -373,8 +374,9 @@ function RootLayout() {
               noops on param-less routes (inbox, agents, new-task), so it's safe
               to mount everywhere. */}
           <BrowserTabStrip />
-          {channelsEnabled && (
-            <Flex align="center" className="no-drag ml-auto pr-3">
+          <Flex align="center" gap="2" className="no-drag ml-auto pr-3">
+            <UsageButton />
+            {channelsEnabled && (
               <Button
                 variant="outline"
                 size="sm"
@@ -384,8 +386,8 @@ function RootLayout() {
                 <ArrowSquareOut size={14} />
                 PostHog Web
               </Button>
-            </Flex>
-          )}
+            )}
+          </Flex>
         </Flex>
         <ConnectivityBanner />
         <Flex flexGrow="1" overflow="hidden">
