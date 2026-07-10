@@ -251,7 +251,7 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
     <Card
       size="sm"
       className={cn(
-        "mt-1.5 w-full max-w-[820px] cursor-pointer rounded-sm py-0 transition-none hover:bg-fill-hover",
+        "mt-1.5 w-full cursor-pointer rounded-sm py-0 transition-none hover:bg-fill-hover",
         statusDisplay.isMerged
           ? "border-transparent bg-(--purple-a2) shadow-[0_0_0_1px_var(--purple-8)] hover:bg-(--purple-a3) dark:bg-(--purple-a1) dark:hover:bg-(--purple-a2)"
           : "hover:border-border-primary",
