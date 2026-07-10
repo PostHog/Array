@@ -337,6 +337,42 @@ describe("getEffectiveCustomInstructions", () => {
   });
 });
 
+describe("feature settingsStore custom instructions sync persistence", () => {
+  beforeEach(async () => {
+    await resetPersistenceMocks();
+
+    useSettingsStore.setState({
+      syncCustomInstructionsFromFile: false,
+      syncedCustomInstructions: null,
+    });
+  });
+
+  it("persists the sync toggle but never the runtime snapshot", async () => {
+    // The toggle is durable preference; the snapshot is re-read on boot by the
+    // sync contribution. Persisting the snapshot would let a stale file rehydrate
+    // and reach a session created before the contribution's re-read finishes.
+    useSettingsStore.setState({
+      syncCustomInstructionsFromFile: true,
+      syncedCustomInstructions: {
+        path: "/home/u/.claude/CLAUDE.md",
+        displayPath: "~/.claude/CLAUDE.md",
+        content: "from file",
+        truncated: false,
+      },
+    });
+    // Nudge a persisted write via a partialized field.
+    useSettingsStore.getState().setCustomInstructions("touch");
+
+    await waitForPersistedWrite();
+
+    const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
+    const persisted = JSON.parse(lastCall[1]);
+
+    expect(persisted.state.syncCustomInstructionsFromFile).toBe(true);
+    expect(persisted.state).not.toHaveProperty("syncedCustomInstructions");
+  });
+});
+
 describe("feature settingsStore terminal font", () => {
   beforeEach(async () => {
     await resetPersistenceMocks();

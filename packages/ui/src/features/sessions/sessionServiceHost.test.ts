@@ -226,6 +226,13 @@ const mockNotificationService = vi.hoisted(() => ({
 
 const mockSettingsState = vi.hoisted(() => ({
   customInstructions: "",
+  syncCustomInstructionsFromFile: false,
+  syncedCustomInstructions: null as {
+    path: string;
+    displayPath: string;
+    content: string;
+    truncated: boolean;
+  } | null,
 }));
 
 vi.mock(
@@ -403,6 +410,8 @@ describe("SessionService", () => {
     mockConvertStoredEntriesToEvents.mockImplementation(() => []);
     resetSessionService();
     mockSettingsState.customInstructions = "";
+    mockSettingsState.syncCustomInstructionsFromFile = false;
+    mockSettingsState.syncedCustomInstructions = null;
     mockGetIsOnline.mockReturnValue(true);
     mockGetConfigOptionByCategory.mockReturnValue(undefined);
     mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
@@ -541,6 +550,42 @@ describe("SessionService", () => {
       });
 
       expect(mockTrpcAgent.start.mutate).not.toHaveBeenCalled();
+    });
+
+    it("starts the session with the synced file content when file sync is on", async () => {
+      // Pins the host wiring at sessionServiceHost.ts: the settings getter runs
+      // the store through getEffectiveCustomInstructions, so the synced file -
+      // not the hand-typed instructions - reaches agent.start. Reverting that
+      // to a plain state.customInstructions pass-through would send "typed".
+      const service = getSessionService();
+      mockSettingsState.customInstructions = "typed";
+      mockSettingsState.syncCustomInstructionsFromFile = true;
+      mockSettingsState.syncedCustomInstructions = {
+        path: "/home/u/.claude/CLAUDE.md",
+        displayPath: "~/.claude/CLAUDE.md",
+        content: "synced from file",
+        truncated: false,
+      };
+
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(undefined);
+      mockBuildAuthenticatedClient.mockReturnValue({
+        ...mockAuthenticatedClient,
+        createTaskRun: vi.fn().mockResolvedValue({ id: "run-789" }),
+        appendTaskRunLog: vi.fn(),
+      });
+      mockTrpcAgent.start.mutate.mockResolvedValue({
+        channel: "test-channel",
+        configOptions: [],
+      });
+
+      await service.connectToTask({
+        task: createMockTask(),
+        repoPath: "/repo",
+      });
+
+      expect(mockTrpcAgent.start.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({ customInstructions: "synced from file" }),
+      );
     });
 
     it("deduplicates concurrent connection attempts", async () => {

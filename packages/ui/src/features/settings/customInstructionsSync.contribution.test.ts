@@ -59,6 +59,28 @@ describe("CustomInstructionsSyncContribution", () => {
     }
   });
 
+  it("reads the file when hydration completes with sync already on at boot", async () => {
+    // The headline boot behaviour: the contribution starts before persist
+    // rehydration flips _hasHydrated, and sync is persisted-on. The read must
+    // fire on that false -> true transition, not only on a later toggle flip -
+    // otherwise a user with sync persisted-on gets no file read at startup.
+    useSettingsStore.setState({
+      _hasHydrated: false,
+      syncCustomInstructionsFromFile: true,
+      syncedCustomInstructions: null,
+    });
+    query.mockResolvedValue(freshFile);
+
+    // Rehydration flips this asynchronously, after start() has already run.
+    useSettingsStore.setState({ _hasHydrated: true });
+    await flush();
+
+    expect(query).toHaveBeenCalled();
+    expect(useSettingsStore.getState().syncedCustomInstructions).toEqual(
+      freshFile,
+    );
+  });
+
   it("mirrors the file into the store when sync turns on", async () => {
     query.mockResolvedValueOnce(freshFile);
 
