@@ -45,6 +45,7 @@ const CLAUDE_CLOUD_PERMISSION_MODES = [
 ] as const;
 
 const CODEX_CLOUD_PERMISSION_MODES = [
+  "plan",
   "auto",
   "read-only",
   "full-access",
@@ -65,19 +66,18 @@ function isCodexCloudPermissionMode(
   return (CODEX_CLOUD_PERMISSION_MODES as readonly string[]).includes(mode);
 }
 
-// The cloud API's per-adapter mode enums are narrower than the local presets (no "plan" for codex); degrade to the nearest permission ceiling.
+// Translate presets that only exist on the other adapter to the nearest permission ceiling.
 const CODEX_CLOUD_MODE_FALLBACKS: Record<
-  Exclude<ClaudeCloudPermissionMode, "auto">,
+  Exclude<ClaudeCloudPermissionMode, "auto" | "plan">,
   CodexCloudPermissionMode
 > = {
   default: "auto",
   acceptEdits: "auto",
-  plan: "read-only",
   bypassPermissions: "full-access",
 };
 
 const CLAUDE_CLOUD_MODE_FALLBACKS: Record<
-  Exclude<CodexCloudPermissionMode, "auto">,
+  Exclude<CodexCloudPermissionMode, "auto" | "plan">,
   ClaudeCloudPermissionMode
 > = {
   "read-only": "plan",

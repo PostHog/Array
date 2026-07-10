@@ -6,7 +6,7 @@ describe("resolveCloudInitialPermissionMode", () => {
     ["codex", "auto", "auto"],
     ["codex", "read-only", "read-only"],
     ["codex", "full-access", "full-access"],
-    ["codex", "plan", "read-only"],
+    ["codex", "plan", "plan"],
     ["codex", "default", "auto"],
     ["codex", "acceptEdits", "auto"],
     ["codex", "bypassPermissions", "full-access"],

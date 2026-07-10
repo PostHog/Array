@@ -41,6 +41,18 @@ export function mapAppServerNotification(
         },
       };
     }
+    // Plan-mode proposal streaming as agent prose (codex strips it from agentMessage deltas).
+    case APP_SERVER_NOTIFICATIONS.PLAN_DELTA: {
+      const delta = readStringField(params, "delta");
+      if (!delta) return null;
+      return {
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: delta },
+        },
+      };
+    }
     case APP_SERVER_NOTIFICATIONS.TOKEN_USAGE_UPDATED: {
       // Context indicator: renderer reads `used`/`size`; detailed breakdown comes via `_posthog/usage_update`.
       const usage = readTokenUsage(params);
@@ -232,7 +244,7 @@ function dynamicToolText(items: unknown): string | null {
 /**
  * Re-renders a persisted `ThreadItem` as the ACP updates a live stream would have produced,
  * so a reattaching host shows the full transcript. Tool items collapse to one completed
- * `tool_call`; ephemeral items (reasoning, plan) are not replayed.
+ * `tool_call`; reasoning is not replayed.
  */
 export function mapHistoryItem(
   sessionId: string,
@@ -254,8 +266,20 @@ export function mapHistoryItem(
           ]
         : [];
     case "reasoning":
-    case "plan":
       return [];
+    // Replay the proposed plan as agent prose so a reattached host still shows it.
+    case "plan":
+      return item.text
+        ? [
+            {
+              sessionId,
+              update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: item.text },
+              },
+            },
+          ]
+        : [];
     default: {
       const tool = describeTool(item);
       if (!tool || !item.id) return [];

@@ -2115,4 +2115,468 @@ describe("CodexAppServerAgent", () => {
     // The richer handler returns a typed { answers } object, not a decision string.
     expect(response).toEqual({ answers: { q1: { answers: ["A"] } } });
   });
+
+  // --- Plan-mode implementation handoff ------------------------------------
+
+  async function waitUntil(cond: () => boolean): Promise<void> {
+    for (let i = 0; i < 50 && !cond(); i++) {
+      await new Promise((r) => setImmediate(r));
+    }
+  }
+
+  // permissionOutcome may be a value or a function (per-call, e.g. a pending promise).
+  function makePlanAgent(permissionOutcome: unknown) {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+    });
+    const sessionUpdates: Array<{ update?: Record<string, unknown> }> = [];
+    const extNotifications: Array<{ method: string; params: unknown }> = [];
+    const permissionRequests: Array<{
+      toolCall: Record<string, unknown>;
+      options: Array<{ optionId?: string; kind?: string }>;
+    }> = [];
+    const client = {
+      sessionUpdate: async (n: unknown) => {
+        sessionUpdates.push(n as { update?: Record<string, unknown> });
+      },
+      requestPermission: async (params: {
+        toolCall: Record<string, unknown>;
+        options: Array<{ optionId?: string; kind?: string }>;
+      }) => {
+        permissionRequests.push(params);
+        return typeof permissionOutcome === "function"
+          ? permissionOutcome()
+          : permissionOutcome;
+      },
+      extNotification: async (method: string, params: unknown) => {
+        extNotifications.push({ method, params });
+      },
+    } as unknown as AgentSideConnection;
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    return {
+      agent,
+      stub,
+      sessionUpdates,
+      extNotifications,
+      permissionRequests,
+    };
+  }
+
+  // Wrapped in an object: returning the pending promise directly would make
+  // the caller's await adopt it and block until the whole prompt finishes.
+  async function startPlanTurn(
+    agent: CodexAppServerAgent,
+    stub: ReturnType<typeof makeStubRpc>,
+    meta?: Record<string, unknown>,
+  ): Promise<{ done: ReturnType<CodexAppServerAgent["prompt"]> }> {
+    await agent.newSession({
+      cwd: "/r",
+      ...(meta ? { _meta: meta } : {}),
+    } as unknown as NewSessionRequest);
+    await agent.setSessionConfigOption({
+      configId: "mode",
+      value: "plan",
+      sessionId: "t",
+    } as any);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "plan a refactor" }],
+    } as unknown as PromptRequest);
+    await waitUntil(
+      () => stub.requests.filter((r) => r.method === "turn/start").length >= 1,
+    );
+    return { done };
+  }
+
+  it("offers the implement handoff from the streamed plan and runs the implementation in auto", async () => {
+    const { agent, stub, sessionUpdates, permissionRequests } = makePlanAgent({
+      outcome: { outcome: "selected", optionId: "auto" },
+    });
+    const { done } = await startPlanTurn(agent, stub);
+
+    // codex 0.140 can stream the proposal without a completed plan item.
+    stub.emit("item/plan/delta", {
+      itemId: "p1",
+      delta: "# The plan\n\n",
+    });
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "1. do it" });
+    stub.emit("item/completed", {
+      item: {
+        type: "agentMessage",
+        id: "a1",
+        text: "The implementation plan is ready.",
+      },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+
+    // The accepted handoff starts the implementation turn inside the same prompt().
+    await waitUntil(
+      () => stub.requests.filter((r) => r.method === "turn/start").length >= 2,
+    );
+    stub.emit("turn/completed", {
+      turn: { id: "turn_2", status: "completed" },
+    });
+    expect((await done).stopReason).toBe("end_turn");
+
+    // The approval renders as the plan-approval UI (switch_mode + the plan text).
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0].toolCall).toMatchObject({
+      toolCallId: "p1:implement",
+      kind: "switch_mode",
+      rawInput: { plan: "# The plan\n\n1. do it" },
+    });
+    expect(permissionRequests[0].options.map((o) => o.optionId)).toContain(
+      "auto",
+    );
+
+    // Mode flipped to auto and the host was told.
+    expect(sessionUpdates).toContainEqual(
+      expect.objectContaining({
+        update: { sessionUpdate: "current_mode_update", currentModeId: "auto" },
+      }),
+    );
+
+    // The implementation turn runs with auto's policies and an echoed kickoff message.
+    const turnStarts = stub.requests.filter((r) => r.method === "turn/start");
+    expect(turnStarts[1].params).toMatchObject({
+      input: [{ type: "text", text: "Implement the plan." }],
+      approvalPolicy: "on-request",
+      sandboxPolicy: sandboxPolicyFor("auto"),
+      collaborationMode: { mode: "default", settings: { model: "gpt-5.5" } },
+    });
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "t",
+      update: {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "Implement the plan." },
+      },
+    });
+  });
+
+  it("stays in plan mode when the handoff is rejected without feedback", async () => {
+    const { agent, stub, permissionRequests } = makePlanAgent({
+      outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+    });
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+
+    expect((await done).stopReason).toBe("end_turn");
+    expect(permissionRequests).toHaveLength(1);
+    // No implementation turn started; the picker stays on plan.
+    expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
+      1,
+    );
+  });
+
+  it("feeds handoff feedback into another plan turn", async () => {
+    const { agent, stub, permissionRequests } = makePlanAgent({
+      outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+      _meta: { customInput: "cover the migration path too" },
+    });
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+
+    // The feedback re-enters planning; the revised turn ends without a new plan.
+    await waitUntil(
+      () => stub.requests.filter((r) => r.method === "turn/start").length >= 2,
+    );
+    stub.emit("turn/completed", {
+      turn: { id: "turn_2", status: "completed" },
+    });
+    expect((await done).stopReason).toBe("end_turn");
+
+    expect(permissionRequests).toHaveLength(1);
+    const turnStarts = stub.requests.filter((r) => r.method === "turn/start");
+    expect(turnStarts[1].params).toMatchObject({
+      input: [{ type: "text", text: "cover the migration path too" }],
+      // Still planning: the follow-up keeps plan collaboration + the read-only sandbox.
+      collaborationMode: { mode: "plan", settings: { model: "gpt-5.5" } },
+      sandboxPolicy: { type: "readOnly", networkAccess: true },
+    });
+  });
+
+  it("skips the handoff when a plan turn ends without a proposed plan", async () => {
+    const { agent, stub, permissionRequests } = makePlanAgent({
+      outcome: { outcome: "selected", optionId: "auto" },
+    });
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    expect((await done).stopReason).toBe("end_turn");
+    expect(permissionRequests).toHaveLength(0);
+  });
+
+  it("skips the handoff outside plan mode even if codex emits a plan item", async () => {
+    const { agent, stub, permissionRequests } = makePlanAgent({
+      outcome: { outcome: "selected", optionId: "auto" },
+    });
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    await waitUntil(
+      () => stub.requests.filter((r) => r.method === "turn/start").length >= 1,
+    );
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    expect((await done).stopReason).toBe("end_turn");
+    expect(permissionRequests).toHaveLength(0);
+  });
+
+  it("defers the cloud idle signal until the handoff settles", async () => {
+    let resolvePermission: (v: unknown) => void = () => {};
+    const { agent, stub, extNotifications, permissionRequests } = makePlanAgent(
+      () =>
+        new Promise((resolve) => {
+          resolvePermission = resolve;
+        }),
+    );
+    const { done } = await startPlanTurn(agent, stub, { taskRunId: "run_1" });
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await waitUntil(() => permissionRequests.length === 1);
+
+    // The plan turn ended, but the prompt is still busy in the handoff — no idle yet.
+    expect(
+      extNotifications.filter((n) => n.method === "_posthog/turn_complete"),
+    ).toHaveLength(0);
+
+    resolvePermission({ outcome: { outcome: "selected", optionId: "auto" } });
+    await waitUntil(
+      () => stub.requests.filter((r) => r.method === "turn/start").length >= 2,
+    );
+    stub.emit("turn/completed", {
+      turn: { id: "turn_2", status: "completed" },
+    });
+    expect((await done).stopReason).toBe("end_turn");
+
+    // Exactly one idle signal, from the implementation turn's completion.
+    const idle = extNotifications.filter(
+      (n) => n.method === "_posthog/turn_complete",
+    );
+    expect(idle).toHaveLength(1);
+    expect((idle[0].params as { stopReason?: string }).stopReason).toBe(
+      "end_turn",
+    );
+  });
+
+  it("cancel settles a pending handoff: prompt returns cancelled and idle emits once", async () => {
+    const { agent, stub, extNotifications, permissionRequests } = makePlanAgent(
+      // The approval UI never answers.
+      () => new Promise(() => {}),
+    );
+    const { done } = await startPlanTurn(agent, stub, { taskRunId: "run_1" });
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await waitUntil(() => permissionRequests.length === 1);
+
+    await agent.cancel({ sessionId: "t" } as never);
+    expect((await done).stopReason).toBe("cancelled");
+    expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
+      1,
+    );
+    const idle = extNotifications.filter(
+      (n) => n.method === "_posthog/turn_complete",
+    );
+    expect(idle).toHaveLength(1);
+    expect((idle[0].params as { stopReason?: string }).stopReason).toBe(
+      "cancelled",
+    );
+  });
+
+  it("ignores an accept that arrives after cancellation", async () => {
+    let resolvePermission: (v: unknown) => void = () => {};
+    const { agent, stub, sessionUpdates, permissionRequests } = makePlanAgent(
+      () =>
+        new Promise((resolve) => {
+          resolvePermission = resolve;
+        }),
+    );
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await waitUntil(() => permissionRequests.length === 1);
+
+    await agent.cancel({ sessionId: "t" } as never);
+    expect((await done).stopReason).toBe("cancelled");
+
+    // The approval UI answers too late: no implementation turn, no mode switch.
+    resolvePermission({ outcome: { outcome: "selected", optionId: "auto" } });
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
+      1,
+    );
+    expect(
+      sessionUpdates.filter(
+        (u) =>
+          u.update?.sessionUpdate === "current_mode_update" &&
+          u.update?.currentModeId === "auto",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("closes a pending handoff as cancelled and emits cancelled idle", async () => {
+    const { agent, stub, extNotifications, permissionRequests } = makePlanAgent(
+      () => new Promise(() => {}),
+    );
+    const { done } = await startPlanTurn(agent, stub, { taskRunId: "run_1" });
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await waitUntil(() => permissionRequests.length === 1);
+
+    await agent.closeSession();
+    expect((await done).stopReason).toBe("cancelled");
+    const idle = extNotifications.filter(
+      (n) => n.method === "_posthog/turn_complete",
+    );
+    expect(idle).toHaveLength(1);
+    expect((idle[0].params as { stopReason?: string }).stopReason).toBe(
+      "cancelled",
+    );
+  });
+
+  it("keeps a newer restrictive mode when a stale handoff is accepted", async () => {
+    let resolvePermission: (v: unknown) => void = () => {};
+    const { agent, stub, sessionUpdates, permissionRequests } = makePlanAgent(
+      () =>
+        new Promise((resolve) => {
+          resolvePermission = resolve;
+        }),
+    );
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await waitUntil(() => permissionRequests.length === 1);
+
+    await agent.setSessionConfigOption({
+      configId: "mode",
+      value: "read-only",
+      sessionId: "t",
+    } as any);
+    expect((await done).stopReason).toBe("end_turn");
+
+    resolvePermission({ outcome: { outcome: "selected", optionId: "auto" } });
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+    expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
+      1,
+    );
+    expect(sessionUpdates).toContainEqual(
+      expect.objectContaining({
+        update: {
+          sessionUpdate: "current_mode_update",
+          currentModeId: "read-only",
+        },
+      }),
+    );
+    expect(
+      sessionUpdates.filter(
+        (u) =>
+          u.update?.sessionUpdate === "current_mode_update" &&
+          u.update?.currentModeId === "auto",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("ignores a response selecting an option that was not offered", async () => {
+    const { agent, stub, sessionUpdates } = makePlanAgent({
+      // Never offered by the handoff — must not switch modes or implement.
+      outcome: { outcome: "selected", optionId: "bypassPermissions" },
+    });
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    expect((await done).stopReason).toBe("end_turn");
+    expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
+      1,
+    );
+    expect(
+      sessionUpdates.filter(
+        (u) =>
+          u.update?.sessionUpdate === "current_mode_update" &&
+          u.update?.currentModeId !== "plan",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("explains how to recover when the approval prompt fails", async () => {
+    const { agent, stub, sessionUpdates } = makePlanAgent(() =>
+      Promise.reject(new Error("permission UI unavailable")),
+    );
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    expect((await done).stopReason).toBe("end_turn");
+
+    const texts = sessionUpdates.map(
+      (u) => (u.update?.content as { text?: string } | undefined)?.text ?? "",
+    );
+    expect(texts.some((t) => t.includes("Still in Plan mode"))).toBe(true);
+    expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
+      1,
+    );
+  });
 });

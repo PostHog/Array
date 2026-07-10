@@ -77,7 +77,7 @@ describe("PostHogAPIClient", () => {
     );
   });
 
-  it("maps plan to read-only for cloud Codex runs", async () => {
+  it("preserves plan for cloud Codex runs", async () => {
     const client = new PostHogAPIClient(
       "http://localhost:8000",
       async () => "token",
@@ -106,7 +106,7 @@ describe("PostHogAPIClient", () => {
       "/api/projects/{project_id}/tasks/{id}/run/",
       expect.objectContaining({
         body: expect.objectContaining({
-          initial_permission_mode: "read-only",
+          initial_permission_mode: "plan",
         }),
       }),
     );

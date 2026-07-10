@@ -12,6 +12,7 @@ import type {
   NewSessionResponse,
   PromptRequest,
   PromptResponse,
+  RequestPermissionResponse,
   ResumeSessionRequest,
   ResumeSessionResponse,
   SetSessionConfigOptionRequest,
@@ -22,6 +23,7 @@ import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
 import { POSTHOG_NOTIFICATIONS } from "../../acp-extensions";
 import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
 import type { ProcessSpawnedCallback } from "../../types";
+import { ALLOW_BYPASS } from "../../utils/common";
 import { Logger } from "../../utils/logger";
 import {
   nodeReadableToWebReadable,
@@ -45,7 +47,7 @@ import {
   buildTurnCompleteParams,
   buildUsageBreakdownParams,
 } from "./ext-notifications";
-import { toCodexInput } from "./input";
+import { type CodexUserInput, toCodexInput } from "./input";
 import { buildLocalToolsServer, type LocalToolsMeta } from "./local-tools-mcp";
 import {
   type AppServerItem,
@@ -144,6 +146,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private additionalDirectories?: string[];
   /** The session workspace stays writable when extra roots are applied per turn. */
   private workspaceDirectory?: string;
+  /** The in-flight turn's <proposed_plan>, streamed or completed (drives the implement handoff). */
+  private planProposal?: { itemId: string; text: string };
+  /** Idle signal deferred while the plan handoff keeps this prompt busy. */
+  private deferredTurnComplete?: { usage: AccumulatedUsage };
+  /** Settles the pending plan-approval race on cancel/close/preempting prompt. */
+  private planHandoffCancel?: () => void;
   private readonly mcp = new McpManager();
   private readonly turns = new TurnController();
   private readonly usage = new UsageTracker();
@@ -457,7 +465,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     const value = (params as { value?: unknown }).value;
     const { modeChanged } = this.config.setOption(configId, value);
     // collaborationMode rides the next turn/start, so a mode switch only needs current_mode_update here.
-    if (modeChanged) this.emitCurrentMode(this.config.mode);
+    if (modeChanged) {
+      this.emitCurrentMode(this.config.mode);
+      if (this.config.mode !== "plan") this.planHandoffCancel?.();
+    }
     this.emitConfigOptions();
     return { configOptions: this.config.options };
   }
@@ -535,6 +546,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     // Reopen the notification gate (a prior interrupt may have left session.cancelled set).
     this.session.cancelled = false;
+    // A new prompt while the plan handoff awaits approval implicitly declines it:
+    // settle the race so the previous prompt() returns and this one owns the turn.
+    this.planHandoffCancel?.();
     // Prepend _meta.prContext (host PR-follow-up / Slack runs) to the FORWARDED prompt,
     // else codex cloud follow-ups lose the PR-review context. The echo omits it.
     const prContext = (params._meta as { prContext?: unknown } | undefined)
@@ -585,8 +599,17 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       throw new Error("prompt() called while a turn is already in progress");
     }
 
+    const stopReason = await this.runTurn(input);
+    return { stopReason: await this.maybeOfferPlanImplementation(stopReason) };
+  }
+
+  /** Start one codex turn and await its completion. */
+  private async runTurn(input: CodexUserInput[]): Promise<StopReason> {
     this.lastAgentMessage = "";
     this.resetUsage();
+    this.planProposal = undefined;
+    // A new turn owns the idle boundary; its own completion emits the signal.
+    this.deferredTurnComplete = undefined;
     const { completion, turn } = this.turns.begin();
     try {
       const approvalPolicy = this.config.approvalPolicy();
@@ -612,10 +635,191 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         // Constrain the final message to the task schema for parseable structured output.
         ...(this.jsonSchema ? { outputSchema: this.jsonSchema } : {}),
       });
-      return { stopReason: await completion };
+      return await completion;
     } finally {
       this.turns.finishPrompt(turn);
     }
+  }
+
+  /**
+   * codex plan mode finalizes with a <proposed_plan> item and (by design) never
+   * asks "should I proceed?" — the client owns the handoff. Mirror the Claude
+   * ExitPlanMode flow: offer to implement; on accept switch the mode and run
+   * the implementation turn inside the same prompt() call. Plan feedback loops
+   * back into another plan turn, whose revised plan prompts again.
+   */
+  private async maybeOfferPlanImplementation(
+    stopReason: StopReason,
+  ): Promise<StopReason> {
+    let reason = stopReason;
+    try {
+      while (
+        reason === "end_turn" &&
+        this.config.mode === "plan" &&
+        this.planProposal &&
+        !this.session.cancelled
+      ) {
+        const proposal = this.planProposal;
+        this.planProposal = undefined;
+        const outcome = await this.requestPlanImplementation(proposal);
+        // Re-check after the await: a cancel that raced the response wins, so a
+        // late accept can never start implementation on a cancelled prompt.
+        if (this.session.cancelled) {
+          reason = "cancelled";
+          break;
+        }
+        // A picker change while approval was open owns the mode. Never let a
+        // stale approval overwrite it with a broader implementation mode.
+        if (this.config.mode !== "plan") break;
+        if (outcome.kind === "implement") {
+          this.config.setOption("mode", outcome.mode);
+          this.emitCurrentMode(outcome.mode);
+          this.emitConfigOptions();
+          reason = await this.runFollowUpTurn(IMPLEMENT_PLAN_MESSAGE);
+          break;
+        }
+        if (outcome.kind === "feedback") {
+          reason = await this.runFollowUpTurn(outcome.feedback);
+          continue;
+        }
+        break;
+      }
+    } finally {
+      await this.flushDeferredTurnComplete(reason);
+    }
+    return reason;
+  }
+
+  /**
+   * Emit the idle signal the handoff's plan turn deferred, unless a newer turn
+   * took over the boundary (a follow-up turn clears the deferral in runTurn and
+   * emits its own completion; a preempting prompt() does the same).
+   */
+  private async flushDeferredTurnComplete(reason: StopReason): Promise<void> {
+    const deferred = this.deferredTurnComplete;
+    this.deferredTurnComplete = undefined;
+    if (!deferred || this.turns.isPending) return;
+    await this.emitTurnCompleteSignal(reason, deferred.usage);
+  }
+
+  /** Run an adapter-initiated turn, echoed as a user message like a host prompt. */
+  private async runFollowUpTurn(text: string): Promise<StopReason> {
+    this.broadcastUserInput([{ type: "text", text }]);
+    return this.runTurn(toCodexInput([{ type: "text", text }]));
+  }
+
+  /**
+   * The ExitPlanMode-style approval: a switch_mode tool call (routes the host
+   * to its plan-approval UI) whose option ids are codex mode ids. Cancel or a
+   * failed prompt stays in plan mode — never silently start implementing.
+   */
+  private async requestPlanImplementation(proposal: {
+    itemId: string;
+    text: string;
+  }): Promise<
+    | { kind: "implement"; mode: "auto" | "full-access" }
+    | { kind: "feedback"; feedback: string }
+    | { kind: "stay" }
+  > {
+    const toolCallId = `${proposal.itemId}:implement`;
+    const toolCall = {
+      toolCallId,
+      title: "Ready to code?",
+      kind: "switch_mode",
+      content: [
+        {
+          type: "content" as const,
+          content: { type: "text" as const, text: proposal.text },
+        },
+      ],
+      rawInput: { plan: proposal.text },
+    };
+    const options = [
+      {
+        optionId: "auto",
+        name: 'Yes, and use "auto" mode',
+        kind: "allow_always" as const,
+      },
+      ...(ALLOW_BYPASS
+        ? [
+            {
+              optionId: "full-access",
+              name: "Yes, and auto-approve everything",
+              kind: "allow_always" as const,
+            },
+          ]
+        : []),
+      {
+        optionId: "reject_with_feedback",
+        name: "No, and tell Codex what to do differently",
+        kind: "reject_once" as const,
+        _meta: { customInput: true },
+      },
+    ];
+    // Accept only what was offered: a stale or malformed response must not
+    // select a mode that was hidden from the approval UI.
+    const offered = new Set(options.map((o) => o.optionId));
+    const permission = this.client
+      .requestPermission({
+        sessionId: this.sessionId,
+        toolCall,
+        options,
+      } as unknown as Parameters<AgentSideConnection["requestPermission"]>[0])
+      .then(
+        (res: RequestPermissionResponse) => ({ failed: false as const, res }),
+        (err: unknown) => ({ failed: true as const, err }),
+      );
+    // Race against cancellation so cancel/close (or a preempting prompt) settles
+    // the handoff instead of leaving prompt() pending on UI that may never answer.
+    const cancelled = new Promise<undefined>((resolve) => {
+      this.planHandoffCancel = () => resolve(undefined);
+    });
+    const settled = await Promise.race([permission, cancelled]);
+    this.planHandoffCancel = undefined;
+    if (!settled) return { kind: "stay" };
+    if (settled.failed) {
+      this.logger.warn("plan implementation prompt failed; staying in plan", {
+        error: String(settled.err),
+      });
+      // Without this the user sees nothing and Plan mode just sits there.
+      this.broadcastAgentText(
+        'The plan approval prompt could not be shown. Still in Plan mode — switch the mode to Auto and send "Implement the plan." to proceed.',
+      );
+      return { kind: "stay" };
+    }
+    const response = settled.res;
+    if (this.session.cancelled || response.outcome.outcome !== "selected") {
+      return { kind: "stay" };
+    }
+    const optionId = response.outcome.optionId;
+    if (!offered.has(optionId)) return { kind: "stay" };
+    if (optionId === "auto") return { kind: "implement", mode: "auto" };
+    // Double-gated: only ever offered under ALLOW_BYPASS, and re-checked here.
+    if (optionId === "full-access" && ALLOW_BYPASS) {
+      return { kind: "implement", mode: "full-access" };
+    }
+    if (optionId === "reject_with_feedback") {
+      const feedback = (response as { _meta?: { customInput?: unknown } })._meta
+        ?.customInput;
+      if (typeof feedback === "string" && feedback.trim()) {
+        return { kind: "feedback", feedback: feedback.trim() };
+      }
+    }
+    return { kind: "stay" };
+  }
+
+  /** Emit a plain agent message (user-facing status the model didn't produce). */
+  private broadcastAgentText(text: string): void {
+    if (!this.sessionId) return;
+    void this.client
+      .sessionUpdate({
+        sessionId: this.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      })
+      .catch(() => undefined);
   }
 
   /** The mode's sandbox with the session's extra writable roots folded into workspaceWrite. */
@@ -658,6 +862,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   protected async interrupt(): Promise<void> {
+    // Settle a pending plan-approval race first so prompt() returns instead of
+    // waiting on approval UI that may never answer after a cancel.
+    this.planHandoffCancel?.();
     // Stop the server, then finalize through the shared path so a cancelled turn still emits
     // the cloud idle signal (finalizeTurn claims idempotently). turn/interrupt requires BOTH
     // threadId and turnId (else -32600); skip the RPC when no turn started.
@@ -676,6 +883,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   async closeSession(): Promise<void> {
     this.commandOutputs.clear();
     this.session.abortController.abort();
+    this.session.cancelled = true;
+    this.planHandoffCancel?.();
     this.turns.close("cancelled");
     this.session.settingsManager.dispose();
     // Close the transport BEFORE kill() destroys the stdio streams (else close() blocks on
@@ -741,6 +950,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
     if (method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED) {
       this.captureAgentMessage(params);
+      this.capturePlanProposal(params);
+    }
+    if (method === APP_SERVER_NOTIFICATIONS.PLAN_DELTA) {
+      this.captureStreamedPlanProposal(params);
     }
 
     if (method === APP_SERVER_NOTIFICATIONS.TOKEN_USAGE_UPDATED) {
@@ -819,6 +1032,32 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     if (item?.type === "agentMessage" && typeof item.text === "string") {
       this.lastAgentMessage = item.text;
     }
+  }
+
+  /** Remember the turn's completed plan item (codex plan mode's authoritative <proposed_plan>). */
+  private capturePlanProposal(params: unknown): void {
+    const item = (
+      params as { item?: { type?: string; id?: string; text?: string } }
+    )?.item;
+    if (item?.type === "plan" && typeof item.text === "string" && item.text) {
+      this.planProposal = { itemId: item.id ?? "codex-plan", text: item.text };
+    }
+  }
+
+  /** Accumulate the proposal stream used by codex builds that emit no completed plan item. */
+  private captureStreamedPlanProposal(params: unknown): void {
+    const { itemId, delta } = params as {
+      itemId?: unknown;
+      delta?: unknown;
+    };
+    if (typeof delta !== "string" || !delta) return;
+    const proposalId =
+      typeof itemId === "string" && itemId
+        ? itemId
+        : (this.planProposal?.itemId ?? "codex-plan");
+    const previousText =
+      this.planProposal?.itemId === proposalId ? this.planProposal.text : "";
+    this.planProposal = { itemId: proposalId, text: previousText + delta };
   }
 
   /** Compaction started: emit `_posthog/status` so the host sets `isCompacting` (gates steer/queue). */
@@ -904,45 +1143,66 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         );
       }
     }
-    await this.emitTurnComplete(reason, usage, contextUsed);
+    if (this.willOfferPlanHandoff(reason)) {
+      // Defer the canonical idle signal: the handoff (and a possible implementation
+      // turn) keeps this prompt busy, and the cloud host treats turn_complete as
+      // idle — emitting it now would flush queued prompts into the handoff.
+      this.deferredTurnComplete = { usage };
+      await this.emitUsageBreakdown(contextUsed);
+    } else {
+      await this.emitTurnCompleteSignal(reason, usage);
+      await this.emitUsageBreakdown(contextUsed);
+    }
     pending.resolve(reason);
   }
 
-  /** Emit cloud per-turn notifications: `_posthog/turn_complete` (only with a taskRunId) + the usage breakdown (always). */
-  private async emitTurnComplete(
+  /** Whether maybeOfferPlanImplementation will run for a turn that ended this way. */
+  private willOfferPlanHandoff(reason: StopReason): boolean {
+    return (
+      reason === "end_turn" &&
+      this.config.mode === "plan" &&
+      !!this.planProposal &&
+      !this.session.cancelled
+    );
+  }
+
+  /** Emit the cloud idle signal `_posthog/turn_complete` (only with a taskRunId). */
+  private async emitTurnCompleteSignal(
     reason: StopReason,
     usage: AccumulatedUsage,
+  ): Promise<void> {
+    if (!this.sessionId || !this.taskRunId) return;
+    await this.client
+      .extNotification(
+        POSTHOG_NOTIFICATIONS.TURN_COMPLETE,
+        buildTurnCompleteParams(
+          this.sessionId,
+          reason,
+          usage,
+        ) as unknown as Record<string, unknown>,
+      )
+      .catch((err) =>
+        this.logger.warn("turn_complete extNotification failed", err),
+      );
+  }
+
+  /** Emit the `_posthog/usage_update` context breakdown for the host's token UI. */
+  private async emitUsageBreakdown(
     contextUsed: number | undefined,
   ): Promise<void> {
-    if (!this.sessionId) return;
-    if (this.taskRunId) {
-      await this.client
-        .extNotification(
-          POSTHOG_NOTIFICATIONS.TURN_COMPLETE,
-          buildTurnCompleteParams(
-            this.sessionId,
-            reason,
-            usage,
-          ) as unknown as Record<string, unknown>,
-        )
-        .catch((err) =>
-          this.logger.warn("turn_complete extNotification failed", err),
-        );
-    }
-    if (contextUsed !== undefined) {
-      await this.client
-        .extNotification(
-          POSTHOG_NOTIFICATIONS.USAGE_UPDATE,
-          buildUsageBreakdownParams(
-            this.sessionId,
-            this.usage.baselineBreakdown,
-            contextUsed,
-          ) as unknown as Record<string, unknown>,
-        )
-        .catch((err) =>
-          this.logger.warn("usage breakdown extNotification failed", err),
-        );
-    }
+    if (!this.sessionId || contextUsed === undefined) return;
+    await this.client
+      .extNotification(
+        POSTHOG_NOTIFICATIONS.USAGE_UPDATE,
+        buildUsageBreakdownParams(
+          this.sessionId,
+          this.usage.baselineBreakdown,
+          contextUsed,
+        ) as unknown as Record<string, unknown>,
+      )
+      .catch((err) =>
+        this.logger.warn("usage breakdown extNotification failed", err),
+      );
   }
 
   private handleServerClosed(): void {
@@ -1112,6 +1372,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
 // BASELINE_TOKENS from codex-rs protocol.rs — the resident floor we can't attribute per-source.
 const CODEX_BASELINE_TOKENS = 12000;
+
+// The implementation kickoff message, matching codex's own TUI plan handoff.
+const IMPLEMENT_PLAN_MESSAGE = "Implement the plan.";
 
 /** codex `TurnStatus` → ACP `StopReason`: interrupted → cancel, failed → refusal, else end. */
 function mapTurnStopReason(status: string | undefined): StopReason {
