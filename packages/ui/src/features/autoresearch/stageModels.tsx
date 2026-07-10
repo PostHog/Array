@@ -10,7 +10,7 @@ export interface AutoresearchModelOption {
 }
 
 /**
- * Sentinel for "no stage model" — Radix `Select.Item` cannot have an empty
+ * Sentinel for "no stage model" because Radix `Select.Item` cannot have an empty
  * value, so the "leave the session model alone" choice needs a placeholder.
  * Shared so the composer strip and the dashboard dialog can't drift onto
  * different sentinels.
@@ -18,7 +18,7 @@ export interface AutoresearchModelOption {
 export const NO_STAGE_MODEL = "__no_stage_model__";
 
 /**
- * Derive stage select options from a session config option — works for the
+ * Derive stage select options from a session config option. This works for the
  * `model` option and the `thought_level` (effort) option alike.
  */
 export function toStageSelectOptions(

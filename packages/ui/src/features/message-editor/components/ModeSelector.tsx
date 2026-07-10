@@ -136,7 +136,7 @@ export function ModeSelector({
                 setOpen(false);
               }}
             >
-              <span className="text-violet-11">
+              <span className="text-muted-foreground">
                 <ChartLineUp size={12} />
               </span>
               <span className="whitespace-nowrap">Autoresearch</span>

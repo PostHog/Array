@@ -5,15 +5,33 @@ import type {
 import { Flex } from "@radix-ui/themes";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RunStats } from "./AutoresearchPanel";
+import { AutoresearchRuntimeStats } from "./AutoresearchRuntimeStats";
 import { IterationsTable } from "./IterationsTable";
 import { MetricChart } from "./MetricChart";
+import { PreBaselineState } from "./PreBaselineState";
 
 /**
- * The run dashboard's presentational stack — stat cards, metric chart, and
- * iterations table — as `AutoresearchPanel` composes them, minus the header
+ * The run dashboard presentational stack includes stat cards, the metric
+ * chart, and the iterations table. It matches `AutoresearchPanel` without header
  * controls and dialogs (which need a live service).
  */
 function RunDashboard({ run }: { run: AutoresearchRun }) {
+  if (run.iterations.length === 0) {
+    return (
+      <Flex direction="column" gap="4">
+        <PreBaselineState
+          run={run}
+          sessionActivity={{
+            status: "connected",
+            isPromptPending: true,
+            isCompacting: false,
+          }}
+        />
+        <AutoresearchRuntimeStats run={run} usage={null} />
+      </Flex>
+    );
+  }
+
   return (
     <Flex direction="column" gap="4">
       <RunStats run={run} />
@@ -23,6 +41,16 @@ function RunDashboard({ run }: { run: AutoresearchRun }) {
         targetValue={run.config.targetValue}
         metricName={run.metricName ?? "the metric"}
         unit={run.metricUnit}
+      />
+      <AutoresearchRuntimeStats
+        run={run}
+        usage={{
+          used: 42_800,
+          size: 200_000,
+          percentage: 21,
+          cost: null,
+          breakdown: null,
+        }}
       />
       <IterationsTable
         iterations={run.iterations}
@@ -76,6 +104,7 @@ const run = (overrides: Partial<AutoresearchRun> = {}): AutoresearchRun => ({
   phase: null,
   originalModel: null,
   originalEffort: null,
+  researchFindings: [],
   iterations: [],
   startedAt: BASE_AT,
   endedAt: null,
@@ -101,7 +130,7 @@ const meta: Meta<typeof RunDashboard> = {
 export default meta;
 type Story = StoryObj<typeof RunDashboard>;
 
-/** A minimize run mid-flight: noisy progress, best-so-far frontier, target line. */
+/** A minimize run in progress with noisy results, the best frontier, and a target. */
 export const MinimizeInProgress: Story = {
   args: {
     run: run({
@@ -123,7 +152,7 @@ export const MinimizeInProgress: Story = {
   },
 };
 
-/** A completed maximize run with no target — the loop spent its budget. */
+/** A completed maximize run with no target. The loop spent its budget. */
 export const MaximizeCompleted: Story = {
   args: {
     run: run({
@@ -158,7 +187,7 @@ export const MaximizeCompleted: Story = {
   },
 };
 
-/** Before the first metric report arrives: empty cards, chart, and table. */
+/** Before the first metric report arrives: active baseline measurement. */
 export const NoIterationsYet: Story = {
   args: { run: run() },
 };
