@@ -871,7 +871,8 @@ export type ChannelActionType =
   | "copy_link"
   | "mention_member"
   | "view_activity"
-  | "open_mention";
+  | "open_mention"
+  | "canvas_mode_toggle";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
@@ -888,6 +889,8 @@ export interface ChannelActionProperties {
   mentioned_user_id?: string;
   /** For new_task_suggestion: the starter-prompt card label. */
   suggestion_label?: string;
+  /** For canvas_mode_toggle: whether canvas mode is being armed. */
+  armed?: boolean;
   /** Whether the underlying mutation resolved successfully. */
   success?: boolean;
 }

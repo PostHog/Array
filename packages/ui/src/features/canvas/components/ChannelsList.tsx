@@ -39,8 +39,8 @@ import {
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
-import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
+import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/createCanvasAnalytics";
 import {
   useChannelStars,
   useChannelStarToggle,

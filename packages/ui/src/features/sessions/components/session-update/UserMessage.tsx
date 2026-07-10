@@ -129,7 +129,7 @@ export const UserMessage = memo(function UserMessage({
         className="group/msg relative border-l-2 bg-gray-2 py-2 pl-3"
         style={{ borderColor: "var(--accent-9)" }}
       >
-        <CollapsibleMessageContent contentClassName="[&_p]:leading-[1.9]">
+        <CollapsibleMessageContent contentClassName="font-medium text-[13px] [&_p]:leading-[1.9]">
           {containsFileMentions ? (
             parseFileMentions(displayContent)
           ) : (

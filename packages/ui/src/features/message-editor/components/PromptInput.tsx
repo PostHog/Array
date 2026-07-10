@@ -48,6 +48,14 @@ export interface PromptInputProps {
     active: boolean;
     onToggle: () => void;
   };
+  /**
+   * When provided, the mode dropdown gains a "Canvas" toggle (channels
+   * composer only). `active` drives its checkmark and the trigger label.
+   */
+  canvas?: {
+    active: boolean;
+    onToggle: () => void;
+  };
   // capabilities
   enableBashMode?: boolean;
   enableCommands?: boolean;
@@ -103,6 +111,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onModeChange,
       allowBypassPermissions = false,
       autoresearch,
+      canvas,
       enableBashMode = false,
       enableCommands = true,
       modelSelector,
@@ -405,6 +414,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
                       allowBypassPermissions={allowBypassPermissions}
                       disabled={disabled}
                       autoresearch={autoresearch}
+                      canvas={canvas}
                     />
                   )}
                   {modelSelector && <span>{modelSelector}</span>}

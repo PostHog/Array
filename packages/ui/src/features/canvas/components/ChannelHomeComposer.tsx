@@ -1,5 +1,8 @@
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
+import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import {
   forwardRef,
   useCallback,
@@ -8,10 +11,13 @@ import {
   useState,
 } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
+import { track } from "../../../shell/analytics";
+import { useOptionalAuthenticatedClient } from "../../auth/authClient";
 import { useUserRepositoryIntegration } from "../../integrations/useIntegrations";
 import { PromptInput } from "../../message-editor/components/PromptInput";
 import { useDraftStore } from "../../message-editor/draftStore";
 import type { EditorHandle } from "../../message-editor/types";
+import { toastError } from "../../notifications/errorDetails";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
 import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
@@ -27,6 +33,17 @@ import { useCloudModeEnabled } from "../../task-detail/hooks/useCloudModeEnabled
 import { usePreviewConfig } from "../../task-detail/hooks/usePreviewConfig";
 import { useTaskCreation } from "../../task-detail/hooks/useTaskCreation";
 import { resolveWorkspaceModePreference } from "../../task-detail/hooks/workspaceModePreference";
+import { trackAndCreateCanvas } from "../createCanvasAnalytics";
+import { channelFeedQueryKey } from "../hooks/useChannelFeed";
+import {
+  UNTITLED_CANVAS_NAME,
+  useDashboardMutations,
+} from "../hooks/useDashboards";
+import { useGenerateFreeformCanvas } from "../hooks/useGenerateFreeformCanvas";
+import {
+  normalizeChannelName,
+  PERSONAL_CHANNEL_NAME,
+} from "../hooks/useTaskChannels";
 
 export interface ChannelHomeComposerHandle {
   /** Drop a starter prompt into the editor and apply its mode, if any. */
@@ -60,6 +77,33 @@ export const ChannelHomeComposer = forwardRef<
   const editorRef = useRef<EditorHandle>(null);
   const [editorIsEmpty, setEditorIsEmpty] = useState(true);
   const { isOnline } = useConnectivity();
+  const navigate = useNavigate();
+
+  // Canvas mode, armed from the mode selector (like Autoresearch on the
+  // new-task composer): the next submit generates a canvas from the prompt —
+  // create a canvas in the channel, kick off freeform generation, and open it —
+  // instead of creating a plain task. This replaces the prompt-to-canvas entry
+  // the old channel landing had.
+  const [canvasArmed, setCanvasArmed] = useState(false);
+  const { createDashboard } = useDashboardMutations();
+  const { generate: generateCanvas, isStarting: isStartingCanvas } =
+    useGenerateFreeformCanvas({
+      channelId,
+      channelName: channelName ?? "",
+      // The parent already fetches the channel CONTEXT.md; passing it keeps
+      // the hook from running its own duplicate fetch.
+      channelContext,
+    });
+
+  const toggleCanvasMode = useCallback(() => {
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: "canvas_mode_toggle",
+      surface: "channel_home",
+      channel_id: channelId,
+      armed: !canvasArmed,
+    });
+    setCanvasArmed(!canvasArmed);
+  }, [channelId, canvasArmed]);
 
   const {
     lastUsedAdapter,
@@ -122,6 +166,81 @@ export const ChannelHomeComposer = forwardRef<
     modeFallback;
   const currentReasoningLevel =
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+
+  const queryClient = useQueryClient();
+  const apiClient = useOptionalAuthenticatedClient();
+  const handleCanvasSubmit = useCallback(async () => {
+    const instruction = editorRef.current?.getText().trim();
+    if (!instruction || isStartingCanvas) return;
+    // The folder→backend channel mapping can still be resolving when the user
+    // submits (fresh channel, cold channels list). Resolve it here rather than
+    // silently creating a run the feed will never show. The personal channel
+    // can't be resolved by name; it only arrives via the channels list.
+    let feedChannelId = backendChannelId;
+    const normalizedName = channelName ? normalizeChannelName(channelName) : "";
+    if (
+      !feedChannelId &&
+      apiClient &&
+      normalizedName &&
+      normalizedName !== PERSONAL_CHANNEL_NAME
+    ) {
+      feedChannelId = await apiClient
+        .resolveTaskChannel(normalizedName)
+        .then((c) => c.id)
+        .catch(() => undefined);
+    }
+    let record: { id: string; name: string };
+    try {
+      record = await trackAndCreateCanvas(
+        channelId,
+        "freeform",
+        "channel_home",
+        () => createDashboard(channelId, UNTITLED_CANVAS_NAME, "freeform"),
+      );
+    } catch (error) {
+      toastError("Couldn't create canvas", error);
+      return;
+    }
+    // generate() surfaces its own failure toasts; on success it files the task
+    // to the channel and tracks completion for the finished-generation toast.
+    const taskId = await generateCanvas({
+      dashboardId: record.id,
+      name: record.name,
+      templateId: "freeform",
+      instruction,
+      // Owned by the backend channel so the run shows as a card in the feed,
+      // like a plain composer submit.
+      backendChannelId: feedChannelId,
+      adapter: adapter ?? "claude",
+      model: currentModel,
+      reasoningLevel: currentReasoningLevel,
+      useStarter: true,
+    });
+    if (!taskId) return;
+    // Surface the new card without waiting for the feed's next poll.
+    void queryClient.invalidateQueries({
+      queryKey: channelFeedQueryKey(feedChannelId),
+    });
+    editorRef.current?.clear();
+    setCanvasArmed(false);
+    void navigate({
+      to: "/website/$channelId/dashboards/$dashboardId",
+      params: { channelId, dashboardId: record.id },
+    });
+  }, [
+    channelId,
+    channelName,
+    backendChannelId,
+    apiClient,
+    adapter,
+    currentModel,
+    currentReasoningLevel,
+    createDashboard,
+    generateCanvas,
+    isStartingCanvas,
+    navigate,
+    queryClient,
+  ]);
 
   const { isCreatingTask, canSubmit, handleSubmit } = useTaskCreation({
     editorRef,
@@ -187,36 +306,49 @@ export const ChannelHomeComposer = forwardRef<
   );
 
   const hints = ["@ to add files", "/ for skills"].join(", ");
+  const isBusy = isCreatingTask || isStartingCanvas;
+  const submitComposer = canvasArmed ? handleCanvasSubmit : handleSubmit;
 
   return (
     <div className="flex w-full flex-col">
-      <div className="mb-2 flex items-center gap-2">
-        <WorkspaceModeSelect
-          value={workspaceMode}
-          onChange={setWorkspaceMode}
-          overrideModes={["local", "cloud"]}
-          selectedCloudEnvironmentId={selectedCloudEnvId}
-          onCloudEnvironmentChange={setSelectedCloudEnvId}
-          size="1"
-          disabled={isCreatingTask}
-        />
-      </div>
+      {/* Canvas generation always runs in the cloud, so the local/cloud pick
+          doesn't apply while canvas mode is armed. */}
+      {!canvasArmed && (
+        <div className="mb-2 flex items-center gap-2">
+          <WorkspaceModeSelect
+            value={workspaceMode}
+            onChange={setWorkspaceMode}
+            overrideModes={["local", "cloud"]}
+            selectedCloudEnvironmentId={selectedCloudEnvId}
+            onCloudEnvironmentChange={setSelectedCloudEnvId}
+            size="1"
+            disabled={isBusy}
+          />
+        </div>
+      )}
 
       <PromptInput
         ref={editorRef}
         sessionId={sessionId}
-        placeholder={`What do you want to ship? ${hints}`}
+        placeholder={
+          canvasArmed
+            ? "Describe the canvas to build — the agent generates and publishes it"
+            : `What do you want to ship? ${hints}`
+        }
         editorHeight="large"
-        disabled={isCreatingTask}
-        isLoading={isCreatingTask}
+        disabled={isBusy}
+        isLoading={isBusy}
         autoFocus
         clearOnSubmit={false}
         submitDisabledExternal={
-          !canSubmit || isCreatingTask || !isOnline || isLoading
+          canvasArmed
+            ? editorIsEmpty || isBusy || !isOnline
+            : !canSubmit || isBusy || !isOnline || isLoading
         }
         modeOption={modeOption}
         onModeChange={handleModeChange}
         allowBypassPermissions={allowBypassPermissions}
+        canvas={{ active: canvasArmed, onToggle: toggleCanvasMode }}
         enableCommands
         enableBashMode={false}
         modelSelector={
@@ -224,7 +356,7 @@ export const ChannelHomeComposer = forwardRef<
             modelOption={modelOption}
             adapter={adapter ?? "claude"}
             onAdapterChange={setAdapter}
-            disabled={isCreatingTask}
+            disabled={isBusy}
             isConnecting={isLoading}
             onModelChange={handleModelChange}
           />
@@ -235,14 +367,14 @@ export const ChannelHomeComposer = forwardRef<
               thoughtOption={thoughtOption}
               adapter={adapter}
               onChange={handleThoughtChange}
-              disabled={isCreatingTask}
+              disabled={isBusy}
             />
           )
         }
         onEmptyChange={setEditorIsEmpty}
-        onSubmitClick={handleSubmit}
+        onSubmitClick={() => void submitComposer()}
         onSubmit={() => {
-          if (canSubmit) handleSubmit();
+          if (canvasArmed || canSubmit) void submitComposer();
         }}
       />
     </div>
