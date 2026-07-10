@@ -2,13 +2,17 @@ import type { AcpMessage } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
   buildContinuationPrompt,
+  buildImplementPrompt,
   buildKickoffPreamble,
   buildKickoffPrompt,
+  buildMeasurePrompt,
   buildReportReminderPrompt,
   buildResumePrompt,
   countPromptRequests,
   extractLastAgentTurnText,
   parseMetricReport,
+  parsePlanReport,
+  parseResearchReport,
 } from "./prompts";
 import type {
   AutoresearchConfig,
@@ -38,7 +42,17 @@ function makeIteration(
   value: number,
   summary: string | null = null,
 ): AutoresearchIteration {
-  return { index, value, bestValue: value, delta: null, summary, at: index };
+  return {
+    index,
+    value,
+    bestValue: value,
+    delta: null,
+    summary,
+    hypothesis: null,
+    plan: null,
+    approach: null,
+    at: index,
+  };
 }
 
 function makeRun(
@@ -54,6 +68,7 @@ function makeRun(
     phase: null,
     originalModel: null,
     originalEffort: null,
+    researchFindings: [],
     iterations,
     startedAt: 0,
     endedAt: null,
@@ -77,6 +92,9 @@ describe("parseMetricReport", () => {
       name: null,
       unit: null,
       summary: "swapped JSON parser",
+      hypothesis: null,
+      plan: null,
+      approach: null,
     });
   });
 
@@ -86,6 +104,9 @@ describe("parseMetricReport", () => {
       name: null,
       unit: null,
       summary: null,
+      hypothesis: null,
+      plan: null,
+      approach: null,
     });
   });
 
@@ -104,6 +125,9 @@ describe("parseMetricReport", () => {
       name: null,
       unit: null,
       summary: "final",
+      hypothesis: null,
+      plan: null,
+      approach: null,
     });
   });
 
@@ -114,6 +138,9 @@ describe("parseMetricReport", () => {
       name: null,
       unit: null,
       summary: "good",
+      hypothesis: null,
+      plan: null,
+      approach: null,
     });
   });
 
@@ -132,7 +159,103 @@ describe("parseMetricReport", () => {
       name: null,
       unit: null,
       summary: "tidy",
+      hypothesis: null,
+      plan: null,
+      approach: null,
     });
+  });
+
+  it("parses experiment context from a metric report", () => {
+    expect(
+      parseMetricReport(
+        "```autoresearch\nmetric: 90\nsummary: memoized selectors\nhypothesis: repeated selectors dominate render time\nplan: memoize selectors and rerun the benchmark\napproach: rendering\n```",
+      ),
+    ).toEqual({
+      value: 90,
+      name: null,
+      unit: null,
+      summary: "memoized selectors",
+      hypothesis: "repeated selectors dominate render time",
+      plan: "memoize selectors and rerun the benchmark",
+      approach: "rendering",
+    });
+  });
+
+  it("ignores research only blocks", () => {
+    expect(
+      parseMetricReport(
+        "```autoresearch\ntype: research\nsummary: traced routing\nfinding: routes are contributed by UI modules\n```",
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("parseResearchReport", () => {
+  it("parses a valid research checkpoint", () => {
+    expect(
+      parseResearchReport(
+        "```autoresearch\ntype: research\nsummary: traced routing\nfinding: routes are contributed by UI modules\nnext: inspect the contribution\n```",
+      ),
+    ).toEqual({
+      summary: "traced routing",
+      finding: "routes are contributed by UI modules",
+      nextStep: "inspect the contribution",
+      area: null,
+    });
+  });
+
+  it.each([
+    ["missing type", "summary: traced routing\nfinding: found it"],
+    ["missing summary", "type: research\nfinding: found it"],
+    ["missing finding", "type: research\nsummary: traced routing"],
+  ])("rejects a checkpoint with %s", (_name, body) => {
+    expect(
+      parseResearchReport(`\`\`\`autoresearch\n${body}\n\`\`\``),
+    ).toBeNull();
+  });
+
+  it("uses the last valid research checkpoint", () => {
+    const text = [
+      "```autoresearch",
+      "type: research",
+      "summary: first",
+      "finding: initial finding",
+      "```",
+      "```autoresearch",
+      "type: research",
+      "summary: second",
+      "finding: final finding",
+      "```",
+    ].join("\n");
+
+    expect(parseResearchReport(text)).toEqual({
+      summary: "second",
+      finding: "final finding",
+      nextStep: null,
+      area: null,
+    });
+  });
+});
+
+describe("parsePlanReport", () => {
+  it("parses a complete experiment plan", () => {
+    expect(
+      parsePlanReport(
+        "```autoresearch\ntype: plan\nhypothesis: repeated queries dominate latency\nplan: cache the query and rerun the benchmark\napproach: caching\n```",
+      ),
+    ).toEqual({
+      hypothesis: "repeated queries dominate latency",
+      plan: "cache the query and rerun the benchmark",
+      approach: "caching",
+    });
+  });
+
+  it("requires every plan field", () => {
+    expect(
+      parsePlanReport(
+        "```autoresearch\ntype: plan\nhypothesis: repeated queries dominate latency\n```",
+      ),
+    ).toBeNull();
   });
 });
 
@@ -260,6 +383,12 @@ describe("buildKickoffPreamble", () => {
       "Optimize the HTTP handler throughput benchmark.",
     );
   });
+
+  it("requires autoresearch pull request attribution", () => {
+    const preamble = buildKickoffPreamble(makeConfig());
+    expect(preamble).toContain("feat(autoresearch): <descriptive title>");
+    expect(preamble).toContain('"Created with Autoresearch."');
+  });
 });
 
 describe("buildContinuationPrompt", () => {
@@ -276,14 +405,34 @@ describe("buildContinuationPrompt", () => {
     expect(prompt).toContain("```autoresearch");
   });
 
+  it("preserves the pull request convention in later iterations", () => {
+    const run = makeRun([makeIteration(1, 100, "baseline")]);
+    expect(buildContinuationPrompt(run)).toContain(
+      "feat(autoresearch): <descriptive title>",
+    );
+    expect(buildImplementPrompt(run)).toContain('"Created with Autoresearch."');
+    expect(buildMeasurePrompt(run)).toContain(
+      "feat(autoresearch): <descriptive title>",
+    );
+  });
+
+  it("requests an experiment plan in every implementation path", () => {
+    const run = makeRun([makeIteration(1, 100, "baseline")]);
+    expect(buildContinuationPrompt(run)).toContain("type: plan");
+    expect(buildImplementPrompt(run)).toContain("type: plan");
+    expect(buildMeasurePrompt(run)).toContain(
+      "Repeat the hypothesis, plan, and approach",
+    );
+  });
+
   it("only lists the five most recent iterations", () => {
     const run = makeRun(
       Array.from({ length: 7 }, (_, i) => makeIteration(i + 1, i + 1)),
     );
     const prompt = buildContinuationPrompt(run);
-    expect(prompt).not.toContain("- Iteration 2:");
-    expect(prompt).toContain("- Iteration 3:");
-    expect(prompt).toContain("- Iteration 7:");
+    expect(prompt).not.toContain("Iteration 2:");
+    expect(prompt).toContain("Iteration 3:");
+    expect(prompt).toContain("Iteration 7:");
   });
 });
 
@@ -308,7 +457,7 @@ describe("buildResumePrompt", () => {
   it("warns about half-applied changes from the aborted iteration", () => {
     const prompt = buildResumePrompt(makeRun([]), "app-restart");
     expect(prompt).toContain("the app restarted");
-    expect(prompt).toContain("half-applied change");
+    expect(prompt).toContain("partially applied change");
   });
 });
 
@@ -321,6 +470,9 @@ describe("unit parsing and rendering", () => {
       name: "bundle size",
       unit: "kB",
       summary: "trimmed deps",
+      hypothesis: null,
+      plan: null,
+      approach: null,
     });
   });
 
@@ -336,7 +488,7 @@ describe("unit parsing and rendering", () => {
       metricUnit: "ms",
     };
     const prompt = buildContinuationPrompt(run);
-    expect(prompt).toContain("- Iteration 1: 100 ms — baseline");
+    expect(prompt).toContain("Iteration 1: 100 ms. baseline");
     expect(prompt).toContain("Best so far: 100 ms (iteration 1)");
     expect(prompt).toContain("Last: 100 ms");
   });
