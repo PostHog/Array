@@ -241,9 +241,18 @@ export function rebuildConversation(
   return turns;
 }
 
-const CHARS_PER_TOKEN = 4;
-const DEFAULT_MAX_TOKENS = 150_000;
-const LARGE_CONTEXT_MAX_TOKENS = 800_000;
+// JSON-heavy tool payloads tokenize at ~2.5-3 chars/token, so estimate low:
+// overestimating a turn's cost just drops more history, underestimating
+// overfills the context window.
+const CHARS_PER_TOKEN = 3;
+// Budgets must leave the window room for the system prompt, tools, skills,
+// and the resumed run's own work. The rebuilt transcript carries zero usage
+// metadata, so the SDK can't see the real context size and auto-compact
+// before the first API call — if the hydrated history overfills the window,
+// every request (including compaction itself) fails with "prompt is too
+// long" and the run dies. Target roughly half the window in real tokens.
+const DEFAULT_MAX_TOKENS = 80_000;
+const LARGE_CONTEXT_MAX_TOKENS = 400_000;
 
 function estimateTurnTokens(turn: ConversationTurn): number {
   let chars = 0;
