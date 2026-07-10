@@ -1165,6 +1165,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       pendingUserMessage: prompt,
       reasoningEffort,
       initialPermissionMode,
+      rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
     });
 
     const newRun = updatedTask.latest_run;
