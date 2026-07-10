@@ -12,6 +12,7 @@ import {
 } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
 import { track } from "../../../shell/analytics";
+import { useOptionalAuthenticatedClient } from "../../auth/authClient";
 import { useUserRepositoryIntegration } from "../../integrations/useIntegrations";
 import { PromptInput } from "../../message-editor/components/PromptInput";
 import { useDraftStore } from "../../message-editor/draftStore";
@@ -39,6 +40,10 @@ import {
   useDashboardMutations,
 } from "../hooks/useDashboards";
 import { useGenerateFreeformCanvas } from "../hooks/useGenerateFreeformCanvas";
+import {
+  normalizeChannelName,
+  PERSONAL_CHANNEL_NAME,
+} from "../hooks/useTaskChannels";
 
 export interface ChannelHomeComposerHandle {
   /** Drop a starter prompt into the editor and apply its mode, if any. */
@@ -163,9 +168,27 @@ export const ChannelHomeComposer = forwardRef<
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
 
   const queryClient = useQueryClient();
+  const apiClient = useOptionalAuthenticatedClient();
   const handleCanvasSubmit = useCallback(async () => {
     const instruction = editorRef.current?.getText().trim();
     if (!instruction || isStartingCanvas) return;
+    // The folder→backend channel mapping can still be resolving when the user
+    // submits (fresh channel, cold channels list). Resolve it here rather than
+    // silently creating a run the feed will never show. The personal channel
+    // can't be resolved by name; it only arrives via the channels list.
+    let feedChannelId = backendChannelId;
+    const normalizedName = channelName ? normalizeChannelName(channelName) : "";
+    if (
+      !feedChannelId &&
+      apiClient &&
+      normalizedName &&
+      normalizedName !== PERSONAL_CHANNEL_NAME
+    ) {
+      feedChannelId = await apiClient
+        .resolveTaskChannel(normalizedName)
+        .then((c) => c.id)
+        .catch(() => undefined);
+    }
     let record: { id: string; name: string };
     try {
       record = await trackAndCreateCanvas(
@@ -187,7 +210,7 @@ export const ChannelHomeComposer = forwardRef<
       instruction,
       // Owned by the backend channel so the run shows as a card in the feed,
       // like a plain composer submit.
-      backendChannelId,
+      backendChannelId: feedChannelId,
       adapter: adapter ?? "claude",
       model: currentModel,
       reasoningLevel: currentReasoningLevel,
@@ -196,7 +219,7 @@ export const ChannelHomeComposer = forwardRef<
     if (!taskId) return;
     // Surface the new card without waiting for the feed's next poll.
     void queryClient.invalidateQueries({
-      queryKey: channelFeedQueryKey(backendChannelId),
+      queryKey: channelFeedQueryKey(feedChannelId),
     });
     editorRef.current?.clear();
     setCanvasArmed(false);
@@ -206,7 +229,9 @@ export const ChannelHomeComposer = forwardRef<
     });
   }, [
     channelId,
+    channelName,
     backendChannelId,
+    apiClient,
     adapter,
     currentModel,
     currentReasoningLevel,
