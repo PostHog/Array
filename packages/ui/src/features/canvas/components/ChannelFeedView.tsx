@@ -383,9 +383,6 @@ function ReplyFooter({
             </AvatarFallback>
           </Avatar>
         </AvatarGroup>
-        {/* Muted, not the teaser's --primary accent: on an always-present row
-            the accent should stay earned by real replies, not shout on every
-            card. Matches the grey of the populated state's "Last reply" meta. */}
         <ThreadItemRepliesLabel className="text-(--muted-foreground)">
           Reply
         </ThreadItemRepliesLabel>
