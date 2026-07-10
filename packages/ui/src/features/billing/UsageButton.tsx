@@ -63,7 +63,12 @@ export function UsageButton() {
           </Button>
         }
       />
-      <PopoverContent side="bottom" align="end" sideOffset={6}>
+      <PopoverContent
+        side="bottom"
+        align="end"
+        sideOffset={6}
+        className="gap-2"
+      >
         <div className="flex items-center justify-between">
           <span className="font-medium text-foreground text-xs">
             Free plan
@@ -78,18 +83,17 @@ export function UsageButton() {
           </span>
           <button
             type="button"
-            className="bg-transparent font-medium text-primary text-xs transition-opacity hover:opacity-80"
+            className="bg-transparent font-medium text-primary text-xs transition-opacity hover:underline hover:opacity-80"
             onClick={() => handleOpenPlan("titlebar_card")}
           >
             Upgrade
           </button>
         </div>
         <Progress
-          className="mt-2"
           value={usagePercent}
           variant={exceeded ? "destructive" : "default"}
         />
-        <div className="mt-1.5 font-normal text-[11px] text-muted-foreground">
+        <div className="font-normal text-[11px] text-muted-foreground">
           {resetLabel}
         </div>
       </PopoverContent>
