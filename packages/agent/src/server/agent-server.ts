@@ -89,6 +89,7 @@ import {
 } from "./cloud-prompt";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
+import { resolveRtkSavings } from "./rtk-savings";
 import { RunUsageAccumulator } from "./run-usage";
 import {
   handoffLocalGitStateSchema,
@@ -321,6 +322,7 @@ export class AgentServer {
   private app: Hono;
   private posthogAPI: PostHogAPIClient;
   private eventStreamSender: TaskRunEventStreamSender | null = null;
+  private rtkSavingsAttempted = false;
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private runUsage = new RunUsageAccumulator();
@@ -3093,6 +3095,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     } catch (error) {
       this.logger.error("Failed to signal task completion", error);
     } finally {
+      await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
     }
   }
@@ -3699,6 +3702,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
 
     if (completeEventStream) {
+      await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
     }
 
@@ -3708,6 +3712,41 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     // with a different run_id) must not inherit the previous run's totals.
     this.runUsage = new RunUsageAccumulator();
     this.session = null;
+  }
+
+  private async emitRtkSavings(): Promise<void> {
+    if (!this.eventStreamSender || this.rtkSavingsAttempted) return;
+    this.rtkSavingsAttempted = true;
+
+    try {
+      const savings = await (
+        this.config.resolveRtkSavings ?? resolveRtkSavings
+      )();
+      if (!savings) return;
+
+      this.eventStreamSender.enqueue({
+        type: "notification",
+        timestamp: new Date().toISOString(),
+        notification: {
+          jsonrpc: "2.0",
+          method: POSTHOG_NOTIFICATIONS.RTK_SAVINGS,
+          params: {
+            task_id: this.config.taskId,
+            run_id: this.config.runId,
+            team_id: this.config.projectId,
+            counter_id: this.config.taskId,
+            cumulative_commands: savings.totalCommands,
+            cumulative_input_tokens: savings.inputTokens,
+            cumulative_output_tokens: savings.outputTokens,
+            cumulative_tokens_saved: savings.tokensSaved,
+            runtime_adapter: this.config.runtimeAdapter,
+            model: this.config.model,
+          },
+        },
+      });
+    } catch (error) {
+      this.logger.debug("Failed to emit rtk savings", { error });
+    }
   }
 
   private async captureCheckpointState(

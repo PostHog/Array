@@ -406,6 +406,7 @@ describe("AgentServer HTTP Mode", () => {
       mode: "interactive",
       taskId: "test-task-id",
       runId: "test-run-id",
+      resolveRtkSavings: async () => null,
       ...overrides,
     });
     return server;
@@ -445,6 +446,7 @@ describe("AgentServer HTTP Mode", () => {
 
   describe("turn completion", () => {
     function stubSessionCleanup(testServer: unknown): {
+      session: unknown;
       cleanupSession: (options?: {
         completeEventStream?: boolean;
       }) => Promise<void>;
@@ -495,6 +497,48 @@ describe("AgentServer HTTP Mode", () => {
 
       expect(testServer.eventStreamSender.enqueue).not.toHaveBeenCalled();
       expect(testServer.eventStreamSender.stop).toHaveBeenCalledOnce();
+    });
+
+    it("emits rtk savings once before terminal event ingest stops", async () => {
+      const testServer = stubSessionCleanup(
+        createServer({
+          resolveRtkSavings: async () => ({
+            totalCommands: 4,
+            inputTokens: 1000,
+            outputTokens: 350,
+            tokensSaved: 650,
+          }),
+        }),
+      );
+      const session = testServer.session;
+
+      await testServer.cleanupSession({ completeEventStream: true });
+      testServer.session = session;
+      await testServer.cleanupSession({ completeEventStream: true });
+
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledOnce();
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          notification: expect.objectContaining({
+            method: "_posthog/rtk_savings",
+            params: expect.objectContaining({
+              task_id: "test-task-id",
+              run_id: "test-run-id",
+              team_id: 1,
+              counter_id: "test-task-id",
+              cumulative_commands: 4,
+              cumulative_input_tokens: 1000,
+              cumulative_output_tokens: 350,
+              cumulative_tokens_saved: 650,
+            }),
+          }),
+        }),
+      );
+      expect(
+        testServer.eventStreamSender.enqueue.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        testServer.eventStreamSender.stop.mock.invocationCallOrder[0],
+      );
     });
 
     it("writes terminal failure status before completing event ingest", async () => {

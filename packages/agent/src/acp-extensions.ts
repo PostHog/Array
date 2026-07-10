@@ -83,6 +83,9 @@ export const POSTHOG_NOTIFICATIONS = {
 
   /** Permission request resolved, persisted so a reconnecting client can tell it is no longer pending */
   PERMISSION_RESOLVED: "_posthog/permission_resolved",
+
+  /** RTK output-compression token savings tallied at the end of a run */
+  RTK_SAVINGS: "_posthog/rtk_savings",
 } as const;
 
 /**
