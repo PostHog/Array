@@ -427,10 +427,7 @@ const FeedItem = memo(function FeedItem({
         </ThreadItemHeader>
 
         <ThreadItemBody>
-          <CollapsibleMessageContent
-            contentClassName="wrap-break-word whitespace-pre-wrap"
-            fadeColor="var(--gray-1)"
-          >
+          <CollapsibleMessageContent contentClassName="wrap-break-word whitespace-pre-wrap">
             {prompt}
           </CollapsibleMessageContent>
         </ThreadItemBody>

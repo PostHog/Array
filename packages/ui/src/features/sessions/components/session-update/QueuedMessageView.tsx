@@ -37,7 +37,6 @@ export function QueuedMessageView({
         <CollapsibleMessageContent
           className="min-w-0 flex-1"
           contentClassName="font-medium text-[13px] text-gray-12"
-          fadeColor="var(--card)"
         >
           {hasFileMentions(message.content) ? (
             parseFileMentions(message.content)

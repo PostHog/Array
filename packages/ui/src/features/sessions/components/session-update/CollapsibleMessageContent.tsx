@@ -1,4 +1,5 @@
 import { CaretDown, CaretUp } from "@phosphor-icons/react";
+import { cn } from "@posthog/quill";
 import { Box } from "@radix-ui/themes";
 import {
   type CSSProperties,
@@ -15,8 +16,6 @@ interface CollapsibleMessageContentProps {
   className?: string;
   /** Extra classes for the inner content box (e.g. per-caller typography). */
   contentClassName?: string;
-  /** Color the bottom fade blends into — match the caller's background. */
-  fadeColor?: string;
   style?: CSSProperties;
 }
 
@@ -24,7 +23,6 @@ export function CollapsibleMessageContent({
   children,
   className,
   contentClassName,
-  fadeColor = "var(--gray-2)",
   style,
 }: CollapsibleMessageContentProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -52,9 +50,21 @@ export function CollapsibleMessageContent({
 
   return (
     <Box className={className} style={style}>
+      {/* When collapsed + overflowing, clamp the height and fade the *text* out
+          at the bottom with a paint-only mask (same technique as the chat
+          thread's user bubble). A mask fades only painted pixels, so — unlike an
+          overlaid colored gradient — it needs no background color to blend into
+          and never paints a full-width band past ragged text. Being paint-only,
+          it also leaves the scrollHeight measurement above untouched. */}
       <Box
         ref={measureRef}
-        className={`relative overflow-hidden [&>*:last-child]:mb-0 ${contentClassName ?? ""}`}
+        className={cn(
+          "overflow-hidden [&>*:last-child]:mb-0",
+          !isExpanded &&
+            isOverflowing &&
+            "[mask-image:linear-gradient(to_bottom,black_45%,transparent)]",
+          contentClassName,
+        )}
         style={
           !isExpanded && isOverflowing
             ? { maxHeight: COLLAPSED_MAX_HEIGHT }
@@ -62,14 +72,6 @@ export function CollapsibleMessageContent({
         }
       >
         {children}
-        {!isExpanded && isOverflowing && (
-          <Box
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-12"
-            style={{
-              background: `linear-gradient(transparent, ${fadeColor})`,
-            }}
-          />
-        )}
       </Box>
       {isOverflowing && (
         <button
