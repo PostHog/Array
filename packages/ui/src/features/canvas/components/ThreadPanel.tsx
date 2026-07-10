@@ -316,7 +316,7 @@ export function ThreadPanel({
           onMentionInsert={handleMentionInsert}
           placeholder="Reply in thread… @ to tag a teammate"
           rows={2}
-          textareaClassName="max-h-40 text-[13px]"
+          inputClassName="max-h-40 text-[13px]"
         >
           <InputGroupAddon align="block-end" className="p-1">
             <span className="ml-auto flex items-center gap-1">
