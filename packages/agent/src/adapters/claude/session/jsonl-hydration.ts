@@ -243,8 +243,8 @@ export function rebuildConversation(
 
 // JSON-heavy tool payloads tokenize at ~2.5-3 chars/token, so estimate low.
 const CHARS_PER_TOKEN = 3;
-// Target ~half the context window: hydrated transcripts carry no usage
-// metadata, so the SDK can't auto-compact before the first API call.
+// Target ~half the context window, leaving headroom for the system prompt,
+// tools, skills, estimation error, and the resumed run's own work.
 const DEFAULT_MAX_TOKENS = 80_000;
 const LARGE_CONTEXT_MAX_TOKENS = 400_000;
 
