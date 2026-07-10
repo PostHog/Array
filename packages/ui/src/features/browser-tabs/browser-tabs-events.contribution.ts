@@ -1,5 +1,6 @@
 import type { Contribution } from "@posthog/di/contribution";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
+import { sleepWithBackoff } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
   BROWSER_TABS_CLIENT,
@@ -69,20 +70,11 @@ export class BrowserTabsEventsContribution implements Contribution {
           this.logger.error("browser-tabs snapshot seed failed", { error });
           return;
         }
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(
-            resolve,
-            SEED_RETRY_BASE_MS * 2 ** (attempt - 1),
-          );
-          signal.addEventListener(
-            "abort",
-            () => {
-              clearTimeout(timer);
-              resolve();
-            },
-            { once: true },
-          );
-        });
+        await sleepWithBackoff(
+          attempt - 1,
+          { initialDelayMs: SEED_RETRY_BASE_MS },
+          signal,
+        );
       }
     }
   }

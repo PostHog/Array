@@ -7,6 +7,17 @@ function isDuplicateColumnError(error: unknown): boolean {
   return error instanceof Error && /duplicate column name/i.test(error.message);
 }
 
+// Repair migrations heal DBs whose recorded history diverged from their real
+// schema (a migration amended in place on a branch). Their statements are
+// opportunistic: one that cannot apply must not roll back the batch and kill
+// boot — for these migrations the worst acceptable outcome is the pre-repair
+// status quo, never a database that fails to open. Statements in the listed
+// migrations tolerate ANY SQLite error; everything else keeps the strict
+// duplicate-column-only tolerance.
+const BEST_EFFORT_MIGRATIONS = new Set<number>([
+  1783685997328, // 0020_repair_browser_tabs_schema
+]);
+
 export function runMigrations(
   sqlite: SqliteDatabase,
   migrationsFolder: string,
@@ -33,11 +44,12 @@ export function runMigrations(
       if (appliedTimestamps.has(migration.folderMillis)) {
         continue;
       }
+      const bestEffort = BEST_EFFORT_MIGRATIONS.has(migration.folderMillis);
       for (const statement of migration.sql) {
         try {
           sqlite.exec(statement);
         } catch (error) {
-          if (isDuplicateColumnError(error)) {
+          if (bestEffort || isDuplicateColumnError(error)) {
             continue;
           }
           throw error;

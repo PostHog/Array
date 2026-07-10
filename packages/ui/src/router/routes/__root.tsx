@@ -374,20 +374,25 @@ function RootLayout() {
               noops on param-less routes (inbox, agents, new-task), so it's safe
               to mount everywhere. */}
           <BrowserTabStrip />
-          <Flex align="center" gap="2" className="no-drag ml-auto pr-3">
-            <UsageButton />
-            {channelsEnabled && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!posthogWebUrl}
-                onClick={handleOpenPostHogWeb}
-              >
-                <ArrowSquareOut size={14} />
-                PostHog Web
-              </Button>
-            )}
-          </Flex>
+          {/* Gated so an empty right-side group can't claim a no-drag rect
+              in the title bar for nothing — every pixel without controls
+              should drag the window. */}
+          {(billingEnabled || channelsEnabled) && (
+            <Flex align="center" gap="2" className="no-drag ml-auto pr-3">
+              <UsageButton />
+              {channelsEnabled && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!posthogWebUrl}
+                  onClick={handleOpenPostHogWeb}
+                >
+                  <ArrowSquareOut size={14} />
+                  PostHog Web
+                </Button>
+              )}
+            </Flex>
+          )}
         </Flex>
         <ConnectivityBanner />
         <Flex flexGrow="1" overflow="hidden">

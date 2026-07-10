@@ -111,13 +111,14 @@ export function UsageButton() {
               {exceeded ? "Limit reached" : `${usagePercent}% used`}
             </span>
           </span>
-          <button
-            type="button"
-            className="bg-transparent font-medium text-primary text-xs transition-opacity hover:underline hover:opacity-80"
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
             onClick={() => handleOpenPlan("titlebar_card")}
           >
             Upgrade
-          </button>
+          </Button>
         </div>
         <Progress
           value={usagePercent}

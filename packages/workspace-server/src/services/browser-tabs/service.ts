@@ -98,7 +98,11 @@ export class BrowserTabsService
 
   /** Creation targets heal a stale window id (a mirror seeded before a schema
    * repair, or another window's since-closed id) to the primary window rather
-   * than appending into a window that doesn't exist. */
+   * than appending into a window that doesn't exist. Deliberately creation-only:
+   * a desynced mirror's reorder (`setOrder`) or focus (`setActiveTab`) carries
+   * stale TAB ids too, so retargeting those at the primary window would apply
+   * wrong state — the shared transforms no-op safely instead, and the snapshot
+   * reconcile heals the mirror. Creating a tab is window-independent intent. */
   private resolveWindowId(windowId: string): string {
     return this.snapshot.windows.some((w) => w.id === windowId)
       ? windowId

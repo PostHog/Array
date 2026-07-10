@@ -790,7 +790,14 @@ export function BrowserTabStrip() {
         const win = server
           ? primaryWindow(server)
           : primaryWindow(readMirror());
-        if (win) createBlankTab(win.id);
+        if (win) {
+          createBlankTab(win.id);
+          return;
+        }
+        // Should be unreachable (the server always mints a primary window),
+        // but a silent skip here reproduces the dead-"+" this path exists to
+        // fix — make it loud instead.
+        logger.error("browser-tabs: new-tab found no window after reseed");
       })
       .catch((error) => {
         logger.error("browser-tabs: new-tab reseed failed", { error });
