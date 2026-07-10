@@ -1,5 +1,5 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { CaretDown, ChartLineUp } from "@phosphor-icons/react";
+import { CaretDown, ChartLineUp, Shapes } from "@phosphor-icons/react";
 import {
   Button,
   DropdownMenu,
@@ -31,6 +31,16 @@ interface ModeSelectorProps {
     active: boolean;
     onToggle: () => void;
   };
+  /**
+   * When provided, a "Canvas" toggle renders in the same trailing section
+   * (channels composer only). Arming it makes the next submit generate a
+   * canvas from the prompt instead of creating a plain task; while armed the
+   * trigger reads "Canvas" so the composer's state is visible at a glance.
+   */
+  canvas?: {
+    active: boolean;
+    onToggle: () => void;
+  };
 }
 
 export function ModeSelector({
@@ -39,10 +49,12 @@ export function ModeSelector({
   allowBypassPermissions,
   disabled,
   autoresearch,
+  canvas,
 }: ModeSelectorProps) {
   const [open, setOpen] = useState(false);
   const pendingValueRef = useRef<string | null>(null);
   const pendingAutoresearchRef = useRef(false);
+  const pendingCanvasRef = useRef(false);
   const displayOption = useRetainedConfigOption(modeOption);
 
   if (!displayOption || displayOption.type !== "select") return null;
@@ -63,9 +75,14 @@ export function ModeSelector({
   if (options.length === 0) return null;
 
   const currentValue = displayOption.currentValue;
-  const currentStyle = getModeStyle(currentValue);
-  const currentLabel =
-    allOptions.find((opt) => opt.value === currentValue)?.name ?? currentValue;
+  const canvasActive = !!canvas?.active;
+  const currentStyle = canvasActive
+    ? { icon: <Shapes size={12} weight="fill" />, className: "text-teal-11" }
+    : getModeStyle(currentValue);
+  const currentLabel = canvasActive
+    ? "Canvas"
+    : (allOptions.find((opt) => opt.value === currentValue)?.name ??
+      currentValue);
 
   return (
     <DropdownMenu
@@ -76,10 +93,16 @@ export function ModeSelector({
         if (pendingValueRef.current !== null) {
           onChange(pendingValueRef.current);
           pendingValueRef.current = null;
+          // Picking a plain mode leaves canvas mode; the two are exclusive.
+          if (canvasActive) canvas?.onToggle();
         }
         if (pendingAutoresearchRef.current) {
           pendingAutoresearchRef.current = false;
           autoresearch?.onToggle();
+        }
+        if (pendingCanvasRef.current) {
+          pendingCanvasRef.current = false;
+          canvas?.onToggle();
         }
       }}
     >
@@ -110,7 +133,9 @@ export function ModeSelector({
       >
         <MenuLabel>Mode</MenuLabel>
         <DropdownMenuRadioGroup
-          value={currentValue}
+          // While canvas mode is armed it reads as the selected mode, so no
+          // plain-mode radio shows checked.
+          value={canvasActive ? "" : currentValue}
           onValueChange={(value) => {
             pendingValueRef.current = value;
             setOpen(false);
@@ -126,22 +151,34 @@ export function ModeSelector({
             );
           })}
         </DropdownMenuRadioGroup>
+        {(autoresearch || canvas) && <DropdownMenuSeparator />}
+        {canvas && (
+          <DropdownMenuCheckboxItem
+            checked={canvas.active}
+            onCheckedChange={() => {
+              pendingCanvasRef.current = true;
+              setOpen(false);
+            }}
+          >
+            <span className="text-teal-11">
+              <Shapes size={12} weight="fill" />
+            </span>
+            <span className="whitespace-nowrap">Canvas</span>
+          </DropdownMenuCheckboxItem>
+        )}
         {autoresearch && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuCheckboxItem
-              checked={autoresearch.active}
-              onCheckedChange={() => {
-                pendingAutoresearchRef.current = true;
-                setOpen(false);
-              }}
-            >
-              <span className="text-violet-11">
-                <ChartLineUp size={12} />
-              </span>
-              <span className="whitespace-nowrap">Autoresearch</span>
-            </DropdownMenuCheckboxItem>
-          </>
+          <DropdownMenuCheckboxItem
+            checked={autoresearch.active}
+            onCheckedChange={() => {
+              pendingAutoresearchRef.current = true;
+              setOpen(false);
+            }}
+          >
+            <span className="text-violet-11">
+              <ChartLineUp size={12} />
+            </span>
+            <span className="whitespace-nowrap">Autoresearch</span>
+          </DropdownMenuCheckboxItem>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

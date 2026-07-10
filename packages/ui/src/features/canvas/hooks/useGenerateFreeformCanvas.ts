@@ -35,13 +35,10 @@ import { useCallback, useState } from "react";
 // server-side regardless of which client kicked it off, and the agent publishes
 // the result via the `desktop-file-system-canvas-partial-update` MCP tool.
 export function useGenerateFreeformCanvas(args: {
-  dashboardId: string;
   channelId: string;
-  name: string;
   channelName: string;
-  templateId?: string;
 }) {
-  const { dashboardId, channelId, name, channelName, templateId } = args;
+  const { channelId, channelName } = args;
   const taskService = useService<TaskService>(TASK_SERVICE);
   const modelResolver = useService<ReportModelResolver>(REPORT_MODEL_RESOLVER);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
@@ -61,6 +58,11 @@ export function useGenerateFreeformCanvas(args: {
 
   const generate = useCallback(
     async (opts: {
+      // The canvas being generated — per call, so surfaces that create the
+      // canvas at submit time (the channel composer) can use one hook instance.
+      dashboardId: string;
+      name: string;
+      templateId?: string;
       instruction: string;
       currentCode?: string;
       // Default on (opt out in the bar): seed the starter scaffold on first build.
@@ -70,6 +72,7 @@ export function useGenerateFreeformCanvas(args: {
       // always runs in the cloud — see the default below.
       workspaceMode?: WorkspaceMode;
     }): Promise<string | null> => {
+      const { dashboardId, name, templateId } = opts;
       setIsStarting(true);
       try {
         // Defaults to a cloud run — canvas generation should never tie up (or
@@ -178,11 +181,8 @@ export function useGenerateFreeformCanvas(args: {
       fileTask,
       setGenerationTask,
       renameDashboard,
-      dashboardId,
       channelId,
-      name,
       channelName,
-      templateId,
       channelContext,
     ],
   );
