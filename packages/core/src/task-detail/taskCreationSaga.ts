@@ -403,6 +403,7 @@ export class TaskCreationSaga extends Saga<
             customImageId: input.customImageId,
             prAuthorshipMode,
             autoPublish: input.cloudAutoPublish,
+            rtkEnabled: input.cloudRtkEnabled,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
             homeQuickAction: input.homeQuickActionLabel,

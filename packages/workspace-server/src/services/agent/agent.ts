@@ -13,6 +13,7 @@ import {
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
 import {
+  detectRtkBinary,
   isMcpToolReadOnly,
   isNotification,
   POSTHOG_NOTIFICATIONS,
@@ -107,6 +108,7 @@ import {
   type InterruptReason,
   type PromptOutput,
   type ReconnectSessionInput,
+  type RtkStatus,
   type SessionResponse,
   type StartSessionInput,
 } from "./schemas";
@@ -280,6 +282,8 @@ interface SessionConfig {
    * replayed to the client. Claude adapter only.
    */
   importedSessionId?: string;
+  /** rtk command-output compression for this session; false opts out. */
+  rtkEnabled?: boolean;
 }
 
 /** Pull the adapter's `agentCapabilities._meta.posthog.steering` from initialize. */
@@ -422,6 +426,15 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     // (copyClaudeExecutable plugin).
     const binary = process.platform === "win32" ? "claude.exe" : "claude";
     return this.bundledResources.resolve(`.vite/build/claude-cli/${binary}`);
+  }
+
+  /** Whether an rtk binary is installed on this host, independent of the toggle. */
+  getRtkStatus(): RtkStatus {
+    const binaryPath = detectRtkBinary(process.env);
+    return {
+      available: binaryPath !== undefined,
+      binaryPath: binaryPath ?? null,
+    };
   }
 
   private getCodexBinaryPath(): string {
@@ -759,6 +772,7 @@ If a repository IS genuinely required, attach one in this priority order:
       credentials,
       proxyUrl,
       claudeCliPath: this.getClaudeCliPath(),
+      rtkEnabled: config.rtkEnabled,
     });
 
     const isPreview = taskId === "__preview__";
@@ -1963,6 +1977,7 @@ For git operations while detached:
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
       importedSessionId:
         "importedSessionId" in params ? params.importedSessionId : undefined,
+      rtkEnabled: "rtkEnabled" in params ? params.rtkEnabled : undefined,
     };
   }
 

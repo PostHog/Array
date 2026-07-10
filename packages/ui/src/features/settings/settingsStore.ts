@@ -155,10 +155,17 @@ interface SettingsStore {
   // When on, cloud runs push their work and open a draft PR on completion
   // without waiting for an explicit ask.
   autoPublishCloudRuns: boolean;
+  // When on, agent runs compress eligible command output through rtk before it
+  // reaches the model. Split by modality: local covers local and worktree
+  // sessions, cloud covers cloud runs.
+  rtkEnabledLocal: boolean;
+  rtkEnabledCloud: boolean;
   setAllowBypassPermissions: (enabled: boolean) => void;
   setPreventSleepWhileRunning: (enabled: boolean) => void;
   setDebugLogsCloudRuns: (enabled: boolean) => void;
   setAutoPublishCloudRuns: (enabled: boolean) => void;
+  setRtkEnabledLocal: (enabled: boolean) => void;
+  setRtkEnabledCloud: (enabled: boolean) => void;
 
   // Terminal
   terminalFont: TerminalFont;
@@ -326,6 +333,8 @@ export const useSettingsStore = create<SettingsStore>()(
       preventSleepWhileRunning: false,
       debugLogsCloudRuns: false,
       autoPublishCloudRuns: true,
+      rtkEnabledLocal: true,
+      rtkEnabledCloud: true,
       setAllowBypassPermissions: (enabled) =>
         set({ allowBypassPermissions: enabled }),
       setPreventSleepWhileRunning: (enabled) =>
@@ -333,6 +342,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setDebugLogsCloudRuns: (enabled) => set({ debugLogsCloudRuns: enabled }),
       setAutoPublishCloudRuns: (enabled) =>
         set({ autoPublishCloudRuns: enabled }),
+      setRtkEnabledLocal: (enabled) => set({ rtkEnabledLocal: enabled }),
+      setRtkEnabledCloud: (enabled) => set({ rtkEnabledCloud: enabled }),
 
       // Terminal
       terminalFont: "berkeley-mono",
@@ -446,6 +457,8 @@ export const useSettingsStore = create<SettingsStore>()(
         preventSleepWhileRunning: state.preventSleepWhileRunning,
         debugLogsCloudRuns: state.debugLogsCloudRuns,
         autoPublishCloudRuns: state.autoPublishCloudRuns,
+        rtkEnabledLocal: state.rtkEnabledLocal,
+        rtkEnabledCloud: state.rtkEnabledCloud,
 
         // Terminal
         terminalFont: state.terminalFont,

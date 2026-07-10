@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { Logger } from "../../../utils/logger";
 import {
   createRtkRewriteHook,
+  detectRtkBinary,
   resolveRtkPrefix,
   rewriteBashForRtk,
 } from "./rtk";
@@ -129,6 +130,50 @@ describe("resolveRtkPrefix", () => {
   test("is disabled for an explicit path that does not exist", () => {
     expect(
       resolveRtkPrefix({ POSTHOG_RTK: path.join(dir, "missing") }),
+    ).toBeUndefined();
+  });
+});
+
+describe("detectRtkBinary", () => {
+  let dir: string;
+  let binary: string;
+
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "rtk-detect-"));
+    binary = path.join(dir, "rtk");
+    fs.writeFileSync(binary, "#!/bin/sh\n");
+  });
+
+  afterAll(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  // The per-session toggle must not hide an installed binary from the
+  // status probe — a prior session leaving POSTHOG_RTK=0 in the process
+  // env would otherwise flap the settings hint.
+  test.each([
+    ["unset", undefined],
+    ["0", "0"],
+    ["false", "false"],
+    ["1", "1"],
+    ["true", "true"],
+  ])("finds the PATH binary when POSTHOG_RTK is %s", (_label, value) => {
+    expect(detectRtkBinary({ POSTHOG_RTK: value, PATH: dir })).toBe(binary);
+  });
+
+  test("reports no binary when rtk is not on PATH", () => {
+    expect(detectRtkBinary({ PATH: "/nonexistent" })).toBeUndefined();
+  });
+
+  test("honors an explicit path override that exists", () => {
+    expect(detectRtkBinary({ POSTHOG_RTK: binary, PATH: "/nonexistent" })).toBe(
+      binary,
+    );
+  });
+
+  test("reports no binary for a broken explicit path, matching the resolver", () => {
+    expect(
+      detectRtkBinary({ POSTHOG_RTK: path.join(dir, "missing"), PATH: dir }),
     ).toBeUndefined();
   });
 });

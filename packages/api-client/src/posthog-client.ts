@@ -497,6 +497,8 @@ interface CloudRunOptions {
   customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
   autoPublish?: boolean;
+  /** Only false is sent: opts the run out of rtk command-output compression. */
+  rtkEnabled?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: ExecutionMode;
@@ -582,6 +584,9 @@ function buildCloudRunRequestBody(
   }
   if (options?.autoPublish) {
     body.auto_publish = options.autoPublish;
+  }
+  if (options?.rtkEnabled === false) {
+    body.rtk_enabled = false;
   }
   if (options?.runSource) {
     body.run_source = options.runSource;

@@ -75,6 +75,11 @@ export const startSessionInput = z.object({
    * history is replayed to the client. Claude adapter only.
    */
   importedSessionId: z.string().optional(),
+  /**
+   * Whether rtk command-output compression is enabled for this session.
+   * Defaults to enabled; false sets POSTHOG_RTK=0 on the agent environment.
+   */
+  rtkEnabled: z.boolean().optional(),
 });
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;
@@ -206,9 +211,19 @@ export const reconnectSessionInput = z.object({
   customInstructions: z.string().max(2000).optional(),
   effort: effortLevelSchema.optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
+  /** See startSessionInput.rtkEnabled. */
+  rtkEnabled: z.boolean().optional(),
 });
 
 export type ReconnectSessionInput = z.infer<typeof reconnectSessionInput>;
+
+/** Whether an rtk binary is installed on this host, independent of the toggle. */
+export const rtkStatusOutput = z.object({
+  available: z.boolean(),
+  binaryPath: z.string().nullable(),
+});
+
+export type RtkStatus = z.infer<typeof rtkStatusOutput>;
 
 // Set config option input (for Codex reasoning level, etc.)
 export const setConfigOptionInput = z.object({
