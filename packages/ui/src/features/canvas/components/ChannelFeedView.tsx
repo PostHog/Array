@@ -390,7 +390,7 @@ const FeedItem = memo(function FeedItem({
 
       <ThreadItemContent className="min-w-0">
         <ThreadItemHeader>
-          <ThreadItemAuthor>Agent</ThreadItemAuthor>
+          <ThreadItemAuthor>PostHog</ThreadItemAuthor>
           <Badge variant="info">Agent</Badge>
           <ThreadItemTimestamp
             dateTime={new Date(task.created_at).toISOString()}
