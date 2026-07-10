@@ -18,10 +18,7 @@ import {
   type WorkspaceMode,
 } from "@posthog/shared";
 import type { ExecutionMode, Task } from "@posthog/shared/domain-types";
-import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
-import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
-import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useTaskChannels } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToTaskPending } from "@posthog/ui/router/navigationBridge";
@@ -207,53 +204,16 @@ export function useTaskCreation({
   // Used to name the task occupying a branch's worktree when reuse is blocked.
   const { data: tasks } = useTasks();
 
-  // Tasks created without a channel default into the private #me channel so
-  // they still surface in the Channels space instead of staying unfiled.
+  // Tasks created without a channel default into the user's private #me
+  // backend channel so they still surface in the Channels space instead of
+  // staying unfiled. The personal channel is per-user and provisioned lazily
+  // server-side on first list, so this can't collide across teammates. If it
+  // hasn't loaded yet the task is created unfiled, as before.
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
-  const apiClient = useOptionalAuthenticatedClient();
-  const { createChannel } = useChannelMutations();
-  const { fileTask } = useChannelTaskMutations();
-
-  const fileToPersonalChannel = useCallback(
-    async (task: Task) => {
-      if (!apiClient) return;
-      let meFolderId: string | undefined;
-      try {
-        // List fresh rather than trusting the polled channels cache — a stale
-        // miss here would create a duplicate "me" folder.
-        const rows = await apiClient.getDesktopFileSystemChannels();
-        const existing = rows.find(
-          (fs) =>
-            fs.type === "folder" &&
-            fs.path.replace(/^\/+/, "") === PERSONAL_CHANNEL_NAME,
-        );
-        meFolderId =
-          existing?.id ?? (await createChannel(PERSONAL_CHANNEL_NAME)).id;
-        await fileTask(meFolderId, task.id, task.title);
-        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-          action_type: "file_task",
-          surface: "task_input",
-          channel_id: meFolderId,
-          task_id: task.id,
-          success: true,
-        });
-      } catch (error) {
-        // Best-effort: on failure the task just stays unfiled, as before.
-        log.warn("Failed to default-file task to #me", { error });
-        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-          action_type: "file_task",
-          surface: "task_input",
-          channel_id: meFolderId,
-          task_id: task.id,
-          success: false,
-        });
-      }
-    },
-    [apiClient, createChannel, fileTask],
-  );
+  const { personalChannel } = useTaskChannels({ enabled: bluebirdEnabled });
 
   const hasRequiredPath = allowNoRepo
     ? true
@@ -361,6 +321,11 @@ export function useTaskCreation({
         }
 
         const settings = useSettingsStore.getState();
+        const defaultedChannelId =
+          bluebirdEnabled && !channelId && !channelName
+            ? personalChannel?.id
+            : undefined;
+
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
@@ -383,7 +348,7 @@ export function useTaskCreation({
           additionalDirectories,
           channelContext,
           channelName,
-          channelId,
+          channelId: channelId ?? defaultedChannelId,
           customInstructions: getEffectiveCustomInstructions(settings),
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
           rtkEnabledCloud: settings.rtkEnabledCloud,
@@ -430,8 +395,14 @@ export function useTaskCreation({
             if (!pendingTaskKey && !contentOverride) {
               editor.clear();
             }
-            if (bluebirdEnabled && !channelId && !channelName) {
-              void fileToPersonalChannel(output.task);
+            if (defaultedChannelId) {
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: "file_task",
+                surface: "task_input",
+                channel_id: defaultedChannelId,
+                task_id: output.task.id,
+                success: true,
+              });
             }
             onTaskCreatedEffect?.(output.task);
             if (onTaskCreated) {
@@ -551,7 +522,7 @@ export function useTaskCreation({
       channelId,
       allowNoRepo,
       bluebirdEnabled,
-      fileToPersonalChannel,
+      personalChannel?.id,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
