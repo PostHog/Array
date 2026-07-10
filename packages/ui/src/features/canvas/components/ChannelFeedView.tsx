@@ -3,7 +3,6 @@ import {
   ChatCircleIcon,
   GitBranchIcon,
   RobotIcon,
-  UserIcon,
 } from "@phosphor-icons/react";
 import {
   Avatar,
@@ -43,10 +42,6 @@ import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import { xmlToPlainText } from "@posthog/ui/features/message-editor/content";
-import { CollapsibleMessageContent } from "@posthog/ui/features/sessions/components/session-update/CollapsibleMessageContent";
-import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
-import { getOriginProductMeta } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 import {
   type SidebarPrState,
   useTaskPrStatus,
@@ -242,53 +237,15 @@ function TaskStatusBadge({ display }: { display: TaskStatusDisplay }) {
   );
 }
 
-// The prompt as the user typed it: drop the channel CONTEXT.md block the saga
-// prepended and flatten the editor XML back to plain text.
-function promptText(task: Task): string {
-  const raw =
-    extractChannelContext(task.description)?.stripped ?? task.description;
-  try {
-    return xmlToPlainText(raw).trim() || task.title;
-  } catch {
-    return raw.trim() || task.title;
-  }
-}
-
-// The card's context line, mirroring the storybook feed: who/what kicked the
-// task off ("Requested by @Ann" for humans, the origin product otherwise).
-function TaskCardOrigin({ task }: { task: Task }) {
-  const isUserCreated = task.origin_product === "user_created";
-  const label = isUserCreated
-    ? `Requested by @${userDisplayName(task.created_by)}`
-    : (getOriginProductMeta(task.origin_product)?.label ?? task.origin_product);
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
-      {isUserCreated ? <UserIcon size={12} /> : <RobotIcon size={12} />}
-      <span className="truncate">{label}</span>
-    </span>
-  );
-}
-
 // The task the message kicked off, as a card everyone in the channel sees:
-// origin + status up top, bold title, then run metadata.
+// bold title + status up top, then run metadata.
 function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const statusDisplay = useTaskStatusDisplay(task);
   const prUrl =
     typeof task.latest_run?.output?.pr_url === "string"
       ? task.latest_run.output.pr_url
       : undefined;
-  // The repository renders separately with its icon; `meta` is the plain-text
-  // remainder of the row.
-  const environment = task.latest_run?.environment;
-  const meta = [
-    task.slug || null,
-    task.latest_run?.stage ?? null,
-    environment === "cloud"
-      ? "Cloud"
-      : environment === "local"
-        ? "Local"
-        : null,
-  ].filter(Boolean) as string[];
+  const stage = task.latest_run?.stage;
 
   return (
     <Card
@@ -303,19 +260,18 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
     >
       <CardContent className="flex flex-col gap-1 py-2.5">
         <div className="flex items-center justify-between gap-2">
-          <TaskCardOrigin task={task} />
+          <div className="flex min-w-0 items-center gap-1.5">
+            {/* Same live status icon as the code side nav, so the card and the
+                nav never disagree (generating spinner, needs-permission, cloud
+                status colors, PR state). */}
+            <TaskTabIcon task={task} size={14} />
+            <Text size="2" weight="medium" className="line-clamp-2">
+              {task.title || "Untitled task"}
+            </Text>
+          </div>
           <TaskStatusBadge display={statusDisplay} />
         </div>
-        <div className="flex min-w-0 items-center gap-1.5">
-          {/* Same live status icon as the code side nav, so the card and the
-              nav never disagree (generating spinner, needs-permission, cloud
-              status colors, PR state). */}
-          <TaskTabIcon task={task} size={14} />
-          <Text size="2" weight="medium" className="line-clamp-2">
-            {task.title || "Untitled task"}
-          </Text>
-        </div>
-        {(meta.length > 0 || task.repository || prUrl) && (
+        {(stage || task.repository || prUrl) && (
           <div className="flex min-w-0 items-center gap-3">
             {task.repository && (
               <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
@@ -323,9 +279,9 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
                 {task.repository}
               </span>
             )}
-            {meta.length > 0 && (
+            {stage && (
               <Text size="1" className="truncate text-muted-foreground">
-                {meta.join(" · ")}
+                {stage}
               </Text>
             )}
             {prUrl && (
@@ -422,29 +378,20 @@ const FeedItem = memo(function FeedItem({
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
-  const prompt = useMemo(() => promptText(task), [task]);
-  const isAgent = !task.created_by || task.origin_product !== "user_created";
-
   return (
     <ThreadItem className="rounded-none py-4 pr-8 hover:bg-fill-hover/50">
       <ThreadItemGutter>
         <Avatar>
           <AvatarFallback>
-            {isAgent && !task.created_by ? (
-              <RobotIcon size={16} />
-            ) : (
-              getUserInitials(task.created_by)
-            )}
+            <RobotIcon size={16} />
           </AvatarFallback>
         </Avatar>
       </ThreadItemGutter>
 
       <ThreadItemContent className="min-w-0">
         <ThreadItemHeader>
-          <ThreadItemAuthor>
-            {task.created_by ? userDisplayName(task.created_by) : "Agent"}
-          </ThreadItemAuthor>
-          {isAgent && <Badge variant="info">Agent</Badge>}
+          <ThreadItemAuthor>Agent</ThreadItemAuthor>
+          <Badge variant="info">Agent</Badge>
           <ThreadItemTimestamp
             dateTime={new Date(task.created_at).toISOString()}
           >
@@ -452,10 +399,19 @@ const FeedItem = memo(function FeedItem({
           </ThreadItemTimestamp>
         </ThreadItemHeader>
 
-        <ThreadItemBody>
-          <CollapsibleMessageContent contentClassName="wrap-break-word whitespace-pre-wrap">
-            {prompt}
-          </CollapsibleMessageContent>
+        <ThreadItemBody className="wrap-break-word">
+          {task.created_by ? (
+            <>
+              {/* Mention-styled but rendered inert: the starter shouldn't be
+                  notified about their own task. */}
+              <span className="rounded px-0.5 font-medium text-[var(--accent-11)]">
+                @{userDisplayName(task.created_by)}
+              </span>{" "}
+              started a new task
+            </>
+          ) : (
+            "A new task was started"
+          )}
         </ThreadItemBody>
 
         <TaskCard task={task} onOpen={() => onOpenTask(task)} />
