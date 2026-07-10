@@ -34,13 +34,19 @@ describe("resolveRtkSavings", () => {
 
   it.each([
     ["the binary is unavailable", undefined, GAIN_JSON],
-    ["nothing was tracked", "/bundled/rtk", JSON.stringify({ summary: { total_commands: 0 } })],
+    [
+      "nothing was tracked",
+      "/bundled/rtk",
+      JSON.stringify({ summary: { total_commands: 0 } }),
+    ],
     ["the output is malformed", "/bundled/rtk", "not json"],
     ["the summary is missing", "/bundled/rtk", JSON.stringify({ daily: [] })],
   ])("returns null when %s", async (_label, binary, stdout) => {
     const runGain = gain(stdout);
 
-    await expect(resolveRtkSavings({ resolveBinary: () => binary, runGain })).resolves.toBeNull();
+    await expect(
+      resolveRtkSavings({ resolveBinary: () => binary, runGain }),
+    ).resolves.toBeNull();
     if (!binary) expect(runGain).not.toHaveBeenCalled();
   });
 

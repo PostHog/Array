@@ -35,7 +35,10 @@ function parseGainSummary(stdout: string): RtkSavingsSummary | null {
   };
 }
 
-async function defaultRunGain(binary: string, env: NodeJS.ProcessEnv): Promise<string> {
+async function defaultRunGain(
+  binary: string,
+  env: NodeJS.ProcessEnv,
+): Promise<string> {
   const { stdout } = await execFileAsync(binary, ["gain", "--format", "json"], {
     timeout: 5_000,
     maxBuffer: 10 * 1024 * 1024,
@@ -60,7 +63,10 @@ const GAIN_ENV_ALLOWLIST = [
 
 export function scrubbedGainEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(
-    GAIN_ENV_ALLOWLIST.filter((key) => env[key] !== undefined).map((key) => [key, env[key]]),
+    GAIN_ENV_ALLOWLIST.filter((key) => env[key] !== undefined).map((key) => [
+      key,
+      env[key],
+    ]),
   );
 }
 

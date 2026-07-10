@@ -553,6 +553,7 @@ describe("AgentServer HTTP Mode", () => {
         mode: "interactive",
         taskId: "test-task-id",
         runId: "test-run-id",
+        resolveRtkSavings: async () => null,
       }) as unknown as {
         eventStreamSender: {
           enqueue: (event: Record<string, unknown>) => void;
@@ -630,6 +631,7 @@ describe("AgentServer HTTP Mode", () => {
         mode: "interactive",
         taskId: "test-task-id",
         runId: "test-run-id",
+        resolveRtkSavings: async () => null,
       }) as unknown as {
         eventStreamSender: {
           enqueue: (event: Record<string, unknown>) => void;
