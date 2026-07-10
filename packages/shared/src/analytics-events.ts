@@ -958,7 +958,10 @@ export interface ChannelsSpaceViewedProperties {
 
 // Subscription / billing events
 
-export type UpgradePromptShownSurface = "usage_limit_modal" | "upgrade_dialog";
+export type UpgradePromptShownSurface =
+  | "usage_limit_modal"
+  | "upgrade_dialog"
+  | "titlebar_card";
 
 export type UpgradePromptClickedSurface =
   | "usage_limit_modal"

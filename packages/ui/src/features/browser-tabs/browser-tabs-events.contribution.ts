@@ -20,6 +20,7 @@ const SEED_RETRY_BASE_MS = 1_000;
 @injectable()
 export class BrowserTabsEventsContribution implements Contribution {
   private subscription: { unsubscribe: () => void } | null = null;
+  private seedAbort: AbortController | null = null;
   private readonly logger;
 
   constructor(
@@ -36,7 +37,11 @@ export class BrowserTabsEventsContribution implements Contribution {
     // (a failed mutation emits no snapshotChange, so nothing else reconciles).
     registerSnapshotFetcher(() => this.client.getSnapshot());
 
-    void this.seedWithRetry();
+    // Abort any prior loop so a repeated start() can't stack a second one
+    // (mirrors the subscription replacement below).
+    this.seedAbort?.abort();
+    this.seedAbort = new AbortController();
+    void this.seedWithRetry(this.seedAbort.signal);
 
     // Replace any prior handle so a repeated start() can't leak a subscription.
     this.subscription?.unsubscribe();
@@ -48,24 +53,43 @@ export class BrowserTabsEventsContribution implements Contribution {
   // A failed seed used to be swallowed, leaving the mirror windowless forever —
   // the strip renders only a dead "+" in that state. Retry with backoff, and
   // make the terminal failure loud so a broken service can't fail silently.
-  private async seedWithRetry(): Promise<void> {
+  // Abort-aware: stop() must cancel the backoff and prevent a late snapshot
+  // from applying after teardown.
+  private async seedWithRetry(signal: AbortSignal): Promise<void> {
     for (let attempt = 1; attempt <= SEED_ATTEMPTS; attempt++) {
+      if (signal.aborted) return;
       try {
-        applyRemoteSnapshot(await this.client.getSnapshot());
+        const snapshot = await this.client.getSnapshot();
+        if (signal.aborted) return;
+        applyRemoteSnapshot(snapshot);
         return;
       } catch (error) {
+        if (signal.aborted) return;
         if (attempt === SEED_ATTEMPTS) {
           this.logger.error("browser-tabs snapshot seed failed", { error });
           return;
         }
-        await new Promise((resolve) =>
-          setTimeout(resolve, SEED_RETRY_BASE_MS * 2 ** (attempt - 1)),
-        );
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(
+            resolve,
+            SEED_RETRY_BASE_MS * 2 ** (attempt - 1),
+          );
+          signal.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              resolve();
+            },
+            { once: true },
+          );
+        });
       }
     }
   }
 
   stop(): void {
+    this.seedAbort?.abort();
+    this.seedAbort = null;
     registerSnapshotFetcher(null);
     this.subscription?.unsubscribe();
     this.subscription = null;

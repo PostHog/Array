@@ -15,6 +15,7 @@ import {
   ANALYTICS_EVENTS,
   type UpgradePromptClickedSurface,
 } from "@posthog/shared/analytics-events";
+import { useState } from "react";
 import { track } from "../../shell/analytics";
 import { useFeatureFlag } from "../feature-flags/useFeatureFlag";
 import { openSettings } from "../settings/hooks/useOpenSettings";
@@ -30,9 +31,24 @@ import { useFreeUsage } from "./useFreeUsage";
 // popover portal.
 export function UsageButton() {
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
-  const { usage } = useFreeUsage(billingEnabled);
+  const { usage, isLoading } = useFreeUsage(billingEnabled);
+  // Controlled so the trigger click can close the card before navigating to
+  // settings — uncontrolled, the same click would also toggle the popover open
+  // over the settings view. Hover open/close still flows through onOpenChange.
+  const [open, setOpen] = useState(false);
 
-  if (!billingEnabled || !usage) return null;
+  if (!billingEnabled) return null;
+
+  // Same-size placeholder while usage loads, so the button doesn't pop in and
+  // shift the PostHog Web button after boot.
+  if (!usage) {
+    if (!isLoading) return null;
+    return (
+      <Button variant="outline" size="sm" disabled aria-hidden>
+        <span className="animate-pulse">Usage: --%</span>
+      </Button>
+    );
+  }
 
   const exceeded = isUsageExceeded(usage);
   const dominant =
@@ -42,13 +58,25 @@ export function UsageButton() {
   const usagePercent = Math.min(Math.round(dominant.used_percent), 100);
   const resetLabel = formatResetTime(dominant.reset_at);
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    // The hover card has real impressions now (the old sidebar bar was
+    // always-visible); count each open as a shown upgrade prompt.
+    if (nextOpen && !open) {
+      track(ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN, {
+        surface: "titlebar_card",
+      });
+    }
+    setOpen(nextOpen);
+  };
+
   const handleOpenPlan = (surface: UpgradePromptClickedSurface) => {
     track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, { surface });
+    setOpen(false);
     openSettings("plan-usage");
   };
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         openOnHover
         delay={300}

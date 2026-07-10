@@ -7,6 +7,8 @@ import {
   SquaresFourIcon,
   TrayIcon,
 } from "@phosphor-icons/react";
+import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
+import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
   closeTab as closeTabLocal,
@@ -158,6 +160,7 @@ function isAppView(value: string): value is AppView {
 }
 
 export function BrowserTabStrip() {
+  const logger = useService<RootLogger>(ROOT_LOGGER);
   const snapshot = useTabsSnapshot();
   const navigate = useNavigate();
   const router = useRouter();
@@ -789,7 +792,9 @@ export function BrowserTabStrip() {
           : primaryWindow(readMirror());
         if (win) createBlankTab(win.id);
       })
-      .catch(() => undefined);
+      .catch((error) => {
+        logger.error("browser-tabs: new-tab reseed failed", { error });
+      });
   };
 
   // Cmd/Ctrl+T opens a new browser tab. Bound here (not globally) so it only
