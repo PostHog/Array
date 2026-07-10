@@ -52,10 +52,6 @@
       "types": "./dist/adapters/claude/conversion/tool-use-to-acp.d.ts",
       "import": "./dist/adapters/claude/conversion/tool-use-to-acp.js"
     },
-    "./adapters/codex/rollout": {
-      "types": "./dist/adapters/codex/rollout.d.ts",
-      "import": "./dist/adapters/codex/rollout.js"
-    },
     "./adapters/claude/session/jsonl-hydration": {
       "types": "./dist/adapters/claude/session/jsonl-hydration.d.ts",
       "import": "./dist/adapters/claude/session/jsonl-hydration.js"

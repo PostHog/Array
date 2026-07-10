@@ -22,7 +22,6 @@ export const SHORTCUTS = {
   SPACE_UP: "mod+up",
   SPACE_DOWN: "mod+down",
   FIND_IN_CONVERSATION: "mod+f",
-  FILE_PICKER: "mod+p",
   BLUR: "escape",
   SUBMIT_BLUR: "mod+enter",
   SWITCH_MESSAGING_MODE: "mod+s",
@@ -38,8 +37,6 @@ export interface KeyboardShortcut {
   category: ShortcutCategory;
   context?: string;
   alternateKeys?: string;
-  /** Whether this shortcut's keybinding can be customized by the user. */
-  configurable?: boolean;
 }
 
 export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
@@ -173,14 +170,6 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     context: "Task detail",
   },
   {
-    id: "file-picker",
-    keys: SHORTCUTS.FILE_PICKER,
-    description: "Open file picker",
-    category: "panels",
-    context: "Task detail",
-    configurable: true,
-  },
-  {
     id: "paste-as-file",
     keys: SHORTCUTS.PASTE_AS_FILE,
     description: "Paste as file attachment",
@@ -236,56 +225,6 @@ export const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
   navigation: "Navigation",
   panels: "Panels & Tabs",
   editor: "Editor",
-};
-
-export const CONFIGURABLE_SHORTCUT_IDS = [
-  "command-menu",
-  "new-task",
-  "settings",
-  "shortcuts",
-  "inbox",
-  "prev-task",
-  "next-task",
-  "space-up",
-  "space-down",
-  "go-back",
-  "go-forward",
-  "toggle-left-sidebar",
-  "toggle-review-panel",
-  "close-tab",
-  "open-in-editor",
-  "copy-path",
-  "toggle-focus",
-  "file-picker",
-  "paste-as-file",
-  "prompt-history-prev",
-  "prompt-history-next",
-] as const;
-
-export type ConfigurableShortcutId = (typeof CONFIGURABLE_SHORTCUT_IDS)[number];
-
-export const DEFAULT_KEYBINDINGS: Record<ConfigurableShortcutId, string> = {
-  "command-menu": SHORTCUTS.COMMAND_MENU,
-  "new-task": SHORTCUTS.NEW_TASK,
-  settings: SHORTCUTS.SETTINGS,
-  shortcuts: SHORTCUTS.SHORTCUTS_SHEET,
-  inbox: SHORTCUTS.INBOX,
-  "prev-task": SHORTCUTS.PREV_TASK,
-  "next-task": SHORTCUTS.NEXT_TASK,
-  "space-up": SHORTCUTS.SPACE_UP,
-  "space-down": SHORTCUTS.SPACE_DOWN,
-  "go-back": SHORTCUTS.GO_BACK,
-  "go-forward": SHORTCUTS.GO_FORWARD,
-  "toggle-left-sidebar": SHORTCUTS.TOGGLE_LEFT_SIDEBAR,
-  "toggle-review-panel": SHORTCUTS.TOGGLE_REVIEW_PANEL,
-  "close-tab": SHORTCUTS.CLOSE_TAB,
-  "open-in-editor": SHORTCUTS.OPEN_IN_EDITOR,
-  "copy-path": SHORTCUTS.COPY_PATH,
-  "toggle-focus": SHORTCUTS.TOGGLE_FOCUS,
-  "file-picker": SHORTCUTS.FILE_PICKER,
-  "paste-as-file": SHORTCUTS.PASTE_AS_FILE,
-  "prompt-history-prev": "shift+up",
-  "prompt-history-next": "shift+down",
 };
 
 export function getShortcutsByCategory(): Record<
