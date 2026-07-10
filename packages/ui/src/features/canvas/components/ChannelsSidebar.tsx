@@ -10,6 +10,12 @@ import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/Project
 import { SidebarMenu } from "@posthog/ui/features/sidebar/components/SidebarMenu";
 import { SidebarNavSection } from "@posthog/ui/features/sidebar/components/SidebarNavSection";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
+import {
+  beginSidebarPeek,
+  cancelSidebarPeek,
+  endSidebarPeek,
+  useSidebarPeekStore,
+} from "@posthog/ui/features/sidebar/sidebarPeekStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
@@ -32,6 +38,7 @@ export function ChannelsSidebar() {
   // finished onboarding or has any workspace, matching the retired MainSidebar —
   // so a brand-new user sees the welcome screen without the sidebar beside it.
   const open = useSidebarStore((s) => s.open);
+  const setOpen = useSidebarStore((s) => s.setOpen);
   const setOpenAuto = useSidebarStore((s) => s.setOpenAuto);
   const hasCompletedOnboarding = useOnboardingStore(
     (s) => s.hasCompletedOnboarding,
@@ -42,6 +49,14 @@ export function ChannelsSidebar() {
     if (!workspacesFetched) return;
     setOpenAuto(hasCompletedOnboarding || Object.keys(workspaces).length > 0);
   }, [workspacesFetched, workspaces, hasCompletedOnboarding, setOpenAuto]);
+
+  // Hover-reveal while collapsed: the left gutter / title-bar toggle set peek,
+  // and the panel keeps it alive under the pointer. Any open (click, Cmd+B)
+  // makes the peek redundant — drop it so the overlay state can't linger.
+  const peek = useSidebarPeekStore((s) => s.peek);
+  useEffect(() => {
+    if (open) cancelSidebarPeek();
+  }, [open]);
 
   // Channels stay behind project-bluebird: the toggle only appears where the
   // canvas backend is wired, and a persisted "on" is ignored when the flag is
@@ -69,6 +84,11 @@ export function ChannelsSidebar() {
       isResizing={isResizing}
       setIsResizing={setIsResizing}
       side="left"
+      setOpen={setOpen}
+      peek={peek}
+      onPeekEnter={beginSidebarPeek}
+      onPeekLeave={() => endSidebarPeek()}
+      onPeekDismiss={cancelSidebarPeek}
     >
       <Flex direction="column" className="h-full bg-chrome">
         {/* The nav owns the "Enable channels" toggle + Canvas rows (gated by

@@ -4,7 +4,7 @@ import {
   CaretRightIcon,
 } from "@phosphor-icons/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
-import { Button } from "@posthog/quill";
+import { Button, ButtonGroup } from "@posthog/quill";
 import {
   BILLING_FLAG,
   HOME_TAB_FLAG,
@@ -42,6 +42,12 @@ import { useInboxDeepLink } from "@posthog/ui/features/inbox/hooks/useInboxDeepL
 import { useIntegrations } from "@posthog/ui/features/integrations/useIntegrations";
 import { useScoutDeepLink } from "@posthog/ui/features/scouts/hooks/useScoutDeepLink";
 import { useSetupDiscovery } from "@posthog/ui/features/setup/useSetupDiscovery";
+import {
+  beginSidebarPeek,
+  cancelSidebarPeek,
+  endSidebarPeek,
+  useSidebarPeekStore,
+} from "@posthog/ui/features/sidebar/sidebarPeekStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useVisualTaskOrder } from "@posthog/ui/features/sidebar/useVisualTaskOrder";
@@ -76,6 +82,7 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
+import { SidebarClose, SidebarOpen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 // The router devtools render their genuine floating overlay, mounted by the
@@ -185,6 +192,14 @@ function RootLayout() {
   // When the sidebar is collapsed (Cmd+B) the title bar's left block shrinks to
   // fit its own controls so the tab strip flushes left with the content pane.
   const sidebarOpen = useSidebarStore((s) => s.open);
+  const toggleSidebar = useSidebarStore((s) => s.toggle);
+  const sidebarPeek = useSidebarPeekStore((s) => s.peek);
+  // Toggling makes any hover-peek redundant (opening replaces the overlay;
+  // closing must not leave it lingering under the pointer).
+  const handleToggleSidebar = (): void => {
+    cancelSidebarPeek();
+    toggleSidebar();
+  };
 
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
@@ -340,33 +355,60 @@ function RootLayout() {
             className="shrink-0 pr-2 pl-[78px]"
             style={{
               width: sidebarOpen ? channelsSidebarWidth : undefined,
-              transition: sidebarIsResizing ? "none" : "width 0.2s ease-in-out",
+              // Same curve/duration as ResizableSidebar's SLIDE_EASING so the
+              // title bar tracks the sidebar edge.
+              transition: sidebarIsResizing
+                ? "none"
+                : "width 0.2s cubic-bezier(0, 0, 0.2, 1)",
             }}
           >
             <Flex align="center" gap="2" className="no-drag">
               <Box className="h-[14px] w-[30px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
                 <LogosLandscape code={false} />
               </Box>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Toggle sidebar"
+                onClick={handleToggleSidebar}
+                onMouseEnter={() => {
+                  if (!sidebarOpen) beginSidebarPeek();
+                }}
+                onMouseLeave={() => {
+                  // Grace only here: the pointer needs time to travel from
+                  // the title-bar button down into the nav. Leaving the nav
+                  // itself hides immediately.
+                  if (!sidebarOpen) endSidebarPeek(300);
+                }}
+              >
+                {sidebarOpen ? (
+                  <SidebarClose size={10} />
+                ) : (
+                  <SidebarOpen size={10} />
+                )}
+              </Button>
             </Flex>
             <Flex align="center" gap="2" className="no-drag">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Back"
-                disabled={!canGoBack}
-                onClick={() => router.history.back()}
-              >
-                <CaretLeftIcon size={14} />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Forward"
-                disabled={!canGoForward}
-                onClick={() => router.history.forward()}
-              >
-                <CaretRightIcon size={14} />
-              </Button>
+              <ButtonGroup className="no-drag">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Back"
+                  disabled={!canGoBack}
+                  onClick={() => router.history.back()}
+                >
+                  <CaretLeftIcon size={14} />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Forward"
+                  disabled={!canGoForward}
+                  onClick={() => router.history.forward()}
+                >
+                  <CaretRightIcon size={14} />
+                </Button>
+              </ButtonGroup>
             </Flex>
           </Flex>
           {/* Tabs work in both spaces: channel tabs under /website and plain
@@ -395,12 +437,45 @@ function RootLayout() {
           )}
         </Flex>
         <ConnectivityBanner />
-        <Flex flexGrow="1" overflow="hidden">
+        <Flex flexGrow="1" overflow="hidden" className="relative">
+          {/* Invisible hover gutter: while the sidebar is collapsed, resting
+              the pointer on the window's left edge peeks the sidebar out as an
+              overlay. The panel (z-50) slides over this strip, so its own
+              hover handlers take over keeping the peek alive. */}
+          {!sidebarOpen && (
+            <Box
+              className="absolute inset-y-0 left-0 z-40 w-2"
+              onMouseEnter={() => {
+                // A drag-to-close sweeps the pointer through this strip —
+                // peeking then would fight the drag.
+                if (!sidebarIsResizing) beginSidebarPeek();
+              }}
+              onMouseLeave={() => endSidebarPeek()}
+            />
+          )}
+          {/* Scrim under the peeked nav: dims the content while the overlay is
+              out. Purely visual (pointer-transparent) and paired with the
+              panel's slide — same 200ms ease-out — so they read as one unit. */}
+          {!sidebarOpen && (
+            <Box
+              aria-hidden
+              // The radix preset replaces Tailwind's palette, so plain
+              // `bg-black/*` doesn't exist — use the radix black-alpha scale
+              // (--black-a2 = 10%, --black-a5 = 30%).
+              className={`pointer-events-none absolute inset-0 z-40 bg-blackA-2 transition-opacity duration-200 ease-out motion-reduce:transition-none dark:bg-blackA-5 ${
+                sidebarPeek ? "opacity-100" : "opacity-0"
+              }`}
+            />
+          )}
           <ChannelsSidebar />
           {/* Content sits in a bordered, rounded card inset from the window
               edges — the framed pane from the design. */}
           <Box flexGrow="1" className="overflow-hidden">
-            <Box className="h-full overflow-hidden rounded-tl-sm border-border border-t border-l bg-background">
+            <Box
+              className={`h-full overflow-hidden border-border border-t border-l bg-background ${
+                sidebarOpen ? "rounded-tl-sm" : ""
+              }`}
+            >
               <Flex direction="column" height="100%">
                 {/* The /website space renders its own header (WebsiteLayout);
                       everywhere else the shared header carries the view title
