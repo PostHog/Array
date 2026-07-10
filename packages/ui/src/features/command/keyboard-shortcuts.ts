@@ -47,169 +47,139 @@ export interface KeyboardShortcut {
   alternateKeys?: string;
 }
 
-export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
-  {
-    id: "new-task",
-    keys: "mod+n",
-    description: "New task",
-    category: "general",
-  },
-  {
-    id: "new-tab",
-    keys: SHORTCUTS.NEW_TAB,
+type ShortcutId = keyof typeof SHORTCUTS;
+
+/**
+ * Bindings that are implementation details rather than discoverable actions
+ * (aliases folded into another shortcut's `alternateKeys`, or internal
+ * escape/blur handling) -- deliberately excluded from the sheet.
+ */
+const HIDDEN_FROM_SHEET = [
+  "GO_BACK_ALT",
+  "GO_FORWARD_ALT",
+  "BLUR",
+  "SUBMIT_BLUR",
+] as const satisfies ShortcutId[];
+
+/**
+ * Documentation for every entry in `SHORTCUTS` that's a discoverable,
+ * user-facing action. This is the single source the Keyboard Shortcuts sheet
+ * and the command palette both read from -- add a `SHORTCUTS` entry and this
+ * map won't compile until you either document it here or add it to
+ * `HIDDEN_FROM_SHEET`, so the two surfaces can't silently drift again.
+ */
+const SHORTCUT_META: Record<
+  Exclude<ShortcutId, (typeof HIDDEN_FROM_SHEET)[number]>,
+  { description: string; category: ShortcutCategory; context?: string }
+> = {
+  COMMAND_MENU: { description: "Open command menu", category: "general" },
+  NEW_TASK: { description: "New task", category: "general" },
+  NEW_TAB: {
     description: "New tab",
     category: "navigation",
     context: "Channels",
   },
-  {
-    id: "command-menu",
-    keys: SHORTCUTS.COMMAND_MENU,
-    description: "Open command menu",
-    category: "general",
-  },
-  {
-    id: "settings",
-    keys: SHORTCUTS.SETTINGS,
-    description: "Open settings",
-    category: "general",
-  },
-  {
-    id: "shortcuts",
-    keys: SHORTCUTS.SHORTCUTS_SHEET,
+  SETTINGS: { description: "Open settings", category: "general" },
+  SHORTCUTS_SHEET: {
     description: "Show keyboard shortcuts",
     category: "general",
   },
-  {
-    id: "zoom-in",
-    keys: SHORTCUTS.ZOOM_IN,
-    description: "Zoom in",
-    category: "general",
-  },
-  {
-    id: "zoom-out",
-    keys: SHORTCUTS.ZOOM_OUT,
-    description: "Zoom out",
-    category: "general",
-  },
-  {
-    id: "reset-zoom",
-    keys: SHORTCUTS.RESET_ZOOM,
-    description: "Reset zoom",
-    category: "general",
-  },
-  {
-    id: "switch-messaging-mode",
-    keys: SHORTCUTS.SWITCH_MESSAGING_MODE,
-    description: "Switch Steer / Queue mode",
-    category: "editor",
-    context: "Session composer",
-  },
-  {
-    id: "inbox",
-    keys: SHORTCUTS.INBOX,
-    description: "Open inbox",
-    category: "navigation",
-  },
-  {
-    id: "switch-task",
-    keys: "mod+1-9",
-    description: "Switch to task 1-9",
-    category: "navigation",
-  },
-  {
-    id: "prev-task",
-    keys: "mod+shift+[",
-    description: "Previous task",
-    category: "navigation",
-    alternateKeys: "ctrl+shift+tab",
-  },
-  {
-    id: "next-task",
-    keys: "mod+shift+]",
-    description: "Next task",
-    category: "navigation",
-    alternateKeys: "ctrl+tab",
-  },
-  {
-    id: "space-up",
-    keys: SHORTCUTS.SPACE_UP,
-    description: "Previous space",
-    category: "navigation",
-  },
-  {
-    id: "space-down",
-    keys: SHORTCUTS.SPACE_DOWN,
-    description: "Next space",
-    category: "navigation",
-  },
-  {
-    id: "go-back",
-    keys: SHORTCUTS.GO_BACK,
-    description: "Go back",
-    category: "navigation",
-    alternateKeys: SHORTCUTS.GO_BACK_ALT,
-  },
-  {
-    id: "go-forward",
-    keys: SHORTCUTS.GO_FORWARD,
-    description: "Go forward",
-    category: "navigation",
-    alternateKeys: SHORTCUTS.GO_FORWARD_ALT,
-  },
-  {
-    id: "toggle-left-sidebar",
-    keys: SHORTCUTS.TOGGLE_LEFT_SIDEBAR,
+  GO_BACK: { description: "Go back", category: "navigation" },
+  GO_FORWARD: { description: "Go forward", category: "navigation" },
+  TOGGLE_LEFT_SIDEBAR: {
     description: "Toggle left sidebar",
     category: "navigation",
   },
-  {
-    id: "toggle-review-panel",
-    keys: SHORTCUTS.TOGGLE_REVIEW_PANEL,
+  TOGGLE_REVIEW_PANEL: {
     description: "Toggle review panel",
     category: "navigation",
   },
-  {
-    id: "switch-tab",
-    keys: "ctrl+1-9",
-    description: "Switch to tab 1-9",
-    category: "panels",
-    context: "Task detail",
-  },
-  {
-    id: "close-tab",
-    keys: SHORTCUTS.CLOSE_TAB,
+  PREV_TASK: { description: "Previous task", category: "navigation" },
+  NEXT_TASK: { description: "Next task", category: "navigation" },
+  CLOSE_TAB: {
     description: "Close active tab",
     category: "panels",
     context: "Task detail",
   },
-  {
-    id: "open-in-editor",
-    keys: SHORTCUTS.OPEN_IN_EDITOR,
+  SWITCH_TAB: {
+    description: "Switch to tab 1-9",
+    category: "panels",
+    context: "Task detail",
+  },
+  SWITCH_TASK: { description: "Switch to task 1-9", category: "navigation" },
+  OPEN_IN_EDITOR: {
     description: "Open in external editor",
     category: "panels",
     context: "Task detail",
   },
-  {
-    id: "copy-path",
-    keys: SHORTCUTS.COPY_PATH,
+  COPY_PATH: {
     description: "Copy file path",
     category: "panels",
     context: "Task detail",
   },
-  {
-    id: "find-in-conversation",
-    keys: SHORTCUTS.FIND_IN_CONVERSATION,
-    description: "Find in conversation",
+  TOGGLE_FOCUS: {
+    description: "Toggle focus mode",
     category: "panels",
     context: "Task detail",
   },
-  {
-    id: "paste-as-file",
-    keys: SHORTCUTS.PASTE_AS_FILE,
+  PASTE_AS_FILE: {
     description: "Paste as file attachment",
     category: "editor",
     context: "Message editor",
   },
+  INBOX: { description: "Open inbox", category: "navigation" },
+  SPACE_UP: { description: "Previous space", category: "navigation" },
+  SPACE_DOWN: { description: "Next space", category: "navigation" },
+  FIND_IN_CONVERSATION: {
+    description: "Find in conversation",
+    category: "panels",
+    context: "Task detail",
+  },
+  SWITCH_MESSAGING_MODE: {
+    description: "Switch Steer / Queue mode",
+    category: "editor",
+    context: "Session composer",
+  },
+  RELOAD_WINDOW: { description: "Reload window", category: "general" },
+  ZOOM_IN: { description: "Zoom in", category: "general" },
+  ZOOM_OUT: { description: "Zoom out", category: "general" },
+  RESET_ZOOM: { description: "Reset zoom", category: "general" },
+};
+
+const ALTERNATE_KEYS: Partial<Record<ShortcutId, ShortcutId>> = {
+  GO_BACK: "GO_BACK_ALT",
+  GO_FORWARD: "GO_FORWARD_ALT",
+};
+
+/**
+ * A handful of `SHORTCUTS` entries pack several bindings into one
+ * comma-separated string (mod+1..mod+9 for task switching). The sheet shows
+ * those as a single "1-9" range rather than every literal binding.
+ */
+const RANGE_DISPLAY_KEYS: Partial<Record<ShortcutId, string>> = {
+  SWITCH_TAB: "ctrl+1-9",
+  SWITCH_TASK: "mod+1-9",
+};
+
+function resolveKeys(id: ShortcutId): { keys: string; alternateKeys?: string } {
+  const rangeDisplay = RANGE_DISPLAY_KEYS[id];
+  if (rangeDisplay) return { keys: rangeDisplay };
+
+  const alternateId = ALTERNATE_KEYS[id];
+  if (alternateId)
+    return { keys: SHORTCUTS[id], alternateKeys: SHORTCUTS[alternateId] };
+
+  const [keys, alternateKeys] = SHORTCUTS[id].split(",");
+  return { keys, alternateKeys };
+}
+
+/**
+ * Bindings owned by third-party editor keymaps (Tiptap defaults, the message
+ * editor's own history nav) rather than the app's `SHORTCUTS`/`useHotkeys`
+ * system -- there's no single-source entry to derive these from, so they're
+ * documented here by hand.
+ */
+const EDITOR_KEYMAP_SHORTCUTS: KeyboardShortcut[] = [
   {
     id: "prompt-history-prev",
     keys: "up",
@@ -252,6 +222,22 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     category: "editor",
     context: "Rich text editor",
   },
+];
+
+export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
+  ...(
+    Object.entries(SHORTCUT_META) as [
+      keyof typeof SHORTCUT_META,
+      (typeof SHORTCUT_META)[keyof typeof SHORTCUT_META],
+    ][]
+  ).map(([id, meta]) => ({
+    id: id.toLowerCase().replaceAll("_", "-"),
+    description: meta.description,
+    category: meta.category,
+    context: meta.context,
+    ...resolveKeys(id),
+  })),
+  ...EDITOR_KEYMAP_SHORTCUTS,
 ];
 
 export const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
