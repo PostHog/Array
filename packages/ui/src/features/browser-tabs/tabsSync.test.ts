@@ -60,6 +60,7 @@ describe("tabsSync", () => {
   it("drops remote snapshots while a write is in flight (stale echo)", async () => {
     const d = deferred<TabsSnapshot>();
     const settled = persistWrite(() => d.promise);
+    registerSnapshotFetcher(async () => snap(["a", "b"]));
 
     applyLocalTransform(() => snap(["a", "b"]));
     // Echo of an older state arrives mid-flight — must not rewind the mirror.
@@ -68,6 +69,43 @@ describe("tabsSync", () => {
 
     d.resolve(snap(["a", "b"]));
     await settled;
+    await Promise.resolve();
+  });
+
+  it("re-pulls changes from another window after a local write settles", async () => {
+    const d = deferred<TabsSnapshot>();
+    const fetched = deferred<TabsSnapshot>();
+    registerSnapshotFetcher(() => fetched.promise);
+    const settled = persistWrite(() => d.promise);
+
+    applyLocalTransform(() => snap(["a", "b"]));
+    applyRemoteSnapshot(snap(["a", "b", "remote"]));
+
+    d.resolve(snap(["a", "b"]));
+    await settled;
+    fetched.resolve(snap(["a", "b", "remote"]));
+    await fetched.promise;
+    await Promise.resolve();
+
+    expect(current().tabs.map((t) => t.id)).toEqual(["a", "b", "remote"]);
+  });
+
+  it("does not overwrite a newer live push with a reconciliation fetch", async () => {
+    const write = deferred<TabsSnapshot>();
+    const fetched = deferred<TabsSnapshot>();
+    registerSnapshotFetcher(() => fetched.promise);
+    const settled = persistWrite(() => write.promise);
+
+    applyRemoteSnapshot(snap(["a", "remote"]));
+    write.resolve(snap(["a"]));
+    await settled;
+
+    applyRemoteSnapshot(snap(["a", "remote", "newer"]));
+    fetched.resolve(snap(["a", "remote"]));
+    await fetched.promise;
+    await Promise.resolve();
+
+    expect(current().tabs.map((t) => t.id)).toEqual(["a", "remote", "newer"]);
   });
 
   it("applies remote snapshots when idle", () => {

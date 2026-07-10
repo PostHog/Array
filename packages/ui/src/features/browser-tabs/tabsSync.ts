@@ -8,8 +8,7 @@ import type { TabsSnapshot } from "@posthog/shared";
  * synchronously (the UI renders from the mirror, so interactions are instant),
  * then persists to the main process in the background. Because the renderer
  * and the service run the SAME transforms in the SAME order, the mirror and
- * the durable snapshot converge — the server round-trip carries no new
- * information for this window.
+ * the durable snapshot converge.
  *
  * The hazard this module exists to prevent: the main process echoes every
  * commit back (the mutation's return value and the snapshotChange fan-out).
@@ -17,23 +16,35 @@ import type { TabsSnapshot } from "@posthog/shared";
  * write N+1; applying it would rewind the mirror, and the navigation effect
  * would re-decide against stale state and misfire persistent writes (the
  * historical "tab targets swap / titles flicker" corruption). So while any
- * local write is in flight, remote snapshots are dropped; when the LAST
- * in-flight write settles, its returned snapshot — which reflects every write
- * up to and including it — is applied once as the authoritative reconcile
- * (normally value-equal to the mirror, so the store's equality guard makes it
- * a no-op).
+ * local write is in flight, remote snapshots are dropped. If a push arrives,
+ * the renderer re-fetches the authoritative snapshot after the write batch
+ * settles because it may contain another window's mutation. Otherwise the last
+ * write response reconciles the mirror directly.
  */
 let inFlight = 0;
+let remoteSnapshotVersion = 0;
+let needsAuthoritativeReconcile = false;
 
 // Authoritative-snapshot fetcher, registered once at boot by the events
 // contribution (tabsSync can't reach the injected BrowserTabsClient itself).
-// Used only to reconcile after a FAILED write — see persistWrite's catch.
+// Used to reconcile after a failed write or a dropped remote snapshot.
 let fetchAuthoritative: (() => Promise<TabsSnapshot>) | null = null;
 
 export function registerSnapshotFetcher(
   fetch: (() => Promise<TabsSnapshot>) | null,
 ): void {
   fetchAuthoritative = fetch;
+}
+
+function reconcileAuthoritative(): void {
+  const versionAtRequest = remoteSnapshotVersion;
+  void fetchAuthoritative?.()
+    .then((server) => {
+      if (inFlight === 0 && remoteSnapshotVersion === versionAtRequest) {
+        browserTabsStore.getState().setSnapshot(server);
+      }
+    })
+    .catch(() => undefined);
 }
 
 /** Read the mirror's current snapshot (non-reactive; for event handlers and
@@ -55,52 +66,49 @@ export function applyLocalTransform(
 /**
  * Persist a local write to the main process. Fire-and-forget from the caller's
  * perspective: the UI has already moved via applyLocalTransform. Only the last
- * settling write applies its server snapshot (see module doc). A failed write
- * is swallowed — the next successful write's settle (or the next remote
- * snapshot once idle) reconciles the mirror with the durable state.
+ * settling write applies its server snapshot unless a remote push was dropped,
+ * in which case an authoritative fetch reconciles cross-window state. Failed
+ * writes are swallowed and reconciled through the same fetch path.
  */
 export async function persistWrite(
   write: () => Promise<TabsSnapshot>,
 ): Promise<void> {
   inFlight++;
+  let serverSnapshot: TabsSnapshot | null = null;
   try {
-    const server = await write();
-    // Last-settling write applies its snapshot. Over Electron IPC this is also
-    // the last-ISSUED write (single FIFO channel, synchronous service handlers,
-    // so responses return in request order); if this ever migrates to a
-    // transport that can reorder responses (HTTP batching, WS), "last to
-    // settle" stops implying "newest snapshot" and this needs a sequence guard.
-    if (inFlight === 1) {
-      browserTabsStore.getState().setSnapshot(server);
-    }
+    serverSnapshot = await write();
   } catch {
-    // Failed write: the optimistic mirror may hold state the server never
-    // committed, and a failed mutation emits no snapshotChange push — so if
-    // this was the last write in flight, nothing else would reconcile (any
-    // earlier overlapping writes skipped their settle apply). Re-pull the
-    // authoritative snapshot; apply only if still idle when it arrives (a
-    // newer write's settle otherwise supersedes it).
-    if (inFlight === 1) {
-      void fetchAuthoritative?.()
-        .then((server) => {
-          if (inFlight === 0) {
-            browserTabsStore.getState().setSnapshot(server);
-          }
-        })
-        .catch(() => undefined);
-    }
+    needsAuthoritativeReconcile = true;
   } finally {
     inFlight--;
+    if (inFlight === 0) {
+      if (needsAuthoritativeReconcile) {
+        needsAuthoritativeReconcile = false;
+        reconcileAuthoritative();
+      } else if (serverSnapshot) {
+        // Over Electron IPC the last-settling write is also the last-issued
+        // write (single FIFO channel, synchronous service handlers). A transport
+        // that can reorder responses will need a sequence guard here.
+        browserTabsStore.getState().setSnapshot(serverSnapshot);
+      }
+    }
   }
 }
 
 /**
  * Apply a snapshot pushed from the main process (boot seed, or a mutation made
- * by another window). Dropped while local writes are in flight — those pushes
- * are echoes of our own writes and may predate newer local state.
+ * by another window). A push received during a local write is dropped and
+ * replaced by an authoritative fetch when the write batch settles.
  */
 export function applyRemoteSnapshot(snapshot: TabsSnapshot): void {
-  if (inFlight > 0) return;
+  remoteSnapshotVersion++;
+  if (inFlight > 0) {
+    // This may be an echo of our own write, or a real mutation from another
+    // window. Re-pull once the local write batch settles so neither case can
+    // rewind or strand the mirror.
+    needsAuthoritativeReconcile = true;
+    return;
+  }
   browserTabsStore.getState().setSnapshot(snapshot);
 }
 

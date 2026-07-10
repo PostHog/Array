@@ -55,12 +55,12 @@ The feature is deliberately split so the rules are portable and testable:
   every operation applies its shared pure transform to the renderer mirror
   synchronously (interactions are instant; new tabs mint their id client-side
   so no navigation ever waits on IPC), server writes are background persistence,
-  and while any write is in flight remote snapshot pushes are dropped — they're
-  echoes of our own commits and may predate newer local state. The LAST settling
-  write applies its returned snapshot once as the authoritative reconcile
-  (normally a value-equal no-op). This is what makes rapid tab switching
-  race-free: a stale echo can never rewind the mirror and re-trigger the
-  navigation effect against old state.
+  and while any write is in flight remote snapshot pushes are dropped because
+  they may predate newer local state. If a push was dropped, the renderer
+  re-fetches the authoritative snapshot after the write batch settles so a real
+  mutation from another window is retained; otherwise the last settling write
+  applies its returned snapshot. This makes rapid tab switching race-free
+  without losing cross-window updates.
 
 One source of truth: any window mutates → service writes sqlite + emits → every
 window's store updates. No window talks to another directly. The same shape ports
