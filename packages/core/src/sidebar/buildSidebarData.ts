@@ -1,7 +1,7 @@
 import { readPrUrls, type WorkspaceMode } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { getRepositoryInfo } from "./groupTasks";
-import type { TaskData } from "./sidebarData.types";
+import type { TaskData, TaskGroup } from "./sidebarData.types";
 
 export type SortMode = "updated" | "created";
 export type OrganizeMode = "by-project" | "chronological";
@@ -255,21 +255,50 @@ export function partitionAndSortTasks(
   };
 }
 
-export interface ChronologicalSlice {
+export interface VisibleTasksSlice {
   flatTasks: TaskData[];
   hasMore: boolean;
 }
 
-export function sliceChronological(
+/**
+ * Caps the flat (chronological) task list to the current history window. The
+ * cap is a render bound, not a cosmetic one: every rendered task row mounts its
+ * own workspace and PR-status queries, so an uncapped list of thousands of
+ * tasks fires thousands of per-row requests and floods the DOM. Pinned tasks
+ * are rendered separately and are never capped.
+ */
+export function sliceVisibleTasks(
   sortedUnpinnedTasks: TaskData[],
-  organizeMode: OrganizeMode,
-  historyVisibleCount: number,
-): ChronologicalSlice {
-  if (organizeMode !== "chronological") {
-    return { flatTasks: sortedUnpinnedTasks, hasMore: false };
-  }
+  visibleCount: number,
+): VisibleTasksSlice {
   return {
-    flatTasks: sortedUnpinnedTasks.slice(0, historyVisibleCount),
-    hasMore: sortedUnpinnedTasks.length > historyVisibleCount,
+    flatTasks: sortedUnpinnedTasks.slice(0, visibleCount),
+    hasMore: sortedUnpinnedTasks.length > visibleCount,
   };
+}
+
+export interface LimitedGroupsSlice {
+  groups: TaskGroup[];
+  hasMore: boolean;
+}
+
+/**
+ * Caps how many tasks each project group renders in "by-project" mode. A
+ * per-group window (rather than a single global cap) keeps every project
+ * showing its most-recent tasks, so a busy project can't starve quieter ones
+ * out of view entirely. Like {@link sliceVisibleTasks}, this exists to bound
+ * the number of mounted task rows — and therefore the per-row workspace and
+ * PR-status queries — when a project has accumulated thousands of tasks.
+ */
+export function limitTasksPerGroup(
+  groups: TaskGroup[],
+  limitPerGroup: number,
+): LimitedGroupsSlice {
+  let hasMore = false;
+  const limited = groups.map((group) => {
+    if (group.tasks.length <= limitPerGroup) return group;
+    hasMore = true;
+    return { ...group, tasks: group.tasks.slice(0, limitPerGroup) };
+  });
+  return { groups: limited, hasMore };
 }
