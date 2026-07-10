@@ -19,6 +19,7 @@ import { getCurrentBranch } from "@posthog/git/queries";
 import {
   type Adapter,
   buildPrOutput,
+  getErrorMessage,
   mergePrUrls,
   readPrUrls,
 } from "@posthog/shared";
@@ -40,6 +41,7 @@ import { hasCodexThreadState } from "../adapters/codex-app-server/thread-state";
 import {
   type AgentErrorClassification,
   classifyAgentError,
+  isPromptTooLongError,
 } from "../adapters/error-classification";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
@@ -249,6 +251,8 @@ interface ActiveSession {
   /** Whether a desktop client has ever connected via SSE during this session */
   hasDesktopConnected: boolean;
   pendingHandoffGitState?: HandoffLocalGitState;
+  /** Meta the session was created with, reused when a retry needs a fresh session */
+  sessionMeta: Record<string, unknown>;
 }
 
 interface InstalledSkillBundle {
@@ -328,6 +332,7 @@ export class AgentServer {
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
   private nativeResume: { sessionId: string; warm: boolean } | null = null;
+  private oversizedResumeRetried = false;
   // Prewarmed runs boot before the user's first message exists, so the boot-time
   // --autoPublish flag can't carry the user's choice; it is resolved from run
   // state when the first message arrives (see resolveWarmAutoPublishUpgrade).
@@ -1409,6 +1414,7 @@ export class AgentServer {
       permissionMode: initialPermissionMode,
       hasDesktopConnected: sseController !== null,
       pendingHandoffGitState: undefined,
+      sessionMeta,
     };
 
     this.logger = new Logger({
@@ -1745,7 +1751,6 @@ export class AgentServer {
         gitCheckpointBranch: resumeState.latestGitCheckpoint?.branch ?? null,
       });
 
-      this.resumeState = null;
       return {
         prompt: resumePromptBlocks,
         ...(resumePromptMeta ? { meta: resumePromptMeta } : {}),
@@ -1786,14 +1791,74 @@ export class AgentServer {
           hasPendingUserMessage: !!pendingUserPrompt?.prompt.length,
         });
 
-        this.resumeState = null;
-        this.nativeResume = null;
         return {
           prompt,
           ...(pendingUserPrompt?.meta ? { meta: pendingUserPrompt.meta } : {}),
         };
       },
+      { retryOnOversizedPrompt: true },
     );
+  }
+
+  /**
+   * A native resume replays the prior transcript verbatim; when that
+   * transcript no longer fits the context window, every request (including
+   * auto-compaction) is rejected, so the only way forward is a fresh session
+   * seeded with the summarized history the non-native resume path uses.
+   */
+  private async retryOversizedResumeOnFreshSession(
+    payload: JwtPayload,
+    taskRun: TaskRun | null,
+  ): Promise<boolean> {
+    if (this.oversizedResumeRetried || !this.session) {
+      return false;
+    }
+    this.oversizedResumeRetried = true;
+
+    const resumeRunId = this.getResumeRunId(taskRun);
+    if (!resumeRunId) return false;
+    if (!this.resumeState) {
+      try {
+        await this.loadResumeState(
+          payload.task_id,
+          resumeRunId,
+          payload.run_id,
+        );
+      } catch (error) {
+        this.logger.warn("Failed to reload resume state for retry", {
+          error: getErrorMessage(error),
+        });
+        return false;
+      }
+    }
+    if (!this.resumeState?.conversation.length) return false;
+
+    this.logger.warn(
+      "Resume prompt exceeded the context window; retrying on a fresh session with summarized history",
+      { taskId: payload.task_id, runId: payload.run_id },
+    );
+
+    try {
+      const response = await this.session.clientConnection.newSession({
+        cwd: this.config.repositoryPath ?? "/tmp/workspace",
+        mcpServers: this.config.mcpServers ?? [],
+        _meta: this.session.sessionMeta,
+      });
+      this.session.acpSessionId = response.sessionId;
+    } catch (error) {
+      this.logger.warn("Failed to start fresh session for oversized resume", {
+        error: getErrorMessage(error),
+      });
+      return false;
+    }
+
+    try {
+      await this.sendResumeMessage(payload, taskRun);
+      return true;
+    } finally {
+      this.resumeState = null;
+      this.nativeResume = null;
+    }
   }
 
   private async runResumeTurn(
@@ -1801,6 +1866,7 @@ export class AgentServer {
     taskRun: TaskRun | null,
     logLabel: string,
     buildPrompt: () => Promise<BuiltPrompt>,
+    opts: { retryOnOversizedPrompt?: boolean } = {},
   ): Promise<void> {
     if (!this.session) return;
 
@@ -1819,6 +1885,10 @@ export class AgentServer {
         stopReason: result.stopReason,
       });
 
+      // Kept until the turn succeeds so a prompt-too-long retry can reuse it.
+      this.resumeState = null;
+      this.nativeResume = null;
+
       await this.clearPendingInitialPromptState(payload, taskRun);
 
       if (result.stopReason === "end_turn") {
@@ -1835,6 +1905,13 @@ export class AgentServer {
       this.logger.error(`Failed to send ${logLabel.toLowerCase()}`, error);
       if (this.session) {
         await this.session.logWriter.flushAll();
+      }
+      if (
+        opts.retryOnOversizedPrompt &&
+        isPromptTooLongError(error) &&
+        (await this.retryOversizedResumeOnFreshSession(payload, taskRun))
+      ) {
+        return;
       }
       await this.handleTurnFailure(payload, "resume", error);
     }

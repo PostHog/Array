@@ -1,3 +1,5 @@
+import { getErrorMessage } from "@posthog/shared";
+
 export type AgentErrorClassification =
   | "upstream_stream_terminated"
   | "upstream_connection_error"
@@ -31,4 +33,9 @@ export function classifyAgentError(
     return "upstream_provider_failure";
   }
   return "agent_error";
+}
+
+/** Hard API rejection: the assembled prompt exceeds the model's context window. */
+export function isPromptTooLongError(error: unknown): boolean {
+  return /prompt is too long/i.test(getErrorMessage(error));
 }

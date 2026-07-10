@@ -1808,6 +1808,98 @@ describe("AgentServer HTTP Mode", () => {
   });
 
   describe("native resume", () => {
+    it.each([
+      { retryOutcome: "succeeds", retryFails: false },
+      { retryOutcome: "fails", retryFails: true },
+    ])(
+      "clears resume state when the fresh-session retry $retryOutcome",
+      async ({ retryFails }) => {
+        const s = createServer();
+        await s.start();
+
+        const prompts: ContentBlock[][] = [];
+        const prompt = vi.fn(async (params: { prompt: ContentBlock[] }) => {
+          prompts.push(params.prompt);
+          if (prompts.length === 1) {
+            throw new Error("Internal error: Prompt is too long");
+          }
+          if (retryFails) {
+            throw new Error("Fresh-session retry failed");
+          }
+          return { stopReason: "end_turn" };
+        });
+        const newSession = vi.fn(async () => ({ sessionId: "fresh-session" }));
+
+        const internals = s as unknown as {
+          session: {
+            acpSessionId: string;
+            clientConnection: {
+              prompt: typeof prompt;
+              newSession: typeof newSession;
+            };
+          };
+          resumeState: ResumeState | null;
+          nativeResume: { sessionId: string; warm: boolean } | null;
+          loadResumeState(
+            taskId: string,
+            resumeRunId: string,
+            runId: string,
+          ): Promise<void>;
+          sendResumeContinuation(
+            payload: JwtPayload,
+            taskRun: TaskRun | null,
+          ): Promise<void>;
+        };
+        internals.session.clientConnection.prompt = prompt;
+        internals.session.clientConnection.newSession = newSession;
+        internals.nativeResume = { sessionId: "prior-session", warm: true };
+        internals.loadResumeState = vi.fn(async () => {
+          internals.resumeState = {
+            conversation: [
+              {
+                role: "user",
+                content: [{ type: "text", text: "original task" }],
+              },
+              {
+                role: "assistant",
+                content: [{ type: "text", text: "progress so far" }],
+              },
+            ],
+            latestGitCheckpoint: null,
+            interrupted: false,
+            logEntryCount: 2,
+            sessionId: "prior-session",
+          };
+        });
+
+        await internals.sendResumeContinuation(
+          {
+            task_id: "test-task-id",
+            run_id: "test-run-id",
+            team_id: 1,
+            user_id: 1,
+            distinct_id: "test-distinct-id",
+            mode: "interactive",
+          },
+          createTaskRun({
+            id: "test-run-id",
+            state: { resume_from_run_id: "previous-run" },
+          }),
+        );
+
+        expect(newSession).toHaveBeenCalledOnce();
+        expect(internals.session.acpSessionId).toBe("fresh-session");
+        expect(internals.resumeState).toBeNull();
+        expect(internals.nativeResume).toBeNull();
+        expect(prompts).toHaveLength(2);
+        const retryText = prompts[1]
+          .map((block) => ("text" in block ? block.text : ""))
+          .join("\n");
+        expect(retryText).toContain("progress so far");
+      },
+      20000,
+    );
+
     it("hydrates cold sessions from S3 logs instead of cached resume conversation", async () => {
       const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
       process.env.CLAUDE_CONFIG_DIR = join(repo.path, ".claude-test");
