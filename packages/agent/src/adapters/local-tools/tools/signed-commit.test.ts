@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createSignedCommit = vi.fn();
+const reportCommitArtefacts = vi.fn();
+const reportTaskRunBranch = vi.fn();
 
 vi.mock("@posthog/git/signed-commit", async (importOriginal) => {
   const actual =
@@ -11,6 +13,11 @@ vi.mock("@posthog/git/signed-commit", async (importOriginal) => {
   };
 });
 
+vi.mock("../../../signed-commit-artefacts", () => ({
+  reportCommitArtefacts: (...args: unknown[]) => reportCommitArtefacts(...args),
+  reportTaskRunBranch: (...args: unknown[]) => reportTaskRunBranch(...args),
+}));
+
 // Importing the tool after the mock so its transitive `createSignedCommit`
 // reference resolves to the mock above.
 const { signedCommitTool } = await import("./signed-commit");
@@ -20,6 +27,8 @@ describe("signed-commit tool handler", () => {
 
   beforeEach(() => {
     createSignedCommit.mockReset();
+    reportCommitArtefacts.mockReset();
+    reportTaskRunBranch.mockReset();
     createSignedCommit.mockResolvedValue({
       branch: "posthog-code/feature",
       repository: "x/y",
@@ -88,6 +97,24 @@ describe("signed-commit tool handler", () => {
     );
     const [ctx] = createSignedCommit.mock.calls[0];
     expect(ctx.baseBranch).toBe("master");
+  });
+
+  it("persists the created branch for the task run", async () => {
+    await signedCommitTool.handler(
+      {
+        cwd: "/tmp/workspace/repos/posthog/code",
+        token: "ghs_x",
+        taskId: "task-1",
+        taskRunId: "run-1",
+      },
+      { message: "chore: bump" },
+    );
+
+    expect(reportTaskRunBranch).toHaveBeenCalledWith({
+      taskId: "task-1",
+      taskRunId: "run-1",
+      branch: "posthog-code/feature",
+    });
   });
 
   it("returns the no-token error without invoking createSignedCommit", async () => {

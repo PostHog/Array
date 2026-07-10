@@ -1893,7 +1893,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       McpSdkServerConfigWithInstance
     > => {
       const server = createLocalToolsMcpServer(
-        { cwd, token: resolveGithubToken(), taskId, baseBranch },
+        {
+          cwd,
+          token: resolveGithubToken(),
+          taskId,
+          taskRunId: meta?.taskRunId,
+          baseBranch,
+        },
         { environment },
       );
       return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};

@@ -133,6 +133,58 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
+  it("includes buffered command output when completion omits aggregatedOutput", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    stub.emit("item/commandExecution/outputDelta", {
+      itemId: "cmd_1",
+      delta: "https://github.com/PostHog/posthog/p",
+    });
+    stub.emit("item/commandExecution/outputDelta", {
+      itemId: "cmd_1",
+      delta: "ull/12345\n",
+    });
+    stub.emit("item/completed", {
+      item: {
+        type: "commandExecution",
+        id: "cmd_1",
+        command: "gh pr create --draft",
+        status: "completed",
+        aggregatedOutput: null,
+      },
+    });
+
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "thr_1",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "cmd_1",
+        status: "completed",
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "text",
+              text: "https://github.com/PostHog/posthog/pull/12345\n",
+            },
+          },
+        ],
+      },
+    });
+  });
+
   it("enriches an MCP tool-call approval with the structured posthog channel", async () => {
     const stub = makeStubRpc({
       initialize: {},

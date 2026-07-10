@@ -139,6 +139,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private taskRunId?: string;
   /** Deployment environment; on "cloud" a non-danger sandbox would panic, so we skip the override. */
   private environment?: "local" | "cloud";
+  private readonly commandOutputs = new Map<string, string>();
   private readonly mcp = new McpManager();
   private readonly turns = new TurnController();
   private readonly usage = new UsageTracker();
@@ -422,6 +423,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       environment: meta.environment,
       channelMode: meta.channelMode,
       taskId: meta.taskId,
+      taskRunId: meta.taskRunId,
       persistence: meta.persistence,
       baseBranch: meta.baseBranch,
     };
@@ -651,6 +653,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   async closeSession(): Promise<void> {
+    this.commandOutputs.clear();
     this.session.abortController.abort();
     this.turns.close("cancelled");
     this.session.settingsManager.dispose();
@@ -664,11 +667,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   private handleNotification(method: string, params: unknown): void {
+    const mappedParams = this.withBufferedCommandOutput(method, params);
     if (this.sessionId && !this.session.cancelled) {
       const notification = mapAppServerNotification(
         this.sessionId,
         method,
-        params,
+        mappedParams,
       );
       if (notification) {
         void this.client
@@ -723,6 +727,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
 
     if (method === APP_SERVER_NOTIFICATIONS.TURN_COMPLETED) {
+      this.commandOutputs.clear();
       const turn = (params as { turn?: { id?: string; status?: string } })
         ?.turn;
       // Drop the late completion of an already-interrupted turn (else it cancels the follow-up).
@@ -740,6 +745,51 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         void this.finalizeTurn("refusal");
       }
     }
+  }
+
+  private withBufferedCommandOutput(method: string, params: unknown): unknown {
+    if (!params || typeof params !== "object") {
+      return params;
+    }
+    const value = params as {
+      itemId?: unknown;
+      delta?: unknown;
+      item?: Record<string, unknown>;
+    };
+
+    if (method === APP_SERVER_NOTIFICATIONS.COMMAND_OUTPUT_DELTA) {
+      if (typeof value.itemId === "string" && typeof value.delta === "string") {
+        this.commandOutputs.set(
+          value.itemId,
+          `${this.commandOutputs.get(value.itemId) ?? ""}${value.delta}`,
+        );
+      }
+      return params;
+    }
+
+    if (method !== APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED) {
+      return params;
+    }
+
+    const itemId = value.item?.id;
+    if (typeof itemId !== "string") {
+      return params;
+    }
+
+    const output = this.commandOutputs.get(itemId);
+    this.commandOutputs.delete(itemId);
+    if (
+      value.item?.type !== "commandExecution" ||
+      value.item.aggregatedOutput != null ||
+      !output
+    ) {
+      return params;
+    }
+
+    return {
+      ...value,
+      item: { ...value.item, aggregatedOutput: output },
+    };
   }
 
   /** Track the latest assistant message so the final one feeds structured output. */

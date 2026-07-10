@@ -43,7 +43,12 @@ describe("buildLocalToolsServer", () => {
 
     const server = buildLocalToolsServer(
       { cwd: "/repo" },
-      { environment: "cloud" },
+      {
+        environment: "cloud",
+        taskId: "task-1",
+        taskRunId: "run-1",
+        baseBranch: "master",
+      },
     );
 
     expect(server).not.toBeNull();
@@ -74,6 +79,9 @@ describe("buildLocalToolsServer", () => {
     );
     expect(ctx.cwd).toBe("/repo");
     expect(ctx.token).toBe("ghs_test");
+    expect(ctx.taskId).toBe("task-1");
+    expect(ctx.taskRunId).toBe("run-1");
+    expect(ctx.baseBranch).toBe("master");
   });
 
   it("returns a server but omits token env vars when no token is present", () => {
