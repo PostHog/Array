@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 
-const COLLAPSED_MAX_HEIGHT = 160;
+const COLLAPSED_MAX_HEIGHT = 120;
 
 interface CollapsibleMessageContentProps {
   children: ReactNode;
@@ -29,13 +29,8 @@ export function CollapsibleMessageContent({
   const [isOverflowing, setIsOverflowing] = useState(false);
   const observerRef = useRef<ResizeObserver | null>(null);
 
-  // Measure via a callback ref (React's recommended way to read a DOM node into
-  // state) rather than a mount effect, so it runs before paint — no flash of
-  // unclamped content. The ResizeObserver keeps the check correct when content
-  // reflows or, for feed rows inside a `content-visibility: auto` container,
-  // lays out lazily only once scrolled into view. scrollHeight is the true
-  // content height regardless of the collapsed max-height, so the check holds
-  // in both the collapsed and expanded states.
+  // Callback ref (not a mount effect) so it measures before paint; the observer
+  // re-checks on reflow and lazy `content-visibility` layout.
   const measureRef = useCallback((el: HTMLDivElement | null) => {
     observerRef.current?.disconnect();
     observerRef.current = null;
@@ -50,12 +45,8 @@ export function CollapsibleMessageContent({
 
   return (
     <Box className={className} style={style}>
-      {/* When collapsed + overflowing, clamp the height and fade the *text* out
-          at the bottom with a paint-only mask (same technique as the chat
-          thread's user bubble). A mask fades only painted pixels, so — unlike an
-          overlaid colored gradient — it needs no background color to blend into
-          and never paints a full-width band past ragged text. Being paint-only,
-          it also leaves the scrollHeight measurement above untouched. */}
+      {/* Paint-only mask fades just the text — no background color to match, no
+          full-width band past ragged text. */}
       <Box
         ref={measureRef}
         className={cn(
