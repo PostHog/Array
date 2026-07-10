@@ -199,6 +199,8 @@ export default function SettingsScreen() {
   const setAutoPublishCloudRuns = usePreferencesStore(
     (s) => s.setAutoPublishCloudRuns,
   );
+  const rtkEnabledCloud = usePreferencesStore((s) => s.rtkEnabledCloud);
+  const setRtkEnabledCloud = usePreferencesStore((s) => s.setRtkEnabledCloud);
   const defaultMessagingMode = useMessagingModeStore((s) => s.defaultMode);
   const setDefaultMessagingMode = useMessagingModeStore(
     (s) => s.setDefaultMode,
@@ -427,11 +429,21 @@ export default function SettingsScreen() {
           <SettingsRow
             label="Always create pull requests for cloud runs"
             description="Cloud runs push their changes and open a draft pull request when they finish, without waiting for you to ask"
-            showDivider={false}
             rightSlot={
               <Switch
                 value={autoPublishCloudRuns}
                 onValueChange={setAutoPublishCloudRuns}
+              />
+            }
+          />
+          <SettingsRow
+            label="Compress command output"
+            description="Route verbose shell command output through rtk so it is compressed before it reaches the model, reducing token usage"
+            showDivider={false}
+            rightSlot={
+              <Switch
+                value={rtkEnabledCloud}
+                onValueChange={setRtkEnabledCloud}
               />
             }
           />

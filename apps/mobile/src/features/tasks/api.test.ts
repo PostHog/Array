@@ -62,4 +62,19 @@ describe("runTaskInCloud", () => {
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(init.body).toBeUndefined();
   });
+
+  it("sends rtk_enabled=false when the run opts out", async () => {
+    await runTaskInCloud("task-1", { rtkEnabled: false });
+
+    expect(bodyOf(mockFetch.mock.calls[0])).toMatchObject({
+      rtk_enabled: false,
+    });
+  });
+
+  it("omits rtk_enabled when the run keeps compression on", async () => {
+    await runTaskInCloud("task-1", { rtkEnabled: true });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBeUndefined();
+  });
 });
