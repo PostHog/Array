@@ -8,6 +8,12 @@ type RenderSegment =
   | { type: "link"; text: string; href: string }
   | { type: "mention"; name: string; email: string };
 
+// The plain (not-the-viewer) mention chip look, also used by surfaces that
+// render a mention-styled name without real mention semantics (e.g. the
+// channel feed's "started a new task" row).
+export const mentionChipClass =
+  "rounded px-0.5 font-medium text-[var(--accent-11)]";
+
 /**
  * Thread message content with inline mention tokens rendered as highlighted
  * `@Name` chips (a mention of the viewer gets the stronger treatment) and
@@ -52,11 +58,11 @@ export function MentionText({
           return (
             <span
               key={key}
-              className={`rounded px-0.5 font-medium ${
+              className={
                 selfEmail && segment.email.toLowerCase() === selfEmail
-                  ? "bg-[var(--accent-a4)] text-[var(--accent-12)]"
-                  : "text-[var(--accent-11)]"
-              }`}
+                  ? "rounded bg-[var(--accent-a4)] px-0.5 font-medium text-[var(--accent-12)]"
+                  : mentionChipClass
+              }
               title={segment.email}
             >
               @{segment.name}

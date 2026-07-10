@@ -39,6 +39,7 @@ import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
+import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
@@ -193,9 +194,8 @@ function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
     base = statusBadge(status);
   } else {
     // Local, non-terminal: the run status is unreliable (the backend row stays
-    // "queued" while the agent runs on the creator's machine), and the
-    // environment already shows in the card's meta row ("· Local"), so we
-    // render no status badge here rather than a redundant "Local" pill.
+    // "queued" while the agent runs on the creator's machine), so we render no
+    // status badge rather than a misleading one.
     base = null;
   }
 
@@ -404,7 +404,7 @@ const FeedItem = memo(function FeedItem({
             <>
               {/* Mention-styled but rendered inert: the starter shouldn't be
                   notified about their own task. */}
-              <span className="rounded px-0.5 font-medium text-[var(--accent-11)]">
+              <span className={mentionChipClass}>
                 @{userDisplayName(task.created_by)}
               </span>{" "}
               started a new task
