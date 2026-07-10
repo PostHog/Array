@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCodexModes,
   buildConfigOptions,
   CODEX_MODES,
   collaborationModeFor,
@@ -41,14 +42,57 @@ describe("sandboxPolicyFor", () => {
     });
   });
 
-  it("leaves auto + full-access at the spawned full-access sandbox (no override)", () => {
-    expect(sandboxPolicyFor("auto")).toBeUndefined();
-    expect(sandboxPolicyFor("full-access")).toBeUndefined();
+  it("restores an editable sandbox for auto + full-access (turn overrides are sticky)", () => {
+    expect(sandboxPolicyFor("full-access")).toEqual({
+      type: "dangerFullAccess",
+    });
+    expect(sandboxPolicyFor("auto")).toEqual(
+      process.platform === "darwin"
+        ? { type: "workspaceWrite", networkAccess: false }
+        : { type: "dangerFullAccess" },
+    );
   });
 
   it("returns undefined for unknown ids", () => {
     expect(sandboxPolicyFor("bypassPermissions")).toBeUndefined();
     expect(sandboxPolicyFor(undefined)).toBeUndefined();
+  });
+});
+
+describe("buildCodexModes", () => {
+  const sandboxFor = (platform: string, id: string) =>
+    buildCodexModes(platform).find((m) => m.id === id)?.sandboxPolicy;
+
+  it("gives auto the platform's editable sandbox (Seatbelt workspace-write on macOS, danger elsewhere)", () => {
+    // Network stays restricted: egress still goes through codex's escalation prompt.
+    expect(sandboxFor("darwin", "auto")).toEqual({
+      type: "workspaceWrite",
+      networkAccess: false,
+    });
+    expect(sandboxFor("linux", "auto")).toEqual({ type: "dangerFullAccess" });
+    expect(sandboxFor("win32", "auto")).toEqual({ type: "dangerFullAccess" });
+  });
+
+  it.each(["darwin", "linux", "win32"])(
+    "every mode states a full sandbox policy on %s so mode switches never inherit the previous sandbox",
+    (platform) => {
+      for (const mode of buildCodexModes(platform)) {
+        expect(mode.sandboxPolicy).toBeDefined();
+      }
+    },
+  );
+
+  it("keeps plan + read-only on a read-only sandbox on every platform", () => {
+    for (const platform of ["darwin", "linux", "win32"]) {
+      expect(sandboxFor(platform, "plan")).toEqual({
+        type: "readOnly",
+        networkAccess: true,
+      });
+      expect(sandboxFor(platform, "read-only")).toEqual({
+        type: "readOnly",
+        networkAccess: true,
+      });
+    }
   });
 });
 

@@ -61,7 +61,7 @@ import {
   APP_SERVER_NOTIFICATIONS,
   APP_SERVER_REQUESTS,
 } from "./protocol";
-import { SessionConfigState } from "./session-config";
+import { type CodexSandboxPolicy, SessionConfigState } from "./session-config";
 import {
   type CodexAppServerProcess,
   type CodexAppServerProcessOptions,
@@ -140,6 +140,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   /** Deployment environment; on "cloud" a non-danger sandbox would panic, so we skip the override. */
   private environment?: "local" | "cloud";
   private readonly commandOutputs = new Map<string, string>();
+  /** Extra writable roots for this session, folded into workspaceWrite sandbox turns. */
+  private additionalDirectories?: string[];
+  /** The session workspace stays writable when extra roots are applied per turn. */
+  private workspaceDirectory?: string;
   private readonly mcp = new McpManager();
   private readonly turns = new TurnController();
   private readonly usage = new UsageTracker();
@@ -351,6 +355,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.jsonSchema = params.meta?.jsonSchema ?? undefined;
     this.taskRunId = params.meta?.taskRunId;
     this.environment = params.meta?.environment;
+    this.additionalDirectories = params.additionalDirectories;
+    this.workspaceDirectory = params.cwd;
     this.config.setInitialMode(params.meta?.permissionMode);
     // Codex doesn't attribute input tokens by source; the baseline seeds the resident floor + system prompt.
     this.usage.setBaseline(buildBaseline(params.meta));
@@ -584,8 +590,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     const { completion, turn } = this.turns.begin();
     try {
       const approvalPolicy = this.config.approvalPolicy();
-      const sandboxPolicy = this.config.sandboxPolicy();
-      const activePermissionProfile = this.config.permissionProfile();
+      const sandboxPolicy = this.sandboxPolicyForTurn();
       await this.rpc.request(APP_SERVER_METHODS.TURN_START, {
         threadId: this.threadId,
         input,
@@ -593,18 +598,16 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         ...(this.config.effort ? { effort: this.config.effort } : {}),
         // Always request a reasoning summary; the default "auto" can skip it on trivial turns.
         summary: "detailed",
-        // Picker preset applied per-turn. Skipped on cloud, where a non-danger sandbox
-        // re-engages the unavailable linux-sandbox and panics.
+        // Picker preset applied per-turn. codex keeps turn overrides for subsequent turns,
+        // so every mode sends its full policy — omitting a field would leave the previous
+        // mode's value active (e.g. plan's readOnly sandbox bleeding into auto).
         ...(approvalPolicy ? { approvalPolicy } : {}),
         // Pushed every turn — codex remembers the last mode, so switching back from plan must be explicit.
         collaborationMode: this.config.collaborationModeForTurn(),
+        // Skipped on cloud, where a non-danger sandbox re-engages the unavailable
+        // linux-sandbox and panics; the enclosing docker/Modal sandbox isolates instead.
         ...(this.environment !== "cloud" && sandboxPolicy
           ? { sandboxPolicy }
-          : {}),
-        // codex 0.140.0 enforces the sandbox via named profiles; sandboxPolicy alone is no
-        // longer honored, so plan/read-only also send this. Same cloud gating.
-        ...(this.environment !== "cloud" && activePermissionProfile
-          ? { activePermissionProfile }
           : {}),
         // Constrain the final message to the task schema for parseable structured output.
         ...(this.jsonSchema ? { outputSchema: this.jsonSchema } : {}),
@@ -613,6 +616,24 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     } finally {
       this.turns.finishPrompt(turn);
     }
+  }
+
+  /** The mode's sandbox with the session's extra writable roots folded into workspaceWrite. */
+  private sandboxPolicyForTurn(): CodexSandboxPolicy | undefined {
+    const policy = this.config.sandboxPolicy();
+    if (
+      policy?.type === "workspaceWrite" &&
+      this.additionalDirectories?.length
+    ) {
+      const writableRoots = [
+        this.workspaceDirectory,
+        ...this.additionalDirectories,
+      ].filter((root): root is string => !!root);
+      if (writableRoots.length) {
+        return { ...policy, writableRoots: [...new Set(writableRoots)] };
+      }
+    }
+    return policy;
   }
 
   /** Echo each user prompt block (text + image, so an image-only turn still renders) for the host log/UI. */
@@ -959,18 +980,31 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       itemId?: string;
       command?: string;
       changes?: AppServerItem["changes"];
-      available_decisions?: unknown;
+      availableDecisions?: unknown[];
     };
-    // codex tells us which decisions are valid here. When it offers an "approve and
-    // remember" decision (exec-policy allowlist / session approval), surface Allow-always.
-    const availableDecisions = Array.isArray(detail.available_decisions)
-      ? detail.available_decisions.filter(
-          (d): d is string => typeof d === "string",
-        )
+    // codex lists the decisions valid for this prompt. An "approve and remember"
+    // decision is echoed back verbatim: either the string "acceptForSession" or the
+    // acceptWithExecpolicyAmendment object carrying the proposed allowlist amendment.
+    const availableDecisions = Array.isArray(detail.availableDecisions)
+      ? detail.availableDecisions
       : [];
-    const rememberDecision =
-      availableDecisions.find((d) => d === "approved_execpolicy_amendment") ??
-      availableDecisions.find((d) => d === "approved_for_session");
+    const offeredRememberDecision =
+      availableDecisions.find(
+        (d) =>
+          !!d && typeof d === "object" && "acceptWithExecpolicyAmendment" in d,
+      ) ?? availableDecisions.find((d) => d === "acceptForSession");
+    // File-change approvals normally omit availableDecisions, but codex accepts the
+    // session-scoped decision for them. If codex sends an explicit list, honor it.
+    const rememberDecision: unknown =
+      isFileChange && detail.availableDecisions === undefined
+        ? "acceptForSession"
+        : offeredRememberDecision;
+    // Label the actual scope: an execpolicy amendment persists in the command
+    // allowlist; acceptForSession (commands and file changes) lasts one session.
+    const rememberLabel =
+      typeof rememberDecision === "object"
+        ? "Allow similar commands and don't ask again"
+        : "Allow for the rest of this session";
     const title =
       detail.command ?? (isFileChange ? "Apply file changes" : "Run command");
     const toolCallId = detail.itemId ?? "codex-approval";
@@ -1020,9 +1054,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
             ? [
                 {
                   optionId: "allow_always",
-                  name: isFileChange
-                    ? "Allow for the rest of this session"
-                    : "Allow and don't ask again",
+                  name: rememberLabel,
                   kind: "allow_always" as const,
                 },
               ]

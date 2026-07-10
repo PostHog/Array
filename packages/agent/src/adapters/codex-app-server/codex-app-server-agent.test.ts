@@ -10,6 +10,7 @@ import type {
   AppServerRpc,
 } from "./app-server-client";
 import { CodexAppServerAgent } from "./codex-app-server-agent";
+import { sandboxPolicyFor } from "./session-config";
 
 // Required-field invariants the native codex app-server enforces on each request.
 const REQUIRED_FIELDS: Record<string, string[]> = {
@@ -348,28 +349,54 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
-  it("surfaces Allow-always and echoes codex's remember decision when offered", async () => {
+  it("surfaces Allow-always and echoes codex's execpolicy amendment decision verbatim", async () => {
     const { agent, stub, permissionOptions } =
       makeApprovalAgent("allow_always");
     await agent.initialize(init);
     await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
 
-    // codex offers the command-prefix allowlist decision for this approval.
+    // codex offers the command-prefix allowlist decision for this approval. Exact
+    // 0.140 wire shape: serde renames only the VARIANT to camelCase, the field
+    // stays snake_case, and ExecPolicyAmendment is transparent over a string array.
+    const amendment = {
+      acceptWithExecpolicyAmendment: {
+        execpolicy_amendment: ["pnpm", "test"],
+      },
+    };
     const decision = await stub.invokeRequest(
       "item/commandExecution/requestApproval",
       {
         itemId: "c1",
         command: "pnpm test",
-        available_decisions: ["approved_execpolicy_amendment", "denied"],
+        availableDecisions: ["accept", amendment, "decline"],
       },
     );
 
     expect(permissionOptions[0].map((o) => o.kind)).toContain("allow_always");
-    // Picking it echoes codex's own decision so it applies the amendment.
-    expect(decision).toEqual({ decision: "approved_execpolicy_amendment" });
+    // Picking it echoes codex's own decision entry verbatim (same reference, no remapping).
+    expect((decision as { decision: unknown }).decision).toBe(amendment);
   });
 
-  it("omits Allow-always when codex offers no remember decision", async () => {
+  it("surfaces Allow-always for the session-scoped command decision", async () => {
+    const { agent, stub, permissionOptions } =
+      makeApprovalAgent("allow_always");
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    const decision = await stub.invokeRequest(
+      "item/commandExecution/requestApproval",
+      {
+        itemId: "c1",
+        command: "pnpm test",
+        availableDecisions: ["accept", "acceptForSession", "decline"],
+      },
+    );
+
+    expect(permissionOptions[0].map((o) => o.kind)).toContain("allow_always");
+    expect(decision).toEqual({ decision: "acceptForSession" });
+  });
+
+  it("omits Allow-always when codex offers no remember decision for a command", async () => {
     const { agent, stub, permissionOptions } = makeApprovalAgent("allow");
     await agent.initialize(init);
     await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
@@ -387,6 +414,46 @@ describe("CodexAppServerAgent", () => {
       "reject",
       "reject_with_feedback",
     ]);
+    expect(decision).toEqual({ decision: "accept" });
+  });
+
+  it("always offers Allow-always on file changes and answers acceptForSession", async () => {
+    const { agent, stub, permissionOptions } =
+      makeApprovalAgent("allow_always");
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    // File-change approvals carry no availableDecisions, but codex always
+    // accepts the session-scoped decision for them.
+    const decision = await stub.invokeRequest(
+      "item/fileChange/requestApproval",
+      {
+        itemId: "f1",
+        changes: [{ path: "src/a.ts", diff: "@@ -1 +1 @@\n-old\n+new\n" }],
+      },
+    );
+
+    expect(permissionOptions[0].map((o) => o.kind)).toContain("allow_always");
+    expect(decision).toEqual({ decision: "acceptForSession" });
+  });
+
+  it("honors an explicit file-change decision list without a remember option", async () => {
+    const { agent, stub, permissionOptions } = makeApprovalAgent("allow");
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    const decision = await stub.invokeRequest(
+      "item/fileChange/requestApproval",
+      {
+        itemId: "f1",
+        changes: [{ path: "src/a.ts", diff: "@@ -1 +1 @@\n-old\n+new\n" }],
+        availableDecisions: ["accept", "decline"],
+      },
+    );
+
+    expect(permissionOptions[0].map((o) => o.kind)).not.toContain(
+      "allow_always",
+    );
     expect(decision).toEqual({ decision: "accept" });
   });
 
@@ -706,7 +773,7 @@ describe("CodexAppServerAgent", () => {
     expect(params.approvalPolicy).toBe("on-request");
   });
 
-  it("omits sandboxPolicy for an editing preset (auto) so the spawned full-access stays", async () => {
+  it("restores the editable sandbox on auto turns (codex turn overrides are sticky)", async () => {
     const stub = makeStubRpc({
       "thread/start": { thread: { id: "t" } },
       "turn/start": { turn: { id: "turn_1" } },
@@ -717,7 +784,8 @@ describe("CodexAppServerAgent", () => {
       model: "gpt-5.5",
       rpcFactory: stub.factory,
     });
-    // Default mode is "auto" → editing allowed, no sandbox override.
+    // Default mode is "auto" → editing allowed. A prior plan/read-only turn's
+    // readOnly sandbox persists on the thread, so auto must state its sandbox.
     await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
     const done = agent.prompt({
       sessionId: "t",
@@ -731,12 +799,77 @@ describe("CodexAppServerAgent", () => {
       sandboxPolicy?: unknown;
       collaborationMode?: unknown;
     };
-    expect(params.sandboxPolicy).toBeUndefined();
+    expect(params.sandboxPolicy).toEqual(sandboxPolicyFor("auto"));
     // Default collaboration is pushed every turn so switching back from Plan reverts.
     expect(params.collaborationMode).toEqual({
       mode: "default",
       settings: { model: "gpt-5.5" },
     });
+  });
+
+  it("folds the session's additional directories into a workspaceWrite sandbox", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({
+      cwd: "/r",
+      additionalDirectories: ["/extra"],
+    } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await done;
+
+    const turnStart = stub.requests.find((r) => r.method === "turn/start");
+    const policy = (turnStart?.params as { sandboxPolicy?: { type?: string } })
+      .sandboxPolicy;
+    // Only the workspaceWrite shape carries writable roots; danger needs none.
+    if (policy?.type === "workspaceWrite") {
+      expect(policy).toEqual({
+        type: "workspaceWrite",
+        networkAccess: false,
+        writableRoots: ["/r", "/extra"],
+      });
+    } else {
+      expect(policy).toEqual({ type: "dangerFullAccess" });
+    }
+  });
+
+  it("skips the sandbox override entirely on cloud (a managed sandbox would panic)", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({
+      cwd: "/r",
+      _meta: { environment: "cloud" },
+    } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await done;
+
+    const turnStart = stub.requests.find((r) => r.method === "turn/start");
+    expect(
+      (turnStart?.params as { sandboxPolicy?: unknown }).sandboxPolicy,
+    ).toBeUndefined();
   });
 
   it("returns mode + model + thought_level configOptions and emits config_option_update", async () => {
@@ -852,7 +985,7 @@ describe("CodexAppServerAgent", () => {
     expect(modelOpt.currentValue).toBe("gpt-6");
   });
 
-  it("sends activePermissionProfile :read-only on turn/start in read-only mode", async () => {
+  it("restricts read-only mode via sandboxPolicy without inventing turn/start params", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client } = makeFakeClient();
     const agent = new CodexAppServerAgent(client, {
@@ -873,12 +1006,13 @@ describe("CodexAppServerAgent", () => {
     stub.emit("turn/completed", { turn: { status: "completed" } });
     await done;
 
-    // codex 0.140.0 enforces the sandbox via the named profile, so read-only MUST send it alongside sandboxPolicy.
     const turnStart = stub.requests.find((r) => r.method === "turn/start");
     expect(turnStart?.params).toMatchObject({
-      activePermissionProfile: { extends: ":read-only" },
+      approvalPolicy: "untrusted",
       sandboxPolicy: { type: "readOnly" },
     });
+    // Not a codex turn/start param — the app-server would silently ignore it.
+    expect(turnStart?.params).not.toHaveProperty("activePermissionProfile");
   });
 
   it("resumeSession resumes the existing thread and returns configOptions", async () => {
