@@ -34,6 +34,7 @@ import {
   extractLastAgentTurnText,
   parseMetricReports,
   parseResearchReports,
+  parseStreamedMetricReports,
 } from "./prompts";
 import {
   type AutoresearchConfigInput,
@@ -432,13 +433,13 @@ export class AutoresearchService {
 
       if (session.isPromptPending) {
         if (promptCount === 0) continue;
-        this.ingestCompletedReports(run, session);
+        this.ingestCompletedReports(run, session, false);
         continue;
       }
       if (promptCount <= (this.promptCursor.get(run.id) ?? 0)) continue;
       if (!turnCompleted) continue;
 
-      const reports = this.ingestCompletedReports(run, session);
+      const reports = this.ingestCompletedReports(run, session, true);
       this.promptCursor.set(run.id, promptCount);
       this.onAgentTurnComplete(run.id, reports);
     }
@@ -447,9 +448,18 @@ export class AutoresearchService {
   private ingestCompletedReports(
     run: AutoresearchRun,
     session: AgentSession,
+    turnComplete: boolean,
   ): { hasMetric: boolean; hasResearch: boolean } {
     const text = extractLastAgentTurnText(session.events);
-    const metricReports = parseMetricReports(text);
+    const streamedMetricReports = parseStreamedMetricReports(text);
+    const allMetricReports = turnComplete ? parseMetricReports(text) : [];
+    const finalMetricReport =
+      allMetricReports.length > streamedMetricReports.length
+        ? allMetricReports.at(-1)
+        : null;
+    const metricReports = finalMetricReport
+      ? [...streamedMetricReports, finalMetricReport]
+      : streamedMetricReports;
     const researchReports = parseResearchReports(text);
     const promptCount = countPromptRequests(session.events);
     const existing = this.streamedReportCursor.get(run.id);
@@ -507,7 +517,17 @@ export class AutoresearchService {
     const run = autoresearchStore.getState().runs[runId];
     if (!run || run.status !== "running") return;
     if (reports.hasMetric) {
-      this.continueLoop(run);
+      const decision = evaluateContinuation(run);
+      if (decision.done) {
+        this.endRun(run.id, "completed", { endReason: decision.reason });
+        this.log.info("Autoresearch run completed", {
+          runId: run.id,
+          reason: decision.reason,
+          iterations: run.iterations.length,
+        });
+      } else {
+        this.continueLoop(run);
+      }
       return;
     }
     if (reports.hasResearch && run.iterations.length === 0) {
@@ -549,20 +569,6 @@ export class AutoresearchService {
       }
     }
     this.persist(run.id);
-
-    const updated = autoresearchStore.getState().runs[run.id];
-    if (!updated || updated.status !== "running") return;
-
-    const decision = evaluateContinuation(updated);
-    if (decision.done) {
-      this.endRun(run.id, "completed", { endReason: decision.reason });
-      this.log.info("Autoresearch run completed", {
-        runId: run.id,
-        reason: decision.reason,
-        iterations: updated.iterations.length,
-      });
-      return;
-    }
   }
 
   /** Kick off the next iteration after a recorded report. */

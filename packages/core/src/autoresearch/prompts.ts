@@ -248,12 +248,33 @@ export function parseMetricReport(text: string): AutoresearchReport | null {
 }
 
 export function parseMetricReports(text: string): AutoresearchReport[] {
-  const reports: AutoresearchReport[] = [];
+  return parseMetricReportBlocks(text).map(({ report }) => report);
+}
+
+export function parseStreamedMetricReports(text: string): AutoresearchReport[] {
+  return parseMetricReportBlocks(text)
+    .filter(({ end }) => startsAnotherIteration(text.slice(end)))
+    .map(({ report }) => report);
+}
+
+function parseMetricReportBlocks(
+  text: string,
+): Array<{ report: AutoresearchReport; end: number }> {
+  const reports: Array<{ report: AutoresearchReport; end: number }> = [];
   for (const match of text.matchAll(REPORT_BLOCK_REGEX)) {
     const parsed = parseReportBody(match[1]);
-    if (parsed) reports.push(parsed);
+    if (parsed) {
+      reports.push({
+        report: parsed,
+        end: (match.index ?? 0) + match[0].length,
+      });
+    }
   }
   return reports;
+}
+
+function startsAnotherIteration(text: string): boolean {
+  return /\b(?:for\s+)?iteration\s+\d+\b/i.test(text);
 }
 
 export function parseResearchReport(

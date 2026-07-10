@@ -13,6 +13,7 @@ import {
   parseMetricReport,
   parsePlanReport,
   parseResearchReport,
+  parseStreamedMetricReports,
 } from "./prompts";
 import type {
   AutoresearchConfig,
@@ -187,6 +188,20 @@ describe("parseMetricReport", () => {
         "```autoresearch\ntype: research\nsummary: traced routing\nfinding: routes are contributed by UI modules\n```",
       ),
     ).toBeNull();
+  });
+});
+
+describe("parseStreamedMetricReports", () => {
+  it("ignores a report at the streaming tail", () => {
+    expect(parseStreamedMetricReports(report("10", "draft"))).toEqual([]);
+  });
+
+  it("accepts a report once the next iteration starts", () => {
+    expect(
+      parseStreamedMetricReports(
+        `${report("10", "baseline")}\nIteration 2 starts now.`,
+      ),
+    ).toEqual([expect.objectContaining({ value: 10, summary: "baseline" })]);
   });
 });
 

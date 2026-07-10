@@ -67,4 +67,33 @@ describe("analyzeAutoresearchActivity", () => {
       measurement: 3_000,
     });
   });
+
+  it("excludes activity after a historical run ended", () => {
+    const events = [
+      updateEvent(2_000, {
+        sessionUpdate: "tool_call",
+        title: "Run benchmark",
+        kind: "execute",
+        status: "completed",
+      }),
+      updateEvent(6_000, {
+        sessionUpdate: "tool_call",
+        title: "Later manual edit",
+        kind: "edit",
+        status: "completed",
+      }),
+    ];
+
+    const result = analyzeAutoresearchActivity(events, 1_000, 4_000, 10_000);
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ label: "Run benchmark" }),
+    ]);
+    expect(result.timeByKind).toEqual({
+      reasoning: 1_000,
+      research: 0,
+      implementation: 0,
+      measurement: 2_000,
+    });
+  });
 });

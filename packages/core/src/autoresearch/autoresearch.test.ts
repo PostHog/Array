@@ -388,9 +388,13 @@ describe("AutoresearchService", () => {
       beginTurn();
       service.registerRun(baseConfig);
 
-      streamTurnText(reportText(10, "baseline"));
-      streamTurnText(reportText(12, "iteration 2"));
-      streamTurnText(reportText(14, "iteration 3"));
+      streamTurnText(`${reportText(10, "baseline")}\nIteration 2 starts now.`);
+      streamTurnText(
+        `${reportText(12, "iteration 2")}\nIteration 3 starts now.`,
+      );
+      streamTurnText(
+        `${reportText(14, "iteration 3")}\nIteration 4 starts now.`,
+      );
 
       expect(activeRun().iterations).toEqual([
         expect.objectContaining({ index: 1, value: 10 }),
@@ -414,7 +418,7 @@ describe("AutoresearchService", () => {
       };
       internals.promptCursor.set(run.id, 1);
 
-      streamTurnText(reportText(10, "baseline"));
+      streamTurnText(`${reportText(10, "baseline")}\nIteration 2 starts now.`);
 
       expect(activeRun().iterations).toEqual([
         expect.objectContaining({ index: 1, value: 10 }),
@@ -428,10 +432,10 @@ describe("AutoresearchService", () => {
   });
 
   describe("iteration loop", () => {
-    it("records a completed metric block before the agent turn ends", () => {
+    it("records a metric block after the next iteration starts", () => {
       service.startRun(baseConfig);
       beginTurn();
-      streamTurnText(reportText(10, "baseline"));
+      streamTurnText(`${reportText(10, "baseline")}\nIteration 2 starts now.`);
 
       expect(activeRun().iterations).toEqual([
         expect.objectContaining({ index: 1, value: 10, summary: "baseline" }),
@@ -447,6 +451,30 @@ describe("AutoresearchService", () => {
       expect(sentPrompts.at(-1)?.prompt).toContain(
         "Then make the next focused change",
       );
+    });
+
+    it("keeps the tail report provisional until the turn ends", () => {
+      service.startRun({ ...baseConfig, maxIterations: 1 });
+      beginTurn();
+      streamTurnText(reportText(10, "draft baseline"));
+
+      expect(activeRun().iterations).toHaveLength(0);
+      expect(activeRun().status).toBe("running");
+
+      streamTurnText(reportText(12, "corrected baseline"));
+      expect(activeRun().iterations).toHaveLength(0);
+
+      completeTurn("Finalized the corrected report.");
+
+      expect(activeRun().iterations).toEqual([
+        expect.objectContaining({
+          index: 1,
+          value: 12,
+          summary: "corrected baseline",
+        }),
+      ]);
+      expect(activeRun().status).toBe("completed");
+      expect(activeRun().endReason).toBe("max-iterations");
     });
 
     it("records prebaseline research without consuming an iteration", () => {

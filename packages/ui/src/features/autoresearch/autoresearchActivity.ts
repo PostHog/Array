@@ -27,7 +27,10 @@ export function analyzeAutoresearchActivity(
   endedAt: number | null,
   now: number,
 ): AutoresearchActivitySnapshot {
-  const relevant = events.filter((event) => event.ts >= startedAt);
+  const relevant = events.filter(
+    (event) =>
+      event.ts >= startedAt && (endedAt === null || event.ts <= endedAt),
+  );
   const items: AutoresearchActivityItem[] = [];
   const agentText: string[] = [];
 

@@ -25,7 +25,7 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
-import { motion, useReducedMotion } from "framer-motion";
+import { domAnimation, LazyMotion, m, useReducedMotion } from "framer-motion";
 import { useState } from "react";
 import { openExternalUrl } from "../../shell/openExternal";
 import {
@@ -212,21 +212,23 @@ function DirectionOption({
 
   return (
     <span className="inline-flex items-center gap-1.5">
-      <motion.span
-        className="inline-flex"
-        animate={
-          reducedMotion || !selected
-            ? { y: 0 }
-            : { y: direction === "maximize" ? [0, -2, 0] : [0, 2, 0] }
-        }
-        transition={{
-          duration: 0.8,
-          repeat: selected ? Number.POSITIVE_INFINITY : 0,
-          repeatDelay: 1.4,
-        }}
-      >
-        <Icon size={12} weight="bold" />
-      </motion.span>
+      <LazyMotion features={domAnimation}>
+        <m.span
+          className="inline-flex"
+          animate={
+            reducedMotion || !selected
+              ? { y: 0 }
+              : { y: direction === "maximize" ? [0, -2, 0] : [0, 2, 0] }
+          }
+          transition={{
+            duration: 0.8,
+            repeat: selected ? Number.POSITIVE_INFINITY : 0,
+            repeatDelay: 1.4,
+          }}
+        >
+          <Icon size={12} weight="bold" />
+        </m.span>
+      </LazyMotion>
       {label}
     </span>
   );
@@ -441,55 +443,59 @@ function ExperimentLoopVisual() {
           />
         ))}
 
-        <motion.path
-          d={path}
-          fill="none"
-          stroke="var(--gray-10)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          initial={reducedMotion ? false : { pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 1.1, ease: "easeOut" }}
-        />
+        <LazyMotion features={domAnimation}>
+          <m.path
+            d={path}
+            fill="none"
+            stroke="var(--gray-10)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            initial={reducedMotion ? false : { pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: 1.1, ease: "easeOut" }}
+          />
 
-        {EXPERIMENT_POINTS.map((point, index) => (
-          <motion.g
-            key={point.label}
-            initial={reducedMotion ? false : { opacity: 0, scale: 0.65, y: 4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ delay: 0.18 + index * 0.18, duration: 0.25 }}
-            style={{ transformOrigin: `${point.x}px ${point.y}px` }}
-          >
-            <circle
-              cx={point.x}
-              cy={point.y}
-              r={index === EXPERIMENT_POINTS.length - 1 ? 5 : 4}
-              fill={point.improved ? "var(--green-9)" : "var(--orange-9)"}
-              stroke="var(--gray-2)"
-              strokeWidth="2"
-            />
-            <text
-              x={point.x}
-              y={point.y - 10}
-              textAnchor="middle"
-              fill="var(--gray-12)"
-              fontSize="10"
-              fontWeight="500"
+          {EXPERIMENT_POINTS.map((point, index) => (
+            <m.g
+              key={point.label}
+              initial={
+                reducedMotion ? false : { opacity: 0, scale: 0.65, y: 4 }
+              }
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ delay: 0.18 + index * 0.18, duration: 0.25 }}
+              style={{ transformOrigin: `${point.x}px ${point.y}px` }}
             >
-              {point.value}
-            </text>
-            <text
-              x={point.x}
-              y="119"
-              textAnchor="middle"
-              fill="var(--gray-10)"
-              fontSize="9"
-            >
-              {index === 0 ? "Baseline" : index}
-            </text>
-          </motion.g>
-        ))}
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r={index === EXPERIMENT_POINTS.length - 1 ? 5 : 4}
+                fill={point.improved ? "var(--green-9)" : "var(--orange-9)"}
+                stroke="var(--gray-2)"
+                strokeWidth="2"
+              />
+              <text
+                x={point.x}
+                y={point.y - 10}
+                textAnchor="middle"
+                fill="var(--gray-12)"
+                fontSize="10"
+                fontWeight="500"
+              >
+                {point.value}
+              </text>
+              <text
+                x={point.x}
+                y="119"
+                textAnchor="middle"
+                fill="var(--gray-10)"
+                fontSize="9"
+              >
+                {index === 0 ? "Baseline" : index}
+              </text>
+            </m.g>
+          ))}
+        </LazyMotion>
       </svg>
 
       <figcaption className="flex items-center gap-3 border-gray-5 border-t px-3 py-1.5 text-gray-10 text-xs">

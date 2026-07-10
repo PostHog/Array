@@ -474,7 +474,9 @@ export function RunSummary({ run }: { run: AutoresearchRun }) {
   );
   const approaches = Array.from(
     new Set(
-      run.iterations.map((iteration) => iteration.approach).filter(Boolean),
+      run.iterations.flatMap((iteration) =>
+        iteration.approach ? [iteration.approach] : [],
+      ),
     ),
   );
   return (
