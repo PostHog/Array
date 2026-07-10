@@ -1,4 +1,3 @@
-import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk";
@@ -13,7 +12,6 @@ import type { AgentScopedLogger } from "./ports";
 
 interface DiscoverPluginsOptions {
   userDataDir: string;
-  repoPath?: string;
   /**
    * The bundled PostHog skills dir (`<plugin>/skills`). Used only to dedupe the
    * user's Codex skills against names PostHog Code already provides.
@@ -28,26 +26,24 @@ const noopLogger: AgentScopedLogger = {
   error() {},
 };
 
+/**
+ * `~/.claude/skills` and `<repoPath>/.claude/skills` are already auto-loaded
+ * natively by the Claude Agent SDK as `@skills-dir` plugins, so they're not
+ * wrapped here — doing so double-registered every skill under both its bare
+ * name and a synthetic plugin prefix. Only sources the SDK can't see on its
+ * own (marketplace-installed plugins, the user's Codex skills dir) need
+ * manual discovery.
+ */
 export async function discoverExternalPlugins(
   options: DiscoverPluginsOptions,
   log: AgentScopedLogger = noopLogger,
 ): Promise<SdkPluginConfig[]> {
-  const [globalSkills, marketplacePlugins, repoSkills, codexSkills] =
-    await Promise.all([
-      discoverUserSkills(options.userDataDir, log),
-      discoverMarketplacePlugins(),
-      options.repoPath
-        ? discoverRepoSkills(options.userDataDir, options.repoPath, log)
-        : Promise.resolve([]),
-      discoverCodexSkills(options.userDataDir, options.bundledSkillsDir, log),
-    ]);
+  const [marketplacePlugins, codexSkills] = await Promise.all([
+    discoverMarketplacePlugins(),
+    discoverCodexSkills(options.userDataDir, options.bundledSkillsDir, log),
+  ]);
 
-  return [
-    ...globalSkills,
-    ...marketplacePlugins,
-    ...repoSkills,
-    ...codexSkills,
-  ];
+  return [...marketplacePlugins, ...codexSkills];
 }
 
 /**
@@ -77,43 +73,9 @@ async function discoverCodexSkills(
   );
 }
 
-async function discoverUserSkills(
-  userDataDir: string,
-  log: AgentScopedLogger,
-): Promise<SdkPluginConfig[]> {
-  return buildSyntheticPlugin(
-    getUserSkillsDir(),
-    path.join(userDataDir, "plugins", "user-skills"),
-    "user-skills",
-    "User Claude skills",
-    log,
-  );
-}
-
 async function discoverMarketplacePlugins(): Promise<SdkPluginConfig[]> {
   const paths = await getMarketplaceInstallPaths();
   return paths.map((p) => ({ type: "local" as const, path: p }));
-}
-
-async function discoverRepoSkills(
-  userDataDir: string,
-  repoPath: string,
-  log: AgentScopedLogger,
-): Promise<SdkPluginConfig[]> {
-  const skillsDir = path.join(repoPath, ".claude", "skills");
-  const hash = crypto
-    .createHash("md5")
-    .update(repoPath)
-    .digest("hex")
-    .slice(0, 8);
-
-  return buildSyntheticPlugin(
-    skillsDir,
-    path.join(userDataDir, "plugins", `repo-skills-${hash}`),
-    `repo-skills-${hash}`,
-    `Repo skills for ${path.basename(repoPath)}`,
-    log,
-  );
 }
 
 async function buildSyntheticPlugin(

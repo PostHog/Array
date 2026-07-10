@@ -924,7 +924,6 @@ If a repository IS genuinely required, attach one in this priority order:
         externalPlugins = await discoverExternalPlugins(
           {
             userDataDir: this.storagePaths.appDataPath,
-            repoPath,
             bundledSkillsDir,
           },
           this.log,
