@@ -49,6 +49,7 @@ import {
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
+import { configurePersistentAgentState } from "../persistent-agent-state";
 import { PostHogAPIClient } from "../posthog-api";
 import {
   findPrUrls,
@@ -635,6 +636,10 @@ export class AgentServer {
   }
 
   async start(): Promise<void> {
+    if (this.config.agentStateDir) {
+      await configurePersistentAgentState(this.config.agentStateDir);
+    }
+
     await new Promise<void>((resolve) => {
       this.server = serve(
         {

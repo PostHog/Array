@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
@@ -440,6 +448,42 @@ describe("AgentServer HTTP Mode", () => {
         bootMs: expect.any(Number),
         sessionInitMs: expect.any(Number),
       });
+    }, 30000);
+
+    it("links native agent state before initializing the session", async () => {
+      const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+      const originalCodexHome = process.env.CODEX_HOME;
+      const claudeConfigDir = join(repo.path, ".claude-test");
+      const codexHome = join(repo.path, ".codex-test");
+      const agentStateDir = join(repo.path, ".posthog", "agent-state");
+      process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
+      process.env.CODEX_HOME = codexHome;
+
+      try {
+        await createServer({ agentStateDir }).start();
+
+        const claudeProjects = join(claudeConfigDir, "projects");
+        const codexSessions = join(codexHome, "sessions");
+        expect((await lstat(claudeProjects)).isSymbolicLink()).toBe(true);
+        expect((await lstat(codexSessions)).isSymbolicLink()).toBe(true);
+        expect(await readlink(claudeProjects)).toBe(
+          join(agentStateDir, "claude", "projects"),
+        );
+        expect(await readlink(codexSessions)).toBe(
+          join(agentStateDir, "codex", "sessions"),
+        );
+      } finally {
+        if (originalClaudeConfigDir === undefined) {
+          delete process.env.CLAUDE_CONFIG_DIR;
+        } else {
+          process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir;
+        }
+        if (originalCodexHome === undefined) {
+          delete process.env.CODEX_HOME;
+        } else {
+          process.env.CODEX_HOME = originalCodexHome;
+        }
+      }
     }, 30000);
   });
 
