@@ -63,11 +63,13 @@ export function UsageButton() {
           </Button>
         }
       />
+      {/* no-drag: the popover opens under the title bar's drag region; without
+          the opt-out a click near its top edge is swallowed as a window drag. */}
       <PopoverContent
         side="bottom"
         align="end"
         sideOffset={6}
-        className="gap-2"
+        className="no-drag gap-2"
       >
         <div className="flex items-center justify-between">
           <span className="font-medium text-foreground text-xs">

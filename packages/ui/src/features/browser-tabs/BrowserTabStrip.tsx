@@ -778,10 +778,15 @@ export function BrowserTabStrip() {
     }
     // No window means the mirror never seeded (the boot fetch raced or
     // failed) — the click must not die. Re-pull the authoritative snapshot
-    // (the server always has a primary window) and append into it.
+    // (the server always has a primary window) and append into it. Resolve
+    // the window from the FETCHED snapshot, not the mirror: reseedMirror
+    // skips the store apply when a local write or newer remote push raced
+    // the fetch, and the mirror could still be windowless then.
     void reseedMirror()
-      .then(() => {
-        const win = primaryWindow(readMirror());
+      .then((server) => {
+        const win = server
+          ? primaryWindow(server)
+          : primaryWindow(readMirror());
         if (win) createBlankTab(win.id);
       })
       .catch(() => undefined);
