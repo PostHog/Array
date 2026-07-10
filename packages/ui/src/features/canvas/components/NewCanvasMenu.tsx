@@ -8,33 +8,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@posthog/quill";
-import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import {
+  type CreateSurface,
+  trackAndCreateCanvas,
+} from "@posthog/ui/features/canvas/createCanvasAnalytics";
 import { useCanvasTemplates } from "@posthog/ui/features/canvas/hooks/useCanvasTemplates";
 import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
-import { track } from "@posthog/ui/shell/analytics";
 import { useState } from "react";
-
-// Where a canvas create was triggered from, for analytics.
-export type CreateSurface = "dashboards_grid" | "sidebar" | "channel_home";
-
-// Fire the "create" DASHBOARD_ACTION, then create + open the canvas. Exported so
-// other entry points (the sidebar "+" dropdown, the channel composer's canvas
-// mode) report creation the same way. Returns `create`'s result so callers that
-// need the created record can await it.
-export function trackAndCreateCanvas<T>(
-  channelId: string | undefined,
-  templateId: string | undefined,
-  surface: CreateSurface,
-  create: () => T,
-): T {
-  track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-    action_type: "create",
-    surface,
-    channel_id: channelId,
-    template_id: templateId,
-  });
-  return create();
-}
 
 // The list of template options shared by the canvas-create surfaces (the
 // dashboards-grid dialog and the sidebar "+" dropdown). Picking a template

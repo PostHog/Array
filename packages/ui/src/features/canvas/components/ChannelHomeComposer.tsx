@@ -31,12 +31,12 @@ import { useCloudModeEnabled } from "../../task-detail/hooks/useCloudModeEnabled
 import { usePreviewConfig } from "../../task-detail/hooks/usePreviewConfig";
 import { useTaskCreation } from "../../task-detail/hooks/useTaskCreation";
 import { resolveWorkspaceModePreference } from "../../task-detail/hooks/workspaceModePreference";
+import { trackAndCreateCanvas } from "../createCanvasAnalytics";
 import {
   UNTITLED_CANVAS_NAME,
   useDashboardMutations,
 } from "../hooks/useDashboards";
 import { useGenerateFreeformCanvas } from "../hooks/useGenerateFreeformCanvas";
-import { trackAndCreateCanvas } from "./NewCanvasMenu";
 
 export interface ChannelHomeComposerHandle {
   /** Drop a starter prompt into the editor and apply its mode, if any. */
