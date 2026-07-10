@@ -41,7 +41,7 @@ interface AutoresearchConfigDialogProps {
   /** Session effort options for the stage-effort selects; hidden when empty. */
   effortOptions?: AutoresearchModelOption[];
   initial?: Partial<AutoresearchConfigValues>;
-  /** May throw — the message is shown inline and the dialog stays open. */
+  /** May throw. The message is shown inline and the dialog stays open. */
   onSubmit: (values: AutoresearchConfigValues) => void;
 }
 
@@ -248,8 +248,8 @@ function ConfigForm({
             />
             <Text as="div" size="1" color="gray">
               Identical stages run each iteration as one turn. Different stages
-              split every iteration: build on the first, measure on the second —
-              pick a cheap model or low effort for measuring.
+              split every iteration: build on the first, then measure on the
+              second. pick a cheap model or low effort for measuring.
             </Text>
           </div>
         )}

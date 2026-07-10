@@ -51,7 +51,7 @@ export const autoresearchConfigSchema = z.object({
    * Stage configuration. When the implement and measure stages differ (in
    * model or effort), each iteration runs as two turns: an
    * ideation/implementation turn on the implement stage and a measurement
-   * turn on the measure stage (typically a cheaper model/effort — measuring
+   * turn on the measure stage, typically with a cheaper model or effort. Measuring
    * is tool calls, not thinking). When the stages are identical, iterations
    * are single turns. Null fields mean "leave the session's current value
    * alone".
@@ -63,7 +63,7 @@ export const autoresearchConfigSchema = z.object({
   /**
    * Free-form instructions for the agent: what to optimize, how to measure
    * the metric, and any constraints to respect. The metric itself is not
-   * configured anywhere — the agent names it in its reports based on this
+   * configured anywhere. The agent names it in its reports based on this
    * brief.
    */
   instructions: z.string().trim().min(1),
@@ -94,9 +94,24 @@ export const autoresearchIterationSchema = z.object({
   delta: z.number().finite().nullable(),
   /** Agent's one-line description of what it changed. */
   summary: z.string().nullable(),
+  hypothesis: z.string().nullable().default(null),
+  plan: z.string().nullable().default(null),
+  approach: z.string().nullable().default(null),
   at: z.number(),
 });
 export type AutoresearchIteration = z.infer<typeof autoresearchIterationSchema>;
+
+export const autoresearchResearchFindingSchema = z.object({
+  index: z.number().int().min(1),
+  summary: z.string().min(1),
+  finding: z.string().min(1),
+  nextStep: z.string().nullable(),
+  area: z.string().nullable().default(null),
+  at: z.number(),
+});
+export type AutoresearchResearchFinding = z.infer<
+  typeof autoresearchResearchFindingSchema
+>;
 
 export function isTerminalRunStatus(status: AutoresearchRunStatus): boolean {
   return status === "completed" || status === "stopped" || status === "failed";
@@ -132,6 +147,7 @@ export const autoresearchRunSchema = z.object({
    */
   originalModel: z.string().nullable().default(null),
   originalEffort: z.string().nullable().default(null),
+  researchFindings: z.array(autoresearchResearchFindingSchema).default([]),
   iterations: z.array(autoresearchIterationSchema),
   startedAt: z.number(),
   endedAt: z.number().nullable(),
@@ -177,4 +193,20 @@ export interface AutoresearchReport {
   /** The metric's unit, e.g. "kB", "ms", "%"; null for unitless counts. */
   unit: string | null;
   summary: string | null;
+  hypothesis: string | null;
+  plan: string | null;
+  approach: string | null;
+}
+
+export interface AutoresearchResearchReport {
+  summary: string;
+  finding: string;
+  nextStep: string | null;
+  area: string | null;
+}
+
+export interface AutoresearchPlanReport {
+  hypothesis: string;
+  plan: string;
+  approach: string;
 }
