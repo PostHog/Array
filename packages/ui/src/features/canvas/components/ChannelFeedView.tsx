@@ -461,16 +461,12 @@ const FeedItem = memo(function FeedItem({
         />
       </ThreadItemContent>
 
-      {/* Actions anchor to the row's top-right corner; a top tooltip there
-          overhangs the panel edge and gets clipped by the scroll container, so
-          open tooltips toward the content instead. */}
+      {/* Replying now lives in the always-visible ReplyFooter, so the hover
+          toolbar only carries the distinct "Open task" action. Actions anchor
+          to the row's top-right corner; a top tooltip there overhangs the panel
+          edge and gets clipped by the scroll container, so open tooltips toward
+          the content instead. */}
       <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
-        <ThreadItemAction
-          label="Reply in thread"
-          onClick={() => onOpenThread(task)}
-        >
-          <ChatCircleIcon size={15} />
-        </ThreadItemAction>
         <ThreadItemAction label="Open task" onClick={() => onOpenTask(task)}>
           <ArrowSquareOutIcon size={15} />
         </ThreadItemAction>
