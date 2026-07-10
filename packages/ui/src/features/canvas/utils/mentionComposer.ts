@@ -1,5 +1,8 @@
+import { formatMention, splitMentionSegments } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
+import type { Node as PmNode } from "@tiptap/pm/model";
+import type { JSONContent } from "@tiptap/react";
 
 /** Members matching the query, best-first: name prefix, word prefix, email, substring. */
 export function filterMentionCandidates(
@@ -27,4 +30,47 @@ export function filterMentionCandidates(
     )
     .slice(0, limit)
     .map((entry) => entry.member);
+}
+
+/** Serialize the composer's editor doc back to content with inline mention tokens. */
+export function docToContent(doc: PmNode): string {
+  const lines: string[] = [];
+  doc.forEach((block) => {
+    let line = "";
+    block.forEach((child) => {
+      if (child.type.name === "mention") {
+        line += formatMention(child.attrs.label, child.attrs.id);
+      } else if (child.type.name === "hardBreak") {
+        line += "\n";
+      } else {
+        line += child.text ?? "";
+      }
+    });
+    lines.push(line);
+  });
+  return lines.join("\n");
+}
+
+export function contentToDoc(content: string): JSONContent {
+  return {
+    type: "doc",
+    content: content.split("\n").map((line) => {
+      const children = splitMentionSegments(line).flatMap<JSONContent>(
+        (segment) =>
+          segment.type === "mention"
+            ? [
+                {
+                  type: "mention",
+                  attrs: { id: segment.email, label: segment.name },
+                },
+              ]
+            : segment.text
+              ? [{ type: "text", text: segment.text }]
+              : [],
+      );
+      return children.length
+        ? { type: "paragraph", content: children }
+        : { type: "paragraph" };
+    }),
+  };
 }

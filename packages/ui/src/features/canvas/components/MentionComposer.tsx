@@ -1,14 +1,16 @@
 import { Avatar, AvatarFallback, InputGroup } from "@posthog/quill";
-import { formatMention, splitMentionSegments } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
-import { filterMentionCandidates } from "@posthog/ui/features/canvas/utils/mentionComposer";
+import {
+  contentToDoc,
+  docToContent,
+  filterMentionCandidates,
+} from "@posthog/ui/features/canvas/utils/mentionComposer";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { Text } from "@radix-ui/themes";
 import Mention, { type MentionNodeAttrs } from "@tiptap/extension-mention";
 import Placeholder from "@tiptap/extension-placeholder";
-import type { Node as PmNode } from "@tiptap/pm/model";
-import { EditorContent, type JSONContent, useEditor } from "@tiptap/react";
+import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import "./mention-composer.css";
@@ -35,49 +37,6 @@ const MENTION_CHIP_CLASS = "rounded px-0.5 font-medium text-[var(--accent-11)]";
 // click anywhere in the box focuses the editor.
 const EDITOR_CLASS =
   "w-full px-2.5 py-2 outline-none break-words [overflow-wrap:break-word] [white-space:pre-wrap] [word-break:break-word]";
-
-/** Serialize the editor doc back to content with inline mention tokens. */
-export function docToContent(doc: PmNode): string {
-  const lines: string[] = [];
-  doc.forEach((block) => {
-    let line = "";
-    block.forEach((child) => {
-      if (child.type.name === "mention") {
-        line += formatMention(child.attrs.label, child.attrs.id);
-      } else if (child.type.name === "hardBreak") {
-        line += "\n";
-      } else {
-        line += child.text ?? "";
-      }
-    });
-    lines.push(line);
-  });
-  return lines.join("\n");
-}
-
-export function contentToDoc(content: string): JSONContent {
-  return {
-    type: "doc",
-    content: content.split("\n").map((line) => {
-      const children = splitMentionSegments(line).flatMap<JSONContent>(
-        (segment) =>
-          segment.type === "mention"
-            ? [
-                {
-                  type: "mention",
-                  attrs: { id: segment.email, label: segment.name },
-                },
-              ]
-            : segment.text
-              ? [{ type: "text", text: segment.text }]
-              : [],
-      );
-      return children.length
-        ? { type: "paragraph", content: children }
-        : { type: "paragraph" };
-    }),
-  };
-}
 
 interface SuggestionSession {
   items: UserBasic[];
