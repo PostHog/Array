@@ -57,6 +57,9 @@ export function ChannelsSidebar() {
   useEffect(() => {
     if (open) cancelSidebarPeek();
   }, [open]);
+  // The peek store is a module-level singleton — if this sidebar unmounts
+  // while peeked (route without it), a stale peek would greet the remount.
+  useEffect(() => () => cancelSidebarPeek(), []);
 
   // Channels stay behind project-bluebird: the toggle only appears where the
   // canvas backend is wired, and a persisted "on" is ignored when the flag is

@@ -57,11 +57,17 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
   // SIDEBAR_MIN_WIDTH on the way to the edge, so if the drag ends closed we
   // put this back — the next open should restore the user's chosen width.
   const dragStartWidthRef = React.useRef(width);
+  // Whether the drag has closed the sidebar. Tracked in a ref, synchronously
+  // with the mousemove that closes it — mouseup can fire before React
+  // re-registers the listeners with the post-close open/peek values, so the
+  // closure state can't be trusted for the width restore.
+  const dragEndedClosedRef = React.useRef(false);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     dragOriginRef.current = open ? "docked" : "overlay";
     dragStartWidthRef.current = width;
+    dragEndedClosedRef.current = false;
     setIsResizing(true);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
@@ -99,6 +105,7 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
       if (open) {
         if (pointer < DRAG_COLLAPSE_AT && setOpen) {
           setOpen(false);
+          dragEndedClosedRef.current = true;
           return;
         }
         setWidth(clamped);
@@ -108,6 +115,7 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
       if (peek) {
         if (pointer < DRAG_COLLAPSE_AT) {
           onPeekDismiss?.();
+          dragEndedClosedRef.current = true;
           return;
         }
         setWidth(clamped);
@@ -122,6 +130,7 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
         } else {
           onPeekEnter?.();
         }
+        dragEndedClosedRef.current = false;
         setWidth(clamped);
       }
     };
@@ -134,7 +143,7 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
       // Drag ended closed (drag-to-close or peek dismiss): the collapse walk
       // clamped the store width to min on the way down — restore the pre-drag
       // width so the next open comes back at the user's chosen size.
-      if (!open && !peek) {
+      if (dragEndedClosedRef.current) {
         setWidth(dragStartWidthRef.current);
       }
       // A floating-panel drag suppresses the panel's mouseleave (the pointer
@@ -176,22 +185,28 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
 
   // While the panel slides, the resize handle sweeps under a stationary
   // pointer and picks up a stale :hover (browsers only recompute hover on
-  // pointer moves) — the primary line would stick on. Disarm the handle for
-  // the duration of any slide; a grab in progress keeps it live.
+  // pointer moves) — the primary line would stick on. Any open/peek flip
+  // starts a slide, so disarm the handle inline during that same render (a
+  // grab in progress keeps it live), then re-arm once the slide is over.
   const [handleArmed, setHandleArmed] = React.useState(true);
-  const skipFirstArmCycle = React.useRef(true);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: open/overlayVisible are pure triggers — any open/peek flip starts a slide and must disarm the handle
-  React.useEffect(() => {
-    if (skipFirstArmCycle.current) {
-      skipFirstArmCycle.current = false;
-      return;
-    }
+  const [prevSlideState, setPrevSlideState] = React.useState({
+    open,
+    overlayVisible,
+  });
+  if (
+    prevSlideState.open !== open ||
+    prevSlideState.overlayVisible !== overlayVisible
+  ) {
+    setPrevSlideState({ open, overlayVisible });
     setHandleArmed(false);
+  }
+  React.useEffect(() => {
+    if (handleArmed) return;
     // Slightly past the 200ms slide; timer-based so reduced-motion (no
     // transitionend) can't leave the handle disarmed.
     const timer = setTimeout(() => setHandleArmed(true), 250);
     return () => clearTimeout(timer);
-  }, [open, overlayVisible]);
+  }, [handleArmed]);
 
   return (
     <Box
