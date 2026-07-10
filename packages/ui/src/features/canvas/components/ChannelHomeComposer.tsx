@@ -1,6 +1,7 @@
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   forwardRef,
@@ -11,6 +12,7 @@ import {
 } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
 import { track } from "../../../shell/analytics";
+import { useOptionalAuthenticatedClient } from "../../auth/authClient";
 import { useUserRepositoryIntegration } from "../../integrations/useIntegrations";
 import { PromptInput } from "../../message-editor/components/PromptInput";
 import { useDraftStore } from "../../message-editor/draftStore";
@@ -32,11 +34,16 @@ import { usePreviewConfig } from "../../task-detail/hooks/usePreviewConfig";
 import { useTaskCreation } from "../../task-detail/hooks/useTaskCreation";
 import { resolveWorkspaceModePreference } from "../../task-detail/hooks/workspaceModePreference";
 import { trackAndCreateCanvas } from "../createCanvasAnalytics";
+import { channelFeedQueryKey } from "../hooks/useChannelFeed";
 import {
   UNTITLED_CANVAS_NAME,
   useDashboardMutations,
 } from "../hooks/useDashboards";
 import { useGenerateFreeformCanvas } from "../hooks/useGenerateFreeformCanvas";
+import {
+  normalizeChannelName,
+  PERSONAL_CHANNEL_NAME,
+} from "../hooks/useTaskChannels";
 
 export interface ChannelHomeComposerHandle {
   /** Drop a starter prompt into the editor and apply its mode, if any. */
@@ -97,39 +104,6 @@ export const ChannelHomeComposer = forwardRef<
     });
     setCanvasArmed(!canvasArmed);
   }, [channelId, canvasArmed]);
-
-  const handleCanvasSubmit = useCallback(async () => {
-    const instruction = editorRef.current?.getText().trim();
-    if (!instruction || isStartingCanvas) return;
-    let record: { id: string; name: string };
-    try {
-      record = await trackAndCreateCanvas(
-        channelId,
-        "freeform",
-        "channel_home",
-        () => createDashboard(channelId, UNTITLED_CANVAS_NAME, "freeform"),
-      );
-    } catch (error) {
-      toastError("Couldn't create canvas", error);
-      return;
-    }
-    // generate() surfaces its own failure toasts; on success it files the task
-    // to the channel and tracks completion for the finished-generation toast.
-    const taskId = await generateCanvas({
-      dashboardId: record.id,
-      name: record.name,
-      templateId: "freeform",
-      instruction,
-      useStarter: true,
-    });
-    if (!taskId) return;
-    editorRef.current?.clear();
-    setCanvasArmed(false);
-    void navigate({
-      to: "/website/$channelId/dashboards/$dashboardId",
-      params: { channelId, dashboardId: record.id },
-    });
-  }, [channelId, createDashboard, generateCanvas, isStartingCanvas, navigate]);
 
   const {
     lastUsedAdapter,
@@ -192,6 +166,81 @@ export const ChannelHomeComposer = forwardRef<
     modeFallback;
   const currentReasoningLevel =
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+
+  const queryClient = useQueryClient();
+  const apiClient = useOptionalAuthenticatedClient();
+  const handleCanvasSubmit = useCallback(async () => {
+    const instruction = editorRef.current?.getText().trim();
+    if (!instruction || isStartingCanvas) return;
+    // The folder→backend channel mapping can still be resolving when the user
+    // submits (fresh channel, cold channels list). Resolve it here rather than
+    // silently creating a run the feed will never show. The personal channel
+    // can't be resolved by name; it only arrives via the channels list.
+    let feedChannelId = backendChannelId;
+    const normalizedName = channelName ? normalizeChannelName(channelName) : "";
+    if (
+      !feedChannelId &&
+      apiClient &&
+      normalizedName &&
+      normalizedName !== PERSONAL_CHANNEL_NAME
+    ) {
+      feedChannelId = await apiClient
+        .resolveTaskChannel(normalizedName)
+        .then((c) => c.id)
+        .catch(() => undefined);
+    }
+    let record: { id: string; name: string };
+    try {
+      record = await trackAndCreateCanvas(
+        channelId,
+        "freeform",
+        "channel_home",
+        () => createDashboard(channelId, UNTITLED_CANVAS_NAME, "freeform"),
+      );
+    } catch (error) {
+      toastError("Couldn't create canvas", error);
+      return;
+    }
+    // generate() surfaces its own failure toasts; on success it files the task
+    // to the channel and tracks completion for the finished-generation toast.
+    const taskId = await generateCanvas({
+      dashboardId: record.id,
+      name: record.name,
+      templateId: "freeform",
+      instruction,
+      // Owned by the backend channel so the run shows as a card in the feed,
+      // like a plain composer submit.
+      backendChannelId: feedChannelId,
+      adapter: adapter ?? "claude",
+      model: currentModel,
+      reasoningLevel: currentReasoningLevel,
+      useStarter: true,
+    });
+    if (!taskId) return;
+    // Surface the new card without waiting for the feed's next poll.
+    void queryClient.invalidateQueries({
+      queryKey: channelFeedQueryKey(feedChannelId),
+    });
+    editorRef.current?.clear();
+    setCanvasArmed(false);
+    void navigate({
+      to: "/website/$channelId/dashboards/$dashboardId",
+      params: { channelId, dashboardId: record.id },
+    });
+  }, [
+    channelId,
+    channelName,
+    backendChannelId,
+    apiClient,
+    adapter,
+    currentModel,
+    currentReasoningLevel,
+    createDashboard,
+    generateCanvas,
+    isStartingCanvas,
+    navigate,
+    queryClient,
+  ]);
 
   const { isCreatingTask, canSubmit, handleSubmit } = useTaskCreation({
     editorRef,
@@ -303,21 +352,17 @@ export const ChannelHomeComposer = forwardRef<
         enableCommands
         enableBashMode={false}
         modelSelector={
-          // Canvas generation resolves the adapter's default model itself.
-          canvasArmed ? null : (
-            <UnifiedModelSelector
-              modelOption={modelOption}
-              adapter={adapter ?? "claude"}
-              onAdapterChange={setAdapter}
-              disabled={isBusy}
-              isConnecting={isLoading}
-              onModelChange={handleModelChange}
-            />
-          )
+          <UnifiedModelSelector
+            modelOption={modelOption}
+            adapter={adapter ?? "claude"}
+            onAdapterChange={setAdapter}
+            disabled={isBusy}
+            isConnecting={isLoading}
+            onModelChange={handleModelChange}
+          />
         }
         reasoningSelector={
-          !isLoading &&
-          !canvasArmed && (
+          !isLoading && (
             <ReasoningLevelSelector
               thoughtOption={thoughtOption}
               adapter={adapter}
