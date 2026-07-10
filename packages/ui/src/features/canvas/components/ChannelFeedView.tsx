@@ -400,7 +400,9 @@ const FeedItem = memo(function FeedItem({
         </ThreadItemHeader>
 
         <ThreadItemBody className="wrap-break-word">
-          {task.created_by ? (
+          {/* Only attribute channel-started tasks: other origins (Slack,
+              automations) carry a created_by who didn't start it here. */}
+          {task.origin_product === "user_created" && task.created_by ? (
             <>
               {/* Mention-styled but rendered inert: the starter shouldn't be
                   notified about their own task. */}
