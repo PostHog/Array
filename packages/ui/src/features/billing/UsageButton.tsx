@@ -8,6 +8,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  Progress,
 } from "@posthog/quill";
 import { BILLING_FLAG } from "@posthog/shared";
 import {
@@ -24,6 +25,9 @@ import { useFreeUsage } from "./useFreeUsage";
 // progress bar, reset time, and the Upgrade action. Built on quill's Popover
 // with `openOnHover` on the trigger, so it behaves as a hover card (Base UI
 // keeps it open while the pointer travels into the card to click Upgrade).
+// The card body styles with quill tokens (foreground/muted-foreground/primary,
+// quill Progress) — radix scale classes don't resolve inside the data-quill
+// popover portal.
 export function UsageButton() {
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const { usage } = useFreeUsage(billingEnabled);
@@ -61,32 +65,31 @@ export function UsageButton() {
       />
       <PopoverContent side="bottom" align="end" sideOffset={6}>
         <div className="flex items-center justify-between">
-          <span className="font-medium text-gray-11 text-xs">
+          <span className="font-medium text-foreground text-xs">
             Free plan
             <Circle
               size={4}
               weight="fill"
-              className="mx-1.5 inline text-gray-8"
+              className="mx-1.5 inline text-muted-foreground"
             />
-            <span className="font-normal text-gray-10">
+            <span className="font-normal text-muted-foreground">
               {exceeded ? "Limit reached" : `${usagePercent}% used`}
             </span>
           </span>
           <button
             type="button"
-            className="bg-transparent font-medium text-accent-11 text-xs transition-colors hover:text-accent-12"
+            className="bg-transparent font-medium text-primary text-xs transition-opacity hover:opacity-80"
             onClick={() => handleOpenPlan("titlebar_card")}
           >
             Upgrade
           </button>
         </div>
-        <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-gray-4">
-          <div
-            className={`h-full rounded-full transition-all ${exceeded ? "bg-red-9" : "bg-accent-9"}`}
-            style={{ width: `${usagePercent}%` }}
-          />
-        </div>
-        <div className="mt-1.5 font-normal text-[11px] text-gray-9">
+        <Progress
+          className="mt-2"
+          value={usagePercent}
+          variant={exceeded ? "destructive" : "default"}
+        />
+        <div className="mt-1.5 font-normal text-[11px] text-muted-foreground">
           {resetLabel}
         </div>
       </PopoverContent>
