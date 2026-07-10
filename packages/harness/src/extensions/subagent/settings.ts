@@ -31,7 +31,6 @@ export interface ModelScopeConfig {
 }
 
 export interface SubagentSettings {
-  defaultModel?: string;
   disableThinking?: boolean;
   agentOverrides?: Record<string, AgentOverride>;
   modelScope?: ModelScopeConfig;
@@ -74,7 +73,6 @@ function mergeSettings(
   override: SubagentSettings,
 ): SubagentSettings {
   return {
-    defaultModel: override.defaultModel ?? base.defaultModel,
     disableThinking: override.disableThinking ?? base.disableThinking,
     agentOverrides: { ...base.agentOverrides, ...override.agentOverrides },
     modelScope: override.modelScope ?? base.modelScope,
@@ -113,9 +111,14 @@ export interface EffectiveAgent extends AgentConfig {
 }
 
 /**
- * Applies `settings.subagents.agentOverrides[agent.name]` and
- * `settings.subagents.defaultModel` on top of a static `AgentConfig`. Never
- * mutates the input.
+ * Applies `settings.subagents.agentOverrides[agent.name]` on top of a static
+ * `AgentConfig`. Never mutates the input. Model resolution is just two
+ * steps from here: this agent's effective `model` (override, or whatever's
+ * baked into its frontmatter — possibly nothing), and then `auth.ts`'s
+ * implicit inherit-the-parent's-model fallback if that model can't be
+ * resolved. There is no separate global default — an agent that wants a
+ * specific model pins it in its own frontmatter or gets a per-agent
+ * override; nothing silently overrides every agent at once.
  */
 export function applyAgentOverrides(
   agent: AgentConfig,
@@ -129,7 +132,7 @@ export function applyAgentOverrides(
 
   return {
     ...agent,
-    model: override?.model ?? agent.model ?? settings.defaultModel,
+    model: override?.model ?? agent.model,
     tools: tools && tools.length > 0 ? tools : agent.tools,
     thinking: settings.disableThinking ? "off" : override?.thinking,
     fallbackModels: override?.fallbackModels,

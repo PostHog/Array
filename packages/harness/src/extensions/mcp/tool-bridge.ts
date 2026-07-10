@@ -10,16 +10,23 @@
  *   - Text/image passthrough; audio/resource content described as text
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  type ExtensionAPI,
+  formatSize,
+  truncateHead,
+} from "@earendil-works/pi-coding-agent";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   CallToolResultSchema,
   ListToolsResultSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { McpSettings } from "./config";
+import type { McpServerConfig, McpSettings } from "./config";
 import { McpError } from "./errors";
 import { renderMcpToolCall } from "./render";
 import { convertJsonSchemaToTypebox } from "./schema";
+import { hashServerConfig, type McpToolCache } from "./tool-cache";
 
 /** Subset of pi's ExtensionAPI the bridge needs (narrow for easy faking). */
 export type ToolBridgeHost = Pick<
@@ -51,7 +58,7 @@ export function buildToolName(
   return `${safe.slice(0, MAX_TOOL_NAME_LENGTH - hash.length - 1)}_${hash}`;
 }
 
-type BridgedContent =
+export type BridgedContent =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string };
 
@@ -161,23 +168,142 @@ export interface ToolCollision {
   piToolName: string;
 }
 
+/** Metadata the `mcp` proxy tool needs to search over and dispatch calls. */
+export interface ToolMeta {
+  serverName: string;
+  mcpName: string;
+  description: string;
+}
+
+export interface SearchableTool extends ToolMeta {
+  piName: string;
+  /** Whether this tool is currently in the model's active tool set. */
+  active: boolean;
+}
+
+/**
+ * Call an MCP tool and convert the result into pi tool-result content.
+ * Shared by directly-registered pi tools (`ToolBridge.registerTool`) and the
+ * `mcp` proxy tool, so both paths get identical error handling.
+ */
+/**
+ * Truncate each text content block to pi's built-in-tool convention (50KB /
+ * 2000 lines, whichever hits first — see `DEFAULT_MAX_BYTES`/
+ * `DEFAULT_MAX_LINES`). Render-level collapsing (render.ts) only affects
+ * what the TUI *displays*; without this, an MCP tool that returns a large
+ * result (e.g. a broad SQL query) would send it to the model uncapped —
+ * the same class of context blowup as an untruncated discovery dump, just
+ * via the actual call path instead.
+ */
+export function truncateBridgedContent(
+  content: BridgedContent[],
+): BridgedContent[] {
+  return content.map((item): BridgedContent => {
+    if (item.type !== "text") return item;
+    const truncation = truncateHead(item.text, {
+      maxLines: DEFAULT_MAX_LINES,
+      maxBytes: DEFAULT_MAX_BYTES,
+    });
+    if (!truncation.truncated) return item;
+    const note =
+      `\n\n[Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines ` +
+      `(${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). ` +
+      `Narrow the query/arguments (filters, LIMIT, pagination) to see more.]`;
+    return { type: "text", text: truncation.content + note };
+  });
+}
+
+export async function invokeTool(
+  client: Client,
+  serverName: string,
+  mcpToolName: string,
+  args: Record<string, unknown>,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<{ content: BridgedContent[] }> {
+  if (signal?.aborted) {
+    return { content: [{ type: "text", text: "Cancelled" }] };
+  }
+  try {
+    const result = await client.request(
+      { method: "tools/call", params: { name: mcpToolName, arguments: args } },
+      CallToolResultSchema,
+      // The SDK sends notifications/cancelled when the signal fires.
+      { timeout: timeoutMs, ...(signal ? { signal } : {}) },
+    );
+
+    const content = truncateBridgedContent(
+      convertMcpContent(result.content as unknown[]),
+    );
+
+    // Tool execution errors (isError) are distinct from protocol errors.
+    if (result.isError) {
+      const text = content
+        .map((c) => (c.type === "text" ? c.text : `[${c.type}]`))
+        .join("\n");
+      throw new McpError(text || "Tool reported an error", serverName, "tool");
+    }
+
+    return { content };
+  } catch (err) {
+    if (err instanceof McpError) throw err;
+    throw new McpError(
+      err instanceof Error ? err.message : String(err),
+      serverName,
+      "protocol",
+      err,
+    );
+  }
+}
+
+export interface ToolBridgeOptions {
+  /** Disk-backed metadata cache, used so `mcp` search works pre-connection. */
+  toolCache?: McpToolCache;
+  /**
+   * Called after every tool call (direct or via the `mcp` proxy tool), so
+   * lazy-server idle timeouts reset on real use.
+   */
+  onToolUsed?: (serverName: string) => void;
+}
+
 /**
  * Manages MCP tools as pi tools for a set of servers. Tools are (re-)registered
  * on every refresh (pi's `registerTool` overwrites by name, and re-registering
- * rebinds the execute closure to the latest client after reconnects) and
- * activated/deactivated as servers connect/disconnect, avoiding tool churn.
+ * rebinds the execute closure to the latest client after reconnects). Only
+ * `directTools`/proxy-activated tools are ever put in the model's active set
+ * (`setActiveTools`) — the rest stay registered-but-inactive so their schemas
+ * don't cost context until the `mcp` proxy tool activates them.
  */
 export class ToolBridge {
   private readonly settings: McpSettings;
   private readonly pi: ToolBridgeHost;
+  private readonly toolCache: McpToolCache | undefined;
+  private readonly onToolUsed: ((serverName: string) => void) | undefined;
   /** pi tool names registered per MCP server. */
   private readonly serverToolNames = new Map<string, Set<string>>();
   /** Collisions observed during each server's most recent refresh. */
   private readonly serverCollisions = new Map<string, ToolCollision[]>();
+  /** Metadata for every currently-registered pi tool (active or not). */
+  private readonly toolMeta = new Map<string, ToolMeta>();
+  /** Per-server pi names that `directTools` config puts straight in context. */
+  private readonly serverDirectNames = new Map<string, Set<string>>();
+  /**
+   * Per-server pi names activated on demand via the `mcp` proxy tool's
+   * search+call flow. Tracked separately from pi's active-tools list so a
+   * reconnect can restore them (activateServer/deactivateServer otherwise
+   * only know about `directTools`).
+   */
+  private readonly serverSearchActivated = new Map<string, Set<string>>();
 
-  constructor(settings: McpSettings, pi: ToolBridgeHost) {
+  constructor(
+    settings: McpSettings,
+    pi: ToolBridgeHost,
+    options: ToolBridgeOptions = {},
+  ) {
     this.settings = settings;
     this.pi = pi;
+    this.toolCache = options.toolCache;
+    this.onToolUsed = options.onToolUsed;
   }
 
   /** pi tool names currently tracked for a server. */
@@ -190,17 +316,62 @@ export class ToolBridge {
     return [...(this.serverCollisions.get(serverName) ?? [])];
   }
 
+  /** Whether `piName` is currently registered (from any connected server). */
+  hasTool(piName: string): boolean {
+    return this.toolMeta.has(piName);
+  }
+
+  /** Metadata for a registered pi tool, for the `mcp` proxy tool's dispatch. */
+  getToolMeta(piName: string): ToolMeta | undefined {
+    return this.toolMeta.get(piName);
+  }
+
+  /** All currently-registered tools, for the `mcp` proxy tool's search. */
+  getSearchableTools(): SearchableTool[] {
+    const active = new Set(this.pi.getActiveTools());
+    return [...this.toolMeta.entries()].map(([piName, meta]) => ({
+      piName,
+      ...meta,
+      active: active.has(piName),
+    }));
+  }
+
+  /**
+   * Activate specific pi tool names on demand (the `mcp` proxy tool's
+   * `tool` call). Only known tool names are activated; unknown names are
+   * silently skipped (the proxy tool validates before calling this).
+   * Remembered per-server so a later reconnect restores them.
+   */
+  activateTools(piNames: readonly string[]): string[] {
+    const activated: string[] = [];
+    const active = new Set(this.pi.getActiveTools());
+    for (const piName of piNames) {
+      const meta = this.toolMeta.get(piName);
+      if (!meta || active.has(piName)) continue;
+      active.add(piName);
+      activated.push(piName);
+      const set = this.serverSearchActivated.get(meta.serverName) ?? new Set();
+      set.add(piName);
+      this.serverSearchActivated.set(meta.serverName, set);
+    }
+    if (activated.length > 0) this.pi.setActiveTools([...active]);
+    return activated;
+  }
+
   /**
    * Refresh tools for a server — called on initial connect and on
    * notifications/tools/list_changed. Deactivates tools that disappeared
    * from the server's list, then activates the current set.
    *
    * `requestTimeoutMs` overrides the global default (per-server config).
+   * `serverConfig`, when given, drives `directTools` filtering and the
+   * on-disk metadata cache used by the `mcp` proxy tool's search.
    */
   async refreshTools(
     serverName: string,
     client: Client,
     requestTimeoutMs?: number,
+    serverConfig?: McpServerConfig,
   ): Promise<void> {
     const timeoutMs = requestTimeoutMs ?? this.settings.requestTimeoutMs;
 
@@ -223,6 +394,8 @@ export class ToolBridge {
     const firstClaimant = new Map<string, string>();
     const reportedClaimant = new Set<string>();
     const collisions: ToolCollision[] = [];
+    const directConfig = serverConfig?.directTools ?? true;
+    const directNames = new Set<string>();
 
     for (const tool of tools) {
       const piName = buildToolName(
@@ -252,24 +425,81 @@ export class ToolBridge {
         firstClaimant.set(piName, tool.name);
       }
       current.add(piName);
-      this.registerTool(piName, serverName, tool, client, timeoutMs);
+      const description = this.registerTool(
+        piName,
+        serverName,
+        tool,
+        client,
+        timeoutMs,
+      );
+      this.toolMeta.set(piName, {
+        serverName,
+        mcpName: tool.name,
+        description,
+      });
+      const isDirect =
+        directConfig === true ||
+        (Array.isArray(directConfig) && directConfig.includes(tool.name));
+      if (isDirect) directNames.add(piName);
     }
 
     for (const stale of previous) {
-      if (!current.has(stale)) this.deactivateTool(stale);
+      if (!current.has(stale)) {
+        this.deactivateTool(stale);
+        this.toolMeta.delete(stale);
+      }
+    }
+    const searchActivated = this.serverSearchActivated.get(serverName);
+    if (searchActivated) {
+      for (const name of searchActivated) {
+        if (!current.has(name)) searchActivated.delete(name);
+      }
     }
 
     this.serverToolNames.set(serverName, current);
     this.serverCollisions.set(serverName, collisions);
+    this.serverDirectNames.set(serverName, directNames);
     this.activateServer(serverName);
+
+    if (this.toolCache && serverConfig) {
+      const entry = {
+        configHash: hashServerConfig(serverConfig),
+        ...(serverConfig.description !== undefined
+          ? { description: serverConfig.description }
+          : {}),
+        tools: tools.map((tool) => ({
+          name: buildToolName(this.settings.toolPrefix, serverName, tool.name),
+          mcpName: tool.name,
+          description: buildDescription(tool),
+        })),
+      };
+      void this.toolCache.set(serverName, entry).catch(() => {
+        // Best effort — a failed cache write only degrades pre-connection search.
+      });
+    }
   }
 
-  /** Activate all pi tools belonging to a server. */
+  /**
+   * Activate this server's `directTools` and any proxy-activated tools —
+   * deactivating the rest of its tools. Must always reconcile (never
+   * early-return when there's nothing to *add*): pi's own `registerTool()`
+   * auto-activates every brand-new tool name the moment it's registered
+   * (`agent-session.js` `_refreshToolRegistry`), so a server with
+   * `directTools: false` still needs its tools explicitly pulled back out
+   * of the active set here, or they silently stay in context.
+   */
   activateServer(serverName: string): void {
     const names = this.serverToolNames.get(serverName);
     if (!names || names.size === 0) return;
+    const direct = this.serverDirectNames.get(serverName);
+    const extra = this.serverSearchActivated.get(serverName);
+    const shouldBeActive = (name: string) =>
+      direct?.has(name) || extra?.has(name);
     const active = new Set(this.pi.getActiveTools());
-    for (const name of names) active.add(name);
+    for (const name of names) {
+      if (shouldBeActive(name)) active.add(name);
+      else active.delete(name);
+    }
     this.pi.setActiveTools([...active]);
   }
 
@@ -288,14 +518,16 @@ export class ToolBridge {
     );
   }
 
+  /** Registers the pi tool and returns its (annotation-augmented) description. */
   private registerTool(
     piName: string,
     serverName: string,
     tool: McpToolDefinition,
     client: Client,
     timeoutMs: number,
-  ): void {
+  ): string {
     const description = buildDescription(tool);
+    const onToolUsed = this.onToolUsed;
 
     this.pi.registerTool({
       name: piName,
@@ -308,49 +540,18 @@ export class ToolBridge {
       },
 
       async execute(_toolCallId, params, signal) {
-        if (signal?.aborted) {
-          return {
-            content: [{ type: "text", text: "Cancelled" }],
-            details: {},
-          };
-        }
-
-        try {
-          const result = await client.request(
-            {
-              method: "tools/call",
-              params: { name: tool.name, arguments: params ?? {} },
-            },
-            CallToolResultSchema,
-            // The SDK sends notifications/cancelled when the signal fires.
-            { timeout: timeoutMs, ...(signal ? { signal } : {}) },
-          );
-
-          const content = convertMcpContent(result.content as unknown[]);
-
-          // Tool execution errors (isError) are distinct from protocol errors.
-          if (result.isError) {
-            const text = content
-              .map((c) => (c.type === "text" ? c.text : `[${c.type}]`))
-              .join("\n");
-            throw new McpError(
-              text || "Tool reported an error",
-              serverName,
-              "tool",
-            );
-          }
-
-          return { content, details: {} };
-        } catch (err) {
-          if (err instanceof McpError) throw err;
-          throw new McpError(
-            err instanceof Error ? err.message : String(err),
-            serverName,
-            "protocol",
-            err,
-          );
-        }
+        onToolUsed?.(serverName);
+        const { content } = await invokeTool(
+          client,
+          serverName,
+          tool.name,
+          (params ?? {}) as Record<string, unknown>,
+          timeoutMs,
+          signal,
+        );
+        return { content, details: {} };
       },
     });
+    return description;
   }
 }

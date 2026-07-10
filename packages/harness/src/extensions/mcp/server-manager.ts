@@ -51,6 +51,10 @@ export interface ManagedServer {
   healthCheckTimer: ReturnType<typeof setInterval> | null;
   /** Pending retry timeout — cleared on shutdown to prevent ghost reconnects. */
   retryTimer: ReturnType<typeof setTimeout> | null;
+  /** Idle-disconnect ticker for `lifecycle: "lazy"` servers with `idleTimeoutMs`. */
+  idleTimer: ReturnType<typeof setInterval> | null;
+  /** Updated by `touch()` on every tool call; drives the idle-disconnect ticker. */
+  lastUsedAt: number;
 }
 
 /** Called after a server connects and whenever its tool list changes. */
@@ -166,6 +170,16 @@ export class ServerManager {
     return [...this.servers.values()];
   }
 
+  /**
+   * Record tool-call activity for a server, resetting its idle-disconnect
+   * countdown (`lifecycle: "lazy"` + `idleTimeoutMs`). Called by the tool
+   * bridge and the `mcp` proxy tool on every dispatch.
+   */
+  touch(name: string): void {
+    const server = this.servers.get(name);
+    if (server) server.lastUsedAt = Date.now();
+  }
+
   /** Effective per-request timeout for a server. */
   getRequestTimeoutMs(name: string): number {
     return (
@@ -249,6 +263,8 @@ export class ServerManager {
         log: [],
         healthCheckTimer: null,
         retryTimer: null,
+        idleTimer: null,
+        lastUsedAt: Date.now(),
       });
     }
   }
@@ -382,6 +398,7 @@ export class ServerManager {
     server.state = "ready";
     server.retryCount = 0;
     server.lastError = null;
+    server.lastUsedAt = Date.now();
 
     // Detect crashes and dropped connections: without this, a dead server
     // would stay "ready" with active tools bound to a closed client forever.
@@ -406,6 +423,20 @@ export class ServerManager {
         }
       }, server.config.healthCheckIntervalMs);
       server.healthCheckTimer.unref?.();
+    }
+
+    // Idle-disconnect: only for lazy servers that opt in. Metadata stays
+    // cached (tool-cache.ts) so search keeps working; the next call to one
+    // of its tools reconnects transparently.
+    if (server.config.lifecycle === "lazy" && server.config.idleTimeoutMs) {
+      const idleTimeoutMs = server.config.idleTimeoutMs;
+      const checkIntervalMs = Math.min(idleTimeoutMs, 60_000);
+      server.idleTimer = setInterval(() => {
+        if (Date.now() - server.lastUsedAt >= idleTimeoutMs) {
+          void this.stopServer(server.name);
+        }
+      }, checkIntervalMs);
+      server.idleTimer.unref?.();
     }
 
     if (this.onToolRefresh) {
@@ -438,6 +469,10 @@ export class ServerManager {
     if (server.healthCheckTimer) {
       clearInterval(server.healthCheckTimer);
       server.healthCheckTimer = null;
+    }
+    if (server.idleTimer) {
+      clearInterval(server.idleTimer);
+      server.idleTimer = null;
     }
     server.client = null;
     server.state = "stopped";
@@ -492,6 +527,10 @@ export class ServerManager {
     if (server.healthCheckTimer) {
       clearInterval(server.healthCheckTimer);
       server.healthCheckTimer = null;
+    }
+    if (server.idleTimer) {
+      clearInterval(server.idleTimer);
+      server.idleTimer = null;
     }
     if (server.state === "stopped" && !server.client) return;
 

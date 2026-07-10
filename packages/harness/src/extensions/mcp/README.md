@@ -13,12 +13,19 @@ replace same-named global servers wholesale):
 | `~/.pi/agent/mcp.json` | global |
 | `<project>/.pi/mcp.json` | project-local — only honored when the project is trusted |
 
+By default a server is `lifecycle: "lazy"` (connects on first use, not at `session_start`) and
+`directTools: false` (its tools are searchable-only through the `mcp` proxy tool, not preloaded
+into context) — see [Context window control](#context-window-control-the-mcp-proxy-tool) below.
+Set `lifecycle: "eager"` and/or `directTools: true` per server to opt back into always-on,
+always-in-context behavior.
+
 ```json
 {
   "settings": {
     "toolPrefix": "mcp",
     "requestTimeoutMs": 30000,
-    "maxRetries": 3
+    "maxRetries": 3,
+    "searchResultLimit": 15
   },
   "mcpServers": {
     "filesystem": {
@@ -31,7 +38,9 @@ replace same-named global servers wholesale):
       "transport": "streamable-http",
       "url": "https://mcp.example.com/mcp",
       "headers": { "Authorization": "Bearer <api-key>" },
-      "lifecycle": "lazy"
+      "lifecycle": "lazy",
+      "idleTimeoutMs": 600000,
+      "description": "Internal API — deploys, feature flags, on-call"
     },
     "linear": {
       "transport": "streamable-http",
@@ -51,9 +60,12 @@ replace same-named global servers wholesale):
 | `url` | URL | | required for streamable-http / sse |
 | `headers` | record | | static HTTP headers (API-key auth) |
 | `auth` | object | | OAuth config, http/sse only (below) |
-| `lifecycle` | `"eager" \| "lazy"` | `"eager"` | eager starts at `session_start`; lazy via `/mcp:start` |
+| `lifecycle` | `"eager" \| "lazy"` | `"lazy"` | lazy (default) starts on first use of one of its tools (via the `mcp` proxy tool, below) or manually via `/mcp:start`; eager starts at `session_start` |
 | `requestTimeoutMs` | number | settings value | per-request timeout override |
 | `healthCheckIntervalMs` | number | disabled | opt-in ping; reconnects on failure |
+| `idleTimeoutMs` | number | disabled | `lifecycle: "lazy"` only — auto-disconnect this many ms after the last tool call; metadata stays cached so search keeps working, and the next call reconnects transparently |
+| `description` | string | — | one-line summary shown by `mcp` search results before this server has ever connected (its real tools aren't known yet) |
+| `directTools` | `boolean \| string[]` | `false` | which tools register straight into the model's context vs. staying searchable-only via the `mcp` proxy tool (see below) |
 
 ### Settings
 
@@ -62,6 +74,7 @@ replace same-named global servers wholesale):
 | `toolPrefix` | `"mcp"` | tool names are `<prefix>_<server>_<tool>` (sanitized to `[a-zA-Z0-9_]`, ≤64 chars with hash suffix on truncation) |
 | `requestTimeoutMs` | `30000` | default per-request timeout |
 | `maxRetries` | `3` | reconnect attempts (fixed 1s/3s/5s/10s/30s schedule) |
+| `searchResultLimit` | `15` | max results returned by the `mcp` proxy tool's search |
 
 ## OAuth (`auth`)
 
@@ -92,6 +105,40 @@ authorization is needed the connection fails with a hint to run `/mcp:auth <serv
 
 The `client_credentials` grant (machine-to-machine, no user) is not implemented — use static
 `headers` for that case.
+
+## Context window control (the `mcp` proxy tool)
+
+One extra tool, `mcp`, is always registered (regardless of how many servers/tools are
+configured) so the model can find and call MCP tools without every server's full schema
+catalog sitting in the model's context:
+
+```
+mcp({ search: "deploy staging" })
+mcp({ tool: "mcp_internal_api_trigger_deploy", args: '{"env":"staging"}' })
+```
+
+- **`search`** finds relevant tools by keyword (OR-matched, fuzzy on `-`/`_`) across three
+  sources: already-connected servers' live tools, a disk-cached catalog
+  (`~/.pi/agent/mcp-cache.json`) for `lifecycle: "lazy"` servers that connected in a previous
+  session but aren't running right now, and the `description` of a lazy server that has never
+  connected at all (its real tools aren't known yet). None of this requires a live connection.
+- **`tool`** calls a tool by its exact name (as returned by search). If the owning server isn't
+  connected, it starts automatically first (`lifecycle: "lazy"` servers connect on first real
+  use instead of at `session_start`). Passing a bare server name instead of a tool name connects
+  that server and returns its freshly discovered tool list, without executing anything.
+- **`args`** is a JSON-object string (not a nested schema) to keep the proxy tool's own schema
+  tiny.
+
+**`directTools`** (per server, default `false`) controls which tools also register as
+first-class pi tools, straight in the model's context, versus staying searchable-only through
+`mcp` (the default): `false` (all proxy-only), `true` (all direct — pre-proxy behavior), or a
+list of MCP-side tool names to keep direct while the rest stay proxy-only. Set it to `true` (or
+list specific tool names) for a small server you use on every turn and don't want a `search`
+round-trip for.
+
+**`idleTimeoutMs`** (per `lifecycle: "lazy"` server) auto-disconnects it this long after its
+last tool call — metadata stays cached so search keeps working, and the next call reconnects
+transparently.
 
 ## Commands
 
@@ -130,6 +177,13 @@ load on demand (progressive disclosure).
 - Tool-call `AbortSignal`s propagate to the SDK (`notifications/cancelled`).
 - MCP text/image result content passes through; audio/resource content is described as text.
 - Server stderr and `notifications/message` logs land in a per-server ring buffer (`/mcp <name>`).
+- Only `directTools` (default: none) are ever put in the model's active tool set; the rest
+  stay registered-but-inactive until the `mcp` proxy tool activates them, so their schemas cost
+  nothing in context until requested.
+- Servers are `lifecycle: "lazy"` by default: they connect on first use of one of their tools
+  (via `mcp`) as well as `/mcp:start`, not at `session_start`. Set `lifecycle: "eager"` for a
+  server you want connected (and, with `directTools: true`, in context) from the start. With
+  `idleTimeoutMs` set, lazy servers also auto-disconnect after a period of inactivity.
 
 ## Module map
 
@@ -137,8 +191,10 @@ load on demand (progressive disclosure).
 | --- | --- |
 | `extension.ts` | pi wiring: lifecycle, commands, notifications |
 | `config.ts` | zod schemas, load + merge of the two `mcp.json` files |
-| `server-manager.ts` | connection lifecycle, retries, health checks, transports |
-| `tool-bridge.ts` | MCP tools ⇄ pi tools (naming, schema conversion, execution) |
+| `server-manager.ts` | connection lifecycle, retries, health checks, idle timeouts, transports |
+| `tool-bridge.ts` | MCP tools ⇄ pi tools (naming, schema conversion, execution, `directTools` gating) |
+| `proxy-tool.ts` | the `mcp` search/call proxy tool |
+| `tool-cache.ts` | disk-backed tool metadata cache backing pre-connection search |
 | `schema.ts` | JSON Schema → TypeBox conversion |
 | `render.ts` | TUI call renderer (shows tool arguments inline; full JSON when expanded) |
 | `auth-storage.ts` / `oauth-provider.ts` / `callback-server.ts` / `auth-flow.ts` | OAuth |

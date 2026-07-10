@@ -15,7 +15,7 @@ import { truncateUtf8 } from "./text-truncate";
 
 export const LIFECYCLE_ARTIFACT_VERSION = 1;
 
-export type RunMode = "single" | "parallel" | "chain";
+export type RunMode = "single" | "parallel";
 export type RunState = "running" | "completed" | "failed" | "aborted";
 
 export interface RunStatus {

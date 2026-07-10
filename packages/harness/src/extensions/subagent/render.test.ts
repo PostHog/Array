@@ -104,14 +104,6 @@ describe("renderSubagentCall", () => {
     );
     expect(component.constructor.name).toBe("Text");
   });
-
-  it("renders chain mode with a step count", () => {
-    const component = renderSubagentCall(
-      { chain: [{ agent: "scout", task: "a" }] },
-      theme,
-    );
-    expect(component.constructor.name).toBe("Text");
-  });
 });
 
 describe("renderSubagentResult", () => {

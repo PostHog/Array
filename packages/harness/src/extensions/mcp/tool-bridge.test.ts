@@ -4,16 +4,19 @@ import type { McpSettings } from "./config";
 import { McpError } from "./errors";
 import type { ToolBridgeHost } from "./tool-bridge";
 import {
+  type BridgedContent,
   buildToolName,
   convertMcpContent,
   listAllTools,
   ToolBridge,
+  truncateBridgedContent,
 } from "./tool-bridge";
 
 const settings: McpSettings = {
   toolPrefix: "mcp",
   requestTimeoutMs: 5_000,
   maxRetries: 3,
+  searchResultLimit: 15,
 };
 
 interface RegisteredTool {
@@ -35,7 +38,15 @@ function fakeHost(initialActive: string[] = ["read", "bash"]) {
   const host = {
     registerTool: (tool: unknown) => {
       const t = tool as RegisteredTool;
+      // Matches real pi (`agent-session.js` `_refreshToolRegistry`): a
+      // brand-new tool name is auto-activated the instant it's registered.
+      // ToolBridge.activateServer() must always correct for this (never
+      // early-return) even when a server has nothing to explicitly add.
+      const isNew = !registered.has(t.name);
       registered.set(t.name, t);
+      if (isNew && !active.includes(t.name)) {
+        active = [...active, t.name];
+      }
     },
     getActiveTools: () => [...active],
     setActiveTools: (names: string[]) => {
@@ -156,6 +167,26 @@ describe("listAllTools", () => {
     const tools = await listAllTools(client, 1_000);
     expect(request).toHaveBeenCalledTimes(100);
     expect(tools).toHaveLength(100);
+  });
+});
+
+describe("truncateBridgedContent", () => {
+  it("leaves small text and non-text content untouched", () => {
+    const content: BridgedContent[] = [
+      { type: "text", text: "hello" },
+      { type: "image", data: "aGk=", mimeType: "image/png" },
+    ];
+    expect(truncateBridgedContent(content)).toEqual(content);
+  });
+
+  it("truncates a large text block and appends an explanatory note", () => {
+    const bigText = "x".repeat(200_000);
+    const [result] = truncateBridgedContent([{ type: "text", text: bigText }]);
+    expect(result?.type).toBe("text");
+    const text = (result as { text: string }).text;
+    expect(text.length).toBeLessThan(bigText.length);
+    expect(text).toContain("Output truncated");
+    expect(text).toContain("Narrow the query/arguments");
   });
 });
 
@@ -350,6 +381,32 @@ describe("ToolBridge", () => {
   });
 
   describe("bridged execute", () => {
+    it("truncates a large tool result before it reaches the model (regression)", async () => {
+      // Render-level collapsing (render.ts) only affects what the TUI
+      // displays — it must not be the only thing standing between a large
+      // MCP tool result (e.g. a broad SQL query) and the model's context.
+      const { host, registered } = fakeHost();
+      const bridge = new ToolBridge(settings, host);
+      const bigOutput = Array.from(
+        { length: 5_000 },
+        (_, i) => `row ${i}`,
+      ).join("\n");
+      await bridge.refreshTools(
+        "demo",
+        fakeClient({
+          tools: [{ name: "dump", inputSchema: {} }],
+          onCall: () => ({ content: [{ type: "text", text: bigOutput }] }),
+        }),
+      );
+
+      const result = await registered.get("mcp_demo_dump")?.execute("id-1", {});
+      const text = (result?.content[0] as { text: string }).text;
+      expect(text.length).toBeLessThan(bigOutput.length);
+      expect(text).toContain("row 0");
+      expect(text).not.toContain("row 4999");
+      expect(text).toContain("Output truncated");
+    });
+
     it("forwards arguments and converts result content", async () => {
       const { host, registered } = fakeHost();
       const bridge = new ToolBridge(settings, host);

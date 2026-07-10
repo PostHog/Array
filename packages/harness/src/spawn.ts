@@ -9,12 +9,23 @@ import { piCliInvocation, resolvePiCliEntry } from "./pi-cli";
 
 export { resolvePiCliEntry as resolvePiCli };
 
-export function harnessExtensionFiles(): string[] {
+export interface HarnessExtensionFilesOptions {
+  /** Extension names to omit — e.g. `bin/hog.ts`'s standalone binary excludes
+   * `subagent`, which needs a real `node_modules` tree to resolve pi's CLI
+   * entry against, something a single compiled executable doesn't carry. */
+  exclude?: string[];
+}
+
+export function harnessExtensionFiles(
+  options: HarnessExtensionFilesOptions = {},
+): string[] {
+  const exclude = new Set(options.exclude ?? []);
   // `./index.js` (not `./extension.js`) so pi's startup banner shows each
   // extension by its directory name instead of `<name>/extension.js`; see
   // `src/extensions/<name>/index.ts`.
-  return HARNESS_EXTENSION_NAMES.map((name) =>
-    fileURLToPath(new URL(`./extensions/${name}/index.js`, import.meta.url)),
+  return HARNESS_EXTENSION_NAMES.filter((name) => !exclude.has(name)).map(
+    (name) =>
+      fileURLToPath(new URL(`./extensions/${name}/index.js`, import.meta.url)),
   );
 }
 
