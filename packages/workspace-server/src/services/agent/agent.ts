@@ -1605,7 +1605,7 @@ If a repository IS genuinely required, attach one in this priority order:
     existing.push(entry);
     this.sessionCheckpoints.set(taskRunId, existing);
 
-    this.log.info("Registered cloud checkpoint for local session", {
+    this.log.debug("Registered cloud checkpoint for local session", {
       taskRunId,
       checkpointId: entry.checkpointId,
       promptId: entry.promptId,
@@ -2518,7 +2518,7 @@ For git operations while detached:
       return;
     }
 
-    this.log.info("TURN_COMPLETE in stream — capturing local checkpoint", {
+    this.log.debug("TURN_COMPLETE in stream — capturing local checkpoint", {
       taskRunId,
       repoPath: session.config.repoPath,
       promptId,
@@ -2558,11 +2558,6 @@ For git operations while detached:
     turnCompletedAt: string,
     emitToRenderer: (payload: unknown) => void,
   ): Promise<void> {
-    this.log.info("Capturing local checkpoint after turn", {
-      taskRunId,
-      repoPath,
-    });
-
     const captureStart = Date.now();
     const saga = new CaptureCheckpointSaga();
     const sagaResult = await saga.run({ baseDir: repoPath });
@@ -2608,7 +2603,7 @@ For git operations while detached:
       turnCompletedAt,
     });
     this.sessionCheckpoints.set(taskRunId, existing);
-    this.log.info("Stored checkpoint for reconnect replay", {
+    this.log.debug("Stored checkpoint for reconnect replay", {
       taskRunId,
       checkpointId: result.checkpointId,
       promptId,
@@ -2631,7 +2626,7 @@ For git operations while detached:
     };
     emitToRenderer(acpMessage);
 
-    this.log.info("Emitted GIT_CHECKPOINT notification to renderer", {
+    this.log.debug("Emitted GIT_CHECKPOINT notification to renderer", {
       taskRunId,
       checkpointId: result.checkpointId,
     });
@@ -2642,7 +2637,7 @@ For git operations while detached:
         const jsonlPath = getSessionJsonlPath(sessionId, repoPath);
         const line = `${JSON.stringify({ notification })}\n`;
         await fsPromises.appendFile(jsonlPath, line, "utf-8");
-        this.log.info("Checkpoint appended to JSONL", {
+        this.log.debug("Checkpoint appended to JSONL", {
           taskRunId,
           checkpointId: result.checkpointId,
           jsonlPath,
@@ -2685,7 +2680,7 @@ For git operations while detached:
         `${JSON.stringify(entry)}\n`,
         "utf-8",
       );
-      this.log.info("Checkpoint appended to local logs.ndjson", {
+      this.log.debug("Checkpoint appended to local logs.ndjson", {
         taskRunId,
         checkpointId: result.checkpointId,
       });
