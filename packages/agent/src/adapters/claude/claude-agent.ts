@@ -135,6 +135,7 @@ import {
   CODE_EXECUTION_MODES,
   type CodeExecutionMode,
   getAvailableModes,
+  toSdkPermissionMode,
 } from "./tools";
 import type {
   BackgroundTerminal,
@@ -1778,7 +1779,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.session.modeBeforePlan = previousMode;
     }
     try {
-      await this.session.query.setPermissionMode(modeId as CodeExecutionMode);
+      await this.session.query.setPermissionMode(
+        toSdkPermissionMode(modeId as CodeExecutionMode),
+      );
     } catch (error) {
       this.session.permissionMode = previousMode;
       if (error instanceof Error) {

@@ -24,7 +24,7 @@ import {
   type EnrichedReadCache,
   type OnModeChange,
 } from "../hooks";
-import type { CodeExecutionMode } from "../tools";
+import { type CodeExecutionMode, toSdkPermissionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { APPENDED_INSTRUCTIONS } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
@@ -445,7 +445,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     cwd: params.cwd,
     includePartialMessages: true,
     allowDangerouslySkipPermissions: !IS_ROOT || !!process.env.IS_SANDBOX,
-    permissionMode: params.permissionMode,
+    permissionMode: toSdkPermissionMode(params.permissionMode),
     canUseTool: params.canUseTool,
     tools,
     agents,

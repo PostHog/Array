@@ -5,6 +5,7 @@ export {
   type ModeInfo,
 } from "../../execution-mode";
 
+import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import type { CodeExecutionMode } from "../../execution-mode";
 import { isMcpToolReadOnly } from "./mcp/tool-metadata";
 
@@ -54,6 +55,21 @@ const AUTO_ALLOWED_TOOLS: Record<string, Set<string>> = {
   acceptEdits: new Set([...BASE_ALLOWED_TOOLS, ...WRITE_TOOLS]),
   plan: new Set(BASE_ALLOWED_TOOLS),
 };
+
+// PostHog's "auto" mode is host-arbitrated: canUseTool auto-approves file edits
+// and shell commands (see AUTO_ALLOWED_TOOLS) while still gating MCP tools. The
+// Claude SDK, however, has its own native "auto" mode that runs a model
+// classifier and honors an org "ask" ceiling (isOrgAskCeiling), either of which
+// can force a user prompt for the very tools we mean to auto-approve. Handing
+// our "auto" straight to the SDK therefore surrenders control to that classifier
+// and reintroduces the permission prompts auto mode exists to remove. Map it to
+// the SDK's "default" mode so the SDK defers every gated tool to canUseTool,
+// which stays the single arbiter; the host keeps session.permissionMode "auto"
+// so canUseTool still auto-allows edits and bash. Every other mode is a native
+// SDK mode whose semantics match ours, so it passes through unchanged.
+export function toSdkPermissionMode(mode: CodeExecutionMode): PermissionMode {
+  return mode === "auto" ? "default" : mode;
+}
 
 export function isToolAllowedForMode(
   toolName: string,
