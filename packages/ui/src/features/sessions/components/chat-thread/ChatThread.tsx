@@ -28,6 +28,7 @@ import type { ConversationItem } from "@posthog/ui/features/sessions/components/
 import { ChatMarkdown } from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
 import { ChatThreadFooter } from "@posthog/ui/features/sessions/components/chat-thread/ChatThreadFooter";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
+import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
 import {
   ToolGroup,
   type ToolGroupItem,
@@ -58,6 +59,7 @@ import {
 } from "@posthog/ui/features/sessions/useSessionTaskId";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
+import { useShortcut } from "@posthog/ui/primitives/hooks/useShortcut";
 import {
   DIFF_WORKER_FACTORY,
   type DiffWorkerFactory,
@@ -73,6 +75,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 
 import type { ConversationViewProps } from "../ConversationView";
 
@@ -189,10 +192,12 @@ function UserBubble({
   content,
   timestamp,
   attachments = [],
+  keyboardFocused = false,
 }: {
   content: string;
   timestamp?: number;
   attachments?: UserMessageAttachment[];
+  keyboardFocused?: boolean;
 }) {
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
@@ -252,7 +257,13 @@ function UserBubble({
   }, [displayContent, isExpanded]);
 
   return (
-    <ChatMessage align="end" className="group">
+    <ChatMessage
+      align="end"
+      className={cn(
+        "group rounded-(--radius-3) transition-shadow",
+        keyboardFocused && "ring-(--accent-9) ring-2 ring-offset-2",
+      )}
+    >
       <ChatMessageContent>
         {showHeaderChips && (
           <ChatMessageHeader className="flex-wrap gap-1">
@@ -467,9 +478,11 @@ function StickyHeaderOverlay({ items }: { items: ConversationItem[] }) {
 const ThreadRow = memo(function ThreadRow({
   item,
   renderItem,
+  keyboardFocused,
 }: {
   item: ThreadItem;
   renderItem: (item: ConversationItem) => ReactNode;
+  keyboardFocused?: boolean;
 }) {
   return (
     <ChatMessageScrollerItem
@@ -485,6 +498,7 @@ const ThreadRow = memo(function ThreadRow({
           content={item.content}
           timestamp={item.timestamp}
           attachments={item.attachments}
+          keyboardFocused={keyboardFocused}
         />
       ) : (
         renderItem(item)
@@ -493,28 +507,155 @@ const ThreadRow = memo(function ThreadRow({
   );
 });
 
+/**
+ * Keyboard message navigation (Alt/Option+Up/Down) and the Cmd/Ctrl+J jump picker. Rendered inside
+ * `ChatMessageScrollerProvider` so it can call `scrollToMessage` from the engine — the same primitive
+ * `StickyHeaderOverlay` uses to jump back to the anchored turn.
+ */
+function ThreadKeyboardNav({
+  items,
+  jumpPickerOpen,
+  setJumpPickerOpen,
+  keyboardFocusedMessageId,
+  setKeyboardFocusedMessageId,
+  messageJumpKey,
+  previousMessageKey,
+  nextMessageKey,
+}: {
+  items: ConversationItem[];
+  jumpPickerOpen: boolean;
+  setJumpPickerOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
+  keyboardFocusedMessageId: string | null;
+  setKeyboardFocusedMessageId: (id: string | null) => void;
+  messageJumpKey: string;
+  previousMessageKey: string;
+  nextMessageKey: string;
+}) {
+  const { scrollToMessage } = useChatMessageScroller();
+
+  const userMessageIds = useMemo(
+    () =>
+      items
+        .filter(
+          (item): item is Extract<ConversationItem, { type: "user_message" }> =>
+            item.type === "user_message",
+        )
+        .map((item) => item.id),
+    [items],
+  );
+
+  useHotkeys(messageJumpKey, () => setJumpPickerOpen((prev) => !prev), {
+    enableOnFormTags: true,
+    enableOnContentEditable: true,
+    preventDefault: true,
+  });
+
+  const handleNavigateMessage = useCallback(
+    (direction: -1 | 1) => {
+      if (userMessageIds.length === 0) return;
+
+      const currentIndex = keyboardFocusedMessageId
+        ? userMessageIds.indexOf(keyboardFocusedMessageId)
+        : -1;
+
+      const nextIndex =
+        currentIndex === -1
+          ? direction > 0
+            ? 0
+            : userMessageIds.length - 1
+          : Math.max(
+              0,
+              Math.min(userMessageIds.length - 1, currentIndex + direction),
+            );
+
+      const nextId = userMessageIds[nextIndex];
+      if (!nextId) return;
+
+      setKeyboardFocusedMessageId(nextId);
+      scrollToMessage(nextId);
+    },
+    [
+      keyboardFocusedMessageId,
+      userMessageIds,
+      setKeyboardFocusedMessageId,
+      scrollToMessage,
+    ],
+  );
+
+  useHotkeys(previousMessageKey, () => handleNavigateMessage(-1), {
+    enableOnFormTags: true,
+    enableOnContentEditable: true,
+    preventDefault: true,
+  });
+
+  useHotkeys(nextMessageKey, () => handleNavigateMessage(1), {
+    enableOnFormTags: true,
+    enableOnContentEditable: true,
+    preventDefault: true,
+  });
+
+  useEffect(() => {
+    if (
+      keyboardFocusedMessageId &&
+      !userMessageIds.includes(keyboardFocusedMessageId)
+    ) {
+      setKeyboardFocusedMessageId(null);
+    }
+  }, [keyboardFocusedMessageId, userMessageIds, setKeyboardFocusedMessageId]);
+
+  const handleJumpToMessage = useCallback(
+    (id: string) => {
+      setKeyboardFocusedMessageId(id);
+      scrollToMessage(id);
+    },
+    [scrollToMessage, setKeyboardFocusedMessageId],
+  );
+
+  return (
+    <MessageJumpPicker
+      open={jumpPickerOpen}
+      onOpenChange={setJumpPickerOpen}
+      items={items}
+      onJumpToMessage={handleJumpToMessage}
+    />
+  );
+}
+
 /** The scroll body, under the Provider so the overlay + scroll-button hooks can read engine state. */
 function ThreadScrollBody({
   items,
   rows,
   renderItem,
   footer,
+  keyboardFocusedMessageId,
+  onUserInteract,
 }: {
   items: ConversationItem[];
   rows: ThreadItem[];
   renderItem: (item: ConversationItem) => ReactNode;
   /** Status row (duration / context usage) pinned as the last item in the thread. */
   footer?: ReactNode;
+  keyboardFocusedMessageId?: string | null;
+  /** Clears keyboard-focused message state on any pointer interaction with the thread. */
+  onUserInteract?: () => void;
 }) {
   // `group/thread` so the footer's hover-reveal (opacity-50 → 100 on group-hover) tracks the thread,
   // mirroring the legacy ConversationView container.
   return (
-    <ChatMessageScroller className="group/thread">
+    <ChatMessageScroller
+      className="group/thread"
+      onPointerDownCapture={onUserInteract}
+    >
       <StickyHeaderOverlay items={items} />
       <ChatMessageScrollerViewport>
         <ChatMessageScrollerContent className="py-4 pb-8" density="default">
           {rows.map((item) => (
-            <ThreadRow key={item.id} item={item} renderItem={renderItem} />
+            <ThreadRow
+              key={item.id}
+              item={item}
+              renderItem={renderItem}
+              keyboardFocused={item.id === keyboardFocusedMessageId}
+            />
           ))}
           {footer && (
             <div
@@ -579,6 +720,17 @@ export function ChatThread({
   );
 
   const rows = useMemo<ThreadItem[]>(() => groupToolRuns(items), [items]);
+
+  const [jumpPickerOpen, setJumpPickerOpen] = useState(false);
+  const [keyboardFocusedMessageId, setKeyboardFocusedMessageId] = useState<
+    string | null
+  >(null);
+  const messageJumpKey = useShortcut("message-jump");
+  const previousMessageKey = useShortcut("message-prev");
+  const nextMessageKey = useShortcut("message-next");
+  const clearKeyboardFocus = useCallback(() => {
+    setKeyboardFocusedMessageId(null);
+  }, []);
 
   const renderItem = useCallback(
     (item: ConversationItem) => {
@@ -663,6 +815,8 @@ export function ChatThread({
               items={items}
               rows={rows}
               renderItem={renderItem}
+              keyboardFocusedMessageId={keyboardFocusedMessageId}
+              onUserInteract={clearKeyboardFocus}
               footer={
                 <ChatThreadFooter
                   events={events}
@@ -672,6 +826,16 @@ export function ChatThread({
                   taskId={taskId}
                 />
               }
+            />
+            <ThreadKeyboardNav
+              items={items}
+              jumpPickerOpen={jumpPickerOpen}
+              setJumpPickerOpen={setJumpPickerOpen}
+              keyboardFocusedMessageId={keyboardFocusedMessageId}
+              setKeyboardFocusedMessageId={setKeyboardFocusedMessageId}
+              messageJumpKey={messageJumpKey}
+              previousMessageKey={previousMessageKey}
+              nextMessageKey={nextMessageKey}
             />
           </ChatMessageScrollerProvider>
         </ChatThreadChromeProvider>
