@@ -40,6 +40,9 @@ export const APP_SERVER_NOTIFICATIONS = {
   // codex auto-compacted the thread; mirrors Claude's compact_boundary so the host's context indicator + queue drain fire.
   CONTEXT_COMPACTED: "thread/compacted",
   COMMAND_OUTPUT_DELTA: "item/commandExecution/outputDelta",
+  // Per-server MCP startup progress. `status: "failed"` is the only signal codex
+  // emits when a configured server dies at launch — its tools silently never appear.
+  MCP_STARTUP_STATUS: "mcpServer/startupStatus/updated",
   // PTY-level stdin echoed back for an interactive terminal command.
   TERMINAL_INTERACTION: "item/commandExecution/terminalInteraction",
   FILE_CHANGE_PATCH_UPDATED: "item/fileChange/patchUpdated",

@@ -969,6 +969,20 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       void this.finalizeTurn(mapTurnStopReason(turn?.status));
     }
 
+    if (method === APP_SERVER_NOTIFICATIONS.MCP_STARTUP_STATUS) {
+      const startup = params as {
+        name?: string;
+        status?: string;
+        error?: string | null;
+      };
+      if (startup?.status === "failed") {
+        this.logger.warn("MCP server failed to start; its tools are absent", {
+          server: startup.name,
+          error: startup.error,
+        });
+      }
+    }
+
     if (method === APP_SERVER_NOTIFICATIONS.ERROR) {
       // A non-retried fatal error: resolve the turn so prompt() returns rather than hangs.
       const willRetry = (params as { willRetry?: boolean })?.willRetry;
