@@ -18,6 +18,7 @@ import {
 } from "@posthog/ui/features/sidebar/sidebarPeekStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
+import { useSidebarEdgeHoverPeek } from "@posthog/ui/primitives/hooks/useSidebarEdgeHoverPeek";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { navigateToArchived } from "@posthog/ui/router/navigationBridge";
 import { Box, Flex } from "@radix-ui/themes";
@@ -50,10 +51,22 @@ export function ChannelsSidebar() {
     setOpenAuto(hasCompletedOnboarding || Object.keys(workspaces).length > 0);
   }, [workspacesFetched, workspaces, hasCompletedOnboarding, setOpenAuto]);
 
-  // Hover-reveal while collapsed: the left gutter / title-bar toggle set peek,
-  // and the panel keeps it alive under the pointer. Any open (click, Cmd+B)
-  // makes the peek redundant — drop it so the overlay state can't linger.
+  // Hover-reveal while collapsed (see the pointer gesture below). Any open
+  // (click, Cmd+B) makes the peek redundant — drop it so the overlay state
+  // can't linger.
   const peek = useSidebarPeekStore((s) => s.peek);
+  // Pointer-position hover gesture (Dia-style): approaching the left edge peeks
+  // the nav out, and once out it stays until the pointer crosses decisively
+  // into the content (past the panel's right edge + margin). Leaving to the
+  // left / off-window keeps it open. Off while docked or mid-resize.
+  useSidebarEdgeHoverPeek({
+    enabled: !open && !isResizing,
+    peeked: peek,
+    side: "left",
+    width,
+    onReveal: beginSidebarPeek,
+    onClose: () => endSidebarPeek(),
+  });
   useEffect(() => {
     if (open) cancelSidebarPeek();
   }, [open]);

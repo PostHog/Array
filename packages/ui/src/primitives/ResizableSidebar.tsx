@@ -1,4 +1,5 @@
 import { SIDEBAR_MIN_WIDTH } from "@posthog/ui/features/sidebar/constants";
+import { PEEK_CLOSE_MARGIN } from "@posthog/ui/primitives/hooks/useSidebarEdgeHoverPeek";
 import { Box, Flex } from "@radix-ui/themes";
 import React from "react";
 
@@ -146,13 +147,13 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
       if (dragEndedClosedRef.current) {
         setWidth(dragStartWidthRef.current);
       }
-      // A floating-panel drag suppresses the panel's mouseleave (the pointer
-      // can travel anywhere mid-drag), so when it ends off-panel, schedule the
-      // hide the leave would have scheduled.
+      // A floating-panel drag lets the pointer travel anywhere mid-drag, so
+      // when it ends decisively in the content (past the panel edge + the
+      // same directional-close margin the hover gesture uses), hide the peek.
       if (!open && peek) {
         const pointer =
           side === "left" ? e.clientX : window.innerWidth - e.clientX;
-        if (pointer > width) onPeekLeave?.();
+        if (pointer > width + PEEK_CLOSE_MARGIN) onPeekLeave?.();
       }
     };
 
@@ -227,10 +228,6 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
     >
       <Flex
         direction="column"
-        onMouseEnter={isOverlay ? onPeekEnter : undefined}
-        onMouseLeave={
-          isOverlay && !isResizing ? () => onPeekLeave?.() : undefined
-        }
         style={{
           width: `${width}px`,
           ...(isOverlay

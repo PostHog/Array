@@ -45,7 +45,6 @@ import { useSetupDiscovery } from "@posthog/ui/features/setup/useSetupDiscovery"
 import {
   beginSidebarPeek,
   cancelSidebarPeek,
-  endSidebarPeek,
   useSidebarPeekStore,
 } from "@posthog/ui/features/sidebar/sidebarPeekStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
@@ -372,13 +371,10 @@ function RootLayout() {
                 aria-label="Toggle sidebar"
                 onClick={handleToggleSidebar}
                 onMouseEnter={() => {
+                  // Hovering the toggle is a secondary reveal affordance; the
+                  // directional-close gesture (see useSidebarEdgeHoverPeek)
+                  // owns hiding it again.
                   if (!sidebarOpen) beginSidebarPeek();
-                }}
-                onMouseLeave={() => {
-                  // Grace only here: the pointer needs time to travel from
-                  // the title-bar button down into the nav. Leaving the nav
-                  // itself hides immediately.
-                  if (!sidebarOpen) endSidebarPeek(300);
                 }}
               >
                 {sidebarOpen ? (
@@ -438,21 +434,9 @@ function RootLayout() {
         </Flex>
         <ConnectivityBanner />
         <Flex flexGrow="1" overflow="hidden" className="relative">
-          {/* Invisible hover gutter: while the sidebar is collapsed, resting
-              the pointer on the window's left edge peeks the sidebar out as an
-              overlay. The panel (z-50) slides over this strip, so its own
-              hover handlers take over keeping the peek alive. */}
-          {!sidebarOpen && (
-            <Box
-              className="absolute inset-y-0 left-0 z-40 w-2"
-              onMouseEnter={() => {
-                // A drag-to-close sweeps the pointer through this strip —
-                // peeking then would fight the drag.
-                if (!sidebarIsResizing) beginSidebarPeek();
-              }}
-              onMouseLeave={() => endSidebarPeek()}
-            />
-          )}
+          {/* The collapsed-sidebar hover-reveal is driven by pointer position
+              (see useSidebarEdgeHoverPeek in ChannelsSidebar), not a fixed hit
+              strip — approaching the left edge peeks it out. */}
           {/* Scrim under the peeked nav: dims the content while the overlay is
               out. Purely visual (pointer-transparent) and paired with the
               panel's slide — same 200ms ease-out — so they read as one unit. */}
