@@ -1,5 +1,14 @@
 import { Check, Copy } from "@phosphor-icons/react";
 import {
+  buildResolvedLabel,
+  fetchPostHogResourceTitle,
+} from "@posthog/core/message-editor/posthogChip";
+import {
+  type ParsedPostHogUrl,
+  parsePostHogUrl,
+} from "@posthog/core/message-editor/posthogUrl";
+import { useHostTRPC } from "@posthog/host-router/react";
+import {
   Heading,
   Separator,
   Table,
@@ -10,23 +19,91 @@ import {
   TableRow,
   Text,
 } from "@posthog/quill";
+import { unescapeXmlAttr } from "@posthog/shared";
+import { GithubRefChip } from "@posthog/ui/features/editor/components/GithubRefChip";
+import { PostHogRefChip } from "@posthog/ui/features/editor/components/PostHogRefChip";
 import {
   parseOpenFence,
   splitMarkdownBlocks,
 } from "@posthog/ui/features/editor/components/splitMarkdownBlocks";
+import {
+  type ParsedGithubIssueUrl,
+  parseGithubIssueUrl,
+} from "@posthog/ui/features/message-editor/githubIssueUrl";
 import {
   BareFileLink,
   hasDirectoryPath,
   InlineFileLink,
   looksLikeBareFilename,
 } from "@posthog/ui/features/sessions/components/session-update/fileLinkChips";
+import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { HighlightedCode } from "@posthog/ui/primitives/HighlightedCode";
 import { useCopy } from "@posthog/ui/primitives/useCopy";
 import { IconButton } from "@radix-ui/themes";
+import { useQuery } from "@tanstack/react-query";
 import { memo, type ReactNode, useMemo } from "react";
 import Markdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+
+const POSTHOG_CHIP_TAG_REGEX =
+  /<(feature_flag|experiment|insight|dashboard|recording|error_tracking|survey|notebook|cohort|action|early_access_feature|person|group)\s+id="([^"]+)"(?:\s+label="([^"]*)")?\s*\/>/g;
+
+/** Converts persisted PostHog XML chip tags (see `content.ts`) into markdown links so the `a`
+ * component below can render them as {@link SmartPostHogRefChip}. */
+function preprocessChipTags(content: string): string {
+  return content.replace(POSTHOG_CHIP_TAG_REGEX, (_, _type, id, label) => {
+    const url = unescapeXmlAttr(id);
+    const text = label ? unescapeXmlAttr(label) : url;
+    return `[${text}](${url})`;
+  });
+}
+
+/** Mirrors `MarkdownRenderer`'s `SmartGithubRefChip` — resolves the issue/PR title via tRPC. */
+function SmartGithubRefChip({ parsed }: { parsed: ParsedGithubIssueUrl }) {
+  const trpc = useHostTRPC();
+  const input = {
+    owner: parsed.owner,
+    repo: parsed.repo,
+    number: parsed.number,
+  };
+  const options =
+    parsed.kind === "pr"
+      ? trpc.git.getGithubPullRequest.queryOptions(input)
+      : trpc.git.getGithubIssue.queryOptions(input);
+  const { data } = useQuery({ ...options, staleTime: 60_000 });
+
+  const label = data?.title
+    ? `#${parsed.number} - ${data.title}`
+    : `${parsed.owner}/${parsed.repo}#${parsed.number}`;
+
+  return (
+    <GithubRefChip href={parsed.normalizedUrl} kind={parsed.kind}>
+      {label}
+    </GithubRefChip>
+  );
+}
+
+/** Mirrors `MarkdownRenderer`'s `SmartPostHogRefChip` — resolves the resource title via the
+ * authenticated PostHog API client. */
+function SmartPostHogRefChip({ parsed }: { parsed: ParsedPostHogUrl }) {
+  const { data: title } = useAuthenticatedQuery(
+    ["posthog-resource", parsed.normalizedUrl],
+    (client) => fetchPostHogResourceTitle(client, parsed),
+    { staleTime: 60_000 },
+  );
+
+  const label = buildResolvedLabel(parsed, title ?? null);
+
+  return (
+    <PostHogRefChip
+      href={parsed.normalizedUrl}
+      resourceType={parsed.resourceType}
+    >
+      {label}
+    </PostHogRefChip>
+  );
+}
 
 function ChatCodeBlock({
   code,
@@ -66,16 +143,45 @@ const components: Components = {
   p: ({ children }) => (
     <Text className="text-sm leading-[1.5]">{children}</Text>
   ),
-  a: ({ children, href }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="text-primary underline underline-offset-2"
-    >
-      {children}
-    </a>
-  ),
+  a: ({ children, href }) => {
+    const githubRef = href ? parseGithubIssueUrl(href) : null;
+    if (githubRef) {
+      const isAutoLink = typeof children === "string" && children === href;
+      if (isAutoLink) {
+        return <SmartGithubRefChip parsed={githubRef} />;
+      }
+      return (
+        <GithubRefChip href={githubRef.normalizedUrl} kind={githubRef.kind}>
+          {children}
+        </GithubRefChip>
+      );
+    }
+    const posthogRef = href ? parsePostHogUrl(href) : null;
+    if (posthogRef) {
+      const isAutoLink = typeof children === "string" && children === href;
+      if (isAutoLink) {
+        return <SmartPostHogRefChip parsed={posthogRef} />;
+      }
+      return (
+        <PostHogRefChip
+          href={posthogRef.normalizedUrl}
+          resourceType={posthogRef.resourceType}
+        >
+          {children}
+        </PostHogRefChip>
+      );
+    }
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary underline underline-offset-2"
+      >
+        {children}
+      </a>
+    );
+  },
   ul: ({ children }) => (
     <ul className="list-disc space-y-0.5 ps-4">{children}</ul>
   ),
@@ -159,6 +265,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 }: {
   content: string;
 }) {
+  const processedContent = useMemo(
+    () => preprocessChipTags(content),
+    [content],
+  );
   return (
     <div className="flex flex-col gap-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
       <Markdown
@@ -166,7 +276,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
         rehypePlugins={rehypePlugins}
         components={components}
       >
-        {content}
+        {processedContent}
       </Markdown>
     </div>
   );
