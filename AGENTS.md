@@ -113,6 +113,13 @@ For each new file or meaningful change:
 - Bespoke clients that wrap `trpcClient.x` one-to-one.
 - `*Port`, `*_PORT`, or `ports.ts` naming.
 - Business logic in `apps/<host>`.
+- New Radix imports. Radix is frozen: only `Box`, `Flex`, and `Text` from `@radix-ui/themes` may be added; every other Radix component and every other `@radix-ui/*` package is denied for new code — use the `@posthog/quill` equivalent. See "Radix Freeze" below.
+
+## Radix Freeze
+
+Radix UI is legacy and being migrated to `@posthog/quill`. New code may import only the layout/typography primitives `Box`, `Flex`, and `Text` from `@radix-ui/themes`. Everything else — every other `@radix-ui/themes` component (`Button`, `Dialog`, `Tooltip`, `Select`, ...) and every other `@radix-ui/*` package — is denied for new usage. Reach for the `@posthog/quill` equivalent instead.
+
+`scripts/check-radix-imports.mjs` (`pnpm radix`) enforces this in CI by diffing each changed file's Radix imports against `main`: existing imports may stay until migrated, but a changed file must not gain any. When you touch a file that still uses frozen Radix components, prefer swapping them to quill.
 
 ## Host Boundary
 
@@ -199,6 +206,7 @@ await boot(container);
 - `pnpm --filter <pkg> typecheck|test|build`: run a scoped task.
 - `pnpm --filter code package|make`: package the Electron app.
 - `node scripts/check-host-boundaries.mjs`: verify host boundary allowlist.
+- `node scripts/check-radix-imports.mjs`: fail on Radix imports added relative to `main` (`pnpm radix`).
 
 ## Merging PRs
 
@@ -232,7 +240,7 @@ See [docs/conventions.md](./docs/conventions.md).
 
 ## Key Libraries
 
-- React 19, Radix UI Themes, Tailwind CSS, `@posthog/quill`
+- React 19, Tailwind CSS, `@posthog/quill` (Radix UI Themes is legacy — frozen to `Box`/`Flex`/`Text` for new code; see "Radix Freeze")
 - TanStack Query, TanStack Router
 - Zustand, InversifyJS (with `@inversifyjs/strongly-typed`), Zod
 - xterm.js, CodeMirror, Tiptap
