@@ -1,4 +1,5 @@
 import { File, Folder, Warning } from "@phosphor-icons/react";
+import type { PostHogResourceType } from "@posthog/core/message-editor/posthogUrl";
 import { unescapeXmlAttr } from "@posthog/shared";
 import { Text } from "@radix-ui/themes";
 import type { ReactNode } from "react";
@@ -10,11 +11,12 @@ import {
   baseComponents,
   defaultRemarkPlugins,
 } from "../../../editor/components/MarkdownRenderer";
+import { PostHogRefChip } from "../../../editor/components/PostHogRefChip";
 
 const MENTION_TAG_REGEX =
-  /<file\s+path="([^"]+)"\s*\/>|<(github_issue|github_pr)\s+number="([^"]+)"(?:\s+title="([^"]*)")?(?:\s+url="([^"]*)")?\s*\/>|<error_context\s+label="([^"]*)">[\s\S]*?<\/error_context>|<folder\s+path="([^"]+)"\s*\/>/g;
+  /<file\s+path="([^"]+)"\s*\/>|<(github_issue|github_pr)\s+number="([^"]+)"(?:\s+title="([^"]*)")?(?:\s+url="([^"]*)")?\s*\/>|<error_context\s+label="([^"]*)">[\s\S]*?<\/error_context>|<folder\s+path="([^"]+)"\s*\/>|<(feature_flag|experiment|insight|dashboard|recording|error_tracking|survey|notebook|cohort|action|early_access_feature|person|group)\s+id="([^"]+)"(?:\s+label="([^"]*)")?\s*\/>/g;
 const MENTION_TAG_TEST =
-  /<(?:file\s+path|folder\s+path|github_issue\s+number|github_pr\s+number|error_context\s+label)="[^"]+"/;
+  /<(?:file\s+path|folder\s+path|github_issue\s+number|github_pr\s+number|error_context\s+label|(?:feature_flag|experiment|insight|dashboard|recording|error_tracking|survey|notebook|cohort|action|early_access_feature|person|group)\s+id)="[^"]+"/;
 const SLASH_COMMAND_START = /^\/([a-zA-Z][\w-]*)(?=\s|$)/;
 
 const inlineComponents: Components = {
@@ -161,6 +163,19 @@ export function parseMentionTags(content: string): ReactNode[] {
           icon={<Folder size={12} />}
           label={folderName}
         />,
+      );
+    } else if (match[8]) {
+      const resourceType = match[8] as PostHogResourceType;
+      const id = unescapeXmlAttr(match[9]);
+      const label = match[10] ? unescapeXmlAttr(match[10]) : id;
+      parts.push(
+        <PostHogRefChip
+          key={`posthog-${matchIndex}`}
+          href={id}
+          resourceType={resourceType}
+        >
+          {label}
+        </PostHogRefChip>,
       );
     }
 

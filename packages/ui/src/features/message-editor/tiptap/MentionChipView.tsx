@@ -1,12 +1,22 @@
 import {
+  BugIcon,
+  BuildingsIcon,
   ChartLineIcon,
+  ClipboardTextIcon,
   FileTextIcon,
   FlagIcon,
   FlaskIcon,
   FolderIcon,
   GithubLogoIcon,
   GitPullRequestIcon,
+  LightningIcon,
+  NotebookIcon,
+  RocketLaunchIcon,
+  SquaresFourIcon,
   TerminalIcon,
+  UserIcon,
+  UsersThreeIcon,
+  VideoIcon,
   WarningIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -33,6 +43,16 @@ const typeIconMap: Record<ChipType, React.ComponentType<{ size: number }>> = {
   experiment: FlaskIcon,
   insight: ChartLineIcon,
   feature_flag: FlagIcon,
+  dashboard: SquaresFourIcon,
+  recording: VideoIcon,
+  error_tracking: BugIcon,
+  survey: ClipboardTextIcon,
+  notebook: NotebookIcon,
+  cohort: UsersThreeIcon,
+  action: LightningIcon,
+  early_access_feature: RocketLaunchIcon,
+  person: UserIcon,
+  group: BuildingsIcon,
 };
 
 function IconCloseButton({
@@ -82,17 +102,24 @@ function DefaultChip({
   const isFile = type === "file";
   const isFolder = type === "folder";
   const isGithubRef = type === "github_issue" || type === "github_pr";
-  const canOpenUrl = isGithubRef && /^https:\/\//.test(id);
+  const isPostHogRef =
+    type !== "file" &&
+    type !== "folder" &&
+    type !== "command" &&
+    type !== "error" &&
+    !isGithubRef;
+  const isUrlChip = isGithubRef || isPostHogRef;
+  const canOpenUrl = isUrlChip && /^https?:\/\//.test(id);
 
   const chipContent = (
     <Chip
       size="xs"
       contentEditable={false}
       onClick={canOpenUrl ? () => window.open(id, "_blank") : undefined}
-      className={`${chipBase} max-w-full whitespace-nowrap ${isGithubRef ? "cursor-pointer!" : "cursor-default! active:translate-y-0!"} ${isCommand ? "cli-slash-command" : "cli-file-mention"} ${selected ? selectedRing : ""}`}
+      className={`${chipBase} max-w-full whitespace-nowrap ${isUrlChip ? "cursor-pointer!" : "cursor-default! active:translate-y-0!"} ${isCommand ? "cli-slash-command" : "cli-file-mention"} ${selected ? selectedRing : ""}`}
     >
       <IconCloseButton type={type as ChipType} onRemove={onRemove} />
-      {isGithubRef ? (
+      {isUrlChip ? (
         <span className="min-w-0 truncate">{label}</span>
       ) : (
         `${prefix}${label}`

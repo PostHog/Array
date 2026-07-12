@@ -1365,6 +1365,10 @@ export class PostHogAPIClient {
     throw new Error("No team found for user");
   }
 
+  async getDefaultProjectId(): Promise<number> {
+    return this.getTeamId();
+  }
+
   async getCurrentUser() {
     const data = await this.api.get("/api/users/{uuid}/", {
       path: { uuid: "@me" },
@@ -6147,5 +6151,225 @@ export class PostHogAPIClient {
       { kpi, daily, perAgent, byModel, toolErrors },
       nameById,
     );
+  }
+
+  async getFeatureFlag(
+    projectId: string,
+    flagId: string,
+  ): Promise<{ name: string; key: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/feature_flags/${encodeURIComponent(flagId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { name?: string; key?: string };
+    return { name: data.name ?? "", key: data.key ?? "" };
+  }
+
+  async getExperiment(
+    projectId: string,
+    experimentId: string,
+  ): Promise<{ name: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { name?: string };
+    return { name: data.name ?? "" };
+  }
+
+  async getInsight(
+    projectId: string,
+    insightId: string,
+  ): Promise<{ name: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/insights/${encodeURIComponent(insightId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { name?: string };
+    return { name: data.name ?? "" };
+  }
+
+  async getDashboard(
+    projectId: string,
+    dashboardId: string,
+  ): Promise<{ name: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/dashboards/${encodeURIComponent(dashboardId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { name?: string };
+    return { name: data.name ?? "" };
+  }
+
+  async getErrorTrackingGroup(
+    projectId: string,
+    groupId: string,
+  ): Promise<{ title: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/error_tracking/${encodeURIComponent(groupId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { title?: string };
+    return { title: data.title ?? "" };
+  }
+
+  async getRecording(
+    projectId: string,
+    recordingId: string,
+  ): Promise<{ name: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/session_recordings/${encodeURIComponent(recordingId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { name?: string };
+    return { name: data.name ?? "" };
+  }
+
+  async getSurvey(
+    projectId: string,
+    surveyId: string,
+  ): Promise<{ name: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/surveys/${encodeURIComponent(surveyId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { name?: string };
+    return { name: data.name ?? "" };
+  }
+
+  async getNotebook(
+    projectId: string,
+    notebookId: string,
+  ): Promise<{ title: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/notebooks/${encodeURIComponent(notebookId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { title?: string };
+    return { title: data.title ?? "" };
+  }
+
+  async getCohort(
+    projectId: string,
+    cohortId: string,
+  ): Promise<{ name: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/cohorts/${encodeURIComponent(cohortId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { name?: string };
+    return { name: data.name ?? "" };
+  }
+
+  async getAction(
+    projectId: string,
+    actionId: string,
+  ): Promise<{ name: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/actions/${encodeURIComponent(actionId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { name?: string };
+    return { name: data.name ?? "" };
+  }
+
+  async getEarlyAccessFeature(
+    projectId: string,
+    featureId: string,
+  ): Promise<{ name: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/early_access_feature/${encodeURIComponent(featureId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { name?: string };
+    return { name: data.name ?? "" };
+  }
+
+  async getPerson(
+    projectId: string,
+    distinctId: string,
+  ): Promise<{ name: string } | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/persons/?distinct_id=${encodeURIComponent(distinctId)}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      results?: Array<{ properties?: { email?: string; name?: string } }>;
+    };
+    const person = data.results?.[0];
+    return {
+      name: person?.properties?.email || person?.properties?.name || "",
+    };
+  }
+
+  async getGroup(
+    projectId: string,
+    groupCompoundId: string,
+  ): Promise<{ name: string } | null> {
+    const slashIndex = groupCompoundId.indexOf("/");
+    if (slashIndex === -1) return null;
+    const typeIndex = groupCompoundId.slice(0, slashIndex);
+    const groupKey = groupCompoundId.slice(slashIndex + 1);
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/groups/?group_type_index=${encodeURIComponent(typeIndex)}&group_key=${encodeURIComponent(groupKey)}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      results?: Array<{ group_properties?: { name?: string } }>;
+    };
+    const group = data.results?.[0];
+    return { name: group?.group_properties?.name || "" };
   }
 }

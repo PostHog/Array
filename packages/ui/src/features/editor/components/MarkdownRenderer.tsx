@@ -1,17 +1,32 @@
-import { isPostHogCodeDeeplink } from "@posthog/shared";
+import {
+  buildResolvedLabel,
+  fetchPostHogResourceTitle,
+} from "@posthog/core/message-editor/posthogChip";
+import {
+  type ParsedPostHogUrl,
+  parsePostHogUrl,
+} from "@posthog/core/message-editor/posthogUrl";
+import { useHostTRPC } from "@posthog/host-router/react";
+import { isPostHogCodeDeeplink, unescapeXmlAttr } from "@posthog/shared";
 import { GithubRefChip } from "@posthog/ui/features/editor/components/GithubRefChip";
-import { parseGithubIssueUrl } from "@posthog/ui/features/message-editor/githubIssueUrl";
+import {
+  type ParsedGithubIssueUrl,
+  parseGithubIssueUrl,
+} from "@posthog/ui/features/message-editor/githubIssueUrl";
+import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
 import { Divider } from "@posthog/ui/primitives/Divider";
 import { HighlightedCode } from "@posthog/ui/primitives/HighlightedCode";
 import { List, ListItem } from "@posthog/ui/primitives/List";
 import { Blockquote, Checkbox, Code, Kbd, Text } from "@radix-ui/themes";
+import { useQuery } from "@tanstack/react-query";
 import { memo, useMemo } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { PluggableList } from "unified";
 import { openExternalUrl } from "../../../shell/openExternal";
+import { PostHogRefChip } from "./PostHogRefChip";
 
 interface MarkdownRendererProps {
   content: string;
@@ -20,10 +35,21 @@ interface MarkdownRendererProps {
   rehypePlugins?: PluggableList;
 }
 
+const POSTHOG_CHIP_TAG_REGEX =
+  /<(feature_flag|experiment|insight|dashboard|recording|error_tracking|survey|notebook|cohort|action|early_access_feature|person|group)\s+id="([^"]+)"(?:\s+label="([^"]*)")?\s*\/>/g;
+
 // Preprocessor to prevent setext heading interpretation of horizontal rules
-// Ensures `---`, `***`, `___` are preceded by a blank line
+// Ensures `---`, `***`, `___` are preceded by a blank line.
+// Also converts PostHog XML chip tags to markdown links so the `a` component
+// handler can render them as PostHogRefChip.
 function preprocessMarkdown(content: string): string {
-  return content.replace(/\n([^\n].*)\n(---+|___+|\*\*\*+)\n/g, "\n$1\n\n$2\n");
+  return content
+    .replace(/\n([^\n].*)\n(---+|___+|\*\*\*+)\n/g, "\n$1\n\n$2\n")
+    .replace(POSTHOG_CHIP_TAG_REGEX, (_, _type, id, label) => {
+      const url = unescapeXmlAttr(id);
+      const text = label ? unescapeXmlAttr(label) : url;
+      return `[${text}](${url})`;
+    });
 }
 
 function markdownUrlTransform(value: string): string {
@@ -36,6 +62,49 @@ const HeadingText = ({ children }: { children: React.ReactNode }) => (
     <strong>{children}</strong>
   </Text>
 );
+
+function SmartGithubRefChip({ parsed }: { parsed: ParsedGithubIssueUrl }) {
+  const trpc = useHostTRPC();
+  const input = {
+    owner: parsed.owner,
+    repo: parsed.repo,
+    number: parsed.number,
+  };
+  const options =
+    parsed.kind === "pr"
+      ? trpc.git.getGithubPullRequest.queryOptions(input)
+      : trpc.git.getGithubIssue.queryOptions(input);
+  const { data } = useQuery({ ...options, staleTime: 60_000 });
+
+  const label = data?.title
+    ? `#${parsed.number} - ${data.title}`
+    : `${parsed.owner}/${parsed.repo}#${parsed.number}`;
+
+  return (
+    <GithubRefChip href={parsed.normalizedUrl} kind={parsed.kind}>
+      {label}
+    </GithubRefChip>
+  );
+}
+
+function SmartPostHogRefChip({ parsed }: { parsed: ParsedPostHogUrl }) {
+  const { data: title } = useAuthenticatedQuery(
+    ["posthog-resource", parsed.normalizedUrl],
+    (client) => fetchPostHogResourceTitle(client, parsed),
+    { staleTime: 60_000 },
+  );
+
+  const label = buildResolvedLabel(parsed, title ?? null);
+
+  return (
+    <PostHogRefChip
+      href={parsed.normalizedUrl}
+      resourceType={parsed.resourceType}
+    >
+      {label}
+    </PostHogRefChip>
+  );
+}
 
 export const baseComponents: Components = {
   h1: ({ children }) => <HeadingText>{children}</HeadingText>,
@@ -77,13 +146,28 @@ export const baseComponents: Components = {
     const githubRef = href ? parseGithubIssueUrl(href) : null;
     if (githubRef) {
       const isAutoLink = typeof children === "string" && children === href;
-      const label = isAutoLink
-        ? `${githubRef.owner}/${githubRef.repo}#${githubRef.number}`
-        : children;
+      if (isAutoLink) {
+        return <SmartGithubRefChip parsed={githubRef} />;
+      }
       return (
         <GithubRefChip href={githubRef.normalizedUrl} kind={githubRef.kind}>
-          {label}
+          {children}
         </GithubRefChip>
+      );
+    }
+    const posthogRef = href ? parsePostHogUrl(href) : null;
+    if (posthogRef) {
+      const isAutoLink = typeof children === "string" && children === href;
+      if (isAutoLink) {
+        return <SmartPostHogRefChip parsed={posthogRef} />;
+      }
+      return (
+        <PostHogRefChip
+          href={posthogRef.normalizedUrl}
+          resourceType={posthogRef.resourceType}
+        >
+          {children}
+        </PostHogRefChip>
       );
     }
     const isDeeplink = isPostHogCodeDeeplink(href);

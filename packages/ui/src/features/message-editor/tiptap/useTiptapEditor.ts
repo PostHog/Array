@@ -18,10 +18,22 @@ import {
   isUrlOnly,
   shouldAutoConvertLongText,
 } from "@posthog/core/message-editor/paste";
+import {
+  buildPostHogPlaceholderLabel,
+  buildResolvedLabel,
+  fetchPostHogResourceTitle,
+  posthogResourceToMentionChip,
+} from "@posthog/core/message-editor/posthogChip";
+import {
+  type ParsedPostHogUrl,
+  parsePostHogUrl,
+} from "@posthog/core/message-editor/posthogUrl";
+import { getAuthenticatedClient } from "@posthog/ui/features/auth/authClientImperative";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore as useFeatureSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { isSendMessageSubmitKey } from "@posthog/ui/utils/sendMessageKey";
+import { Fragment, type Node as PmNode, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import { useEditor } from "@tiptap/react";
 import type React from "react";
@@ -105,6 +117,77 @@ async function pasteTextAsFile(
   view.focus();
 }
 
+interface MixedPasteResult {
+  fragment: Fragment;
+  githubRefs: ParsedGithubIssueUrl[];
+  posthogRefs: ParsedPostHogUrl[];
+}
+
+const URL_INLINE_REGEX = /https?:\/\/\S+/g;
+
+function buildMixedPasteContent(
+  view: EditorView,
+  text: string,
+): MixedPasteResult | null {
+  const schema = view.state.schema;
+  const nodes: PmNode[] = [];
+  const githubRefs: ParsedGithubIssueUrl[] = [];
+  const posthogRefs: ParsedPostHogUrl[] = [];
+  let lastIndex = 0;
+  let hasChip = false;
+
+  for (const match of text.matchAll(URL_INLINE_REGEX)) {
+    const url = match[0];
+    const matchIndex = match.index;
+
+    const githubRef = parseGithubIssueUrl(url);
+    const posthogRef = parsePostHogUrl(url);
+
+    if (!githubRef && !posthogRef) continue;
+
+    hasChip = true;
+
+    if (matchIndex > lastIndex) {
+      nodes.push(schema.text(text.slice(lastIndex, matchIndex)));
+    }
+
+    if (githubRef) {
+      const chip = buildGithubRefPlaceholderChip(githubRef);
+      nodes.push(
+        schema.nodes.mentionChip.create({
+          pastedText: false,
+          ...chip,
+        }),
+      );
+      githubRefs.push(githubRef);
+    } else if (posthogRef) {
+      const chip = posthogResourceToMentionChip(posthogRef);
+      chip.label = buildPostHogPlaceholderLabel(posthogRef);
+      nodes.push(
+        schema.nodes.mentionChip.create({
+          pastedText: false,
+          ...chip,
+        }),
+      );
+      posthogRefs.push(posthogRef);
+    }
+
+    lastIndex = matchIndex + url.length;
+  }
+
+  if (!hasChip) return null;
+
+  if (lastIndex < text.length) {
+    nodes.push(schema.text(text.slice(lastIndex)));
+  }
+
+  return {
+    fragment: Fragment.from(nodes),
+    githubRefs,
+    posthogRefs,
+  };
+}
+
 function insertGithubRefPlaceholder(
   view: EditorView,
   parsed: ParsedGithubIssueUrl,
@@ -150,6 +233,48 @@ async function resolveGithubRefChip(
     if (
       node.type.name !== "mentionChip" ||
       node.attrs.type !== chipType ||
+      node.attrs.id !== parsed.normalizedUrl ||
+      node.attrs.label !== placeholderLabel
+    ) {
+      return true;
+    }
+    tr.setNodeMarkup(pos, undefined, {
+      ...node.attrs,
+      label: resolvedLabel,
+    });
+    updated = true;
+    return false;
+  });
+
+  if (updated) view.dispatch(tr);
+}
+
+function insertPostHogRefPlaceholder(
+  view: EditorView,
+  parsed: ParsedPostHogUrl,
+): void {
+  const chip = posthogResourceToMentionChip(parsed);
+  chip.label = buildPostHogPlaceholderLabel(parsed);
+  insertChipWithTrailingSpace(view, chip);
+}
+
+async function resolvePostHogRefChip(
+  view: EditorView,
+  parsed: ParsedPostHogUrl,
+): Promise<void> {
+  const placeholderLabel = buildPostHogPlaceholderLabel(parsed);
+  const client = await getAuthenticatedClient();
+  const title = client ? await fetchPostHogResourceTitle(client, parsed) : null;
+  const resolvedLabel = buildResolvedLabel(parsed, title);
+
+  if (view.isDestroyed) return;
+
+  const { doc, tr } = view.state;
+  let updated = false;
+  doc.descendants((node, pos) => {
+    if (
+      node.type.name !== "mentionChip" ||
+      node.attrs.type !== parsed.resourceType ||
       node.attrs.id !== parsed.normalizedUrl ||
       node.attrs.label !== placeholderLabel
     ) {
@@ -405,6 +530,29 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               event.preventDefault();
               insertGithubRefPlaceholder(view, parsedRef);
               void resolveGithubRefChip(view, parsedRef);
+              return true;
+            }
+
+            const parsedPostHog = parsePostHogUrl(trimmedClipboardText);
+            if (parsedPostHog) {
+              event.preventDefault();
+              insertPostHogRefPlaceholder(view, parsedPostHog);
+              void resolvePostHogRefChip(view, parsedPostHog);
+              return true;
+            }
+
+            const mixed = buildMixedPasteContent(view, trimmedClipboardText);
+            if (mixed) {
+              event.preventDefault();
+              const { tr } = view.state;
+              tr.replaceSelection(new Slice(mixed.fragment, 0, 0));
+              view.dispatch(tr);
+              for (const ref of mixed.githubRefs) {
+                void resolveGithubRefChip(view, ref);
+              }
+              for (const ref of mixed.posthogRefs) {
+                void resolvePostHogRefChip(view, ref);
+              }
               return true;
             }
           }

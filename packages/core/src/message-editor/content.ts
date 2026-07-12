@@ -1,4 +1,5 @@
 import { escapeXmlAttr, type UploadableSkillSource } from "@posthog/shared";
+import { parsePostHogUrl } from "./posthogUrl";
 import { isUploadableSkillSource, parseXmlAttrs } from "./skillTags";
 
 export interface MentionChip {
@@ -10,6 +11,16 @@ export interface MentionChip {
     | "experiment"
     | "insight"
     | "feature_flag"
+    | "dashboard"
+    | "recording"
+    | "error_tracking"
+    | "survey"
+    | "notebook"
+    | "cohort"
+    | "action"
+    | "early_access_feature"
+    | "person"
+    | "group"
     | "github_issue"
     | "github_pr";
   id: string;
@@ -74,11 +85,19 @@ export function contentToXml(content: EditorContent): string {
       case "error":
         return `<error id="${escapedId}" />`;
       case "experiment":
-        return `<experiment id="${escapedId}" />`;
       case "insight":
-        return `<insight id="${escapedId}" />`;
       case "feature_flag":
-        return `<feature_flag id="${escapedId}" />`;
+      case "dashboard":
+      case "recording":
+      case "error_tracking":
+      case "survey":
+      case "notebook":
+      case "cohort":
+      case "action":
+      case "early_access_feature":
+      case "person":
+      case "group":
+        return `<${chip.type} id="${escapedId}" label="${escapeXmlAttr(chip.label)}" />`;
       case "github_issue":
       case "github_pr": {
         const labelMatch = chip.label.match(/^#(\d+)(?:\s*-\s*(.*))?$/);
@@ -104,7 +123,7 @@ export function contentToXml(content: EditorContent): string {
 }
 
 const CHIP_TAG_REGEX =
-  /<(file|folder|skill|error|experiment|insight|feature_flag|github_issue|github_pr)\b([^>]*?)\s*\/>/g;
+  /<(file|folder|skill|error|experiment|insight|feature_flag|dashboard|recording|error_tracking|survey|notebook|cohort|action|early_access_feature|person|group|github_issue|github_pr)\b([^>]*?)\s*\/>/g;
 
 export function deriveFileLabel(filePath: string): string {
   const segments = filePath.split("/").filter(Boolean);
@@ -142,13 +161,28 @@ function chipFromTag(tag: string, rawAttrs: string): MentionChip | null {
         skillName: name,
       };
     }
-    case "error":
-    case "experiment":
-    case "insight":
-    case "feature_flag": {
+    case "error": {
       const id = attrs.id;
       if (!id) return null;
       return { type: tag, id, label: id };
+    }
+    case "experiment":
+    case "insight":
+    case "feature_flag":
+    case "dashboard":
+    case "recording":
+    case "error_tracking":
+    case "survey":
+    case "notebook":
+    case "cohort":
+    case "action":
+    case "early_access_feature":
+    case "person":
+    case "group": {
+      const id = attrs.id;
+      if (!id) return null;
+      const label = attrs.label || parsePostHogUrl(id)?.label || id;
+      return { type: tag, id, label };
     }
     case "github_issue":
     case "github_pr": {

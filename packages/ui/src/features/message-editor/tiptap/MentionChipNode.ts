@@ -11,6 +11,16 @@ export type ChipType =
   | "experiment"
   | "insight"
   | "feature_flag"
+  | "dashboard"
+  | "recording"
+  | "error_tracking"
+  | "survey"
+  | "notebook"
+  | "cohort"
+  | "action"
+  | "early_access_feature"
+  | "person"
+  | "group"
   | "github_issue"
   | "github_pr";
 
