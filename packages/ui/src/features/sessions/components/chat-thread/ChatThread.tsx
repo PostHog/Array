@@ -257,13 +257,7 @@ function UserBubble({
   }, [displayContent, isExpanded]);
 
   return (
-    <ChatMessage
-      align="end"
-      className={cn(
-        "group rounded-(--radius-3) transition-shadow",
-        keyboardFocused && "ring-(--accent-9) ring-2 ring-offset-2",
-      )}
-    >
+    <ChatMessage align="end" className="group">
       <ChatMessageContent>
         {showHeaderChips && (
           <ChatMessageHeader className="flex-wrap gap-1">
@@ -302,7 +296,14 @@ function UserBubble({
             )}
           </ChatMessageHeader>
         )}
-        <ChatBubble align="end" variant="default">
+        <ChatBubble
+          align="end"
+          variant="default"
+          className={cn(
+            "rounded-lg ring-(--gray-11) ring-0 ring-inset transition-shadow",
+            keyboardFocused && "ring-[3px]",
+          )}
+        >
           <ChatBubbleContent>
             <div
               ref={textRef}

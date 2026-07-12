@@ -47,7 +47,6 @@ type DatePreset =
 
 interface PresetConfig {
   label: string;
-  shortLabel: string;
   footerLabel: string;
   getRange: () => { from: number; to: number };
 }
@@ -55,7 +54,6 @@ interface PresetConfig {
 const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
   today: {
     label: "Today",
-    shortLabel: "Today",
     footerLabel: "today",
     getRange: () => {
       const start = new Date();
@@ -65,7 +63,6 @@ const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
   },
   yesterday: {
     label: "Yesterday",
-    shortLabel: "Yest.",
     footerLabel: "yesterday",
     getRange: () => {
       const d = new Date();
@@ -79,7 +76,6 @@ const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
   },
   last7d: {
     label: "Last 7 days",
-    shortLabel: "7d",
     footerLabel: "last 7 days",
     getRange: () => {
       const start = new Date();
@@ -90,7 +86,6 @@ const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
   },
   last14d: {
     label: "Last 14 days",
-    shortLabel: "14d",
     footerLabel: "last 14 days",
     getRange: () => {
       const start = new Date();
@@ -101,7 +96,6 @@ const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
   },
   thisMonth: {
     label: "This month",
-    shortLabel: "This mo",
     footerLabel: "this month",
     getRange: () => {
       const start = new Date();
@@ -112,7 +106,6 @@ const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
   },
   lastMonth: {
     label: "Last month",
-    shortLabel: "Last mo",
     footerLabel: "last month",
     getRange: () => {
       const now = new Date();
@@ -131,7 +124,6 @@ const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
   },
   last30d: {
     label: "Last 30 days",
-    shortLabel: "30d",
     footerLabel: "last 30 days",
     getRange: () => {
       const start = new Date();
@@ -142,7 +134,6 @@ const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
   },
   last90d: {
     label: "Last 90 days",
-    shortLabel: "90d",
     footerLabel: "last 90 days",
     getRange: () => {
       const start = new Date();
@@ -153,7 +144,6 @@ const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
   },
   last6mo: {
     label: "Last 6 months",
-    shortLabel: "6mo",
     footerLabel: "last 6 months",
     getRange: () => {
       const start = new Date();
@@ -164,7 +154,6 @@ const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
   },
   thisYear: {
     label: "This year",
-    shortLabel: "This yr",
     footerLabel: "this year",
     getRange: () => {
       const start = new Date();
@@ -175,7 +164,6 @@ const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
   },
   lastYear: {
     label: "Last year",
-    shortLabel: "Last yr",
     footerLabel: "last year",
     getRange: () => {
       const year = new Date().getFullYear() - 1;
@@ -310,7 +298,7 @@ export function MessageJumpPicker({
   }, [activePreset, showCustom, customFrom, customTo]);
 
   const triggerLabel = useMemo((): string => {
-    if (activePreset !== null) return DATE_PRESETS[activePreset].shortLabel;
+    if (activePreset !== null) return DATE_PRESETS[activePreset].label;
     if (showCustom && (customFrom || customTo)) return "Custom";
     return "Filter";
   }, [activePreset, showCustom, customFrom, customTo]);
