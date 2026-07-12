@@ -59,6 +59,7 @@ const GAIN_ENV_ALLOWLIST = [
   "TEMP",
   "TMP",
   "SystemRoot",
+  "RTK_DB_PATH",
 ];
 
 export function scrubbedGainEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

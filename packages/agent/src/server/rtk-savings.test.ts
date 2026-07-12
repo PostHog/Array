@@ -66,9 +66,14 @@ describe("scrubbedGainEnv", () => {
       scrubbedGainEnv({
         PATH: "/usr/bin",
         HOME: "/home/posthog",
+        RTK_DB_PATH: "/tmp/posthog-rtk.db",
         GITHUB_TOKEN: "secret",
         ANTHROPIC_API_KEY: "secret",
       }),
-    ).toEqual({ PATH: "/usr/bin", HOME: "/home/posthog" });
+    ).toEqual({
+      PATH: "/usr/bin",
+      HOME: "/home/posthog",
+      RTK_DB_PATH: "/tmp/posthog-rtk.db",
+    });
   });
 });
