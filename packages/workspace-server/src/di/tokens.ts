@@ -14,3 +14,6 @@ export const CONNECTIVITY_SERVICE = Symbol.for(
 export const ENVIRONMENT_SERVICE = Symbol.for(
   "posthog.workspace.environment-service",
 );
+export const BROWSER_TABS_SERVICE = Symbol.for(
+  "posthog.workspace.browser-tabs-service",
+);

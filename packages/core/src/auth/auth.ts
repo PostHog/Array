@@ -487,12 +487,13 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private async ensureValidSession(
     forceRefresh = false,
   ): Promise<InMemorySession> {
+    const currentSession = this.session;
     if (
-      this.session &&
+      currentSession &&
       !forceRefresh &&
-      !this.isSessionExpiring(this.session)
+      !this.isSessionExpiring(currentSession)
     ) {
-      return this.session;
+      return currentSession;
     }
 
     if (this.refreshPromise) {
@@ -502,7 +503,24 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     const sessionInput = this.getSessionInputForRefresh();
 
     const refreshAndSync = async (): Promise<InMemorySession> => {
-      const session = await this.refreshSession(sessionInput);
+      let session: InMemorySession;
+      try {
+        session = await this.refreshSession(sessionInput);
+      } catch (error) {
+        if (
+          currentSession &&
+          this.session === currentSession &&
+          !forceRefresh &&
+          !this.isSessionExpired(currentSession)
+        ) {
+          this.logger.warn(
+            "Preemptive session refresh failed; using current access token",
+            { error },
+          );
+          return currentSession;
+        }
+        throw error;
+      }
       await this.syncAuthenticatedSession(session);
       return session;
     };
@@ -595,11 +613,21 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       tokenResponse.access_token,
       options.cloudRegion,
     );
+    // Team-scoped tokens (required_access_level=project) can arrive with an
+    // empty scoped_organizations list — the server only populates scoped_teams.
+    // Fall back to the current org from /api/users/@me/ so the picker isn't
+    // empty; without this the user is stranded on "No projects".
+    const orgIdsToFetch =
+      scopedOrgIds.length > 0
+        ? scopedOrgIds
+        : currentOrgId
+          ? [currentOrgId]
+          : [];
     const { map: orgProjectsMap, incomplete: orgProjectsIncomplete } =
       await this.buildOrgProjectsMap(
         tokenResponse.access_token,
         options.cloudRegion,
-        scopedOrgIds,
+        orgIdsToFetch,
         this.session?.orgProjectsMap ?? {},
       );
     const lastPrefs = accountKey
@@ -832,6 +860,9 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   }
   private isSessionExpiring(session: InMemorySession): boolean {
     return session.accessTokenExpiresAt - Date.now() <= TOKEN_EXPIRY_SKEW_MS;
+  }
+  private isSessionExpired(session: InMemorySession): boolean {
+    return session.accessTokenExpiresAt <= Date.now();
   }
   private async fetchUserContext(
     accessToken: string,

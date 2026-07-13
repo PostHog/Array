@@ -29,11 +29,15 @@ export function extractContextUsage(events: AcpMessage[]): ContextUsage | null {
     const msg = events[i].message;
     if (!aggregate) {
       aggregate = extractAggregate(msg);
+    } else if (aggregate.size <= 0) {
+      // The newest update omitted the context window; borrow it from an older one.
+      const older = extractAggregate(msg);
+      if (older) aggregate = withCarriedSize(aggregate, older);
     }
     if (!breakdown) {
       breakdown = extractBreakdown(msg);
     }
-    if (aggregate && breakdown) break;
+    if (aggregate && aggregate.size > 0 && breakdown) break;
   }
 
   if (!aggregate) return null;
@@ -50,7 +54,10 @@ export function createContextUsageTracker() {
     init: () => ({ aggregate: null, breakdown: null }),
     processEvent: (state, event) => {
       const msg = event.message;
-      state.aggregate = extractAggregate(msg) ?? state.aggregate;
+      const next = extractAggregate(msg);
+      if (next) {
+        state.aggregate = withCarriedSize(next, state.aggregate);
+      }
       state.breakdown = extractBreakdown(msg) ?? state.breakdown;
     },
     getResult: (state) =>
@@ -58,6 +65,24 @@ export function createContextUsageTracker() {
         ? { ...state.aggregate, breakdown: state.breakdown }
         : null,
   });
+}
+
+/**
+ * An update that omits `size` must not wipe a previously known context window
+ * (codex reports `modelContextWindow` intermittently), so keep the last known
+ * size and recompute the percentage against it.
+ */
+function withCarriedSize(
+  next: ContextUsageAggregate,
+  previous: ContextUsageAggregate | null,
+): ContextUsageAggregate {
+  if (next.size > 0 || !previous || previous.size <= 0) return next;
+  const size = previous.size;
+  return {
+    ...next,
+    size,
+    percentage: Math.min(100, Math.round((next.used / size) * 100)),
+  };
 }
 
 function extractAggregate(
@@ -82,16 +107,18 @@ function extractAggregate(
     const update = params?.update;
     if (
       update?.sessionUpdate === "usage_update" &&
-      typeof update.used === "number" &&
-      typeof update.size === "number"
+      typeof update.used === "number"
     ) {
+      // The model context window (`size`) may be unknown — e.g. codex omits it
+      // when the protocol doesn't report `modelContextWindow`. Still surface the
+      // raw token count (size 0 → the indicator shows used tokens, no
+      // percentage) rather than dropping the whole aggregate.
+      const size = typeof update.size === "number" ? update.size : 0;
       const percentage =
-        update.size > 0
-          ? Math.min(100, Math.round((update.used / update.size) * 100))
-          : 0;
+        size > 0 ? Math.min(100, Math.round((update.used / size) * 100)) : 0;
       return {
         used: update.used,
-        size: update.size,
+        size,
         percentage,
         cost: update.cost ?? null,
       };

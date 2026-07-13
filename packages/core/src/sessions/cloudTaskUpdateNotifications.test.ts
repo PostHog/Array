@@ -6,12 +6,28 @@ import { SessionService, type SessionServiceDeps } from "./sessionService";
 const TASK_ID = "task-1";
 const RUN_ID = "run-1";
 
-function turnComplete(): StoredLogEntry {
+function turnComplete(timestamp?: string): StoredLogEntry {
   return {
     type: "notification",
+    timestamp,
     notification: {
       method: "_posthog/turn_complete",
       params: { sessionId: RUN_ID, stopReason: "end_turn" },
+    },
+  };
+}
+
+// The `session/prompt` request that opens a turn. Its arrival is what arms the
+// turn's single completion notification, so realistic sequences pair it with a
+// later `turn_complete`.
+function sessionPrompt(id: number, timestamp?: string): StoredLogEntry {
+  return {
+    type: "notification",
+    timestamp,
+    notification: {
+      id,
+      method: "session/prompt",
+      params: { sessionId: RUN_ID, prompt: [] },
     },
   };
 }
@@ -30,6 +46,32 @@ function permissionRequest(
         options: [],
       },
     },
+  };
+}
+
+function logsUpdate(
+  newEntries: StoredLogEntry[],
+  totalEntryCount: number,
+): CloudTaskUpdatePayload {
+  return {
+    taskId: TASK_ID,
+    runId: RUN_ID,
+    kind: "logs",
+    newEntries,
+    totalEntryCount,
+  };
+}
+
+function snapshotUpdate(
+  newEntries: StoredLogEntry[],
+  totalEntryCount: number,
+): CloudTaskUpdatePayload {
+  return {
+    taskId: TASK_ID,
+    runId: RUN_ID,
+    kind: "snapshot",
+    newEntries,
+    totalEntryCount,
   };
 }
 
@@ -155,29 +197,61 @@ describe("cloud task update notifications", () => {
     expect(harness.markActivity).not.toHaveBeenCalled();
   });
 
-  it("notifies once for a live turn_complete delta after the snapshot", () => {
+  // Each case applies a sequence of updates to a fresh harness; `expected` is
+  // the resulting notify count. Snapshots never ring; each live turn_complete
+  // rings once. Re-delivered stream entries are dropped upstream in
+  // CloudTaskService by their event id (see cloud-task.test.ts), so a replay
+  // never reaches this layer.
+  it.each([
+    {
+      label: "a live turn that starts and completes",
+      updates: [logsUpdate([sessionPrompt(1), turnComplete()], 2)],
+      expected: 1,
+    },
+    {
+      label: "several turns each completing",
+      updates: [
+        logsUpdate([sessionPrompt(1), turnComplete()], 2),
+        logsUpdate([sessionPrompt(2), turnComplete()], 4),
+      ],
+      expected: 2,
+    },
+    {
+      // Opening a task mid-turn: its session/prompt is already in history and
+      // only the turn_complete arrives live. The completion must still ring.
+      label: "a prompt seen only in the snapshot, completing live",
+      updates: [
+        snapshotUpdate([sessionPrompt(1)], 1),
+        logsUpdate([turnComplete()], 2),
+      ],
+      expected: 1,
+    },
+  ])(
+    "fires the completion notification once per turn: $label",
+    ({ updates, expected }) => {
+      const harness = createHarness();
+      for (const update of updates) harness.sendUpdate(update);
+      expect(harness.notifyPromptComplete).toHaveBeenCalledTimes(expected);
+    },
+  );
+
+  it("notifies with the task title, stop reason and turn duration, and marks activity", () => {
     const harness = createHarness();
-    harness.sendUpdate({
-      taskId: TASK_ID,
-      runId: RUN_ID,
-      kind: "snapshot",
-      newEntries: [turnComplete(), turnComplete()],
-      totalEntryCount: 2,
-    });
+    harness.sendUpdate(
+      logsUpdate(
+        [
+          sessionPrompt(1, "2026-01-01T00:00:00Z"),
+          turnComplete("2026-01-01T00:00:45Z"),
+        ],
+        2,
+      ),
+    );
 
-    harness.sendUpdate({
-      taskId: TASK_ID,
-      runId: RUN_ID,
-      kind: "logs",
-      newEntries: [turnComplete()],
-      totalEntryCount: 3,
-    });
-
-    expect(harness.notifyPromptComplete).toHaveBeenCalledTimes(1);
     expect(harness.notifyPromptComplete).toHaveBeenCalledWith(
       "Cloud Task",
       "end_turn",
       TASK_ID,
+      45_000,
     );
     expect(harness.markActivity).toHaveBeenCalledTimes(1);
   });

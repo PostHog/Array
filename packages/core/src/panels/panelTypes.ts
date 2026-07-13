@@ -42,6 +42,9 @@ export type TabData =
       body: string;
     }
   | {
+      type: "autoresearch";
+    }
+  | {
       type: "other";
     };
 

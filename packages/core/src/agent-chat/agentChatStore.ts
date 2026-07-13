@@ -37,6 +37,13 @@ export interface AgentChatState {
   error: string | null;
 }
 
+/**
+ * Retention cap per chat. A live chat streams an AcpMessage per chunk, so an
+ * unbounded array grows without limit on long sessions; past this the oldest
+ * messages fall off (the transcript of record lives server-side).
+ */
+export const MAX_CHAT_MESSAGES = 2000;
+
 export const EMPTY_CHAT: AgentChatState = {
   agentKey: null,
   sessionId: null,
@@ -87,11 +94,18 @@ export const agentChatStore = createStore<AgentChatStore>((set) => {
       set((s) => {
         if (messages.length === 0) return s;
         const cur = s.chats[chatId] ?? EMPTY_CHAT;
+        const appended = [...cur.messages, ...messages];
         return {
           ...s,
           chats: {
             ...s.chats,
-            [chatId]: { ...cur, messages: [...cur.messages, ...messages] },
+            [chatId]: {
+              ...cur,
+              messages:
+                appended.length > MAX_CHAT_MESSAGES
+                  ? appended.slice(-MAX_CHAT_MESSAGES)
+                  : appended,
+            },
           },
         };
       }),

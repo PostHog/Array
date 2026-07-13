@@ -8,6 +8,7 @@ import { useService } from "@posthog/di/react";
 import { useCallback } from "react";
 import { toast } from "../../primitives/toast";
 import { showFocusSuccessToast } from "../focus/focusToast";
+import { toastError } from "../notifications/errorDetails";
 
 export function useExternalAppAction() {
   const service = useService<ExternalAppService>(EXTERNAL_APPS_SERVICE);
@@ -39,14 +40,10 @@ export function useExternalAppAction() {
           });
           return;
         case "open-failed":
-          toast.error("Failed to open in external app", {
-            description: outcome.error,
-          });
+          toastError("Failed to open in external app", outcome.error);
           return;
         case "focus-failed":
-          toast.error("Could not edit workspace", {
-            description: outcome.error,
-          });
+          toastError("Could not edit workspace", outcome.error);
           return;
         case "copied":
           toast.success("Path copied to clipboard", {

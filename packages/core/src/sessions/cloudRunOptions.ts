@@ -2,6 +2,7 @@ import {
   type Adapter,
   type AgentSession,
   type CloudRunSource,
+  type ExecutionMode,
   getConfigOptionByCategory,
   type PrAuthorshipMode,
 } from "@posthog/shared";
@@ -34,6 +35,7 @@ export interface CloudRuntimeOptions {
   adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
+  initialPermissionMode?: ExecutionMode;
 }
 
 export function getCloudRuntimeOptions(
@@ -45,6 +47,8 @@ export function getCloudRuntimeOptions(
     session.configOptions,
     "thought_level",
   );
+  const modeOption = getConfigOptionByCategory(session.configOptions, "mode");
+  const previousMode = previousRun?.state?.initial_permission_mode;
 
   return {
     adapter: session.adapter ?? previousRun?.runtime_adapter ?? undefined,
@@ -56,5 +60,11 @@ export function getCloudRuntimeOptions(
       typeof thoughtLevelOption?.currentValue === "string"
         ? thoughtLevelOption.currentValue
         : (previousRun?.reasoning_effort ?? undefined),
+    initialPermissionMode:
+      typeof modeOption?.currentValue === "string"
+        ? (modeOption.currentValue as ExecutionMode)
+        : typeof previousMode === "string"
+          ? (previousMode as ExecutionMode)
+          : undefined,
   };
 }

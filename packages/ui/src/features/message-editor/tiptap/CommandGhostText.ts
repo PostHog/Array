@@ -84,6 +84,9 @@ function acceptGhost(
     id: ghost.item.id,
     label: ghost.item.label,
     pastedText: false,
+    skillPath: ghost.item.skillPath,
+    skillSource: ghost.item.skillSource,
+    skillName: ghost.item.skillName,
   });
   const space = state.schema.text(" ");
 

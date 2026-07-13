@@ -99,6 +99,24 @@ export function canvasShareUrl(
   );
 }
 
+/**
+ * The shareable https link for a channel — or a thread (channel-filed task)
+ * inside it: `<instance>/code/channel/<channelId>[/tasks/<taskId>]`. Opening
+ * it in a browser hits a web interstitial that deep-links into the desktop app
+ * (or offers the download), so the link works for anyone — app installed or
+ * not. Not project-scoped: the ids are globally-unique row ids. The inbound
+ * desktop side lives in `ChannelLinkService` / `useChannelDeepLink`.
+ */
+export function channelShareUrl(
+  channelId: string,
+  taskId?: string,
+): string | null {
+  const base = `/code/channel/${encodeURIComponent(channelId)}`;
+  return getPostHogUrl(
+    taskId ? `${base}/tasks/${encodeURIComponent(taskId)}` : base,
+  );
+}
+
 export function errorTrackingIssueUrl(
   issueId: string,
   overrides?: ErrorTrackingIssueLinkOverrides,

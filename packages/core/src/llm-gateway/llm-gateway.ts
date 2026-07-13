@@ -1,4 +1,8 @@
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
+import {
+  buildPosthogPropertyHeaderRecord,
+  type PosthogProperties,
+} from "@posthog/shared/posthog-property-headers";
 import { inject, injectable } from "inversify";
 import {
   LLM_GATEWAY_HOST,
@@ -58,6 +62,13 @@ export class LlmGatewayService {
       model?: string;
       signal?: AbortSignal;
       timeoutMs?: number;
+      /**
+       * Free-form metadata forwarded as `x-posthog-property-<key>` headers.
+       * The gateway lifts each one onto the `$ai_generation` event it
+       * captures, so helper callers (commit messages, PR descriptions, etc.)
+       * can be told apart from the agent's main generations.
+       */
+      posthogProperties?: PosthogProperties;
     } = {},
   ): Promise<PromptOutput> {
     const {
@@ -66,6 +77,7 @@ export class LlmGatewayService {
       model = this.endpoints.defaultModel,
       signal,
       timeoutMs = 60_000,
+      posthogProperties,
     } = options;
 
     const auth = await this.auth.getValidAccessToken();
@@ -101,13 +113,18 @@ export class LlmGatewayService {
       else signal.addEventListener("abort", onCallerAbort, { once: true });
     }
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...(posthogProperties
+        ? buildPosthogPropertyHeaderRecord(posthogProperties)
+        : {}),
+    };
+
     let response: Response;
     try {
       response = await this.auth.authenticatedFetch(messagesUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(requestBody),
         signal: timeoutController.signal,
       });

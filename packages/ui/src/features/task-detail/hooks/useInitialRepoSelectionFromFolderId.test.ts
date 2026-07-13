@@ -164,6 +164,70 @@ describe("resolveRepoSelectionForFolder", () => {
         nextMode: undefined,
       },
     },
+    {
+      name: "most recent run was local while in cloud: switch to local (keep cloud repo seeded)",
+      input: {
+        remoteUrl: "posthog/posthog",
+        repositories: ["posthog/posthog"],
+        reposLoaded: true,
+        currentMode: "cloud",
+        lastUsedLocalMode: "local",
+        mostRecentEnvironment: "local",
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: "posthog/posthog",
+        nextMode: "local",
+      },
+    },
+    {
+      name: "most recent run was cloud while in local: switch to cloud",
+      input: {
+        remoteUrl: "posthog/posthog",
+        repositories: ["posthog/posthog"],
+        reposLoaded: true,
+        currentMode: "local",
+        lastUsedLocalMode: "local",
+        mostRecentEnvironment: "cloud",
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: "posthog/posthog",
+        nextMode: "cloud",
+      },
+    },
+    {
+      name: "most recent run was cloud but repo not cloud-capable, in local: stay local",
+      input: {
+        remoteUrl: null,
+        repositories: ["posthog/posthog"],
+        reposLoaded: true,
+        currentMode: "local",
+        lastUsedLocalMode: "local",
+        mostRecentEnvironment: "cloud",
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: undefined,
+        nextMode: undefined,
+      },
+    },
+    {
+      name: "most recent run was cloud but repo not cloud-capable, in cloud: drop to local",
+      input: {
+        remoteUrl: null,
+        repositories: ["posthog/posthog"],
+        reposLoaded: true,
+        currentMode: "cloud",
+        lastUsedLocalMode: "worktree",
+        mostRecentEnvironment: "cloud",
+      },
+      expected: {
+        directory: "/repos/a",
+        cloudRepository: undefined,
+        nextMode: "worktree",
+      },
+    },
   ])("$name", ({ input: { remoteUrl, ...rest }, expected }) => {
     expect(
       resolveRepoSelectionForFolder({
@@ -220,10 +284,12 @@ describe("areReposReady", () => {
 
 type HookArgs = {
   folderId: string | undefined;
+  requestId?: string;
   folders: RegisteredFolder[];
   repositories: string[];
   reposLoaded: boolean;
   currentMode: WorkspaceMode;
+  mostRecentEnvironment?: "local" | "cloud";
 };
 
 function renderRepoSelectionHook(initial: HookArgs) {
@@ -234,11 +300,13 @@ function renderRepoSelectionHook(initial: HookArgs) {
     (props: HookArgs) =>
       useInitialRepoSelectionFromFolderId({
         folderId: props.folderId,
+        requestId: props.requestId,
         folders: props.folders,
         repositories: props.repositories,
         reposLoaded: props.reposLoaded,
         currentMode: props.currentMode,
         lastUsedLocalMode: "local",
+        mostRecentEnvironment: props.mostRecentEnvironment,
         setSelectedDirectory,
         setSelectedRepository,
         switchWorkspaceMode: setWorkspaceMode,
@@ -279,6 +347,35 @@ describe("useInitialRepoSelectionFromFolderId", () => {
     );
     // Directory is not re-applied (once per folderId).
     expect(setSelectedDirectory).toHaveBeenCalledTimes(1);
+  });
+
+  it("switches into cloud when the repo's most recent run was cloud", () => {
+    const { setWorkspaceMode, setSelectedRepository } = renderRepoSelectionHook(
+      {
+        folderId: "a",
+        folders: [folder("a", "/repos/a", "posthog/posthog")],
+        repositories: ["posthog/posthog"],
+        reposLoaded: true,
+        currentMode: "local",
+        mostRecentEnvironment: "cloud",
+      },
+    );
+    expect(setWorkspaceMode).toHaveBeenCalledExactlyOnceWith("cloud");
+    expect(setSelectedRepository).toHaveBeenCalledExactlyOnceWith(
+      "posthog/posthog",
+    );
+  });
+
+  it("switches to local when the repo's most recent run was local while in cloud", () => {
+    const { setWorkspaceMode } = renderRepoSelectionHook({
+      folderId: "a",
+      folders: [folder("a", "/repos/a", "posthog/posthog")],
+      repositories: ["posthog/posthog"],
+      reposLoaded: true,
+      currentMode: "cloud",
+      mostRecentEnvironment: "local",
+    });
+    expect(setWorkspaceMode).toHaveBeenCalledExactlyOnceWith("local");
   });
 
   it("switches to local mode for a local-only folder once repos load", () => {
@@ -465,5 +562,43 @@ describe("useInitialRepoSelectionFromFolderId", () => {
       currentMode: "local",
     });
     expect(setWorkspaceMode).not.toHaveBeenCalled();
+  });
+
+  it("re-syncs the same folderId when a new requestId arrives (repeat '+' click)", () => {
+    const folders = [folder("a", "/repos/a", "posthog/a")];
+    const repositories = ["posthog/a"];
+    const { rerender, setSelectedDirectory } = renderRepoSelectionHook({
+      folderId: "a",
+      requestId: "req-1",
+      folders,
+      repositories,
+      reposLoaded: true,
+      currentMode: "local",
+    });
+    expect(setSelectedDirectory).toHaveBeenCalledExactlyOnceWith("/repos/a");
+
+    // Same request re-rendering must not re-apply (user edits stay intact)...
+    rerender({
+      folderId: "a",
+      requestId: "req-1",
+      folders,
+      repositories,
+      reposLoaded: true,
+      currentMode: "local",
+    });
+    expect(setSelectedDirectory).toHaveBeenCalledTimes(1);
+
+    // ...but a fresh click on the same group's "+" issues a new requestId and
+    // must re-select the folder's directory.
+    rerender({
+      folderId: "a",
+      requestId: "req-2",
+      folders,
+      repositories,
+      reposLoaded: true,
+      currentMode: "local",
+    });
+    expect(setSelectedDirectory).toHaveBeenCalledTimes(2);
+    expect(setSelectedDirectory).toHaveBeenLastCalledWith("/repos/a");
   });
 });

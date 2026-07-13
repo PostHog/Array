@@ -29,7 +29,7 @@ export function ChannelContextPanel({
           weight="medium"
           className="min-w-0 truncate text-gray-12"
         >
-          {channelName ? `#${channelName} ` : ""}CONTEXT.md
+          {channelName ? `${channelName} ` : ""}CONTEXT.md
         </Text>
         <Tooltip content="Close">
           <button

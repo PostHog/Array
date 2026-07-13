@@ -4277,7 +4277,7 @@ export namespace Schemas {
   };
   export type CodeInviteRedeemRequest = { code: string };
   export type CodexRuntimeAdapterEnum = "codex";
-  export type CodexTaskRunCreateSchemaInitialPermissionModeEnum = "auto" | "read-only" | "full-access";
+  export type CodexTaskRunCreateSchemaInitialPermissionModeEnum = "plan" | "auto" | "read-only" | "full-access";
   export type CodexTaskRunCreateSchema = {
     mode?: (TaskExecutionModeEnum & unknown) | undefined;
     branch?: (string | null) | undefined;

@@ -229,6 +229,37 @@ describe("SuspensionService", () => {
       expect(mocks.suspensionRepo.findAll()).toHaveLength(0);
     });
 
+    it("does nothing when active count equals the limit", async () => {
+      mockGetMaxActiveWorktrees.mockReturnValue(2);
+      seedWorktreeWorkspace(mocks, { taskId: "task-a" });
+      seedWorktreeWorkspace(mocks, { taskId: "task-b" });
+      await service.suspendLeastRecentIfOverLimit();
+      expect(mocks.suspensionRepo.findAll()).toHaveLength(0);
+    });
+
+    it("suspends every workspace over the limit, oldest first", async () => {
+      mockGetMaxActiveWorktrees.mockReturnValue(1);
+      const oldest = seedWorktreeWorkspace(mocks, {
+        taskId: "task-oldest",
+        createdAt: "2024-01-01T00:00:00.000Z",
+      });
+      const middle = seedWorktreeWorkspace(mocks, {
+        taskId: "task-middle",
+        createdAt: "2024-02-01T00:00:00.000Z",
+      });
+      seedWorktreeWorkspace(mocks, {
+        taskId: "task-newest",
+        createdAt: "2024-03-01T00:00:00.000Z",
+      });
+
+      await service.suspendLeastRecentIfOverLimit();
+
+      const suspended = mocks.suspensionRepo.findAll();
+      expect(suspended.map((s) => s.workspaceId).sort()).toEqual(
+        [oldest.id, middle.id].sort(),
+      );
+    });
+
     it.each([
       [
         "lastActivityAt",

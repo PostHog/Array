@@ -20,6 +20,10 @@ const mockHost = vi.hoisted(() => ({
   getEnvironment: vi.fn(),
   detectRepo: vi.fn(),
   getCloudPromptTransport: vi.fn(),
+  resolveLocalSkillCommandPrompt: vi.fn(async (prompt: string) => prompt),
+  takeWarmTaskLease: vi.fn(
+    (): { taskId: string; runId: string } | null => null,
+  ),
   uploadRunAttachments: vi.fn(),
   setProvisioningActive: vi.fn(),
   clearProvisioning: vi.fn(),
@@ -39,6 +43,7 @@ const sessionService = {
   connectToTask: vi.fn(),
   disconnectFromTask: vi.fn(),
   rememberInitialCloudPrompt: vi.fn(),
+  markTaskCreationInFlight: vi.fn(),
 } as unknown as SessionService;
 
 const createTask = (overrides: Partial<Task> = {}): Task => ({
@@ -113,6 +118,7 @@ describe("TaskCreationSaga", () => {
         filePaths: string[] = [],
       ): CloudPromptTransport => ({
         filePaths,
+        skillBundles: [],
         messageText: typeof prompt === "string" ? prompt : undefined,
         promptText: typeof prompt === "string" ? prompt : "",
       }),
@@ -146,6 +152,8 @@ describe("TaskCreationSaga", () => {
       adapter: "codex",
       model: "gpt-5.4",
       reasoningLevel: "high",
+      cloudAutoPublish: true,
+      cloudRtkEnabled: false,
     });
 
     expect(result.success).toBe(true);
@@ -162,6 +170,8 @@ describe("TaskCreationSaga", () => {
       reasoningLevel: "high",
       sandboxEnvironmentId: undefined,
       prAuthorshipMode: "user",
+      autoPublish: true,
+      rtkEnabled: false,
       runSource: "manual",
       signalReportId: undefined,
       initialPermissionMode: "auto",
@@ -339,6 +349,7 @@ describe("TaskCreationSaga", () => {
 
     mockHost.getCloudPromptTransport.mockReturnValue({
       filePaths: ["/tmp/test.txt"],
+      skillBundles: [],
       messageText: "read this file",
       promptText: "read this file\n\nAttached files: test.txt",
     });
@@ -394,6 +405,7 @@ describe("TaskCreationSaga", () => {
       "task-123",
       "run-123",
       ["/tmp/test.txt"],
+      [],
     );
     expect(startTaskRunMock).toHaveBeenCalledWith("task-123", "run-123", {
       pendingUserMessage: "read this file",
@@ -409,6 +421,270 @@ describe("TaskCreationSaga", () => {
     expect(startTaskRunMock.mock.invocationCallOrder[0]).toBeLessThan(
       onTaskReady.mock.invocationCallOrder[0],
     );
+  });
+
+  it("resolves a typed local-skill slash command before building the cloud transport", async () => {
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+
+    const skillTag =
+      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it';
+    mockHost.resolveLocalSkillCommandPrompt.mockResolvedValue(skillTag);
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: [],
+      skillBundles: [
+        { name: "my-skill", source: "user", path: "/skills/my-skill" },
+      ],
+      messageText: "/my-skill do it",
+      promptText: "/my-skill do it",
+    });
+    mockHost.uploadRunAttachments.mockResolvedValue(["skill-artifact-1"]);
+
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "/my-skill do it",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockHost.resolveLocalSkillCommandPrompt).toHaveBeenCalledWith(
+      "/my-skill do it",
+    );
+    // The resolved tag (not the raw slash command) must reach the transport so
+    // the bundle is collected and uploaded on the first message.
+    expect(mockHost.getCloudPromptTransport).toHaveBeenCalledWith(
+      skillTag,
+      undefined,
+    );
+    expect(startTaskRunMock).toHaveBeenCalledWith("task-123", "run-123", {
+      pendingUserMessage: "/my-skill do it",
+      pendingUserArtifactIds: ["skill-artifact-1"],
+    });
+  });
+
+  it.each([
+    ["a plain-text prompt that isn't a slash command", "just do the thing"],
+    ["a slash command that isn't a local skill", "/good keep going"],
+  ])(
+    "passes %s through to the transport unchanged",
+    async (_label, content) => {
+      const createdTask = createTask();
+      const startedTask = createTask({ latest_run: createRun() });
+      const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+      const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+
+      // The host resolver is a no-op for non-local-skill prompts — it returns the
+      // original string unchanged (mirrors `resolveLocalSkillPrompt` yielding null
+      // and the host falling back to the prompt).
+      mockHost.resolveLocalSkillCommandPrompt.mockImplementation(
+        async (prompt: string) => prompt,
+      );
+      mockHost.getCloudPromptTransport.mockReturnValue({
+        filePaths: [],
+        skillBundles: [],
+        messageText: content,
+        promptText: content,
+      });
+      mockHost.uploadRunAttachments.mockResolvedValue([]);
+
+      const saga = makeSaga({
+        createTask: vi.fn().mockResolvedValue(createdTask),
+        createTaskRun: createTaskRunMock,
+        startTaskRun: startTaskRunMock,
+      });
+
+      const result = await saga.run({
+        content,
+        repository: "posthog/posthog",
+        workspaceMode: "cloud",
+        branch: "main",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockHost.resolveLocalSkillCommandPrompt).toHaveBeenCalledWith(
+        content,
+      );
+      // Resolution is a no-op, so the original content (not a rewritten skill tag)
+      // reaches the transport and no bundle is collected.
+      expect(mockHost.getCloudPromptTransport).toHaveBeenCalledWith(
+        content,
+        undefined,
+      );
+    },
+  );
+
+  it("uploads skill bundles to the warm run and passes pending fields through createTask", async () => {
+    const skillTag =
+      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it';
+    mockHost.resolveLocalSkillCommandPrompt.mockResolvedValue(skillTag);
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: [],
+      skillBundles: [
+        { name: "my-skill", source: "user", path: "/skills/my-skill" },
+      ],
+      messageText: "/my-skill do it",
+      promptText: "/my-skill do it",
+    });
+    mockHost.takeWarmTaskLease.mockReturnValue({
+      taskId: "warm-task",
+      runId: "warm-run",
+    });
+    mockHost.uploadRunAttachments.mockResolvedValue(["skill-artifact-1"]);
+
+    const warmActivatedTask = createTask({
+      id: "warm-task",
+      latest_run: createRun({ id: "warm-run", task: "warm-task" }),
+    });
+    const createTaskMock = vi.fn().mockResolvedValue(warmActivatedTask);
+    const createTaskRunMock = vi.fn();
+    const startTaskRunMock = vi.fn();
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "/my-skill do it",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+      cloudAutoPublish: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockHost.takeWarmTaskLease).toHaveBeenCalledWith({
+      repository: "posthog/posthog",
+      branch: "main",
+      runtimeAdapter: null,
+      model: null,
+      reasoningEffort: null,
+    });
+    // The bundle must land on the warm run before createTask triggers activation.
+    expect(mockHost.uploadRunAttachments).toHaveBeenCalledWith(
+      expect.anything(),
+      "warm-task",
+      "warm-run",
+      [],
+      [{ name: "my-skill", source: "user", path: "/skills/my-skill" }],
+    );
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: "main",
+        pending_user_message: "/my-skill do it",
+        pending_user_artifact_ids: ["skill-artifact-1"],
+        // Warm activation skips run creation, so the choice must ride along here.
+        auto_publish: true,
+      }),
+    );
+    // Warm-activated at create time: no fresh run is created or started.
+    expect(createTaskRunMock).not.toHaveBeenCalled();
+    expect(startTaskRunMock).not.toHaveBeenCalled();
+  });
+
+  it("suppresses warm reuse when attachments exist but no warm lease is known", async () => {
+    const skillTag =
+      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it';
+    mockHost.resolveLocalSkillCommandPrompt.mockResolvedValue(skillTag);
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: [],
+      skillBundles: [
+        { name: "my-skill", source: "user", path: "/skills/my-skill" },
+      ],
+      messageText: "/my-skill do it",
+      promptText: "/my-skill do it",
+    });
+    mockHost.takeWarmTaskLease.mockReturnValue(null);
+    mockHost.uploadRunAttachments.mockResolvedValue(["skill-artifact-1"]);
+
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "/my-skill do it",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+    });
+
+    expect(result.success).toBe(true);
+    // No lease to upload to: omit the warm-reuse branch hint so the backend
+    // cannot activate a warm run this client can't attach the bundle to.
+    expect(createTaskMock.mock.calls[0][0].branch).toBeUndefined();
+    // Cold path proceeds and delivers the bundle through the run start.
+    expect(startTaskRunMock).toHaveBeenCalledWith("task-123", "run-123", {
+      pendingUserMessage: "/my-skill do it",
+      pendingUserArtifactIds: ["skill-artifact-1"],
+    });
+  });
+
+  it("falls back to cold creation when the warm-run upload fails", async () => {
+    const skillTag =
+      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it';
+    mockHost.resolveLocalSkillCommandPrompt.mockResolvedValue(skillTag);
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: [],
+      skillBundles: [
+        { name: "my-skill", source: "user", path: "/skills/my-skill" },
+      ],
+      messageText: "/my-skill do it",
+      promptText: "/my-skill do it",
+    });
+    mockHost.takeWarmTaskLease.mockReturnValue({
+      taskId: "warm-task",
+      runId: "warm-run",
+    });
+    mockHost.uploadRunAttachments
+      .mockRejectedValueOnce(new Error("warm upload failed"))
+      .mockResolvedValueOnce(["skill-artifact-1"]);
+
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "/my-skill do it",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+    });
+
+    // The failed pre-upload must not fail creation or activate warm without
+    // the bundle: warm reuse is suppressed and the cold path re-uploads.
+    expect(result.success).toBe(true);
+    expect(createTaskMock.mock.calls[0][0].branch).toBeUndefined();
+    expect(
+      createTaskMock.mock.calls[0][0].pending_user_artifact_ids,
+    ).toBeUndefined();
+    expect(startTaskRunMock).toHaveBeenCalledWith("task-123", "run-123", {
+      pendingUserMessage: "/my-skill do it",
+      pendingUserArtifactIds: ["skill-artifact-1"],
+    });
   });
 
   it("uses the selected user GitHub integration for cloud task creation", async () => {
@@ -646,6 +922,50 @@ describe("TaskCreationSaga", () => {
     );
   });
 
+  it("marks task creation in flight before connecting the session", async () => {
+    const createTaskMock = vi.fn().mockResolvedValue(createTask());
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+
+    const saga = makeSaga({ createTask: createTaskMock });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repoPath: "/repo",
+      workspaceMode: "local",
+    });
+
+    expect(result.success).toBe(true);
+    expect(sessionService.markTaskCreationInFlight).toHaveBeenCalledWith(
+      "task-123",
+    );
+    expect(
+      vi.mocked(sessionService.markTaskCreationInFlight).mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(sessionService.connectToTask).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("creates the task without a repository when repo detection fails", async () => {
+    const createTaskMock = vi.fn().mockResolvedValue(createTask());
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockRejectedValue(new TypeError("fetch failed"));
+
+    const saga = makeSaga({ createTask: createTaskMock });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ repository: undefined }),
+    );
+  });
+
   it("rolls back the import snapshot and tracking row when a later step fails", async () => {
     const createdTask = createTask();
     const createTaskMock = vi.fn().mockResolvedValue(createdTask);
@@ -677,6 +997,9 @@ describe("TaskCreationSaga", () => {
     });
 
     expect(result.success).toBe(false);
+    // Local (non-worktree) mode is not the kept-on-failure path, so the task
+    // is rolled back as before.
+    expect(deleteTaskMock).toHaveBeenCalledWith("task-123");
     // Record step rollback drops the tracking row...
     expect(mockHost.deleteClaudeCliImportRecord).toHaveBeenCalledWith({
       importedSessionId: "imported-session-id",
@@ -686,6 +1009,71 @@ describe("TaskCreationSaga", () => {
       repoPath: "/repo",
       importedSessionId: "imported-session-id",
     });
+  });
+
+  it("keeps the worktree task (and its prompt) when provisioning fails", async () => {
+    const createdTask = createTask();
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const deleteTaskMock = vi.fn().mockResolvedValue(undefined);
+    const onTaskReady = vi.fn();
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+    mockHost.createWorkspace.mockRejectedValue(new Error("worktree boom"));
+
+    const saga = makeSaga(
+      { createTask: createTaskMock, deleteTask: deleteTaskMock },
+      { onTaskReady },
+    );
+
+    const result = await saga.run({
+      content: "Fix the login flow",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      throw new Error("Expected worktree provisioning failure to be kept");
+    }
+    expect(result.data.task.id).toBe("task-123");
+    expect(result.data.workspace).toBeNull();
+    expect(result.data.provisioningError).toContain("worktree boom");
+    // The task (and its persisted prompt) survives for retry.
+    expect(deleteTaskMock).not.toHaveBeenCalled();
+    // Spinner is dismissed and no agent session starts without a worktree.
+    expect(mockHost.clearProvisioning).toHaveBeenCalledWith("task-123");
+    expect(sessionService.connectToTask).not.toHaveBeenCalled();
+    // The early onTaskReady already navigated onto the task.
+    expect(onTaskReady).toHaveBeenCalledTimes(1);
+    expect(onTaskReady.mock.calls[0][0].workspace).toBeNull();
+  });
+
+  it("still rolls back a worktree task when a later (non-provisioning) step fails", async () => {
+    const createdTask = createTask();
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const deleteTaskMock = vi.fn().mockResolvedValue(undefined);
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+    mockHost.createWorkspace.mockResolvedValue({});
+    vi.mocked(sessionService.connectToTask).mockImplementationOnce(() => {
+      throw new Error("agent boom");
+    });
+
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      deleteTask: deleteTaskMock,
+    });
+
+    const result = await saga.run({
+      content: "Fix the login flow",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+    });
+
+    expect(result.success).toBe(false);
+    // Only workspace_creation is protected; an agent_session failure rolls back.
+    expect(deleteTaskMock).toHaveBeenCalledWith("task-123");
+    expect(mockHost.deleteWorkspace).toHaveBeenCalled();
   });
 
   it("does not import a Claude CLI session for non-local workspace modes", async () => {

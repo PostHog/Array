@@ -14,7 +14,10 @@ import React, {
 } from "react";
 import { Tooltip } from "../Tooltip";
 import "./Combobox.css";
-import { useComboboxFilter } from "./useComboboxFilter";
+import {
+  type ComboboxSearchKeys,
+  useComboboxFilter,
+} from "./useComboboxFilter";
 
 type ComboboxSize = "1" | "2" | "3";
 type ComboboxContentVariant = "solid" | "soft";
@@ -212,6 +215,12 @@ interface ComboboxContentFilteredProps<T> extends ComboboxContentBaseProps {
   items: T[];
   /** Extract the searchable string from each item. Defaults to `String(item)`. */
   getValue?: (item: T) => string;
+  /**
+   * Opt-in weighted fuzzy search across multiple fields (fuse.js). Each key
+   * carries a weight (e.g. name above description) and prefix matches on
+   * `getValue` are promoted. Pass a stable reference (a module constant).
+   */
+  searchKeys?: ComboboxSearchKeys<T>;
   /** Maximum items to render. Defaults to 50. */
   limit?: number;
   /** Values pinned to the top regardless of score. */
@@ -238,6 +247,7 @@ function ComboboxContent<T>({
   const hasItems = "items" in rest && rest.items !== undefined;
   const filterItems = hasItems ? rest.items : ([] as T[]);
   const getValue = hasItems ? rest.getValue : undefined;
+  const searchKeys = hasItems ? rest.searchKeys : undefined;
   const limit = hasItems ? rest.limit : undefined;
   const pinned = hasItems ? rest.pinned : undefined;
   const shouldFilter = hasItems
@@ -248,7 +258,7 @@ function ComboboxContent<T>({
 
   const filter = useComboboxFilter(
     filterItems,
-    { limit, pinned, open },
+    { limit, pinned, open, keys: searchKeys },
     getValue,
   );
 
@@ -358,91 +368,107 @@ interface ComboboxItemProps {
   className?: string;
   textValue?: string;
   icon?: React.ReactNode;
+  /** Optional muted second line, truncated to one line. */
+  description?: React.ReactNode;
 }
 
 const ComboboxItem = React.forwardRef<
   React.ElementRef<typeof CmdkCommand.Item>,
   ComboboxItemProps
->(({ children, value, disabled, className, textValue, icon }, ref) => {
-  const {
-    value: selectedValue,
-    onValueChange,
-    onOpenChange,
-    registerItem,
-    unregisterItem,
-  } = useComboboxContext();
+>(
+  (
+    { children, value, disabled, className, textValue, icon, description },
+    ref,
+  ) => {
+    const {
+      value: selectedValue,
+      onValueChange,
+      onOpenChange,
+      registerItem,
+      unregisterItem,
+    } = useComboboxContext();
 
-  const textRef = useRef<HTMLSpanElement>(null);
-  const itemRef = useRef<HTMLDivElement>(null);
-  const [showTooltip, setShowTooltip] = useState(false);
+    const textRef = useRef<HTMLSpanElement>(null);
+    const itemRef = useRef<HTMLDivElement>(null);
+    const [showTooltip, setShowTooltip] = useState(false);
 
-  useEffect(() => {
-    const label =
+    useEffect(() => {
+      const label =
+        textValue || (typeof children === "string" ? children : value);
+      registerItem(value, label);
+      return () => unregisterItem(value);
+    }, [value, children, textValue, registerItem, unregisterItem]);
+
+    useEffect(() => {
+      if (!showTooltip) return;
+      const scrollParent = itemRef.current?.closest("[cmdk-list]");
+      if (!scrollParent) return;
+      const dismiss = () => setShowTooltip(false);
+      scrollParent.addEventListener("scroll", dismiss, { passive: true });
+      return () => scrollParent.removeEventListener("scroll", dismiss);
+    }, [showTooltip]);
+
+    const isSelected = selectedValue === value;
+
+    const handleSelect = useCallback(() => {
+      if (!disabled) {
+        onValueChange(value);
+        onOpenChange(false);
+      }
+    }, [disabled, value, onValueChange, onOpenChange]);
+
+    const handleMouseEnter = useCallback(() => {
+      const el = textRef.current;
+      if (el && el.scrollWidth > el.clientWidth) {
+        setShowTooltip(true);
+      }
+    }, []);
+
+    const handleMouseLeave = useCallback(() => {
+      setShowTooltip(false);
+    }, []);
+
+    const tooltipContent =
       textValue || (typeof children === "string" ? children : value);
-    registerItem(value, label);
-    return () => unregisterItem(value);
-  }, [value, children, textValue, registerItem, unregisterItem]);
 
-  useEffect(() => {
-    if (!showTooltip) return;
-    const scrollParent = itemRef.current?.closest("[cmdk-list]");
-    if (!scrollParent) return;
-    const dismiss = () => setShowTooltip(false);
-    scrollParent.addEventListener("scroll", dismiss, { passive: true });
-    return () => scrollParent.removeEventListener("scroll", dismiss);
-  }, [showTooltip]);
-
-  const isSelected = selectedValue === value;
-
-  const handleSelect = useCallback(() => {
-    if (!disabled) {
-      onValueChange(value);
-      onOpenChange(false);
-    }
-  }, [disabled, value, onValueChange, onOpenChange]);
-
-  const handleMouseEnter = useCallback(() => {
-    const el = textRef.current;
-    if (el && el.scrollWidth > el.clientWidth) {
-      setShowTooltip(true);
-    }
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    setShowTooltip(false);
-  }, []);
-
-  const tooltipContent =
-    textValue || (typeof children === "string" ? children : value);
-
-  return (
-    <Tooltip content={tooltipContent} open={showTooltip} side="top">
-      <CmdkCommand.Item
-        ref={(node) => {
-          itemRef.current = node;
-          if (typeof ref === "function") ref(node);
-          else if (ref) ref.current = node;
-        }}
-        value={value}
-        disabled={disabled}
-        onSelect={handleSelect}
-        className={className}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-      >
-        <span className="combobox-item-content">
-          {icon && <span className="combobox-item-icon">{icon}</span>}
-          <span ref={textRef} className="combobox-item-text">
-            {children}
+    return (
+      <Tooltip content={tooltipContent} open={showTooltip} side="top">
+        <CmdkCommand.Item
+          ref={(node) => {
+            itemRef.current = node;
+            if (typeof ref === "function") ref(node);
+            else if (ref) ref.current = node;
+          }}
+          value={value}
+          disabled={disabled}
+          onSelect={handleSelect}
+          className={className}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          <span className="combobox-item-content">
+            {icon && <span className="combobox-item-icon">{icon}</span>}
+            {description ? (
+              <span className="combobox-item-text-group">
+                <span ref={textRef} className="combobox-item-text">
+                  {children}
+                </span>
+                <span className="combobox-item-description">{description}</span>
+              </span>
+            ) : (
+              <span ref={textRef} className="combobox-item-text">
+                {children}
+              </span>
+            )}
           </span>
-        </span>
-        <span className="combobox-item-indicator">
-          {isSelected && <Check weight="bold" size={14} />}
-        </span>
-      </CmdkCommand.Item>
-    </Tooltip>
-  );
-});
+          <span className="combobox-item-indicator">
+            {isSelected && <Check weight="bold" size={14} />}
+          </span>
+        </CmdkCommand.Item>
+      </Tooltip>
+    );
+  },
+);
 
 ComboboxItem.displayName = "ComboboxItem";
 

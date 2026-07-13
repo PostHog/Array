@@ -18,7 +18,7 @@ export function useExternalApps() {
   const { data: lastUsedAppId, isLoading: lastUsedLoading } = useQuery({
     queryKey: LAST_USED_KEY,
     queryFn: async () =>
-      (await client.externalApps.getLastUsed.query()).lastUsedApp,
+      (await client.externalApps.getLastUsed.query()).lastUsedApp ?? null,
     staleTime: 60_000,
   });
 

@@ -61,6 +61,7 @@ export const workflowAction = z
     prompt: z.string().min(1).max(8_000),
     adapter: z.enum(["claude", "codex"]).optional(),
     model: z.string().min(1).optional(),
+    auto: z.boolean().optional(),
   })
   .strict();
 export type WorkflowAction = z.infer<typeof workflowAction>;
@@ -90,6 +91,7 @@ export const validationDiagnostic = z
       "duplicate_action_id",
       "action_empty_prompt",
       "action_empty_label",
+      "action_auto_not_bool",
     ]),
     message: z.string(),
     situationId: situationId.optional(),

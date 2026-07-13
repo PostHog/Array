@@ -44,11 +44,12 @@ let capturedMutationOptions: {
   onError?: (e: Error) => void;
 } = {};
 const mockMutate = vi.fn();
+let mockIsPending = false;
 
 vi.mock("@tanstack/react-query", () => ({
   useMutation: (opts: Record<string, unknown>) => {
     capturedMutationOptions = opts as typeof capturedMutationOptions;
-    return { mutate: mockMutate, isPending: false };
+    return { mutate: mockMutate, isPending: mockIsPending };
   },
 }));
 
@@ -89,6 +90,7 @@ describe("useBranchMismatchDialog", () => {
     vi.clearAllMocks();
     capturedMutationOptions = {};
     mockShouldWarn = false;
+    mockIsPending = false;
   });
 
   describe("handleBeforeSubmit", () => {
@@ -183,6 +185,34 @@ describe("useBranchMismatchDialog", () => {
           current_branch: "main",
         },
       );
+    });
+
+    it("does nothing while a switch is in flight, so a dismiss can't drop the pending message", () => {
+      mockIsPending = true;
+      const { result, onSendPrompt } = renderDialog({ shouldWarn: true });
+      const clearEditor = vi.fn();
+
+      act(() => {
+        result.current.handleBeforeSubmit("hello", clearEditor);
+      });
+
+      act(() => {
+        result.current.dialogProps?.onSwitch();
+      });
+
+      mockTrack.mockClear();
+      act(() => {
+        result.current.dialogProps?.onCancel();
+      });
+
+      expect(mockTrack).not.toHaveBeenCalled();
+      expect(result.current.dialogProps?.open).toBe(true);
+
+      act(() => {
+        capturedMutationOptions.onSuccess?.();
+      });
+
+      expect(onSendPrompt).toHaveBeenCalledWith("hello");
     });
   });
 

@@ -6,10 +6,13 @@ import { useBlurOnEscape } from "../../../hooks/useBlurOnEscape";
 import { useSetHeaderContent } from "../../../hooks/useSetHeaderContent";
 import { logger } from "../../../shell/logger";
 import { ChannelBreadcrumb } from "../../canvas/components/ChannelBreadcrumb";
-import { CloudReviewPage } from "../../code-review/components/CloudReviewPage";
-import { ReviewPage } from "../../code-review/components/ReviewPage";
+import { CopyThreadLinkButton } from "../../canvas/components/CopyThreadLinkButton";
+import {
+  LazyCloudReviewPage as CloudReviewPage,
+  LazyReviewPage as ReviewPage,
+} from "../../code-review/components/LazyReviewPages";
 import { useReviewNavigationStore } from "../../code-review/reviewNavigationStore";
-import { FilePicker } from "../../command/FilePicker";
+import { useFileSearchStore } from "../../command/fileSearchStore";
 import { useRepoFileWatcher } from "../../file-watcher/useRepoFileWatcher";
 import { clearGitReviewQueries } from "../../git-interaction/gitCacheKeys";
 import { PanelLayout } from "../../panels/components/PanelLayout";
@@ -36,11 +39,14 @@ interface TaskDetailProps {
    * plain Code task view.
    */
   channelName?: string;
+  /** The channel's id, so the breadcrumb's "# channel" links to its home. */
+  channelId?: string;
 }
 
 export function TaskDetail({
   task: initialTask,
   channelName,
+  channelId,
 }: TaskDetailProps) {
   const taskId = initialTask.id;
 
@@ -70,7 +76,7 @@ export function TaskDetail({
       ? [effectiveRepoPath, activeRelativePath].join("/").replace(/\/+/g, "/")
       : effectiveRepoPath;
 
-  const [filePickerOpen, setFilePickerOpen] = useState(false);
+  const openFilePicker = useFileSearchStore((state) => state.openPicker);
 
   const { enableScope, disableScope } = useHotkeysContext();
 
@@ -81,7 +87,7 @@ export function TaskDetail({
     };
   }, [enableScope, disableScope]);
 
-  useHotkeys("mod+p", () => setFilePickerOpen(true), {
+  useHotkeys("mod+p", () => openFilePicker(), {
     enableOnContentEditable: true,
     enableOnFormTags: true,
     preventDefault: true,
@@ -115,9 +121,20 @@ export function TaskDetail({
   const handleTitleEditCancel = useCallback(() => {
     setIsEditingTitle(false);
   }, []);
-  const trailing = openTargetPath ? (
-    <ExternalAppsOpener targetPath={openTargetPath} />
-  ) : null;
+  // Inside a channel the thread also gets a "copy link" share affordance.
+  // Memoized so the headerContent memo below isn't busted by unrelated renders.
+  const trailing = useMemo(
+    () =>
+      channelId || openTargetPath ? (
+        <Flex align="center" gap="2">
+          {channelId && (
+            <CopyThreadLinkButton channelId={channelId} taskId={taskId} />
+          )}
+          {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
+        </Flex>
+      ) : null,
+    [channelId, taskId, openTargetPath],
+  );
   const workspace = useWorkspace(taskId);
   const workspaceMode = workspace?.mode;
   const headerContent = useMemo(
@@ -128,9 +145,13 @@ export function TaskDetail({
       channelName ? (
         <ChannelBreadcrumb
           channelName={channelName}
+          channelId={channelId}
           leafIcon={
             workspaceMode ? (
-              <WorkspaceModeBadge mode={workspaceMode} />
+              <WorkspaceModeBadge
+                mode={workspaceMode}
+                checkoutPath={effectiveRepoPath}
+              />
             ) : undefined
           }
           leafLabel={task.title}
@@ -147,7 +168,10 @@ export function TaskDetail({
             />
           ) : (
             <Flex align="center" gap="2" minWidth="0">
-              <WorkspaceModeBadge mode={workspaceMode} />
+              <WorkspaceModeBadge
+                mode={workspaceMode}
+                checkoutPath={effectiveRepoPath}
+              />
               <Tooltip content={task.title} side="bottom" delayDuration={300}>
                 <Text
                   truncate
@@ -164,10 +188,12 @@ export function TaskDetail({
       ),
     [
       channelName,
+      channelId,
       task.title,
       trailing,
       isEditingTitle,
       workspaceMode,
+      effectiveRepoPath,
       handleTitleEditSubmit,
       handleTitleEditCancel,
     ],
@@ -270,12 +296,6 @@ export function TaskDetail({
           </Box>
         )}
       </Flex>
-      <FilePicker
-        open={filePickerOpen}
-        onOpenChange={setFilePickerOpen}
-        taskId={taskId}
-        repoPath={effectiveRepoPath}
-      />
     </Box>
   );
 }

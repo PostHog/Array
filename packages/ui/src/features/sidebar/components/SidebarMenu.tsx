@@ -1,5 +1,6 @@
+import { findGroupFolder } from "@posthog/core/sidebar/groupTasks";
+import { isTaskActivelyRunning } from "@posthog/core/sidebar/taskRunning";
 import { useHostTRPCClient } from "@posthog/host-router/react";
-import { Separator } from "@posthog/quill";
 import type { Task } from "@posthog/shared/types";
 import {
   archiveTasksImperative,
@@ -7,14 +8,13 @@ import {
   useArchiveTask,
 } from "@posthog/ui/features/archive/useArchiveTask";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
+import { useExternalAppAction } from "@posthog/ui/features/external-apps/useExternalAppAction";
+import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
-import {
-  type TaskData,
-  useSidebarData,
-} from "@posthog/ui/features/sidebar/useSidebarData";
+import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
@@ -34,14 +34,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArchiveRunningTaskDialog } from "./ArchiveRunningTaskDialog";
 import { SidebarItem } from "./SidebarItem";
-import { SidebarNavSection } from "./SidebarNavSection";
 import { TaskListView } from "./TaskListView";
 import { TasksHeader } from "./TasksHeader";
 
 const log = logger.scope("sidebar-menu");
 
-function isTaskActivelyRunning(task: TaskData): boolean {
-  return task.taskRunStatus === "in_progress" || task.isGenerating;
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
 function SidebarMenuComponent() {
@@ -57,6 +59,10 @@ function SidebarMenuComponent() {
 
   const { data: workspaces = {} } = useWorkspaces();
   const { markAsViewed } = useTaskViewed();
+
+  const { folders, removeFolder } = useFolders();
+
+  const openExternalApp = useExternalAppAction();
 
   const { showContextMenu, editingTaskId, setEditingTaskId } =
     useTaskContextMenu();
@@ -102,6 +108,21 @@ function SidebarMenuComponent() {
     taskId: string;
     taskTitle: string;
   } | null>(null);
+
+  // Escape clears any bulk task selection (moved here from the retired
+  // MainSidebar so it survives with the task list in the unified sidebar).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (isEditableTarget(e.target)) return;
+      const { selectedTaskIds, clearSelection } =
+        useTaskSelectionStore.getState();
+      if (selectedTaskIds.length === 0) return;
+      clearSelection();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const selectedTaskIds = useTaskSelectionStore((s) => s.selectedTaskIds);
   const toggleTaskSelection = useTaskSelectionStore(
@@ -222,6 +243,36 @@ function SidebarMenuComponent() {
     [hostClient, queryClient, clearSelection, archiveCacheKeys],
   );
 
+  const handleGroupContextMenu = useCallback(
+    async (groupId: string, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const folder = findGroupFolder(folders, groupId);
+      if (!folder) return;
+      try {
+        const result =
+          await hostClient.contextMenu.showFolderContextMenu.mutate({
+            folderName: folder.name,
+            folderPath: folder.path,
+          });
+        if (result.action?.type === "remove") {
+          await removeFolder(folder.id);
+        } else if (result.action?.type === "external-app") {
+          await openExternalApp(
+            result.action.action,
+            folder.path,
+            folder.name,
+            { workspace: null },
+          );
+        }
+      } catch (error) {
+        log.error("Failed to show folder context menu", error);
+        toast.error("Couldn't perform folder action");
+      }
+    },
+    [folders, removeFolder, hostClient, openExternalApp],
+  );
+
   const handleTaskContextMenu = (
     taskId: string,
     e: React.MouseEvent,
@@ -243,10 +294,10 @@ function SidebarMenuComponent() {
       clearSelection();
     }
 
-    const task = taskMap.get(taskId);
+    const taskData = allSidebarTasks.find((t) => t.id === taskId);
+    const task = taskMap.get(taskId) ?? taskData;
     if (task) {
       const workspace = workspaces[taskId];
-      const taskData = allSidebarTasks.find((t) => t.id === taskId);
       const isInCommandCenter = commandCenterCells.some(
         (id) => id === taskId && taskMap.has(id),
       );
@@ -399,18 +450,6 @@ function SidebarMenuComponent() {
       id="side-bar-menu"
       className="flex min-h-0 flex-col"
     >
-      {/* Derive the command-center count from data SidebarMenu already holds,
-          so the nested nav section doesn't open its own task subscription. */}
-      <SidebarNavSection
-        commandCenterActiveCount={commandCenterCells.reduce(
-          (count, taskId) =>
-            taskId != null && taskMap.has(taskId) ? count + 1 : count,
-          0,
-        )}
-      />
-
-      <Separator className="mx-2 my-2 shrink-0" />
-
       <TasksHeader />
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
@@ -437,6 +476,7 @@ function SidebarMenuComponent() {
               onTaskTogglePin={handleTaskTogglePin}
               onTaskEditSubmit={handleTaskEditSubmit}
               onTaskEditCancel={handleTaskEditCancel}
+              onGroupContextMenu={handleGroupContextMenu}
               hasMore={sidebarData.hasMore}
             />
           )}

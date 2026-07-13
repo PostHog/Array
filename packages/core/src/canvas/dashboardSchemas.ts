@@ -25,6 +25,9 @@ export const dashboardRecordSchema = z.object({
   createdBy: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
+  // Epoch ms the canvas was pinned to its channel; absent = not pinned. Stored
+  // in the row's meta, so a pin is shared across all users of the channel.
+  pinnedAt: z.number().optional(),
 });
 export type DashboardRecord = z.infer<typeof dashboardRecordSchema>;
 
@@ -58,6 +61,9 @@ export const dashboardFileMetaSchema = z.object({
   // auto-created freeform board shown when the channel name is clicked). Stored
   // on the folder's meta because the FileSystem model has no column for it.
   homeCanvasId: z.string().optional(),
+  // Epoch ms the canvas was pinned to its channel; absent = not pinned. Lives in
+  // meta (the shared backend row) so a pin is visible to every channel member.
+  pinnedAt: z.number().optional(),
 });
 export type DashboardFileMeta = z.infer<typeof dashboardFileMetaSchema>;
 
@@ -75,6 +81,9 @@ export const dashboardSummarySchema = z.object({
   // Surfaced on the summary so the sidebar can show the run nested under the
   // canvas without a per-canvas get().
   generationTaskId: z.string().nullish(),
+  // Epoch ms the canvas was pinned to its channel; absent = not pinned. On the
+  // summary so the Pinned menu can filter/sort without a per-canvas get().
+  pinnedAt: z.number().optional(),
 });
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
 
@@ -114,4 +123,11 @@ export const renameDashboardInput = z.object({
 export const setGenerationTaskInput = z.object({
   id: z.string().min(1),
   taskId: z.string().nullable(),
+});
+
+// Pin (or unpin) a canvas to its channel. Persisted in the row's meta so the
+// pin is shared across every user of the channel.
+export const setPinnedInput = z.object({
+  id: z.string().min(1),
+  pinned: z.boolean(),
 });

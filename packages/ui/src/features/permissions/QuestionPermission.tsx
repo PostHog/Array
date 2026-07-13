@@ -14,7 +14,8 @@ import {
   SUBMIT_OPTION_ID,
 } from "@posthog/ui/primitives/ActionSelector";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { useQuestionDraftStore } from "./questionDraftStore";
 import { type BasePermissionProps, toSelectorOptions } from "./types";
 
 function parseQuestionMeta(raw: unknown): QuestionMeta | undefined {
@@ -77,6 +78,17 @@ function buildAnswersRecord(
   return result;
 }
 
+function buildSingleQuestionAnswers(
+  selectedIds: string[],
+  customInput: string | undefined,
+  allQuestions: QuestionItem[],
+): Record<string, string> {
+  return buildAnswersRecord(
+    new Map([[0, { selectedIds, customInput: customInput ?? "" }]]),
+    allQuestions,
+  );
+}
+
 function isQuestionAnswered(
   stepAnswers: Map<number, StepAnswer>,
   questionIndex: number,
@@ -88,20 +100,32 @@ function isQuestionAnswered(
   return hasOptions || hasCustomInput;
 }
 
+const EMPTY_STEP_ANSWERS: Map<number, StepAnswer> = new Map();
+
 export function QuestionPermission({
   toolCall,
   options,
   onSelect,
   onCancel,
 }: BasePermissionProps) {
-  const meta = parseQuestionMeta(toolCall._meta);
-  const allQuestions = meta?.questions ?? [];
-  const totalQuestions = allQuestions.length;
-
-  const [activeStep, setActiveStep] = useState(0);
-  const [stepAnswers, setStepAnswers] = useState<Map<number, StepAnswer>>(
-    () => new Map(),
+  // Memoized so the hooks depending on allQuestions keep a stable identity
+  // instead of re-parsing the meta (and re-allocating) on every render.
+  const allQuestions = useMemo(
+    () => parseQuestionMeta(toolCall._meta)?.questions ?? [],
+    [toolCall._meta],
   );
+  const totalQuestions = allQuestions.length;
+  const toolCallId = toolCall.toolCallId;
+
+  // Chat switches unmount this card. The draft store preserves the
+  // in-progress answers so a remount restores them instead of resetting to
+  // the first question.
+  const draft = useQuestionDraftStore((s) => s.drafts.get(toolCallId));
+  const setDraftActiveStep = useQuestionDraftStore((s) => s.setActiveStep);
+  const setDraftStepAnswer = useQuestionDraftStore((s) => s.setStepAnswer);
+  const clearDraft = useQuestionDraftStore((s) => s.clearDraft);
+  const activeStep = draft?.activeStep ?? 0;
+  const stepAnswers = draft?.stepAnswers ?? EMPTY_STEP_ANSWERS;
 
   const isOnSubmitStep = activeStep >= totalQuestions;
 
@@ -116,59 +140,76 @@ export function QuestionPermission({
 
   const currentStepAnswer = stepAnswers.get(activeStep);
 
+  const handleCancel = useCallback(() => {
+    clearDraft(toolCallId);
+    onCancel();
+  }, [toolCallId, clearDraft, onCancel]);
+
   const advanceStep = useCallback(
     (optionIds: string[], customInput?: string) => {
-      setStepAnswers((prev) => {
-        const next = new Map(prev);
-        next.set(activeStep, {
-          selectedIds: optionIds,
-          customInput: customInput ?? "",
-        });
-        return next;
+      setDraftStepAnswer(toolCallId, activeStep, {
+        selectedIds: optionIds,
+        customInput: customInput ?? "",
       });
-
-      if (activeStep < totalQuestions - 1) {
-        setActiveStep(activeStep + 1);
-      } else {
-        setActiveStep(totalQuestions);
-      }
+      setDraftActiveStep(
+        toolCallId,
+        activeStep < totalQuestions - 1 ? activeStep + 1 : totalQuestions,
+      );
     },
-    [activeStep, totalQuestions],
+    [
+      toolCallId,
+      activeStep,
+      totalQuestions,
+      setDraftStepAnswer,
+      setDraftActiveStep,
+    ],
   );
 
   const handleMultiSelect = useCallback(
     (optionIds: string[], customInput?: string) => {
       if (totalQuestions === 1) {
         const filteredIds = filterOtherOptions(optionIds);
-        const singleAnswer: Map<number, StepAnswer> = new Map([
-          [0, { selectedIds: optionIds, customInput: customInput ?? "" }],
-        ]);
-        const answers = buildAnswersRecord(singleAnswer, allQuestions);
+        const answers = buildSingleQuestionAnswers(
+          optionIds,
+          customInput,
+          allQuestions,
+        );
+        clearDraft(toolCallId);
         onSelect(filteredIds[0] ?? "other", customInput, answers);
         return;
       }
       advanceStep(optionIds, customInput);
     },
-    [totalQuestions, onSelect, advanceStep, allQuestions],
+    [
+      totalQuestions,
+      onSelect,
+      advanceStep,
+      allQuestions,
+      clearDraft,
+      toolCallId,
+    ],
   );
 
   const handleSelect = useCallback(
     (optionId: string, customInput?: string) => {
       if (isOnSubmitStep) {
         if (optionId === CANCEL_OPTION_ID) {
-          onCancel();
+          handleCancel();
           return;
         }
         const answers = buildAnswersRecord(stepAnswers, allQuestions);
+        clearDraft(toolCallId);
         onSelect(SUBMIT_OPTION_ID, undefined, answers);
         return;
       }
 
       if (totalQuestions === 1) {
-        const singleAnswer: Map<number, StepAnswer> = new Map([
-          [0, { selectedIds: [optionId], customInput: customInput ?? "" }],
-        ]);
-        const answers = buildAnswersRecord(singleAnswer, allQuestions);
+        const answers = buildSingleQuestionAnswers(
+          [optionId],
+          customInput,
+          allQuestions,
+        );
+        clearDraft(toolCallId);
         onSelect(optionId, customInput, answers);
         return;
       }
@@ -181,28 +222,29 @@ export function QuestionPermission({
       allQuestions,
       totalQuestions,
       onSelect,
-      onCancel,
+      handleCancel,
       advanceStep,
+      clearDraft,
+      toolCallId,
     ],
   );
 
   const handleStepAnswer = useCallback(
     (stepIndex: number, optionIds: string[], customInput?: string) => {
-      setStepAnswers((prev) => {
-        const next = new Map(prev);
-        next.set(stepIndex, {
-          selectedIds: optionIds,
-          customInput: customInput ?? "",
-        });
-        return next;
+      setDraftStepAnswer(toolCallId, stepIndex, {
+        selectedIds: optionIds,
+        customInput: customInput ?? "",
       });
     },
-    [],
+    [toolCallId, setDraftStepAnswer],
   );
 
-  const handleStepChange = useCallback((stepIndex: number) => {
-    setActiveStep(stepIndex);
-  }, []);
+  const handleStepChange = useCallback(
+    (stepIndex: number) => {
+      setDraftActiveStep(toolCallId, stepIndex);
+    },
+    [toolCallId, setDraftActiveStep],
+  );
 
   const hasUnanswered = useMemo(() => {
     for (let i = 0; i < totalQuestions; i++) {
@@ -272,9 +314,10 @@ export function QuestionPermission({
       currentStep={activeStep}
       steps={steps}
       initialSelections={currentStepAnswer?.selectedIds}
+      initialCustomInput={currentStepAnswer?.customInput}
       onSelect={handleSelect}
       onMultiSelect={handleMultiSelect}
-      onCancel={onCancel}
+      onCancel={handleCancel}
       onStepChange={handleStepChange}
       onStepAnswer={handleStepAnswer}
     />

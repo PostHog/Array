@@ -1,4 +1,5 @@
 import { resolveService } from "@posthog/di/container";
+import { recordLog } from "./logCapture";
 
 export interface ScopedLogger {
   info(...args: unknown[]): void;
@@ -21,31 +22,32 @@ function impl(): HostLogger | null {
   }
 }
 
+// Every log line is also teed into the in-memory capture buffer
+// (shell/logCapture) so error surfaces can bundle recent logs — even on hosts
+// that bind no HOST_LOGGER at all.
+type Level = "debug" | "info" | "warn" | "error";
+
+function emit(level: Level, scope: string | null, args: unknown[]): void {
+  recordLog(level, scope, args);
+  const target = impl();
+  if (!target) return;
+  const sink = scope ? target.scope(scope) : target;
+  sink[level](...args);
+}
+
 function deferredScope(name: string): ScopedLogger {
   return {
-    info: (...args) =>
-      impl()
-        ?.scope(name)
-        .info(...args),
-    warn: (...args) =>
-      impl()
-        ?.scope(name)
-        .warn(...args),
-    error: (...args) =>
-      impl()
-        ?.scope(name)
-        .error(...args),
-    debug: (...args) =>
-      impl()
-        ?.scope(name)
-        .debug(...args),
+    info: (...args) => emit("info", name, args),
+    warn: (...args) => emit("warn", name, args),
+    error: (...args) => emit("error", name, args),
+    debug: (...args) => emit("debug", name, args),
   };
 }
 
 export const logger: HostLogger = {
   scope: (name) => deferredScope(name),
-  info: (...args) => impl()?.info(...args),
-  warn: (...args) => impl()?.warn(...args),
-  error: (...args) => impl()?.error(...args),
-  debug: (...args) => impl()?.debug(...args),
+  info: (...args) => emit("info", null, args),
+  warn: (...args) => emit("warn", null, args),
+  error: (...args) => emit("error", null, args),
+  debug: (...args) => emit("debug", null, args),
 };

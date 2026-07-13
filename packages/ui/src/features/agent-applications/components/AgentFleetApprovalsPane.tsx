@@ -24,7 +24,7 @@ import { RefreshIndicator } from "./RefreshIndicator";
  * (joined client-side with `useAgentApplications`) and the detail pane reuses
  * `AgentApprovalDetail` once we resolve the application's `idOrSlug`. Owns its
  * own chrome (back link + title) rather than nesting under the Scouts /
- * Applications tab bar, matching how per-agent detail pages render.
+ * Fleet tab bar, matching how per-agent detail pages render.
  */
 export function AgentFleetApprovalsPane({
   selectedId,
@@ -149,7 +149,7 @@ export function AgentFleetApprovalsPane({
           className="flex w-fit items-center gap-1.5 text-[12px] text-gray-11 no-underline hover:text-gray-12"
         >
           <ArrowLeftIcon size={13} />
-          Applications
+          Fleet
         </Link>
         <Flex align="center" gap="2" wrap="wrap">
           <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">

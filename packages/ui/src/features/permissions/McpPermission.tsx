@@ -1,4 +1,4 @@
-import { parseMcpToolKey } from "@posthog/ui/features/mcp-apps/utils/mcp-app-host-utils";
+import { mcpToolKey, readMcpToolDescriptor } from "@posthog/shared";
 import {
   formatPosthogExecBody,
   getPostHogExecDisplay,
@@ -16,11 +16,9 @@ export function McpPermission({
   onSelect,
   onCancel,
 }: BasePermissionProps) {
-  const mcpToolName = (
-    toolCall._meta as { claudeCode?: { toolName?: string } } | undefined
-  )?.claudeCode?.toolName;
+  const mcp = readMcpToolDescriptor(toolCall._meta);
 
-  if (!mcpToolName) {
+  if (!mcp) {
     return (
       <DefaultPermission
         toolCall={toolCall}
@@ -31,13 +29,11 @@ export function McpPermission({
     );
   }
 
-  const { serverName: defaultServerName, toolName: defaultToolName } =
-    parseMcpToolKey(mcpToolName);
-  const posthogDisplay = isPostHogExecTool(mcpToolName)
+  const posthogDisplay = isPostHogExecTool(mcpToolKey(mcp))
     ? getPostHogExecDisplay(toolCall.rawInput)
     : null;
-  const serverName = posthogDisplay ? "posthog" : defaultServerName;
-  const toolName = posthogDisplay?.label ?? defaultToolName;
+  const serverName = posthogDisplay ? "posthog" : mcp.server;
+  const toolName = posthogDisplay?.label ?? mcp.tool;
   const fullInput = posthogDisplay
     ? formatPosthogExecBody(posthogDisplay.input)
     : formatInput(toolCall.rawInput);

@@ -16,6 +16,8 @@ bin/
 
 # tsup bundled config artifacts (temporary files left behind when bundling TS configs)
 *.config.bundled_*.mjs
+# vite bundled config artifacts (left behind when a vitest run is interrupted)
+*.config.ts.timestamp-*.mjs
 
 # Environment
 .env
@@ -57,6 +59,8 @@ test-results/
 *storybook.log
 .session-store.json
 .playwright-mcp
+# Trunk Flaky Tests JUnit reports (one per package, uploaded from CI)
+junit.xml
 
 # Downloaded binaries
 apps/code/resources/codex-acp/
@@ -74,3 +78,8 @@ posthog-sym
 CLAUDE.local.md
 
 apps/mobile/ROADMAP.md
+# Local quill tarball for ChatX thread testing (not committed)
+.local-quill/
+
+# pi project-local config (per-developer MCP servers, prompts, etc.)
+.pi/

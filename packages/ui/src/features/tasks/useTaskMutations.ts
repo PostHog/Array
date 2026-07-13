@@ -124,7 +124,8 @@ export function useRenameTask() {
         if (previousDetail) {
           queryClient.setQueryData<Task | undefined>(
             taskKeys.detail(taskId),
-            (current) => rollbackDetailData(current, previousDetail, newTitle),
+            (current) =>
+              rollbackDetailData<Task>(current, previousDetail, newTitle),
           );
         }
         if (rollbackSession) {

@@ -19,6 +19,9 @@ export function ContextUsageIndicator({ usage }: ContextUsageIndicatorProps) {
   if (!usage) return null;
 
   const { used, size, percentage } = usage;
+  // The context window can be unknown (size 0) — show just the token count
+  // rather than a misleading "X/0 · 0%".
+  const hasSize = size > 0;
   const strokeDashoffset = CIRCUMFERENCE - (percentage / 100) * CIRCUMFERENCE;
   const color = getOverallUsageColor(percentage);
 
@@ -28,7 +31,11 @@ export function ContextUsageIndicator({ usage }: ContextUsageIndicatorProps) {
         <button
           type="button"
           className="flex cursor-pointer select-none items-center gap-1 bg-transparent"
-          aria-label={`Context usage: ${percentage}%`}
+          aria-label={
+            hasSize
+              ? `Context usage: ${percentage}%`
+              : `Context usage: ${formatTokensCompact(used)} tokens`
+          }
         >
           <Flex align="center" gap="1">
             <svg
@@ -59,8 +66,9 @@ export function ContextUsageIndicator({ usage }: ContextUsageIndicatorProps) {
               />
             </svg>
             <Text className="text-[13px] text-muted-foreground tabular-nums">
-              {formatTokensCompact(used)}/{formatTokensCompact(size)} ·{" "}
-              {percentage}%
+              {hasSize
+                ? `${formatTokensCompact(used)}/${formatTokensCompact(size)} · ${percentage}%`
+                : formatTokensCompact(used)}
             </Text>
           </Flex>
         </button>

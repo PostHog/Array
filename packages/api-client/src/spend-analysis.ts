@@ -30,6 +30,12 @@ export interface SpendAnalysisModelRow {
   output_tokens: number;
 }
 
+export interface SpendAnalysisDayRow {
+  day: string;
+  event_count: number;
+  cost_usd: number;
+}
+
 export interface SpendAnalysisBreakdown<TRow> {
   items: TRow[];
   truncated: boolean;
@@ -40,6 +46,8 @@ export interface SpendAnalysisResponse {
   by_product: SpendAnalysisBreakdown<SpendAnalysisProductRow>;
   by_tool: SpendAnalysisBreakdown<SpendAnalysisToolRow>;
   by_model: SpendAnalysisBreakdown<SpendAnalysisModelRow>;
+  // Optional until the backend by_day rollout reaches every deployment.
+  by_day?: SpendAnalysisBreakdown<SpendAnalysisDayRow>;
   // `top_traces` is still in the backend response shape (always empty) per
   // posthog/posthog#59796. Renderer code does not consume it; left out of the
   // TS type so future readers see only what we actually use.

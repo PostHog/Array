@@ -6,6 +6,8 @@ import {
   selectFileSource,
 } from "@posthog/core/code-editor/fileSource";
 import { getRelativePath } from "@posthog/core/code-editor/pathUtils";
+import { buildFileLineReferencePrompt } from "@posthog/core/code-review/reviewPrompts";
+import { xmlToContent } from "@posthog/core/message-editor/content";
 import {
   getImageMimeType,
   isRasterImageFile,
@@ -21,6 +23,7 @@ import { PanelMessage } from "../../../primitives/PanelMessage";
 import { SafeImagePreview } from "../../../primitives/SafeImagePreview";
 import { Tooltip } from "../../../primitives/Tooltip";
 import { openExternalUrl } from "../../../shell/openExternal";
+import { useDraftStore } from "../../message-editor/draftStore";
 import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { useFileTreeStore } from "../../right-sidebar/fileTreeStore";
 import { useCwd } from "../../sidebar/useCwd";
@@ -35,6 +38,10 @@ import {
 import { useFileEnrichment } from "../hooks/useFileEnrichment";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
 import { EnrichmentPopover } from "./EnrichmentPopover";
+import {
+  SelectionCommentOverlay,
+  useSelectionComposer,
+} from "./SelectionCommentOverlay";
 
 interface CodeEditorPanelProps {
   taskId: string;
@@ -113,6 +120,23 @@ export function CodeEditorPanel({
   const openFileInSplit = usePanelLayoutStore((s) => s.openFileInSplit);
   const expandToFile = useFileTreeStore((s) => s.expandToFile);
   const [copied, setCopied] = useState(false);
+
+  const composer = useSelectionComposer();
+  const handleAddSelectionToChat = useCallback(
+    (startLine: number, endLine: number, text: string) => {
+      const prompt = buildFileLineReferencePrompt(
+        absolutePath,
+        startLine,
+        endLine,
+        text,
+      );
+      // sessionId === taskId for the in-task chat composer.
+      useDraftStore
+        .getState()
+        .actions.insertPendingContent(taskId, xmlToContent(prompt));
+    },
+    [absolutePath, taskId],
+  );
 
   const handleMarkdownLinkClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
@@ -267,8 +291,17 @@ export function CodeEditorPanel({
         relativePath={filePath}
         readOnly
         enrichment={enrichment}
+        highlightSelectedLines
+        onSelectionChange={composer.onSelectionChange}
       />
       <EnrichmentPopover />
+      <SelectionCommentOverlay
+        selection={composer.selection}
+        open={composer.open}
+        filePath={filePath}
+        onSubmit={handleAddSelectionToChat}
+        onDismiss={composer.close}
+      />
     </Box>
   );
 

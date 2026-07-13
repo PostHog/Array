@@ -65,6 +65,7 @@ export interface TaskRun {
   status: TaskRunStatus;
   log_url: string;
   error_message: string | null;
+  reasoning_effort?: string | null;
   output: Record<string, unknown> | null;
   state: Record<string, unknown>;
   created_at: string;

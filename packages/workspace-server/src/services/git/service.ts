@@ -37,6 +37,7 @@ import {
   ResetToDefaultBranchSaga,
   SwitchBranchSaga,
 } from "@posthog/git/sagas/branch";
+import { CleanWorkingTreeSaga } from "@posthog/git/sagas/clean";
 import { CloneSaga } from "@posthog/git/sagas/clone";
 import { CommitSaga } from "@posthog/git/sagas/commit";
 import { DiscardFileChangesSaga } from "@posthog/git/sagas/discard";
@@ -48,12 +49,15 @@ import { TypedEventEmitter } from "@posthog/shared";
 import { injectable } from "inversify";
 import type { SidebarPrState } from "../workspace/schemas";
 import type {
+  ApprovePrOutput,
   ChangedFile,
   CloneProgressPayload,
   CommitOutput,
   DetectRepoResult,
   DiscardFileChangesOutput,
   GetCommitConventionsOutput,
+  GetPrChecksOutput,
+  GetPrCommentsOutput,
   GetPrTemplateOutput,
   GhAuthTokenOutput,
   GhStatusOutput,
@@ -66,10 +70,16 @@ import type {
   GitStatusOutput,
   GitSyncStatus,
   HandoffLocalGitState,
+  MergePrOutput,
   OpenPrOutput,
   PrActionType,
+  PrCheck,
+  PrCheckBucket,
+  PrConversationComment,
   PrDetailsByUrlOutput,
   PrDiffStats,
+  PrInfoByUrlOutput,
+  PrMergeMethod,
   PrReviewComment,
   PrReviewThread,
   PrStatusOutput,
@@ -81,6 +91,7 @@ import type {
   SyncOutput,
   UpdatePrByUrlOutput,
 } from "./schemas";
+import { getPrInfoByUrlOutput, prConversationCommentSchema } from "./schemas";
 
 const FETCH_THROTTLE_MS = 30_000;
 /** Max PRs per GraphQL request – stays well under GitHub's complexity ceiling. */
@@ -132,6 +143,22 @@ function normalizeGraphqlPrState(
       return "closed";
     default:
       return "open";
+  }
+}
+
+/**
+ * Narrow `gh pr checks` bucket values to the schema enum. Unknown values fall
+ * back to "pending" so one odd bucket can never fail the whole checks list.
+ */
+function normalizeCheckBucket(bucket: string | undefined): PrCheckBucket {
+  switch (bucket) {
+    case "fail":
+    case "cancel":
+    case "pass":
+    case "skipping":
+      return bucket;
+    default:
+      return "pending";
   }
 }
 
@@ -432,25 +459,40 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
 
   private readonly lastFetchTime = new Map<string, number>();
 
+  /**
+   * Always runs `git fetch`, bypassing the staleness throttle. Use when the
+   * caller has explicitly asked for a fresh view of the remote (e.g.,
+   * `fetchFromRemote: true`) — otherwise a fetch triggered by a preceding
+   * mutation can silently swallow this one and leave the snapshot stale at
+   * exactly the moment it mattered.
+   */
+  private async forceFetch(directoryPath: string): Promise<void> {
+    try {
+      await gitFetch(directoryPath);
+      this.lastFetchTime.set(directoryPath, Date.now());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(
+        `[git-service] fetch failed for ${directoryPath}; using local refs: ${message}\n`,
+      );
+    }
+  }
+
   private async fetchIfStale(directoryPath: string): Promise<void> {
     const now = Date.now();
     const lastFetch = this.lastFetchTime.get(directoryPath) ?? 0;
     if (now - lastFetch > FETCH_THROTTLE_MS) {
-      try {
-        await gitFetch(directoryPath);
-        this.lastFetchTime.set(directoryPath, now);
-      } catch {}
+      await this.forceFetch(directoryPath);
     }
   }
 
   private async getGitSyncStatusInternal(
     directoryPath: string,
-    forceRefresh = false,
+    fetchFromRemote = false,
   ): Promise<GitSyncStatus> {
-    if (forceRefresh) {
-      this.lastFetchTime.delete(directoryPath);
+    if (fetchFromRemote) {
+      await this.forceFetch(directoryPath);
     }
-    await this.fetchIfStale(directoryPath);
 
     const status = await getSyncStatus(directoryPath);
     return {
@@ -483,7 +525,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
       includeChangedFiles ? this.getChangedFilesHead(directoryPath) : null,
       includeDiffStats ? this.getDiffStats(directoryPath) : null,
       includeSyncStatus
-        ? this.getGitSyncStatusInternal(directoryPath, true)
+        ? this.getGitSyncStatusInternal(directoryPath, false)
         : null,
       includeLatestCommit ? this.getLatestCommit(directoryPath) : null,
     ]);
@@ -508,9 +550,9 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
 
   async getGitSyncStatus(
     directoryPath: string,
-    forceRefresh = false,
+    fetchFromRemote = false,
   ): Promise<GitSyncStatus> {
-    return this.getGitSyncStatusInternal(directoryPath, forceRefresh);
+    return this.getGitSyncStatusInternal(directoryPath, fetchFromRemote);
   }
 
   async createBranch(directoryPath: string, branchName: string): Promise<void> {
@@ -556,6 +598,23 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
       filePath,
       fileStatus,
     });
+    if (!result.success) {
+      return { success: false };
+    }
+
+    const state = await this.getStateSnapshot(directoryPath, {
+      includeSyncStatus: false,
+      includeLatestCommit: false,
+    });
+
+    return { success: true, state };
+  }
+
+  async discardAllChanges(
+    directoryPath: string,
+  ): Promise<DiscardFileChangesOutput> {
+    const saga = new CleanWorkingTreeSaga();
+    const result = await saga.run({ baseDir: directoryPath });
     if (!result.success) {
       return { success: false };
     }
@@ -930,7 +989,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         "api",
         `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`,
         "--jq",
-        "{state,merged,draft,headRefName: .head.ref}",
+        "{state,merged,draft,headRefName: .head.ref,title}",
       ]);
 
       if (result.exitCode !== 0) {
@@ -942,9 +1001,34 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         merged: boolean;
         draft: boolean;
         headRefName: string | null;
+        title: string | null;
       };
 
       return data;
+    } catch {
+      return null;
+    }
+  }
+
+  async getPrInfoByUrl(prUrl: string): Promise<PrInfoByUrlOutput | null> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return null;
+
+    try {
+      const result = await execGh([
+        "api",
+        `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`,
+        "--jq",
+        '{number,title,body: (.body // ""),author: .user.login,state,merged,draft,mergeable,mergeStateStatus: (.mergeable_state // "unknown"),baseRefName: .base.ref,headRefName: .head.ref,additions,deletions,changedFiles: .changed_files}',
+      ]);
+
+      if (result.exitCode !== 0) {
+        return null;
+      }
+
+      // Zod-parse rather than cast, so a GitHub response-shape change
+      // surfaces here (caught, -> null) instead of leaking bad data.
+      return getPrInfoByUrlOutput.parse(JSON.parse(result.stdout));
     } catch {
       return null;
     }
@@ -1267,6 +1351,161 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         message: error instanceof Error ? error.message : "Unknown error",
       };
     }
+  }
+
+  async approvePr(prUrl: string): Promise<ApprovePrOutput> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") {
+      return { success: false, message: "Invalid PR URL" };
+    }
+
+    try {
+      const result = await execGh([
+        "pr",
+        "review",
+        String(pr.number),
+        "--approve",
+        "--repo",
+        `${pr.owner}/${pr.repo}`,
+      ]);
+
+      if (result.exitCode !== 0) {
+        return {
+          success: false,
+          message: result.stderr || result.error || "Unknown error",
+        };
+      }
+
+      return { success: true, message: result.stdout };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  async mergePr(prUrl: string, method: PrMergeMethod): Promise<MergePrOutput> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") {
+      return { success: false, message: "Invalid PR URL" };
+    }
+
+    try {
+      const result = await execGh([
+        "pr",
+        "merge",
+        String(pr.number),
+        `--${method}`,
+        "--repo",
+        `${pr.owner}/${pr.repo}`,
+      ]);
+
+      if (result.exitCode !== 0) {
+        return {
+          success: false,
+          message: result.stderr || result.error || "Unknown error",
+        };
+      }
+
+      return { success: true, message: result.stdout };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  async getPrChecks(prUrl: string): Promise<GetPrChecksOutput> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return null;
+
+    try {
+      // `gh pr checks` exits non-zero when checks are failing (1) or pending
+      // (8), so the exit code alone doesn't distinguish "couldn't fetch" from
+      // "fetched, some red" — parse stdout instead.
+      const result = await execGh([
+        "pr",
+        "checks",
+        String(pr.number),
+        "--repo",
+        `${pr.owner}/${pr.repo}`,
+        "--json",
+        "name,bucket,link,workflow,description",
+      ]);
+
+      if (result.stdout.trim()) {
+        const checks = JSON.parse(result.stdout) as Array<{
+          name?: string;
+          bucket?: string;
+          link?: string;
+          workflow?: string;
+          description?: string;
+        }>;
+        return checks.map(
+          (check): PrCheck => ({
+            name: check.name ?? "",
+            bucket: normalizeCheckBucket(check.bucket),
+            link: check.link || null,
+            workflow: check.workflow || null,
+            description: check.description || null,
+          }),
+        );
+      }
+
+      if (result.exitCode === 0) return [];
+      // A PR with no CI configured is not an error state.
+      if ((result.stderr ?? "").includes("no checks reported")) return [];
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async getPrComments(prUrl: string): Promise<GetPrCommentsOutput> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return null;
+
+    // GitHub's conversation tab is two feeds: issue comments and review
+    // summaries ("approved with a comment"). Inline code comments come from
+    // getPrReviewComments separately.
+    const [comments, reviewSummaries] = await Promise.all([
+      this.fetchPrCommentFeed(
+        `repos/${pr.owner}/${pr.repo}/issues/${pr.number}/comments`,
+        '.[] | {id, author: (.user.login // "unknown"), avatarUrl: (.user.avatar_url // null), body: (.body // ""), createdAt: .created_at, url: (.html_url // null)}',
+      ),
+      this.fetchPrCommentFeed(
+        `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}/reviews`,
+        '.[] | select(.state != "PENDING") | select((.body // "") != "") | {id, author: (.user.login // "unknown"), avatarUrl: (.user.avatar_url // null), body, createdAt: (.submitted_at // ""), url: (.html_url // null)}',
+      ),
+    ]);
+    return [...comments, ...reviewSummaries];
+  }
+
+  /**
+   * Fetch a paginated comment-shaped feed, slimmed to the schema fields in
+   * gh's jq (full comment objects are mostly boilerplate URLs and can blow
+   * past the exec buffer on busy PRs). `--jq` with `--paginate` emits one
+   * compact JSON object per line. Throws on failure so the renderer can show
+   * why (rate limit, auth, network) instead of a silent empty section.
+   */
+  private async fetchPrCommentFeed(
+    endpoint: string,
+    jq: string,
+  ): Promise<PrConversationComment[]> {
+    const result = await execGh(["api", endpoint, "--paginate", "--jq", jq]);
+
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `Failed to fetch PR comments: ${result.stderr || result.error || "Unknown error"}`,
+      );
+    }
+
+    return result.stdout
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => prConversationCommentSchema.parse(JSON.parse(line)));
   }
 
   async getPrReviewComments(prUrl: string): Promise<PrReviewThread[]> {

@@ -2,6 +2,7 @@ import {
   type ResolvedDiffSource,
   resolveDiffSource,
 } from "@posthog/core/code-review/resolveDiffSource";
+import { EMPTY_DIFF_STATS } from "@posthog/core/code-review/selectTaskDiffStats";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { useQuery } from "@tanstack/react-query";
 import { useDiffViewerStore } from "../../code-editor/diffViewerStore";
@@ -31,11 +32,6 @@ export function useEffectiveDiffSource(taskId: string): EffectiveDiffSource {
   const configured = useDiffViewerStore((s) => s.diffSource[taskId] ?? null);
 
   const enabled = !!repoPath;
-  const emptyDiffStats: DiffStats = {
-    filesChanged: 0,
-    linesAdded: 0,
-    linesRemoved: 0,
-  };
 
   const { data: syncStatus } = useQuery(
     trpc.git.getGitSyncStatus.queryOptions(
@@ -51,7 +47,7 @@ export function useEffectiveDiffSource(taskId: string): EffectiveDiffSource {
     ),
   );
 
-  const { data: diffStats = emptyDiffStats } = useDiffStats(repoPath ?? null);
+  const { data: diffStats = EMPTY_DIFF_STATS } = useDiffStats(repoPath ?? null);
 
   const aheadOfDefault = syncStatus?.aheadOfDefault ?? 0;
   const defaultBranch = repoInfo?.defaultBranch ?? null;

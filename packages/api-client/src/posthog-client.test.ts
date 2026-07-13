@@ -77,6 +77,74 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it("preserves plan for cloud Codex runs", async () => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    const post = vi.fn().mockResolvedValue({
+      id: "task-123",
+      title: "Task",
+      description: "Task",
+      created_at: "2026-04-14T00:00:00Z",
+      updated_at: "2026-04-14T00:00:00Z",
+      origin_product: "user_created",
+    });
+
+    (client as unknown as { api: { post: typeof post } }).api = { post };
+
+    await client.runTaskInCloud("task-123", "feature/codex-plan", {
+      adapter: "codex",
+      model: "gpt-5.4",
+      initialPermissionMode: "plan",
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/tasks/{id}/run/",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          initial_permission_mode: "plan",
+        }),
+      }),
+    );
+  });
+
+  it("omits the permission mode when no adapter is set", async () => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    const post = vi.fn().mockResolvedValue({
+      id: "task-123",
+      title: "Task",
+      description: "Task",
+      created_at: "2026-04-14T00:00:00Z",
+      updated_at: "2026-04-14T00:00:00Z",
+      origin_product: "user_created",
+    });
+
+    (client as unknown as { api: { post: typeof post } }).api = { post };
+
+    await client.runTaskInCloud("task-123", "feature/no-adapter", {
+      initialPermissionMode: "plan",
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/tasks/{id}/run/",
+      expect.objectContaining({
+        body: expect.not.objectContaining({
+          initial_permission_mode: expect.anything(),
+        }),
+      }),
+    );
+  });
+
   it("rejects unsupported reasoning effort for cloud Codex runs", async () => {
     const client = new PostHogAPIClient(
       "http://localhost:8000",
@@ -177,6 +245,137 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it("maps the permission mode per adapter when creating task runs", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "run-123", environment: "cloud" }),
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await client.createTaskRun("task-123", {
+      environment: "cloud",
+      adapter: "claude",
+      model: "claude-opus-4-8",
+      initialPermissionMode: "read-only",
+    });
+
+    const body = JSON.parse(fetch.mock.calls[0][0].overrides.body as string);
+    expect(body.initial_permission_mode).toBe("plan");
+  });
+
+  it("serializes an rtk opt-out as rtk_enabled false on run creation", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "run-123", environment: "cloud" }),
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await client.createTaskRun("task-123", {
+      environment: "cloud",
+      mode: "interactive",
+      rtkEnabled: false,
+    });
+
+    const request = fetch.mock.calls[0][0] as {
+      overrides: { body: string };
+    };
+    expect(JSON.parse(request.overrides.body)).toMatchObject({
+      rtk_enabled: false,
+    });
+  });
+
+  it("omits the permission mode from created task runs without an adapter", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "run-123", environment: "cloud" }),
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await client.createTaskRun("task-123", {
+      environment: "cloud",
+      initialPermissionMode: "plan",
+    });
+
+    const body = JSON.parse(fetch.mock.calls[0][0].overrides.body as string);
+    expect(body).not.toHaveProperty("initial_permission_mode");
+  });
+
+  it("omits the permission mode when none is selected", async () => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    const post = vi.fn().mockResolvedValue({
+      id: "task-123",
+      title: "Task",
+      description: "Task",
+      created_at: "2026-04-14T00:00:00Z",
+      updated_at: "2026-04-14T00:00:00Z",
+      origin_product: "user_created",
+    });
+
+    (client as unknown as { api: { post: typeof post } }).api = { post };
+
+    await client.runTaskInCloud("task-123", "feature/no-mode", {
+      adapter: "codex",
+      model: "gpt-5.4",
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/tasks/{id}/run/",
+      expect.objectContaining({
+        body: expect.not.objectContaining({
+          initial_permission_mode: expect.anything(),
+        }),
+      }),
+    );
+  });
+
   it("starts an existing cloud task run with run-scoped artifact ids", async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -217,6 +416,49 @@ describe("PostHogAPIClient", () => {
         },
       }),
     );
+  });
+
+  it("returns the redirect URL when authorizing an MCP installation", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        redirect_url: "https://auth.example.com/authorize?state=abc",
+      }),
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await expect(
+      client.authorizeMcpInstallation({
+        installation_id: "inst-123",
+        install_source: "posthog-code",
+        posthog_code_callback_url: "posthog-code://mcp-oauth-complete",
+      }),
+    ).resolves.toEqual({
+      redirect_url: "https://auth.example.com/authorize?state=abc",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "get",
+        path: "/api/environments/123/mcp_server_installations/authorize/",
+      }),
+    );
+    expect(fetch.mock.calls[0][0]).not.toHaveProperty("overrides");
   });
 
   describe("warmTask", () => {
@@ -919,6 +1161,538 @@ describe("PostHogAPIClient", () => {
           path: "/api/projects/123/agent_applications/models/",
         }),
       );
+    });
+  });
+
+  describe("batched scout emissions", () => {
+    const EMISSIONS_PATH =
+      "/api/projects/123/signals/scout/runs/emissions/batch/";
+    const REPORTS_PATH =
+      "/api/projects/123/signals/scout/runs/emissions/reports/batch/";
+
+    function buildClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    // Both batch methods share the same scoutBatchByRunIds helper, so their
+    // empty short-circuit, request shape, and error path are exercised together.
+    const methods = [
+      ["batchScoutRunEmissions", EMISSIONS_PATH],
+      ["batchScoutEmissionReports", REPORTS_PATH],
+    ] as const;
+
+    it.each(methods)(
+      "%s short-circuits empty run ids without hitting the network",
+      async (method) => {
+        const fetch = vi.fn();
+        const client = buildClient(fetch);
+        await expect(client[method](123, [])).resolves.toEqual([]);
+        expect(fetch).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(methods)(
+      "%s POSTs the run ids in one request and flattens the response",
+      async (method, path) => {
+        const rows = [
+          { id: "e1", run_id: "r1" },
+          { id: "e2", run_id: "r2" },
+        ];
+        const fetch = vi
+          .fn()
+          .mockResolvedValue({ ok: true, json: async () => rows });
+
+        await expect(
+          buildClient(fetch)[method](123, ["r1", "r2"]),
+        ).resolves.toEqual(rows);
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(fetch.mock.calls[0][0]).toMatchObject({ method: "post", path });
+        expect(JSON.parse(fetch.mock.calls[0][0].overrides.body)).toEqual({
+          run_ids: ["r1", "r2"],
+        });
+      },
+    );
+
+    it.each(methods)(
+      "%s throws when the server responds non-OK",
+      async (method) => {
+        const fetch = vi
+          .fn()
+          .mockResolvedValue({ ok: false, statusText: "Bad Request" });
+        await expect(buildClient(fetch)[method](123, ["r1"])).rejects.toThrow(
+          "Bad Request",
+        );
+      },
+    );
+
+    it("unwraps a paginated reports payload", async () => {
+      const links = [{ finding_id: "f1", source_id: "s1", report: null }];
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ results: links }),
+      });
+
+      await expect(
+        buildClient(fetch).batchScoutEmissionReports(123, ["r1"]),
+      ).resolves.toEqual(links);
+      expect(fetch.mock.calls[0][0]).toMatchObject({
+        method: "post",
+        path: REPORTS_PATH,
+      });
+    });
+
+    it("splits >200 run ids into parallel chunks and concatenates them", async () => {
+      const runIds = Array.from({ length: 450 }, (_, i) => `r${i}`);
+      const fetch = vi.fn(async (req) => {
+        const { run_ids } = JSON.parse(req.overrides.body) as {
+          run_ids: string[];
+        };
+        return {
+          ok: true,
+          json: async () => run_ids.map((run_id) => ({ id: run_id, run_id })),
+        };
+      });
+
+      const result = await buildClient(fetch).batchScoutRunEmissions(
+        123,
+        runIds,
+      );
+      // 450 ids → chunks of 200, 200, 50.
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(result).toHaveLength(450);
+      expect(result.map((row) => row.run_id)).toEqual(runIds);
+    });
+  });
+
+  describe("getTaskRunSessionLogs", () => {
+    function makeClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    function makeEntries(count: number, prefix: string) {
+      return Array.from({ length: count }, (_, i) => ({
+        type: "notification",
+        timestamp: `2026-07-01T00:00:00.${String(i).padStart(3, "0")}Z`,
+        notification: { method: `${prefix}-${i}` },
+      }));
+    }
+
+    function page(entries: unknown[], hasMore: boolean) {
+      return {
+        ok: true,
+        json: async () => entries,
+        headers: new Headers({ "X-Has-More": String(hasMore) }),
+      };
+    }
+
+    function requestedParams(call: { url: URL }) {
+      return Object.fromEntries(call.url.searchParams);
+    }
+
+    it.each([
+      {
+        name: "defaults to the server's max page size",
+        options: undefined,
+        expectedLimit: "5000",
+      },
+      {
+        name: "clamps a larger total cap to the server's max page size",
+        options: { limit: 100000 },
+        expectedLimit: "5000",
+      },
+      {
+        name: "requests fewer when the total cap is below the page size",
+        options: { limit: 100 },
+        expectedLimit: "100",
+      },
+    ])("$name", async ({ options, expectedLimit }) => {
+      const fetch = vi.fn().mockResolvedValue(page(makeEntries(3, "a"), false));
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs(
+        "task-1",
+        "run-1",
+        options,
+      );
+
+      expect(result).toHaveLength(3);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(requestedParams(fetch.mock.calls[0][0])).toEqual({
+        limit: expectedLimit,
+      });
+    });
+
+    it("paginates until X-Has-More is false, advancing offset by entries actually returned", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(page(makeEntries(120, "a"), true))
+        .mockResolvedValueOnce(page(makeEntries(80, "b"), true))
+        .mockResolvedValueOnce(page(makeEntries(10, "c"), false));
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 100000,
+      });
+
+      expect(result).toHaveLength(210);
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(requestedParams(fetch.mock.calls[1][0])).toEqual({
+        limit: "5000",
+        offset: "120",
+      });
+      expect(requestedParams(fetch.mock.calls[2][0])).toEqual({
+        limit: "5000",
+        offset: "200",
+      });
+    });
+
+    it("stops at the requested total limit even when more pages remain", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(page(makeEntries(5000, "a"), true))
+        .mockResolvedValueOnce(page(makeEntries(1000, "b"), true));
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 6000,
+      });
+
+      expect(result).toHaveLength(6000);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(requestedParams(fetch.mock.calls[1][0])).toEqual({
+        limit: "1000",
+        offset: "5000",
+      });
+    });
+
+    it("forwards the after cursor on every page", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(page(makeEntries(10, "a"), true))
+        .mockResolvedValueOnce(page(makeEntries(5, "b"), false));
+      const client = makeClient(fetch);
+
+      await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 100000,
+        after: "2026-07-01T00:00:00Z",
+      });
+
+      expect(requestedParams(fetch.mock.calls[0][0])).toEqual({
+        limit: "5000",
+        after: "2026-07-01T00:00:00Z",
+      });
+      expect(requestedParams(fetch.mock.calls[1][0])).toEqual({
+        limit: "5000",
+        offset: "10",
+        after: "2026-07-01T00:00:00Z",
+      });
+    });
+
+    it("returns the entries collected so far when a later page fails", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(page(makeEntries(50, "a"), true))
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          statusText: "Internal Server Error",
+          headers: new Headers(),
+        });
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 100000,
+      });
+
+      expect(result).toHaveLength(50);
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("treats a missing X-Has-More header as the final page", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => makeEntries(10, "a"),
+        headers: new Headers(),
+      });
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 100000,
+      });
+
+      expect(result).toHaveLength(10);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops on an empty page even if the server claims more", async () => {
+      const fetch = vi.fn().mockResolvedValue(page([], true));
+      const client = makeClient(fetch);
+
+      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
+        limit: 100000,
+      });
+
+      expect(result).toHaveLength(0);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("custom tool authoring", () => {
+    function makeClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    // The shared fetcher throws `Failed request: [<status>] <json>` on non-2xx.
+    const failWith = (status: number, body: unknown) =>
+      new Error(`Failed request: [${status}] ${JSON.stringify(body)}`);
+
+    describe("putRevisionTool", () => {
+      it("returns an ok result with capabilities on 200", async () => {
+        const fetch = vi.fn().mockResolvedValue({
+          json: async () => ({
+            ok: true,
+            tool_id: "t1",
+            capabilities: {
+              secret_refs: ["API_KEY"],
+              dynamic_secret_refs: false,
+            },
+          }),
+        });
+        const client = makeClient(fetch);
+
+        await expect(
+          client.putRevisionTool("agent", "rev-1", "t1", {
+            description: "d",
+            args_schema: {},
+            source: "export default {}",
+          }),
+        ).resolves.toEqual({
+          ok: true,
+          tool_id: "t1",
+          capabilities: {
+            secret_refs: ["API_KEY"],
+            dynamic_secret_refs: false,
+          },
+        });
+        const call = fetch.mock.calls[0][0];
+        expect(call.method).toBe("put");
+        expect(call.path).toBe(
+          "/api/projects/123/agent_applications/agent/revisions/rev-1/tools/t1/",
+        );
+      });
+
+      it("returns a typed compile-failed result on 422 (not a throw)", async () => {
+        const errors = [
+          {
+            kind: "parse_failed",
+            message: "Unexpected token",
+            line: 3,
+            column: 5,
+          },
+        ];
+        const fetch = vi.fn().mockRejectedValue(
+          failWith(422, {
+            error: "tool_compile_failed",
+            tool_id: "t1",
+            errors,
+          }),
+        );
+        const client = makeClient(fetch);
+
+        await expect(
+          client.putRevisionTool("agent", "rev-1", "t1", {
+            description: "d",
+            args_schema: {},
+            source: "bad(",
+          }),
+        ).resolves.toEqual({
+          ok: false,
+          error: "tool_compile_failed",
+          tool_id: "t1",
+          errors,
+        });
+      });
+
+      it("rethrows non-422 failures (e.g. 409 sealed revision)", async () => {
+        const fetch = vi
+          .fn()
+          .mockRejectedValue(failWith(409, { error: "revision_sealed" }));
+        const client = makeClient(fetch);
+
+        await expect(
+          client.putRevisionTool("agent", "rev-1", "t1", {
+            description: "d",
+            args_schema: {},
+            source: "x",
+          }),
+        ).rejects.toThrow("[409]");
+      });
+    });
+
+    describe("deleteRevisionTool", () => {
+      it("resolves on 200", async () => {
+        const fetch = vi.fn().mockResolvedValue({ json: async () => ({}) });
+        const client = makeClient(fetch);
+        await expect(
+          client.deleteRevisionTool("agent", "rev-1", "t1"),
+        ).resolves.toBeUndefined();
+        expect(fetch.mock.calls[0][0].method).toBe("delete");
+      });
+
+      it("treats a 404 (tool_not_found) as success", async () => {
+        const fetch = vi
+          .fn()
+          .mockRejectedValue(failWith(404, { error: "tool_not_found" }));
+        const client = makeClient(fetch);
+        await expect(
+          client.deleteRevisionTool("agent", "rev-1", "gone"),
+        ).resolves.toBeUndefined();
+      });
+
+      it("rethrows other failures", async () => {
+        const fetch = vi.fn().mockRejectedValue(failWith(500, "boom"));
+        const client = makeClient(fetch);
+        await expect(
+          client.deleteRevisionTool("agent", "rev-1", "t1"),
+        ).rejects.toThrow("[500]");
+      });
+    });
+
+    describe("dryRunRevisionTool", () => {
+      it("returns a completed envelope on a 200 success", async () => {
+        const envelope = {
+          ok: true,
+          tool_id: "t1",
+          result: { hello: "world" },
+          duration_ms: 42,
+        };
+        const fetch = vi.fn().mockResolvedValue({ json: async () => envelope });
+        const client = makeClient(fetch);
+
+        await expect(
+          client.dryRunRevisionTool("agent", "rev-1", "t1", { args: {} }),
+        ).resolves.toEqual({ outcome: "completed", envelope });
+      });
+
+      it("returns a completed envelope for a 200 with ok:false (tool threw)", async () => {
+        const envelope = {
+          ok: false,
+          tool_id: "t1",
+          error: { code: "timeout", message: "wall clock exceeded" },
+          duration_ms: 5000,
+        };
+        const fetch = vi.fn().mockResolvedValue({ json: async () => envelope });
+        const client = makeClient(fetch);
+
+        await expect(
+          client.dryRunRevisionTool("agent", "rev-1", "t1", { args: {} }),
+        ).resolves.toEqual({ outcome: "completed", envelope });
+      });
+
+      it("surfaces a 500 envelope as completed (infra failure carries error.code)", async () => {
+        const envelope = {
+          ok: false,
+          tool_id: "t1",
+          error: { code: "sandbox_acquire_failed", message: "no sandbox" },
+          duration_ms: 12,
+        };
+        const fetch = vi.fn().mockRejectedValue(failWith(500, envelope));
+        const client = makeClient(fetch);
+
+        await expect(
+          client.dryRunRevisionTool("agent", "rev-1", "t1", { args: {} }),
+        ).resolves.toEqual({ outcome: "completed", envelope });
+      });
+
+      it("returns a throttled outcome on 429 (never throws, carries max_concurrent)", async () => {
+        const fetch = vi
+          .fn()
+          .mockRejectedValue(
+            failWith(429, { error: "dry_run_throttled", max_concurrent: 2 }),
+          );
+        const client = makeClient(fetch);
+
+        await expect(
+          client.dryRunRevisionTool("agent", "rev-1", "t1", { args: {} }),
+        ).resolves.toEqual({ outcome: "throttled", max_concurrent: 2 });
+      });
+
+      it("throttles without a count when max_concurrent is absent", async () => {
+        const fetch = vi
+          .fn()
+          .mockRejectedValue(failWith(429, { error: "dry_run_throttled" }));
+        const client = makeClient(fetch);
+
+        const result = await client.dryRunRevisionTool("agent", "rev-1", "t1", {
+          args: {},
+        });
+        expect(result).toEqual({ outcome: "throttled" });
+        expect(
+          (result as { max_concurrent?: number }).max_concurrent,
+        ).toBeUndefined();
+      });
+
+      it("returns an unavailable outcome on 503", async () => {
+        const fetch = vi
+          .fn()
+          .mockRejectedValue(failWith(503, "not configured"));
+        const client = makeClient(fetch);
+
+        await expect(
+          client.dryRunRevisionTool("agent", "rev-1", "t1", { args: {} }),
+        ).resolves.toEqual({ outcome: "unavailable" });
+      });
+
+      it("passes mock_secrets through in the request body", async () => {
+        const fetch = vi.fn().mockResolvedValue({
+          json: async () => ({ ok: true, tool_id: "t1", duration_ms: 1 }),
+        });
+        const client = makeClient(fetch);
+
+        await client.dryRunRevisionTool("agent", "rev-1", "t1", {
+          args: { q: 1 },
+          mock_secrets: { API_KEY: "placeholder" },
+        });
+
+        const body = JSON.parse(fetch.mock.calls[0][0].overrides.body);
+        expect(body).toEqual({
+          args: { q: 1 },
+          mock_secrets: { API_KEY: "placeholder" },
+        });
+      });
     });
   });
 });

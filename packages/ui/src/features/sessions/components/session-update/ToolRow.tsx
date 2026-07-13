@@ -1,7 +1,14 @@
 import { Collapsible } from "@base-ui/react/collapsible";
 import { type Icon, WrenchIcon } from "@phosphor-icons/react";
-import { cn } from "@posthog/quill";
+import {
+  ChatMarker,
+  ChatMarkerContent,
+  ChatMarkerIcon,
+  cn,
+  Spinner,
+} from "@posthog/quill";
 import { type ReactNode, useState } from "react";
+import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
 import {
   ExpandableIcon,
   LoadingIcon,
@@ -69,7 +76,44 @@ export function ToolRow({
     onOpenChange?.(next);
   };
 
+  const chatChrome = useChatThreadChrome();
+
   const isCollapsible = collapsible || content != null;
+
+  // New thread: render the tool as a ChatMarker (icon + title row, collapsible detail body).
+  // Old thread (no provider) skips this and uses the Radix chrome below.
+  if (chatChrome) {
+    const IconComp = icon ?? WrenchIcon;
+    const iconNode = leading ?? (isLoading ? <Spinner /> : <IconComp />);
+    return (
+      <ChatMarker
+        body={content ?? undefined}
+        defaultOpen={defaultOpen}
+        open={open}
+        onOpenChange={onOpenChange}
+        // Hover/selected chrome only when the row actually expands on click — a
+        // flat marker (e.g. "Thinking" before any content arrives) shouldn't
+        // invite interaction it can't honor.
+        className={cn(
+          "opacity-50",
+          isCollapsible &&
+            "hover:opacity-100 data-panel-open:bg-fill-selected data-panel-open:opacity-100",
+        )}
+      >
+        <ChatMarkerIcon>{iconNode}</ChatMarkerIcon>
+        <ChatMarkerContent className="flex w-full min-w-0 flex-nowrap items-center gap-1">
+          {/* Example: posthog - insight-create(... */}
+          {typeof children === "string" ? (
+            <ToolTitle>{children}</ToolTitle>
+          ) : (
+            children
+          )}
+          <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
+          {trailing}
+        </ChatMarkerContent>
+      </ChatMarker>
+    );
+  }
 
   const leadingNode = leading ?? (
     <span className="flex shrink-0 items-center justify-center pt-1">

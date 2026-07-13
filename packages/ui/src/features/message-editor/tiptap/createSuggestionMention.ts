@@ -176,6 +176,9 @@ export function createSuggestionMention<T extends SuggestionItem>(
         label: overrides.label ?? item.label,
         pastedText: false,
         chipId,
+        skillPath: overrides.skillPath ?? item.skillPath,
+        skillSource: overrides.skillSource ?? item.skillSource,
+        skillName: overrides.skillName ?? item.skillName,
       };
       editor
         .chain()

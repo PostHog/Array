@@ -3,12 +3,15 @@ import {
   MagnifyingGlassPlus,
   Trash,
 } from "@phosphor-icons/react";
+import { getCellCount } from "@posthog/core/command-center/grid";
 import { Flex, Select, Text } from "@radix-ui/themes";
+import { useCallback } from "react";
 import {
   type LayoutPreset,
   useCommandCenterStore,
 } from "../commandCenterStore";
 import type { StatusSummary } from "../hooks/useCommandCenterData";
+import { destroyTerminalCells } from "../terminalCells";
 
 function LayoutIcon({ cols, rows }: { cols: number; rows: number }) {
   const size = 14;
@@ -83,6 +86,21 @@ export function CommandCenterToolbar({ summary }: CommandCenterToolbarProps) {
   const layout = useCommandCenterStore((s) => s.layout);
   const setLayout = useCommandCenterStore((s) => s.setLayout);
   const clearAll = useCommandCenterStore((s) => s.clearAll);
+
+  const handleSetLayout = useCallback(
+    (preset: LayoutPreset) => {
+      const cells = useCommandCenterStore.getState().cells;
+      destroyTerminalCells(cells.slice(getCellCount(preset)));
+      setLayout(preset);
+    },
+    [setLayout],
+  );
+
+  const handleClearAll = useCallback(() => {
+    destroyTerminalCells(useCommandCenterStore.getState().cells);
+    clearAll();
+  }, [clearAll]);
+
   const zoom = useCommandCenterStore((s) => s.zoom);
   const zoomIn = useCommandCenterStore((s) => s.zoomIn);
   const zoomOut = useCommandCenterStore((s) => s.zoomOut);
@@ -97,7 +115,7 @@ export function CommandCenterToolbar({ summary }: CommandCenterToolbarProps) {
     >
       <Select.Root
         value={layout}
-        onValueChange={(v) => setLayout(v as LayoutPreset)}
+        onValueChange={(v) => handleSetLayout(v as LayoutPreset)}
       >
         <Select.Trigger variant="ghost" className="text-[12px]" />
         <Select.Content position="popper">
@@ -142,7 +160,7 @@ export function CommandCenterToolbar({ summary }: CommandCenterToolbarProps) {
 
       <button
         type="button"
-        onClick={clearAll}
+        onClick={handleClearAll}
         className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
         title="Clear all cells"
       >

@@ -238,7 +238,7 @@ export class ContextMenuService {
         {
           confirm: {
             title: "Remove Folder",
-            message: `Remove "${folderName}" from Array?`,
+            message: `Remove "${folderName}"?`,
             detail:
               "This will clean up any worktrees but keep your folder and tasks intact.",
             confirmLabel: "Remove",

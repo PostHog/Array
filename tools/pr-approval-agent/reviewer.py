@@ -5,6 +5,7 @@ The reviewer uses Read/Grep/Glob tools to explore the repo
 and reach a verdict on whether a PR is safe to auto-approve.
 """
 
+import os
 import re
 import json
 import asyncio
@@ -14,18 +15,20 @@ from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 from claude_agent_sdk.types import AssistantMessage, ToolUseBlock
+from gateway import gateway_env, resolve_gateway_config
 from github import PRData
 
+# Traced wrapper, bound only with a PostHog key. Gateway mode uses the plain
+# `query` so the gateway's own $ai_generation isn't double-counted.
+_traced_query = None
 try:
-    import os
-
     import posthoganalytics
 
     posthoganalytics.api_key = os.environ.get("POSTHOG_API_KEY", "")  # ty: ignore[invalid-assignment]
     posthoganalytics.host = os.environ.get("POSTHOG_HOST", "https://us.i.posthog.com")  # ty: ignore[invalid-assignment]
 
     if posthoganalytics.api_key:
-        from posthoganalytics.ai.claude_agent_sdk import query  # type: ignore[no-redef]  # noqa: F811
+        from posthoganalytics.ai.claude_agent_sdk import query as _traced_query  # type: ignore[no-redef]
 
         _POSTHOG_AI_AVAILABLE = True
     else:
@@ -34,6 +37,15 @@ except ImportError:
     _POSTHOG_AI_AVAILABLE = False
 
 MODEL = "claude-sonnet-4-6"
+
+
+def _apply_gateway_route(gateway: tuple[str, str] | None, attribution: dict[str, object]):
+    """Apply the gateway env and return the plain SDK ``query`` when configured, else None."""
+    if gateway is None:
+        return None
+    base_url, api_key = gateway
+    os.environ.update(gateway_env(base_url, api_key, attribution))
+    return query
 
 
 _CONTROL_CHARS_RE = re.compile(r"[^\x20-\x7E\n\t]")
@@ -233,11 +245,24 @@ class Reviewer:
             extra_args={"no-session-persistence": None},
         )
 
+        attribution = {
+            "stamphog_pr_number": pr.number,
+            "stamphog_repo": pr.repo,
+            "stamphog_author": pr.author,
+            "stamphog_tier": classification.get("tier", ""),
+            "stamphog_t1_subclass": classification.get("t1_subclass", ""),
+            "stamphog_breadth": classification.get("breadth", ""),
+            "stamphog_commit_type": classification.get("commit_type") or "",
+            "stamphog_gate_verdict": gate_context.get("gate_verdict", ""),
+            "stamphog_files_changed": len(pr.files),
+            "stamphog_lines_total": pr.lines_total,
+        }
+
+        active_query = _apply_gateway_route(resolve_gateway_config(), attribution)
         posthog_kwargs: dict = {}
-        if _POSTHOG_AI_AVAILABLE:
-            # Unique reviewer usernames, sanitized — labels and title are
-            # author-controlled so we sanitize them too (cheap insurance
-            # against weird unicode landing in analytics).
+        props: dict = {}
+        if active_query is None and _POSTHOG_AI_AVAILABLE:
+            active_query = _traced_query
             reviewers = sorted({_sanitize_untrusted(r["user"], max_len=50) for r in pr.reviews if r.get("user")})
             safe_labels = [_sanitize_untrusted(label, max_len=100) for label in pr.labels]
             trace_name = f"stamphog PR #{pr.number}: {_sanitize_untrusted(pr.title, max_len=100)}"
@@ -273,14 +298,15 @@ class Reviewer:
                     "stamphog_llm_verdict": "",
                 },
             }
+            # Live ref: the verdict update below reaches the trace ($ai_trace is
+            # sent after the generator ends).
+            props = posthog_kwargs["posthog_properties"]
 
-        # Keep a reference so we can mutate it when the verdict arrives —
-        # the SDK sends the $ai_trace event after the generator completes,
-        # so updates here propagate to the trace.
-        props = posthog_kwargs.get("posthog_properties", {})
+        if active_query is None:
+            active_query = query
 
         structured_output = None
-        async for message in query(prompt=prompt, options=options, **posthog_kwargs):
+        async for message in active_query(prompt=prompt, options=options, **posthog_kwargs):
             if self.verbose:
                 print(f"\033[2m    [{type(message).__name__}]\033[0m", flush=True)
             if isinstance(message, ResultMessage):

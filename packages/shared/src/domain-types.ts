@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Adapter } from "./adapter";
 import type { DismissalReasonOptionValue } from "./dismissal-reasons";
 import type { StoredLogEntry } from "./session-events";
 
@@ -36,6 +37,12 @@ export interface UserBasic {
   is_email_verified?: boolean | null;
 }
 
+/** One row from the org members list; trimmed to what mention pickers need. */
+export interface OrganizationMemberBasic {
+  id: string;
+  user: UserBasic;
+}
+
 export interface Task {
   id: string;
   task_number: number | null;
@@ -53,7 +60,53 @@ export interface Task {
   json_schema?: Record<string, unknown> | null;
   signal_report?: string | null;
   internal?: boolean;
+  /** Backend channel (tasks product Channel UUID) this task is owned by. */
+  channel?: string | null;
   latest_run?: TaskRun;
+}
+
+/**
+ * A backend task channel — the shared feed a task is kicked off in. Distinct
+ * from the desktop file-system "channel" folders: those carry CONTEXT.md and
+ * artifacts, while this owns the task feed and threads. `personal` is the
+ * user's private "#me" channel.
+ */
+export interface TaskChannel {
+  id: string;
+  name: string;
+  channel_type: "public" | "personal";
+  created_at: string;
+  created_by?: UserBasic | null;
+}
+
+/**
+ * One human message in a task's thread. Thread messages never reach the agent
+ * unless the task author forwards one, which stamps the forwarded_* fields.
+ */
+export interface TaskThreadMessage {
+  id: string;
+  task: string;
+  content: string;
+  created_at: string;
+  author?: UserBasic | null;
+  forwarded_to_agent_at?: string | null;
+  forwarded_by?: UserBasic | null;
+}
+
+/**
+ * One @-mention of the current user in a task's thread, from the backend
+ * mentions index (`/task_mentions/`). Mirrors `TaskMentionDTO`.
+ */
+export interface TaskMention {
+  id: string;
+  message_id: string;
+  task_id: string;
+  task_title: string;
+  channel_id?: string | null;
+  channel_name?: string | null;
+  author?: UserBasic | null;
+  content: string;
+  created_at: string;
 }
 
 export type TaskRunStatus =
@@ -88,7 +141,7 @@ export interface TaskRun {
   task: string; // Task ID
   team: number;
   branch: string | null;
-  runtime_adapter?: "claude" | "codex" | null;
+  runtime_adapter?: Adapter | null;
   model?: string | null;
   reasoning_effort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
   stage?: string | null; // Current stage (e.g., 'research', 'plan', 'build')
@@ -115,6 +168,9 @@ export interface SandboxEnvironment {
   has_environment_variables: boolean;
   private: boolean;
   effective_domains: string[];
+  custom_image_id: string | null;
+  custom_image_name: string | null;
+  custom_image_status: string | null;
   created_by?: UserBasic | null;
   created_at: string;
   updated_at: string;
@@ -128,6 +184,54 @@ export interface SandboxEnvironmentInput {
   repositories?: string[];
   environment_variables?: Record<string, string>;
   private?: boolean;
+  custom_image_id?: string | null;
+}
+
+export type SandboxCustomImageStatus =
+  | "draft"
+  | "scanning"
+  | "scan_failed"
+  | "building"
+  | "build_failed"
+  | "ready"
+  | "archived";
+
+export function isImageBuildInProgress(
+  status: SandboxCustomImageStatus,
+): boolean {
+  return status === "scanning" || status === "building";
+}
+
+export function isImageBuildFailed(status: SandboxCustomImageStatus): boolean {
+  return status === "scan_failed" || status === "build_failed";
+}
+
+export interface SandboxCustomImageScanFinding {
+  severity: string;
+  detail: string;
+}
+
+export interface SandboxCustomImage {
+  id: string;
+  name: string;
+  description: string;
+  status: SandboxCustomImageStatus;
+  version: number;
+  modal_image_name: string;
+  repository: string;
+  private: boolean;
+  spec: Record<string, unknown>;
+  spec_yaml: string;
+  scan_result: {
+    passed?: boolean;
+    findings?: SandboxCustomImageScanFinding[];
+  };
+  error: string;
+  build_log: string;
+  builder_task_id: string | null;
+  created_by?: UserBasic | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface CloudTaskUpdateBase {
@@ -148,6 +252,7 @@ export interface CloudTaskStatusUpdate extends CloudTaskUpdateBase {
   output?: Record<string, unknown> | null;
   errorMessage?: string | null;
   branch?: string | null;
+  sandboxAlive?: boolean | null;
 }
 
 export interface CloudTaskSnapshotUpdate extends CloudTaskUpdateBase {
@@ -159,6 +264,7 @@ export interface CloudTaskSnapshotUpdate extends CloudTaskUpdateBase {
   output?: Record<string, unknown> | null;
   errorMessage?: string | null;
   branch?: string | null;
+  sandboxAlive?: boolean | null;
 }
 
 export interface CloudTaskErrorUpdate extends CloudTaskUpdateBase {

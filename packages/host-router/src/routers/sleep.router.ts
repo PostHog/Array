@@ -15,4 +15,10 @@ export const sleepRouter = router({
     .mutation(({ ctx, input }) => {
       ctx.container.get<SleepService>(SLEEP_SERVICE).setEnabled(input.enabled);
     }),
+
+  hasBuiltInBattery: publicProcedure
+    .output(z.boolean())
+    .query(({ ctx }) =>
+      ctx.container.get<SleepService>(SLEEP_SERVICE).hasBuiltInBattery(),
+    ),
 });

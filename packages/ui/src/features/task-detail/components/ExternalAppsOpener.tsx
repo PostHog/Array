@@ -8,7 +8,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
-  Kbd,
 } from "@posthog/quill";
 import { ChevronDown } from "lucide-react";
 import { useCallback } from "react";
@@ -136,9 +135,7 @@ export function ExternalAppsOpener({ targetPath }: ExternalAppsOpenerProps) {
               )}
               {app.name}
               {app.id === defaultApp?.id && (
-                <DropdownMenuShortcut>
-                  <Kbd>⌘O</Kbd>
-                </DropdownMenuShortcut>
+                <DropdownMenuShortcut>⌘O</DropdownMenuShortcut>
               )}
             </DropdownMenuItem>
           ))}
@@ -146,9 +143,7 @@ export function ExternalAppsOpener({ targetPath }: ExternalAppsOpenerProps) {
           <DropdownMenuItem onClick={handleCopyPath}>
             <CopyIcon size={THUMBNAIL_ICON_SIZE} weight="regular" />
             Copy Path
-            <DropdownMenuShortcut>
-              <Kbd>⌘⇧C</Kbd>
-            </DropdownMenuShortcut>
+            <DropdownMenuShortcut>⌘⇧C</DropdownMenuShortcut>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

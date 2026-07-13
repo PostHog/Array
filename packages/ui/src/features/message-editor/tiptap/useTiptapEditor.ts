@@ -1,5 +1,6 @@
 import {
   contentToXml,
+  type EditorContent,
   type FileAttachment,
   isContentEmpty,
   type MentionChip,
@@ -28,7 +29,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getGithubIssue, getGithubPullRequest } from "../hostApi";
 import { usePromptHistoryStore } from "../promptHistoryStore";
 import { getEditorExtensions } from "../tiptap/extensions";
-import { type DraftContext, useDraftSync } from "../tiptap/useDraftSync";
+import {
+  type DraftContext,
+  editorContentToTiptapJson,
+  useDraftSync,
+} from "../tiptap/useDraftSync";
 import { htmlToMarkdown } from "../utils/htmlToMarkdown";
 import {
   persistImageFile,
@@ -615,7 +620,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
   const focus = useCallback(() => {
     if (editor?.view) {
-      editor.commands.focus("end");
+      // scrollIntoView:false keeps a focus request from yanking the viewport
+      // when the composer is off-screen (e.g. embedded in a command-center cell).
+      editor.commands.focus("end", { scrollIntoView: false });
     }
   }, [editor]);
   const blur = useCallback(() => editor?.commands.blur(), [editor]);
@@ -630,7 +637,19 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     (text: string) => {
       if (!editor) return;
       editor.commands.setContent(text);
+      editor.commands.focus("end", { scrollIntoView: false });
+      draft.saveDraft(editor, attachments);
+    },
+    [editor, draft, attachments],
+  );
+  const insertEditorContent = useCallback(
+    (content: EditorContent) => {
+      if (!editor) return;
       editor.commands.focus("end");
+      // Paragraphs, not the doc wrapper, so it appends rather than replaces.
+      editor.commands.insertContent(
+        editorContentToTiptapJson(content).content ?? [],
+      );
       draft.saveDraft(editor, attachments);
     },
     [editor, draft, attachments],
@@ -644,6 +663,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
         label: chip.label,
         pastedText: false,
         chipId: chip.chipId,
+        skillPath: chip.skillPath,
+        skillSource: chip.skillSource,
+        skillName: chip.skillName,
       });
       draft.saveDraft(editor, attachments);
     },
@@ -702,6 +724,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     getText,
     getContent: draft.getContent,
     setContent,
+    insertEditorContent,
     insertChip,
     removeChipById,
     replaceChipAttrs,

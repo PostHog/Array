@@ -43,6 +43,10 @@ export class SleepService {
     return this.enabled;
   }
 
+  hasBuiltInBattery(): Promise<boolean> {
+    return this.powerManager.hasBuiltInBattery();
+  }
+
   acquire(activityId: string): void {
     this.activeActivities.add(activityId);
     this.updateBlocker();

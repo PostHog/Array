@@ -12,6 +12,7 @@ import clsx from "clsx";
 import { forwardRef, useCallback, useEffect, useImperativeHandle } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useSkills } from "../../skills/useSkills";
+import { skillToEditorCommand } from "../commands";
 import { ModeSelector } from "../components/ModeSelector";
 import { useDraftStore } from "../draftStore";
 import { useTiptapEditor } from "../tiptap/useTiptapEditor";
@@ -39,6 +40,22 @@ export interface PromptInputProps {
   modeOption?: SessionConfigOption;
   onModeChange?: (value: string) => void;
   allowBypassPermissions?: boolean;
+  /**
+   * When provided, the mode dropdown gains an "Autoresearch" toggle as its
+   * last item (new-task composer only). `active` drives its checkmark.
+   */
+  autoresearch?: {
+    active: boolean;
+    onToggle: () => void;
+  };
+  /**
+   * When provided, the mode dropdown gains a "Canvas" toggle (channels
+   * composer only). `active` drives its checkmark and the trigger label.
+   */
+  canvas?: {
+    active: boolean;
+    onToggle: () => void;
+  };
   // capabilities
   enableBashMode?: boolean;
   enableCommands?: boolean;
@@ -47,6 +64,12 @@ export interface PromptInputProps {
   reasoningSelector?: React.ReactElement | null | false;
   messagingModeToggle?: React.ReactNode;
   historyButton?: React.ReactNode;
+  /**
+   * Rendered inside the composer box, above the editor — for mode chrome
+   * that must read as part of the input itself (e.g. autoresearch controls)
+   * rather than a separate widget attached outside it.
+   */
+  headerAddon?: React.ReactNode;
   // Render an empty toolbar (no attach/mode/model/reasoning/history/submit).
   // Submission falls back to the Enter key. Used by surfaces that want the
   // editor chrome without any controls yet (e.g. the canvas composer).
@@ -87,12 +110,15 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       modeOption,
       onModeChange,
       allowBypassPermissions = false,
+      autoresearch,
+      canvas,
       enableBashMode = false,
       enableCommands = true,
       modelSelector,
       reasoningSelector,
       messagingModeToggle,
       historyButton,
+      headerAddon,
       hideDefaultToolbar = false,
       getPromptHistory,
       onBeforeSubmit,
@@ -129,6 +155,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       getText,
       getContent,
       setContent,
+      insertEditorContent,
       insertChip,
       removeChipById,
       replaceChipAttrs,
@@ -169,6 +196,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         getContent,
         getText,
         setContent,
+        insertEditorContent,
         insertChip,
         removeChipById,
         replaceChipAttrs,
@@ -183,6 +211,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         getContent,
         getText,
         setContent,
+        insertEditorContent,
         insertChip,
         removeChipById,
         replaceChipAttrs,
@@ -203,10 +232,9 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
     // only the built-in /good /bad /feedback commands.
     useEffect(() => {
       if (!enableCommands || !skills) return;
-      useDraftStore.getState().actions.setCommands(
-        sessionId,
-        skills.map((s) => ({ name: s.name, description: s.description })),
-      );
+      useDraftStore
+        .getState()
+        .actions.setCommands(sessionId, skills.map(skillToEditorCommand));
       return () => {
         useDraftStore.getState().actions.clearCommands(sessionId);
       };
@@ -340,12 +368,17 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
           <InputGroup
             onClick={handleContainerClick}
             onContextMenu={handleContextMenu}
-            className={`h-auto flex-1 cursor-text bg-card ${isBashMode ? "ring-1 ring-blue-9" : "focus-within:ring-1 focus-within:ring-purple-9"}`}
+            className={`h-auto flex-1 cursor-text bg-card ${isBashMode ? "ring-1 ring-blue-9" : "focus-within:border-ring/50 focus-within:ring-3 focus-within:ring-ring/30"}`}
             {...(tourTarget && {
               "data-tour": `${tourTarget}-editor`,
               "data-tour-ready": !isEmpty ? "true" : undefined,
             })}
           >
+            {headerAddon && (
+              <InputGroupAddon align="block-start">
+                {headerAddon}
+              </InputGroupAddon>
+            )}
             {attachments.length > 0 && (
               <InputGroupAddon align="block-start">
                 <AttachmentsBar
@@ -374,12 +407,14 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
                     onInsertChip={insertChip}
                     onRemoveChip={removeChipById}
                   />
-                  {modeOption && onModeChange && (
+                  {onModeChange && (
                     <ModeSelector
                       modeOption={modeOption}
                       onChange={onModeChange}
                       allowBypassPermissions={allowBypassPermissions}
                       disabled={disabled}
+                      autoresearch={autoresearch}
+                      canvas={canvas}
                     />
                   )}
                   {modelSelector && <span>{modelSelector}</span>}

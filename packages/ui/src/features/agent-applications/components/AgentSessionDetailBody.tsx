@@ -1,5 +1,5 @@
 import type { AgentApplicationSessionDetail } from "@posthog/shared/agent-platform-types";
-import { ConversationView } from "@posthog/ui/features/sessions/components/ConversationView";
+import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Flex, Text } from "@radix-ui/themes";
 import { type ReactNode, useMemo, useState } from "react";
@@ -230,7 +230,7 @@ export function AgentSessionDetailBody({
             />
           </Centered>
         ) : (
-          <ConversationView events={events} isPromptPending={null} />
+          <ThreadView events={events} isPromptPending={null} />
         )}
       </div>
     </Flex>

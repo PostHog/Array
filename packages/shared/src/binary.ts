@@ -12,7 +12,9 @@ export const AUDIO_VIDEO_EXTENSIONS: ReadonlySet<string> = new Set([
   "mpeg",
   "flac",
   "ogg",
+  "ogv",
   "m4a",
+  "m4v",
   "aac",
 ]);
 

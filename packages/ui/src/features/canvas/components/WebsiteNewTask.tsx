@@ -35,10 +35,11 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
       () => (
         <ChannelBreadcrumb
           channelName={channelName ?? "Channel"}
+          channelId={channelId}
           leafLabel="New task"
         />
       ),
-      [channelName],
+      [channelName, channelId],
     ),
   );
   // The channel's CONTEXT.md, passed to the agent as optional background so
@@ -90,7 +91,7 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
             task_id: task.id,
             success: false,
           });
-          toast.error("Couldn't file task to channel", {
+          toast.error("Couldn't file task to context", {
             description: error instanceof Error ? error.message : String(error),
           });
         });

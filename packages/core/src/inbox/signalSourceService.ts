@@ -12,6 +12,7 @@ export interface SignalSourceValues {
   error_tracking: boolean;
   github: boolean;
   linear: boolean;
+  jira: boolean;
   zendesk: boolean;
   conversations: boolean;
   pganalyze: boolean;
@@ -22,6 +23,7 @@ export type SignalSourceProduct = keyof SignalSourceValues;
 export type WarehouseSourceProduct =
   | "github"
   | "linear"
+  | "jira"
   | "zendesk"
   | "pganalyze";
 
@@ -45,6 +47,7 @@ const SOURCE_TYPE_MAP: Record<
   session_replay: "session_analysis_cluster",
   github: "issue",
   linear: "issue",
+  jira: "issue",
   zendesk: "ticket",
   conversations: "ticket",
   pganalyze: "issue",
@@ -62,6 +65,7 @@ const DATA_WAREHOUSE_SOURCES: Record<
 > = {
   github: { dwSourceType: "Github", requiredTable: "issues" },
   linear: { dwSourceType: "Linear", requiredTable: "issues" },
+  jira: { dwSourceType: "Jira", requiredTable: "issues" },
   zendesk: { dwSourceType: "Zendesk", requiredTable: "tickets" },
   pganalyze: { dwSourceType: "PgAnalyze", requiredTable: "issues" },
 };
@@ -71,6 +75,7 @@ const ALL_SOURCE_PRODUCTS: SignalSourceProduct[] = [
   "error_tracking",
   "github",
   "linear",
+  "jira",
   "zendesk",
   "conversations",
   "pganalyze",
@@ -106,6 +111,7 @@ export function computeSourceValues(
     error_tracking: false,
     github: false,
     linear: false,
+    jira: false,
     zendesk: false,
     conversations: false,
     pganalyze: false,
@@ -194,7 +200,7 @@ export class SignalSourceService {
     }
 
     const issuesFullReplication =
-      (product === "github" || product === "linear") &&
+      (product === "github" || product === "linear" || product === "jira") &&
       dwConfig.requiredTable === "issues";
 
     if (issuesFullReplication) {

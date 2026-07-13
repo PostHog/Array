@@ -5,8 +5,8 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 ## Fork Point
 
 - **Forked**: v0.10.9, commit `5411e0f4`, Dec 2 2025
-- **Last sync**: v0.44.0, commit `7de5e4b`, Jun 11 2026
-- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.170, `@agentclientprotocol/sdk` 0.25.0, `@anthropic-ai/sdk` 0.104.1
+- **Last sync**: v0.54.1, commit `8d5febf`, Jul 1 2026
+- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.197, `@agentclientprotocol/sdk` 1.1.0, `@anthropic-ai/sdk` 0.109.0
 
 ## File Mapping
 
@@ -38,6 +38,12 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 - `SYSTEM_REMINDER` stripping from Read tool results
 - WebFetch `resourceLink` content enrichment
 - `customTitle` in listSessions (PostHog Code is ahead of upstream here)
+- Refusal support: `Options.fallbackModel` defaults to `FALLBACK_MODEL` in
+  `session/options.ts`; `model_refusal_fallback` system messages emit a
+  `_posthog/status` notification (`refusal_fallback`) in `sdk-to-acp.ts`; a
+  terminal `stop_reason: "refusal"` emits `_posthog/status` (`refusal`) instead
+  of upstream's raw-explanation `agent_message_chunk` (supersedes the v0.42.0
+  "Refusal handling" port and the v0.44.0 `model_refusal_fallback` skip)
 - SettingsManager `PreToolUse` hook for permission rules
 - `ensureLocalSettings` / `clearStatsigCache`
 - `ELECTRON_RUN_AS_NODE` / `ENABLE_TOOL_SEARCH` env vars
@@ -54,8 +60,118 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 | Auth methods | `claude-ai-login` + `console-login` | Returns empty `authMethods` | Auth handled externally |
 | Session fingerprinting | Implicit teardown on cwd/mcp change | Explicit `refreshSession()` | Caller-initiated is more predictable |
 | Shutdown on ACP close | Process exits | No standalone process | Agent is embedded in server |
-| Unsupported slash commands | Loops silently on early idle | Emits "Unsupported slash command" chunk, gated on `initializationResult().commands` so plugin/skill commands (e.g. `/skills-store`) whose echoes use a fresh uuid are not false-flagged | The SDK consumes some slash commands without producing output (e.g. `/plugin` in non-interactive mode); without this we hang. The known-commands gate avoids racing plugin/skill loads where idle can arrive before the transformed user-message echo. |
-| Prompt-loop cancel race | `Promise.race([query.next(), cancelWake])` each iteration (#742) | `withAbort(query.next(), cancelController.signal)` helper in `utils/common.ts`, also guarding the `compact_boundary` `getContextUsage` fetch | The classic `Promise.race` leak (nodejs/node#17469): each race call parks a reaction on the turn-lived `cancelWake` promise that retains that iteration's settled value, so every yielded message (and every stream event, since `includePartialMessages` is on) stays reachable until the turn ends. Long high-reasoning turns could pin tens of MB. `withAbort` removes its abort listener as soon as `next()` settles, so nothing accumulates. Cancel semantics are unchanged, including the force-cancel backstop. |
+| Unsupported slash commands | Loops silently on early idle | Emits "Unsupported slash command" chunk, gated on `initializationResult().commands` so plugin/skill commands (e.g. `/skills-store`) whose echoes use a fresh uuid are not false-flagged. Lives in the consumer's idle handler: fires only when idle arrives with no active turn, an unsettled head turn whose leading command is unknown, and no pending orphan results. | The SDK consumes some slash commands without producing output (e.g. `/plugin` in non-interactive mode); without this we hang. The known-commands gate avoids racing plugin/skill loads where idle can arrive before the transformed user-message echo. |
+| Prompt-loop cancel race | Per-iteration `addEventListener`/`removeEventListener` race in the consumer (#780) | `withAbort(query.next(), cancelController.signal)` helper in `utils/common.ts`, also guarding the `compact_boundary` `getContextUsage` fetch | Same effect (no listener/reaction accumulation on the long-lived wake-up promise), different helper. `withAbort` removes its abort listener as soon as `next()` settles; the consumer re-arms a fresh controller after each abort fire, matching upstream's re-arm. |
+| ACP connection wiring | `agent({name}).onRequest(...).connect(stream)` builder + narrow `AcpClient` interface (#790) | Keeps `AgentSideConnection` / `ClientSideConnection` (deprecated but fully functional in ACP 1.1.0) in `acp-connection.ts` / `base-acp-agent.ts` / codex | The fork is embedded (in-process streams, `extMethod`/`extNotification` extension surface) and the deprecated classes still route optional `extMethod`/`extNotification` to the Agent/Client. Revisit when ACP removes them; permission cancellation already uses the class's generic `request(..., { cancellationSignal })`. |
+| Consumer ownership | Per-session map; consumer keyed by `sessions[id]` | Single `this.session`; consumer captures `query` + `queryGeneration` and exits quietly on mismatch | `refreshSession()` (fork-only) swaps `query`/`input` in place on the same session object; the generation guard keeps a retired consumer from tearing down the refreshed session. |
+
+## Changes Ported in v0.54.1 Sync
+
+- **SDK bumps**: claude-agent-sdk 0.3.170 -> 0.3.197, ACP SDK 0.25.0 -> 1.1.0, anthropic SDK
+  0.104.1 -> 0.109.0. The ACP 1.x major is source-compatible for the fork: the deprecated
+  `AgentSideConnection`/`ClientSideConnection` classes are still shipped and still route
+  `extMethod`/`extNotification` (see Intentional Divergences). Only in-repo break was the SDK
+  `Query` interface gaining `setMcpPermissionModeOverride` and `reinitialize` (test mock updated).
+- **Persistent consumer + turn queue** (#780, 4f273a2): The per-prompt message loop became a
+  single long-lived consumer per session. `prompt()` now enqueues a `Turn` (deferred) and returns;
+  the consumer drains the query stream for the session's whole life, activates turns via their
+  user-message echoes (promoting the queue head for echo-less local-only/compaction results, with
+  orphan-result accounting after cancels), settles turns at their terminal `result` instead of
+  waiting for the SDK's trailing `idle` (which can lag behind background tasks — upstream issues
+  #773/#679/#688), forwards between-turn/background output live, and rejects turns with a clear
+  "session has ended" error once the stream dies (`queryClosed`). Upstream's fixes folded in:
+  fresh-abort-listener per iteration (kept as `withAbort` + re-armed controller), error results
+  via `failActive` without killing the consumer (replaces the drain-after-error loop, #706's
+  successor), process-death teardown via `failAllTurns` + `closeQueryStream`. Fork adaptations:
+  single-session, steer mode untouched (mid-turn push + benign end_turn), `interruptReason`
+  carried on every cancelled settle, per-turn broadcast fired at activation (preserves the old
+  "broadcast when the turn takes over" timing), the unsupported-slash-command gate re-anchored on
+  "idle with an unactivated head turn", `toolUseStreamCache` cleared on cancel/error settles, and
+  a `queryGeneration` guard so `refreshSession()` retires the old consumer cleanly.
+- **Content-based streamed-block dedupe** (#785 12d34e6, #789 1c80bf8, #800 960f62d — ported as
+  the final #800 state): `StreamedAssistantBlocks` switched from per-message-id
+  `textIds`/`thinkingIds` sets to an ordered accumulated-text record; the consolidated assistant
+  message prefix-diffs each block against what streamed and forwards only the un-streamed
+  remainder (nothing / whole block / cut-short tail). Robust to gateways whose consolidated
+  message id doesn't match the stream. Record cleared at each top-level `message_start` and after
+  consumption; consumer-lived so mid-message turn activation can't drop it. New unit tests cover
+  tail-forwarding, id-mismatch dedupe, residue clearing and empty-delta stalls.
+- **Skip empty thinking chunks** (#793, 15fdf26): `handleThinkingChunk` drops signature-only
+  (empty) thinking blocks that models with `thinking.display: "omitted"` stream; empty deltas are
+  also excluded from the streamed-block record so they can't stall the diff cursor.
+- **Emit tool_call before permission request** (#820, c95fc88): New agent-lived
+  `emittedToolCalls` set shared between the streamed tool_use path and the permission flow.
+  `requestPermissionFromClient` eagerly emits the referenced `tool_call` (Task*/TodoWrite
+  excluded; Bash carries `terminal_info`) so the client has it before being asked to approve;
+  whichever side runs second emits a `tool_call_update` instead of a duplicate. Pruned at
+  `tool_result` alongside `toolUseCache`.
+- **Permission request cancellation** (#801, 9013d1d): All five permission-request sites now go
+  through `client.request(methods.client.session.requestPermission, params, { cancellationSignal:
+  signal })`, so cancelling a turn sends `$/cancel_request` and the client can dismiss the open
+  dialog; an abort-time rejection maps to the existing "Tool use aborted".
+- **Terminal error rendering** (#776, db6eaaf): Bash `is_error` results keep flowing through the
+  terminal-output `_meta` channel (when the client supports it) instead of short-circuiting to
+  plain error content.
+- **Bash image output** (#617, a759e64): Array tool_result content that isn't text-only (e.g. an
+  image from a piped data URI) bypasses the terminal channel and surfaces as ACP content blocks
+  instead of being silently dropped.
+- **`informational` system subtype** (rode in with SDK 0.3.178, #777 58549ff): Surfaced as an
+  `agent_message_chunk` (level folded into the text for non-info levels) so hook-blocked stops are
+  no longer silent. `worker_shutting_down` no-ops via the existing `default: break`.
+- **Sonnet 5 model-version matching** (#826, ef42c46): `MODEL_FAMILY_VERSION_PATTERN` accepts
+  single-number generations (`5`) and `extractModelFamilyVersion` strips `[1m]`-style context
+  hints before matching, so `sonnet 5` resolves and `claude-sonnet-4-6` can't cross-match a
+  Sonnet 5 alias. Unit tests added.
+- **Session title push at turn end** (#812, 1fe7ec0): `maybeUpdateSessionTitle` polls
+  `getSessionInfo` at each `idle` and pushes a `session_info_update` (ACP 1.1) when the
+  SDK-generated `customTitle`/`summary` changes.
+- **Fast mode session config** (#828, fa949a2, adapted to gateway models): New `fast` on/off
+  select config option, surfaced only for models in `MODELS_WITH_FAST_MODE`
+  (claude-opus-4-8/-4-7). Toggling calls `query.applyFlagSettings({ fastMode })`; the intent is
+  retained across model switches (`session.fastModeEnabled`), seeded from
+  `initializationResult.fast_mode_state`, and reconciled with SDK-reported `fast_mode_state` on
+  init and user-turn results (`cooldown` never flaps the toggle). Boolean-typed config options
+  were not adopted — the renderer consumes selects; revisit if it advertises
+  `sessionConfigOptions.boolean`.
+- **ReportFindings tool rendering** (#826, ef42c46): Not ported to `toolInfoFromToolUse` — see
+  Skipped (the fork renders unknown tools generically and PostHog Code has no code-review
+  ReportFindings flow); re-evaluate if the SDK starts emitting it in our sessions.
+- **Test mock**: added `setMcpPermissionModeOverride` and `reinitialize` to the SDK `MockQuery`
+  (new methods on the SDK `Query` interface by 0.3.197).
+
+## Skipped in v0.54.1 Sync
+
+- **ACP builder-pattern migration** (#790, 2554c7b): Kept the deprecated connection classes —
+  recorded as an Intentional Divergence (they still ship in 1.1.0 and carry the
+  `extMethod`/`extNotification` surface the fork's `_posthog/*` extensions rely on).
+- **Elicitation fixes** (#774 d58004a, #779 b364059): Upstream's AskUserQuestion runs through
+  ACP's unstable elicitation API; ours uses its own `questions/` machinery behind the permission
+  flow and the renderer does not advertise elicitation. Same standing skip as the v0.44 sync.
+- **ACP logout support** (#816, 0a0468c): Fork returns empty `authMethods` (auth handled
+  externally by PostHog); there is no CLI credential store to clear from the embedded agent.
+- **Version flag handling** (#813, 9616bda): `src/index.ts` CLI-entrypoint concern; the fork is
+  embedded in the agent server and has no standalone binary.
+- **Agent selection dropdown** (#794, 5729c47): Surfaces custom main-thread agent personas
+  (`supportedAgents()` minus built-ins) as an `agent` config option. PostHog Code drives its own
+  agent concepts; defer until product wants persona selection in the picker.
+- **availableModels allowlist fixes** (#768 cc2885f, #827 98c284b) and **1M inference from model
+  descriptions** (#799, 508453c): All operate on upstream's SDK-settings model pipeline
+  (`ANTHROPIC_CUSTOM_MODEL_OPTION`, `modelOverrides`, `ModelInfo.description` scans). The fork's
+  models and context windows come from the PostHog gateway (`fetchGatewayModels`,
+  `getContextWindowForModel`), which has none of those inputs.
+- **ReportFindings rendering** (#826): See above — no ReportFindings flow reaches the fork today;
+  the generic tool_call rendering is acceptable if it ever does.
+- **`model_refusal_no_fallback` status subtype** (SDK 0.3.193, #818 5dd8746): Our
+  `handleSystemMessage` status handling is non-exhaustive, so the new subtype already no-ops
+  (same precedent as `thinking_tokens` / `model_refusal_fallback`).
+- **Idle-time `usage_update`**: Dropped along with the #780 port (upstream removed it when turns
+  began settling at their terminal result). The mid-stream and result-time usage updates remain;
+  the idle-time emission double-counted cumulative loop usage in rare paths anyway.
+- **Test-only upstream changes** (#769 41cde99 CLAUDE_CONFIG_DIR isolation, #792 9f38cb6 tmp
+  dirs): Upstream test-harness hygiene; our tests use their own fixtures.
+- **Release / CI / dep-group bumps** (#772, #775, #778, #784, #788, #795, #802, #803, #808,
+  #811, #817, #821, #822, #823, #829, #831 and the pure SDK-bump commits #771, #783, #791, #798,
+  #806, #807, #810, #818 beyond the versions captured above): No fork-relevant code.
 
 ## Changes Ported in v0.44.0 Sync
 
@@ -270,7 +386,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 
 ## Next Sync
 
-1. Check upstream changelog since v0.44.0
+1. Check upstream changelog since v0.54.1
 2. Diff upstream source against PostHog Code using the file mapping above
 3. Port in phases: bug fixes first, then features
 4. After each phase: `pnpm --filter agent typecheck && pnpm --filter agent build && pnpm lint`

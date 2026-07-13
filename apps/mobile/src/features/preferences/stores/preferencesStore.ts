@@ -64,6 +64,8 @@ interface PreferencesState {
   setCompletionSound: (sound: CompletionSound) => void;
   completionVolume: number;
   setCompletionVolume: (volume: number) => void;
+  scaleSoundWithTaskLength: boolean;
+  setScaleSoundWithTaskLength: (enabled: boolean) => void;
 
   defaultInitialTaskMode: InitialTaskMode;
   setDefaultInitialTaskMode: (mode: InitialTaskMode) => void;
@@ -78,6 +80,12 @@ interface PreferencesState {
    *  `defaultReasoningEffort === "last_used"` can pre-fill it next time. */
   lastUsedReasoningEffort: string;
   setLastUsedReasoningEffort: (effort: string) => void;
+
+  autoPublishCloudRuns: boolean;
+  setAutoPublishCloudRuns: (enabled: boolean) => void;
+
+  rtkEnabledCloud: boolean;
+  setRtkEnabledCloud: (enabled: boolean) => void;
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -102,6 +110,9 @@ export const usePreferencesStore = create<PreferencesState>()(
         set({
           completionVolume: Math.max(0, Math.min(100, Math.round(volume))),
         }),
+      scaleSoundWithTaskLength: false,
+      setScaleSoundWithTaskLength: (enabled) =>
+        set({ scaleSoundWithTaskLength: enabled }),
 
       defaultInitialTaskMode: "plan",
       setDefaultInitialTaskMode: (mode) =>
@@ -115,6 +126,13 @@ export const usePreferencesStore = create<PreferencesState>()(
       lastUsedReasoningEffort: "high",
       setLastUsedReasoningEffort: (effort) =>
         set({ lastUsedReasoningEffort: effort }),
+
+      autoPublishCloudRuns: true,
+      setAutoPublishCloudRuns: (enabled) =>
+        set({ autoPublishCloudRuns: enabled }),
+
+      rtkEnabledCloud: true,
+      setRtkEnabledCloud: (enabled) => set({ rtkEnabledCloud: enabled }),
     }),
     {
       name: "posthog-preferences",
@@ -126,10 +144,13 @@ export const usePreferencesStore = create<PreferencesState>()(
         fontSize: state.fontSize,
         completionSound: state.completionSound,
         completionVolume: state.completionVolume,
+        scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastNewTaskMode: state.lastNewTaskMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
+        autoPublishCloudRuns: state.autoPublishCloudRuns,
+        rtkEnabledCloud: state.rtkEnabledCloud,
       }),
     },
   ),

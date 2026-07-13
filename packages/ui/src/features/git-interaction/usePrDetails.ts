@@ -1,6 +1,6 @@
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { PrReviewThread } from "@posthog/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { PrCommentThread } from "../code-review/prCommentAnnotations";
 
@@ -22,6 +22,39 @@ function threadsToMap(threads: PrReviewThread[]): Map<number, PrCommentThread> {
   return map;
 }
 
+export interface PrStateDetails {
+  state: string;
+  merged: boolean;
+  draft: boolean;
+}
+
+/**
+ * Fetch lifecycle state for a set of PRs at once (the "Other PRs" submenu).
+ * Also serves as a prefetch: it warms the same `getPrDetailsByUrl` cache
+ * `usePrDetails` reads, so promoting one of these PRs renders its badge with
+ * the correct state instantly.
+ */
+export function usePrDetailsMap(
+  prUrls: string[],
+): Record<string, PrStateDetails> {
+  const trpc = useHostTRPC();
+  return useQueries({
+    queries: prUrls.map((prUrl) => ({
+      ...trpc.git.getPrDetailsByUrl.queryOptions({ prUrl }),
+      staleTime: 60_000,
+      retry: 1,
+    })),
+    combine: (results) =>
+      Object.fromEntries(
+        results.flatMap((result, i) =>
+          result.data && result.data.state !== "unknown"
+            ? [[prUrls[i], result.data]]
+            : [],
+        ),
+      ),
+  });
+}
+
 export function usePrDetails(
   prUrl: string | null,
   options?: UsePrDetailsOptions,
@@ -33,6 +66,7 @@ export function usePrDetails(
     ...trpc.git.getPrDetailsByUrl.queryOptions({ prUrl: prUrl as string }),
     enabled: !!prUrl,
     staleTime: 60_000,
+    placeholderData: (prev) => prev,
     retry: 1,
   });
 

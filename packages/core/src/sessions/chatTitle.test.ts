@@ -103,6 +103,83 @@ describe("decideTitleGeneration", () => {
     });
     expect(decision.shouldGenerateFromTaskDescription).toBe(true);
   });
+
+  it.each([
+    {
+      name: "skips a catch-up fire when the title is locked and a summary exists",
+      promptCount: 1 + REGENERATE_INTERVAL,
+      lastGeneratedAtCount: 0,
+      initialDescriptionHandled: false,
+      titleLocked: true,
+      hasSummary: true,
+      expected: false,
+    },
+    {
+      name: "runs a catch-up fire when no summary exists yet",
+      promptCount: 1 + REGENERATE_INTERVAL,
+      lastGeneratedAtCount: 0,
+      initialDescriptionHandled: false,
+      titleLocked: true,
+      hasSummary: false,
+      expected: true,
+    },
+    {
+      name: "runs a catch-up fire when the title is not locked",
+      promptCount: 1 + REGENERATE_INTERVAL,
+      lastGeneratedAtCount: 0,
+      initialDescriptionHandled: false,
+      titleLocked: false,
+      hasSummary: true,
+      expected: true,
+    },
+    {
+      name: "still refreshes the summary at the interval while locked",
+      promptCount: 1 + REGENERATE_INTERVAL,
+      lastGeneratedAtCount: 1,
+      initialDescriptionHandled: false,
+      titleLocked: true,
+      hasSummary: true,
+      expected: true,
+    },
+    {
+      name: "still generates on the first prompt while locked",
+      promptCount: 1,
+      lastGeneratedAtCount: 0,
+      initialDescriptionHandled: false,
+      titleLocked: true,
+      hasSummary: false,
+      expected: true,
+    },
+    {
+      name: "treats a description-handled interval fire as organic while locked",
+      promptCount: REGENERATE_INTERVAL,
+      lastGeneratedAtCount: 0,
+      initialDescriptionHandled: true,
+      titleLocked: true,
+      hasSummary: true,
+      expected: true,
+    },
+  ])(
+    "$name",
+    ({
+      promptCount,
+      lastGeneratedAtCount,
+      initialDescriptionHandled,
+      titleLocked,
+      hasSummary,
+      expected,
+    }) => {
+      const decision = decideTitleGeneration({
+        promptCount,
+        lastGeneratedAtCount,
+        initialDescriptionHandled,
+        task: { title: "Custom", description: "d" },
+        isTitleLocked: () => titleLocked,
+        hasSummary,
+      });
+      expect(decision.shouldGenerateFromPrompts).toBe(expected);
+    },
+  );
 });
 
 describe("selectPromptsForTitle", () => {

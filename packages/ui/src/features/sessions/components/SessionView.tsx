@@ -17,7 +17,6 @@ import { useAutoFocusOnTyping } from "@posthog/ui/features/message-editor/useAut
 import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
 import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
-import { ConversationView } from "@posthog/ui/features/sessions/components/ConversationView";
 import {
   copyFromContextMenu,
   getGithubRefUrlFromEventTarget,
@@ -31,7 +30,9 @@ import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
+import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/useSessionEventsResidency";
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
   useAdapterForTask,
@@ -44,7 +45,7 @@ import {
   useShowRawLogs,
 } from "@posthog/ui/features/sessions/sessionViewStore";
 import type { Plan } from "@posthog/ui/features/sessions/types";
-import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import { useSessionHandoffInProgress } from "@posthog/ui/features/sessions/useSession";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
@@ -90,6 +91,54 @@ interface SessionViewProps {
 
 const DEFAULT_ERROR_MESSAGE =
   "Failed to resume this session. The working directory may have been deleted. Please start a new session.";
+
+function ConnectingToAgent() {
+  return (
+    <>
+      <Spinner size={28} className="animate-spin text-gray-9" />
+      <Text color="gray" className="text-base">
+        Connecting to agent...
+      </Text>
+    </>
+  );
+}
+
+/** Centers composer-slot content at the chat width (or compact padding). */
+function ComposerWidth({
+  compact,
+  children,
+}: {
+  compact: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Box
+      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
+      style={compact ? undefined : { maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+/**
+ * Input region replacing the composer: `shrink-0` keeps it from being
+ * compressed by the scroller above, and `min-h-0 overflow-y-auto` lets tall
+ * content scroll inside itself.
+ */
+function ComposerSlot({
+  compact,
+  children,
+}: {
+  compact: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Box className="min-h-0 shrink-0 overflow-y-auto">
+      <ComposerWidth compact={compact}>{children}</ComposerWidth>
+    </Box>
+  );
+}
 
 interface CloudStreamDisconnectedBannerProps {
   errorTitle?: string;
@@ -164,6 +213,7 @@ export function SessionView({
   hideInput = false,
 }: SessionViewProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  useSessionEventsResidency(taskId);
   const showRawLogs = useShowRawLogs();
   const { setShowRawLogs } = useSessionViewActions();
   const pendingTaskPrompt = usePendingTaskPrompt(taskId);
@@ -173,10 +223,10 @@ export function SessionView({
   const adapter = useAdapterForTask(taskId);
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();
+  const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
   const { isOnline } = useConnectivity();
   const currentModeId = modeOption?.currentValue;
-  const handoffInProgress =
-    useSessionForTask(taskId)?.handoffInProgress ?? false;
+  const handoffInProgress = useSessionHandoffInProgress(taskId);
   const showInlineBanner = hasError && errorRetryable && events.length > 0;
 
   useEffect(() => {
@@ -190,8 +240,16 @@ export function SessionView({
       isCloud,
       allowBypassPermissions,
       currentModeId,
+      modeOption,
     });
-  }, [allowBypassPermissions, currentModeId, taskId, isCloud, sessionService]);
+  }, [
+    allowBypassPermissions,
+    currentModeId,
+    taskId,
+    isCloud,
+    sessionService,
+    modeOption,
+  ]);
 
   const handleModeChange = useCallback(
     (nextMode: string) => {
@@ -421,7 +479,7 @@ export function SessionView({
           >
             {isSuspended ? (
               <>
-                <ConversationView
+                <ThreadView
                   events={events}
                   isPromptPending={isPromptPending}
                   promptStartedAt={promptStartedAt}
@@ -505,7 +563,7 @@ export function SessionView({
                     onRetry={onRetry}
                   />
                 )}
-                <ConversationView
+                <ThreadView
                   events={events}
                   isPromptPending={isPromptPending}
                   promptStartedAt={promptStartedAt}
@@ -517,7 +575,7 @@ export function SessionView({
                   scrollX={false}
                 />
 
-                <SessionResourcesBar events={events} />
+                {!useNewChatThread && <SessionResourcesBar events={events} />}
 
                 <PlanStatusBar plan={latestPlan} />
 
@@ -565,25 +623,16 @@ export function SessionView({
                     </Flex>
                   </Flex>
                 ) : hideInput ? null : firstPendingPermission ? (
-                  <Box className="min-h-0 overflow-y-auto">
-                    <Box
-                      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
-                      style={
-                        compact
-                          ? undefined
-                          : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
-                      }
-                    >
-                      <PermissionSelector
-                        toolCall={firstPendingPermission.toolCall}
-                        options={firstPendingPermission.options}
-                        onSelect={handlePermissionSelect}
-                        onCancel={handlePermissionCancel}
-                      />
-                    </Box>
-                  </Box>
+                  <ComposerSlot compact={compact}>
+                    <PermissionSelector
+                      toolCall={firstPendingPermission.toolCall}
+                      options={firstPendingPermission.options}
+                      onSelect={handlePermissionSelect}
+                      onCancel={handlePermissionCancel}
+                    />
+                  </ComposerSlot>
                 ) : (
-                  <Box className="relative">
+                  <Box className="relative shrink-0">
                     <Box
                       className={`absolute inset-0 flex min-h-[66px] items-center justify-center gap-2 transition-opacity duration-200 ${
                         isRunning
@@ -591,10 +640,7 @@ export function SessionView({
                           : "opacity-100"
                       }`}
                     >
-                      <Spinner size={28} className="animate-spin text-gray-9" />
-                      <Text color="gray" className="text-base">
-                        Connecting to agent...
-                      </Text>
+                      <ConnectingToAgent />
                     </Box>
                     <Box
                       className={`transition-all duration-300 ease-out ${
@@ -603,14 +649,7 @@ export function SessionView({
                           : "pointer-events-none translate-y-4 opacity-0"
                       }`}
                     >
-                      <Box
-                        className={compact ? "p-1" : "mx-auto px-2 pb-3"}
-                        style={
-                          compact
-                            ? undefined
-                            : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
-                        }
-                      >
+                      <ComposerWidth compact={compact}>
                         {taskId && <QueuedMessagesDock taskId={taskId} />}
                         <PromptInput
                           ref={editorRef}
@@ -650,17 +689,19 @@ export function SessionView({
                             ) : null
                           }
                           messagingModeToggle={
-                            taskId ? (
+                            taskId && !isCloudRun ? (
                               <SteerQueueToggle taskId={taskId} />
                             ) : undefined
                           }
-                          onToggleMessagingMode={toggleMessagingMode}
+                          onToggleMessagingMode={
+                            isCloudRun ? undefined : toggleMessagingMode
+                          }
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
                           onBashCommand={onBashCommand}
                           onCancel={onCancelPrompt}
                         />
-                      </Box>
+                      </ComposerWidth>
                     </Box>
                   </Box>
                 )}

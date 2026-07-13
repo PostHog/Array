@@ -6,20 +6,30 @@ import {
   taskDetailQuery,
 } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import { RoutePending } from "@posthog/ui/router/RoutePending";
+import { TaskDetailSkeleton } from "@posthog/ui/router/routeSkeletons";
+import { yieldToPaint } from "@posthog/ui/router/yieldToPaint";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/code/tasks/$taskId")({
   component: TaskDetailRoute,
-  // Synchronous + cache-only: return whatever is already cached (the detail
-  // entry seeded by openTask, or the sidebar list) and never await the network.
-  // A blocking loader would leave the route pending — and thus un-navigable —
-  // whenever the fetch is slow or never resolves (optimistic/cloud-pending
-  // tasks the API can't return). The cold-miss fetch + spinner live in the
-  // component instead, so navigation always commits instantly.
-  loader: ({ params }): Task | null =>
-    getCachedTaskDetail(params.taskId) ?? getCachedTask(params.taskId) ?? null,
+  pendingComponent: TaskDetailSkeleton,
+  // Cache-only: return whatever is already cached (the detail entry seeded by
+  // openTask, or the sidebar list) and never await the network. A
+  // network-blocked loader would leave the route pending — and thus
+  // un-navigable — whenever the fetch is slow or never resolves
+  // (optimistic/cloud-pending tasks the API can't return). The cold-miss
+  // fetch + skeleton live in the component instead. The single-frame yield
+  // lets the pending skeleton paint before TaskDetail's heavy mount (chat
+  // thread, terminal) blocks the main thread.
+  loader: async ({ params }): Promise<Task | null> => {
+    const task =
+      getCachedTaskDetail(params.taskId) ??
+      getCachedTask(params.taskId) ??
+      null;
+    await yieldToPaint();
+    return task;
+  },
 });
 
 function TaskDetailRoute() {
@@ -51,7 +61,7 @@ function TaskDetailRoute() {
   }
 
   if (!task) {
-    return <RoutePending />;
+    return <TaskDetailSkeleton />;
   }
 
   return <TaskDetail key={task.id} task={task} />;

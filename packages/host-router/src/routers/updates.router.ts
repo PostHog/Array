@@ -9,6 +9,7 @@ import {
 } from "@posthog/core/updates/schemas";
 import type { UpdatesService } from "@posthog/core/updates/updates";
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
+import { z } from "zod";
 
 function subscribe<K extends keyof UpdatesEvents>(event: K) {
   return publicProcedure.subscription(async function* ({ ctx, signal }) {
@@ -40,6 +41,18 @@ export const updatesRouter = router({
     const service = ctx.container.get<UpdatesService>(UPDATES_SERVICE);
     return service.installUpdate();
   }),
+
+  download: publicProcedure.mutation(({ ctx }) => {
+    ctx.container.get<UpdatesService>(UPDATES_SERVICE).requestDownload();
+  }),
+
+  setAutoDownload: publicProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(({ ctx, input }) => {
+      ctx.container
+        .get<UpdatesService>(UPDATES_SERVICE)
+        .setAutoDownloadEnabled(input.enabled);
+    }),
 
   onReady: subscribe(UpdatesEvent.Ready),
   onStatus: subscribe(UpdatesEvent.Status),

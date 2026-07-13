@@ -2,11 +2,16 @@ import { isMac } from "@posthog/ui/utils/platform";
 
 export const SHORTCUTS = {
   COMMAND_MENU: "mod+k",
-  NEW_TASK: "mod+n,mod+t",
+  NEW_TASK: "mod+n",
+  NEW_TAB: "mod+t",
   SETTINGS: "mod+,",
   SHORTCUTS_SHEET: "mod+/",
   GO_BACK: "mod+[",
   GO_FORWARD: "mod+]",
+  // Arrow variants must stay outside form fields/editors, where mod+left/right
+  // means jump to line start/end - bind them without enableOnFormTags.
+  GO_BACK_ALT: "mod+left",
+  GO_FORWARD_ALT: "mod+right",
   TOGGLE_LEFT_SIDEBAR: "mod+b",
   TOGGLE_REVIEW_PANEL: "mod+shift+b",
   PREV_TASK: "mod+shift+[,ctrl+shift+tab",
@@ -25,6 +30,10 @@ export const SHORTCUTS = {
   BLUR: "escape",
   SUBMIT_BLUR: "mod+enter",
   SWITCH_MESSAGING_MODE: "mod+s",
+  RELOAD_WINDOW: "mod+shift+r",
+  ZOOM_IN: "mod+=",
+  ZOOM_OUT: "mod+-",
+  RESET_ZOOM: "mod+0",
 } as const;
 
 export type ShortcutCategory = "general" | "navigation" | "panels" | "editor";
@@ -44,7 +53,13 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     keys: "mod+n",
     description: "New task",
     category: "general",
-    alternateKeys: "mod+t",
+  },
+  {
+    id: "new-tab",
+    keys: SHORTCUTS.NEW_TAB,
+    description: "New tab",
+    category: "navigation",
+    context: "Channels",
   },
   {
     id: "command-menu",
@@ -62,6 +77,24 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     id: "shortcuts",
     keys: SHORTCUTS.SHORTCUTS_SHEET,
     description: "Show keyboard shortcuts",
+    category: "general",
+  },
+  {
+    id: "zoom-in",
+    keys: SHORTCUTS.ZOOM_IN,
+    description: "Zoom in",
+    category: "general",
+  },
+  {
+    id: "zoom-out",
+    keys: SHORTCUTS.ZOOM_OUT,
+    description: "Zoom out",
+    category: "general",
+  },
+  {
+    id: "reset-zoom",
+    keys: SHORTCUTS.RESET_ZOOM,
+    description: "Reset zoom",
     category: "general",
   },
   {
@@ -114,12 +147,14 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     keys: SHORTCUTS.GO_BACK,
     description: "Go back",
     category: "navigation",
+    alternateKeys: SHORTCUTS.GO_BACK_ALT,
   },
   {
     id: "go-forward",
     keys: SHORTCUTS.GO_FORWARD,
     description: "Go forward",
     category: "navigation",
+    alternateKeys: SHORTCUTS.GO_FORWARD_ALT,
   },
   {
     id: "toggle-left-sidebar",
@@ -252,9 +287,13 @@ function formatKey(key: string): string {
   if (k === "escape" || k === "esc") return "Esc";
   if (k === "up" || k === "arrowup") return "↑";
   if (k === "down" || k === "arrowdown") return "↓";
+  if (k === "left" || k === "arrowleft") return "←";
+  if (k === "right" || k === "arrowright") return "→";
   if (k === ",") return ",";
   if (k === "[") return "[";
   if (k === "]") return "]";
+  if (k === "=") return "+";
+  if (k === "-") return "-";
   if (k === "tab") return "Tab";
   return k.toUpperCase();
 }

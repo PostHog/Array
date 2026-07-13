@@ -38,7 +38,7 @@ export function useTaskContextMenu() {
 
   const showContextMenu = useCallback(
     async (
-      task: Task,
+      task: Pick<Task, "id" | "title">,
       event: React.MouseEvent,
       options?: {
         worktreePath?: string;
@@ -124,7 +124,7 @@ export function useTaskContextMenu() {
             try {
               await fileTask(intent.channelId, task.id, task.title);
             } catch (error) {
-              toast.error("Couldn't file task to channel", {
+              toast.error("Couldn't file task to context", {
                 description:
                   error instanceof Error ? error.message : String(error),
               });
