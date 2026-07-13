@@ -1181,15 +1181,39 @@ export async function listUntrackedFiles(
   );
 }
 
+export interface ListAllFilesOptions {
+  maxFiles?: number;
+  timeoutMs?: number;
+}
+
 export async function listAllFiles(
   baseDir: string,
-  options?: CreateGitClientOptions,
+  options?: ListAllFilesOptions,
 ): Promise<string[]> {
-  const [tracked, untracked] = await Promise.all([
-    listFiles(baseDir, options),
-    listUntrackedFiles(baseDir, options),
-  ]);
-  return [...tracked, ...untracked];
+  const { maxFiles, timeoutMs } = options ?? {};
+  const controller =
+    timeoutMs !== undefined ? new AbortController() : undefined;
+  const timer =
+    controller && timeoutMs !== undefined
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : undefined;
+  try {
+    const [tracked, untracked] = await Promise.all([
+      listFiles(baseDir, { abortSignal: controller?.signal }).catch(
+        (): string[] => [],
+      ),
+      listUntrackedFiles(baseDir, { abortSignal: controller?.signal }).catch(
+        (): string[] => [],
+      ),
+    ]);
+    const combined = untracked.concat(tracked);
+    if (maxFiles !== undefined && combined.length > maxFiles) {
+      combined.splice(maxFiles);
+    }
+    return combined;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // Tracked + untracked files containing `pattern` (literal, case-insensitive).

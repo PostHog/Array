@@ -1,10 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  getChangedFiles,
-  listFiles,
-  listUntrackedFiles,
-} from "@posthog/git/queries";
+import { getChangedFiles, listAllFiles } from "@posthog/git/queries";
 import { injectable } from "inversify";
 import type { BoundedReadResult, DirectoryEntry, FileEntry } from "./schemas";
 
@@ -13,7 +9,7 @@ export class FsService {
   private static readonly CACHE_TTL = 30000;
   private static readonly READ_REPO_FILES_CONCURRENCY = 24;
   private static readonly MAX_REPO_FILES = 50_000;
-  private static readonly UNTRACKED_TIMEOUT_MS = 8_000;
+  private static readonly LIST_FILES_TIMEOUT_MS = 8_000;
   private cache = new Map<string, { files: FileEntry[]; timestamp: number }>();
 
   async listDirectory(dirPath: string): Promise<DirectoryEntry[]> {
@@ -49,7 +45,7 @@ export class FsService {
       const changedFiles = await getChangedFiles(repoPath);
 
       if (query?.trim()) {
-        const allFiles = await this.fetchAllFiles(repoPath);
+        const allFiles = await this.listAllFilesBounded(repoPath);
         const directories = this.deriveDirectories(allFiles);
         const lowerQuery = query.toLowerCase();
         const matchingDirs = directories.filter((d) =>
@@ -70,7 +66,7 @@ export class FsService {
         return limit ? cached.files.slice(0, limit) : cached.files;
       }
 
-      const files = await this.fetchAllFiles(repoPath);
+      const files = await this.listAllFilesBounded(repoPath);
       const directories = this.deriveDirectories(files);
       const entries = [
         ...this.toDirectoryEntries(directories),
@@ -227,27 +223,11 @@ export class FsService {
     }));
   }
 
-  private async fetchAllFiles(repoPath: string): Promise<string[]> {
-    const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      FsService.UNTRACKED_TIMEOUT_MS,
-    );
-    try {
-      const [tracked, untracked] = await Promise.all([
-        listFiles(repoPath),
-        listUntrackedFiles(repoPath, { abortSignal: controller.signal }).catch(
-          () => [],
-        ),
-      ]);
-      const combined = tracked.concat(untracked);
-      if (combined.length > FsService.MAX_REPO_FILES) {
-        combined.length = FsService.MAX_REPO_FILES;
-      }
-      return combined;
-    } finally {
-      clearTimeout(timer);
-    }
+  private listAllFilesBounded(repoPath: string): Promise<string[]> {
+    return listAllFiles(repoPath, {
+      maxFiles: FsService.MAX_REPO_FILES,
+      timeoutMs: FsService.LIST_FILES_TIMEOUT_MS,
+    });
   }
 
   private deriveDirectories(files: string[]): string[] {

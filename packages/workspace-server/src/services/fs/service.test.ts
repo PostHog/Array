@@ -5,26 +5,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@posthog/git/queries", () => ({
   getChangedFiles: vi.fn(async () => new Set<string>()),
-  listFiles: vi.fn(async () => []),
-  listUntrackedFiles: vi.fn(async () => []),
+  listAllFiles: vi.fn(async () => []),
 }));
 
-import {
-  getChangedFiles,
-  listFiles,
-  listUntrackedFiles,
-} from "@posthog/git/queries";
+import { getChangedFiles, listAllFiles } from "@posthog/git/queries";
 import { FsService } from "./service";
 
 describe("FsService.listRepoFiles", () => {
   it("derives directory entries alongside files", async () => {
     vi.mocked(getChangedFiles).mockResolvedValue(new Set());
-    vi.mocked(listFiles).mockResolvedValue([
+    vi.mocked(listAllFiles).mockResolvedValue([
       "a.ts",
       "src/b.ts",
       "src/sub/c.ts",
     ]);
-    vi.mocked(listUntrackedFiles).mockResolvedValue([]);
 
     const service = new FsService();
     const entries = await service.listRepoFiles("/repo");
@@ -40,12 +34,11 @@ describe("FsService.listRepoFiles", () => {
 
   it("filters directories and files by query substring", async () => {
     vi.mocked(getChangedFiles).mockResolvedValue(new Set());
-    vi.mocked(listFiles).mockResolvedValue([
+    vi.mocked(listAllFiles).mockResolvedValue([
       "a.ts",
       "src/b.ts",
       "src/sub/c.ts",
     ]);
-    vi.mocked(listUntrackedFiles).mockResolvedValue([]);
 
     const service = new FsService();
     const entries = await service.listRepoFiles("/repo", "sub");
@@ -56,26 +49,26 @@ describe("FsService.listRepoFiles", () => {
     ]);
   });
 
-  it("caps file list at MAX_REPO_FILES when repo is very large", async () => {
+  it("passes the file cap and timeout through to listAllFiles", async () => {
     vi.mocked(getChangedFiles).mockResolvedValue(new Set());
-    const bigList = Array.from({ length: 60_000 }, (_, i) => `file${i}.ts`);
-    vi.mocked(listFiles).mockResolvedValue(bigList);
-    vi.mocked(listUntrackedFiles).mockResolvedValue([]);
+    vi.mocked(listAllFiles).mockResolvedValue([]);
 
     const service = new FsService();
-    const entries = await service.listRepoFiles("/repo");
+    await service.listRepoFiles("/repo");
 
-    expect(entries.length).toBe(50_000);
+    expect(listAllFiles).toHaveBeenCalledWith("/repo", {
+      maxFiles: 50_000,
+      timeoutMs: 8_000,
+    });
   });
 
-  it("total entries can exceed MAX_REPO_FILES when derived directories are included", async () => {
+  it("total entries can exceed the file cap when derived directories are included", async () => {
     vi.mocked(getChangedFiles).mockResolvedValue(new Set());
-    const bigList = Array.from(
-      { length: 60_000 },
+    const cappedList = Array.from(
+      { length: 50_000 },
       (_, i) => `src/sub${i}/file.ts`,
     );
-    vi.mocked(listFiles).mockResolvedValue(bigList);
-    vi.mocked(listUntrackedFiles).mockResolvedValue([]);
+    vi.mocked(listAllFiles).mockResolvedValue(cappedList);
 
     const service = new FsService();
     const entries = await service.listRepoFiles("/repo");
@@ -83,17 +76,6 @@ describe("FsService.listRepoFiles", () => {
     const fileEntries = entries.filter((e) => e.kind === "file");
     expect(fileEntries.length).toBe(50_000);
     expect(entries.length).toBeGreaterThan(50_000);
-  });
-
-  it("omits untracked files when git ls-files --others is aborted", async () => {
-    vi.mocked(getChangedFiles).mockResolvedValue(new Set());
-    vi.mocked(listFiles).mockResolvedValue(["tracked.ts"]);
-    vi.mocked(listUntrackedFiles).mockRejectedValue(new Error("AbortError"));
-
-    const service = new FsService();
-    const entries = await service.listRepoFiles("/repo");
-
-    expect(entries.some((e) => e.path === "tracked.ts")).toBe(true);
   });
 });
 
