@@ -51,14 +51,7 @@ export function ChannelsSidebar() {
     setOpenAuto(hasCompletedOnboarding || Object.keys(workspaces).length > 0);
   }, [workspacesFetched, workspaces, hasCompletedOnboarding, setOpenAuto]);
 
-  // Hover-reveal while collapsed (see the pointer gesture below). Any open
-  // (click, Cmd+B) makes the peek redundant — drop it so the overlay state
-  // can't linger.
   const peek = useSidebarPeekStore((s) => s.peek);
-  // Pointer-position hover gesture (Dia-style): approaching the left edge peeks
-  // the nav out, and once out it stays until the pointer crosses decisively
-  // into the content (past the panel's right edge + margin). Leaving to the
-  // left / off-window keeps it open. Off while docked or mid-resize.
   useSidebarEdgeHoverPeek({
     enabled: !open && !isResizing,
     peeked: peek,

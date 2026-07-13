@@ -147,9 +147,6 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
       if (dragEndedClosedRef.current) {
         setWidth(dragStartWidthRef.current);
       }
-      // A floating-panel drag lets the pointer travel anywhere mid-drag, so
-      // when it ends decisively in the content (past the panel edge + the
-      // same directional-close margin the hover gesture uses), hide the peek.
       if (!open && peek) {
         const pointer =
           side === "left" ? e.clientX : window.innerWidth - e.clientX;

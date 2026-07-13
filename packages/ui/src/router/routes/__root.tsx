@@ -371,9 +371,6 @@ function RootLayout() {
                 aria-label="Toggle sidebar"
                 onClick={handleToggleSidebar}
                 onMouseEnter={() => {
-                  // Hovering the toggle is a secondary reveal affordance; the
-                  // directional-close gesture (see useSidebarEdgeHoverPeek)
-                  // owns hiding it again.
                   if (!sidebarOpen) beginSidebarPeek();
                 }}
               >
@@ -434,9 +431,6 @@ function RootLayout() {
         </Flex>
         <ConnectivityBanner />
         <Flex flexGrow="1" overflow="hidden" className="relative">
-          {/* The collapsed-sidebar hover-reveal is driven by pointer position
-              (see useSidebarEdgeHoverPeek in ChannelsSidebar), not a fixed hit
-              strip — approaching the left edge peeks it out. */}
           {/* Scrim under the peeked nav: dims the content while the overlay is
               out. Purely visual (pointer-transparent) and paired with the
               panel's slide — same 200ms ease-out — so they read as one unit. */}

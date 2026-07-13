@@ -10,7 +10,6 @@ describe("shouldRevealOnEdge", () => {
   const threshold = PEEK_REVEAL_THRESHOLD;
 
   it.each([
-    // [name, pointer, wasInside, expected]
     ["crosses into the zone from outside", 10, false, true],
     ["already inside the zone (no re-trigger)", 10, true, false],
     ["outside the zone", 100, false, false],
@@ -28,14 +27,12 @@ describe("shouldCloseOnExit", () => {
   const margin = PEEK_CLOSE_MARGIN;
 
   it.each([
-    // [name, pointer, width, expected]
     ["inside the panel", 100, 240, false],
     ["between the panel edge and the margin", 280, 240, false],
     ["exactly on the far edge (right edge)", 240, 240, false],
     ["exactly on the close boundary", 240 + margin, 240, false],
     ["past the close boundary into content", 240 + margin + 1, 240, true],
     ["stays open at the left edge / off-window", 0, 240, false],
-    // Wider panel: the boundary tracks the live width.
     ["wide panel still open before its boundary", 400 + margin, 400, false],
     ["wide panel closes past its boundary", 400 + margin + 1, 400, true],
   ])("%s", (_name, pointer, width, expected) => {
