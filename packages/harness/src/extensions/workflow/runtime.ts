@@ -782,8 +782,12 @@ export async function runWorkflowScript(
         `workflow agent limit reached (${maxAgents})`,
       );
     const id = agentCount;
+    // Capture phase ownership at dispatch. A child runs behind the concurrency
+    // limiter and may complete after the script has advanced its phase state.
+    let producerPhase: WorkflowDeclaredPhase | undefined;
     if (plan) {
       const declared = currentDeclaredPhase(plan, declaredPhaseIndex);
+      producerPhase = declared;
       if (!Array.isArray(opts.inputs))
         throw new WorkflowFatalError(
           "strict-plan agent inputs must be an array of artifact names",
@@ -856,11 +860,11 @@ export async function runWorkflowScript(
           result = parseJsonLoose(outcome.output);
           checkAgainstSchema(result, schema);
         }
-        if (plan && event.produces) {
+        if (event.produces && producerPhase) {
           publishArtifact(
             event.produces,
             result,
-            currentDeclaredPhase(plan, declaredPhaseIndex),
+            producerPhase,
             event.label,
             artifacts,
             hooks,
