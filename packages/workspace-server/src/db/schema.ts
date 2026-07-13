@@ -59,6 +59,11 @@ export const taskMetadata = sqliteTable("task_metadata", {
   // row, so this timestamp is their only home — without it, archiving them is a
   // silent no-op and they reappear on the next refetch.
   archivedAt: text(),
+  // JSON-encoded ContentBlock[] initial prompt for a LOCAL task, stored the
+  // moment the task run is created so it survives reload/crash before the
+  // agent's first response. Cleared once the agent echoes the prompt
+  // (session/prompt). Null = nothing pending.
+  pendingInitialPrompt: text(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

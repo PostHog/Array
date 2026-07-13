@@ -1,0 +1,1 @@
+ALTER TABLE `task_metadata` ADD `pending_initial_prompt` text;

@@ -109,6 +109,11 @@ function createHarness() {
           subscribe: () => ({ unsubscribe: vi.fn() }),
         },
       },
+      workspace: {
+        clearPendingInitialPrompt: {
+          mutate: vi.fn().mockResolvedValue(undefined),
+        },
+      },
     },
   } as unknown as SessionServiceDeps;
 

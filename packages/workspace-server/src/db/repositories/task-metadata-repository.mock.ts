@@ -33,6 +33,10 @@ export function createMockTaskMetadataRepository(): MockTaskMetadataRepository {
         "archivedAt" in patch
           ? (patch.archivedAt ?? null)
           : (existing?.archivedAt ?? null),
+      pendingInitialPrompt:
+        "pendingInitialPrompt" in patch
+          ? (patch.pendingInitialPrompt ?? null)
+          : (existing?.pendingInitialPrompt ?? null),
       createdAt: existing?.createdAt ?? ts,
       updatedAt: ts,
     });
@@ -44,6 +48,8 @@ export function createMockTaskMetadataRepository(): MockTaskMetadataRepository {
     findAllPinned: () => [...rows.values()].filter((r) => r.pinnedAt != null),
     findAllArchived: () =>
       [...rows.values()].filter((r) => r.archivedAt != null),
+    getPendingInitialPrompt: (taskId) =>
+      rows.get(taskId)?.pendingInitialPrompt ?? null,
     upsert: apply,
     delete: (taskId) => {
       rows.delete(taskId);

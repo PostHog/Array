@@ -277,6 +277,22 @@ export const getAllTaskTimestampsOutput = z.record(
   }),
 );
 
+// Durable per-task pending initial prompt (JSON-encoded ContentBlock[]).
+export const setPendingInitialPromptInput = z.object({
+  taskId: z.string(),
+  promptJson: z.string(),
+});
+
+export const getPendingInitialPromptInput = z.object({
+  taskId: z.string(),
+});
+
+export const getPendingInitialPromptOutput = z.string().nullable();
+
+export const clearPendingInitialPromptInput = z.object({
+  taskId: z.string(),
+});
+
 // Task PR status
 export const taskPrStatusInput = z.object({
   taskId: z.string(),

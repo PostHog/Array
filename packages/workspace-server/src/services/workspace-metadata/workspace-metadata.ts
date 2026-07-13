@@ -73,6 +73,21 @@ export class WorkspaceMetadataService {
     this.taskMetadataRepo.upsert(taskId, { lastActivityAt });
   }
 
+  // The pending initial prompt is short-lived per-task creation state, always
+  // keyed purely by task id in `task_metadata` — it never lives on a
+  // `workspaces` row, so (unlike pin/view/activity) there is no fallback branch.
+  setPendingInitialPrompt(taskId: string, promptJson: string): void {
+    this.taskMetadataRepo.upsert(taskId, { pendingInitialPrompt: promptJson });
+  }
+
+  getPendingInitialPrompt(taskId: string): string | null {
+    return this.taskMetadataRepo.getPendingInitialPrompt(taskId);
+  }
+
+  clearPendingInitialPrompt(taskId: string): void {
+    this.taskMetadataRepo.upsert(taskId, { pendingInitialPrompt: null });
+  }
+
   getPinnedTaskIds(): string[] {
     return [
       ...this.workspaceRepo.findAllPinned().map((w) => w.taskId),

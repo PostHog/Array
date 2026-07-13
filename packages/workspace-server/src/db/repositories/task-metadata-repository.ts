@@ -14,6 +14,7 @@ export interface TaskMetadataPatch {
   lastViewedAt?: string | null;
   lastActivityAt?: string | null;
   archivedAt?: string | null;
+  pendingInitialPrompt?: string | null;
 }
 
 /**
@@ -27,6 +28,7 @@ export interface ITaskMetadataRepository {
   findAll(): TaskMetadataRow[];
   findAllPinned(): TaskMetadataRow[];
   findAllArchived(): TaskMetadataRow[];
+  getPendingInitialPrompt(taskId: string): string | null;
   upsert(taskId: string, patch: TaskMetadataPatch): void;
   delete(taskId: string): void;
 }
@@ -70,6 +72,10 @@ export class TaskMetadataRepository implements ITaskMetadataRepository {
       .from(taskMetadata)
       .where(isNotNull(taskMetadata.archivedAt))
       .all();
+  }
+
+  getPendingInitialPrompt(taskId: string): string | null {
+    return this.findByTaskId(taskId)?.pendingInitialPrompt ?? null;
   }
 
   upsert(taskId: string, patch: TaskMetadataPatch): void {
