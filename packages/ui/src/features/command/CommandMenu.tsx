@@ -42,6 +42,7 @@ import {
 import { useFileSearchContext } from "@posthog/ui/features/command/useFileSearchContext";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
+import { useProvisioningStore } from "@posthog/ui/features/provisioning/store";
 import {
   closeSettings,
   openSettings,
@@ -157,6 +158,9 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const { data: tasks = [] } = useTasks();
   const archivedTaskIds = useArchivedTaskIds();
   const { data: workspaces, isFetched: workspacesFetched } = useWorkspaces();
+  const provisioningTaskIds = useProvisioningStore(
+    (state) => state.activeTasks,
+  );
   const [query, setQuery] = useState("");
   const { repoPath } = useFileSearchContext();
   const canSearchFiles = !!repoPath;
@@ -456,9 +460,11 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     const visibleTasks = tasks.filter(
       (task) =>
         !archivedTaskIds.has(task.id) &&
-        (!workspacesFetched || workspaceIds.has(task.id)),
+        (!workspacesFetched ||
+          workspaceIds.has(task.id) ||
+          provisioningTaskIds.has(task.id)),
     );
-    if (!visibleTasks.length) return [];
+    if (visibleTasks.length === 0) return [];
     return [
       {
         label: "Tasks",
@@ -493,6 +499,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     archivedTaskIds,
     workspaces,
     workspacesFetched,
+    provisioningTaskIds,
     taskChannelMap,
     bluebirdEnabled,
     closeSettingsDialog,
