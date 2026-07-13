@@ -125,6 +125,12 @@ type MessageCallback = (message: unknown) => void;
 
 export const SSE_KEEPALIVE_INTERVAL_MS = 25_000;
 
+// Bounded per-turn retries for unattended (initial/resume) turns that hit a
+// transient upstream failure. Two covers a retry whose own attempt also gets
+// cut once, without letting a hard upstream outage loop forever.
+const MAX_UPSTREAM_TURN_RETRIES = 2;
+const UPSTREAM_TURN_RETRY_DELAY_MS = 5_000;
+
 class NdJsonTap {
   private decoder = new TextDecoder();
   private buffer = "";
@@ -1516,6 +1522,72 @@ export class AgentServer {
     return { classification: classifyAgentError(message), message };
   }
 
+  /**
+   * Send an initial/resume turn prompt, absorbing transient upstream
+   * failures with a bounded number of retries. These turns run unattended
+   * (no user watching who could retry), so without this a single transient
+   * transport cut fails the whole run. A stream that died mid-response has
+   * already delivered the original prompt into the session history, so that
+   * case retries with a hidden continuation; failures where the request may
+   * never have been processed re-send the original prompt instead.
+   */
+  private async promptWithUpstreamRetry(request: {
+    sessionId: string;
+    prompt: ContentBlock[];
+    _meta?: Record<string, unknown>;
+  }): Promise<PromptResponse> {
+    let retries = 0;
+    let continueInterruptedTurn = false;
+    for (;;) {
+      // Re-read the session on every attempt: it can be torn down or
+      // replaced while the retry delay is pending.
+      const session = this.session;
+      if (!session) {
+        throw new Error("Agent session ended before the turn could be sent");
+      }
+      const attempt = continueInterruptedTurn
+        ? {
+            sessionId: session.acpSessionId,
+            prompt: [
+              hiddenTextBlock(
+                "The previous response was interrupted by a transient connection error. " +
+                  "Continue from where you left off — do not repeat work that already completed.",
+              ),
+            ],
+          }
+        : { ...request, sessionId: session.acpSessionId };
+      try {
+        return await session.clientConnection.prompt(attempt);
+      } catch (error) {
+        const { classification, message } =
+          this.extractErrorClassification(error);
+        if (
+          !upstreamProviderFailureClassifications.has(classification) ||
+          retries >= MAX_UPSTREAM_TURN_RETRIES
+        ) {
+          throw error;
+        }
+        retries += 1;
+        // Only a mid-response stream death guarantees the prompt reached the
+        // model; connection/timeout/status failures re-send the original.
+        continueInterruptedTurn =
+          classification === "upstream_stream_terminated";
+        this.logger.warn(
+          "Turn hit a transient upstream failure; retrying after a short delay",
+          {
+            classification,
+            message,
+            attempt: retries,
+            continueInterruptedTurn,
+          },
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, UPSTREAM_TURN_RETRY_DELAY_MS),
+        );
+      }
+    }
+  }
+
   private async handleTurnFailure(
     payload: JwtPayload,
     phase: "initial" | "resume" | "followup",
@@ -1665,7 +1737,7 @@ export class AgentServer {
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
 
-      const result = await this.session.clientConnection.prompt({
+      const result = await this.promptWithUpstreamRetry({
         sessionId: this.session.acpSessionId,
         prompt: initialPrompt,
         ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
@@ -1877,7 +1949,7 @@ export class AgentServer {
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
 
-      const result = await this.session.clientConnection.prompt({
+      const result = await this.promptWithUpstreamRetry({
         sessionId: this.session.acpSessionId,
         prompt: builtPrompt.prompt,
         ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
