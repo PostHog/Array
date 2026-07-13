@@ -4,13 +4,20 @@ export type PosthogProperties = Record<string, PosthogPropertyValue>;
 
 /**
  * Make a value safe to embed in an HTTP header value. Collapses newlines to
- * spaces (the header block is newline-delimited) and drops characters outside
- * the valid header-byte range — control chars and code points above latin1
- * (emoji, smart quotes) — which an HTTP client (e.g. undici) would otherwise
- * reject before sending. ASCII is preserved.
+ * spaces (the header block is newline-delimited), transliterates accented
+ * letters to their ASCII base (`più` → `piu`), and drops everything else
+ * outside printable ASCII (emoji, smart quotes, CJK). Latin1 bytes are valid
+ * per RFC 9110 and undici accepts them, but Bun's fetch — which the Claude
+ * Code CLI uses to send headers wired through `ANTHROPIC_CUSTOM_HEADERS` —
+ * rejects any non-ASCII header value, so printable ASCII is the only range
+ * every consumer accepts.
  */
 function sanitizeHeaderValue(value: string): string {
-  return value.replace(/[\r\n]+/g, " ").replace(/[^\x20-\x7e\x80-\xff]/g, "");
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/[^\x20-\x7e]/g, "");
 }
 
 function buildEntries(properties: PosthogProperties): Array<[string, string]> {

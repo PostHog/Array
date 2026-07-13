@@ -57,11 +57,21 @@ describe("buildPosthogPropertyHeaderRecord", () => {
     ).toEqual({ "x-posthog-property-task_title": "dontship" });
   });
 
-  it("keeps latin1 characters such as accents", () => {
-    expect(buildPosthogPropertyHeaderRecord({ task_title: "café" })).toEqual({
-      "x-posthog-property-task_title": "café",
-    });
-  });
+  it.each([
+    { title: "café", expected: "cafe" },
+    {
+      title: "sono più di 48 ore, è tardi",
+      expected: "sono piu di 48 ore, e tardi",
+    },
+    { title: "Ærøskøbing–東京", expected: "rskbing" },
+  ])(
+    "transliterates accents to ASCII and drops what has no base letter ($title)",
+    ({ title, expected }) => {
+      expect(buildPosthogPropertyHeaderRecord({ task_title: title })).toEqual({
+        "x-posthog-property-task_title": expected,
+      });
+    },
+  );
 });
 
 describe("buildPosthogPropertyHeaderLines", () => {
