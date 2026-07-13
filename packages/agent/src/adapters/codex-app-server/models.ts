@@ -15,12 +15,16 @@ const CODEX_REASONING_EFFORT_OPTIONS: ReasoningEffortOption[] = [
   { value: "high", name: "High" },
 ];
 
-// OpenAI's `reasoning_effort` exposes an "extra high" tier only on the gpt-5.5
-// and gpt-5.6 families, matching what the Codex app offers. Older models top
-// out at "high".
+// OpenAI's `reasoning_effort` exposes an "extra high" tier on the gpt-5.5 and
+// gpt-5.6 families. GPT-5.6 also supports the "max" tier. Older models top out
+// at "high".
 export function supportsXhighEffort(modelId: string): boolean {
   const id = modelId.toLowerCase();
   return id.includes("gpt-5.5") || id.includes("gpt-5.6");
+}
+
+export function supportsMaxEffort(modelId: string): boolean {
+  return modelId.toLowerCase().includes("gpt-5.6");
 }
 
 export function getReasoningEffortOptions(
@@ -29,6 +33,9 @@ export function getReasoningEffortOptions(
   const options = [...CODEX_REASONING_EFFORT_OPTIONS];
   if (supportsXhighEffort(modelId)) {
     options.push({ value: "xhigh", name: "Extra High" });
+  }
+  if (supportsMaxEffort(modelId)) {
+    options.push({ value: "max", name: "Max" });
   }
   return options;
 }
