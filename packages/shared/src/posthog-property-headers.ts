@@ -3,14 +3,13 @@ export type PosthogPropertyValue = string | number | boolean | null | undefined;
 export type PosthogProperties = Record<string, PosthogPropertyValue>;
 
 /**
- * Make a value safe to embed in an HTTP header value. Collapses newlines to
- * spaces (the header block is newline-delimited), transliterates accented
- * letters to their ASCII base (`più` → `piu`), and drops everything else
- * outside printable ASCII (emoji, smart quotes, CJK). Latin1 bytes are valid
- * per RFC 9110 and undici accepts them, but Bun's fetch — which the Claude
- * Code CLI uses to send headers wired through `ANTHROPIC_CUSTOM_HEADERS` —
- * rejects any non-ASCII header value, so printable ASCII is the only range
- * every consumer accepts.
+ * Make a value safe to embed in an HTTP header value. Only printable ASCII
+ * survives: latin1 is valid per RFC 9110 and undici accepts it, but Bun's
+ * fetch — which the Claude Code CLI uses for `ANTHROPIC_CUSTOM_HEADERS` —
+ * rejects any non-ASCII header value. NFKD plus the final strip is what
+ * transliterates accented letters to their ASCII base (`più` → `piu`); the
+ * combining-mark pass just keeps a stray mark from splitting a newline run
+ * before it is collapsed to a single space.
  */
 function sanitizeHeaderValue(value: string): string {
   return value

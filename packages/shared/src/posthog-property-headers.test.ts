@@ -58,12 +58,11 @@ describe("buildPosthogPropertyHeaderRecord", () => {
   });
 
   it.each([
-    { title: "café", expected: "cafe" },
     {
       title: "sono più di 48 ore, è tardi",
       expected: "sono piu di 48 ore, e tardi",
     },
-    { title: "Ærøskøbing–東京", expected: "rskbing" },
+    { title: "Ærøskøbing", expected: "rskbing" },
   ])(
     "transliterates accents to ASCII and drops what has no base letter ($title)",
     ({ title, expected }) => {

@@ -12,6 +12,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { FileEnrichmentDeps } from "../../../enrichment/file-enricher";
 import { IS_ROOT } from "../../../utils/common";
+import { buildGatewayPropertyHeaders } from "../../../utils/gateway";
 import type { Logger } from "../../../utils/logger";
 import type { TaskState } from "../conversion/task-state";
 import {
@@ -163,7 +164,7 @@ function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
   // get_llm_client(team_id=...).
   const projectId = gateway?.posthogProjectId ?? process.env.POSTHOG_PROJECT_ID;
   if (projectId) {
-    headerLines.push(`x-posthog-property-team_id: ${projectId}`);
+    headerLines.push(buildGatewayPropertyHeaders({ team_id: projectId }));
   }
   // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
   headerLines.push("x-posthog-use-bedrock-fallback: true");
