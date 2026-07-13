@@ -638,4 +638,13 @@ describe("listAllFiles", () => {
 
     expect(files).toEqual(["untracked.txt"]);
   });
+
+  it("returns tracked files when the untracked scan times out", async () => {
+    repoDir = await setupRepo();
+    await writeFile(path.join(repoDir, "untracked.txt"), "content");
+
+    const files = await listAllFiles(repoDir, { timeoutMs: 0 });
+
+    expect(files).toContain("file.txt");
+  });
 });

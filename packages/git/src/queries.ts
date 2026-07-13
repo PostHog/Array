@@ -1199,9 +1199,7 @@ export async function listAllFiles(
       : undefined;
   try {
     const [tracked, untracked] = await Promise.all([
-      listFiles(baseDir, { abortSignal: controller?.signal }).catch(
-        (): string[] => [],
-      ),
+      listFiles(baseDir).catch((): string[] => []),
       listUntrackedFiles(baseDir, { abortSignal: controller?.signal }).catch(
         (): string[] => [],
       ),
