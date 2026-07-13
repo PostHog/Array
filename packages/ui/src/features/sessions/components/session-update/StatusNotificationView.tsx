@@ -129,15 +129,15 @@ export function StatusNotificationView({
  * elapsed-time counter, which is the one honest progress signal we have.
  */
 function CompactingStatusView() {
-  const [startedAt] = useState(() => Date.now());
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
+    const startedAt = Date.now();
     const interval = setInterval(() => {
       setElapsed(Date.now() - startedAt);
     }, 100);
     return () => clearInterval(interval);
-  }, [startedAt]);
+  }, []);
 
   return (
     <Box className="my-1 border-blue-6 border-l-2 px-3 py-1 dark:border-blue-8">
