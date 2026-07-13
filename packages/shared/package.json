@@ -12,6 +12,10 @@
       "types": "./dist/analytics-events.d.ts",
       "import": "./dist/analytics-events.js"
     },
+    "./agent-platform-types": {
+      "types": "./dist/agent-platform-types.d.ts",
+      "import": "./dist/agent-platform-types.js"
+    },
     "./domain-types": {
       "types": "./dist/domain-types.d.ts",
       "import": "./dist/domain-types.js"
@@ -35,6 +39,10 @@
     "./mcp-sandbox-proxy": {
       "types": "./dist/mcp-sandbox-proxy.d.ts",
       "import": "./dist/mcp-sandbox-proxy.js"
+    },
+    "./posthog-property-headers": {
+      "types": "./dist/posthog-property-headers.d.ts",
+      "import": "./dist/posthog-property-headers.js"
     }
   },
   "scripts": {

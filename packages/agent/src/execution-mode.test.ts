@@ -12,8 +12,9 @@ describe("execution modes", () => {
     ]);
   });
 
-  it("includes full access for codex sessions", () => {
+  it("exposes the same presets as a live codex session (incl. plan)", () => {
     expect(getAvailableCodexModes().map((mode) => mode.id)).toEqual([
+      "plan",
       "read-only",
       "auto",
       "full-access",

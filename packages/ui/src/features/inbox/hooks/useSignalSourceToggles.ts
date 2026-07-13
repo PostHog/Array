@@ -5,23 +5,28 @@ import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import type { SignalSourceValues } from "@posthog/ui/features/inbox/components/SignalSourceToggles";
 import { useExternalDataSources } from "@posthog/ui/features/inbox/hooks/useExternalDataSources";
 import { useSignalSourceConfigs } from "@posthog/ui/features/inbox/hooks/useSignalSourceConfigs";
+import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 
 type SourceProduct = SignalSourceConfig["source_product"];
 type SourceType = SignalSourceConfig["source_type"];
-type SetupSourceProduct = "github" | "linear" | "zendesk" | "pganalyze";
+type SetupSourceProduct =
+  | "github"
+  | "linear"
+  | "jira"
+  | "zendesk"
+  | "pganalyze";
 
 const SOURCE_TYPE_MAP: Record<
-  Exclude<SourceProduct, "error_tracking" | "llm_analytics">,
+  Exclude<SourceProduct, "error_tracking" | "llm_analytics" | "signals_scout">,
   SourceType
 > = {
   session_replay: "session_analysis_cluster",
-  signals_scout: "cross_source_issue",
   github: "issue",
   linear: "issue",
+  jira: "issue",
   zendesk: "ticket",
   conversations: "ticket",
   pganalyze: "issue",
@@ -36,9 +41,9 @@ const ERROR_TRACKING_SOURCE_TYPES: SourceType[] = [
 const SOURCE_LABELS: Record<keyof SignalSourceValues, string> = {
   session_replay: "Session replay",
   error_tracking: "Error tracking",
-  signals_scout: "Scouts",
   github: "GitHub Issues",
   linear: "Linear Issues",
+  jira: "Jira Issues",
   zendesk: "Zendesk Tickets",
   conversations: "PostHog Support",
   pganalyze: "pganalyze",
@@ -50,6 +55,7 @@ const DATA_WAREHOUSE_SOURCES: Record<
 > = {
   github: { dwSourceType: "Github", requiredTable: "issues" },
   linear: { dwSourceType: "Linear", requiredTable: "issues" },
+  jira: { dwSourceType: "Jira", requiredTable: "issues" },
   zendesk: { dwSourceType: "Zendesk", requiredTable: "tickets" },
   pganalyze: { dwSourceType: "PgAnalyze", requiredTable: "issues" },
 };
@@ -57,9 +63,9 @@ const DATA_WAREHOUSE_SOURCES: Record<
 const ALL_SOURCE_PRODUCTS: (keyof SignalSourceValues)[] = [
   "session_replay",
   "error_tracking",
-  "signals_scout",
   "github",
   "linear",
+  "jira",
   "zendesk",
   "conversations",
   "pganalyze",
@@ -77,9 +83,9 @@ function computeValues(
   const result: SignalSourceValues = {
     session_replay: false,
     error_tracking: false,
-    signals_scout: false,
     github: false,
     linear: false,
+    jira: false,
     zendesk: false,
     conversations: false,
     pganalyze: false,
@@ -207,7 +213,7 @@ export function useSignalSourceToggles() {
       if (!requiredSchema) return;
 
       const issuesFullReplication =
-        (product === "github" || product === "linear") &&
+        (product === "github" || product === "linear" || product === "jira") &&
         dwConfig.requiredTable === "issues";
 
       if (issuesFullReplication) {
@@ -316,7 +322,7 @@ export function useSignalSourceToggles() {
                 SOURCE_TYPE_MAP[
                   product as Exclude<
                     SourceProduct,
-                    "error_tracking" | "llm_analytics"
+                    "error_tracking" | "llm_analytics" | "signals_scout"
                   >
                 ],
               enabled: true,

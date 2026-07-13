@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   ArrowsClockwise,
+  Bell,
   CaretRight,
   Code,
   CreditCard,
@@ -33,6 +34,7 @@ import { DiscordSettings } from "@posthog/ui/features/settings/sections/DiscordS
 import { EnvironmentsSettings } from "@posthog/ui/features/settings/sections/environments/EnvironmentsSettings";
 import { GeneralSettings } from "@posthog/ui/features/settings/sections/GeneralSettings";
 import { GitHubSettings } from "@posthog/ui/features/settings/sections/GitHubSettings";
+import { NotificationsSettings } from "@posthog/ui/features/settings/sections/NotificationsSettings";
 import { PersonalizationSettings } from "@posthog/ui/features/settings/sections/PersonalizationSettings";
 import { PlanUsageSettings } from "@posthog/ui/features/settings/sections/PlanUsageSettings";
 import { ShortcutsSettings } from "@posthog/ui/features/settings/sections/ShortcutsSettings";
@@ -44,6 +46,7 @@ import { WorkspacesSettings } from "@posthog/ui/features/settings/sections/Works
 import { WorktreesSettings } from "@posthog/ui/features/settings/sections/worktrees/WorktreesSettings";
 import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
+import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import * as nav from "@posthog/ui/router/navigationBridge";
 import { Avatar, Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { type ReactNode, useMemo } from "react";
@@ -58,6 +61,7 @@ interface SidebarItem {
 
 const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "general", label: "General", icon: <GearSix size={16} /> },
+  { id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
   { id: "plan-usage", label: "Plan & usage", icon: <CreditCard size={16} /> },
   { id: "workspaces", label: "Workspaces", icon: <Folder size={16} /> },
   { id: "worktrees", label: "Worktrees", icon: <TreeStructure size={16} /> },
@@ -80,6 +84,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
 
 const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   general: "General",
+  notifications: "Notifications",
   "plan-usage": "Plan & usage",
   workspaces: "Workspaces",
   worktrees: "Worktrees",
@@ -99,6 +104,7 @@ const CATEGORY_TITLES: Record<SettingsCategory, string> = {
 
 const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   general: GeneralSettings,
+  notifications: NotificationsSettings,
   "plan-usage": PlanUsageSettings,
   workspaces: WorkspacesSettings,
   worktrees: WorktreesSettings,
@@ -151,12 +157,13 @@ export function SettingsPanel({
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const logoutMutation = useLogoutMutation();
 
+  const spendAnalysisEnabled = useSpendAnalysisEnabled();
   const sidebarItems = useMemo(
     () =>
-      billingEnabled
+      billingEnabled || spendAnalysisEnabled
         ? SIDEBAR_ITEMS
         : SIDEBAR_ITEMS.filter((item) => item.id !== "plan-usage"),
-    [billingEnabled],
+    [billingEnabled, spendAnalysisEnabled],
   );
 
   useHotkeys("escape", close, {

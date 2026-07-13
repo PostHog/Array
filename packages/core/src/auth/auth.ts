@@ -421,15 +421,20 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return;
     }
 
-    this.setRestoringState(storedSession);
+    this.setRestoringState(storedSession, false);
 
     try {
       const restore = this.ensureValidSession().then(() => undefined);
       const outcome = await withTimeout(restore, AUTH_BOOTSTRAP_DEADLINE_MS);
       if (outcome.result === "timeout") {
         this.logger.warn(
-          "Auth bootstrap exceeded deadline; keeping stored session in restoring state",
+          "Auth bootstrap exceeded deadline; completing bootstrap while the restore continues in the background",
         );
+        // A stored session that is merely slow to refresh must not strand the
+        // renderer on the boot screen. Complete bootstrap but stay "restoring"
+        // so a late success still upgrades and consumers don't treat the delay
+        // as a logout.
+        this.completeBootstrapWhileRestoring(storedSession);
         restore.catch((error) => {
           this.logger.warn("Background auth restore failed after deadline", {
             error,
@@ -443,11 +448,14 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     }
   }
 
-  private setRestoringState(storedSession: StoredSessionInput): void {
+  private setRestoringState(
+    storedSession: StoredSessionInput,
+    bootstrapComplete: boolean,
+  ): void {
     this.session = null;
     this.updateState({
       status: "restoring",
-      bootstrapComplete: false,
+      bootstrapComplete,
       cloudRegion: storedSession.cloudRegion,
       orgProjectsMap: {},
       currentOrgId: null,
@@ -457,26 +465,35 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     });
   }
 
+  private completeBootstrapWhileRestoring(
+    storedSession: StoredSessionInput,
+  ): void {
+    // Only meaningful while the stored session is still on disk: a rejected
+    // refresh token clears it and publishes a real anonymous state instead.
+    // Transient/offline failures keep the session, so stay "restoring" (no
+    // logout side effects) but flip bootstrapComplete so the renderer leaves
+    // the boot gate rather than stranding on the loading screen.
+    if (this.authSession.getCurrent()) {
+      this.setRestoringState(storedSession, true);
+    }
+  }
+
   private handleStoredSessionRestoreFailure(
     storedSession: StoredSessionInput,
   ): void {
-    // Refresh-token auth errors clear the stored session and publish a real
-    // anonymous state from refreshSession. Transient/offline failures keep the
-    // stored session on disk, so consumers must not treat them as logout.
-    if (this.authSession.getCurrent()) {
-      this.setRestoringState(storedSession);
-    }
+    this.completeBootstrapWhileRestoring(storedSession);
   }
 
   private async ensureValidSession(
     forceRefresh = false,
   ): Promise<InMemorySession> {
+    const currentSession = this.session;
     if (
-      this.session &&
+      currentSession &&
       !forceRefresh &&
-      !this.isSessionExpiring(this.session)
+      !this.isSessionExpiring(currentSession)
     ) {
-      return this.session;
+      return currentSession;
     }
 
     if (this.refreshPromise) {
@@ -486,7 +503,24 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     const sessionInput = this.getSessionInputForRefresh();
 
     const refreshAndSync = async (): Promise<InMemorySession> => {
-      const session = await this.refreshSession(sessionInput);
+      let session: InMemorySession;
+      try {
+        session = await this.refreshSession(sessionInput);
+      } catch (error) {
+        if (
+          currentSession &&
+          this.session === currentSession &&
+          !forceRefresh &&
+          !this.isSessionExpired(currentSession)
+        ) {
+          this.logger.warn(
+            "Preemptive session refresh failed; using current access token",
+            { error },
+          );
+          return currentSession;
+        }
+        throw error;
+      }
       await this.syncAuthenticatedSession(session);
       return session;
     };
@@ -579,11 +613,21 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       tokenResponse.access_token,
       options.cloudRegion,
     );
+    // Team-scoped tokens (required_access_level=project) can arrive with an
+    // empty scoped_organizations list — the server only populates scoped_teams.
+    // Fall back to the current org from /api/users/@me/ so the picker isn't
+    // empty; without this the user is stranded on "No projects".
+    const orgIdsToFetch =
+      scopedOrgIds.length > 0
+        ? scopedOrgIds
+        : currentOrgId
+          ? [currentOrgId]
+          : [];
     const { map: orgProjectsMap, incomplete: orgProjectsIncomplete } =
       await this.buildOrgProjectsMap(
         tokenResponse.access_token,
         options.cloudRegion,
-        scopedOrgIds,
+        orgIdsToFetch,
         this.session?.orgProjectsMap ?? {},
       );
     const lastPrefs = accountKey
@@ -817,6 +861,9 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private isSessionExpiring(session: InMemorySession): boolean {
     return session.accessTokenExpiresAt - Date.now() <= TOKEN_EXPIRY_SKEW_MS;
   }
+  private isSessionExpired(session: InMemorySession): boolean {
+    return session.accessTokenExpiresAt <= Date.now();
+  }
   private async fetchUserContext(
     accessToken: string,
     cloudRegion: CloudRegion,
@@ -894,26 +941,84 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return;
     }
 
-    try {
-      const apiHost = getCloudUrlFromRegion(this.session.cloudRegion);
-      const response = await this.executeAuthenticatedFetch(
-        fetch,
-        `${apiHost}/api/code/invites/check-access/`,
-        {},
-        this.session.accessToken,
-      );
-      const data = (await response.json().catch(() => ({}))) as {
-        has_access?: boolean;
-      };
+    const hasAccess = await this.checkCodeAccess(this.session);
 
-      this.updateState({ hasCodeAccess: data.has_access === true });
-    } catch (error) {
-      this.logger.warn("Failed to update code access state", { error });
-      this.updateState({ hasCodeAccess: false });
+    if (hasAccess !== null) {
+      this.updateState({ hasCodeAccess: hasAccess });
+      return;
     }
+
+    // Indeterminate: a transient/unauthorized failure isn't proof the invite
+    // was revoked, so keep the prior value and let the next sync re-check.
+    this.logger.warn(
+      "Code access check was inconclusive; keeping previous value",
+      { hasCodeAccess: this.state.hasCodeAccess },
+    );
+  }
+
+  /**
+   * Resolves Code invite access. Only a 2xx response with an explicit boolean
+   * `has_access` is authoritative; everything else (offline, network error,
+   * non-2xx, malformed body) is indeterminate, retried with backoff, then
+   * returned as `null` so the caller keeps the prior value. Uses the synced
+   * token directly rather than `authenticatedFetch`, which would re-enter the
+   * refresh flow this runs inside and deadlock.
+   */
+  private async checkCodeAccess(
+    session: InMemorySession,
+  ): Promise<boolean | null> {
+    const url = `${getCloudUrlFromRegion(session.cloudRegion)}/api/code/invites/check-access/`;
+
+    for (
+      let attempt = 0;
+      attempt < AuthService.CODE_ACCESS_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      if (!this.connectivity.getStatus().isOnline) {
+        return null;
+      }
+
+      try {
+        const response = await this.executeAuthenticatedFetch(
+          fetch,
+          url,
+          {},
+          session.accessToken,
+        );
+
+        if (response.ok) {
+          const data = (await response.json().catch(() => null)) as {
+            has_access?: unknown;
+          } | null;
+          if (data && typeof data.has_access === "boolean") {
+            return data.has_access;
+          }
+          this.logger.warn("Code access response missing has_access flag", {
+            status: response.status,
+          });
+        } else {
+          this.logger.warn("Code access check returned non-OK status", {
+            status: response.status,
+          });
+        }
+      } catch (error) {
+        this.logger.warn("Code access check request failed", {
+          error,
+          attempt,
+        });
+      }
+
+      const isLastAttempt =
+        attempt === AuthService.CODE_ACCESS_MAX_ATTEMPTS - 1;
+      if (isLastAttempt) break;
+      await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
+    }
+
+    return null;
   }
   private static readonly REFRESH_MAX_ATTEMPTS = 3;
   private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
+  private static readonly CODE_ACCESS_MAX_ATTEMPTS = 3;
   private static readonly ORG_RECOVERY_MAX_ATTEMPTS = 5;
   private static readonly REFRESH_BACKOFF: BackoffOptions = {
     initialDelayMs: 1_000,

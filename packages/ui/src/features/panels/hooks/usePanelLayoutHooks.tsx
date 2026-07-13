@@ -1,4 +1,10 @@
-import { ChatCenteredText, FileText, Terminal } from "@phosphor-icons/react";
+import {
+  ChartLineUp,
+  ChatCenteredText,
+  FileText,
+  Scroll,
+  Terminal,
+} from "@phosphor-icons/react";
 import { resolveTabAbsolutePath } from "@posthog/core/panels/resolveTabPath";
 import type { Task } from "@posthog/shared/domain-types";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -109,6 +115,10 @@ export function useTabInjection(
             icon = <ActionTabIcon actionId={tab.data.actionId} />;
           } else if (tab.data.type === "context") {
             icon = <FileText size={14} />;
+          } else if (tab.data.type === "canvas-instructions") {
+            icon = <Scroll size={14} />;
+          } else if (tab.data.type === "autoresearch") {
+            icon = <ChartLineUp size={14} />;
           }
         }
 

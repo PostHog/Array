@@ -103,6 +103,18 @@ export const SCOUT_LINK_SERVICE = Symbol.for(
 export const NEW_TASK_LINK_SERVICE = Symbol.for(
   "posthog.host.main.new-task-link.service",
 );
+export const APPROVAL_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.approval-link.service",
+);
+export const OPEN_TARGET_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.open-target-link.service",
+);
+export const CANVAS_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.canvas-link.service",
+);
+export const CHANNEL_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.channel-link.service",
+);
 export const WATCHER_REGISTRY_SERVICE = Symbol.for(
   "posthog.host.main.watcher-registry.service",
 );
@@ -118,49 +130,18 @@ export const WORKSPACE_SERVER_SERVICE = Symbol.for(
 export const DISCORD_PRESENCE_SERVICE = Symbol.for(
   "posthog.host.main.discord-presence.service",
 );
-
-export const MAIN_TOKENS = Object.freeze({
-  WorkspaceClient: WORKSPACE_CLIENT,
-
-  SettingsStore: SETTINGS_STORE,
-  SecureStoreService: SECURE_STORE_SERVICE,
-  SecureStoreBackend: SECURE_STORE_BACKEND,
-  EncryptionService: ENCRYPTION_SERVICE,
-
-  AuthPreferenceRepository: AUTH_PREFERENCE_REPOSITORY,
-  DatabaseService: DATABASE_SERVICE,
-  AuthSessionRepository: AUTH_SESSION_REPOSITORY,
-  RepositoryRepository: REPOSITORY_REPOSITORY,
-  WorkspaceRepository: WORKSPACE_REPOSITORY,
-  WorktreeRepository: WORKTREE_REPOSITORY,
-  ArchiveRepository: ARCHIVE_REPOSITORY,
-  SuspensionRepository: SUSPENSION_REPOSITORY,
-  DefaultAdditionalDirectoryRepository: DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
-
-  AuthService: AUTH_SERVICE,
-  SuspensionService: SUSPENSION_SERVICE,
-  AppLifecycleService: APP_LIFECYCLE_SERVICE,
-  CloudTaskService: CLOUD_TASK_SERVICE,
-  ContextMenuService: CONTEXT_MENU_SERVICE,
-  DiscordPresenceService: DISCORD_PRESENCE_SERVICE,
-
-  ExternalAppsService: EXTERNAL_APPS_SERVICE,
-  LlmGatewayService: LLM_GATEWAY_SERVICE,
-  McpAppsService: MCP_APPS_SERVICE,
-  FileWatcherService: FILE_WATCHER_SERVICE,
-  FsService: FS_SERVICE,
-  GitService: GIT_SERVICE,
-  DeepLinkService: DEEP_LINK_SERVICE,
-  ProcessTrackingService: PROCESS_TRACKING_SERVICE,
-  SleepService: SLEEP_SERVICE,
-  PosthogPluginService: POSTHOG_PLUGIN_SERVICE,
-  UpdatesService: UPDATES_SERVICE,
-  TaskLinkService: TASK_LINK_SERVICE,
-  InboxLinkService: INBOX_LINK_SERVICE,
-  ScoutLinkService: SCOUT_LINK_SERVICE,
-  NewTaskLinkService: NEW_TASK_LINK_SERVICE,
-  WatcherRegistryService: WATCHER_REGISTRY_SERVICE,
-  ProvisioningService: PROVISIONING_SERVICE,
-  WorkspaceService: WORKSPACE_SERVICE,
-  WorkspaceServerService: WORKSPACE_SERVER_SERVICE,
-});
+export const DEV_FLAGS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-flags.service",
+);
+export const DEV_METRICS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-metrics.service",
+);
+export const DEV_NETWORK_SERVICE = Symbol.for(
+  "posthog.host.main.dev-network.service",
+);
+export const DEV_LOGS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-logs.service",
+);
+export const DEV_ACTIONS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-actions.service",
+);

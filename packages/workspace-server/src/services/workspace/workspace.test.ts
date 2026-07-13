@@ -3,9 +3,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { RootLogger } from "@posthog/di/logger";
 import {
+  anyBranchRefExists,
   branchExists,
   getCurrentBranch,
   getDefaultBranch,
+  hasTrackedFiles,
   remoteBranchExists,
 } from "@posthog/git/queries";
 import type { IAnalytics } from "@posthog/platform/analytics";
@@ -15,14 +17,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockRepositoryRepository } from "../../db/repositories/repository-repository.mock";
 import { createMockWorkspaceRepository } from "../../db/repositories/workspace-repository.mock";
 import { createMockWorktreeRepository } from "../../db/repositories/worktree-repository.mock";
+import type { DatabaseService } from "../../db/service";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import type { SuspensionService } from "../suspension/suspension";
+import { listLinkedWorktrees } from "../worktree-query/worktree-query";
 import type {
   WorkspaceAgent,
   WorkspaceFileWatcher,
   WorkspaceFocus,
   WorkspaceProvisioning,
 } from "./ports";
+import type { CreateWorkspaceInput } from "./schemas";
 import { WorkspaceService, WorkspaceServiceEvent } from "./workspace";
 
 vi.mock("@posthog/git/queries", async (importOriginal) => {
@@ -32,7 +37,9 @@ vi.mock("@posthog/git/queries", async (importOriginal) => {
     getDefaultBranch: vi.fn(),
     getCurrentBranch: vi.fn(),
     branchExists: vi.fn(),
+    anyBranchRefExists: vi.fn(),
     remoteBranchExists: vi.fn(),
+    hasTrackedFiles: vi.fn(),
   };
 });
 
@@ -44,10 +51,33 @@ vi.mock("../worktree-query/worktree-query", async (importOriginal) => {
   return {
     ...actual,
     deleteWorktree: vi.fn(async () => {}),
+    listTwigWorktrees: vi.fn(),
+    listLinkedWorktrees: vi.fn(),
   };
 });
 
+// WorkspaceService constructs a WorktreeManager internally; stub the git-backed
+// creation methods so tests can drive the create-path branches without real git.
+const mockWorktreeManager = {
+  createWorktree: vi.fn(),
+  createWorktreeForExistingBranch: vi.fn(),
+  createWorktreeForRemoteBranch: vi.fn(),
+};
+
+vi.mock("@posthog/git/worktree", () => ({
+  WorktreeManager: class {
+    createWorktree = mockWorktreeManager.createWorktree;
+    createWorktreeForExistingBranch =
+      mockWorktreeManager.createWorktreeForExistingBranch;
+    createWorktreeForRemoteBranch =
+      mockWorktreeManager.createWorktreeForRemoteBranch;
+  },
+}));
+
 function createMocks() {
+  const databaseService = {
+    isInitialized: vi.fn(() => true),
+  } as unknown as DatabaseService;
   const agent = {
     cancelSessionsByTaskId: vi.fn(async () => {}),
     onAgentFileActivity: vi.fn(),
@@ -89,6 +119,7 @@ function createMocks() {
   };
 
   return {
+    databaseService,
     agent,
     processTracking,
     repositoryRepo,
@@ -129,6 +160,7 @@ function seedWorktreeTask(
 
 function makeService(mocks: ReturnType<typeof createMocks>): WorkspaceService {
   return new WorkspaceService(
+    mocks.databaseService,
     mocks.agent,
     mocks.processTracking,
     mocks.repositoryRepo,
@@ -140,6 +172,7 @@ function makeService(mocks: ReturnType<typeof createMocks>): WorkspaceService {
     mocks.focus,
     mocks.workspaceSettings,
     mocks.analytics,
+    { deleteImportForTask: async () => {} },
     mocks.log,
   );
 }
@@ -233,6 +266,93 @@ describe("WorkspaceService", () => {
     });
   });
 
+  describe("getWorkspace (stale linked branch healing)", () => {
+    const tempDirs: string[] = [];
+
+    beforeEach(() => {
+      vi.mocked(anyBranchRefExists).mockReset();
+    });
+
+    afterEach(() => {
+      for (const dir of tempDirs.splice(0)) {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    /** A fake worktree checkout whose HEAD points at `branch`. */
+    function mkWorktreeOn(branch: string): string {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stale-link-"));
+      tempDirs.push(dir);
+      fs.mkdirSync(path.join(dir, ".git"));
+      fs.writeFileSync(
+        path.join(dir, ".git", "HEAD"),
+        `ref: refs/heads/${branch}\n`,
+      );
+      return dir;
+    }
+
+    function seedLinkedTask(linkedBranch: string, currentBranch = "main") {
+      seedWorktreeTask(mocks, {
+        taskId: "t1",
+        repoPath: "/code/myrepo",
+        name: "wt",
+        worktreePath: mkWorktreeOn(currentBranch),
+      });
+      service.linkBranch("t1", linkedBranch, "user");
+      vi.mocked(mocks.analytics.track).mockClear();
+    }
+
+    it.each([
+      { branch: "feat/gone", refExists: false, expected: null },
+      { branch: "feat/alive", refExists: true, expected: "feat/alive" },
+    ])(
+      "linkedBranch is $expected when refExists=$refExists",
+      async ({ branch, refExists, expected }) => {
+        seedLinkedTask(branch);
+        vi.mocked(anyBranchRefExists).mockResolvedValue(refExists);
+
+        const workspace = await service.getWorkspace("t1");
+
+        expect(workspace?.linkedBranch).toBe(expected);
+      },
+    );
+
+    it("emits, tracks, and persists the unlink when refs are gone", async () => {
+      seedLinkedTask("feat/gone");
+      vi.mocked(anyBranchRefExists).mockResolvedValue(false);
+      const emitted = vi.fn();
+      service.on(WorkspaceServiceEvent.LinkedBranchChanged, emitted);
+
+      await service.getWorkspace("t1");
+
+      expect(emitted).toHaveBeenCalledWith({ taskId: "t1", branchName: null });
+      expect(mocks.analytics.track).toHaveBeenCalledWith(
+        ANALYTICS_EVENTS.BRANCH_UNLINKED,
+        expect.objectContaining({ task_id: "t1", source: "auto" }),
+      );
+      expect(mocks.workspaceRepo.findByTaskId("t1")?.linkedBranch).toBeNull();
+    });
+
+    it("skips the check when on the linked branch", async () => {
+      seedLinkedTask("main", "main");
+
+      const workspace = await service.getWorkspace("t1");
+
+      expect(workspace?.linkedBranch).toBe("main");
+      expect(anyBranchRefExists).not.toHaveBeenCalled();
+    });
+
+    it("keeps the link when the staleness check fails", async () => {
+      seedLinkedTask("feat/unknown");
+      vi.mocked(anyBranchRefExists).mockRejectedValue(new Error("git broke"));
+
+      const workspace = await service.getWorkspace("t1");
+
+      expect(workspace?.linkedBranch).toBe("feat/unknown");
+      expect(mocks.analytics.track).not.toHaveBeenCalled();
+    });
+  });
+
   describe("getWorkspace (cloud mode)", () => {
     it("projects a cloud workspace without touching git or fs", async () => {
       mocks.workspaceRepo.create({
@@ -267,6 +387,20 @@ describe("WorkspaceService", () => {
       expect(mocks.focus.onBranchRenamed).toHaveBeenCalledTimes(1);
       expect(mocks.agent.onAgentFileActivity).toHaveBeenCalledTimes(1);
     });
+
+    it("agent file activity bails without touching the db when it is not initialized", async () => {
+      vi.mocked(mocks.databaseService.isInitialized).mockReturnValue(false);
+      const findByTaskId = vi.spyOn(mocks.workspaceRepo, "findByTaskId");
+      service.initBranchWatcher();
+      const handler = vi.mocked(mocks.agent.onAgentFileActivity).mock
+        .calls[0][0];
+
+      await (handler({
+        taskId: "task-1",
+        branchName: "feature/x",
+      }) as unknown as Promise<void>);
+      expect(findByTaskId).not.toHaveBeenCalled();
+    });
   });
 
   describe("checkWorktreeBranch", () => {
@@ -277,6 +411,7 @@ describe("WorkspaceService", () => {
       vi.mocked(getCurrentBranch).mockResolvedValue("main");
       vi.mocked(branchExists).mockResolvedValue(false);
       vi.mocked(remoteBranchExists).mockResolvedValue(false);
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([]);
     });
 
     it.each([
@@ -297,9 +432,114 @@ describe("WorkspaceService", () => {
 
         expect(
           await service.checkWorktreeBranch({ mainRepoPath, branch }),
-        ).toEqual({ status });
+        ).toEqual({
+          status,
+          existingWorktreePath: null,
+          existingWorktreeTaskId: null,
+        });
       },
     );
+
+    it("offers an unused worktree on the branch for reuse", async () => {
+      vi.mocked(branchExists).mockResolvedValue(true);
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([
+        {
+          worktreePath: "/tmp/worktrees/feature-x/repo",
+          head: "abc123",
+          branch: "feature/x",
+        },
+      ]);
+
+      expect(
+        await service.checkWorktreeBranch({
+          mainRepoPath,
+          branch: "feature/x",
+        }),
+      ).toEqual({
+        status: "local",
+        existingWorktreePath: "/tmp/worktrees/feature-x/repo",
+        existingWorktreeTaskId: null,
+      });
+    });
+
+    it("offers an unused worktree outside the managed base path for reuse", async () => {
+      vi.mocked(branchExists).mockResolvedValue(true);
+      // A worktree the user created by hand, well outside the managed base path.
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([
+        {
+          worktreePath: "/Users/me/projects/feature-x",
+          head: "abc123",
+          branch: "feature/x",
+        },
+      ]);
+
+      expect(
+        await service.checkWorktreeBranch({
+          mainRepoPath,
+          branch: "feature/x",
+        }),
+      ).toEqual({
+        status: "local",
+        existingWorktreePath: "/Users/me/projects/feature-x",
+        existingWorktreeTaskId: null,
+      });
+    });
+
+    it("reports the occupying task instead of offering reuse when the worktree is taken", async () => {
+      vi.mocked(branchExists).mockResolvedValue(true);
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([
+        {
+          worktreePath: "/tmp/worktrees/feature-x/repo",
+          head: "abc123",
+          branch: "feature/x",
+        },
+      ]);
+      // Associate a task with that worktree path so getWorktreeTasks finds it.
+      // Occupancy matches on the stored `path` column (set explicitly below),
+      // not on anything derived from `name` + repo.
+      const folder = mocks.repositoryRepo.create({ path: mainRepoPath });
+      const occupantWorkspace = mocks.workspaceRepo.create({
+        taskId: "occupant-task",
+        repositoryId: folder.id,
+        mode: "worktree",
+      });
+      mocks.worktreeRepo.create({
+        workspaceId: occupantWorkspace.id,
+        name: "feature-x",
+        path: "/tmp/worktrees/feature-x/repo",
+      });
+
+      expect(
+        await service.checkWorktreeBranch({
+          mainRepoPath,
+          branch: "feature/x",
+        }),
+      ).toEqual({
+        status: "local",
+        existingWorktreePath: null,
+        existingWorktreeTaskId: "occupant-task",
+      });
+    });
+
+    it("does not offer reuse for a worktree on the trunk branch", async () => {
+      // Trunk supports many coexisting detached worktrees, so an existing
+      // worktree on it must not be offered for reuse.
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([
+        {
+          worktreePath: "/tmp/worktrees/main/repo",
+          head: "abc123",
+          branch: "main",
+        },
+      ]);
+
+      expect(
+        await service.checkWorktreeBranch({ mainRepoPath, branch: "main" }),
+      ).toEqual({
+        status: "trunk",
+        existingWorktreePath: null,
+        existingWorktreeTaskId: null,
+      });
+    });
 
     it("falls back to the current branch as trunk when getDefaultBranch fails", async () => {
       vi.mocked(getDefaultBranch).mockRejectedValue(new Error("no remote"));
@@ -307,7 +547,201 @@ describe("WorkspaceService", () => {
 
       expect(
         await service.checkWorktreeBranch({ mainRepoPath, branch: "develop" }),
-      ).toEqual({ status: "trunk" });
+      ).toEqual({
+        status: "trunk",
+        existingWorktreePath: null,
+        existingWorktreeTaskId: null,
+      });
+    });
+  });
+
+  describe("createWorkspace (worktree reuse)", () => {
+    const mainRepoPath = "/tmp/repo";
+
+    beforeEach(() => {
+      vi.mocked(getDefaultBranch).mockResolvedValue("main");
+      vi.mocked(getCurrentBranch).mockResolvedValue("main");
+      // This package's vitest config does not reset mocks between tests, so
+      // default to no linked worktrees; each test sets its own value.
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([]);
+      mockWorktreeManager.createWorktree.mockReset();
+      mockWorktreeManager.createWorktreeForExistingBranch.mockReset();
+      mockWorktreeManager.createWorktreeForRemoteBranch.mockReset();
+      // The reuse success path checks whether the worktree has files; pretend it
+      // does so the empty-workspace warning branch (and its fs reads) is skipped.
+      vi.mocked(hasTrackedFiles).mockResolvedValue(true);
+    });
+
+    function reuseInput(taskId: string): CreateWorkspaceInput {
+      return {
+        taskId,
+        mainRepoPath,
+        folderId: "folder-1",
+        folderPath: mainRepoPath,
+        mode: "worktree",
+        branch: "feature/x",
+        reuseExistingWorktree: true,
+      };
+    }
+
+    it("reuses an unused worktree and stores its layout-aware name (legacy layout)", async () => {
+      // Legacy layout is <base>/<repo>/<name>, so the name is the final segment
+      // ("feature-x"), not the parent dir. No task owns it, so reuse proceeds and
+      // the recovered name is persisted via worktreeRepo.create.
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([
+        {
+          worktreePath: "/tmp/worktrees/repo/feature-x",
+          head: "abc123",
+          branch: "feature/x",
+        },
+      ]);
+      const createWorktree = vi.spyOn(mocks.worktreeRepo, "create");
+
+      const workspace = await service.createWorkspace(reuseInput("new-task"));
+
+      expect(workspace.worktree?.worktreeName).toBe("feature-x");
+      expect(workspace.worktree?.worktreePath).toBe(
+        "/tmp/worktrees/repo/feature-x",
+      );
+      expect(createWorktree).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "feature-x",
+          path: "/tmp/worktrees/repo/feature-x",
+        }),
+      );
+    });
+
+    it("reuses an unused worktree and stores its layout-aware name (new layout)", async () => {
+      // New layout is <base>/<name>/<repo>, so the final segment equals the repo
+      // name ("repo") and the name is the parent dir ("feature-x"). No task owns
+      // it, so reuse proceeds and the recovered name is persisted.
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([
+        {
+          worktreePath: "/tmp/worktrees/feature-x/repo",
+          head: "abc123",
+          branch: "feature/x",
+        },
+      ]);
+      const createWorktree = vi.spyOn(mocks.worktreeRepo, "create");
+
+      const workspace = await service.createWorkspace(reuseInput("new-task"));
+
+      expect(workspace.worktree?.worktreeName).toBe("feature-x");
+      expect(workspace.worktree?.worktreePath).toBe(
+        "/tmp/worktrees/feature-x/repo",
+      );
+      expect(createWorktree).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "feature-x",
+          path: "/tmp/worktrees/feature-x/repo",
+        }),
+      );
+    });
+
+    it("fails the create step when the worktree was claimed between preflight and create", async () => {
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([
+        {
+          worktreePath: "/tmp/worktrees/feature-x/repo",
+          head: "abc123",
+          branch: "feature/x",
+        },
+      ]);
+      // Associate another task with that worktree path so the re-check's
+      // getWorktreeTasks finds an occupant. Occupancy matches on the stored
+      // `path` column (set explicitly below), same as the checkWorktreeBranch
+      // occupied case.
+      const folder = mocks.repositoryRepo.create({ path: mainRepoPath });
+      const occupantWorkspace = mocks.workspaceRepo.create({
+        taskId: "occupant-task",
+        repositoryId: folder.id,
+        mode: "worktree",
+      });
+      mocks.worktreeRepo.create({
+        workspaceId: occupantWorkspace.id,
+        name: "feature-x",
+        path: "/tmp/worktrees/feature-x/repo",
+      });
+
+      await expect(
+        service.createWorkspace(reuseInput("new-task")),
+      ).rejects.toThrow(/already used by task occupant-task/);
+    });
+
+    it("fails instead of creating a detached worktree when an occupied branch is hit without the reuse flag", async () => {
+      // No reuse flag: the upfront reuse path is bypassed (e.g. the preflight
+      // check errored), so creation falls through to a branch checkout, and git
+      // reports the branch is already used by a worktree. The old behavior
+      // silently created a detached duplicate; it must now fail loudly.
+      mockWorktreeManager.createWorktreeForExistingBranch.mockRejectedValue(
+        new Error("fatal: 'feature/x' is already used by worktree at /wt"),
+      );
+
+      await expect(
+        service.createWorkspace({
+          ...reuseInput("new-task"),
+          reuseExistingWorktree: false,
+        }),
+      ).rejects.toThrow(/already has a worktree checked out/);
+
+      expect(mockWorktreeManager.createWorktree).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("pending creations", () => {
+    afterEach(() => {
+      vi.mocked(getCurrentBranch).mockReset();
+    });
+
+    function localInput(taskId: string): CreateWorkspaceInput {
+      return {
+        taskId,
+        mainRepoPath: "/repo",
+        folderId: "folder-1",
+        folderPath: "/repo",
+        mode: "local",
+        branch: "feature/x",
+      };
+    }
+
+    it("tracks in-flight creations and clears them when creation settles", async () => {
+      let rejectBranch: (error: Error) => void = () => {};
+      vi.mocked(getCurrentBranch).mockReturnValue(
+        new Promise((_, reject) => {
+          rejectBranch = reject;
+        }),
+      );
+
+      const pending = service.createWorkspace(localInput("task-1"));
+      expect(service.pendingCreationCount).toBe(1);
+
+      rejectBranch(new Error("boom"));
+      await expect(pending).rejects.toThrow("boom");
+      expect(service.pendingCreationCount).toBe(0);
+    });
+
+    it("waitForPendingCreations resolves even when creations reject", async () => {
+      const rejectors: Array<(error: Error) => void> = [];
+      const deferredBranch = () =>
+        new Promise<string | null>((_, reject) => {
+          rejectors.push(reject);
+        });
+      vi.mocked(getCurrentBranch)
+        .mockReturnValueOnce(deferredBranch())
+        .mockReturnValueOnce(deferredBranch());
+
+      const first = service.createWorkspace(localInput("task-1"));
+      const second = service.createWorkspace(localInput("task-2"));
+      expect(service.pendingCreationCount).toBe(2);
+
+      const wait = service.waitForPendingCreations();
+      for (const reject of rejectors) {
+        reject(new Error("boom"));
+      }
+
+      await expect(wait).resolves.toBeUndefined();
+      await expect(first).rejects.toThrow("boom");
+      await expect(second).rejects.toThrow("boom");
+      expect(service.pendingCreationCount).toBe(0);
     });
   });
 

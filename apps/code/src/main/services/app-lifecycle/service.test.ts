@@ -4,15 +4,17 @@ import { AppLifecycleService } from "./service";
 
 const {
   mockAppLifecycle,
-  mockContainer,
   mockDatabaseService,
   mockSuspensionService,
   mockWatcherRegistry,
   mockProcessTracking,
+  mockWorkspaceService,
   mockTrackAppEvent,
   mockShutdownPostHog,
   mockShutdownOtelTransport,
   mockProcessExit,
+  mockGetFullScreenState,
+  mockSetRestoreFullScreenOnNextLaunch,
 } = vi.hoisted(() => {
   const mockDatabaseService = {
     close: vi.fn(),
@@ -23,6 +25,10 @@ const {
     },
     mockWatcherRegistry: {
       shutdownAll: vi.fn(() => Promise.resolve()),
+    },
+    mockWorkspaceService: {
+      pendingCreationCount: 0,
+      waitForPendingCreations: vi.fn(() => Promise.resolve()),
     },
     mockProcessTracking: {
       getSnapshot: vi.fn(() =>
@@ -40,17 +46,20 @@ const {
       onQuit: vi.fn(() => () => {}),
       registerDeepLinkScheme: vi.fn(),
     },
-    mockContainer: {
-      unbindAll: vi.fn(() => Promise.resolve()),
-      get: vi.fn(() => mockDatabaseService),
-    },
     mockDatabaseService,
     mockTrackAppEvent: vi.fn(),
     mockShutdownPostHog: vi.fn(() => Promise.resolve()),
     mockShutdownOtelTransport: vi.fn(() => Promise.resolve()),
     mockProcessExit: vi.fn() as unknown as (code?: number) => never,
+    mockGetFullScreenState: vi.fn(() => false),
+    mockSetRestoreFullScreenOnNextLaunch: vi.fn(),
   };
 });
+
+vi.mock("../../utils/store.js", () => ({
+  getFullScreenState: mockGetFullScreenState,
+  setRestoreFullScreenOnNextLaunch: mockSetRestoreFullScreenOnNextLaunch,
+}));
 
 vi.mock("../../utils/logger.js", () => ({
   logger: {
@@ -74,10 +83,6 @@ vi.mock("../../platform-adapters/posthog-analytics.js", () => ({
   },
 }));
 
-vi.mock("../../di/container.js", () => ({
-  container: mockContainer,
-}));
-
 vi.mock("@posthog/shared/analytics-events", () => ({
   ANALYTICS_EVENTS: {
     APP_QUIT: "app_quit",
@@ -92,12 +97,14 @@ describe("AppLifecycleService", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     process.exit = mockProcessExit;
+    mockWorkspaceService.pendingCreationCount = 0;
     service = new AppLifecycleService(
       mockAppLifecycle as unknown as IAppLifecycle,
       mockDatabaseService as never,
       mockSuspensionService as never,
       mockWatcherRegistry as never,
       mockProcessTracking as never,
+      mockWorkspaceService as never,
     );
   });
 
@@ -121,6 +128,26 @@ describe("AppLifecycleService", () => {
       service.clearQuittingForUpdate();
       expect(service.isQuittingForUpdate).toBe(false);
     });
+
+    it.each([[true], [false]])(
+      "schedules restore-fullscreen=%s on update-quit",
+      (isFullScreen) => {
+        mockGetFullScreenState.mockReturnValue(isFullScreen);
+        service.setQuittingForUpdate();
+        expect(mockSetRestoreFullScreenOnNextLaunch).toHaveBeenCalledWith(
+          isFullScreen,
+        );
+      },
+    );
+
+    it("clears the fullscreen-restore flag when the update handoff is aborted", () => {
+      mockGetFullScreenState.mockReturnValue(true);
+      service.setQuittingForUpdate();
+      service.clearQuittingForUpdate();
+      expect(mockSetRestoreFullScreenOnNextLaunch).toHaveBeenLastCalledWith(
+        false,
+      );
+    });
   });
 
   describe("isShuttingDown", () => {
@@ -137,13 +164,6 @@ describe("AppLifecycleService", () => {
   });
 
   describe("shutdown", () => {
-    it("unbinds all container services", async () => {
-      const promise = service.shutdown();
-      await vi.runAllTimersAsync();
-      await promise;
-      expect(mockContainer.unbindAll).toHaveBeenCalled();
-    });
-
     it("tracks app quit event", async () => {
       const promise = service.shutdown();
       await vi.runAllTimersAsync();
@@ -164,9 +184,6 @@ describe("AppLifecycleService", () => {
       mockDatabaseService.close.mockImplementation(() => {
         callOrder.push("dbClose");
       });
-      mockContainer.unbindAll.mockImplementation(async () => {
-        callOrder.push("unbindAll");
-      });
       mockTrackAppEvent.mockImplementation(() => {
         callOrder.push("trackAppEvent");
       });
@@ -183,7 +200,6 @@ describe("AppLifecycleService", () => {
 
       expect(callOrder).toEqual([
         "dbClose",
-        "unbindAll",
         "trackAppEvent",
         "shutdownOtelTransport",
         "shutdownPostHog",
@@ -195,17 +211,6 @@ describe("AppLifecycleService", () => {
       await vi.runAllTimersAsync();
       await promise;
       expect(mockDatabaseService.close).toHaveBeenCalled();
-    });
-
-    it("continues shutdown if container unbind fails", async () => {
-      mockContainer.unbindAll.mockRejectedValue(new Error("unbind failed"));
-
-      const promise = service.shutdown();
-      await vi.runAllTimersAsync();
-      await promise;
-
-      expect(mockTrackAppEvent).toHaveBeenCalled();
-      expect(mockShutdownPostHog).toHaveBeenCalled();
     });
 
     it("continues shutdown if PostHog shutdown fails", async () => {
@@ -225,7 +230,7 @@ describe("AppLifecycleService", () => {
     });
 
     it("force-exits when shutdown times out", async () => {
-      mockContainer.unbindAll.mockReturnValue(new Promise(() => {}));
+      mockShutdownOtelTransport.mockReturnValue(new Promise(() => {}));
 
       const promise = service.shutdown();
 
@@ -236,15 +241,56 @@ describe("AppLifecycleService", () => {
     });
   });
 
+  describe("shutdownWithoutContainer", () => {
+    it("skips the wait when no creations are pending", async () => {
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(
+        mockWorkspaceService.waitForPendingCreations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("waits for in-flight workspace creations before teardown", async () => {
+      mockWorkspaceService.pendingCreationCount = 1;
+      const callOrder: string[] = [];
+      mockWorkspaceService.waitForPendingCreations.mockImplementation(
+        async () => {
+          callOrder.push("waitForCreations");
+        },
+      );
+      mockWatcherRegistry.shutdownAll.mockImplementation(async () => {
+        callOrder.push("teardown");
+      });
+
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(callOrder).toEqual(["waitForCreations", "teardown"]);
+    });
+
+    it("proceeds with teardown when creations do not settle in time", async () => {
+      mockWorkspaceService.pendingCreationCount = 1;
+      mockWorkspaceService.waitForPendingCreations.mockReturnValue(
+        new Promise(() => {}),
+      );
+
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockProcessTracking.getSnapshot).toHaveBeenCalled();
+    });
+  });
+
   describe("gracefulExit", () => {
     it("calls shutdown before exit", async () => {
       const callOrder: string[] = [];
 
       mockDatabaseService.close.mockImplementation(() => {
         callOrder.push("dbClose");
-      });
-      mockContainer.unbindAll.mockImplementation(async () => {
-        callOrder.push("unbindAll");
       });
       mockAppLifecycle.exit.mockImplementation(() => {
         callOrder.push("exit");
@@ -263,6 +309,27 @@ describe("AppLifecycleService", () => {
       await vi.runAllTimersAsync();
       await promise;
       expect(mockAppLifecycle.exit).toHaveBeenCalledWith(0);
+    });
+
+    it("runs the beforeExit hook after shutdown and before exit", async () => {
+      const callOrder: string[] = [];
+
+      mockDatabaseService.close.mockImplementation(() => {
+        callOrder.push("dbClose");
+      });
+      mockAppLifecycle.exit.mockImplementation(() => {
+        callOrder.push("exit");
+      });
+      const beforeExit = vi.fn(async () => {
+        callOrder.push("beforeExit");
+      });
+
+      const promise = service.gracefulExit(beforeExit);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(beforeExit).toHaveBeenCalledTimes(1);
+      expect(callOrder).toEqual(["dbClose", "beforeExit", "exit"]);
     });
   });
 });

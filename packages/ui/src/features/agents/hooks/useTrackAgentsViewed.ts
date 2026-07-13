@@ -41,9 +41,8 @@ export function useTrackAgentsViewed(input: TrackAgentsViewedInput): void {
   const firedRef = useRef(false);
   useEffect(() => {
     if (firedRef.current) return;
-    // Don't fire (and lock `firedRef`) until the data settled successfully: an
-    // errored fetch also clears `isLoading`, and firing then would capture a
-    // bogus default view that a later refetch can't correct.
+    // Gate on isError too: an errored fetch also clears isLoading, and firing
+    // then would lock in a bogus default view (see isError above).
     if (isLoading || isError) return;
     firedRef.current = true;
     track(ANALYTICS_EVENTS.AGENTS_VIEWED, {

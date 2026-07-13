@@ -45,7 +45,7 @@ export function InboxItem({
           onClick={onClick}
           endContent={
             <>
-              <Badge variant="warning">Alpha</Badge>
+              <Badge variant="warning">Beta</Badge>
               <SidebarKbdHint keys={SHORTCUTS.INBOX} />
             </>
           }

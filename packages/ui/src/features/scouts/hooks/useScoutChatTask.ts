@@ -63,8 +63,11 @@ export function useScoutChatTask({
     (ctx: InboxCloudTaskInputContext): TaskCreationInput => ({
       content: prompt,
       taskDescription: prompt,
+      // Scout chats only need the cloud sandbox + PostHog MCP, so they run
+      // repo-less when no personal GitHub repo is resolvable. When one is
+      // available it's passed through (harmless, enables PR authorship).
       repository: ctx.cloudRepository,
-      githubUserIntegrationId: ctx.githubUserIntegrationId,
+      githubUserIntegrationId: ctx.githubUserIntegrationId ?? undefined,
       workspaceMode: "cloud",
       executionMode: "auto",
       adapter: ctx.adapter,
@@ -89,6 +92,11 @@ export function useScoutChatTask({
 
   const { run, isRunning } = useInboxCloudTaskRunner({
     cloudRepository,
+    // Authoring or asking about scouts is pure PostHog-MCP work; a missing repo
+    // must not block it. Without this, a user with only a team-level GitHub
+    // integration (no personal install) hit a confusing "Connect a GitHub
+    // repository" failure even though scouts never touch repo code.
+    allowMissingRepository: true,
     loggerScope,
     copy,
     buildInput,

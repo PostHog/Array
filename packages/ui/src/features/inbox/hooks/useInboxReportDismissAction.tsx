@@ -1,4 +1,4 @@
-import { ThumbsDownIcon } from "@phosphor-icons/react";
+import { ArchiveIcon } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { isDismissalReasonSnooze } from "@posthog/shared/dismissalReasons";
 import type { SignalReport } from "@posthog/shared/types";
@@ -28,6 +28,7 @@ export function useInboxReportDismissAction(report: SignalReport): {
   const bulkActions = useInboxBulkActions(
     reportsForActions,
     open ? report.id : null,
+    "detail_pane",
   );
 
   const isPending = bulkActions.isSuppressing || bulkActions.isSnoozing;
@@ -53,7 +54,7 @@ export function useInboxReportDismissAction(report: SignalReport): {
         disabled={isPending}
         onClick={() => setOpen(true)}
       >
-        {isPending ? <Spinner size="1" /> : <ThumbsDownIcon size={12} />}
+        {isPending ? <Spinner size="1" /> : <ArchiveIcon size={12} />}
       </Button>
     </Tooltip>
   );

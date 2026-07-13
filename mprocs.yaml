@@ -1,6 +1,6 @@
 procs:
   1-code:
-    shell: 'node scripts/pnpm-run.mjs --filter code run start'
+    shell: 'node scripts/wait-for-electron-exit.mjs && node scripts/pnpm-run.mjs --filter code run start'
     env:
       DEBUG: "false"
     depends_on:

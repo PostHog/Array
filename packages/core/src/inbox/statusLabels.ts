@@ -4,6 +4,8 @@ export function inboxStatusLabel(status: SignalReportStatus): string {
   switch (status) {
     case "ready":
       return "Ready";
+    case "resolved":
+      return "Resolved";
     case "pending_input":
       return "Needs input";
     case "in_progress":

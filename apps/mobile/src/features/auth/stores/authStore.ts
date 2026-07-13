@@ -14,6 +14,7 @@ import {
 import {
   performOAuthFlow,
   refreshAccessToken as refreshAccessTokenRequest,
+  TokenRefreshError,
 } from "../lib/oauth";
 import { deleteTokens, getTokens, saveTokens } from "../lib/secureStorage";
 import type { CloudRegion, StoredTokens } from "../types";
@@ -77,6 +78,20 @@ function resolveActiveProjectId(
   if (current && scopedTeams.includes(current)) return current;
   return scopedTeams[0] ?? null;
 }
+
+function isDeadRefreshToken(error: unknown): boolean {
+  return error instanceof TokenRefreshError && error.errorCode === "auth_error";
+}
+
+const CLEARED_AUTH_STATE = {
+  oauthAccessToken: null,
+  oauthRefreshToken: null,
+  tokenExpiry: null,
+  cloudRegion: null,
+  projectId: null,
+  scopedTeams: [],
+  isAuthenticated: false,
+} satisfies Partial<AuthState>;
 
 function maybeRegisterPushToken(): void {
   if (!usePreferencesStore.getState().pushNotificationsEnabled) return;
@@ -282,16 +297,7 @@ export const useAuthStore = create<AuthState>()(
           if (tokens.scopeVersion !== OAUTH_SCOPE_VERSION) {
             await deleteTokens();
             queryClient.clear();
-            set({
-              oauthAccessToken: null,
-              oauthRefreshToken: null,
-              tokenExpiry: null,
-              cloudRegion: null,
-              projectId: null,
-              scopedTeams: [],
-              isLoading: false,
-              isAuthenticated: false,
-            });
+            set({ ...CLEARED_AUTH_STATE, isLoading: false });
             return false;
           }
 
@@ -320,20 +326,19 @@ export const useAuthStore = create<AuthState>()(
             try {
               await get().refreshAccessToken();
             } catch (error) {
-              logger.error("Failed to refresh expired token:", error);
-              await deleteTokens();
-              queryClient.clear();
-              set({
-                oauthAccessToken: null,
-                oauthRefreshToken: null,
-                tokenExpiry: null,
-                cloudRegion: null,
-                projectId: null,
-                scopedTeams: [],
-                isLoading: false,
-                isAuthenticated: false,
-              });
-              return false;
+              if (isDeadRefreshToken(error)) {
+                logger.error("Refresh token rejected on startup; signing out");
+                await deleteTokens();
+                queryClient.clear();
+                set({ ...CLEARED_AUTH_STATE, isLoading: false });
+                return false;
+              }
+              // Transient (network/server) or config failure: keep the stored
+              // session so the next request's authedFetch retry can recover.
+              logger.warn(
+                "Token refresh failed transiently on startup; keeping session",
+                error,
+              );
             }
           }
 
@@ -362,15 +367,7 @@ export const useAuthStore = create<AuthState>()(
         // Clear React Query cache to prevent data leakage between sessions
         queryClient.clear();
 
-        set({
-          oauthAccessToken: null,
-          oauthRefreshToken: null,
-          tokenExpiry: null,
-          cloudRegion: null,
-          projectId: null,
-          scopedTeams: [],
-          isAuthenticated: false,
-        });
+        set(CLEARED_AUTH_STATE);
       },
     }),
     {

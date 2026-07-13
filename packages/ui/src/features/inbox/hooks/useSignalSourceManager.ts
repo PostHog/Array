@@ -47,8 +47,6 @@ export function useSignalSourceManager() {
     // User autonomy
     userAutonomyConfig,
     userAutonomyConfigLoading,
-    handleUpdateUserAutonomyPriority:
-      userAutonomyMutations.handleUpdateUserAutonomyPriority,
     handleUpdateSlackNotifications:
       userAutonomyMutations.handleUpdateSlackNotifications,
   };

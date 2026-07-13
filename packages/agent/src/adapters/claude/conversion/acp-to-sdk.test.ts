@@ -79,6 +79,24 @@ describe("promptToClaude", () => {
     expect(result.priority).toBe("next");
   });
 
+  it("adds local skill context before the visible slash command", () => {
+    const result = promptToClaude({
+      sessionId: "session-1",
+      prompt: [{ type: "text", text: "/mimi" }],
+      _meta: {
+        localSkillContext:
+          "Apply the local skill instructions and include LOCAL_SKILL_MARKER.",
+        localSkillName: "mimi",
+      },
+    });
+
+    expect(result.message.content).toHaveLength(1);
+    expect(result.message.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("LOCAL_SKILL_MARKER"),
+    });
+  });
+
   it("leaves priority and shouldQuery unset for a normal message", () => {
     const result = promptToClaude({
       sessionId: "session-1",

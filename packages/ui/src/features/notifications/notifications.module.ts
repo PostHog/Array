@@ -1,6 +1,6 @@
 import { ContainerModule } from "inversify";
-import { TaskNotificationService } from "./notifications";
+import { NotificationBus } from "./notifications";
 
 export const notificationsUiModule = new ContainerModule(({ bind }) => {
-  bind(TaskNotificationService).toSelf().inSingletonScope();
+  bind(NotificationBus).toSelf().inSingletonScope();
 });

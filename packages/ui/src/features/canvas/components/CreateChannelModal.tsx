@@ -1,10 +1,13 @@
-import { HashIcon, XIcon } from "@phosphor-icons/react";
+import { XIcon } from "@phosphor-icons/react";
 import { validateChannelName } from "@posthog/core/canvas/channelName";
 import { Button } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { Dialog, Flex, IconButton, Text, TextField } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
+import { SquircleDashed } from "lucide-react";
 import { useState } from "react";
 
 // Matches Slack's "Create a channel" naming constraint.
@@ -38,18 +41,32 @@ export function CreateChannelModal({
 
   const submit = async () => {
     if (!trimmed || validationError || isCreating) return;
+    let channel: Awaited<ReturnType<typeof createChannel>>;
     try {
-      const channel = await createChannel(trimmed);
-      onOpenChange(false);
-      void navigate({
-        to: "/website/$channelId",
-        params: { channelId: channel.id },
+      channel = await createChannel(trimmed);
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "create",
+        surface: "sidebar",
+        channel_id: channel.id,
+        success: true,
       });
     } catch (error) {
-      toast.error("Couldn't create channel", {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "create",
+        surface: "sidebar",
+        success: false,
+      });
+      toast.error("Couldn't create context", {
         description: error instanceof Error ? error.message : String(error),
       });
+      return;
     }
+    onOpenChange(false);
+    // Open the new channel's static homepage.
+    void navigate({
+      to: "/website/$channelId",
+      params: { channelId: channel.id },
+    });
   };
 
   return (
@@ -62,7 +79,7 @@ export function CreateChannelModal({
       <Dialog.Content maxWidth="560px">
         <Flex align="start" justify="between" gap="3">
           <Dialog.Title>
-            <Text className="font-bold text-lg">Create a channel</Text>
+            <Text className="font-bold text-lg">Create a context</Text>
           </Dialog.Title>
           <Dialog.Close>
             <IconButton
@@ -102,7 +119,7 @@ export function CreateChannelModal({
             }}
           >
             <TextField.Slot>
-              <HashIcon size={16} className="text-gray-10" />
+              <SquircleDashed size={16} className="text-gray-10" />
             </TextField.Slot>
             <TextField.Slot side="right">
               <Text className="text-gray-9 text-sm tabular-nums">
@@ -116,7 +133,7 @@ export function CreateChannelModal({
             </Text>
           )}
           <Text className="text-gray-10 text-sm">
-            Each channel gets its own dashboards, tasks, and settings. Use a
+            Each context gets its own dashboards, tasks, and settings. Use a
             name that's easy to find.
           </Text>
         </Flex>

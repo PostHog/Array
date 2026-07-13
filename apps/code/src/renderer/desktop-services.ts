@@ -11,6 +11,14 @@ import {
   type ArchiveClient,
 } from "@posthog/core/archive/identifiers";
 import {
+  AUTORESEARCH_GATE,
+  AUTORESEARCH_SESSION_CLIENT,
+  AUTORESEARCH_STORAGE_CLIENT,
+  type AutoresearchGate,
+  type AutoresearchSessionClient,
+  type AutoresearchStorageClient,
+} from "@posthog/core/autoresearch/identifiers";
+import {
   LINEAR_OAUTH_FLOW,
   type LinearOAuthFlow,
   REPORT_MODEL_RESOLVER,
@@ -39,8 +47,13 @@ import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
+  type NotificationTarget,
 } from "@posthog/platform/notifications";
-import type { CloudRegion } from "@posthog/shared";
+import {
+  type Adapter,
+  AUTORESEARCH_FLAG,
+  type CloudRegion,
+} from "@posthog/shared";
 import {
   AUTH_SIDE_EFFECTS,
   type IAuthSideEffects,
@@ -72,7 +85,7 @@ import {
   type AgentPromptSender,
 } from "@posthog/ui/features/sessions/agentPromptSender";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
-import { getAppViewSnapshot } from "@posthog/ui/router/useAppView";
+import { getCurrentMatches } from "@posthog/ui/router/navigationBridge";
 import { HEDGEHOG_MODE_HOST } from "@posthog/ui/shell/hedgehogModeHost";
 import { posthogFeatureFlags } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { IMPERATIVE_QUERY_CLIENT } from "@posthog/ui/shell/queryClient";
@@ -107,14 +120,15 @@ const reportModelResolverLog = logger.scope("report-model-resolver");
 container.bind<ReportModelResolver>(REPORT_MODEL_RESOLVER).toConstantValue({
   async resolveDefaultModel(
     apiHost: string,
-    adapter: "claude" | "codex",
+    adapter: Adapter,
+    preferredModel?: string | null,
   ): Promise<string | undefined> {
     try {
       const options = await hostTrpcClient.agent.getPreviewConfigOptions.query({
         apiHost,
         adapter,
       });
-      return selectModelFromOptions(options);
+      return selectModelFromOptions(options, preferredModel);
     } catch (error) {
       reportModelResolverLog.warn("Failed to resolve default model", {
         error,
@@ -158,6 +172,80 @@ container
       prompt,
     );
   });
+container
+  .bind<AutoresearchSessionClient>(AUTORESEARCH_SESSION_CLIENT)
+  .toConstantValue({
+    sendPrompt: (taskId, prompt) =>
+      resolveService<SessionService>(SESSION_SERVICE).sendPrompt(
+        taskId,
+        prompt,
+      ),
+    setModel: (taskId, model) =>
+      resolveService<SessionService>(
+        SESSION_SERVICE,
+      ).setSessionConfigOptionByCategory(taskId, "model", model),
+    setEffort: (taskId, effort) =>
+      resolveService<SessionService>(
+        SESSION_SERVICE,
+      ).setSessionConfigOptionByCategory(taskId, "thought_level", effort),
+    reconnect: async (taskId) => {
+      const workspaces = (await trpcClient.workspace.getAll.query()) as Record<
+        string,
+        { mode?: string; worktreePath?: string | null; folderPath?: string }
+      >;
+      const workspace = workspaces[taskId];
+      // Cloud sessions are re-established by the app's own cloud-task watcher,
+      // not clearSessionError (which is local-only). Leave recovery to that;
+      // autoresearch resumes when the session becomes usable again.
+      if (workspace?.mode === "cloud") return;
+      const repoPath = workspace?.worktreePath ?? workspace?.folderPath;
+      if (!repoPath) {
+        throw new Error(`No workspace found for task ${taskId}`);
+      }
+      await resolveService<SessionService>(SESSION_SERVICE).clearSessionError(
+        taskId,
+        repoPath,
+      );
+    },
+  });
+container.bind<AutoresearchGate>(AUTORESEARCH_GATE).toConstantValue({
+  isEnabled: () => {
+    // Always on in dev builds; staff-gated via the flag in production.
+    if (import.meta.env.DEV) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      // posthog-js may still be fetching flags at boot; onFlagsLoaded fires
+      // right away (possibly synchronously) when they are already known,
+      // otherwise on first load. Fall back to the current (cached) value if
+      // nothing arrives in time.
+      let unsubscribe: (() => void) | undefined;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      const settle = () => {
+        if (settled) return;
+        settled = true;
+        unsubscribe?.();
+        if (timer !== undefined) clearTimeout(timer);
+        resolve(posthogFeatureFlags.isEnabled(AUTORESEARCH_FLAG));
+      };
+      unsubscribe = posthogFeatureFlags.onFlagsLoaded(settle);
+      if (settled) {
+        unsubscribe();
+        return;
+      }
+      timer = setTimeout(settle, 10_000);
+    });
+  },
+});
+container
+  .bind<AutoresearchStorageClient>(AUTORESEARCH_STORAGE_CLIENT)
+  .toConstantValue({
+    save: async (run) => {
+      await trpcClient.autoresearch.save.mutate(run);
+    },
+    listOpen: () => trpcClient.autoresearch.listOpen.query(),
+    listByTask: (taskId) =>
+      trpcClient.autoresearch.listByTask.query({ taskId }),
+  });
 container.bind<FilePathResolver>(FILE_PATH_RESOLVER).toConstantValue({
   resolve: (file) => window.electronUtils?.getPathForFile?.(file),
 });
@@ -200,15 +288,38 @@ container
         dockBounceNotifications: s.dockBounceNotifications,
         completionSound: s.completionSound,
         completionVolume: s.completionVolume,
+        scaleSoundWithTaskLength: s.scaleSoundWithTaskLength,
+        customSounds: s.customSounds,
       };
     },
   });
 
 container.bind<IActiveView>(ACTIVE_VIEW_PROVIDER).toConstantValue({
   hasFocus: () => document.hasFocus(),
-  getActiveTaskId: () => {
-    const view = getAppViewSnapshot();
-    return view.type === "task-detail" ? view.taskId : undefined;
+  // Read the active leaf route directly: AppView collapses the channel routes
+  // and drops channelId/dashboardId, which we need to identify a canvas target.
+  getActiveTarget: (): NotificationTarget | undefined => {
+    const matches = getCurrentMatches();
+    const last = matches[matches.length - 1];
+    if (!last) return undefined;
+    const params = last.params as Record<string, string | undefined>;
+    switch (last.routeId) {
+      case "/code/tasks/$taskId":
+      case "/website/$channelId/tasks/$taskId":
+        return params.taskId
+          ? { kind: "task", taskId: params.taskId }
+          : undefined;
+      case "/website/$channelId/dashboards/$dashboardId":
+        return params.channelId && params.dashboardId
+          ? {
+              kind: "canvas",
+              channelId: params.channelId,
+              dashboardId: params.dashboardId,
+            }
+          : undefined;
+      default:
+        return undefined;
+    }
   },
 });
 

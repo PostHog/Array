@@ -11,6 +11,7 @@ export type SourceProduct =
   | "llm_analytics"
   | "github"
   | "linear"
+  | "jira"
   | "zendesk"
   | "conversations"
   | "pganalyze"

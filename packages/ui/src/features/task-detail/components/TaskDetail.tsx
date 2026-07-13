@@ -5,10 +5,14 @@ import { useHotkeys, useHotkeysContext } from "react-hotkeys-hook";
 import { useBlurOnEscape } from "../../../hooks/useBlurOnEscape";
 import { useSetHeaderContent } from "../../../hooks/useSetHeaderContent";
 import { logger } from "../../../shell/logger";
-import { CloudReviewPage } from "../../code-review/components/CloudReviewPage";
-import { ReviewPage } from "../../code-review/components/ReviewPage";
+import { ChannelBreadcrumb } from "../../canvas/components/ChannelBreadcrumb";
+import { CopyThreadLinkButton } from "../../canvas/components/CopyThreadLinkButton";
+import {
+  LazyCloudReviewPage as CloudReviewPage,
+  LazyReviewPage as ReviewPage,
+} from "../../code-review/components/LazyReviewPages";
 import { useReviewNavigationStore } from "../../code-review/reviewNavigationStore";
-import { FilePicker } from "../../command/FilePicker";
+import { useFileSearchStore } from "../../command/fileSearchStore";
 import { useRepoFileWatcher } from "../../file-watcher/useRepoFileWatcher";
 import { clearGitReviewQueries } from "../../git-interaction/gitCacheKeys";
 import { PanelLayout } from "../../panels/components/PanelLayout";
@@ -22,15 +26,28 @@ import { useWorkspaceEvents } from "../../workspace/useWorkspaceEvents";
 import { HeaderTitleEditor } from "../HeaderTitleEditor";
 import { useTaskData } from "../hooks/useTaskData";
 import { ExternalAppsOpener } from "./ExternalAppsOpener";
+import { WorkspaceModeBadge } from "./WorkspaceModeBadge";
 
 const MIN_REVIEW_WIDTH = 300;
 const log = logger.scope("task-detail");
 
 interface TaskDetailProps {
   task: Task;
+  /**
+   * When the task is opened inside a channel, the channel name to prefix the
+   * header title with as a "# channel / title" breadcrumb. Omitted for the
+   * plain Code task view.
+   */
+  channelName?: string;
+  /** The channel's id, so the breadcrumb's "# channel" links to its home. */
+  channelId?: string;
 }
 
-export function TaskDetail({ task: initialTask }: TaskDetailProps) {
+export function TaskDetail({
+  task: initialTask,
+  channelName,
+  channelId,
+}: TaskDetailProps) {
   const taskId = initialTask.id;
 
   const { task } = useTaskData({ taskId, initialTask });
@@ -59,7 +76,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       ? [effectiveRepoPath, activeRelativePath].join("/").replace(/\/+/g, "/")
       : effectiveRepoPath;
 
-  const [filePickerOpen, setFilePickerOpen] = useState(false);
+  const openFilePicker = useFileSearchStore((state) => state.openPicker);
 
   const { enableScope, disableScope } = useHotkeysContext();
 
@@ -70,7 +87,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     };
   }, [enableScope, disableScope]);
 
-  useHotkeys("mod+p", () => setFilePickerOpen(true), {
+  useHotkeys("mod+p", () => openFilePicker(), {
     enableOnContentEditable: true,
     enableOnFormTags: true,
     preventDefault: true,
@@ -104,33 +121,79 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const handleTitleEditCancel = useCallback(() => {
     setIsEditingTitle(false);
   }, []);
+  // Inside a channel the thread also gets a "copy link" share affordance.
+  // Memoized so the headerContent memo below isn't busted by unrelated renders.
+  const trailing = useMemo(
+    () =>
+      channelId || openTargetPath ? (
+        <Flex align="center" gap="2">
+          {channelId && (
+            <CopyThreadLinkButton channelId={channelId} taskId={taskId} />
+          )}
+          {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
+        </Flex>
+      ) : null,
+    [channelId, taskId, openTargetPath],
+  );
+  const workspace = useWorkspace(taskId);
+  const workspaceMode = workspace?.mode;
   const headerContent = useMemo(
-    () => (
-      <Flex align="center" justify="between" gap="2" width="100%">
-        {isEditingTitle ? (
-          <HeaderTitleEditor
-            initialTitle={task.title}
-            onSubmit={handleTitleEditSubmit}
-            onCancel={handleTitleEditCancel}
-          />
-        ) : (
-          <Tooltip content={task.title} side="bottom" delayDuration={300}>
-            <Text
-              truncate
-              className="no-drag min-w-0 font-medium text-[13px]"
-              onDoubleClick={() => setIsEditingTitle(true)}
-            >
-              {task.title}
-            </Text>
-          </Tooltip>
-        )}
-        {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
-      </Flex>
-    ),
+    () =>
+      // Inside a channel, prefix the editable title with the channel
+      // breadcrumb ("# channel / title"); the plain Code view keeps the bare
+      // title. Both share the same inline-rename editor.
+      channelName ? (
+        <ChannelBreadcrumb
+          channelName={channelName}
+          channelId={channelId}
+          leafIcon={
+            workspaceMode ? (
+              <WorkspaceModeBadge
+                mode={workspaceMode}
+                checkoutPath={effectiveRepoPath}
+              />
+            ) : undefined
+          }
+          leafLabel={task.title}
+          onRename={handleTitleEditSubmit}
+          trailing={trailing}
+        />
+      ) : (
+        <Flex align="center" justify="between" gap="2" width="100%">
+          {isEditingTitle ? (
+            <HeaderTitleEditor
+              initialTitle={task.title}
+              onSubmit={handleTitleEditSubmit}
+              onCancel={handleTitleEditCancel}
+            />
+          ) : (
+            <Flex align="center" gap="2" minWidth="0">
+              <WorkspaceModeBadge
+                mode={workspaceMode}
+                checkoutPath={effectiveRepoPath}
+              />
+              <Tooltip content={task.title} side="bottom" delayDuration={300}>
+                <Text
+                  truncate
+                  className="no-drag min-w-0 font-medium text-[13px]"
+                  onDoubleClick={() => setIsEditingTitle(true)}
+                >
+                  {task.title}
+                </Text>
+              </Tooltip>
+            </Flex>
+          )}
+          {trailing}
+        </Flex>
+      ),
     [
+      channelName,
+      channelId,
       task.title,
-      openTargetPath,
+      trailing,
       isEditingTitle,
+      workspaceMode,
+      effectiveRepoPath,
       handleTitleEditSubmit,
       handleTitleEditCancel,
     ],
@@ -141,7 +204,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const reviewMode = useReviewNavigationStore(
     (s) => s.reviewModes[taskId] ?? "closed",
   );
-  const workspace = useWorkspace(taskId);
   const isCloud =
     workspace?.mode === "cloud" || task.latest_run?.environment === "cloud";
 
@@ -234,12 +296,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
           </Box>
         )}
       </Flex>
-      <FilePicker
-        open={filePickerOpen}
-        onOpenChange={setFilePickerOpen}
-        taskId={taskId}
-        repoPath={effectiveRepoPath}
-      />
     </Box>
   );
 }

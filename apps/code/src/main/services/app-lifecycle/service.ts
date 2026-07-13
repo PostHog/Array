@@ -10,19 +10,24 @@ import type { ProcessTrackingService } from "@posthog/workspace-server/services/
 import { SUSPENSION_SERVICE } from "@posthog/workspace-server/services/suspension/identifiers";
 import type { SuspensionService } from "@posthog/workspace-server/services/suspension/suspension";
 import type { WatcherRegistryService } from "@posthog/workspace-server/services/watcher-registry/watcher-registry";
+import type { WorkspaceService } from "@posthog/workspace-server/services/workspace/workspace";
 import { inject, injectable } from "inversify";
-import { container } from "../../di/container";
-import { MAIN_TOKENS } from "../../di/tokens";
+import { WATCHER_REGISTRY_SERVICE, WORKSPACE_SERVICE } from "../../di/tokens";
 import { posthogNodeAnalytics } from "../../platform-adapters/posthog-analytics";
 import { withTimeout } from "../../utils/async";
 import { logger } from "../../utils/logger";
 import { shutdownOtelTransport } from "../../utils/otel-log-transport";
+import {
+  getFullScreenState,
+  setRestoreFullScreenOnNextLaunch,
+} from "../../utils/store";
 
 const log = logger.scope("app-lifecycle");
 
 @injectable()
 export class AppLifecycleService {
   private static readonly SHUTDOWN_TIMEOUT_MS = 3000;
+  private static readonly PENDING_CREATION_WAIT_MS = 10_000;
 
   private _isQuittingForUpdate = false;
   private _isShuttingDown = false;
@@ -34,10 +39,12 @@ export class AppLifecycleService {
     private readonly db: DatabaseService,
     @inject(SUSPENSION_SERVICE)
     private readonly suspensionService: SuspensionService,
-    @inject(MAIN_TOKENS.WatcherRegistryService)
+    @inject(WATCHER_REGISTRY_SERVICE)
     private readonly watcherRegistry: WatcherRegistryService,
     @inject(PROCESS_TRACKING_SERVICE)
     private readonly processTracking: ProcessTrackingService,
+    @inject(WORKSPACE_SERVICE)
+    private readonly workspaceService: WorkspaceService,
   ) {}
 
   get isQuittingForUpdate(): boolean {
@@ -50,10 +57,14 @@ export class AppLifecycleService {
 
   setQuittingForUpdate(): void {
     this._isQuittingForUpdate = true;
+    // Remember fullscreen state so the post-update relaunch restores it.
+    setRestoreFullScreenOnNextLaunch(getFullScreenState());
   }
 
   clearQuittingForUpdate(): void {
     this._isQuittingForUpdate = false;
+    // The install handoff was aborted.
+    setRestoreFullScreenOnNextLaunch(false);
   }
 
   /**
@@ -94,6 +105,7 @@ export class AppLifecycleService {
    */
   async shutdownWithoutContainer(): Promise<void> {
     log.info("Partial shutdown started (keeping container)");
+    await this.waitForPendingWorkspaceCreations();
     await this.teardownNativeResources();
     try {
       this.db.close();
@@ -103,15 +115,20 @@ export class AppLifecycleService {
   }
 
   /**
-   * Runs a full shutdown then exits the Electron app.
+   * Runs a full shutdown then exits the Electron app. The optional
+   * `beforeExit` hook lets the composition root tear down the DI container
+   * after shutdown completes but before the process exits.
    */
-  async gracefulExit(): Promise<void> {
+  async gracefulExit(beforeExit?: () => Promise<void>): Promise<void> {
     await this.shutdown();
+    if (beforeExit) {
+      await beforeExit();
+    }
     this.appLifecycle.exit(0);
   }
 
   /**
-   * Runs the full shutdown sequence: native resources, container, analytics.
+   * Runs the full shutdown sequence: native resources, database, analytics.
    */
   private async doShutdown(): Promise<void> {
     log.info("Shutdown started");
@@ -130,12 +147,6 @@ export class AppLifecycleService {
       log.warn("Failed to close database during shutdown", error);
     }
 
-    try {
-      await container.unbindAll();
-    } catch (error) {
-      log.warn("Failed to unbind container", error);
-    }
-
     posthogNodeAnalytics.track(ANALYTICS_EVENTS.APP_QUIT);
 
     try {
@@ -151,6 +162,32 @@ export class AppLifecycleService {
     }
 
     log.info("Shutdown complete");
+  }
+
+  /**
+   * An update install that lands while a task's workspace is still being
+   * created leaves the task permanently half-provisioned. Give in-flight
+   * creations a bounded window to settle before tearing processes down.
+   */
+  private async waitForPendingWorkspaceCreations(): Promise<void> {
+    const pending = this.workspaceService.pendingCreationCount;
+    if (pending === 0) return;
+
+    log.warn(
+      `Waiting for ${pending} in-flight workspace creations before teardown`,
+      { timeoutMs: AppLifecycleService.PENDING_CREATION_WAIT_MS },
+    );
+    const result = await withTimeout(
+      this.workspaceService.waitForPendingCreations(),
+      AppLifecycleService.PENDING_CREATION_WAIT_MS,
+    );
+    if (result.result === "timeout") {
+      log.warn(
+        "Workspace creations still pending after wait, proceeding with teardown",
+      );
+    } else {
+      log.info("In-flight workspace creations settled before teardown");
+    }
   }
 
   /**

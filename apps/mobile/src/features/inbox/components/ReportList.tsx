@@ -21,7 +21,15 @@ export function ReportList({
   onReportPress,
   contentInsetTop = 0,
 }: ReportListProps) {
-  const { reports, isLoading, error, refetch } = useInboxReports();
+  const {
+    reports,
+    isLoading,
+    error,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInboxReports();
   const themeColors = useThemeColors();
 
   const handlePress = (report: SignalReport) => {
@@ -81,6 +89,19 @@ export function ReportList({
           tintColor={themeColors.accent[9]}
           progressViewOffset={contentInsetTop}
         />
+      }
+      onEndReachedThreshold={0.5}
+      onEndReached={() => {
+        if (hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      }}
+      ListFooterComponent={
+        isFetchingNextPage ? (
+          <View className="py-4">
+            <ActivityIndicator color={themeColors.accent[9]} />
+          </View>
+        ) : null
       }
       contentContainerStyle={{
         paddingTop: contentInsetTop,

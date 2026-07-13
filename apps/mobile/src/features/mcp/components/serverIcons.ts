@@ -19,9 +19,11 @@ import FigmaSvg from "../../../../assets/services/figma.svg";
 import FiretigerSvg from "../../../../assets/services/firetiger.svg";
 import GitHubSvg from "../../../../assets/services/github.svg";
 import GitLabSvg from "../../../../assets/services/gitlab.svg";
+import GranolaSvg from "../../../../assets/services/granola.svg";
 import HexSvg from "../../../../assets/services/hex.svg";
 import HubSpotSvg from "../../../../assets/services/hubspot.svg";
 import LinearSvg from "../../../../assets/services/linear.svg";
+import Mem0Svg from "../../../../assets/services/mem0.svg";
 import MondaySvg from "../../../../assets/services/monday.svg";
 import NeonSvg from "../../../../assets/services/neon.svg";
 import NotionSvg from "../../../../assets/services/notion.svg";
@@ -83,10 +85,12 @@ export const SERVER_LOGOS: Record<string, ServerLogo> = {
   firetiger: svg(FiretigerSvg),
   github: svg(GitHubSvg),
   gitlab: svg(GitLabSvg),
+  granola: svg(GranolaSvg),
   hex: svg(HexSvg),
   hubspot: svg(HubSpotSvg),
   launchdarkly: png(LaunchDarklyPng),
   linear: svg(LinearSvg),
+  mem0: svg(Mem0Svg),
   monday: svg(MondaySvg),
   neon: svg(NeonSvg),
   notion: svg(NotionSvg),

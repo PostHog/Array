@@ -175,6 +175,12 @@ export default function SettingsScreen() {
   const setCompletionSound = usePreferencesStore((s) => s.setCompletionSound);
   const completionVolume = usePreferencesStore((s) => s.completionVolume);
   const setCompletionVolume = usePreferencesStore((s) => s.setCompletionVolume);
+  const scaleSoundWithTaskLength = usePreferencesStore(
+    (s) => s.scaleSoundWithTaskLength,
+  );
+  const setScaleSoundWithTaskLength = usePreferencesStore(
+    (s) => s.setScaleSoundWithTaskLength,
+  );
   const defaultInitialTaskMode = usePreferencesStore(
     (s) => s.defaultInitialTaskMode,
   );
@@ -187,6 +193,14 @@ export default function SettingsScreen() {
   const setDefaultReasoningEffort = usePreferencesStore(
     (s) => s.setDefaultReasoningEffort,
   );
+  const autoPublishCloudRuns = usePreferencesStore(
+    (s) => s.autoPublishCloudRuns,
+  );
+  const setAutoPublishCloudRuns = usePreferencesStore(
+    (s) => s.setAutoPublishCloudRuns,
+  );
+  const rtkEnabledCloud = usePreferencesStore((s) => s.rtkEnabledCloud);
+  const setRtkEnabledCloud = usePreferencesStore((s) => s.setRtkEnabledCloud);
   const defaultMessagingMode = useMessagingModeStore((s) => s.defaultMode);
   const setDefaultMessagingMode = useMessagingModeStore(
     (s) => s.setDefaultMode,
@@ -348,7 +362,6 @@ export default function SettingsScreen() {
               label="Sound volume"
               description="How loud the completion sound plays"
               onPress={() => setVolumeSheetOpen(true)}
-              showDivider={false}
               rightSlot={
                 <>
                   <Text className="text-[14px] text-gray-11">
@@ -356,6 +369,17 @@ export default function SettingsScreen() {
                   </Text>
                   <CaretRight size={14} color={themeColors.gray[10]} />
                 </>
+              }
+            />
+            <SettingsRow
+              label="Scale sound speed with task length"
+              description="Play the sound faster for quick tasks and slower for long ones"
+              showDivider={false}
+              rightSlot={
+                <Switch
+                  value={scaleSoundWithTaskLength}
+                  onValueChange={setScaleSoundWithTaskLength}
+                />
               }
             />
           </SettingsSection>
@@ -393,7 +417,6 @@ export default function SettingsScreen() {
             label="Messaging mode"
             description="What happens when you send while a turn is running"
             onPress={() => setMessagingModeSheetOpen(true)}
-            showDivider={false}
             rightSlot={
               <>
                 <Text className="text-[14px] text-gray-11">
@@ -401,6 +424,27 @@ export default function SettingsScreen() {
                 </Text>
                 <CaretRight size={14} color={themeColors.gray[10]} />
               </>
+            }
+          />
+          <SettingsRow
+            label="Always create pull requests for cloud runs"
+            description="Cloud runs push their changes and open a draft pull request when they finish, without waiting for you to ask"
+            rightSlot={
+              <Switch
+                value={autoPublishCloudRuns}
+                onValueChange={setAutoPublishCloudRuns}
+              />
+            }
+          />
+          <SettingsRow
+            label="Compress command output"
+            description="Route verbose shell command output through rtk so it is compressed before it reaches the model, reducing token usage"
+            showDivider={false}
+            rightSlot={
+              <Switch
+                value={rtkEnabledCloud}
+                onValueChange={setRtkEnabledCloud}
+              />
             }
           />
         </SettingsSection>

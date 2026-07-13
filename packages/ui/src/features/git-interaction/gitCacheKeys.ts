@@ -23,6 +23,10 @@ export function invalidateGitWorkingTreeQueries(repoPath: string) {
 }
 
 export function invalidateGitBranchQueries(repoPath: string) {
+  // A branch/index change (stage, commit, checkout) also changes the working
+  // tree, so the diff and changed-file queries must refresh too.
+  invalidateGitWorkingTreeQueries(repoPath);
+
   const queryClient = resolveService<ImperativeQueryClient>(
     IMPERATIVE_QUERY_CLIENT,
   );
@@ -41,16 +45,16 @@ export function invalidateGitBranchQueries(repoPath: string) {
     provider.gitQueryFilter("getGitSyncStatus", input),
   );
   queryClient.invalidateQueries(
-    provider.gitQueryFilter("getChangedFilesHead", input),
-  );
-  queryClient.invalidateQueries(provider.gitQueryFilter("getDiffStats", input));
-  queryClient.invalidateQueries(
     provider.gitQueryFilter("getLatestCommit", input),
   );
   queryClient.invalidateQueries(provider.gitQueryFilter("getPrStatus", input));
   queryClient.invalidateQueries(provider.gitPathFilter("getFileAtHead"));
   queryClient.invalidateQueries(
     provider.gitPathFilter("getLocalBranchChangedFiles"),
+  );
+  queryClient.invalidateQueries(provider.gitPathFilter("getPrChangedFiles"));
+  queryClient.invalidateQueries(
+    provider.gitPathFilter("getBranchChangedFiles"),
   );
 }
 

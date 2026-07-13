@@ -1,3 +1,4 @@
+import type { Adapter } from "./adapter";
 import type { GitHandoffCheckpoint, HandoffLocalGitState } from "./git-handoff";
 import type { WorkspaceMode } from "./workspace";
 
@@ -21,7 +22,7 @@ export interface HandoffReconnectParams {
   projectId: number;
   logUrl: string;
   sessionId?: string;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
 }
 
 export interface HandoffResumeStateResult {

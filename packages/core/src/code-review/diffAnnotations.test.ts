@@ -87,18 +87,21 @@ describe("buildCommentMergedOptions", () => {
     { hasOpenComment: false, expectedEnabled: true },
     { hasOpenComment: true, expectedEnabled: false },
   ])(
-    "with hasOpenComment=$hasOpenComment sets selection/gutter enabled=$expectedEnabled and routes both callbacks to the handler",
+    "with hasOpenComment=$hasOpenComment sets selection/gutter enabled=$expectedEnabled and routes callbacks to the handlers",
     ({ hasOpenComment, expectedEnabled }) => {
-      const handler = () => {};
+      const onChange = () => {};
+      const onEnd = () => {};
       const merged = buildCommentMergedOptions(
         undefined,
         hasOpenComment,
-        handler,
+        onChange,
+        onEnd,
       );
       expect(merged.enableLineSelection).toBe(expectedEnabled);
       expect(merged.enableGutterUtility).toBe(expectedEnabled);
-      expect(merged.onLineSelectionEnd).toBe(handler);
-      expect(merged.onGutterUtilityClick).toBe(handler);
+      expect(merged.onLineSelectionChange).toBe(onChange);
+      expect(merged.onLineSelectionEnd).toBe(onEnd);
+      expect(merged.onGutterUtilityClick).toBe(onEnd);
     },
   );
 });

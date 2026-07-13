@@ -20,8 +20,8 @@ import type { AcpMessage } from "@posthog/shared";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
-import { type ComponentType, useMemo, useState } from "react";
-import { accumulateSessionResources } from "./accumulateSessionResources";
+import { type ComponentType, useMemo, useRef, useState } from "react";
+import { createSessionResourcesTracker } from "./accumulateSessionResources";
 
 /**
  * Icon per PostHog product. `Record<PostHogProductId, …>` keeps this exhaustive:
@@ -41,7 +41,6 @@ const PRODUCT_ICON: Record<PostHogProductId, ComponentType<IconProps>> = {
   logs: FileTextIcon,
   apm: GaugeIcon,
   sql: TableIcon,
-  posthog: SparkleIcon,
 };
 
 /**
@@ -63,7 +62,6 @@ const PRODUCT_DOC_URL: Partial<Record<PostHogProductId, string>> = {
   cdp: "https://posthog.com/docs/cdp",
   logs: "https://posthog.com/docs/logs",
   sql: "https://posthog.com/docs/sql",
-  posthog: "https://posthog.com/docs",
 };
 
 interface SessionResourcesBarProps {
@@ -85,7 +83,12 @@ const MAX_VISIBLE_CHIPS = 6;
  * Mirrors PlanStatusBar's placement and styling.
  */
 export function SessionResourcesBar({ events }: SessionResourcesBarProps) {
-  const products = useMemo(() => accumulateSessionResources(events), [events]);
+  const trackerRef = useRef<ReturnType<
+    typeof createSessionResourcesTracker
+  > | null>(null);
+  trackerRef.current ??= createSessionResourcesTracker();
+  const tracker = trackerRef.current;
+  const products = useMemo(() => tracker.update(events), [events, tracker]);
   const [expanded, setExpanded] = useState(false);
 
   if (products.length === 0) return null;

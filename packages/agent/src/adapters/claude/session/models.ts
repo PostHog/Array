@@ -2,6 +2,10 @@ import type { EffortLevel } from "../types";
 
 export const DEFAULT_MODEL = "opus";
 
+// Refusal/overload rescue target. The SDK rejects fallbackModel === Options.model
+// at spawn, so this must stay distinct from the alias form used for DEFAULT_MODEL.
+export const FALLBACK_MODEL = "claude-opus-4-8";
+
 // Default thinking level when the user hasn't picked one. Adaptive-only models
 // like claude-fable-5 reject the SDK's no-effort `thinking: { type: "disabled" }`
 // shape, so effort-capable models default to high to keep thinking enabled.
@@ -21,6 +25,7 @@ const MODELS_WITH_1M_CONTEXT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
+  "claude-sonnet-5",
   "claude-fable-5",
 ]);
 
@@ -32,12 +37,14 @@ const MODELS_WITH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
+  "claude-sonnet-5",
   "claude-fable-5",
 ]);
 
 const MODELS_WITH_XHIGH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
+  "claude-sonnet-5",
   "claude-fable-5",
 ]);
 
@@ -61,6 +68,17 @@ const MODELS_TO_EXCLUDE_MCP_TOOLS = new Set(["claude-haiku-4-5"]);
 
 export function supportsMcpInjection(modelId: string): boolean {
   return !MODELS_TO_EXCLUDE_MCP_TOOLS.has(modelId);
+}
+
+const MODELS_WITH_FAST_MODE = new Set(["claude-opus-4-7", "claude-opus-4-8"]);
+
+export function supportsFastMode(modelId: string): boolean {
+  return MODELS_WITH_FAST_MODE.has(modelId);
+}
+
+// cooldown keeps the toggle on (user intent); only an explicit off clears it.
+export function fastModeStateEnabled(state: string | undefined): boolean {
+  return state !== undefined && state !== "off";
 }
 
 interface EffortOption {
@@ -121,15 +139,18 @@ interface ModelOption {
   description?: string;
 }
 
-// Captures a model family version such as `4-6` or `4.7` so we can keep
-// `claude-opus-4-7` from being copied onto the SDK's `opus` alias when that
-// alias currently resolves to a different family version (e.g. Opus 4.8).
-const MODEL_FAMILY_VERSION_PATTERN = /\b(\d+)[-.](\d+)\b/;
+// Captures a model family version: `4-6`/`4.7` for dated generations, or a
+// bare `5` for single-number ones like "Sonnet 5". Used to keep a pinned
+// `claude-opus-4-7` from matching the `opus` alias once it points at 4.8.
+const MODEL_FAMILY_VERSION_PATTERN = /\b(\d+)(?:[-.](\d+))?\b/;
 
 function extractModelFamilyVersion(s: string | undefined): string | null {
   if (!s) return null;
-  const match = s.match(MODEL_FAMILY_VERSION_PATTERN);
-  return match ? `${match[1]}.${match[2]}` : null;
+  // Strip "[1m]"-style context hints first — that digit is context window
+  // size, not a model generation version.
+  const match = s.replace(/\[\d+m\]/gi, "").match(MODEL_FAMILY_VERSION_PATTERN);
+  if (!match) return null;
+  return match[2] ? `${match[1]}.${match[2]}` : match[1];
 }
 
 function modelVersionsCompatible(

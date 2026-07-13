@@ -1,8 +1,8 @@
 import { LinkIcon } from "@phosphor-icons/react";
 import type { ScoutEmission } from "@posthog/api-client/posthog-client";
 import { ANALYTICS_EVENTS, buildScoutDeeplink } from "@posthog/shared";
+import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
-import { toast } from "sonner";
 
 /**
  * Per-finding "Share" CTA on a scout emission card: copies a canonical

@@ -23,6 +23,13 @@ interface VirtualizedListProps<T> {
   footer?: ReactNode;
   onScrollStateChange?: (isAtBottom: boolean) => void;
   keepMounted?: readonly number[];
+  /**
+   * Allow horizontal scrolling of the list viewport. Defaults to true. Narrow
+   * surfaces (e.g. the Agent Builder dock) pass false so off-edge content like
+   * a message's hover action can't produce a horizontal scrollbar; nested
+   * scrollers (code blocks) keep their own overflow.
+   */
+  scrollX?: boolean;
 }
 
 export interface VirtualizedListHandle {
@@ -32,7 +39,10 @@ export interface VirtualizedListHandle {
 
 const AT_BOTTOM_THRESHOLD = 50;
 const ESTIMATED_ROW_SIZE = 80;
-const OVERSCAN = 6;
+// Render rows well ahead so tall, async rows (markdown, code, diffs) measure and
+// paint off-screen instead of shifting and stuttering as they enter view. 12
+// erases the scroll-up shift empirically; higher only adds DOM cost.
+const OVERSCAN = 12;
 // A real upward drift, not a 1-frame measure transient: the DOM bottom sits
 // this far below the viewport. Well above any single append's measure gap.
 const FAR_DRIFT_THRESHOLD = 400;
@@ -48,6 +58,7 @@ function VirtualizedListInner<T>(
     footer,
     onScrollStateChange,
     keepMounted,
+    scrollX = true,
   }: VirtualizedListProps<T>,
   ref: React.ForwardedRef<VirtualizedListHandle>,
 ) {
@@ -243,7 +254,7 @@ function VirtualizedListInner<T>(
       <div
         ref={parentRef}
         onScroll={handleScroll}
-        className="scroll-mask-8 flex-1 overflow-y-auto overflow-x-hidden"
+        className={`scroll-mask-8 flex-1 overflow-y-auto ${scrollX ? "overflow-x-auto" : "overflow-x-hidden"}`}
         style={{ scrollbarGutter: "stable" }}
       >
         <div

@@ -2,7 +2,7 @@ import { injectable } from "inversify";
 import {
   BUILT_IN_TEMPLATES,
   type CanvasTemplate,
-  DEFAULT_TEMPLATE_ID,
+  freeformSystemPromptFor,
 } from "./canvasTemplates";
 import type { ICanvasTemplatesService } from "./services";
 import type { CanvasTemplateSummary } from "./templateSchemas";
@@ -30,13 +30,8 @@ export class CanvasTemplatesService implements ICanvasTemplatesService {
     return this.templates.get(id);
   }
 
-  /** The system prompt for a template, falling back to the default template. */
-  systemPromptFor(id: string | undefined): string {
-    const template =
-      (id && this.templates.get(id)) ?? this.templates.get(DEFAULT_TEMPLATE_ID);
-    if (!template) {
-      throw new Error("No canvas templates registered");
-    }
-    return template.systemPrompt;
+  /** The freeform (React) prompt for a template, falling back to the generic sandbox. */
+  freeformSystemPromptFor(id: string | undefined): string {
+    return freeformSystemPromptFor(id);
   }
 }

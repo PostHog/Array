@@ -1,4 +1,10 @@
-import { ArrowsClockwise, Columns, Rows, X } from "@phosphor-icons/react";
+import {
+  ArrowCounterClockwise,
+  ArrowsClockwise,
+  Columns,
+  Rows,
+  X,
+} from "@phosphor-icons/react";
 import type { ResolvedDiffSource } from "@posthog/core/code-review/resolveDiffSource";
 import { Button } from "@posthog/quill";
 import { useDiffViewerStore } from "@posthog/ui/features/code-editor/diffViewerStore";
@@ -22,6 +28,7 @@ interface ReviewToolbarProps {
   onExpandAll: () => void;
   onCollapseAll: () => void;
   onRefresh?: () => void;
+  onDiscardAll?: () => void;
   effectiveSource?: ResolvedDiffSource;
   branchSourceAvailable?: boolean;
   prSourceAvailable?: boolean;
@@ -35,6 +42,7 @@ export const ReviewToolbar = memo(function ReviewToolbar({
   onExpandAll,
   onCollapseAll,
   onRefresh,
+  onDiscardAll,
   effectiveSource,
   branchSourceAvailable,
   prSourceAvailable,
@@ -87,6 +95,18 @@ export const ReviewToolbar = memo(function ReviewToolbar({
           <Tooltip content="Refresh diff">
             <Button size="icon-sm" onClick={onRefresh} className="rounded-xs">
               <ArrowsClockwise size={14} />
+            </Button>
+          </Tooltip>
+        )}
+
+        {onDiscardAll && (
+          <Tooltip content="Revert all local changes">
+            <Button
+              size="icon-sm"
+              onClick={onDiscardAll}
+              className="rounded-xs"
+            >
+              <ArrowCounterClockwise size={14} />
             </Button>
           </Tooltip>
         )}

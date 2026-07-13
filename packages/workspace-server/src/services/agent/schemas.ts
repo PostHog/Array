@@ -4,6 +4,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { effortLevelSchema } from "@posthog/shared/domain-types";
 import { z } from "zod";
+import { USER_AGENT_INSTRUCTIONS_MAX_LENGTH } from "../os/schemas";
 
 export { effortLevelSchema };
 export type { EffortLevel } from "@posthog/shared/domain-types";
@@ -30,9 +31,25 @@ export const sessionConfigSchema = z.object({
   additionalDirectories: z.array(z.string()).optional(),
   /** Permission mode to use for the session (e.g. "default", "acceptEdits", "plan", "bypassPermissions") */
   permissionMode: z.string().optional(),
+  /**
+   * Session ID of an imported Claude Code CLI transcript already present in
+   * CLAUDE_CONFIG_DIR. Starts the session via loadSession so the prior
+   * history is replayed to the client. Claude adapter only.
+   */
+  importedSessionId: z.string().optional(),
 });
 
 export type SessionConfig = z.infer<typeof sessionConfigSchema>;
+
+// Sized for personalization synced from an AGENTS.md/CLAUDE.md file, which
+// can be far larger than the 2000-char hand-typed settings field. Kept equal
+// to OsService's truncation length (USER_AGENT_INSTRUCTIONS_MAX_LENGTH) or a
+// synced file gets truncated to fit but still fails this check. Shared by
+// startSessionInput and reconnectSessionInput below.
+const customInstructionsField = z
+  .string()
+  .max(USER_AGENT_INSTRUCTIONS_MAX_LENGTH)
+  .optional();
 
 // Start session input/output
 
@@ -47,7 +64,7 @@ export const startSessionInput = z.object({
   runMode: z.enum(["local", "cloud"]).optional(),
   adapter: z.enum(["claude", "codex"]).optional(),
   additionalDirectories: z.array(z.string()).optional(),
-  customInstructions: z.string().max(2000).optional(),
+  customInstructions: customInstructionsField,
   /**
    * Replaces the PostHog system prompt entirely for this session. Used by
    * constrained, single-purpose surfaces (e.g. the canvas generator) that drive
@@ -63,6 +80,17 @@ export const startSessionInput = z.object({
   effort: effortLevelSchema.optional(),
   model: z.string().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
+  /**
+   * Session ID of an imported Claude Code CLI transcript already present in
+   * CLAUDE_CONFIG_DIR. Starts the session via loadSession so the prior
+   * history is replayed to the client. Claude adapter only.
+   */
+  importedSessionId: z.string().optional(),
+  /**
+   * Whether rtk command-output compression is enabled for this session.
+   * Defaults to enabled; false sets POSTHOG_RTK=0 on the agent environment.
+   */
+  rtkEnabled: z.boolean().optional(),
 });
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;
@@ -124,6 +152,11 @@ export const sessionResponseSchema = z.object({
   sessionId: z.string(),
   channel: z.string(),
   configOptions: z.array(sessionConfigOptionSchema).optional(),
+  // The adapter's negotiated steering capability from initialize
+  // (`_meta.posthog.steering`): "native" folds a mid-turn message into the
+  // running turn; "interrupt-resend" (legacy) or absent means the host must
+  // cancel + resend instead. Drives the host's steer-vs-resend decision.
+  steering: z.string().optional(),
 });
 
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
@@ -186,12 +219,22 @@ export const reconnectSessionInput = z.object({
   additionalDirectories: z.array(z.string()).optional(),
   permissionMode: z.string().optional(),
   model: z.string().optional(),
-  customInstructions: z.string().max(2000).optional(),
+  customInstructions: customInstructionsField,
   effort: effortLevelSchema.optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
+  /** See startSessionInput.rtkEnabled. */
+  rtkEnabled: z.boolean().optional(),
 });
 
 export type ReconnectSessionInput = z.infer<typeof reconnectSessionInput>;
+
+/** Whether an rtk binary is installed on this host, independent of the toggle. */
+export const rtkStatusOutput = z.object({
+  available: z.boolean(),
+  binaryPath: z.string().nullable(),
+});
+
+export type RtkStatus = z.infer<typeof rtkStatusOutput>;
 
 // Set config option input (for Codex reasoning level, etc.)
 export const setConfigOptionInput = z.object({

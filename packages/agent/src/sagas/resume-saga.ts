@@ -36,6 +36,7 @@ export interface ResumeOutput {
   interrupted: boolean;
   lastDevice?: DeviceInfo;
   logEntryCount: number;
+  sessionId: string | null;
 }
 
 export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
@@ -87,9 +88,14 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
       Promise.resolve(this.findLastDeviceInfo(entries)),
     );
 
+    const sessionId = await this.readOnlyStep("find_session_id", () =>
+      Promise.resolve(this.findSessionId(entries)),
+    );
+
     this.log.info("Resume state rebuilt", {
       turns: conversation.length,
       hasGitCheckpoint: !!latestGitCheckpoint,
+      hasSessionId: !!sessionId,
       interrupted: false,
     });
 
@@ -99,6 +105,7 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
       interrupted: false,
       lastDevice,
       logEntryCount: entries.length,
+      sessionId,
     };
   }
 
@@ -108,7 +115,24 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
       latestGitCheckpoint: null,
       interrupted: false,
       logEntryCount: 0,
+      sessionId: null,
     };
+  }
+
+  private findSessionId(entries: StoredNotification[]): string | null {
+    const runStarted = POSTHOG_NOTIFICATIONS.RUN_STARTED;
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const method = entries[i].notification?.method;
+      if (method === runStarted || method === `_${runStarted}`) {
+        const params = entries[i].notification?.params as
+          | { sessionId?: string }
+          | undefined;
+        if (typeof params?.sessionId === "string" && params.sessionId) {
+          return params.sessionId;
+        }
+      }
+    }
+    return null;
   }
 
   private findLatestGitCheckpoint(

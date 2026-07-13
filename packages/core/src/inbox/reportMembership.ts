@@ -1,13 +1,16 @@
 import type { SignalReport } from "@posthog/shared/types";
 
 /**
- * Statuses that are out of the inbox entirely (user-suppressed or removed).
+ * Statuses that are out of the inbox entirely (user-suppressed, resolved, or
+ * removed). `resolved` is terminal — its implementation PR merged — so it drops
+ * out of the live inbox and is surfaced only in the Archive tab for reference.
  * `failed` is NOT in here: failed runs surface in the Runs tab's Recently
  * finished section so the user can see what went wrong. Other tabs filter
  * them out via their own predicates.
  */
 export const INBOX_EXCLUDED_STATUSES = new Set<SignalReport["status"]>([
   "suppressed",
+  "resolved",
   "deleted",
 ]);
 
@@ -16,19 +19,20 @@ export function isExcludedFromInbox(report: SignalReport): boolean {
 }
 
 /**
- * Archive tab membership. `suppressed` is the only status that represents "the
- * user archived this out of the inbox" — there is no separate `dismissed` /
- * `resolved` status in the enum (see `SignalReportStatus`), the archive action
- * sets `suppressed`. The other not-in-inbox states are deliberately excluded:
- * `deleted` is permanent (gone, never restorable, stripped server-side), and
- * snooze is not a status at all — it is a temporary `snoozed_until` timestamp
- * on an otherwise-active report that auto-returns to the inbox when it elapses,
- * so it doesn't belong in a manual restore list. Archived reports are fetched
- * by a dedicated query (the main pipeline query excludes them), so this
- * predicate is applied to that separate list.
+ * Archive tab membership — the two terminal, not-in-inbox states. `suppressed`
+ * is "the user archived this out of the inbox" (the archive action sets it; it
+ * is restorable). `resolved` is "the implementation PR merged" — terminal, set
+ * server-side, shown for reference only and not restorable. The other
+ * not-in-inbox states are deliberately excluded: `deleted` is permanent (gone,
+ * never restorable, stripped server-side), and snooze is not a status at all —
+ * it is a temporary `snoozed_until` timestamp on an otherwise-active report that
+ * auto-returns to the inbox when it elapses, so it doesn't belong in a manual
+ * restore list. Archived reports are fetched by a dedicated query (the main
+ * pipeline query excludes them), so this predicate is applied to that separate
+ * list.
  */
 export function isDismissedReport(report: SignalReport): boolean {
-  return report.status === "suppressed";
+  return report.status === "suppressed" || report.status === "resolved";
 }
 
 export type InboxScope = "for-you" | "entire-project" | `teammate:${string}`;

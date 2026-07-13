@@ -1,3 +1,5 @@
+import { POSTHOG_GITHUB_APP_URL } from "../integrations/githubApp";
+
 export function summarizeReposByOwner(
   repositories: readonly string[],
 ): { owner: string; count: number }[] {
@@ -25,14 +27,11 @@ export function githubInstallationSettingsUrl(
   integration: GithubInstallationLike,
 ): string {
   const accountType = integration.account?.type;
-  const accountName = integration.account?.name;
   if (
     typeof accountType === "string" &&
-    accountType.toLowerCase() === "organization" &&
-    typeof accountName === "string" &&
-    accountName
+    accountType.toLowerCase() === "organization"
   ) {
-    return `https://github.com/organizations/${accountName}/settings/installations/${integration.installation_id}`;
+    return POSTHOG_GITHUB_APP_URL;
   }
   return `https://github.com/settings/installations/${integration.installation_id}`;
 }

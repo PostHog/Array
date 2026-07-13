@@ -28,6 +28,7 @@ export interface ResumeState {
   interrupted: boolean;
   lastDevice?: DeviceInfo;
   logEntryCount: number;
+  sessionId: string | null;
 }
 
 export interface ConversationTurn {
@@ -93,6 +94,7 @@ export async function resumeFromLog(
     interrupted: result.data.interrupted,
     lastDevice: result.data.lastDevice,
     logEntryCount: result.data.logEntryCount,
+    sessionId: result.data.sessionId,
   };
 }
 

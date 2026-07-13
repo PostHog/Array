@@ -1,10 +1,9 @@
 import {
-  CaretDown,
-  CaretUp,
   Check,
   Copy,
   File,
   FileText,
+  Scroll,
   SlackLogo,
 } from "@phosphor-icons/react";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
@@ -16,14 +15,15 @@ import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import { useFeatureFlag } from "../../../feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "../../../panels/panelLayoutStore";
 import type { UserMessageAttachment } from "../../userMessageTypes";
+import { CollapsibleMessageContent } from "./CollapsibleMessageContent";
+import { extractCanvasInstructions } from "./canvasInstructions";
 import { extractChannelContext } from "./channelContext";
+import { extractCustomInstructions } from "./customInstructions";
 import {
   hasFileMentions,
   MentionChip,
   parseFileMentions,
 } from "./parseFileMentions";
-
-const COLLAPSED_MAX_HEIGHT = 160;
 
 interface UserMessageProps {
   content: string;
@@ -59,11 +59,15 @@ export const UserMessage = memo(function UserMessage({
   animate = true,
   taskId,
 }: UserMessageProps) {
-  // A channel's CONTEXT.md, if injected into this prompt, is collapsed into a
-  // clickable tag instead of rendered inline; the rest of the prompt renders
-  // normally. Clicking the tag opens the snapshot as a file tab. The clickable
-  // tag + split tab is a project-bluebird feature, but we always strip the block
-  // so the raw <channel_context> XML never leaks for flag-off viewers.
+  // A channel's CONTEXT.md and the canvas generation instructions, if injected
+  // into this prompt, are each collapsed into a clickable tag instead of
+  // rendered inline; the rest of the prompt renders normally. Clicking a tag
+  // opens the snapshot as a split tab. The clickable tag + split tab is a
+  // project-bluebird feature, but we always strip the blocks so the raw
+  // <channel_context>/<canvas_generation_instructions> XML never leaks for
+  // flag-off viewers. The user's saved personalization
+  // (<user_custom_instructions>) is always-on background, not contextual to this
+  // message, so it's stripped without a tag.
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
@@ -72,25 +76,35 @@ export const UserMessage = memo(function UserMessage({
     () => extractChannelContext(content),
     [content],
   );
-  const displayContent = channelContext ? channelContext.stripped : content;
+  const afterChannelContext = channelContext
+    ? channelContext.stripped
+    : content;
+  const canvasInstructions = useMemo(
+    () => extractCanvasInstructions(afterChannelContext),
+    [afterChannelContext],
+  );
+  const afterCanvasInstructions = canvasInstructions
+    ? canvasInstructions.stripped
+    : afterChannelContext;
+  const customInstructions = useMemo(
+    () => extractCustomInstructions(afterCanvasInstructions),
+    [afterCanvasInstructions],
+  );
+  const displayContent = customInstructions
+    ? customInstructions.stripped
+    : afterCanvasInstructions;
   const showChannelContextTag = !!channelContext && bluebirdEnabled;
+  const showCanvasInstructionsTag = !!canvasInstructions && bluebirdEnabled;
   const openChannelContextInSplit = usePanelLayoutStore(
     (s) => s.openChannelContextInSplit,
+  );
+  const openCanvasInstructionsInSplit = usePanelLayoutStore(
+    (s) => s.openCanvasInstructionsInSplit,
   );
 
   const containsFileMentions = hasFileMentions(displayContent);
   const showAttachmentChips = attachments.length > 0 && !containsFileMentions;
   const [copied, setCopied] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isOverflowing, setIsOverflowing] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = contentRef.current;
-    if (el) {
-      setIsOverflowing(el.scrollHeight > COLLAPSED_MAX_HEIGHT);
-    }
-  }, []);
 
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -115,43 +129,51 @@ export const UserMessage = memo(function UserMessage({
         className="group/msg relative border-l-2 bg-gray-2 py-2 pl-3"
         style={{ borderColor: "var(--accent-9)" }}
       >
-        <Box
-          ref={contentRef}
-          className="relative overflow-hidden font-medium text-[13px] [&>*:last-child]:mb-0 [&_p]:leading-[1.9]"
-          style={
-            !isExpanded && isOverflowing
-              ? { maxHeight: COLLAPSED_MAX_HEIGHT }
-              : undefined
-          }
-        >
+        <CollapsibleMessageContent contentClassName="font-medium text-[13px] [&_p]:leading-[1.9]">
           {containsFileMentions ? (
             parseFileMentions(displayContent)
           ) : (
             <MarkdownRenderer content={displayContent} />
           )}
-          {showChannelContextTag && channelContext && (
+          {(showChannelContextTag || showCanvasInstructionsTag) && (
             <Flex
               wrap="wrap"
               gap="1"
               className={displayContent ? "mt-1.5" : ""}
             >
-              <MentionChip
-                icon={<FileText size={12} />}
-                label={`${
-                  channelContext.mention.name
-                    ? `#${channelContext.mention.name} `
-                    : ""
-                }CONTEXT.md`}
-                onClick={
-                  taskId
-                    ? () =>
-                        openChannelContextInSplit(taskId, {
-                          channelName: channelContext.mention.name,
-                          body: channelContext.mention.body,
-                        })
-                    : undefined
-                }
-              />
+              {showChannelContextTag && channelContext && (
+                <MentionChip
+                  icon={<FileText size={12} />}
+                  label={`${
+                    channelContext.mention.name
+                      ? `#${channelContext.mention.name} `
+                      : ""
+                  }CONTEXT.md`}
+                  onClick={
+                    taskId
+                      ? () =>
+                          openChannelContextInSplit(taskId, {
+                            channelName: channelContext.mention.name,
+                            body: channelContext.mention.body,
+                          })
+                      : undefined
+                  }
+                />
+              )}
+              {showCanvasInstructionsTag && canvasInstructions && (
+                <MentionChip
+                  icon={<Scroll size={12} />}
+                  label="Canvas instructions"
+                  onClick={
+                    taskId
+                      ? () =>
+                          openCanvasInstructionsInSplit(taskId, {
+                            body: canvasInstructions.body,
+                          })
+                      : undefined
+                  }
+                />
+              )}
             </Flex>
           )}
           {showAttachmentChips && (
@@ -169,34 +191,7 @@ export const UserMessage = memo(function UserMessage({
               ))}
             </Flex>
           )}
-          {!isExpanded && isOverflowing && (
-            <Box
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-12"
-              style={{
-                background: "linear-gradient(transparent, var(--gray-2))",
-              }}
-            />
-          )}
-        </Box>
-        {isOverflowing && (
-          <button
-            type="button"
-            onClick={() => setIsExpanded((prev) => !prev)}
-            className="mt-1 inline-flex items-center gap-1 text-[12px] text-accent-11 hover:text-accent-12"
-          >
-            {isExpanded ? (
-              <>
-                <CaretUp size={12} />
-                Show less
-              </>
-            ) : (
-              <>
-                <CaretDown size={12} />
-                Show more
-              </>
-            )}
-          </button>
-        )}
+        </CollapsibleMessageContent>
         {sourceUrl && (
           <a
             href={sourceUrl}

@@ -1,6 +1,7 @@
 import type { PermissionRequest } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
+  formatPermissionAnswerPrompt,
   isOtherPermissionOption,
   planPermissionResponse,
 } from "./permissionResponse";
@@ -77,4 +78,72 @@ describe("planPermissionResponse", () => {
     expect(plan.respondWithCustomInput).toBe(false);
     expect(plan.resendPromptText).toBeNull();
   });
+});
+
+describe("formatPermissionAnswerPrompt", () => {
+  const questionPermission = (questions: Array<{ question: string }>) =>
+    ({
+      taskRunId: "run-1",
+      receivedAt: 0,
+      toolCall: {
+        toolCallId: "tool-1",
+        _meta: { codeToolKind: "question", questions },
+      },
+      options: [
+        { optionId: "option_0", name: "MIT", kind: "allow_once" },
+        { optionId: "option_1", name: "Apache 2.0", kind: "allow_once" },
+      ],
+    }) as unknown as PermissionRequest;
+
+  it("quotes each question above its answer", () => {
+    const prompt = formatPermissionAnswerPrompt(
+      questionPermission([{ question: "Which license should I use?" }]),
+      "option_0",
+      undefined,
+      { "Which license should I use?": "MIT" },
+    );
+    expect(prompt).toBe("MIT");
+  });
+
+  it("carries every entry of a multi-question answers map", () => {
+    const prompt = formatPermissionAnswerPrompt(
+      questionPermission([{ question: "Q1?" }, { question: "Q2?" }]),
+      "option_0",
+      undefined,
+      { "Q1?": "A1", "Q2?": "A2" },
+    );
+    expect(prompt).toBe("1. A1\n2. A2");
+  });
+
+  it("falls back to the picked option label when no answers map is sent", () => {
+    const prompt = formatPermissionAnswerPrompt(
+      questionPermission([{ question: "Which license should I use?" }]),
+      "option_1",
+    );
+    expect(prompt).toBe("Apache 2.0");
+  });
+
+  it("uses free-text custom input for a question", () => {
+    const prompt = formatPermissionAnswerPrompt(
+      questionPermission([{ question: "Which license should I use?" }]),
+      "_other",
+      "BSD, actually",
+    );
+    expect(prompt).toBe("BSD, actually");
+  });
+
+  it.each([
+    ["plain approval", "allow", undefined],
+    ["plain rejection with feedback", "reject", "not like this"],
+  ])(
+    "returns null for %s so no resume run is spun",
+    (_caseName, optionId, customInput) => {
+      const approval = makePermission([
+        { optionId: "allow", kind: "allow_once" },
+      ]);
+      expect(
+        formatPermissionAnswerPrompt(approval, optionId, customInput),
+      ).toBeNull();
+    },
+  );
 });

@@ -38,9 +38,12 @@ function fakeReport(overrides: Partial<SignalReport> = {}): SignalReport {
 }
 
 describe("isDismissedReport", () => {
-  it("matches only suppressed reports", () => {
-    expect(isDismissedReport(fakeReport({ status: "suppressed" }))).toBe(true);
-  });
+  it.each(["suppressed", "resolved"] as const)(
+    "matches %s reports",
+    (status) => {
+      expect(isDismissedReport(fakeReport({ status }))).toBe(true);
+    },
+  );
 
   it.each([
     "potential",
@@ -158,8 +161,11 @@ describe("tabFilters", () => {
   });
 
   describe("isExcludedFromInbox", () => {
-    it("returns true for suppressed and deleted", () => {
+    it("returns true for suppressed, resolved and deleted", () => {
       expect(isExcludedFromInbox(fakeReport({ status: "suppressed" }))).toBe(
+        true,
+      );
+      expect(isExcludedFromInbox(fakeReport({ status: "resolved" }))).toBe(
         true,
       );
       expect(isExcludedFromInbox(fakeReport({ status: "deleted" }))).toBe(true);

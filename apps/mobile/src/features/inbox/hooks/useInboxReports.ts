@@ -1,20 +1,32 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useAuthStore } from "@/features/auth";
 import {
   type DismissSignalReportInput,
   dismissSignalReport,
   getAvailableSuggestedReviewers,
+  getCommitDiff,
   getSignalProcessingState,
   getSignalReport,
   getSignalReportArtefacts,
   getSignalReportSignals,
   getSignalReports,
+  restoreSignalReport,
   updateSignalReportArtefact,
 } from "../api";
-import { INBOX_REFETCH_INTERVAL_MS } from "../constants";
+import {
+  INBOX_DISMISSED_STATUS_FILTER,
+  INBOX_REFETCH_INTERVAL_MS,
+} from "../constants";
 import { useInboxFilterStore } from "../stores/inboxFilterStore";
 import type {
   AvailableSuggestedReviewersResponse,
+  CommitDiffResponse,
   SignalProcessingStateResponse,
   SignalReport,
   SignalReportArtefactsResponse,
@@ -25,23 +37,39 @@ import type {
   SuggestedReviewerWriteEntry,
 } from "../types";
 import {
+  buildArchiveListOrdering,
   buildPriorityFilterParam,
   buildSignalReportListOrdering,
   buildStatusFilterParam,
   buildSuggestedReviewerFilterParam,
+  isRestorableReport,
 } from "../utils";
 
 export const inboxKeys = {
   all: ["inbox", "signal-reports"] as const,
   list: (params?: SignalReportsQueryParams) =>
     [...inboxKeys.all, "list", params ?? {}] as const,
+  archived: (params?: SignalReportsQueryParams) =>
+    [...inboxKeys.all, "archived", params ?? {}] as const,
   detail: (reportId: string) => [...inboxKeys.all, reportId, "detail"] as const,
   artefacts: (reportId: string) =>
     [...inboxKeys.all, reportId, "artefacts"] as const,
   signals: (reportId: string) =>
     [...inboxKeys.all, reportId, "signals"] as const,
+  commitDiff: (reportId: string, artefactId: string) =>
+    [...inboxKeys.all, reportId, "artefacts", artefactId, "diff"] as const,
   processingState: ["inbox", "signal-processing-state"] as const,
 };
+
+const REPORTS_PAGE_SIZE = 100;
+
+export function getReportsNextPageParam(
+  lastPage: SignalReportsResponse,
+  allPages: SignalReportsResponse[],
+): number | undefined {
+  const loaded = allPages.reduce((n, page) => n + page.results.length, 0);
+  return loaded < lastPage.count ? loaded : undefined;
+}
 
 export function useInboxReports(options?: { enabled?: boolean }) {
   const { projectId, oauthAccessToken } = useAuthStore();
@@ -68,11 +96,50 @@ export function useInboxReports(options?: { enabled?: boolean }) {
     priority: buildPriorityFilterParam(priorityFilter),
   };
 
-  const query = useQuery<SignalReportsResponse>({
+  const query = useInfiniteQuery({
     queryKey: inboxKeys.list(params),
-    queryFn: () => getSignalReports(params),
+    queryFn: ({ pageParam }) =>
+      getSignalReports({
+        ...params,
+        limit: REPORTS_PAGE_SIZE,
+        offset: pageParam,
+      }),
     enabled: !!projectId && !!oauthAccessToken && (options?.enabled ?? true),
     refetchInterval: INBOX_REFETCH_INTERVAL_MS,
+    initialPageParam: 0,
+    getNextPageParam: getReportsNextPageParam,
+  });
+
+  const reports = useMemo(
+    () => query.data?.pages.flatMap((page) => page.results) ?? [],
+    [query.data?.pages],
+  );
+
+  return {
+    reports,
+    totalCount: query.data?.pages[0]?.count ?? 0,
+    isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    error: query.error?.message ?? null,
+    refetch: query.refetch,
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    fetchNextPage: () => query.fetchNextPage({ cancelRefetch: false }),
+  };
+}
+
+export function useArchivedReports(options?: { enabled?: boolean }) {
+  const { projectId, oauthAccessToken } = useAuthStore();
+
+  const params: SignalReportsQueryParams = {
+    status: INBOX_DISMISSED_STATUS_FILTER,
+    ordering: buildArchiveListOrdering("updated_at", "desc"),
+  };
+
+  const query = useQuery<SignalReportsResponse>({
+    queryKey: inboxKeys.archived(params),
+    queryFn: () => getSignalReports(params),
+    enabled: !!projectId && !!oauthAccessToken && (options?.enabled ?? true),
   });
 
   return {
@@ -111,15 +178,19 @@ export function useSignalProcessingState(options?: { enabled?: boolean }) {
 
 export function useAvailableSuggestedReviewers(options?: {
   enabled?: boolean;
+  query?: string;
 }) {
   const { projectId, oauthAccessToken } = useAuthStore();
+  const query = options?.query?.trim() ?? "";
 
   return useQuery<AvailableSuggestedReviewersResponse>({
-    queryKey: [...inboxKeys.all, "available-reviewers"] as const,
-    queryFn: () => getAvailableSuggestedReviewers(),
+    queryKey: [...inboxKeys.all, "available-reviewers", query] as const,
+    queryFn: () => getAvailableSuggestedReviewers(query || undefined),
     enabled: !!projectId && !!oauthAccessToken && (options?.enabled ?? true),
     staleTime: 5 * 60 * 1000,
-    refetchInterval: 60_000,
+    // Only poll the unfiltered list; search terms are transient and each one
+    // would otherwise spawn its own background poller.
+    refetchInterval: query === "" ? 60_000 : false,
   });
 }
 
@@ -133,6 +204,27 @@ export function useInboxReportArtefacts(reportId: string | null) {
       return getSignalReportArtefacts(reportId);
     },
     enabled: !!projectId && !!oauthAccessToken && !!reportId,
+    // The log is a live work record — agents append artefacts while a report
+    // is open, so refresh it gently rather than trusting the default staleTime.
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+  });
+}
+
+export function useCommitDiff(
+  reportId: string,
+  artefactId: string,
+  enabled: boolean,
+) {
+  const { projectId, oauthAccessToken } = useAuthStore();
+
+  return useQuery<CommitDiffResponse>({
+    queryKey: inboxKeys.commitDiff(reportId, artefactId),
+    queryFn: () => getCommitDiff(reportId, artefactId),
+    // A commit's diff is immutable, so only fetch once expanded and never retry.
+    enabled: enabled && !!projectId && !!oauthAccessToken,
+    staleTime: 5 * 60_000,
+    retry: false,
   });
 }
 
@@ -202,6 +294,27 @@ export function useDismissReport(reportId: string) {
     mutationFn: (input) => dismissSignalReport(reportId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inboxKeys.detail(reportId) });
+      queryClient.invalidateQueries({ queryKey: inboxKeys.all });
+    },
+  });
+}
+
+export function useRestoreReport() {
+  const queryClient = useQueryClient();
+
+  // Resolves to whether the report was actually re-queued. Revalidate against
+  // the server first so a stale row can't silently reopen an already-active
+  // report.
+  return useMutation<boolean, Error, string>({
+    mutationFn: async (reportId) => {
+      const current = await getSignalReport(reportId);
+      if (current && !isRestorableReport(current)) {
+        return false;
+      }
+      await restoreSignalReport(reportId);
+      return true;
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inboxKeys.all });
     },
   });

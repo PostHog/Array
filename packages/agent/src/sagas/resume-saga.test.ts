@@ -1,5 +1,6 @@
 import type { SagaLogger } from "@posthog/shared";
 import { afterEach, beforeEach, describe, expect, it, type vi } from "vitest";
+import { POSTHOG_NOTIFICATIONS } from "../acp-extensions";
 import type { PostHogAPIClient } from "../posthog-api";
 import { ResumeSaga } from "./resume-saga";
 import {
@@ -8,6 +9,7 @@ import {
   createGitCheckpointNotification,
   createMockApiClient,
   createMockLogger,
+  createNotification,
   createTaskRun,
   createTestRepo,
   createToolCall,
@@ -550,6 +552,68 @@ describe("ResumeSaga", () => {
       if (!result.success) {
         expect(result.error).toContain("Log fetch failed");
       }
+    });
+  });
+
+  describe("session id", () => {
+    const runStarted = (sessionId: string) =>
+      createNotification(POSTHOG_NOTIFICATIONS.RUN_STARTED, { sessionId });
+    const sdkPrefixedRunStarted = (sessionId: string) =>
+      createNotification(`_${POSTHOG_NOTIFICATIONS.RUN_STARTED}`, {
+        sessionId,
+      });
+
+    it.each([
+      {
+        name: "extracts the session id from the run_started notification",
+        entries: () => [
+          runStarted("session-abc"),
+          createUserMessage("Hello"),
+          createAgentChunk("Hi"),
+        ],
+        expected: "session-abc",
+      },
+      {
+        name: "reads the sdk-prefixed run_started method too",
+        entries: () => [
+          sdkPrefixedRunStarted("session-prefixed"),
+          createUserMessage("Hello"),
+        ],
+        expected: "session-prefixed",
+      },
+      {
+        name: "returns the most recent session id when several are present",
+        entries: () => [
+          runStarted("session-old"),
+          createUserMessage("Hello"),
+          runStarted("session-new"),
+        ],
+        expected: "session-new",
+      },
+      {
+        name: "returns null when no run_started notification is present",
+        entries: () => [createUserMessage("Hello"), createAgentChunk("Hi")],
+        expected: null,
+      },
+    ])("$name", async ({ entries, expected }) => {
+      (mockApiClient.getTaskRun as ReturnType<typeof vi.fn>).mockResolvedValue(
+        createTaskRun(),
+      );
+      (
+        mockApiClient.fetchTaskRunLogs as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(entries());
+
+      const saga = new ResumeSaga(mockLogger);
+      const result = await saga.run({
+        taskId: "task-1",
+        runId: "run-1",
+        repositoryPath: repo.path,
+        apiClient: mockApiClient,
+      });
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.sessionId).toBe(expected);
     });
   });
 

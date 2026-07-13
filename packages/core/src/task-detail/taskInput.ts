@@ -1,5 +1,9 @@
 import { buildCloudTaskDescription } from "@posthog/core/editor/cloud-prompt";
-import type { TaskCreationInput, WorkspaceMode } from "@posthog/shared";
+import type {
+  Adapter,
+  TaskCreationInput,
+  WorkspaceMode,
+} from "@posthog/shared";
 import type { ExecutionMode } from "@posthog/shared/domain-types";
 
 export interface PrepareTaskInputOptions {
@@ -10,16 +14,22 @@ export interface PrepareTaskInputOptions {
   workspaceMode: WorkspaceMode;
   branch?: string | null;
   allowRemoteBranchCheckout?: boolean;
+  reuseExistingWorktree?: boolean;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   signalReportId?: string;
   additionalDirectories?: string[];
   channelContext?: string;
   channelName?: string;
+  channelId?: string;
+  customInstructions?: string;
+  autoPublishCloudRuns?: boolean;
+  rtkEnabledCloud?: boolean;
   allowNoRepo?: boolean;
 }
 
@@ -42,20 +52,26 @@ export function prepareTaskInput(
     workspaceMode: options.workspaceMode,
     branch: options.branch,
     allowRemoteBranchCheckout: options.allowRemoteBranchCheckout,
+    reuseExistingWorktree: options.reuseExistingWorktree,
     executionMode: options.executionMode,
     adapter: options.adapter,
     model: options.model,
     reasoningLevel: options.reasoningLevel,
     environmentId: options.environmentId ?? undefined,
     sandboxEnvironmentId: options.sandboxEnvironmentId,
+    customImageId: options.customImageId,
     cloudPrAuthorshipMode:
       options.signalReportId && isCloud ? "user" : undefined,
     cloudRunSource:
       options.signalReportId && isCloud ? "signal_report" : undefined,
+    cloudAutoPublish: isCloud ? options.autoPublishCloudRuns : undefined,
+    cloudRtkEnabled: isCloud ? options.rtkEnabledCloud : undefined,
     signalReportId: options.signalReportId,
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,
     channelName: options.channelName,
+    channelId: options.channelId,
+    customInstructions: isCloud ? options.customInstructions : undefined,
     allowNoRepo: options.allowNoRepo,
   };
 }

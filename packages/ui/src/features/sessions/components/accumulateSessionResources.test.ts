@@ -1,6 +1,9 @@
 import type { AcpMessage } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
-import { accumulateSessionResources } from "./accumulateSessionResources";
+import {
+  accumulateSessionResources,
+  createSessionResourcesTracker,
+} from "./accumulateSessionResources";
 
 function resourcesUsedMsg(
   ts: number,
@@ -62,5 +65,53 @@ describe("accumulateSessionResources", () => {
     ];
 
     expect(accumulateSessionResources(events)).toEqual([]);
+  });
+
+  it("tracker only processes newly appended events", () => {
+    const first = resourcesUsedMsg(1, [
+      { id: "feature_flags", label: "Feature flags" },
+    ]);
+    const tracker = createSessionResourcesTracker();
+
+    expect(tracker.update([first])).toEqual([
+      { id: "feature_flags", label: "Feature flags" },
+    ]);
+
+    Object.defineProperty(first, "message", {
+      get() {
+        throw new Error("old event was read again");
+      },
+    });
+
+    expect(
+      tracker.update([
+        first,
+        resourcesUsedMsg(2, [
+          { id: "product_analytics", label: "Product analytics" },
+        ]),
+      ]),
+    ).toEqual([
+      { id: "feature_flags", label: "Feature flags" },
+      { id: "product_analytics", label: "Product analytics" },
+    ]);
+  });
+
+  it("rebuilds without carrying over products when the list is replaced", () => {
+    const tracker = createSessionResourcesTracker();
+
+    tracker.update([
+      resourcesUsedMsg(1, [{ id: "feature_flags", label: "Feature flags" }]),
+      resourcesUsedMsg(2, [{ id: "experiments", label: "Experiments" }]),
+    ]);
+
+    // A shorter, unrelated list breaks the append invariant — the prior
+    // products must not leak into the result.
+    expect(
+      tracker.update([
+        resourcesUsedMsg(3, [
+          { id: "product_analytics", label: "Product analytics" },
+        ]),
+      ]),
+    ).toEqual([{ id: "product_analytics", label: "Product analytics" }]);
   });
 });

@@ -26,6 +26,10 @@ import type { IRepositoryRepository } from "@posthog/workspace-server/db/reposit
 import { createMockRepositoryRepository } from "@posthog/workspace-server/db/repositories/repository-repository.mock";
 import { createMockSuspensionRepository } from "@posthog/workspace-server/db/repositories/suspension-repository.mock";
 import {
+  createMockTaskMetadataRepository,
+  type MockTaskMetadataRepository,
+} from "@posthog/workspace-server/db/repositories/task-metadata-repository.mock";
+import {
   createMockWorkspaceRepository,
   type MockWorkspaceRepository,
 } from "@posthog/workspace-server/db/repositories/workspace-repository.mock";
@@ -69,6 +73,7 @@ interface TestContext {
   workspaceRepo: MockWorkspaceRepository;
   worktreeRepo: MockWorktreeRepository;
   archiveRepo: MockArchiveRepository;
+  taskMetadataRepo: MockTaskMetadataRepository;
   repoPath: string;
   repoId: string;
   worktreeBasePath: string;
@@ -135,6 +140,7 @@ async function withTestContext(
   };
 
   const suspensionRepo = createMockSuspensionRepository();
+  const taskMetadataRepo = createMockTaskMetadataRepository();
 
   const service = new ArchiveService(
     mocks.sessionCanceller as never,
@@ -145,7 +151,9 @@ async function withTestContext(
     worktreeRepo as never,
     archiveRepo as never,
     suspensionRepo as never,
+    taskMetadataRepo as never,
     workspaceSettings as never,
+    { deleteImportForTask: async () => {} },
     archiveLogger as never,
   );
 
@@ -211,6 +219,7 @@ async function withTestContext(
     workspaceRepo,
     worktreeRepo,
     archiveRepo,
+    taskMetadataRepo,
     repoPath,
     repoId,
     worktreeBasePath,
@@ -386,6 +395,67 @@ describe("ArchiveService integration", () => {
         expect(archived.branchName).toBeNull();
         expect(ctx.archiveRepo.findAll()).toHaveLength(1);
       }));
+
+    it("archive succeeds when worktree has an in-progress merge conflict", () =>
+      withTestContext({}, async (ctx) => {
+        const { worktreePath } = await ctx.setupWorktree("detached");
+
+        const wt = (cmd: string) =>
+          execSync(`git ${cmd}`, {
+            cwd: worktreePath,
+            encoding: "utf8",
+            stdio: "pipe",
+          });
+
+        await fs.writeFile(path.join(worktreePath, "c.txt"), "base\n");
+        wt("add c.txt");
+        wt("commit -m base");
+        wt("tag base_commit");
+
+        await fs.writeFile(path.join(worktreePath, "c.txt"), "AAA\n");
+        wt("add c.txt");
+        wt("commit -m a");
+        wt("tag commit_a");
+
+        wt("reset --hard base_commit");
+        await fs.writeFile(path.join(worktreePath, "c.txt"), "BBB\n");
+        wt("add c.txt");
+        wt("commit -m b");
+
+        wt("merge commit_a || true");
+
+        const archived = await ctx.service.archiveTask(ctx.archiveInput());
+
+        expect(archived.checkpointId).toBeNull();
+        expect(await pathExists(worktreePath)).toBe(false);
+        expect(ctx.archiveRepo.findAll()).toHaveLength(1);
+      }));
+
+    it("archive succeeds and drops the checkpoint when worktree removal fails", () =>
+      withTestContext({}, async (ctx) => {
+        await ctx.setupWorktree("detached");
+
+        // Simulate git refusing to remove the worktree (e.g. a stale lock).
+        // Capture succeeded, so the checkpoint ref exists — but since the
+        // worktree stays registered, keeping the restore point would make a
+        // later unarchive fail to re-add it. The archive must still be recorded
+        // and its checkpoint dropped.
+        const deleteSpy = vi
+          .spyOn(WorktreeManager.prototype, "deleteWorktree")
+          .mockRejectedValue(new Error("worktree is locked"));
+
+        try {
+          const archived = await ctx.service.archiveTask(ctx.archiveInput());
+
+          expect(deleteSpy).toHaveBeenCalled();
+          expect(archived.checkpointId).toBeNull();
+          const records = ctx.archiveRepo.findAll();
+          expect(records).toHaveLength(1);
+          expect(records[0].checkpointId).toBeNull();
+        } finally {
+          deleteSpy.mockRestore();
+        }
+      }));
   });
 
   describe("local/cloud mode", () => {
@@ -419,6 +489,82 @@ describe("ArchiveService integration", () => {
           branchName: null,
           checkpointId: null,
         });
+        // The archive must persist for a rowless task — otherwise the sidebar
+        // never learns it's archived and the row reappears on the next refetch.
+        expect(ctx.service.getArchivedTaskIds()).toContain("nonexistent");
+        expect(ctx.service.isArchived("nonexistent")).toBe(true);
+        expect(ctx.service.getArchivedTasks()).toContainEqual(
+          expect.objectContaining({ taskId: "nonexistent", mode: "cloud" }),
+        );
+      }));
+
+    it("rejects archiving a rowless task that is already archived", () =>
+      withTestContext({ hasWorkspace: false }, async (ctx) => {
+        await ctx.service.archiveTask({ taskId: "nonexistent" });
+        await expect(
+          ctx.service.archiveTask({ taskId: "nonexistent" }),
+        ).rejects.toThrow("already archived");
+      }));
+
+    // Unarchive and delete are parallel "remove a rowless task from the archived
+    // list" operations sharing the same arrange step; the per-case `extraAssert`
+    // covers what's unique (delete also drops the metadata row, not just the
+    // archived flag).
+    const rowlessRemovalCases: {
+      name: string;
+      act: (ctx: TestContext) => Promise<unknown>;
+      extraAssert?: (ctx: TestContext) => void;
+    }[] = [
+      {
+        name: "unarchiving clears its archived state",
+        act: (ctx) => ctx.service.unarchiveTask("nonexistent"),
+      },
+      {
+        name: "deleting removes its metadata row",
+        act: (ctx) => ctx.service.deleteArchivedTask("nonexistent"),
+        extraAssert: (ctx) =>
+          expect(ctx.taskMetadataRepo.findByTaskId("nonexistent")).toBeNull(),
+      },
+    ];
+
+    it.each(rowlessRemovalCases)(
+      "$name and drops it from the archived list",
+      ({ act, extraAssert }) =>
+        withTestContext({ hasWorkspace: false }, async (ctx) => {
+          await ctx.service.archiveTask({ taskId: "nonexistent" });
+
+          await act(ctx);
+
+          expect(ctx.service.getArchivedTaskIds()).not.toContain("nonexistent");
+          expect(ctx.service.isArchived("nonexistent")).toBe(false);
+          extraAssert?.(ctx);
+        }),
+    );
+
+    it("does not double-count a task with both a workspace archive and stale metadata", () =>
+      withTestContext({}, async (ctx) => {
+        // Task owns a workspace + archive (the authoritative record) yet also
+        // carries a lingering archivedAt in task_metadata. It must appear once.
+        const workspace = ctx.workspaceRepo.create({
+          taskId: TASK_ID,
+          repositoryId: null,
+          mode: "cloud",
+        });
+        ctx.archiveRepo.create({
+          workspaceId: workspace.id,
+          branchName: null,
+          checkpointId: null,
+        });
+        ctx.taskMetadataRepo.upsert(TASK_ID, {
+          archivedAt: new Date().toISOString(),
+        });
+
+        expect(
+          ctx.service.getArchivedTaskIds().filter((id) => id === TASK_ID),
+        ).toHaveLength(1);
+        expect(
+          ctx.service.getArchivedTasks().filter((t) => t.taskId === TASK_ID),
+        ).toHaveLength(1);
       }));
 
     it("unarchives task without repository association", () =>

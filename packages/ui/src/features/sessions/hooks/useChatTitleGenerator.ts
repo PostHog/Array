@@ -18,10 +18,15 @@ import {
   sessionStoreSetters,
   useSessionStore,
 } from "@posthog/ui/features/sessions/sessionStore";
+import {
+  type TitleGenerationEntry,
+  titleGenerationStoreApi,
+} from "@posthog/ui/features/sessions/titleGenerationStore";
 import { taskKeys } from "@posthog/ui/features/tasks/taskKeys";
 import { logger } from "@posthog/ui/shell/logger";
+import { titleAttachmentStoreApi } from "@posthog/ui/shell/titleAttachmentStore";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 const log = logger.scope("chat-title-generator");
 
@@ -43,9 +48,6 @@ export function useChatTitleGenerator(task: Task): void {
   );
   const queryClient = useQueryClient();
   const client = useOptionalAuthenticatedClient();
-  const lastGeneratedAtCount = useRef(0);
-  const initialDescriptionHandled = useRef(false);
-  const isGenerating = useRef(false);
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated" && !!state.cloudRegion,
   );
@@ -60,30 +62,37 @@ export function useChatTitleGenerator(task: Task): void {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    if (isGenerating.current) return;
+
+    const bookkeeping = titleGenerationStoreApi.get(taskId);
+    if (bookkeeping.inFlight) return;
+
+    const state = useSessionStore.getState();
+    const taskRunId = state.taskIdIndex[taskId];
+    const session = taskRunId ? state.sessions[taskRunId] : undefined;
+    const isTitleLocked = () =>
+      isAutoTitleLocked(getCachedTask(queryClient, taskId) ?? task);
 
     const { shouldGenerateFromPrompts, shouldGenerateFromTaskDescription } =
       decideTitleGeneration({
         promptCount,
-        lastGeneratedAtCount: lastGeneratedAtCount.current,
-        initialDescriptionHandled: initialDescriptionHandled.current,
+        lastGeneratedAtCount: bookkeeping.lastGeneratedAtCount,
+        initialDescriptionHandled: bookkeeping.initialDescriptionHandled,
         task,
+        isTitleLocked,
+        hasSummary: !!session?.conversationSummary,
       });
 
     if (!shouldGenerateFromPrompts && !shouldGenerateFromTaskDescription) {
       return;
     }
 
-    isGenerating.current = true;
+    titleGenerationStoreApi.update(taskId, { inFlight: true });
 
-    const state = useSessionStore.getState();
-    const taskRunId = state.taskIdIndex[taskId];
-    const session = taskRunId ? state.sessions[taskRunId] : undefined;
     let rawContent = task.description;
 
     if (shouldGenerateFromPrompts) {
       if (!session?.events) {
-        isGenerating.current = false;
+        titleGenerationStoreApi.update(taskId, { inFlight: false });
         return;
       }
 
@@ -95,16 +104,21 @@ export function useChatTitleGenerator(task: Task): void {
 
     const run = async () => {
       try {
-        const content =
-          await titleGenerator.enrichDescriptionWithFileContent(rawContent);
+        const attachmentPaths = titleAttachmentStoreApi.get(taskId) ?? [];
+        const content = await titleGenerator.enrichDescriptionWithFileContent(
+          rawContent,
+          attachmentPaths,
+        );
         const result = await titleGenerator.generateTitleAndSummary(content);
         if (result) {
+          // Drop the stash once a title has been successfully produced so the
+          // map doesn't grow across a long-lived session. Keeping it on failure
+          // lets the prompt-based regeneration at REGENERATE_INTERVAL pick it
+          // up and try again with the file contents.
+          titleAttachmentStoreApi.clear(taskId);
           const { title, summary } = result;
-          const titleLocked = isAutoTitleLocked(
-            getCachedTask(queryClient, taskId) ?? task,
-          );
 
-          if (title && titleLocked) {
+          if (title && isTitleLocked()) {
             log.debug("Skipping auto-title, user renamed task", { taskId });
           } else if (title) {
             if (client) {
@@ -148,13 +162,14 @@ export function useChatTitleGenerator(task: Task): void {
       } catch (error) {
         log.error("Failed to update task title", { taskId, error });
       } finally {
+        const patch: Partial<TitleGenerationEntry> = { inFlight: false };
         if (shouldGenerateFromPrompts) {
-          lastGeneratedAtCount.current = promptCount;
+          patch.lastGeneratedAtCount = promptCount;
         }
         if (shouldGenerateFromTaskDescription) {
-          initialDescriptionHandled.current = true;
+          patch.initialDescriptionHandled = true;
         }
-        isGenerating.current = false;
+        titleGenerationStoreApi.update(taskId, patch);
       }
     };
 

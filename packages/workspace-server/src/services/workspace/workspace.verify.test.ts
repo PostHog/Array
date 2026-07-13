@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockRepositoryRepository } from "../../db/repositories/repository-repository.mock";
 import { createMockWorkspaceRepository } from "../../db/repositories/workspace-repository.mock";
 import { createMockWorktreeRepository } from "../../db/repositories/worktree-repository.mock";
+import type { DatabaseService } from "../../db/service";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import type { SuspensionService } from "../suspension/suspension";
 import type {
@@ -39,6 +40,7 @@ function createService(worktreeBasePath: string) {
   };
 
   const service = new WorkspaceService(
+    { isInitialized: vi.fn(() => true) } as unknown as DatabaseService,
     {
       cancelSessionsByTaskId: vi.fn(async () => {}),
       onAgentFileActivity: vi.fn(),
@@ -60,6 +62,7 @@ function createService(worktreeBasePath: string) {
       getWorktreeLocation: () => worktreeBasePath,
     } as unknown as IWorkspaceSettings,
     { track: vi.fn() } as unknown as IAnalytics,
+    { deleteImportForTask: async () => {} },
     log,
   );
 
@@ -166,10 +169,14 @@ describe("WorkspaceService.verifyWorkspaceExists", () => {
       mode: "local",
       folderPath: scratchPath,
       worktreePath: null,
+      // Marked so the navigation task binder skips folder registration (and the
+      // "initialize git" dialog) for repo-less channel tasks.
+      isScratch: true,
     });
 
     const all = await service.getAllWorkspaces();
     expect(all[TASK_ID]?.folderPath).toBe(scratchPath);
+    expect(all[TASK_ID]?.isScratch).toBe(true);
 
     // It is not backed by a DB row.
     expect(workspaceRepo.findByTaskId(TASK_ID)).toBeNull();

@@ -40,7 +40,7 @@ export interface GitDiffSource {
     limit: number,
   ): Promise<GitCommitSummary[]>;
   getPrTemplate(directoryPath: string): Promise<GitPrTemplate>;
-  fetchIfStale(directoryPath: string): Promise<void>;
+  fetchFromRemote(directoryPath: string): Promise<void>;
 }
 
 export interface GitPrLogger extends SagaLogger {}

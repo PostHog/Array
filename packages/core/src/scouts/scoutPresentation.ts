@@ -1,37 +1,25 @@
-import type { ScoutConfig, ScoutRun } from "@posthog/api-client/posthog-client";
+import type {
+  LlmSkillCreatedBy,
+  LlmSkillListItem,
+  ScoutConfig,
+  ScoutRun,
+} from "@posthog/api-client/posthog-client";
 
 // Single source of truth lives in `@posthog/shared` so `buildScoutDeeplink`
 // (which cannot import core) and the UI share one slug implementation.
 export { scoutSkillNameFromSlug, scoutSkillSlug } from "@posthog/shared";
 
-/**
- * Canonical scouts shipped in the PostHog repo (products/signals/skills).
- * The configs endpoint does not yet distinguish canonical from hand-authored
- * skills (scouts-ui api gap 4); until it carries `seeded_by`, classify by
- * this known-name list.
- */
-export const CANONICAL_SCOUT_SKILLS = new Set<string>([
-  "signals-scout-general",
-  "signals-scout-anomaly-detection",
-  "signals-scout-ai-observability",
-  "signals-scout-csp-violations",
-  "signals-scout-data-pipelines",
-  "signals-scout-error-tracking",
-  "signals-scout-experiments",
-  "signals-scout-feature-flags",
-  "signals-scout-health-checks",
-  "signals-scout-logs",
-  "signals-scout-observability-gaps",
-  "signals-scout-revenue-analytics",
-  "signals-scout-session-replay",
-  "signals-scout-surveys",
-  "signals-scout-web-analytics",
-]);
-
 export type ScoutOrigin = "canonical" | "custom";
 
-export function getScoutOrigin(skillName: string): ScoutOrigin {
-  return CANONICAL_SCOUT_SKILLS.has(skillName) ? "canonical" : "custom";
+/**
+ * Origin comes straight from the configs endpoint's `scout_origin` field, which
+ * the backend computes from the skill's `seeded_by` metadata. Older backends
+ * omit the field; treat those scouts as custom.
+ */
+export function getScoutOrigin(
+  config: Pick<ScoutConfig, "scout_origin"> | null | undefined,
+): ScoutOrigin {
+  return config?.scout_origin === "canonical" ? "canonical" : "custom";
 }
 
 /** "signals-scout-error-tracking" → "Error tracking" */
@@ -42,6 +30,117 @@ export function prettifyScoutSkillName(skillName: string): string {
     .trim();
   if (!cleaned) return skillName;
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+/** Skill name → author of the backing `signals-scout-*` skill's latest version. */
+export type ScoutCreatorIndex = Map<string, LlmSkillCreatedBy>;
+
+/**
+ * The configs endpoint carries no creator, so authorship comes from the
+ * backing skill (the scout IS the skill). Canonical seeds are created with no
+ * `created_by`, so absence from the index means "not hand-authored by anyone".
+ */
+export function buildScoutCreatorIndex(
+  skills: Pick<LlmSkillListItem, "name" | "created_by" | "is_latest">[],
+): ScoutCreatorIndex {
+  const index: ScoutCreatorIndex = new Map();
+  for (const skill of skills) {
+    if (!skill.is_latest || !skill.created_by) continue;
+    index.set(skill.name, skill.created_by);
+  }
+  return index;
+}
+
+/** The slice of the current user the creator filter needs. */
+export interface ScoutCreatorUser {
+  id?: number;
+  email?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+}
+
+export function isScoutCreatedByUser(
+  creator: LlmSkillCreatedBy | null | undefined,
+  user: ScoutCreatorUser | null | undefined,
+): boolean {
+  if (!creator || !user) return false;
+  if (creator.id !== undefined && user.id !== undefined) {
+    return creator.id === user.id;
+  }
+  // Older payloads may omit the numeric id; emails are unique per instance.
+  const creatorEmail = creator.email?.trim().toLowerCase();
+  const userEmail = user.email?.trim().toLowerCase();
+  return !!creatorEmail && creatorEmail === userEmail;
+}
+
+export function scoutCreatorDisplayName(
+  creator: Pick<LlmSkillCreatedBy, "first_name" | "last_name" | "email">,
+): string {
+  const name = [creator.first_name, creator.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return name || creator.email?.trim() || "Unknown user";
+}
+
+/**
+ * Stable identity for a creator across the option list and the per-config
+ * lookup: the numeric user id when present, else the lowercased email.
+ */
+export function scoutCreatorKey(
+  creator: Pick<LlmSkillCreatedBy, "id" | "email"> | null | undefined,
+): string | null {
+  if (!creator) return null;
+  if (typeof creator.id === "number") return `id:${creator.id}`;
+  const email = creator.email?.trim().toLowerCase();
+  return email ? `email:${email}` : null;
+}
+
+export interface ScoutCreatorOption {
+  key: string;
+  label: string;
+  isCurrentUser: boolean;
+}
+
+/**
+ * Distinct authors across the fleet for a "Created by" picker: the current
+ * user pinned first (offered even with nothing authored yet, so "just mine"
+ * is always selectable), then the other authors A–Z. Canonical seeds carry no
+ * author, so they never contribute an option.
+ */
+export function listScoutCreatorOptions(
+  index: ScoutCreatorIndex,
+  currentUser: ScoutCreatorUser | null | undefined,
+): ScoutCreatorOption[] {
+  const byKey = new Map<string, ScoutCreatorOption>();
+  for (const creator of index.values()) {
+    const key = scoutCreatorKey(creator);
+    if (!key || byKey.has(key)) continue;
+    const isCurrentUser = isScoutCreatedByUser(creator, currentUser);
+    byKey.set(key, {
+      key,
+      label: isCurrentUser
+        ? `${scoutCreatorDisplayName(creator)} (you)`
+        : scoutCreatorDisplayName(creator),
+      isCurrentUser,
+    });
+  }
+  const options = [...byKey.values()];
+  if (currentUser && !options.some((option) => option.isCurrentUser)) {
+    const key = scoutCreatorKey(currentUser);
+    if (key) {
+      options.push({
+        key,
+        label: `${scoutCreatorDisplayName(currentUser)} (you)`,
+        isCurrentUser: true,
+      });
+    }
+  }
+  options.sort((a, b) => {
+    if (a.isCurrentUser !== b.isCurrentUser) return a.isCurrentUser ? -1 : 1;
+    return a.label.localeCompare(b.label);
+  });
+  return options;
 }
 
 export type ScoutRunStatus =

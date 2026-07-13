@@ -14,14 +14,23 @@ export function clearApplicationStorage(): void {
 
   if (!confirmed) return;
 
-  resolveService<HostTrpcClient>(HOST_TRPC_CLIENT)
-    .folders.clearAllData.mutate()
-    .then(() => {
-      localStorage.clear();
-      window.location.reload();
-    })
-    .catch((error: unknown) => {
-      log.error("Failed to clear storage:", error);
+  const client = resolveService<HostTrpcClient>(HOST_TRPC_CLIENT);
+
+  Promise.allSettled([
+    client.folders.clearAllData.mutate(),
+    client.secureStore.clear.query(),
+  ]).then((results) => {
+    const rejected = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (rejected.length > 0) {
+      for (const failure of rejected) {
+        log.error("Failed to clear application storage:", failure.reason);
+      }
       alert("Failed to clear storage. Please try again.");
-    });
+      return;
+    }
+    localStorage.clear();
+    window.location.reload();
+  });
 }

@@ -1,4 +1,8 @@
-import type { HandoffLocalGitState, WorkspaceMode } from "@posthog/shared";
+import type {
+  Adapter,
+  HandoffLocalGitState,
+  WorkspaceMode,
+} from "@posthog/shared";
 
 export type HandoffStep =
   | "fetching_logs"
@@ -17,7 +21,7 @@ export interface HandoffSagaInput {
   apiHost: string;
   teamId: number;
   sessionId?: string;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   localGitState?: HandoffLocalGitState;
 }
 

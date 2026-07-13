@@ -14,14 +14,6 @@ export const CONNECTIVITY_SERVICE = Symbol.for(
 export const ENVIRONMENT_SERVICE = Symbol.for(
   "posthog.workspace.environment-service",
 );
-
-export const TOKENS = Object.freeze({
-  FocusService: FOCUS_SERVICE,
-  FocusSyncService: FOCUS_SYNC_SERVICE,
-  GitService: GIT_SERVICE,
-  FsService: FS_SERVICE,
-  WatcherService: WATCHER_SERVICE,
-  LocalLogsService: LOCAL_LOGS_SERVICE,
-  ConnectivityService: CONNECTIVITY_SERVICE,
-  EnvironmentService: ENVIRONMENT_SERVICE,
-});
+export const BROWSER_TABS_SERVICE = Symbol.for(
+  "posthog.workspace.browser-tabs-service",
+);

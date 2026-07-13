@@ -2,7 +2,11 @@ import type {
   ToolCallContent,
   ToolCallLocation,
 } from "@agentclientprotocol/sdk";
-import { type AcpMessage, isJsonRpcNotification } from "@posthog/shared";
+import {
+  type AcpMessage,
+  isBinaryFile,
+  isJsonRpcNotification,
+} from "@posthog/shared";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 
 function getContentText(
@@ -42,6 +46,23 @@ export interface ParsedToolCall {
   status?: string | null;
   locations?: ToolCallLocation[];
   content?: ToolCallContent[];
+  rawOutput?: unknown;
+}
+
+/**
+ * A Read whose file is unchanged since the agent's last read returns a
+ * `file_unchanged` result (Claude Code's "Wasted call — ... Refer to that
+ * earlier tool_result instead." sentinel) instead of the file body. Its
+ * `content` is that sentinel message, not the file, so it must not be treated
+ * as file content.
+ */
+function isFileUnchangedRead(toolCall: ParsedToolCall): boolean {
+  const raw = toolCall.rawOutput;
+  return (
+    typeof raw === "object" &&
+    raw !== null &&
+    (raw as { type?: unknown }).type === "file_unchanged"
+  );
 }
 
 // Match file paths that may differ in format (absolute vs relative)
@@ -83,6 +104,7 @@ function mergeToolCall(
       patch.content && patch.content.length > 0
         ? patch.content
         : existing?.content,
+    rawOutput: patch.rawOutput ?? existing?.rawOutput,
   };
 }
 
@@ -138,6 +160,22 @@ function getDiffStats(
   return { added, removed };
 }
 
+const diffStatsCache = new WeakMap<
+  Extract<ToolCallContent, { type: "diff" }>,
+  { added?: number; removed?: number }
+>();
+
+export function cachedDiffStats(
+  diff: Extract<ToolCallContent, { type: "diff" }> | undefined,
+): { added?: number; removed?: number } {
+  if (!diff) return {};
+  const cached = diffStatsCache.get(diff);
+  if (cached) return cached;
+  const stats = getDiffStats(diff.oldText, diff.newText);
+  diffStatsCache.set(diff, stats);
+  return stats;
+}
+
 export interface CloudEventSummary {
   toolCalls: Map<string, ParsedToolCall>;
 }
@@ -184,6 +222,7 @@ export function buildCloudEventSummary(
         content: Array.isArray(update.content)
           ? (update.content as ToolCallContent[])
           : undefined,
+        rawOutput: update.rawOutput,
       };
 
       const merged = mergeToolCall(toolCalls.get(toolCallId), patch);
@@ -266,7 +305,7 @@ export function extractCloudToolChangedFiles(
         status: "deleted",
       };
     } else {
-      const diffStats = getDiffStats(diff?.oldText, diff?.newText);
+      const diffStats = isBinaryFile(path) ? {} : cachedDiffStats(diff);
       file = {
         path,
         status: kind === "write" && !diff?.oldText ? "added" : "modified",
@@ -309,6 +348,8 @@ export function extractCloudFileContent(
     const locationPath = toolCall.locations?.[0]?.path;
 
     if (kind === "read" && pathsMatch(locationPath, filePath)) {
+      // A `file_unchanged` read carries the dedup sentinel, not the file body.
+      if (isFileUnchangedRead(toolCall)) continue;
       const text = getReadToolContent(toolCall.content);
       if (text != null) {
         latestContent = text;

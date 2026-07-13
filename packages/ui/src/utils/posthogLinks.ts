@@ -7,6 +7,10 @@ export interface LinkOverrides {
   cloudRegion?: CloudRegion | null;
 }
 
+export interface ErrorTrackingIssueLinkOverrides extends LinkOverrides {
+  fingerprint?: string | null;
+}
+
 function resolveProjectId(override?: number | null): number | null {
   if (override != null) return override;
   return useAuthStore.getState().authState.currentProjectId ?? null;
@@ -76,12 +80,51 @@ export function skillUrl(
   );
 }
 
+/**
+ * The shareable https link for a canvas (a dashboard inside a channel):
+ * `<instance>/code/canvas/<channelId>/<dashboardId>`. Opening it in a browser
+ * hits a web interstitial that deep-links into the desktop app (or offers the
+ * download), so the link works for anyone — app installed or not. Not
+ * project-scoped: the ids are globally-unique desktop file-system row ids. The
+ * inbound desktop side lives in `CanvasLinkService` / `useCanvasDeepLink`.
+ */
+export function canvasShareUrl(
+  channelId: string,
+  dashboardId: string,
+  regionOverride?: CloudRegion | null,
+): string | null {
+  return getPostHogUrl(
+    `/code/canvas/${encodeURIComponent(channelId)}/${encodeURIComponent(dashboardId)}`,
+    regionOverride,
+  );
+}
+
+/**
+ * The shareable https link for a channel — or a thread (channel-filed task)
+ * inside it: `<instance>/code/channel/<channelId>[/tasks/<taskId>]`. Opening
+ * it in a browser hits a web interstitial that deep-links into the desktop app
+ * (or offers the download), so the link works for anyone — app installed or
+ * not. Not project-scoped: the ids are globally-unique row ids. The inbound
+ * desktop side lives in `ChannelLinkService` / `useChannelDeepLink`.
+ */
+export function channelShareUrl(
+  channelId: string,
+  taskId?: string,
+): string | null {
+  const base = `/code/channel/${encodeURIComponent(channelId)}`;
+  return getPostHogUrl(
+    taskId ? `${base}/tasks/${encodeURIComponent(taskId)}` : base,
+  );
+}
+
 export function errorTrackingIssueUrl(
   issueId: string,
-  overrides?: LinkOverrides,
+  overrides?: ErrorTrackingIssueLinkOverrides,
 ): string | null {
-  return withProjectId(
-    (pid) => `/project/${pid}/error_tracking/${encodeURIComponent(issueId)}`,
-    overrides,
-  );
+  return withProjectId((pid) => {
+    const path = `/project/${pid}/error_tracking/${encodeURIComponent(issueId)}`;
+    return overrides?.fingerprint
+      ? `${path}?fingerprint=${encodeURIComponent(overrides.fingerprint)}`
+      : path;
+  }, overrides);
 }

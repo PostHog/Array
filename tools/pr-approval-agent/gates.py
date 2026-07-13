@@ -525,7 +525,7 @@ def detect_ownership(files: list[str], rules: list[CodeownersRule]) -> dict:
 # ── Tier assignment ──────────────────────────────────────────────
 
 
-MAX_LINES = 500
+MAX_LINES = 1000
 MAX_FILES = 20
 
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Adapter } from "./adapter";
 import type { DismissalReasonOptionValue } from "./dismissal-reasons";
 import type { StoredLogEntry } from "./session-events";
 
@@ -26,7 +27,7 @@ export const effortLevelSchema = z.enum([
 ]);
 export type EffortLevel = z.infer<typeof effortLevelSchema>;
 
-interface UserBasic {
+export interface UserBasic {
   id: number;
   uuid: string;
   distinct_id?: string | null;
@@ -34,6 +35,12 @@ interface UserBasic {
   last_name?: string;
   email: string;
   is_email_verified?: boolean | null;
+}
+
+/** One row from the org members list; trimmed to what mention pickers need. */
+export interface OrganizationMemberBasic {
+  id: string;
+  user: UserBasic;
 }
 
 export interface Task {
@@ -53,7 +60,53 @@ export interface Task {
   json_schema?: Record<string, unknown> | null;
   signal_report?: string | null;
   internal?: boolean;
+  /** Backend channel (tasks product Channel UUID) this task is owned by. */
+  channel?: string | null;
   latest_run?: TaskRun;
+}
+
+/**
+ * A backend task channel — the shared feed a task is kicked off in. Distinct
+ * from the desktop file-system "channel" folders: those carry CONTEXT.md and
+ * artifacts, while this owns the task feed and threads. `personal` is the
+ * user's private "#me" channel.
+ */
+export interface TaskChannel {
+  id: string;
+  name: string;
+  channel_type: "public" | "personal";
+  created_at: string;
+  created_by?: UserBasic | null;
+}
+
+/**
+ * One human message in a task's thread. Thread messages never reach the agent
+ * unless the task author forwards one, which stamps the forwarded_* fields.
+ */
+export interface TaskThreadMessage {
+  id: string;
+  task: string;
+  content: string;
+  created_at: string;
+  author?: UserBasic | null;
+  forwarded_to_agent_at?: string | null;
+  forwarded_by?: UserBasic | null;
+}
+
+/**
+ * One @-mention of the current user in a task's thread, from the backend
+ * mentions index (`/task_mentions/`). Mirrors `TaskMentionDTO`.
+ */
+export interface TaskMention {
+  id: string;
+  message_id: string;
+  task_id: string;
+  task_title: string;
+  channel_id?: string | null;
+  channel_name?: string | null;
+  author?: UserBasic | null;
+  content: string;
+  created_at: string;
 }
 
 export type TaskRunStatus =
@@ -76,12 +129,19 @@ export function isTerminalStatus(
   );
 }
 
+export function isContentlessTask(task: {
+  title?: string | null;
+  description?: string | null;
+}): boolean {
+  return !task.title?.trim() && !task.description?.trim();
+}
+
 export interface TaskRun {
   id: string;
   task: string; // Task ID
   team: number;
   branch: string | null;
-  runtime_adapter?: "claude" | "codex" | null;
+  runtime_adapter?: Adapter | null;
   model?: string | null;
   reasoning_effort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
   stage?: string | null; // Current stage (e.g., 'research', 'plan', 'build')
@@ -108,6 +168,9 @@ export interface SandboxEnvironment {
   has_environment_variables: boolean;
   private: boolean;
   effective_domains: string[];
+  custom_image_id: string | null;
+  custom_image_name: string | null;
+  custom_image_status: string | null;
   created_by?: UserBasic | null;
   created_at: string;
   updated_at: string;
@@ -121,6 +184,54 @@ export interface SandboxEnvironmentInput {
   repositories?: string[];
   environment_variables?: Record<string, string>;
   private?: boolean;
+  custom_image_id?: string | null;
+}
+
+export type SandboxCustomImageStatus =
+  | "draft"
+  | "scanning"
+  | "scan_failed"
+  | "building"
+  | "build_failed"
+  | "ready"
+  | "archived";
+
+export function isImageBuildInProgress(
+  status: SandboxCustomImageStatus,
+): boolean {
+  return status === "scanning" || status === "building";
+}
+
+export function isImageBuildFailed(status: SandboxCustomImageStatus): boolean {
+  return status === "scan_failed" || status === "build_failed";
+}
+
+export interface SandboxCustomImageScanFinding {
+  severity: string;
+  detail: string;
+}
+
+export interface SandboxCustomImage {
+  id: string;
+  name: string;
+  description: string;
+  status: SandboxCustomImageStatus;
+  version: number;
+  modal_image_name: string;
+  repository: string;
+  private: boolean;
+  spec: Record<string, unknown>;
+  spec_yaml: string;
+  scan_result: {
+    passed?: boolean;
+    findings?: SandboxCustomImageScanFinding[];
+  };
+  error: string;
+  build_log: string;
+  builder_task_id: string | null;
+  created_by?: UserBasic | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface CloudTaskUpdateBase {
@@ -141,6 +252,7 @@ export interface CloudTaskStatusUpdate extends CloudTaskUpdateBase {
   output?: Record<string, unknown> | null;
   errorMessage?: string | null;
   branch?: string | null;
+  sandboxAlive?: boolean | null;
 }
 
 export interface CloudTaskSnapshotUpdate extends CloudTaskUpdateBase {
@@ -152,6 +264,7 @@ export interface CloudTaskSnapshotUpdate extends CloudTaskUpdateBase {
   output?: Record<string, unknown> | null;
   errorMessage?: string | null;
   branch?: string | null;
+  sandboxAlive?: boolean | null;
 }
 
 export interface CloudTaskErrorUpdate extends CloudTaskUpdateBase {
@@ -309,19 +422,36 @@ export interface SignalReportArtefactContent {
   distance_to_centroid: number | null;
 }
 
-export interface SignalReportArtefact {
+/**
+ * Fields shared by every artefact row. `created_by` / `task_id` carry attribution:
+ * at most one is set — `created_by` for user writes, `task_id` for agent writes,
+ * neither for system (pipeline) writes.
+ */
+export interface SignalReportArtefactBase {
   id: string;
+  created_at: string;
+  updated_at?: string | null;
+  /** User the artefact is attributed to, when a user produced it. */
+  created_by?: UserBasic | null;
+  /** Task the artefact is attributed to, when an agent produced it. */
+  task_id?: string | null;
+  /**
+   * True when the row's content did not match its type's expected shape and was
+   * normalized to a plain text preview instead — the entry still renders rather
+   * than silently vanishing from the activity log.
+   */
+  degraded?: boolean;
+}
+
+export interface SignalReportArtefact extends SignalReportArtefactBase {
   type: string;
   content: SignalReportArtefactContent;
-  created_at: string;
 }
 
 /** Artefact with `type: "priority_judgment"` — priority assessment from the agentic report. */
-export interface PriorityJudgmentArtefact {
-  id: string;
+export interface PriorityJudgmentArtefact extends SignalReportArtefactBase {
   type: "priority_judgment";
   content: PriorityJudgmentContent;
-  created_at: string;
 }
 
 export interface PriorityJudgmentContent {
@@ -330,11 +460,10 @@ export interface PriorityJudgmentContent {
 }
 
 /** Artefact with `type: "actionability_judgment"` — actionability assessment from the agentic report. */
-export interface ActionabilityJudgmentArtefact {
-  id: string;
+export interface ActionabilityJudgmentArtefact
+  extends SignalReportArtefactBase {
   type: "actionability_judgment";
   content: ActionabilityJudgmentContent;
-  created_at: string;
 }
 
 export interface ActionabilityJudgmentContent {
@@ -343,12 +472,23 @@ export interface ActionabilityJudgmentContent {
   already_addressed: boolean;
 }
 
+/** Artefact with `type: "safety_judgment"` — the prompt-injection safety verdict for the report. */
+export interface SafetyJudgmentArtefact extends SignalReportArtefactBase {
+  type: "safety_judgment";
+  content: SafetyJudgmentContent;
+}
+
+export interface SafetyJudgmentContent {
+  /** True when the report's signals are judged safe to act on. */
+  choice: boolean;
+  /** Why the report was judged unsafe; null when safe. */
+  explanation: string | null;
+}
+
 /** Artefact with `type: "signal_finding"` — per-signal research finding from the agentic report. */
-export interface SignalFindingArtefact {
-  id: string;
+export interface SignalFindingArtefact extends SignalReportArtefactBase {
   type: "signal_finding";
   content: SignalFindingContent;
-  created_at: string;
 }
 
 export interface SignalFindingContent {
@@ -360,11 +500,9 @@ export interface SignalFindingContent {
 }
 
 /** Artefact with `type: "repo_selection"` - selected repository for the report run. */
-export interface RepoSelectionArtefact {
-  id: string;
+export interface RepoSelectionArtefact extends SignalReportArtefactBase {
   type: "repo_selection";
   content: RepoSelectionContent;
-  created_at: string;
 }
 
 export interface RepoSelectionContent {
@@ -373,19 +511,15 @@ export interface RepoSelectionContent {
 }
 
 /** Artefact with `type: "suggested_reviewers"` — content is an enriched reviewer list. */
-export interface SuggestedReviewersArtefact {
-  id: string;
+export interface SuggestedReviewersArtefact extends SignalReportArtefactBase {
   type: "suggested_reviewers";
   content: SuggestedReviewer[];
-  created_at: string;
 }
 
 /** Artefact with `type: "dismissal"` — captures the user's rationale when suppressing a report. */
-export interface DismissalArtefact {
-  id: string;
+export interface DismissalArtefact extends SignalReportArtefactBase {
   type: "dismissal";
   content: DismissalContent;
-  created_at: string;
 }
 
 export interface DismissalContent {
@@ -396,6 +530,93 @@ export interface DismissalContent {
   user_id: number | null;
   /** PostHog UUID of the dismisser, when available. */
   user_uuid: string | null;
+}
+
+// ── Log artefacts ────────────────────────────────────────────────────────────
+// Append-but-deletable "work log" entries that accumulate on a report. Distinct
+// from the status artefacts above (judgments, reviewers) which are latest-wins.
+// Content shapes mirror products/signals/backend/artefact_schemas.py.
+
+/** Artefact with `type: "code_reference"` — a contiguous span of source lines. */
+export interface CodeReferenceArtefact extends SignalReportArtefactBase {
+  type: "code_reference";
+  content: CodeReferenceContent;
+}
+
+export interface CodeReferenceContent {
+  file_path: string;
+  start_line: number;
+  end_line: number;
+  contents: string;
+  relevance_note: string;
+}
+
+/** Artefact with `type: "line_reference"` — a single source line callout (a point). */
+export interface LineReferenceArtefact extends SignalReportArtefactBase {
+  type: "line_reference";
+  content: LineReferenceContent;
+}
+
+export interface LineReferenceContent {
+  file_path: string;
+  line: number;
+  note: string;
+  /** The exact source text of the referenced line, if available. */
+  contents?: string | null;
+}
+
+/** Artefact with `type: "commit"` — one commit pushed in relation to the report. */
+export interface CommitArtefact extends SignalReportArtefactBase {
+  type: "commit";
+  content: CommitContent;
+}
+
+export interface CommitContent {
+  repository: string;
+  branch: string;
+  commit_sha: string;
+  message: string;
+  note?: string | null;
+}
+
+/** Artefact with `type: "task_run"` — a reference to a `tasks.Task` run for the report. */
+export interface TaskRunArtefact extends SignalReportArtefactBase {
+  type: "task_run";
+  content: TaskRunArtefactContent;
+}
+
+export interface TaskRunArtefactContent {
+  task_id: string;
+  run_id?: string | null;
+  /**
+   * Product that ran the task — `signals` for the built-in pipeline, or a custom agent's
+   * product identifier (mirrors backend TaskRunArtefact).
+   */
+  product: string;
+  /**
+   * Task type within the product — e.g. `research` / `implementation` / `repo_selection` for the
+   * signals pipeline, or a custom agent's type identifier.
+   */
+  type: string;
+}
+
+/** Artefact with `type: "note"` — a free-form note authored by an agent or by code. */
+export interface NoteArtefact extends SignalReportArtefactBase {
+  type: "note";
+  content: NoteContent;
+}
+
+export interface NoteContent {
+  note: string;
+  author?: string | null;
+}
+
+/** Response from the `commit` artefact diff endpoint — the commit rendered against its parent. */
+export interface CommitDiffResponse {
+  /** Unified diff (patch) text introduced by the commit. */
+  diff: string;
+  /** True when the diff was too large to return in full and has been truncated. */
+  truncated: boolean;
 }
 
 export interface SuggestedReviewerCommit {
@@ -472,16 +693,24 @@ export interface SignalReportSignalsResponse {
   signals: Signal[];
 }
 
+/** Any artefact returned by the report `artefacts/` endpoint, discriminated on `type`. */
+export type AnySignalReportArtefact =
+  | SignalReportArtefact
+  | PriorityJudgmentArtefact
+  | ActionabilityJudgmentArtefact
+  | SafetyJudgmentArtefact
+  | SignalFindingArtefact
+  | RepoSelectionArtefact
+  | SuggestedReviewersArtefact
+  | DismissalArtefact
+  | CodeReferenceArtefact
+  | LineReferenceArtefact
+  | CommitArtefact
+  | TaskRunArtefact
+  | NoteArtefact;
+
 export interface SignalReportArtefactsResponse {
-  results: (
-    | SignalReportArtefact
-    | PriorityJudgmentArtefact
-    | ActionabilityJudgmentArtefact
-    | SignalFindingArtefact
-    | RepoSelectionArtefact
-    | SuggestedReviewersArtefact
-    | DismissalArtefact
-  )[];
+  results: AnySignalReportArtefact[];
   count: number;
   unavailableReason?:
     | "forbidden"
@@ -514,27 +743,6 @@ export interface SignalReportsQueryParams {
    * reports, `false` only non-PR reports. Pair with `limit: 1` to count PR reports cheaply.
    */
   has_implementation_pr?: boolean;
-}
-
-/** Values match `SignalReportTask.Relationship` on the PostHog API. */
-export const SIGNAL_REPORT_TASK_RELATIONSHIPS = [
-  "repo_selection",
-  "research",
-  "implementation",
-] as const;
-
-export type SignalReportTaskRelationship =
-  (typeof SIGNAL_REPORT_TASK_RELATIONSHIPS)[number];
-
-/** Inbox / cloud PR tasks must use this when creating the `SignalReportTask` link. */
-export const SIGNAL_REPORT_TASK_IMPLEMENTATION_RELATIONSHIP: SignalReportTaskRelationship =
-  "implementation";
-
-export interface SignalReportTask {
-  id: string;
-  relationship: SignalReportTaskRelationship;
-  task_id: string;
-  created_at: string;
 }
 
 export interface SignalTeamConfig {

@@ -11,7 +11,11 @@ vi.mock("@posthog/git/queries", () => ({
   listWorktrees: (...args: unknown[]) => listWorktrees(...args),
 }));
 
-import { getWorktreeFileUsage, listTwigWorktrees } from "./worktree-query";
+import {
+  getWorktreeFileUsage,
+  listLinkedWorktrees,
+  listTwigWorktrees,
+} from "./worktree-query";
 
 afterEach(() => {
   vol.reset();
@@ -62,6 +66,31 @@ describe("listTwigWorktrees", () => {
     ]);
 
     expect(await listTwigWorktrees(MAIN, BASE)).toEqual([]);
+  });
+});
+
+describe("listLinkedWorktrees", () => {
+  it("excludes the main repo but keeps worktrees in any location", async () => {
+    listWorktrees.mockResolvedValue([
+      { path: MAIN, head: "h0", branch: "main" },
+      { path: `${BASE}/feat`, head: "h1", branch: "feat" },
+      { path: "/elsewhere/rogue", head: "h2", branch: "rogue" },
+    ]);
+
+    const result = await listLinkedWorktrees(MAIN);
+
+    expect(result).toEqual([
+      { worktreePath: `${BASE}/feat`, head: "h1", branch: "feat" },
+      { worktreePath: "/elsewhere/rogue", head: "h2", branch: "rogue" },
+    ]);
+  });
+
+  it("returns an empty list when only the main repo exists", async () => {
+    listWorktrees.mockResolvedValue([
+      { path: MAIN, head: "h0", branch: "main" },
+    ]);
+
+    expect(await listLinkedWorktrees(MAIN)).toEqual([]);
   });
 });
 

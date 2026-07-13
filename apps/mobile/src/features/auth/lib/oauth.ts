@@ -53,26 +53,78 @@ export async function exchangeCodeForToken(
   return response.json();
 }
 
+export type OAuthRefreshErrorCode =
+  | "auth_error"
+  | "server_error"
+  | "network_error"
+  | "unknown_error";
+
+export class TokenRefreshError extends Error {
+  readonly errorCode: OAuthRefreshErrorCode;
+
+  constructor(errorCode: OAuthRefreshErrorCode, message: string) {
+    super(message);
+    this.name = "TokenRefreshError";
+    this.errorCode = errorCode;
+  }
+}
+
+async function parseOAuthErrorCode(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.json()) as { error?: unknown };
+    return typeof body.error === "string" ? body.error : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function refreshAccessToken(
   refreshToken: string,
   region: CloudRegion,
 ): Promise<OAuthTokenResponse> {
   const cloudUrl = getCloudUrlFromRegion(region);
 
-  const response = await fetch(`${cloudUrl}/oauth/token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: getOauthClientIdFromRegion(region),
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${cloudUrl}/oauth/token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: getOauthClientIdFromRegion(region),
+      }),
+    });
+  } catch (error) {
+    throw new TokenRefreshError(
+      "network_error",
+      error instanceof Error ? error.message : "Token refresh network error",
+    );
+  }
 
   if (!response.ok) {
-    throw new Error(`Token refresh failed: ${response.statusText}`);
+    // 401/403 are always auth failures. A 400 only means a dead refresh token
+    // when the OAuth error is invalid_grant/invalid_token; other 400s like
+    // invalid_client are config bugs that must not sign the user out, or they
+    // could never log back in with the same broken config.
+    const oauthErrorCode =
+      response.status === 400 ? await parseOAuthErrorCode(response) : null;
+    const isAuthError =
+      response.status === 401 ||
+      response.status === 403 ||
+      oauthErrorCode === "invalid_grant" ||
+      oauthErrorCode === "invalid_token";
+    const errorCode: OAuthRefreshErrorCode = isAuthError
+      ? "auth_error"
+      : response.status >= 500
+        ? "server_error"
+        : "unknown_error";
+    throw new TokenRefreshError(
+      errorCode,
+      `Token refresh failed: ${response.status} ${response.statusText}`,
+    );
   }
 
   return response.json();

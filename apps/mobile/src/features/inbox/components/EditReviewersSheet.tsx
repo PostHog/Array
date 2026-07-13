@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 import { useAvailableSuggestedReviewers } from "../hooks/useInboxReports";
@@ -33,26 +34,17 @@ export function EditReviewersSheet({
 }: EditReviewersSheetProps) {
   const { bottom, sheetContentTop } = useScreenInsets();
   const themeColors = useThemeColors();
+  const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 250);
   const { data: available, isLoading } = useAvailableSuggestedReviewers({
     enabled: visible,
+    query: debouncedQuery,
   });
-  const [query, setQuery] = useState("");
 
   const options = useMemo(
     () => buildReviewerOptions(available?.results ?? [], meUuid ?? undefined),
     [available?.results, meUuid],
   );
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter(
-      (o) =>
-        o.name.toLowerCase().includes(q) ||
-        o.email.toLowerCase().includes(q) ||
-        o.github_login.toLowerCase().includes(q),
-    );
-  }, [options, query]);
 
   return (
     <Modal
@@ -91,14 +83,16 @@ export function EditReviewersSheet({
           </View>
         </View>
 
-        {isLoading && options.length === 0 ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" color={themeColors.accent[9]} />
-          </View>
-        ) : filtered.length === 0 ? (
-          <View className="flex-1 items-center justify-center p-6">
-            <Text className="text-[14px] text-gray-10">No users found</Text>
-          </View>
+        {options.length === 0 ? (
+          isLoading ? (
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator size="large" color={themeColors.accent[9]} />
+            </View>
+          ) : (
+            <View className="flex-1 items-center justify-center p-6">
+              <Text className="text-[14px] text-gray-10">No users found</Text>
+            </View>
+          )
         ) : (
           <ScrollView
             keyboardShouldPersistTaps="handled"
@@ -108,7 +102,7 @@ export function EditReviewersSheet({
               paddingBottom: bottom("roomy"),
             }}
           >
-            {filtered.map((reviewer) => (
+            {options.map((reviewer) => (
               <ReviewerOptionRow
                 key={reviewer.uuid}
                 reviewer={reviewer}

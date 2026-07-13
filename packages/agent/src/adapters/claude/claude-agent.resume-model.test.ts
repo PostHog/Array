@@ -187,7 +187,9 @@ describe("ClaudeAcpAgent session model on resume", () => {
     );
     if (expectsWarn) {
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Non-Anthropic model"),
+        expect.stringContaining(
+          "Incompatible model requested on Claude adapter",
+        ),
         expect.objectContaining({ requestedModel: model }),
       );
     } else {

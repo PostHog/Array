@@ -1,7 +1,7 @@
 import { reportKeys } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 
 /** Thrown when the report is no longer archived by the time Restore runs. */
 class ReportNoLongerArchivedError extends Error {

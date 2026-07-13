@@ -1,4 +1,10 @@
-import { ArrowSquareOut, CaretDown } from "@phosphor-icons/react";
+import {
+  ArrowCounterClockwise,
+  ArrowSquareOut,
+  CaretDown,
+  Minus,
+  Plus,
+} from "@phosphor-icons/react";
 import type { FileDiffMetadata } from "@pierre/diffs/react";
 import type { ResolvedDiffSource } from "@posthog/core/code-review/resolveDiffSource";
 import {
@@ -10,6 +16,7 @@ import {
 import type { ChangedFile, Task } from "@posthog/shared/domain-types";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { FileIcon } from "../../primitives/FileIcon";
+import { Tooltip } from "../../primitives/Tooltip";
 import { useThemeStore } from "../../shell/themeStore";
 import { useDiffViewerStore } from "../code-editor/diffViewerStore";
 import { computeDiffStats } from "../git-interaction/utils/diffStats";
@@ -22,7 +29,7 @@ export {
 
 const STICKY_HEADER_CSS = `[data-diffs-header] { position: sticky; top: 0; z-index: 1; background: var(--gray-2); }`;
 
-function useDiffOptions() {
+export function useDiffOptions() {
   const viewMode = useDiffViewerStore((s) => s.viewMode);
   const wordWrap = useDiffViewerStore((s) => s.wordWrap);
   const loadFullFiles = useDiffViewerStore((s) => s.loadFullFiles);
@@ -112,6 +119,7 @@ export interface ReviewShellProps {
   onExpandAll: () => void;
   onCollapseAll: () => void;
   onRefresh?: () => void;
+  onDiscardAll?: () => void;
   effectiveSource?: ResolvedDiffSource;
   branchSourceAvailable?: boolean;
   prSourceAvailable?: boolean;
@@ -179,16 +187,40 @@ export function FileHeaderRow({
   );
 }
 
+export function OpenFileButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="ml-auto inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
+    >
+      <ArrowSquareOut size={14} />
+    </button>
+  );
+}
+
 export function DiffFileHeader({
   fileDiff,
   collapsed,
   onToggle,
   onOpenFile,
+  onDiscard,
+  onStage,
+  staged,
+  trailing,
 }: {
   fileDiff: FileDiffMetadata;
   collapsed: boolean;
   onToggle: () => void;
   onOpenFile?: () => void;
+  onDiscard?: () => void;
+  onStage?: () => void;
+  staged?: boolean;
+  /** Extra controls rendered after the action buttons (e.g. a "Viewed" toggle). */
+  trailing?: ReactNode;
 }) {
   const fullPath =
     fileDiff.prevName && fileDiff.prevName !== fileDiff.name
@@ -206,17 +238,52 @@ export function DiffFileHeader({
       collapsed={collapsed}
       onToggle={onToggle}
       trailing={
-        onOpenFile && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenFile();
-            }}
-            className="ml-auto inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
-          >
-            <ArrowSquareOut size={14} />
-          </button>
+        (onStage || onDiscard || onOpenFile || trailing) && (
+          <span className="ml-auto inline-flex items-center gap-[2px]">
+            {onStage && (
+              <Tooltip content={staged ? "Unstage" : "Stage"}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStage();
+                  }}
+                  className="inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
+                >
+                  {staged ? <Minus size={14} /> : <Plus size={14} />}
+                </button>
+              </Tooltip>
+            )}
+            {onDiscard && (
+              <Tooltip content="Discard changes">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDiscard();
+                  }}
+                  className="inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
+                >
+                  <ArrowCounterClockwise size={14} />
+                </button>
+              </Tooltip>
+            )}
+            {onOpenFile && (
+              <Tooltip content="Open file">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenFile();
+                  }}
+                  className="inline-flex cursor-pointer rounded-[3px] border-0 bg-transparent p-[2px] text-(--gray-9) hover:bg-gray-4"
+                >
+                  <ArrowSquareOut size={14} />
+                </button>
+              </Tooltip>
+            )}
+            {trailing}
+          </span>
         )
       }
     />
@@ -232,6 +299,7 @@ export function DeferredDiffPlaceholder({
   onToggle,
   onShow,
   externalUrl,
+  headerTrailing,
 }: {
   filePath: string;
   linesAdded: number;
@@ -241,6 +309,8 @@ export function DeferredDiffPlaceholder({
   onToggle: () => void;
   onShow?: () => void;
   externalUrl?: string;
+  /** Extra controls in the header row (e.g. a "Viewed" toggle). */
+  headerTrailing?: ReactNode;
 }) {
   const { dirPath, fileName } = splitFilePath(filePath);
 
@@ -253,6 +323,13 @@ export function DeferredDiffPlaceholder({
         deletions={linesRemoved}
         collapsed={collapsed}
         onToggle={onToggle}
+        trailing={
+          headerTrailing && (
+            <span className="ml-auto inline-flex items-center">
+              {headerTrailing}
+            </span>
+          )
+        }
       />
       {!collapsed && (
         <div className="w-full border-b border-b-(--gray-5) bg-(--gray-2) p-[16px] text-center text-(--gray-9) text-xs">

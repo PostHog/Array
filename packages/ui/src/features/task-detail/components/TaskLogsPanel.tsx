@@ -41,6 +41,8 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
   const { restoreTask, isRestoring } = useRestoreTask();
 
   const isProvisioning = useProvisioningStore((s) => s.activeTasks.has(taskId));
+  const provisioningError = useProvisioningStore((s) => s.errors[taskId]);
+  const clearProvisioning = useProvisioningStore((s) => s.clear);
 
   const { requestFocus } = useDraftStore((s) => s.actions);
 
@@ -93,12 +95,41 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
     requestFocus(taskId);
   }, [taskId, requestFocus]);
 
+  // Once a retry provisions a workspace, drop the stale provisioning error so
+  // the guard in ensureWorkspaceForTask stops firing and the retry prompt hides.
+  useEffect(() => {
+    if (repoPath && provisioningError) {
+      clearProvisioning(taskId);
+    }
+  }, [repoPath, provisioningError, taskId, clearProvisioning]);
+
   const handleRestoreWorktree = useCallback(async () => {
     await restoreTask(taskId);
   }, [taskId, restoreTask]);
 
   if (isProvisioning) {
     return <ProvisioningView taskId={taskId} />;
+  }
+
+  // Worktree provisioning failed but the task was kept. Offer to retry setup
+  // (worktree mode) on the existing task. Takes priority over the folder-picker
+  // branch below, whose !hasDirectoryMapping gate wouldn't fire here since the
+  // task's repo folder is already registered.
+  if (
+    provisioningError &&
+    !repoPath &&
+    !isCloud &&
+    !isSuspended &&
+    isWorkspaceLoaded &&
+    !isCreatingWorkspace
+  ) {
+    return (
+      <BackgroundWrapper>
+        <Box height="100%" width="100%">
+          <WorkspaceSetupPrompt taskId={taskId} task={task} />
+        </Box>
+      </BackgroundWrapper>
+    );
   }
 
   if (

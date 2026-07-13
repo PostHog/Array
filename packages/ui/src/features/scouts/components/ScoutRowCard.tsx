@@ -26,9 +26,8 @@ import { ScoutRunBoxes } from "./ScoutRunBoxes";
 
 /**
  * The one scout card: name, badges, cadence, emitted count, run boxes,
- * enable switch, and a gear that expands the settings form. Used both as the
- * fleet list row and as the header card on the scout detail screen, so the
- * two surfaces always look and behave the same.
+ * enable switch, and a gear that expands the settings form. Used as the fleet
+ * list row; the scout detail screen builds its own header from the same parts.
  */
 export function ScoutRowCard({
   config,
@@ -103,7 +102,7 @@ export function ScoutRowCard({
               </a>
             </Tooltip>
           ) : null}
-          <ScoutOriginBadge skillName={config.skill_name} />
+          <ScoutOriginBadge config={config} />
           <DryRunBadge config={config} />
           <Text className="whitespace-nowrap text-[11px] text-gray-10">
             {formatRunIntervalShort(config.run_interval_minutes)}
@@ -159,7 +158,7 @@ export function ScoutRowCard({
  * Icon-only chat CTA on the row: fires a one-click auto-mode cloud task asking
  * the exploring-signals-scouts skill about this specific scout.
  */
-function ScoutChatButton({
+export function ScoutChatButton({
   skillName,
   surface,
 }: {

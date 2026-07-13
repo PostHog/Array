@@ -1,6 +1,5 @@
 import type { INotifier, NotifyOptions } from "@posthog/platform/notifier";
 import { describe, expect, it, vi } from "vitest";
-import { TaskLinkEvent } from "../links/task-link";
 import { NotificationService } from "./notification";
 
 function makeLogger() {
@@ -35,10 +34,10 @@ function createDeps(supported = true) {
     focus: vi.fn(),
   };
 
-  const taskLinkService = { emit: vi.fn() };
+  const openTargetLink = { open: vi.fn() };
 
   const service = new NotificationService(
-    taskLinkService as never,
+    openTargetLink as never,
     notifier,
     mainWindow as never,
     makeLogger(),
@@ -48,7 +47,7 @@ function createDeps(supported = true) {
     service,
     notifier,
     mainWindow,
-    taskLinkService,
+    openTargetLink,
     getLastNotify: () => lastNotify,
     getFocusHandler: () => focusHandler,
   };
@@ -82,24 +81,23 @@ describe("NotificationService.send", () => {
     expect(mainWindow.focus).toHaveBeenCalled();
   });
 
-  it("emits OpenTask on click when a taskId is provided", () => {
-    const { service, taskLinkService, getLastNotify } = createDeps();
+  it("opens the target on click when one is provided", () => {
+    const { service, openTargetLink, getLastNotify } = createDeps();
 
-    service.send("Title", "Body", false, "task-9");
+    const target = { kind: "task" as const, taskId: "task-9" };
+    service.send("Title", "Body", false, target);
     getLastNotify()?.onClick?.();
 
-    expect(taskLinkService.emit).toHaveBeenCalledWith(TaskLinkEvent.OpenTask, {
-      taskId: "task-9",
-    });
+    expect(openTargetLink.open).toHaveBeenCalledWith(target);
   });
 
-  it("does not emit OpenTask on click without a taskId", () => {
-    const { service, taskLinkService, getLastNotify } = createDeps();
+  it("does not open a target on click when none is provided", () => {
+    const { service, openTargetLink, getLastNotify } = createDeps();
 
     service.send("Title", "Body", false);
     getLastNotify()?.onClick?.();
 
-    expect(taskLinkService.emit).not.toHaveBeenCalled();
+    expect(openTargetLink.open).not.toHaveBeenCalled();
   });
 });
 

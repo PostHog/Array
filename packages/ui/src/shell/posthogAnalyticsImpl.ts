@@ -3,9 +3,10 @@ import posthog from "posthog-js/dist/module.full.no-external";
 // The module.full.no-external bundle includes rrweb but not the initSessionRecording function
 // posthog-recorder (vs lazy-recorder) ensures recording is ready immediately
 import "posthog-js/dist/posthog-recorder";
-import type {
-  EventPropertyMap,
-  UserIdentifyProperties,
+import {
+  type EventPropertyMap,
+  isInboxAnalyticsEvent,
+  type UserIdentifyProperties,
 } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import type { FeatureFlags } from "@posthog/ui/features/feature-flags/identifiers";
@@ -17,6 +18,12 @@ import type {
 import { logger } from "@posthog/ui/shell/logger";
 
 const log = logger.scope("analytics");
+
+// Client discriminator stamped on every inbox analytics event so the shared
+// PostHog project can be sliced by surface (this desktop host = "code";
+// mobile sends "mobile"; the PostHog web frontend sends "cloud"). Mirrors
+// posthog's frontend/src/scenes/inbox/inboxAnalytics.ts.
+const INBOX_CLIENT = "code" as const;
 
 let isInitialized = false;
 
@@ -55,9 +62,23 @@ export function initializePostHog(sessionId?: string) {
   }
 
   posthog.init(apiKey, {
+    defaults: "2026-05-30",
     api_host: apiHost,
     ui_host: uiHost,
+    // The epoch turns capture_pageview into "history_change". This app routes via
+    // createHashHistory() (packages/ui/src/router/router.ts), so the route lives in
+    // the URL hash and $pathname is identical for every screen — automatic pageviews
+    // would collapse all routes into one and corrupt route-level analytics. Opt out
+    // and rely on explicit instrumentation instead.
+    capture_pageview: false,
     disable_session_recording: false,
+    // Never let the project's remote canvasRecording config apply here: our
+    // canvases are xterm terminals (secrets show up as pixels, bypassing text
+    // masking) and decorative WebGL (hedgehog, confetti). Capturing them costs
+    // an image encode per canvas at canvasFps for the whole app lifetime.
+    session_recording: {
+      captureCanvas: { recordCanvas: false },
+    },
     session_idle_timeout_seconds: SESSION_IDLE_TIMEOUT_SECONDS,
     ...(sessionId ? { bootstrap: { sessionID: sessionId } } : {}),
     capture_exceptions: import.meta.env.DEV
@@ -76,6 +97,14 @@ export function initializePostHog(sessionId?: string) {
   posthog.unregister("signal_report_id");
 
   isInitialized = true;
+
+  // Dev-only: expose the posthog instance so flags can be toggled from the
+  // renderer console, e.g. `posthog.featureFlags.override({ "agent-platform": true })`
+  // (and `posthog.featureFlags.override(false)` to clear). The module build
+  // doesn't attach to window otherwise.
+  if (import.meta.env.DEV) {
+    (window as unknown as { posthog?: typeof posthog }).posthog = posthog;
+  }
 
   registerPersistentSuperProperties();
 
@@ -215,35 +244,47 @@ export function track<K extends keyof EventPropertyMap>(
     return;
   }
 
-  posthog.capture(eventName, args[0]);
+  // Stamp inbox events with the client discriminator. Spread first so a caller
+  // could override it, matching posthog's inboxAnalytics.ts (none do today).
+  const properties = isInboxAnalyticsEvent(eventName)
+    ? { inbox_client: INBOX_CLIENT, ...args[0] }
+    : args[0];
+
+  posthog.capture(eventName, properties);
 }
 
 /**
- * Record a survey response via posthog-js's `survey sent` event. The survey
- * must already exist (and be launched) in the project the app reports to, or
- * the response will not attach to it.
+ * Record a survey response via posthog-js's `survey sent` event. Pass one entry
+ * per answered question; they're submitted together as a single response. The
+ * survey must already exist (and be launched) in the project the app reports to,
+ * or the response will not attach to it.
  */
 export function captureSurveyResponse({
   surveyId,
-  questionId,
-  response,
+  responses,
 }: {
   surveyId: string;
-  questionId: string;
-  response: string;
+  responses: Array<{ questionId: string; response: string }>;
 }) {
   if (!isInitialized) {
     return;
   }
 
-  posthog.capture("survey sent", {
+  const properties: Record<string, unknown> = {
     $survey_id: surveyId,
-    $survey_questions: [{ id: questionId }],
-    // Newer ingestion keys responses by question id; `$survey_response` is the
-    // legacy single-question key. Send both so the response attaches either way.
-    [`$survey_response_${questionId}`]: response,
-    $survey_response: response,
-  });
+    $survey_questions: responses.map(({ questionId }) => ({ id: questionId })),
+  };
+  // Newer ingestion keys each response by question id.
+  for (const { questionId, response } of responses) {
+    properties[`$survey_response_${questionId}`] = response;
+  }
+  // `$survey_response` is the legacy single-question key; only set it when there
+  // is exactly one answer, otherwise it would be ambiguous.
+  if (responses.length === 1) {
+    properties.$survey_response = responses[0].response;
+  }
+
+  posthog.capture("survey sent", properties);
 }
 
 /**

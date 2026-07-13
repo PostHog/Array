@@ -1,3 +1,4 @@
+import { isContentlessTask } from "@posthog/shared/domain-types";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -126,6 +127,9 @@ export function filterAndSortTasks(
   filter: string,
 ): Task[] {
   let filtered = tasks;
+
+  // Warm-sandbox prewarming creates empty placeholder tasks; never surface them.
+  filtered = filtered.filter((task) => !isContentlessTask(task));
 
   // Visibility filter — mirrors desktop radio: External hides internal, Internal shows only internal.
   filtered = filtered.filter((task) =>

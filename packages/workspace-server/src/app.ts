@@ -3,12 +3,13 @@ import { trpcServer } from "@hono/trpc-server";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import { appRouter } from "./trpc";
+import type { AppRouter } from "./trpc";
 
 const SECRET_HEADER = "x-workspace-secret";
 
 export interface CreateAppOptions {
   sharedSecret: string;
+  router: AppRouter;
 }
 
 export function createApp(options: CreateAppOptions): Hono {
@@ -34,7 +35,7 @@ export function createApp(options: CreateAppOptions): Hono {
   });
 
   app.use("/trpc/*", requireSecret);
-  app.use("/trpc/*", trpcServer({ router: appRouter }));
+  app.use("/trpc/*", trpcServer({ router: options.router }));
 
   return app;
 }

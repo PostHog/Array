@@ -1,4 +1,5 @@
 import {
+  CircleNotch,
   GitBranch,
   GitPullRequest,
   Sparkle,
@@ -39,10 +40,13 @@ export function HomeWorkstreamCard({ workstream }: HomeWorkstreamCardProps) {
     primaryIsTask,
     showPrInMenu,
     showTaskInMenu,
+    canArchive,
     hasMenu,
     runAction,
+    isRunningAction,
     openTask,
     openPr,
+    archive,
   } = useWorkstreamPresentation(workstream);
   const setSelectedWorkstreamId = useHomeUiStore(
     (s) => s.setSelectedWorkstreamId,
@@ -159,10 +163,15 @@ export function HomeWorkstreamCard({ workstream }: HomeWorkstreamCardProps) {
           <Button
             variant="primary"
             size="xs"
+            disabled={isRunningAction}
             onClick={() => runAction(primaryBound)}
             title={`${primaryBound.situationLabel} → ${primaryBound.skillId}`}
           >
-            <Sparkle size={11} weight="fill" />
+            {isRunningAction ? (
+              <CircleNotch size={11} weight="bold" className="animate-spin" />
+            ) : (
+              <Sparkle size={11} weight="fill" />
+            )}
             {primaryBound.label}
           </Button>
         ) : primaryIsPr ? (
@@ -189,10 +198,13 @@ export function HomeWorkstreamCard({ workstream }: HomeWorkstreamCardProps) {
               restBound={restBound}
               showPrInMenu={showPrInMenu}
               showTaskInMenu={showTaskInMenu}
+              showArchive={canArchive}
               onRun={runAction}
               onOpenPr={openPr}
               onOpenTask={openTask}
+              onArchive={archive}
               size="xs"
+              runDisabled={isRunningAction}
             />
           ) : null}
         </div>

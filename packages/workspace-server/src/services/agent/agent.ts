@@ -1,4 +1,4 @@
-import fs, { mkdirSync, symlinkSync } from "node:fs";
+import fs from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
@@ -13,6 +13,7 @@ import {
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
 import {
+  detectRtkBinary,
   isMcpToolReadOnly,
   isNotification,
   POSTHOG_NOTIFICATIONS,
@@ -30,13 +31,19 @@ import {
   DEFAULT_GATEWAY_MODEL,
   fetchGatewayModels,
   formatGatewayModelName,
+  type GatewayModel,
   getClaudeModelRecency,
   getProviderName,
   isAnthropicModel,
+  isCloudflareModel,
   isOpenAIModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
-import { findPrUrl, wasCreatedRecently } from "@posthog/agent/pr-url-detector";
+import {
+  findPrUrls,
+  wasCreatedByLogin,
+  wasCreatedRecently,
+} from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
@@ -59,6 +66,7 @@ import {
 } from "@posthog/platform/workspace-settings";
 import {
   type AcpMessage,
+  type Adapter,
   isAuthError,
   serializeError,
   TypedEventEmitter,
@@ -66,6 +74,9 @@ import {
 import { inject, injectable, preDestroy } from "inversify";
 import { WORKSPACE_REPOSITORY } from "../../db/identifiers";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
+import type { FoldersService } from "../folders/folders";
+import { FOLDERS_SERVICE } from "../folders/identifiers";
+import type { RegisteredFolder } from "../folders/schemas";
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
@@ -97,6 +108,7 @@ import {
   type InterruptReason,
   type PromptOutput,
   type ReconnectSessionInput,
+  type RtkStatus,
   type SessionResponse,
   type StartSessionInput,
 } from "./schemas";
@@ -105,13 +117,6 @@ export type { InterruptReason };
 
 function isDevBuild(): boolean {
   return process.env.POSTHOG_CODE_IS_DEV === "true";
-}
-
-const MOCK_NODE_DIR_PREFIX = "agent-node";
-
-function getMockNodeDir(): string {
-  const suffix = isDevBuild() ? "dev" : "prod";
-  return join(tmpdir(), `${MOCK_NODE_DIR_PREFIX}-${suffix}`);
 }
 
 /** Mark all content blocks as hidden so the renderer doesn't show a duplicate user message on retry */
@@ -256,7 +261,7 @@ interface SessionConfig {
   logUrl?: string;
   /** The agent's session ID (for resume - SDK session ID for Claude, Codex's session ID for Codex) */
   sessionId?: string;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   /** Permission mode to use for the session */
   permissionMode?: string;
   /** Custom instructions injected into the system prompt */
@@ -271,6 +276,24 @@ interface SessionConfig {
   model?: string;
   /** JSON Schema for structured task output — when set, the agent gets a create_output tool */
   jsonSchema?: Record<string, unknown> | null;
+  /**
+   * Session ID of an imported Claude Code CLI transcript already present in
+   * CLAUDE_CONFIG_DIR. Starts the session via loadSession so prior history is
+   * replayed to the client. Claude adapter only.
+   */
+  importedSessionId?: string;
+  /** rtk command-output compression for this session; false opts out. */
+  rtkEnabled?: boolean;
+}
+
+/** Pull the adapter's `agentCapabilities._meta.posthog.steering` from initialize. */
+function extractSteeringCapability(init: unknown): string | undefined {
+  const steering = (
+    init as {
+      agentCapabilities?: { _meta?: { posthog?: { steering?: unknown } } };
+    }
+  )?.agentCapabilities?._meta?.posthog?.steering;
+  return typeof steering === "string" ? steering : undefined;
 }
 
 interface ManagedSession {
@@ -287,15 +310,19 @@ interface ManagedSession {
   promptPending: boolean;
   pendingContext?: string;
   configOptions?: SessionConfigOption[];
+  /** Adapter's negotiated steering capability from initialize (`_meta.posthog.steering`). */
+  steering?: string;
   /** Tracks in-flight MCP tool calls (toolCallId → toolKey) for cancellation */
   inFlightMcpToolCalls: Map<string, string>;
   /** MCP tool approval states fetched at session start */
   mcpToolApprovals: McpToolApprovals;
   /** Maps tool keys to their installation for backend approval updates */
   toolInstallations: McpToolInstallations;
-  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
-  prAttributed: boolean;
+  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL;
+  // `prAttachChain` serializes attach writes so concurrent fetch-merge-patch
+  // cycles can't drop each other's URLs from the accumulated list.
   evaluatedPrUrls: Set<string>;
+  prAttachChain: Promise<void>;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -329,11 +356,15 @@ interface PendingPermission {
 
 @injectable()
 export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
-  private static readonly IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+  // POSTHOG_CODE_AGENT_IDLE_TIMEOUT_MS overrides for dev/test only — the
+  // memory bench shrinks it to verify idle reclaim in minutes.
+  private static readonly IDLE_TIMEOUT_MS =
+    Number(process.env.POSTHOG_CODE_AGENT_IDLE_TIMEOUT_MS) > 0
+      ? Number(process.env.POSTHOG_CODE_AGENT_IDLE_TIMEOUT_MS)
+      : 15 * 60 * 1000;
 
   private sessions = new Map<string, ManagedSession>();
   private pendingPermissions = new Map<string, PendingPermission>();
-  private mockNodeReady = false;
   private idleTimeouts = new Map<
     string,
     { handle: ReturnType<typeof setTimeout>; deadline: number }
@@ -372,6 +403,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly workspaceRepository: IWorkspaceRepository,
     @inject(WORKSPACE_SETTINGS_SERVICE)
     private readonly workspaceSettings: IWorkspaceSettings,
+    @inject(FOLDERS_SERVICE)
+    private readonly foldersService: FoldersService,
     @inject(AGENT_LOGGER)
     loggerFactory: AgentLogger,
   ) {
@@ -389,14 +422,23 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   }
 
   private getClaudeCliPath(): string {
-    // Keep in sync with the destDir in apps/code/vite.main.config.mts
+    // Keep in sync with the destDir in apps/code/vite-main-plugins.mts
     // (copyClaudeExecutable plugin).
     const binary = process.platform === "win32" ? "claude.exe" : "claude";
     return this.bundledResources.resolve(`.vite/build/claude-cli/${binary}`);
   }
 
+  /** Whether an rtk binary is installed on this host, independent of the toggle. */
+  getRtkStatus(): RtkStatus {
+    const binaryPath = detectRtkBinary(process.env);
+    return {
+      available: binaryPath !== undefined,
+      binaryPath: binaryPath ?? null,
+    };
+  }
+
   private getCodexBinaryPath(): string {
-    const binary = process.platform === "win32" ? "codex-acp.exe" : "codex-acp";
+    const binary = process.platform === "win32" ? "codex.exe" : "codex";
     return this.bundledResources.resolve(`.vite/build/codex-acp/${binary}`);
   }
 
@@ -535,6 +577,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     additionalDirectories?: string[],
     systemPromptOverride?: string,
     channelMode?: boolean,
+    knownLocalFolders?: RegisteredFolder[],
   ): {
     append: string;
   } {
@@ -572,19 +615,42 @@ When creating pull requests, add the following footer at the end of the PR descr
 \`\`\`
 ---
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
-\`\`\``;
+\`\`\`
+
+When you mention a pull request in any reply or summary, always hyperlink it to its full URL (e.g. a Markdown link like [#123](https://github.com/org/repo/pull/123)) rather than plain text, so readers can open it directly.
+
+## Shell efficiency
+Optimize for the fewest shell round trips.
+- Batch related commands into one Bash invocation using \`&&\` (e.g. \`npm run typecheck && npm run lint && npm test\`).
+- Emit all independent tool calls in the same response.
+- Read multiple files at once.
+- Never rerun a command solely to reproduce output you already have.`;
 
     if (channelMode) {
+      const localFolders = (knownLocalFolders ?? []).filter(
+        (f) => f.exists !== false,
+      );
+      const localFoldersBlock = localFolders.length
+        ? `\n\nThe user already has these repositories checked out locally on this machine. Prefer reusing one of these over cloning anything:\n${localFolders
+            .map(
+              (f) =>
+                `  - ${f.name} — ${f.path}${f.remoteUrl ? ` (${f.remoteUrl})` : ""}`,
+            )
+            .join("\n")}`
+        : "";
+
       prompt += `
 
 ## Channel task (no repository attached)
 You are running in a PostHog channel as a general-purpose assistant. This task may NOT need a code repository at all — it could be data analysis via PostHog tools, drafting a message, or answering a question. Do not assume you need a repo.
 
 - Your working directory is a scratch directory, not a git checkout. Treat it as empty.
-- Decide from the user's request (and the channel CONTEXT.md included above, if any) whether the task actually requires working inside a code repository.
-- Only if a repository is genuinely required: pick which one from the request and CONTEXT.md. Repositories named in CONTEXT.md are the most likely candidates — prefer them. Call \`list_repos\` to see what is available.
-- Bring a repo into your workspace with the \`clone_repo\` tool (pass \`owner/repo\`). It clones into a subdirectory of your working directory and returns the path — cd into that path for all git work.
-- If a repository is required but you cannot confidently determine which one, use the AskUserQuestion tool to ask the user to choose before cloning. Do not guess.`;
+- Decide from the user's request (and the channel CONTEXT.md included above, if any) whether the task actually requires working inside a code repository. If it doesn't, just do the work in the scratch directory — do NOT attach a repo.
+
+If a repository IS genuinely required, attach one in this priority order:
+1. **Reuse a folder the user already has locally.** ${localFolders.length ? "Pick the one that best matches the request and the channel CONTEXT.md, then `cd` into its absolute path and do all git and file work there. It is already on disk — do NOT clone it again." : "If the user names a folder or path, `cd` into that absolute path and work there."}
+2. **If you can't confidently pick one** (none clearly match, or it's ambiguous), use the AskUserQuestion tool to ask the user which local folder to use, or for the path where the folder lives on this machine. Do not guess.
+3. **Only as a last resort** — when the user has no local copy, or explicitly wants a fresh checkout — clone from remote. Call \`list_repos\` to see what's available (prefer repos named in CONTEXT.md), then **confirm with the user via AskUserQuestion before cloning**, and use \`clone_repo\` (pass \`owner/repo\`); it clones into a subdirectory of your working directory and returns the path to \`cd\` into.${localFoldersBlock}`;
     }
 
     if (customInstructions) {
@@ -607,9 +673,6 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
     this.validateSessionParams(params);
     const config = this.toSessionConfig(params);
     const session = await this.getOrCreateSession(config, false);
-    if (!session) {
-      throw new Error("Failed to create session");
-    }
     return this.toSessionResponse(session);
   }
 
@@ -628,6 +691,16 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
     return session ? this.toSessionResponse(session) : null;
   }
 
+  private async getOrCreateSession(
+    config: SessionConfig,
+    isReconnect: false,
+    isRetry?: boolean,
+  ): Promise<ManagedSession>;
+  private async getOrCreateSession(
+    config: SessionConfig,
+    isReconnect: true,
+    isRetry?: boolean,
+  ): Promise<ManagedSession | null>;
   private async getOrCreateSession(
     config: SessionConfig,
     isReconnect: boolean,
@@ -660,6 +733,13 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
       this.workspaceSettings.getWorktreeLocation(),
     );
 
+    // In channel mode the agent decides at runtime whether it needs a repo. Give
+    // it the user's previously-used local folders so it can reuse one (or ask)
+    // instead of cloning from remote. Only fetched for channel sessions.
+    const knownLocalFolders = channelMode
+      ? await this.foldersService.getFolders().catch(() => [])
+      : [];
+
     const additionalDirectories =
       taskId === "__preview__"
         ? []
@@ -685,15 +765,14 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
     }
 
     const channel = `agent-event:${taskRunId}`;
-    const mockNodeDir = this.setupMockNodeEnvironment();
     const proxyUrl = await this.agentAuthAdapter.ensureGatewayProxy(
       credentials.apiHost,
     );
     await this.agentAuthAdapter.configureProcessEnv({
       credentials,
-      mockNodeDir,
       proxyUrl,
       claudeCliPath: this.getClaudeCliPath(),
+      rtkEnabled: config.rtkEnabled,
     });
 
     const isPreview = taskId === "__preview__";
@@ -717,6 +796,7 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
         additionalDirectories,
         systemPromptOverride,
         channelMode,
+        knownLocalFolders,
       );
 
       const bundledSkillsDir = join(
@@ -796,7 +876,7 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
         clientStreams,
       );
 
-      await connection.initialize({
+      const initResult = await connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: {
           fs: {
@@ -806,6 +886,11 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
           terminal: true,
         },
       });
+      // The adapter advertises whether mid-turn steering folds natively into the
+      // running turn (`steering: "native"`) vs needs cancel+resend. Surface it so
+      // the host gates steer-vs-resend on the negotiated capability, not on a
+      // hardcoded adapter name (codex-acp advertises "interrupt-resend").
+      const steering = extractSteeringCapability(initResult);
 
       const {
         servers: mcpServers,
@@ -864,7 +949,50 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
       });
 
       let configOptions: SessionConfigOption[] | undefined;
-      let agentSessionId: string;
+      let agentSessionId: string | undefined;
+
+      // Imported Claude Code CLI session: the transcript JSONL was copied
+      // into CLAUDE_CONFIG_DIR at import time, so load it directly and let
+      // the adapter replay its history to the client. On failure, fall
+      // through to a fresh session so the task still starts.
+      if (!isReconnect && config.importedSessionId && adapter !== "codex") {
+        const importedSessionId = config.importedSessionId;
+        try {
+          const loadResponse = await connection.loadSession({
+            sessionId: importedSessionId,
+            cwd: repoPath,
+            mcpServers: sessionMcpServers,
+            _meta: {
+              ...(logUrl && {
+                persistence: { taskId, runId: taskRunId, logUrl },
+              }),
+              taskRunId,
+              environment: "local",
+              sessionId: importedSessionId,
+              systemPrompt,
+              ...(channelMode && { channelMode }),
+              mcpToolApprovals: toolApprovals,
+              ...(permissionMode && { permissionMode }),
+              ...(model != null && { model }),
+              ...(jsonSchema && { jsonSchema }),
+              claudeCode: {
+                options: claudeCodeOptions,
+              },
+            },
+          });
+          configOptions = loadResponse?.configOptions ?? undefined;
+          agentSessionId = importedSessionId;
+        } catch (err) {
+          this.log.warn(
+            "Failed to load imported session, creating new session instead",
+            {
+              taskId,
+              taskRunId,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+        }
+      }
 
       // Claude-specific: hydrate session JSONL from PostHog before resuming.
       // If hydration finds no conversation to restore, skip the resume and
@@ -926,7 +1054,7 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
         });
         configOptions = resumeResponse?.configOptions ?? undefined;
         agentSessionId = existingSessionId;
-      } else {
+      } else if (agentSessionId === undefined) {
         if (isReconnect) {
           this.log.info("No sessionId for reconnect, creating new session", {
             taskId,
@@ -968,11 +1096,12 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
         config,
         promptPending: false,
         configOptions,
+        steering,
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
-        prAttributed: false,
         evaluatedPrUrls: new Set(),
+        prAttachChain: Promise.resolve(),
       };
 
       this.sessions.set(taskRunId, session);
@@ -996,7 +1125,10 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
           `Auth error during ${isReconnect ? "reconnect" : "create"}, retrying`,
           { taskRunId },
         );
-        return this.getOrCreateSession(config, isReconnect, true);
+        if (isReconnect) {
+          return this.getOrCreateSession(config, true, true);
+        }
+        return this.getOrCreateSession(config, false, true);
       }
       // When the in-process ACP layer masks a thrown error as a generic
       // "Internal error", the real text survives in `data.details`. Surface it
@@ -1229,6 +1361,49 @@ You are running in a PostHog channel as a general-purpose assistant. This task m
     return this.sessions.get(taskRunId);
   }
 
+  getDebugSnapshot(): {
+    sessions: Array<{
+      taskRunId: string;
+      taskId: string;
+      repoPath: string;
+      adapter: string;
+      model: string | null;
+      sessionId: string | null;
+      channel: string;
+      createdAt: number;
+      lastActivityAt: number;
+      promptPending: boolean;
+      inFlightToolCalls: number;
+      idleDeadline: number | null;
+    }>;
+    pendingPermissions: Array<{
+      taskRunId: string;
+      toolCallId: string;
+    }>;
+  } {
+    const sessions = [...this.sessions.values()].map((session) => ({
+      taskRunId: session.taskRunId,
+      taskId: session.taskId,
+      repoPath: session.repoPath,
+      adapter: session.config.adapter ?? "claude",
+      model: session.config.model ?? null,
+      sessionId: session.config.sessionId ?? null,
+      channel: session.channel,
+      createdAt: session.createdAt,
+      lastActivityAt: session.lastActivityAt,
+      promptPending: session.promptPending,
+      inFlightToolCalls: session.inFlightMcpToolCalls.size,
+      idleDeadline: this.idleTimeouts.get(session.taskRunId)?.deadline ?? null,
+    }));
+    const pendingPermissions = [...this.pendingPermissions.values()].map(
+      (perm) => ({
+        taskRunId: perm.taskRunId,
+        toolCallId: perm.toolCallId,
+      }),
+    );
+    return { sessions, pendingPermissions };
+  }
+
   async setSessionConfigOption(
     sessionId: string,
     configId: string,
@@ -1422,31 +1597,6 @@ For git operations while detached:
     }
 
     this.log.info("All agent sessions cleaned up");
-  }
-
-  private setupMockNodeEnvironment(): string {
-    const mockNodeDir = getMockNodeDir();
-    if (!this.mockNodeReady) {
-      try {
-        mkdirSync(mockNodeDir, { recursive: true });
-        const nodeSymlinkPath = join(mockNodeDir, "node");
-        try {
-          symlinkSync(process.execPath, nodeSymlinkPath);
-        } catch (err) {
-          if (
-            !(err instanceof Error) ||
-            !("code" in err) ||
-            err.code !== "EEXIST"
-          ) {
-            throw err;
-          }
-        }
-        this.mockNodeReady = true;
-      } catch (err) {
-        this.log.warn("Failed to setup mock node environment", err);
-      }
-    }
-    return mockNodeDir;
   }
 
   private cancelInFlightMcpToolCalls(session: ManagedSession): void {
@@ -1727,7 +1877,7 @@ For git operations while detached:
           } = params as {
             taskRunId: string;
             sessionId: string;
-            adapter: "claude" | "codex";
+            adapter: Adapter;
           };
           const session = this.sessions.get(notifTaskRunId);
           if (session) {
@@ -1825,6 +1975,9 @@ For git operations while detached:
       effort: "effort" in params ? params.effort : undefined,
       model: "model" in params ? params.model : undefined,
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
+      importedSessionId:
+        "importedSessionId" in params ? params.importedSessionId : undefined,
+      rtkEnabled: "rtkEnabled" in params ? params.rtkEnabled : undefined,
     };
   }
 
@@ -1833,6 +1986,7 @@ For git operations while detached:
       sessionId: session.taskRunId,
       channel: session.channel,
       configOptions: session.configOptions,
+      steering: session.steering,
     };
   }
 
@@ -1884,11 +2038,14 @@ For git operations while detached:
     session: ManagedSession | undefined,
     update: unknown,
   ): void {
-    if (!session || session.prAttributed) return;
-    const prUrl = findPrUrl(JSON.stringify(update));
-    if (!prUrl || session.evaluatedPrUrls.has(prUrl)) return;
-    session.evaluatedPrUrls.add(prUrl);
-    void this.attachPrIfCreatedThisRun(taskRunId, session, prUrl);
+    if (!session) return;
+    for (const prUrl of findPrUrls(JSON.stringify(update))) {
+      if (session.evaluatedPrUrls.has(prUrl)) continue;
+      session.evaluatedPrUrls.add(prUrl);
+      session.prAttachChain = session.prAttachChain
+        .catch(() => {})
+        .then(() => this.attachPrIfCreatedThisRun(taskRunId, session, prUrl));
+    }
   }
 
   private async attachPrIfCreatedThisRun(
@@ -1896,33 +2053,30 @@ For git operations while detached:
     session: ManagedSession,
     prUrl: string,
   ): Promise<void> {
-    if (session.prAttributed) return;
+    const [attribution, ghLogin] = await Promise.all([
+      this.fetchPrAttribution(session.repoPath, prUrl),
+      this.fetchGhLogin(session.repoPath),
+    ]);
+    if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
+    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
 
-    const createdAt = await this.fetchPrCreatedAt(session.repoPath, prUrl);
-    if (!wasCreatedRecently(createdAt, Date.now())) return;
-    // Re-check after the await: another URL may have attributed while we waited.
-    if (session.prAttributed) return;
-
-    session.prAttributed = true;
     this.log.info("Detected PR URL created during run", { taskRunId, prUrl });
 
-    session.agent
-      .attachPullRequestToTask(session.taskId, prUrl)
-      .then(() => {
-        this.log.info("PR URL attached to task", {
-          taskRunId,
-          taskId: session.taskId,
-          prUrl,
-        });
-      })
-      .catch((err) => {
-        this.log.error("Failed to attach PR URL to task", {
-          taskRunId,
-          taskId: session.taskId,
-          prUrl,
-          error: err,
-        });
+    try {
+      await session.agent.attachPullRequestToTask(session.taskId, prUrl);
+      this.log.info("PR URL attached to task", {
+        taskRunId,
+        taskId: session.taskId,
+        prUrl,
       });
+    } catch (err) {
+      this.log.error("Failed to attach PR URL to task", {
+        taskRunId,
+        taskId: session.taskId,
+        prUrl,
+        error: err,
+      });
+    }
 
     // The user-initiated PR-creation flow links the current branch to the
     // workspace atomically (see GitService.createPr). PRs created via bash —
@@ -1937,24 +2091,51 @@ For git operations while detached:
     });
   }
 
-  /** PR `createdAt` (ISO) via the GitHub CLI, or null if it can't be resolved. */
-  private async fetchPrCreatedAt(
+  /** PR `createdAt` (ISO) and author login via the GitHub CLI; nulls if unresolvable. */
+  private async fetchPrAttribution(
     cwd: string,
     prUrl: string,
-  ): Promise<string | null> {
+  ): Promise<{ createdAt: string | null; author: string | null }> {
     try {
-      const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
-        cwd,
-        timeoutMs: 10_000,
-      });
-      if (res.exitCode !== 0) return null;
-      return (
-        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
+      const res = await execGh(
+        ["pr", "view", prUrl, "--json", "createdAt,author"],
+        {
+          cwd,
+          timeoutMs: 10_000,
+        },
       );
+      if (res.exitCode !== 0) return { createdAt: null, author: null };
+      const data = JSON.parse(res.stdout) as {
+        createdAt?: string;
+        author?: { login?: string };
+      };
+      return {
+        createdAt: data.createdAt ?? null,
+        author: data.author?.login ?? null,
+      };
     } catch (err) {
-      this.log.debug("Failed to resolve PR createdAt", { prUrl, error: err });
-      return null;
+      this.log.debug("Failed to resolve PR attribution", { prUrl, error: err });
+      return { createdAt: null, author: null };
     }
+  }
+
+  private ghLoginPromise: Promise<string | null> | null = null;
+
+  private fetchGhLogin(cwd: string): Promise<string | null> {
+    this.ghLoginPromise ??= execGh(["api", "user", "--jq", ".login"], {
+      cwd,
+      timeoutMs: 10_000,
+    })
+      .then((res) => {
+        const login = res.exitCode === 0 ? res.stdout.trim() : "";
+        if (!login) this.ghLoginPromise = null;
+        return login || null;
+      })
+      .catch(() => {
+        this.ghLoginPromise = null;
+        return null;
+      });
+    return this.ghLoginPromise;
   }
 
   /**
@@ -2038,12 +2219,19 @@ For git operations while detached:
 
   async getPreviewConfigOptions(
     apiHost: string,
-    adapter: "claude" | "codex" = "claude",
+    adapter: Adapter = "claude",
   ): Promise<SessionConfigOption[]> {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
     const gatewayModels = await fetchGatewayModels({ gatewayUrl });
 
-    const modelFilter = adapter === "codex" ? isOpenAIModel : isAnthropicModel;
+    // The Claude adapter can also drive Cloudflare `@cf/` models the gateway serves over its
+    // Anthropic-Messages surface, so the preview/default-model path must offer them too — otherwise an
+    // advertised `@cf/*` model is dropped here and the pre-session run falls back to Opus.
+    const modelFilter =
+      adapter === "codex"
+        ? isOpenAIModel
+        : (model: GatewayModel) =>
+            isAnthropicModel(model) || isCloudflareModel(model);
 
     const modelOptions = gatewayModels
       .filter((model) => modelFilter(model))

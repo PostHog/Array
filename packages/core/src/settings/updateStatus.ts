@@ -39,3 +39,28 @@ export function deriveUpdateStatus(
   }
   return {};
 }
+
+export interface CheckForUpdatesResult {
+  success: boolean;
+  errorCode?: "already_checking" | "disabled";
+  errorMessage?: string;
+}
+
+export interface CheckResultAction {
+  updatesDisabled: boolean;
+  message: string;
+  type: "error";
+}
+
+export function resolveCheckResultAction(
+  result: CheckForUpdatesResult,
+): CheckResultAction | null {
+  if (result.success || result.errorCode === "already_checking") {
+    return null;
+  }
+  return {
+    updatesDisabled: result.errorCode === "disabled",
+    message: result.errorMessage || "Failed to check for updates",
+    type: "error",
+  };
+}

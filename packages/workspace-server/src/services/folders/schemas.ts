@@ -7,6 +7,11 @@ export const registeredFolderSchema = z.object({
   remoteUrl: z.string().nullable(),
   lastAccessed: z.string(),
   createdAt: z.string(),
+  /**
+   * Root of the main checkout when this folder is a linked git worktree
+   * (`git worktree add`), null for a main clone. Computed at list time.
+   */
+  mainRepoPath: z.string().nullable().optional(),
 });
 
 export const registeredFolderWithExistsSchema = registeredFolderSchema.extend({

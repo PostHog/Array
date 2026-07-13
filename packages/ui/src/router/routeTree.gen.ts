@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WebsiteRouteImport } from './routes/website'
+import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as McpServersRouteImport } from './routes/mcp-servers'
 import { Route as CommandCenterRouteImport } from './routes/command-center'
@@ -22,8 +23,10 @@ import { Route as WebsiteNewRouteImport } from './routes/website/new'
 import { Route as WebsiteMcpServersRouteImport } from './routes/website/mcp-servers'
 import { Route as WebsiteHomeRouteImport } from './routes/website/home'
 import { Route as WebsiteCommandCenterRouteImport } from './routes/website/command-center'
+import { Route as WebsiteActivityRouteImport } from './routes/website/activity'
 import { Route as SettingsCategoryRouteImport } from './routes/settings/$category'
 import { Route as FoldersFolderIdRouteImport } from './routes/folders/$folderId'
+import { Route as CodePrRouteImport } from './routes/code/pr'
 import { Route as CodeInboxRouteImport } from './routes/code/inbox'
 import { Route as CodeHomeRouteImport } from './routes/code/home'
 import { Route as CodeArchivedRouteImport } from './routes/code/archived'
@@ -32,7 +35,10 @@ import { Route as WebsiteChannelIdIndexRouteImport } from './routes/website/$cha
 import { Route as CodeInboxIndexRouteImport } from './routes/code/inbox/index'
 import { Route as CodeAgentsIndexRouteImport } from './routes/code/agents/index'
 import { Route as WebsiteChannelIdNewRouteImport } from './routes/website/$channelId/new'
+import { Route as WebsiteChannelIdHistoryRouteImport } from './routes/website/$channelId/history'
 import { Route as WebsiteChannelIdContextRouteImport } from './routes/website/$channelId/context'
+import { Route as WebsiteChannelIdCanvasesRouteImport } from './routes/website/$channelId/canvases'
+import { Route as WebsiteChannelIdArtifactsRouteImport } from './routes/website/$channelId/artifacts'
 import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId'
 import { Route as CodeInboxRunsRouteImport } from './routes/code/inbox/runs'
 import { Route as CodeInboxReportsRouteImport } from './routes/code/inbox/reports'
@@ -40,10 +46,13 @@ import { Route as CodeInboxPullsRouteImport } from './routes/code/inbox/pulls'
 import { Route as CodeInboxDismissedRouteImport } from './routes/code/inbox/dismissed'
 import { Route as CodeInboxAgentsRouteImport } from './routes/code/inbox/agents'
 import { Route as CodeAgentsScoutsRouteImport } from './routes/code/agents/scouts'
+import { Route as CodeAgentsApplicationsRouteImport } from './routes/code/agents/applications'
 import { Route as CodeInboxRunsIndexRouteImport } from './routes/code/inbox/runs.index'
 import { Route as CodeInboxReportsIndexRouteImport } from './routes/code/inbox/reports.index'
 import { Route as CodeInboxPullsIndexRouteImport } from './routes/code/inbox/pulls.index'
 import { Route as CodeInboxDismissedIndexRouteImport } from './routes/code/inbox/dismissed.index'
+import { Route as CodeAgentsScoutsIndexRouteImport } from './routes/code/agents/scouts.index'
+import { Route as CodeAgentsApplicationsIndexRouteImport } from './routes/code/agents/applications/index'
 import { Route as WebsiteChannelIdTasksTaskIdRouteImport } from './routes/website/$channelId/tasks/$taskId'
 import { Route as WebsiteChannelIdDashboardsDashboardIdRouteImport } from './routes/website/$channelId/dashboards/$dashboardId'
 import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pending.$key'
@@ -51,12 +60,30 @@ import { Route as CodeInboxRunsReportIdRouteImport } from './routes/code/inbox/r
 import { Route as CodeInboxReportsReportIdRouteImport } from './routes/code/inbox/reports.$reportId'
 import { Route as CodeInboxPullsReportIdRouteImport } from './routes/code/inbox/pulls.$reportId'
 import { Route as CodeInboxDismissedReportIdRouteImport } from './routes/code/inbox/dismissed.$reportId'
+import { Route as CodeAgentsScoutsScratchpadRouteImport } from './routes/code/agents/scouts.scratchpad'
+import { Route as CodeAgentsScoutsFindingsRouteImport } from './routes/code/agents/scouts.findings'
 import { Route as CodeAgentsScoutsSkillNameRouteImport } from './routes/code/agents/scouts.$skillName'
+import { Route as CodeAgentsApplicationsApprovalsRouteImport } from './routes/code/agents/applications/approvals'
+import { Route as CodeAgentsApplicationsIdOrSlugRouteImport } from './routes/code/agents/applications/$idOrSlug'
 import { Route as CodeAgentsScoutsSkillNameIndexRouteImport } from './routes/code/agents/scouts.$skillName.index'
+import { Route as CodeAgentsApplicationsIdOrSlugIndexRouteImport } from './routes/code/agents/applications/$idOrSlug/index'
+import { Route as CodeAgentsApplicationsIdOrSlugUsersRouteImport } from './routes/code/agents/applications/$idOrSlug/users'
+import { Route as CodeAgentsApplicationsIdOrSlugObservabilityRouteImport } from './routes/code/agents/applications/$idOrSlug/observability'
+import { Route as CodeAgentsApplicationsIdOrSlugMemoryRouteImport } from './routes/code/agents/applications/$idOrSlug/memory'
+import { Route as CodeAgentsApplicationsIdOrSlugConfigurationRouteImport } from './routes/code/agents/applications/$idOrSlug/configuration'
+import { Route as CodeAgentsApplicationsIdOrSlugChatRouteImport } from './routes/code/agents/applications/$idOrSlug/chat'
+import { Route as CodeAgentsApplicationsIdOrSlugApprovalsRouteImport } from './routes/code/agents/applications/$idOrSlug/approvals'
+import { Route as CodeAgentsApplicationsIdOrSlugSessionsIndexRouteImport } from './routes/code/agents/applications/$idOrSlug/sessions.index'
+import { Route as CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport } from './routes/code/agents/applications/$idOrSlug/sessions.$sessionId'
 
 const WebsiteRoute = WebsiteRouteImport.update({
   id: '/website',
   path: '/website',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsageRoute = UsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SkillsRoute = SkillsRouteImport.update({
@@ -119,6 +146,11 @@ const WebsiteCommandCenterRoute = WebsiteCommandCenterRouteImport.update({
   path: '/command-center',
   getParentRoute: () => WebsiteRoute,
 } as any)
+const WebsiteActivityRoute = WebsiteActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => WebsiteRoute,
+} as any)
 const SettingsCategoryRoute = SettingsCategoryRouteImport.update({
   id: '/settings/$category',
   path: '/settings/$category',
@@ -127,6 +159,11 @@ const SettingsCategoryRoute = SettingsCategoryRouteImport.update({
 const FoldersFolderIdRoute = FoldersFolderIdRouteImport.update({
   id: '/folders/$folderId',
   path: '/folders/$folderId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodePrRoute = CodePrRouteImport.update({
+  id: '/code/pr',
+  path: '/code/pr',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CodeInboxRoute = CodeInboxRouteImport.update({
@@ -169,11 +206,28 @@ const WebsiteChannelIdNewRoute = WebsiteChannelIdNewRouteImport.update({
   path: '/$channelId/new',
   getParentRoute: () => WebsiteRoute,
 } as any)
+const WebsiteChannelIdHistoryRoute = WebsiteChannelIdHistoryRouteImport.update({
+  id: '/$channelId/history',
+  path: '/$channelId/history',
+  getParentRoute: () => WebsiteRoute,
+} as any)
 const WebsiteChannelIdContextRoute = WebsiteChannelIdContextRouteImport.update({
   id: '/$channelId/context',
   path: '/$channelId/context',
   getParentRoute: () => WebsiteRoute,
 } as any)
+const WebsiteChannelIdCanvasesRoute =
+  WebsiteChannelIdCanvasesRouteImport.update({
+    id: '/$channelId/canvases',
+    path: '/$channelId/canvases',
+    getParentRoute: () => WebsiteRoute,
+  } as any)
+const WebsiteChannelIdArtifactsRoute =
+  WebsiteChannelIdArtifactsRouteImport.update({
+    id: '/$channelId/artifacts',
+    path: '/$channelId/artifacts',
+    getParentRoute: () => WebsiteRoute,
+  } as any)
 const CodeTasksTaskIdRoute = CodeTasksTaskIdRouteImport.update({
   id: '/code/tasks/$taskId',
   path: '/code/tasks/$taskId',
@@ -209,6 +263,11 @@ const CodeAgentsScoutsRoute = CodeAgentsScoutsRouteImport.update({
   path: '/scouts',
   getParentRoute: () => CodeAgentsRoute,
 } as any)
+const CodeAgentsApplicationsRoute = CodeAgentsApplicationsRouteImport.update({
+  id: '/applications',
+  path: '/applications',
+  getParentRoute: () => CodeAgentsRoute,
+} as any)
 const CodeInboxRunsIndexRoute = CodeInboxRunsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -229,6 +288,17 @@ const CodeInboxDismissedIndexRoute = CodeInboxDismissedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => CodeInboxDismissedRoute,
 } as any)
+const CodeAgentsScoutsIndexRoute = CodeAgentsScoutsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CodeAgentsScoutsRoute,
+} as any)
+const CodeAgentsApplicationsIndexRoute =
+  CodeAgentsApplicationsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => CodeAgentsApplicationsRoute,
+  } as any)
 const WebsiteChannelIdTasksTaskIdRoute =
   WebsiteChannelIdTasksTaskIdRouteImport.update({
     id: '/$channelId/tasks/$taskId',
@@ -268,11 +338,35 @@ const CodeInboxDismissedReportIdRoute =
     path: '/$reportId',
     getParentRoute: () => CodeInboxDismissedRoute,
   } as any)
+const CodeAgentsScoutsScratchpadRoute =
+  CodeAgentsScoutsScratchpadRouteImport.update({
+    id: '/scratchpad',
+    path: '/scratchpad',
+    getParentRoute: () => CodeAgentsScoutsRoute,
+  } as any)
+const CodeAgentsScoutsFindingsRoute =
+  CodeAgentsScoutsFindingsRouteImport.update({
+    id: '/findings',
+    path: '/findings',
+    getParentRoute: () => CodeAgentsScoutsRoute,
+  } as any)
 const CodeAgentsScoutsSkillNameRoute =
   CodeAgentsScoutsSkillNameRouteImport.update({
     id: '/$skillName',
     path: '/$skillName',
     getParentRoute: () => CodeAgentsScoutsRoute,
+  } as any)
+const CodeAgentsApplicationsApprovalsRoute =
+  CodeAgentsApplicationsApprovalsRouteImport.update({
+    id: '/approvals',
+    path: '/approvals',
+    getParentRoute: () => CodeAgentsApplicationsRoute,
+  } as any)
+const CodeAgentsApplicationsIdOrSlugRoute =
+  CodeAgentsApplicationsIdOrSlugRouteImport.update({
+    id: '/$idOrSlug',
+    path: '/$idOrSlug',
+    getParentRoute: () => CodeAgentsApplicationsRoute,
   } as any)
 const CodeAgentsScoutsSkillNameIndexRoute =
   CodeAgentsScoutsSkillNameIndexRouteImport.update({
@@ -280,19 +374,76 @@ const CodeAgentsScoutsSkillNameIndexRoute =
     path: '/',
     getParentRoute: () => CodeAgentsScoutsSkillNameRoute,
   } as any)
+const CodeAgentsApplicationsIdOrSlugIndexRoute =
+  CodeAgentsApplicationsIdOrSlugIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
+const CodeAgentsApplicationsIdOrSlugUsersRoute =
+  CodeAgentsApplicationsIdOrSlugUsersRouteImport.update({
+    id: '/users',
+    path: '/users',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
+const CodeAgentsApplicationsIdOrSlugObservabilityRoute =
+  CodeAgentsApplicationsIdOrSlugObservabilityRouteImport.update({
+    id: '/observability',
+    path: '/observability',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
+const CodeAgentsApplicationsIdOrSlugMemoryRoute =
+  CodeAgentsApplicationsIdOrSlugMemoryRouteImport.update({
+    id: '/memory',
+    path: '/memory',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
+const CodeAgentsApplicationsIdOrSlugConfigurationRoute =
+  CodeAgentsApplicationsIdOrSlugConfigurationRouteImport.update({
+    id: '/configuration',
+    path: '/configuration',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
+const CodeAgentsApplicationsIdOrSlugChatRoute =
+  CodeAgentsApplicationsIdOrSlugChatRouteImport.update({
+    id: '/chat',
+    path: '/chat',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
+const CodeAgentsApplicationsIdOrSlugApprovalsRoute =
+  CodeAgentsApplicationsIdOrSlugApprovalsRouteImport.update({
+    id: '/approvals',
+    path: '/approvals',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
+const CodeAgentsApplicationsIdOrSlugSessionsIndexRoute =
+  CodeAgentsApplicationsIdOrSlugSessionsIndexRouteImport.update({
+    id: '/sessions/',
+    path: '/sessions/',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
+const CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute =
+  CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport.update({
+    id: '/sessions/$sessionId',
+    path: '/sessions/$sessionId',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/usage': typeof UsageRoute
   '/website': typeof WebsiteRouteWithChildren
   '/code/agents': typeof CodeAgentsRouteWithChildren
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
   '/code/inbox': typeof CodeInboxRouteWithChildren
+  '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
+  '/website/activity': typeof WebsiteActivityRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
   '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
@@ -301,6 +452,7 @@ export interface FileRoutesByFullPath {
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
+  '/code/agents/applications': typeof CodeAgentsApplicationsRouteWithChildren
   '/code/agents/scouts': typeof CodeAgentsScoutsRouteWithChildren
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/inbox/dismissed': typeof CodeInboxDismissedRouteWithChildren
@@ -308,12 +460,19 @@ export interface FileRoutesByFullPath {
   '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
   '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
+  '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
+  '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
   '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
+  '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
+  '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
+  '/code/agents/scouts/findings': typeof CodeAgentsScoutsFindingsRoute
+  '/code/agents/scouts/scratchpad': typeof CodeAgentsScoutsScratchpadRoute
   '/code/inbox/dismissed/$reportId': typeof CodeInboxDismissedReportIdRoute
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
@@ -321,21 +480,35 @@ export interface FileRoutesByFullPath {
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
+  '/code/agents/applications/': typeof CodeAgentsApplicationsIndexRoute
+  '/code/agents/scouts/': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/dismissed/': typeof CodeInboxDismissedIndexRoute
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
+  '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
+  '/code/agents/applications/$idOrSlug/chat': typeof CodeAgentsApplicationsIdOrSlugChatRoute
+  '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
+  '/code/agents/applications/$idOrSlug/memory': typeof CodeAgentsApplicationsIdOrSlugMemoryRoute
+  '/code/agents/applications/$idOrSlug/observability': typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
+  '/code/agents/applications/$idOrSlug/users': typeof CodeAgentsApplicationsIdOrSlugUsersRoute
+  '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
+  '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
+  '/code/agents/applications/$idOrSlug/sessions/': typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/usage': typeof UsageRoute
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
+  '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
+  '/website/activity': typeof WebsiteActivityRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
   '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
@@ -344,14 +517,19 @@ export interface FileRoutesByTo {
   '/code': typeof CodeIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/website': typeof WebsiteIndexRoute
-  '/code/agents/scouts': typeof CodeAgentsScoutsRouteWithChildren
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
+  '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
+  '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents': typeof CodeAgentsIndexRoute
   '/code/inbox': typeof CodeInboxIndexRoute
   '/website/$channelId': typeof WebsiteChannelIdIndexRoute
+  '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
+  '/code/agents/scouts/findings': typeof CodeAgentsScoutsFindingsRoute
+  '/code/agents/scouts/scratchpad': typeof CodeAgentsScoutsScratchpadRoute
   '/code/inbox/dismissed/$reportId': typeof CodeInboxDismissedReportIdRoute
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
@@ -359,11 +537,22 @@ export interface FileRoutesByTo {
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
+  '/code/agents/applications': typeof CodeAgentsApplicationsIndexRoute
+  '/code/agents/scouts': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/dismissed': typeof CodeInboxDismissedIndexRoute
   '/code/inbox/pulls': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
+  '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
+  '/code/agents/applications/$idOrSlug/chat': typeof CodeAgentsApplicationsIdOrSlugChatRoute
+  '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
+  '/code/agents/applications/$idOrSlug/memory': typeof CodeAgentsApplicationsIdOrSlugMemoryRoute
+  '/code/agents/applications/$idOrSlug/observability': typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
+  '/code/agents/applications/$idOrSlug/users': typeof CodeAgentsApplicationsIdOrSlugUsersRoute
+  '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameIndexRoute
+  '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
+  '/code/agents/applications/$idOrSlug/sessions': typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -371,13 +560,16 @@ export interface FileRoutesById {
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/usage': typeof UsageRoute
   '/website': typeof WebsiteRouteWithChildren
   '/code/agents': typeof CodeAgentsRouteWithChildren
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
   '/code/inbox': typeof CodeInboxRouteWithChildren
+  '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
+  '/website/activity': typeof WebsiteActivityRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
   '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
@@ -386,6 +578,7 @@ export interface FileRoutesById {
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
+  '/code/agents/applications': typeof CodeAgentsApplicationsRouteWithChildren
   '/code/agents/scouts': typeof CodeAgentsScoutsRouteWithChildren
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/inbox/dismissed': typeof CodeInboxDismissedRouteWithChildren
@@ -393,12 +586,19 @@ export interface FileRoutesById {
   '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
   '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
+  '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
+  '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
   '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
+  '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
+  '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
+  '/code/agents/scouts/findings': typeof CodeAgentsScoutsFindingsRoute
+  '/code/agents/scouts/scratchpad': typeof CodeAgentsScoutsScratchpadRoute
   '/code/inbox/dismissed/$reportId': typeof CodeInboxDismissedReportIdRoute
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
@@ -406,11 +606,22 @@ export interface FileRoutesById {
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
+  '/code/agents/applications/': typeof CodeAgentsApplicationsIndexRoute
+  '/code/agents/scouts/': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/dismissed/': typeof CodeInboxDismissedIndexRoute
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
+  '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
+  '/code/agents/applications/$idOrSlug/chat': typeof CodeAgentsApplicationsIdOrSlugChatRoute
+  '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
+  '/code/agents/applications/$idOrSlug/memory': typeof CodeAgentsApplicationsIdOrSlugMemoryRoute
+  '/code/agents/applications/$idOrSlug/observability': typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
+  '/code/agents/applications/$idOrSlug/users': typeof CodeAgentsApplicationsIdOrSlugUsersRoute
+  '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
+  '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
+  '/code/agents/applications/$idOrSlug/sessions/': typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -419,13 +630,16 @@ export interface FileRouteTypes {
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/usage'
     | '/website'
     | '/code/agents'
     | '/code/archived'
     | '/code/home'
     | '/code/inbox'
+    | '/code/pr'
     | '/folders/$folderId'
     | '/settings/$category'
+    | '/website/activity'
     | '/website/command-center'
     | '/website/home'
     | '/website/mcp-servers'
@@ -434,6 +648,7 @@ export interface FileRouteTypes {
     | '/code/'
     | '/settings/'
     | '/website/'
+    | '/code/agents/applications'
     | '/code/agents/scouts'
     | '/code/inbox/agents'
     | '/code/inbox/dismissed'
@@ -441,12 +656,19 @@ export interface FileRouteTypes {
     | '/code/inbox/reports'
     | '/code/inbox/runs'
     | '/code/tasks/$taskId'
+    | '/website/$channelId/artifacts'
+    | '/website/$channelId/canvases'
     | '/website/$channelId/context'
+    | '/website/$channelId/history'
     | '/website/$channelId/new'
     | '/code/agents/'
     | '/code/inbox/'
     | '/website/$channelId/'
+    | '/code/agents/applications/$idOrSlug'
+    | '/code/agents/applications/approvals'
     | '/code/agents/scouts/$skillName'
+    | '/code/agents/scouts/findings'
+    | '/code/agents/scouts/scratchpad'
     | '/code/inbox/dismissed/$reportId'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
@@ -454,21 +676,35 @@ export interface FileRouteTypes {
     | '/code/tasks/pending/$key'
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
+    | '/code/agents/applications/'
+    | '/code/agents/scouts/'
     | '/code/inbox/dismissed/'
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
+    | '/code/agents/applications/$idOrSlug/approvals'
+    | '/code/agents/applications/$idOrSlug/chat'
+    | '/code/agents/applications/$idOrSlug/configuration'
+    | '/code/agents/applications/$idOrSlug/memory'
+    | '/code/agents/applications/$idOrSlug/observability'
+    | '/code/agents/applications/$idOrSlug/users'
+    | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
+    | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
+    | '/code/agents/applications/$idOrSlug/sessions/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/usage'
     | '/code/archived'
     | '/code/home'
+    | '/code/pr'
     | '/folders/$folderId'
     | '/settings/$category'
+    | '/website/activity'
     | '/website/command-center'
     | '/website/home'
     | '/website/mcp-servers'
@@ -477,14 +713,19 @@ export interface FileRouteTypes {
     | '/code'
     | '/settings'
     | '/website'
-    | '/code/agents/scouts'
     | '/code/inbox/agents'
     | '/code/tasks/$taskId'
+    | '/website/$channelId/artifacts'
+    | '/website/$channelId/canvases'
     | '/website/$channelId/context'
+    | '/website/$channelId/history'
     | '/website/$channelId/new'
     | '/code/agents'
     | '/code/inbox'
     | '/website/$channelId'
+    | '/code/agents/applications/approvals'
+    | '/code/agents/scouts/findings'
+    | '/code/agents/scouts/scratchpad'
     | '/code/inbox/dismissed/$reportId'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
@@ -492,24 +733,38 @@ export interface FileRouteTypes {
     | '/code/tasks/pending/$key'
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
+    | '/code/agents/applications'
+    | '/code/agents/scouts'
     | '/code/inbox/dismissed'
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
     | '/code/inbox/runs'
+    | '/code/agents/applications/$idOrSlug/approvals'
+    | '/code/agents/applications/$idOrSlug/chat'
+    | '/code/agents/applications/$idOrSlug/configuration'
+    | '/code/agents/applications/$idOrSlug/memory'
+    | '/code/agents/applications/$idOrSlug/observability'
+    | '/code/agents/applications/$idOrSlug/users'
+    | '/code/agents/applications/$idOrSlug'
     | '/code/agents/scouts/$skillName'
+    | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
+    | '/code/agents/applications/$idOrSlug/sessions'
   id:
     | '__root__'
     | '/'
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/usage'
     | '/website'
     | '/code/agents'
     | '/code/archived'
     | '/code/home'
     | '/code/inbox'
+    | '/code/pr'
     | '/folders/$folderId'
     | '/settings/$category'
+    | '/website/activity'
     | '/website/command-center'
     | '/website/home'
     | '/website/mcp-servers'
@@ -518,6 +773,7 @@ export interface FileRouteTypes {
     | '/code/'
     | '/settings/'
     | '/website/'
+    | '/code/agents/applications'
     | '/code/agents/scouts'
     | '/code/inbox/agents'
     | '/code/inbox/dismissed'
@@ -525,12 +781,19 @@ export interface FileRouteTypes {
     | '/code/inbox/reports'
     | '/code/inbox/runs'
     | '/code/tasks/$taskId'
+    | '/website/$channelId/artifacts'
+    | '/website/$channelId/canvases'
     | '/website/$channelId/context'
+    | '/website/$channelId/history'
     | '/website/$channelId/new'
     | '/code/agents/'
     | '/code/inbox/'
     | '/website/$channelId/'
+    | '/code/agents/applications/$idOrSlug'
+    | '/code/agents/applications/approvals'
     | '/code/agents/scouts/$skillName'
+    | '/code/agents/scouts/findings'
+    | '/code/agents/scouts/scratchpad'
     | '/code/inbox/dismissed/$reportId'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
@@ -538,11 +801,22 @@ export interface FileRouteTypes {
     | '/code/tasks/pending/$key'
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
+    | '/code/agents/applications/'
+    | '/code/agents/scouts/'
     | '/code/inbox/dismissed/'
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
+    | '/code/agents/applications/$idOrSlug/approvals'
+    | '/code/agents/applications/$idOrSlug/chat'
+    | '/code/agents/applications/$idOrSlug/configuration'
+    | '/code/agents/applications/$idOrSlug/memory'
+    | '/code/agents/applications/$idOrSlug/observability'
+    | '/code/agents/applications/$idOrSlug/users'
+    | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
+    | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
+    | '/code/agents/applications/$idOrSlug/sessions/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -550,11 +824,13 @@ export interface RootRouteChildren {
   CommandCenterRoute: typeof CommandCenterRoute
   McpServersRoute: typeof McpServersRoute
   SkillsRoute: typeof SkillsRoute
+  UsageRoute: typeof UsageRoute
   WebsiteRoute: typeof WebsiteRouteWithChildren
   CodeAgentsRoute: typeof CodeAgentsRouteWithChildren
   CodeArchivedRoute: typeof CodeArchivedRoute
   CodeHomeRoute: typeof CodeHomeRoute
   CodeInboxRoute: typeof CodeInboxRouteWithChildren
+  CodePrRoute: typeof CodePrRoute
   FoldersFolderIdRoute: typeof FoldersFolderIdRoute
   SettingsCategoryRoute: typeof SettingsCategoryRoute
   CodeIndexRoute: typeof CodeIndexRoute
@@ -570,6 +846,13 @@ declare module '@tanstack/react-router' {
       path: '/website'
       fullPath: '/website'
       preLoaderRoute: typeof WebsiteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/usage': {
+      id: '/usage'
+      path: '/usage'
+      fullPath: '/usage'
+      preLoaderRoute: typeof UsageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/skills': {
@@ -656,6 +939,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebsiteCommandCenterRouteImport
       parentRoute: typeof WebsiteRoute
     }
+    '/website/activity': {
+      id: '/website/activity'
+      path: '/activity'
+      fullPath: '/website/activity'
+      preLoaderRoute: typeof WebsiteActivityRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
     '/settings/$category': {
       id: '/settings/$category'
       path: '/settings/$category'
@@ -668,6 +958,13 @@ declare module '@tanstack/react-router' {
       path: '/folders/$folderId'
       fullPath: '/folders/$folderId'
       preLoaderRoute: typeof FoldersFolderIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code/pr': {
+      id: '/code/pr'
+      path: '/code/pr'
+      fullPath: '/code/pr'
+      preLoaderRoute: typeof CodePrRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/code/inbox': {
@@ -726,11 +1023,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebsiteChannelIdNewRouteImport
       parentRoute: typeof WebsiteRoute
     }
+    '/website/$channelId/history': {
+      id: '/website/$channelId/history'
+      path: '/$channelId/history'
+      fullPath: '/website/$channelId/history'
+      preLoaderRoute: typeof WebsiteChannelIdHistoryRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
     '/website/$channelId/context': {
       id: '/website/$channelId/context'
       path: '/$channelId/context'
       fullPath: '/website/$channelId/context'
       preLoaderRoute: typeof WebsiteChannelIdContextRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/$channelId/canvases': {
+      id: '/website/$channelId/canvases'
+      path: '/$channelId/canvases'
+      fullPath: '/website/$channelId/canvases'
+      preLoaderRoute: typeof WebsiteChannelIdCanvasesRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/$channelId/artifacts': {
+      id: '/website/$channelId/artifacts'
+      path: '/$channelId/artifacts'
+      fullPath: '/website/$channelId/artifacts'
+      preLoaderRoute: typeof WebsiteChannelIdArtifactsRouteImport
       parentRoute: typeof WebsiteRoute
     }
     '/code/tasks/$taskId': {
@@ -782,6 +1100,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsScoutsRouteImport
       parentRoute: typeof CodeAgentsRoute
     }
+    '/code/agents/applications': {
+      id: '/code/agents/applications'
+      path: '/applications'
+      fullPath: '/code/agents/applications'
+      preLoaderRoute: typeof CodeAgentsApplicationsRouteImport
+      parentRoute: typeof CodeAgentsRoute
+    }
     '/code/inbox/runs/': {
       id: '/code/inbox/runs/'
       path: '/'
@@ -809,6 +1134,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/code/inbox/dismissed/'
       preLoaderRoute: typeof CodeInboxDismissedIndexRouteImport
       parentRoute: typeof CodeInboxDismissedRoute
+    }
+    '/code/agents/scouts/': {
+      id: '/code/agents/scouts/'
+      path: '/'
+      fullPath: '/code/agents/scouts/'
+      preLoaderRoute: typeof CodeAgentsScoutsIndexRouteImport
+      parentRoute: typeof CodeAgentsScoutsRoute
+    }
+    '/code/agents/applications/': {
+      id: '/code/agents/applications/'
+      path: '/'
+      fullPath: '/code/agents/applications/'
+      preLoaderRoute: typeof CodeAgentsApplicationsIndexRouteImport
+      parentRoute: typeof CodeAgentsApplicationsRoute
     }
     '/website/$channelId/tasks/$taskId': {
       id: '/website/$channelId/tasks/$taskId'
@@ -859,12 +1198,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeInboxDismissedReportIdRouteImport
       parentRoute: typeof CodeInboxDismissedRoute
     }
+    '/code/agents/scouts/scratchpad': {
+      id: '/code/agents/scouts/scratchpad'
+      path: '/scratchpad'
+      fullPath: '/code/agents/scouts/scratchpad'
+      preLoaderRoute: typeof CodeAgentsScoutsScratchpadRouteImport
+      parentRoute: typeof CodeAgentsScoutsRoute
+    }
+    '/code/agents/scouts/findings': {
+      id: '/code/agents/scouts/findings'
+      path: '/findings'
+      fullPath: '/code/agents/scouts/findings'
+      preLoaderRoute: typeof CodeAgentsScoutsFindingsRouteImport
+      parentRoute: typeof CodeAgentsScoutsRoute
+    }
     '/code/agents/scouts/$skillName': {
       id: '/code/agents/scouts/$skillName'
       path: '/$skillName'
       fullPath: '/code/agents/scouts/$skillName'
       preLoaderRoute: typeof CodeAgentsScoutsSkillNameRouteImport
       parentRoute: typeof CodeAgentsScoutsRoute
+    }
+    '/code/agents/applications/approvals': {
+      id: '/code/agents/applications/approvals'
+      path: '/approvals'
+      fullPath: '/code/agents/applications/approvals'
+      preLoaderRoute: typeof CodeAgentsApplicationsApprovalsRouteImport
+      parentRoute: typeof CodeAgentsApplicationsRoute
+    }
+    '/code/agents/applications/$idOrSlug': {
+      id: '/code/agents/applications/$idOrSlug'
+      path: '/$idOrSlug'
+      fullPath: '/code/agents/applications/$idOrSlug'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugRouteImport
+      parentRoute: typeof CodeAgentsApplicationsRoute
     }
     '/code/agents/scouts/$skillName/': {
       id: '/code/agents/scouts/$skillName/'
@@ -873,17 +1240,84 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsScoutsSkillNameIndexRouteImport
       parentRoute: typeof CodeAgentsScoutsSkillNameRoute
     }
+    '/code/agents/applications/$idOrSlug/': {
+      id: '/code/agents/applications/$idOrSlug/'
+      path: '/'
+      fullPath: '/code/agents/applications/$idOrSlug/'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugIndexRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
+    '/code/agents/applications/$idOrSlug/users': {
+      id: '/code/agents/applications/$idOrSlug/users'
+      path: '/users'
+      fullPath: '/code/agents/applications/$idOrSlug/users'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugUsersRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
+    '/code/agents/applications/$idOrSlug/observability': {
+      id: '/code/agents/applications/$idOrSlug/observability'
+      path: '/observability'
+      fullPath: '/code/agents/applications/$idOrSlug/observability'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugObservabilityRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
+    '/code/agents/applications/$idOrSlug/memory': {
+      id: '/code/agents/applications/$idOrSlug/memory'
+      path: '/memory'
+      fullPath: '/code/agents/applications/$idOrSlug/memory'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugMemoryRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
+    '/code/agents/applications/$idOrSlug/configuration': {
+      id: '/code/agents/applications/$idOrSlug/configuration'
+      path: '/configuration'
+      fullPath: '/code/agents/applications/$idOrSlug/configuration'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugConfigurationRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
+    '/code/agents/applications/$idOrSlug/chat': {
+      id: '/code/agents/applications/$idOrSlug/chat'
+      path: '/chat'
+      fullPath: '/code/agents/applications/$idOrSlug/chat'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugChatRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
+    '/code/agents/applications/$idOrSlug/approvals': {
+      id: '/code/agents/applications/$idOrSlug/approvals'
+      path: '/approvals'
+      fullPath: '/code/agents/applications/$idOrSlug/approvals'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugApprovalsRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
+    '/code/agents/applications/$idOrSlug/sessions/': {
+      id: '/code/agents/applications/$idOrSlug/sessions/'
+      path: '/sessions'
+      fullPath: '/code/agents/applications/$idOrSlug/sessions/'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
+    '/code/agents/applications/$idOrSlug/sessions/$sessionId': {
+      id: '/code/agents/applications/$idOrSlug/sessions/$sessionId'
+      path: '/sessions/$sessionId'
+      fullPath: '/code/agents/applications/$idOrSlug/sessions/$sessionId'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
   }
 }
 
 interface WebsiteRouteChildren {
+  WebsiteActivityRoute: typeof WebsiteActivityRoute
   WebsiteCommandCenterRoute: typeof WebsiteCommandCenterRoute
   WebsiteHomeRoute: typeof WebsiteHomeRoute
   WebsiteMcpServersRoute: typeof WebsiteMcpServersRoute
   WebsiteNewRoute: typeof WebsiteNewRoute
   WebsiteSkillsRoute: typeof WebsiteSkillsRoute
   WebsiteIndexRoute: typeof WebsiteIndexRoute
+  WebsiteChannelIdArtifactsRoute: typeof WebsiteChannelIdArtifactsRoute
+  WebsiteChannelIdCanvasesRoute: typeof WebsiteChannelIdCanvasesRoute
   WebsiteChannelIdContextRoute: typeof WebsiteChannelIdContextRoute
+  WebsiteChannelIdHistoryRoute: typeof WebsiteChannelIdHistoryRoute
   WebsiteChannelIdNewRoute: typeof WebsiteChannelIdNewRoute
   WebsiteChannelIdIndexRoute: typeof WebsiteChannelIdIndexRoute
   WebsiteChannelIdDashboardsDashboardIdRoute: typeof WebsiteChannelIdDashboardsDashboardIdRoute
@@ -891,13 +1325,17 @@ interface WebsiteRouteChildren {
 }
 
 const WebsiteRouteChildren: WebsiteRouteChildren = {
+  WebsiteActivityRoute: WebsiteActivityRoute,
   WebsiteCommandCenterRoute: WebsiteCommandCenterRoute,
   WebsiteHomeRoute: WebsiteHomeRoute,
   WebsiteMcpServersRoute: WebsiteMcpServersRoute,
   WebsiteNewRoute: WebsiteNewRoute,
   WebsiteSkillsRoute: WebsiteSkillsRoute,
   WebsiteIndexRoute: WebsiteIndexRoute,
+  WebsiteChannelIdArtifactsRoute: WebsiteChannelIdArtifactsRoute,
+  WebsiteChannelIdCanvasesRoute: WebsiteChannelIdCanvasesRoute,
   WebsiteChannelIdContextRoute: WebsiteChannelIdContextRoute,
+  WebsiteChannelIdHistoryRoute: WebsiteChannelIdHistoryRoute,
   WebsiteChannelIdNewRoute: WebsiteChannelIdNewRoute,
   WebsiteChannelIdIndexRoute: WebsiteChannelIdIndexRoute,
   WebsiteChannelIdDashboardsDashboardIdRoute:
@@ -907,6 +1345,64 @@ const WebsiteRouteChildren: WebsiteRouteChildren = {
 
 const WebsiteRouteWithChildren =
   WebsiteRoute._addFileChildren(WebsiteRouteChildren)
+
+interface CodeAgentsApplicationsIdOrSlugRouteChildren {
+  CodeAgentsApplicationsIdOrSlugApprovalsRoute: typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
+  CodeAgentsApplicationsIdOrSlugChatRoute: typeof CodeAgentsApplicationsIdOrSlugChatRoute
+  CodeAgentsApplicationsIdOrSlugConfigurationRoute: typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
+  CodeAgentsApplicationsIdOrSlugMemoryRoute: typeof CodeAgentsApplicationsIdOrSlugMemoryRoute
+  CodeAgentsApplicationsIdOrSlugObservabilityRoute: typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
+  CodeAgentsApplicationsIdOrSlugUsersRoute: typeof CodeAgentsApplicationsIdOrSlugUsersRoute
+  CodeAgentsApplicationsIdOrSlugIndexRoute: typeof CodeAgentsApplicationsIdOrSlugIndexRoute
+  CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
+  CodeAgentsApplicationsIdOrSlugSessionsIndexRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
+}
+
+const CodeAgentsApplicationsIdOrSlugRouteChildren: CodeAgentsApplicationsIdOrSlugRouteChildren =
+  {
+    CodeAgentsApplicationsIdOrSlugApprovalsRoute:
+      CodeAgentsApplicationsIdOrSlugApprovalsRoute,
+    CodeAgentsApplicationsIdOrSlugChatRoute:
+      CodeAgentsApplicationsIdOrSlugChatRoute,
+    CodeAgentsApplicationsIdOrSlugConfigurationRoute:
+      CodeAgentsApplicationsIdOrSlugConfigurationRoute,
+    CodeAgentsApplicationsIdOrSlugMemoryRoute:
+      CodeAgentsApplicationsIdOrSlugMemoryRoute,
+    CodeAgentsApplicationsIdOrSlugObservabilityRoute:
+      CodeAgentsApplicationsIdOrSlugObservabilityRoute,
+    CodeAgentsApplicationsIdOrSlugUsersRoute:
+      CodeAgentsApplicationsIdOrSlugUsersRoute,
+    CodeAgentsApplicationsIdOrSlugIndexRoute:
+      CodeAgentsApplicationsIdOrSlugIndexRoute,
+    CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute:
+      CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute,
+    CodeAgentsApplicationsIdOrSlugSessionsIndexRoute:
+      CodeAgentsApplicationsIdOrSlugSessionsIndexRoute,
+  }
+
+const CodeAgentsApplicationsIdOrSlugRouteWithChildren =
+  CodeAgentsApplicationsIdOrSlugRoute._addFileChildren(
+    CodeAgentsApplicationsIdOrSlugRouteChildren,
+  )
+
+interface CodeAgentsApplicationsRouteChildren {
+  CodeAgentsApplicationsIdOrSlugRoute: typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
+  CodeAgentsApplicationsApprovalsRoute: typeof CodeAgentsApplicationsApprovalsRoute
+  CodeAgentsApplicationsIndexRoute: typeof CodeAgentsApplicationsIndexRoute
+}
+
+const CodeAgentsApplicationsRouteChildren: CodeAgentsApplicationsRouteChildren =
+  {
+    CodeAgentsApplicationsIdOrSlugRoute:
+      CodeAgentsApplicationsIdOrSlugRouteWithChildren,
+    CodeAgentsApplicationsApprovalsRoute: CodeAgentsApplicationsApprovalsRoute,
+    CodeAgentsApplicationsIndexRoute: CodeAgentsApplicationsIndexRoute,
+  }
+
+const CodeAgentsApplicationsRouteWithChildren =
+  CodeAgentsApplicationsRoute._addFileChildren(
+    CodeAgentsApplicationsRouteChildren,
+  )
 
 interface CodeAgentsScoutsSkillNameRouteChildren {
   CodeAgentsScoutsSkillNameIndexRoute: typeof CodeAgentsScoutsSkillNameIndexRoute
@@ -924,21 +1420,29 @@ const CodeAgentsScoutsSkillNameRouteWithChildren =
 
 interface CodeAgentsScoutsRouteChildren {
   CodeAgentsScoutsSkillNameRoute: typeof CodeAgentsScoutsSkillNameRouteWithChildren
+  CodeAgentsScoutsFindingsRoute: typeof CodeAgentsScoutsFindingsRoute
+  CodeAgentsScoutsScratchpadRoute: typeof CodeAgentsScoutsScratchpadRoute
+  CodeAgentsScoutsIndexRoute: typeof CodeAgentsScoutsIndexRoute
 }
 
 const CodeAgentsScoutsRouteChildren: CodeAgentsScoutsRouteChildren = {
   CodeAgentsScoutsSkillNameRoute: CodeAgentsScoutsSkillNameRouteWithChildren,
+  CodeAgentsScoutsFindingsRoute: CodeAgentsScoutsFindingsRoute,
+  CodeAgentsScoutsScratchpadRoute: CodeAgentsScoutsScratchpadRoute,
+  CodeAgentsScoutsIndexRoute: CodeAgentsScoutsIndexRoute,
 }
 
 const CodeAgentsScoutsRouteWithChildren =
   CodeAgentsScoutsRoute._addFileChildren(CodeAgentsScoutsRouteChildren)
 
 interface CodeAgentsRouteChildren {
+  CodeAgentsApplicationsRoute: typeof CodeAgentsApplicationsRouteWithChildren
   CodeAgentsScoutsRoute: typeof CodeAgentsScoutsRouteWithChildren
   CodeAgentsIndexRoute: typeof CodeAgentsIndexRoute
 }
 
 const CodeAgentsRouteChildren: CodeAgentsRouteChildren = {
+  CodeAgentsApplicationsRoute: CodeAgentsApplicationsRouteWithChildren,
   CodeAgentsScoutsRoute: CodeAgentsScoutsRouteWithChildren,
   CodeAgentsIndexRoute: CodeAgentsIndexRoute,
 }
@@ -1028,11 +1532,13 @@ const rootRouteChildren: RootRouteChildren = {
   CommandCenterRoute: CommandCenterRoute,
   McpServersRoute: McpServersRoute,
   SkillsRoute: SkillsRoute,
+  UsageRoute: UsageRoute,
   WebsiteRoute: WebsiteRouteWithChildren,
   CodeAgentsRoute: CodeAgentsRouteWithChildren,
   CodeArchivedRoute: CodeArchivedRoute,
   CodeHomeRoute: CodeHomeRoute,
   CodeInboxRoute: CodeInboxRouteWithChildren,
+  CodePrRoute: CodePrRoute,
   FoldersFolderIdRoute: FoldersFolderIdRoute,
   SettingsCategoryRoute: SettingsCategoryRoute,
   CodeIndexRoute: CodeIndexRoute,

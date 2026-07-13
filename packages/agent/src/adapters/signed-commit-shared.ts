@@ -9,6 +9,10 @@ import {
   type SignedRewriteInput,
 } from "@posthog/git/signed-commit";
 import { z } from "zod";
+import {
+  reportCommitArtefacts,
+  reportTaskRunBranch,
+} from "../signed-commit-artefacts";
 import { qualifiedLocalToolName } from "./local-tools/registry";
 
 /**
@@ -131,6 +135,8 @@ export interface SignedCommitToolResult {
   [key: string]: unknown;
 }
 
+export type SignedCommitToolCtx = SignedCommitCtx & { taskRunId?: string };
+
 async function runSignedTool<A>(
   toolName: string,
   op: (ctx: SignedCommitCtx, args: A) => Promise<SignedCommitResult>,
@@ -163,12 +169,30 @@ async function runSignedTool<A>(
 }
 
 export function runSignedCommitTool(
-  ctx: SignedCommitCtx,
+  ctx: SignedCommitToolCtx,
   args: SignedCommitInput,
 ): Promise<SignedCommitToolResult> {
   return runSignedTool(
     SIGNED_COMMIT_TOOL_NAME,
-    createSignedCommit,
+    async (c, a: SignedCommitInput) => {
+      const result = await createSignedCommit(c, a);
+      await reportTaskRunBranch({
+        taskId: ctx.taskId,
+        taskRunId: ctx.taskRunId,
+        branch: result.branch,
+      });
+      // The "commit hook": every pushed commit becomes a `commit` artefact on the signal
+      // reports this task is associated with. Best-effort and awaited inside the tool's
+      // try/catch-free success path — reportCommitArtefacts never throws, so a failed
+      // artefact post can't fail a commit that already landed. git_signed_rewrite is
+      // intentionally not hooked (it republishes existing history).
+      await reportCommitArtefacts({
+        taskId: c.taskId,
+        result,
+        message: a.message,
+      });
+      return result;
+    },
     (r) => `Created ${r.commits.length} signed commit(s) on ${r.branch}`,
     ctx,
     args,

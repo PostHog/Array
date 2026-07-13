@@ -3,7 +3,6 @@ import {
   canFocusWorkspace,
   focusTerminalKey,
 } from "@posthog/core/workspace/focusWorkspace";
-import { Text } from "@radix-ui/themes";
 import { useCallback, useMemo } from "react";
 import { toast } from "../../primitives/toast";
 import {
@@ -12,6 +11,7 @@ import {
   useFocusStore,
 } from "../focus/focusStore";
 import { showFocusSuccessToast } from "../focus/focusToast";
+import { toastError } from "../notifications/errorDetails";
 import { useTerminalStore } from "../terminal/terminalStore";
 import { useWorkspace } from "./useWorkspace";
 
@@ -49,23 +49,16 @@ export function useFocusWorkspace(taskId: string) {
     const result = await disableFocus();
     if (result.success) {
       useTerminalStore.getState().clearTerminalState(terminalKey);
-      toast.success(
-        <>
-          Returned to{" "}
-          <Text className="text-(--accent-11)">
-            {focusSession.originalBranch}
-          </Text>
-        </>,
-        {
-          description:
-            result.stashPopWarning ??
-            (hadStash ? "Your stashed changes were restored." : undefined),
-        },
-      );
-    } else {
-      toast.error(`Could not return to ${focusSession.originalBranch}`, {
-        description: result.error,
+      toast.success(`Returned to ${focusSession.originalBranch}`, {
+        description:
+          result.stashPopWarning ??
+          (hadStash ? "Your stashed changes were restored." : undefined),
       });
+    } else {
+      toastError(
+        `Could not return to ${focusSession.originalBranch}`,
+        result.error,
+      );
     }
   }, [focusSession, disableFocus, getFocusTerminalKey]);
 
@@ -85,9 +78,7 @@ export function useFocusWorkspace(taskId: string) {
     if (result.success) {
       showFocusSuccessToast(params.branch, result);
     } else {
-      toast.error("Could not edit workspace", {
-        description: result.error,
-      });
+      toastError("Could not edit workspace", result.error);
     }
   }, [workspace, enableFocus]);
 

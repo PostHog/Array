@@ -49,6 +49,8 @@ interface InboxDetailFrameProps {
     Icon: ComponentType<IconProps>;
     title: string;
   };
+  /** Sections rendered in the main column under the summary (e.g. PR files changed). */
+  belowSummary?: ReactNode;
   /** Optional "Evidence" section icon + title; null hides it. */
   evidenceSection: {
     Icon: ComponentType<IconProps>;
@@ -76,6 +78,7 @@ export function InboxDetailFrame({
   metaSuffix,
   primaryAction,
   summarySection,
+  belowSummary,
   evidenceSection,
   showDismiss = true,
   children,
@@ -173,7 +176,7 @@ export function InboxDetailFrame({
         */}
       <div className="@container mx-auto w-full max-w-[calc(160ch+5rem)] px-6 py-5 text-[13px]">
         <div className="grid @4xl:grid-cols-[minmax(0,80ch)_minmax(0,1fr)] grid-cols-1 gap-5">
-          <div className="min-w-0">
+          <div className="flex min-w-0 flex-col gap-5">
             <DetailSection Icon={SummaryIcon} title={summarySection.title}>
               <SignalReportSummaryMarkdown
                 content={report.summary}
@@ -182,6 +185,7 @@ export function InboxDetailFrame({
                 pending={report.status === "in_progress"}
               />
             </DetailSection>
+            {belowSummary}
           </div>
 
           <div className="flex min-w-0 flex-col gap-5">

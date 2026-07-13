@@ -209,13 +209,21 @@ export class PostHogAPIClient {
     taskId: string,
     runId: string,
     text: string,
+    textParts?: string[],
   ): Promise<void> {
     const teamId = this.getTeamId();
+    // Send `text_parts` alongside the joined `text` so backends that understand
+    // the new schema can pick just the post-last-tool-use answer, while older
+    // backends still get the flat `text` field they already handle.
+    const body: { text: string; text_parts?: string[] } = { text };
+    if (textParts && textParts.length > 0) {
+      body.text_parts = textParts;
+    }
     await this.apiRequest<{ status: string }>(
       `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/relay_message/`,
       {
         method: "POST",
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(body),
       },
     );
   }
@@ -243,6 +251,35 @@ export class PostHogAPIClient {
     // The backend returns the full run artifact manifest after each upload.
     // Callers want the artifacts corresponding to this upload request only.
     return manifest.slice(-artifacts.length);
+  }
+
+  /** Signal reports the given task is associated with (via report task associations). */
+  async getSignalReportIdsForTask(taskId: string): Promise<string[]> {
+    const teamId = this.getTeamId();
+    const response = await this.apiRequest<{ results?: { id: string }[] }>(
+      `/api/projects/${teamId}/signals/reports/?task_id=${encodeURIComponent(taskId)}&limit=100`,
+    );
+    return (response.results ?? []).map((r) => r.id);
+  }
+
+  /**
+   * Append a log artefact to a signal report, attributed to `taskId` via the
+   * `X-PostHog-Task-Id` header (the server validates it against the token's team).
+   */
+  async createSignalReportArtefact(
+    reportId: string,
+    taskId: string,
+    body: { artefact_type: string; content: Record<string, unknown> },
+  ): Promise<void> {
+    const teamId = this.getTeamId();
+    await this.apiRequest(
+      `/api/projects/${teamId}/signals/reports/${reportId}/artefacts/`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: { "X-PostHog-Task-Id": taskId },
+      },
+    );
   }
 
   /**

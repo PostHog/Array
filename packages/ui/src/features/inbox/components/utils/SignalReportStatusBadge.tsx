@@ -5,6 +5,7 @@ import { Tooltip } from "@radix-ui/themes";
 
 const STATUS_TOOLTIPS: Record<string, string> = {
   ready: "Research is complete. You can create a task from this report.",
+  resolved: "This report is resolved — its implementation pull request merged.",
   pending_input:
     "This report needs human input in PostHog before it can proceed.",
   in_progress: "An AI agent is actively researching this report's findings.",
@@ -21,6 +22,8 @@ type BadgeVariant = "success" | "info" | "warning" | "default" | "destructive";
 function inboxStatusBadgeVariant(status: SignalReportStatus): BadgeVariant {
   switch (status) {
     case "ready":
+      return "success";
+    case "resolved":
       return "success";
     case "pending_input":
       return "info";

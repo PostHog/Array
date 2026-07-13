@@ -1,4 +1,5 @@
 import {
+  isDismissedReport,
   isPullRequestReport,
   isReportTabReport,
 } from "@posthog/core/inbox/reportMembership";
@@ -70,21 +71,25 @@ export function InboxReportDetailGate({
 
   // Keep the report on the route that matches its status. A status↔route mismatch
   // happens when a URL goes stale — browser history, a bookmark, a copied deep
-  // link, or a status change in another session. A suppressed report reached via a
-  // /pulls, /reports, or /runs URL would otherwise render that tab's full triage
-  // actions (archive, discuss, create PR) on an out-of-pipeline report; a restored
-  // report reached via /dismissed would offer Restore and silently re-queue it
-  // (READY/RESOLVED → POTENTIAL is an allowed server-side transition). Redirect
-  // across that dismissed↔pipeline boundary, gated on a settled fetch so we act on
-  // the confirmed status rather than a pre-change cache snapshot (the detail query
-  // forces a fresh fetch on mount via `initialDataUpdatedAt: 0`).
+  // link, or a status change in another session. An archived report (suppressed or
+  // resolved) reached via a /pulls, /reports, or /runs URL would otherwise render
+  // that tab's full triage actions (archive, discuss, create PR) on an
+  // out-of-pipeline report; a restored report reached via /dismissed would offer
+  // Restore and silently re-queue it (READY/RESOLVED → POTENTIAL is an allowed
+  // server-side transition). Redirect across that dismissed↔pipeline boundary,
+  // gated on a settled fetch so we act on the confirmed status rather than a
+  // pre-change cache snapshot (the detail query forces a fresh fetch on mount via
+  // `initialDataUpdatedAt: 0`). Both terminal states belong on the Archive route,
+  // so resolved cards keep their reference-only detail view instead of being
+  // bounced to Runs.
   const onDismissedRoute = backTo === "/code/inbox/dismissed";
-  const isSuppressed = resolvedReport?.status === "suppressed";
+  const isArchived =
+    resolvedReport != null && isDismissedReport(resolvedReport);
   let redirectTo: InboxDetailRoute | null = null;
   if (resolvedReport && !isFetching) {
-    if (isSuppressed && !onDismissedRoute) {
+    if (isArchived && !onDismissedRoute) {
       redirectTo = "/code/inbox/dismissed/$reportId";
-    } else if (!isSuppressed && onDismissedRoute) {
+    } else if (!isArchived && onDismissedRoute) {
       redirectTo = nonSuppressedDetailRoute(resolvedReport);
     }
   }

@@ -3,6 +3,7 @@ import {
   POSTHOG_NOTIFICATIONS,
 } from "@posthog/agent/acp-extensions";
 import type { PostHogProductId } from "@posthog/agent/posthog-products";
+import { createAppendOnlyTracker } from "@posthog/core/sessions/appendOnlyTracker";
 import { type AcpMessage, isJsonRpcNotification } from "@posthog/shared";
 
 export interface ResourceProduct {
@@ -24,18 +25,43 @@ export function accumulateSessionResources(
 ): ResourceProduct[] {
   const byId = new Map<PostHogProductId, ResourceProduct>();
   for (const event of events) {
-    const msg = event.message;
-    if (!isJsonRpcNotification(msg)) continue;
-    if (!isNotification(msg.method, POSTHOG_NOTIFICATIONS.RESOURCES_USED)) {
-      continue;
-    }
-    const products = (
-      msg.params as { products?: ResourceProduct[] } | undefined
-    )?.products;
-    if (!products) continue;
-    for (const product of products) {
-      if (product && !byId.has(product.id)) byId.set(product.id, product);
-    }
+    collectResourcesFromEvent(event, byId);
   }
   return [...byId.values()];
+}
+
+interface SessionResourcesState {
+  byId: Map<PostHogProductId, ResourceProduct>;
+  products: ResourceProduct[];
+}
+
+export function createSessionResourcesTracker() {
+  return createAppendOnlyTracker<SessionResourcesState, ResourceProduct[]>({
+    init: () => ({ byId: new Map(), products: [] }),
+    processEvent: (state, event) => {
+      collectResourcesFromEvent(event, state.byId, state.products);
+    },
+    getResult: (state) => state.products,
+  });
+}
+
+function collectResourcesFromEvent(
+  event: AcpMessage,
+  byId: Map<PostHogProductId, ResourceProduct>,
+  products?: ResourceProduct[],
+) {
+  const msg = event.message;
+  if (!isJsonRpcNotification(msg)) return;
+  if (!isNotification(msg.method, POSTHOG_NOTIFICATIONS.RESOURCES_USED)) {
+    return;
+  }
+  const reportedProducts = (
+    msg.params as { products?: ResourceProduct[] } | undefined
+  )?.products;
+  if (!reportedProducts) return;
+  for (const product of reportedProducts) {
+    if (!product || byId.has(product.id)) continue;
+    byId.set(product.id, product);
+    products?.push(product);
+  }
 }

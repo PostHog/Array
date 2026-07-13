@@ -43,6 +43,7 @@ async function ensureAudioMode(): Promise<void> {
 export async function playCompletionSound(
   sound?: CompletionSound,
   volume?: number,
+  playbackRate = 1,
 ): Promise<void> {
   const prefs = usePreferencesStore.getState();
   const which = sound ?? prefs.completionSound;
@@ -51,16 +52,12 @@ export async function playCompletionSound(
   const { sound: player } = await Audio.Sound.createAsync(SOUND_ASSETS[which], {
     shouldPlay: true,
     volume: Math.max(0, Math.min(1, vol)),
+    rate: playbackRate,
+    shouldCorrectPitch: false,
   });
   player.setOnPlaybackStatusUpdate((status) => {
     if (status.isLoaded && status.didJustFinish) {
       player.unloadAsync();
     }
   });
-}
-
-// Kept as an alias so existing call sites continue to work; routes through
-// the user's selected completion sound.
-export function playMeepSound(): Promise<void> {
-  return playCompletionSound();
 }

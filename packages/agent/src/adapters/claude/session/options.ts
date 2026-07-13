@@ -12,6 +12,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { FileEnrichmentDeps } from "../../../enrichment/file-enricher";
 import { IS_ROOT } from "../../../utils/common";
+import { buildGatewayPropertyHeaders } from "../../../utils/gateway";
 import type { Logger } from "../../../utils/logger";
 import type { TaskState } from "../conversion/task-state";
 import {
@@ -24,11 +25,12 @@ import {
   type EnrichedReadCache,
   type OnModeChange,
 } from "../hooks";
-import type { CodeExecutionMode } from "../tools";
+import { type CodeExecutionMode, toSdkPermissionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { APPENDED_INSTRUCTIONS } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
-import { DEFAULT_MODEL } from "./models";
+import { DEFAULT_MODEL, FALLBACK_MODEL } from "./models";
+import { createRtkRewriteHook, resolveRtkPrefix } from "./rtk";
 import type { SettingsManager } from "./settings";
 
 export interface ProcessSpawnedInfo {
@@ -36,6 +38,29 @@ export interface ProcessSpawnedInfo {
   command: string;
   sessionId: string;
 }
+
+/**
+ * Gateway config threaded explicitly through session creation so that
+ * concurrent Agent instances do not clobber each other's values via
+ * global `process.env` mutation.
+ */
+export type GatewayEnv = {
+  anthropicBaseUrl: string;
+  anthropicAuthToken: string;
+  openaiBaseUrl: string;
+  openaiApiKey: string;
+  /** Task-specific custom headers forwarded to the gateway (e.g. task_id, run_id). */
+  anthropicCustomHeaders?: string;
+  /**
+   * Same task-metadata attribution headers as {@link anthropicCustomHeaders},
+   * in record form for the codex/OpenAI path (which sets provider
+   * `http_headers` rather than `ANTHROPIC_CUSTOM_HEADERS`). Includes `team_id`,
+   * which the Claude path instead appends in {@link buildEnvironment}.
+   */
+  openaiCustomHeaders?: Record<string, string>;
+  /** PostHog project ID for per-team attribution headers. */
+  posthogProjectId?: string;
+};
 
 export interface BuildOptionsParams {
   cwd: string;
@@ -70,6 +95,8 @@ export interface BuildOptionsParams {
   /** Called after createTaskHook mutates taskState so callers can emit a plan
    * sessionUpdate to the client. */
   onTaskStateChange?: () => Promise<void>;
+  /** Explicit gateway config — prevents global process.env mutation. */
+  gatewayEnv?: GatewayEnv;
 }
 
 export function buildSystemPrompt(
@@ -116,13 +143,16 @@ function buildMcpServers(
   };
 }
 
-function buildEnvironment(): Record<string, string> {
+function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
   // Custom HTTP headers reach the model only through the Claude CLI subprocess,
   // which reads them from this env var (newline-delimited `name: value` lines)
   // — the SDK has no direct header option. We finalize them here, the single
   // chokepoint every session (desktop and cloud) funnels through.
   const headerLines: string[] = [];
-  const existingCustomHeaders = process.env.ANTHROPIC_CUSTOM_HEADERS;
+  // Prefer explicit gateway config over process.env so concurrent sessions
+  // do not clobber each other's task-specific headers.
+  const existingCustomHeaders =
+    gateway?.anthropicCustomHeaders ?? process.env.ANTHROPIC_CUSTOM_HEADERS;
   if (existingCustomHeaders) {
     headerLines.push(existingCustomHeaders);
   }
@@ -132,9 +162,9 @@ function buildEnvironment(): Record<string, string> {
   // the event; both entrypoints export POSTHOG_PROJECT_ID before this runs
   // (workspace-server auth-adapter.ts, server/agent-server.ts). Mirrors django's
   // get_llm_client(team_id=...).
-  const projectId = process.env.POSTHOG_PROJECT_ID;
+  const projectId = gateway?.posthogProjectId ?? process.env.POSTHOG_PROJECT_ID;
   if (projectId) {
-    headerLines.push(`x-posthog-property-team_id: ${projectId}`);
+    headerLines.push(buildGatewayPropertyHeaders({ team_id: projectId }));
   }
   // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
   headerLines.push("x-posthog-use-bedrock-fallback: true");
@@ -149,7 +179,21 @@ function buildEnvironment(): Record<string, string> {
 
   return {
     ...process.env,
-    ELECTRON_RUN_AS_NODE: "1",
+    // Explicit gateway values win over whatever happens to be in process.env.
+    // This prevents concurrent Agent instances from clobbering each other's
+    // gateway config when process.env was mutated globally.
+    ...(gateway?.anthropicBaseUrl && {
+      ANTHROPIC_BASE_URL: gateway.anthropicBaseUrl,
+    }),
+    ...(gateway?.anthropicAuthToken && {
+      ANTHROPIC_AUTH_TOKEN: gateway.anthropicAuthToken,
+      ANTHROPIC_API_KEY: gateway.anthropicAuthToken,
+    }),
+    ...(gateway?.openaiBaseUrl && { OPENAI_BASE_URL: gateway.openaiBaseUrl }),
+    ...(gateway?.openaiApiKey && { OPENAI_API_KEY: gateway.openaiApiKey }),
+    ...((process.versions.electron || process.env.ELECTRON_RUN_AS_NODE) && {
+      ELECTRON_RUN_AS_NODE: "1",
+    }),
     CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL: "true",
     // Offload all MCP tools by default
     ENABLE_TOOL_SEARCH: "auto:0",
@@ -177,6 +221,7 @@ function buildHooks(
   onEnsureLocalToolsConnected: (() => Promise<boolean>) | undefined,
   taskState: TaskState,
   onTaskStateChange: (() => Promise<void>) | undefined,
+  rtkPrefix: string | undefined,
 ): Options["hooks"] {
   const postToolUseHooks = [
     createPostToolUseHook({
@@ -198,6 +243,10 @@ function buildHooks(
     preToolUseHooks.push(
       createSignedCommitGuardHook(logger, onEnsureLocalToolsConnected),
     );
+  }
+  // Registered last so the signed-commit guard evaluates the raw command first.
+  if (rtkPrefix) {
+    preToolUseHooks.push(createRtkRewriteHook(rtkPrefix, logger));
   }
 
   const taskHook = createTaskHook(taskState, onTaskStateChange);
@@ -397,7 +446,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     cwd: params.cwd,
     includePartialMessages: true,
     allowDangerouslySkipPermissions: !IS_ROOT || !!process.env.IS_SANDBOX,
-    permissionMode: params.permissionMode,
+    permissionMode: toSdkPermissionMode(params.permissionMode),
     canUseTool: params.canUseTool,
     tools,
     agents,
@@ -410,7 +459,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.mcpServers,
       loadUserClaudeJsonMcpServers(params.cwd, params.logger),
     ),
-    env: buildEnvironment(),
+    env: buildEnvironment(params.gatewayEnv),
     hooks: buildHooks(
       params.userProvidedOptions?.hooks,
       params.onModeChange,
@@ -424,6 +473,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.onEnsureLocalToolsConnected,
       params.taskState,
       params.onTaskStateChange,
+      resolveRtkPrefix(process.env),
     ),
     outputFormat: params.outputFormat,
     abortController: getAbortController(
@@ -452,6 +502,10 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
   } else {
     options.sessionId = params.sessionId;
     options.model = DEFAULT_MODEL;
+  }
+
+  if (!options.fallbackModel && options.model !== FALLBACK_MODEL) {
+    options.fallbackModel = FALLBACK_MODEL;
   }
 
   if (params.additionalDirectories) {

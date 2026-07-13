@@ -39,6 +39,9 @@ export const homeWorkstreamTask = z
     status: taskRunStatus.nullable(),
     isGenerating: z.boolean(),
     needsPermission: z.boolean(),
+    // Label of the Home quick action that started this run, when it came from one.
+    // Optional for tolerance of snapshots produced before this field shipped.
+    quickAction: z.string().nullable().optional(),
   })
   .strict();
 export type HomeWorkstreamTask = z.infer<typeof homeWorkstreamTask>;

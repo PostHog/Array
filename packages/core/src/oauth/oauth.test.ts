@@ -122,6 +122,53 @@ describe("OAuthService.refreshToken", () => {
     expect(result.errorCode).toBe("auth_error");
   });
 
+  it.each([
+    {
+      name: "invalid_grant",
+      body: { error: "invalid_grant" },
+      expected: "auth_error",
+    },
+    {
+      name: "invalid_token",
+      body: { error: "invalid_token" },
+      expected: "auth_error",
+    },
+    {
+      name: "invalid_client",
+      body: { error: "invalid_client" },
+      expected: "unknown_error",
+    },
+    {
+      name: "invalid_request",
+      body: { error: "invalid_request" },
+      expected: "unknown_error",
+    },
+    {
+      name: "a non-string error field",
+      body: { error: 42 },
+      expected: "unknown_error",
+    },
+    { name: "no error field", body: {}, expected: "unknown_error" },
+  ])("maps a 400 $name to a $expected", async ({ body, expected }) => {
+    const { service } = createDeps();
+    fetchMock.mockResolvedValue(jsonResponse(body, 400));
+
+    const result = await service.refreshToken("rt", "us");
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe(expected);
+  });
+
+  it("maps a 400 with an unparseable body to an unknown_error", async () => {
+    const { service } = createDeps();
+    fetchMock.mockResolvedValue(new Response("", { status: 400 }));
+
+    const result = await service.refreshToken("rt", "us");
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe("unknown_error");
+  });
+
   it("maps 5xx to a server_error", async () => {
     const { service } = createDeps();
     fetchMock.mockResolvedValue(jsonResponse({}, 503));
@@ -133,7 +180,7 @@ describe("OAuthService.refreshToken", () => {
 
   it("maps other 4xx to an unknown_error", async () => {
     const { service } = createDeps();
-    fetchMock.mockResolvedValue(jsonResponse({}, 400));
+    fetchMock.mockResolvedValue(jsonResponse({}, 404));
 
     const result = await service.refreshToken("rt", "us");
 

@@ -1,5 +1,6 @@
 import {
   ChatCircle,
+  CircleNotch,
   GitBranch,
   GitPullRequest,
   Sparkle,
@@ -35,16 +36,20 @@ export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
     extraSituations,
     generating,
     needsPermission,
+    quickActions,
     primaryBound,
     restBound,
     primaryIsPr,
     primaryIsTask,
     showPrInMenu,
     showTaskInMenu,
+    canArchive,
     hasMenu,
     runAction,
+    isRunningAction,
     openTask,
     openPr,
+    archive,
   } = useWorkstreamPresentation(workstream);
   const setSelectedWorkstreamId = useHomeUiStore(
     (s) => s.setSelectedWorkstreamId,
@@ -104,6 +109,21 @@ export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
       ),
     });
   }
+  if (quickActions.length > 0) {
+    meta.push({
+      key: "quick-actions",
+      node: (
+        <span
+          className="inline-flex items-center gap-1 text-(--accent-11)"
+          title={`Quick actions run: ${quickActions.join(", ")}`}
+        >
+          <Sparkle size={11} weight="fill" />
+          {quickActions.slice(0, 2).join(", ")}
+          {quickActions.length > 2 ? ` +${quickActions.length - 2}` : ""}
+        </span>
+      ),
+    });
+  }
 
   return (
     <Box
@@ -159,10 +179,15 @@ export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
             <Button
               variant="primary"
               size="sm"
+              disabled={isRunningAction}
               onClick={() => runAction(primaryBound)}
               title={`${primaryBound.situationLabel} → ${primaryBound.skillId}`}
             >
-              <Sparkle size={12} weight="fill" />
+              {isRunningAction ? (
+                <CircleNotch size={12} weight="bold" className="animate-spin" />
+              ) : (
+                <Sparkle size={12} weight="fill" />
+              )}
               {primaryBound.label}
             </Button>
           ) : primaryIsPr ? (
@@ -181,10 +206,13 @@ export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
               restBound={restBound}
               showPrInMenu={showPrInMenu}
               showTaskInMenu={showTaskInMenu}
+              showArchive={canArchive}
               onRun={runAction}
               onOpenPr={openPr}
               onOpenTask={openTask}
+              onArchive={archive}
               size="sm"
+              runDisabled={isRunningAction}
             />
           ) : null}
         </div>

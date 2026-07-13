@@ -1,4 +1,5 @@
 export type SkillSource = "bundled" | "user" | "repo" | "marketplace" | "codex";
+export type UploadableSkillSource = Exclude<SkillSource, "bundled">;
 
 export interface SkillInfo {
   name: string;

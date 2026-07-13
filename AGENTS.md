@@ -200,6 +200,15 @@ await boot(container);
 - `pnpm --filter code package|make`: package the Electron app.
 - `node scripts/check-host-boundaries.mjs`: verify host boundary allowlist.
 
+## Merging PRs
+
+All merges into `main` go through the Trunk merge queue. Never run `gh pr merge` or click the GitHub merge button -- both are blocked by branch ruleset.
+
+- Enqueue: `gh pr comment <number> --body "/trunk merge"`. Cancel: `gh pr comment <number> --body "/trunk cancel"`.
+- After enqueueing, babysit the PR until it merges or fails -- follow [`.claude/skills/merging-prs/SKILL.md`](./.claude/skills/merging-prs/SKILL.md) for the preflight, poll, and failure-handling loop.
+- Queue progress is the `Trunk Merge Queue (main)` check run on the PR's head commit. On failure the Trunk bot comments with links to the failing workflows; fix, push, and re-enqueue.
+- Never force-push a branch while it is in the queue -- it removes the PR from the queue.
+
 ## Code Style
 
 - Prefer local code over new dependencies for simple fixes.
@@ -210,6 +219,7 @@ await boot(container);
 - Use path aliases and package public exports. Avoid deep relative imports.
 - No barrel files (`index.ts`).
 - Use Tailwind first. Keep classes sorted. Use inline `style` only for runtime values, library configuration, or CSS variables.
+- Empty/placeholder/loading screens (canvas and elsewhere) are a `@posthog/quill` `<Empty>` (`EmptyHeader` → `EmptyMedia variant="icon"` → `EmptyTitle` → `EmptyDescription`, then `EmptyContent` for CTAs). Don't hand-roll the centered Flex + dashed icon box. CTAs are quill `Button`s: primary action `variant="primary"`, secondary `variant="outline"`, `size="default"`. For a link CTA use `render={<Link … />}` (Base UI), not `asChild`.
 - Abort controllers before awaiting cleanup that depends on them.
 
 See [docs/conventions.md](./docs/conventions.md).
@@ -226,7 +236,6 @@ See [docs/conventions.md](./docs/conventions.md).
 - TanStack Query, TanStack Router
 - Zustand, InversifyJS (with `@inversifyjs/strongly-typed`), Zod
 - xterm.js, CodeMirror, Tiptap
-- Sonner
 
 ## Testing
 

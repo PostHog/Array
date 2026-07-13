@@ -1,8 +1,8 @@
 // Builds the prompt for the task that generates a channel's CONTEXT.md. The
-// task runs as a normal agent task in the channel's repo, so the agent has full
-// tools; this is the task's content (its first user message). CONTEXT.md is not
-// a file on disk — it lives in PostHog — so the agent must publish the result
-// via the PostHog MCP rather than writing a file.
+// task runs as a normal repo-less agent task (no repo picked up front), so the
+// agent has full tools; this is the task's content (its first user message).
+// CONTEXT.md is not a file on disk — it lives in PostHog — so the agent must
+// publish the result via the PostHog MCP rather than writing a file.
 export function buildContextGenerationPrompt(input: {
   channelName: string;
   channelId: string;
@@ -15,8 +15,10 @@ work in "${channelName}": what it is, key files, conventions, gotchas, and the
 PostHog resources that relate to it.
 
 Investigate two sources:
-1. This repository — use Read, Grep, and Glob to find code, directories, and
-   config related to "${channelName}" (conventions, key files, gotchas).
+1. The relevant repository — use Read, Grep, and Glob to find code, directories,
+   and config related to "${channelName}" (conventions, key files, gotchas). No
+   repo is attached up front: if one isn't already available and you can't infer
+   which to use, ask the user which repository to look at before continuing.
 2. PostHog — use the PostHog MCP to find data related to "${channelName}" in
    this project: feature flags, experiments, surveys, notebooks, insights, web
    analytics, and persons. Operate only on this project.

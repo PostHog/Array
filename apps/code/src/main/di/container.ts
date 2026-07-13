@@ -19,10 +19,6 @@ import {
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
 import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
-import {
-  CANVAS_GEN_SERVICE,
-  FREEFORM_GEN_SERVICE,
-} from "@posthog/core/canvas/identifiers";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
@@ -50,14 +46,22 @@ import { GIT_DIFF_SOURCE } from "@posthog/core/git-pr/identifiers";
 import { handoffModule } from "@posthog/core/handoff/handoff.module";
 import { HANDOFF_HOST } from "@posthog/core/handoff/identifiers";
 import { integrationsModule } from "@posthog/core/integrations/integrations.module";
+import { ApprovalLinkService } from "@posthog/core/links/approval-link";
+import { CanvasLinkService } from "@posthog/core/links/canvas-link";
+import { ChannelLinkService } from "@posthog/core/links/channel-link";
 import {
+  APPROVAL_LINK_SERVICE,
+  CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
+  OPEN_TARGET_LINK_SERVICE,
   SCOUT_LINK_SERVICE,
   TASK_LINK_SERVICE,
 } from "@posthog/core/links/identifiers";
 import { InboxLinkService } from "@posthog/core/links/inbox-link";
 import { NewTaskLinkService } from "@posthog/core/links/new-task-link";
+import { OpenTargetLinkService } from "@posthog/core/links/open-target-link";
 import { ScoutLinkService } from "@posthog/core/links/scout-link";
 import { TaskLinkService } from "@posthog/core/links/task-link";
 import {
@@ -94,16 +98,16 @@ import {
   GIT_PR_STATUS_PROVIDER,
   type IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
-import { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
-import { FreeformGenService } from "@posthog/host-router/services/freeform-gen.service";
 import { ANALYTICS_SERVICE } from "@posthog/platform/analytics";
 import { APP_LIFECYCLE_SERVICE } from "@posthog/platform/app-lifecycle";
 import { APP_META_SERVICE } from "@posthog/platform/app-meta";
+import { APP_METRICS_SERVICE } from "@posthog/platform/app-metrics";
 import { BUNDLED_RESOURCES_SERVICE } from "@posthog/platform/bundled-resources";
 import { CLIPBOARD_SERVICE } from "@posthog/platform/clipboard";
 import { CONTEXT_MENU_SERVICE } from "@posthog/platform/context-menu";
 import { CRYPTO_SERVICE } from "@posthog/platform/crypto";
 import { DEEP_LINK_SERVICE } from "@posthog/platform/deep-link";
+import { DEV_HOST_ACTIONS_SERVICE } from "@posthog/platform/dev-host-actions";
 import { DIALOG_SERVICE } from "@posthog/platform/dialog";
 import { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
 import { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
@@ -149,6 +153,8 @@ import {
 } from "@posthog/workspace-server/services/archive/identifiers";
 import { authProxyModule } from "@posthog/workspace-server/services/auth-proxy/auth-proxy.module";
 import { AUTH_PROXY_AUTH } from "@posthog/workspace-server/services/auth-proxy/identifiers";
+import { browserTabsModule } from "@posthog/workspace-server/services/browser-tabs/browser-tabs.module";
+import { claudeCliSessionsModule } from "@posthog/workspace-server/services/claude-cli-sessions/claude-cli-sessions.module";
 import { enrichmentModule } from "@posthog/workspace-server/services/enrichment/enrichment.module";
 import {
   ENRICHMENT_AUTH,
@@ -163,6 +169,7 @@ import type { ExternalAppsPreferences } from "@posthog/workspace-server/services
 import { foldersModule } from "@posthog/workspace-server/services/folders/folders.module";
 import { GitService } from "@posthog/workspace-server/services/git/service";
 import { TaskPrStatusService } from "@posthog/workspace-server/services/git/task-pr-status";
+import { githubReleasesModule } from "@posthog/workspace-server/services/github-releases/github-releases.module";
 import {
   HANDOFF_GIT_GATEWAY,
   HANDOFF_LOG_GATEWAY,
@@ -214,10 +221,12 @@ import ExternalAppsStoreImpl from "electron-store";
 import type { FileWatcherBridge } from "../index";
 import { ElectronAppLifecycle } from "../platform-adapters/electron-app-lifecycle";
 import { ElectronAppMeta } from "../platform-adapters/electron-app-meta";
+import { ElectronAppMetrics } from "../platform-adapters/electron-app-metrics";
 import { ElectronBundledResources } from "../platform-adapters/electron-bundled-resources";
 import { ElectronClipboard } from "../platform-adapters/electron-clipboard";
 import { ElectronContextMenu } from "../platform-adapters/electron-context-menu";
 import { ElectronCrypto } from "../platform-adapters/electron-crypto";
+import { ElectronDevHostActions } from "../platform-adapters/electron-dev-host-actions";
 import { ElectronDialog } from "../platform-adapters/electron-dialog";
 import { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
 import { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
@@ -240,6 +249,11 @@ import {
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
 import { DeepLinkService } from "../services/deep-link/service";
+import { DevActionsService } from "../services/dev-actions/service";
+import { DevFlagsService } from "../services/dev-flags/service";
+import { DevLogsService } from "../services/dev-logs/service";
+import { DevMetricsService } from "../services/dev-metrics/service";
+import { DevNetworkService } from "../services/dev-network/service";
 import { DiscordPresenceService } from "../services/discord-presence/service";
 import { EncryptionService } from "../services/encryption/service";
 import { SecureStoreService } from "../services/secure-store/service";
@@ -251,22 +265,33 @@ import { rendererStore } from "../utils/store";
 import type { MainBindings } from "./bindings";
 import {
   APP_LIFECYCLE_SERVICE as MAIN_APP_LIFECYCLE_SERVICE,
+  APPROVAL_LINK_SERVICE as MAIN_APPROVAL_LINK_SERVICE,
   ARCHIVE_REPOSITORY as MAIN_ARCHIVE_REPOSITORY,
   AUTH_PREFERENCE_REPOSITORY as MAIN_AUTH_PREFERENCE_REPOSITORY,
   AUTH_SERVICE as MAIN_AUTH_SERVICE,
   AUTH_SESSION_REPOSITORY as MAIN_AUTH_SESSION_REPOSITORY,
+  CANVAS_LINK_SERVICE as MAIN_CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE as MAIN_CHANNEL_LINK_SERVICE,
   CLOUD_TASK_SERVICE as MAIN_CLOUD_TASK_SERVICE,
   CONTEXT_MENU_SERVICE as MAIN_CONTEXT_MENU_SERVICE,
   DATABASE_SERVICE as MAIN_DATABASE_SERVICE,
   DEEP_LINK_SERVICE as MAIN_DEEP_LINK_SERVICE,
   DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY as MAIN_DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
+  DEV_ACTIONS_SERVICE as MAIN_DEV_ACTIONS_SERVICE,
+  DEV_FLAGS_SERVICE as MAIN_DEV_FLAGS_SERVICE,
+  DEV_LOGS_SERVICE as MAIN_DEV_LOGS_SERVICE,
+  DEV_METRICS_SERVICE as MAIN_DEV_METRICS_SERVICE,
+  DEV_NETWORK_SERVICE as MAIN_DEV_NETWORK_SERVICE,
+  DISCORD_PRESENCE_SERVICE as MAIN_DISCORD_PRESENCE_SERVICE,
   ENCRYPTION_SERVICE as MAIN_ENCRYPTION_SERVICE,
   EXTERNAL_APPS_SERVICE as MAIN_EXTERNAL_APPS_SERVICE,
+  FILE_WATCHER_SERVICE as MAIN_FILE_WATCHER_SERVICE,
   FS_SERVICE as MAIN_FS_SERVICE,
   INBOX_LINK_SERVICE as MAIN_INBOX_LINK_SERVICE,
   LLM_GATEWAY_SERVICE as MAIN_LLM_GATEWAY_SERVICE,
   MCP_APPS_SERVICE as MAIN_MCP_APPS_SERVICE,
   NEW_TASK_LINK_SERVICE as MAIN_NEW_TASK_LINK_SERVICE,
+  OPEN_TARGET_LINK_SERVICE as MAIN_OPEN_TARGET_LINK_SERVICE,
   POSTHOG_PLUGIN_SERVICE as MAIN_POSTHOG_PLUGIN_SERVICE,
   PROCESS_TRACKING_SERVICE as MAIN_PROCESS_TRACKING_SERVICE,
   PROVISIONING_SERVICE as MAIN_PROVISIONING_SERVICE,
@@ -279,9 +304,9 @@ import {
   SUSPENSION_REPOSITORY as MAIN_SUSPENSION_REPOSITORY,
   SUSPENSION_SERVICE as MAIN_SUSPENSION_SERVICE,
   TASK_LINK_SERVICE as MAIN_TASK_LINK_SERVICE,
-  MAIN_TOKENS,
   UPDATES_SERVICE as MAIN_UPDATES_SERVICE,
   WATCHER_REGISTRY_SERVICE as MAIN_WATCHER_REGISTRY_SERVICE,
+  WORKSPACE_CLIENT as MAIN_WORKSPACE_CLIENT,
   WORKSPACE_REPOSITORY as MAIN_WORKSPACE_REPOSITORY,
   WORKSPACE_SERVER_SERVICE as MAIN_WORKSPACE_SERVER_SERVICE,
   WORKSPACE_SERVICE as MAIN_WORKSPACE_SERVICE,
@@ -310,6 +335,8 @@ container.bind(CONTEXT_MENU_SERVICE).to(ElectronContextMenu);
 container.bind(BUNDLED_RESOURCES_SERVICE).to(ElectronBundledResources);
 container.bind(IMAGE_PROCESSOR_SERVICE).to(ElectronImageProcessor);
 container.bind(WORKSPACE_SETTINGS_SERVICE).to(ElectronWorkspaceSettings);
+container.bind(APP_METRICS_SERVICE).to(ElectronAppMetrics);
+container.bind(DEV_HOST_ACTIONS_SERVICE).to(ElectronDevHostActions);
 
 container.load(databaseModule);
 container.load(repositoriesModule);
@@ -343,17 +370,17 @@ container
   .bind(AUTH_TOKEN_OVERRIDE)
   .toConstantValue(process.env.VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE ?? null);
 container.bind(MAIN_AUTH_SERVICE).to(AuthService);
-container.bind(AUTH_SERVICE).toService(MAIN_TOKENS.AuthService);
+container.bind(AUTH_SERVICE).toService(MAIN_AUTH_SERVICE);
 container.load(authProxyModule);
 container.bind(AUTH_PROXY_AUTH).toDynamicValue((ctx) => ({
   authenticatedFetch: (url: string, init?: RequestInit) =>
     ctx
-      .get<AuthService>(MAIN_TOKENS.AuthService)
+      .get<AuthService>(MAIN_AUTH_SERVICE)
       .authenticatedFetch(fetch, url, init),
 }));
 container.load(mcpProxyModule);
 container.bind(MCP_PROXY_AUTH).toDynamicValue((ctx) => {
-  const auth = () => ctx.get<AuthService>(MAIN_TOKENS.AuthService);
+  const auth = () => ctx.get<AuthService>(MAIN_AUTH_SERVICE);
   return {
     authenticatedFetch: (url: string, init?: RequestInit) =>
       auth().authenticatedFetch(fetch, url, init),
@@ -368,7 +395,7 @@ container.bind(ARCHIVE_SESSION_CANCELLER).toDynamicValue((ctx) => ({
 container.bind(ARCHIVE_FILE_WATCHER).toDynamicValue((ctx) => ({
   stopWatching: async (worktreePath: string) => {
     ctx
-      .get<FileWatcherBridge>(MAIN_TOKENS.FileWatcherService)
+      .get<FileWatcherBridge>(MAIN_FILE_WATCHER_SERVICE)
       .stopWatching(worktreePath);
   },
 }));
@@ -380,7 +407,7 @@ container.bind(SUSPENSION_SESSION_CANCELLER).toDynamicValue((ctx) => ({
 container.bind(SUSPENSION_FILE_WATCHER).toDynamicValue((ctx) => ({
   stopWatching: async (worktreePath: string) => {
     ctx
-      .get<FileWatcherBridge>(MAIN_TOKENS.FileWatcherService)
+      .get<FileWatcherBridge>(MAIN_FILE_WATCHER_SERVICE)
       .stopWatching(worktreePath);
   },
 }));
@@ -390,20 +417,20 @@ container.load(cloudTaskModule);
 container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
   authenticatedFetch: (url: string, init?: RequestInit) =>
     ctx
-      .get<AuthService>(MAIN_TOKENS.AuthService)
+      .get<AuthService>(MAIN_AUTH_SERVICE)
       .authenticatedFetch(fetch, url, init),
 }));
 container.bind(MAIN_CLOUD_TASK_SERVICE).toService(CLOUD_TASK_SERVICE);
 container.load(contextMenuCoreModule);
 container
   .bind(CONTEXT_MENU_EXTERNAL_APPS_SERVICE)
-  .toService(MAIN_TOKENS.ExternalAppsService);
+  .toService(MAIN_EXTERNAL_APPS_SERVICE);
 container.bind(MAIN_CONTEXT_MENU_SERVICE).toService(CONTEXT_MENU_CONTROLLER);
 container.bind(MAIN_DEEP_LINK_SERVICE).to(DeepLinkService);
-container.bind(DEEP_LINK_SERVICE).toService(MAIN_TOKENS.DeepLinkService);
+container.bind(DEEP_LINK_SERVICE).toService(MAIN_DEEP_LINK_SERVICE);
 container.load(enrichmentModule);
 container.bind(ENRICHMENT_AUTH).toDynamicValue((ctx) => {
-  const auth = () => ctx.get<AuthService>(MAIN_TOKENS.AuthService);
+  const auth = () => ctx.get<AuthService>(MAIN_AUTH_SERVICE);
   return {
     getState: () => {
       const state = auth().getState();
@@ -426,7 +453,7 @@ container.bind(ENRICHMENT_FILE_READER).toConstantValue({
     listFilesContainingText(repoPath, text),
 });
 container.bind(MAIN_PROVISIONING_SERVICE).to(ProvisioningService);
-container.bind(PROVISIONING_SERVICE).toService(MAIN_TOKENS.ProvisioningService);
+container.bind(PROVISIONING_SERVICE).toService(MAIN_PROVISIONING_SERVICE);
 
 const externalAppsPrefsStore = new ExternalAppsStoreImpl<{
   externalAppsPrefs: ExternalAppsPreferences;
@@ -444,7 +471,7 @@ container.load(externalAppsModule);
 container.bind(MAIN_EXTERNAL_APPS_SERVICE).toService(EXTERNAL_APPS_SERVICE);
 container.load(llmGatewayModule);
 container.bind(LLM_GATEWAY_HOST).toDynamicValue((ctx) => {
-  const auth = () => ctx.get<AuthService>(MAIN_TOKENS.AuthService);
+  const auth = () => ctx.get<AuthService>(MAIN_AUTH_SERVICE);
   return {
     getValidAccessToken: () => auth().getValidAccessToken(),
     authenticatedFetch: (url: string, init?: RequestInit) =>
@@ -463,9 +490,8 @@ container.bind(MAIN_MCP_APPS_SERVICE).toService(MCP_APPS_SERVICE);
 container.load(foldersModule);
 container.load(integrationsModule);
 container.load(gitPrModule);
-container.bind(GIT_DIFF_SOURCE).toDynamicValue(() => {
-  const wsClient = () =>
-    container.get<HostGitWorkspaceClient>(GIT_WORKSPACE_CLIENT);
+container.bind(GIT_DIFF_SOURCE).toDynamicValue((ctx) => {
+  const wsClient = () => ctx.get<HostGitWorkspaceClient>(GIT_WORKSPACE_CLIENT);
   const git = () => wsClient().git;
   return {
     getStagedDiff: (directoryPath: string) =>
@@ -496,10 +522,10 @@ container.bind(GIT_DIFF_SOURCE).toDynamicValue(() => {
       }),
     getPrTemplate: (directoryPath: string) =>
       git().getPrTemplate.query({ directoryPath }),
-    fetchIfStale: async (directoryPath: string) => {
+    fetchFromRemote: async (directoryPath: string) => {
       await git().getGitSyncStatus.query({
         directoryPath,
-        forceRefresh: true,
+        fetchFromRemote: true,
       });
     },
   };
@@ -526,7 +552,7 @@ container
 container.load(handoffModule);
 container.bind(HANDOFF_HOST).to(HandoffHostService).inSingletonScope();
 container.bind(HANDOFF_GIT_GATEWAY).toDynamicValue((ctx): HandoffGitGateway => {
-  const workspace = ctx.get<WorkspaceClient>(MAIN_TOKENS.WorkspaceClient);
+  const workspace = ctx.get<WorkspaceClient>(MAIN_WORKSPACE_CLIENT);
   return {
     async getChangedFiles(repoPath) {
       const files = await workspace.git.getChangedFilesHead.query({
@@ -551,7 +577,7 @@ container.bind(HANDOFF_GIT_GATEWAY).toDynamicValue((ctx): HandoffGitGateway => {
   };
 });
 container.bind(HANDOFF_LOG_GATEWAY).toDynamicValue((ctx) => {
-  const ws = ctx.get<WorkspaceClient>(MAIN_TOKENS.WorkspaceClient);
+  const ws = ctx.get<WorkspaceClient>(MAIN_WORKSPACE_CLIENT);
   return {
     seedLocalLogs: (taskRunId: string, content: string) =>
       ws.localLogs.seed.mutate({ taskRunId, content }),
@@ -584,29 +610,27 @@ container.load(posthogPluginModule);
 container.bind(MAIN_POSTHOG_PLUGIN_SERVICE).toService(POSTHOG_PLUGIN_SERVICE);
 container.load(skillsModule);
 container.load(skillsMarketplaceModule);
+container.load(githubReleasesModule);
 container.load(onboardingImportModule);
+container.load(claudeCliSessionsModule);
 container.load(additionalDirectoriesModule);
 container.bind(MAIN_SLEEP_SERVICE).to(SleepService);
-container.bind(SLEEP_SERVICE).toService(MAIN_TOKENS.SleepService);
+container.bind(SLEEP_SERVICE).toService(MAIN_SLEEP_SERVICE);
 container.load(shellModule);
 container.load(uiModule);
 container.bind(UI_AUTH).toDynamicValue((ctx) => ({
   invalidateAccessTokenForTest: () =>
-    ctx
-      .get<AuthService>(MAIN_TOKENS.AuthService)
-      .invalidateAccessTokenForTest(),
+    ctx.get<AuthService>(MAIN_AUTH_SERVICE).invalidateAccessTokenForTest(),
 }));
 container.load(updatesCoreModule);
-container
-  .bind(UPDATE_LIFECYCLE_SERVICE)
-  .toService(MAIN_TOKENS.AppLifecycleService);
+container.bind(UPDATE_LIFECYCLE_SERVICE).toService(MAIN_APP_LIFECYCLE_SERVICE);
 container.bind(MAIN_UPDATES_SERVICE).toService(UPDATES_SERVICE);
 container.load(usageMonitorModule);
 container.bind(USAGE_HOST).toDynamicValue((ctx) => {
   const agent = () => ctx.get<AgentService>(AGENT_SERVICE);
   return {
     fetchUsage: () =>
-      ctx.get<LlmGatewayService>(MAIN_TOKENS.LlmGatewayService).fetchUsage(),
+      ctx.get<LlmGatewayService>(MAIN_LLM_GATEWAY_SERVICE).fetchUsage(),
     onLlmActivity: (listener: () => void) =>
       agent().on(AgentServiceEvent.LlmActivity, listener),
     offLlmActivity: (listener: () => void) =>
@@ -618,13 +642,23 @@ container.bind(USAGE_HOST).toDynamicValue((ctx) => {
   };
 });
 container.bind(MAIN_TASK_LINK_SERVICE).to(TaskLinkService);
-container.bind(TASK_LINK_SERVICE).toService(MAIN_TOKENS.TaskLinkService);
+container.bind(TASK_LINK_SERVICE).toService(MAIN_TASK_LINK_SERVICE);
 container.bind(MAIN_INBOX_LINK_SERVICE).to(InboxLinkService);
-container.bind(INBOX_LINK_SERVICE).toService(MAIN_TOKENS.InboxLinkService);
+container.bind(INBOX_LINK_SERVICE).toService(MAIN_INBOX_LINK_SERVICE);
 container.bind(MAIN_SCOUT_LINK_SERVICE).to(ScoutLinkService);
-container.bind(SCOUT_LINK_SERVICE).toService(MAIN_TOKENS.ScoutLinkService);
+container.bind(SCOUT_LINK_SERVICE).toService(MAIN_SCOUT_LINK_SERVICE);
 container.bind(MAIN_NEW_TASK_LINK_SERVICE).to(NewTaskLinkService);
-container.bind(NEW_TASK_LINK_SERVICE).toService(MAIN_TOKENS.NewTaskLinkService);
+container.bind(NEW_TASK_LINK_SERVICE).toService(MAIN_NEW_TASK_LINK_SERVICE);
+container.bind(MAIN_APPROVAL_LINK_SERVICE).to(ApprovalLinkService);
+container.bind(APPROVAL_LINK_SERVICE).toService(MAIN_APPROVAL_LINK_SERVICE);
+container.bind(MAIN_OPEN_TARGET_LINK_SERVICE).to(OpenTargetLinkService);
+container
+  .bind(OPEN_TARGET_LINK_SERVICE)
+  .toService(MAIN_OPEN_TARGET_LINK_SERVICE);
+container.bind(MAIN_CANVAS_LINK_SERVICE).to(CanvasLinkService);
+container.bind(CANVAS_LINK_SERVICE).toService(MAIN_CANVAS_LINK_SERVICE);
+container.bind(MAIN_CHANNEL_LINK_SERVICE).to(ChannelLinkService);
+container.bind(CHANNEL_LINK_SERVICE).toService(MAIN_CHANNEL_LINK_SERVICE);
 container.load(watcherRegistryModule);
 container
   .bind(MAIN_WATCHER_REGISTRY_SERVICE)
@@ -641,9 +675,7 @@ container.bind(WORKSPACE_AGENT).toDynamicValue((ctx): WorkspaceAgent => {
 container
   .bind(WORKSPACE_FILE_WATCHER)
   .toDynamicValue((ctx): WorkspaceFileWatcher => {
-    const fileWatcher = ctx.get<FileWatcherBridge>(
-      MAIN_TOKENS.FileWatcherService,
-    );
+    const fileWatcher = ctx.get<FileWatcherBridge>(MAIN_FILE_WATCHER_SERVICE);
     return {
       stopWatching: async (worktreePath) => {
         fileWatcher.stopWatching(worktreePath);
@@ -665,7 +697,7 @@ container
   .bind(WORKSPACE_PROVISIONING)
   .toDynamicValue((ctx): WorkspaceProvisioning => {
     const provisioning = ctx.get<ProvisioningService>(
-      MAIN_TOKENS.ProvisioningService,
+      MAIN_PROVISIONING_SERVICE,
     );
     return {
       emitOutput: (taskId, data) => provisioning.emitOutput(taskId, data),
@@ -684,9 +716,9 @@ container
   .bind(MAIN_SECURE_STORE_SERVICE)
   .to(SecureStoreService)
   .inSingletonScope();
-container.bind(SECURE_STORE_SERVICE).toService(MAIN_TOKENS.SecureStoreService);
+container.bind(SECURE_STORE_SERVICE).toService(MAIN_SECURE_STORE_SERVICE);
 container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
-  const ws = ctx.get<WorkspaceClient>(MAIN_TOKENS.WorkspaceClient);
+  const ws = ctx.get<WorkspaceClient>(MAIN_WORKSPACE_CLIENT);
   return {
     fetchS3Logs: async (logUrl: string) => {
       try {
@@ -700,18 +732,28 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
     },
     readLocalLogs: (taskRunId: string) =>
       ws.localLogs.read.query({ taskRunId }),
+    readLocalLogsCollapsed: (taskRunId: string) =>
+      ws.localLogs.readCollapsed.query({ taskRunId }),
+    readLocalLogsTail: (taskRunId: string, maxBytes: number) =>
+      ws.localLogs.readTail.query({ taskRunId, maxBytes }),
     writeLocalLogs: (taskRunId: string, content: string) =>
       ws.localLogs.write.mutate({ taskRunId, content }),
   };
 });
 container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
-container.bind(MAIN_TOKENS.DiscordPresenceService).to(DiscordPresenceService);
+container.bind(MAIN_DISCORD_PRESENCE_SERVICE).to(DiscordPresenceService);
 
 // Canvas / dashboards (project-bluebird). The host-agnostic dashboard services
-// live in @posthog/core (bound via canvasCoreModule); CanvasGenService is the
-// desktop-bound agent surface (a singleton holding per-thread agent state + a
-// forwarding loop for app life). Both resolve through ctx.container in the
-// host-router routers.
+// live in @posthog/core (bound via canvasCoreModule) and resolve through
+// ctx.container in the host-router routers.
 container.load(canvasCoreModule);
-container.bind(CANVAS_GEN_SERVICE).to(CanvasGenService).inSingletonScope();
-container.bind(FREEFORM_GEN_SERVICE).to(FreeformGenService).inSingletonScope();
+
+// Browser tabs for the Channels canvas surface. Authoritative sqlite-backed
+// service in the main process; resolved by the host-router browserTabs router.
+container.load(browserTabsModule);
+
+container.bind(MAIN_DEV_FLAGS_SERVICE).to(DevFlagsService);
+container.bind(MAIN_DEV_METRICS_SERVICE).to(DevMetricsService);
+container.bind(MAIN_DEV_NETWORK_SERVICE).to(DevNetworkService);
+container.bind(MAIN_DEV_LOGS_SERVICE).to(DevLogsService);
+container.bind(MAIN_DEV_ACTIONS_SERVICE).to(DevActionsService);

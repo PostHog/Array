@@ -2,9 +2,9 @@ import "reflect-metadata";
 import os from "node:os";
 import { TypedEventEmitter } from "@posthog/shared";
 import type { WorkspaceClient } from "@posthog/workspace-client/client";
-import { createWorkspaceClient } from "@posthog/workspace-client/client";
+import { createReconnectingWorkspaceClient } from "@posthog/workspace-client/client";
 import type { FileWatcherEvent } from "@posthog/workspace-client/types";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, session } from "electron";
 import log from "electron-log/main";
 import "./utils/logger";
 import "./services/index.js";
@@ -22,6 +22,9 @@ import {
   SLACK_INTEGRATION_SERVICE,
 } from "@posthog/core/integrations/identifiers";
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
+import type { ApprovalLinkService } from "@posthog/core/links/approval-link";
+import type { CanvasLinkService } from "@posthog/core/links/canvas-link";
+import type { ChannelLinkService } from "@posthog/core/links/channel-link";
 import type { InboxLinkService } from "@posthog/core/links/inbox-link";
 import type { NewTaskLinkService } from "@posthog/core/links/new-task-link";
 import type { ScoutLinkService } from "@posthog/core/links/scout-link";
@@ -47,16 +50,43 @@ import type { SuspensionService } from "@posthog/workspace-server/services/suspe
 import type { WorkspaceService } from "@posthog/workspace-server/services/workspace/workspace";
 import { initializeDeepLinks, registerDeepLinkHandlers } from "./deep-links";
 import { container } from "./di/container";
-import { MAIN_TOKENS } from "./di/tokens";
+import {
+  APP_LIFECYCLE_SERVICE,
+  APPROVAL_LINK_SERVICE,
+  AUTH_SERVICE,
+  CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE,
+  DATABASE_SERVICE,
+  DEV_NETWORK_SERVICE,
+  DISCORD_PRESENCE_SERVICE,
+  EXTERNAL_APPS_SERVICE,
+  FILE_WATCHER_SERVICE,
+  INBOX_LINK_SERVICE,
+  FS_SERVICE as MAIN_FS_SERVICE,
+  NEW_TASK_LINK_SERVICE,
+  POSTHOG_PLUGIN_SERVICE,
+  SCOUT_LINK_SERVICE,
+  TASK_LINK_SERVICE,
+  UPDATES_SERVICE,
+  WORKSPACE_CLIENT,
+  WORKSPACE_SERVER_SERVICE,
+  WORKSPACE_SERVICE,
+} from "./di/tokens";
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
+import type { DevNetworkService } from "./services/dev-network/service";
+import { initDevToolbar } from "./services/dev-toolbar";
 import type { DiscordPresenceService } from "./services/discord-presence/service";
 import {
   focusSessionStore,
   focusWorktreePaths,
 } from "./services/focus/desktop-adapters";
-import type { WorkspaceServerService } from "./services/workspace-server/service";
+import {
+  WorkspaceServerEvent,
+  type WorkspaceServerService,
+  WorkspaceServerStatus,
+} from "./services/workspace-server/service";
 import {
   collectMemorySnapshot,
   flattenMemorySnapshot,
@@ -65,9 +95,12 @@ import { ensureClaudeConfigDir } from "./utils/env";
 import {
   getChromiumLogFilePath,
   getLogFilePath,
+  getNetworkLogFilePath,
   readChromiumLogTail,
 } from "./utils/logger";
 import { isMacosPackagedUnsafeBundleLocation } from "./utils/macos-packaged-install-guard";
+import { installMainFetchLogging } from "./utils/network-fetch-logger";
+import { installRendererNetworkLogging } from "./utils/network-webrequest-logger";
 import { createWindow } from "./window";
 
 type FileWatcherEventsByKind = {
@@ -100,6 +133,19 @@ export class FileWatcherBridge extends TypedEventEmitter<FileWatcherEventsByKind
     if (!sub) return;
     sub.unsubscribe();
     this.subs.delete(repoPath);
+  }
+
+  /**
+   * Tear down and re-create every active watch. The workspace-server child
+   * respawns on a new port after a crash; the old SSE subscriptions keep
+   * retrying the dead port forever, so the boot wiring calls this when the
+   * server reports ready again.
+   */
+  resubscribeAll(): void {
+    for (const repoPath of [...this.subs.keys()]) {
+      this.stopWatching(repoPath);
+      this.startWatching(repoPath);
+    }
   }
 }
 
@@ -218,28 +264,33 @@ app.on("child-process-gone", (_event, details) => {
 });
 
 async function initializeServices(): Promise<void> {
-  container.get<DatabaseService>(MAIN_TOKENS.DatabaseService);
+  initDevToolbar();
+
+  container.get<DatabaseService>(DATABASE_SERVICE);
   container.get<OAuthService>(OAUTH_SERVICE);
-  const authService = container.get<AuthService>(MAIN_TOKENS.AuthService);
+  const authService = container.get<AuthService>(AUTH_SERVICE);
   container.get<NotificationService>(NOTIFICATION_SERVICE);
-  container.get<UpdatesService>(MAIN_TOKENS.UpdatesService);
-  container.get<TaskLinkService>(MAIN_TOKENS.TaskLinkService);
-  container.get<InboxLinkService>(MAIN_TOKENS.InboxLinkService);
-  container.get<ScoutLinkService>(MAIN_TOKENS.ScoutLinkService);
-  container.get<NewTaskLinkService>(MAIN_TOKENS.NewTaskLinkService);
+  container.get<UpdatesService>(UPDATES_SERVICE);
+  container.get<TaskLinkService>(TASK_LINK_SERVICE);
+  container.get<InboxLinkService>(INBOX_LINK_SERVICE);
+  container.get<ScoutLinkService>(SCOUT_LINK_SERVICE);
+  container.get<NewTaskLinkService>(NEW_TASK_LINK_SERVICE);
+  container.get<ApprovalLinkService>(APPROVAL_LINK_SERVICE);
+  // Eagerly resolved so their constructors register the `canvas` / `channel`
+  // deep-link handlers at boot, before any link arrives.
+  container.get<CanvasLinkService>(CANVAS_LINK_SERVICE);
+  container.get<ChannelLinkService>(CHANNEL_LINK_SERVICE);
   container.get<GitHubIntegrationService>(GITHUB_INTEGRATION_SERVICE);
   container.get<SlackIntegrationService>(SLACK_INTEGRATION_SERVICE);
-  container.get<ExternalAppsService>(MAIN_TOKENS.ExternalAppsService);
-  container.get<PosthogPluginService>(MAIN_TOKENS.PosthogPluginService);
+  container.get<ExternalAppsService>(EXTERNAL_APPS_SERVICE);
+  container.get<PosthogPluginService>(POSTHOG_PLUGIN_SERVICE);
   // Eagerly start the Discord presence service so it connects when enabled.
-  container.get<DiscordPresenceService>(MAIN_TOKENS.DiscordPresenceService);
+  container.get<DiscordPresenceService>(DISCORD_PRESENCE_SERVICE);
 
   await authService.initialize();
 
   // Initialize workspace branch watcher for live branch rename detection
-  const workspaceService = container.get<WorkspaceService>(
-    MAIN_TOKENS.WorkspaceService,
-  );
+  const workspaceService = container.get<WorkspaceService>(WORKSPACE_SERVICE);
   workspaceService.initBranchWatcher();
 
   const suspensionService =
@@ -259,6 +310,11 @@ registerDeepLinkHandlers();
 
 // Initialize PostHog analytics
 posthogNodeAnalytics.initialize();
+
+// Must wrap fetch before DevNetworkService.install() (post-ready, dev toolbar)
+// so it stays the innermost layer; otherwise toggling dev mode off restores
+// native fetch and silently drops network.log capture.
+installMainFetchLogging();
 
 app.whenReady().then(async () => {
   if (
@@ -301,25 +357,39 @@ app.whenReady().then(async () => {
     ].join(" | "),
   );
   log.info(
-    `Logs: main=${getLogFilePath()} chromium=${getChromiumLogFilePath() ?? "(disabled)"}`,
+    `Logs: main=${getLogFilePath()} chromium=${getChromiumLogFilePath() ?? "(disabled)"} network=${getNetworkLogFilePath()}`,
   );
   ensureClaudeConfigDir();
   registerMcpSandboxProtocol();
+  installRendererNetworkLogging(
+    session.fromPartition("persist:main").webRequest,
+    container.get<DevNetworkService>(DEV_NETWORK_SERVICE),
+  );
   createWindow();
 
   const wsServer = container.get<WorkspaceServerService>(
-    MAIN_TOKENS.WorkspaceServerService,
+    WORKSPACE_SERVER_SERVICE,
   );
-  const connection = await wsServer.start();
-  const workspaceClient = createWorkspaceClient(connection);
-  container.bind(MAIN_TOKENS.WorkspaceClient).toConstantValue(workspaceClient);
+  await wsServer.start();
+  // The workspace-server child respawns on a new port/secret after a crash;
+  // a reconnecting client follows the current connection so main-process
+  // callers don't keep hitting the dead port for the rest of the session.
+  const workspaceClient = createReconnectingWorkspaceClient(() =>
+    wsServer.getConnection(),
+  );
+  container.bind(WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(GIT_WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(CONNECTIVITY_CLIENT).toConstantValue(workspaceClient);
   container.bind(ENVIRONMENT_CLIENT).toConstantValue(workspaceClient);
   const fileWatcherBridge = new FileWatcherBridge(workspaceClient);
-  container
-    .bind(MAIN_TOKENS.FileWatcherService)
-    .toConstantValue(fileWatcherBridge);
+  // Re-establish live watches after a workspace-server respawn — the old SSE
+  // subscriptions keep retrying the dead port and never recover on their own.
+  wsServer.on(WorkspaceServerEvent.StatusChanged, ({ status }) => {
+    if (status === WorkspaceServerStatus.Ready) {
+      fileWatcherBridge.resubscribeAll();
+    }
+  });
+  container.bind(FILE_WATCHER_SERVICE).toConstantValue(fileWatcherBridge);
   container.bind(FILE_WATCHER_CONTROL).toConstantValue(fileWatcherBridge);
   container.bind(FOCUS_WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(FOCUS_SESSION_STORE).toConstantValue(focusSessionStore);
@@ -356,26 +426,45 @@ app.whenReady().then(async () => {
       });
     },
   };
-  container.bind(MAIN_TOKENS.FsService).toConstantValue(fsCapability);
-  container.bind(FS_SERVICE).toService(MAIN_TOKENS.FsService);
+  container.bind(MAIN_FS_SERVICE).toConstantValue(fsCapability);
+  container.bind(FS_SERVICE).toService(MAIN_FS_SERVICE);
   await initializeServices();
   initializeDeepLinks();
+
+  if (process.env.POSTHOG_E2E_UPDATE_FEED) {
+    const updates = container.get<UpdatesService>(UPDATES_SERVICE);
+    Object.assign(globalThis, {
+      __e2eUpdates: {
+        check: () => updates.checkForUpdates(),
+        download: () => updates.requestDownload(),
+        install: () => updates.installUpdate(),
+        status: () => updates.getStatus(),
+      },
+    });
+    log.info("E2E update hook installed on globalThis.__e2eUpdates");
+  }
 });
 
 app.on("window-all-closed", () => {
   app.quit();
 });
 
+const teardownContainer = async (): Promise<void> => {
+  try {
+    await container.unbindAll();
+  } catch (error) {
+    log.warn("Failed to unbind container", error);
+  }
+};
+
 app.on("before-quit", async (event) => {
   try {
-    container
-      .get<WorkspaceServerService>(MAIN_TOKENS.WorkspaceServerService)
-      .stop();
+    container.get<WorkspaceServerService>(WORKSPACE_SERVER_SERVICE).stop();
   } catch {}
   let lifecycleService: AppLifecycleService;
   try {
     lifecycleService = container.get<AppLifecycleService>(
-      MAIN_TOKENS.AppLifecycleService,
+      APP_LIFECYCLE_SERVICE,
     );
   } catch {
     // Container already torn down (e.g. second quit during shutdown), let Electron quit
@@ -395,20 +484,21 @@ app.on("before-quit", async (event) => {
 
   event.preventDefault();
 
-  await lifecycleService.gracefulExit();
+  await lifecycleService.gracefulExit(teardownContainer);
 });
 
 const handleShutdownSignal = async (signal: string) => {
   log.info(`Received ${signal}, starting shutdown`);
   try {
     const lifecycleService = container.get<AppLifecycleService>(
-      MAIN_TOKENS.AppLifecycleService,
+      APP_LIFECYCLE_SERVICE,
     );
     if (lifecycleService.isShuttingDown) {
       log.warn(`${signal} received during shutdown, forcing exit`);
       process.exit(1);
     }
     await lifecycleService.shutdown();
+    await teardownContainer();
   } catch (_err) {
     // Container torn down or shutdown failed
   }
@@ -425,9 +515,21 @@ if (process.platform !== "win32") {
   process.on("SIGHUP", () => handleShutdownSignal("SIGHUP"));
 }
 
+// A deliberate Ctrl+C during an interactive prompt makes Node's readline
+// SIGINT trap reject the pending prompt with an AbortError (code ABORT_ERR).
+// It is user-initiated, not a crash, so don't report it as an uncaught error.
+const isAbortError = (error: unknown): boolean =>
+  error instanceof Error &&
+  (error.name === "AbortError" ||
+    (error as NodeJS.ErrnoException).code === "ABORT_ERR");
+
 process.on("uncaughtException", (error) => {
   if (error.message === "write EIO") {
     log.transports.console.level = false;
+    return;
+  }
+  if (isAbortError(error)) {
+    log.debug("Ignoring user-initiated abort", error);
     return;
   }
   log.error("Uncaught exception", error);
@@ -438,6 +540,10 @@ process.on("uncaughtException", (error) => {
 });
 
 process.on("unhandledRejection", (reason) => {
+  if (isAbortError(reason)) {
+    log.debug("Ignoring user-initiated abort", reason);
+    return;
+  }
   log.error("Unhandled rejection", reason);
   const error = reason instanceof Error ? reason : new Error(String(reason));
   posthogNodeAnalytics.captureException(error, {

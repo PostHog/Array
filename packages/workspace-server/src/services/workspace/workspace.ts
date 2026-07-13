@@ -7,6 +7,7 @@ import {
 } from "@posthog/di/logger";
 import { createGitClient } from "@posthog/git/client";
 import {
+  anyBranchRefExists,
   branchExists,
   getCurrentBranch,
   getDefaultBranch,
@@ -27,6 +28,7 @@ import {
 import { ANALYTICS_EVENTS, TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
+  DATABASE_SERVICE,
   REPOSITORY_REPOSITORY,
   WORKSPACE_REPOSITORY,
   WORKTREE_REPOSITORY,
@@ -34,6 +36,11 @@ import {
 import type { IRepositoryRepository } from "../../db/repositories/repository-repository";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
 import type { IWorktreeRepository } from "../../db/repositories/worktree-repository";
+import type { DatabaseService } from "../../db/service";
+import {
+  IMPORTED_SESSION_CLEANER,
+  type ImportedSessionCleaner,
+} from "../claude-cli-sessions/identifiers";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import { getBranchFromPath, hasAnyFiles } from "../repo-fs-query/repo-fs-query";
@@ -41,6 +48,7 @@ import { SUSPENSION_SERVICE } from "../suspension/identifiers";
 import type { SuspensionService } from "../suspension/suspension";
 import {
   deleteWorktree as deleteGitWorktree,
+  listLinkedWorktrees,
   listTwigWorktrees,
   resolveLocalWorktreePath,
 } from "../worktree-query/worktree-query";
@@ -119,6 +127,8 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
   private readonly log: ScopedLogger;
 
   constructor(
+    @inject(DATABASE_SERVICE)
+    private readonly databaseService: DatabaseService,
     @inject(WORKSPACE_AGENT)
     private readonly agent: WorkspaceAgent,
     @inject(PROCESS_TRACKING_SERVICE)
@@ -141,6 +151,8 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     private readonly workspaceSettings: IWorkspaceSettings,
     @inject(ANALYTICS_SERVICE)
     private readonly analytics: IAnalytics,
+    @inject(IMPORTED_SESSION_CLEANER)
+    private readonly importedSessionCleaner: ImportedSessionCleaner,
     @inject(ROOT_LOGGER)
     logger: RootLogger,
   ) {
@@ -150,6 +162,8 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
   private creatingWorkspaces = new Map<string, Promise<WorkspaceInfo>>();
   private branchWatcherInitialized = false;
+  /** Tasks with an in-flight staleness check, so reads don't stack git calls. */
+  private staleLinkChecks = new Set<string>();
 
   private findTaskAssociation(taskId: string): TaskAssociation | null {
     const workspace = this.workspaceRepo.findByTaskId(taskId);
@@ -319,6 +333,12 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
   }): Promise<void> {
     if (!branchName) return;
 
+    // This runs from a fire-and-forget emit on the agent side, so it can land
+    // during the startup/teardown window when the DB is closed or not yet
+    // initialized. Bail gracefully — branch association is best-effort — rather
+    // than letting the synchronous repo read throw into an unhandled rejection.
+    if (!this.databaseService.isInitialized()) return;
+
     const dbRow = this.workspaceRepo.findByTaskId(taskId);
     if (!dbRow || dbRow.mode !== "local") return;
     if (!dbRow.repositoryId) return;
@@ -377,7 +397,10 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     this.log.info("Linked branch to task", { taskId, branchName, source });
   }
 
-  public unlinkBranch(taskId: string, source?: "agent" | "user"): void {
+  public unlinkBranch(
+    taskId: string,
+    source?: "agent" | "user" | "auto",
+  ): void {
     this.workspaceRepo.updateLinkedBranch(taskId, null);
     this.emit(WorkspaceServiceEvent.LinkedBranchChanged, {
       taskId,
@@ -388,6 +411,43 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       source: source ?? "unknown",
     });
     this.log.info("Unlinked branch from task", { taskId, source });
+  }
+
+  /**
+   * Drops a linked branch whose branch no longer exists anywhere — no local
+   * branch and no remote-tracking ref (the usual end state after a PR merge
+   * plus branch deletion). Such a link can never match the working tree
+   * again, so keeping it only produces wrong-branch warnings on every send.
+   * Returns true when the link was removed.
+   */
+  private async unlinkStaleLinkedBranch(
+    taskId: string,
+    linkedBranch: string,
+    repoPath: string,
+  ): Promise<boolean> {
+    if (this.staleLinkChecks.has(taskId)) return false;
+    this.staleLinkChecks.add(taskId);
+    try {
+      if (await anyBranchRefExists(repoPath, linkedBranch)) return false;
+      // Re-read: the link may have changed while the git check ran.
+      const row = this.workspaceRepo.findByTaskId(taskId);
+      if ((row?.linkedBranch ?? null) !== linkedBranch) return false;
+      this.log.info("Linked branch has no remaining refs, unlinking", {
+        taskId,
+        linkedBranch,
+      });
+      this.unlinkBranch(taskId, "auto");
+      return true;
+    } catch (error) {
+      this.log.warn("Failed to check linked branch staleness", {
+        taskId,
+        linkedBranch,
+        error,
+      });
+      return false;
+    } finally {
+      this.staleLinkChecks.delete(taskId);
+    }
   }
 
   private getLocalWorktreePathIfExists(
@@ -434,28 +494,102 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
   ): Promise<CheckWorktreeBranchOutput> {
     const { mainRepoPath, branch } = options;
 
-    const defaultBranch = await getDefaultBranch(mainRepoPath, {
-      abortSignal: signal,
-    }).catch(() =>
-      getCurrentBranch(mainRepoPath, { abortSignal: signal }).then(
-        (b) => b ?? "main",
+    const [existingWorktree, defaultBranch] = await Promise.all([
+      this.findExistingWorktreeForBranch(mainRepoPath, branch),
+      getDefaultBranch(mainRepoPath, { abortSignal: signal }).catch(() =>
+        getCurrentBranch(mainRepoPath, { abortSignal: signal }).then(
+          (b) => b ?? "main",
+        ),
       ),
-    );
+    ]);
+    // Trunk intentionally supports many coexisting detached worktrees, so never
+    // offer to reuse an existing worktree for it; a trunk task always gets its
+    // own.
     if (branch === defaultBranch) {
-      return { status: "trunk" };
+      return {
+        status: "trunk",
+        existingWorktreePath: null,
+        existingWorktreeTaskId: null,
+      };
+    }
+
+    // Reuse is only offered for an *unused* worktree. If a task already holds
+    // the worktree on this branch, report that task instead so the renderer can
+    // block the duplicate and point the user at it.
+    let reuseFields: {
+      existingWorktreePath: string | null;
+      existingWorktreeTaskId: string | null;
+    } = { existingWorktreePath: null, existingWorktreeTaskId: null };
+    if (existingWorktree) {
+      const [occupant] = this.getWorktreeTasks(existingWorktree.worktreePath);
+      reuseFields = occupant
+        ? {
+            existingWorktreePath: null,
+            existingWorktreeTaskId: occupant.taskId,
+          }
+        : {
+            existingWorktreePath: existingWorktree.worktreePath,
+            existingWorktreeTaskId: null,
+          };
     }
 
     if (await branchExists(mainRepoPath, branch, { abortSignal: signal })) {
-      return { status: "local" };
+      return { status: "local", ...reuseFields };
     }
 
     if (
       await remoteBranchExists(mainRepoPath, branch, { abortSignal: signal })
     ) {
-      return { status: "remote-only" };
+      return { status: "remote-only", ...reuseFields };
     }
 
-    return { status: "missing" };
+    return { status: "missing", ...reuseFields };
+  }
+
+  /**
+   * Finds a worktree already checked out on `branch` in any location, returning
+   * it as a `WorktreeInfo` ready to reuse, or null when none exists. Worktrees
+   * outside the managed base path qualify too: the stored `path` column is the
+   * source of truth for a task's worktree, so an externally-created worktree
+   * round-trips just like a managed one.
+   */
+  private async findExistingWorktreeForBranch(
+    mainRepoPath: string,
+    branch: string,
+  ): Promise<WorktreeInfo | null> {
+    const linkedWorktrees = await listLinkedWorktrees(mainRepoPath);
+    const match = linkedWorktrees.find((wt) => wt.branch === branch);
+    if (!match) return null;
+
+    // `worktreeName` is a cosmetic label only; `worktreePath` is authoritative.
+    // Recover the name layout-aware for managed worktrees: new layout is
+    // `<base>/<name>/<repo>` (name is the parent dir), legacy is
+    // `<base>/<repo>/<name>` (name is the final segment). For an external
+    // worktree neither layout holds, so the final segment is a sensible label.
+    const repoName = path.basename(mainRepoPath);
+    const finalSegment = path.basename(match.worktreePath);
+    const worktreeName =
+      finalSegment === repoName
+        ? path.basename(path.dirname(match.worktreePath))
+        : finalSegment;
+
+    // baseBranch/createdAt are unknown for an already-existing worktree; mirror
+    // WorktreeManager.listWorktrees() and leave them empty rather than fabricate.
+    return {
+      worktreePath: match.worktreePath,
+      worktreeName,
+      branchName: branch,
+      baseBranch: "",
+      createdAt: "",
+    };
+  }
+
+  get pendingCreationCount(): number {
+    return this.creatingWorkspaces.size;
+  }
+
+  async waitForPendingCreations(): Promise<void> {
+    await Promise.allSettled([...this.creatingWorkspaces.values()]);
   }
 
   async createWorkspace(options: CreateWorkspaceInput): Promise<WorkspaceInfo> {
@@ -468,11 +602,22 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       return existingPromise;
     }
 
+    const startedAt = Date.now();
     const promise = this.doCreateWorkspace(options);
     this.creatingWorkspaces.set(options.taskId, promise);
 
     try {
-      return await promise;
+      const workspaceInfo = await promise;
+      this.log.info(
+        `Workspace ready for task ${options.taskId} after ${Date.now() - startedAt}ms (mode: ${workspaceInfo.mode})`,
+      );
+      return workspaceInfo;
+    } catch (error) {
+      this.log.error(
+        `Workspace creation failed for task ${options.taskId} after ${Date.now() - startedAt}ms`,
+        error,
+      );
+      throw error;
     } finally {
       this.creatingWorkspaces.delete(options.taskId);
     }
@@ -489,6 +634,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       branch,
       useExistingBranch,
       allowRemoteBranchCheckout,
+      reuseExistingWorktree,
     } = options;
 
     const existingWorkspace = await this.getWorkspaceInfo(taskId);
@@ -555,6 +701,9 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         repositoryId,
         mode: "local",
       });
+      this.log.info(
+        `Workspace record persisted for task ${taskId} (mode: local)`,
+      );
 
       const localBranch = await getBranchFromPath(folderPath);
       return {
@@ -566,12 +715,11 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       };
     }
 
-    await this.suspensionService.suspendLeastRecentIfOverLimit();
-
     const worktreeBasePath = this.workspaceSettings.getWorktreeLocation();
     const worktreeManager = new WorktreeManager({
       mainRepoPath,
       worktreeBasePath,
+      logger: this.log,
     });
     let worktree: WorktreeInfo;
 
@@ -582,11 +730,35 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       const selectedBranch = branch ?? defaultBranch;
       const isTrunkSelected = selectedBranch === defaultBranch;
 
+      // Renderer provisioning output is dropped when no view subscribes; mirror it into the main log.
       const onOutput = (data: string) => {
         this.provisioning.emitOutput(taskId, data);
+        const trimmed = data.trim();
+        if (trimmed) {
+          this.log.info(`[worktree:${taskId}] ${trimmed}`);
+        }
       };
 
-      if (isTrunkSelected) {
+      const existingWorktree = reuseExistingWorktree
+        ? await this.findExistingWorktreeForBranch(mainRepoPath, selectedBranch)
+        : null;
+
+      // Reuse only an unused worktree. The renderer already gates on this, but
+      // re-check here so a lost race (the worktree got claimed between preflight
+      // and now) fails the saga step rather than sharing one worktree across two
+      // tasks.
+      if (existingWorktree) {
+        const [occupant] = this.getWorktreeTasks(existingWorktree.worktreePath);
+        if (occupant) {
+          throw new Error(
+            `Worktree at ${existingWorktree.worktreePath} is already used by task ${occupant.taskId}`,
+          );
+        }
+        this.log.info(
+          `Reusing existing worktree for branch ${selectedBranch}: ${existingWorktree.worktreePath}`,
+        );
+        worktree = existingWorktree;
+      } else if (isTrunkSelected) {
         this.log.info(
           `Trunk branch selected (${defaultBranch}), creating detached worktree`,
         );
@@ -617,15 +789,13 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
               ? checkoutError.message
               : String(checkoutError);
           if (errorMessage.includes("is already used by worktree")) {
-            this.log.info(
-              `Branch ${selectedBranch} is occupied, falling back to detached worktree`,
-            );
-            worktree = await worktreeManager.createWorktree({
-              baseBranch: selectedBranch,
-              onOutput,
-            });
-            this.log.info(
-              `Created detached worktree from occupied branch: ${worktree.worktreeName} at ${worktree.worktreePath}`,
+            // The branch already has a worktree. Reuse is handled upfront
+            // (checkWorktreeBranch + reuseExistingWorktree); reaching here means
+            // that path was bypassed (e.g. the preflight check errored). Fail
+            // loudly instead of creating a detached duplicate that lands on a
+            // detached HEAD rather than the requested branch.
+            throw new Error(
+              `Branch ${selectedBranch} already has a worktree checked out`,
             );
           } else if (
             allowRemoteBranchCheckout &&
@@ -668,7 +838,8 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       }
     } catch (error) {
       this.log.error(`Failed to create worktree for task ${taskId}:`, error);
-      throw new Error(`Failed to create worktree: ${String(error)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to create worktree: ${message}`);
     }
 
     const createdWorkspace = this.workspaceRepo.create({
@@ -683,6 +854,13 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       path: worktree.worktreePath,
     });
 
+    // Enforce the worktree cap after the new workspace exists rather than
+    // before: suspending the least-recent task checkpoints and deletes a
+    // potentially multi-gigabyte worktree, which must not block this creation.
+    this.suspensionService.suspendLeastRecentIfOverLimit().catch((error) => {
+      this.log.error("Failed to auto-suspend over-limit worktrees:", error);
+    });
+
     return {
       taskId,
       mode,
@@ -694,6 +872,14 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
   async deleteWorkspace(taskId: string, mainRepoPath: string): Promise<void> {
     this.log.info(`Deleting workspace for task ${taskId}`);
+
+    // Drop any imported CLI snapshot first, before the early returns below.
+    // Best-effort: a cleanup failure must not block deleting the task.
+    await this.importedSessionCleaner
+      .deleteImportForTask(taskId)
+      .catch((error) => {
+        this.log.warn("Failed to clean up imported session", { taskId, error });
+      });
 
     const association = this.findTaskAssociation(taskId);
     if (!association) {
@@ -898,6 +1084,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       baseBranch: null,
       linkedBranch: null,
       createdAt: new Date().toISOString(),
+      isScratch: true,
     };
   }
 
@@ -958,7 +1145,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     }
 
     const dbRow = this.workspaceRepo.findByTaskId(taskId);
-    const linkedBranch = dbRow?.linkedBranch ?? null;
+    let linkedBranch = dbRow?.linkedBranch ?? null;
 
     if (assoc.mode === "cloud") {
       return {
@@ -992,6 +1179,21 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         await this.getLocalWorktreePathIfExists(folderPath);
       const branchPath = localWorktreePath ?? folderPath;
       branchName = await getBranchFromPath(branchPath);
+    }
+
+    // Only a mismatched link can be stale: being on the linked branch proves
+    // it exists, and without a current branch nothing warns anyway.
+    if (
+      linkedBranch &&
+      branchName &&
+      linkedBranch !== branchName &&
+      (await this.unlinkStaleLinkedBranch(
+        taskId,
+        linkedBranch,
+        worktreePath ?? folderPath,
+      ))
+    ) {
+      linkedBranch = null;
     }
 
     return {
@@ -1157,6 +1359,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     const worktreeManager = new WorktreeManager({
       mainRepoPath,
       worktreeBasePath,
+      logger: this.log,
     });
 
     let worktree: WorktreeInfo;
@@ -1182,7 +1385,8 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         `Failed to create worktree for promoted task ${taskId}:`,
         error,
       );
-      throw new Error(`Failed to promote task to worktree: ${String(error)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to promote task to worktree: ${message}`);
     }
 
     const workspace = this.workspaceRepo.findByTaskId(taskId);
@@ -1215,6 +1419,10 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       .map((a) => ({ taskId: a.taskId }));
   }
 
+  // Paths are compared verbatim against the stored `path` column, which holds
+  // git's reported worktree path as-is (the same value `listLinkedWorktrees`
+  // returns). Don't normalize one side only (e.g. add `path.resolve` here but
+  // not where the path is stored) or occupancy matching silently breaks.
   getWorktreeTasks(worktreePath: string): Array<{ taskId: string }> {
     const associations = this.getAllTaskAssociations();
     const result: Array<{ taskId: string }> = [];
@@ -1249,6 +1457,19 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       branch: wt.branch,
       taskIds: this.getWorktreeTasks(wt.worktreePath).map((t) => t.taskId),
     }));
+  }
+
+  /**
+   * Every other checkout of the repo `repoPath` belongs to — the main clone
+   * and all linked worktrees (app-managed or user-created), each with its
+   * checked-out branch. Unlike listGitWorktrees this is plain
+   * `git worktree list` scope, minus `repoPath` itself.
+   */
+  async listRepoCheckouts(
+    repoPath: string,
+  ): Promise<Array<{ path: string; branch: string | null }>> {
+    const others = await listLinkedWorktrees(repoPath);
+    return others.map((wt) => ({ path: wt.worktreePath, branch: wt.branch }));
   }
 
   async deleteWorktree(

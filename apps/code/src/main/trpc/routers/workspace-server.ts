@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { container } from "../../di/container";
-import { MAIN_TOKENS } from "../../di/tokens";
+import { WORKSPACE_SERVER_SERVICE } from "../../di/tokens";
 import {
   WorkspaceServerEvent,
   type WorkspaceServerService,
@@ -13,12 +13,16 @@ const connectionSchema = z.object({
 });
 
 const getService = () =>
-  container.get<WorkspaceServerService>(MAIN_TOKENS.WorkspaceServerService);
+  container.get<WorkspaceServerService>(WORKSPACE_SERVER_SERVICE);
 
 export const workspaceServerRouter = router({
   getConnection: publicProcedure.output(connectionSchema).query(async () => {
     const service = getService();
     return service.getConnection() ?? service.start();
+  }),
+
+  restart: publicProcedure.mutation(async () => {
+    await getService().restart();
   }),
 
   onConnectionLost: publicProcedure.subscription(async function* (opts) {
@@ -28,6 +32,26 @@ export const workspaceServerRouter = router({
     });
     for await (const data of iterable) {
       yield data;
+    }
+  }),
+
+  onStatusChanged: publicProcedure.subscription(async function* (opts) {
+    const service = getService();
+    const iterable = service.toIterable(WorkspaceServerEvent.StatusChanged, {
+      signal: opts.signal,
+    });
+    // toIterable attaches its listener on the first pull. Prime it before
+    // reading the snapshot so a transition in between is buffered, not dropped.
+    const firstEvent = iterable.next();
+    yield service.getStatusSnapshot();
+    try {
+      let result = await firstEvent;
+      while (!result.done) {
+        yield result.value;
+        result = await iterable.next();
+      }
+    } finally {
+      await iterable.return?.(undefined);
     }
   }),
 });

@@ -14,7 +14,12 @@ import type {
   StoredLogEntry,
   UserShellExecuteParams,
 } from "@posthog/shared";
-import { isJsonRpcNotification, isJsonRpcRequest } from "@posthog/shared";
+import {
+  IMPORTED_USER_PROMPT_META_KEY,
+  isJsonRpcNotification,
+  isJsonRpcRequest,
+} from "@posthog/shared";
+import { skillTagsToSlashCommands } from "../message-editor/skillTags";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
 import { extractPromptDisplayContent } from "./promptContent";
 
@@ -22,11 +27,47 @@ import { extractPromptDisplayContent } from "./promptContent";
  * Convert a stored log entry to an ACP message.
  */
 function storedEntryToAcpMessage(entry: StoredLogEntry): AcpMessage {
-  return {
+  const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now();
+  const promoted = promoteImportedUserPrompt(entry, ts);
+  // Freeze at creation: events assigned via setSession bypass the store's
+  // per-append freeze, so this keeps them read-only once stored.
+  if (promoted) return Object.freeze(promoted);
+  return Object.freeze({
     type: "acp_message",
-    ts: entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now(),
+    ts,
     message: (entry.notification ?? {}) as JsonRpcMessage,
-  };
+  });
+}
+
+/**
+ * A typed user prompt replayed from an imported Claude Code session arrives as
+ * a `user_message_chunk` tagged with `_meta.importedUserPrompt`. The renderer
+ * ignores raw user_message_chunks (live, user turns render from session/prompt
+ * requests), so promote the tagged ones into a session/prompt user event. Only
+ * affects imported sessions; normal logs carry no such marker.
+ */
+function promoteImportedUserPrompt(
+  entry: StoredLogEntry,
+  ts: number,
+): AcpMessage | null {
+  const notification = entry.notification as
+    | { method?: string; params?: { update?: Record<string, unknown> } }
+    | undefined;
+  if (notification?.method !== "session/update") return null;
+  const update = notification.params?.update;
+  const meta = update?._meta as Record<string, unknown> | undefined;
+  if (
+    !update ||
+    update.sessionUpdate !== "user_message_chunk" ||
+    meta?.[IMPORTED_USER_PROMPT_META_KEY] !== true
+  ) {
+    return null;
+  }
+  const content = update.content as
+    | { type?: string; text?: string }
+    | undefined;
+  if (content?.type !== "text" || !content.text) return null;
+  return createUserMessageEvent(content.text, ts);
 }
 
 /**
@@ -130,6 +171,94 @@ export function shellExecutesToContextBlocks(
  * Convert stored log entries to ACP messages.
  * Optionally prepends a user message with the task description.
  */
+function toolCallUpdateOf(
+  event: AcpMessage,
+): (Record<string, unknown> & { toolCallId: string }) | undefined {
+  const msg = event.message;
+  if (!isJsonRpcNotification(msg) || msg.method !== "session/update") {
+    return undefined;
+  }
+  const update = (msg.params as SessionNotification | undefined)?.update as
+    | { sessionUpdate?: string; toolCallId?: unknown }
+    | undefined;
+  if (update?.sessionUpdate !== "tool_call_update") return undefined;
+  if (typeof update.toolCallId !== "string") return undefined;
+  return update as Record<string, unknown> & { toolCallId: string };
+}
+
+/** Rebuild a (frozen) tool_call_update event around a replacement update. */
+function withToolCallUpdate(
+  event: AcpMessage,
+  update: Record<string, unknown>,
+): AcpMessage {
+  const msg = event.message as { params?: SessionNotification };
+  return Object.freeze({
+    ...event,
+    message: {
+      ...msg,
+      params: { ...msg.params, update },
+    } as JsonRpcMessage,
+  });
+}
+
+/**
+ * Collapse superseded `tool_call_update` snapshots into one merged update per
+ * `toolCallId`, kept at the last update's position. Agents re-send the full
+ * accumulated tool output on every update, so a long-running tool leaves
+ * thousands of near-identical growing snapshots in a loaded transcript; one
+ * 9k-update tool run carried ~312MB of tool content of which the merged
+ * result is ~3MB.
+ *
+ * Updates are merged (shallow, later fields win) rather than dropped because
+ * they carry different fields at different times — streamed `rawInput`
+ * snapshots, input-derived title/content, edit diffs, then terminal
+ * status/rawOutput — and the conversation reducer `Object.assign`s each one
+ * into the tool call. Merging here reproduces exactly the state a full replay
+ * would build; keeping only the last update would lose any field it doesn't
+ * re-send (e.g. `rawInput` for every streamed call).
+ */
+export function collapseSupersededToolCallUpdates(
+  events: AcpMessage[],
+): AcpMessage[] {
+  const firstIndexById = new Map<string, number>();
+  const lastIndexById = new Map<string, number>();
+  const mergedById = new Map<string, Record<string, unknown>>();
+  for (let i = 0; i < events.length; i++) {
+    const update = toolCallUpdateOf(events[i]);
+    if (!update) continue;
+    lastIndexById.set(update.toolCallId, i);
+    const merged = mergedById.get(update.toolCallId);
+    if (merged) {
+      Object.assign(merged, update);
+    } else {
+      firstIndexById.set(update.toolCallId, i);
+      mergedById.set(update.toolCallId, { ...update });
+    }
+  }
+  if (lastIndexById.size === 0) return events;
+
+  const collapsed: AcpMessage[] = [];
+  for (let i = 0; i < events.length; i++) {
+    const update = toolCallUpdateOf(events[i]);
+    if (update) {
+      const id = update.toolCallId;
+      if (lastIndexById.get(id) !== i) continue;
+      // A call with a single update needs no synthetic merge.
+      if (firstIndexById.get(id) === i) {
+        collapsed.push(events[i]);
+      } else {
+        const merged = mergedById.get(id);
+        collapsed.push(
+          merged ? withToolCallUpdate(events[i], merged) : events[i],
+        );
+      }
+      continue;
+    }
+    collapsed.push(events[i]);
+  }
+  return collapsed;
+}
+
 export function convertStoredEntriesToEvents(
   entries: StoredLogEntry[],
   taskDescription?: string,
@@ -147,7 +276,7 @@ export function convertStoredEntriesToEvents(
     events.push(storedEntryToAcpMessage(entry));
   }
 
-  return events;
+  return collapseSupersededToolCallUpdates(events);
 }
 
 /**
@@ -208,8 +337,8 @@ export function extractUserPromptsFromEvents(events: AcpMessage[]): string[] {
 }
 
 export function extractPromptText(prompt: string | ContentBlock[]): string {
-  if (typeof prompt === "string") return prompt;
-  return extractPromptDisplayContent(prompt).text;
+  if (typeof prompt === "string") return skillTagsToSlashCommands(prompt);
+  return skillTagsToSlashCommands(extractPromptDisplayContent(prompt).text);
 }
 
 /**
@@ -218,7 +347,15 @@ export function extractPromptText(prompt: string | ContentBlock[]): string {
 export function normalizePromptToBlocks(
   prompt: string | ContentBlock[],
 ): ContentBlock[] {
-  return typeof prompt === "string" ? [{ type: "text", text: prompt }] : prompt;
+  if (typeof prompt === "string") {
+    return [{ type: "text", text: skillTagsToSlashCommands(prompt) }];
+  }
+
+  return prompt.map((block) =>
+    block.type === "text"
+      ? { ...block, text: skillTagsToSlashCommands(block.text) }
+      : block,
+  );
 }
 
 export { isFatalSessionError, isRateLimitError } from "@posthog/shared";

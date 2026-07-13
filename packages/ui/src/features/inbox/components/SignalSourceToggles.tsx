@@ -4,7 +4,6 @@ import {
   BugIcon,
   ChatsIcon,
   CircleNotchIcon,
-  CompassIcon,
   GithubLogoIcon,
   KanbanIcon,
   TicketIcon,
@@ -12,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import type { SignalSourceConfig } from "@posthog/api-client/posthog-client";
 import { Button } from "@posthog/quill";
+import { JiraIcon } from "@posthog/ui/features/inbox/components/utils/JiraIcon";
 import { PgAnalyzeIcon } from "@posthog/ui/features/inbox/components/utils/PgAnalyzeIcon";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Box, Flex, Spinner, Switch, Text, Tooltip } from "@radix-ui/themes";
@@ -20,9 +20,9 @@ import { memo, useCallback } from "react";
 export interface SignalSourceValues {
   session_replay: boolean;
   error_tracking: boolean;
-  signals_scout: boolean;
   github: boolean;
   linear: boolean;
+  jira: boolean;
   zendesk: boolean;
   conversations: boolean;
   pganalyze: boolean;
@@ -292,6 +292,10 @@ export function SignalSourceToggles({
     (checked: boolean) => onToggle("linear", checked),
     [onToggle],
   );
+  const toggleJira = useCallback(
+    (checked: boolean) => onToggle("jira", checked),
+    [onToggle],
+  );
   const toggleZendesk = useCallback(
     (checked: boolean) => onToggle("zendesk", checked),
     [onToggle],
@@ -300,16 +304,13 @@ export function SignalSourceToggles({
     (checked: boolean) => onToggle("conversations", checked),
     [onToggle],
   );
-  const toggleScouts = useCallback(
-    (checked: boolean) => onToggle("signals_scout", checked),
-    [onToggle],
-  );
   const togglePgAnalyze = useCallback(
     (checked: boolean) => onToggle("pganalyze", checked),
     [onToggle],
   );
   const setupGithub = useCallback(() => onSetup?.("github"), [onSetup]);
   const setupLinear = useCallback(() => onSetup?.("linear"), [onSetup]);
+  const setupJira = useCallback(() => onSetup?.("jira"), [onSetup]);
   const setupZendesk = useCallback(() => onSetup?.("zendesk"), [onSetup]);
   const setupPgAnalyze = useCallback(() => onSetup?.("pganalyze"), [onSetup]);
 
@@ -361,18 +362,6 @@ export function SignalSourceToggles({
               ) : undefined
             }
           />
-          <SignalSourceToggleCard
-            icon={<CompassIcon size={20} />}
-            label="Scouts"
-            labelSuffix={<Badge color="orange">Beta</Badge>}
-            description="Scheduled agents that sweep this project and surface findings"
-            checked={value.signals_scout}
-            onCheckedChange={toggleScouts}
-            disabled={disabled}
-            syncStatus={sourceStates?.signals_scout?.syncStatus}
-            docsUrl="https://posthog.com/docs/self-driving"
-            docsLabel="Scouts"
-          />
           {evaluationsUrl && (
             <EvaluationsSection evaluationsUrl={evaluationsUrl} />
           )}
@@ -408,6 +397,18 @@ export function SignalSourceToggles({
             onSetup={setupLinear}
             loading={sourceStates?.linear?.loading}
             syncStatus={sourceStates?.linear?.syncStatus}
+          />
+          <SignalSourceToggleCard
+            icon={<JiraIcon size={20} />}
+            label="Jira"
+            description="Monitor new issues and updates"
+            checked={value.jira}
+            onCheckedChange={toggleJira}
+            disabled={disabled}
+            requiresSetup={sourceStates?.jira?.requiresSetup}
+            onSetup={setupJira}
+            loading={sourceStates?.jira?.loading}
+            syncStatus={sourceStates?.jira?.syncStatus}
           />
           <SignalSourceToggleCard
             icon={<TicketIcon size={20} />}

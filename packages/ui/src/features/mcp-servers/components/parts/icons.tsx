@@ -17,10 +17,12 @@ import IconFigma from "../../../../assets/services/figma.svg";
 import IconFiretiger from "../../../../assets/services/firetiger.svg";
 import IconGitHub from "../../../../assets/services/github.svg";
 import IconGitLab from "../../../../assets/services/gitlab.svg";
+import IconGranola from "../../../../assets/services/granola.svg";
 import IconHex from "../../../../assets/services/hex.svg";
 import IconHubSpot from "../../../../assets/services/hubspot.svg";
 import IconLaunchDarkly from "../../../../assets/services/launchdarkly.png";
 import IconLinear from "../../../../assets/services/linear.svg";
+import IconMem0 from "../../../../assets/services/mem0.svg";
 import IconMonday from "../../../../assets/services/monday.svg";
 import IconNeon from "../../../../assets/services/neon.svg";
 import IconNotion from "../../../../assets/services/notion.svg";
@@ -55,10 +57,12 @@ const BRAND_ICONS: Record<string, string> = {
   firetiger: IconFiretiger,
   github: IconGitHub,
   gitlab: IconGitLab,
+  granola: IconGranola,
   hex: IconHex,
   hubspot: IconHubSpot,
   launchdarkly: IconLaunchDarkly,
   linear: IconLinear,
+  mem0: IconMem0,
   monday: IconMonday,
   neon: IconNeon,
   notion: IconNotion,

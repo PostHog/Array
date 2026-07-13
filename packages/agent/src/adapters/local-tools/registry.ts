@@ -15,6 +15,7 @@ export interface LocalToolCtx {
   /** GitHub token available to the sandbox, if any. */
   token?: string;
   taskId?: string;
+  taskRunId?: string;
   /**
    * Base branch of the task's repo (e.g. "master"); the signed-git tools fall
    * back to origin/HEAD detection when unset.

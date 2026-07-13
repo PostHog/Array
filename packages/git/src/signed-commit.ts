@@ -55,6 +55,8 @@ export interface SignedCommitInput {
 
 export interface SignedCommitResult {
   branch: string;
+  /** Repository the commits were pushed to, as `owner/repo` (from the origin remote). */
+  repository: string;
   /** One entry per chunk; >1 only when the payload was split. */
   commits: { sha: string; url: string }[];
 }
@@ -871,7 +873,7 @@ export async function createSignedCommit(
       (await runGit(["diff", "--cached", "--quiet", "HEAD"], ctx.cwd))
         .exitCode !== 0;
     if (hasStagedChanges) {
-      return { branch, commits: [] };
+      return { branch, repository: repo, commits: [] };
     }
     throw new Error(
       "No staged changes to commit. Stage files with `git add` first (or pass `paths`).",
@@ -895,7 +897,7 @@ export async function createSignedCommit(
   );
 
   await syncLocalCheckout(ctx, branch, newTip);
-  return { branch, commits };
+  return { branch, repository: repo, commits };
 }
 
 /** Splits a raw commit message into a headline and the remaining body */
@@ -1039,7 +1041,7 @@ export async function createSignedRewrite(
     }
     await forceUpdateRef(ctx, repo, branch, expectedHeadOid);
     await syncLocalCheckout(ctx, branch, expectedHeadOid);
-    return { branch, commits };
+    return { branch, repository: repo, commits };
   } finally {
     // The history is already published via the ref move; the scratch ref is just
     // bookkeeping, so a delete failure is non-fatal.

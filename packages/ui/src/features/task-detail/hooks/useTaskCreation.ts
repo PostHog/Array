@@ -11,11 +11,15 @@ import { useService } from "@posthog/di/react";
 import type { HostTrpcClient } from "@posthog/host-router/client";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
+  type Adapter,
   ANALYTICS_EVENTS,
+  PROJECT_BLUEBIRD_FLAG,
   type TaskCreationInput,
   type WorkspaceMode,
 } from "@posthog/shared";
 import type { ExecutionMode, Task } from "@posthog/shared/domain-types";
+import { useTaskChannels } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToTaskPending } from "@posthog/ui/router/navigationBridge";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -26,6 +30,7 @@ import { toast } from "../../../primitives/toast";
 import { track } from "../../../shell/analytics";
 import { logger } from "../../../shell/logger";
 import { pendingTaskPromptStoreApi } from "../../../shell/pendingTaskPromptStore";
+import { titleAttachmentStoreApi } from "../../../shell/titleAttachmentStore";
 import { useAuthStateValue } from "../../auth/store";
 import { assertCloudUsageAvailable } from "../../billing/preflightCloudUsage";
 import { useUsageLimitStore } from "../../billing/usageLimitStore";
@@ -38,10 +43,17 @@ import {
 import { useDraftStore } from "../../message-editor/draftStore";
 import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryStore";
 import type { EditorHandle } from "../../message-editor/types";
-import { useSettingsStore } from "../../settings/settingsStore";
+import { toastError } from "../../notifications/errorDetails";
+import { useProvisioningStore } from "../../provisioning/store";
+import {
+  getEffectiveCustomInstructions,
+  useSettingsStore,
+} from "../../settings/settingsStore";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
+import { useTasks } from "../../tasks/useTasks";
 import { useTourStore } from "../../tour/tourStore";
 import { createFirstTaskTour } from "../../tour/tours/createFirstTaskTour";
+import { useExistingWorktreeConfirmStore } from "../stores/existingWorktreeConfirmStore";
 import { useRemoteBranchConfirmStore } from "../stores/remoteBranchConfirmStore";
 
 const log = logger.scope("task-creation");
@@ -58,14 +70,17 @@ interface UseTaskCreationOptions {
   branch?: string | null;
   editorIsEmpty: boolean;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   signalReportId?: string;
   channelContext?: string;
   channelName?: string;
+  /** Backend channel UUID the created task is owned by (its feed home). */
+  channelId?: string;
   /**
    * Channels "generic chat box" mode: drop the repo/branch requirement so a
    * task can be submitted without picking a repo. The agent decides at runtime
@@ -73,6 +88,12 @@ interface UseTaskCreationOptions {
    */
   allowNoRepo?: boolean;
   onTaskCreated?: (task: Task) => void;
+  /**
+   * Side effect run with the created task in addition to (not instead of)
+   * the default open/navigation behavior — unlike onTaskCreated, providing
+   * this does not suppress the pending-task view.
+   */
+  onTaskCreatedEffect?: (task: Task) => void;
 }
 
 interface UseTaskCreationReturn {
@@ -149,11 +170,14 @@ export function useTaskCreation({
   reasoningLevel,
   environmentId,
   sandboxEnvironmentId,
+  customImageId,
   signalReportId,
   channelContext,
   channelName,
+  channelId,
   allowNoRepo,
   onTaskCreated,
+  onTaskCreatedEffect,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const hostClient = useHostTRPCClient();
@@ -177,6 +201,19 @@ export function useTaskCreation({
   );
   const { invalidateTasks } = useCreateTask();
   const { isOnline } = useConnectivity();
+  // Used to name the task occupying a branch's worktree when reuse is blocked.
+  const { data: tasks } = useTasks();
+
+  // Tasks created without a channel default into the user's private #me
+  // backend channel so they still surface in the Channels space instead of
+  // staying unfiled. The personal channel is per-user and provisioned lazily
+  // server-side on first list, so this can't collide across teammates. If it
+  // hasn't loaded yet the task is created unfiled, as before.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const { personalChannel } = useTaskChannels({ enabled: bluebirdEnabled });
 
   const hasRequiredPath = allowNoRepo
     ? true
@@ -199,18 +236,41 @@ export function useTaskCreation({
         return false;
       }
 
-      // If the chosen worktree branch only exists on the remote, confirm before
-      // fetching and checking it out locally. Done before the pending view so
-      // the dialog (and a cancel) don't leave a half-started task on screen.
+      // Confirm a couple of worktree branch situations before starting the
+      // task. Done before the pending view so a dialog (and a cancel) don't
+      // leave a half-started task on screen. Reusing an existing worktree takes
+      // priority over checking out a remote branch.
       let allowRemoteBranchCheckout = false;
+      let reuseExistingWorktree = false;
       if (workspaceMode === "worktree" && branch && selectedDirectory) {
         try {
-          const { status } =
+          const { status, existingWorktreePath, existingWorktreeTaskId } =
             await hostClient.workspace.checkWorktreeBranch.query({
               mainRepoPath: selectedDirectory,
               branch,
             });
-          if (status === "remote-only") {
+          if (existingWorktreeTaskId) {
+            // The branch's worktree already belongs to another task. Don't
+            // create a duplicate; point the user at the task using it.
+            const occupant = tasks?.find(
+              (t) => t.id === existingWorktreeTaskId,
+            );
+            toast.error("Worktree already in use", {
+              description: occupant
+                ? `${branch} already has a worktree used by "${occupant.title}". Open that task to keep working there.`
+                : `${branch} already has a worktree used by another task.`,
+            });
+            return false;
+          }
+          if (existingWorktreePath) {
+            const confirmed = await useExistingWorktreeConfirmStore
+              .getState()
+              .confirm(branch, existingWorktreePath);
+            if (!confirmed) {
+              return false;
+            }
+            reuseExistingWorktree = true;
+          } else if (status === "remote-only") {
             const confirmed = await useRemoteBranchConfirmStore
               .getState()
               .confirm(branch);
@@ -228,6 +288,9 @@ export function useTaskCreation({
 
       const content = contentOverride ?? editor.getContent();
       const plainPromptText = contentToPlainText(content).trim();
+      const serializedContent = contentToXml(content).trim();
+      const filePaths = extractFilePaths(content);
+
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
       const pendingTaskKey = shouldShowPendingView
         ? (globalThis.crypto?.randomUUID?.() ?? `pending-${Date.now()}`)
@@ -247,6 +310,8 @@ export function useTaskCreation({
         }
       }
 
+      let createdTaskId: string | undefined;
+
       try {
         if (!contentOverride) {
           const plainText = editor.getText()?.trim() ?? plainPromptText;
@@ -255,8 +320,12 @@ export function useTaskCreation({
           }
         }
 
-        const serializedContent = contentToXml(content).trim();
-        const filePaths = extractFilePaths(content);
+        const settings = useSettingsStore.getState();
+        const defaultedChannelId =
+          bluebirdEnabled && !channelId && !channelName
+            ? personalChannel?.id
+            : undefined;
+
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
@@ -267,16 +336,22 @@ export function useTaskCreation({
           workspaceMode,
           branch,
           allowRemoteBranchCheckout,
+          reuseExistingWorktree,
           executionMode,
           adapter,
           model,
           reasoningLevel,
           environmentId,
           sandboxEnvironmentId,
+          customImageId,
           signalReportId,
           additionalDirectories,
           channelContext,
           channelName,
+          channelId: channelId ?? defaultedChannelId,
+          customInstructions: getEffectiveCustomInstructions(settings),
+          autoPublishCloudRuns: settings.autoPublishCloudRuns,
+          rtkEnabledCloud: settings.rtkEnabledCloud,
           allowNoRepo,
         });
 
@@ -288,9 +363,28 @@ export function useTaskCreation({
           input,
           (output) => {
             invalidateTasks(output.task);
+            // Stash the prompt's local attachment paths so the chat-title
+            // generator can read their contents when naming the task — needed
+            // for pasted-text prompts whose only signal is the file body, and
+            // especially for cloud tasks where the local path is otherwise lost
+            // once the file is uploaded as an artifact.
+            // Exclude folder chips — only file paths are readable by the title
+            // generator's readAbsoluteFile call.
+            const folderIds = new Set(
+              content.segments.flatMap((seg) =>
+                seg.type === "chip" && seg.chip.type === "folder"
+                  ? [seg.chip.id]
+                  : [],
+              ),
+            );
+            const fileOnlyPaths = filePaths.filter((p) => !folderIds.has(p));
+            if (fileOnlyPaths.length > 0) {
+              titleAttachmentStoreApi.set(output.task.id, fileOnlyPaths);
+            }
             if (signalReportId) {
               clearTaskInputReportAssociation();
             }
+            createdTaskId = output.task.id;
             if (pendingTaskKey) {
               pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
             }
@@ -301,6 +395,16 @@ export function useTaskCreation({
             if (!pendingTaskKey && !contentOverride) {
               editor.clear();
             }
+            if (defaultedChannelId) {
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: "file_task",
+                surface: "task_input",
+                channel_id: defaultedChannelId,
+                task_id: output.task.id,
+                success: true,
+              });
+            }
+            onTaskCreatedEffect?.(output.task);
             if (onTaskCreated) {
               onTaskCreated(output.task);
             } else {
@@ -312,7 +416,29 @@ export function useTaskCreation({
           { skipCloudUsagePreflight: true },
         );
 
+        if (result.success && result.data.provisioningError) {
+          // Worktree provisioning failed but the task (and its prompt) was kept
+          // so the user can retry setup on it. Stay on the task the onTaskReady
+          // callback already navigated to — don't reopen the composer — and
+          // flag the failure so the task view shows a retry prompt.
+          useProvisioningStore
+            .getState()
+            .setFailed(result.data.task.id, result.data.provisioningError);
+          toastError(
+            getErrorTitle("workspace_creation"),
+            result.data.provisioningError,
+          );
+        }
+
         if (result.success) {
+          if (!result.data.provisioningError) {
+            if (pendingTaskKey) {
+              pendingTaskPromptStoreApi.clear(pendingTaskKey);
+            }
+            if (createdTaskId) {
+              pendingTaskPromptStoreApi.clear(createdTaskId);
+            }
+          }
           setAdditionalDirectoriesOverride(null);
           // Guarantee the editor draft is wiped on success. editor.clear()
           // above only runs inside the onTaskReady callback (and after it
@@ -341,7 +467,7 @@ export function useTaskCreation({
             log.warn("Cloud task creation blocked by usage limit");
           } else {
             const title = getErrorTitle(result.failedStep);
-            toast.error(title, { description: result.error });
+            toastError(title, result.error);
             log.error("Task creation failed", {
               failedStep: result.failedStep,
               error: result.error,
@@ -349,17 +475,21 @@ export function useTaskCreation({
           }
           if (pendingTaskKey) {
             pendingTaskPromptStoreApi.clear(pendingTaskKey);
+            if (createdTaskId) {
+              pendingTaskPromptStoreApi.clear(createdTaskId);
+            }
             openTaskInput({ initialPrompt: plainPromptText });
           }
         }
         return result.success;
       } catch (error) {
-        const description =
-          error instanceof Error ? error.message : "Unknown error";
-        toast.error("Failed to create task", { description });
+        toastError("Failed to create task", error);
         log.error("Unexpected error during task creation", { error });
         if (pendingTaskKey) {
           pendingTaskPromptStoreApi.clear(pendingTaskKey);
+          if (createdTaskId) {
+            pendingTaskPromptStoreApi.clear(createdTaskId);
+          }
           openTaskInput({ initialPrompt: plainPromptText });
         }
         return false;
@@ -384,18 +514,24 @@ export function useTaskCreation({
       reasoningLevel,
       environmentId,
       sandboxEnvironmentId,
+      customImageId,
       signalReportId,
       additionalDirectories,
       channelContext,
       channelName,
+      channelId,
       allowNoRepo,
+      bluebirdEnabled,
+      personalChannel?.id,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
+      onTaskCreatedEffect,
       hostClient,
       trpc,
       queryClient,
       taskService,
+      tasks,
     ],
   );
 

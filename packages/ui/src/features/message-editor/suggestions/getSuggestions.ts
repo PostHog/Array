@@ -9,7 +9,10 @@ import {
   shapeCommandSuggestions,
   shapeFileSuggestions,
 } from "@posthog/core/message-editor/suggestions";
-import { getAvailableCommandsForTask } from "@posthog/ui/features/sessions/sessionStore";
+import {
+  getAvailableCommandsForTask,
+  useSessionStore,
+} from "@posthog/ui/features/sessions/sessionStore";
 import { fetchRepoFiles, searchFiles } from "../../repo-files/useRepoFiles";
 import { CODE_COMMANDS } from "../commands";
 import { useDraftStore } from "../draftStore";
@@ -19,6 +22,19 @@ import type {
   FileSuggestionItem,
   IssueSuggestionItem,
 } from "../types";
+
+function getTaskCommandContext(taskId: string | undefined): {
+  adapter: string | undefined;
+  commands: ReturnType<typeof getAvailableCommandsForTask>;
+} {
+  if (!taskId) return { adapter: undefined, commands: null };
+  const state = useSessionStore.getState();
+  const taskRunId = state.taskIdIndex[taskId];
+  return {
+    adapter: taskRunId ? state.sessions[taskRunId]?.adapter : undefined,
+    commands: getAvailableCommandsForTask(taskId),
+  };
+}
 
 export async function getFileSuggestions(
   sessionId: string,
@@ -83,15 +99,20 @@ export function getCommandSuggestions(
 ): CommandSuggestionItem[] {
   const store = useDraftStore.getState();
   const taskId = store.contexts[sessionId]?.taskId;
-  // Agent commands (from `available_commands_update`) are authoritative once a
-  // session has reported them, but they arrive async after session startup —
-  // fall back to the trpc-fetched skills list so users don't see only the
-  // built-in /good /bad /feedback commands during that window. `null` means
-  // "agent hasn't reported yet"; an empty array means "agent reported empty"
-  // and we respect it.
-  const sessionCommands = taskId ? getAvailableCommandsForTask(taskId) : null;
+  // Agent commands (from `available_commands_update`) are authoritative for
+  // Claude once a session has reported them. Codex does not emit skill slash
+  // commands, so keep merging the trpc-fetched skills fallback for GPT tasks.
+  // `null` means "agent hasn't reported yet"; an empty array means "agent
+  // reported empty".
+  const { adapter, commands: sessionCommands } = getTaskCommandContext(taskId);
   const draftCommands = store.commands[sessionId] ?? [];
-  const agentCommands = sessionCommands ?? draftCommands;
+  const localDraftCommands = draftCommands.filter((cmd) => cmd.localSkill);
+  const agentCommands =
+    sessionCommands === null
+      ? draftCommands
+      : adapter === "codex"
+        ? mergeCommands(sessionCommands, draftCommands)
+        : [...sessionCommands, ...localDraftCommands];
   const commands = mergeCommands(CODE_COMMANDS, agentCommands);
   const filtered = searchCommands(commands, query);
 

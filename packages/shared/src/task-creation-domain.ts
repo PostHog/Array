@@ -1,3 +1,4 @@
+import type { Adapter } from "./adapter";
 import type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 import type { Task } from "./domain-types";
 import type { ExecutionMode } from "./exec-types";
@@ -23,16 +24,30 @@ export interface TaskCreationInput {
   // When the branch exists only on the remote, opt in to fetching and checking
   // it out locally into the worktree (set after the user confirms).
   allowRemoteBranchCheckout?: boolean;
+  // When a worktree is already checked out on the branch, opt in to reusing it
+  // for this task instead of creating a new one (set after the user confirms).
+  reuseExistingWorktree?: boolean;
   githubIntegrationId?: number;
   githubUserIntegrationId?: string;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
+  /**
+   * When true, the cloud run agent pushes its work and opens a draft PR on
+   * completion without waiting for an explicit ask (Settings → Advanced).
+   */
+  cloudAutoPublish?: boolean;
+  /**
+   * rtk command-output compression for the cloud run. Only false is
+   * meaningful: it opts the run out of the server-side default (enabled).
+   */
+  cloudRtkEnabled?: boolean;
   signalReportId?: string;
   additionalDirectories?: string[];
   /**
@@ -43,6 +58,15 @@ export interface TaskCreationInput {
   channelContext?: string;
   /** Display name of that channel, embedded in the context block for the UI. */
   channelName?: string;
+  /** Backend channel UUID the created task is owned by (its feed home). */
+  channelId?: string;
+  /**
+   * The user's saved personalization (Settings → Personalization custom
+   * instructions). Cloud-only: local tasks already receive these through the
+   * workspace-server system prompt, so the saga folds this into the cloud run's
+   * first message instead, to avoid double-injecting.
+   */
+  customInstructions?: string;
   /**
    * When true, the task may be created without a repo/branch. Used by the
    * channels "generic chat box": the agent decides at runtime whether it needs
@@ -50,9 +74,25 @@ export interface TaskCreationInput {
    * working directory, so non-code tasks (analysis, email) can run repo-less.
    */
   allowNoRepo?: boolean;
+  // Label of the Home-tab quick action that started this run (e.g. "Fix CI"), so the
+  // workstream can show which quick actions have been run against it.
+  homeQuickActionLabel?: string;
+  /**
+   * Continue a Claude Code CLI session by importing its transcript and resuming
+   * with replay. Local mode only; forces the claude adapter. `branch` is what the
+   * session last worked on, linked so the branch-mismatch prompt can fire.
+   */
+  importedClaudeSession?: { sourceSessionId: string; branch?: string | null };
 }
 
 export interface TaskCreationOutput {
   task: Task;
   workspace: Workspace | null;
+  /**
+   * Set when worktree provisioning failed but the task was kept (not rolled
+   * back) so the user can retry setup on the existing task. The saga returns a
+   * partial success in this case; consumers surface the error and keep the user
+   * on the task rather than reopening the composer.
+   */
+  provisioningError?: string;
 }

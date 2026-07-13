@@ -10,6 +10,10 @@ import {
   computeFleetSummary,
   computeScoutRollups,
   getScoutOrigin,
+  listScoutCreatorOptions,
+  type ScoutCreatorIndex,
+  type ScoutCreatorUser,
+  scoutCreatorKey,
   sortConfigsForDisplay,
 } from "@posthog/core/scouts/scoutPresentation";
 import {
@@ -19,18 +23,26 @@ import {
 } from "@posthog/core/scouts/scoutPrompts";
 import {
   SCOUT_RUNS_WINDOW_SPAN,
+  type ScoutRunsWindow,
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
 import type { ScoutChatType } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useMeQuery } from "../../auth/useMeQuery";
 import { useScoutChatTask } from "../hooks/useScoutChatTask";
+import type { ScoutConfigUpdate } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
+import { useScoutSkillCreators } from "../hooks/useScoutSkillCreators";
+import { FleetFindingsCallout } from "./FleetFindingsCallout";
+import { FleetMemoryCallout } from "./FleetMemoryCallout";
+import { ScoutAlphaBanner } from "./ScoutAlphaBanner";
 import { ScoutHelperSkillLinks } from "./ScoutHelperSkillLinks";
 import { ScoutRowCard } from "./ScoutRowCard";
 
@@ -94,6 +106,7 @@ export function ScoutsFleetSection() {
 
   return (
     <Flex direction="column" gap="3">
+      <ScoutAlphaBanner />
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
@@ -139,7 +152,7 @@ function useTrackFleetViewed(configs: ScoutConfig[]) {
       enabled_count: configs.filter((config) => config.enabled).length,
       dry_run_count: configs.filter((config) => !config.emit).length,
       custom_count: configs.filter(
-        (config) => getScoutOrigin(config.skill_name) === "custom",
+        (config) => getScoutOrigin(config) === "custom",
       ).length,
       is_empty: configs.length === 0,
     });
@@ -149,8 +162,45 @@ function useTrackFleetViewed(configs: ScoutConfig[]) {
 function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
   const { data: runsWindow } = useScoutRuns();
   const { updateConfig } = useScoutConfigMutations();
-  const [hideDisabled, setHideDisabled] = useState(false);
+  const { data: creators } = useScoutSkillCreators();
+  const { data: currentUser } = useMeQuery();
   useTrackFleetViewed(configs);
+
+  return (
+    <ScoutsFleetListView
+      configs={configs}
+      runsWindow={runsWindow}
+      creators={creators}
+      currentUser={currentUser ?? null}
+      onUpdateConfig={updateConfig}
+    />
+  );
+}
+
+/**
+ * Pure fleet list: summary line, filters, chat CTAs, and the scout rows. Data
+ * and mutations come in as props (Storybook renders this directly — the
+ * container's hooks never resolve there).
+ */
+export function ScoutsFleetListView({
+  configs,
+  runsWindow,
+  creators,
+  currentUser,
+  onUpdateConfig,
+  initialCreatorKey = "",
+}: {
+  configs: ScoutConfig[];
+  runsWindow: ScoutRunsWindow | undefined;
+  /** Undefined while loading; null when the skills API is unavailable for the org. */
+  creators: ScoutCreatorIndex | null | undefined;
+  currentUser: ScoutCreatorUser | null;
+  onUpdateConfig: (configId: string, updates: ScoutConfigUpdate) => void;
+  /** Start with a creator preselected (Storybook seam). */
+  initialCreatorKey?: string;
+}) {
+  const [hideDisabled, setHideDisabled] = useState(false);
+  const [creatorKey, setCreatorKey] = useState(initialCreatorKey);
 
   const runs = runsWindow?.runs;
   const rollups = useMemo(() => computeScoutRollups(runs ?? []), [runs]);
@@ -158,10 +208,29 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
     () => computeFleetSummary(configs, rollups),
     [configs, rollups],
   );
+  // Null/undefined creators = the skills API is gated for this org (or still
+  // loading), so authorship is unknowable; render no picker instead of an
+  // always-empty filter.
+  const creatorOptions = useMemo(
+    () => (creators ? listScoutCreatorOptions(creators, currentUser) : []),
+    [creators, currentUser],
+  );
+  const selectedCreator = creatorOptions.find(
+    (option) => option.key === creatorKey,
+  );
   const visibleConfigs = useMemo(() => {
-    const sorted = sortConfigsForDisplay(configs);
-    return hideDisabled ? sorted.filter((config) => config.enabled) : sorted;
-  }, [configs, hideDisabled]);
+    let sorted = sortConfigsForDisplay(configs);
+    if (hideDisabled) {
+      sorted = sorted.filter((config) => config.enabled);
+    }
+    if (creatorKey && creators) {
+      sorted = sorted.filter(
+        (config) =>
+          scoutCreatorKey(creators.get(config.skill_name)) === creatorKey,
+      );
+    }
+    return sorted;
+  }, [configs, hideDisabled, creatorKey, creators]);
 
   return (
     <Flex direction="column" gap="3">
@@ -183,6 +252,46 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
           </span>
         </Text>
         <span className="flex-1" />
+        {creatorOptions.length > 0 ? (
+          <Flex align="center" gap="2">
+            <Text className="whitespace-nowrap text-[12px] text-gray-10">
+              Created by
+            </Text>
+            <div className="w-44">
+              <SettingsOptionSelect
+                value={creatorKey}
+                options={[
+                  { value: "", label: "Any user" },
+                  ...creatorOptions.map((option) => ({
+                    value: option.key,
+                    label: option.label,
+                  })),
+                ]}
+                onValueChange={(next) => {
+                  setCreatorKey(next);
+                  const option = creatorOptions.find(
+                    (candidate) => candidate.key === next,
+                  );
+                  track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+                    action_type: "filter_created_by",
+                    surface: "fleet_list",
+                    created_by_me: option?.isCurrentUser ?? false,
+                    filter_match_count: next
+                      ? configs.filter(
+                          (config) =>
+                            scoutCreatorKey(
+                              creators?.get(config.skill_name),
+                            ) === next,
+                        ).length
+                      : undefined,
+                  });
+                }}
+                ariaLabel="Filter scouts by creator"
+                placeholder="Any user"
+              />
+            </div>
+          </Flex>
+        ) : null}
         <button
           type="button"
           onClick={() => {
@@ -225,17 +334,33 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
         />
       </Flex>
 
+      {/* Findings: renders only once scouts have emitted something. */}
+      <FleetFindingsCallout />
+
+      {/* Fleet memory: renders only once scouts have written scratchpad notes. */}
+      <FleetMemoryCallout />
+
       {/* Bounded to roughly 10 rows; larger fleets scroll within the section. */}
       <div className="max-h-[710px] overflow-y-auto">
         <Flex direction="column" gap="2">
-          {visibleConfigs.map((config) => (
-            <ScoutRowCard
-              key={config.id}
-              config={config}
-              rollup={rollups.get(config.skill_name)}
-              onUpdate={updateConfig}
-            />
-          ))}
+          {visibleConfigs.length === 0 ? (
+            <Text className="px-1 py-2 text-[12.5px] text-gray-10">
+              {creatorKey
+                ? selectedCreator?.isCurrentUser
+                  ? "No scouts created by you match the current filters."
+                  : "No scouts created by the selected user match the current filters."
+                : "No scouts match the current filters."}
+            </Text>
+          ) : (
+            visibleConfigs.map((config) => (
+              <ScoutRowCard
+                key={config.id}
+                config={config}
+                rollup={rollups.get(config.skill_name)}
+                onUpdate={onUpdateConfig}
+              />
+            ))
+          )}
         </Flex>
       </div>
 
@@ -295,26 +420,29 @@ function ScoutChatCta({
 function ScoutsEmptyState() {
   useTrackFleetViewed(EMPTY_CONFIGS);
   return (
-    <Flex
-      direction="column"
-      gap="2"
-      align="start"
-      className="rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-5 py-5"
-    >
-      <Flex align="center" gap="2">
-        <CompassIcon size={18} className="text-(--iris-9)" />
-        <Text className="font-medium text-[13px] text-gray-12">
-          No scouts on this project yet
+    <Flex direction="column" gap="3">
+      <ScoutAlphaBanner />
+      <Flex
+        direction="column"
+        gap="2"
+        align="start"
+        className="rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-5 py-5"
+      >
+        <Flex align="center" gap="2">
+          <CompassIcon size={18} className="text-(--iris-9)" />
+          <Text className="font-medium text-[13px] text-gray-12">
+            No scouts on this project yet
+          </Text>
+        </Flex>
+        <Text className="max-w-2xl text-[12.5px] text-gray-11 leading-snug">
+          Scouts are rolling out gradually. Once your project is enrolled, the
+          canonical fleet appears here automatically and you can add custom
+          scouts by creating{" "}
+          <span className="font-mono text-[11px]">signals-scout-*</span> skills
+          in PostHog.
         </Text>
+        <ScoutHelperSkillLinks surface="empty_state" />
       </Flex>
-      <Text className="max-w-2xl text-[12.5px] text-gray-11 leading-snug">
-        Scouts are rolling out gradually. Once your project is enrolled, the
-        canonical fleet appears here automatically and you can add custom scouts
-        by creating{" "}
-        <span className="font-mono text-[11px]">signals-scout-*</span> skills in
-        PostHog.
-      </Text>
-      <ScoutHelperSkillLinks surface="empty_state" />
     </Flex>
   );
 }

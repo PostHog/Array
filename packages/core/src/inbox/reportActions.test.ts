@@ -5,41 +5,49 @@ import {
 } from "./reportActions";
 
 describe("buildCreatePrReportPrompt", () => {
-  it.each([
-    { isDevBuild: false, expectedScheme: "posthog-code" },
-    { isDevBuild: true, expectedScheme: "posthog-code-dev" },
-  ])(
-    "uses the $expectedScheme deeplink scheme when isDevBuild=$isDevBuild",
-    ({ isDevBuild, expectedScheme }) => {
-      const prompt = buildCreatePrReportPrompt({
-        reportId: "abc123",
-        isDevBuild,
-      });
-      expect(prompt).toContain(`${expectedScheme}://inbox/abc123`);
-    },
-  );
-
-  it("references the inbox MCP tools so the agent fetches the detail itself", () => {
+  it("embeds the report web URL as a clickable backlink when provided", () => {
     const prompt = buildCreatePrReportPrompt({
       reportId: "abc123",
-      isDevBuild: false,
+      reportUrl: "https://us.posthog.com/project/2/inbox/abc123",
     });
+    expect(prompt).toContain(
+      "([inbox item](https://us.posthog.com/project/2/inbox/abc123))",
+    );
+  });
+
+  it("never embeds a posthog-code:// deep link", () => {
+    const prompt = buildCreatePrReportPrompt({
+      reportId: "abc123",
+      reportUrl: "https://us.posthog.com/project/2/inbox/abc123",
+    });
+    expect(prompt).not.toContain("posthog-code://");
+  });
+
+  it("omits the inline link when no report URL is known", () => {
+    const prompt = buildCreatePrReportPrompt({ reportId: "abc123" });
+    expect(prompt).not.toContain("([inbox item]");
+    expect(prompt).toContain("Act on PostHog inbox report abc123.");
+  });
+
+  it("references the inbox MCP tools so the agent fetches the detail itself", () => {
+    const prompt = buildCreatePrReportPrompt({ reportId: "abc123" });
     expect(prompt).toContain("inbox MCP tools");
   });
 
   it("asks the agent to open a PR", () => {
-    const prompt = buildCreatePrReportPrompt({
-      reportId: "abc123",
-      isDevBuild: false,
-    });
+    const prompt = buildCreatePrReportPrompt({ reportId: "abc123" });
     expect(prompt).toMatch(/open a PR/i);
   });
 
+  it("tells the agent to continue an existing linked PR instead of opening a duplicate", () => {
+    const prompt = buildCreatePrReportPrompt({ reportId: "abc123" });
+    expect(prompt).toContain("implementation_pr_url");
+    expect(prompt).toMatch(/gh pr checkout/i);
+    expect(prompt).toMatch(/do not open a second PR/i);
+  });
+
   it("tells the agent to stop rather than guess if the report can't be fetched", () => {
-    const prompt = buildCreatePrReportPrompt({
-      reportId: "abc123",
-      isDevBuild: false,
-    });
+    const prompt = buildCreatePrReportPrompt({ reportId: "abc123" });
     expect(prompt).toMatch(/can't fetch the report/i);
     expect(prompt).toMatch(/instead of guessing/i);
   });
@@ -47,7 +55,6 @@ describe("buildCreatePrReportPrompt", () => {
   it("appends user feedback when provided", () => {
     const prompt = buildCreatePrReportPrompt({
       reportId: "abc123",
-      isDevBuild: false,
       feedback: "Use the v2 endpoint, not v1.",
     });
     expect(prompt).toMatch(/Additional feedback from the user/i);
@@ -59,13 +66,9 @@ describe("buildCreatePrReportPrompt", () => {
     { label: "empty string", feedback: "" },
     { label: "whitespace only", feedback: "   " },
   ])("omits the feedback section when feedback is $label", ({ feedback }) => {
-    const base = buildCreatePrReportPrompt({
-      reportId: "abc123",
-      isDevBuild: false,
-    });
+    const base = buildCreatePrReportPrompt({ reportId: "abc123" });
     const prompt = buildCreatePrReportPrompt({
       reportId: "abc123",
-      isDevBuild: false,
       feedback,
     });
     expect(prompt).toBe(base);

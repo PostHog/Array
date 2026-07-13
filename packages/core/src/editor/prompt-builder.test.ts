@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildChannelContextBlock,
   buildChannelContextText,
+  buildCustomInstructionsText,
 } from "./prompt-builder";
 
 describe("buildChannelContextText", () => {
@@ -25,6 +26,24 @@ describe("buildChannelContextText", () => {
     const text = buildChannelContextText("# Billing", "billing");
     const block = buildChannelContextBlock("# Billing", "billing");
     expect(block).toEqual({ type: "text", text });
+  });
+});
+
+describe("buildCustomInstructionsText", () => {
+  it.each([[undefined], [null], [""], ["   \n  "]] as const)(
+    "returns null for empty or whitespace content (%s)",
+    (input) => {
+      expect(buildCustomInstructionsText(input)).toBeNull();
+    },
+  );
+
+  it("wraps the trimmed body in a user_custom_instructions element", () => {
+    const text = buildCustomInstructionsText("  Always use tabs.  ");
+    expect(text).not.toBeNull();
+    expect(text?.startsWith("<user_custom_instructions>\n")).toBe(true);
+    expect(
+      text?.endsWith("\nAlways use tabs.\n</user_custom_instructions>"),
+    ).toBe(true);
   });
 });
 

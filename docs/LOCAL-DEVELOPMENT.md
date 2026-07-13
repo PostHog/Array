@@ -95,6 +95,36 @@ Open devtools in the dev build and type:
 
 Source: `apps/code/src/renderer/features/inbox/devtools/inboxDemoConsole.ts`.
 
+## Feature flags in local dev
+
+Feature flags are read through posthog-js, configured by the `VITE_POSTHOG_*`
+vars in `.env`. By default these point at PostHog's internal analytics instance,
+so flags you create locally never resolve in the dev build (and flag-gated UI —
+e.g. the agent-platform surface behind the `agent-platform` flag — stays hidden).
+
+To point the flags/analytics client at your local PostHog so locally-synced
+flags take effect:
+
+```bash
+# In your PostHog repo: create + enable all frontend-defined flags locally
+python manage.py sync_feature_flags
+
+# In this repo: rewrite VITE_POSTHOG_* to your local instance, then restart dev
+node scripts/use-local-posthog.mjs
+pnpm dev
+```
+
+`node scripts/use-local-posthog.mjs` auto-reads the project API key from a
+sibling `../posthog` checkout (or pass it:
+`node scripts/use-local-posthog.mjs phc_xxx`, or set `POSTHOG_DIR`). This
+only affects the analytics/flags client — the data API still uses the **Dev**
+region you pick at login.
+
+> One-off override without changing `.env`: the dev build exposes the client on
+> `window.posthog`, so you can run
+> `posthog.featureFlags.override({ "agent-platform": true })` in the renderer
+> console (clear with `posthog.featureFlags.override(false)`).
+
 ## Troubleshooting
 
 ### "Invalid client_id" error during OAuth

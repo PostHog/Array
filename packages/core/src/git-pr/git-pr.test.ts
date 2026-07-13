@@ -26,7 +26,7 @@ function makeDiffSource(over: Partial<GitDiffSource> = {}): GitDiffSource {
     getDiffAgainstRemote: vi.fn().mockResolvedValue(""),
     getCommitsBetweenBranches: vi.fn().mockResolvedValue([]),
     getPrTemplate: vi.fn().mockResolvedValue({ template: null }),
-    fetchIfStale: vi.fn().mockResolvedValue(undefined),
+    fetchFromRemote: vi.fn().mockResolvedValue(undefined),
     ...over,
   };
 }
@@ -67,6 +67,9 @@ describe("GitPrService.generateCommitMessage", () => {
     expect(messages[0].content).toContain("modified: x.ts");
     expect(messages[0].content).toContain("why context");
     expect(options.system).toContain("commit message generator");
+    expect(options.posthogProperties).toEqual({
+      $ai_span_name: "commit_message",
+    });
   });
 });
 
@@ -97,7 +100,11 @@ describe("GitPrService.generatePrTitleAndBody", () => {
 
     expect(result.title).toBe("feat: add widget");
     expect(result.body).toBe("TL;DR: adds a widget.");
-    expect(diffSource.fetchIfStale).toHaveBeenCalledWith("/repo");
+    expect(diffSource.fetchFromRemote).toHaveBeenCalledWith("/repo");
+    const [, options] = (llm.prompt as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(options.posthogProperties).toEqual({
+      $ai_span_name: "pr_description",
+    });
   });
 });
 

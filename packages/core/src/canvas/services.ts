@@ -6,50 +6,23 @@ import type {
   CanvasCaptureResult,
   CanvasDataQueryInput,
   CanvasDataResult,
-  FreeformGenEventPayload,
-  FreeformGenerateInput,
-  FreeformThreadInput,
+  CanvasLoadInsightInput,
   FreeformVersion,
 } from "./freeformSchemas";
-import type {
-  CanvasGenEventPayload,
-  CanvasGenerateInput,
-  CanvasThreadInput,
-} from "./genSchemas";
-import type {
-  DashboardQueryResult,
-  DashboardQueryRunInput,
-} from "./querySchemas";
 import type { CanvasTemplate, CanvasTemplateSummary } from "./templateSchemas";
 
 // Structural service interfaces the host-router routers depend on. The concrete
 // implementations live in the desktop app's main process and are bound to the
 // tokens in identifiers.ts; the router only needs the method surface.
 
-export interface ICanvasGenService {
-  generate(input: CanvasGenerateInput): Promise<void>;
-  reset(input: CanvasThreadInput): Promise<void>;
-  /** Async iterable of canvas stream events (for the onEvent subscription). */
-  toIterable(
-    event: "canvas-event",
-    opts?: { signal?: AbortSignal },
-  ): AsyncIterable<CanvasGenEventPayload>;
-}
-
-export interface IFreeformGenService {
-  generate(input: FreeformGenerateInput): Promise<void>;
-  reset(input: FreeformThreadInput): Promise<void>;
-  toIterable(
-    event: "freeform-event",
-    opts?: { signal?: AbortSignal },
-  ): AsyncIterable<FreeformGenEventPayload>;
-}
-
 export interface ICanvasTemplatesService {
   list(): CanvasTemplateSummary[];
   get(id: string): CanvasTemplate | undefined;
-  /** The system prompt for a template, falling back to the default template. */
-  systemPromptFor(id: string | undefined): string;
+  /**
+   * The freeform (React iframe) system prompt for a template, falling back to
+   * the generic freeform sandbox prompt.
+   */
+  freeformSystemPromptFor(id: string | undefined): string;
 }
 
 export interface IDashboardsService {
@@ -58,13 +31,7 @@ export interface IDashboardsService {
   create(input: {
     channelId: string;
     name: string;
-    spec: Record<string, unknown> | null;
     templateId?: string;
-  }): Promise<DashboardRecord>;
-  update(input: {
-    id: string;
-    name?: string;
-    spec: Record<string, unknown> | null;
   }): Promise<DashboardRecord>;
   saveFreeform(input: {
     id: string;
@@ -73,23 +40,23 @@ export interface IDashboardsService {
     versions: FreeformVersion[];
     currentVersionId?: string;
   }): Promise<DashboardRecord>;
-  delete(id: string): Promise<void>;
-  refresh(input: {
+  setGenerationTask(input: {
     id: string;
-    elementKeys?: string[];
-    touchUpdatedAt?: boolean;
-  }): Promise<{
-    updated: number;
-    failures: { elementKey: string; error: string }[];
-  }>;
-}
-
-export interface IDashboardQueryService {
-  run(input: DashboardQueryRunInput): Promise<DashboardQueryResult[]>;
+    taskId: string | null;
+  }): Promise<DashboardRecord>;
+  setPinned(input: { id: string; pinned: boolean }): Promise<DashboardRecord>;
+  rename(input: { id: string; name: string }): Promise<DashboardRecord>;
+  // Idempotently create + seed a channel's home canvas, returning it.
+  ensureHomeCanvas(channelId: string): Promise<DashboardRecord>;
+  // Append a fresh template version to the home canvas (non-destructive; the
+  // prior version stays in history so the edit can be restored via undo).
+  resetHomeCanvas(channelId: string): Promise<DashboardRecord>;
+  delete(id: string): Promise<void>;
 }
 
 export interface ICanvasDataService {
   query(input: CanvasDataQueryInput): Promise<CanvasDataResult>;
+  loadInsight(input: CanvasLoadInsightInput): Promise<CanvasDataResult>;
   capture(input: CanvasCaptureInput): Promise<CanvasCaptureResult>;
   captureConfig(): Promise<CanvasCaptureConfig>;
 }

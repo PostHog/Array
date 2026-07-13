@@ -8,6 +8,7 @@ import type { DiscoveredTask } from "@posthog/core/setup/types";
 import { Flex, Text } from "@radix-ui/themes";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -47,7 +48,7 @@ const fadeMotion = {
 const pagerButtonClass =
   "flex h-5 w-5 cursor-pointer items-center justify-center rounded text-(--gray-11) hover:bg-(--gray-3) hover:text-(--gray-12) disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-(--gray-11)";
 
-export function SuggestedTasksPanel() {
+export function SuggestedTasksPanel({ leading }: { leading?: ReactNode }) {
   const selectedDirectory = useActiveRepoStore((s) => s.path);
   const discoveredTasks = useSetupStore((s) =>
     s.discoveredTasks.filter((task) =>
@@ -123,7 +124,8 @@ export function SuggestedTasksPanel() {
   const showEnricherFeed = !hasTasks && enricherStatus === "running";
   const showDiscoveryFeed = discoveryStatus === "running";
 
-  if (!hasTasks && !showEnricherFeed && !showDiscoveryFeed) return null;
+  if (!hasTasks && !showEnricherFeed && !showDiscoveryFeed && !leading)
+    return null;
 
   const totalTasks = discoveredTasks.length;
   const desiredVisible = Math.min(totalTasks, VISIBLE_LIMIT);
@@ -186,7 +188,7 @@ export function SuggestedTasksPanel() {
 
   return (
     <div ref={containerRef} className="mt-3 flex flex-col gap-2">
-      {hasTasks && (
+      {(hasTasks || leading) && (
         <Flex align="center" justify="between" className="px-2.5">
           <Text size="1" weight="medium" className="text-(--gray-11)">
             Suggestions
@@ -220,6 +222,7 @@ export function SuggestedTasksPanel() {
           )}
         </Flex>
       )}
+      {leading}
       {hasTasks && (
         <div className="relative">
           <AnimatePresence mode="wait" initial={false} custom={pageDirection}>

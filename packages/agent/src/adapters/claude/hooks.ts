@@ -7,6 +7,7 @@ import type { Logger } from "../../utils/logger";
 import { SIGNED_COMMIT_QUALIFIED_TOOL_NAME } from "../signed-commit-shared";
 import { stripCatLineNumbers } from "./conversion/sdk-to-acp";
 import type { TaskState } from "./conversion/task-state";
+import { gitSubcommand } from "./git-command";
 import {
   extractPostHogSubTool,
   isPostHogDestructiveSubTool,
@@ -283,40 +284,6 @@ export const createSubagentRewriteHook =
       },
     };
   };
-
-// git global options that consume the following token as their value, so the
-// subcommand detector must skip both (mirrors the sandbox `git` PATH shim).
-const GIT_VALUE_FLAGS = new Set([
-  "-C",
-  "-c",
-  "--git-dir",
-  "--work-tree",
-  "--namespace",
-  "--exec-path",
-]);
-
-function gitSubcommand(segment: string): string | null {
-  const tokens = segment.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return null;
-  // Strip a leading path so `/usr/bin/git` is still recognised as git.
-  const head = tokens[0].split("/").pop();
-  if (head !== "git") return null;
-
-  let skipNext = false;
-  for (const tok of tokens.slice(1)) {
-    if (skipNext) {
-      skipNext = false;
-      continue;
-    }
-    if (GIT_VALUE_FLAGS.has(tok)) {
-      skipNext = true;
-      continue;
-    }
-    if (tok.startsWith("-")) continue;
-    return tok;
-  }
-  return null;
-}
 
 /**
  * True when any top-level shell segment of `command` is a direct `git commit` /

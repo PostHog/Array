@@ -26,6 +26,9 @@ export const createWorkspaceInput = z
     // When set, a worktree branch that exists only on the remote is fetched and
     // checked out locally instead of failing. Gated behind a user confirmation.
     allowRemoteBranchCheckout: z.boolean().optional(),
+    // When set, an existing worktree already checked out on the branch is reused
+    // for the task instead of creating a new one. Gated behind a confirmation.
+    reuseExistingWorktree: z.boolean().optional(),
   })
   .refine(
     (data) =>
@@ -46,6 +49,15 @@ export const checkWorktreeBranchOutput = z.object({
   // "local": branch exists locally. "remote-only": exists on the remote but not
   // locally. "missing": found neither locally nor on the remote.
   status: z.enum(["trunk", "local", "remote-only", "missing"]),
+  // Path of an *unused* worktree already checked out on this branch, if any.
+  // Set only when no task is associated with it; the renderer offers to reuse
+  // it. Null when there is no managed worktree, or when one exists but is
+  // already taken by a task (see existingWorktreeTaskId).
+  existingWorktreePath: z.string().nullable(),
+  // Id of the task already using the managed worktree on this branch, if any.
+  // When set, the renderer blocks reuse and points the user at that task.
+  // Mutually exclusive with existingWorktreePath.
+  existingWorktreeTaskId: z.string().nullable(),
 });
 
 export const reconcileCloudWorkspacesInput = z.object({
@@ -116,6 +128,7 @@ export const linkedBranchChangedPayload = z.object({
 export const taskPrInfoChangedPayload = z.object({
   taskId: z.string(),
   prUrl: z.string().nullable(),
+  prUrls: z.array(z.string()).optional(),
   prState: z.enum(["merged", "open", "draft", "closed"]).nullable(),
 });
 
@@ -202,6 +215,17 @@ export const gitWorktreeEntrySchema = z.object({
 
 export const listGitWorktreesOutput = z.array(gitWorktreeEntrySchema);
 
+export const listRepoCheckoutsInput = z.object({
+  repoPath: z.string(),
+});
+
+export const repoCheckoutSchema = z.object({
+  path: z.string(),
+  branch: z.string().nullable(),
+});
+
+export const listRepoCheckoutsOutput = z.array(repoCheckoutSchema);
+
 export const getWorktreeSizeInput = z.object({
   worktreePath: z.string(),
 });
@@ -265,6 +289,12 @@ export const cachedPrUrlInput = z.object({
 
 export const cachedPrUrlOutput = z.object({
   prUrl: z.string().nullable(),
+  prUrls: z.array(z.string()),
+});
+
+export const setPrimaryPrUrlInput = z.object({
+  taskId: z.string(),
+  prUrl: z.string(),
 });
 
 export const sidebarPrStateSchema = z
@@ -305,6 +335,8 @@ export type DeleteWorkspaceInput = z.infer<typeof deleteWorkspaceInput>;
 export type VerifyWorkspaceInput = z.infer<typeof verifyWorkspaceInput>;
 export type GetWorkspaceInfoInput = z.infer<typeof getWorkspaceInfoInput>;
 export type ListGitWorktreesInput = z.infer<typeof listGitWorktreesInput>;
+export type ListRepoCheckoutsInput = z.infer<typeof listRepoCheckoutsInput>;
+export type RepoCheckout = z.infer<typeof repoCheckoutSchema>;
 export type GetWorktreeSizeInput = z.infer<typeof getWorktreeSizeInput>;
 export type DeleteWorktreeInput = z.infer<typeof deleteWorktreeInput>;
 export type WorkspaceErrorPayload = z.infer<typeof workspaceErrorPayload>;

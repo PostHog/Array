@@ -1,3 +1,4 @@
+import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import {
   REPORT_MODEL_RESOLVER,
   type ReportModelResolver,
@@ -9,19 +10,26 @@ import {
   type TaskService,
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
-import { ANALYTICS_EVENTS, getCloudUrlFromRegion } from "@posthog/shared";
+import {
+  type Adapter,
+  ANALYTICS_EVENTS,
+  defaultEligibleModel,
+  getCloudUrlFromRegion,
+} from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDefaultModel";
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
+import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
+import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { toast } from "@posthog/ui/primitives/toast";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import { toast as sonnerToast } from "sonner";
 
 /** Variant-specific copy used in the toasts/errors emitted by the runner. */
 export interface InboxCloudTaskCopy {
@@ -49,9 +57,15 @@ export interface InboxCloudTaskCopy {
 export interface InboxCloudTaskInputContext {
   reportId?: string;
   reportTitle?: string | null;
-  cloudRepository: string;
-  githubUserIntegrationId: string;
-  adapter: "claude" | "codex";
+  /**
+   * Resolved repository, or null when the runner ran repo-less (only possible
+   * when the caller sets `allowMissingRepository`). Variants that require a repo
+   * never observe null here, since the runner bails before `buildInput`.
+   */
+  cloudRepository: string | null;
+  /** Null alongside a null `cloudRepository` (repo-less run). */
+  githubUserIntegrationId: string | null;
+  adapter: Adapter;
   model: string;
   reasoningLevel?: string;
 }
@@ -61,6 +75,14 @@ export interface UseInboxCloudTaskRunnerOptions {
   reportId?: string;
   reportTitle?: string | null;
   cloudRepository: string | null;
+  /**
+   * When true, a missing repository is not an error: the task is created
+   * repo-less (no clone, no GitHub identity). The backend provisions a bare
+   * sandbox in that case. Use for flows that only need the cloud sandbox plus
+   * PostHog MCP — e.g. scout chats — never for flows that author a PR. Defaults
+   * to false, preserving the repo + integration gate for Create-PR / Discuss.
+   */
+  allowMissingRepository?: boolean;
   copy: InboxCloudTaskCopy;
   /** Logger scope used for failure traces. */
   loggerScope: string;
@@ -93,6 +115,7 @@ export function useInboxCloudTaskRunner({
   reportId,
   reportTitle,
   cloudRepository,
+  allowMissingRepository = false,
   copy,
   loggerScope,
   buildInput,
@@ -106,19 +129,28 @@ export function useInboxCloudTaskRunner({
   const modelResolver = useService<ReportModelResolver>(REPORT_MODEL_RESOLVER);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const queryClient = useQueryClient();
+  const { isOnline } = useConnectivity();
 
   const run = useCallback(async () => {
     if (isRunning) return;
     const log = logger.scope(loggerScope);
 
-    if (!cloudRepository) {
+    if (!isOnline) {
+      showOfflineToast();
+      return;
+    }
+
+    if (!cloudRepository && !allowMissingRepository) {
       toast.error(copy.errorTitle, { description: copy.missingRepository });
       return;
     }
 
-    const githubUserIntegrationId =
-      getUserIntegrationIdForRepo(cloudRepository);
-    if (!githubUserIntegrationId) {
+    // A repo-less run has no GitHub identity; only resolve/require the user
+    // integration when a repository is actually in play.
+    const githubUserIntegrationId = cloudRepository
+      ? getUserIntegrationIdForRepo(cloudRepository)
+      : null;
+    if (cloudRepository && !githubUserIntegrationId) {
       toast.error(copy.errorTitle, { description: copy.missingIntegration });
       return;
     }
@@ -135,25 +167,57 @@ export function useInboxCloudTaskRunner({
     const adapter = settings.lastUsedAdapter ?? "claude";
     const apiHost = getCloudUrlFromRegion(cloudRegion);
 
-    const model =
-      settings.lastUsedModel ??
-      (await resolveDefaultModel(queryClient, apiHost, adapter, modelResolver));
+    // Pass the persisted model as a *preference*, not a hard selection: the
+    // resolver keeps it only if the gateway still offers it, otherwise it falls
+    // back to the server default. A stale id (e.g. one later de-listed for the
+    // org) would otherwise be sent here and fail the run with a gateway 403.
+    const preferredModel = defaultEligibleModel(settings.lastUsedModel);
+    const resolvedModel = await resolveDefaultModel(
+      queryClient,
+      apiHost,
+      adapter,
+      modelResolver,
+      preferredModel,
+    );
+    // The resolver returns undefined on a transient failure; fall back to the
+    // persisted id so a gateway outage degrades gracefully rather than blocking.
+    const model = resolvedModel ?? preferredModel;
 
     if (!model) {
-      sonnerToast.dismiss(toastId);
+      toast.dismiss(toastId);
       toast.error(copy.errorTitle, { description: copy.missingModel });
       setIsRunning(false);
       return;
     }
 
+    // The persisted effort belongs to `lastUsedModel`; if the resolver swapped in
+    // a fallback default, that tier may be unsupported for the new model and the
+    // cloud runtime rejects the pair (see agent `bin.ts`). Carry the effort only
+    // when the model is unchanged AND the tier is actually supported for it —
+    // an effort-less model (e.g. a Cloudflare `@cf/*` model) carrying a stale
+    // tier would otherwise hard-fail the run at startup. Otherwise let the
+    // runtime pick its default.
+    const reasoningLevel =
+      model === settings.lastUsedModel &&
+      settings.lastUsedReasoningEffort &&
+      isSupportedReasoningEffort(
+        adapter,
+        model,
+        settings.lastUsedReasoningEffort,
+      )
+        ? settings.lastUsedReasoningEffort
+        : undefined;
+
     const input = buildInput({
       reportId,
       reportTitle,
       cloudRepository,
-      githubUserIntegrationId: String(githubUserIntegrationId),
+      githubUserIntegrationId: githubUserIntegrationId
+        ? String(githubUserIntegrationId)
+        : null,
       adapter,
       model,
-      reasoningLevel: settings.lastUsedReasoningEffort ?? undefined,
+      reasoningLevel,
     });
 
     try {
@@ -167,7 +231,7 @@ export function useInboxCloudTaskRunner({
       });
 
       if (result.success) {
-        sonnerToast.dismiss(toastId);
+        toast.dismiss(toastId);
         if (!redirectOnSuccess) {
           const task = createdTask;
           toast.success(copy.successTitle ?? "Task started", {
@@ -185,7 +249,7 @@ export function useInboxCloudTaskRunner({
         track(ANALYTICS_EVENTS.TASK_CREATED, {
           auto_run: true,
           created_from: "command-menu",
-          repository_provider: "github",
+          ...(cloudRepository ? { repository_provider: "github" } : {}),
           workspace_mode: "cloud",
           ...(reportId
             ? {
@@ -198,10 +262,10 @@ export function useInboxCloudTaskRunner({
           ...analyticsExtras,
         });
       } else {
-        sonnerToast.dismiss(toastId);
+        toast.dismiss(toastId);
         // Usage-limit blocks already show the upgrade modal; don't double-toast.
         if (!isUsageLimitResult(result)) {
-          toast.error(copy.errorTitle, { description: result.error });
+          toastError(copy.errorTitle, result.error);
           log.error("Cloud-task creation failed", {
             failedStep: result.failedStep,
             error: result.error,
@@ -211,10 +275,8 @@ export function useInboxCloudTaskRunner({
         }
       }
     } catch (error) {
-      sonnerToast.dismiss(toastId);
-      const description =
-        error instanceof Error ? error.message : "Unknown error";
-      toast.error(copy.errorTitle, { description });
+      toast.dismiss(toastId);
+      toastError(copy.errorTitle, error);
       log.error("Unexpected error during cloud-task creation", {
         error,
         reportId,
@@ -224,8 +286,10 @@ export function useInboxCloudTaskRunner({
     }
   }, [
     isRunning,
+    isOnline,
     loggerScope,
     cloudRepository,
+    allowMissingRepository,
     cloudRegion,
     reportId,
     reportTitle,

@@ -7,10 +7,11 @@ import {
   type IMainWindow,
   MAIN_WINDOW_SERVICE,
 } from "@posthog/platform/main-window";
+import type { NotificationTarget } from "@posthog/platform/notifications";
 import { type INotifier, NOTIFIER_SERVICE } from "@posthog/platform/notifier";
 import { inject, injectable, postConstruct } from "inversify";
-import { TASK_LINK_SERVICE } from "../links/identifiers";
-import { TaskLinkEvent, type TaskLinkService } from "../links/task-link";
+import { OPEN_TARGET_LINK_SERVICE } from "../links/identifiers";
+import type { OpenTargetLinkService } from "../links/open-target-link";
 
 @injectable()
 export class NotificationService {
@@ -18,8 +19,8 @@ export class NotificationService {
   private readonly log: ScopedLogger;
 
   constructor(
-    @inject(TASK_LINK_SERVICE)
-    private readonly taskLinkService: TaskLinkService,
+    @inject(OPEN_TARGET_LINK_SERVICE)
+    private readonly openTargetLink: OpenTargetLinkService,
     @inject(NOTIFIER_SERVICE)
     private readonly notifier: INotifier,
     @inject(MAIN_WINDOW_SERVICE)
@@ -35,7 +36,12 @@ export class NotificationService {
     this.mainWindow.onFocus(() => this.clearDockBadge());
   }
 
-  send(title: string, body: string, silent: boolean, taskId?: string): void {
+  send(
+    title: string,
+    body: string,
+    silent: boolean,
+    target?: NotificationTarget,
+  ): void {
     if (!this.notifier.isSupported()) {
       this.log.warn("Notifications not supported on this platform");
       return;
@@ -48,20 +54,24 @@ export class NotificationService {
       onClick: () => {
         this.log.info("Notification clicked, focusing window", {
           title,
-          taskId,
+          target: target?.kind,
         });
         if (this.mainWindow.isMinimized()) {
           this.mainWindow.restore();
         }
         this.mainWindow.focus();
 
-        if (taskId) {
-          this.taskLinkService.emit(TaskLinkEvent.OpenTask, { taskId });
-          this.log.info("Notification clicked, navigating to task", { taskId });
+        if (target) {
+          // Window focus is handled inside open(); we still focus above so a
+          // targetless notification raises the app too.
+          this.openTargetLink.open(target);
+          this.log.info("Notification clicked, navigating to target", {
+            kind: target.kind,
+          });
         }
       },
     });
-    this.log.info("Notification sent", { title, body, silent, taskId });
+    this.log.info("Notification sent", { title, body, silent, target });
   }
 
   showDockBadge(): void {

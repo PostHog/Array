@@ -7,7 +7,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { track } from "@posthog/ui/shell/analytics";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { SeverityBadge } from "./ScoutBadges";
 import { ScoutLinkedReportChip } from "./ScoutLinkedReportChip";
@@ -15,6 +15,7 @@ import { ScoutLinkedReportChip } from "./ScoutLinkedReportChip";
 export function ScoutEmissionCard({
   emission,
   skillName,
+  scoutLabel,
   actions,
   footerEnd,
   linkedReport,
@@ -24,6 +25,12 @@ export function ScoutEmissionCard({
   emission: ScoutEmission;
   /** The emitting scout, attached to analytics events when known. */
   skillName?: string;
+  /**
+   * Prettified emitting-scout name, shown in the header. Set on cross-fleet
+   * surfaces (the findings page) where cards from different scouts are mixed;
+   * omit on a single-scout surface where the scout is already obvious.
+   */
+  scoutLabel?: string;
   /** Interactive controls shown after the finding id at the footer's left. */
   actions?: ReactNode;
   /** Content pinned to the footer's right edge, e.g. the task-run link. */
@@ -81,6 +88,17 @@ export function ScoutEmissionCard({
         <Text className="text-[11px] text-gray-10">
           confidence {Math.round(emission.confidence * 100)}%
         </Text>
+        {scoutLabel ? (
+          <Flex align="center" gap="1" className="min-w-0">
+            <CompassIcon size={11} className="shrink-0 text-gray-9" />
+            <Text
+              className="truncate text-[11px] text-gray-9"
+              title={scoutLabel}
+            >
+              {scoutLabel}
+            </Text>
+          </Flex>
+        ) : null}
         <span className="flex-1" />
         <RelativeTimestamp timestamp={emission.emitted_at} />
       </button>
@@ -91,6 +109,21 @@ export function ScoutEmissionCard({
       >
         <MarkdownRenderer content={emission.description} />
       </Box>
+      {emission.tags?.length ? (
+        <Flex gap="1" mt="2" wrap="wrap">
+          {emission.tags.map((tag) => (
+            <Badge
+              key={tag}
+              variant="soft"
+              color="gray"
+              size="1"
+              className="text-[11px]"
+            >
+              {tag}
+            </Badge>
+          ))}
+        </Flex>
+      ) : null}
       {expanded ? (
         <Flex
           align="center"

@@ -6,6 +6,7 @@ import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { DEFAULT_GATEWAY_MODEL } from "../../../gateway-models";
 import type { PostHogAPIClient } from "../../../posthog-api";
 import type { StoredEntry } from "../../../types";
+import { isEmptyContentBlock } from "../../../utils/acp-content";
 import { supports1MContext } from "./models";
 
 interface ConversationTurn {
@@ -42,6 +43,37 @@ interface SessionUpdate {
   sessionUpdate: string;
   content?: ContentBlock | ContentBlock[];
   _meta?: { claudeCode?: ClaudeCodeMeta };
+  // ACP puts these on the update itself; _meta.claudeCode only reliably
+  // carries toolName (and sometimes toolResponse).
+  toolCallId?: string;
+  rawInput?: unknown;
+  rawOutput?: unknown;
+}
+
+// Individual tool payloads can be huge (whole-file Write inputs, full test
+// output). Cap each one so a single call can't dominate the resume budget.
+const MAX_TOOL_PAYLOAD_CHARS = 10_000;
+
+function capToolPayload(value: unknown): unknown {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  if (typeof text !== "string" || text.length <= MAX_TOOL_PAYLOAD_CHARS) {
+    return value;
+  }
+  const preview = `${text.slice(0, MAX_TOOL_PAYLOAD_CHARS)}… [truncated ${text.length - MAX_TOOL_PAYLOAD_CHARS} chars]`;
+  // tool_use.input must stay an object per the Claude API schema — wrap
+  // instead of replacing with a bare string.
+  return typeof value === "string"
+    ? preview
+    : { _truncated: true, preview, originalSize: text.length };
+}
+
+function isEmptyRecord(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 0
+  );
 }
 
 const MAX_PROJECT_KEY_LENGTH = 200;
@@ -55,14 +87,23 @@ function hashString(s: string): string {
   return Math.abs(hash).toString(36);
 }
 
-export function getSessionJsonlPath(sessionId: string, cwd: string): string {
-  const configDir =
-    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+export function encodeCwdToProjectKey(cwd: string): string {
   let projectKey = cwd.replace(/[^a-zA-Z0-9]/g, "-");
   if (projectKey.length > MAX_PROJECT_KEY_LENGTH) {
     projectKey = `${projectKey.slice(0, MAX_PROJECT_KEY_LENGTH)}-${hashString(cwd)}`;
   }
-  return path.join(configDir, "projects", projectKey, `${sessionId}.jsonl`);
+  return projectKey;
+}
+
+export function getSessionJsonlPath(sessionId: string, cwd: string): string {
+  const configDir =
+    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  return path.join(
+    configDir,
+    "projects",
+    encodeCwdToProjectKey(cwd),
+    `${sessionId}.jsonl`,
+  );
 }
 
 export function rebuildConversation(
@@ -116,7 +157,11 @@ export function rebuildConversation(
         case "agent_message_chunk":
         case "agent_thought_chunk": {
           const content = update.content;
-          if (content && !Array.isArray(content)) {
+          if (
+            content &&
+            !Array.isArray(content) &&
+            !isEmptyContentBlock(content)
+          ) {
             if (
               content.type === "text" &&
               currentAssistantContent.length > 0 &&
@@ -139,36 +184,44 @@ export function rebuildConversation(
         case "tool_call":
         case "tool_call_update": {
           const meta = update._meta?.claudeCode;
-          if (meta) {
-            const { toolCallId, toolName, toolInput, toolResponse } = meta;
+          const toolCallId = update.toolCallId ?? meta?.toolCallId;
+          if (!toolCallId) break;
 
-            if (toolCallId && toolName) {
-              let toolCall = currentToolCalls.find(
-                (tc) => tc.toolCallId === toolCallId,
-              );
-              if (!toolCall) {
-                toolCall = { toolCallId, toolName, input: toolInput };
-                currentToolCalls.push(toolCall);
-              }
-              if (toolResponse !== undefined) {
-                toolCall.result = toolResponse;
-              }
-            }
+          let toolCall = currentToolCalls.find(
+            (tc) => tc.toolCallId === toolCallId,
+          );
+          if (!toolCall) {
+            const toolName = meta?.toolName;
+            // Bare streaming updates carry no name; the opening tool_call
+            // always does, so the call exists by the time they arrive.
+            if (!toolName) break;
+            toolCall = { toolCallId, toolName, input: {} };
+            currentToolCalls.push(toolCall);
+          }
+
+          const input = update.rawInput ?? meta?.toolInput;
+          // The opening tool_call ships rawInput: {} — don't clobber an
+          // already-streamed input with it.
+          if (input !== undefined && !isEmptyRecord(input)) {
+            toolCall.input = capToolPayload(input);
+          }
+          const result = update.rawOutput ?? meta?.toolResponse;
+          if (result !== undefined) {
+            toolCall.result = capToolPayload(result);
           }
           break;
         }
 
         case "tool_result": {
           const meta = update._meta?.claudeCode;
-          if (meta) {
-            const { toolCallId, toolResponse } = meta;
-            if (toolCallId) {
-              const toolCall = currentToolCalls.find(
-                (tc) => tc.toolCallId === toolCallId,
-              );
-              if (toolCall && toolResponse !== undefined) {
-                toolCall.result = toolResponse;
-              }
+          const toolCallId = update.toolCallId ?? meta?.toolCallId;
+          if (toolCallId) {
+            const toolCall = currentToolCalls.find(
+              (tc) => tc.toolCallId === toolCallId,
+            );
+            const result = update.rawOutput ?? meta?.toolResponse;
+            if (toolCall && result !== undefined) {
+              toolCall.result = capToolPayload(result);
             }
           }
           break;
@@ -188,9 +241,12 @@ export function rebuildConversation(
   return turns;
 }
 
-const CHARS_PER_TOKEN = 4;
-const DEFAULT_MAX_TOKENS = 150_000;
-const LARGE_CONTEXT_MAX_TOKENS = 800_000;
+// JSON-heavy tool payloads tokenize at ~2.5-3 chars/token, so estimate low.
+const CHARS_PER_TOKEN = 3;
+// Target ~half the context window, leaving headroom for the system prompt,
+// tools, skills, estimation error, and the resumed run's own work.
+const DEFAULT_MAX_TOKENS = 80_000;
+const LARGE_CONTEXT_MAX_TOKENS = 400_000;
 
 function estimateTurnTokens(turn: ConversationTurn): number {
   let chars = 0;
@@ -227,12 +283,60 @@ export function selectRecentTurns(
     startIndex = i;
   }
 
+  if (startIndex === turns.length && turns.length > 0) {
+    // Even the most recent turn alone exceeds the budget — typical for a
+    // single-prompt run, where everything after the prompt is one giant
+    // assistant turn. Resuming with nothing loses all context, so keep the
+    // nearest user turn (the task intent) and shed the assistant turn's
+    // oldest tool calls until it fits.
+    return selectOversizedTailFallback(turns, maxTokens);
+  }
+
   // Ensure we start on a user turn so the conversation is well-formed
   while (startIndex < turns.length && turns[startIndex].role !== "user") {
     startIndex++;
   }
 
   return turns.slice(startIndex);
+}
+
+function selectOversizedTailFallback(
+  turns: ConversationTurn[],
+  maxTokens: number,
+): ConversationTurn[] {
+  const last = turns[turns.length - 1];
+
+  let userIndex = turns.length - 1;
+  while (userIndex >= 0 && turns[userIndex].role !== "user") {
+    userIndex--;
+  }
+
+  const selected: ConversationTurn[] = [];
+  let budget = maxTokens;
+  if (userIndex >= 0) {
+    selected.push(turns[userIndex]);
+    budget -= estimateTurnTokens(turns[userIndex]);
+  }
+  if (userIndex !== turns.length - 1) {
+    selected.push(dropOldestToolCalls(last, Math.max(budget, 0)));
+  }
+  return selected;
+}
+
+function dropOldestToolCalls(
+  turn: ConversationTurn,
+  budget: number,
+): ConversationTurn {
+  if (!turn.toolCalls?.length) return turn;
+  const toolCalls = [...turn.toolCalls];
+  const trimmed: ConversationTurn = { ...turn, toolCalls };
+  while (toolCalls.length > 0 && estimateTurnTokens(trimmed) > budget) {
+    toolCalls.shift();
+  }
+  if (toolCalls.length === 0) {
+    trimmed.toolCalls = undefined;
+  }
+  return trimmed;
 }
 
 const BASE62 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -378,7 +482,10 @@ export function conversationTurnsToJsonlEntries(
 
       for (const block of turn.content) {
         const blockType = (block as { type: string }).type;
-        if (blockType === "thinking" || blockType === "text") {
+        if (
+          (blockType === "thinking" || blockType === "text") &&
+          !isEmptyContentBlock(block)
+        ) {
           allBlocks.push(block);
         }
       }
@@ -389,7 +496,8 @@ export function conversationTurnsToJsonlEntries(
             type: "tool_use",
             id: tc.toolCallId,
             name: tc.toolName,
-            input: tc.input,
+            // undefined would be dropped on stringify; the API requires input
+            input: tc.input ?? {},
           });
         }
       }
@@ -487,6 +595,74 @@ interface HydrationLog {
   warn: (msg: string, data?: unknown) => void;
 }
 
+// Heals JSONL files written before the empty-block and missing-tool_use-input
+// fixes existed; without this an already-poisoned transcript keeps 400ing on
+// every resume.
+export async function sanitizeSessionJsonl(
+  jsonlPath: string,
+): Promise<boolean> {
+  let raw: string;
+  let statBefore: { mtimeMs: number; size: number };
+  try {
+    statBefore = await fs.stat(jsonlPath);
+    raw = await fs.readFile(jsonlPath, "utf8");
+  } catch {
+    return false;
+  }
+
+  let changed = false;
+  const sanitized = raw.split("\n").map((line) => {
+    if (!line.trim()) return line;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      return line;
+    }
+    const message = parsed.message as { content?: unknown } | undefined;
+    if (!message || !Array.isArray(message.content)) return line;
+    let lineChanged = false;
+    const kept = message.content.filter((block) => !isEmptyContentBlock(block));
+    if (kept.length !== message.content.length) {
+      lineChanged = true;
+      message.content = kept.length > 0 ? kept : [{ type: "text", text: " " }];
+    }
+    for (const block of message.content as (Record<string, unknown> | null)[]) {
+      if (block?.type === "tool_use" && block.input == null) {
+        block.input = {};
+        lineChanged = true;
+      }
+    }
+    if (!lineChanged) return line;
+    changed = true;
+    return JSON.stringify(parsed);
+  });
+
+  if (!changed) return false;
+
+  const tmpPath = `${jsonlPath}.tmp.${Date.now()}`;
+  let renamed = false;
+  try {
+    await fs.writeFile(tmpPath, sanitized.join("\n"));
+    // A concurrent writer may still own the file; abort rather than clobber
+    // lines appended since the read. The next resume retries.
+    const statNow = await fs.stat(jsonlPath);
+    if (
+      statNow.mtimeMs !== statBefore.mtimeMs ||
+      statNow.size !== statBefore.size
+    ) {
+      return false;
+    }
+    await fs.rename(tmpPath, jsonlPath);
+    renamed = true;
+    return true;
+  } finally {
+    if (!renamed) {
+      await fs.unlink(tmpPath).catch(() => {});
+    }
+  }
+}
+
 export async function hydrateSessionJsonl(params: {
   sessionId: string;
   cwd: string;
@@ -504,6 +680,19 @@ export async function hydrateSessionJsonl(params: {
     const jsonlPath = getSessionJsonlPath(params.sessionId, params.cwd);
     try {
       await fs.access(jsonlPath);
+      try {
+        if (await sanitizeSessionJsonl(jsonlPath)) {
+          log.info("Removed empty content blocks from existing session JSONL", {
+            jsonlPath,
+          });
+        }
+      } catch (err) {
+        // A sanitize failure must not block resuming from the existing file.
+        log.warn("Failed to sanitize existing session JSONL", {
+          jsonlPath,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       return true;
     } catch {
       // File doesn't exist, proceed with hydration
@@ -541,8 +730,9 @@ export async function hydrateSessionJsonl(params: {
     });
 
     const allTurns = rebuildConversation(entries);
+
     if (allTurns.length === 0) {
-      log.info("No conversation in S3 logs, skipping JSONL hydration");
+      log.info("No conversation to hydrate, skipping JSONL hydration");
       return false;
     }
 

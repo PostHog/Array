@@ -1,10 +1,14 @@
 import type { Task } from "@posthog/shared/domain-types";
+import { AutoresearchPanel } from "../../autoresearch/AutoresearchPanel";
 import { CodeEditorPanel } from "../../code-editor/components/CodeEditorPanel";
-import { CloudReviewPage } from "../../code-review/components/CloudReviewPage";
-import { ReviewPage } from "../../code-review/components/ReviewPage";
+import {
+  LazyCloudReviewPage as CloudReviewPage,
+  LazyReviewPage as ReviewPage,
+} from "../../code-review/components/LazyReviewPages";
 import type { Tab } from "../../panels/panelTypes";
 import { useIsWorkspaceCloudRun } from "../../workspace/useWorkspace";
 import { ActionPanel } from "./ActionPanel";
+import { CanvasInstructionsTab } from "./CanvasInstructionsTab";
 import { ChangesPanel } from "./ChangesPanel";
 import { ChannelContextTab } from "./ChannelContextTab";
 import { FileTreePanel } from "./FileTreePanel";
@@ -65,6 +69,12 @@ export function TabContentRenderer({
       return (
         <ChannelContextTab channelName={data.channelName} body={data.body} />
       );
+
+    case "canvas-instructions":
+      return <CanvasInstructionsTab body={data.body} />;
+
+    case "autoresearch":
+      return <AutoresearchPanel taskId={taskId} />;
 
     case "other":
       switch (tab.id) {

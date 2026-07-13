@@ -1,7 +1,7 @@
 import { getDeeplinkProtocol } from "@posthog/shared";
 import { app } from "electron";
 import { container } from "./di/container";
-import { MAIN_TOKENS } from "./di/tokens";
+import { DEEP_LINK_SERVICE } from "./di/tokens";
 import type { DeepLinkService } from "./services/deep-link/service";
 import { isDevBuild } from "./utils/env";
 import { logger } from "./utils/logger";
@@ -12,7 +12,7 @@ const log = logger.scope("deep-links");
 let pendingDeepLinkUrl: string | null = null;
 
 function getDeepLinkService(): DeepLinkService {
-  return container.get<DeepLinkService>(MAIN_TOKENS.DeepLinkService);
+  return container.get<DeepLinkService>(DEEP_LINK_SERVICE);
 }
 
 function findDeepLinkUrlInArgs(args: string[]): string | undefined {

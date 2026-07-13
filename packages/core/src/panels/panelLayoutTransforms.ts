@@ -16,7 +16,13 @@ import {
   removeTabFromPanel,
   updateTreeNode,
 } from "./panelTree";
-import type { PanelNode, SplitDirection, Tab, TaskLayout } from "./panelTypes";
+import type {
+  PanelNode,
+  SplitDirection,
+  Tab,
+  TabData,
+  TaskLayout,
+} from "./panelTypes";
 
 export const MAX_RECENT_FILES = 10;
 
@@ -216,24 +222,21 @@ export function openTabInSplit(
   return { panelTree: finalTree, focusedPanelId: newPanelId, ...metadata };
 }
 
-// Opens a channel-context snapshot as a tab in the right-side split (creating
-// the split if needed), mirroring openTabInSplit but carrying the content
-// inline in the tab's data instead of deriving it from the tab id. Re-opening
-// the same tab id just activates the existing tab.
-export function openContextInSplit(
+// Opens a read-only snapshot (channel CONTEXT.md, canvas generation
+// instructions, …) as a tab in the right-side split (creating the split if
+// needed), mirroring openTabInSplit but carrying the content inline in the
+// tab's data instead of deriving it from the tab id. Re-opening the same tab id
+// just activates the existing tab.
+export function openReadonlyTabInSplit(
   layout: TaskLayout,
   tabId: string,
   label: string,
-  context: { channelName: string | null; body: string },
+  data: TabData,
 ): Partial<TaskLayout> {
   const buildTab = (): Tab => ({
     id: tabId,
     label,
-    data: {
-      type: "context",
-      channelName: context.channelName,
-      body: context.body,
-    },
+    data,
     component: null,
     draggable: true,
     closeable: true,

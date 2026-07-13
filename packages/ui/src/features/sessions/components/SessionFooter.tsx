@@ -8,6 +8,8 @@ import {
 import type { ContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { DiffStatsChip } from "./DiffStatsChip";
+import { ImageBuilderBuildButton } from "./ImageBuilderBuildButton";
+import { SlotMachineLever } from "./SlotMachineLever";
 
 interface SessionFooterProps {
   task?: Task;
@@ -40,6 +42,9 @@ export function SessionFooter({
 }: SessionFooterProps) {
   const rightSide = (
     <Flex align="center" gap="3" className="ml-auto shrink-0">
+      {task?.origin_product === "image_builder" && (
+        <ImageBuilderBuildButton taskId={task.id} />
+      )}
       {task && <DiffStatsChip task={task} />}
       <ContextUsageIndicator usage={usage ?? null} />
     </Flex>
@@ -80,6 +85,7 @@ export function SessionFooter({
                 ({queuedCount} queued)
               </Text>
             )}
+            <SlotMachineLever spinning={Boolean(isPromptPending)} />
           </Flex>
           {rightSide}
         </Flex>

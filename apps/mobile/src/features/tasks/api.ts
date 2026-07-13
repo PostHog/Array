@@ -1,3 +1,4 @@
+import type { Adapter } from "@posthog/shared";
 import { fetch } from "expo/fetch";
 import {
   authedFetch,
@@ -302,6 +303,47 @@ export async function runTaskAutomation(
   return await parseJsonResponse<TaskAutomation>(response);
 }
 
+export async function warmTask(options: {
+  repository: string;
+  github_integration: number;
+  branch?: string | null;
+  runtime_adapter?: string | null;
+  model?: string | null;
+  reasoning_effort?: string | null;
+}): Promise<{ task_id: string; run_id: string } | null> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/warm/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        repository: options.repository,
+        github_integration: options.github_integration,
+        branch: options.branch ?? null,
+        runtime_adapter: options.runtime_adapter ?? null,
+        model: options.model ?? null,
+        reasoning_effort: options.reasoning_effort ?? null,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to warm task",
+    );
+  }
+
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  return JSON.parse(text) as { task_id: string; run_id: string };
+}
+
 export async function createTask(options: CreateTaskOptions): Promise<Task> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
@@ -380,7 +422,7 @@ export interface RunTaskInCloudOptions {
   pendingUserMessage?: string;
   mode?: "interactive" | "background";
   /** Adapter to use on the cloud runner. Currently only "claude" on mobile. */
-  runtimeAdapter?: "claude" | "codex";
+  runtimeAdapter?: Adapter;
   /** Gateway model ID, e.g. "claude-opus-4-8". */
   model?: string;
   /** Reasoning effort: "low" | "medium" | "high" (model-dependent). */
@@ -391,6 +433,11 @@ export interface RunTaskInCloudOptions {
   runSource?: "manual" | "signal_report";
   /** Signal report ID when run_source is "signal_report". */
   signalReportId?: string;
+  /** When true, the cloud run pushes its changes and opens a draft PR on
+   *  completion without waiting for an explicit ask. */
+  autoPublish?: boolean;
+  /** Only false is sent: opts the run out of rtk command-output compression. */
+  rtkEnabled?: boolean;
 }
 
 export async function runTaskInCloud(
@@ -414,7 +461,9 @@ export async function runTaskInCloud(
       options.reasoningEffort !== undefined ||
       options.initialPermissionMode !== undefined ||
       options.runSource !== undefined ||
-      options.signalReportId !== undefined);
+      options.signalReportId !== undefined ||
+      options.autoPublish !== undefined ||
+      options.rtkEnabled === false);
 
   let body: string | undefined;
   if (hasOptions) {
@@ -441,6 +490,12 @@ export async function runTaskInCloud(
     if (options?.runSource) payload.run_source = options.runSource;
     if (options?.signalReportId)
       payload.signal_report_id = options.signalReportId;
+    if (options?.autoPublish !== undefined) {
+      payload.auto_publish = options.autoPublish;
+    }
+    if (options?.rtkEnabled === false) {
+      payload.rtk_enabled = false;
+    }
     body = JSON.stringify(payload);
   }
 
@@ -815,7 +870,9 @@ export async function getUserGithubIntegrations(): Promise<
 > {
   const baseUrl = getBaseUrl();
 
-  const response = await authedFetch(`${baseUrl}/api/users/@me/integrations/`);
+  const response = await authedFetch(
+    `${baseUrl}/api/users/@me/integrations/?kind=github`,
+  );
 
   if (!response.ok) {
     throw new HttpError(
@@ -828,7 +885,7 @@ export async function getUserGithubIntegrations(): Promise<
   const data = await parseJsonResponse<{ results?: UserGithubIntegration[] }>(
     response,
   );
-  return (data.results ?? []).filter((i) => i.kind === "github");
+  return data.results ?? [];
 }
 
 export async function getUserGithubRepositories(

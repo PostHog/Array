@@ -1,5 +1,7 @@
 // Analytics event types and properties
 
+import type { Adapter } from "./adapter";
+
 export interface PromptHistoryOpenedProperties {
   entry_count: number;
 }
@@ -47,8 +49,20 @@ export type CommandMenuAction =
   | "toggle-theme"
   | "toggle-left-sidebar"
   | "open-review-panel"
+  | "go-back"
+  | "go-forward"
   | "open-task"
-  | "open-channel";
+  | "open-channel"
+  | "open-command-center"
+  | "open-inbox"
+  | "open-usage"
+  | "search-files"
+  | "open-file"
+  | "reload-window"
+  | "show-log-folder"
+  | "zoom-in"
+  | "zoom-out"
+  | "zoom-reset";
 
 // Event property interfaces
 export interface TaskListViewProperties {
@@ -74,7 +88,7 @@ export interface TaskCreateProperties {
   uses_worktree_link?: boolean;
   /** Worktree mode: repo has a non-empty .worktreeinclude file */
   uses_worktree_include?: boolean;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
 }
 
 export interface TaskViewProperties {
@@ -152,8 +166,9 @@ export interface AgentFileActivityProperties {
   branch_name: string | null;
 }
 
-// Branch link events
-type BranchLinkSource = "agent" | "user" | "unknown";
+// Branch link events. "auto" marks self-healing unlinks of branches that no
+// longer exist anywhere (e.g. deleted after a PR merge).
+type BranchLinkSource = "agent" | "user" | "auto" | "unknown";
 
 export interface BranchLinkedProperties {
   task_id: string;
@@ -211,6 +226,15 @@ export interface FolderRegisteredProperties {
 // Navigation events
 export interface CommandMenuActionProperties {
   action_type: CommandMenuAction;
+  /** Channel acted on for the bluebird `open-channel` / `open-task` actions. */
+  channel_id?: string;
+}
+
+export interface BrainrotActivatedProperties {
+  /** Grid layout preset, e.g. "2x2". */
+  layout: string;
+  /** Cells already holding a task when Brainrot was chosen. */
+  filled_cells: number;
 }
 
 export interface SkillButtonTriggeredProperties {
@@ -224,6 +248,15 @@ export interface SettingChangedProperties {
   setting_name: string;
   new_value: string | boolean | number;
   old_value?: string | boolean | number;
+}
+
+export interface CustomSoundAddedProperties {
+  // How the clip was captured.
+  source: "recording" | "import";
+  // Whether the user applied the offered leading/trailing-silence trim.
+  trimmed: boolean;
+  // Length of the saved clip in ms (no clip contents or name — no PII).
+  duration_ms: number;
 }
 
 // Error events
@@ -328,6 +361,17 @@ export interface DeepLinkIssueFailedProperties {
   issue_number: number;
   reason: "not_found" | "fetch_failed";
   error_message?: string;
+}
+
+export interface DeepLinkCanvasProperties {
+  channel_id: string;
+  dashboard_id: string;
+}
+
+export interface DeepLinkChannelProperties {
+  channel_id: string;
+  /** Present when the link targets a thread inside the channel. */
+  task_id?: string;
 }
 
 // Feedback events
@@ -589,6 +633,14 @@ export interface InboxReportScrolledProperties {
   time_since_open_ms: number;
 }
 
+export interface UsageViewedProperties {
+  is_pro: boolean;
+  /** Monthly bucket percent (0-100), null when usage is unavailable. */
+  sustained_used_percent: number | null;
+  /** Daily bucket percent (0-100), null when usage is unavailable. */
+  burst_used_percent: number | null;
+}
+
 export interface SpendAnalysisTaskOpenedProperties {
   /** Total LLM spend in USD across all products for the analysed window. */
   total_cost_usd: number;
@@ -646,7 +698,11 @@ export type ScoutChatType =
   | "finding_discuss"
   | "author_scout";
 
-export type ScoutSurface = "fleet_list" | "scout_detail" | "empty_state";
+export type ScoutSurface =
+  | "fleet_list"
+  | "scout_detail"
+  | "empty_state"
+  | "scout_findings";
 
 export type ScoutActionType =
   | "expand_run"
@@ -661,8 +717,12 @@ export type ScoutActionType =
   | "show_more_emitted_runs"
   | "filter_runs"
   | "toggle_hide_disabled"
+  | "filter_created_by"
   | "open_settings"
-  | "close_settings";
+  | "close_settings"
+  | "open_findings"
+  | "filter_findings"
+  | "sort_findings";
 
 export interface ScoutFleetViewedProperties {
   scout_count: number;
@@ -716,6 +776,7 @@ export interface ScoutActionProperties {
   filter_match_count?: number;
   helper_skill?: string;
   hide_disabled?: boolean;
+  created_by_me?: boolean;
   /** Status of the linked inbox report, for `open_linked_report`. */
   report_status?: string;
 }
@@ -727,6 +788,7 @@ export interface SignalSourceConnectedProperties {
     | "signals_scout"
     | "github"
     | "linear"
+    | "jira"
     | "zendesk"
     | "conversations"
     | "pganalyze"
@@ -738,10 +800,7 @@ export interface SignalSourceConnectedProperties {
 }
 
 // Agents page events (the `/code/agents` configuration surface)
-export type AgentsActionType =
-  | "run_setup_agent"
-  | "change_autostart_priority"
-  | "open_mcp_servers";
+export type AgentsActionType = "run_setup_agent" | "open_mcp_servers";
 
 export interface AgentsViewedProperties {
   /** Whether code access (GitHub) is connected — gates responder configuration. */
@@ -758,19 +817,162 @@ export interface AgentsViewedProperties {
 
 export interface AgentsActionProperties {
   action_type: AgentsActionType;
-  /** New threshold for `change_autostart_priority` (P0–P4, or null for "Never"). */
-  autostart_priority?: string | null;
   /** Whether `run_setup_agent` successfully created the setup task. */
   success?: boolean;
 }
 
+// ── Project Bluebird / Channels (Website) space events ──
+
+/** Where within the Channels space an interaction originated. */
+export type ChannelsSurface =
+  | "header_button"
+  | "title_bar"
+  | "nav"
+  | "sidebar"
+  | "command_menu"
+  | "new_task"
+  | "task_input"
+  | "channel_home"
+  | "channel_history"
+  | "channel_artifacts"
+  | "pinned"
+  | "dashboards_grid"
+  | "canvas"
+  | "context"
+  | "thread_panel"
+  | "activity";
+
+export type ChannelActionType =
+  | "enter_space"
+  | "leave_space"
+  | "toggle_channels"
+  | "leave_feedback"
+  | "nav_click"
+  | "open_channel"
+  | "collapse_channel"
+  | "view_more_tasks"
+  | "create"
+  | "rename"
+  | "delete"
+  | "star"
+  | "unstar"
+  | "edit_context_open"
+  | "new_task_open"
+  | "new_task_suggestion"
+  | "view_context"
+  | "view_history"
+  | "view_artifacts"
+  | "open_artifact"
+  | "file_task"
+  | "unfile_task"
+  | "archive_task"
+  | "open_task"
+  | "collapse_thread"
+  | "expand_thread"
+  | "copy_link"
+  | "mention_member"
+  | "view_activity"
+  | "open_mention"
+  | "canvas_mode_toggle";
+
+export interface ChannelActionProperties {
+  action_type: ChannelActionType;
+  surface: ChannelsSurface;
+  /** The channel acted on, when one is in scope. */
+  channel_id?: string;
+  /** For file/unfile/archive/open task actions; for copy_link of a thread. */
+  task_id?: string;
+  /** For file_task: destination channel when different from `channel_id`. */
+  target_channel_id?: string;
+  /** For nav_click: which destination ("home"|"activity"|"inbox"|"canvas"|"agents"|"files"|"settings"). */
+  nav_target?: string;
+  /** For mention_member: the tagged teammate's user uuid. */
+  mentioned_user_id?: string;
+  /** For new_task_suggestion: the starter-prompt card label. */
+  suggestion_label?: string;
+  /** For canvas_mode_toggle: whether canvas mode is being armed. */
+  armed?: boolean;
+  /** Whether the underlying mutation resolved successfully. */
+  success?: boolean;
+}
+
+export type DashboardActionType =
+  | "open"
+  | "create"
+  | "delete"
+  | "rename"
+  | "save"
+  | "fork"
+  | "edit_toggle"
+  | "revert"
+  | "refresh"
+  | "poll_mode_change"
+  | "date_range_apply"
+  | "link_copied"
+  | "pin"
+  | "unpin";
+
+export interface DashboardActionProperties {
+  action_type: DashboardActionType;
+  surface: ChannelsSurface;
+  channel_id?: string;
+  dashboard_id?: string;
+  /** The canvas render kind. */
+  kind?: "json-render" | "freeform";
+  /** Template chosen on create. */
+  template_id?: string;
+  /** edit_toggle: the state being entered. */
+  editing?: boolean;
+  /** poll_mode_change: the new value ("static"|"10s"|"10min"). */
+  poll_mode?: string;
+  /** date_range_apply: the named range, when not custom. */
+  range_name?: string;
+  /** Whether the underlying mutation resolved successfully. */
+  success?: boolean;
+}
+
+export type CanvasPromptSurface = "json" | "freeform";
+
+export interface CanvasPromptSentProperties {
+  surface: CanvasPromptSurface;
+  dashboard_id?: string;
+  /** True when sent via a suggestion chip rather than free-typed. */
+  from_suggestion: boolean;
+  /** "ask_agent_to_fix" for the freeform self-repair path; absent otherwise. */
+  intent?: "ask_agent_to_fix";
+  prompt_length_chars: number;
+}
+
+export type ContextActionType = "save_version" | "generate_started" | "discard";
+
+export interface ContextActionProperties {
+  action_type: ContextActionType;
+  channel_id: string;
+  /** generate_started only. */
+  execution_type?: "local" | "cloud";
+  /** save_version: whether this created the first version vs. an update. */
+  is_first_version?: boolean;
+  success?: boolean;
+}
+
+export interface ChannelsSpaceViewedProperties {
+  /** Total channels visible when the space mounts. */
+  channel_count: number;
+  starred_count: number;
+}
+
 // Subscription / billing events
 
-export type UpgradePromptShownSurface = "usage_limit_modal" | "upgrade_dialog";
+export type UpgradePromptShownSurface =
+  | "usage_limit_modal"
+  | "upgrade_dialog"
+  | "titlebar_card";
 
 export type UpgradePromptClickedSurface =
   | "usage_limit_modal"
   | "sidebar"
+  | "titlebar"
+  | "titlebar_card"
   | "plan_page_card"
   | "upgrade_dialog";
 
@@ -796,6 +998,58 @@ export interface SubscriptionCancelledProperties {
   plan_key: string;
 }
 
+// Claude Code session import events
+/** Where in the new-task suggestions the import was launched from. */
+export type ClaudeSessionImportSource = "inline_card" | "picker_dialog";
+/**
+ * Import status of a listed CLI session. "imported" sessions are hidden from
+ * the suggestions, so an import is only ever started from a "new" or "updated"
+ * one; the wider union mirrors the domain status field.
+ */
+export type ClaudeSessionImportStatus = "new" | "imported" | "updated";
+
+export interface ClaudeSessionsShownProperties {
+  /** Resumable Claude Code CLI sessions surfaced for the repo. */
+  sessions_count: number;
+}
+
+export interface ClaudeSessionImportedProperties {
+  source: ClaudeSessionImportSource;
+  session_status: ClaudeSessionImportStatus;
+  has_git_branch: boolean;
+  /** Resumable sessions available when this one was imported. */
+  sessions_available_count: number;
+}
+
+export interface ClaudeSessionImportFailedProperties {
+  source: ClaudeSessionImportSource;
+  session_status: ClaudeSessionImportStatus;
+  /** Saga step that failed, e.g. "import_claude_session" or "task_creation". */
+  failed_step?: string;
+}
+
+/** Fired when a user arms autoresearch mode on the new-task composer. */
+export interface AutoresearchArmedProperties {
+  /** Hands-off mode auto-applied on arm so the unattended loop isn't blocked on permission prompts. */
+  default_mode: "bypassPermissions" | "acceptEdits";
+  workspace_mode?: "local" | "worktree" | "cloud";
+}
+
+/** Fired when an armed autoresearch task is submitted and its run kicks off. */
+export interface AutoresearchRunStartedProperties {
+  direction: "maximize" | "minimize";
+  /** Whether the user set a target metric value to stop early at. */
+  has_target: boolean;
+  max_iterations: number;
+  /** Build and measure stages differ, so each iteration splits into a build turn and a measure turn. */
+  stages_split: boolean;
+  implement_model?: string;
+  measure_model?: string;
+  implement_effort?: string;
+  measure_effort?: string;
+  workspace_mode?: "local" | "worktree" | "cloud";
+}
+
 // Event names as constants
 export const ANALYTICS_EVENTS = {
   // App lifecycle
@@ -815,6 +1069,11 @@ export const ANALYTICS_EVENTS = {
   TASK_RUN_COMPLETED: "Task run completed",
   TASK_RUN_CANCELLED: "Task run cancelled",
   PROMPT_SENT: "Prompt sent",
+
+  // Claude Code session import
+  CLAUDE_SESSIONS_SHOWN: "Claude Code sessions shown",
+  CLAUDE_SESSION_IMPORTED: "Claude Code session imported",
+  CLAUDE_SESSION_IMPORT_FAILED: "Claude Code session import failed",
 
   // Repository
   REPOSITORY_SELECTED: "Repository selected",
@@ -843,7 +1102,9 @@ export const ANALYTICS_EVENTS = {
   COMMAND_MENU_OPENED: "Command menu opened",
   COMMAND_MENU_ACTION: "Command menu action",
   COMMAND_CENTER_VIEWED: "Command center viewed",
+  BRAINROT_ACTIVATED: "Brainrot activated",
   SKILL_BUTTON_TRIGGERED: "Skill button triggered",
+  POSTHOG_WEB_OPENED: "PostHog web opened",
 
   // Permission events
   PERMISSION_RESPONDED: "Permission responded",
@@ -854,6 +1115,8 @@ export const ANALYTICS_EVENTS = {
 
   // Settings events
   SETTING_CHANGED: "Setting changed",
+  CUSTOM_SOUND_ADDED: "Custom sound added",
+  CUSTOM_SOUND_RECORDING_SILENT: "Custom sound recording silent",
 
   // Feedback events
   TASK_FEEDBACK: "Task feedback",
@@ -897,6 +1160,8 @@ export const ANALYTICS_EVENTS = {
   DEEP_LINK_PLAN: "Deep link plan",
   DEEP_LINK_ISSUE: "Deep link issue",
   DEEP_LINK_ISSUE_FAILED: "Deep link issue failed",
+  DEEP_LINK_CANVAS: "Deep link canvas",
+  DEEP_LINK_CHANNEL: "Deep link channel",
 
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
@@ -922,7 +1187,8 @@ export const ANALYTICS_EVENTS = {
   SCOUT_CHAT_STARTED: "Scout chat started",
   SCOUT_ACTION: "Scout action",
 
-  // Spend analysis events
+  // Usage and spend analysis events
+  USAGE_VIEWED: "Usage viewed",
   SPEND_ANALYSIS_TASK_OPENED: "Spend analysis task opened",
 
   // Prompt history events
@@ -935,6 +1201,17 @@ export const ANALYTICS_EVENTS = {
   CLOUD_TASK_USAGE_BLOCKED: "Cloud task usage blocked",
   SUBSCRIPTION_STARTED: "Subscription started",
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
+
+  // Project Bluebird (Channels) events
+  CHANNELS_SPACE_VIEWED: "Channels space viewed",
+  CHANNEL_ACTION: "Channel action",
+  DASHBOARD_ACTION: "Dashboard action",
+  CANVAS_PROMPT_SENT: "Canvas prompt sent",
+  CONTEXT_ACTION: "Context action",
+
+  // Autoresearch events
+  AUTORESEARCH_ARMED: "Autoresearch armed",
+  AUTORESEARCH_RUN_STARTED: "Autoresearch run started",
 } as const;
 
 // Event property mapping
@@ -952,6 +1229,11 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.TASK_RUN_COMPLETED]: TaskRunCompletedProperties;
   [ANALYTICS_EVENTS.TASK_RUN_CANCELLED]: TaskRunCancelledProperties;
   [ANALYTICS_EVENTS.PROMPT_SENT]: PromptSentProperties;
+
+  // Claude Code session import
+  [ANALYTICS_EVENTS.CLAUDE_SESSIONS_SHOWN]: ClaudeSessionsShownProperties;
+  [ANALYTICS_EVENTS.CLAUDE_SESSION_IMPORTED]: ClaudeSessionImportedProperties;
+  [ANALYTICS_EVENTS.CLAUDE_SESSION_IMPORT_FAILED]: ClaudeSessionImportFailedProperties;
 
   // Git operations
   [ANALYTICS_EVENTS.GIT_ACTION_EXECUTED]: GitActionExecutedProperties;
@@ -977,7 +1259,9 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.COMMAND_MENU_OPENED]: never;
   [ANALYTICS_EVENTS.COMMAND_MENU_ACTION]: CommandMenuActionProperties;
   [ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED]: never;
+  [ANALYTICS_EVENTS.BRAINROT_ACTIVATED]: BrainrotActivatedProperties;
   [ANALYTICS_EVENTS.SKILL_BUTTON_TRIGGERED]: SkillButtonTriggeredProperties;
+  [ANALYTICS_EVENTS.POSTHOG_WEB_OPENED]: never;
 
   // Permission events
   [ANALYTICS_EVENTS.PERMISSION_RESPONDED]: PermissionRespondedProperties;
@@ -988,6 +1272,8 @@ export type EventPropertyMap = {
 
   // Settings events
   [ANALYTICS_EVENTS.SETTING_CHANGED]: SettingChangedProperties;
+  [ANALYTICS_EVENTS.CUSTOM_SOUND_ADDED]: CustomSoundAddedProperties;
+  [ANALYTICS_EVENTS.CUSTOM_SOUND_RECORDING_SILENT]: never;
 
   // Feedback events
   [ANALYTICS_EVENTS.TASK_FEEDBACK]: TaskFeedbackProperties;
@@ -1031,6 +1317,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.DEEP_LINK_PLAN]: DeepLinkPlanProperties;
   [ANALYTICS_EVENTS.DEEP_LINK_ISSUE]: DeepLinkIssueProperties;
   [ANALYTICS_EVENTS.DEEP_LINK_ISSUE_FAILED]: DeepLinkIssueFailedProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_CANVAS]: DeepLinkCanvasProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_CHANNEL]: DeepLinkChannelProperties;
 
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;
@@ -1056,7 +1344,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SCOUT_CHAT_STARTED]: ScoutChatStartedProperties;
   [ANALYTICS_EVENTS.SCOUT_ACTION]: ScoutActionProperties;
 
-  // Spend analysis events
+  // Usage and spend analysis events
+  [ANALYTICS_EVENTS.USAGE_VIEWED]: UsageViewedProperties;
   [ANALYTICS_EVENTS.SPEND_ANALYSIS_TASK_OPENED]: SpendAnalysisTaskOpenedProperties;
 
   // Prompt history events
@@ -1069,4 +1358,37 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.CLOUD_TASK_USAGE_BLOCKED]: CloudTaskUsageBlockedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
+
+  // Project Bluebird (Channels) events
+  [ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED]: ChannelsSpaceViewedProperties;
+  [ANALYTICS_EVENTS.CHANNEL_ACTION]: ChannelActionProperties;
+  [ANALYTICS_EVENTS.DASHBOARD_ACTION]: DashboardActionProperties;
+  [ANALYTICS_EVENTS.CANVAS_PROMPT_SENT]: CanvasPromptSentProperties;
+  [ANALYTICS_EVENTS.CONTEXT_ACTION]: ContextActionProperties;
+
+  // Autoresearch events
+  [ANALYTICS_EVENTS.AUTORESEARCH_ARMED]: AutoresearchArmedProperties;
+  [ANALYTICS_EVENTS.AUTORESEARCH_RUN_STARTED]: AutoresearchRunStartedProperties;
 };
+
+/**
+ * The inbox event family. Every host stamps an `inbox_client` property (e.g.
+ * "code" on desktop, "mobile" on the mobile app, "cloud" on the PostHog web
+ * frontend) on exactly these events so the shared PostHog project can be sliced
+ * by surface. Mirrors posthog's `frontend/src/scenes/inbox/inboxAnalytics.ts`.
+ *
+ * Keep this in sync with the inbox entries in `EventPropertyMap` above.
+ */
+export const INBOX_ANALYTICS_EVENT_NAMES: ReadonlySet<string> = new Set([
+  ANALYTICS_EVENTS.INBOX_VIEWED,
+  ANALYTICS_EVENTS.INBOX_REPORT_OPENED,
+  ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,
+  ANALYTICS_EVENTS.INBOX_REPORT_ACTION,
+  ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED,
+  ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED,
+]);
+
+/** True when `eventName` is an inbox event that should carry `inbox_client`. */
+export function isInboxAnalyticsEvent(eventName: string): boolean {
+  return INBOX_ANALYTICS_EVENT_NAMES.has(eventName);
+}

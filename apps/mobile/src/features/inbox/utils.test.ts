@@ -2,14 +2,19 @@ import { describe, expect, it } from "vitest";
 import type {
   AvailableSuggestedReviewer,
   SignalReport,
+  SignalReportOrderingField,
   SignalReportStatus,
   SuggestedReviewer,
 } from "./types";
 import {
+  buildArchiveListOrdering,
   buildInboxViewedProperties,
   buildPriorityFilterParam,
   buildReviewerOptions,
+  buildSignalReportListOrdering,
+  dismissalReasonLabel,
   formatSignalReportSummaryMarkdown,
+  isRestorableReport,
   orderSuggestedReviewers,
   reviewerMatchesAvailable,
   toSuggestedReviewerWriteContent,
@@ -338,6 +343,46 @@ describe("reviewerMatchesAvailable", () => {
   });
 });
 
+describe("buildSignalReportListOrdering", () => {
+  it.each([
+    {
+      field: "priority" as SignalReportOrderingField,
+      direction: "desc" as const,
+      expected: "status,-is_suggested_reviewer,-priority,-created_at",
+    },
+    {
+      field: "priority" as SignalReportOrderingField,
+      direction: "asc" as const,
+      expected: "status,-is_suggested_reviewer,priority,-created_at",
+    },
+    {
+      field: "signal_count" as SignalReportOrderingField,
+      direction: "desc" as const,
+      expected: "status,-is_suggested_reviewer,-signal_count",
+    },
+    {
+      field: "total_weight" as SignalReportOrderingField,
+      direction: "asc" as const,
+      expected: "status,-is_suggested_reviewer,total_weight",
+    },
+    {
+      field: "created_at" as SignalReportOrderingField,
+      direction: "desc" as const,
+      expected: "status,-is_suggested_reviewer,-created_at",
+    },
+    {
+      field: "updated_at" as SignalReportOrderingField,
+      direction: "asc" as const,
+      expected: "status,-is_suggested_reviewer,updated_at",
+    },
+  ])(
+    "orders $field $direction as $expected",
+    ({ field, direction, expected }) => {
+      expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
+    },
+  );
+});
+
 describe("buildPriorityFilterParam", () => {
   it.each([
     {
@@ -357,6 +402,39 @@ describe("buildPriorityFilterParam", () => {
     },
   ])("$name", ({ input, expected }) => {
     expect(buildPriorityFilterParam([...input])).toBe(expected);
+  });
+});
+
+describe("buildArchiveListOrdering", () => {
+  it.each([
+    { direction: "desc" as const, expected: "-updated_at" },
+    { direction: "asc" as const, expected: "updated_at" },
+  ])(
+    "sorts by field without a status prefix ($direction)",
+    ({ direction, expected }) => {
+      expect(buildArchiveListOrdering("updated_at", direction)).toBe(expected);
+    },
+  );
+});
+
+describe("isRestorableReport", () => {
+  it.each([
+    { status: "suppressed" as SignalReportStatus, expected: true },
+    { status: "resolved" as SignalReportStatus, expected: false },
+    { status: "ready" as SignalReportStatus, expected: false },
+    { status: "deleted" as SignalReportStatus, expected: false },
+  ])("is $expected for $status", ({ status, expected }) => {
+    expect(isRestorableReport({ status })).toBe(expected);
+  });
+});
+
+describe("dismissalReasonLabel", () => {
+  it.each([
+    { value: "analysis_wrong", expected: "Agent's analysis is wrong" },
+    { value: "other", expected: "Something else…" },
+    { value: "totally_unknown_code", expected: "totally_unknown_code" },
+  ])("maps $value", ({ value, expected }) => {
+    expect(dismissalReasonLabel(value)).toBe(expected);
   });
 });
 

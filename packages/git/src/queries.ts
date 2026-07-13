@@ -1,6 +1,7 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync, statSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { isBinaryFile } from "@posthog/shared";
 import type { CreateGitClientOptions } from "./client";
 import { mapWithConcurrency } from "./concurrency";
 import { getGitOperationManager } from "./operation-manager";
@@ -224,6 +225,34 @@ export async function branchExists(
 }
 
 /**
+ * True when the branch exists as a local branch or as a remote-tracking
+ * ref on any remote. Unlike `branchExists`, a tag or raw commit-ish with
+ * the same name does not count, and nothing reaches the network — a
+ * remote branch only counts once it has been fetched.
+ */
+export async function anyBranchRefExists(
+  baseDir: string,
+  branchName: string,
+  options?: CreateGitClientOptions,
+): Promise<boolean> {
+  const manager = getGitOperationManager();
+  return manager.executeRead(
+    baseDir,
+    async (git) => {
+      const refs = await git.raw([
+        "for-each-ref",
+        "--count=1",
+        "--format=%(refname)",
+        `refs/heads/${branchName}`,
+        `refs/remotes/*/${branchName}`,
+      ]);
+      return refs.trim().length > 0;
+    },
+    { signal: options?.abortSignal },
+  );
+}
+
+/**
  * Checks whether a branch exists on the remote without fetching it.
  * Uses `git ls-remote --heads`, which is read-only and reaches the remote.
  */
@@ -349,6 +378,36 @@ export async function isGitRepository(
     },
     { signal: options?.abortSignal },
   );
+}
+
+/**
+ * Detects whether `dirPath` is a linked git worktree (created with
+ * `git worktree add`) and returns the root of the main checkout it belongs
+ * to, or null when it isn't one. Works without spawning git: in a linked
+ * worktree `.git` is a file containing `gitdir: <main>/.git/worktrees/<name>`,
+ * while a main checkout has a `.git` directory.
+ */
+export function getLinkedWorktreeMainPath(dirPath: string): string | null {
+  try {
+    const dotGit = path.join(dirPath, ".git");
+    if (!statSync(dotGit).isFile()) return null;
+    const match = readFileSync(dotGit, "utf8").match(/^gitdir:\s*(.+?)\s*$/m);
+    if (!match) return null;
+    const gitDir = path.resolve(dirPath, match[1]);
+    // Expect <main>/.git/worktrees/<name>; anything else (e.g. a submodule's
+    // `.git` file pointing into the parent's modules dir) is not a worktree.
+    const worktreesDir = path.dirname(gitDir);
+    const dotGitDir = path.dirname(worktreesDir);
+    if (
+      path.basename(worktreesDir) !== "worktrees" ||
+      path.basename(dotGitDir) !== ".git"
+    ) {
+      return null;
+    }
+    return path.dirname(dotGitDir);
+  } catch {
+    return null;
+  }
 }
 
 export async function getChangedFiles(
@@ -655,6 +714,10 @@ export async function getChangedFilesDetailed(
           if (excludePatterns && matchesExcludePattern(file, excludePatterns)) {
             continue;
           }
+          if (isBinaryFile(file)) {
+            files.push({ path: file, status: "untracked" });
+            continue;
+          }
           untrackedToCount.push(file);
         }
 
@@ -826,9 +889,10 @@ export function computeDiffStatsFromFiles(files: ChangedFileInfo[]): DiffStats {
   const uniquePaths = new Set<string>();
 
   for (const file of files) {
+    uniquePaths.add(file.path);
+    if (isBinaryFile(file.path)) continue;
     linesAdded += file.linesAdded ?? 0;
     linesRemoved += file.linesRemoved ?? 0;
-    uniquePaths.add(file.path);
   }
 
   return {
@@ -1071,12 +1135,14 @@ export async function fetchRef(
   git: GitLike,
   remote: string,
   ref: string,
+  options?: { onError?: (message: string) => void },
 ): Promise<boolean> {
   try {
     // `--` keeps a ref beginning with `-` from being parsed as an option.
     await git.raw(["fetch", "--quiet", "--no-tags", remote, "--", ref]);
     return true;
-  } catch {
+  } catch (error) {
+    options?.onError?.(error instanceof Error ? error.message : String(error));
     return false;
   }
 }

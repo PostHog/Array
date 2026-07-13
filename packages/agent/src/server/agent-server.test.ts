@@ -1,3 +1,18 @@
+import { createHash } from "node:crypto";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type { Adapter } from "@posthog/shared";
+import { zipSync } from "fflate";
 import jwt from "jsonwebtoken";
 import { type SetupServerApi, setupServer } from "msw/node";
 import {
@@ -10,9 +25,18 @@ import {
   it,
   vi,
 } from "vitest";
-import { createTestRepo, type TestRepo } from "../test/fixtures/api";
+import { getSessionJsonlPath } from "../adapters/claude/session/jsonl-hydration";
+import type { PermissionMode } from "../execution-mode";
+import type { PostHogAPIClient } from "../posthog-api";
+import type { ResumeState } from "../resume";
+import {
+  createMockApiClient,
+  createTaskRun,
+  createTestRepo,
+  type TestRepo,
+} from "../test/fixtures/api";
 import { createPostHogHandlers } from "../test/mocks/msw-handlers";
-import type { TaskRun } from "../types";
+import type { StoredEntry, TaskRun } from "../types";
 import {
   AgentServer,
   isTurnCompleteNotification,
@@ -204,17 +228,31 @@ interface TestableServer {
   buildCloudSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string;
   buildDetectedPrContext(prUrl: string): string;
   buildSessionSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string | { append: string };
   buildCodexInstructions(systemPrompt: string | { append: string }): string;
-  getRuntimeAdapter(): "claude" | "codex";
+  getRuntimeAdapter(): Adapter;
   buildClaudeCodeSessionMeta(
-    runtimeAdapter: "claude" | "codex",
+    runtimeAdapter: Adapter,
   ): { claudeCode: { options: Record<string, unknown> } } | undefined;
+}
+
+interface NativeResumeTestServer {
+  resumeState: ResumeState | null;
+  prepareNativeResume(
+    payload: JwtPayload,
+    posthogAPI: PostHogAPIClient,
+    preTaskRun: TaskRun | null,
+    runtimeAdapter: Adapter,
+    cwd: string,
+    permissionMode: PermissionMode,
+  ): Promise<{ sessionId: string; warm: boolean } | null>;
 }
 
 let nextTestPort = 20000;
@@ -223,6 +261,12 @@ function getNextTestPort(): number {
   const port = nextTestPort;
   nextTestPort += 1;
   return port;
+}
+
+function exactArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 // The Claude Agent SDK has an internal readMessages() loop that rejects with
@@ -270,6 +314,21 @@ function createTestJwt(
       expiresIn: expiresInSeconds,
     },
   );
+}
+
+function sessionUpdateEntry(
+  sessionUpdate: string,
+  extra: Record<string, unknown> = {},
+): StoredEntry {
+  return {
+    type: "notification",
+    timestamp: new Date().toISOString(),
+    notification: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { update: { sessionUpdate, ...extra } },
+    },
+  };
 }
 
 // Test RSA key pair (2048-bit, for testing only)
@@ -355,6 +414,7 @@ describe("AgentServer HTTP Mode", () => {
       mode: "interactive",
       taskId: "test-task-id",
       runId: "test-run-id",
+      resolveRtkSavings: async () => null,
       ...overrides,
     });
     return server;
@@ -383,12 +443,54 @@ describe("AgentServer HTTP Mode", () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body).toEqual({ status: "ok", hasSession: true });
+      expect(body).toEqual({
+        status: "ok",
+        hasSession: true,
+        bootMs: expect.any(Number),
+        sessionInitMs: expect.any(Number),
+      });
+    }, 30000);
+
+    it("links native agent state before initializing the session", async () => {
+      const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+      const originalCodexHome = process.env.CODEX_HOME;
+      const claudeConfigDir = join(repo.path, ".claude-test");
+      const codexHome = join(repo.path, ".codex-test");
+      const agentStateDir = join(repo.path, ".posthog", "agent-state");
+      process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
+      process.env.CODEX_HOME = codexHome;
+
+      try {
+        await createServer({ agentStateDir }).start();
+
+        const claudeProjects = join(claudeConfigDir, "projects");
+        const codexSessions = join(codexHome, "sessions");
+        expect((await lstat(claudeProjects)).isSymbolicLink()).toBe(true);
+        expect((await lstat(codexSessions)).isSymbolicLink()).toBe(true);
+        expect(await readlink(claudeProjects)).toBe(
+          join(agentStateDir, "claude", "projects"),
+        );
+        expect(await readlink(codexSessions)).toBe(
+          join(agentStateDir, "codex", "sessions"),
+        );
+      } finally {
+        if (originalClaudeConfigDir === undefined) {
+          delete process.env.CLAUDE_CONFIG_DIR;
+        } else {
+          process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir;
+        }
+        if (originalCodexHome === undefined) {
+          delete process.env.CODEX_HOME;
+        } else {
+          process.env.CODEX_HOME = originalCodexHome;
+        }
+      }
     }, 30000);
   });
 
   describe("turn completion", () => {
     function stubSessionCleanup(testServer: unknown): {
+      session: unknown;
       cleanupSession: (options?: {
         completeEventStream?: boolean;
       }) => Promise<void>;
@@ -441,6 +543,48 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.stop).toHaveBeenCalledOnce();
     });
 
+    it("emits rtk savings once before terminal event ingest stops", async () => {
+      const testServer = stubSessionCleanup(
+        createServer({
+          resolveRtkSavings: async () => ({
+            totalCommands: 4,
+            inputTokens: 1000,
+            outputTokens: 350,
+            tokensSaved: 650,
+          }),
+        }),
+      );
+      const session = testServer.session;
+
+      await testServer.cleanupSession({ completeEventStream: true });
+      testServer.session = session;
+      await testServer.cleanupSession({ completeEventStream: true });
+
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledOnce();
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          notification: expect.objectContaining({
+            method: "_posthog/rtk_savings",
+            params: expect.objectContaining({
+              task_id: "test-task-id",
+              run_id: "test-run-id",
+              team_id: 1,
+              counter_id: "test-task-id",
+              cumulative_commands: 4,
+              cumulative_input_tokens: 1000,
+              cumulative_output_tokens: 350,
+              cumulative_tokens_saved: 650,
+            }),
+          }),
+        }),
+      );
+      expect(
+        testServer.eventStreamSender.enqueue.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        testServer.eventStreamSender.stop.mock.invocationCallOrder[0],
+      );
+    });
+
     it("writes terminal failure status before completing event ingest", async () => {
       const order: string[] = [];
       const testServer = new AgentServer({
@@ -453,6 +597,7 @@ describe("AgentServer HTTP Mode", () => {
         mode: "interactive",
         taskId: "test-task-id",
         runId: "test-run-id",
+        resolveRtkSavings: async () => null,
       }) as unknown as {
         eventStreamSender: {
           enqueue: (event: Record<string, unknown>) => void;
@@ -530,6 +675,7 @@ describe("AgentServer HTTP Mode", () => {
         mode: "interactive",
         taskId: "test-task-id",
         runId: "test-run-id",
+        resolveRtkSavings: async () => null,
       }) as unknown as {
         eventStreamSender: {
           enqueue: (event: Record<string, unknown>) => void;
@@ -627,6 +773,348 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.enqueue).not.toHaveBeenCalled();
       expect(testServer.eventStreamSender.stop).not.toHaveBeenCalled();
       expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+    });
+
+    function createUsageTestServer() {
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: { payload: JwtPayload } | null;
+        posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+        recordTurnUsage(usage: unknown): void;
+      };
+      testServer.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      testServer.session = {
+        payload: {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+      };
+      return testServer;
+    }
+
+    it("reports cumulative run token usage into TaskRun.state after each settled turn", () => {
+      const testServer = createUsageTestServer();
+      const turnUsage = {
+        inputTokens: 100,
+        outputTokens: 50,
+        cachedReadTokens: 10,
+        cachedWriteTokens: 5,
+        totalTokens: 165,
+      };
+
+      testServer.recordTurnUsage(turnUsage);
+      testServer.recordTurnUsage(turnUsage);
+
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenNthCalledWith(
+        1,
+        "task-1",
+        "run-1",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_read_tokens: 10,
+              cache_write_tokens: 5,
+              thought_tokens: 0,
+              total_tokens: 165,
+              turns: 1,
+            },
+          },
+        },
+      );
+      // The second report carries run-cumulative totals, not per-turn figures.
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith(
+        "task-1",
+        "run-1",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 200,
+              output_tokens: 100,
+              cache_read_tokens: 20,
+              cache_write_tokens: 10,
+              thought_tokens: 0,
+              total_tokens: 330,
+              turns: 2,
+            },
+          },
+        },
+      );
+    });
+
+    it("does not report anything when a turn settles without usage", () => {
+      const testServer = createUsageTestServer();
+
+      testServer.recordTurnUsage(undefined);
+
+      expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+    });
+
+    it("resets run usage on session cleanup so a later run starts from zero", async () => {
+      const testServer = createUsageTestServer();
+      const turnUsage = {
+        inputTokens: 100,
+        outputTokens: 50,
+        totalTokens: 150,
+      };
+      testServer.recordTurnUsage(turnUsage);
+
+      const cleanupServer = stubSessionCleanup(testServer);
+      await cleanupServer.cleanupSession();
+
+      testServer.session = {
+        payload: {
+          run_id: "run-2",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+      };
+      testServer.recordTurnUsage(turnUsage);
+
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith(
+        "task-1",
+        "run-2",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_read_tokens: 0,
+              cache_write_tokens: 0,
+              thought_tokens: 0,
+              total_tokens: 150,
+              turns: 1,
+            },
+          },
+        },
+      );
+    });
+
+    function createFailureTestServer() {
+      const appendRawLine = vi.fn();
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        eventStreamSender: {
+          enqueue: ReturnType<typeof vi.fn>;
+          stop: ReturnType<typeof vi.fn>;
+        };
+        posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+        session: unknown;
+        handleTurnFailure(
+          payload: JwtPayload,
+          phase: "initial" | "resume" | "followup",
+          error: unknown,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      testServer.session = {
+        acpSessionId: "acp-1",
+        payload: { run_id: "run-1" },
+        logWriter: { appendRawLine, flush: vi.fn(async () => {}) },
+      };
+      return testServer;
+    }
+
+    const interactivePayload: JwtPayload = {
+      run_id: "run-1",
+      task_id: "task-1",
+      team_id: 1,
+      user_id: 1,
+      distinct_id: "distinct-id",
+      mode: "interactive",
+    };
+
+    it.each([
+      ["genuine agent error (terminal)", "boom", "agent_error", true],
+      [
+        "transient upstream timeout (recoverable)",
+        "API Error: The operation timed out.",
+        "upstream_timeout",
+        false,
+      ],
+    ] as const)(
+      "tags and handles a follow-up %s",
+      async (_name, errorMessage, expectedErrorType, expectsFailed) => {
+        const testServer = createFailureTestServer();
+
+        await testServer.handleTurnFailure(
+          interactivePayload,
+          "followup",
+          new Error(errorMessage),
+        );
+
+        expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+          expect.objectContaining({
+            notification: expect.objectContaining({
+              method: "session/update",
+              params: expect.objectContaining({
+                update: expect.objectContaining({
+                  sessionUpdate: "error",
+                  errorType: expectedErrorType,
+                }),
+              }),
+            }),
+          }),
+        );
+
+        if (expectsFailed) {
+          expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledWith(
+            "task-1",
+            "run-1",
+            expect.objectContaining({ status: "failed" }),
+          );
+        } else {
+          expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    function createRetryTestServer(prompt: ReturnType<typeof vi.fn>) {
+      const testServer = createFailureTestServer();
+      testServer.session = {
+        acpSessionId: "acp-1",
+        payload: { run_id: "run-1" },
+        logWriter: { appendRawLine: vi.fn(), flush: vi.fn(async () => {}) },
+        clientConnection: { prompt },
+      };
+      return testServer as unknown as {
+        promptWithUpstreamRetry(request: {
+          sessionId: string;
+          prompt: ContentBlock[];
+        }): Promise<{ stopReason: string }>;
+      };
+    }
+
+    it("continues an unattended turn after a transient upstream stream death", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValueOnce(new Error("API Error: terminated"))
+          .mockResolvedValueOnce({ stopReason: "end_turn" });
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        await expect(resultPromise).resolves.toEqual({
+          stopReason: "end_turn",
+        });
+        expect(prompt).toHaveBeenCalledTimes(2);
+        const retryRequest = prompt.mock.calls[1][0] as {
+          sessionId: string;
+          prompt: Array<{ type: string; text: string }>;
+        };
+        expect(retryRequest.sessionId).toBe("acp-1");
+        expect(retryRequest.prompt[0].text).toContain(
+          "interrupted by a transient connection error",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("re-sends the original prompt when the failure happened before the stream started", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValueOnce(new Error("API Error: Connection error."))
+          .mockResolvedValueOnce({ stopReason: "end_turn" });
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        await expect(resultPromise).resolves.toEqual({
+          stopReason: "end_turn",
+        });
+        expect(prompt).toHaveBeenCalledTimes(2);
+        const retryRequest = prompt.mock.calls[1][0] as {
+          sessionId: string;
+          prompt: Array<{ type: string; text: string }>;
+        };
+        expect(retryRequest.sessionId).toBe("acp-1");
+        expect(retryRequest.prompt).toEqual([
+          { type: "text", text: "do the task" },
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not retry a genuine agent error", async () => {
+      const prompt = vi.fn().mockRejectedValue(new Error("boom"));
+      const testServer = createRetryTestServer(prompt);
+
+      await expect(
+        testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        }),
+      ).rejects.toThrow("boom");
+      expect(prompt).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops continuing once the bounded retry budget is exhausted", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValue(new Error("API Error: terminated"));
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        const assertion = expect(resultPromise).rejects.toThrow(
+          "API Error: terminated",
+        );
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        await assertion;
+        expect(prompt).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("persists structured turn completion notifications", () => {
@@ -944,6 +1432,193 @@ describe("AgentServer HTTP Mode", () => {
       const body = await response.json();
       expect(body.error).toBe("No active session for this run");
     }, 20000);
+
+    it("rewrites a bundled local skill slash command before sending the prompt", async () => {
+      const skillDefinition = [
+        "---",
+        "name: local-test-skill",
+        "description: Test skill",
+        "---",
+        "",
+        "Reply with LOCAL_SKILL_MARKER from the bundled skill.",
+      ].join("\n");
+      const bundle = zipSync({
+        "SKILL.md": new TextEncoder().encode(skillDefinition),
+      });
+      const checksum = createHash("sha256")
+        .update(Buffer.from(bundle))
+        .digest("hex");
+
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(
+        async (_params: {
+          prompt: ContentBlock[];
+          _meta?: Record<string, unknown>;
+        }) => ({ stopReason: "cancelled" }) as { stopReason: string },
+      );
+      const downloadArtifact = vi.fn(async () => exactArrayBuffer(bundle));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+        posthogAPI: { downloadArtifact: typeof downloadArtifact };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.posthogAPI.downloadArtifact = downloadArtifact;
+
+      const token = createToken();
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "skill-command",
+          method: "user_message",
+          params: {
+            content: "/local-test-skill with context",
+            artifacts: [
+              {
+                id: "skill-artifact-1",
+                name: "local-test-skill.zip",
+                type: "skill_bundle",
+                source: "posthog_code_skill",
+                storage_path: "tasks/artifacts/local-test-skill.zip",
+                content_type: "application/zip",
+                metadata: {
+                  skill_name: "local-test-skill",
+                  skill_source: "user",
+                  content_sha256: checksum,
+                  bundle_format: "zip",
+                  schema_version: 1,
+                },
+              },
+            ],
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        result?: { stopReason?: string };
+      };
+      expect(body.result?.stopReason).toBe("cancelled");
+      expect(downloadArtifact).toHaveBeenCalledWith(
+        "test-task-id",
+        "test-run-id",
+        "tasks/artifacts/local-test-skill.zip",
+      );
+      expect(prompt).toHaveBeenCalledOnce();
+
+      const sentPrompt = prompt.mock.calls[0]?.[0].prompt;
+      const sentMeta = prompt.mock.calls[0]?.[0]._meta;
+      const sentText = sentPrompt?.find(
+        (block): block is Extract<ContentBlock, { type: "text" }> =>
+          block.type === "text",
+      )?.text;
+
+      expect(sentText).toBe("/local-test-skill with context");
+      expect(sentMeta?.localSkillContext).toContain(
+        'local skill "/local-test-skill"',
+      );
+      expect(sentMeta?.localSkillContext).toContain("LOCAL_SKILL_MARKER");
+      expect(sentMeta?.localSkillContext).toContain("with context");
+      expect(sentMeta?.localSkillName).toBe("local-test-skill");
+    }, 20000);
+
+    it("ignores a redelivered user_message whose messageId was already accepted", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(async () => ({ stopReason: "end_turn" }));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async (messageId: string | undefined) => {
+        const response = await fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: messageId ?? "no-id",
+            method: "user_message",
+            params: {
+              content: "do the thing",
+              ...(messageId ? { messageId } : {}),
+            },
+          }),
+        });
+        expect(response.status).toBe(200);
+        return (await response.json()) as {
+          result?: { stopReason?: string; duplicate?: boolean };
+        };
+      };
+
+      const first = await send("m-1");
+      expect(first.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const redelivery = await send("m-1");
+      expect(redelivery.result?.duplicate).toBe(true);
+      expect(redelivery.result?.stopReason).toBe("duplicate_delivery");
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const distinct = await send("m-2");
+      expect(distinct.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(2);
+
+      const anonymousFirst = await send(undefined);
+      const anonymousSecond = await send(undefined);
+      expect(anonymousFirst.result?.stopReason).toBe("end_turn");
+      expect(anonymousSecond.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(4);
+    }, 20000);
+
+    it("redelivers a messageId whose first delivery failed before producing a turn", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi
+        .fn(async () => ({ stopReason: "end_turn" }))
+        .mockRejectedValueOnce(new Error("sdk connection lost"));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async () =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: "m-err",
+            method: "user_message",
+            params: { content: "do the thing", messageId: "m-err" },
+          }),
+        });
+
+      await send();
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const retry = await send();
+      expect(retry.status).toBe(200);
+      const body = (await retry.json()) as {
+        result?: { stopReason?: string; duplicate?: boolean };
+      };
+      expect(body.result?.duplicate).toBeUndefined();
+      expect(body.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(2);
+    }, 20000);
   });
 
   describe("404 handling", () => {
@@ -990,6 +1665,38 @@ describe("AgentServer HTTP Mode", () => {
           expect(
             (runStarted?.notification?.params?.agentVersion as string).length,
           ).toBeGreaterThan(0);
+        },
+        { timeout: 15000, interval: 100 },
+      );
+    }, 30000);
+
+    it("emits a completed _posthog/progress for the agent step after session initialization", async () => {
+      await createServer().start();
+
+      // Resolves the setup card's "agent" step on the agent-proxy read leg,
+      // where the orchestrator's Django-only progress event never arrives.
+      await vi.waitFor(
+        () => {
+          const allEntries = appendLogCalls.flat() as Array<{
+            notification?: {
+              method?: string;
+              params?: Record<string, unknown>;
+            };
+          }>;
+          const agentProgress = allEntries.find(
+            (e) =>
+              e?.notification?.method === "_posthog/progress" &&
+              e?.notification?.params?.step === "agent",
+          );
+          expect(agentProgress).toBeDefined();
+          expect(agentProgress?.notification?.params).toMatchObject({
+            group: "setup:test-run-id",
+            step: "agent",
+            status: "completed",
+          });
+          expect(typeof agentProgress?.notification?.params?.label).toBe(
+            "string",
+          );
         },
         { timeout: 15000, interval: 100 },
       );
@@ -1100,6 +1807,109 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
+  describe("resume prompt display", () => {
+    it("hides synthetic resume context while keeping the pending user message visible", async () => {
+      const s = createServer() as unknown as {
+        resumeState: ResumeState | null;
+        session: {
+          payload: JwtPayload;
+          acpSessionId: string;
+          clientConnection: {
+            prompt: ReturnType<typeof vi.fn>;
+          };
+          logWriter: {
+            resetTurnMessages: ReturnType<typeof vi.fn>;
+            appendRawLine: ReturnType<typeof vi.fn>;
+            flushAll: ReturnType<typeof vi.fn>;
+          };
+          sseController: null;
+          deviceInfo: { type: "cloud"; name: string };
+          permissionMode: PermissionMode;
+          hasDesktopConnected: boolean;
+        };
+        sendResumeMessage(
+          payload: JwtPayload,
+          taskRun: TaskRun | null,
+        ): Promise<void>;
+      };
+      const payload: JwtPayload = {
+        run_id: "test-run-id",
+        task_id: "test-task-id",
+        team_id: 1,
+        user_id: 1,
+        distinct_id: "test-distinct-id",
+        mode: "interactive",
+      };
+      const prompt = vi.fn(async () => ({ stopReason: "cancelled" }));
+      s.session = {
+        payload,
+        acpSessionId: "acp-session",
+        clientConnection: { prompt },
+        logWriter: {
+          resetTurnMessages: vi.fn(),
+          appendRawLine: vi.fn(),
+          flushAll: vi.fn(),
+        },
+        sseController: null,
+        deviceInfo: { type: "cloud", name: "test-sandbox" },
+        permissionMode: "bypassPermissions",
+        hasDesktopConnected: false,
+      };
+      s.resumeState = {
+        conversation: [
+          { role: "user", content: [{ type: "text", text: "old request" }] },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "old answer" }],
+          },
+        ],
+        latestGitCheckpoint: null,
+        interrupted: false,
+        logEntryCount: 2,
+        sessionId: "prior-session",
+      };
+
+      await s.sendResumeMessage(
+        payload,
+        createTaskRun({
+          id: "test-run-id",
+          task: "test-task-id",
+          state: {
+            pending_user_message: "visible follow-up",
+            pending_user_message_ts: "123.456",
+          },
+        }),
+      );
+
+      const [{ prompt: promptBlocks }] = prompt.mock.calls[0] as unknown as [
+        { prompt: ContentBlock[] },
+      ];
+      const visibleText = promptBlocks
+        .filter(
+          (block) =>
+            block.type === "text" &&
+            !(
+              (block as { _meta?: { ui?: { hidden?: boolean } } })._meta?.ui
+                ?.hidden === true
+            ),
+        )
+        .map((block) => (block as { text: string }).text);
+
+      expect(promptBlocks[0]).toMatchObject({
+        type: "text",
+        _meta: { ui: { hidden: true } },
+      });
+      expect((promptBlocks[0] as { text: string }).text).toContain(
+        "You are resuming a previous conversation",
+      );
+      expect(visibleText).toEqual(["visible follow-up"]);
+      expect(promptBlocks.at(-1)).toMatchObject({
+        type: "text",
+        _meta: { ui: { hidden: true } },
+      });
+    });
+  });
+
   describe("runtime adapter selection", () => {
     it("defaults to claude when no runtime adapter is configured", () => {
       const s = createServer();
@@ -1204,6 +2014,264 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
+  describe("native resume", () => {
+    it.each([
+      { retryOutcome: "succeeds", retryFails: false },
+      { retryOutcome: "fails", retryFails: true },
+    ])(
+      "clears resume state when the fresh-session retry $retryOutcome",
+      async ({ retryFails }) => {
+        const s = createServer();
+        await s.start();
+
+        const prompts: ContentBlock[][] = [];
+        const prompt = vi.fn(async (params: { prompt: ContentBlock[] }) => {
+          prompts.push(params.prompt);
+          if (prompts.length === 1) {
+            throw new Error("Internal error: Prompt is too long");
+          }
+          if (retryFails) {
+            throw new Error("Fresh-session retry failed");
+          }
+          return { stopReason: "end_turn" };
+        });
+        const newSession = vi.fn(async () => ({ sessionId: "fresh-session" }));
+
+        const internals = s as unknown as {
+          session: {
+            acpSessionId: string;
+            clientConnection: {
+              prompt: typeof prompt;
+              newSession: typeof newSession;
+            };
+          };
+          resumeState: ResumeState | null;
+          nativeResume: { sessionId: string; warm: boolean } | null;
+          loadResumeState(
+            taskId: string,
+            resumeRunId: string,
+            runId: string,
+          ): Promise<void>;
+          sendResumeContinuation(
+            payload: JwtPayload,
+            taskRun: TaskRun | null,
+          ): Promise<void>;
+        };
+        internals.session.clientConnection.prompt = prompt;
+        internals.session.clientConnection.newSession = newSession;
+        internals.nativeResume = { sessionId: "prior-session", warm: true };
+        internals.loadResumeState = vi.fn(async () => {
+          internals.resumeState = {
+            conversation: [
+              {
+                role: "user",
+                content: [{ type: "text", text: "original task" }],
+              },
+              {
+                role: "assistant",
+                content: [{ type: "text", text: "progress so far" }],
+              },
+            ],
+            latestGitCheckpoint: null,
+            interrupted: false,
+            logEntryCount: 2,
+            sessionId: "prior-session",
+          };
+        });
+
+        await internals.sendResumeContinuation(
+          {
+            task_id: "test-task-id",
+            run_id: "test-run-id",
+            team_id: 1,
+            user_id: 1,
+            distinct_id: "test-distinct-id",
+            mode: "interactive",
+          },
+          createTaskRun({
+            id: "test-run-id",
+            state: { resume_from_run_id: "previous-run" },
+          }),
+        );
+
+        expect(newSession).toHaveBeenCalledOnce();
+        expect(internals.session.acpSessionId).toBe("fresh-session");
+        expect(internals.resumeState).toBeNull();
+        expect(internals.nativeResume).toBeNull();
+        expect(prompts).toHaveLength(2);
+        const retryText = prompts[1]
+          .map((block) => ("text" in block ? block.text : ""))
+          .join("\n");
+        expect(retryText).toContain("progress so far");
+      },
+      20000,
+    );
+
+    it("hydrates cold sessions from S3 logs instead of cached resume conversation", async () => {
+      const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+      process.env.CLAUDE_CONFIG_DIR = join(repo.path, ".claude-test");
+
+      try {
+        const s = createServer() as unknown as NativeResumeTestServer;
+        s.resumeState = {
+          conversation: [
+            {
+              role: "user",
+              content: [{ type: "text", text: "continue" }],
+            },
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "visible answer only" }],
+            },
+          ],
+          latestGitCheckpoint: null,
+          interrupted: false,
+          logEntryCount: 3,
+          sessionId: "prior-session",
+        };
+
+        const posthogAPI = createMockApiClient();
+        (posthogAPI.getTaskRun as ReturnType<typeof vi.fn>).mockResolvedValue(
+          createTaskRun({ id: "previous-run", log_url: "s3://logs" }),
+        );
+        (
+          posthogAPI.fetchTaskRunLogs as ReturnType<typeof vi.fn>
+        ).mockResolvedValue([
+          sessionUpdateEntry("user_message", {
+            content: { type: "text", text: "continue" },
+          }),
+          sessionUpdateEntry("agent_thought_chunk", {
+            content: {
+              type: "thinking",
+              thinking: "preserve extended thinking",
+            },
+          }),
+          sessionUpdateEntry("agent_message", {
+            content: { type: "text", text: "visible answer" },
+          }),
+        ]);
+
+        const result = await s.prepareNativeResume(
+          {
+            task_id: "test-task-id",
+            run_id: "test-run-id",
+            team_id: 1,
+            user_id: 1,
+            distinct_id: "test-distinct-id",
+            mode: "interactive",
+          },
+          posthogAPI,
+          createTaskRun({
+            id: "test-run-id",
+            state: { resume_from_run_id: "previous-run" },
+          }),
+          "claude",
+          repo.path,
+          "bypassPermissions",
+        );
+
+        expect(result).toEqual({ sessionId: "prior-session", warm: false });
+        expect(posthogAPI.fetchTaskRunLogs).toHaveBeenCalledTimes(1);
+
+        const jsonl = await readFile(
+          getSessionJsonlPath("prior-session", repo.path),
+          "utf-8",
+        );
+        const blocks = jsonl
+          .trim()
+          .split("\n")
+          .flatMap((line) => {
+            const parsed = JSON.parse(line) as {
+              message?: { content?: unknown[] };
+            };
+            return parsed.message?.content ?? [];
+          });
+
+        expect(blocks).toContainEqual({
+          type: "thinking",
+          thinking: "preserve extended thinking",
+        });
+      } finally {
+        if (originalConfigDir === undefined) {
+          delete process.env.CLAUDE_CONFIG_DIR;
+        } else {
+          process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
+        }
+      }
+    });
+
+    describe("codex", () => {
+      const THREAD_ID = "0199a5c3-2f60-7b21-9c39-1d2e3f4a5b6c";
+      let codexHome: string;
+
+      const payload: JwtPayload = {
+        task_id: "test-task-id",
+        run_id: "test-run-id",
+        team_id: 1,
+        user_id: 1,
+        distinct_id: "test-distinct-id",
+        mode: "interactive",
+      };
+
+      const codexServer = (sessionId: string | null) => {
+        const s = createServer() as unknown as NativeResumeTestServer;
+        s.resumeState = {
+          conversation: [
+            { role: "user", content: [{ type: "text", text: "continue" }] },
+          ],
+          latestGitCheckpoint: null,
+          interrupted: false,
+          logEntryCount: 1,
+          sessionId,
+        };
+        return s;
+      };
+
+      const prepare = (s: NativeResumeTestServer) =>
+        s.prepareNativeResume(
+          payload,
+          createMockApiClient(),
+          createTaskRun({
+            id: "test-run-id",
+            state: { resume_from_run_id: "previous-run" },
+          }),
+          "codex",
+          repo.path,
+          "auto",
+        );
+
+      beforeEach(() => {
+        codexHome = join(repo.path, ".codex-test");
+        vi.stubEnv("CODEX_HOME", codexHome);
+      });
+
+      afterEach(() => {
+        vi.unstubAllEnvs();
+      });
+
+      it("resumes natively when the thread rollout survived in CODEX_HOME", async () => {
+        const dir = join(codexHome, "sessions", "2026", "07", "07");
+        await mkdir(dir, { recursive: true });
+        await writeFile(
+          join(dir, `rollout-2026-07-07T10-00-00-${THREAD_ID}.jsonl`),
+          "",
+        );
+
+        await expect(prepare(codexServer(THREAD_ID))).resolves.toEqual({
+          sessionId: THREAD_ID,
+          warm: true,
+        });
+      });
+
+      it.each([
+        ["the thread state is gone", THREAD_ID],
+        ["there is no prior session id", null],
+      ])("falls back to summary resume when %s", async (_case, sessionId) => {
+        await expect(prepare(codexServer(sessionId))).resolves.toBeNull();
+      });
+    });
+  });
+
   describe("PR attribution", () => {
     const PR_URL = "https://github.com/PostHog/posthog.com/pull/17764";
     const payload: JwtPayload = {
@@ -1228,18 +2296,45 @@ describe("AgentServer HTTP Mode", () => {
         p: JwtPayload,
         u: Record<string, unknown> | undefined,
       ): void;
-      fetchPrCreatedAt(url: string): Promise<string | null>;
+      fetchPrAttribution(
+        url: string,
+      ): Promise<{ createdAt: string | null; author: string | null }>;
+      fetchGhLogin(): Promise<string | null>;
       detectedPrUrl: string | null;
-      posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+      posthogAPI: {
+        getTaskRun: ReturnType<typeof vi.fn>;
+        updateTaskRun: ReturnType<typeof vi.fn>;
+      };
     };
 
     const justNow = () => new Date().toISOString();
     const longAgo = "2020-01-01T00:00:00Z";
+    const GH_LOGIN = "run-owner";
 
-    const setup = (prCreatedAt: string | null): PrTestServer => {
+    const setup = (
+      prCreatedAt: string | null,
+      prAuthor: string | null = GH_LOGIN,
+    ): PrTestServer => {
       const s = createServer() as unknown as PrTestServer;
-      s.fetchPrCreatedAt = vi.fn(async () => prCreatedAt);
-      s.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      s.fetchPrAttribution = vi.fn(async () => ({
+        createdAt: prCreatedAt,
+        author: prAuthor,
+      }));
+      s.fetchGhLogin = vi.fn(async () => GH_LOGIN);
+      let storedOutput: Record<string, unknown> | null = null;
+      s.posthogAPI = {
+        getTaskRun: vi.fn(async () => ({ output: storedOutput })),
+        updateTaskRun: vi.fn(
+          async (
+            _taskId: string,
+            _runId: string,
+            updates: { output: Record<string, unknown> },
+          ) => {
+            storedOutput = updates.output;
+            return {};
+          },
+        ),
+      };
       return s;
     };
 
@@ -1250,7 +2345,7 @@ describe("AgentServer HTTP Mode", () => {
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
-        output: { pr_url: PR_URL },
+        output: { pr_url: PR_URL, pr_urls: [PR_URL] },
       });
       expect(s.detectedPrUrl).toBe(PR_URL);
     });
@@ -1267,7 +2362,7 @@ describe("AgentServer HTTP Mode", () => {
       const s = setup(justNow());
       s.maybeAttachCreatedPr(payload, { sessionUpdate: "agent_thought_chunk" });
       await flush();
-      expect(s.fetchPrCreatedAt).not.toHaveBeenCalled();
+      expect(s.fetchPrAttribution).not.toHaveBeenCalled();
       expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
 
@@ -1277,19 +2372,66 @@ describe("AgentServer HTTP Mode", () => {
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
-      expect(s.fetchPrCreatedAt).toHaveBeenCalledTimes(1);
+      expect(s.fetchPrAttribution).toHaveBeenCalledTimes(1);
       expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
 
-    it("attributes only the first when two distinct recent PRs race", async () => {
-      // Both fetch as recent; without the post-await guard each would attribute.
+    it("accumulates every PR a run opens, keeping the first as primary", async () => {
       const s = setup(justNow());
       const second = "https://github.com/PostHog/posthog.com/pull/17765";
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       s.maybeAttachCreatedPr(payload, terminalUpdate(second));
       await flush();
-      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith("t", "r", {
+        output: { pr_url: PR_URL, pr_urls: [PR_URL, second] },
+      });
+      expect(s.detectedPrUrl).toBe(second);
+    });
+
+    it("does not let an older PR the run only viewed overwrite the one it created", async () => {
+      const viewed = "https://github.com/PostHog/posthog.com/pull/1";
+      // The created PR reads as recent; the later, merely-viewed PR reads as old.
+      const s = setup(justNow());
+      s.fetchPrAttribution = vi.fn(async (url: string) => ({
+        createdAt: url === PR_URL ? justNow() : longAgo,
+        author: GH_LOGIN,
+      }));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(viewed));
+      await flush();
       expect(s.detectedPrUrl).toBe(PR_URL);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not attribute a fresh PR authored by someone else (merely viewed)", async () => {
+      const s = setup(justNow(), "someone-else");
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+      expect(s.detectedPrUrl).toBeNull();
+    });
+
+    it("attributes a recent PR when the identity is a GitHub App installation (gh api user unavailable)", async () => {
+      // Cloud runs authenticate with a GitHub App installation token, for which
+      // `gh api user` returns 403 → ghLogin is null. The PR is authored by the
+      // app bot (e.g. "app/posthog"); recency alone must carry attribution.
+      const s = setup(justNow(), "app/posthog");
+      s.fetchGhLogin = vi.fn(async () => null);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
+        output: { pr_url: PR_URL, pr_urls: [PR_URL] },
+      });
+      expect(s.detectedPrUrl).toBe(PR_URL);
+    });
+
+    it("still rejects an old PR when the identity cannot be resolved (recency guards)", async () => {
+      const s = setup(longAgo, "app/posthog");
+      s.fetchGhLogin = vi.fn(async () => null);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
   });
 
@@ -1320,6 +2462,17 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("Generated-By: PostHog Code");
       expect(prompt).toContain("Task-Id: test-task-id");
       expect(prompt).not.toContain("gh pr create --draft");
+      // If the user does explicitly ask for a PR in this review-first mode,
+      // the agent must still use the PostHog Code footer, not Claude Code's default.
+      expect(prompt).toContain(
+        "If the user explicitly asks you to open a pull request",
+      );
+      expect(prompt).toContain(
+        "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
+      );
+      expect(prompt).toContain(".github/pull_request_template.md");
+      expect(prompt).toContain("gh issue list --search");
+      expect(prompt).toContain("Closes #<n>");
     });
 
     it("returns default prompt when prUrl is null", () => {
@@ -1385,7 +2538,10 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("gh pr create --draft");
       expect(prompt).toContain("Generated-By: PostHog Code");
       expect(prompt).toContain("Task-Id: test-task-id");
-      expect(prompt).toContain("Created with [PostHog Code]");
+      // Slack-origin PRs are attributed to PostHog, not the PostHog Code app.
+      expect(prompt).toContain(
+        "Created with [PostHog](https://posthog.com?ref=pr)",
+      );
       // PR template detection (repo first, org `.github` fallback)
       expect(prompt).toContain(".github/pull_request_template.md");
       expect(prompt).toContain("org's `.github` repo");
@@ -1405,6 +2561,133 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("gh pr create --draft");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
+
+    it("returns auto-PR prompt for manual runs when the user opted into auto-publish", () => {
+      const s = createServer({ autoPublish: true });
+      const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt();
+      expect(prompt).toContain("gh pr create --draft");
+      expect(prompt).not.toContain("stop with local changes ready for review");
+      // Manual runs keep the PostHog Code attribution.
+      expect(prompt).toContain(
+        "Created with [PostHog Code](https://posthog.com/code?ref=pr)",
+      );
+    });
+
+    it("keeps review-first prompt when auto-publish is on but createPr is false", () => {
+      const s = createServer({ autoPublish: true, createPr: false });
+      const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt();
+      expect(prompt).toContain("stop with local changes ready for review");
+      expect(prompt).not.toContain("gh pr create --draft");
+    });
+
+    it("auto-publishes in no-repository mode when the user opted in", () => {
+      const s = createServer({ repositoryPath: undefined, autoPublish: true });
+      const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt();
+      expect(prompt).toContain("Cloud Task Execution — No Repository Mode");
+      expect(prompt).toContain("without waiting to be asked");
+      expect(prompt).not.toContain("unless the user explicitly asks for that");
+    });
+
+    // Prewarmed runs boot before the user's choice exists; the upgrade is
+    // resolved from run state when the first message arrives.
+    type WarmTestable = {
+      prewarmedRun: boolean;
+      session: { payload: { task_id: string; run_id: string } } | null;
+      posthogAPI: { getTaskRun: ReturnType<typeof vi.fn> };
+      resolveWarmAutoPublishUpgrade(): Promise<string | null>;
+      buildCloudSystemPrompt(): string;
+    };
+    const makeWarmServer = (
+      state: Record<string, unknown> | Error,
+      overrides: Partial<ConstructorParameters<typeof AgentServer>[0]> = {},
+    ): WarmTestable => {
+      const t = createServer(overrides) as unknown as WarmTestable;
+      t.prewarmedRun = true;
+      t.session = {
+        payload: { task_id: "test-task-id", run_id: "test-run-id" },
+      };
+      t.posthogAPI = {
+        getTaskRun:
+          state instanceof Error
+            ? vi.fn(async () => {
+                throw state;
+              })
+            : vi.fn(async () => ({ state })),
+      };
+      return t;
+    };
+
+    it("upgrades a prewarmed run to auto-publish from run state on the first message", async () => {
+      const t = makeWarmServer({ prewarmed: true, auto_publish: true });
+
+      const override = await t.resolveWarmAutoPublishUpgrade();
+      expect(override).toContain("OVERRIDE PREVIOUS INSTRUCTIONS");
+      expect(override).toContain("gh pr create --draft");
+      // The flip persists for the rest of the session...
+      expect(t.buildCloudSystemPrompt()).toContain("gh pr create --draft");
+      // ...and the override is injected only once.
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.posthogAPI.getTaskRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps a prewarmed run review-first when run state has no auto_publish", async () => {
+      const t = makeWarmServer({ prewarmed: true });
+
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.buildCloudSystemPrompt()).toContain(
+        "stop with local changes ready for review",
+      );
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.posthogAPI.getTaskRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("never upgrades a prewarmed run when createPr is false", async () => {
+      // PostHog AI warm runs launch with createPr=false; auto-publish must not
+      // override that even if auto_publish somehow lands in state.
+      const t = makeWarmServer(
+        { prewarmed: true, auto_publish: true },
+        { createPr: false },
+      );
+
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+      expect(t.posthogAPI.getTaskRun).not.toHaveBeenCalled();
+      expect(t.buildCloudSystemPrompt()).toContain(
+        "stop with local changes ready for review",
+      );
+    });
+
+    it("retries the state fetch on a later message when it fails", async () => {
+      const t = makeWarmServer(new Error("fetch failed"));
+      expect(await t.resolveWarmAutoPublishUpgrade()).toBeNull();
+
+      t.posthogAPI.getTaskRun = vi.fn(async () => ({
+        state: { prewarmed: true, auto_publish: true },
+      }));
+      expect(await t.resolveWarmAutoPublishUpgrade()).toContain(
+        "gh pr create --draft",
+      );
+    });
+
+    it.each([
+      { label: "Slack", origin: "slack" },
+      { label: "signal_report", origin: "signal_report" },
+    ])(
+      "guards the auto-PR prompt against duplicating an existing PR on $label-origin runs",
+      ({ origin }) => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = origin;
+        const s = createServer();
+        const prompt = (
+          s as unknown as TestableServer
+        ).buildCloudSystemPrompt();
+        // Still the new-PR branch...
+        expect(prompt).toContain("gh pr create --draft");
+        // ...but tells the agent to continue an existing linked PR instead of duplicating.
+        expect(prompt).toContain("implementation_pr_url");
+        expect(prompt).toContain("gh pr checkout <url>");
+        expect(prompt).toMatch(/do not open a second PR/i);
+        delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+      },
+    );
 
     it("returns PR-update prompt for existing PRs on Slack-origin runs", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
@@ -1616,11 +2899,12 @@ describe("AgentServer HTTP Mode", () => {
           // brevity
           expect(prompt).toContain("Keep the PR description brief");
           expect(prompt).toContain("do NOT enumerate every change");
-          // plain footer, no Slack link
+          // plain footer, no Slack link; Slack-origin PRs are branded "PostHog"
           expect(prompt).toContain(
-            "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
+            "*Created with [PostHog](https://posthog.com?ref=pr)*",
           );
           expect(prompt).not.toContain("from a [Slack thread]");
+          expect(prompt).not.toContain("PostHog Code](https://posthog.com");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
@@ -1636,12 +2920,48 @@ describe("AgentServer HTTP Mode", () => {
             "https://posthog.slack.com/archives/C123/p456",
           );
           expect(prompt).toContain(
-            "*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
+            "*Created with [PostHog](https://posthog.com?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
           );
           // The Why bullet no longer carries the thread link.
           expect(prompt).not.toContain(
             "this task started from a Slack thread, also link it",
           );
+        } finally {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
+      });
+
+      it("embeds the inbox report link in the footer for a signal_report run", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "signal_report";
+        try {
+          const prompt = (
+            createServer() as unknown as TestableServer
+          ).buildCloudSystemPrompt(
+            null,
+            null,
+            "http://localhost:8000/project/1/inbox/rep_1",
+          );
+          expect(prompt).toContain(
+            "*Created with [PostHog](https://posthog.com?ref=pr) from an [inbox report](http://localhost:8000/project/1/inbox/rep_1)*",
+          );
+          expect(prompt).not.toContain("from a [Slack thread]");
+        } finally {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
+      });
+
+      it("prefers the Slack thread link over the inbox report link when both are present", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+        try {
+          const prompt = (
+            createServer() as unknown as TestableServer
+          ).buildCloudSystemPrompt(
+            null,
+            "https://posthog.slack.com/archives/C123/p456",
+            "http://localhost:8000/project/1/inbox/rep_1",
+          );
+          expect(prompt).toContain("from a [Slack thread]");
+          expect(prompt).not.toContain("from an [inbox report]");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
@@ -1660,7 +2980,7 @@ describe("AgentServer HTTP Mode", () => {
         expect(prompt).toContain(
           "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
         );
-        expect(prompt).not.toContain("Slack thread");
+        expect(prompt).not.toContain("from a [Slack thread]");
       });
 
       it("embeds the Slack thread link in the footer on the no-repository path when one is available", () => {
@@ -1675,7 +2995,7 @@ describe("AgentServer HTTP Mode", () => {
             "https://posthog.slack.com/archives/C123/p456",
           );
           expect(prompt).toContain(
-            "*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
+            "*Created with [PostHog](https://posthog.com?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
           );
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
@@ -1733,5 +3053,181 @@ describe("AgentServer HTTP Mode", () => {
       expect(context).not.toContain("gh pr checkout");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
+  });
+});
+
+// Exercises getPendingUserPrompt directly (no HTTP server / git repo) so we can
+// assert how the initial cloud prompt degrades when an attached file can't be
+// hydrated — the case behind a pasted-text task reaching the agent as a bare
+// "Attached files: …" description with no readable file.
+describe("AgentServer pending user attachments", () => {
+  interface PendingPromptInternals {
+    posthogAPI: {
+      getTaskRun: (taskId: string, runId: string) => Promise<TaskRun>;
+      downloadArtifact: (
+        taskId: string,
+        runId: string,
+        storagePath: string,
+      ) => Promise<ArrayBuffer | null>;
+    };
+    getPendingUserPrompt(
+      taskRun: TaskRun | null,
+    ): Promise<{ prompt: ContentBlock[] } | null>;
+  }
+
+  let tempDir: string;
+  let server: AgentServer | undefined;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-pending-"));
+  });
+
+  afterEach(async () => {
+    await server?.stop();
+    server = undefined;
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  const buildInternals = (): PendingPromptInternals => {
+    server = new AgentServer({
+      port: getNextTestPort(),
+      jwtPublicKey: TEST_PUBLIC_KEY,
+      repositoryPath: tempDir,
+      apiUrl: "http://localhost:8000",
+      apiKey: "test-api-key",
+      projectId: 1,
+      mode: "interactive",
+      taskId: "test-task-id",
+      runId: "test-run-id",
+    });
+    return server as unknown as PendingPromptInternals;
+  };
+
+  it("appends an explicit notice when a pending attachment never reaches the manifest", async () => {
+    const internals = buildInternals();
+    // Refetch still can't see the attachment (truly absent, not just lagging).
+    const getTaskRun = vi.fn(async () =>
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: [],
+      }),
+    );
+    internals.posthogAPI.getTaskRun = getTaskRun;
+
+    const result = await internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: [],
+      }),
+    );
+
+    // Refetched once to recover a lagging manifest, then — still missing —
+    // surfaced an explicit notice instead of returning null (which would let the
+    // caller fall back to the misleading "Attached files: …" description).
+    expect(getTaskRun).toHaveBeenCalledTimes(1);
+    expect(result).not.toBeNull();
+    expect(result?.prompt).toHaveLength(1);
+    const [block] = result?.prompt ?? [];
+    expect(block?.type).toBe("text");
+    expect((block as { text: string }).text).toContain("could not be loaded");
+  });
+
+  it("recovers a pending attachment from a refetched run manifest", async () => {
+    const internals = buildInternals();
+    internals.posthogAPI.getTaskRun = vi.fn(async () =>
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["att-1"] },
+        artifacts: [
+          {
+            id: "att-1",
+            name: "pasted-text.txt",
+            type: "user_attachment",
+            storage_path: "tasks/artifacts/pasted-text.txt",
+            content_type: "text/plain",
+          },
+        ],
+      }),
+    );
+    const downloadArtifact = vi.fn(async () =>
+      exactArrayBuffer(new TextEncoder().encode("pasted body")),
+    );
+    internals.posthogAPI.downloadArtifact = downloadArtifact;
+
+    const result = await internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["att-1"] },
+        artifacts: [],
+      }),
+    );
+
+    expect(downloadArtifact).toHaveBeenCalledWith(
+      "task-1",
+      "run-1",
+      "tasks/artifacts/pasted-text.txt",
+    );
+    const resourceLinks = result?.prompt.filter(
+      (block) => block.type === "resource_link",
+    );
+    expect(resourceLinks).toHaveLength(1);
+    // No "couldn't load" notice once the attachment is recovered.
+    const hasNotice = result?.prompt.some(
+      (block) =>
+        block.type === "text" &&
+        (block as { text: string }).text.includes("could not be loaded"),
+    );
+    expect(hasNotice).toBe(false);
+  });
+
+  it("returns null without refetching when no pending artifacts were declared", async () => {
+    const internals = buildInternals();
+    const getTaskRun = vi.fn();
+    internals.posthogAPI.getTaskRun = getTaskRun;
+
+    const result = await internals.getPendingUserPrompt(
+      createTaskRun({ state: {}, artifacts: [] }),
+    );
+
+    expect(result).toBeNull();
+    expect(getTaskRun).not.toHaveBeenCalled();
+  });
+
+  it("warns once (not twice) about a missing artifact across the speculative and post-refetch resolves", async () => {
+    const internals = buildInternals();
+    // A non-empty manifest that never lists the requested id — so getArtifactsById
+    // reaches its per-id "missing" warning on both the pre- and post-refetch calls
+    // (an empty manifest would short-circuit before warning at all).
+    const decoyManifest = [
+      {
+        id: "unrelated-artifact",
+        name: "other.txt",
+        type: "user_attachment" as const,
+      },
+    ];
+    internals.posthogAPI.getTaskRun = vi.fn(async () =>
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: decoyManifest,
+      }),
+    );
+    const loggerHost = internals as unknown as {
+      logger: { warn: (...args: unknown[]) => void };
+    };
+    const warnSpy = vi
+      .spyOn(loggerHost.logger, "warn")
+      .mockImplementation(() => {});
+
+    await internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["missing-attachment"] },
+        artifacts: decoyManifest,
+      }),
+    );
+
+    // The speculative pre-refetch resolve stays quiet (a miss there is expected);
+    // only the post-refetch resolve emits the per-id "missing" warning.
+    const manifestWarnings = warnSpy.mock.calls.filter(
+      ([message]) => message === "Pending artifact missing from run manifest",
+    );
+    expect(manifestWarnings).toHaveLength(1);
   });
 });

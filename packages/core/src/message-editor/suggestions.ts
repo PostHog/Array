@@ -1,9 +1,14 @@
-import { isAbsolutePath } from "@posthog/shared";
+import { isAbsolutePath, type SkillSource } from "@posthog/shared";
 import Fuse, { type IFuseOptions } from "fuse.js";
 
 export interface CommandLike {
   name: string;
   description?: string;
+  localSkill?: {
+    name: string;
+    source: Exclude<SkillSource, "bundled">;
+    path: string;
+  };
 }
 
 export interface FileItemLike {
@@ -27,6 +32,9 @@ export interface CommandSuggestionShape<T extends CommandLike> {
   id: string;
   label: string;
   description?: string;
+  skillPath?: string;
+  skillSource?: Exclude<SkillSource, "bundled">;
+  skillName?: string;
   command: T;
 }
 
@@ -75,9 +83,12 @@ export function shapeCommandSuggestions<T extends CommandLike>(
   commands: T[],
 ): CommandSuggestionShape<T>[] {
   return commands.map((cmd) => ({
-    id: cmd.name,
+    id: cmd.localSkill?.path ?? cmd.name,
     label: cmd.name,
     description: cmd.description,
+    skillPath: cmd.localSkill?.path,
+    skillSource: cmd.localSkill?.source,
+    skillName: cmd.localSkill?.name,
     command: cmd,
   }));
 }

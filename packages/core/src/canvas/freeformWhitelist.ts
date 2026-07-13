@@ -19,6 +19,10 @@ export interface WhitelistEntry {
 
 const ESM = "https://esm.sh";
 
+// One source of truth for the Quill version — used by both the import-map entry
+// (the JS module) and the stylesheet URLs the iframe links (see below).
+const QUILL_VERSION = "0.3.0-beta.18";
+
 // `?external=react,react-dom` keeps every dependent bound to the ONE react the
 // import map provides, instead of esm.sh bundling its own copy (which breaks
 // hooks across module boundaries — "invalid hook call").
@@ -38,14 +42,20 @@ export const FREEFORM_WHITELIST: WhitelistEntry[] = [
   // cheapest dependency and keeps shared canvases visually on-brand.
   {
     name: "@posthog/quill",
-    version: "0.3.0-beta.17",
-    esm: `${ESM}/@posthog/quill@0.3.0-beta.17?external=react,react-dom`,
+    version: QUILL_VERSION,
+    esm: `${ESM}/@posthog/quill@${QUILL_VERSION}?external=react,react-dom`,
   },
   // One charting library (the conventional React pick).
   {
     name: "recharts",
     version: "2.15.0",
     esm: `${ESM}/recharts@2.15.0?external=react,react-dom`,
+  },
+  // The icon set (named exports, e.g. `import { Calendar, RefreshCw } from "lucide-react"`).
+  {
+    name: "lucide-react",
+    version: "1.21.0",
+    esm: `${ESM}/lucide-react@1.21.0?external=react`,
   },
   // One formatting/date util.
   { name: "dayjs", version: "1.11.13", esm: `${ESM}/dayjs@1.11.13` },
@@ -54,6 +64,19 @@ export const FREEFORM_WHITELIST: WhitelistEntry[] = [
 // The CDN host the edit-mode import map (and Babel) load from. The iframe CSP
 // must allow this in edit mode; view/published mode self-hosts and forbids it.
 export const FREEFORM_ESM_HOST = ESM;
+
+// Quill stylesheets the iframe must <link> for its components to render styled.
+// Quill ships a self-contained compiled sheet (BEM `.quill-*` classes — NO
+// Tailwind build needed) plus its design tokens; the sandbox has no build step,
+// so without these every Quill component renders unstyled (which is what forced
+// agents to inline raw hex). Order matters: tokens + colors define the CSS vars,
+// then the component styles consume them. CSP `style-src` already allows the CDN.
+export const FREEFORM_QUILL_CSS_URLS = [
+  `${ESM}/@posthog/quill@${QUILL_VERSION}/tokens.css`,
+  `${ESM}/@posthog/quill@${QUILL_VERSION}/color-system.css`,
+  `${ESM}/@posthog/quill@${QUILL_VERSION}/base.css`,
+  `${ESM}/@posthog/quill@${QUILL_VERSION}/primitives.css`,
+];
 
 // The in-browser transpiler (Q2), imported as ESM so egress stays on one host.
 export const FREEFORM_BABEL_URL = `${ESM}/@babel/standalone@7.26.4`;

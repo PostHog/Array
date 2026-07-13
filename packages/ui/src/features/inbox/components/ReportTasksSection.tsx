@@ -1,13 +1,6 @@
 import { ArrowSquareOutIcon, TerminalIcon } from "@phosphor-icons/react";
-import type {
-  SignalReport,
-  SignalReportTaskRelationship,
-  Task,
-} from "@posthog/shared/types";
-import {
-  RELATIONSHIP_LABEL,
-  TaskRunStatusDot,
-} from "@posthog/ui/features/inbox/components/AgentRunDetail";
+import type { SignalReport, Task } from "@posthog/shared/types";
+import { TaskRunStatusDot } from "@posthog/ui/features/inbox/components/AgentRunDetail";
 import { RightColumnSection } from "@posthog/ui/features/inbox/components/RightColumnSection";
 import { useReportTasks } from "@posthog/ui/features/inbox/hooks/useReportTasks";
 import { Flex, Text } from "@radix-ui/themes";
@@ -30,11 +23,11 @@ export function ReportTasksSection({ report }: ReportTasksSectionProps) {
   return (
     <RightColumnSection Icon={TerminalIcon} title="Runs">
       <Flex direction="column" gap="0.5">
-        {reportTasks.map(({ task, relationship }) => (
+        {reportTasks.map(({ task, purposeLabel }) => (
           <TaskRow
             key={task.id}
             task={task}
-            relationship={relationship}
+            purposeLabel={purposeLabel}
             onOpen={() =>
               navigate({
                 to: "/code/inbox/runs/$reportId",
@@ -50,11 +43,11 @@ export function ReportTasksSection({ report }: ReportTasksSectionProps) {
 
 function TaskRow({
   task,
-  relationship,
+  purposeLabel,
   onOpen,
 }: {
   task: Task;
-  relationship: SignalReportTaskRelationship;
+  purposeLabel: string;
   onOpen: () => void;
 }) {
   const status = task.latest_run?.status ?? "not_started";
@@ -65,9 +58,7 @@ function TaskRow({
       className="group flex cursor-default select-none items-center gap-2 rounded-(--radius-1) px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-(--gray-3)"
     >
       <TaskRunStatusDot status={status} />
-      <Text className="shrink-0 text-gray-11">
-        {RELATIONSHIP_LABEL[relationship]}
-      </Text>
+      <Text className="shrink-0 text-gray-11">{purposeLabel}</Text>
       <Text className="ml-auto truncate text-(--gray-9)">
         {task.title || "Untitled"}
       </Text>

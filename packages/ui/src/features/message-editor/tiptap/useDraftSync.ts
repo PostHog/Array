@@ -25,6 +25,9 @@ function tiptapJsonToEditorContent(json: JSONContent): EditorContent {
           id: node.attrs.id,
           label: node.attrs.label,
           pastedText: node.attrs.pastedText,
+          skillPath: node.attrs.skillPath,
+          skillSource: node.attrs.skillSource,
+          skillName: node.attrs.skillName,
         },
       });
     } else if (node.type === "doc" && node.content) {
@@ -47,7 +50,7 @@ function tiptapJsonToEditorContent(json: JSONContent): EditorContent {
   return { segments };
 }
 
-function editorContentToTiptapJson(content: EditorContent): JSONContent {
+export function editorContentToTiptapJson(content: EditorContent): JSONContent {
   const paragraphs: JSONContent[] = [];
   let currentParagraphContent: JSONContent[] = [];
 
@@ -81,6 +84,9 @@ function editorContentToTiptapJson(content: EditorContent): JSONContent {
           id: seg.chip.id,
           label: seg.chip.label,
           pastedText: seg.chip.pastedText ?? false,
+          skillPath: seg.chip.skillPath,
+          skillSource: seg.chip.skillSource,
+          skillName: seg.chip.skillName,
         },
       });
     }
@@ -118,6 +124,9 @@ export function useDraftSync(
   const draft = useDraftStore((s) => s.drafts[sessionId] ?? null);
   const pendingContent = useDraftStore(
     (s) => s.pendingContent[sessionId] ?? null,
+  );
+  const pendingInsert = useDraftStore(
+    (s) => s.pendingInsert[sessionId] ?? null,
   );
   const hasHydrated = useDraftStore((s) => s._hasHydrated);
 
@@ -163,9 +172,19 @@ export function useDraftSync(
     if (!editor || !pendingContent) return;
 
     editor.commands.setContent(editorContentToTiptapJson(pendingContent));
-    editor.commands.focus("end");
+    editor.commands.focus("end", { scrollIntoView: false });
     draftActions.clearPendingContent(sessionId);
   }, [editor, pendingContent, sessionId, draftActions]);
+
+  useLayoutEffect(() => {
+    if (!editor || !pendingInsert) return;
+
+    editor.commands.focus("end");
+    editor.commands.insertContent(
+      editorContentToTiptapJson(pendingInsert).content ?? [],
+    );
+    draftActions.clearPendingInsert(sessionId);
+  }, [editor, pendingInsert, sessionId, draftActions]);
 
   // Extract restored attachments from draft on first restore
   const [restoredAttachments, setRestoredAttachments] = useState<

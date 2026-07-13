@@ -4,10 +4,11 @@ import { agentRouter } from "./routers/agent.router";
 import { analyticsRouter } from "./routers/analytics.router";
 import { archiveRouter } from "./routers/archive.router";
 import { authRouter } from "./routers/auth.router";
+import { browserTabsRouter } from "./routers/browser-tabs.router";
 import { canvasDataRouter } from "./routers/canvas-data.router";
-import { canvasGenRouter } from "./routers/canvas-gen.router";
 import { canvasTemplatesRouter } from "./routers/canvas-templates.router";
 import { channelTasksRouter } from "./routers/channel-tasks.router";
+import { claudeCliSessionsRouter } from "./routers/claude-cli-sessions.router";
 import { cloudTaskRouter } from "./routers/cloud-task.router";
 import { connectivityRouter } from "./routers/connectivity.router";
 import { contextMenuRouter } from "./routers/context-menu.router";
@@ -19,10 +20,10 @@ import { externalAppsRouter } from "./routers/external-apps.router";
 import { fileWatcherRouter } from "./routers/file-watcher.router";
 import { focusRouter } from "./routers/focus.router";
 import { foldersRouter } from "./routers/folders.router";
-import { freeformGenRouter } from "./routers/freeform-gen.router";
 import { fsRouter } from "./routers/fs.router";
 import { gitRouter } from "./routers/git.router";
 import { githubIntegrationRouter } from "./routers/github-integration.router";
+import { githubReleasesRouter } from "./routers/github-releases.router";
 import { handoffRouter } from "./routers/handoff.router";
 import { linearIntegrationRouter } from "./routers/linear-integration.router";
 import { llmGatewayRouter } from "./routers/llm-gateway.router";
@@ -52,10 +53,11 @@ export const hostRouter = router({
   analytics: analyticsRouter,
   archive: archiveRouter,
   auth: authRouter,
+  browserTabs: browserTabsRouter,
   canvasData: canvasDataRouter,
-  canvasGen: canvasGenRouter,
   canvasTemplates: canvasTemplatesRouter,
   channelTasks: channelTasksRouter,
+  claudeCliSessions: claudeCliSessionsRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,
@@ -67,11 +69,11 @@ export const hostRouter = router({
   fileWatcher: fileWatcherRouter,
   focus: focusRouter,
   folders: foldersRouter,
-  freeformGen: freeformGenRouter,
   fs: fsRouter,
   git: gitRouter,
   handoff: handoffRouter,
   githubIntegration: githubIntegrationRouter,
+  githubReleases: githubReleasesRouter,
   linearIntegration: linearIntegrationRouter,
   llmGateway: llmGatewayRouter,
   logs: logsRouter,

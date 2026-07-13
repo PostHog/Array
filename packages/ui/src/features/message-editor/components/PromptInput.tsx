@@ -4,6 +4,7 @@ import { ArrowUp, Stop } from "@phosphor-icons/react";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { cycleModeOption } from "@posthog/ui/features/sessions/sessionStore";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { hasOpenOverlay } from "@posthog/ui/utils/overlay";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { EditorContent } from "@tiptap/react";
@@ -11,12 +12,14 @@ import clsx from "clsx";
 import { forwardRef, useCallback, useEffect, useImperativeHandle } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useSkills } from "../../skills/useSkills";
+import { skillToEditorCommand } from "../commands";
 import { ModeSelector } from "../components/ModeSelector";
 import { useDraftStore } from "../draftStore";
 import { useTiptapEditor } from "../tiptap/useTiptapEditor";
 import type { EditorHandle } from "../types";
 import { AttachmentMenu } from "./AttachmentMenu";
 import { AttachmentsBar } from "./AttachmentsBar";
+import { SlotMachineSubmit } from "./SlotMachineSubmit";
 
 export type { EditorHandle };
 
@@ -37,6 +40,22 @@ export interface PromptInputProps {
   modeOption?: SessionConfigOption;
   onModeChange?: (value: string) => void;
   allowBypassPermissions?: boolean;
+  /**
+   * When provided, the mode dropdown gains an "Autoresearch" toggle as its
+   * last item (new-task composer only). `active` drives its checkmark.
+   */
+  autoresearch?: {
+    active: boolean;
+    onToggle: () => void;
+  };
+  /**
+   * When provided, the mode dropdown gains a "Canvas" toggle (channels
+   * composer only). `active` drives its checkmark and the trigger label.
+   */
+  canvas?: {
+    active: boolean;
+    onToggle: () => void;
+  };
   // capabilities
   enableBashMode?: boolean;
   enableCommands?: boolean;
@@ -45,6 +64,16 @@ export interface PromptInputProps {
   reasoningSelector?: React.ReactElement | null | false;
   messagingModeToggle?: React.ReactNode;
   historyButton?: React.ReactNode;
+  /**
+   * Rendered inside the composer box, above the editor — for mode chrome
+   * that must read as part of the input itself (e.g. autoresearch controls)
+   * rather than a separate widget attached outside it.
+   */
+  headerAddon?: React.ReactNode;
+  // Render an empty toolbar (no attach/mode/model/reasoning/history/submit).
+  // Submission falls back to the Enter key. Used by surfaces that want the
+  // editor chrome without any controls yet (e.g. the canvas composer).
+  hideDefaultToolbar?: boolean;
   // prompt history provider
   getPromptHistory?: () => string[];
   // callbacks
@@ -81,12 +110,16 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       modeOption,
       onModeChange,
       allowBypassPermissions = false,
+      autoresearch,
+      canvas,
       enableBashMode = false,
       enableCommands = true,
       modelSelector,
       reasoningSelector,
       messagingModeToggle,
       historyButton,
+      headerAddon,
+      hideDefaultToolbar = false,
       getPromptHistory,
       onBeforeSubmit,
       onSubmit,
@@ -107,6 +140,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
   ) => {
     const focusRequested = useDraftStore((s) => s.focusRequested[sessionId]);
     const clearFocusRequest = useDraftStore((s) => s.actions.clearFocusRequest);
+    const slotMachineMode = useSettingsStore((s) => s.slotMachineMode);
     const { data: skills } = useSkills();
 
     const {
@@ -121,6 +155,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       getText,
       getContent,
       setContent,
+      insertEditorContent,
       insertChip,
       removeChipById,
       replaceChipAttrs,
@@ -161,6 +196,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         getContent,
         getText,
         setContent,
+        insertEditorContent,
         insertChip,
         removeChipById,
         replaceChipAttrs,
@@ -175,6 +211,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         getContent,
         getText,
         setContent,
+        insertEditorContent,
         insertChip,
         removeChipById,
         replaceChipAttrs,
@@ -195,10 +232,9 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
     // only the built-in /good /bad /feedback commands.
     useEffect(() => {
       if (!enableCommands || !skills) return;
-      useDraftStore.getState().actions.setCommands(
-        sessionId,
-        skills.map((s) => ({ name: s.name, description: s.description })),
-      );
+      useDraftStore
+        .getState()
+        .actions.setCommands(sessionId, skills.map(skillToEditorCommand));
       return () => {
         useDraftStore.getState().actions.clearCommands(sessionId);
       };
@@ -278,13 +314,17 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       e.stopPropagation();
     }, []);
 
-    const handleSubmitClick = (e: React.MouseEvent) => {
-      e.stopPropagation();
+    const doSubmit = useCallback(() => {
       if (onSubmitClick) {
         onSubmitClick();
       } else {
         submit();
       }
+    }, [onSubmitClick, submit]);
+
+    const handleSubmitClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      doSubmit();
     };
 
     const submitBlocked = submitDisabledExternal || isEmpty;
@@ -292,92 +332,117 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       submitTooltipOverride ??
       (submitBlocked ? "Enter a message" : "Send message");
 
-    const submitButton =
-      isLoading && onCancel ? (
-        <Tooltip content="Stop">
-          <InputGroupButton
-            variant="destructive"
-            size="icon-sm"
-            onClick={onCancel}
-            aria-label="Stop"
-          >
-            <Stop size={14} weight="fill" />
-          </InputGroupButton>
-        </Tooltip>
-      ) : (
-        <Tooltip content={submitTooltip}>
-          <InputGroupButton
-            variant="primary"
-            size="icon-sm"
-            onClick={handleSubmitClick}
-            disabled={submitBlocked}
-            aria-label="Send message"
-            {...(tourTarget && { "data-tour": `${tourTarget}-submit` })}
-          >
-            <ArrowUp size={14} weight="bold" />
-          </InputGroupButton>
-        </Tooltip>
-      );
+    // Stop takes priority over everything: you cancel a run, you don't gamble
+    // on it. With slot machine mode on, the send affordance moves out to the
+    // pull-lever mounted beside the composer, so the toolbar slot is empty.
+    const inStopMode = isLoading && !!onCancel;
+    const submitButton = inStopMode ? (
+      <Tooltip content="Stop">
+        <InputGroupButton
+          variant="destructive"
+          size="icon-sm"
+          onClick={onCancel}
+          aria-label="Stop"
+        >
+          <Stop size={14} weight="fill" />
+        </InputGroupButton>
+      </Tooltip>
+    ) : slotMachineMode ? null : (
+      <Tooltip content={submitTooltip}>
+        <InputGroupButton
+          variant="primary"
+          size="icon-sm"
+          onClick={handleSubmitClick}
+          disabled={submitBlocked}
+          aria-label="Send message"
+          {...(tourTarget && { "data-tour": `${tourTarget}-submit` })}
+        >
+          <ArrowUp size={14} weight="bold" />
+        </InputGroupButton>
+      </Tooltip>
+    );
 
     return (
       <Flex direction="column" gap="1">
-        <InputGroup
-          onClick={handleContainerClick}
-          onContextMenu={handleContextMenu}
-          className={`h-auto cursor-text bg-card ${isBashMode ? "ring-1 ring-blue-9" : "focus-within:ring-1 focus-within:ring-purple-9"}`}
-          {...(tourTarget && {
-            "data-tour": `${tourTarget}-editor`,
-            "data-tour-ready": !isEmpty ? "true" : undefined,
-          })}
-        >
-          {attachments.length > 0 && (
-            <InputGroupAddon align="block-start">
-              <AttachmentsBar
-                attachments={attachments}
-                onRemove={removeAttachment}
-              />
-            </InputGroupAddon>
-          )}
-          <div
-            className={clsx(
-              "cli-editor-scroll relative min-h-[50px] w-full flex-1 overflow-y-auto px-2 py-2 text-[14px]",
-              editorHeight === "large" ? "max-h-[45vh]" : "max-h-[200px]",
-            )}
+        <Flex gap="2" align="stretch">
+          <InputGroup
+            onClick={handleContainerClick}
+            onContextMenu={handleContextMenu}
+            className={`h-auto flex-1 cursor-text bg-card ${isBashMode ? "ring-1 ring-blue-9" : "focus-within:border-ring/50 focus-within:ring-3 focus-within:ring-ring/30"}`}
+            {...(tourTarget && {
+              "data-tour": `${tourTarget}-editor`,
+              "data-tour-ready": !isEmpty ? "true" : undefined,
+            })}
           >
-            <EditorContent editor={editor} />
-          </div>
-          <InputGroupAddon align="block-end" className="p-1">
-            <AttachmentMenu
-              disabled={disabled}
-              repoPath={repoPath}
-              taskId={taskId}
-              onAddAttachment={addAttachment}
-              onAttachFiles={onAttachFiles}
-              onInsertChip={insertChip}
-              onRemoveChip={removeChipById}
+            {headerAddon && (
+              <InputGroupAddon align="block-start">
+                {headerAddon}
+              </InputGroupAddon>
+            )}
+            {attachments.length > 0 && (
+              <InputGroupAddon align="block-start">
+                <AttachmentsBar
+                  attachments={attachments}
+                  onRemove={removeAttachment}
+                />
+              </InputGroupAddon>
+            )}
+            <div
+              className={clsx(
+                "cli-editor-scroll relative min-h-[50px] w-full flex-1 overflow-y-auto px-2 py-2 text-[14px]",
+                editorHeight === "large" ? "max-h-[45vh]" : "max-h-[200px]",
+              )}
+            >
+              <EditorContent editor={editor} />
+            </div>
+            <InputGroupAddon align="block-end" className="p-1">
+              {!hideDefaultToolbar && (
+                <>
+                  <AttachmentMenu
+                    disabled={disabled}
+                    repoPath={repoPath}
+                    taskId={taskId}
+                    onAddAttachment={addAttachment}
+                    onAttachFiles={onAttachFiles}
+                    onInsertChip={insertChip}
+                    onRemoveChip={removeChipById}
+                  />
+                  {onModeChange && (
+                    <ModeSelector
+                      modeOption={modeOption}
+                      onChange={onModeChange}
+                      allowBypassPermissions={allowBypassPermissions}
+                      disabled={disabled}
+                      autoresearch={autoresearch}
+                      canvas={canvas}
+                    />
+                  )}
+                  {modelSelector && <span>{modelSelector}</span>}
+                  {reasoningSelector && <span>{reasoningSelector}</span>}
+                  {messagingModeToggle && <span>{messagingModeToggle}</span>}
+                  {isBashMode && (
+                    <Text className="font-mono text-(--blue-9) text-[13px]">
+                      ! bash
+                    </Text>
+                  )}
+                </>
+              )}
+              {/* Submit stays even with a blank toolbar; only the left-side
+                  addons are suppressed. */}
+              <span className="ml-auto flex items-center gap-1">
+                {!hideDefaultToolbar && historyButton}
+                {submitButton}
+              </span>
+            </InputGroupAddon>
+          </InputGroup>
+          {slotMachineMode && !inStopMode && (
+            <SlotMachineSubmit
+              disabled={submitBlocked}
+              onSubmit={doSubmit}
+              tourTarget={tourTarget}
             />
-            {modeOption && onModeChange && (
-              <ModeSelector
-                modeOption={modeOption}
-                onChange={onModeChange}
-                allowBypassPermissions={allowBypassPermissions}
-                disabled={disabled}
-              />
-            )}
-            {modelSelector && <span>{modelSelector}</span>}
-            {reasoningSelector && <span>{reasoningSelector}</span>}
-            {messagingModeToggle && <span>{messagingModeToggle}</span>}
-            {isBashMode && (
-              <Text className="font-mono text-(--blue-9) text-[13px]">
-                ! bash
-              </Text>
-            )}
-            <span className="ml-auto flex items-center gap-1">
-              {historyButton}
-              {submitButton}
-            </span>
-          </InputGroupAddon>
-        </InputGroup>
+          )}
+        </Flex>
       </Flex>
     );
   },

@@ -1,11 +1,25 @@
 import {
   FileTextIcon,
-  HashIcon,
   SparkleIcon,
   SpinnerGapIcon,
 } from "@phosphor-icons/react";
 import { FolderInstructionsConflictError } from "@posthog/api-client/posthog-client";
+import { buildContextSaveProps } from "@posthog/core/canvas/canvasAnalytics";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Button as QuillButton,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
+import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useFolderGenerationTask,
@@ -16,18 +30,16 @@ import {
   useFolderInstructionsMutations,
   useFolderInstructionsVersions,
 } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
-import {
-  type GenerateContextTarget,
-  useGenerateContext,
-} from "@posthog/ui/features/canvas/hooks/useGenerateContext";
+import { useGenerateContext } from "@posthog/ui/features/canvas/hooks/useGenerateContext";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
-import { FolderPicker } from "@posthog/ui/features/folder-picker/FolderPicker";
-import { GitHubRepoPicker } from "@posthog/ui/features/folder-picker/GitHubRepoPicker";
-import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
-import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import {
+  type WorkspaceMode,
+  WorkspaceModeSelect,
+} from "@posthog/ui/features/task-detail/components/WorkspaceModeSelect";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
+import { track } from "@posthog/ui/shell/analytics";
 import {
   Box,
   Button,
@@ -55,13 +67,10 @@ interface WebsiteContextProps {
 }
 
 export function WebsiteContext({ channelId }: WebsiteContextProps) {
-  // Resolve the channel name from the cached channels list, so we don't make
-  // a second network call just for the header label.
+  // Channel name for the empty-state copy (the header reads its own).
   const { channels } = useChannels();
-  const channel = useMemo(
-    () => channels.find((c) => c.id === channelId) ?? null,
-    [channels, channelId],
-  );
+  const channelName =
+    channels.find((c) => c.id === channelId)?.name ?? "Channel";
 
   const {
     data: latest,
@@ -151,25 +160,9 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
     setDraft(latest?.content ?? "");
   }, [latest?.content, hasDraft]);
 
-  const channelName = channel?.name ?? "Channel";
   const headerContent = useMemo(
-    () => (
-      <Flex align="center" gap="2" className="w-full min-w-0">
-        <HashIcon size={12} className="shrink-0 text-gray-10" />
-        <Text
-          className="truncate whitespace-nowrap font-medium text-[13px]"
-          title={channelName}
-        >
-          {channelName}
-        </Text>
-        <Text className="shrink-0 text-[13px] text-gray-9">/</Text>
-        <FileTextIcon size={12} className="shrink-0 text-gray-10" />
-        <Text className="shrink-0 whitespace-nowrap text-[13px] text-gray-11">
-          CONTEXT.md
-        </Text>
-      </Flex>
-    ),
-    [channelName],
+    () => <ChannelHeader channelId={channelId} />,
+    [channelId],
   );
   useSetHeaderContent(headerContent);
 
@@ -181,9 +174,17 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
         // concurrency check; otherwise we send the version we started from.
         baseVersion: latest?.version ?? 0,
       });
+      track(
+        ANALYTICS_EVENTS.CONTEXT_ACTION,
+        buildContextSaveProps({ channelId, hasInstructions, success: true }),
+      );
       setHasDraft(false);
       setMode("rendered");
     } catch {
+      track(
+        ANALYTICS_EVENTS.CONTEXT_ACTION,
+        buildContextSaveProps({ channelId, hasInstructions, success: false }),
+      );
       // Errors surface through `publishError` below; nothing to do here.
     }
   };
@@ -406,61 +407,54 @@ function EmptyState({
   onCreate: () => void;
 }) {
   return (
-    <Flex
-      direction="column"
-      align="center"
-      gap="4"
-      className="mx-auto max-w-[440px] py-16 text-center"
-    >
-      <Box className="rounded-lg border border-gray-6 border-dashed p-4">
-        <FileTextIcon size={28} className="text-gray-8" />
-      </Box>
-      <Flex direction="column" gap="2" align="center">
-        <Text className="font-medium text-[14px] text-gray-12">
-          No CONTEXT.md yet
-        </Text>
-        <Text className="text-[13px] text-gray-10 leading-relaxed">
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <FileTextIcon size={28} />
+        </EmptyMedia>
+        <EmptyTitle>No CONTEXT.md yet</EmptyTitle>
+        <EmptyDescription>
           CONTEXT.md tells agents the specific details they need to know when
           working in <strong>{channelName}</strong> — conventions, gotchas, key
           files, and anything else that isn't obvious from the code.
-        </Text>
-      </Flex>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        {stoppedTaskId ? (
+          <Callout.Root color="amber" size="1" className="w-full text-left">
+            <Callout.Text>
+              The previous generation in task{" "}
+              <Link
+                to="/website/$channelId/tasks/$taskId"
+                params={{ channelId, taskId: stoppedTaskId }}
+                className="font-medium text-amber-11 underline"
+              >
+                {shortTaskId(stoppedTaskId)}
+              </Link>{" "}
+              stopped before writing a CONTEXT.md. You can generate again.
+            </Callout.Text>
+          </Callout.Root>
+        ) : null}
 
-      {stoppedTaskId ? (
-        <Callout.Root color="amber" size="1" className="w-full text-left">
-          <Callout.Text>
-            The previous generation in task{" "}
-            <Link
-              to="/website/$channelId/tasks/$taskId"
-              params={{ channelId, taskId: stoppedTaskId }}
-              className="font-medium text-amber-11 underline"
-            >
-              {shortTaskId(stoppedTaskId)}
-            </Link>{" "}
-            stopped before writing a CONTEXT.md. You can generate again.
-          </Callout.Text>
-        </Callout.Root>
-      ) : null}
-
-      <Flex align="center" gap="3">
-        <Button size="2" variant="solid" onClick={onCreate}>
-          Create CONTEXT.md
-        </Button>
-        <GenerateWithAgent
-          channelId={channelId}
-          channelName={channelName}
-          regenerate={!!stoppedTaskId}
-        />
-      </Flex>
-    </Flex>
+        <Flex align="center" gap="3">
+          <QuillButton variant="primary" size="default" onClick={onCreate}>
+            Create
+          </QuillButton>
+          <GenerateWithAgent
+            channelId={channelId}
+            channelName={channelName}
+            regenerate={!!stoppedTaskId}
+          />
+        </Flex>
+      </EmptyContent>
+    </Empty>
   );
 }
 
-type GenMode = "local" | "cloud";
-
-// Lets the user pick a local repo or a connected GitHub repo (cloud), then kicks
-// off a normal task that explores the code + PostHog data and publishes
-// CONTEXT.md via the MCP. Reuses the same pickers as the task input bar.
+// Kicks off a repo-less task that explores PostHog data (and a repo, if the
+// agent decides it needs one) and publishes CONTEXT.md via the MCP. The user no
+// longer picks a folder/repo up front — the agent attaches one lazily and asks
+// to clarify if it can't find the right one.
 function GenerateWithAgent({
   channelId,
   channelName,
@@ -471,115 +465,47 @@ function GenerateWithAgent({
   regenerate: boolean;
 }) {
   const { generate, isStarting } = useGenerateContext(channelId, channelName);
-  const lastUsedRunMode = useSettingsStore((s) => s.lastUsedRunMode);
 
-  const [picking, setPicking] = useState(false);
-  const [genMode, setGenMode] = useState<GenMode>(
-    lastUsedRunMode === "cloud" ? "cloud" : "local",
-  );
+  // Generation always runs in the cloud, except the dev-only picker below lets a
+  // local build of these features be tested before it's merged to the cloud env.
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("cloud");
 
-  if (!picking) {
-    return (
-      <Button size="2" variant="soft" onClick={() => setPicking(true)}>
-        <SparkleIcon size={14} />
+  const onGenerate = () => {
+    track(ANALYTICS_EVENTS.CONTEXT_ACTION, {
+      action_type: "generate_started",
+      channel_id: channelId,
+    });
+    void generate(workspaceMode);
+  };
+
+  return (
+    <Flex align="center" gap="2">
+      <QuillButton
+        variant="outline"
+        size="default"
+        disabled={isStarting}
+        onClick={onGenerate}
+      >
+        {isStarting ? <Spinner size="1" /> : <SparkleIcon size={14} />}
         {regenerate ? "Generate again" : "Generate with agent"}
-      </Button>
-    );
-  }
-
-  return (
-    <Flex direction="column" align="center" gap="2">
-      <SegmentedControl.Root
-        size="1"
-        value={genMode}
-        onValueChange={(v) => setGenMode(v as GenMode)}
-      >
-        <SegmentedControl.Item value="local">Local</SegmentedControl.Item>
-        <SegmentedControl.Item value="cloud">Cloud</SegmentedControl.Item>
-      </SegmentedControl.Root>
-      {genMode === "local" ? (
-        <GenerateLocal generate={generate} isStarting={isStarting} />
-      ) : (
-        <GenerateCloud generate={generate} isStarting={isStarting} />
+      </QuillButton>
+      {/* Dev-only: pick local vs cloud so a local build can be tested pre-merge. */}
+      {import.meta.env.DEV && (
+        <Tooltip>
+          <TooltipTrigger render={<div />}>
+            <WorkspaceModeSelect
+              value={workspaceMode}
+              onChange={setWorkspaceMode}
+              overrideModes={["local", "cloud"]}
+              disabled={isStarting}
+              size="1"
+            />
+          </TooltipTrigger>
+          <TooltipContent>
+            Dev mode only — generation always runs in the cloud in production.
+          </TooltipContent>
+        </Tooltip>
       )}
-    </Flex>
-  );
-}
-
-interface GenerateSubProps {
-  generate: (target: GenerateContextTarget) => Promise<string | null>;
-  isStarting: boolean;
-}
-
-function GenerateLocal({ generate, isStarting }: GenerateSubProps) {
-  const [repoPath, setRepoPath] = useState("");
-  return (
-    <Flex align="center" gap="2">
-      <FolderPicker value={repoPath} onChange={setRepoPath} />
-      <Button
-        size="2"
-        variant="solid"
-        disabled={!repoPath || isStarting}
-        onClick={() => {
-          if (repoPath) void generate({ mode: "local", repoPath });
-        }}
-      >
-        {isStarting ? <Spinner size="1" /> : <SparkleIcon size={14} />}
-        Generate
-      </Button>
-    </Flex>
-  );
-}
-
-function GenerateCloud({ generate, isStarting }: GenerateSubProps) {
-  const {
-    repositories,
-    getUserIntegrationIdForRepo,
-    isLoadingRepos,
-    hasGithubIntegration,
-  } = useUserRepositoryIntegration();
-  const lastUsedCloudRepository = useSettingsStore(
-    (s) => s.lastUsedCloudRepository,
-  );
-  const [repo, setRepo] = useState<string | null>(
-    lastUsedCloudRepository ?? null,
-  );
-  const integrationId = repo ? getUserIntegrationIdForRepo(repo) : undefined;
-
-  if (!hasGithubIntegration && !isLoadingRepos) {
-    return (
-      <Text className="text-[12px] text-gray-10">
-        Connect GitHub to generate in the cloud.
-      </Text>
-    );
-  }
-
-  return (
-    <Flex align="center" gap="2">
-      <GitHubRepoPicker
-        value={repo}
-        onChange={setRepo}
-        repositories={repositories}
-        isLoading={isLoadingRepos}
-        size="2"
-      />
-      <Button
-        size="2"
-        variant="solid"
-        disabled={!repo || !integrationId || isStarting}
-        onClick={() => {
-          if (repo && integrationId) {
-            void generate({
-              mode: "cloud",
-              repository: repo,
-              githubUserIntegrationId: integrationId,
-            });
-          }
-        }}
-      >
-        {isStarting ? <Spinner size="1" /> : <SparkleIcon size={14} />}
-        Generate
-      </Button>
     </Flex>
   );
 }
@@ -594,30 +520,31 @@ function GeneratingState({
   taskId: string;
 }) {
   return (
-    <Flex
-      direction="column"
-      align="center"
-      gap="4"
-      className="mx-auto max-w-[440px] py-16 text-center"
-    >
-      <Box className="rounded-lg border border-gray-6 border-dashed p-3">
-        <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
-      </Box>
-      <Flex direction="column" gap="1" align="center">
-        <Text className="font-medium text-[14px] text-gray-12">Generating</Text>
-        <Text className="text-[13px] text-gray-10">
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
+        </EmptyMedia>
+        <EmptyTitle>Generating</EmptyTitle>
+        <EmptyDescription>
           An agent is writing this CONTEXT.md.
-        </Text>
-      </Flex>
-      <Button size="2" variant="soft" asChild>
-        <Link
-          to="/website/$channelId/tasks/$taskId"
-          params={{ channelId, taskId }}
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <QuillButton
+          variant="primary"
+          size="default"
+          render={
+            <Link
+              to="/website/$channelId/tasks/$taskId"
+              params={{ channelId, taskId }}
+            />
+          }
         >
           View task
-        </Link>
-      </Button>
-    </Flex>
+        </QuillButton>
+      </EmptyContent>
+    </Empty>
   );
 }
 

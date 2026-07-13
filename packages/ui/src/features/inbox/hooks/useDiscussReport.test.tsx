@@ -12,6 +12,9 @@ const createTask = vi.hoisted(() =>
 const getUserIntegrationIdForRepo = vi.hoisted(() => vi.fn(() => "ghu_1"));
 const openTask = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const toastError = vi.hoisted(() => vi.fn());
+const resolveDefaultModel = vi.hoisted(() =>
+  vi.fn().mockResolvedValue("claude-sonnet"),
+);
 
 vi.mock("@posthog/ui/features/auth/store", () => ({
   useAuthStateValue: (sel: (s: { cloudRegion: string }) => unknown) =>
@@ -29,8 +32,14 @@ vi.mock("@posthog/ui/features/settings/settingsStore", () => ({
     }),
   },
 }));
+// The runner resolves two distinct services off the container (the task service
+// and the report model resolver); return the right shape per token so the model
+// resolver isn't silently `{ createTask }` (which would make every run blocked).
 vi.mock("@posthog/di/react", () => ({
-  useService: () => ({ createTask }),
+  useService: (token: symbol) =>
+    token.description === "posthog.core.inbox.reportModelResolver"
+      ? { resolveDefaultModel }
+      : { createTask },
 }));
 vi.mock("@posthog/ui/features/tasks/useTaskCrudMutations", () => ({
   useCreateTask: () => ({ invalidateTasks: vi.fn() }),
@@ -43,9 +52,12 @@ vi.mock("@posthog/ui/shell/logger", () => ({
   logger: { scope: () => ({ info: vi.fn(), error: vi.fn(), warn: vi.fn() }) },
 }));
 vi.mock("@posthog/ui/primitives/toast", () => ({
-  toast: { error: toastError, loading: vi.fn(() => "toast-1") },
+  toast: {
+    error: toastError,
+    loading: vi.fn(() => "toast-1"),
+    dismiss: vi.fn(),
+  },
 }));
-vi.mock("sonner", () => ({ toast: { dismiss: vi.fn() } }));
 
 import { useDiscussReport } from "./useDiscussReport";
 

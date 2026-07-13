@@ -10,7 +10,7 @@ import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
 import {
   type QueuedMessage,
   sessionStoreSetters,
-  useSessionForTask,
+  useSessionIsCloud,
 } from "@posthog/ui/features/sessions/sessionStore";
 import { useCallback } from "react";
 
@@ -24,7 +24,7 @@ export function useReturnQueuedMessageToEditor(
   taskId: string | undefined,
 ): (message: QueuedMessage) => void {
   const { requestFocus, setPendingContent } = useDraftStore((s) => s.actions);
-  const isCloud = useSessionForTask(taskId)?.isCloud ?? false;
+  const isCloud = useSessionIsCloud(taskId);
 
   return useCallback(
     (message: QueuedMessage) => {
