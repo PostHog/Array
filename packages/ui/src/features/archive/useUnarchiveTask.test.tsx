@@ -3,11 +3,11 @@ import type {
   DeleteOutcome,
   RestoreOutcome,
 } from "@posthog/core/archive/archivedTasksController";
+import { WORKSPACE_QUERY_KEY } from "@posthog/ui/features/workspace/identifiers";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { WORKSPACE_QUERY_KEY } from "../workspace/identifiers";
 
 const ARCHIVE_FILTER = { queryKey: [["archive"]] };
 
@@ -46,12 +46,11 @@ describe("useUnarchiveTask", () => {
     });
   });
 
-  it("invalidates the workspace query when an archived task is deleted", async () => {
-    // Regression: the delete path once skipped WORKSPACE_QUERY_KEY, so the
-    // sidebar kept showing deleted archived tasks. Pin the invalidation here so
-    // the restore/delete sets can't silently drift apart again.
+  it("invalidates the workspace, archive and tasks caches together when an archived task is deleted", async () => {
+    // Regression: delete once skipped WORKSPACE_QUERY_KEY, leaving stale sidebar rows.
     controller.remove.mockResolvedValue({ kind: "deleted" } as DeleteOutcome);
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const refetchSpy = vi.spyOn(queryClient, "refetchQueries");
     const { result } = renderHook(() => useUnarchiveTask(), { wrapper });
 
     await act(async () => {
@@ -61,54 +60,114 @@ describe("useUnarchiveTask", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: WORKSPACE_QUERY_KEY,
     });
+    expect(invalidateSpy).toHaveBeenCalledWith(ARCHIVE_FILTER);
+    expect(refetchSpy).toHaveBeenCalledWith({ queryKey: ["tasks"] });
   });
 
-  it("does not invalidate when deletion fails", async () => {
-    controller.remove.mockResolvedValue({
-      kind: "error",
-      message: "nope",
-    } as DeleteOutcome);
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-    const { result } = renderHook(() => useUnarchiveTask(), { wrapper });
+  it.each<[string, DeleteOutcome, boolean]>([
+    ["deleted", { kind: "deleted" }, true],
+    ["error", { kind: "error", message: "nope" }, false],
+  ])(
+    "remove() with outcome %s invalidates the workspace query: %s",
+    async (_name, outcome, shouldInvalidate) => {
+      controller.remove.mockResolvedValue(outcome);
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderHook(() => useUnarchiveTask(), { wrapper });
 
-    await act(async () => {
-      await result.current.remove("t1");
-    });
+      await act(async () => {
+        await result.current.remove("t1");
+      });
 
-    expect(invalidateSpy).not.toHaveBeenCalled();
-  });
+      if (shouldInvalidate) {
+        expect(invalidateSpy).toHaveBeenCalledWith({
+          queryKey: WORKSPACE_QUERY_KEY,
+        });
+      } else {
+        expect(invalidateSpy).not.toHaveBeenCalled();
+      }
+    },
+  );
 
-  it("invalidates the workspace query when a task is restored", async () => {
-    controller.restore.mockResolvedValue({
-      kind: "restored",
-      navigateToTaskId: "t1",
-    } as RestoreOutcome);
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-    const { result } = renderHook(() => useUnarchiveTask(), { wrapper });
+  it.each<[string, RestoreOutcome, boolean]>([
+    ["restored", { kind: "restored", navigateToTaskId: "t1" }, true],
+    [
+      "branch-not-found",
+      { kind: "branch-not-found", taskId: "t1", branchName: "b" },
+      false,
+    ],
+    ["error", { kind: "error", message: "nope" }, false],
+  ])(
+    "restore() with outcome %s invalidates the workspace query: %s",
+    async (_name, outcome, shouldInvalidate) => {
+      controller.restore.mockResolvedValue(outcome);
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderHook(() => useUnarchiveTask(), { wrapper });
 
-    await act(async () => {
-      await result.current.restore("t1", true);
-    });
+      await act(async () => {
+        await result.current.restore("t1", true);
+      });
 
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: WORKSPACE_QUERY_KEY,
-    });
-  });
+      if (shouldInvalidate) {
+        expect(invalidateSpy).toHaveBeenCalledWith({
+          queryKey: WORKSPACE_QUERY_KEY,
+        });
+      } else {
+        expect(invalidateSpy).not.toHaveBeenCalled();
+      }
+    },
+  );
 
-  it("invalidates the workspace query when the context menu deletes a task", async () => {
-    controller.runContextMenuAction.mockResolvedValue({
-      kind: "delete",
-      outcome: { kind: "deleted" },
-    } as ContextMenuOutcome);
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-    const { result } = renderHook(() => useUnarchiveTask(), { wrapper });
+  it.each<[string, ContextMenuOutcome, boolean]>([
+    ["noop", { kind: "noop" }, false],
+    ["menu-error", { kind: "menu-error", message: "nope" }, false],
+    [
+      "restore -> restored",
+      {
+        kind: "restore",
+        outcome: { kind: "restored", navigateToTaskId: "t1" },
+      },
+      true,
+    ],
+    [
+      "restore -> branch-not-found",
+      {
+        kind: "restore",
+        outcome: {
+          kind: "branch-not-found",
+          taskId: "t1",
+          branchName: "b",
+        },
+      },
+      false,
+    ],
+    [
+      "delete -> deleted",
+      { kind: "delete", outcome: { kind: "deleted" } },
+      true,
+    ],
+    [
+      "delete -> error",
+      { kind: "delete", outcome: { kind: "error", message: "nope" } },
+      false,
+    ],
+  ])(
+    "runContextMenuAction() with outcome %s invalidates the workspace query: %s",
+    async (_name, outcome, shouldInvalidate) => {
+      controller.runContextMenuAction.mockResolvedValue(outcome);
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderHook(() => useUnarchiveTask(), { wrapper });
 
-    await act(async () => {
-      await result.current.runContextMenuAction("t1", "Task 1", true);
-    });
+      await act(async () => {
+        await result.current.runContextMenuAction("t1", "Task 1", true);
+      });
 
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: WORKSPACE_QUERY_KEY,
-    });
-  });
+      if (shouldInvalidate) {
+        expect(invalidateSpy).toHaveBeenCalledWith({
+          queryKey: WORKSPACE_QUERY_KEY,
+        });
+      } else {
+        expect(invalidateSpy).not.toHaveBeenCalled();
+      }
+    },
+  );
 });
