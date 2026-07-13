@@ -5,6 +5,13 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import { PRO_USAGE_MULTIPLIER } from "@posthog/core/billing/usageDisplay";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@posthog/quill";
 import { BILLING_FLAG, PLAN_PRO_ALPHA } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -96,8 +103,10 @@ export function PlanUsageSettings() {
 
   useEffect(() => {
     void fetchSeat({ autoProvision: true });
-    void refetchUsage();
-  }, [fetchSeat, refetchUsage]);
+    // refetchUsage is a refresh mutation, so it bypasses useUsage's `enabled`
+    // gate — skip it for spend-only users.
+    if (billingEnabled) void refetchUsage();
+  }, [fetchSeat, refetchUsage, billingEnabled]);
 
   useTrackUsageViewed({
     isLoading: billingEnabled && (isLoading || usageLoading),
@@ -127,6 +136,22 @@ export function PlanUsageSettings() {
         Math.ceil((activeUntil.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
       )
     : null;
+
+  if (!billingEnabled && !spendAnalysisEnabled) {
+    return (
+      <Empty className="mx-auto max-w-md py-16">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <CreditCard size={24} />
+          </EmptyMedia>
+          <EmptyTitle>Plan & usage isn't available</EmptyTitle>
+          <EmptyDescription>
+            Billing and usage reporting aren't enabled for your account yet.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
 
   return (
     <Flex direction="column" gap="5">
