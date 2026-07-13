@@ -5,7 +5,7 @@ export {
   type ModeInfo,
 } from "../../execution-mode";
 
-import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
+import type { PermissionMode as SdkPermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import type { CodeExecutionMode } from "../../execution-mode";
 import { isMcpToolReadOnly } from "./mcp/tool-metadata";
 
@@ -56,7 +56,9 @@ const AUTO_ALLOWED_TOOLS: Record<string, Set<string>> = {
   plan: new Set(BASE_ALLOWED_TOOLS),
 };
 
-export function toSdkPermissionMode(mode: CodeExecutionMode): PermissionMode {
+export function toSdkPermissionMode(
+  mode: CodeExecutionMode,
+): SdkPermissionMode {
   return mode === "auto" ? "default" : mode;
 }
 
