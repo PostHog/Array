@@ -24,12 +24,8 @@ function electronDistMissing(electronDist) {
   }
 }
 
-// Self-heal missing Electron binary.
-// pnpm skips package-level postinstall scripts when the lockfile is already
-// satisfied, so if node_modules/electron/dist gets wiped (interrupted download,
-// cache eviction, arch change, manual cleanup), `pnpm install` won't notice —
-// and `electron-vite dev` then fails with "Electron failed to install
-// correctly, please delete node_modules/electron and try installing again".
+// pnpm may not rerun Electron's package-level postinstall when the lockfile is
+// unchanged. Repair a missing or empty dist directory here.
 const electronDist = join(REPO_ROOT, "node_modules", "electron", "dist");
 if (electronDistMissing(electronDist)) {
   console.log(`Electron binary missing at ${electronDist} — downloading...`);

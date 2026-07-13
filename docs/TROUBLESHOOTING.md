@@ -10,7 +10,7 @@ If install dies in `apps/code` postinstall with:
 
 an older checkout is still running `bash scripts/postinstall.sh`, and Windows is resolving `bash` to the System32 WSL stub without a distro. Current `main` uses `node scripts/postinstall.mjs` — pull latest and re-run `pnpm install`. WSL/Git Bash are not required for install.
 
-`pnpm dev` / phrocs on Windows is a separate issue: use `pnpm dev:agent` + `pnpm dev:code`, or `pnpm dev:mprocs`, until a Windows runner path lands.
+`pnpm dev` / phrocs on Windows is a separate issue. Prefer `pnpm dev:agent` and `pnpm dev:code` in separate terminals; `pnpm dev:mprocs` is also available as an alternative.
 
 ## Black screen during development
 

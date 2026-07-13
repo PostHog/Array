@@ -36,7 +36,7 @@ cp .env.example .env
 
 - Prerequisites: Node.js 22+, pnpm 10.23+. Git for Windows is useful for contributing; you do **not** need WSL or Git Bash for `pnpm install`.
 - `pnpm install` runs `apps/code/scripts/postinstall.mjs` via Node (not bash), so it does not hit the System32 WSL `bash.exe` stub.
-- `pnpm dev` still relies on phrocs, which has no Windows binary yet. Until that is fixed, use `pnpm dev:agent` and `pnpm dev:code` in two terminals, or `pnpm dev:mprocs`.
+- On Windows, run `pnpm dev:agent` and `pnpm dev:code` in separate terminals. `pnpm dev` still depends on phrocs (no Windows binary yet). `pnpm dev:mprocs` is also available as an alternative.
 
 ### Running in Development
 
