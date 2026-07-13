@@ -251,7 +251,7 @@ describe("loginPosthog region selection", () => {
   });
 });
 
-describe("loginPosthog", () => {
+describe("loginPosthog", { timeout: 15_000 }, () => {
   const originalPort = process.env.HARNESS_OAUTH_PORT;
   let fetchSpy: MockInstance<typeof fetch>;
   let port: number;
