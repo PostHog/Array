@@ -3,9 +3,6 @@ import type { CodeExecutionMode } from "../../execution-mode";
 import { isToolAllowedForMode, toSdkPermissionMode } from "./tools";
 
 describe("toSdkPermissionMode", () => {
-  // PostHog's "auto" is host-arbitrated (canUseTool auto-approves edits/bash).
-  // It must NOT be handed to the SDK's native "auto" mode, whose classifier and
-  // org "ask" ceiling can force prompts for the tools we mean to auto-approve.
   it("maps the custom auto mode to the SDK's default mode", () => {
     expect(toSdkPermissionMode("auto")).toBe("default");
   });
@@ -21,8 +18,6 @@ describe("toSdkPermissionMode", () => {
 });
 
 describe("isToolAllowedForMode stays authoritative for auto", () => {
-  // Even though the SDK is told "default", the host arbiter still treats the
-  // session as "auto" and auto-allows edits and shell commands.
   it.each(["Bash", "Edit", "Write", "NotebookEdit", "BashOutput", "KillShell"])(
     "auto-allows %s in auto mode",
     (tool) => {

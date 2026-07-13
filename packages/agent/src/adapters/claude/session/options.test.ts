@@ -58,9 +58,6 @@ describe("buildSessionOptions", () => {
   );
 
   it("maps the custom auto mode to the SDK's default mode", () => {
-    // The SDK's own "auto" mode runs a classifier / org ask-ceiling that can
-    // re-prompt; the host keeps arbitration in canUseTool, so the SDK must be
-    // told "default" for auto sessions.
     const options = buildSessionOptions({
       ...makeParams(),
       permissionMode: "auto",
