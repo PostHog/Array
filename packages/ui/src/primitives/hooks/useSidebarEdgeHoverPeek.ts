@@ -44,37 +44,37 @@ export function useSidebarEdgeHoverPeek({
   onReveal,
   onClose,
 }: UseSidebarEdgeHoverPeekOptions): void {
-  const stateRef = useRef({ peeked, side, width, onReveal, onClose });
-  stateRef.current = { peeked, side, width, onReveal, onClose };
+  const stateRef = useRef({ enabled, peeked, side, width, onReveal, onClose });
+  stateRef.current = { enabled, peeked, side, width, onReveal, onClose };
 
   useEffect(() => {
-    if (!enabled) return;
-
-    let wasInside = true;
+    let wasInside = false;
 
     const handleMouseMove = (e: MouseEvent) => {
       const state = stateRef.current;
       const pointer =
         state.side === "left" ? e.clientX : window.innerWidth - e.clientX;
 
-      if (state.peeked) {
-        if (
-          shouldCloseOnExit({
+      if (state.enabled) {
+        if (state.peeked) {
+          if (
+            shouldCloseOnExit({
+              pointer,
+              width: state.width,
+              margin: PEEK_CLOSE_MARGIN,
+            })
+          ) {
+            state.onClose();
+          }
+        } else if (
+          shouldRevealOnEdge({
             pointer,
-            width: state.width,
-            margin: PEEK_CLOSE_MARGIN,
+            wasInside,
+            threshold: PEEK_REVEAL_THRESHOLD,
           })
         ) {
-          state.onClose();
+          state.onReveal();
         }
-      } else if (
-        shouldRevealOnEdge({
-          pointer,
-          wasInside,
-          threshold: PEEK_REVEAL_THRESHOLD,
-        })
-      ) {
-        state.onReveal();
       }
 
       wasInside = pointer <= PEEK_REVEAL_THRESHOLD;
@@ -82,5 +82,5 @@ export function useSidebarEdgeHoverPeek({
 
     document.addEventListener("mousemove", handleMouseMove);
     return () => document.removeEventListener("mousemove", handleMouseMove);
-  }, [enabled]);
+  }, []);
 }
