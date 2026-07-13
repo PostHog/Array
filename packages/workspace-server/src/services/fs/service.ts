@@ -12,11 +12,7 @@ import type { BoundedReadResult, DirectoryEntry, FileEntry } from "./schemas";
 export class FsService {
   private static readonly CACHE_TTL = 30000;
   private static readonly READ_REPO_FILES_CONCURRENCY = 24;
-  // Large repos (100k+ files) cause GC pressure that starves the session-init
-  // event loop. Cap the combined tracked + untracked list to bound allocation.
   private static readonly MAX_REPO_FILES = 50_000;
-  // Abort git ls-files --others if it takes too long (unignored venvs, caches,
-  // or staticfiles directories can make it scan millions of entries).
   private static readonly UNTRACKED_TIMEOUT_MS = 8_000;
   private cache = new Map<string, { files: FileEntry[]; timestamp: number }>();
 

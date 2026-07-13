@@ -58,7 +58,6 @@ describe("FsService.listRepoFiles", () => {
 
   it("caps file list at MAX_REPO_FILES when repo is very large", async () => {
     vi.mocked(getChangedFiles).mockResolvedValue(new Set());
-    // Flat paths produce zero derived directory entries, so total === cap.
     const bigList = Array.from({ length: 60_000 }, (_, i) => `file${i}.ts`);
     vi.mocked(listFiles).mockResolvedValue(bigList);
     vi.mocked(listUntrackedFiles).mockResolvedValue([]);
@@ -71,8 +70,6 @@ describe("FsService.listRepoFiles", () => {
 
   it("total entries can exceed MAX_REPO_FILES when derived directories are included", async () => {
     vi.mocked(getChangedFiles).mockResolvedValue(new Set());
-    // Nested paths cause deriveDirectories to add parent directory entries on
-    // top of the capped 50k file entries, so the returned total is > 50k.
     const bigList = Array.from(
       { length: 60_000 },
       (_, i) => `src/sub${i}/file.ts`,
