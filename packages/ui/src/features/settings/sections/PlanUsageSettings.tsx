@@ -5,7 +5,7 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import { PRO_USAGE_MULTIPLIER } from "@posthog/core/billing/usageDisplay";
-import { PLAN_PRO_ALPHA } from "@posthog/shared";
+import { BILLING_FLAG, PLAN_PRO_ALPHA } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useSwitchOrgMutation } from "@posthog/ui/features/auth/useAuthMutations";
@@ -13,9 +13,10 @@ import { useSeatStore } from "@posthog/ui/features/billing/seatStore";
 import { UsageMeter } from "@posthog/ui/features/billing/UsageMeter";
 import { useSeat } from "@posthog/ui/features/billing/useSeat";
 import { useUsage } from "@posthog/ui/features/billing/useUsage";
-import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { SpendAnalysisSection } from "@posthog/ui/features/usage/components/SpendAnalysisSection";
 import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
-import { navigateToUsage } from "@posthog/ui/router/navigationBridge";
+import { useTrackUsageViewed } from "@posthog/ui/features/usage/useTrackUsageViewed";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
 import { getBillingUrl, getPostHogUrl } from "@posthog/ui/utils/urls";
@@ -36,6 +37,7 @@ export function PlanUsageSettings() {
   const {
     seat,
     orgSeat,
+    isPro,
     isOrgPro,
     isCanceling,
     activeUntil,
@@ -45,6 +47,7 @@ export function PlanUsageSettings() {
     billingOrgId,
     hasBetterPlanElsewhere,
   } = useSeat();
+  const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const { fetchSeat, upgradeToPro, cancelSeat, reactivateSeat, clearError } =
     useSeatStore();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
@@ -88,13 +91,20 @@ export function PlanUsageSettings() {
     isLoading: usageLoading,
     refetch: refetchUsage,
   } = useUsage({
-    enabled: seat !== null,
+    enabled: billingEnabled && seat !== null,
   });
 
   useEffect(() => {
     void fetchSeat({ autoProvision: true });
     void refetchUsage();
   }, [fetchSeat, refetchUsage]);
+
+  useTrackUsageViewed({
+    isLoading: billingEnabled && (isLoading || usageLoading),
+    isPro,
+    sustainedUsedPercent: usage?.sustained.used_percent ?? null,
+    burstUsedPercent: usage?.burst.used_percent ?? null,
+  });
 
   useEffect(() => {
     if (showUpgradeDialog) {
@@ -117,6 +127,16 @@ export function PlanUsageSettings() {
         Math.ceil((activeUntil.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
       )
     : null;
+
+  // Spend analysis can be enabled without billing (mirrors the retired
+  // standalone Usage tab, which showed only spend data in that case).
+  if (!billingEnabled) {
+    return (
+      <Flex direction="column" gap="5">
+        {spendAnalysisEnabled && <SpendAnalysisSection />}
+      </Flex>
+    );
+  }
 
   return (
     <Flex direction="column" gap="5">
@@ -322,22 +342,7 @@ export function PlanUsageSettings() {
       )}
 
       <Flex direction="column" gap="3">
-        <Flex align="center" justify="between">
-          <Text className="font-medium text-(--gray-9) text-sm">Usage</Text>
-          {spendAnalysisEnabled && (
-            <Button
-              size="1"
-              variant="ghost"
-              onClick={() => {
-                // Replace the settings route so back from /usage skips it.
-                useSettingsPageStore.getState().reset();
-                navigateToUsage({ replace: true });
-              }}
-            >
-              View usage & spend analysis
-            </Button>
-          )}
-        </Flex>
+        <Text className="font-medium text-(--gray-9) text-sm">Usage</Text>
         {usageLoading ? (
           <Flex
             align="center"
@@ -373,6 +378,8 @@ export function PlanUsageSettings() {
           </Flex>
         )}
       </Flex>
+
+      {spendAnalysisEnabled && <SpendAnalysisSection />}
 
       {isOrgPro && (
         <Flex direction="column" gap="3">
