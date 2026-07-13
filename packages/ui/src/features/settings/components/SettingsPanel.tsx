@@ -157,8 +157,6 @@ export function SettingsPanel({
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const logoutMutation = useLogoutMutation();
 
-  // Spend analysis alone (without billing) still warrants the Plan & usage
-  // section — it now hosts the spend analysis that used to be the Usage tab.
   const spendAnalysisEnabled = useSpendAnalysisEnabled();
   const sidebarItems = useMemo(
     () =>
