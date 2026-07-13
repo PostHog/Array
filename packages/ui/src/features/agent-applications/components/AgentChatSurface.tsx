@@ -6,7 +6,7 @@ import {
   InputGroupTextarea,
 } from "@posthog/quill";
 import type { AcpMessage } from "@posthog/shared";
-import { ConversationView } from "@posthog/ui/features/sessions/components/ConversationView";
+import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { type KeyboardEvent, type ReactNode, useState } from "react";
 
@@ -65,7 +65,7 @@ export function AgentChatSurface({
             </div>
           ))
         ) : (
-          <ConversationView
+          <ThreadView
             events={messages}
             isPromptPending={isStreaming}
             collapseMode="none"

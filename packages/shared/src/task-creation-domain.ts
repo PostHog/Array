@@ -1,3 +1,4 @@
+import type { Adapter } from "./adapter";
 import type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 import type { Task } from "./domain-types";
 import type { ExecutionMode } from "./exec-types";
@@ -29,13 +30,24 @@ export interface TaskCreationInput {
   githubIntegrationId?: number;
   githubUserIntegrationId?: string;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
+  /**
+   * When true, the cloud run agent pushes its work and opens a draft PR on
+   * completion without waiting for an explicit ask (Settings → Advanced).
+   */
+  cloudAutoPublish?: boolean;
+  /**
+   * rtk command-output compression for the cloud run. Only false is
+   * meaningful: it opts the run out of the server-side default (enabled).
+   */
+  cloudRtkEnabled?: boolean;
   signalReportId?: string;
   additionalDirectories?: string[];
   /**
@@ -46,6 +58,8 @@ export interface TaskCreationInput {
   channelContext?: string;
   /** Display name of that channel, embedded in the context block for the UI. */
   channelName?: string;
+  /** Backend channel UUID the created task is owned by (its feed home). */
+  channelId?: string;
   /**
    * The user's saved personalization (Settings → Personalization custom
    * instructions). Cloud-only: local tasks already receive these through the
@@ -77,4 +91,11 @@ export interface TaskCreationInput {
 export interface TaskCreationOutput {
   task: Task;
   workspace: Workspace | null;
+  /**
+   * Set when worktree provisioning failed but the task was kept (not rolled
+   * back) so the user can retry setup on the existing task. The saga returns a
+   * partial success in this case; consumers surface the error and keep the user
+   * on the task rather than reopening the composer.
+   */
+  provisioningError?: string;
 }

@@ -1,6 +1,6 @@
 import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
 import type { SaveMode } from "@posthog/core/save-mode/saveMode";
-import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
+import type { Adapter, ExecutionMode, WorkspaceMode } from "@posthog/shared";
 import {
   COLLAPSE_MODE_DEFAULT,
   type CollapseMode,
@@ -13,7 +13,9 @@ import { persist } from "zustand/middleware";
 
 export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
-export type AgentAdapter = "claude" | "codex";
+
+export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "cloud";
+export type AgentAdapter = Adapter;
 export type DefaultInitialTaskMode = "plan" | "last_used";
 export type DefaultMessagingMode = "queue" | "steer";
 export type DefaultReasoningEffort =
@@ -28,7 +30,7 @@ export type SendMessagesWith = "enter" | "cmd+enter";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
 export type DiffOpenMode = "auto" | "split" | "same-pane" | "last-active-pane";
 
-export type CompletionSound =
+export type BuiltInCompletionSound =
   | "none"
   | "guitar"
   | "danilo"
@@ -45,6 +47,23 @@ export type CompletionSound =
   | "wilhelm"
   | "icq";
 
+// A user-installed sound is selected by referencing its id as `custom:<id>`.
+export type CompletionSound =
+  | BuiltInCompletionSound
+  | "random-all"
+  | "random-custom"
+  | `custom:${string}`;
+
+// A notification sound the user recorded or imported. The clip is stored inline
+// as a base64 data URL so it persists with the rest of the settings (no host
+// filesystem dependency); a length cap on capture keeps that payload small.
+export interface CustomSound {
+  id: string;
+  name: string;
+  dataUrl: string;
+  durationMs: number;
+}
+
 export type TerminalFont =
   | "berkeley-mono"
   | "jetbrains-mono"
@@ -54,6 +73,19 @@ export type TerminalFont =
 export interface HintState {
   count: number;
   learned: boolean;
+}
+
+/**
+ * Snapshot of the user-level AGENTS.md/CLAUDE.md that personalization syncs
+ * from. Runtime-only: the sync contribution re-reads the file on boot and
+ * whenever the toggle flips on.
+ */
+export interface SyncedCustomInstructions {
+  path: string;
+  /** Home-relative form of `path` (e.g. `~/.claude/CLAUDE.md`), for display. */
+  displayPath: string;
+  content: string;
+  truncated: boolean;
 }
 
 // ---------- Store shape ----------
@@ -72,6 +104,8 @@ interface SettingsStore {
   lastUsedEnvironments: Record<string, string>;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
+  // Mode last chosen when approving a plan; pre-selected on the next approval.
+  lastPlanApprovalMode: ExecutionMode | null;
   defaultReasoningEffort: DefaultReasoningEffort;
   defaultMessagingMode: DefaultMessagingMode;
   setDefaultMessagingMode: (mode: DefaultMessagingMode) => void;
@@ -93,27 +127,44 @@ interface SettingsStore {
   getLastUsedEnvironment: (repoPath: string) => string | null;
   setDefaultInitialTaskMode: (mode: DefaultInitialTaskMode) => void;
   setLastUsedInitialTaskMode: (mode: ExecutionMode) => void;
+  setLastPlanApprovalMode: (mode: ExecutionMode) => void;
   setDefaultReasoningEffort: (effort: DefaultReasoningEffort) => void;
 
   // Notifications
   desktopNotifications: boolean;
   dockBadgeNotifications: boolean;
   dockBounceNotifications: boolean;
+  toastNotifications: boolean;
   completionSound: CompletionSound;
   completionVolume: number;
+  scaleSoundWithTaskLength: boolean;
+  customSounds: CustomSound[];
   setDesktopNotifications: (enabled: boolean) => void;
   setDockBadgeNotifications: (enabled: boolean) => void;
   setDockBounceNotifications: (enabled: boolean) => void;
+  setToastNotifications: (enabled: boolean) => void;
   setCompletionSound: (sound: CompletionSound) => void;
   setCompletionVolume: (volume: number) => void;
+  setScaleSoundWithTaskLength: (enabled: boolean) => void;
+  addCustomSound: (sound: CustomSound) => void;
+  removeCustomSound: (id: string) => void;
+  renameCustomSound: (id: string, name: string) => void;
 
   // Composer / chat
   autoConvertLongText: AutoConvertLongText;
   sendMessagesWith: SendMessagesWith;
   customInstructions: string;
+  // When on, personalization mirrors the user-level AGENTS.md (or CLAUDE.md)
+  // instead of the hand-typed customInstructions above.
+  syncCustomInstructionsFromFile: boolean;
+  syncedCustomInstructions: SyncedCustomInstructions | null;
   setAutoConvertLongText: (value: AutoConvertLongText) => void;
   setSendMessagesWith: (mode: SendMessagesWith) => void;
   setCustomInstructions: (instructions: string) => void;
+  setSyncCustomInstructionsFromFile: (enabled: boolean) => void;
+  setSyncedCustomInstructions: (
+    synced: SyncedCustomInstructions | null,
+  ) => void;
 
   // Diff viewer
   diffOpenMode: DiffOpenMode;
@@ -123,9 +174,20 @@ interface SettingsStore {
   allowBypassPermissions: boolean;
   preventSleepWhileRunning: boolean;
   debugLogsCloudRuns: boolean;
+  // When on, cloud runs push their work and open a draft PR on completion
+  // without waiting for an explicit ask.
+  autoPublishCloudRuns: boolean;
+  // When on, agent runs compress eligible command output through rtk before it
+  // reaches the model. Split by modality: local covers local and worktree
+  // sessions, cloud covers cloud runs.
+  rtkEnabledLocal: boolean;
+  rtkEnabledCloud: boolean;
   setAllowBypassPermissions: (enabled: boolean) => void;
   setPreventSleepWhileRunning: (enabled: boolean) => void;
   setDebugLogsCloudRuns: (enabled: boolean) => void;
+  setAutoPublishCloudRuns: (enabled: boolean) => void;
+  setRtkEnabledLocal: (enabled: boolean) => void;
+  setRtkEnabledCloud: (enabled: boolean) => void;
 
   // Terminal
   terminalFont: TerminalFont;
@@ -142,10 +204,22 @@ interface SettingsStore {
   // Experimental / misc
   hedgehogMode: boolean;
   slotMachineMode: boolean;
+  brainrotMode: boolean;
   mcpAppsDisabledServers: string[];
+  downloadUpdatesAutomatically: boolean;
+  dismissibleUpdateBanners: boolean;
+  lastSeenChangelogVersion: string | null;
+  // Renders the conversation with the new ChatX (quill) primitives instead of
+  // the virtualized ConversationView. Local A/B toggle while the rebuild bakes.
+  useNewChatThread: boolean;
+  setUseNewChatThread: (enabled: boolean) => void;
   setHedgehogMode: (enabled: boolean) => void;
   setSlotMachineMode: (enabled: boolean) => void;
+  setBrainrotMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
+  setDownloadUpdatesAutomatically: (enabled: boolean) => void;
+  setDismissibleUpdateBanners: (enabled: boolean) => void;
+  setLastSeenChangelogVersion: (version: string | null) => void;
 
   // Onboarding hints
   hints: Record<string, HintState>;
@@ -169,8 +243,10 @@ export const NOTIFICATION_DEFAULTS = {
   desktopNotifications: true,
   dockBadgeNotifications: true,
   dockBounceNotifications: false,
+  toastNotifications: true,
   completionSound: "none" as CompletionSound,
   completionVolume: 80,
+  scaleSoundWithTaskLength: false,
 };
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -180,7 +256,7 @@ export const useSettingsStore = create<SettingsStore>()(
       defaultRunMode: "last_used",
       lastUsedRunMode: "local",
       lastUsedLocalWorkspaceMode: "local",
-      lastUsedWorkspaceMode: "local",
+      lastUsedWorkspaceMode: DEFAULT_WORKSPACE_MODE,
       lastUsedAdapter: "claude",
       lastUsedModel: null,
       lastUsedReasoningEffort: null,
@@ -189,6 +265,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedEnvironments: {},
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
+      lastPlanApprovalMode: null,
       defaultReasoningEffort: "last_used",
       defaultMessagingMode: "queue",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
@@ -220,29 +297,64 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ defaultInitialTaskMode: mode }),
       setLastUsedInitialTaskMode: (mode) =>
         set({ lastUsedInitialTaskMode: mode }),
+      setLastPlanApprovalMode: (mode) => set({ lastPlanApprovalMode: mode }),
       setDefaultReasoningEffort: (effort) =>
         set({ defaultReasoningEffort: effort }),
       setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
 
       // Notifications
       ...NOTIFICATION_DEFAULTS,
+      // Kept out of NOTIFICATION_DEFAULTS so "Reset to defaults" never discards
+      // sounds the user installed.
+      customSounds: [],
       setDesktopNotifications: (enabled) =>
         set({ desktopNotifications: enabled }),
       setDockBadgeNotifications: (enabled) =>
         set({ dockBadgeNotifications: enabled }),
       setDockBounceNotifications: (enabled) =>
         set({ dockBounceNotifications: enabled }),
+      setToastNotifications: (enabled) => set({ toastNotifications: enabled }),
       setCompletionSound: (sound) => set({ completionSound: sound }),
       setCompletionVolume: (volume) => set({ completionVolume: volume }),
+      setScaleSoundWithTaskLength: (enabled) =>
+        set({ scaleSoundWithTaskLength: enabled }),
+      addCustomSound: (sound) =>
+        set((state) => ({ customSounds: [...state.customSounds, sound] })),
+      removeCustomSound: (id) =>
+        set((state) => {
+          const customSounds = state.customSounds.filter((s) => s.id !== id);
+          const soundNowUnplayable =
+            state.completionSound === `custom:${id}` ||
+            (state.completionSound === "random-custom" &&
+              customSounds.length === 0);
+          return {
+            customSounds,
+            completionSound: soundNowUnplayable
+              ? "none"
+              : state.completionSound,
+          };
+        }),
+      renameCustomSound: (id, name) =>
+        set((state) => ({
+          customSounds: state.customSounds.map((s) =>
+            s.id === id ? { ...s, name } : s,
+          ),
+        })),
 
       // Composer / chat
       autoConvertLongText: "2500",
       sendMessagesWith: "enter",
       customInstructions: "",
+      syncCustomInstructionsFromFile: false,
+      syncedCustomInstructions: null,
       setAutoConvertLongText: (value) => set({ autoConvertLongText: value }),
       setSendMessagesWith: (mode) => set({ sendMessagesWith: mode }),
       setCustomInstructions: (instructions) =>
         set({ customInstructions: instructions }),
+      setSyncCustomInstructionsFromFile: (enabled) =>
+        set({ syncCustomInstructionsFromFile: enabled }),
+      setSyncedCustomInstructions: (synced) =>
+        set({ syncedCustomInstructions: synced }),
 
       // Diff viewer
       diffOpenMode: "auto",
@@ -252,11 +364,18 @@ export const useSettingsStore = create<SettingsStore>()(
       allowBypassPermissions: false,
       preventSleepWhileRunning: false,
       debugLogsCloudRuns: false,
+      autoPublishCloudRuns: true,
+      rtkEnabledLocal: true,
+      rtkEnabledCloud: true,
       setAllowBypassPermissions: (enabled) =>
         set({ allowBypassPermissions: enabled }),
       setPreventSleepWhileRunning: (enabled) =>
         set({ preventSleepWhileRunning: enabled }),
       setDebugLogsCloudRuns: (enabled) => set({ debugLogsCloudRuns: enabled }),
+      setAutoPublishCloudRuns: (enabled) =>
+        set({ autoPublishCloudRuns: enabled }),
+      setRtkEnabledLocal: (enabled) => set({ rtkEnabledLocal: enabled }),
+      setRtkEnabledCloud: (enabled) => set({ rtkEnabledCloud: enabled }),
 
       // Terminal
       terminalFont: "berkeley-mono",
@@ -276,9 +395,22 @@ export const useSettingsStore = create<SettingsStore>()(
       // Experimental / misc
       hedgehogMode: false,
       slotMachineMode: false,
+      brainrotMode: false,
       mcpAppsDisabledServers: [],
+      downloadUpdatesAutomatically: true,
+      dismissibleUpdateBanners: false,
+      lastSeenChangelogVersion: null,
+      useNewChatThread: false,
+      setUseNewChatThread: (enabled) => set({ useNewChatThread: enabled }),
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
       setSlotMachineMode: (enabled) => set({ slotMachineMode: enabled }),
+      setBrainrotMode: (enabled) => set({ brainrotMode: enabled }),
+      setDownloadUpdatesAutomatically: (enabled) =>
+        set({ downloadUpdatesAutomatically: enabled }),
+      setDismissibleUpdateBanners: (enabled) =>
+        set({ dismissibleUpdateBanners: enabled }),
+      setLastSeenChangelogVersion: (version) =>
+        set({ lastSeenChangelogVersion: version }),
       setMcpAppsDisabledServers: (servers) =>
         set({ mcpAppsDisabledServers: servers }),
 
@@ -334,6 +466,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedEnvironments: state.lastUsedEnvironments,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
+        lastPlanApprovalMode: state.lastPlanApprovalMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
         defaultMessagingMode: state.defaultMessagingMode,
 
@@ -341,13 +474,17 @@ export const useSettingsStore = create<SettingsStore>()(
         desktopNotifications: state.desktopNotifications,
         dockBadgeNotifications: state.dockBadgeNotifications,
         dockBounceNotifications: state.dockBounceNotifications,
+        toastNotifications: state.toastNotifications,
         completionSound: state.completionSound,
         completionVolume: state.completionVolume,
+        scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,
+        customSounds: state.customSounds,
 
         // Composer / chat
         autoConvertLongText: state.autoConvertLongText,
         sendMessagesWith: state.sendMessagesWith,
         customInstructions: state.customInstructions,
+        syncCustomInstructionsFromFile: state.syncCustomInstructionsFromFile,
 
         // Diff viewer
         diffOpenMode: state.diffOpenMode,
@@ -356,6 +493,9 @@ export const useSettingsStore = create<SettingsStore>()(
         allowBypassPermissions: state.allowBypassPermissions,
         preventSleepWhileRunning: state.preventSleepWhileRunning,
         debugLogsCloudRuns: state.debugLogsCloudRuns,
+        autoPublishCloudRuns: state.autoPublishCloudRuns,
+        rtkEnabledLocal: state.rtkEnabledLocal,
+        rtkEnabledCloud: state.rtkEnabledCloud,
 
         // Terminal
         terminalFont: state.terminalFont,
@@ -368,7 +508,12 @@ export const useSettingsStore = create<SettingsStore>()(
         // Experimental / misc
         hedgehogMode: state.hedgehogMode,
         slotMachineMode: state.slotMachineMode,
+        brainrotMode: state.brainrotMode,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
+        downloadUpdatesAutomatically: state.downloadUpdatesAutomatically,
+        dismissibleUpdateBanners: state.dismissibleUpdateBanners,
+        lastSeenChangelogVersion: state.lastSeenChangelogVersion,
+        useNewChatThread: state.useNewChatThread,
 
         // Save mode
         saveMode: state.saveMode,
@@ -391,11 +536,37 @@ export const useSettingsStore = create<SettingsStore>()(
         if ((merged.autoConvertLongText as string) === "500") {
           (merged as Record<string, unknown>).autoConvertLongText = "1000";
         }
+        if (
+          merged.completionSound === "random-custom" &&
+          (!merged.customSounds || merged.customSounds.length === 0)
+        ) {
+          (merged as Record<string, unknown>).completionSound = "none";
+        }
         return merged;
       },
     },
   ),
 );
+
+/**
+ * The personalization to inject into sessions. Strictly either/or: while file
+ * sync is on, only the synced AGENTS.md/CLAUDE.md snapshot applies (empty when
+ * no file was found) and the hand-typed custom instructions are ignored.
+ */
+export function getEffectiveCustomInstructions(
+  state: Pick<
+    SettingsStore,
+    | "customInstructions"
+    | "syncCustomInstructionsFromFile"
+    | "syncedCustomInstructions"
+  >,
+): string {
+  if (state.syncCustomInstructionsFromFile) {
+    const content = state.syncedCustomInstructions?.content ?? "";
+    return content.trim() ? content : "";
+  }
+  return state.customInstructions;
+}
 
 /**
  * The repository a one-click cloud task should default to: the last-used cloud

@@ -1,4 +1,4 @@
-import { Plus, Sparkle } from "@phosphor-icons/react";
+import { Lightning, Plus, Sparkle } from "@phosphor-icons/react";
 import {
   SITUATIONS,
   type SituationId,
@@ -111,7 +111,15 @@ export function SituationStation({ id, bindings }: Props) {
                   : action.label
               }
             >
-              <Sparkle size={9} />
+              {action.auto ? (
+                <Lightning
+                  size={9}
+                  weight="fill"
+                  className="text-(--amber-9)"
+                />
+              ) : (
+                <Sparkle size={9} />
+              )}
               <span className="truncate">{action.label || "(no label)"}</span>
             </button>
           );

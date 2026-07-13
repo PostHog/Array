@@ -24,6 +24,7 @@ const mockModelOption = {
       name: "Recommended",
       options: [
         { value: "gpt-5.5", name: "gpt-5.5" },
+        { value: "claude-sonnet-5", name: "Claude Sonnet 5" },
         { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
       ],
     },

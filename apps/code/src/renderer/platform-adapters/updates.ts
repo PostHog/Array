@@ -6,12 +6,15 @@ import {
   updateStore,
 } from "@posthog/core/updates/updateStore";
 import { resolveService } from "@posthog/di/container";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import {
   UPDATES_CLIENT,
   type UpdatesClient,
 } from "@posthog/ui/features/updates/updatesClient";
+import { useWhatsNewStore } from "@posthog/ui/features/updates/whatsNewStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { logger } from "@posthog/ui/shell/logger";
+import { hostTrpcClient } from "@renderer/trpc/client";
 
 const log = logger.scope("updates-host");
 
@@ -44,11 +47,8 @@ void client
   .getStatus()
   .then((status) => {
     const update = deriveUpdateUiStatus(status, store().status);
-    if (update?.status) {
-      store().setStatus(update.status);
-    }
-    if (update && "version" in update) {
-      store().setVersion(update.version ?? null);
+    if (update) {
+      store().applyStatusUpdate(update);
     }
   })
   .catch((error: unknown) => {
@@ -58,11 +58,8 @@ void client
 client.onStatus({
   onData: (status) => {
     const update = deriveUpdateUiStatus(status, store().status);
-    if (update?.status) {
-      store().setStatus(update.status);
-    }
-    if (update && "version" in update) {
-      store().setVersion(update.version ?? null);
+    if (update) {
+      store().applyStatusUpdate(update);
     }
 
     const outcome = resolveMenuCheckFromStatus(
@@ -119,3 +116,48 @@ client.onCheckFromMenu({
     log.error("Update menu check subscription error", { error });
   },
 });
+
+// Bridge the "download updates automatically" preference to the core updater.
+let lastSyncedAutoDownload: boolean | null = null;
+function syncAutoDownload(enabled: boolean): void {
+  if (enabled === lastSyncedAutoDownload) return;
+  lastSyncedAutoDownload = enabled;
+  void hostTrpcClient.updates.setAutoDownload
+    .mutate({ enabled })
+    .catch((error: unknown) =>
+      log.error("Failed to sync auto-download preference", { error }),
+    );
+}
+
+// Auto-show "What's New" once on the first launch after the version changes.
+function maybeShowWhatsNew(): void {
+  void hostTrpcClient.os.getAppVersion
+    .query()
+    .then((currentVersion) => {
+      const settings = useSettingsStore.getState();
+      const lastSeen = settings.lastSeenChangelogVersion;
+      if (lastSeen && lastSeen !== currentVersion) {
+        useWhatsNewStore.getState().open();
+      }
+      if (lastSeen !== currentVersion) {
+        settings.setLastSeenChangelogVersion(currentVersion);
+      }
+    })
+    .catch((error: unknown) =>
+      log.error("Failed to evaluate What's New", { error }),
+    );
+}
+
+function onSettingsReady(): void {
+  syncAutoDownload(useSettingsStore.getState().downloadUpdatesAutomatically);
+  useSettingsStore.subscribe((state) =>
+    syncAutoDownload(state.downloadUpdatesAutomatically),
+  );
+  maybeShowWhatsNew();
+}
+
+if (useSettingsStore.persist.hasHydrated()) {
+  onSettingsReady();
+} else {
+  useSettingsStore.persist.onFinishHydration(onSettingsReady);
+}

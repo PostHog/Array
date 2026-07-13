@@ -404,6 +404,17 @@ export function toolInfoFromToolUse(
         content: [],
       };
 
+    case "Skill": {
+      const skill = typeof input?.skill === "string" ? input.skill : undefined;
+      const skillArgs =
+        typeof input?.args === "string" ? input.args : undefined;
+      return {
+        title: skill ? `Skill: ${skill}` : "Skill",
+        kind: "other",
+        content: skillArgs ? toolContent().text(skillArgs).build() : [],
+      };
+    }
+
     case "ExitPlanMode":
       return {
         title: "Ready to code?",
@@ -558,7 +569,9 @@ export function toolUpdateFromToolResult(
     "is_error" in toolResult &&
     toolResult.is_error &&
     toolResult.content &&
-    (toolResult.content as unknown[]).length > 0
+    (toolResult.content as unknown[]).length > 0 &&
+    // Bash errors keep rendering through the terminal-output channel below.
+    !(toolUse?.name === "Bash" && options?.supportsTerminalOutput)
   ) {
     return toAcpContentUpdate(toolResult.content, true);
   }
@@ -650,13 +663,22 @@ export function toolUpdateFromToolResult(
         exitCode = bashResult.return_code;
       } else if (typeof result === "string") {
         output = result;
-      } else if (
-        Array.isArray(result) &&
-        result.length > 0 &&
-        "text" in result[0] &&
-        typeof result[0].text === "string"
-      ) {
-        output = result.map((c: { text?: string }) => c.text ?? "").join("\n");
+      } else if (Array.isArray(result) && result.length > 0) {
+        const textOnly = result.every(
+          (c) =>
+            c &&
+            typeof c === "object" &&
+            typeof (c as { text?: unknown }).text === "string",
+        );
+        if (textOnly) {
+          output = result
+            .map((c: { text?: string }) => c.text ?? "")
+            .join("\n");
+        } else {
+          // Binary payloads can't ride the terminal-output _meta channel;
+          // surface image/mixed content as ACP content blocks instead.
+          return toAcpContentUpdate(result, isError === true);
+        }
       }
 
       if (options?.supportsTerminalOutput) {

@@ -13,6 +13,18 @@ function getTurndown(): TurndownService {
     emDelimiter: "*",
   });
   turndown.use(gfm); // tables, strikethrough, task lists
+  // Drop non-content elements outright. macOS puts a <style> block in the
+  // clipboard HTML when copying rich text from native apps (Notes, Mail,
+  // Slack), and Turndown would otherwise emit its CSS as text, e.g.
+  // "p.p1 {margin: 0.0px ...; font: 18.0px Helvetica}" before the real text.
+  turndown.remove(["style", "script", "head", "title", "meta", "link"]);
+  // The composer is plain-text, so we only want structural formatting
+  // (headings, lists, links, tables, code) preserved as Markdown. Turndown's
+  // default escaping is meant for round-tripping Markdown and mangles ordinary
+  // text — "1." -> "1\.", "snake_case" -> "snake\_case", "[x]" -> "\[x\]".
+  // Disabling it keeps plain text intact so it also stays equal to the
+  // plain-text fallback below and defers to the editor's native paste.
+  turndown.escape = (text) => text;
   return turndown;
 }
 

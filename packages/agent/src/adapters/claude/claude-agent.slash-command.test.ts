@@ -62,9 +62,10 @@ function installFakeSession(
     },
     sessionResources: new Set(),
     configOptions: [],
-    promptRunning: false,
-    pendingMessages: new Map(),
-    nextPendingOrder: 0,
+    turnQueue: [],
+    activeTurn: null,
+    pendingOrphanResults: 0,
+    queryGeneration: 0,
     cwd: "/tmp/repo",
     notificationHistory: [] as unknown[],
     taskRunId: "run-1",
@@ -121,6 +122,22 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
     },
     {
       label:
+        "newly installed skill command is refreshed before unsupported check",
+      sessionId: "s-new-skill",
+      prompt: "/local-test-skill",
+      knownCommands: undefined,
+      supportedCommandsAfterReload: [
+        {
+          name: "local-test-skill",
+          description: "Local test skill",
+          argumentHint: "",
+        },
+      ],
+      expectsUnsupportedChunk: false,
+      commandInMessage: null,
+    },
+    {
+      label:
         "known plugin/skill command with early idle is not flagged as unsupported",
       sessionId: "s-skill",
       prompt: "/skills-store use my address pr review skill",
@@ -137,6 +154,11 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
       tc.sessionId,
       tc.knownCommands as Set<string> | undefined,
     );
+    if ("supportedCommandsAfterReload" in tc) {
+      vi.mocked(query.supportedCommands).mockResolvedValue([
+        ...tc.supportedCommandsAfterReload,
+      ]);
+    }
 
     const promptPromise = agent.prompt({
       sessionId: tc.sessionId,
@@ -163,14 +185,15 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
         expect(text).toContain(tc.commandInMessage);
       }
     } else {
-      // No unsupported chunk; loop falls through to the existing
-      // "Session did not end in result" failure path.
-      await expect(promptPromise).rejects.toThrow(
-        /Session did not end in result/,
-      );
+      // Idle absorbed; the stream then ends before the turn ever starts.
+      await expect(promptPromise).rejects.toThrow(/session has ended/);
       expect(
         findUnsupportedChunkText(client.sessionUpdate.mock.calls),
       ).toBeUndefined();
+      if ("supportedCommandsAfterReload" in tc) {
+        expect(query.reloadSkills).toHaveBeenCalled();
+        expect(query.supportedCommands).toHaveBeenCalled();
+      }
     }
   });
 });
@@ -179,6 +202,21 @@ describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
+
+  function echoQueuedTurn(agent: Agent, query: MockQuery): void {
+    const turn = (
+      agent as unknown as {
+        session: { turnQueue: Array<{ promptUuid: string }> };
+      }
+    ).session.turnQueue[0];
+    query._mockHelpers.sendMessage({
+      type: "user",
+      uuid: turn.promptUuid,
+      session_id: "s",
+      parent_tool_use_id: null,
+      message: { role: "user", content: "echo" },
+    } as unknown as SDKMessage);
+  }
 
   it("returns 'cancelled' when the SDK never yields after interrupt (issue #680)", async () => {
     const { agent } = makeAgent();
@@ -193,6 +231,9 @@ describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
     });
 
     await new Promise((resolve) => setImmediate(resolve));
+    // cancel() only arms the backstop for an activated (echoed) turn.
+    echoQueuedTurn(agent, query);
+    await new Promise((resolve) => setImmediate(resolve));
 
     await agent.cancel({ sessionId });
 
@@ -203,7 +244,7 @@ describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
   it("clears the backstop timer on a healthy cancel (interrupt yields)", async () => {
     const { agent } = makeAgent();
     const sessionId = "s-healthy";
-    installFakeSession(agent, sessionId);
+    const query = installFakeSession(agent, sessionId);
     (agent as unknown as { forceCancelGraceMs: number }).forceCancelGraceMs =
       50_000;
 
@@ -211,6 +252,8 @@ describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
       sessionId,
       prompt: [{ type: "text", text: "do something" }],
     });
+    await new Promise((resolve) => setImmediate(resolve));
+    echoQueuedTurn(agent, query);
     await new Promise((resolve) => setImmediate(resolve));
 
     await agent.cancel({ sessionId });
@@ -221,5 +264,30 @@ describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
       (agent as unknown as { session: { forceCancelTimer?: unknown } }).session
         .forceCancelTimer,
     ).toBeUndefined();
+  });
+
+  it("settles a still-queued turn immediately on cancel", async () => {
+    const { agent } = makeAgent();
+    const sessionId = "s-queued";
+    const query = installFakeSession(agent, sessionId);
+    query.interrupt.mockImplementation(async () => {});
+
+    const promptPromise = agent.prompt({
+      sessionId,
+      prompt: [{ type: "text", text: "never echoed" }],
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    await agent.cancel({ sessionId });
+
+    const result = await promptPromise;
+    expect(result.stopReason).toBe("cancelled");
+    const session = (
+      agent as unknown as {
+        session: { pendingOrphanResults: number; turnQueue: unknown[] };
+      }
+    ).session;
+    expect(session.turnQueue).toHaveLength(0);
+    expect(session.pendingOrphanResults).toBe(1);
   });
 });

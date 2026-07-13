@@ -46,11 +46,8 @@ export const FreeformGenerateBar = forwardRef<
   ref,
 ) {
   const { generate, isStarting } = useGenerateFreeformCanvas({
-    dashboardId,
     channelId,
-    name,
     channelName,
-    templateId,
   });
 
   // On a FIRST build we seed the agent with a known-good starter scaffold by
@@ -68,6 +65,9 @@ export const FreeformGenerateBar = forwardRef<
     const instruction = text.trim();
     if (!instruction) return;
     const taskId = await generate({
+      dashboardId,
+      name,
+      templateId,
       instruction,
       currentCode,
       useStarter: !isEdit && useStarter,

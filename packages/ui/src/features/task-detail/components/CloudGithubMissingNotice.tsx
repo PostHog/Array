@@ -1,9 +1,10 @@
 import { ArrowSquareOutIcon, InfoIcon } from "@phosphor-icons/react";
-import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import {
   describeGithubConnectError,
-  useGithubConnect,
-} from "@posthog/ui/features/integrations/useGithubUserConnect";
+  GITHUB_CONNECT_TIMEOUT_MESSAGE,
+} from "@posthog/core/integrations/connectErrors";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { useGithubConnect } from "@posthog/ui/features/integrations/useGithubUserConnect";
 import { useRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 
@@ -12,10 +13,11 @@ export function CloudGithubMissingNotice() {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const { hasGithubIntegration: hasTeamGithubIntegration } =
     useRepositoryIntegration();
-  const { error, isConnecting, hasError, connect, reset } = useGithubConnect({
-    projectId,
-    projectHasTeamIntegration: hasTeamGithubIntegration,
-  });
+  const { error, isConnecting, isTimedOut, hasError, connect, reset } =
+    useGithubConnect({
+      projectId,
+      projectHasTeamIntegration: hasTeamGithubIntegration,
+    });
   const canConnect = projectId != null && cloudRegion != null;
 
   return (
@@ -29,7 +31,9 @@ export function CloudGithubMissingNotice() {
             <Text size="1">
               {hasError
                 ? describeGithubConnectError(error)
-                : "Connect GitHub to your PostHog account for cloud tasks."}
+                : isTimedOut
+                  ? GITHUB_CONNECT_TIMEOUT_MESSAGE
+                  : "Connect GitHub to your PostHog account for cloud tasks."}
             </Text>
           </Callout.Text>
         </Flex>
@@ -49,7 +53,11 @@ export function CloudGithubMissingNotice() {
           ) : (
             <ArrowSquareOutIcon size={12} />
           )}
-          {isConnecting ? "Waiting…" : "Connect GitHub"}
+          {isConnecting
+            ? "Waiting…"
+            : hasError || isTimedOut
+              ? "Try again"
+              : "Connect GitHub"}
         </Button>
       </Flex>
     </Callout.Root>

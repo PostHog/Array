@@ -26,11 +26,22 @@ export function navigateToTaskDetail(taskId: string): void {
   });
 }
 
+export function navigateToPullRequestView(prUrl: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/pr",
+    search: { prUrl },
+  });
+}
+
 export function navigateToTaskPending(key: string): void {
   void getRouterOrNull()?.navigate({
     to: "/code/tasks/pending/$key",
     params: { key },
   });
+}
+
+export function navigateToActivity(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/activity" });
 }
 
 export function navigateToChannel(channelId: string): void {
@@ -138,6 +149,10 @@ export function navigateToScoutDetail(
     params: { skillName: skillSlug },
     search: findingId ? { finding: findingId } : {},
   });
+}
+
+export function navigateToScoutFindings(): void {
+  void getRouterOrNull()?.navigate({ to: "/code/agents/scouts/findings" });
 }
 
 export function navigateToAgents(): void {

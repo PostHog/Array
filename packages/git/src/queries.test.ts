@@ -1,14 +1,18 @@
-import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { devNull, tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createGitClient } from "./client";
 import {
+  anyBranchRefExists,
+  type ChangedFileInfo,
+  computeDiffStatsFromFiles,
   detectDefaultBranch,
   getAllBranches,
   getBranchDiffPatchesByPath,
   getChangedFilesDetailed,
   getGitBusyState,
+  getLinkedWorktreeMainPath,
   remoteBranchExists,
   splitUnifiedDiffByFile,
 } from "./queries";
@@ -314,6 +318,59 @@ describe("getChangedFilesDetailed > untracked line counts", () => {
       linesAdded: LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK,
     });
   });
+
+  // Regression for #2983 follow-up: an untracked binary file (png, mp4, …)
+  // must not have its newline bytes counted as added lines. Pre-fix this
+  // surfaced as an inflated diff badge (e.g. +8147) after dropping in a
+  // screenshot or screen recording.
+  it.each([["shot.png"], ["clip.mp4"]])(
+    "reports no line count for untracked binary file %s",
+    async (name) => {
+      repoDir = await setupRepo();
+      // Content packed with newline bytes — what the line counter would have
+      // tallied if it didn't skip binary files.
+      await writeFile(path.join(repoDir, name), "\n".repeat(8147));
+
+      const files = await getChangedFilesDetailed(repoDir);
+      const binary = files.find((f) => f.path === name);
+
+      expect(binary).toMatchObject({ status: "untracked" });
+      expect(binary?.linesAdded).toBeUndefined();
+      expect(binary?.linesRemoved).toBeUndefined();
+    },
+  );
+});
+
+describe("computeDiffStatsFromFiles", () => {
+  it("excludes binary files from line totals but still counts them as changed", () => {
+    const files: ChangedFileInfo[] = [
+      {
+        path: "src/app.ts",
+        status: "modified",
+        linesAdded: 10,
+        linesRemoved: 4,
+      },
+      // Binary line counts are meaningless newline-byte tallies — exclude them.
+      {
+        path: "assets/shot.png",
+        status: "untracked",
+        linesAdded: 8147,
+        linesRemoved: 0,
+      },
+      {
+        path: "assets/clip.mp4",
+        status: "untracked",
+        linesAdded: 5000,
+        linesRemoved: 0,
+      },
+    ];
+
+    expect(computeDiffStatsFromFiles(files)).toEqual({
+      filesChanged: 3,
+      linesAdded: 10,
+      linesRemoved: 4,
+    });
+  });
 });
 
 describe("getAllBranches", () => {
@@ -448,5 +505,95 @@ describe("remoteBranchExists", () => {
       "/nonexistent/path/to/remote",
     ]);
     expect(await remoteBranchExists(repoDir, "main")).toBe(false);
+  });
+});
+
+describe("anyBranchRefExists", () => {
+  let repoDir: string;
+
+  // Builds refs via plumbing (commit-tree + update-ref) so the fixture also
+  // works in sandboxes where `git commit` is unavailable.
+  beforeEach(async () => {
+    repoDir = await mkdtemp(path.join(tmpdir(), "posthog-code-refs-"));
+    const git = createGitClient(repoDir);
+    await git.init(["--initial-branch", "main"]);
+    await git.addConfig("user.name", "Test");
+    await git.addConfig("user.email", "test@example.com");
+    const tree = (
+      await git.raw(["hash-object", "-w", "-t", "tree", devNull])
+    ).trim();
+    const sha = (await git.raw(["commit-tree", tree, "-m", "seed"])).trim();
+    await git.raw(["update-ref", "refs/heads/feat/local", sha]);
+    await git.raw(["update-ref", "refs/remotes/upstream/feat/remote", sha]);
+    await git.raw(["update-ref", "refs/tags/feat/tag-only", sha]);
+  });
+
+  afterEach(async () => {
+    await rm(repoDir, { recursive: true, force: true });
+  });
+
+  it.each([
+    { branch: "feat/local", expected: true },
+    { branch: "feat/remote", expected: true },
+    { branch: "feat/gone", expected: false },
+    // A tag with the name does not resurrect a deleted branch.
+    { branch: "feat/tag-only", expected: false },
+  ])("returns $expected for '$branch'", async ({ branch, expected }) => {
+    expect(await anyBranchRefExists(repoDir, branch)).toBe(expected);
+  });
+});
+
+describe("getLinkedWorktreeMainPath", () => {
+  // The `.git` layouts are fabricated with plain fs (no git binary needed):
+  // a linked worktree is just a `.git` *file* whose `gitdir:` line points at
+  // `<main>/.git/worktrees/<name>`.
+  let baseDir: string;
+  let repoDir: string;
+  let worktreeDir: string;
+
+  beforeEach(async () => {
+    baseDir = await mkdtemp(path.join(tmpdir(), "posthog-code-wt-"));
+    repoDir = path.join(baseDir, "main-repo");
+    worktreeDir = path.join(baseDir, "my-worktree");
+    await mkdir(path.join(repoDir, ".git", "worktrees", "my-worktree"), {
+      recursive: true,
+    });
+    await mkdir(worktreeDir, { recursive: true });
+    await writeFile(
+      path.join(worktreeDir, ".git"),
+      `gitdir: ${path.join(repoDir, ".git", "worktrees", "my-worktree")}\n`,
+    );
+  });
+
+  afterEach(async () => {
+    await rm(baseDir, { recursive: true, force: true });
+  });
+
+  it("returns the main checkout path for a linked worktree", () => {
+    expect(getLinkedWorktreeMainPath(worktreeDir)).toBe(repoDir);
+  });
+
+  it("resolves a relative gitdir against the worktree", async () => {
+    await writeFile(
+      path.join(worktreeDir, ".git"),
+      "gitdir: ../main-repo/.git/worktrees/my-worktree\n",
+    );
+    expect(getLinkedWorktreeMainPath(worktreeDir)).toBe(repoDir);
+  });
+
+  it("returns null for the main checkout (.git is a directory)", () => {
+    expect(getLinkedWorktreeMainPath(repoDir)).toBeNull();
+  });
+
+  it("returns null for a directory that is not a repository", () => {
+    expect(getLinkedWorktreeMainPath(baseDir)).toBeNull();
+  });
+
+  it("returns null for a submodule-style .git file", async () => {
+    await writeFile(
+      path.join(worktreeDir, ".git"),
+      "gitdir: ../main-repo/.git/modules/child\n",
+    );
+    expect(getLinkedWorktreeMainPath(worktreeDir)).toBeNull();
   });
 });

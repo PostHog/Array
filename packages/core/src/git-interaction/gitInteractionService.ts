@@ -82,7 +82,7 @@ export interface GitInteractionEffects {
   markFirstPrShipped(): void;
   celebrate(): void;
   openExternalUrl(url: string): void;
-  attachPrUrlToTask(taskId: string, prUrl: string): void;
+  attachPrUrlToTask(taskId: string, prUrl: string, prTitle?: string): void;
   getConversationContext(taskId: string): string | undefined;
   logError(message: string, error: unknown): void;
   logWarn(message: string, context: Record<string, unknown>): void;
@@ -385,7 +385,11 @@ export class GitInteractionService {
 
       if (result.prUrl) {
         this.effects.openExternalUrl(result.prUrl);
-        this.effects.attachPrUrlToTask(input.taskId, result.prUrl);
+        this.effects.attachPrUrlToTask(
+          input.taskId,
+          result.prUrl,
+          input.prTitle.trim() || undefined,
+        );
       }
 
       return {

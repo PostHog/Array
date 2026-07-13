@@ -4,41 +4,31 @@ import type {
   McpServerInstallation,
 } from "@posthog/api-client/posthog-client";
 import {
-  type IOAuthCallback,
   installCustomWithOAuth,
   installTemplateWithOAuth,
   reauthorizeWithOAuth,
 } from "@posthog/core/mcp-servers/installFlow";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
+import {
+  createOAuthCallback,
+  mcpKeys,
+} from "@posthog/ui/features/mcp-server-manager/useMcpConnect";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
-export const mcpKeys = {
-  servers: ["mcp", "servers"] as const,
-  installations: ["mcp", "installations"] as const,
-  tools: (installationId: string) =>
-    ["mcp", "installations", installationId, "tools"] as const,
-};
-
-type HostTRPCClient = ReturnType<typeof useHostTRPCClient>;
-
-function createOAuthCallback(trpcClient: HostTRPCClient): IOAuthCallback {
-  return {
-    getCallbackUrl: () => trpcClient.mcpCallback.getCallbackUrl.query(),
-    openAndWaitForCallback: (args) =>
-      trpcClient.mcpCallback.openAndWaitForCallback.mutate(args),
-  };
-}
+// `mcpKeys` + `createOAuthCallback` now live in the shared mcp-server-manager
+// module (also used by the agent-applications builder). Re-exported here so
+// existing importers (e.g. useMcpInstallationTools) keep their path.
+export { mcpKeys };
 
 export function useMcpServers() {
   const trpc = useHostTRPC();
   const trpcClient = useHostTRPCClient();
   const oauth = useMemo(() => createOAuthCallback(trpcClient), [trpcClient]);
-  const [installingId, setInstallingId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: installations, isLoading: installationsLoading } =
@@ -120,18 +110,15 @@ export function useMcpServers() {
           toast.error(data.error);
         }
         invalidateInstallations();
-        setInstallingId(null);
       },
       onError: (error: Error) => {
         toast.error(error.message || "Failed to connect server");
-        setInstallingId(null);
       },
     },
   );
 
   const installTemplate = useCallback(
     (template: McpRecommendedServer, opts?: { api_key?: string }) => {
-      setInstallingId(template.id);
       installTemplateMutation.mutate({
         template_id: template.id,
         api_key: opts?.api_key,
@@ -139,6 +126,10 @@ export function useMcpServers() {
     },
     [installTemplateMutation],
   );
+
+  const installingId = installTemplateMutation.isPending
+    ? (installTemplateMutation.variables?.template_id ?? null)
+    : null;
 
   const installCustomMutation = useAuthenticatedMutation(
     (

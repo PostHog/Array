@@ -46,9 +46,11 @@ import type {
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
 import type { ApprovalLinkService } from "@posthog/core/links/approval-link";
 import type { CanvasLinkService } from "@posthog/core/links/canvas-link";
+import type { ChannelLinkService } from "@posthog/core/links/channel-link";
 import type {
   APPROVAL_LINK_SERVICE,
   CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   OPEN_TARGET_LINK_SERVICE,
@@ -107,11 +109,13 @@ import type {
 } from "@posthog/platform/analytics";
 import type { APP_LIFECYCLE_SERVICE } from "@posthog/platform/app-lifecycle";
 import type { APP_META_SERVICE } from "@posthog/platform/app-meta";
+import type { APP_METRICS_SERVICE } from "@posthog/platform/app-metrics";
 import type { BUNDLED_RESOURCES_SERVICE } from "@posthog/platform/bundled-resources";
 import type { CLIPBOARD_SERVICE } from "@posthog/platform/clipboard";
 import type { CONTEXT_MENU_SERVICE } from "@posthog/platform/context-menu";
 import type { CRYPTO_SERVICE } from "@posthog/platform/crypto";
 import type { DEEP_LINK_SERVICE } from "@posthog/platform/deep-link";
+import type { DEV_HOST_ACTIONS_SERVICE } from "@posthog/platform/dev-host-actions";
 import type { DIALOG_SERVICE } from "@posthog/platform/dialog";
 import type { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
 import type { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
@@ -126,11 +130,13 @@ import type { WORKSPACE_SETTINGS_SERVICE } from "@posthog/platform/workspace-set
 import type { WorkspaceClient } from "@posthog/workspace-client/client";
 import type { DatabaseService } from "@posthog/workspace-server/db/service";
 import type { GIT_SERVICE as WS_GIT_SERVICE } from "@posthog/workspace-server/di/tokens";
+import type { AgentService } from "@posthog/workspace-server/services/agent/agent";
 import type {
   AGENT_AUTH,
   AGENT_LOGGER,
   AGENT_MCP_APPS,
   AGENT_REPO_FILES,
+  AGENT_SERVICE,
   AGENT_SLEEP_COORDINATOR,
 } from "@posthog/workspace-server/services/agent/identifiers";
 import type {
@@ -207,10 +213,12 @@ import type { WorkspaceService } from "@posthog/workspace-server/services/worksp
 import type { FileWatcherBridge } from "../index";
 import type { ElectronAppLifecycle } from "../platform-adapters/electron-app-lifecycle";
 import type { ElectronAppMeta } from "../platform-adapters/electron-app-meta";
+import type { ElectronAppMetrics } from "../platform-adapters/electron-app-metrics";
 import type { ElectronBundledResources } from "../platform-adapters/electron-bundled-resources";
 import type { ElectronClipboard } from "../platform-adapters/electron-clipboard";
 import type { ElectronContextMenu } from "../platform-adapters/electron-context-menu";
 import type { ElectronCrypto } from "../platform-adapters/electron-crypto";
+import type { ElectronDevHostActions } from "../platform-adapters/electron-dev-host-actions";
 import type { ElectronDialog } from "../platform-adapters/electron-dialog";
 import type { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
 import type { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
@@ -231,6 +239,11 @@ import type {
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
 import type { DeepLinkService } from "../services/deep-link/service";
+import type { DevActionsService } from "../services/dev-actions/service";
+import type { DevFlagsService } from "../services/dev-flags/service";
+import type { DevLogsService } from "../services/dev-logs/service";
+import type { DevMetricsService } from "../services/dev-metrics/service";
+import type { DevNetworkService } from "../services/dev-network/service";
 import type { DiscordPresenceService } from "../services/discord-presence/service";
 import type { EncryptionService } from "../services/encryption/service";
 import type { SecureStoreService } from "../services/secure-store/service";
@@ -245,11 +258,17 @@ import type {
   AUTH_SERVICE as MAIN_AUTH_SERVICE,
   AUTH_SESSION_REPOSITORY as MAIN_AUTH_SESSION_REPOSITORY,
   CANVAS_LINK_SERVICE as MAIN_CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE as MAIN_CHANNEL_LINK_SERVICE,
   CLOUD_TASK_SERVICE as MAIN_CLOUD_TASK_SERVICE,
   CONTEXT_MENU_SERVICE as MAIN_CONTEXT_MENU_SERVICE,
   DATABASE_SERVICE as MAIN_DATABASE_SERVICE,
   DEEP_LINK_SERVICE as MAIN_DEEP_LINK_SERVICE,
   DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY as MAIN_DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
+  DEV_ACTIONS_SERVICE as MAIN_DEV_ACTIONS_SERVICE,
+  DEV_FLAGS_SERVICE as MAIN_DEV_FLAGS_SERVICE,
+  DEV_LOGS_SERVICE as MAIN_DEV_LOGS_SERVICE,
+  DEV_METRICS_SERVICE as MAIN_DEV_METRICS_SERVICE,
+  DEV_NETWORK_SERVICE as MAIN_DEV_NETWORK_SERVICE,
   DISCORD_PRESENCE_SERVICE as MAIN_DISCORD_PRESENCE_SERVICE,
   ENCRYPTION_SERVICE as MAIN_ENCRYPTION_SERVICE,
   EXTERNAL_APPS_SERVICE as MAIN_EXTERNAL_APPS_SERVICE,
@@ -301,6 +320,8 @@ export interface MainBindings {
   [BUNDLED_RESOURCES_SERVICE]: ElectronBundledResources;
   [IMAGE_PROCESSOR_SERVICE]: ElectronImageProcessor;
   [WORKSPACE_SETTINGS_SERVICE]: ElectronWorkspaceSettings;
+  [APP_METRICS_SERVICE]: ElectronAppMetrics;
+  [DEV_HOST_ACTIONS_SERVICE]: ElectronDevHostActions;
 
   // Database (main aliases + ws-server source tokens via toService)
   [MAIN_DATABASE_SERVICE]: DatabaseService;
@@ -413,6 +434,7 @@ export interface MainBindings {
   [MAIN_APPROVAL_LINK_SERVICE]: ApprovalLinkService;
   [MAIN_OPEN_TARGET_LINK_SERVICE]: OpenTargetLinkService;
   [MAIN_CANVAS_LINK_SERVICE]: CanvasLinkService;
+  [MAIN_CHANNEL_LINK_SERVICE]: ChannelLinkService;
   [TASK_LINK_SERVICE]: TaskLinkService;
   [INBOX_LINK_SERVICE]: InboxLinkService;
   [SCOUT_LINK_SERVICE]: ScoutLinkService;
@@ -420,6 +442,7 @@ export interface MainBindings {
   [APPROVAL_LINK_SERVICE]: ApprovalLinkService;
   [OPEN_TARGET_LINK_SERVICE]: OpenTargetLinkService;
   [CANVAS_LINK_SERVICE]: CanvasLinkService;
+  [CHANNEL_LINK_SERVICE]: ChannelLinkService;
 
   // Watcher registry
   [MAIN_WATCHER_REGISTRY_SERVICE]: WatcherRegistryService;
@@ -441,6 +464,13 @@ export interface MainBindings {
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
   [MAIN_DISCORD_PRESENCE_SERVICE]: DiscordPresenceService;
 
+  // Dev toolbar diagnostics
+  [MAIN_DEV_FLAGS_SERVICE]: DevFlagsService;
+  [MAIN_DEV_METRICS_SERVICE]: DevMetricsService;
+  [MAIN_DEV_NETWORK_SERVICE]: DevNetworkService;
+  [MAIN_DEV_LOGS_SERVICE]: DevLogsService;
+  [MAIN_DEV_ACTIONS_SERVICE]: DevActionsService;
+
   // ws-server git service (bound to(GitService))
   [WS_GIT_SERVICE]: GitService;
 
@@ -458,6 +488,7 @@ export interface MainBindings {
   [FS_SERVICE]: FsCapability;
 
   // Typed container.get-only tokens (bound via loaded modules)
+  [AGENT_SERVICE]: AgentService;
   [OAUTH_SERVICE]: OAuthService;
   [GITHUB_INTEGRATION_SERVICE]: GitHubIntegrationService;
   [SLACK_INTEGRATION_SERVICE]: SlackIntegrationService;

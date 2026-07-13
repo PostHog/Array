@@ -193,6 +193,7 @@ function PatchDiffView({
     hasOpenComment,
     editSeed,
     reset,
+    handleLineSelectionChange,
     handleLineSelectionEnd,
     openCommentForEdit,
   } = useCommentState();
@@ -302,9 +303,15 @@ function PatchDiffView({
       buildCommentMergedOptions(
         options,
         hasOpenComment,
+        handleLineSelectionChange,
         handleLineSelectionEnd,
       ),
-    [options, hasOpenComment, handleLineSelectionEnd],
+    [
+      options,
+      hasOpenComment,
+      handleLineSelectionChange,
+      handleLineSelectionEnd,
+    ],
   );
 
   return (
@@ -350,6 +357,7 @@ function FilesDiffView({
     hasOpenComment,
     editSeed,
     reset,
+    handleLineSelectionChange,
     handleLineSelectionEnd,
     openCommentForEdit,
   } = useCommentState();
@@ -394,9 +402,15 @@ function FilesDiffView({
       buildCommentMergedOptions(
         options,
         hasOpenComment,
+        handleLineSelectionChange,
         handleLineSelectionEnd,
       ),
-    [options, hasOpenComment, handleLineSelectionEnd],
+    [
+      options,
+      hasOpenComment,
+      handleLineSelectionChange,
+      handleLineSelectionEnd,
+    ],
   );
 
   return (

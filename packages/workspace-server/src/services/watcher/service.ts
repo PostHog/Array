@@ -10,7 +10,26 @@ export type WatchOptions = {
 };
 
 const IGNORE_PATTERNS = ["**/node_modules/**", "**/.git/**", "**/.jj/**"];
-const DEBOUNCE_MS = 500;
+
+// Ignore patterns for the git-dir watches. Linked worktrees share the main
+// repo's `.git` as their `commondir`, so every worktree's commondir watch sees
+// the whole `.git/worktrees/` admin subtree — including sibling worktrees'
+// HEAD/index files. Without this, creating or mutating one worktree wakes every
+// other worktree's watcher (each firing a branch re-check + renderer
+// invalidation), so the per-event cost grows linearly with the number of
+// worktrees. A worktree's own admin dir is watched directly as its `gitDir`
+// (rooted inside `worktrees/<name>`, where this pattern matches nothing), so
+// excluding the subtree from the commondir watch drops only cross-worktree
+// noise; shared refs (`refs/heads`, `packed-refs`) live outside `worktrees/`
+// and are still observed.
+const GIT_IGNORE_PATTERNS = ["**/worktrees/**"];
+export const DEBOUNCE_MS = 500;
+// Upper bound on how long working-tree events may be coalesced. The trailing
+// debounce resets on every event, so an agent writing continuously would other-
+// wise never trip it until it paused, freezing the diff panel/stats mid-run.
+// The max-wait forces a flush at least this often during sustained activity so
+// the UI keeps advancing while the agent works.
+export const MAX_WAIT_MS = 1000;
 const BULK_THRESHOLD = 100;
 
 const dirname = (p: string): string => {
@@ -154,6 +173,7 @@ export class WatcherService {
 
     const pending = createPending();
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
     const outQueue: FileWatcherEvent[] = [];
     let outResolve: ((next: FileWatcherEvent[] | null) => void) | null = null;
     let outClosed = false;
@@ -178,18 +198,32 @@ export class WatcherService {
       }
     };
 
+    const flushPending = () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+      if (maxWaitTimer) {
+        clearTimeout(maxWaitTimer);
+        maxWaitTimer = null;
+      }
+      pushOut(drainPending(repoPath, pending));
+    };
+
     const fileLoop = (async () => {
       try {
         for await (const batch of fileEvents) {
           accumulateFsEvents(pending, batch);
+          // Trailing debounce: coalesce a burst and emit once it goes quiet.
           if (debounceTimer) clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(() => {
-            debounceTimer = null;
-            pushOut(drainPending(repoPath, pending));
-          }, DEBOUNCE_MS);
+          debounceTimer = setTimeout(flushPending, DEBOUNCE_MS);
+          // Max-wait: bound the coalescing so sustained activity still flushes.
+          if (!maxWaitTimer)
+            maxWaitTimer = setTimeout(flushPending, MAX_WAIT_MS);
         }
       } finally {
         if (debounceTimer) clearTimeout(debounceTimer);
+        if (maxWaitTimer) clearTimeout(maxWaitTimer);
         closeOut();
       }
     })();
@@ -202,7 +236,11 @@ export class WatcherService {
     for (const dir of gitDirs) {
       gitLoops.push(
         (async () => {
-          for await (const batch of this.watch(dir, {}, signal)) {
+          for await (const batch of this.watch(
+            dir,
+            { ignore: GIT_IGNORE_PATTERNS },
+            signal,
+          )) {
             if (batch.some((e) => isRelevantGitEvent(e.path))) {
               pushOut([{ kind: "git-state-changed", repoPath }]);
             }

@@ -241,9 +241,11 @@ function ReviewersBody({ reviewers }: { reviewers: SuggestedReviewer[] }) {
 function ArtefactBody({
   reportId,
   artefact,
+  hideCommitDiffs,
 }: {
   reportId: string;
   artefact: AnySignalReportArtefact;
+  hideCommitDiffs?: boolean;
 }) {
   // Degraded rows carry a plain text preview instead of their type's content
   // shape — render that rather than feeding mismatched content to a typed body.
@@ -289,6 +291,7 @@ function ArtefactBody({
           reportId={reportId}
           artefactId={artefact.id}
           content={artefact.content as CommitContent}
+          hideDiff={hideCommitDiffs}
         />
       );
     case "task_run":
@@ -392,9 +395,11 @@ function ArtefactBody({
 function ArtefactRow({
   reportId,
   artefact,
+  hideCommitDiffs,
 }: {
   reportId: string;
   artefact: AnySignalReportArtefact;
+  hideCommitDiffs?: boolean;
 }) {
   const [showRaw, setShowRaw] = useState(false);
   const location = locationLabel(artefact);
@@ -436,7 +441,11 @@ function ArtefactRow({
           <RelativeTimestamp timestamp={artefact.created_at} />
         </Flex>
       </Flex>
-      <ArtefactBody reportId={reportId} artefact={artefact} />
+      <ArtefactBody
+        reportId={reportId}
+        artefact={artefact}
+        hideCommitDiffs={hideCommitDiffs}
+      />
       {showRaw ? (
         <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-(--gray-6) bg-(--gray-2) p-2 font-mono text-(--gray-11) text-[11px]">
           {JSON.stringify(artefact, null, 2)}
@@ -449,9 +458,12 @@ function ArtefactRow({
 export function ArtefactLogList({
   reportId,
   artefacts,
+  hideCommitDiffs,
 }: {
   reportId: string;
   artefacts: AnySignalReportArtefact[];
+  /** Drop the per-commit diff toggle (PR detail shows the full diff already). */
+  hideCommitDiffs?: boolean;
 }) {
   if (artefacts.length === 0) {
     return null;
@@ -469,6 +481,7 @@ export function ArtefactLogList({
           key={artefact.id}
           reportId={reportId}
           artefact={artefact}
+          hideCommitDiffs={hideCommitDiffs}
         />
       ))}
     </Flex>

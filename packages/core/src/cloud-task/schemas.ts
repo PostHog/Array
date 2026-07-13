@@ -33,6 +33,7 @@ export const watchInput = z.object({
   runId: z.string(),
   apiHost: z.string(),
   teamId: z.number(),
+  resumeFromEntryCount: z.number().optional(),
 });
 
 export type WatchInput = z.infer<typeof watchInput>;

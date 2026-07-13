@@ -71,7 +71,9 @@ export function useCreatePrReport({
         reportUrl,
         feedback: feedbackRef.current,
       });
-      const targetRepo = ctx.cloudRepository.toLowerCase();
+      // Create-PR never runs repo-less, so the repo is always present here; the
+      // coalesce only satisfies the now-nullable context type.
+      const targetRepo = (ctx.cloudRepository ?? "").toLowerCase();
       const baseBranch = baseBranchOverrides
         ? (Object.entries(baseBranchOverrides).find(
             ([repo]) => repo.toLowerCase() === targetRepo,
@@ -81,7 +83,7 @@ export function useCreatePrReport({
         content: prompt,
         taskDescription: prompt,
         repository: ctx.cloudRepository,
-        githubUserIntegrationId: ctx.githubUserIntegrationId,
+        githubUserIntegrationId: ctx.githubUserIntegrationId ?? undefined,
         workspaceMode: "cloud",
         executionMode: "auto",
         adapter: ctx.adapter,

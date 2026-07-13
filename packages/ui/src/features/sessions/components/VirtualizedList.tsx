@@ -39,7 +39,10 @@ export interface VirtualizedListHandle {
 
 const AT_BOTTOM_THRESHOLD = 50;
 const ESTIMATED_ROW_SIZE = 80;
-const OVERSCAN = 6;
+// Render rows well ahead so tall, async rows (markdown, code, diffs) measure and
+// paint off-screen instead of shifting and stuttering as they enter view. 12
+// erases the scroll-up shift empirically; higher only adds DOM cost.
+const OVERSCAN = 12;
 // A real upward drift, not a 1-frame measure transient: the DOM bottom sits
 // this far below the viewport. Well above any single append's measure gap.
 const FAR_DRIFT_THRESHOLD = 400;

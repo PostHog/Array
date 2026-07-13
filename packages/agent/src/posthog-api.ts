@@ -209,13 +209,21 @@ export class PostHogAPIClient {
     taskId: string,
     runId: string,
     text: string,
+    textParts?: string[],
   ): Promise<void> {
     const teamId = this.getTeamId();
+    // Send `text_parts` alongside the joined `text` so backends that understand
+    // the new schema can pick just the post-last-tool-use answer, while older
+    // backends still get the flat `text` field they already handle.
+    const body: { text: string; text_parts?: string[] } = { text };
+    if (textParts && textParts.length > 0) {
+      body.text_parts = textParts;
+    }
     await this.apiRequest<{ status: string }>(
       `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/relay_message/`,
       {
         method: "POST",
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(body),
       },
     );
   }

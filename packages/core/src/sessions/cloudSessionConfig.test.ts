@@ -61,7 +61,8 @@ describe("buildCloudDefaultConfigOptions", () => {
   it.each([
     { initialMode: "auto", expected: "auto" },
     { initialMode: "full-access", expected: "full-access" },
-    { initialMode: "plan", expected: "auto" },
+    // plan is now a valid codex preset (mirrors the app-server), so it's kept.
+    { initialMode: "plan", expected: "plan" },
     { initialMode: "default", expected: "auto" },
   ])(
     "validates codex initial mode $initialMode",

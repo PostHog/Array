@@ -9,15 +9,19 @@ import { useState } from "react";
 /**
  * Renders a `commit` artefact: commit metadata plus a collapsible diff of the commit against
  * its parent, fetched lazily (on first expand) from the team's GitHub integration.
+ * `hideDiff` drops the diff toggle — used on the PR detail, where the main
+ * column already shows every changed file.
  */
 export function ArtefactCommit({
   reportId,
   artefactId,
   content,
+  hideDiff = false,
 }: {
   reportId: string;
   artefactId: string;
   content: CommitContent;
+  hideDiff?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -43,21 +47,23 @@ export function ArtefactCommit({
         </Text>
       ) : null}
 
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-        className="-mx-1 mt-1.5 flex items-center gap-1 rounded-md px-1 py-0.5 text-(--gray-11) text-[12px] transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
-      >
-        {expanded ? (
-          <CaretDownIcon size={12} className="shrink-0" />
-        ) : (
-          <CaretRightIcon size={12} className="shrink-0" />
-        )}
-        {expanded ? "Hide diff" : "View diff"}
-      </button>
+      {!hideDiff && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="-mx-1 mt-1.5 flex items-center gap-1 rounded-md px-1 py-0.5 text-(--gray-11) text-[12px] transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
+        >
+          {expanded ? (
+            <CaretDownIcon size={12} className="shrink-0" />
+          ) : (
+            <CaretRightIcon size={12} className="shrink-0" />
+          )}
+          {expanded ? "Hide diff" : "View diff"}
+        </button>
+      )}
 
-      {expanded ? (
+      {expanded && !hideDiff ? (
         <Box className="mt-1.5">
           {diffQuery.isLoading ? (
             <Flex

@@ -2,7 +2,6 @@ import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import { getIsOnline } from "@posthog/core/connectivity/connectivityStore";
 import { CloudArtifactService } from "@posthog/core/sessions/cloudArtifactService";
 import {
-  cloudPromptToBlocks,
   combineQueuedCloudPrompts,
   getCloudPromptTransport,
 } from "@posthog/core/sessions/cloudPrompt";
@@ -32,7 +31,10 @@ import {
   updatePersistedConfigOptionValue,
 } from "@posthog/ui/features/sessions/sessionConfigStore";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
-import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import {
+  getEffectiveCustomInstructions,
+  useSettingsStore,
+} from "@posthog/ui/features/settings/settingsStore";
 import { taskViewedApi } from "@posthog/ui/features/sidebar/taskMetaApi";
 import { WORKSPACE_QUERY_KEY } from "@posthog/ui/features/workspace/identifiers";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -45,6 +47,7 @@ import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
 } from "../../shell/queryClient";
+import { resolveLocalSkillPrompt } from "../message-editor/commands";
 
 export { SessionService };
 
@@ -59,8 +62,10 @@ function buildSessionServiceDeps(): SessionServiceDeps {
   const queryClient = resolveService<ImperativeQueryClient>(
     IMPERATIVE_QUERY_CLIENT,
   );
-  const cloudArtifactService = new CloudArtifactService((filePath) =>
-    trpc.fs.readFileAsBase64.query({ filePath }),
+  const cloudArtifactService = new CloudArtifactService(
+    (filePath) => trpc.fs.readFileAsBase64.query({ filePath }),
+    (skillBundleRef) => trpc.skills.bundleLocal.query(skillBundleRef),
+    (skillBundleRefs) => trpc.skills.resolveDependencies.query(skillBundleRefs),
   );
 
   return {
@@ -83,11 +88,12 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         taskTitle,
         taskId,
       ),
-    notifyPromptComplete: (taskTitle, stopReason, taskId) =>
+    notifyPromptComplete: (taskTitle, stopReason, taskId, durationMs) =>
       resolveService(NotificationBus).notifyPromptComplete(
         taskTitle,
         stopReason,
         taskId,
+        durationMs,
       ),
     getIsOnline,
     fetchAuthState,
@@ -107,7 +113,11 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         useSessionAdapterStore.getState().removeAdapter(taskRunId),
     },
     get settings() {
-      return useSettingsStore.getState();
+      const state = useSettingsStore.getState();
+      return {
+        ...state,
+        customInstructions: getEffectiveCustomInstructions(state),
+      };
     },
     usageLimit: {
       show: (...args) => useUsageLimitStore.getState().show(...args),
@@ -123,21 +133,24 @@ function buildSessionServiceDeps(): SessionServiceDeps {
     WORKSPACE_QUERY_KEY,
     h: {
       extractSkillButtonId,
-      cloudPromptToBlocks,
       combineQueuedCloudPrompts,
       getCloudPromptTransport,
-      uploadRunAttachments: (client, taskId, runId, filePaths) =>
+      resolveLocalSkillCommandPrompt: (prompt) =>
+        resolveLocalSkillPrompt(prompt, () => trpc.skills.list.query()),
+      uploadRunAttachments: (client, taskId, runId, filePaths, skillBundles) =>
         cloudArtifactService.uploadRunAttachments(
           client,
           taskId,
           runId,
           filePaths,
+          skillBundles,
         ),
-      uploadTaskStagedAttachments: (client, taskId, filePaths) =>
+      uploadTaskStagedAttachments: (client, taskId, filePaths, skillBundles) =>
         cloudArtifactService.uploadTaskStagedAttachments(
           client,
           taskId,
           filePaths,
+          skillBundles,
         ),
     },
   };

@@ -21,6 +21,64 @@ export function parseSkillFrontmatter(
   return { name, description };
 }
 
+/**
+ * Extracts the optional `dependencies` list from a SKILL.md frontmatter — the
+ * names of other skills this skill needs. Supports flow (`dependencies: [a, b]`)
+ * and block (`dependencies:\n  - a\n  - b`) sequences. Returns [] when absent.
+ */
+export function parseSkillDependencies(content: string): string[] {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return [];
+  return extractYamlList(match[1], "dependencies");
+}
+
+function unquoteYamlScalar(value: string): string {
+  if (
+    (value.startsWith("'") && value.endsWith("'")) ||
+    (value.startsWith('"') && value.endsWith('"'))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function extractYamlList(yaml: string, key: string): string[] {
+  const lines = yaml.split("\n");
+  // Match `key:` at the start of the line with a literal prefix rather than a
+  // RegExp built from the (caller-supplied) key — avoids a metacharacter
+  // footgun if this helper is ever reused with a key like `my.key`.
+  const prefix = `${key}:`;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith(prefix)) continue;
+
+    const inline = lines[i].slice(prefix.length).trim();
+    // Flow sequence or comma list: `[a, b]` / `a, b`
+    if (inline) {
+      const stripped = inline.replace(/^\[/, "").replace(/\]$/, "");
+      return stripped
+        .split(",")
+        .map((entry) => unquoteYamlScalar(entry.trim()))
+        .filter((entry) => entry.length > 0);
+    }
+
+    // Block sequence: subsequent `- item` lines
+    const items: string[] = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      const itemMatch = lines[j].match(/^\s*-\s+(.*)$/);
+      if (!itemMatch) {
+        if (/^\s*$/.test(lines[j])) continue;
+        break;
+      }
+      const value = unquoteYamlScalar(itemMatch[1].trim());
+      if (value) items.push(value);
+    }
+    return items;
+  }
+
+  return [];
+}
+
 function extractYamlValue(yaml: string, key: string): string | null {
   const lines = yaml.split("\n");
 

@@ -1,4 +1,5 @@
 import type {
+  Adapter,
   GitHandoffCheckpoint,
   HandoffLocalGitState as GitHandoffLocalGitState,
   PostHogAPIConfig,
@@ -49,7 +50,7 @@ export interface ProcessSpawnedCallback {
 
 export interface TaskExecutionOptions {
   repositoryPath?: string;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   gatewayUrl?: string;
   codexBinaryPath?: string;

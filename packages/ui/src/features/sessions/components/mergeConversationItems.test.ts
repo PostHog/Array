@@ -72,6 +72,57 @@ describe("mergeConversationItems", () => {
     expect(pinned.content).toBe(echoedWithContext);
   });
 
+  it("cloud: dedupes the echo when the placeholder carries an 'Attached files:' summary the echo lacks", () => {
+    const echoed = {
+      ...userMessage("echo", "hello\n\nDo this"),
+      attachments: [
+        { id: "file:///tmp/clipboard.png", label: "clipboard.png" },
+      ],
+    };
+    const result = mergeConversationItems({
+      conversationItems: [echoed, userMessage("other", "different")],
+      optimisticItems: [
+        userMessage("opt", "hello\n\nDo this\n\nAttached files: clipboard.png"),
+      ],
+      isCloud: true,
+    });
+    expect(result.map((i) => i.id)).toEqual(["opt", "other"]);
+    const pinned = result.find((i) => i.id === "opt");
+    if (pinned?.type !== "user_message")
+      throw new Error("expected user_message");
+    expect(pinned.content).toBe("hello\n\nDo this");
+    expect(pinned.attachments).toEqual(echoed.attachments);
+  });
+
+  it("cloud: dedupes an attachment-only placeholder against its text-less echo", () => {
+    const echoed = {
+      ...userMessage("echo", ""),
+      attachments: [{ id: "file:///tmp/notes.txt", label: "notes.txt" }],
+    };
+    const result = mergeConversationItems({
+      conversationItems: [echoed],
+      optimisticItems: [userMessage("opt", "Attached files: notes.txt")],
+      isCloud: true,
+    });
+    expect(result.map((i) => i.id)).toEqual(["opt"]);
+    const pinned = result.find((i) => i.id === "opt");
+    if (pinned?.type !== "user_message")
+      throw new Error("expected user_message");
+    expect(pinned.attachments).toEqual(echoed.attachments);
+  });
+
+  it("cloud: a pinned placeholder consumes only one echo, later identical messages render", () => {
+    const result = mergeConversationItems({
+      conversationItems: [
+        userMessage("echo", "repeat"),
+        userMessage("again", "repeat"),
+      ],
+      optimisticItems: [userMessage("opt", "repeat")],
+      isCloud: true,
+    });
+    expect(result.map((i) => i.id)).toEqual(["opt", "again"]);
+  });
+
   it("cloud: dedupe is no-op when there are no optimistic items", () => {
     const conversationItems = [
       userMessage("a", "first"),

@@ -10,7 +10,14 @@ import { Text } from "@radix-ui/themes";
  * wherever it is rendered. Renders nothing while loading or when the report
  * has no artefacts.
  */
-export function ReportActivitySection({ reportId }: { reportId: string }) {
+export function ReportActivitySection({
+  reportId,
+  hideCommitDiffs,
+}: {
+  reportId: string;
+  /** Drop the per-commit diff toggle (PR detail shows the full diff already). */
+  hideCommitDiffs?: boolean;
+}) {
   // The log is a live work record — agents append artefacts while the report is
   // open, so don't let the app-wide 5-minute staleTime sit on it. Poll gently
   // while mounted.
@@ -32,7 +39,11 @@ export function ReportActivitySection({ reportId }: { reportId: string }) {
         </Text>
       }
     >
-      <ArtefactLogList reportId={reportId} artefacts={artefacts} />
+      <ArtefactLogList
+        reportId={reportId}
+        artefacts={artefacts}
+        hideCommitDiffs={hideCommitDiffs}
+      />
     </RightColumnSection>
   );
 }

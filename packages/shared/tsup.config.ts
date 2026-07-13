@@ -10,6 +10,7 @@ export default defineConfig({
     "src/dismissalReasons.ts",
     "src/domain-types.ts",
     "src/mcp-sandbox-proxy.ts",
+    "src/posthog-property-headers.ts",
     "src/types.ts",
   ],
   format: ["esm"],

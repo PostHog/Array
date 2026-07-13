@@ -12,7 +12,12 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 type SourceProduct = SignalSourceConfig["source_product"];
 type SourceType = SignalSourceConfig["source_type"];
-type SetupSourceProduct = "github" | "linear" | "zendesk" | "pganalyze";
+type SetupSourceProduct =
+  | "github"
+  | "linear"
+  | "jira"
+  | "zendesk"
+  | "pganalyze";
 
 const SOURCE_TYPE_MAP: Record<
   Exclude<SourceProduct, "error_tracking" | "llm_analytics" | "signals_scout">,
@@ -21,6 +26,7 @@ const SOURCE_TYPE_MAP: Record<
   session_replay: "session_analysis_cluster",
   github: "issue",
   linear: "issue",
+  jira: "issue",
   zendesk: "ticket",
   conversations: "ticket",
   pganalyze: "issue",
@@ -37,6 +43,7 @@ const SOURCE_LABELS: Record<keyof SignalSourceValues, string> = {
   error_tracking: "Error tracking",
   github: "GitHub Issues",
   linear: "Linear Issues",
+  jira: "Jira Issues",
   zendesk: "Zendesk Tickets",
   conversations: "PostHog Support",
   pganalyze: "pganalyze",
@@ -48,6 +55,7 @@ const DATA_WAREHOUSE_SOURCES: Record<
 > = {
   github: { dwSourceType: "Github", requiredTable: "issues" },
   linear: { dwSourceType: "Linear", requiredTable: "issues" },
+  jira: { dwSourceType: "Jira", requiredTable: "issues" },
   zendesk: { dwSourceType: "Zendesk", requiredTable: "tickets" },
   pganalyze: { dwSourceType: "PgAnalyze", requiredTable: "issues" },
 };
@@ -57,6 +65,7 @@ const ALL_SOURCE_PRODUCTS: (keyof SignalSourceValues)[] = [
   "error_tracking",
   "github",
   "linear",
+  "jira",
   "zendesk",
   "conversations",
   "pganalyze",
@@ -76,6 +85,7 @@ function computeValues(
     error_tracking: false,
     github: false,
     linear: false,
+    jira: false,
     zendesk: false,
     conversations: false,
     pganalyze: false,
@@ -203,7 +213,7 @@ export function useSignalSourceToggles() {
       if (!requiredSchema) return;
 
       const issuesFullReplication =
-        (product === "github" || product === "linear") &&
+        (product === "github" || product === "linear" || product === "jira") &&
         dwConfig.requiredTable === "issues";
 
       if (issuesFullReplication) {

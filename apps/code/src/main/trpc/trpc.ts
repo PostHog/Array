@@ -10,16 +10,16 @@ const CALL_RATE_THRESHOLD = 50;
 
 const callCounts: Record<string, number[]> = {};
 
-const ipcTimingEnabled = process.env.IPC_TIMINGS === "true";
+const ipcTimingEnvEnabled = process.env.IPC_TIMINGS === "true";
 const ipcTimingBootMs = 15_000;
 const bootTime = Date.now();
 
 const callRateMonitor = middleware(async ({ path, next, type }) => {
-  const shouldTime =
-    ipcTimingEnabled && Date.now() - bootTime < ipcTimingBootMs;
-  const t = shouldTime ? performance.now() : 0;
+  const bootWindowOpen = Date.now() - bootTime < ipcTimingBootMs;
+  const envBootTiming = ipcTimingEnvEnabled && bootWindowOpen;
+  const start = envBootTiming ? performance.now() : 0;
 
-  if (shouldTime) {
+  if (envBootTiming) {
     log.info(`[ipc-timing] >> ${type} ${path}`);
   }
 
@@ -44,15 +44,14 @@ const callRateMonitor = middleware(async ({ path, next, type }) => {
     }
   }
 
-  const result = await next();
-
-  if (shouldTime) {
-    log.info(
-      `[ipc-timing] << ${type} ${path}: ${(performance.now() - t).toFixed(0)}ms`,
-    );
+  try {
+    return await next();
+  } finally {
+    if (envBootTiming) {
+      const durationMs = performance.now() - start;
+      log.info(`[ipc-timing] << ${type} ${path}: ${durationMs.toFixed(0)}ms`);
+    }
   }
-
-  return result;
 });
 
 export const router = baseRouter;

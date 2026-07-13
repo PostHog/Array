@@ -44,6 +44,7 @@ export interface IDashboardsService {
     id: string;
     taskId: string | null;
   }): Promise<DashboardRecord>;
+  setPinned(input: { id: string; pinned: boolean }): Promise<DashboardRecord>;
   rename(input: { id: string; name: string }): Promise<DashboardRecord>;
   // Idempotently create + seed a channel's home canvas, returning it.
   ensureHomeCanvas(channelId: string): Promise<DashboardRecord>;

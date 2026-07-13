@@ -4,6 +4,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import type {
   SDKAssistantMessage,
+  SDKModelRefusalFallbackMessage,
   SDKPartialAssistantMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -12,6 +13,7 @@ import { Logger } from "../../../utils/logger";
 import type { Session } from "../types";
 import {
   handleStreamEvent,
+  handleSystemMessage,
   handleUserAssistantMessage,
   type MessageHandlerContext,
   stripMarkerTags,
@@ -64,9 +66,13 @@ describe("stripMarkerTags", () => {
 
 function createHandlerContext() {
   const updates: SessionNotification[] = [];
+  const notifications: Array<{ method: string; params: unknown }> = [];
   const client = {
     sessionUpdate: async (notification: SessionNotification) => {
       updates.push(notification);
+    },
+    extNotification: async (method: string, params: unknown) => {
+      notifications.push({ method, params });
     },
   } as unknown as AgentSideConnection;
   const context: MessageHandlerContext = {
@@ -81,12 +87,9 @@ function createHandlerContext() {
     toolUseStreamCache: new Map(),
     fileContentCache: {},
     logger: new Logger({ debug: false }),
-    streamedAssistantBlocks: {
-      textIds: new Set(),
-      thinkingIds: new Set(),
-    },
+    streamedAssistantBlocks: { blocks: [] },
   };
-  return { context, updates };
+  return { context, updates, notifications };
 }
 
 function streamEvent(
@@ -186,7 +189,7 @@ describe("assembled assistant text fallback", () => {
     ]);
   });
 
-  it("tracks streamed ids per message so a later message still falls back", async () => {
+  it("tracks streamed content per message so a later message still falls back", async () => {
     const { context, updates } = createHandlerContext();
     await streamLiveText(context, "msg_1", "streamed");
     updates.length = 0;
@@ -197,6 +200,78 @@ describe("assembled assistant text fallback", () => {
     expect(chunkTexts(updates, "agent_message_chunk")).toEqual([
       "not streamed",
     ]);
+  });
+
+  it.each([
+    {
+      label: "forwards only the un-streamed tail when the stream was cut short",
+      streams: [["msg_1", "hello wor"]] as const,
+      assembled: { id: "msg_1", text: "hello world" },
+      expected: ["ld"],
+    },
+    {
+      label:
+        "dedupes by content when the consolidated message id differs from the stream",
+      streams: [["msg_gateway_1", "same text"]] as const,
+      assembled: { id: "msg_other_id", text: "same text" },
+      expected: [],
+    },
+    {
+      // msg_1 never got its consolidated message (e.g. cancelled turn);
+      // its residue must not swallow or truncate msg_2's block.
+      label: "clears streamed residue when a new top-level message starts",
+      streams: [
+        ["msg_1", "cancelled turn text"],
+        ["msg_2", "cancelled"],
+      ] as const,
+      assembled: { id: "msg_2", text: "cancelled turn" },
+      expected: [" turn"],
+    },
+  ])("$label", async ({ streams, assembled, expected }) => {
+    const { context, updates } = createHandlerContext();
+    for (const [apiId, text] of streams) {
+      await streamLiveText(context, apiId, text);
+    }
+    updates.length = 0;
+    await handleUserAssistantMessage(
+      assistantMessage(assembled.id, [{ type: "text", text: assembled.text }]),
+      context,
+    );
+    expect(chunkTexts(updates, "agent_message_chunk")).toEqual(expected);
+  });
+
+  it("ignores empty streamed deltas so they cannot stall the diff cursor", async () => {
+    const { context, updates } = createHandlerContext();
+    await handleStreamEvent(
+      streamEvent({ type: "message_start", message: { id: "msg_1" } }),
+      context,
+    );
+    await handleStreamEvent(
+      streamEvent({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "thinking_delta", thinking: "" },
+      }),
+      context,
+    );
+    await handleStreamEvent(
+      streamEvent({
+        type: "content_block_delta",
+        index: 1,
+        delta: { type: "text_delta", text: "answer" },
+      }),
+      context,
+    );
+    updates.length = 0;
+    await handleUserAssistantMessage(
+      assistantMessage("msg_1", [
+        { type: "thinking", thinking: "" },
+        { type: "text", text: "answer" },
+      ]),
+      context,
+    );
+    expect(chunkTexts(updates, "agent_message_chunk")).toEqual([]);
+    expect(chunkTexts(updates, "agent_thought_chunk")).toEqual([]);
   });
 
   it("drops empty assembled blocks", async () => {
@@ -360,4 +435,73 @@ describe("import replay (no client-side history)", () => {
     );
     expect(chunkTexts(updates, "agent_message_chunk")).toEqual([]);
   });
+});
+
+describe("handleSystemMessage model_refusal_fallback", () => {
+  function refusalFallbackMessage(
+    overrides: Partial<SDKModelRefusalFallbackMessage> = {},
+  ): SDKModelRefusalFallbackMessage {
+    return {
+      type: "system",
+      subtype: "model_refusal_fallback",
+      trigger: "refusal",
+      direction: "retry",
+      original_model: "claude-fable-5",
+      fallback_model: "claude-opus-4-8",
+      request_id: "req_1",
+      api_refusal_category: "cyber",
+      api_refusal_explanation: "This request was declined.",
+      retracted_message_uuids: [],
+      content: "Retried on fallback model",
+      uuid: "00000000-0000-0000-0000-000000000009",
+      session_id: "test-session",
+      ...overrides,
+    };
+  }
+
+  it.each<
+    [string, Partial<SDKModelRefusalFallbackMessage>, Record<string, unknown>]
+  >([
+    [
+      "emits a refusal_fallback status notification with the model swap",
+      {},
+      {
+        sessionId: "test-session",
+        status: "refusal_fallback",
+        fromModel: "claude-fable-5",
+        toModel: "claude-opus-4-8",
+        explanation: "This request was declined.",
+      },
+    ],
+    [
+      "omits the explanation when the refused response carried none",
+      { api_refusal_explanation: null },
+      {
+        sessionId: "test-session",
+        status: "refusal_fallback",
+        fromModel: "claude-fable-5",
+        toModel: "claude-opus-4-8",
+      },
+    ],
+  ])("%s", async (_name, overrides, expectedParams) => {
+    const { context, updates, notifications } = createHandlerContext();
+
+    await handleSystemMessage(refusalFallbackMessage(overrides), context);
+
+    expect(updates).toEqual([]);
+    expect(notifications).toEqual([
+      { method: "_posthog/status", params: expectedParams },
+    ]);
+  });
+
+  it.each(["revert", "sticky"] as const)(
+    "skips the notification for the legacy %s direction",
+    async (direction) => {
+      const { context, notifications } = createHandlerContext();
+
+      await handleSystemMessage(refusalFallbackMessage({ direction }), context);
+
+      expect(notifications).toEqual([]);
+    },
+  );
 });

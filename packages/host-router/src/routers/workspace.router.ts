@@ -30,10 +30,13 @@ import {
   linkBranchInput,
   listGitWorktreesInput,
   listGitWorktreesOutput,
+  listRepoCheckoutsInput,
+  listRepoCheckoutsOutput,
   markActivityInput,
   markViewedInput,
   reconcileCloudWorkspacesInput,
   reconcileCloudWorkspacesOutput,
+  setPrimaryPrUrlInput,
   taskPrStatusInput,
   taskPrStatusOutput,
   togglePinInput,
@@ -154,6 +157,13 @@ export const workspaceRouter = router({
       getService(ctx.container).listGitWorktrees(input.mainRepoPath),
     ),
 
+  listRepoCheckouts: publicProcedure
+    .input(listRepoCheckoutsInput)
+    .output(listRepoCheckoutsOutput)
+    .query(({ ctx, input }) =>
+      getService(ctx.container).listRepoCheckouts(input.repoPath),
+    ),
+
   getWorktreeSize: publicProcedure
     .input(getWorktreeSizeInput)
     .output(getWorktreeSizeOutput)
@@ -238,6 +248,12 @@ export const workspaceRouter = router({
     .output(cachedPrUrlOutput)
     .query(({ ctx, input }) =>
       getGitService(ctx.container).getCachedPrUrl(input.taskId),
+    ),
+
+  setPrimaryPrUrl: publicProcedure
+    .input(setPrimaryPrUrlInput)
+    .mutation(({ ctx, input }) =>
+      getGitService(ctx.container).setPrimaryPrUrl(input.taskId, input.prUrl),
     ),
 
   onError: subscribe(WorkspaceServiceEvent.Error),

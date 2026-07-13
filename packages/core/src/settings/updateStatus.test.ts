@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { deriveUpdateStatus } from "./updateStatus";
+import {
+  type CheckForUpdatesResult,
+  type CheckResultAction,
+  deriveUpdateStatus,
+  resolveCheckResultAction,
+} from "./updateStatus";
 
 describe("deriveUpdateStatus", () => {
   it("reports downloading", () => {
@@ -48,5 +53,49 @@ describe("deriveUpdateStatus", () => {
 
   it("returns empty while still checking", () => {
     expect(deriveUpdateStatus({ checking: true })).toEqual({});
+  });
+});
+
+describe("resolveCheckResultAction", () => {
+  it.each<[string, CheckForUpdatesResult, CheckResultAction | null]>([
+    ["success lets the subscription own the status", { success: true }, null],
+    [
+      "a check already in progress",
+      { success: false, errorCode: "already_checking" },
+      null,
+    ],
+    [
+      "disabled with a reason",
+      {
+        success: false,
+        errorCode: "disabled",
+        errorMessage: "Updates only available in packaged builds",
+      },
+      {
+        updatesDisabled: true,
+        message: "Updates only available in packaged builds",
+        type: "error",
+      },
+    ],
+    [
+      "disabled without a reason falls back",
+      { success: false, errorCode: "disabled" },
+      {
+        updatesDisabled: true,
+        message: "Failed to check for updates",
+        type: "error",
+      },
+    ],
+    [
+      "a generic failure without a message",
+      { success: false },
+      {
+        updatesDisabled: false,
+        message: "Failed to check for updates",
+        type: "error",
+      },
+    ],
+  ])("resolves %s", (_label, result, expected) => {
+    expect(resolveCheckResultAction(result)).toEqual(expected);
   });
 });

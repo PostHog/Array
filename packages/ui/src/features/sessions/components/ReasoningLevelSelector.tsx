@@ -9,14 +9,17 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import type { Adapter } from "@posthog/shared";
 import { useRef, useState } from "react";
 import { flattenSelectOptions } from "../sessionStore";
+import { useRetainedConfigOption } from "../useRetainedConfigOption";
 
 interface ReasoningLevelSelectorProps {
   thoughtOption?: SessionConfigOption;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   onChange?: (value: string) => void;
   disabled?: boolean;
+  isLoading?: boolean;
 }
 
 export function ReasoningLevelSelector({
@@ -24,17 +27,26 @@ export function ReasoningLevelSelector({
   adapter,
   onChange,
   disabled,
+  isLoading,
 }: ReasoningLevelSelectorProps) {
   const [open, setOpen] = useState(false);
   const pendingValueRef = useRef<string | null>(null);
+  const displayOption = useRetainedConfigOption(thoughtOption);
 
-  if (!thoughtOption || thoughtOption.type !== "select") {
+  // Genuinely no reasoning levels for this harness/model: hide. While the
+  // preview config reloads (a harness switch) keep showing the last value,
+  // disabled, so the toolbar doesn't collapse mid-switch.
+  if (!thoughtOption && !isLoading) return null;
+  if (!displayOption || displayOption.type !== "select") {
     return null;
   }
 
-  const options = flattenSelectOptions(thoughtOption.options);
+  const isReloading = !thoughtOption;
+  const isDisabled = disabled || isReloading;
+
+  const options = flattenSelectOptions(displayOption.options);
   if (options.length === 0) return null;
-  const activeLevel = thoughtOption.currentValue;
+  const activeLevel = displayOption.currentValue;
   const activeLabel =
     options.find((opt) => opt.value === activeLevel)?.name ?? activeLevel;
   const prefix = adapter === "codex" ? "Reasoning" : "Effort";
@@ -56,7 +68,7 @@ export function ReasoningLevelSelector({
             type="button"
             variant="default"
             size="sm"
-            disabled={disabled}
+            disabled={isDisabled}
             aria-label={`${prefix}: ${activeLabel}`}
           >
             <Brain size={14} className="text-muted-foreground" />

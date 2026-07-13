@@ -17,6 +17,21 @@ function usageUpdateEvent(used: number, size: number): AcpMessage {
   };
 }
 
+function sizelessUsageUpdateEvent(used: number): AcpMessage {
+  return {
+    type: "acp_message",
+    ts: 1,
+    message: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "s1",
+        update: { sessionUpdate: "usage_update", used },
+      },
+    },
+  };
+}
+
 function breakdownEvent(
   breakdown: Record<string, number>,
   method = "_posthog/usage_update",
@@ -54,6 +69,37 @@ describe("extractContextUsage", () => {
     expect(result?.size).toBe(200_000);
     expect(result?.percentage).toBe(25);
     expect(result?.breakdown).toBeNull();
+  });
+
+  it("surfaces token count even when the context window size is unknown", () => {
+    // codex omits `size` when the protocol has no modelContextWindow — the
+    // aggregate must still render (size 0, no percentage) rather than vanish.
+    const event: AcpMessage = {
+      type: "acp_message",
+      ts: 1,
+      message: {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: "s1",
+          update: { sessionUpdate: "usage_update", used: 50_000 },
+        },
+      },
+    };
+    const result = extractContextUsage([event]);
+    expect(result?.used).toBe(50_000);
+    expect(result?.size).toBe(0);
+    expect(result?.percentage).toBe(0);
+  });
+
+  it("borrows the context window from an older update when the newest omits it", () => {
+    const result = extractContextUsage([
+      usageUpdateEvent(50_000, 200_000),
+      sizelessUsageUpdateEvent(60_000),
+    ]);
+    expect(result?.used).toBe(60_000);
+    expect(result?.size).toBe(200_000);
+    expect(result?.percentage).toBe(30);
   });
 
   it("merges breakdown from a _posthog/usage_update notification", () => {
@@ -109,6 +155,18 @@ describe("createContextUsageTracker", () => {
     const result = tracker.update([firstEvent, agentChunkEvent()]);
     expect(result?.used).toBe(50_000);
     expect(result?.size).toBe(200_000);
+  });
+
+  it("keeps the last known context window when an update omits size", () => {
+    const tracker = createContextUsageTracker();
+    const withSize = usageUpdateEvent(50_000, 200_000);
+
+    expect(tracker.update([withSize])?.size).toBe(200_000);
+
+    const result = tracker.update([withSize, sizelessUsageUpdateEvent(60_000)]);
+    expect(result?.used).toBe(60_000);
+    expect(result?.size).toBe(200_000);
+    expect(result?.percentage).toBe(30);
   });
 
   it("rebuilds when the event list is truncated", () => {

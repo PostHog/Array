@@ -43,11 +43,13 @@ export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
     primaryIsTask,
     showPrInMenu,
     showTaskInMenu,
+    canArchive,
     hasMenu,
     runAction,
     isRunningAction,
     openTask,
     openPr,
+    archive,
   } = useWorkstreamPresentation(workstream);
   const setSelectedWorkstreamId = useHomeUiStore(
     (s) => s.setSelectedWorkstreamId,
@@ -204,9 +206,11 @@ export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
               restBound={restBound}
               showPrInMenu={showPrInMenu}
               showTaskInMenu={showTaskInMenu}
+              showArchive={canArchive}
               onRun={runAction}
               onOpenPr={openPr}
               onOpenTask={openTask}
+              onArchive={archive}
               size="sm"
               runDisabled={isRunningAction}
             />

@@ -105,6 +105,7 @@ describe("WorkspaceEventsContribution", () => {
     client.handlers.onTaskPrInfoChanged({
       taskId: "task-1",
       prUrl: "https://github.com/o/r/pull/1",
+      prUrls: ["https://github.com/o/r/pull/1"],
       prState: "open",
     });
 
@@ -138,7 +139,10 @@ describe("WorkspaceEventsContribution", () => {
         ["workspace", "getCachedPrUrl"],
         { input: { taskId: "task-1" }, type: "query" },
       ],
-      { prUrl: "https://github.com/o/r/pull/1" },
+      {
+        prUrl: "https://github.com/o/r/pull/1",
+        prUrls: ["https://github.com/o/r/pull/1"],
+      },
     );
   });
 });

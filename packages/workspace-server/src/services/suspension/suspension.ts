@@ -66,6 +66,7 @@ export interface SuspensionServiceEvents {
 @injectable()
 export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents> {
   private inactivityTimerId: ReturnType<typeof setInterval> | null = null;
+  private suspendSweep: Promise<void> = Promise.resolve();
   private readonly log: ScopedLogger;
 
   constructor(
@@ -149,23 +150,43 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
     return this.suspensionRepo.findByWorkspaceId(workspace.id) !== null;
   }
 
-  async suspendLeastRecentIfOverLimit(): Promise<void> {
+  /**
+   * Suspends the least-recently-active worktree tasks until the active count
+   * is back at the cap. Runs after a workspace is created (not before), so the
+   * expensive checkpoint-and-delete never blocks creating a new session.
+   *
+   * Sweeps are serialized: it is called fire-and-forget from every worktree
+   * creation, and two concurrent sweeps would each read the same `active` list
+   * and pick the same oldest task, double-deleting one worktree. Chaining makes
+   * each sweep re-read `active` after the previous one's suspensions commit. The
+   * `.catch` keeps a failed sweep from wedging the chain for later callers.
+   */
+  suspendLeastRecentIfOverLimit(): Promise<void> {
+    this.suspendSweep = this.suspendSweep
+      .catch(() => {})
+      .then(() => this.runSuspendSweep());
+    return this.suspendSweep;
+  }
+
+  private async runSuspendSweep(): Promise<void> {
     if (!this.workspaceSettings.getAutoSuspendEnabled()) return;
     const maxActive = this.workspaceSettings.getMaxActiveWorktrees();
     const active = this.getActiveWorktreeWorkspaces();
-    if (active.length < maxActive) return;
+    const excess = active.length - maxActive;
+    if (excess <= 0) return;
 
-    const oldest = active.sort((a, b) => {
+    const oldestFirst = active.sort((a, b) => {
       const aTime = a.lastActivityAt ?? a.createdAt ?? "";
       const bTime = b.lastActivityAt ?? b.createdAt ?? "";
       return aTime.localeCompare(bTime);
-    })[0];
+    });
 
-    if (!oldest) return;
     this.log.info(
-      `Auto-suspending task ${oldest.taskId} (max: ${maxActive}, active: ${active.length})`,
+      `Auto-suspending ${excess} task(s) over the worktree cap (max: ${maxActive}, active: ${active.length})`,
     );
-    await this.autoSuspend(oldest.taskId, "max_worktrees");
+    for (const workspace of oldestFirst.slice(0, excess)) {
+      await this.autoSuspend(workspace.taskId, "max_worktrees");
+    }
   }
 
   async suspendInactiveWorktrees(): Promise<void> {
@@ -286,6 +307,7 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
     return new WorktreeManager({
       mainRepoPath: folderPath,
       worktreeBasePath: this.workspaceSettings.getWorktreeLocation(),
+      logger: this.log,
     });
   }
 
@@ -482,6 +504,7 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
       branchName,
       checkpointId,
       recreateBranch,
+      logger: this.log,
     });
 
     if (worktree) this.worktreeRepo.deleteByWorkspaceId(workspace.id);

@@ -57,6 +57,29 @@ export interface PendingSecret {
   purpose?: string;
 }
 
+/**
+ * An in-flight `connect_mcp` punch-out. The agent parked its turn; the dock
+ * renders a prefilled connect form, the user completes the auth (OAuth / api
+ * key — tokens never reach the agent), and on success the new connection is
+ * written into the target agent's spec and the session woken.
+ */
+export interface PendingMcpConnect {
+  /** The parked tool call to resolve via `/send`. */
+  callId: string;
+  /** Agent whose spec gets the `mcps[].connection` entry. */
+  agentSlug: string;
+  /** Draft revision the mcps[] entry is written to (spec edits are revision
+   *  scoped). Sourced from the tool args, falling back to the dock's current
+   *  `agent-config` page context. */
+  revisionId: string;
+  /** Prefilled server name (editable by the user). */
+  name?: string;
+  /** Prefilled MCP server URL (editable by the user). */
+  url?: string;
+  /** One-line reason shown above the form. */
+  purpose?: string;
+}
+
 interface AgentBuilderStore {
   /** Dock open/closed (persisted). */
   visible: boolean;
@@ -68,6 +91,9 @@ interface AgentBuilderStore {
   seed: AgentBuilderSeed | null;
   /** In-flight set_secret punch-out the dock renders a form for (ephemeral). */
   pendingSecret: PendingSecret | null;
+  /** In-flight connect_mcp punch-out the dock renders a connect form for
+   *  (ephemeral). */
+  pendingMcpConnect: PendingMcpConnect | null;
   /**
    * The dock's most recent chat session (persisted) plus the project/org it
    * belongs to. On reload the dock resumes it from the slug-routed ingress so
@@ -92,6 +118,7 @@ interface AgentBuilderStore {
   /** Mark a seed handled (no-op if a newer seed has since replaced it). */
   consumeSeed: (seq: number) => void;
   setPendingSecret: (pending: PendingSecret | null) => void;
+  setPendingMcpConnect: (pending: PendingMcpConnect | null) => void;
   setLastSession: (
     session: {
       id: string;
@@ -109,6 +136,7 @@ export const useAgentBuilderStore = create<AgentBuilderStore>()(
       page: { kind: "unknown" },
       seed: null,
       pendingSecret: null,
+      pendingMcpConnect: null,
       lastSession: null,
 
       toggleVisible: () => set((s) => ({ visible: !s.visible })),
@@ -123,6 +151,7 @@ export const useAgentBuilderStore = create<AgentBuilderStore>()(
       consumeSeed: (seq) =>
         set((s) => (s.seed?.seq === seq ? { seed: null } : s)),
       setPendingSecret: (pendingSecret) => set({ pendingSecret }),
+      setPendingMcpConnect: (pendingMcpConnect) => set({ pendingMcpConnect }),
       setLastSession: (lastSession) => set({ lastSession }),
     }),
     {

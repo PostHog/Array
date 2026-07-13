@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GITHUB_CONNECT_TIMEOUT_MESSAGE } from "../integrations/connectErrors";
 import {
   buildConnectFailedProps,
   buildConnectFailureFingerprint,
@@ -29,7 +30,7 @@ describe("getGithubPanelMessage", () => {
     };
     expect(
       getGithubPanelMessage({ ...base, timedOut: true, isConnecting: false }),
-    ).toMatch(/didn't hear back/);
+    ).toBe(GITHUB_CONNECT_TIMEOUT_MESSAGE);
     expect(
       getGithubPanelMessage({ ...base, timedOut: false, isConnecting: true }),
     ).toBe("Waiting for GitHub...");
@@ -76,13 +77,22 @@ describe("isAnyIntegrationStale", () => {
 });
 
 describe("buildInstallationSettingsUrl", () => {
-  it("builds an org settings url", () => {
+  it("links an org install to the app page (org settings are owner-only)", () => {
     expect(
       buildInstallationSettingsUrl(
         { type: "Organization", name: "acme" },
         "42",
       ),
-    ).toBe("https://github.com/organizations/acme/settings/installations/42");
+    ).toBe("https://github.com/apps/posthog");
+  });
+
+  it("matches the organization account type case-insensitively", () => {
+    expect(
+      buildInstallationSettingsUrl(
+        { type: "organization", name: "acme" },
+        "42",
+      ),
+    ).toBe("https://github.com/apps/posthog");
   });
 
   it("builds a personal settings url otherwise", () => {

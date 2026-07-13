@@ -57,6 +57,21 @@ export function resolveSandboxPosthogApi(
   return { apiUrl, apiKey, projectId };
 }
 
+function createSandboxPosthogClient(
+  env?: Record<string, string | undefined>,
+  envFilePath?: string,
+): PostHogAPIClient | undefined {
+  const api = resolveSandboxPosthogApi(env, envFilePath);
+  if (!api) {
+    return undefined;
+  }
+  return new PostHogAPIClient({
+    apiUrl: api.apiUrl,
+    projectId: api.projectId,
+    getApiKey: () => api.apiKey,
+  });
+}
+
 export async function reportCommitArtefacts(opts: {
   taskId: string | undefined;
   result: SignedCommitResult;
@@ -70,15 +85,10 @@ export async function reportCommitArtefacts(opts: {
     return; // Local/desktop run — no task to attribute or associate through.
   }
   try {
-    const api = resolveSandboxPosthogApi(opts.env, opts.envFilePath);
-    if (!api) {
+    const client = createSandboxPosthogClient(opts.env, opts.envFilePath);
+    if (!client) {
       return; // No sandbox PostHog credentials — nothing to report to.
     }
-    const client = new PostHogAPIClient({
-      apiUrl: api.apiUrl,
-      projectId: api.projectId,
-      getApiKey: () => api.apiKey,
-    });
     const reportIds = await client.getSignalReportIdsForTask(taskId);
     for (const reportId of reportIds) {
       for (const commit of result.commits) {
@@ -101,6 +111,30 @@ export async function reportCommitArtefacts(opts: {
     }
   } catch (err) {
     warn(`failed to record commit artefacts: ${err}`);
+  }
+}
+
+export async function reportTaskRunBranch(opts: {
+  taskId: string | undefined;
+  taskRunId: string | undefined;
+  branch: string;
+  env?: Record<string, string | undefined>;
+  envFilePath?: string;
+}): Promise<void> {
+  if (!opts.taskId || !opts.taskRunId) {
+    return;
+  }
+  try {
+    const client = createSandboxPosthogClient(opts.env, opts.envFilePath);
+    if (!client) {
+      return;
+    }
+    await client.updateTaskRun(opts.taskId, opts.taskRunId, {
+      branch: opts.branch,
+      output: { head_branch: opts.branch },
+    });
+  } catch (err) {
+    warn(`failed to attach branch ${opts.branch} to task run: ${err}`);
   }
 }
 

@@ -21,7 +21,11 @@ import {
 import { createFileTabId } from "@posthog/core/panels/panelStoreHelpers";
 import { findTabInTree } from "@posthog/core/panels/panelTree";
 import { ANALYTICS_EVENTS, getFileExtension } from "@posthog/shared";
-import { persist } from "zustand/middleware";
+import {
+  createJSONStorage,
+  persist,
+  type StateStorage,
+} from "zustand/middleware";
 import { createWithEqualityFn } from "zustand/traditional";
 import { track } from "../../shell/analytics";
 import { updateTaskLayout } from "./panelStoreHelpers";
@@ -59,6 +63,7 @@ export interface PanelLayoutStore {
     taskId: string,
     instructions: { body: string },
   ) => void;
+  openAutoresearchTab: (taskId: string) => void;
   keepTab: (taskId: string, panelId: string, tabId: string) => void;
   closeTab: (taskId: string, panelId: string, tabId: string) => void;
   closeOtherTabs: (taskId: string, panelId: string, tabId: string) => void;
@@ -112,6 +117,72 @@ export interface PanelLayoutStore {
   ) => void;
   clearAllLayouts: () => void;
 }
+
+const PANEL_PERSIST_DEBOUNCE_MS = 200;
+
+/**
+ * Wraps a storage so writes to the same key coalesce onto a trailing debounce.
+ * Reads stay synchronous and in-memory state is untouched, so live UI is
+ * unaffected; only the write to the backing store is deferred. Pending writes
+ * flush on `pagehide` so the last change before the window closes isn't lost.
+ */
+export function createDebouncedStorage(
+  base: StateStorage,
+  waitMs: number,
+): StateStorage {
+  const pending = new Map<string, string>();
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  const flush = (key: string) => {
+    timers.delete(key);
+    const value = pending.get(key);
+    pending.delete(key);
+    if (value !== undefined) base.setItem(key, value);
+  };
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", () => {
+      for (const key of [...pending.keys()]) flush(key);
+    });
+  }
+
+  return {
+    getItem: (key) => base.getItem(key),
+    setItem: (key, value) => {
+      pending.set(key, value);
+      const existing = timers.get(key);
+      if (existing !== undefined) clearTimeout(existing);
+      timers.set(
+        key,
+        setTimeout(() => flush(key), waitMs),
+      );
+    },
+    removeItem: (key) => {
+      const existing = timers.get(key);
+      if (existing !== undefined) {
+        clearTimeout(existing);
+        timers.delete(key);
+      }
+      pending.delete(key);
+      base.removeItem(key);
+    },
+  };
+}
+
+/**
+ * react-resizable-panels fires a layout change every frame during a drag, and
+ * persist serializes the whole layout tree on each one. Panels are uncontrolled
+ * (defaultSize), so debouncing the write keeps live resize instant while
+ * collapsing a drag's ~60 synchronous localStorage writes into one.
+ */
+const panelLayoutStorage: StateStorage = createDebouncedStorage(
+  {
+    getItem: (key) => window.localStorage.getItem(key),
+    setItem: (key, value) => window.localStorage.setItem(key, value),
+    removeItem: (key) => window.localStorage.removeItem(key),
+  },
+  PANEL_PERSIST_DEBOUNCE_MS,
+);
 
 export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
   persist(
@@ -197,6 +268,24 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
                 "canvas-instructions",
                 "Canvas instructions",
                 { type: "canvas-instructions", body: instructions.body },
+              ) as Partial<TaskLayout>,
+          ),
+        );
+      },
+
+      openAutoresearchTab: (taskId) => {
+        set((state) =>
+          updateTaskLayout(
+            state,
+            taskId,
+            (layout) =>
+              coreOpenReadonlyTabInSplit(
+                layout,
+                "autoresearch",
+                "Autoresearch",
+                {
+                  type: "autoresearch",
+                },
               ) as Partial<TaskLayout>,
           ),
         );
@@ -414,6 +503,7 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
       name: "panel-layout-store",
       version: 10,
       migrate: () => ({ taskLayouts: {} }),
+      storage: createJSONStorage(() => panelLayoutStorage),
     },
   ),
 );

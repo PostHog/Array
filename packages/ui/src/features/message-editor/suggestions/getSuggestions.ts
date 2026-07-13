@@ -106,10 +106,13 @@ export function getCommandSuggestions(
   // reported empty".
   const { adapter, commands: sessionCommands } = getTaskCommandContext(taskId);
   const draftCommands = store.commands[sessionId] ?? [];
+  const localDraftCommands = draftCommands.filter((cmd) => cmd.localSkill);
   const agentCommands =
-    adapter === "codex" && sessionCommands
-      ? mergeCommands(sessionCommands, draftCommands)
-      : (sessionCommands ?? draftCommands);
+    sessionCommands === null
+      ? draftCommands
+      : adapter === "codex"
+        ? mergeCommands(sessionCommands, draftCommands)
+        : [...sessionCommands, ...localDraftCommands];
   const commands = mergeCommands(CODE_COMMANDS, agentCommands);
   const filtered = searchCommands(commands, query);
 

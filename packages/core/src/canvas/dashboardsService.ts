@@ -91,6 +91,7 @@ export class DashboardsService {
           updatedAt,
           code,
           generationTaskId,
+          pinnedAt,
         }) => ({
           id,
           channelId: cid,
@@ -100,6 +101,7 @@ export class DashboardsService {
           updatedAt,
           code,
           generationTaskId,
+          pinnedAt,
         }),
       );
   }
@@ -197,6 +199,29 @@ export class DashboardsService {
     if (!res.ok) {
       throw new Error(`Failed to set generation task (${res.status})`);
     }
+    return toRecord((await res.json()) as FsEntry);
+  }
+
+  // Pin (or unpin) a canvas to its channel. Writes `pinnedAt` into the row's
+  // meta — shared across users — merging like the other writers so it never
+  // clobbers code/versions. Unpinning drops the key (the PATCH sends the merged
+  // meta sans pinnedAt, which the backend stores verbatim).
+  async setPinned(input: {
+    id: string;
+    pinned: boolean;
+  }): Promise<DashboardRecord> {
+    const entry = await this.getEntry(input.id);
+    const prevMeta = entry?.meta ?? {};
+    const meta: DashboardFileMeta = {
+      ...prevMeta,
+      pinnedAt: input.pinned ? Date.now() : undefined,
+    };
+    const res = await this.fs.fetch(`${encodeURIComponent(input.id)}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meta }),
+    });
+    if (!res.ok) throw new Error(`Failed to set pin (${res.status})`);
     return toRecord((await res.json()) as FsEntry);
   }
 
@@ -770,6 +795,7 @@ function toRecord(entry: FsEntry): DashboardRecord {
     createdBy: meta.createdBy ?? creatorName(entry.created_by),
     createdAt,
     updatedAt: meta.updatedAt ?? createdAt,
+    pinnedAt: meta.pinnedAt,
   };
 }
 

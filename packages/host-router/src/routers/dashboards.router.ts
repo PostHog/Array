@@ -8,6 +8,7 @@ import {
   renameDashboardInput,
   saveFreeformInput,
   setGenerationTaskInput,
+  setPinnedInput,
 } from "@posthog/core/canvas/dashboardSchemas";
 import { DASHBOARDS_SERVICE } from "@posthog/core/canvas/identifiers";
 import type { IDashboardsService } from "@posthog/core/canvas/services";
@@ -50,6 +51,14 @@ export const dashboardsRouter = router({
       ctx.container
         .get<IDashboardsService>(DASHBOARDS_SERVICE)
         .setGenerationTask(input),
+    ),
+  setPinned: publicProcedure
+    .input(setPinnedInput)
+    .output(dashboardRecordSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<IDashboardsService>(DASHBOARDS_SERVICE)
+        .setPinned(input),
     ),
   rename: publicProcedure
     .input(renameDashboardInput)

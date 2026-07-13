@@ -42,7 +42,31 @@ export class TaskPrStatusService {
 
   getCachedPrUrl(taskId: string): CachedPrUrlOutput {
     const row = this.workspaceRepo.findByTaskId(taskId);
-    return { prUrl: row?.prUrl ?? null };
+    return {
+      prUrl: row?.prUrl ?? null,
+      prUrls: this.workspaceRepo.getPrUrls(taskId),
+    };
+  }
+
+  async setPrimaryPrUrl(taskId: string, prUrl: string): Promise<void> {
+    this.workspaceRepo.promotePrUrl(taskId, prUrl);
+    const details = await this.gitService
+      .getPrDetailsByUrl(prUrl)
+      .catch(() => null);
+    const prState: SidebarPrState = details
+      ? mapPrState(details.state, details.merged, details.draft)
+      : null;
+    this.workspaceRepo.updatePrCache(taskId, {
+      prUrl,
+      prState,
+      accumulate: false,
+    });
+    this.workspaceService.emit("taskPrInfoChanged", {
+      taskId,
+      prUrl,
+      prUrls: this.workspaceRepo.getPrUrls(taskId),
+      prState,
+    });
   }
 
   private async computeWorktreeHasDiff(taskId: string): Promise<boolean> {
@@ -84,6 +108,7 @@ export class TaskPrStatusService {
         this.workspaceRepo.updatePrCache(taskId, {
           prUrl: fresh.prUrl,
           prState: fresh.prState,
+          accumulate: fresh.attributable,
         });
 
         if (cachedPrUrl === fresh.prUrl && cachedPrState === fresh.prState) {
@@ -93,6 +118,7 @@ export class TaskPrStatusService {
         this.workspaceService.emit("taskPrInfoChanged", {
           taskId,
           prUrl: fresh.prUrl,
+          prUrls: this.workspaceRepo.getPrUrls(taskId),
           prState: fresh.prState,
         });
       })
@@ -112,9 +138,17 @@ export class TaskPrStatusService {
     prUrl: string | null;
     prState: SidebarPrState;
     hasDiff: boolean;
+    attributable: boolean;
   }> {
     const workspace = await this.workspaceService.getWorkspace(taskId);
-    if (!workspace) return { prUrl: null, prState: null, hasDiff: false };
+    if (!workspace) {
+      return {
+        prUrl: null,
+        prState: null,
+        hasDiff: false,
+        attributable: false,
+      };
+    }
 
     const { mode, worktreePath, folderPath, linkedBranch } = workspace;
     const isCloud = mode === "cloud";
@@ -127,15 +161,33 @@ export class TaskPrStatusService {
           prUrl: cloudPrUrl,
           prState: mapPrState(details.state, details.merged, details.draft),
           hasDiff: false,
+          attributable: true,
         };
       }
-      return { prUrl: cloudPrUrl, prState: null, hasDiff: false };
+      return {
+        prUrl: cloudPrUrl,
+        prState: null,
+        hasDiff: false,
+        attributable: true,
+      };
     }
 
-    if (isCloud) return { prUrl: null, prState: null, hasDiff: false };
+    if (isCloud) {
+      return {
+        prUrl: null,
+        prState: null,
+        hasDiff: false,
+        attributable: false,
+      };
+    }
 
     if (repoPath && !fs.existsSync(repoPath)) {
-      return { prUrl: null, prState: null, hasDiff: false };
+      return {
+        prUrl: null,
+        prState: null,
+        hasDiff: false,
+        attributable: false,
+      };
     }
 
     if (linkedBranch && repoPath) {
@@ -150,10 +202,16 @@ export class TaskPrStatusService {
             prUrl,
             prState: mapPrState(details.state, details.merged, details.draft),
             hasDiff: false,
+            attributable: true,
           };
         }
       }
-      return { prUrl: null, prState: null, hasDiff: false };
+      return {
+        prUrl: null,
+        prState: null,
+        hasDiff: false,
+        attributable: false,
+      };
     }
 
     if (repoPath) {
@@ -167,6 +225,7 @@ export class TaskPrStatusService {
             prStatus.isDraft ?? false,
           ),
           hasDiff: false,
+          attributable: !!worktreePath,
         };
       }
 
@@ -181,10 +240,10 @@ export class TaskPrStatusService {
           (diffStats?.filesChanged ?? 0) > 0 ||
           (syncStatus?.aheadOfDefault ?? 0) > 0;
 
-        return { prUrl: null, prState: null, hasDiff };
+        return { prUrl: null, prState: null, hasDiff, attributable: false };
       }
     }
 
-    return { prUrl: null, prState: null, hasDiff: false };
+    return { prUrl: null, prState: null, hasDiff: false, attributable: false };
   }
 }

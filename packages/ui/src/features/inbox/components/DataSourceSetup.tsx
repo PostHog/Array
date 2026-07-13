@@ -3,6 +3,7 @@ import { Button } from "@posthog/quill";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { GitHubRepoPicker } from "@posthog/ui/features/folder-picker/GitHubRepoPicker";
+import { DynamicSourceSetup } from "@posthog/ui/features/inbox/components/DynamicSourceSetup";
 import {
   describeGithubConnectError,
   useGithubConnect,
@@ -16,11 +17,12 @@ import { Box, Flex, Text, TextField } from "@radix-ui/themes";
 import { useMutation } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type DataSourceType = "github" | "linear" | "zendesk" | "pganalyze";
+type DataSourceType = "github" | "linear" | "jira" | "zendesk" | "pganalyze";
 
 const REQUIRED_SCHEMAS: Record<DataSourceType, string[]> = {
   github: ["issues"],
   linear: ["issues"],
+  jira: ["issues"],
   zendesk: ["tickets"],
   pganalyze: ["issues", "servers"],
 };
@@ -52,6 +54,16 @@ export function DataSourceSetup({
       return <GitHubSetup onComplete={onComplete} onCancel={onCancel} />;
     case "linear":
       return <LinearSetup onComplete={onComplete} onCancel={onCancel} />;
+    case "jira":
+      return (
+        <DynamicSourceSetup
+          sourceType="Jira"
+          title="Connect Jira"
+          schemas={schemasPayload("jira")}
+          onComplete={onComplete}
+          onCancel={onCancel}
+        />
+      );
     case "zendesk":
       return <ZendeskSetup onComplete={onComplete} onCancel={onCancel} />;
     case "pganalyze":

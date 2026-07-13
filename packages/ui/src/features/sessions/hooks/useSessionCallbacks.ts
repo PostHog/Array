@@ -1,4 +1,8 @@
 import {
+  isContentEmpty,
+  xmlToContent,
+} from "@posthog/core/message-editor/content";
+import {
   combineQueuedCloudPrompts,
   promptToQueuedEditorContent,
 } from "@posthog/core/sessions/cloudPrompt";
@@ -7,8 +11,13 @@ import {
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
+import { useHostTRPCClient } from "@posthog/host-router/react";
 import type { Task } from "@posthog/shared/domain-types";
-import { tryExecuteCodeCommand } from "@posthog/ui/features/message-editor/commands";
+import {
+  resolveLocalSkillPrompt,
+  rewriteLocalSkillCommandPrompt,
+  tryExecuteCodeCommand,
+} from "@posthog/ui/features/message-editor/commands";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
 import { useMessagingMode } from "@posthog/ui/features/sessions/hooks/useMessagingMode";
 import {
@@ -42,6 +51,7 @@ export function useSessionCallbacks({
 }: UseSessionCallbacksOptions) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const shellClient = useService<ShellClient>(SHELL_CLIENT);
+  const hostClient = useHostTRPCClient();
   const { markActivity, markAsViewed } = useTaskViewed();
   const { requestFocus, setPendingContent } = useDraftStore((s) => s.actions);
 
@@ -68,10 +78,26 @@ export function useSessionCallbacks({
       });
       if (handled) return;
 
+      let promptText =
+        rewriteLocalSkillCommandPrompt(
+          text,
+          useDraftStore.getState().commands[taskId] ?? [],
+        ) ?? null;
+
+      if (!promptText) {
+        try {
+          promptText = await resolveLocalSkillPrompt(text, () =>
+            hostClient.skills.list.query(),
+          );
+        } catch (error) {
+          log.warn("Failed to resolve local skill command", { error });
+        }
+      }
+
       try {
         markAsViewed(taskId);
         markActivity(taskId);
-        await sessionService.sendPrompt(taskId, text, {
+        await sessionService.sendPrompt(taskId, promptText ?? text, {
           steer: messagingMode === "steer",
         });
 
@@ -84,6 +110,13 @@ export function useSessionCallbacks({
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to send message";
+        // The composer clears optimistically on submit, so a failed send
+        // would otherwise lose the typed prompt. Restore it — unless the
+        // user has already started typing a new message.
+        if (isContentEmpty(useDraftStore.getState().drafts[taskId] ?? null)) {
+          setPendingContent(taskId, xmlToContent(text));
+          requestFocus(taskId);
+        }
         toast.error(message);
         log.error("Failed to send prompt", error);
       }
@@ -95,7 +128,10 @@ export function useSessionCallbacks({
       markAsViewed,
       task.latest_run,
       sessionService,
+      hostClient,
       messagingMode,
+      setPendingContent,
+      requestFocus,
     ],
   );
 

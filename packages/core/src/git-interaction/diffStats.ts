@@ -1,3 +1,4 @@
+import { isBinaryFile } from "@posthog/shared";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 
 export interface DiffStats {
@@ -11,9 +12,10 @@ export function computeDiffStats(files: ChangedFile[]): DiffStats {
   let linesRemoved = 0;
   const uniquePaths = new Set<string>();
   for (const file of files) {
+    uniquePaths.add(file.path);
+    if (isBinaryFile(file.path)) continue;
     linesAdded += file.linesAdded ?? 0;
     linesRemoved += file.linesRemoved ?? 0;
-    uniquePaths.add(file.path);
   }
   return { filesChanged: uniquePaths.size, linesAdded, linesRemoved };
 }

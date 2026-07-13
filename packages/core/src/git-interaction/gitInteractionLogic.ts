@@ -20,12 +20,18 @@ interface GitState {
     headBranch: string | null;
     prUrl: string | null;
   } | null;
+  isOnline: boolean;
 }
+
+const OFFLINE_REASON = "No internet connection";
 
 interface GitComputed {
   actions: GitMenuAction[];
   primaryAction: GitMenuAction;
   pushDisabledReason: string | null;
+  // Named like pushDisabledReason: a disabled create-pr is dropped from
+  // `actions`, so its reason is only readable here.
+  createPrDisabledReason: string | null;
   prBaseBranch: string | null;
   prHeadBranch: string | null;
   prUrl: string | null;
@@ -74,6 +80,7 @@ function getPushDisabledReason(
   opts?: { assumeWillHaveCommits?: boolean },
 ): string | null {
   if (repoReason) return repoReason;
+  if (!s.isOnline) return OFFLINE_REASON;
 
   if (s.behind > 0) {
     return "Sync branch with remote first.";
@@ -96,6 +103,7 @@ function getCreatePrDisabledReason(
   repoReason: string | null,
 ): string | null {
   if (repoReason) return repoReason;
+  if (!s.isOnline) return OFFLINE_REASON;
 
   if (!s.ghStatus) return "Checking GitHub CLI status...";
   if (!s.ghStatus.installed) return "Install GitHub CLI: `brew install gh`";
@@ -172,6 +180,7 @@ export function computeGitInteractionState(input: GitState): GitComputed {
       actions: [branchAction],
       primaryAction: branchAction,
       pushDisabledReason: "Create a branch first.",
+      createPrDisabledReason: "Create a branch first.",
       prBaseBranch: input.defaultBranch,
       prHeadBranch: null,
       prUrl: null,
@@ -200,6 +209,7 @@ export function computeGitInteractionState(input: GitState): GitComputed {
       actions,
       primaryAction,
       pushDisabledReason: "Create a feature branch first.",
+      createPrDisabledReason,
       prBaseBranch: input.defaultBranch,
       prHeadBranch: input.currentBranch,
       prUrl: input.prStatus?.prUrl ?? null,
@@ -231,6 +241,7 @@ export function computeGitInteractionState(input: GitState): GitComputed {
     pushDisabledReason: getPushDisabledReason(input, repoReason, {
       assumeWillHaveCommits: true,
     }),
+    createPrDisabledReason,
     prBaseBranch: input.prStatus?.baseBranch ?? input.defaultBranch,
     prHeadBranch: input.prStatus?.headBranch ?? input.currentBranch,
     prUrl: input.prStatus?.prUrl ?? null,

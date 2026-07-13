@@ -1,3 +1,5 @@
+import { CODEX_MODE_PRESETS } from "@posthog/shared";
+
 export interface ModeInfo {
   id: string;
   name: string;
@@ -28,25 +30,7 @@ const availableModes: ModeInfo[] = [
   {
     id: "auto",
     name: "Auto Mode",
-    description: "Use a model classifier to approve/deny permission prompts",
-  },
-];
-
-const codexModes: ModeInfo[] = [
-  {
-    id: "read-only",
-    name: "Read Only",
-    description: "Read-only access, no file modifications",
-  },
-  {
-    id: "auto",
-    name: "Auto",
-    description: "Standard behavior, prompts for dangerous operations",
-  },
-  {
-    id: "full-access",
-    name: "Full Access",
-    description: "Auto-accept all permission requests",
+    description: "Auto-approve file edits and shell commands",
   },
 ];
 
@@ -54,6 +38,9 @@ export function getAvailableModes(): ModeInfo[] {
   return availableModes;
 }
 
+// The preset literals live in @posthog/shared (one copy for every picker and
+// the app-server adapter's CODEX_MODES). Cloud sessions offer all presets,
+// including full-access; the agent package applies its own bypass gating.
 export function getAvailableCodexModes(): ModeInfo[] {
-  return codexModes;
+  return [...CODEX_MODE_PRESETS];
 }

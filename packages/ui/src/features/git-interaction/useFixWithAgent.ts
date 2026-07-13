@@ -2,7 +2,7 @@ import type { FixWithAgentPrompt } from "@posthog/core/git-interaction/errorProm
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { useCallback } from "react";
 import { sendPromptToAgent } from "../sessions/sendPromptToAgent";
-import { useSessionForTask } from "../sessions/useSession";
+import { useSessionSelector } from "../sessions/useSession";
 
 /**
  * Hook that sends a structured error prompt to the active agent session.
@@ -18,8 +18,12 @@ export function useFixWithAgent(
 } {
   const view = useAppView();
   const taskId = view.type === "task-detail" ? view.taskId : undefined;
-  const session = useSessionForTask(taskId);
-  const isSessionReady = session?.status === "connected";
+  // Only the readiness flag is needed here — reading it as a primitive avoids
+  // re-rendering every consumer (diff views) on each streamed token.
+  const isSessionReady = useSessionSelector(
+    taskId,
+    (s) => s?.status === "connected",
+  );
 
   const canFixWithAgent = !!(taskId && isSessionReady);
 

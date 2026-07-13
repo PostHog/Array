@@ -73,14 +73,12 @@ describe("WebsiteNewTask context panel", () => {
 
     // Panel starts closed.
     expect(
-      screen.queryByText("#project-bluebird CONTEXT.md"),
+      screen.queryByText("project-bluebird CONTEXT.md"),
     ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "context-chip" }));
 
-    expect(
-      screen.getByText("#project-bluebird CONTEXT.md"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("project-bluebird CONTEXT.md")).toBeInTheDocument();
     const viewContextCalls = () =>
       track.mock.calls.filter(
         ([, props]) => props?.action_type === "view_context",
@@ -97,7 +95,7 @@ describe("WebsiteNewTask context panel", () => {
     // Clicking again closes the panel and must NOT re-track view_context.
     await user.click(screen.getByRole("button", { name: "context-chip" }));
     expect(
-      screen.queryByText("#project-bluebird CONTEXT.md"),
+      screen.queryByText("project-bluebird CONTEXT.md"),
     ).not.toBeInTheDocument();
     expect(viewContextCalls()).toHaveLength(1);
   });
