@@ -2054,6 +2054,125 @@ describe("CodexAppServerAgent", () => {
     ]);
   });
 
+  it("injects _meta.localSkillContext in place of the bare skill command, echo unchanged", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "/my-skill do the thing" }],
+      _meta: {
+        localSkillContext: "BEGIN SKILL my-skill ... END SKILL",
+        localSkillName: "my-skill",
+      },
+    } as unknown as PromptRequest);
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await done;
+
+    const turnStart = stub.requests.find((r) => r.method === "turn/start");
+    expect(
+      (turnStart?.params as { input: Array<{ text?: string }> }).input,
+    ).toEqual([
+      {
+        type: "text",
+        text: "BEGIN SKILL my-skill ... END SKILL",
+        text_elements: [],
+      },
+    ]);
+    // The echoed user turn still shows what the user actually typed.
+    const echoes = (sessionUpdates as any[]).filter(
+      (u) => u.update?.sessionUpdate === "user_message_chunk",
+    );
+    expect(echoes).toEqual([
+      {
+        sessionId: "t",
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "/my-skill do the thing" },
+        },
+      },
+    ]);
+  });
+
+  it("orders prContext before localSkillContext and keeps non-command chunks", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [
+        { type: "text", text: "/my-skill" },
+        { type: "text", text: "also check the README" },
+      ],
+      _meta: {
+        prContext: "PR #123 is open.",
+        localSkillContext: "SKILL DEFINITION",
+        localSkillName: "my-skill",
+      },
+    } as unknown as PromptRequest);
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await done;
+
+    const turnStart = stub.requests.find((r) => r.method === "turn/start");
+    expect(
+      (turnStart?.params as { input: Array<{ text?: string }> }).input,
+    ).toEqual([
+      { type: "text", text: "PR #123 is open.", text_elements: [] },
+      { type: "text", text: "SKILL DEFINITION", text_elements: [] },
+      { type: "text", text: "also check the README", text_elements: [] },
+    ]);
+  });
+
+  it("injects localSkillContext without a skill name and keeps the message text", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    // a mid-message mention has no command chunk to strip, so no localSkillName
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "please use /my-skill for this" }],
+      _meta: { localSkillContext: "ATTACHED SKILLS CONTEXT" },
+    } as unknown as PromptRequest);
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await done;
+
+    const turnStart = stub.requests.find((r) => r.method === "turn/start");
+    expect(
+      (turnStart?.params as { input: Array<{ text?: string }> }).input,
+    ).toEqual([
+      { type: "text", text: "ATTACHED SKILLS CONTEXT", text_elements: [] },
+      {
+        type: "text",
+        text: "please use /my-skill for this",
+        text_elements: [],
+      },
+    ]);
+  });
+
   it("echoes an image-only user turn as a user_message_chunk", async () => {
     const stub = makeStubRpc({
       "thread/start": { thread: { id: "t" } },
