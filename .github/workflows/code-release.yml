@@ -140,6 +140,9 @@ jobs:
       - name: Build enricher package
         run: pnpm --filter @posthog/enricher run build
 
+      - name: Build harness package
+        run: pnpm --filter @posthog/harness run build
+
       - name: Build agent package
         run: pnpm --filter @posthog/agent run build
 
@@ -331,6 +334,9 @@ jobs:
       - name: Build enricher package
         run: pnpm --filter @posthog/enricher run build
 
+      - name: Build harness package
+        run: pnpm --filter @posthog/harness run build
+
       - name: Build agent package
         run: pnpm --filter @posthog/agent run build
 
@@ -456,6 +462,9 @@ jobs:
 
       - name: Build enricher package
         run: pnpm --filter @posthog/enricher run build
+
+      - name: Build harness package
+        run: pnpm --filter @posthog/harness run build
 
       - name: Build agent package
         run: pnpm --filter @posthog/agent run build

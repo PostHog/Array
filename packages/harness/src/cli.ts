@@ -9,24 +9,25 @@ import {
 // is evaluated, so pi picks up "hog" branding when its config module first
 // evaluates. `installHogBrandEnv` itself only touches Node builtins, so
 // this static import carries no ordering risk; everything below that
-// touches pi-coding-agent (directly or transitively, e.g. `./spawn`, which
-// pulls in every extension) is loaded dynamically instead of via a static
-// import — see `./extensions/hog-branding/brand-env` for why a static
-// import here wouldn't reliably run first once bundled, and why `./spawn`
-// below is imported by a *computed* (non-literal) specifier: a literal
-// `import("./spawn")` is exactly as statically inlinable (and thus exactly
-// as unordered) as a static `import`, since bundlers resolve and inline
-// literal-specifier dynamic imports when there's no code-splitting. A
-// specifier the bundler can't statically resolve forces a genuine runtime
-// load of the already-separately-built `dist/spawn.js`.
-import type * as SpawnModule from "./spawn";
+// touches pi-coding-agent (directly or transitively through the extension
+// registry) is loaded dynamically instead of via a static import — see
+// `./extensions/hog-branding/brand-env` for why a static
+// import here wouldn't reliably run first once bundled, and why the extension
+// registry below is imported by a *computed* (non-literal) specifier: a
+// literal dynamic import is statically inlinable by a bundler. A specifier the
+// bundler cannot resolve forces a genuine runtime load of the separately-built
+// `dist/extensions/registry.js`.
+import type * as ExtensionRegistry from "./extensions/registry";
 
 installHogBrandEnv();
 
 const { main, VERSION } = await import("@earendil-works/pi-coding-agent");
-const spawnModuleUrl = new URL("./spawn.js", import.meta.url).href;
-const { harnessExtensionFiles }: typeof SpawnModule = await import(
-  spawnModuleUrl
+const extensionRegistryUrl = new URL(
+  "./extensions/registry.js",
+  import.meta.url,
+).href;
+const { harnessExtensionFiles }: typeof ExtensionRegistry = await import(
+  extensionRegistryUrl
 );
 
 // pi generates its own `--help` text (see `cli/args.js`'s `printHelp()`)
