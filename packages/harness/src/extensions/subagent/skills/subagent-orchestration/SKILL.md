@@ -1,6 +1,6 @@
 ---
 name: subagent-orchestration
-description: How and when to delegate work to subagents via the `subagent` tool (Explore, Plan). Use when a task involves codebase recon or implementation planning that would benefit from an isolated, read-only context window instead of doing it all inline.
+description: How and when to delegate work to subagents via the `subagent` tool (Explore, Plan, General). Use when a task involves codebase recon, implementation planning, or actual code changes that would benefit from an isolated context window instead of doing it all inline.
 ---
 
 # Subagent Orchestration
@@ -29,12 +29,20 @@ almost everything is relevant, delegation adds overhead for no benefit.
 |-------|---------|-------|-------|-------|
 | `Explore` | Fast, read-only recon: find files, entry points, data flow | read, bash, grep, find, ls | Fast/cheap model, falls back to your current model | Reports compressed findings, never edits |
 | `Plan` | Turn Explore's findings (or your own) into a concrete implementation plan | read, bash, grep, find, ls | Inherits your current model | Never edits |
+| `General` | Actual implementation: make the code changes an Explore/Plan investigation identified, or any task that needs real edits | read, bash, edit, write, grep, find, ls | Inherits your current model | Same read-write capability as you have; makes real changes |
 
-Both bundled agents are read-only. There is no bundled agent that writes — do any actual
-editing yourself, in the parent session, after Explore/Plan give you what you need.
+`Explore` and `Plan` are read-only. `General` has the same read-write capability you do —
+reach for it when a change is mechanical/independent enough to delegate (especially
+several at once via parallel mode) rather than doing every edit yourself in sequence.
+For a small, one-off change, just make it directly instead of delegating.
 
 Subagents cannot themselves call `subagent` — they are leaves, not orchestrators. Keep
 all delegation decisions in your own (parent) session.
+
+For larger fan-out orchestration — many agents, loops over file lists, staged
+map/verify/synthesize flows — prefer the `workflow` tool (if available), which runs a
+JavaScript script coordinating these same read-only agents and returns one synthesized
+result. `subagent` is for one-off or small parallel delegations.
 
 A project can add its own agents (including ones that write) as `.pi/agents/<name>.md`
 files — same frontmatter convention as the bundled agents above. See `agentScope` below.
@@ -72,6 +80,27 @@ clarify -> Explore -> Plan -> implement it yourself -> confirm before any risky 
 
 This is guidance, not a rigid workflow — decide per task whether you need both steps. For
 a small, well-understood change, skip straight to implementing it yourself.
+
+## Returning outcomes to the user
+
+A subagent is a means to answer the user's request, not a background task whose
+result can be silently acknowledged. After a subagent finishes, read its result
+and give the user the relevant substantive outcome in the parent response.
+
+- For an open-ended request such as "explore the repo", the findings are the
+  answer: summarize the architecture, notable files, and any recommended next
+  steps without waiting for the user to ask "what did it return?"
+- For implementation, investigation, or review tasks, state what changed or
+  was found, name relevant file paths, and include limitations, failures, or
+  follow-ups that matter.
+- Keep the relay proportional. Do not paste a huge transcript when a concise
+  summary answers the request, but do not replace findings with empty praise
+  such as "that helped" or "I can drill in further."
+- If the result is incomplete, failed, or ambiguous, say so plainly and explain
+  the next action rather than presenting it as success.
+
+The tool result remains available in the conversation for detailed follow-up,
+but the parent agent owns communicating its useful conclusion to the user.
 
 ## Observability
 

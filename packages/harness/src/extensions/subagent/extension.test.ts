@@ -21,6 +21,7 @@ function successResult(
 ): SingleRunResult {
   return {
     runId: "test-run-id",
+    startedAt: Date.now(),
     agent: "Explore",
     task: "look around",
     exitCode: 0,

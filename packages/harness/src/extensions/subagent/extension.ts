@@ -2,11 +2,19 @@ import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
+  ExtensionContext,
   ExtensionFactory,
+  Theme,
 } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import type { Component, TUI } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { PosthogProviderOptions } from "../posthog-provider/provider";
+import { showWorkflowStatusOverlay } from "../workflow/status-overlay";
+import {
+  hasActiveWorkflows,
+  subscribeToWorkflows,
+} from "../workflow/status-registry";
 import type { AgentConfig } from "./agents";
 import {
   type AgentScope,
@@ -15,13 +23,16 @@ import {
 } from "./discovery";
 import {
   formatParallelSummary,
-  getFinalOutput,
   getResultOutput,
   truncateForModel,
 } from "./format";
 import { runPool } from "./process/pool";
 import { renderSubagentCall, renderSubagentResult } from "./render";
 import { isFailedResult, runAgent, type SingleRunResult } from "./run-agent";
+import { SubagentStatusEditor } from "./status-editor";
+import { renderSubagentFooterLines } from "./status-footer";
+import { showSubagentStatusOverlay } from "./status-overlay";
+import { hasActiveAgentRuns, subscribeToAgentRuns } from "./status-registry";
 
 export type SubagentOptions = PosthogProviderOptions;
 
@@ -106,6 +117,64 @@ export function createSubagentExtension(
   return (pi: ExtensionAPI) => {
     void options;
 
+    let activeTui: TUI | undefined;
+    let footerInstalled = false;
+    let spinnerFrame = 0;
+    let currentCtx: ExtensionContext | undefined;
+
+    const footerFactory = (
+      tui: TUI,
+      theme: Theme,
+    ): Component & { dispose?(): void } => {
+      activeTui = tui;
+      return {
+        invalidate() {},
+        render: (width: number) =>
+          renderSubagentFooterLines(theme, width, spinnerFrame),
+      };
+    };
+
+    const syncFooterInstalled = () => {
+      if (!currentCtx) return;
+      const shouldBeInstalled = hasActiveAgentRuns() || hasActiveWorkflows();
+      if (shouldBeInstalled === footerInstalled) return;
+      footerInstalled = shouldBeInstalled;
+      currentCtx.ui.setFooter(shouldBeInstalled ? footerFactory : undefined);
+    };
+
+    const refreshStatus = () => {
+      activeTui?.requestRender();
+      syncFooterInstalled();
+    };
+    const unsubscribeStatus = subscribeToAgentRuns(refreshStatus);
+    const unsubscribeWorkflows = subscribeToWorkflows(refreshStatus);
+    const spinnerTimer = setInterval(() => {
+      if (!hasActiveAgentRuns() && !hasActiveWorkflows()) return;
+      spinnerFrame++;
+      activeTui?.requestRender();
+    }, 150);
+
+    pi.on("session_start", (_event, ctx) => {
+      currentCtx = ctx;
+      footerInstalled = false;
+      syncFooterInstalled();
+
+      ctx.ui.setEditorComponent(
+        (tui, theme, keybindings) =>
+          new SubagentStatusEditor(tui, theme, keybindings, (workflowId) => {
+            if (workflowId) void showWorkflowStatusOverlay(ctx, workflowId);
+            else void showSubagentStatusOverlay(ctx);
+          }),
+      );
+    });
+
+    pi.on("session_shutdown", () => {
+      clearInterval(spinnerTimer);
+      unsubscribeStatus();
+      unsubscribeWorkflows();
+      currentCtx = undefined;
+    });
+
     pi.on("resources_discover", () => ({
       skillPaths: [fileURLToPath(new URL("./skills", import.meta.url))],
     }));
@@ -117,22 +186,23 @@ export function createSubagentExtension(
         description: [
           "Delegate a task to a focused subagent running in its own isolated pi process/context window.",
           "Modes: single ({agent, task}), parallel ({tasks:[...]}, max 8 tasks / 4 concurrent).",
-          "Bundled agents: Explore (fast read-only recon on a cheap model), Plan (read-only implementation planning). Both are read-only — delegate any actual edits to yourself.",
+          "Bundled agents: Explore (fast read-only recon on a cheap model), Plan (read-only implementation planning), General (read-write implementation — actually makes the requested edits). Only General edits; Explore and Plan never do.",
           'Set agentScope: "both" to also allow project-local .pi/agents/*.md (gated by trust + confirmation).',
         ].join(" "),
         promptSnippet:
-          "Delegate a task to a focused, read-only subagent (Explore, Plan)",
+          "Delegate a task to a focused subagent (Explore, Plan, General)",
         promptGuidelines: [
-          "Use subagent to delegate scoped read-only work (recon, planning) to an isolated context instead of doing it inline.",
-          "Use subagent's parallel mode to run several independent Explore/Plan tasks concurrently rather than sequentially.",
-          "For a fixed pipeline (e.g. explore then plan), just call subagent twice in sequence and pass the first result back in as context on the second call — there is no chain mode.",
+          "Use subagent to delegate scoped work (recon, planning, or actual implementation) to an isolated context instead of doing it inline.",
+          "Use subagent's parallel mode to run several independent tasks concurrently rather than sequentially.",
+          "For a fixed pipeline (e.g. explore then plan then implement), just call subagent multiple times in sequence and pass each result back in as context on the next call — there is no chain mode.",
+          "Explore and Plan are read-only and never edit. General has the same read-write capability as you do — use it to delegate actual code changes, especially several independent ones you'd otherwise want to parallelize.",
           "Always pass subagent's context field with file paths already found, decisions already made, and constraints — a subagent otherwise only sees its bare task text plus a small auto-generated digest of recent turns.",
           "Subagents cannot themselves call subagent; keep orchestration in the parent session.",
         ],
         parameters: SubagentParams,
         renderCall: renderSubagentCall,
         renderResult: renderSubagentResult,
-        async execute(_toolCallId, params, signal, onUpdate, ctx) {
+        async execute(_toolCallId, params, signal, _onUpdate, ctx) {
           const agentScope: AgentScope =
             (params.agentScope as AgentScope | undefined) ?? "bundled";
           const discovery = discoverAgents(ctx.cwd, agentScope);
@@ -205,19 +275,20 @@ export function createSubagentExtension(
             }
           }
 
-          type UpdateFn = typeof onUpdate;
-
           const runDispatch = async (
             dispatchSignal: AbortSignal | undefined,
-            dispatchOnUpdate: UpdateFn,
           ): Promise<SubagentToolResult> => {
             if (hasTasks && params.tasks) {
+              const tasks = params.tasks;
+              // Live task state is rendered in the subagent status overlay.
+              // Do not stream partial tool results: a tool result is the
+              // completed outcome that is added to the model context.
               const results = await runPool(
-                params.tasks,
+                tasks,
                 { concurrency: MAX_CONCURRENCY, signal: dispatchSignal },
-                (t, _index, taskSignal) => {
+                async (t, _index, taskSignal) => {
                   const agent = findAgent(t.agent) as AgentConfig;
-                  return runAgent({
+                  const result = await runAgent({
                     ctx,
                     agent,
                     task: t.task,
@@ -225,6 +296,7 @@ export function createSubagentExtension(
                     context: t.context,
                     signal: taskSignal,
                   });
+                  return result;
                 },
               );
 
@@ -244,16 +316,6 @@ export function createSubagentExtension(
               cwd: params.cwd,
               context: params.context,
               signal: dispatchSignal,
-              onUpdate: (partial) =>
-                dispatchOnUpdate?.({
-                  content: [
-                    {
-                      type: "text",
-                      text: getFinalOutput(partial.messages) || "(running...)",
-                    },
-                  ],
-                  details: { mode: "single", results: [partial] },
-                }),
             });
 
             if (isFailedResult(result)) {
@@ -280,7 +342,7 @@ export function createSubagentExtension(
             };
           };
 
-          return runDispatch(signal, onUpdate);
+          return runDispatch(signal);
         },
       }),
     );

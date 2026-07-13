@@ -4,7 +4,8 @@
   "description": "Spawn the pi.dev coding agent (CLI + SDK) against the PostHog LLM gateway with PostHog OAuth",
   "type": "module",
   "bin": {
-    "harness": "dist/cli.js"
+    "harness": "dist/cli.js",
+    "hog": "dist/cli.js"
   },
   "exports": {
     "./cli": {
@@ -55,6 +56,14 @@
       "types": "./dist/extensions/subagent/*.d.ts",
       "import": "./dist/extensions/subagent/*.js"
     },
+    "./extensions/workflow": {
+      "types": "./dist/extensions/workflow/extension.d.ts",
+      "import": "./dist/extensions/workflow/extension.js"
+    },
+    "./extensions/workflow/*": {
+      "types": "./dist/extensions/workflow/*.d.ts",
+      "import": "./dist/extensions/workflow/*.js"
+    },
     "./extensions/mcp": {
       "types": "./dist/extensions/mcp/extension.d.ts",
       "import": "./dist/extensions/mcp/extension.js"
@@ -62,6 +71,14 @@
     "./extensions/mcp/*": {
       "types": "./dist/extensions/mcp/*.d.ts",
       "import": "./dist/extensions/mcp/*.js"
+    },
+    "./extensions/footer-focus-demo": {
+      "types": "./dist/extensions/footer-focus-demo/extension.d.ts",
+      "import": "./dist/extensions/footer-focus-demo/extension.js"
+    },
+    "./extensions/footer-focus-demo/*": {
+      "types": "./dist/extensions/footer-focus-demo/*.d.ts",
+      "import": "./dist/extensions/footer-focus-demo/*.js"
     }
   },
   "scripts": {
@@ -73,8 +90,8 @@
   },
   "dependencies": {
     "@earendil-works/pi-ai": "0.80.3",
-    "@earendil-works/pi-coding-agent": "0.80.3",
-    "@earendil-works/pi-tui": "0.80.3",
+    "@earendil-works/pi-coding-agent": "0.80.6",
+    "@earendil-works/pi-tui": "0.80.6",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@posthog/shared": "workspace:*",
     "lru-cache": "^11.1.0",
