@@ -630,13 +630,13 @@ describe("listAllFiles", () => {
     expect(files.length).toBe(2);
   });
 
-  it("keeps untracked files over tracked ones when truncating", async () => {
+  it("keeps tracked files over untracked ones when truncating", async () => {
     repoDir = await setupRepo();
     await writeFile(path.join(repoDir, "untracked.txt"), "content");
 
     const files = await listAllFiles(repoDir, { maxFiles: 1 });
 
-    expect(files).toEqual(["untracked.txt"]);
+    expect(files).toEqual(["file.txt"]);
   });
 
   it("returns tracked files when the untracked scan times out", async () => {

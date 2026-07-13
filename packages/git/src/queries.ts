@@ -1204,7 +1204,7 @@ export async function listAllFiles(
         (): string[] => [],
       ),
     ]);
-    const combined = untracked.concat(tracked);
+    const combined = tracked.concat(untracked);
     if (maxFiles !== undefined && combined.length > maxFiles) {
       combined.splice(maxFiles);
     }
