@@ -27,7 +27,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
     "test:e2e:headed": "playwright test --config=tests/e2e/playwright.config.ts --headed",
-    "postinstall": "bash scripts/postinstall.sh",
+    "postinstall": "node scripts/postinstall.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "clean": "node ../../scripts/rimraf.mjs .vite .turbo out node_modules/.vite"
