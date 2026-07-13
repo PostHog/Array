@@ -1,5 +1,17 @@
 # Troubleshooting
 
+## Windows: `pnpm install` fails with WSL bash / `execvpe(/bin/bash)`
+
+If install dies in `apps/code` postinstall with:
+
+```
+<3>WSL (9 - Relay) ERROR: execvpe(/bin/bash) failed: No such file or directory
+```
+
+an older checkout is still running `bash scripts/postinstall.sh`, and Windows is resolving `bash` to the System32 WSL stub without a distro. Current `main` uses `node scripts/postinstall.mjs` — pull latest and re-run `pnpm install`. WSL/Git Bash are not required for install.
+
+`pnpm dev` / phrocs on Windows is a separate issue. Prefer `pnpm dev:agent` and `pnpm dev:code` in separate terminals; `pnpm dev:mprocs` is also available as an alternative.
+
 ## Black screen during development
 
 If the app launches but renders a blank/black screen, it's almost always a stale Vite cache.
@@ -45,7 +57,7 @@ If the app crashes with something like:
 libc++abi: terminating due to uncaught exception of type Napi::Error
 ```
 
-A native module was built for the wrong runtime. Re-run the install, which rebuilds what Electron needs via `apps/code/scripts/postinstall.sh`:
+A native module was built for the wrong runtime. Re-run the install, which rebuilds what Electron needs via `apps/code/scripts/postinstall.mjs`:
 
 ```bash
 pnpm install
