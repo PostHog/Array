@@ -150,11 +150,8 @@ function CompactingStatusView() {
           {formatDuration(elapsed, 1)}
         </Text>
       </Flex>
-      <div
-        className="compacting-progress mt-1.5"
-        role="progressbar"
-        aria-label="Compacting conversation history"
-      />
+      {/* Decorative: the spinner and the text above carry the accessible status. */}
+      <div className="compacting-progress mt-1.5" aria-hidden="true" />
     </Box>
   );
 }
