@@ -1,10 +1,16 @@
 import { EventEmitter } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const store = vi.hoisted(() => ({
-  get: vi.fn(),
-  save: vi.fn(),
-}));
+const store = vi.hoisted(() => {
+  const state = { zoomLevel: 0.5 };
+  return {
+    get: vi.fn(() => state.zoomLevel),
+    save: vi.fn((level: number) => {
+      state.zoomLevel = level;
+    }),
+    state,
+  };
+});
 
 vi.mock("./utils/store", () => ({
   windowStateStore: { get: store.get },
@@ -38,9 +44,13 @@ function createWindow(): FakeWindow & ZoomWindow {
 describe("window zoom", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    store.state.zoomLevel = 0.5;
     store.get.mockReset();
-    store.get.mockReturnValue(0.5);
+    store.get.mockImplementation(() => store.state.zoomLevel);
     store.save.mockReset();
+    store.save.mockImplementation((level: number) => {
+      store.state.zoomLevel = level;
+    });
   });
 
   it("adjusts from the persisted level when Chromium has reset", () => {
@@ -88,6 +98,42 @@ describe("window zoom", () => {
     vi.runAllTimers();
 
     expect(store.save).toHaveBeenCalledWith(1.5);
+  });
+
+  it("waits for native zoom before applying a menu adjustment", () => {
+    const window = createWindow();
+    setupWindowZoom(window);
+
+    window.webContents.emit("zoom-changed");
+    window.webContents.zoomLevel = 1.5;
+    adjustWindowZoom(window, 0.5);
+    vi.runAllTimers();
+
+    expect({
+      zoomLevel: window.webContents.zoomLevel,
+      saved: store.save.mock.calls,
+    }).toEqual({
+      zoomLevel: 2,
+      saved: [[1.5], [2]],
+    });
+  });
+
+  it("waits for native zoom before restoring after a reload", () => {
+    const window = createWindow();
+    setupWindowZoom(window);
+
+    window.webContents.emit("zoom-changed");
+    window.webContents.zoomLevel = 1.5;
+    window.webContents.emit("did-finish-load");
+    vi.runAllTimers();
+
+    expect({
+      zoomLevel: window.webContents.zoomLevel,
+      saved: store.save.mock.calls,
+    }).toEqual({
+      zoomLevel: 1.5,
+      saved: [[1.5]],
+    });
   });
 
   it("clamps invalid persisted levels before restoring", () => {
