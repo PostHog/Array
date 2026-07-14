@@ -215,17 +215,19 @@ export function CreateChannelModal({
                   </span>
                 )}
               </Field>
-              <Field className="flex flex-row items-center gap-2">
+              <label
+                htmlFor="context-with-md"
+                className="flex cursor-pointer items-center gap-2 text-sm"
+              >
                 <Switch
                   id="context-with-md"
+                  className="shrink-0"
                   checked={withContextMd}
                   disabled={busy}
                   onCheckedChange={(checked) => setWithContextMd(!!checked)}
                 />
-                <FieldLabel htmlFor="context-with-md" className="mb-0">
-                  Plan its context.md now
-                </FieldLabel>
-              </Field>
+                Plan its context.md now
+              </label>
             </>
           )}
 
