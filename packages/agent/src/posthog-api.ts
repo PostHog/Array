@@ -21,15 +21,6 @@ export {
 
 const DEFAULT_USER_AGENT = `posthog/agent.hog.dev; version: ${packageJson.version}`;
 
-// Bounded retry for artifact downloads that momentarily fail because the stored
-// object isn't readable yet (read-after-write lag right after upload).
-const ARTIFACT_DOWNLOAD_MAX_ATTEMPTS = 4;
-const ARTIFACT_DOWNLOAD_RETRY_DELAY_MS = 500;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export interface TaskArtifactUploadPayload {
   name: string;
   type: ArtifactType;
@@ -295,11 +286,6 @@ export class PostHogAPIClient {
    * Download artifact content by storage path
    * Streams the file through the PostHog backend so the sandbox does not need
    * direct access to object storage.
-   *
-   * Retries transient failures with a short backoff: an artifact requested
-   * moments after upload (e.g. a pending attachment on the first cloud turn) can
-   * be listed in the run manifest before its stored object is readable, which
-   * surfaces here as a 404/5xx. Returns null once the attempt budget is spent.
    */
   async downloadArtifact(
     taskId: string,
@@ -307,31 +293,22 @@ export class PostHogAPIClient {
     storagePath: string,
   ): Promise<ArrayBuffer | null> {
     const teamId = this.getTeamId();
-    const endpoint = `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/download/`;
 
-    for (
-      let attempt = 1;
-      attempt <= ARTIFACT_DOWNLOAD_MAX_ATTEMPTS;
-      attempt++
-    ) {
-      try {
-        const response = await this.performRequestWithRetry(endpoint, {
+    try {
+      const response = await this.performRequestWithRetry(
+        `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/download/`,
+        {
           method: "POST",
           body: JSON.stringify({ storage_path: storagePath }),
-        });
-        if (!response.ok) {
-          throw new Error(`Failed to download artifact: ${response.status}`);
-        }
-        return await response.arrayBuffer();
-      } catch {
-        if (attempt >= ARTIFACT_DOWNLOAD_MAX_ATTEMPTS) {
-          return null;
-        }
-        await sleep(ARTIFACT_DOWNLOAD_RETRY_DELAY_MS * attempt);
+        },
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to download artifact: ${response.status}`);
       }
+      return response.arrayBuffer();
+    } catch {
+      return null;
     }
-
-    return null;
   }
 
   /**
