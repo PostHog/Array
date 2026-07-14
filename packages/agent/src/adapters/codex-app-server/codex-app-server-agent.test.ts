@@ -134,6 +134,74 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
+  it("nests subagent updates and ignores child turn completion", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+      "turn/start": { turn: { id: "turn_1", status: "inProgress" } },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    let promptSettled = false;
+    const promptDone = agent
+      .prompt({
+        sessionId: "thr_1",
+        prompt: [{ type: "text", text: "review this" }],
+      } as unknown as PromptRequest)
+      .then((result) => {
+        promptSettled = true;
+        return result;
+      });
+
+    stub.emit("item/started", {
+      threadId: "thr_1",
+      turnId: "turn_1",
+      item: {
+        type: "collabAgentToolCall",
+        id: "spawn-1",
+        tool: "spawnAgent",
+        status: "inProgress",
+        senderThreadId: "thr_1",
+        receiverThreadIds: ["child-1"],
+        prompt: "Review auth",
+      },
+    });
+    stub.emit("item/agentMessage/delta", {
+      threadId: "child-1",
+      turnId: "child-turn",
+      itemId: "child-message",
+      delta: "I found an issue.",
+    });
+    stub.emit("turn/completed", {
+      threadId: "child-1",
+      turn: { id: "child-turn", status: "completed" },
+    });
+
+    await Promise.resolve();
+    expect(promptSettled).toBe(false);
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "thr_1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "I found an issue." },
+        _meta: { posthog: { parentToolCallId: "spawn-1" } },
+      },
+    });
+
+    stub.emit("turn/completed", {
+      threadId: "thr_1",
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await expect(promptDone).resolves.toMatchObject({ stopReason: "end_turn" });
+  });
+
   it("includes buffered command output when completion omits aggregatedOutput", async () => {
     const stub = makeStubRpc({
       initialize: {},

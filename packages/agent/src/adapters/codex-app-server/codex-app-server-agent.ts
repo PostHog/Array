@@ -15,11 +15,16 @@ import type {
   RequestPermissionResponse,
   ResumeSessionRequest,
   ResumeSessionResponse,
+  SessionNotification,
   SetSessionConfigOptionRequest,
   SetSessionConfigOptionResponse,
   StopReason,
 } from "@agentclientprotocol/sdk";
-import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
+import {
+  mcpToolKey,
+  parentToolCallMeta,
+  posthogToolMeta,
+} from "@posthog/shared";
 import { POSTHOG_NOTIFICATIONS } from "../../acp-extensions";
 import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
 import type { ProcessSpawnedCallback } from "../../types";
@@ -143,6 +148,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   /** Deployment environment; on "cloud" a non-danger sandbox would panic, so we skip the override. */
   private environment?: "local" | "cloud";
   private readonly commandOutputs = new Map<string, string>();
+  private readonly subagentParentToolCalls = new Map<string, string>();
   /** Extra writable roots for this session, folded into workspaceWrite sandbox turns. */
   private additionalDirectories?: string[];
   /** The session workspace stays writable when extra roots are applied per turn. */
@@ -361,6 +367,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       additionalDirectories?: string[];
     },
   ): Promise<{ threadId: string; thread: AppServerThread | undefined }> {
+    this.subagentParentToolCalls.clear();
     this.jsonSchema = params.meta?.jsonSchema ?? undefined;
     this.taskRunId = params.meta?.taskRunId;
     this.environment = params.meta?.environment;
@@ -935,23 +942,34 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   private handleNotification(method: string, params: unknown): void {
     const mappedParams = this.withBufferedCommandOutput(method, params);
-    if (this.sessionId && !this.session.cancelled) {
+    this.trackSubagentThreads(mappedParams);
+    const notificationThreadId = readNotificationThreadId(mappedParams);
+    const isMainThread =
+      !notificationThreadId || notificationThreadId === this.threadId;
+    const parentToolCallId = notificationThreadId
+      ? this.subagentParentToolCalls.get(notificationThreadId)
+      : undefined;
+
+    if (
+      this.sessionId &&
+      !this.session.cancelled &&
+      (isMainThread ||
+        (parentToolCallId && shouldSurfaceSubagentNotification(method)))
+    ) {
       const notification = mapAppServerNotification(
         this.sessionId,
         method,
         mappedParams,
       );
       if (notification) {
+        const routedNotification = parentToolCallId
+          ? withParentToolCallId(notification, parentToolCallId)
+          : notification;
         void this.client
-          .sessionUpdate(notification)
+          .sessionUpdate(routedNotification)
           .catch((err) => this.logger.warn("sessionUpdate failed", err));
-        this.appendNotification(this.sessionId, notification);
+        this.appendNotification(this.sessionId, routedNotification);
       }
-    }
-
-    if (method === APP_SERVER_NOTIFICATIONS.TURN_STARTED) {
-      // Capture the active turn id (steer precondition / interrupt target).
-      this.turns.onStarted((params as { turn?: { id?: string } })?.turn?.id);
     }
 
     if (method === APP_SERVER_NOTIFICATIONS.ITEM_STARTED) {
@@ -959,6 +977,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     if (method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED) {
       this.mcp.release(params);
+    }
+
+    if (!isMainThread) return;
+
+    if (method === APP_SERVER_NOTIFICATIONS.TURN_STARTED) {
+      this.turns.onStarted((params as { turn?: { id?: string } })?.turn?.id);
     }
 
     // codex auto-compaction surfaces as a contextCompaction item: item/started → in progress,
@@ -1029,6 +1053,20 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         });
         void this.finalizeTurn("refusal");
       }
+    }
+  }
+
+  private trackSubagentThreads(params: unknown): void {
+    const item = (params as { item?: AppServerItem } | undefined)?.item;
+    if (
+      item?.type !== "collabAgentToolCall" ||
+      item.tool !== "spawnAgent" ||
+      !item.id
+    ) {
+      return;
+    }
+    for (const receiverThreadId of item.receiverThreadIds ?? []) {
+      this.subagentParentToolCalls.set(receiverThreadId, item.id);
     }
   }
 
@@ -1432,6 +1470,53 @@ function mapTurnStopReason(status: string | undefined): StopReason {
   if (status === "interrupted") return "cancelled";
   if (status === "failed") return "refusal";
   return "end_turn";
+}
+
+function readNotificationThreadId(params: unknown): string | undefined {
+  if (!params || typeof params !== "object") return undefined;
+  const threadId = (params as { threadId?: unknown }).threadId;
+  return typeof threadId === "string" ? threadId : undefined;
+}
+
+function shouldSurfaceSubagentNotification(method: string): boolean {
+  const surfacedMethods: string[] = [
+    APP_SERVER_NOTIFICATIONS.AGENT_MESSAGE_DELTA,
+    APP_SERVER_NOTIFICATIONS.REASONING_TEXT_DELTA,
+    APP_SERVER_NOTIFICATIONS.REASONING_SUMMARY_TEXT_DELTA,
+    APP_SERVER_NOTIFICATIONS.PLAN_DELTA,
+    APP_SERVER_NOTIFICATIONS.ITEM_STARTED,
+    APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED,
+    APP_SERVER_NOTIFICATIONS.COMMAND_OUTPUT_DELTA,
+    APP_SERVER_NOTIFICATIONS.TERMINAL_INTERACTION,
+    APP_SERVER_NOTIFICATIONS.FILE_CHANGE_PATCH_UPDATED,
+  ];
+  return surfacedMethods.includes(method);
+}
+
+function withParentToolCallId(
+  notification: SessionNotification,
+  parentToolCallId: string,
+): SessionNotification {
+  const update = notification.update as SessionNotification["update"] & {
+    _meta?: Record<string, unknown>;
+  };
+  const existingPosthog =
+    update._meta?.posthog && typeof update._meta.posthog === "object"
+      ? (update._meta.posthog as Record<string, unknown>)
+      : {};
+  return {
+    ...notification,
+    update: {
+      ...update,
+      _meta: {
+        ...update._meta,
+        posthog: {
+          ...existingPosthog,
+          ...parentToolCallMeta(parentToolCallId).posthog,
+        },
+      },
+    },
+  } as SessionNotification;
 }
 
 /** The codex thread config override map: folds in MCP servers + makes extra workspace roots writable. Undefined when empty. */
