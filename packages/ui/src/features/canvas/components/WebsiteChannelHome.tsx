@@ -161,7 +161,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
       <ChannelIntro
         channel={backendChannel}
         channelName={channelName}
-        showContextMdCard={!hasContextMd}
+        hasContextMd={hasContextMd}
         onCreateContextMd={() => setContextMdDialogOpen(true)}
       />
     ) : undefined;

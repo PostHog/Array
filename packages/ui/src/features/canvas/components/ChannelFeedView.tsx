@@ -266,9 +266,9 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
                 nav never disagree (generating spinner, needs-permission, cloud
                 status colors, PR state). */}
             <TaskTabIcon task={task} size={14} />
-            <Text size="2" weight="medium" className="line-clamp-2">
+            <span className="line-clamp-2 font-medium text-sm">
               {task.title || "Untitled task"}
-            </Text>
+            </span>
           </div>
           <TaskStatusBadge display={statusDisplay} />
         </div>
