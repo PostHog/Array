@@ -1,5 +1,9 @@
 import type { JSX } from "react";
 import { CohortEmbed } from "./embeds/CohortEmbed";
+import {
+  DiscussionCommentEmbed,
+  getNotebookDiscussionCommentTitle,
+} from "./embeds/DiscussionCommentEmbed";
 import { EarlyAccessFeatureEmbed } from "./embeds/EarlyAccessFeatureEmbed";
 import { EmbedFrame } from "./embeds/EmbedFrame";
 import { ExperimentEmbed } from "./embeds/ExperimentEmbed";
@@ -10,6 +14,7 @@ import { PersonEmbed } from "./embeds/PersonEmbed";
 import { QueryEmbed } from "./embeds/QueryEmbed";
 import { RecordingEmbed } from "./embeds/RecordingEmbed";
 import { SurveyEmbed } from "./embeds/SurveyEmbed";
+import { isDiscussionCommentProps } from "./markdown-notebook/markdown";
 import {
   getMarkdownNotebookDefaultRegistry,
   mergeMarkdownNotebookRegistries,
@@ -60,6 +65,23 @@ export function getNotebooksAppRegistry(): NotebookComponentRegistry {
           ViewComponent,
           EditComponent: fallbackEditComponent,
         };
+  }
+  // Discussion-flavor `<Comment ref replies>` threads render (and reply)
+  // through the same component in both modes — the generic props edit panel
+  // makes no sense for a comment thread. Authorial `<!-- -->` comments render
+  // via CommentBlock before the registry is consulted, so this only affects
+  // threads (mirrors the webapp's registry override).
+  const baseComment = base.components.Comment;
+  if (baseComment) {
+    components.Comment = {
+      ...baseComment,
+      ViewComponent: DiscussionCommentEmbed,
+      EditComponent: DiscussionCommentEmbed,
+      getTitle: (node) =>
+        isDiscussionCommentProps(node.props)
+          ? (getNotebookDiscussionCommentTitle(node) ?? "Comment")
+          : (baseComment.getTitle?.(node) ?? "Comment"),
+    };
   }
   return mergeMarkdownNotebookRegistries(base, { components });
 }
