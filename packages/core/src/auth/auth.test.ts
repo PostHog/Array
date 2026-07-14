@@ -413,6 +413,52 @@ describe("AuthService", () => {
     }
   });
 
+  it("dedupes concurrent refreshes into a single token request", async () => {
+    oauthFlow.startFlow.mockResolvedValue(
+      mockTokenResponse({
+        accessToken: "initial-access-token",
+        refreshToken: "initial-refresh-token",
+      }),
+    );
+    stubAuthFetch();
+
+    // Keep the refresh in flight so both callers overlap; if the refresh
+    // isn't deduped, the rotating refresh token is spent twice.
+    let resolveRefresh!: (value: unknown) => void;
+    oauthFlow.refreshToken.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+
+    await service.initialize();
+    await service.login("us");
+
+    // Two forced refreshes fired in the same tick. The dedup guard must close
+    // synchronously — resolving the stored session now awaits decryption, so
+    // if that await sat between the guard and the refreshPromise assignment,
+    // both callers would slip through and fire their own request.
+    oauthFlow.refreshToken.mockClear();
+    const both = Promise.all([
+      service.refreshAccessToken(),
+      service.refreshAccessToken(),
+    ]);
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(1);
+
+    resolveRefresh(
+      mockTokenResponse({
+        accessToken: "refreshed-access-token",
+        refreshToken: "refreshed-refresh-token",
+      }),
+    );
+    const [a, b] = await both;
+    expect(a.accessToken).toBe("refreshed-access-token");
+    expect(b.accessToken).toBe("refreshed-access-token");
+    expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(1);
+  });
+
   it("forces a token refresh when explicitly requested", async () => {
     oauthFlow.startFlow.mockResolvedValue(
       mockTokenResponse({

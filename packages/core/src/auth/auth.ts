@@ -507,9 +507,15 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return this.refreshPromise;
     }
 
-    const sessionInput = await this.getSessionInputForRefresh();
-
+    // Assign refreshPromise synchronously — with no await between the guard
+    // above and this assignment — so concurrent callers dedupe onto one
+    // refresh. Resolving the stored session (which now awaits decryption)
+    // must therefore happen INSIDE refreshAndSync, not before it; otherwise
+    // two callers both pass the null guard, both decrypt, and both fire a
+    // refresh, burning the rotating refresh token twice and logging the user
+    // out when the second request fails.
     const refreshAndSync = async (): Promise<InMemorySession> => {
+      const sessionInput = await this.getSessionInputForRefresh();
       let session: InMemorySession;
       try {
         session = await this.refreshSession(sessionInput);
