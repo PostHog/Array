@@ -5,6 +5,8 @@ import type {
   ContentBlock,
   RequestPermissionRequest,
   SessionConfigOption,
+  SessionConfigSelectGroup,
+  SessionConfigSelectOption,
   SessionUpdate,
 } from "@agentclientprotocol/sdk";
 import {
@@ -57,6 +59,7 @@ import {
   getCloudRuntimeOptions,
 } from "./cloudRunOptions";
 import {
+  addMissingCloudRuntimeConfigOptions,
   buildCloudDefaultConfigOptions,
   extractLatestConfigOptionsFromEntries,
 } from "./cloudSessionConfig";
@@ -4040,44 +4043,112 @@ export class SessionService {
     }
 
     const previewOptions = await entry.promise;
+    const session = this.d.store.getSessions()[taskRunId];
+    if (!session || session.adapter !== adapter) return;
+
+    const existingOptions = session.configOptions ?? [];
+    const existingModelOption = getConfigOptionByCategory(
+      existingOptions,
+      "model",
+    );
+    const existingReasoningOption = getConfigOptionByCategory(
+      existingOptions,
+      "thought_level",
+    );
+    const existingModel = existingModelOption?.currentValue;
+    const existingReasoningEffort = existingReasoningOption?.currentValue;
+    const preferredModel =
+      typeof existingModel === "string" ? existingModel : initialModel;
+    const preferredReasoningEffort =
+      typeof existingReasoningEffort === "string"
+        ? existingReasoningEffort
+        : initialReasoningEffort;
+    const applyPreferredValue = (
+      option: SessionConfigOption,
+      preferredValue: string | undefined,
+      existingOption: SessionConfigOption | undefined,
+    ): SessionConfigOption => {
+      if (option.type !== "select" || !preferredValue) return option;
+
+      const previewValues = flattenSelectOptions(option.options);
+      if (previewValues.some((value) => value.value === preferredValue)) {
+        return { ...option, currentValue: preferredValue };
+      }
+
+      const existingValues =
+        existingOption?.type === "select"
+          ? flattenSelectOptions(existingOption.options)
+          : [];
+      const reasoningLabels: Record<string, string> = {
+        low: "Low",
+        medium: "Medium",
+        high: "High",
+        xhigh: "Extra High",
+        max: "Max",
+      };
+      const selectedValue = existingValues.find(
+        (value) => value.value === preferredValue,
+      ) ?? {
+        value: preferredValue,
+        name:
+          option.category === "thought_level"
+            ? (reasoningLabels[preferredValue] ?? preferredValue)
+            : preferredValue,
+      };
+
+      if (option.options.length > 0 && "group" in option.options[0]) {
+        return {
+          ...option,
+          currentValue: preferredValue,
+          options: [
+            ...(option.options as SessionConfigSelectGroup[]),
+            {
+              group: "selected",
+              name: "Selected",
+              options: [selectedValue],
+            },
+          ],
+        };
+      }
+
+      return {
+        ...option,
+        currentValue: preferredValue,
+        options: [
+          ...(option.options as SessionConfigSelectOption[]),
+          selectedValue,
+        ],
+      };
+    };
     const extras = previewOptions
       .filter(
         (opt) => opt.category === "model" || opt.category === "thought_level",
       )
       .map((opt) => {
-        if (
-          opt.category === "model" &&
-          opt.type === "select" &&
-          typeof initialModel === "string"
-        ) {
-          const flat = flattenSelectOptions(opt.options);
-          if (flat.some((o) => o.value === initialModel)) {
-            return { ...opt, currentValue: initialModel };
-          }
+        if (opt.category === "model") {
+          return applyPreferredValue(opt, preferredModel, existingModelOption);
         }
-        if (
-          opt.category === "thought_level" &&
-          opt.type === "select" &&
-          typeof initialReasoningEffort === "string"
-        ) {
-          const flat = flattenSelectOptions(opt.options);
-          if (flat.some((o) => o.value === initialReasoningEffort)) {
-            return { ...opt, currentValue: initialReasoningEffort };
-          }
+        if (opt.category === "thought_level") {
+          return applyPreferredValue(
+            opt,
+            preferredReasoningEffort,
+            existingReasoningOption,
+          );
         }
         return opt;
       });
 
     if (extras.length === 0) return;
 
-    const session = this.d.store.getSessions()[taskRunId];
-    if (!session) return;
+    const previewCategories = new Set(extras.map((option) => option.category));
+    const merged = [
+      ...existingOptions.filter(
+        (option) => !previewCategories.has(option.category),
+      ),
+      ...extras,
+    ];
 
-    const existingOptions = session.configOptions ?? [];
-    const existingIds = new Set(existingOptions.map((o) => o.id));
-    const newExtras = extras.filter((o) => !existingIds.has(o.id));
-    if (newExtras.length === 0) return;
-    const merged = [...existingOptions, ...newExtras];
+    if (JSON.stringify(existingOptions) === JSON.stringify(merged)) return;
 
     this.d.store.updateSession(taskRunId, { configOptions: merged });
   }
@@ -4136,8 +4207,23 @@ export class SessionService {
         if (shouldRefreshConfigOptions) {
           this.d.store.updateSession(existing.taskRunId, {
             adapter,
-            configOptions: buildCloudDefaultConfigOptions(currentMode, adapter),
+            configOptions: addMissingCloudRuntimeConfigOptions(
+              buildCloudDefaultConfigOptions(currentMode, adapter),
+              adapter,
+              initialModel,
+              initialReasoningEffort,
+            ),
           });
+        } else {
+          const configOptions = addMissingCloudRuntimeConfigOptions(
+            existing.configOptions ?? [],
+            adapter,
+            initialModel,
+            initialReasoningEffort,
+          );
+          if (configOptions !== existing.configOptions) {
+            this.d.store.updateSession(existing.taskRunId, { configOptions });
+          }
         }
         void this.fetchAndApplyCloudPreviewOptions(
           existing.taskRunId,
@@ -4222,9 +4308,11 @@ export class SessionService {
       session.status = "disconnected";
       session.isCloud = true;
       session.adapter = adapter;
-      session.configOptions = buildCloudDefaultConfigOptions(
-        initialMode,
+      session.configOptions = addMissingCloudRuntimeConfigOptions(
+        buildCloudDefaultConfigOptions(initialMode, adapter),
         adapter,
+        initialModel,
+        initialReasoningEffort,
       );
       this.d.store.setSession(session);
       // Optimistic seeding for the initial task description is deferred
@@ -4243,10 +4331,22 @@ export class SessionService {
         )?.currentValue;
         const currentMode =
           typeof existingMode === "string" ? existingMode : initialMode;
-        updates.configOptions = buildCloudDefaultConfigOptions(
-          currentMode,
+        updates.configOptions = addMissingCloudRuntimeConfigOptions(
+          buildCloudDefaultConfigOptions(currentMode, adapter),
           adapter,
+          initialModel,
+          initialReasoningEffort,
         );
+      } else {
+        const configOptions = addMissingCloudRuntimeConfigOptions(
+          existing.configOptions,
+          adapter,
+          initialModel,
+          initialReasoningEffort,
+        );
+        if (configOptions !== existing.configOptions) {
+          updates.configOptions = configOptions;
+        }
       }
       if (Object.keys(updates).length > 0) {
         this.d.store.updateSession(existing.taskRunId, updates);

@@ -1,4 +1,8 @@
-import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type {
+  ContentBlock,
+  SessionConfigOption,
+  SessionConfigSelectGroup,
+} from "@agentclientprotocol/sdk";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import type { AgentSession } from "@posthog/ui/features/sessions/sessionStore";
@@ -961,6 +965,42 @@ describe("SessionService", () => {
               ],
             }),
           ],
+        }),
+      );
+    });
+
+    it("shows the selected cloud model and reasoning before preview config loads", () => {
+      const service = getSessionService();
+
+      service.watchCloudTask(
+        "task-runtime-123",
+        "run-runtime-123",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.6-sol",
+        undefined,
+        undefined,
+        undefined,
+        "max",
+      );
+
+      expect(mockSessionStoreSetters.setSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          adapter: "codex",
+          configOptions: expect.arrayContaining([
+            expect.objectContaining({
+              category: "model",
+              currentValue: "gpt-5.6-sol",
+            }),
+            expect.objectContaining({
+              category: "thought_level",
+              currentValue: "max",
+            }),
+          ]),
         }),
       );
     });
@@ -3538,6 +3578,7 @@ describe("SessionService", () => {
         taskRunId: "run-model-123",
         taskId: "task-model-123",
         isCloud: true,
+        adapter: "claude",
         configOptions: [
           {
             id: "mode",
@@ -3546,6 +3587,27 @@ describe("SessionService", () => {
             category: "mode",
             currentValue: "plan",
             options: [],
+          },
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            category: "model",
+            currentValue: "claude-sonnet-4-6",
+            options: [
+              {
+                value: "claude-sonnet-4-6",
+                name: "claude-sonnet-4-6",
+              },
+            ],
+          },
+          {
+            id: "effort",
+            name: "Effort",
+            type: "select",
+            category: "thought_level",
+            currentValue: "high",
+            options: [{ value: "high", name: "high" }],
           },
         ],
       });
@@ -3620,9 +3682,371 @@ describe("SessionService", () => {
         );
         const modelOpt = modelUpdate?.[1].configOptions?.find(
           (o) => o.id === "model",
-        ) as { currentValue?: string } | undefined;
+        ) as
+          | {
+              currentValue?: string;
+              options?: Array<{ name: string; value: string }>;
+            }
+          | undefined;
         expect(modelOpt?.currentValue).toBe("claude-sonnet-4-6");
+        expect(modelOpt?.options).toContainEqual({
+          value: "claude-sonnet-4-6",
+          name: "Sonnet 4.6",
+        });
       });
+    });
+
+    it("keeps model-specific max reasoning when generic preview options omit it", async () => {
+      const service = getSessionService();
+      const session = createMockSession({
+        taskRunId: "run-max-123",
+        taskId: "task-max-123",
+        isCloud: true,
+        adapter: "codex",
+        configOptions: [
+          {
+            id: "mode",
+            name: "Approval Preset",
+            type: "select",
+            category: "mode",
+            currentValue: "auto",
+            options: [],
+          },
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            category: "model",
+            currentValue: "gpt-5.6-sol",
+            options: [{ value: "gpt-5.6-sol", name: "gpt-5.6-sol" }],
+          },
+          {
+            id: "reasoning_effort",
+            name: "Reasoning",
+            type: "select",
+            category: "thought_level",
+            currentValue: "max",
+            options: [{ value: "max", name: "Max" }],
+          },
+        ],
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-max-123": session,
+      });
+      mockTrpcAgent.getPreviewConfigOptions.query.mockResolvedValueOnce([
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          category: "model",
+          currentValue: "gpt-5.5",
+          options: [
+            { value: "gpt-5.5", name: "gpt-5.5" },
+            { value: "gpt-5.6-sol", name: "gpt-5.6-sol" },
+          ],
+        },
+        {
+          id: "reasoning_effort",
+          name: "Reasoning",
+          type: "select",
+          category: "thought_level",
+          currentValue: "high",
+          options: [
+            { value: "low", name: "Low" },
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
+            { value: "xhigh", name: "Extra High" },
+          ],
+        },
+      ]);
+
+      service.watchCloudTask(
+        "task-max-123",
+        "run-max-123",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.6-sol",
+        undefined,
+        undefined,
+        undefined,
+        "max",
+      );
+
+      await vi.waitFor(() => {
+        const configUpdate = (
+          mockSessionStoreSetters.updateSession.mock.calls as Array<
+            [string, { configOptions?: SessionConfigOption[] }]
+          >
+        )
+          .filter(([runId]) => runId === "run-max-123")
+          .map(([, patch]) => patch.configOptions)
+          .find(Boolean);
+        const reasoningOption = configUpdate?.find(
+          (option) => option.category === "thought_level",
+        );
+        expect(reasoningOption?.currentValue).toBe("max");
+        expect(
+          reasoningOption?.type === "select"
+            ? reasoningOption.options
+            : undefined,
+        ).toContainEqual({ value: "max", name: "Max" });
+      });
+    });
+
+    it("keeps runtime controls omitted from a partial preview response", async () => {
+      const service = getSessionService();
+      const reasoningOption: SessionConfigOption = {
+        id: "reasoning_effort",
+        name: "Reasoning",
+        type: "select",
+        category: "thought_level",
+        currentValue: "max",
+        options: [{ value: "max", name: "Max" }],
+      };
+      const session = createMockSession({
+        taskRunId: "run-partial-123",
+        taskId: "task-partial-123",
+        isCloud: true,
+        adapter: "codex",
+        configOptions: [
+          {
+            id: "mode",
+            name: "Approval Preset",
+            type: "select",
+            category: "mode",
+            currentValue: "auto",
+            options: [],
+          },
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            category: "model",
+            currentValue: "gpt-5.6-sol",
+            options: [{ value: "gpt-5.6-sol", name: "gpt-5.6-sol" }],
+          },
+          reasoningOption,
+        ],
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-partial-123": session,
+      });
+      mockTrpcAgent.getPreviewConfigOptions.query.mockResolvedValueOnce([
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          category: "model",
+          currentValue: "gpt-5.5",
+          options: [
+            { value: "gpt-5.5", name: "gpt-5.5" },
+            { value: "gpt-5.6-sol", name: "gpt-5.6-sol" },
+          ],
+        },
+      ]);
+
+      service.watchCloudTask(
+        "task-partial-123",
+        "run-partial-123",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.6-sol",
+        undefined,
+        undefined,
+        undefined,
+        "max",
+      );
+
+      await vi.waitFor(() => {
+        const configUpdate = (
+          mockSessionStoreSetters.updateSession.mock.calls as Array<
+            [string, { configOptions?: SessionConfigOption[] }]
+          >
+        )
+          .filter(([runId]) => runId === "run-partial-123")
+          .map(([, patch]) => patch.configOptions)
+          .find(Boolean);
+        expect(configUpdate).toContainEqual(reasoningOption);
+      });
+    });
+
+    it("adds a missing selected value to grouped preview options", async () => {
+      const service = getSessionService();
+      mockGetConfigOptionByCategory.mockImplementation(
+        (
+          configOptions: Array<{ category?: string }> | undefined,
+          category?: string,
+        ) => configOptions?.find((option) => option.category === category),
+      );
+      const session = createMockSession({
+        taskRunId: "run-grouped-123",
+        taskId: "task-grouped-123",
+        isCloud: true,
+        adapter: "codex",
+        configOptions: [
+          {
+            id: "mode",
+            name: "Approval Preset",
+            type: "select",
+            category: "mode",
+            currentValue: "auto",
+            options: [],
+          },
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            category: "model",
+            currentValue: "gpt-5.6-sol",
+            options: [{ value: "gpt-5.6-sol", name: "GPT-5.6 Sol" }],
+          },
+        ],
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-grouped-123": session,
+      });
+      mockTrpcAgent.getPreviewConfigOptions.query.mockResolvedValueOnce([
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          category: "model",
+          currentValue: "gpt-5.5",
+          options: [
+            {
+              group: "openai",
+              name: "OpenAI",
+              options: [{ value: "gpt-5.5", name: "GPT-5.5" }],
+            },
+          ],
+        },
+      ]);
+
+      service.watchCloudTask(
+        "task-grouped-123",
+        "run-grouped-123",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.6-sol",
+      );
+
+      await vi.waitFor(() => {
+        const configUpdate = (
+          mockSessionStoreSetters.updateSession.mock.calls as Array<
+            [string, { configOptions?: SessionConfigOption[] }]
+          >
+        )
+          .filter(([runId]) => runId === "run-grouped-123")
+          .map(([, patch]) => patch.configOptions)
+          .find(Boolean);
+        const modelOption = configUpdate?.find(
+          (option) => option.category === "model",
+        );
+        expect(modelOption?.currentValue).toBe("gpt-5.6-sol");
+        expect(
+          modelOption?.type === "select" &&
+            modelOption.options.length > 0 &&
+            "group" in modelOption.options[0]
+            ? (modelOption.options as SessionConfigSelectGroup[]).flatMap(
+                (group) => group.options,
+              )
+            : undefined,
+        ).toContainEqual({ value: "gpt-5.6-sol", name: "GPT-5.6 Sol" });
+      });
+    });
+
+    it("does not rewrite unchanged cloud preview options", async () => {
+      const service = getSessionService();
+      const previewOptions = [
+        {
+          id: "model",
+          name: "Model",
+          type: "select" as const,
+          category: "model" as const,
+          currentValue: "gpt-5.6-sol",
+          options: [{ value: "gpt-5.6-sol", name: "gpt-5.6-sol" }],
+        },
+        {
+          id: "reasoning_effort",
+          name: "Reasoning",
+          type: "select" as const,
+          category: "thought_level" as const,
+          currentValue: "max",
+          options: [{ value: "max", name: "Max" }],
+        },
+      ];
+      const session = createMockSession({
+        taskRunId: "run-stable-123",
+        taskId: "task-stable-123",
+        isCloud: true,
+        adapter: "codex",
+        configOptions: [
+          {
+            id: "mode",
+            name: "Approval Preset",
+            type: "select",
+            category: "mode",
+            currentValue: "auto",
+            options: [],
+          },
+          ...previewOptions,
+        ],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-stable-123": session,
+      });
+      mockTrpcAgent.getPreviewConfigOptions.query.mockResolvedValueOnce([
+        {
+          id: "mode",
+          name: "Approval Preset",
+          type: "select",
+          category: "mode",
+          currentValue: "auto",
+          options: [],
+        },
+        ...previewOptions,
+      ]);
+
+      service.watchCloudTask(
+        "task-stable-123",
+        "run-stable-123",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.6-sol",
+        undefined,
+        undefined,
+        undefined,
+        "max",
+      );
+
+      await vi.waitFor(() => {
+        expect(
+          mockTrpcAgent.getPreviewConfigOptions.query,
+        ).toHaveBeenCalledOnce();
+      });
+      await Promise.resolve();
+
+      expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalledWith(
+        "run-stable-123",
+        expect.objectContaining({ configOptions: expect.any(Array) }),
+      );
     });
 
     it("retries an errored cloud watcher in place", async () => {
