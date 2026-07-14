@@ -192,6 +192,16 @@ async function resolveGithubRefChip(
   );
 }
 
+function hasVisibleSuggestionPopup(sessionId: string): boolean {
+  // tippy.js sets data-state="hidden" when hiding via .hide(); the session
+  // tag keeps another mounted composer's popup from matching.
+  return (
+    document.querySelector(
+      `[data-tippy-root] .tippy-box:not([data-state='hidden']) [data-suggestion-session="${CSS.escape(sessionId)}"]`,
+    ) !== null
+  );
+}
+
 function showPasteHint(message: string, description: string): void {
   const store = useFeatureSettingsStore.getState();
   const key =
@@ -329,11 +339,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
           if (isSendMessageSubmitKey(event)) {
             if (!view.editable || submitDisabledRef.current) return false;
-            // tippy.js sets data-state="hidden" when hiding via .hide()
-            const visibleSuggestion = document.querySelector(
-              "[data-tippy-root] .tippy-box:not([data-state='hidden'])",
-            );
-            if (visibleSuggestion) return false;
+            if (hasVisibleSuggestionPopup(sessionId)) return false;
             event.preventDefault();
             historyActions.reset();
             submitRef.current();
@@ -398,10 +404,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
             const navigateMessages = onNavigateMessagesRef.current;
             if (navigateMessages) {
-              const visibleSuggestion = document.querySelector(
-                "[data-tippy-root] .tippy-box:not([data-state='hidden'])",
-              );
-              if (visibleSuggestion) return false;
+              if (hasVisibleSuggestionPopup(sessionId)) return false;
 
               const { selection, doc } = view.state;
               // Arrows move the caret as usual; only a press that can't
