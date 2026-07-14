@@ -4386,7 +4386,11 @@ export class SessionService {
     void (async () => {
       let rawEntries: StoredLogEntry[];
       let totalLineCount: number;
-      const isResumeRun = Boolean(runState?.resume_from_run_id);
+      const resumeFromRunId =
+        typeof runState?.resume_from_run_id === "string"
+          ? runState.resume_from_run_id
+          : undefined;
+      const isResumeRun = Boolean(resumeFromRunId);
       if (isTerminalStatus(runStatus) || isResumeRun) {
         // Resume chains need the full history even while the leaf run is still
         // active; otherwise a renderer restart hydrates only the final run.
@@ -4396,33 +4400,82 @@ export class SessionService {
         if (authStatus.kind !== "ready") {
           return;
         }
-        try {
-          rawEntries = await authStatus.auth.client.getTaskRunSessionLogs(
-            taskId,
-            taskRunId,
-            { limit: 100000 },
+        if (resumeFromRunId) {
+          const [ancestorResult, currentRunResult] = await Promise.allSettled([
+            authStatus.auth.client.getTaskRunSessionLogs(
+              taskId,
+              resumeFromRunId,
+              { limit: 100000 },
+            ),
+            authStatus.auth.client.getTaskRunSessionLogs(taskId, taskRunId, {
+              limit: 100000,
+            }),
+          ]);
+          const ancestorEntries: StoredLogEntry[] =
+            ancestorResult.status === "fulfilled"
+              ? (ancestorResult.value as StoredLogEntry[])
+              : [];
+          const currentRunEntries: StoredLogEntry[] =
+            currentRunResult.status === "fulfilled"
+              ? (currentRunResult.value as StoredLogEntry[])
+              : [];
+          if (ancestorResult.status === "rejected") {
+            this.d.log.warn("Failed to fetch ancestor session logs", {
+              taskId,
+              taskRunId,
+              resumeFromRunId,
+              err: ancestorResult.reason,
+            });
+          }
+          if (currentRunResult.status === "rejected") {
+            this.d.log.warn("Failed to fetch resumed leaf session logs", {
+              taskId,
+              taskRunId,
+              err: currentRunResult.reason,
+            });
+          }
+
+          const ancestorKeys = ancestorEntries.map((entry) =>
+            JSON.stringify(entry),
           );
-        } catch (err) {
-          this.d.log.warn("Failed to fetch session-log chain for hydrate", {
-            taskId,
-            taskRunId,
-            err,
-          });
-          return;
-        }
-        if (isResumeRun) {
+          const currentIncludesAncestor =
+            ancestorKeys.length > 0 &&
+            ancestorKeys.every(
+              (key, index) => JSON.stringify(currentRunEntries[index]) === key,
+            );
+          const persistedLeafEntries = currentIncludesAncestor
+            ? currentRunEntries.slice(ancestorEntries.length)
+            : currentRunEntries;
           const leafLogs = await this.fetchSessionLogs(logUrl, taskRunId);
-          const chainKeys = new Set(
-            rawEntries.map((entry) => JSON.stringify(entry)),
+          const leafKeys = new Set(
+            persistedLeafEntries.map((entry) => JSON.stringify(entry)),
           );
           rawEntries = [
-            ...rawEntries,
+            ...ancestorEntries,
+            ...persistedLeafEntries,
             ...leafLogs.rawEntries.filter(
-              (entry) => !chainKeys.has(JSON.stringify(entry)),
+              (entry) => !leafKeys.has(JSON.stringify(entry)),
             ),
           ];
-          totalLineCount = leafLogs.totalLineCount;
+          totalLineCount = Math.max(
+            leafLogs.totalLineCount,
+            persistedLeafEntries.length,
+          );
         } else {
+          try {
+            rawEntries = await authStatus.auth.client.getTaskRunSessionLogs(
+              taskId,
+              taskRunId,
+              { limit: 100000 },
+            );
+          } catch (err) {
+            this.d.log.warn("Failed to fetch session logs for hydrate", {
+              taskId,
+              taskRunId,
+              err,
+            });
+            return;
+          }
           totalLineCount = rawEntries.length;
         }
       } else {
