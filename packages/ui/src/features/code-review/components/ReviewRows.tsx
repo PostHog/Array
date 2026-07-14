@@ -1,4 +1,3 @@
-import { ChatCircleIcon } from "@phosphor-icons/react";
 import type { parsePatchFiles } from "@pierre/diffs";
 import { contentHash } from "@posthog/core/code-review/contentHash";
 import type { PrCommentThread } from "@posthog/core/code-review/types";
@@ -8,7 +7,6 @@ import { memo, useCallback, useMemo } from "react";
 import { useInView } from "../../../primitives/hooks/useInView";
 import { REVIEW_PREFETCH_ROOT_MARGIN } from "../constants";
 import { useReadRepoFileBounded } from "../hooks/useReadRepoFileBounded";
-import { countPrCommentsForFile } from "../prCommentThreads";
 import {
   DeferredDiffPlaceholder,
   DiffFileHeader,
@@ -207,7 +205,6 @@ export const RemoteRow = memo(function RemoteRow({
     () => toggleFile(file.path),
     [toggleFile, file.path],
   );
-  const commentCount = countPrCommentsForFile(commentThreads, file.path);
   return (
     <PatchedFileDiff
       file={file}
@@ -218,28 +215,9 @@ export const RemoteRow = memo(function RemoteRow({
       onToggle={onToggle}
       commentThreads={commentThreads}
       externalUrl={externalUrl}
-      headerMetadata={
-        commentCount > 0 ? (
-          <PrCommentCountBadge count={commentCount} />
-        ) : undefined
-      }
     />
   );
 });
-
-function PrCommentCountBadge({ count }: { count: number }) {
-  const label = `${count} comment${count === 1 ? "" : "s"}`;
-  return (
-    <span
-      title={label}
-      className="inline-flex shrink-0 items-center gap-[3px] rounded-full bg-(--accent-3) px-[6px] py-[2px] text-(--accent-11) text-[11px] tabular-nums"
-    >
-      <ChatCircleIcon size={12} weight="fill" />
-      {count}
-      <span className="sr-only"> comment{count === 1 ? "" : "s"}</span>
-    </span>
-  );
-}
 
 function UntrackedFileDiff({
   file,

@@ -1,5 +1,6 @@
 import type { PrCommentThread } from "@posthog/core/code-review/types";
 import type { PrReviewThread } from "@posthog/shared";
+import type { ChangedFile } from "@posthog/shared/domain-types";
 
 export function mapPrCommentThreads(
   threads: PrReviewThread[],
@@ -9,11 +10,16 @@ export function mapPrCommentThreads(
 
 export function countPrCommentsForFile(
   threads: Map<number, PrCommentThread> | undefined,
-  filePath: string,
+  file: Pick<ChangedFile, "path" | "originalPath">,
 ): number {
   let count = 0;
   for (const thread of threads?.values() ?? []) {
-    if (thread.filePath === filePath) count += thread.comments.length;
+    if (
+      thread.filePath === file.path ||
+      (file.originalPath != null && thread.filePath === file.originalPath)
+    ) {
+      count += thread.comments.length;
+    }
   }
   return count;
 }

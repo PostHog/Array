@@ -45,16 +45,17 @@ describe("PR comment thread helpers", () => {
   });
 
   it.each([
-    ["src/one.ts", 3],
-    ["src/two.ts", 4],
-    ["src/missing.ts", 0],
-  ])("counts all comments and replies for %s", (filePath, expected) => {
+    [{ path: "src/one.ts" }, 3],
+    [{ path: "src/two.ts" }, 4],
+    [{ path: "src/renamed.ts", originalPath: "src/one.ts" }, 3],
+    [{ path: "src/missing.ts" }, 0],
+  ])("counts all comments and replies for $0", (file, expected) => {
     const threads = mapPrCommentThreads([
       makeThread(1, "src/one.ts", 2),
       makeThread(2, "src/one.ts", 1),
       makeThread(3, "src/two.ts", 4),
     ]);
 
-    expect(countPrCommentsForFile(threads, filePath)).toBe(expected);
+    expect(countPrCommentsForFile(threads, file)).toBe(expected);
   });
 });

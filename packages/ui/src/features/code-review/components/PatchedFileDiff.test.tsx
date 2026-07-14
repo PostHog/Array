@@ -1,4 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
+import type { PrCommentThread } from "@posthog/core/code-review/types";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -29,7 +30,14 @@ index 1111111..2222222 100644
 +after`;
 
 describe.each([
-  ["regular", { path: "src/reviewed.ts", patch }],
+  [
+    "regular",
+    {
+      path: "src/reviewed.ts",
+      originalPath: "src/original.ts",
+      patch,
+    },
+  ],
   ["binary", { path: "assets/reviewed.png", patch: null }],
   ["unavailable", { path: "src/unavailable.ts", patch: null }],
 ] as const)("PatchedFileDiff %s header", (_kind, fileInput) => {
@@ -39,6 +47,19 @@ describe.each([
       linesAdded: 2,
       linesRemoved: 1,
     } as ChangedFile;
+    const threadPath = file.originalPath ?? file.path;
+    const commentThreads = new Map<number, PrCommentThread>([
+      [
+        1,
+        {
+          rootId: 1,
+          nodeId: "thread-1",
+          isResolved: false,
+          filePath: threadPath,
+          comments: [{ id: 1 }, { id: 2 }] as PrCommentThread["comments"],
+        },
+      ],
+    ]);
 
     render(
       <PatchedFileDiff
@@ -47,7 +68,7 @@ describe.each([
         options={{}}
         collapsed
         onToggle={() => {}}
-        headerMetadata={<span>2 comments</span>}
+        commentThreads={commentThreads}
       />,
     );
 
@@ -55,7 +76,7 @@ describe.each([
     const text = header.textContent ?? "";
     const additions = _kind === "regular" ? "+1" : "+2";
 
-    expect(screen.getByText("2 comments")).toBeInTheDocument();
+    expect(screen.getByTitle("2 comments")).toBeInTheDocument();
     expect(text.indexOf("2 comments")).toBeLessThan(text.indexOf(additions));
   });
 });

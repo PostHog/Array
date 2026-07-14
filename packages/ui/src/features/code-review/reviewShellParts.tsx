@@ -2,6 +2,7 @@ import {
   ArrowCounterClockwise,
   ArrowSquareOut,
   CaretDown,
+  ChatCircle,
   Minus,
   Plus,
 } from "@phosphor-icons/react";
@@ -139,7 +140,7 @@ export function FileHeaderRow({
   deletions,
   collapsed,
   onToggle,
-  metadata,
+  commentCount,
   trailing,
 }: {
   dirPath: string;
@@ -148,7 +149,7 @@ export function FileHeaderRow({
   deletions: number;
   collapsed: boolean;
   onToggle: () => void;
-  metadata?: ReactNode;
+  commentCount?: number;
   trailing?: ReactNode;
 }) {
   return (
@@ -178,7 +179,9 @@ export function FileHeaderRow({
           {dirPath}
         </span>
       </span>
-      {metadata}
+      {commentCount != null && commentCount > 0 && (
+        <PrCommentCountBadge count={commentCount} />
+      )}
       <span className="font-mono text-[10px]">
         {additions > 0 && (
           <span className="mr-[2px] text-(--green-9)">+{additions}</span>
@@ -213,7 +216,7 @@ export function DiffFileHeader({
   onDiscard,
   onStage,
   staged,
-  metadata,
+  commentCount,
   trailing,
 }: {
   fileDiff: FileDiffMetadata;
@@ -223,7 +226,7 @@ export function DiffFileHeader({
   onDiscard?: () => void;
   onStage?: () => void;
   staged?: boolean;
-  metadata?: ReactNode;
+  commentCount?: number;
   /** Extra controls rendered after the action buttons (e.g. a "Viewed" toggle). */
   trailing?: ReactNode;
 }) {
@@ -242,7 +245,7 @@ export function DiffFileHeader({
       deletions={deletions}
       collapsed={collapsed}
       onToggle={onToggle}
-      metadata={metadata}
+      commentCount={commentCount}
       trailing={
         (onStage || onDiscard || onOpenFile || trailing) && (
           <span className="ml-auto inline-flex items-center gap-[2px]">
@@ -305,7 +308,7 @@ export function DeferredDiffPlaceholder({
   onToggle,
   onShow,
   externalUrl,
-  headerMetadata,
+  commentCount,
   headerTrailing,
 }: {
   filePath: string;
@@ -316,7 +319,7 @@ export function DeferredDiffPlaceholder({
   onToggle: () => void;
   onShow?: () => void;
   externalUrl?: string;
-  headerMetadata?: ReactNode;
+  commentCount?: number;
   /** Extra controls in the header row (e.g. a "Viewed" toggle). */
   headerTrailing?: ReactNode;
 }) {
@@ -331,7 +334,7 @@ export function DeferredDiffPlaceholder({
         deletions={linesRemoved}
         collapsed={collapsed}
         onToggle={onToggle}
-        metadata={headerMetadata}
+        commentCount={commentCount}
         trailing={
           headerTrailing && (
             <span className="ml-auto inline-flex items-center">
@@ -376,5 +379,19 @@ export function DeferredDiffPlaceholder({
         </div>
       )}
     </div>
+  );
+}
+
+function PrCommentCountBadge({ count }: { count: number }) {
+  const label = `${count} comment${count === 1 ? "" : "s"}`;
+  return (
+    <span
+      title={label}
+      className="inline-flex shrink-0 items-center gap-[3px] rounded-full bg-(--accent-3) px-[6px] py-[2px] text-(--accent-11) text-[11px] tabular-nums"
+    >
+      <ChatCircle size={12} weight="fill" />
+      {count}
+      <span className="sr-only"> comment{count === 1 ? "" : "s"}</span>
+    </span>
   );
 }

@@ -36,13 +36,13 @@ function findSpan(
   return found;
 }
 
-function renderHeader(path: string, metadata?: React.ReactNode) {
+function renderHeader(path: string, commentCount?: number) {
   const diff = render(
     <DiffFileHeader
       fileDiff={makeFileDiff(path)}
       collapsed={false}
       onToggle={() => {}}
-      metadata={metadata}
+      commentCount={commentCount}
     />,
   );
   const deferred = render(
@@ -53,7 +53,7 @@ function renderHeader(path: string, metadata?: React.ReactNode) {
       reason="line-limit"
       collapsed={false}
       onToggle={() => {}}
-      headerMetadata={metadata}
+      commentCount={commentCount}
     />,
   );
   return { diff, deferred };
@@ -100,10 +100,7 @@ describe.each([
   });
 
   it("renders metadata before line changes", () => {
-    const rendered = renderHeader(
-      "src/ReviewShell.tsx",
-      <span>2 comments</span>,
-    )[which];
+    const rendered = renderHeader("src/ReviewShell.tsx", 2)[which];
     const text = rendered.container.querySelector("button")?.textContent ?? "";
     const additions = which === "diff" ? "+3" : "+10";
 
