@@ -212,6 +212,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Previous message",
     category: "panels",
     context: "Task detail",
+    alternateKeys: "up",
   },
   {
     id: "message-next",
@@ -219,6 +220,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Next message",
     category: "panels",
     context: "Task detail",
+    alternateKeys: "down",
   },
   {
     id: "message-jump",

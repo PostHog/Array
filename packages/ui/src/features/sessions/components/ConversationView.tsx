@@ -16,6 +16,10 @@ import type {
   TurnContext,
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
+import {
+  type ComposerMessageNavigationHandler,
+  composerMessageNavigation,
+} from "@posthog/ui/features/sessions/components/chat-thread/composerMessageNavigation";
 import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
 import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/chat-thread/threadHotkeys";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
@@ -62,7 +66,15 @@ import {
   type DiffWorkerFactory,
 } from "@posthog/ui/shell/diffWorkerHost";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 export interface ConversationViewProps {
@@ -86,6 +98,11 @@ export interface ConversationViewProps {
    * scrollbar from off-edge content; nested code blocks keep their own scroll.
    */
   scrollX?: boolean;
+  /**
+   * Filled with the view's message navigation handler so the composer can
+   * forward plain Up/Down presses (caret at the input boundary) to it.
+   */
+  composerNavigationRef?: RefObject<ComposerMessageNavigationHandler | null>;
 }
 
 export function ConversationView({
@@ -99,6 +116,7 @@ export function ConversationView({
   compact = false,
   collapseMode: collapseModeProp,
   scrollX = true,
+  composerNavigationRef,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -317,6 +335,41 @@ export function ConversationView({
     listRef.current?.scrollToBottom();
     setShowScrollButton(false);
   }, []);
+
+  const navigateFromComposer = useCallback<ComposerMessageNavigationHandler>(
+    (direction) => {
+      const action = composerMessageNavigation(
+        userMessages.map((message) => message.id),
+        keyboardFocusedMessageId,
+        direction,
+      );
+      if (!action) return false;
+      if (action.kind === "exitToBottom") {
+        setKeyboardFocusedMessageId(null);
+        scrollToBottom();
+        return true;
+      }
+      const message = userMessages.find((entry) => entry.id === action.id);
+      if (!message) return false;
+      setKeyboardFocusedMessageId(action.id);
+      scrollToUserMessage(action.id, message.index);
+      return true;
+    },
+    [
+      userMessages,
+      keyboardFocusedMessageId,
+      scrollToUserMessage,
+      scrollToBottom,
+    ],
+  );
+
+  useEffect(() => {
+    if (!composerNavigationRef) return;
+    composerNavigationRef.current = navigateFromComposer;
+    return () => {
+      composerNavigationRef.current = null;
+    };
+  }, [composerNavigationRef, navigateFromComposer]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {

@@ -61,6 +61,7 @@ export interface UseTiptapEditorOptions {
   };
   clearOnSubmit?: boolean;
   getPromptHistory?: () => string[];
+  onNavigateMessages?: (direction: -1 | 1) => boolean;
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
   onSubmit?: (text: string) => void;
   onBashCommand?: (command: string) => void;
@@ -216,6 +217,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     capabilities = {},
     clearOnSubmit = true,
     getPromptHistory,
+    onNavigateMessages,
     onBeforeSubmit,
     onSubmit,
     onBashCommand,
@@ -255,6 +257,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
   const getPromptHistoryRef = useRef(getPromptHistory);
   getPromptHistoryRef.current = getPromptHistory;
+
+  const onNavigateMessagesRef = useRef(onNavigateMessages);
+  onNavigateMessagesRef.current = onNavigateMessages;
 
   const prevBashModeRef = useRef(false);
   const prevIsEmptyRef = useRef(true);
@@ -337,12 +342,14 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
           if (
             (event.key === "ArrowUp" || event.key === "ArrowDown") &&
-            // Only navigate prompt history when the input is empty, so arrow
-            // keys (and Shift+Arrow selection) behave normally while editing.
-            !event.shiftKey
+            // Plain arrows only: Shift+Arrow selects, and Alt/Cmd/Ctrl arrow
+            // chords are global shortcuts handled elsewhere.
+            !event.shiftKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            !event.ctrlKey
           ) {
             const historyGetter = getPromptHistoryRef.current;
-            if (!taskId && !historyGetter) return false;
 
             const currentText = view.state.doc.textContent;
             const isEmpty = !currentText.trim();
@@ -385,6 +392,31 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                     .delete(1, view.state.doc.content.size - 1)
                     .insertText(newText, 1),
                 );
+                return true;
+              }
+            }
+
+            const navigateMessages = onNavigateMessagesRef.current;
+            if (navigateMessages) {
+              const visibleSuggestion = document.querySelector(
+                "[data-tippy-root] .tippy-box:not([data-state='hidden'])",
+              );
+              if (visibleSuggestion) return false;
+
+              const { selection, doc } = view.state;
+              // Arrows move the caret as usual; only a press that can't
+              // travel further (caret already at the first or last position)
+              // hands off to conversation message navigation.
+              const atBoundary =
+                selection.empty &&
+                (event.key === "ArrowUp"
+                  ? selection.from <= 1
+                  : selection.to >= doc.content.size - 1);
+              if (
+                atBoundary &&
+                navigateMessages(event.key === "ArrowUp" ? -1 : 1)
+              ) {
+                event.preventDefault();
                 return true;
               }
             }

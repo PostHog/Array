@@ -76,6 +76,9 @@ export interface PromptInputProps {
   hideDefaultToolbar?: boolean;
   // prompt history provider
   getPromptHistory?: () => string[];
+  // plain Up/Down at the caret boundary; return true when the conversation
+  // view consumed the keypress
+  onNavigateMessages?: (direction: -1 | 1) => boolean;
   // callbacks
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
   onSubmit?: (text: string) => void;
@@ -121,6 +124,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       headerAddon,
       hideDefaultToolbar = false,
       getPromptHistory,
+      onNavigateMessages,
       onBeforeSubmit,
       onSubmit,
       onBashCommand,
@@ -177,6 +181,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         commands: enableCommands,
       },
       getPromptHistory,
+      onNavigateMessages,
       onBeforeSubmit,
       onSubmit,
       onBashCommand,

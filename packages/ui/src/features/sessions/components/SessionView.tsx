@@ -17,6 +17,7 @@ import { useAutoFocusOnTyping } from "@posthog/ui/features/message-editor/useAut
 import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
 import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
+import type { ComposerMessageNavigationHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerMessageNavigation";
 import {
   copyFromContextMenu,
   getGithubRefUrlFromEventTarget,
@@ -323,6 +324,13 @@ export function SessionView({
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
+  const composerNavigationRef = useRef<ComposerMessageNavigationHandler | null>(
+    null,
+  );
+  const handleNavigateMessages = useCallback(
+    (direction: -1 | 1) => composerNavigationRef.current?.(direction) ?? false,
+    [],
+  );
   const dragCounterRef = useRef(0);
   // URL of the GitHub chip the context menu was opened on, captured on
   // right-click so the "Copy" item can copy the link (selections can't reach it).
@@ -573,6 +581,7 @@ export function SessionView({
                   slackThreadUrl={slackThreadUrl}
                   compact={compact}
                   scrollX={false}
+                  composerNavigationRef={composerNavigationRef}
                 />
 
                 {!useNewChatThread && <SessionResourcesBar events={events} />}
@@ -696,6 +705,7 @@ export function SessionView({
                           onToggleMessagingMode={
                             isCloudRun ? undefined : toggleMessagingMode
                           }
+                          onNavigateMessages={handleNavigateMessages}
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
                           onBashCommand={onBashCommand}

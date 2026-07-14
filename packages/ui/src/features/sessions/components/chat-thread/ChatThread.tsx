@@ -41,6 +41,10 @@ import {
 } from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
 import { ChatThreadFooter } from "@posthog/ui/features/sessions/components/chat-thread/ChatThreadFooter";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
+import {
+  type ComposerMessageNavigationHandler,
+  composerMessageNavigation,
+} from "@posthog/ui/features/sessions/components/chat-thread/composerMessageNavigation";
 import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
 import {
   ToolGroup,
@@ -84,6 +88,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   memo,
   type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -92,7 +97,6 @@ import {
   useState,
 } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-
 import type { ConversationViewProps } from "../ConversationView";
 
 /** A row is either a parsed conversation item or a synthesized group of tool calls. */
@@ -816,14 +820,16 @@ function ThreadKeyboardNav({
   setJumpPickerOpen,
   keyboardFocusedMessageId,
   setKeyboardFocusedMessageId,
+  composerNavigationRef,
 }: {
   items: ConversationItem[];
   jumpPickerOpen: boolean;
   setJumpPickerOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
   keyboardFocusedMessageId: string | null;
   setKeyboardFocusedMessageId: (id: string | null) => void;
+  composerNavigationRef?: RefObject<ComposerMessageNavigationHandler | null>;
 }) {
-  const { scrollToMessage } = useChatMessageScroller();
+  const { scrollToMessage, scrollToEnd } = useChatMessageScroller();
 
   const userMessageIds = useMemo(
     () =>
@@ -885,6 +891,40 @@ function ThreadKeyboardNav({
     () => handleNavigateMessage(1),
     THREAD_HOTKEY_OPTIONS,
   );
+
+  const navigateFromComposer = useCallback<ComposerMessageNavigationHandler>(
+    (direction) => {
+      const action = composerMessageNavigation(
+        userMessageIds,
+        keyboardFocusedMessageId,
+        direction,
+      );
+      if (!action) return false;
+      if (action.kind === "exitToBottom") {
+        setKeyboardFocusedMessageId(null);
+        scrollToEnd({ behavior: "smooth" });
+        return true;
+      }
+      setKeyboardFocusedMessageId(action.id);
+      scrollToMessage(action.id);
+      return true;
+    },
+    [
+      userMessageIds,
+      keyboardFocusedMessageId,
+      setKeyboardFocusedMessageId,
+      scrollToMessage,
+      scrollToEnd,
+    ],
+  );
+
+  useEffect(() => {
+    if (!composerNavigationRef) return;
+    composerNavigationRef.current = navigateFromComposer;
+    return () => {
+      composerNavigationRef.current = null;
+    };
+  }, [composerNavigationRef, navigateFromComposer]);
 
   const handleJumpToMessage = useCallback(
     (id: string) => {
@@ -987,6 +1027,7 @@ export function ChatThread({
   repoPath,
   task,
   taskId,
+  composerNavigationRef,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -1129,6 +1170,7 @@ export function ChatThread({
               setJumpPickerOpen={setJumpPickerOpen}
               keyboardFocusedMessageId={keyboardFocusedMessageId}
               setKeyboardFocusedMessageId={setKeyboardFocusedMessageId}
+              composerNavigationRef={composerNavigationRef}
             />
           </ChatMessageScrollerProvider>
         </ChatThreadChromeProvider>
