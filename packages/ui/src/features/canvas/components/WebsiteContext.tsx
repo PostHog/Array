@@ -57,7 +57,9 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
     isLoading: isLoadingLatest,
     isFetching: isFetchingLatest,
     error: latestError,
-  } = useFolderInstructions(channelId);
+    // Poll while empty so an agent's CONTEXT.md publish (mid plan-session, via
+    // the MCP) replaces the empty state without a manual reload.
+  } = useFolderInstructions(channelId, { pollWhileEmpty: true });
 
   const { data: versions = [], isLoading: isLoadingVersions } =
     useFolderInstructionsVersions(channelId);

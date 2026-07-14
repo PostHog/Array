@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   formatRelativeTimeLong,
   formatRelativeTimeShort,
+  getLocalDayDiff,
   getRelativeDateGroup,
 } from "./time";
 
@@ -64,6 +65,29 @@ describe("formatRelativeTimeLong", () => {
 
   it("falls back to a locale date older than a week", () => {
     expect(formatRelativeTimeLong(NOW - 400 * DAY)).toContain("2025");
+  });
+});
+
+describe("getLocalDayDiff", () => {
+  it("returns 0 for any moment on the same local day", () => {
+    expect(getLocalDayDiff(NOW - 2 * HOUR)).toBe(0);
+  });
+
+  it("counts calendar days, not 24h windows", () => {
+    // 1h ago but across the local midnight boundary is still "yesterday".
+    const justAfterMidnight = new Date(NOW);
+    justAfterMidnight.setHours(0, 30, 0, 0);
+    vi.setSystemTime(justAfterMidnight);
+    expect(getLocalDayDiff(justAfterMidnight.getTime() - HOUR)).toBe(1);
+  });
+
+  it("accepts an ISO string and an explicit now", () => {
+    const now = new Date(NOW);
+    expect(getLocalDayDiff(new Date(NOW - 3 * DAY).toISOString(), now)).toBe(3);
+  });
+
+  it("returns negative for future days", () => {
+    expect(getLocalDayDiff(NOW + 2 * DAY)).toBe(-2);
   });
 });
 

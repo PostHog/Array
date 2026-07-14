@@ -1,5 +1,3 @@
-import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
-import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import {
   REPORT_MODEL_RESOLVER,
   type ReportModelResolver,
@@ -21,10 +19,7 @@ import {
 import { channelFeedQueryKey } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
 import { channelFeedMessagesQueryKey } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
-import {
-  normalizeChannelName,
-  PERSONAL_CHANNEL_NAME,
-} from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { resolveBackendChannelId } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { usePreviewConfig } from "@posthog/ui/features/task-detail/hooks/usePreviewConfig";
@@ -39,25 +34,6 @@ interface GenerateContextInput {
   /** What the user says this context is about; seeds the plan. */
   description: string;
   workspaceMode?: WorkspaceMode;
-}
-
-// The task's backend channel is what the context feed queries (getTasks by
-// channel), while the folder id drives Recents/Artifacts. Resolve the folder's
-// display name onto its backend channel the way useBackendChannel does: the "me"
-// folder maps to the personal channel; any other name resolve-or-creates its
-// public channel. Without this the task only appears in Recents, not the feed.
-async function resolveBackendChannelId(
-  client: PostHogAPIClient | null,
-  channelName: string,
-): Promise<string | undefined> {
-  if (!client) return undefined;
-  const normalized = normalizeChannelName(channelName);
-  if (!normalized) return undefined;
-  if (normalized === PERSONAL_CHANNEL_NAME) {
-    const channels = await client.getTaskChannels();
-    return channels.find((c) => c.channel_type === "personal")?.id;
-  }
-  return (await client.resolveTaskChannel(normalized)).id;
 }
 
 // Launches the plan-mode session that builds a context's CONTEXT.md. The task
@@ -143,10 +119,9 @@ export function useGenerateContext() {
             executionMode: "plan",
             allowNoRepo: true,
             // A cloud run pairs a runtime adapter with a model, and the API
-            // rejects one without the other. Since this flow lets the agent pick
-            // its repo at runtime, it never surfaces a model picker, so pin the
-            // default gateway model here to match the adapter the saga defaults to.
-            model: DEFAULT_GATEWAY_MODEL,
+            // rejects one without the other. Since this flow never surfaces a
+            // model picker, pass the gateway-validated model resolved above.
+            model,
           },
           (output) => invalidateTasks(output.task),
         );

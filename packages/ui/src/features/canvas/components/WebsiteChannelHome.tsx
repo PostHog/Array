@@ -52,8 +52,10 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const channelName = channels.find((c) => c.id === channelId)?.name;
   const { fileTask } = useChannelTaskMutations();
 
+  // Poll while empty so the intro's context.md card flips to "created" when
+  // the agent publishes mid plan-session, without a manual reload.
   const { data: instructions, isLoading: isLoadingInstructions } =
-    useFolderInstructions(channelId);
+    useFolderInstructions(channelId, { pollWhileEmpty: true });
   const channelContext = instructions?.content;
 
   // The folder channel maps onto a backend channel (by name; "me" → the

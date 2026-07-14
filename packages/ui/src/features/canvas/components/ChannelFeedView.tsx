@@ -545,7 +545,10 @@ export function ChannelFeedView({
   onOpenThread: (task: Task) => void;
 }) {
   // Merge tasks + system rows into one chronological list. ISO timestamps sort
-  // lexically, so a plain string compare is chronological.
+  // lexically, so a plain string compare is chronological. Announcements are
+  // posted 1ms before the task they describe; if the backend truncates that
+  // sub-second offset the timestamps tie, so break ties system-row-first to
+  // keep the announcement above its card.
   const entries = useMemo<FeedEntry[]>(() => {
     const merged: FeedEntry[] = [
       ...tasks.map((task) => ({
@@ -561,7 +564,11 @@ export function ChannelFeedView({
         message,
       })),
     ];
-    merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    merged.sort(
+      (a, b) =>
+        a.createdAt.localeCompare(b.createdAt) ||
+        (a.kind === b.kind ? 0 : a.kind === "system" ? -1 : 1),
+    );
     return merged;
   }, [tasks, systemMessages]);
 
