@@ -3292,6 +3292,7 @@ describe("AgentServer pending user attachments", () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await server?.stop();
     server = undefined;
     await rm(tempDir, { recursive: true, force: true });
@@ -3313,6 +3314,7 @@ describe("AgentServer pending user attachments", () => {
   };
 
   it("appends an explicit notice when a pending attachment never reaches the manifest", async () => {
+    vi.useFakeTimers();
     const internals = buildInternals();
     // Refetch still can't see the attachment (truly absent, not just lagging).
     const getTaskRun = vi.fn(async () =>
@@ -3323,17 +3325,18 @@ describe("AgentServer pending user attachments", () => {
     );
     internals.posthogAPI.getTaskRun = getTaskRun;
 
-    const result = await internals.getPendingUserPrompt(
+    const resultPromise = internals.getPendingUserPrompt(
       createTaskRun({
         state: { pending_user_artifact_ids: ["missing-attachment"] },
         artifacts: [],
       }),
     );
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
 
-    // Refetched once to recover a lagging manifest, then — still missing —
-    // surfaced an explicit notice instead of returning null (which would let the
-    // caller fall back to the misleading "Attached files: …" description).
-    expect(getTaskRun).toHaveBeenCalledTimes(1);
+    // Retried to recover a lagging manifest, then surfaced an explicit notice
+    // instead of falling back to the misleading attachment summary.
+    expect(getTaskRun).toHaveBeenCalledTimes(4);
     expect(result).not.toBeNull();
     expect(result?.prompt).toHaveLength(1);
     const [block] = result?.prompt ?? [];
@@ -3387,6 +3390,117 @@ describe("AgentServer pending user attachments", () => {
     expect(hasNotice).toBe(false);
   });
 
+  it("recovers a pending attachment that only lands in a later manifest refetch", async () => {
+    vi.useFakeTimers();
+    const internals = buildInternals();
+    internals.posthogAPI.getTaskRun = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createTaskRun({
+          state: { pending_user_artifact_ids: ["att-1"] },
+          artifacts: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        createTaskRun({
+          state: { pending_user_artifact_ids: ["att-1"] },
+          artifacts: [],
+        }),
+      )
+      .mockResolvedValue(
+        createTaskRun({
+          state: { pending_user_artifact_ids: ["att-1"] },
+          artifacts: [
+            {
+              id: "att-1",
+              name: "pasted-text.txt",
+              type: "user_attachment",
+              storage_path: "tasks/artifacts/pasted-text.txt",
+              content_type: "text/plain",
+            },
+          ],
+        }),
+      );
+    internals.posthogAPI.downloadArtifact = vi.fn(async () =>
+      exactArrayBuffer(new TextEncoder().encode("pasted body")),
+    );
+
+    const resultPromise = internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["att-1"] },
+        artifacts: [],
+      }),
+    );
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(internals.posthogAPI.getTaskRun).toHaveBeenCalledTimes(3);
+    expect(result?.prompt.some((block) => block.type === "resource_link")).toBe(
+      true,
+    );
+    expect(
+      result?.prompt.some(
+        (block) =>
+          block.type === "text" && block.text.includes("could not be loaded"),
+      ),
+    ).toBe(false);
+  });
+
+  it("preserves an initially visible attachment while polling for another", async () => {
+    vi.useFakeTimers();
+    const internals = buildInternals();
+    const firstArtifact = {
+      id: "att-1",
+      name: "first.txt",
+      type: "user_attachment" as const,
+      storage_path: "tasks/artifacts/first.txt",
+      content_type: "text/plain",
+    };
+    const secondArtifact = {
+      id: "att-2",
+      name: "second.txt",
+      type: "user_attachment" as const,
+      storage_path: "tasks/artifacts/second.txt",
+      content_type: "text/plain",
+    };
+    internals.posthogAPI.getTaskRun = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createTaskRun({
+          state: { pending_user_artifact_ids: ["att-1", "att-2"] },
+          artifacts: [],
+        }),
+      )
+      .mockResolvedValue(
+        createTaskRun({
+          state: { pending_user_artifact_ids: ["att-1", "att-2"] },
+          artifacts: [secondArtifact],
+        }),
+      );
+    internals.posthogAPI.downloadArtifact = vi.fn(async () =>
+      exactArrayBuffer(new TextEncoder().encode("body")),
+    );
+
+    const resultPromise = internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["att-1", "att-2"] },
+        artifacts: [firstArtifact],
+      }),
+    );
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(
+      result?.prompt.filter((block) => block.type === "resource_link"),
+    ).toHaveLength(2);
+    expect(
+      result?.prompt.some(
+        (block) =>
+          block.type === "text" && block.text.includes("could not be loaded"),
+      ),
+    ).toBe(false);
+  });
+
   it("returns null without refetching when no pending artifacts were declared", async () => {
     const internals = buildInternals();
     const getTaskRun = vi.fn();
@@ -3401,6 +3515,7 @@ describe("AgentServer pending user attachments", () => {
   });
 
   it("warns once (not twice) about a missing artifact across the speculative and post-refetch resolves", async () => {
+    vi.useFakeTimers();
     const internals = buildInternals();
     // A non-empty manifest that never lists the requested id — so getArtifactsById
     // reaches its per-id "missing" warning on both the pre- and post-refetch calls
@@ -3425,12 +3540,14 @@ describe("AgentServer pending user attachments", () => {
       .spyOn(loggerHost.logger, "warn")
       .mockImplementation(() => {});
 
-    await internals.getPendingUserPrompt(
+    const resultPromise = internals.getPendingUserPrompt(
       createTaskRun({
         state: { pending_user_artifact_ids: ["missing-attachment"] },
         artifacts: decoyManifest,
       }),
     );
+    await vi.runAllTimersAsync();
+    await resultPromise;
 
     // The speculative pre-refetch resolve stays quiet (a miss there is expected);
     // only the post-refetch resolve emits the per-id "missing" warning.

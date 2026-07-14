@@ -131,6 +131,12 @@ export const SSE_KEEPALIVE_INTERVAL_MS = 25_000;
 // cut once, without letting a hard upstream outage loop forever.
 const MAX_UPSTREAM_TURN_RETRIES = 2;
 const UPSTREAM_TURN_RETRY_DELAY_MS = 5_000;
+const PENDING_ARTIFACT_MAX_ATTEMPTS = 4;
+const PENDING_ARTIFACT_RETRY_DELAY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 class NdJsonTap {
   private decoder = new TextDecoder();
@@ -2061,9 +2067,10 @@ export class AgentServer {
 
     // The run's artifact manifest can momentarily lag the pending-artifact ids
     // when a run starts right after the attachments were uploaded. If we were
-    // asked for artifacts the manifest doesn't list yet, refetch the run once so
-    // a transient gap doesn't drop the attachment and send the agent the bare
-    // "Attached files: …" description instead of the file it was promised.
+    // asked for artifacts the manifest doesn't list yet, poll the run with a
+    // short backoff so a transient gap doesn't drop the attachment and send the
+    // agent the bare "Attached files: …" description instead of the file it was
+    // promised.
     let manifest = taskRun.artifacts ?? [];
     let resolvedArtifacts = this.getArtifactsById(manifest, artifactIds, {
       warnOnMissing: false,
@@ -2072,11 +2079,13 @@ export class AgentServer {
       artifactIds.length > 0 &&
       resolvedArtifacts.length < artifactIds.length
     ) {
-      const refreshed = await this.refetchRunArtifacts(taskRun);
-      if (refreshed) {
-        manifest = refreshed;
-        resolvedArtifacts = this.getArtifactsById(manifest, artifactIds);
-      }
+      manifest =
+        (await this.resolvePendingArtifactManifest(
+          taskRun,
+          artifactIds,
+          manifest,
+        )) ?? manifest;
+      resolvedArtifacts = this.getArtifactsById(manifest, artifactIds);
     }
 
     const prompt = await this.buildPromptFromContentAndArtifacts({
@@ -2124,6 +2133,49 @@ export class AgentServer {
       blockTypes: prompt.prompt.map((block) => block.type),
     });
     return prompt.prompt.length > 0 ? prompt : null;
+  }
+
+  private async resolvePendingArtifactManifest(
+    taskRun: TaskRun,
+    artifactIds: string[],
+    initialManifest: TaskRunArtifact[],
+  ): Promise<TaskRunArtifact[] | null> {
+    let latestManifest = initialManifest;
+
+    for (let attempt = 1; attempt <= PENDING_ARTIFACT_MAX_ATTEMPTS; attempt++) {
+      const refreshed = await this.refetchRunArtifacts(taskRun);
+      if (refreshed) {
+        const mergedManifest = [...latestManifest];
+        for (const artifact of refreshed) {
+          const existingIndex = mergedManifest.findIndex(
+            (existing) =>
+              (artifact.id && existing.id === artifact.id) ||
+              (artifact.storage_path &&
+                existing.storage_path === artifact.storage_path),
+          );
+          if (existingIndex >= 0) {
+            mergedManifest[existingIndex] = artifact;
+          } else {
+            mergedManifest.push(artifact);
+          }
+        }
+        latestManifest = mergedManifest;
+        const resolvedArtifacts = this.getArtifactsById(
+          latestManifest,
+          artifactIds,
+          { warnOnMissing: false },
+        );
+        if (resolvedArtifacts.length === artifactIds.length) {
+          return latestManifest;
+        }
+      }
+
+      if (attempt < PENDING_ARTIFACT_MAX_ATTEMPTS) {
+        await sleep(PENDING_ARTIFACT_RETRY_DELAY_MS * attempt);
+      }
+    }
+
+    return latestManifest.length > 0 ? latestManifest : null;
   }
 
   // Best-effort refetch of a run's artifact manifest. Returns null on any error
