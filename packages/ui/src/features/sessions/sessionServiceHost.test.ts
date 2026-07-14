@@ -228,6 +228,10 @@ const mockNotificationService = vi.hoisted(() => ({
   notifyPromptComplete: vi.fn(),
 }));
 
+const mockSpeechNotifier = vi.hoisted(() => ({
+  speak: vi.fn(),
+}));
+
 const mockSettingsState = vi.hoisted(() => ({
   customInstructions: "",
   syncCustomInstructionsFromFile: false,
@@ -302,6 +306,9 @@ vi.mock("@posthog/di/container", () => ({
     }
     if (typeof token === "function" && token.name === "NotificationBus") {
       return mockNotificationService;
+    }
+    if (typeof token === "function" && token.name === "SpeechNotifier") {
+      return mockSpeechNotifier;
     }
     throw new Error(`resolveService: unmocked token ${String(token)}`);
   },
