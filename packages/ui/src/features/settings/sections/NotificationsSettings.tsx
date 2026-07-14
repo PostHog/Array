@@ -5,7 +5,11 @@ import {
   NOTIFICATIONS_SERVICE,
 } from "@posthog/platform/notifications";
 import { type ISpeech, SPEECH_SERVICE } from "@posthog/platform/speech";
-import { ANALYTICS_EVENTS, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import {
+  ANALYTICS_EVENTS,
+  PROJECT_BLUEBIRD_FLAG,
+  SPOKEN_NARRATION_FLAG,
+} from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
@@ -73,6 +77,12 @@ export function NotificationsSettings() {
   // Canvases only exist behind the bluebird flag, so only mention them when on.
   const canvasEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+
+  // Spoken narration is behind a flag for a staged rollout; always on in dev.
+  const spokenNarrationEnabled = useFeatureFlag(
+    SPOKEN_NARRATION_FLAG,
     import.meta.env.DEV,
   );
 
@@ -366,7 +376,7 @@ export function NotificationsSettings() {
         </SettingRow>
       )}
 
-      <SpokenNotificationsSection />
+      {spokenNarrationEnabled && <SpokenNotificationsSection />}
 
       <NotificationTestHarness
         bus={bus}

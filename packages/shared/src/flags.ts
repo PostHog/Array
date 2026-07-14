@@ -12,3 +12,5 @@ export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
 export const PROJECT_BLUEBIRD_FLAG = "project-bluebird";
 export const TASKS_PREWARM_SANDBOX_FLAG = "tasks-prewarm-sandbox";
 export const GLM_MODEL_FLAG = "posthog-code-glm-model";
+/** Spoken narration (agent speaks via the `speak` tool). Gated for a staged rollout. */
+export const SPOKEN_NARRATION_FLAG = "posthog-code-spoken-narration";
