@@ -117,7 +117,15 @@ export function useSessionCallbacks({
             error instanceof Error ? error.message : "Failed to update message";
           toast.error(message);
           log.error("Failed to update queued message", error);
-          sessionService.clearEditingQueuedMessage(taskId);
+          // Keep the edit hold: releasing it would let the original, unedited
+          // message drain and send — the opposite of what the user intended by
+          // editing. The message stays held and the composer restores the
+          // edited text (unless the user already started typing) so they can
+          // retry the save or cancel the edit explicitly.
+          if (isContentEmpty(useDraftStore.getState().drafts[taskId] ?? null)) {
+            setPendingContent(taskId, xmlToContent(promptText ?? text));
+            requestFocus(taskId);
+          }
           return;
         }
       }
