@@ -19,6 +19,7 @@ import {
   createPostToolUseHook,
   createPreToolUseHook,
   createReadEnrichmentHook,
+  createReadImageGuardHook,
   createSignedCommitGuardHook,
   createSubagentRewriteHook,
   createTaskHook,
@@ -224,6 +225,7 @@ function buildHooks(
   rtkPrefix: string | undefined,
 ): Options["hooks"] {
   const postToolUseHooks = [
+    createReadImageGuardHook(),
     createPostToolUseHook({
       onModeChange,
       onPostHogResourceUsed,

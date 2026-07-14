@@ -44,6 +44,55 @@ function makeParams() {
 }
 
 describe("buildSessionOptions", () => {
+  it("replaces unprocessable Read images before model delivery", async () => {
+    const options = buildSessionOptions(makeParams());
+    const hooks = (options.hooks?.PostToolUse ?? []).flatMap(
+      (entry) => entry.hooks ?? [],
+    );
+    const input = {
+      session_id: "s",
+      transcript_path: "/tmp/t",
+      cwd: "/tmp",
+      hook_event_name: "PostToolUse",
+      tool_name: "Read",
+      tool_use_id: "toolu_image",
+      tool_input: { file_path: "/tmp/image.heic" },
+      tool_response: [
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: "image/heic",
+            data: "ZmFrZQ==",
+          },
+        },
+      ],
+    } as HookInput;
+
+    const results = await Promise.all(
+      hooks.map((hook) =>
+        hook(input, undefined, {
+          signal: new AbortController().signal,
+        }),
+      ),
+    );
+
+    expect(results).toContainEqual({
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        updatedToolOutput: {
+          content: [
+            {
+              type: "text",
+              text: "[Removed unprocessable image: unsupported image type image/heic]",
+            },
+          ],
+        },
+      },
+    });
+  });
+
   it.each(Object.entries(SUBAGENT_REWRITES))(
     'registers rewrite target "%s" → "%s" in options.agents',
     (_source, target) => {
