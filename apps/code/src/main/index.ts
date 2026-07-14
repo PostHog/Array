@@ -101,6 +101,10 @@ import {
 import { isMacosPackagedUnsafeBundleLocation } from "./utils/macos-packaged-install-guard";
 import { installMainFetchLogging } from "./utils/network-fetch-logger";
 import { installRendererNetworkLogging } from "./utils/network-webrequest-logger";
+import {
+  RendererCrashRecovery,
+  toSafeRendererUrl,
+} from "./utils/renderer-crash-recovery";
 import { createWindow } from "./window";
 
 type FileWatcherEventsByKind = {
@@ -167,19 +171,10 @@ const RECOVERABLE_RENDER_REASONS = new Set([
 ]);
 const CRASH_LOOP_WINDOW_MS = 30_000;
 const CRASH_LOOP_THRESHOLD = 3;
-const recentCrashTimestamps: number[] = [];
-
-function isCrashLoop(): boolean {
-  const now = Date.now();
-  while (
-    recentCrashTimestamps.length > 0 &&
-    now - recentCrashTimestamps[0] > CRASH_LOOP_WINDOW_MS
-  ) {
-    recentCrashTimestamps.shift();
-  }
-  recentCrashTimestamps.push(now);
-  return recentCrashTimestamps.length >= CRASH_LOOP_THRESHOLD;
-}
+const rendererCrashRecovery = new RendererCrashRecovery({
+  crashLoopThreshold: CRASH_LOOP_THRESHOLD,
+  crashLoopWindowMs: CRASH_LOOP_WINDOW_MS,
+});
 
 function crashDiagnostics() {
   return {
@@ -211,9 +206,10 @@ app.on("render-process-gone", (_event, webContents, details) => {
   posthogNodeAnalytics.flush().catch(() => {});
 
   if (RECOVERABLE_RENDER_REASONS.has(details.reason)) {
-    if (isCrashLoop()) {
+    const recoveryAction = rendererCrashRecovery.nextAction();
+    if (recoveryAction === "stop") {
       log.error("Crash loop detected, stopping auto-recovery", {
-        crashesInWindow: recentCrashTimestamps.length,
+        crashesInWindow: rendererCrashRecovery.recentCrashCount,
         windowMs: CRASH_LOOP_WINDOW_MS,
       });
       return;
@@ -226,8 +222,16 @@ app.on("render-process-gone", (_event, webContents, details) => {
     }
     setImmediate(() => {
       if (win.isDestroyed()) return;
-      log.info("Reloading webContents");
-      win.webContents.reload();
+      if (recoveryAction === "reset-route") {
+        const safeUrl = toSafeRendererUrl(win.webContents.getURL());
+        log.info("Reloading renderer without the crashing route", { safeUrl });
+        void win.loadURL(safeUrl).catch((error) => {
+          log.error("Failed to load renderer recovery URL", { error });
+        });
+      } else {
+        log.info("Reloading webContents");
+        win.webContents.reload();
+      }
       log.info("Bringing window to foreground");
       win.show();
       win.moveTop();
